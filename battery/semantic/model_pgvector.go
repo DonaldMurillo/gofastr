@@ -10,23 +10,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// modelTable records which embedding model each pgvector chunk table
-// holds, one row per table. A pgvector column fixes the dimension and
-// nothing else, so two models of one dimension would otherwise mix in
-// one table and rank as one space.
 const modelTable = "semantic_models"
 
-// bindTimeout bounds Open's model check; Open takes no context.
 const bindTimeout = 10 * time.Second
 
-// modelBinder is a store that records the embedding model its vectors
-// came from and refuses another (PgVectorStore). Open calls it with the
-// embedder's Name.
 type modelBinder interface {
 	bindModel(ctx context.Context, model string) error
 }
 
-// ensureModelTable creates the model table; EnsureSchema calls it.
 func (s *PgVectorStore) ensureModelTable(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+query.QuoteFolded(modelTable)+` (
 		table_name TEXT PRIMARY KEY NOT NULL,
@@ -38,12 +29,6 @@ func (s *PgVectorStore) ensureModelTable(ctx context.Context) error {
 	return nil
 }
 
-// bindModel records model and the store's dimension for this table, or
-// checks them against the recorded pair. A table that holds no rows
-// takes the new pair: there are no vectors to mix, and emptying the
-// table is how a host re-indexes after a model change. The model row is
-// locked for the check: a write in flight (checkModel holds the row
-// shared) finishes before the emptiness check, which then sees its rows.
 func (s *PgVectorStore) bindModel(ctx context.Context, model string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -54,7 +39,6 @@ func (s *PgVectorStore) bindModel(ctx context.Context, model string) error {
 	key := foldedTable(s.table)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO `+quoted+` (table_name, model, dim) VALUES ($1, $2, $3)
 		ON CONFLICT (table_name) DO NOTHING`, key, model, s.dim); err != nil {
-		// 42P01 = undefined_table.
 		if pqCode(err) == "42P01" {
 			return fmt.Errorf("semantic: the %s table is missing: call PgVectorStore.EnsureSchema before Open", modelTable)
 		}
@@ -85,11 +69,6 @@ func (s *PgVectorStore) bindModel(ctx context.Context, model string) error {
 	return nil
 }
 
-// checkModel refuses a write of chunks embedded with model while the
-// table is bound to another: a replica still running the old model after
-// another emptied the table and opened with a new one. It holds the model
-// row shared until the write commits, so a bindModel rebinding the table
-// waits for the write and then finds its rows.
 func (s *PgVectorStore) checkModel(ctx context.Context, tx *sql.Tx, model string) error {
 	var gotModel string
 	var gotDim int
@@ -109,9 +88,6 @@ func (s *PgVectorStore) checkModel(ctx context.Context, tx *sql.Tx, model string
 	return nil
 }
 
-// foldedTable is the table name as Postgres stores it: QuoteFolded
-// lowercases it, so Embed_Chunks and embed_chunks name one table and
-// share one model row. NewPgVector validated the name, so it is ASCII.
 func foldedTable(table string) string {
 	b := []byte(table)
 	for i, c := range b {

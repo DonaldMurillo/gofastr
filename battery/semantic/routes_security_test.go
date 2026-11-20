@@ -286,3 +286,35 @@ func TestHTTPDelete_UnstorableIDNeverReachesIndex(t *testing.T) {
 		t.Errorf("the index was asked to remove %q; an id that is not storable text must not reach it", idx.removed)
 	}
 }
+
+func TestHandler_EmptyBearerWithNoTokenRefused(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	rec := httptest.NewRecorder()
+	Handler(errIndex{}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("an empty bearer matched the unset token: %d, want 401", rec.Code)
+	}
+}
+
+func TestHTTPIndex_RejectsOversizedChunkedBody(t *testing.T) {
+	huge := `{"documents":[{"id":"a","text":"` + strings.Repeat("A", 2<<20) + `"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/index", bytes.NewBufferString(huge))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	Handler(errIndex{}, WithInsecureDisabledAuth()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("an oversized body of unknown length = %d, want 413", rec.Code)
+	}
+}
+
+func TestHandlerAnswersAreNoStore(t *testing.T) {
+	idx, _ := Open(Options{Embedder: NewStubEmbedder(16)})
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	rec := httptest.NewRecorder()
+	Handler(idx, WithInsecureDisabledAuth()).ServeHTTP(rec, req)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}

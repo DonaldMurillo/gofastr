@@ -1,3 +1,2 @@
-// Package queue is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package queue is GoFastr's job queue battery.
 package queue

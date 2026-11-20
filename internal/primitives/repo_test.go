@@ -259,6 +259,10 @@ var ownedPackages = []string{
 	"battery/rtc",
 	"battery/log",
 	"battery/service",
+	"battery/queue",
+	"battery/admin",
+	"battery/semantic",
+	"battery/webhook",
 }
 
 //gofastr:test-reads primitives/ *.go

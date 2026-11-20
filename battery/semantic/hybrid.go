@@ -8,16 +8,8 @@ import (
 	"unicode"
 )
 
-// rrfK is the conventional reciprocal-rank-fusion constant. 60 dampens
-// the contribution of low-ranked items from either list and is
-// effectively the published default, varying it within ±20 doesn't
-// change top-K composition meaningfully for our use case.
 const rrfK = 60.0
 
-// fuseRRF merges vector and keyword candidate lists using reciprocal
-// rank fusion. Both inputs MUST be sorted by score in descending
-// order. The output is sorted by fused score in descending order and
-// each hit's Reason is set to "hybrid".
 func fuseRRF(vec, kw []Hit) []Hit {
 	scores := make(map[string]float64, len(vec)+len(kw))
 	chunks := make(map[string]Hit, len(vec)+len(kw))
@@ -27,9 +19,6 @@ func fuseRRF(vec, kw []Hit) []Hit {
 	}
 	for rank, h := range kw {
 		scores[h.Chunk.ID] += 1.0 / (rrfK + float64(rank+1))
-		// Only set chunks[id] if not already present from the vector
-		// pass, the vector pass carries the embedding, which MMR
-		// needs.
 		if _, ok := chunks[h.Chunk.ID]; !ok {
 			chunks[h.Chunk.ID] = h
 		}
@@ -50,28 +39,19 @@ func fuseRRF(vec, kw []Hit) []Hit {
 	return out
 }
 
-// MemoryKeyword is an allocation-cheap, dependency-free
-// [KeywordBackend] used as the default for [Options.Keyword] when the
-// caller wants hybrid retrieval without wiring battery/search.
-//
-// It scores documents using a simplified BM25-flavoured formula: term
-// frequency in the document, normalised by document length and scaled
-// by inverse document frequency. This is not BM25, there is no IDF
-// saturation parameter, but it is the right shape for fusing with
-// vector scores via RRF, where only the rank order matters.
+// MemoryKeyword is a dependency-free in-process KeywordBackend scored with
+// BM25-style weights.
 type MemoryKeyword struct {
-	mu     sync.RWMutex
-	docs   map[string]keywordDoc
-	totals map[string]int // term -> # of docs containing term (for IDF)
-	// totalLen is the sum of every doc's length, kept on Index and
-	// Delete so the average length costs nothing per Search.
+	mu       sync.RWMutex
+	docs     map[string]keywordDoc
+	totals   map[string]int
 	totalLen int
 }
 
 type keywordDoc struct {
 	id     string
-	length int            // total token count
-	tf     map[string]int // term frequency
+	length int
+	tf     map[string]int
 }
 
 // NewMemoryKeyword returns an empty in-memory keyword backend.
@@ -82,8 +62,7 @@ func NewMemoryKeyword() *MemoryKeyword {
 	}
 }
 
-// Index implements [KeywordBackend]. Re-indexing the same id replaces
-// the prior entry so totals stay consistent.
+// Index implements KeywordBackend; re-indexing an id replaces its entry.
 func (m *MemoryKeyword) Index(ctx context.Context, id, text string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -134,8 +113,8 @@ func (m *MemoryKeyword) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// Search implements [KeywordBackend]. Documents with zero matching
-// terms are not returned.
+// Search implements KeywordBackend; a document with no matching term is not
+// returned.
 func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]KeywordHit, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -184,9 +163,8 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 			}
 			idf := logBase(totalDocs / float64(df))
 			if idf <= 0 {
-				idf = 0.0001 // tiny floor so common terms still contribute order
+				idf = 0.0001
 			}
-			// Length-normalised TF: dampens long-document advantage.
 			tfNorm := float64(tf) / (float64(tf) + 0.5 + 1.5*float64(doc.length)/avg)
 			s += idf * tfNorm
 		}
@@ -210,7 +188,6 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 	return out, nil
 }
 
-// avgLen is the mean doc length, floored at 1. The caller holds m.mu.
 func avgLen(m *MemoryKeyword) float64 {
 	if len(m.docs) == 0 {
 		return 1
@@ -222,11 +199,6 @@ func avgLen(m *MemoryKeyword) float64 {
 	return avg
 }
 
-// keywordRune reports whether r belongs to a keyword term: any letter or
-// any number, \pL\pN. SQLite's unicode61 tokenizer indexes "H₂O" as one
-// token (the subscript is category No), so splitting at ASCII-only digits
-// made MemoryKeyword and the query-term cap disagree with it. '_' and '-'
-// stay separators: unicode61 splits there too.
 func keywordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsNumber(r)
 }
@@ -238,15 +210,10 @@ func keywordTokens(s string) []string {
 	})
 }
 
-// logBase is a tiny natural-log-ish helper that avoids math.Log on the
-// hot path while preserving monotonicity. Strict accuracy is not
-// needed, fusion only uses rank, not magnitude.
 func logBase(x float64) float64 {
 	if x <= 1 {
 		return 0
 	}
-	// 6-term Taylor-ish approximation of ln(x) for x > 1.
-	// ln(x) = 2 * artanh((x-1)/(x+1))
 	y := (x - 1) / (x + 1)
 	y2 := y * y
 	return 2 * y * (1 + y2/3 + y2*y2/5)

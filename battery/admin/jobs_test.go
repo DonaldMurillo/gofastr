@@ -493,3 +493,39 @@ func (s *stubUserStore) CreateUser(_ context.Context, email, _ string, _ []strin
 func (s *stubUserStore) UpdateRoles(_ context.Context, _ string, _ []string) error {
 	return auth.ErrUserNotFound
 }
+
+func TestBulkInitLeavesAYoungUnenqueuedJob(t *testing.T) {
+	j := buildJobsEnv(t, 2)
+	j.setRoles("u1", "admin", "editor")
+	for id, age := range map[string]time.Duration{"young": 10 * time.Second, "old": 2 * time.Minute} {
+		j.db.Exec(`INSERT INTO gofastr_bulk_jobs (id, entity, action, count, creator, tenant, filter_hash, run_key, status, enqueued, created_at)
+			VALUES (?, 'posts', 'delete', 2, 'u1', '', 'h', ?, 'queued', 0, ?)`, id, "k-"+id, time.Now().UTC().Add(-age))
+	}
+	j.init(t)
+	for id, want := range map[string]int{"young": 0, "old": 1} {
+		var enqueued int
+		if err := j.db.QueryRow(`SELECT enqueued FROM gofastr_bulk_jobs WHERE id = ?`, id).Scan(&enqueued); err != nil {
+			t.Fatal(err)
+		}
+		if enqueued != want {
+			t.Errorf("%s job enqueued = %d after Init, want %d", id, enqueued, want)
+		}
+	}
+}
+
+func TestBulkJobPayloadWithAnUnknownFieldRunsNothing(t *testing.T) {
+	j := newJobsEnv(t, 120)
+	j.setRoles("u1", "admin", "editor")
+	code, out := j.confirmBulk(t, "u1", 120)
+	jobID, _ := out["job"].(string)
+	if code != http.StatusAccepted || jobID == "" {
+		t.Fatalf("confirm = %d %v, want 202 and a job", code, out)
+	}
+	payload := []byte(`{"id":"` + jobID + `","ids":["p000"]}`)
+	if err := j.env.b.cfg.BulkJobs.run(context.Background(), queue.Job{Type: bulkJobType, Payload: payload}); err == nil {
+		t.Error("the handler accepted a payload with an unknown field")
+	}
+	if n := j.countPosts(t); n != 120 {
+		t.Errorf("a refused payload still ran: %d rows remain of 120", n)
+	}
+}

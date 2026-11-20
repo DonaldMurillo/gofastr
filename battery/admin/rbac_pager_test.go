@@ -79,3 +79,12 @@ func TestUsersPagePagesAccounts(t *testing.T) {
 		t.Errorf("page 3's link %q drops the page size or the page", href)
 	}
 }
+
+func TestUsersLimitIsBounded(t *testing.T) {
+	for raw, want := range map[string]int{"": usersPageSize, "0": usersPageSize, "501": usersPageSize, "500": 500, "7": 7} {
+		opts, _ := listUsersOpts(httptest.NewRequest(http.MethodGet, "/admin/rbac/users?limit="+raw, nil))
+		if opts.Limit != want {
+			t.Errorf("?limit=%s reads %d, want %d", raw, opts.Limit, want)
+		}
+	}
+}

@@ -1,0 +1,26 @@
+primitive: queue.redis
+summary: RedisQueue, the queue on Redis lists and hashes - the claim fenced by its token, Reclaim of expired claims, the dead-letter list, and the atomic erasure script.
+code:
+  - battery/queue/redis.go
+docs:
+  - framework/docs/content/queue.md
+invariants:
+  - id: stale-claim-cannot-settle
+    rule: Ack and Nack act only when the presented ClaimToken matches the current claim, compared in constant time, and count a mismatch in StaleClaimCount.
+    enforced_by:
+      - test: battery/queue.TestRedisStaleAckCannotDeleteReclaimant
+      - test: battery/queue.TestRedisStaleNackCannotTouchReclaimant
+  - id: redis-refuses-unique-and-sequence-keys
+    rule: RedisQueue refuses a UniqueKey with ErrUniqueUnsupported and a SequenceKey with ErrSequenceUnsupported.
+    enforced_by:
+      - test: battery/queue.TestRedisRefusesUniqueKey
+      - test: battery/queue.TestSequenceKeyRefusedUnsupported
+  - id: reclaim-takes-only-expired-claims
+    rule: Reclaim re-delivers only claims whose visibility timeout has passed.
+    enforced_by:
+      - test: battery/queue.TestRedisReclaimRedeliversExpired
+      - test: battery/queue.TestRedisNonPositiveVisibilityKeepsTimeout
+  - id: reclaim-contains-client-panics
+    rule: A panic in the Redis client during Reclaim becomes an error.
+    enforced_by:
+      - test: battery/queue.TestRedisReclaimClientPanicContained

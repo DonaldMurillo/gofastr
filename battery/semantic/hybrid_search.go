@@ -7,10 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/search"
 )
 
-// WrapSearchBackend adapts a [battery/search].Backend to the
-// [KeywordBackend] interface this package expects. It is intentionally
-// thin: every Add/Remove writes through, and Search maps Documents
-// back to chunk IDs.
+// WrapSearchBackend adapts a battery/search Backend to KeywordBackend.
 func WrapSearchBackend(b search.Backend) KeywordBackend {
 	return &searchAdapter{b: b}
 }
@@ -23,15 +20,12 @@ func (a *searchAdapter) Index(ctx context.Context, id, text string) error {
 	return a.IndexOwned(ctx, id, "", text)
 }
 
-// IndexOwned indexes a chunk as a search.Document owned by owner, so the
-// search store's eraser deletes it with the user.
+// IndexOwned indexes a chunk owned by owner, so the search store's eraser
+// deletes it with the user.
 func (a *searchAdapter) IndexOwned(ctx context.Context, id, owner, text string) (err error) {
 	if err := validateDocumentText(Document{ID: id, Owner: owner, Text: text}); err != nil {
 		return err
 	}
-	// b is a host-supplied search.Backend reached from Index.Add/Remove on
-	// dispatch paths with no per-request recover; a panic becomes an
-	// attributed error instead of a process kill.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("semantic: keyword backend panicked: %v", v)

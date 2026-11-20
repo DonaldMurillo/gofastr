@@ -16,42 +16,36 @@ import (
 type AuthKind string
 
 const (
-	// AuthNone sends no credential. The HMAC signature header is the
-	// only proof of origin. The default.
+	// AuthNone sends no credential. The default.
 	AuthNone AuthKind = ""
 	// AuthBearer sends "Authorization: Bearer <Token>".
 	AuthBearer AuthKind = "bearer"
-	// AuthAPIKey sends "<Header>: <Token>". Header defaults to
+	// AuthAPIKey sends "<Header>: <Token>"; Header defaults to
 	// DefaultAPIKeyHeader.
 	AuthAPIKey AuthKind = "api_key"
 	// AuthBasic sends "Authorization: Basic <base64(Username:Password)>".
 	AuthBasic AuthKind = "basic"
 )
 
-// DefaultAPIKeyHeader is the header an AuthAPIKey credential goes in
-// when Auth.Header is empty.
+// DefaultAPIKeyHeader is the header an AuthAPIKey credential goes in when
+// Auth.Header is empty.
 const DefaultAPIKeyHeader = "X-API-Key"
 
-// Auth is a subscriber's outbound credential: what each delivery sends
-// so a receiver that checks "Authorization: Bearer" or "X-API-Key"
-// accepts it. SQLStore seals it with the same SecretCodec as
-// Subscriber.Secret. A delivery that carries a credential never follows
-// a redirect, whatever the HTTPClient says: a 3xx would hand the
-// credential to the host the redirect names.
+// Auth is a subscriber's outbound credential. A delivery carrying one never
+// follows a redirect.
 type Auth struct {
 	Kind AuthKind
 	// Token is the bearer token (AuthBearer) or the key (AuthAPIKey).
 	Token string
-	// Header is the API key's header name (AuthAPIKey only). Empty
-	// means DefaultAPIKeyHeader.
+	// Header is the API key's header name (AuthAPIKey only); empty means
+	// DefaultAPIKeyHeader.
 	Header string
-	// Username and Password are the AuthBasic pair. Username may not
-	// contain ':'.
+	// Username and Password are the AuthBasic pair; Username may not contain
+	// ':'.
 	Username string
 	Password string
 }
 
-// headerName is the header the credential goes in.
 func (a Auth) headerName() string {
 	switch a.Kind {
 	case AuthAPIKey:
@@ -65,8 +59,6 @@ func (a Auth) headerName() string {
 	return ""
 }
 
-// apply sets the credential on req. It runs after validate, so the
-// header name and value are already known to be well-formed.
 func (a Auth) apply(req *http.Request) {
 	switch a.Kind {
 	case AuthBearer:
@@ -78,15 +70,8 @@ func (a Auth) apply(req *http.Request) {
 	}
 }
 
-// redactedCredential replaces a credential a receiver echoed back.
 const redactedCredential = "[redacted]"
 
-// redact removes a's credential from text a receiver sent back, before
-// it is stored in Delivery.ResponseBody: the body column is not sealed
-// like the auth column, and an error page that echoes the request's
-// Authorization or API key header would otherwise put the credential in
-// every database snapshot. It covers the raw token, the Basic password
-// and the base64 Basic value as sent.
 func (a Auth) redact(text string) string {
 	if a.Kind == AuthNone || text == "" {
 		return text
@@ -97,8 +82,6 @@ func (a Auth) redact(text string) string {
 	return text
 }
 
-// secrets lists the strings redact blanks. A 1-3 byte secret is left
-// out: it would blank ordinary words.
 func (a Auth) secrets() []string {
 	if a.Kind == AuthNone {
 		return nil
@@ -116,8 +99,6 @@ func (a Auth) secrets() []string {
 	return out
 }
 
-// redactHead is redact over the first keep bytes of text, matching
-// credentials that begin there and run past them into the rest.
 func (a Auth) redactHead(text string, keep int) string {
 	if keep >= len(text) {
 		return a.redact(text)
@@ -147,7 +128,6 @@ func (a Auth) redactHead(text string, keep int) string {
 	return b.String()
 }
 
-// longestSecret is the byte length of the longest string redact blanks.
 func (a Auth) longestSecret() int {
 	n := 0
 	for _, s := range a.secrets() {
@@ -156,15 +136,11 @@ func (a Auth) longestSecret() int {
 	return n
 }
 
-// reservedAuthHeaders are headers a credential may not take over: the
-// ones the delivery itself sets or the transport owns.
 var reservedAuthHeaders = map[string]bool{
 	"Host": true, "Content-Type": true, "Content-Length": true, "Transfer-Encoding": true,
 	"Connection": true, "User-Agent": true, "Te": true, "Trailer": true, "Upgrade": true,
 }
 
-// validate refuses a credential the delivery cannot send as written.
-// It never echoes a credential value into the error.
 func (a Auth) validate() error {
 	if (a.Kind == AuthBearer || a.Kind == AuthAPIKey) && (a.Username != "" || a.Password != "") {
 		return errors.New("webhook: Subscriber.Auth Username and Password apply to basic only")
@@ -215,7 +191,6 @@ func (a Auth) validate() error {
 	return nil
 }
 
-// authRecord is Auth's stored form, inside the sealed column.
 type authRecord struct {
 	Kind     AuthKind `json:"kind"`
 	Token    string   `json:"token,omitempty"`
@@ -224,8 +199,6 @@ type authRecord struct {
 	Password string   `json:"password,omitempty"`
 }
 
-// encodeAuth is the plaintext a SecretCodec seals: "" for AuthNone,
-// else JSON.
 func encodeAuth(a Auth) (string, error) {
 	if a.Kind == AuthNone {
 		return "", nil
@@ -234,9 +207,6 @@ func encodeAuth(a Auth) (string, error) {
 	return string(b), err
 }
 
-// decodeAuth reverses encodeAuth. A column that does not parse is an
-// error, never "no auth": a delivery that silently dropped its
-// credential would fail at the receiver with no local clue.
 func decodeAuth(s string) (Auth, error) {
 	if s == "" {
 		return Auth{}, nil

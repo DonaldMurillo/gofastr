@@ -1,0 +1,27 @@
+primitive: semantic.retrieval
+summary: The retrieval stages past the vector leg - reciprocal-rank fusion with the keyword leg, MemoryKeyword, the battery/search adapter, and MMR diversity.
+code:
+  - battery/semantic/hybrid.go
+  - battery/semantic/hybrid_search.go
+  - battery/semantic/mmr.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: fusion-keeps-vectors-and-orders-ties
+    rule: fuseRRF keeps the vector leg's copy of a chunk both legs return, so MMR still has its embedding, and orders hits tied on score by chunk id.
+    enforced_by:
+      - test: battery/semantic.TestFuseKeepsTheVectorHitAndOrdersTies
+  - id: mmr-weighs-relevance-against-redundancy
+    rule: MMR scores (1-lambda) times relevance less lambda times the highest similarity to a picked hit, negative similarities included, and a hit with no vector keeps its own score as relevance.
+    enforced_by:
+      - test: battery/semantic.TestMMRFullDiversityPrefersDistinct
+      - test: battery/semantic.TestMMRAccountsForNegativeSimilarity
+      - test: battery/semantic.TestMMRKeepsAKeywordOnlyHitsScore
+decisions:
+  - id: rrf-k-sixty
+    date: 2026-11-20
+    status: accepted
+    decision: Fusion uses the published reciprocal-rank-fusion constant, 60.
+    rejected:
+      - option: Tune the constant per corpus.
+        why: Varying it within 20 either way does not change top-k ordering in practice.

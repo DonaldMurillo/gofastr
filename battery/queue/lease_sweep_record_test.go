@@ -51,3 +51,30 @@ func assertLeaseSweepRecords(t *testing.T, q *DBQueue) {
 		t.Errorf("updated_at %s, want the sweep's %s", j.UpdatedAt, clock)
 	}
 }
+
+func TestDBStaleClaimCannotSettleTheNewOne(t *testing.T) {
+	_, q := openDBQueueOpts(t, WithWorkers(0), WithLeaseTimeout(time.Minute))
+	clock := time.Now().UTC().Truncate(time.Second)
+	q.now = func() time.Time { return clock }
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, Job{ID: "j", Type: "t", MaxAttempts: 5}); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := q.Dequeue(ctx, "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(2 * time.Minute)
+	if _, err := q.Dequeue(ctx, "t"); err != nil {
+		t.Fatalf("re-claim after the lease expired: %v", err)
+	}
+	if err := q.Ack(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Nack(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	if j := onlyJob(t, q, "claimed"); j.ID != "j" {
+		t.Errorf("the stale claim's Ack or Nack moved the live claim: %+v", j)
+	}
+}

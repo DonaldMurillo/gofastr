@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -57,5 +58,16 @@ func TestPanickingEffectiveRolesShowsDirectRoles(t *testing.T) {
 	body := rr.Body.String()
 	if rr.Code != http.StatusOK || !strings.Contains(body, "editor@example.com") || !strings.Contains(body, `<span class="fui-tag__label" data-cui-internal="">editor</span>`) {
 		t.Fatalf("a panicking EffectiveRoles broke the users page: %d\n%s", rr.Code, body)
+	}
+}
+
+func TestPanickingPolicyLogsTypeNotValue(t *testing.T) {
+	var buf strings.Builder
+	b := &Battery{cfg: Config{Logger: slog.New(slog.NewTextHandler(&buf, nil))}}
+	if b.askPolicy("Authorize", func() bool { panic("token=s3cret") }) {
+		t.Fatal("a panicking callback admitted the request")
+	}
+	if log := buf.String(); strings.Contains(log, "s3cret") || !strings.Contains(log, "Authorize") {
+		t.Errorf("the panic log must name the callback and not the panic value: %s", log)
 	}
 }

@@ -1,0 +1,41 @@
+primitive: semantic.http
+summary: The HTTP surface - Handler's /index, /query, /doc and /stats routes, their auth policy and body checks, and the Plugin that mounts them.
+code:
+  - battery/semantic/routes.go
+  - battery/semantic/plugin.go
+  - battery/semantic/phrases.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: unconfigured-auth-fails-closed
+    rule: With no token and no insecure opt-in every route answers 401, an empty or any bearer included, and with a token the bearer must match it in constant time.
+    enforced_by:
+      - test: battery/semantic.TestHandler_EmptyBearerWithNoTokenRefused
+      - test: battery/semantic.TestHandler_WrongBearerTokenRejected
+      - test: battery/semantic.TestHTTPStats_RequiresAuthentication
+      - test: battery/semantic.TestHTTPDelete_RequiresAuthentication
+  - id: bodies-are-json-and-capped
+    rule: /index and /query refuse a Content-Type other than application/json with 415 and a body past 1 MiB with 413, a body of unknown length included.
+    enforced_by:
+      - test: battery/semantic.TestHTTPIndex_RejectsTextPlainJSON
+      - test: battery/semantic.TestHTTPIndex_RejectsOversizedChunkedBody
+  - id: bodies-decode-strictly
+    rule: /index and /query refuse a repeated or case-folded JSON key.
+    enforced_by:
+      - test: battery/semantic.TestRejectsDuplicateAndFoldedJSONKeys
+  - id: unstorable-id-never-reaches-the-index
+    rule: DELETE /doc answers an id that is not storable text without calling the index.
+    enforced_by:
+      - test: battery/semantic.TestHTTPDelete_UnstorableIDNeverReachesIndex
+  - id: answers-are-no-store
+    rule: Every answer the handler writes carries Cache-Control no-store.
+    enforced_by:
+      - test: battery/semantic.TestHandlerAnswersAreNoStore
+decisions:
+  - id: shape-checks-before-auth
+    date: 2026-11-20
+    status: accepted
+    decision: The body-size and Content-Type checks run before authentication.
+    rejected:
+      - option: Authenticate first.
+        why: A 401 for a malformed request would let a probe learn which routes exist.
