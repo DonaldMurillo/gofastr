@@ -126,3 +126,23 @@ func TestLogSenderScrubsBodiesAndAttachments(t *testing.T) {
 		t.Fatalf("newlines or tabs were lost: %q", out)
 	}
 }
+
+// Bcc recipients travel only in the envelope: no header line names them.
+func TestBccIsNeverAHeader(t *testing.T) {
+	for _, e := range []Email{
+		{From: "noreply@example.com", To: []string{"a@b.test"}, BCC: []string{"hidden@b.test"}, Subject: "hi", TextBody: "x"},
+		{
+			From: "noreply@example.com", To: []string{"a@b.test"}, CC: []string{"c@b.test"},
+			BCC: []string{"hidden@b.test"}, Subject: "hi", TextBody: "x", HTMLBody: "<p>x</p>",
+			Attachments: []Attachment{{Filename: "a.txt", Content: []byte("y")}},
+		},
+	} {
+		msg, err := buildMessage(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bcc := headerLines(string(msg), "Bcc"); len(bcc) != 0 || strings.Contains(string(msg), "hidden@b.test") {
+			t.Fatalf("message names its Bcc recipient:\n%s", msg)
+		}
+	}
+}
