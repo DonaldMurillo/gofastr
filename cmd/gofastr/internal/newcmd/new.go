@@ -246,6 +246,9 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if reason := unusableFuncName(rawName); reason != "" {
 		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
 	}
+	if rawName == "http" {
+		return fmt.Errorf("invalid handler name %q: it conflicts with the handler's net/http import; pick another name", rawName)
+	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected

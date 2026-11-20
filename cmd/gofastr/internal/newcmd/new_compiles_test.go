@@ -34,6 +34,22 @@ func TestScaffoldHandlerRefusesDeclaredName(t *testing.T) {
 	}
 }
 
+func TestScaffoldHandlerRefusesImportedName(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		dir := t.TempDir()
+		if existing {
+			writeGo(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+		}
+		err := scaffoldHandler(dir, "http", "GET", "/http", false)
+		if err == nil || !strings.Contains(err.Error(), "import") {
+			t.Errorf("scaffoldHandler(http), existing package %t = %v, want an import-name refusal", existing, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "http_handler.go")); !os.IsNotExist(err) {
+			t.Errorf("scaffoldHandler(http) wrote a file before refusing: %v", err)
+		}
+	}
+}
+
 // Run from a non-main package directory (entities/), the handler was
 // written as package main beside package entities: "found packages
 // entities and main". It takes the directory's package, and the file is
