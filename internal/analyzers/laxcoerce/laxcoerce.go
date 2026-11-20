@@ -381,7 +381,7 @@ func okVar(pass *analysis.Pass, e ast.Expr) types.Object {
 // notOKBranches returns the branch bodies that execute when the comma-ok
 // variable is false: the then-branch of `if !ok ...` (in any boolean
 // combination), the else-branch of a bare `if ok`, the fall-through
-// statements after a bare `if ok` with no else, and the body of a
+// after an exiting success guard with no else, and the body of a
 // `case !ok:` / `switch ok { case false: }` clause.
 func notOKBranches(pass *analysis.Pass, body *ast.BlockStmt, okObj types.Object) []*ast.BlockStmt {
 	parents := dominance.Parents(body)
@@ -399,8 +399,7 @@ func notOKBranches(pass *analysis.Pass, body *ast.BlockStmt, okObj types.Object)
 					out = append(out, els)
 				}
 			}
-			// A successful early return leaves only !ok on the continuing path.
-			if st.Else == nil && isIdentObj(pass, ast.Unparen(st.Cond), okObj) && dominance.Diverges(st.Body) {
+			if st.Else == nil && requiresOK(pass, st.Cond, okObj) && dominance.Diverges(st.Body) {
 				if ft := fallThroughRegion(parents, st); ft != nil {
 					out = append(out, ft)
 				}
@@ -423,6 +422,19 @@ func notOKBranches(pass *analysis.Pass, body *ast.BlockStmt, okObj types.Object)
 		return true
 	})
 	return out
+}
+
+func requiresOK(pass *analysis.Pass, cond ast.Expr, okObj types.Object) bool {
+	cond = ast.Unparen(cond)
+	if expr, ok := cond.(*ast.BinaryExpr); ok {
+		switch expr.Op {
+		case token.LAND:
+			return requiresOK(pass, expr.X, okObj) || requiresOK(pass, expr.Y, okObj)
+		case token.LOR:
+			return requiresOK(pass, expr.X, okObj) && requiresOK(pass, expr.Y, okObj)
+		}
+	}
+	return isIdentObj(pass, cond, okObj)
 }
 
 // fallThroughRegion returns the statements after st in its enclosing

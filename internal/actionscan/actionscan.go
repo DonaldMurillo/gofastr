@@ -115,8 +115,8 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 				return true, after
 			}
 			i, prev, word = i+1, c, "G"
-		case isIdentByte(c):
-			j := i
+		case isIdentByte(c) || c == '#' && i+1 < len(src) && isIdentByte(src[i+1]):
+			j := i + 1
 			for j < len(src) && isIdentByte(src[j]) {
 				j++
 			}

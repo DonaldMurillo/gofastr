@@ -54,7 +54,8 @@
 // which is exactly how the probed sites sat in files whose other routes
 // were capped.
 //
-// Form parsing uses the same cap proofs as the other read sinks.
+// Form parsing requires a local or caller-side cap. Mount detection
+// does not prove that middleware caps the request before dispatch.
 //
 // Silent postures, deliberately:
 //   - a bare r.Form / r.PostForm / r.MultipartForm read is not a trigger:
@@ -73,8 +74,8 @@
 //     the handler invisibly to this rule; nothing in this repo uses
 //     MaxBytesHandler today, and a site that gains one should say so next
 //     to the parse or carry its own wrap;
-//   - function literals take mount credit from their enclosing
-//     declaration and earn caller credit only through named helpers;
+//   - for other reads, function literals take mount credit from their
+//     enclosing declaration and caller credit through named helpers;
 //   - for the read posture, a handler the package never references (an
 //     exported handler a host mounts) has no visible cap and reports,
 //     and a "middleware" whose LimitReader wraps something other than a
@@ -155,7 +156,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !isInboundRequest(pass, sel.X) {
 				return
 			}
-			if ix.sinkCapped(fn, encl, requestObject(pass, sel.X), call.Pos(), map[types.Object]bool{}, 0) {
+			if ix.sinkCapped(fn, encl, requestObject(pass, sel.X), call.Pos(), true, map[types.Object]bool{}, 0) {
 				return
 			}
 			pass.Reportf(call.Pos(),
@@ -229,9 +230,9 @@ func buildIndex(pass *analysis.Pass) *pkgIndex {
 // enclosing FuncDecl is encl) is capped ON ITS PATH: a rebind of its
 // Body earlier in fn, a cap-establishing helper called with it earlier
 // in fn, the enclosing function mounted only under a Body-rebinding
-// middleware, or every same-package caller of fn having capped the
+// middleware (when allowed), or every same-package caller of fn having capped the
 // request it passes in (recursively, cycle-guarded).
-func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object, pos token.Pos, visiting map[types.Object]bool, depth int) bool {
+func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object, pos token.Pos, allowMount bool, visiting map[types.Object]bool, depth int) bool {
 	if rebindCapped(ix.pass, fn, obj, pos) || helperCapped(ix.pass, fn, obj, pos, ix.caps) {
 		return true
 	}
@@ -242,7 +243,7 @@ func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object
 	if fo == nil {
 		return false
 	}
-	if ix.mountCapped(fo) {
+	if allowMount && ix.mountCapped(fo) {
 		return true
 	}
 	// The callers credit needs the request to be fn's own parameter: a
@@ -262,7 +263,7 @@ func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object
 		if callerObj == nil {
 			return false
 		}
-		if !ix.sinkCapped(site.fn, site.encl, callerObj, site.call.Pos(), visiting, depth+1) {
+		if !ix.sinkCapped(site.fn, site.encl, callerObj, site.call.Pos(), allowMount, visiting, depth+1) {
 			return false
 		}
 	}
@@ -457,7 +458,7 @@ func (ix *pkgIndex) checkFormParse(call *ast.CallExpr, fn ast.Node, encl *ast.Fu
 		return
 	}
 	read := formRead{fn: fn, req: requestObject(pass, sel.X)}
-	if reported[read] || ix.sinkCapped(fn, encl, read.req, call.Pos(), map[types.Object]bool{}, 0) {
+	if reported[read] || ix.sinkCapped(fn, encl, read.req, call.Pos(), false, map[types.Object]bool{}, 0) {
 		return
 	}
 	pass.Reportf(call.Pos(),

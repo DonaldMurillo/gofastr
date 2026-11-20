@@ -388,3 +388,26 @@ func detachWithOptionalTimeout(ctx context.Context, bounded bool) (result contex
 	}
 	return
 }
+
+func detachInImmediateClosure(ctx context.Context) context.Context { // want detachInImmediateClosure:`detaches\(bounded=false\)`
+	return func() context.Context {
+		return context.WithoutCancel(ctx)
+	}()
+}
+
+func (q *Queue) workerLoopImmediateClosure(ctx context.Context, job Job) { // want workerLoopImmediateClosure:`runsCallback\[0\]`
+	_ = q.runHandler(ctx, q.handlers[job.Type], job)
+	_ = q.Ack(detachInImmediateClosure(ctx), job) // want `Ack records an outcome under context.WithoutCancel with no timeout`
+}
+
+func uncalledDetachClosure(ctx context.Context) context.Context {
+	_ = func() context.Context { return context.WithoutCancel(ctx) }
+	return ctx
+}
+
+func boundInImmediateClosure(ctx context.Context) (context.Context, context.CancelFunc) { // want boundInImmediateClosure:`detaches\(bounded=true\)`
+	detached := context.WithoutCancel(ctx)
+	return (func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(detached, time.Second)
+	})()
+}

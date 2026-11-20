@@ -301,6 +301,7 @@ type resolver struct {
 	a        *analyzer
 	assigns  map[types.Object][]assign
 	reaching func(types.Object, ast.Node) []ast.Expr
+	litInput func(types.Object, int) state
 	// closures are locals bound to a func literal in this body: the
 	// function's own code, not a caller-supplied callback.
 	closures map[types.Object]bool
@@ -403,6 +404,9 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 		if !returnsContext(info.TypeOf(e)) {
 			return state{}
 		}
+		if lit, ok := ast.Unparen(e.Fun).(*ast.FuncLit); ok {
+			return r.classifyImmediate(lit, e, depth+1)
+		}
 		// A derivation (WithValue, WithCancel, a tracer's Start, a
 		// principal attach): the result carries its parent's cancellation.
 		for _, arg := range e.Args {
@@ -423,13 +427,53 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 	return state{}
 }
 
+func (r *resolver) classifyImmediate(lit *ast.FuncLit, call *ast.CallExpr, depth int) state {
+	nested := r.a.newResolver(lit.Body)
+	nested.useReturnPaths(lit.Body)
+	sig := r.a.pass.TypesInfo.TypeOf(lit).(*types.Signature)
+	nested.litInput = func(obj types.Object, depth int) state {
+		if obj.Pos() < lit.Pos() || obj.Pos() >= lit.End() {
+			return r.classifyLocal(obj, call, depth)
+		}
+		params := sig.Params()
+		for i := 0; i < min(params.Len(), len(call.Args)); i++ {
+			if params.At(i) == obj {
+				return r.classify(call.Args[i], depth)
+			}
+		}
+		return state{}
+	}
+	var result state
+	results := sig.Results()
+	for _, ret := range returnStatements(lit.Body) {
+		for i := 0; i < results.Len(); i++ {
+			obj := results.At(i)
+			if !isContext(obj.Type()) {
+				continue
+			}
+			candidate := nested.classifyReturn(ret, obj, i, depth)
+			if candidate.kind == detached && !candidate.bounded {
+				return candidate
+			}
+			if result.kind == unknown || candidate.kind == detached {
+				result = candidate
+			}
+		}
+	}
+	return result
+}
+
 func (r *resolver) classifyLocal(obj types.Object, use ast.Node, depth int) state {
-	if obj == nil || !isContext(obj.Type()) {
+	if depth > 10 || obj == nil || !isContext(obj.Type()) {
 		return state{}
 	}
 	if r.reaching != nil {
 		var result state
-		for _, value := range r.reaching(obj, use) {
+		values := r.reaching(obj, use)
+		if len(values) == 0 && r.litInput != nil {
+			return r.litInput(obj, depth+1)
+		}
+		for _, value := range values {
 			candidate := r.classify(value, depth+1)
 			if candidate.kind == detached && !candidate.bounded {
 				return candidate
@@ -451,6 +495,31 @@ func (r *resolver) classifyLocal(obj types.Object, use ast.Node, depth int) stat
 		return state{kind: live, root: obj}
 	}
 	return r.classify(last.rhs, depth+1)
+}
+
+func returnStatements(body *ast.BlockStmt) []*ast.ReturnStmt {
+	var returns []*ast.ReturnStmt
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			returns = append(returns, n)
+		}
+		return true
+	})
+	return returns
+}
+
+func (r *resolver) classifyReturn(ret *ast.ReturnStmt, result *types.Var, index, depth int) state {
+	switch len(ret.Results) {
+	case 0:
+		return r.classifyLocal(result, ret, depth)
+	case 1:
+		return r.classify(ret.Results[0], depth)
+	default:
+		return r.classify(ret.Results[index], depth)
+	}
 }
 
 // useReturnPaths traces each returned variable back through every reaching assignment.
@@ -560,17 +629,8 @@ func (a *analyzer) collectDetaching(fns []*ast.FuncDecl) {
 		if !ok || !returnsContext(obj.Signature().Results()) {
 			continue
 		}
-		helper := contextHelper{fn: obj, resolver: a.newResolver(fn.Body)}
+		helper := contextHelper{fn: obj, resolver: a.newResolver(fn.Body), returns: returnStatements(fn.Body)}
 		helper.resolver.useReturnPaths(fn.Body)
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			switch n := n.(type) {
-			case *ast.FuncLit:
-				return false
-			case *ast.ReturnStmt:
-				helper.returns = append(helper.returns, n)
-			}
-			return true
-		})
 		helpers = append(helpers, helper)
 	}
 	for changed := true; changed; {
@@ -584,15 +644,7 @@ func (a *analyzer) collectDetaching(fns []*ast.FuncDecl) {
 					if !isContext(obj.Type()) {
 						continue
 					}
-					var returned state
-					switch {
-					case len(ret.Results) == 0:
-						returned = helper.resolver.classifyLocal(obj, ret, 0)
-					case len(ret.Results) == 1:
-						returned = helper.resolver.classify(ret.Results[0], 0)
-					default:
-						returned = helper.resolver.classify(ret.Results[i], 0)
-					}
+					returned := helper.resolver.classifyReturn(ret, obj, i, 0)
 					if returned.kind == detached {
 						detach = true
 						bounded = bounded && returned.bounded

@@ -173,3 +173,34 @@ func rebuildsMatchingTypedError(err error) *RPCError {
 	}
 	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
 }
+
+func withTypeSwitchDefault(err error) *RPCError {
+	switch typed := err.(type) {
+	case *RPCError:
+		return typed
+	case *preferenceError:
+		return &RPCError{Message: err.Error()}
+	default:
+		return &RPCError{Message: err.Error()}
+	}
+}
+
+func typeSwitchOnDifferentError(err, other error) *RPCError {
+	switch typed := other.(type) {
+	case *RPCError:
+		return typed
+	default:
+		return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+	}
+}
+
+func earlierTypeSwitchInterface(err error) *RPCError {
+	switch typed := err.(type) {
+	case error:
+		return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+	case *RPCError:
+		return typed
+	default:
+		return nil
+	}
+}

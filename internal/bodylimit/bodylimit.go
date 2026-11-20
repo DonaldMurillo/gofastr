@@ -1,8 +1,5 @@
-// Package bodylimit owns the repo's answers for an HTTP request body
-// refused before a handler runs it: the cap on an inbound JSON body, and
-// the status and phrase for a body that passed its cap, could not be
-// read, or would not decode. Each surface keeps its own envelope writer;
-// the status and phrase decision is made here.
+// Package bodylimit defines the inbound JSON body cap and the standard refusal status and phrase.
+// Oversize admin form posts redirect with 303 and result=body-too-large. Form RPCs return 413 with the localized admin body-too-large message.
 package bodylimit
 
 import (
@@ -12,11 +9,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// MaxJSONBodyBytes is the repo's cap on one inbound JSON request body
-// (a crud write, an auth credential, an admin ops post, a semantic
-// query, a desktop bridge call); a larger body answers 413. A cap that
-// belongs to one surface (a picker's 4 KiB, an embed exchange's 8 KiB,
-// multipart's 64 MiB) stays with that surface.
+// MaxJSONBodyBytes is the cap for inbound JSON bodies, including CRUD, auth, admin ops,
+// semantic queries and the desktop bridge. Surface-specific caps stay with their surfaces.
 const MaxJSONBodyBytes int64 = 1 << 20 // 1 MiB
 
 // TooLarge reports whether err is a body that passed the cap its reader
@@ -26,7 +20,7 @@ func TooLarge(err error) bool {
 	return ok
 }
 
-// TooLargeRefusal is the status and phrase every over-cap body answers.
+// TooLargeRefusal returns the standard status and phrase for an over-cap body.
 func TooLargeRefusal() (int, i18n.Phrase) {
 	return http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge)
 }

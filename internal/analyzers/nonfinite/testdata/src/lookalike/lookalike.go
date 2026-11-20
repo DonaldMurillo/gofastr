@@ -1,7 +1,7 @@
 package lookalike
 
 import (
-	fake "fakemath"
+	"fakemath"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -12,7 +12,7 @@ func unrelatedMathPackage(v reflect.Value, s string) error {
 	if err != nil {
 		return err
 	}
-	if fake.IsNaN(f) {
+	if math.IsNaN(f) {
 		return fmt.Errorf("input is non-finite")
 	}
 	v.SetFloat(f)

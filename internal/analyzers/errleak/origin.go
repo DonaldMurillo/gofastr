@@ -720,6 +720,19 @@ func (f *fnOrigins) preservesTypedError(t *types.Named, err ast.Expr, parents ma
 		tt := pass.TypesInfo.TypeOf(e)
 		return types.Identical(tt, ptr) || types.Identical(tt, t)
 	}
+	switchInput := func(sw *ast.TypeSwitchStmt) ast.Expr {
+		var guard ast.Expr
+		switch bind := sw.Assign.(type) {
+		case *ast.ExprStmt:
+			guard = bind.X
+		case *ast.AssignStmt:
+			guard = bind.Rhs[0]
+		}
+		if assertion, ok := ast.Unparen(guard).(*ast.TypeAssertExpr); ok && sameError(assertion.X) {
+			return assertion.X
+		}
+		return nil
+	}
 	asCall := func(e ast.Expr, name string) (*ast.CallExpr, bool) {
 		call, ok := ast.Unparen(e).(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 || !sameError(call.Args[0]) {
@@ -794,21 +807,15 @@ func (f *fnOrigins) preservesTypedError(t *types.Named, err ast.Expr, parents ma
 			if !ok {
 				continue
 			}
-			var assertion *ast.TypeAssertExpr
-			switch bind := sw.Assign.(type) {
-			case *ast.ExprStmt:
-				assertion, _ = ast.Unparen(bind.X).(*ast.TypeAssertExpr)
-			case *ast.AssignStmt:
-				assertion, _ = ast.Unparen(bind.Rhs[0]).(*ast.TypeAssertExpr)
-			}
-			if assertion == nil || !sameError(assertion.X) {
+			input := switchInput(sw)
+			if input == nil {
 				continue
 			}
 			for _, stmt := range sw.Body.List {
 				cc := stmt.(*ast.CaseClause)
 				result := pass.TypesInfo.Implicits[cc]
 				if result == nil {
-					result = object(assertion.X)
+					result = object(input)
 				}
 				if slices.ContainsFunc(cc.List, isT) && preservesOnReturn(pass, &ast.BlockStmt{List: cc.Body}, result) {
 					return true
@@ -817,14 +824,50 @@ func (f *fnOrigins) preservesTypedError(t *types.Named, err ast.Expr, parents ma
 		}
 	}
 	for child, parent := ast.Node(err), parents[err]; parent != nil; child, parent = parent, parents[parent] {
-		if iff, ok := parent.(*ast.IfStmt); ok && (child == iff.Body || child == iff.Else) {
-			result, success := typedOnSuccess(iff)
-			if result != nil && success != (child == iff.Body) {
+		switch arm := parent.(type) {
+		case *ast.IfStmt:
+			if child == arm.Body || child == arm.Else {
+				result, success := typedOnSuccess(arm)
+				if result != nil && success != (child == arm.Body) {
+					return true
+				}
+			}
+		case *ast.CaseClause:
+			sw, ok := parents[parents[arm]].(*ast.TypeSwitchStmt)
+			if !ok {
+				continue
+			}
+			input := switchInput(sw)
+			if input == nil {
+				continue
+			}
+			inputType := pass.TypesInfo.TypeOf(input)
+			excludes := func(candidate types.Type) bool {
+				return !types.AssignableTo(candidate, inputType) || typeSwitchArm(pass, sw, candidate) != arm
+			}
+			if excludes(ptr) && excludes(t) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// typeSwitchArm finds the first matching case for a dynamic type, or the default.
+func typeSwitchArm(pass *analysis.Pass, sw *ast.TypeSwitchStmt, dynamic types.Type) *ast.CaseClause {
+	var fallback *ast.CaseClause
+	for _, stmt := range sw.Body.List {
+		arm := stmt.(*ast.CaseClause)
+		if len(arm.List) == 0 {
+			fallback = arm
+		}
+		for _, expr := range arm.List {
+			if types.AssignableTo(dynamic, pass.TypesInfo.TypeOf(expr)) {
+				return arm
+			}
+		}
+	}
+	return fallback
 }
 
 func statementPrecedes(want ast.Stmt, use ast.Node, body *ast.BlockStmt, parents map[ast.Node]ast.Node) bool {

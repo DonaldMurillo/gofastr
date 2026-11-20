@@ -1,5 +1,5 @@
 primitive: bodylimit
-summary: The repo's cap on one inbound JSON request body and the status+phrase every capped, unreadable or undecodable request body answers, in internal/bodylimit.
+summary: The repo's inbound JSON request body cap and standard body-refusal status and phrase, in internal/bodylimit.
 code:
   - internal/bodylimit/
 twins:
@@ -16,7 +16,7 @@ twins:
         note: IngestHandler's read refusal; webhook stays unmountable too.
 invariants:
   - id: body-refusal-mapping-is-one
-    rule: The status and phrase for a refused request body come from bodylimit - 413 with the status phrase over the cap, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, 400 invalid_form for a failed form parse - and no surface re-derives the pair, except the unmountable batteries' pinned copies listed under twins.
+    rule: Bodylimit supplies the standard status and phrase for a refused request body (413 with the status phrase for overflow, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, and 400 invalid_form for a failed form parse), with exceptions for the pinned copies under twins and the admin ops envelope, which answers overflow with a 303 redirect and result=body-too-large for a plain form post or a 413 with the localized admin body-too-large message for a form RPC.
     enforced_by:
       - test: battery/auth.TestBodyRefusalsMatchBodylimit
       - test: cmd/gofastr/internal/unmountcmd.TestUnmountableBatteriesImportNoInternal
@@ -35,7 +35,7 @@ decisions:
   - id: refusals-live-under-internal
     date: 2026-11-19
     status: accepted
-    decision: The MaxBytesReader-to-refusal mapping moved to internal/bodylimit, deleting the six package copies (crud writeBodyError, entityui writeBodyError, auth decodeJSONLimited, uihost decodeBounded, webhook's ingest read, admin readOps) that had drifted into three wordings for one refusal.
+    decision: Common MaxBytesReader refusal mapping lives in internal/bodylimit, with pinned copies for unmountable batteries and a dedicated admin ops envelope for plain form redirects and localized form RPC errors.
     rejected:
       - option: core/handler or core/i18n, beside the phrases
         why: Both directories are owned by open PRs, while every layer can import an internal package.

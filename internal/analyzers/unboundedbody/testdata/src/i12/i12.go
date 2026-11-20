@@ -21,6 +21,15 @@ func limitBody(next http.Handler) http.Handler {
 	})
 }
 
+func limitBodyConditionally(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength >= 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Handler mounts the factories. indexHandler and queryHandler sit under
 // limitBody; statsHandler and rawHandler do not.
 func Handler() http.Handler {
@@ -31,17 +40,22 @@ func Handler() http.Handler {
 	mux.Handle("POST /raw", limitBody(rawHandler()))
 	mux.Handle("POST /raw2", rawHandler())
 	mux.Handle("POST /method", limitBody(http.HandlerFunc(new(svc).serve)))
+	mux.Handle("POST /form", limitBodyConditionally(http.HandlerFunc(parseForm)))
 	return mux
 }
 
 func requireJSON(next http.Handler) http.Handler { return next }
 
-// indexHandler is wrapped at its only mount: quiet.
+// indexHandler's mount covers the raw read. Form parsing requires its own proof.
 func indexHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
-		_ = r.ParseForm()
+		_ = r.ParseForm() // want `parses the request form with no cap`
 	})
+}
+
+func parseForm(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm() // want `parses the request form with no cap`
 }
 
 // queryHandler is wrapped through an intermediate middleware: quiet.

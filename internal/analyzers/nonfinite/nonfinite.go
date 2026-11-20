@@ -146,7 +146,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 			return true
 		}
 		call, ok := st.Rhs[0].(*ast.CallExpr)
-		if !ok || packageFunc(pass, call.Fun) != "strconv.ParseFloat" || len(call.Args) != 2 {
+		if !ok || pathflow.QualifiedFunc(pass, call.Fun) != "strconv.ParseFloat" || len(call.Args) != 2 {
 			return true
 		}
 		if tv, ok := pass.TypesInfo.Types[call.Args[0]]; ok && tv.Value != nil {
@@ -215,7 +215,7 @@ func targetChecked(pass *analysis.Pass, target ast.Expr, body *ast.BlockStmt) bo
 		if !ok {
 			return true
 		}
-		switch packageFunc(pass, call.Fun) {
+		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "math.IsNaN", "math.IsInf":
 		default:
 			return true
@@ -256,7 +256,7 @@ func paramRooted(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool, 
 		}
 		return false
 	case *ast.CallExpr:
-		switch packageFunc(pass, x.Fun) {
+		switch pathflow.QualifiedFunc(pass, x.Fun) {
 		case "strings.TrimSpace", "strings.TrimSuffix", "strings.TrimPrefix", "strings.Trim", "strings.TrimLeft", "strings.TrimRight", "strings.Join", "strings.ToUpper", "strings.ToLower", "strings.ReplaceAll", "fmt.Sprint", "fmt.Sprintf":
 			for _, a := range x.Args {
 				if paramRooted(pass, a, params, assigns, depth+1) {
@@ -288,7 +288,7 @@ func checkedInFunc(pass *analysis.Pass, obj types.Object, body *ast.BlockStmt) b
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			qf := packageFunc(pass, x.Fun)
+			qf := pathflow.QualifiedFunc(pass, x.Fun)
 			if qf == "math.IsNaN" || qf == "math.IsInf" {
 				for _, a := range x.Args {
 					if isObj(pass, a, obj) {
@@ -346,7 +346,7 @@ func bodyChecksFinite(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
-			qf := packageFunc(pass, call.Fun)
+			qf := pathflow.QualifiedFunc(pass, call.Fun)
 			if qf == "math.IsNaN" || qf == "math.IsInf" {
 				found = true
 			}
@@ -396,7 +396,7 @@ func charsetTest(pass *analysis.Pass, e ast.Expr, pf *ast.CallExpr) bool {
 	if !ok {
 		return false
 	}
-	switch packageFunc(pass, call.Fun) {
+	switch pathflow.QualifiedFunc(pass, call.Fun) {
 	case "regexp.MatchString", "strings.Contains", "strings.ContainsAny", "strings.ContainsRune":
 	default:
 		// A compiled *regexp.Regexp's own MatchString method.
@@ -533,24 +533,6 @@ func literalNames(pass *analysis.Pass, lit *ast.CompositeLit, obj types.Object) 
 func isObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && pass.TypesInfo.ObjectOf(id) == obj
-}
-
-// packageFunc resolves aliases of the standard packages this rule
-// recognizes. Other imports retain their source qualifier.
-func packageFunc(pass *analysis.Pass, fun ast.Expr) string {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	path := astx.PkgPathOf(pass, sel)
-	switch path {
-	case "":
-		return ""
-	case "fmt", "math", "regexp", "strconv", "strings":
-		return path + "." + sel.Sel.Name
-	default:
-		return types.ExprString(sel)
-	}
 }
 
 func renderOperand(e ast.Expr) string {
