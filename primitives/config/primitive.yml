@@ -38,6 +38,8 @@ invariants:
       - test: core/config.TestRedactEscapedSecretSpellings
       - test: core/config.TestSweepConfigSensitiveBadDefaultRedacted
       - test: core/config.TestSweepConfigShadowedSensitiveDefaultRedactedInValidator
+      - test: core/config.TestShadowedSensitiveDefaultOneofRedacted
+      - test: core/config.TestOtherFieldOneofErrorRedacted
   - id: unchanged-binding-errors-keep-chain
     rule: A binding error whose message contains no sensitive value retains its original error chain; a redacted binding error drops the chain so it cannot expose the secret.
     enforced_by:

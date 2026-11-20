@@ -299,3 +299,30 @@ func TestPointerNestedStructBindsOrErrors(t *testing.T) {
 		t.Fatalf("deep nested key did not allocate and bind the chain: %+v", nested.Outer)
 	}
 }
+
+type shadowedOneofBase struct {
+	Token string `config:"TOKEN" default:"sh4dow" sensitive:"true" validate:"oneof=sh4dow-v2 other"`
+}
+
+type shadowedOneofCfg struct {
+	shadowedOneofBase
+	Token string `config:"TOKEN"`
+}
+
+func TestShadowedSensitiveDefaultOneofRedacted(t *testing.T) {
+	err := config.Load(&shadowedOneofCfg{}, config.MapSource{"TOKEN": "x"})
+	if want := "config: default of shadowed field shadowedOneofBase.Token: must be one of (redacted)-v2 other"; err == nil || err.Error() != want {
+		t.Fatalf("Load = %v, want %q", err, want)
+	}
+}
+
+func TestOtherFieldOneofErrorRedacted(t *testing.T) {
+	var c struct {
+		Token string `config:"TOKEN" sensitive:"true"`
+		Mode  string `config:"MODE" validate:"oneof=alpha-key beta"`
+	}
+	err := config.Load(&c, config.MapSource{"TOKEN": "alpha-key", "MODE": "gamma"})
+	if want := "config: field Mode: must be one of (redacted) beta"; err == nil || err.Error() != want {
+		t.Fatalf("Load = %v, want %q", err, want)
+	}
+}
