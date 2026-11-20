@@ -251,7 +251,10 @@ The markdown answers with the status the HTML would: a page that draws
 its not-found state answers 404 in either, a page whose policy blocks
 answers the block's status over the withheld doc, and a page whose
 policy redirects answers the same 303. The per-screen `/llm.md` route is
-a catalog entry and keeps answering 200 with the withheld doc.
+a catalog entry and keeps answering 200 with the withheld doc, except
+for a screen whose policy answers `decide.NotFound()` (or a static page
+whose resolver answers `ErrNotFound`), which answers 404 as an unknown
+URL does.
 
 Every page-markdown answer is per caller: the negotiated twin, the
 per-screen `/llm.md` (exact, pattern and concrete dynamic URLs) and the
@@ -371,7 +374,9 @@ request: a non-Allow decision, or a region guard (an outlet's, an area's,
 or a fill's policy) that redirects, serves a metadata-free "withheld" doc
 (route path and type only: no title, description, SEO front matter, or
 content),
-and the `/llm-pages.md` index lists policy-gated screens path-only. An
+and the `/llm-pages.md` index lists policy-gated screens path-only. A
+screen whose pattern policy answers not-found is left out of the index
+entirely, and its pattern doc answers 404. An
 authenticated agent whose request passes the policy sees the full docs.
 The pattern-level surfaces (the index, the `/llm.md` beside a route
 pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
@@ -437,6 +442,12 @@ outside the dev loop, since both touch local source files.
 Explicit `WithMCPIntrospection()` does not suppress these dev tools;
 generated apps receive them too. `GOFASTR_DEV_MCP=0` or a production
 environment keeps them off even when introspection was explicitly enabled.
+`framework.WithMCPInstructions(text)` sets the `instructions` the
+server's `initialize` answers with: what the server is for and when a
+client should call its tools. It applies to whichever server the options
+leave installed, so it works with `WithMCPServer` in any order. See
+[MCP server](mcp.md) for `SetInstructions`, tool annotations and
+`RequestMeta`.
 Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict. Pick one. Generated apps ship with
 `WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
@@ -732,6 +743,7 @@ scanner scores, so a host wiring the basics passes without per-route work:
 | MCP Manifest | `/.well-known/mcp.json` — flat `endpoint`/`transport` fields AND a nested `mcpServers` map, both naming `/mcp` with `streamable-http` | when `WithMCP` exposes `/mcp` |
 | Agent Skills Index | `/.well-known/agent-skills/index.json` | always (empty list passes; `WithAgentSkills` adds entries) |
 | OAuth Authorization Server (RFC 8414) | `/.well-known/oauth-authorization-server` | opt-in (`WithOAuthAuthorizationServer`) |
+| OpenAI apps domain check | `/.well-known/openai-apps-challenge` (`text/plain`) | opt-in (`WithOpenAIAppsChallenge`), when the token is not empty |
 | Content Signals | `Content-Signal:` line in robots.txt | `AgentReadyConfig.ContentSignals` |
 | Auth.md (WorkOS profile) | `/auth.md` (markdown) + `agent_auth` block in the OAuth AS metadata | opt-in (`WithAuthMD`) |
 
@@ -743,6 +755,20 @@ framework.WithAgentSkills([]framework.AgentSkillEntry{{
 framework.WithOAuthAuthorizationServer(framework.OAuthAuthorizationServerConfig{
     Issuer: "https://auth.example", TokenEndpoint: "https://auth.example/token",
 })
+```
+
+`WithOpenAIAppsChallenge(token)` answers OpenAI's app submission domain
+check: the portal gives you a token and fetches it back from
+`/.well-known/openai-apps-challenge`. The route serves the token as
+`text/plain` with `Cache-Control: no-store`. Surrounding whitespace is
+trimmed, so a value read from a file with a trailing newline works. An
+empty token mounts nothing, so you can pass an unset environment variable.
+A token longer than 1024 bytes, or one holding a space, a control byte or
+a non-ASCII byte, makes `WithOpenAIAppsChallenge` panic when it is called;
+the message does not quote the token.
+
+```go
+framework.WithOpenAIAppsChallenge(os.Getenv("OPENAI_APPS_CHALLENGE"))
 ```
 
 All 11 scored isitagentready checks are covered: robots.txt, Sitemap,

@@ -23,6 +23,10 @@ invariants:
     enforced_by:
       - test: framework/docs/mcptools.TestDocsGetNotFound
       - test: framework/docs/mcptools.TestDocsSearchShortTermIsAToolError
+  - id: docs-tools-read-only-hints
+    rule: framework_docs_list, framework_docs_get and framework_docs_search are annotated read-only, non-destructive, idempotent and closed-world.
+    enforced_by:
+      - test: framework/docs/mcptools.TestDocsToolsCarryListingHints
 decisions:
   - id: clamp-not-reject
     date: 2026-11-17

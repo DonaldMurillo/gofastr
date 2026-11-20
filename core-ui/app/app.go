@@ -605,7 +605,9 @@ func (a *App) renderNotFoundFromResultIDs(ctx context.Context, path, fromPath st
 // layout like every page..
 func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
 	RefuseRetiredScreenMethods("error body", comp)
-	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
+	screen := NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
+	screen.errorOutcome = true
+	return screen
 }
 
 // RenderErrorPageResult renders comp as the whole-page error body for

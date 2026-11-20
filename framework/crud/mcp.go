@@ -56,21 +56,25 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		item        bool
 		write       bool
 		permission  access.Permission
+		hints       mcp.Annotations
 	}
 	keyArgs := crud.toolKeyArgs()
 	reg := crud.Registry
 	defs := []toolDef{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity, reg), crud.listTool(router), opRead, false, false, ""},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.getTool(router), opRead, true, false, ""},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity, reg), crud.createTool(router), opCreate, false, true, ""},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, reg, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity, reg), crud.listTool(router), opRead, false, false, "", readHints},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.getTool(router), opRead, true, false, "", readHints},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity, reg), crud.createTool(router), opCreate, false, true, "", createHints},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, reg, keyArgs), crud.updateTool(router), opUpdate, true, true, "", updateHints},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.deleteTool(router), opDelete, true, true, "", deleteHints},
 	}
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
-		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, reg, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
+		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, reg, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission), transitionHints})
 	}
 	for _, def := range defs {
-		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item, def.permission))}
+		opts := []mcp.ToolOption{
+			mcp.WithToolGate(crud.mcpToolGate(def.op, def.item, def.permission)),
+			mcp.WithAnnotations(def.hints),
+		}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
 		}
@@ -79,6 +83,23 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		}
 	}
 	return nil
+}
+
+var (
+	readHints       = crudHints(true, false, true)
+	createHints     = crudHints(false, false, false)
+	updateHints     = crudHints(false, true, true)
+	deleteHints     = crudHints(false, true, true)
+	transitionHints = crudHints(false, true, false)
+)
+
+func crudHints(readOnly, destructive, idempotent bool) mcp.Annotations {
+	return mcp.Annotations{
+		ReadOnlyHint:    mcp.Bool(readOnly),
+		DestructiveHint: mcp.Bool(destructive),
+		IdempotentHint:  mcp.Bool(idempotent),
+		OpenWorldHint:   mcp.Bool(false),
+	}
 }
 
 var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")

@@ -388,8 +388,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `entities/client/client.go`, the app's typed Go client, from
   `entities/*.go`. Plain `gofastr generate` and `gofastr build` run it
   whenever that file exists ([app spec](app-spec.md)).
-- `gofastr generate sdk`: Go + JS/TS clients your app can host behind
-  a live docs page ([sdk](sdk.md)).
+- `gofastr generate sdk [--from-openapi <path|url>]`: Go + JS/TS clients
+  your app can host behind a live docs page, from the entity set or an
+  OpenAPI document ([sdk](sdk.md)).
 - `gofastr upgrade`: move to a newer release. Lists every migration
   note between your `go.mod` version and the target (`--to vX.Y.Z`;
   without it the newest tagged release is resolved via the proxy) and

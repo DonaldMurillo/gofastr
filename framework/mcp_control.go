@@ -98,7 +98,12 @@ func (a *App) registerControlTools() error {
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		var opts []mcp.ToolOption
+		opts := []mcp.ToolOption{mcp.WithAnnotations(mcp.Annotations{
+			ReadOnlyHint:    mcp.Bool(false),
+			DestructiveHint: mcp.Bool(false),
+			IdempotentHint:  mcp.Bool(true),
+			OpenWorldHint:   mcp.Bool(false),
+		})}
 		if gate != nil {
 			opts = append(opts, mcp.WithToolGate(gate))
 		}

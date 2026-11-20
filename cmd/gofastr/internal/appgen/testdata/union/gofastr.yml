@@ -945,6 +945,9 @@ endpoints:
     path: "{id}/cache"
     handler: entities/posts_endpoints.go#ClearCache
     mcp: true
+    hints:
+      title: "Clear a post's cache"
+      destructive: false
 
 hooks:
   - id: products-before-create

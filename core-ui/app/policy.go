@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -114,11 +116,15 @@ type Decision struct {
 	Status     int                        // populated for DecisionBlock
 	Reason     i18n.Phrase                // optional, for DecisionBlock
 	Params     map[string]any             // Reason's params
+	// NotFound marks a DecisionBlock that renders the not-found page an
+	// unmatched URL gets, instead of the status phrase. It counts only
+	// with Status 404; build it with decide.NotFound.
+	NotFound bool
 }
 
 // Decision values are constructed via the helpers in subpackage
 // core-ui/app/decide (decide.Allow, decide.Redirect, decide.RenderAlt,
-// decide.Block). The subpackage exists to avoid shadowing common
+// decide.Block, decide.BlockWith, decide.NotFound). The subpackage exists to avoid shadowing common
 // variable names like `redirect` and `block` at call sites.
 
 // Policy decides what to do with a request before screen render.
@@ -163,7 +169,9 @@ func EffectivePolicies(s *Screen) []Policy {
 // the resolver state the render installs, so a policy that reads a
 // resolver reads it here as on the page; ResolvePolicy alone gave such
 // a read ErrNoResolver. err is the render's *PageError when a resolver
-// that phase read failed. ok is false when no screen matches path. A
+// that phase read failed or the policy answered decide.NotFound, and d
+// is then a Block (404 with NotFound for a not-found outcome, else 500),
+// never Allow. ok is false when no screen matches path. A
 // host that lists the pages a visitor can read (the sitemap) asks this
 // instead of rendering each page.
 func (a *App) PagePolicy(ctx context.Context, path string) (d Decision, ok bool, err error) {
@@ -188,7 +196,7 @@ func (a *App) policyPhase(ctx context.Context, screen *Screen, path string, para
 	_, o := runPolicyPhase(ctx, screen, path, chain)
 	switch {
 	case o.err != nil:
-		return Decision{}, o.err
+		return pageErrorDecision(o.err), o.err
 	case o.redirect.Kind == DecisionRedirect:
 		return o.redirect, nil
 	}
@@ -233,7 +241,26 @@ func runPolicyPhase(ctx context.Context, screen *Screen, path string, chain []La
 		o.guards, o.redirect = ensureRegionGuards(ctx, screen, chain)
 	}
 	o.err = resolverPageError(ctx, path)
+	if o.err == nil && (o.decision.notFound() || o.redirect.notFound()) {
+		o.err = &PageError{Path: path, Err: ErrNotFound, NotFound: true, Policy: true}
+	}
 	return ctx, o
+}
+
+// notFound reports whether d is decide.NotFound's Block.
+func (d Decision) notFound() bool {
+	return d.Kind == DecisionBlock && d.Status == http.StatusNotFound && d.NotFound
+}
+
+// pageErrorDecision is the Decision that stands beside a policy phase's
+// whole-page error, so a caller that reads only the Decision still sees
+// a refusal: the not-found Block for a not-found outcome, a 500 Block
+// for any other failure.
+func pageErrorDecision(err error) Decision {
+	if errors.Is(err, ErrNotFound) {
+		return Decision{Kind: DecisionBlock, Status: http.StatusNotFound, NotFound: true}
+	}
+	return Decision{Kind: DecisionBlock, Status: http.StatusInternalServerError}
 }
 
 // PatternPolicy decides a document about screen's route pattern rather
@@ -258,7 +285,7 @@ func (a *App) PatternPolicy(ctx context.Context, screen *Screen) Decision {
 	if len(extractParamNames(screen.Path)) == 0 {
 		ctx = WithMatch(ctx, newMatch(screen.Path, screen.Path, nil))
 		d, err := a.policyPhase(ctx, screen, screen.Path, nil)
-		if err != nil {
+		if err != nil && !d.notFound() {
 			return Decision{Kind: DecisionBlock}
 		}
 		return d

@@ -116,7 +116,8 @@ contain parent traversal.
 
 Each generator names an `extension`, with two built-in exceptions. An entry
 named `sdk` (no `extension`) runs the built-in SDK generator, the same
-output as `gofastr generate sdk`; see the [sdk](sdk.md) doc. An entry named
+output as `gofastr generate sdk` (from the entity set, or from the document
+its `from_openapi` names); see the [sdk](sdk.md) doc. An entry named
 `styles` runs `gofastr generate styles` after the other generators. It
 writes beside each sheet rather than under `codegen.output`, so it takes no
 `output` or `source`; its only config key is `patterns`, a list of Go
@@ -350,7 +351,7 @@ Each generator reads the markers before it writes:
 - A derived generator that is about to rebuild an edited file warns that
   the edit is lost and names the source to change instead: the style
   sheet for `styles`, the entity declarations for `sdk`, `client` and
-  `cli` (or the OpenAPI document a `cli --from-openapi` run read).
+  `cli` (or the OpenAPI document a `cli` or `sdk --from-openapi` run read).
 
 Editing a scaffold file is expected: the marker stays and its sum stops
 matching, which only tells the next `--force` that the file holds your

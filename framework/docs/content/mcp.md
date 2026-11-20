@@ -36,16 +36,22 @@ srv.ServeStdio(ctx, os.Stdin, os.Stdout)  // or mount srv as an http.Handler
 `SetServerName` overrides just the name. `ServerInfo()` reads the pair back;
 the MCP server card mirrors it.
 
+`SetInstructions(text)` sets the `instructions` field of the `initialize`
+result: a few sentences telling the client what the server is for and when
+to call its tools. ChatGPT's app review imports it. Empty text (the default)
+leaves the field out; `Instructions()` reads it back. A framework app sets it
+with `framework.WithMCPInstructions(text)`.
+
 ## The wire surface
 
 `Server.HandleRequest` dispatches these JSON-RPC methods:
 
 | Method | Serves |
 |---|---|
-| `initialize` | The handshake: the negotiated protocol version (see below), capabilities, `serverInfo`. |
+| `initialize` | The handshake: the negotiated protocol version (see below), capabilities, `serverInfo`, and `instructions` when set. |
 | `ping` | Liveness check; empty result. |
 | `tools/list` | One page of the tools the caller may see, name order. |
-| `tools/call` | Invokes a tool by name with an `arguments` object. |
+| `tools/call` | Invokes a tool by name with an `arguments` object and an optional `_meta` object (see [request `_meta`](#request-_meta)). |
 | `resources/list` | One page of the resources the caller may see, URI order, metadata only. |
 | `resources/read` | A resource's contents by `uri`. |
 | `resources/templates/list` | One page of the templates the caller may see, uriTemplate order. |
@@ -200,6 +206,119 @@ Options:
 | `WithToolMeta(meta)` | Attaches a `_meta` object, serialized verbatim in `tools/list`. MCP Apps use it to link a tool to its UI resource, e.g. `{"ui": {"resourceUri": "ui://app/widget.html"}}`. |
 | `WithToolGate(gate)` | Per-caller precondition; see [gating](#gating). A nil gate panics. |
 | `WithLaxArgs()` | Skips dispatch-time `inputSchema` validation; the tool receives its arguments verbatim and validates them itself. |
+| `WithAnnotations(a)` | Serves `a` as the tool's `annotations` in `tools/list`; see [annotations](#tool-annotations). |
+
+### Tool annotations
+
+`mcp.Annotations` holds a tool's behaviour hints. Clients use them to decide
+whether to ask the user before a call, and ChatGPT's directory review
+requires `readOnlyHint`, `destructiveHint` and `openWorldHint` on every tool,
+each set to an explicit `true` or `false`.
+
+<!-- gofastr:compile
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+)
+var srv *mcp.Server
+var handler func(context.Context, map[string]any) (any, error)
+-->
+```go
+srv.RegisterTool("generate_barcode", "Generate a barcode image",
+	map[string]any{"type": "object"}, handler,
+	mcp.WithAnnotations(mcp.Annotations{
+		Title:           "Generate a barcode",
+		ReadOnlyHint:    mcp.Bool(true),
+		DestructiveHint: mcp.Bool(false),
+		IdempotentHint:  mcp.Bool(true),
+		OpenWorldHint:   mcp.Bool(false),
+	}))
+```
+
+| Field | JSON | Meaning |
+|---|---|---|
+| `Title` | `title` | A display name for the tool. |
+| `ReadOnlyHint` | `readOnlyHint` | `true`: the tool changes nothing. |
+| `DestructiveHint` | `destructiveHint` | `true`: it may delete or overwrite data. `false`: it only adds. |
+| `IdempotentHint` | `idempotentHint` | `true`: calling it again with the same arguments changes nothing more. |
+| `OpenWorldHint` | `openWorldHint` | `true`: it reaches systems outside the app (the web, third-party APIs). |
+
+The hints are `*bool` so a hint you leave nil is left out of `tools/list`
+rather than sent as `false`; `mcp.Bool(v)` makes the pointer.
+`WithAnnotations` copies them, so changing your bools after registration
+changes nothing. `AppConfig.Annotations` does the same for `RegisterApp`,
+and `entity.Endpoint.MCPAnnotations` for an endpoint's MCP twin.
+
+`SetAnnotationWarnings(true)` logs a warning for each tool that leaves any
+of `readOnlyHint`, `destructiveHint` or `openWorldHint` unset, naming the
+missing ones: once for every tool already registered when it is turned on,
+and at `RegisterTool` for every later one. Each tool is warned about once,
+however often the setting is toggled. A tool registered `WithDevImplied` is
+skipped: it never leaves a loopback bind. A framework app turns the warnings
+on in dev mode (`GOFASTR_DEV`), so `gofastr dev` names every tool that would
+fail the directory scan before you submit. Registration never refuses a tool
+over missing hints.
+
+The framework sets the hints on its own tools. Entity CRUD tools get:
+
+| Tool | readOnly | destructive | idempotent | openWorld |
+|---|---|---|---|---|
+| `<entity>_list`, `<entity>_get` | true | false | true | false |
+| `<entity>_create` | false | false | false | false |
+| `<entity>_update`, `<entity>_delete` | false | true | true | false |
+| a state move (`<entity>_<move>`) | false | true | false | false |
+
+An update or a move overwrites values the caller cannot get back, which the
+MCP spec counts as destructive. The introspection, contract, docs, log and
+telemetry tools are read-only, except the dev-only `contracts_fix`, which
+rewrites source files and is marked destructive; `app_module_enable` /
+`app_module_disable` and `log_set_level` change state but destroy nothing.
+A process module's tools carry the hints the module sends; see
+[process modules](process-modules.md#mcp-tools).
+
+### Request `_meta`
+
+A `tools/call` may carry a `_meta` object beside `name` and `arguments`.
+ChatGPT sends `openai/subject` (an anonymized per-user id), `openai/locale`,
+`openai/userAgent` and `openai/userLocation`. A handler reads it with
+`mcp.RequestMeta(ctx)`:
+
+<!-- gofastr:compile
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+)
+-->
+```go
+handler := func(ctx context.Context, params map[string]any) (any, error) {
+	locale := "en"
+	if meta := mcp.RequestMeta(ctx); meta != nil {
+		if l, ok := meta["openai/locale"].(string); ok {
+			locale = l
+		}
+	}
+	return "reply in " + locale, nil
+}
+_ = handler
+```
+
+`RequestMeta` returns nil when the call sent no `_meta` (or `null`), and a
+fresh copy of the object on every call, so a gate or wrapper that edits its
+copy changes nothing the handler sees. Numbers arrive as they do in
+`arguments`: a `float64`, except an integer past ±2^53, which stays the
+`json.Number` the caller sent. A `_meta` that is not an object, or is longer than 64 KiB, is
+refused with `-32602` before the handler runs. Only `tools/call` carries it;
+`prompts/get` and `resources/read` do not.
+
+**`_meta` is caller-supplied and unauthenticated.** Anyone who can reach
+`/mcp` can send any `openai/subject`. Use it to spread a rate limit or pick a
+reply language, never as an identity, never to authorize anything, and do not
+log it. A signed-in user comes from your auth middleware, as on any route.
+
+`mcp.ContextWithRequestMeta(ctx, meta)` puts a copy of `meta` on a context,
+for testing a handler or calling `CallTool` in process.
 
 Three more calls matter when you hold the server in-process:
 
@@ -929,6 +1048,12 @@ the merged state. The convention and its boundaries:
   without ever receiving anything. Inline `mcp.WidgetClientJS()`, or build
   the document with `mcp.WidgetDocument`, which inlines it
   ([agent host](agent-host.md)).
+- **Treating `openai/subject` from `RequestMeta` as the user.** It is
+  whatever the caller sent. Rate-limit on it if you like; authorize on the
+  user your auth middleware resolved.
+- **Leaving a hint nil and expecting `false`.** A nil hint is left out of
+  `tools/list`, and the MCP default for a missing `destructiveHint` is
+  `true`. Set every hint with `mcp.Bool`.
 - **Forgetting that required prompt arguments are checked before the
   handler runs.** A `prompts/get` missing one is refused with invalid-params;
   the handler never sees the call. Handlers can assume required arguments are

@@ -98,7 +98,32 @@ func (ds *UIHost) notFoundBodyComponent(path string) component.Component {
 	return &defaultNotFoundScreen{path: path}
 }
 
+// ServeNotFound answers r with what a URL no route matches gets: the
+// not-found page, the client-navigation partial, problem JSON or
+// markdown, as r asks, status 404, with no meta from any route.
+// Middleware calls it to make a route look like one that does not exist.
+func (ds *UIHost) ServeNotFound(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Gofastr-Part") != "" {
+		w.Header().Set("Cache-Control", "no-store")
+		reason := partResetAny
+		if _, live := ds.verifySessionToken(readSessionCookie(r)); !live && !staleMarkupClient(r) {
+			reason = partResetSession
+		}
+		ds.writePartReset(w, reason)
+		return
+	}
+	if r.Header.Get("X-Gofastr-Navigate") == "1" {
+		if _, done := ds.partialSession(w, r); done {
+			return
+		}
+	} else if ds.negotiatesMarkdown() {
+		w.Header().Add("Vary", "Accept")
+	}
+	ds.serveNotFound(w, r, routePath(r))
+}
+
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	w.Header().Add("Vary", "Accept")
 	if acceptsProblemJSON(r) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -225,10 +250,12 @@ func (ds *UIHost) errorBodyComponent() component.Component {
 }
 
 func (ds *UIHost) serveResolverError(w http.ResponseWriter, r *http.Request, path string, pe *app.PageError) {
-	slog.Error("uihost: route resolver failed; serving error page",
-		"path", textsafe.StripUnsafe(path),
-		"err", textsafe.Recovered(pe.Err),
-		"not_found", pe.NotFound)
+	if !pe.Policy {
+		slog.Error("uihost: route resolver failed; serving error page",
+			"path", textsafe.StripUnsafe(path),
+			"err", textsafe.Recovered(pe.Err),
+			"not_found", pe.NotFound)
+	}
 	if pe.NotFound {
 		ds.serveNotFound(w, r, path)
 		return
@@ -253,6 +280,7 @@ func (ds *UIHost) serveRenderError(w http.ResponseWriter, r *http.Request, path 
 }
 
 func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string) {
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	if acceptsProblemJSON(r) {
 		ds.serveServerError(w, r, path)
 		return
@@ -362,6 +390,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 }
 
 func (ds *UIHost) renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 	w.Header().Add("Vary", "Accept")

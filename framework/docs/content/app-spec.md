@@ -361,7 +361,8 @@ Each entry is exactly an entry of the `endpoints:` section of
 [`gofastr.settings.yml`](settings.md), the same keys with the same rules:
 `name`, `entity` (required), `method`, `path` (relative to the entity's
 route, so `{id}/publish` serves `POST /api/posts/{id}/publish`), `handler`
-(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, and `public`.
+(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, `public`, and
+`hints` (the MCP tool's behaviour hints).
 [Endpoints](endpoints.md) has the full contract.
 
 `generate app` writes, for each endpoint:

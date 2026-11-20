@@ -458,8 +458,11 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 		}
 		// Policy-gated screens stay listed (existence and shape are
 		// documentation) but metadata-free. A region guard that moves
-		// the page gates it too (PatternPolicy).
-		if a.PatternPolicy(ctx, screen).Kind != DecisionAllow {
+		// the page gates it too (PatternPolicy). A not-found answer
+		// hides the route, so it is not listed at all.
+		if d := a.PatternPolicy(ctx, screen); d.notFound() {
+			continue
+		} else if d.Kind != DecisionAllow {
 			r.Title, r.Description = "", ""
 		}
 		if strings.Contains(r.Path, ":") {
@@ -561,7 +564,10 @@ func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := WithRequest(r.Context(), r)
 		body := md
-		if a.PatternPolicy(ctx, screen).Kind != DecisionAllow {
+		if d := a.PatternPolicy(ctx, screen); d.notFound() {
+			http.NotFound(w, r)
+			return
+		} else if d.Kind != DecisionAllow {
 			body = withheld
 		} else if i18n.PathPrefix(ctx) != "" || i18n.TranslatorFrom(ctx) != nil || i18n.FromContext(ctx).Tag != "" {
 			body = ScreenLLMMD(ctx, screen)
