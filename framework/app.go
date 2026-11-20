@@ -245,6 +245,9 @@ type App struct {
 
 	initialized atomic.Bool
 
+	docsDebugMounted  atomic.Bool
+	docsDebugHasLLMMD bool
+
 	startHooks []func(ctx context.Context) error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
@@ -2402,9 +2405,16 @@ func (a *App) bootSetup(web bool) (interactive bool, err error) {
 	return true, nil
 }
 
-// MountLLMMDAndDebugRoutes mounts configured Markdown and debug routes without starting the app.
-// Call once after registering entities and pages. It reports whether aggregate Markdown was mounted.
+// MountLLMMDAndDebugRoutes mounts the configured /api/llm.md and /.debug/*
+// routes without starting the app, and reports whether /api/llm.md was
+// mounted. Call it after registering entities and pages. It is safe to
+// call before Start or Run: later calls mount nothing and return the
+// first call's result.
 func (a *App) MountLLMMDAndDebugRoutes() (hasLLMMD bool) {
+	if !a.docsDebugMounted.CompareAndSwap(false, true) {
+		return a.docsDebugHasLLMMD
+	}
+	defer func() { a.docsDebugHasLLMMD = hasLLMMD }()
 	if len(a.Registry.All()) > 0 && !a.Config.NoLLMMD {
 		appName := a.Config.Name
 		if appName == "" {

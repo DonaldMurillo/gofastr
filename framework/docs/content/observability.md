@@ -459,6 +459,11 @@ still reachable (a global, a live struct) is never reported, so a zero
 count does not prove the absence of every leak, but a nonzero count is
 never a false alarm.
 
+`Start` and `Run` mount the `/.debug/*` routes when `AppConfig.DebugEndpoints`
+is set. A host that serves the app without calling `Start`, as `kiln serve`
+does, calls `app.MountLLMMDAndDebugRoutes()` to mount them (and
+`/api/llm.md`); calling it a second time does nothing.
+
 ## Common mistakes
 
 - **Exposing `/metrics` without network-level protection.** The endpoint

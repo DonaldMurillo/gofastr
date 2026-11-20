@@ -424,8 +424,9 @@ context supplied by a custom host, Markdown requires a signed-in user; debug
 routes require an admin and return **403** to signed-in non-admins.
 
 Hosts that bypass framework startup can call
-`app.MountLLMMDAndDebugRoutes()` once after registering entities and pages.
-Normal startup uses the same helper. It honors `AppConfig.NoLLMMD`,
+`app.MountLLMMDAndDebugRoutes()` after registering entities and pages.
+Normal startup uses the same helper, and only the first call mounts routes:
+later calls, including the one inside `Start`, do nothing. It honors `AppConfig.NoLLMMD`,
 `DebugEndpoints`, and the existing `PublicOpenAPI` aggregate-doc policy; it does
 not start the app or install authentication. Kiln keeps `PublicOpenAPI` off:
 its public OpenAPI browser does not make aggregate Markdown public.
