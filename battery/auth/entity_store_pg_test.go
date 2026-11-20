@@ -4,15 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 // Cross-dialect smoke for EntityUserStore + EntitySessionStore. The
@@ -365,18 +367,38 @@ func TestBatteryPostgresFixturesFailOnInvalidDSN(t *testing.T) {
 }
 
 func TestBatteryPostgresFixturesPreserveStartupOptions(t *testing.T) {
-	base, err := resolveBatteryPG()
-	if err != nil {
-		t.Skipf("Postgres unavailable: %v", err)
-	}
-	admin, err := sql.Open("postgres", base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	var want string
-	if err := admin.QueryRow("SHOW statement_timeout").Scan(&want); err != nil {
-		t.Fatal(err)
+	const child = "GOFASTR_PG_FIXTURE_STARTUP_OPTIONS_TEST"
+	const want = "13579ms"
+	if os.Getenv(child) == "" {
+		base, err := resolveBatteryPG()
+		if err != nil {
+			t.Skipf("Postgres unavailable: %v", err)
+		}
+		cfg, err := pq.NewConfig(base)
+		if err != nil {
+			t.Fatal("invalid PostgreSQL DSN")
+		}
+		options := strings.TrimSpace(cfg.Options + " -c statement_timeout=" + want)
+		if strings.HasPrefix(base, "postgres://") || strings.HasPrefix(base, "postgresql://") {
+			u, err := url.Parse(base)
+			if err != nil {
+				t.Fatal("invalid PostgreSQL DSN URL")
+			}
+			q := u.Query()
+			q.Set("options", options)
+			u.RawQuery = q.Encode()
+			base = u.String()
+		} else {
+			escape := strings.NewReplacer("\\", "\\\\", "'", "\\'")
+			base += " options='" + escape.Replace(options) + "'"
+		}
+		// ResolveEnv caches the DSN, so the fixtures need a fresh process.
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestBatteryPostgresFixturesPreserveStartupOptions$")
+		cmd.Env = append(os.Environ(), child+"=1", "TEST_POSTGRES_DSN="+base)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Postgres fixture startup options: %v\n%s", err, out)
+		}
+		return
 	}
 	for _, tc := range []struct {
 		name string
@@ -391,11 +413,91 @@ func TestBatteryPostgresFixturesPreserveStartupOptions(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got != want {
-				t.Errorf("statement_timeout = %q, want admin DSN setting %q", got, want)
+				t.Errorf("statement_timeout = %q, want DSN setting %q", got, want)
 			}
 		})
 		if !ran {
 			t.Errorf("configured Postgres fixture %s skipped", tc.name)
 		}
+	}
+}
+
+func TestEntityUserStore_Postgres_SwapRolesRejectsConcurrentWrite(t *testing.T) {
+	db := openPGForBattery(t)
+	db.SetMaxOpenConns(3)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, `ALTER TABLE users ALTER COLUMN roles DROP DEFAULT,
+		ALTER COLUMN roles TYPE jsonb USING roles::jsonb`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, password_hash, roles)
+		VALUES ('target', 'target@example.test', 'unused', '["admin","support","support"]')`); err != nil {
+		t.Fatal(err)
+	}
+	store := NewEntityUserStore(db, "users")
+	previous := []string{"support", "admin"}
+	if updated, err := store.SwapRoles(ctx, "target", previous, previous); err != nil || !updated {
+		t.Fatalf("swap equivalent role set = %t, %v", updated, err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var blocker int
+	if err := tx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&blocker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET roles = '["support"]' WHERE id = 'target'`); err != nil {
+		t.Fatal(err)
+	}
+	type swapResult struct {
+		updated bool
+		err     error
+	}
+	result := make(chan swapResult, 1)
+	go func() {
+		updated, err := store.SwapRoles(ctx, "target", previous, []string{"admin", "editor"})
+		result <- swapResult{updated, err}
+	}()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		var waiting bool
+		err := db.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, blocker).Scan(&waiting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case got := <-result:
+			t.Fatalf("swap returned before the revocation committed: %+v", got)
+		case <-tick.C:
+		case <-ctx.Done():
+			t.Fatal("swap never tried to update the locked account")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-result:
+		if got.updated || got.err != nil {
+			t.Errorf("swap after revocation = %+v, want false, nil", got)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	user, err := store.FindByID(ctx, "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := user.GetRoles(); !slices.Equal(got, []string{"support"}) {
+		t.Errorf("roles after revocation = %v, want [support]", got)
 	}
 }

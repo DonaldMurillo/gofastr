@@ -581,7 +581,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	current := target.GetRoles()
+	current := slices.Clone(target.GetRoles())
 	var changed []string
 	for _, role := range roles {
 		if !slices.Contains(current, role) {
@@ -611,9 +611,14 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusForbidden, "assign-refused")
 		return
 	}
-	if err := b.cfg.Auth.SetUserRoles(r.Context(), userID, roles); err != nil {
+	swapped, err := b.cfg.Auth.SwapUserRoles(r.Context(), userID, current, roles)
+	if err != nil {
 		b.logger().Error("admin: assign roles", "user", textsafe.ScrubControlBytes(userID), "error", textsafe.ScrubControlBytes(err.Error()))
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		return
+	}
+	if !swapped {
+		b.refuse(w, r, page, http.StatusConflict, "roles-conflict")
 		return
 	}
 	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor, map[string]any{"roles": roles})
@@ -667,12 +672,20 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 			return want
 		}
 		for _, p := range perms {
-			if permissionDenied(ctx, p) || (!byName && !callerPerms[p]) {
+			if assignmentDeciderRefuses(ctx, p) || (!byName && !callerPerms[p]) {
 				return want
 			}
 		}
 	}
 	return ""
+}
+
+func assignmentDeciderRefuses(ctx context.Context, perm access.Permission) bool {
+	if perm != access.Wildcard {
+		return permissionDenied(ctx, perm)
+	}
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, access.GetRoles(ctx), perm, access.Ref{}) != access.DecisionAllow
 }
 
 // callerHoldsPermission reports whether the caller's own roles grant

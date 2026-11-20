@@ -445,6 +445,100 @@ func TestAssignAndGrantChangesHonorDeciderDeny(t *testing.T) {
 	}
 }
 
+func TestWildcardRoleChangesRequireDeciderAllow(t *testing.T) {
+	const wildcardRole = "platform"
+	for _, change := range []struct {
+		name   string
+		before []string
+		after  []string
+	}{
+		{name: "assign", before: nil, after: []string{wildcardRole}},
+		{name: "remove", before: []string{wildcardRole}, after: nil},
+	} {
+		for _, decision := range []struct {
+			name string
+			vote access.Decision
+			want int
+		}{
+			{"abstain", access.DecisionAbstain, http.StatusForbidden},
+			{"deny", access.DecisionDeny, http.StatusForbidden},
+			{"allow", access.DecisionAllow, http.StatusNoContent},
+		} {
+			t.Run(change.name+"/"+decision.name, func(t *testing.T) {
+				r := newRBACEnv(t, Config{})
+				if err := r.policy.Grant(wildcardRole, access.Wildcard); err != nil {
+					t.Fatal(err)
+				}
+				id := r.editor.GetID()
+				if err := r.mgr.SetUserRoles(t.Context(), id, change.before); err != nil {
+					t.Fatal(err)
+				}
+				h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					ctx := access.WithDecider(req.Context(), func(_ context.Context, _ []string, p access.Permission, _ access.Ref) access.Decision {
+						switch p {
+						case access.Wildcard:
+							return decision.vote
+						case "posts:read":
+							return access.DecisionDeny
+						default:
+							return access.DecisionAbstain
+						}
+					})
+					r.as(theAdmin).ServeHTTP(w, req.WithContext(ctx))
+				})
+				rr := rpc(h, "/admin/rbac/_assign", map[string]any{"user_id": id, "roles": strings.Join(change.after, ",")})
+				if rr.Code != decision.want {
+					t.Errorf("status = %d, want %d, body = %s", rr.Code, decision.want, rr.Body)
+				}
+				want := change.before
+				if decision.vote == access.DecisionAllow {
+					want = change.after
+				}
+				if got := r.rolesOf(id); !slices.Equal(got, want) {
+					t.Errorf("roles = %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestRoleAssignmentConflictsWithInterveningRevocation(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	targetID := r.editor.GetID()
+	if err := r.mgr.SetUserRoles(t.Context(), targetID, []string{"admin"}); err != nil {
+		t.Fatal(err)
+	}
+	support := roleUser{id: "support-1", roles: []string{"support"}}
+	operator := roleUser{id: theAdmin.id, roles: []string{"admin", "support"}}
+	revoked := false
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := access.WithDecider(req.Context(), func(_ context.Context, _ []string, p access.Permission, _ access.Ref) access.Decision {
+			if p == "queue:read" && !revoked {
+				rr := rpc(r.as(operator), "/admin/rbac/_assign", map[string]any{"user_id": targetID, "roles": ""})
+				if rr.Code != http.StatusNoContent {
+					t.Fatalf("intervening revocation = %d, %s", rr.Code, rr.Body)
+				}
+				revoked = true
+			}
+			return access.DecisionAbstain
+		})
+		r.as(support).ServeHTTP(w, req.WithContext(ctx))
+	})
+	rr := rpc(h, "/admin/rbac/_assign", map[string]any{"user_id": targetID, "roles": "admin,support"})
+	if !revoked {
+		t.Fatal("revocation never ran")
+	}
+	if rr.Code != http.StatusConflict {
+		t.Errorf("stale assignment = %d, want 409, body = %s", rr.Code, rr.Body)
+	}
+	if got := r.rolesOf(targetID); len(got) != 0 {
+		t.Errorf("stale assignment left roles %v, want none", got)
+	}
+	if got := r.auditOps("access"); !slices.Equal(got, []string{"assign-roles"}) {
+		t.Errorf("audit ops = %v, want one successful revocation", got)
+	}
+}
+
 // The submitted id is a key, used exactly: " u1 " names a different
 // account from "u1" (2026-10-27 A42).
 func TestAssignKeepsPaddedUserID(t *testing.T) {

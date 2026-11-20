@@ -255,6 +255,7 @@ safe-but-reduced path.
 
 | Interface | Used by | Effect when implemented |
 |---|---|---|
+| `RoleSwapper` | Admin role editor, `AuthManager.SwapUserRoles` | Atomically replace roles only if the account still has the expected role set. `EntityUserStore` implements it. Stores without this interface refuse edits from the role editor. |
 | `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
 | `OAuthProfileRefresher` | `OAuth2Plugin` | Update the profile of an existing link on a returning sign-in, never inserting one. `EntityUserStore` implements it. Without it the profile stays as it was at link time. |
@@ -1660,7 +1661,9 @@ The identity mutations are covered too: a successful `GET
 `oauth.unlinked` (Meta: provider, mirroring `oauth.linked`), and
 `AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
 so a role change driven from a script or future surface leaves the same
-trail the admin back-office writes.
+trail the admin back-office writes. `AuthManager.SwapUserRoles` emits the
+same event after a successful conditional update. It returns `false, nil`
+if the prior roles differ or the account disappears.
 
 `EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
 `AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8

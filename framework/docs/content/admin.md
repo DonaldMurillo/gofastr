@@ -669,6 +669,11 @@ the policy grants nothing, or does not know, is checked by name
 assigns or removes it. An unknown account is a 400. A refusal is a 403
 with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
 row, so a narrower admin tier cannot mint a role above its own.
+The role editor saves only when the account still has the roles checked by
+the request. An intervening change produces a 409 RPC response or a
+`roles-conflict` result on a plain form post. Reload the user list before
+trying again. Custom auth user stores must implement `auth.RoleSwapper`
+to support role edits.
 Under the default gate a caller cannot remove their own `AdminRole`:
 the post is refused with `own-admin-refused` and an
 `assign-roles-refused` row, because the last admin dropping it leaves
@@ -680,8 +685,10 @@ roles (after the save) with it or the wildcard, is refused with
 never grant it back, since a caller grants only what their roles hold.
 Grant it to a second role the caller holds first. An
 `access.Decider` on the request can veto a grant, a revoke or a change to
-a role that grants the denied permission. `DecisionAllow` leaves the
-caller's tier checks in effect. A grid save is checked whole
+a role that grants the denied permission. Assigning or removing a role
+that grants the global wildcard (`*`) requires a configured Decider to
+return `DecisionAllow` for `*`. An abstention or denial refuses the change.
+The caller's tier checks still apply. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied. A grant inside a wildcard revocation (the role's
 `teams:*` was revoked, and the save grants `teams:read`) is refused that

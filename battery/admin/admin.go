@@ -748,6 +748,7 @@ var results = map[string]result{
 	"bad-input":              {i18nui.AdminBadInput, false},
 	"grant-refused":          {i18nui.AdminGrantRefused, false},
 	"assign-refused":         {i18nui.AdminAssignRefused, false},
+	"roles-conflict":         {i18n.StatusPhrase(http.StatusConflict), false},
 	"own-admin-refused":      {i18nui.AdminOwnAdminRefused, false},
 	"own-permission-refused": {i18nui.AdminOwnPermRefused, false},
 	"name-refused":           {i18nui.AdminNameRefused, false},
