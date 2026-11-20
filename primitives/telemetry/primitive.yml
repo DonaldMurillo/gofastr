@@ -1,0 +1,19 @@
+primitive: telemetry
+summary: The telemetry plugin, which keeps an app's logs and traces in capped day files on its own machine and installs the TracerProvider and log sink that feed them.
+code:
+  - battery/telemetry/telemetry.go
+  - battery/telemetry/agents.go
+docs:
+  - framework/docs/content/telemetry.md
+on_change:
+  - A new Config field or Stats counter goes in telemetry.md with its default.
+invariants:
+  - id: init-runs-once
+    rule: A second Init returns an error and leaves the first one's files and tools as they were.
+    enforced_by:
+      - test: battery/telemetry.TestSecondInitIsRefused
+  - id: external-provider-left-alone
+    rule: With ExternalTracerProvider set, Init does not replace the global TracerProvider.
+    enforced_by:
+      - test: battery/telemetry.TestExternalTracerProviderIsLeftAlone
+      - test: battery/telemetry.TestInitInstallsATracerProvider

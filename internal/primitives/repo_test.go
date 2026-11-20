@@ -153,6 +153,9 @@ var ownedPackages = []string{
 	"battery/email",
 	"battery/cache",
 	"battery/sitesearch",
+	"battery/telemetry",
+	"battery/telemetry/telemetryui",
+	"battery/telemetry/telemetryadmin",
 }
 
 //gofastr:test-reads primitives/ *.go

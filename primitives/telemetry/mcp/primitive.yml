@@ -1,0 +1,20 @@
+primitive: telemetry.mcp
+summary: The opt-in telemetry_* MCP tools that read the day files for a connected agent.
+code:
+  - battery/telemetry/mcp.go
+docs:
+  - framework/docs/content/telemetry.md
+invariants:
+  - id: tools-are-opt-in
+    rule: The tools are registered only with EnableMCP or the dev MCP switch.
+    enforced_by:
+      - test: battery/telemetry.TestMCPToolsAreOptIn
+  - id: default-gate-is-untenanted-admin
+    rule: Without MCPGate, a tool answers only an admin with no tenant, since the files hold every tenant's lines.
+    enforced_by:
+      - test: battery/telemetry.TestMCPToolsRefuseNonAdmins
+  - id: arguments-are-strict
+    rule: An argument of the wrong type or shape is refused, never ignored, and limit is a whole number of at least 1 capped at the tool's most.
+    enforced_by:
+      - test: battery/telemetry.TestMCPToolsRefuseUnreadableArguments
+      - test: battery/telemetry.TestLimitArgIsCapped

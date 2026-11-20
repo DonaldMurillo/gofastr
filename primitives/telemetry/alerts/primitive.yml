@@ -1,0 +1,25 @@
+primitive: telemetry.alerts
+summary: The watch loop that writes each finished minute's counts, reads the machine, checks the alert rules, notifies and sends the heartbeat.
+code:
+  - battery/telemetry/alerts.go
+  - battery/telemetry/heartbeat.go
+docs:
+  - framework/docs/content/telemetry.md
+invariants:
+  - id: machine-reader-panic-is-contained
+    rule: A panic while reading the machine leaves that reading empty and the watch round going.
+    enforced_by:
+      - test: battery/telemetry.TestAPanickingMachineReaderDoesNotEndTheRound
+  - id: hung-notifier-left-behind
+    rule: A notifier gets its deadline and is left running past it; the watch loop does not wait for it.
+    enforced_by:
+      - test: battery/telemetry.TestHungNotifierIsLeftBehind
+  - id: secret-urls-never-quoted
+    rule: The webhook and heartbeat clients follow no redirect, and their errors and logs name the host, never the whole URL.
+    enforced_by:
+      - test: battery/telemetry.TestWebhookNotifier
+      - test: battery/telemetry.TestHeartbeatPingsOnceAMinute
+  - id: heartbeat-url-checked-at-start
+    rule: Init refuses a Heartbeat that is not an absolute http or https URL with a host.
+    enforced_by:
+      - test: battery/telemetry.TestHeartbeatPingsOnceAMinute

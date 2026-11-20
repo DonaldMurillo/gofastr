@@ -20,23 +20,19 @@ import (
 
 // Config places the screens in an app that has no admin to hold them.
 type Config struct {
-	// Path is where the screens are served. Default "/telemetry".
+	// Path is where the screens are served.
 	Path string
-	// Authorize admits a caller to the screens. Required: the pages
-	// show request paths, client addresses and whatever the app logs,
-	// so there is no open default. It runs on every request.
+	// Authorize admits a caller to the screens.
 	Authorize func(ctx context.Context) bool
 }
 
-// Plugin mounts the screens on the app's UI host. It implements
-// framework.Plugin.
+// Plugin mounts the screens on the app's UI host.
 type Plugin struct {
 	tel *telemetry.Plugin
 	cfg Config
 }
 
-// New returns the plugin that serves tel's screens. Register it after
-// the UI host is mounted.
+// New returns the plugin that serves tel's screens.
 func New(tel *telemetry.Plugin, cfg Config) *Plugin { return &Plugin{tel: tel, cfg: cfg} }
 
 // Name implements framework.Plugin.
@@ -68,8 +64,6 @@ func (p *Plugin) Init(app *framework.App) error {
 		return errors.New("telemetryui: the screens render through the app's UI host; mount one first (framework.NewUIHostApp or uihost.New)")
 	}
 
-	// No tabs in the pages: the layout below draws them, outside the
-	// main region.
 	screens := NewScreens(p.tel, path, false)
 	screens.Live = func(list string) string { return path + "/_rows/" + list }
 	allowed := func(ctx context.Context) bool { return p.cfg.Authorize(ctx) }
@@ -79,14 +73,8 @@ func (p *Plugin) Init(app *framework.App) error {
 		}
 		return decide.Block(http.StatusForbidden)
 	})
-	// The tabs are a route area: they sit in the layout, before the
-	// main region, so "Skip to main content" skips them, and they are
-	// drawn again on every navigation to mark the current page.
 	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "tabs"}}}
 	layout := appui.NewLayout("gofastr-telemetry", spec, func(_ context.Context, l *appui.LayoutTree) render.HTML {
-		// No ui.Stack{Screen: true} here: it pins its last child to the
-		// bottom for a footer, and a short page would sit at the foot
-		// of the screen.
 		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
 			l.RouteArea("tabs", func(ctx context.Context, m appui.Match) render.HTML {
 				return screens.Tabs(ctx, m.Path())
@@ -107,9 +95,6 @@ func (p *Plugin) Init(app *framework.App) error {
 	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.LogsTitle, screens.Logs)
 	host.App.Router.ScreenGroup(group)
 
-	// A list's rows alone, for the newest page's timer. The same gate
-	// as the pages, asked on every fetch: a caller whose access ended
-	// stops getting rows at the next tick.
 	rows := func(draw func(context.Context) render.HTML) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := appui.WithRequest(r.Context(), r)
@@ -126,12 +111,8 @@ func (p *Plugin) Init(app *framework.App) error {
 	app.Router().Get(path+"/_rows/requests", rows(screens.RequestsRows))
 	app.Router().Get(path+"/_rows/logs", rows(screens.LogsRows))
 
-	// The bare path goes to the first screen. The target is fixed, and
-	// the screen it names is the one that asks who is calling.
 	target := screens.OverviewPath()
 	app.Router().Get(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The query rides along: a shared link to the bare path with a
-		// time range keeps it.
 		to := target
 		if r.URL.RawQuery != "" {
 			to += "?" + r.URL.Query().Encode()
@@ -141,7 +122,6 @@ func (p *Plugin) Init(app *framework.App) error {
 	return nil
 }
 
-// screen is one page as a screen component.
 type screen struct {
 	component.ContextOnly
 	allowed func(context.Context) bool
@@ -152,9 +132,7 @@ type screen struct {
 // ScreenTitle names the page in the caller's language.
 func (s *screen) ScreenTitle(ctx context.Context) string { return s.name(ctx) }
 
-// RenderCtx draws the page. The group's policy has already refused
-// everyone else; asking again keeps the page's data from depending on
-// that alone.
+// RenderCtx draws the page.
 func (s *screen) RenderCtx(ctx context.Context) render.HTML {
 	if !s.allowed(ctx) {
 		return ""
