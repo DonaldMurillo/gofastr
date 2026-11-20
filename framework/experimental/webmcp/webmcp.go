@@ -30,7 +30,7 @@ const defaultInputSchema = `{"type":"object","properties":{}}`
 //go:embed bridge.js
 var bridgeJS string
 
-//go:embed third_party/webmcp-polyfill/polyfill.js
+//go:embed vendor/webmcp-polyfill/polyfill.js
 var polyfillJS string
 
 var toolNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)

@@ -117,3 +117,15 @@ decisions:
       - option: A separate agent channel with its own credential.
         why: It would need an authorization path beside the app's, and a tool would no longer be bounded by what the signed-in user may already do from devtools.
     upholds: [bridge-calls-as-the-user]
+  - id: vendor-the-polyfill-unmodified
+    date: 2026-11-20
+    status: accepted
+    decision: WithPolyfill embeds the upstream standalone bundle byte for byte from a vendor/ directory, so the repo's JS walkers skip it like any other vendored code.
+    rejected:
+      - option: Rewrite the bundle to pass the repo's JS lints (no var, no arguments, own-property registry reads).
+        why: A hand-edited copy no longer matches the npm archive hash in THIRD_PARTY_NOTICES.md, and every upgrade would repeat the edit.
+      - option: Keep it under third_party/ and add that name to each walker's skip list.
+        why: The skip lists are copied across several walkers in core-ui/check and cmd/repolint; one more name means editing all of them, while vendor/ is already skipped everywhere.
+      - option: Load it from a CDN or require npm.
+        why: The point of the option is a Go-only app that serves the fallback from its own origin under the bridge's scope and authorization.
+    upholds: [bridge-noop-without-api]

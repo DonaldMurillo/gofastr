@@ -4,7 +4,7 @@
 
 `@w3c/webmcp-polyfill@0.1.1` is copyright 2026 World Wide Web Consortium
 and distributed under Apache-2.0. The unmodified standalone browser bundle
-and its license are in `framework/experimental/webmcp/third_party/webmcp-polyfill`.
+and its license are in `framework/experimental/webmcp/vendor/webmcp-polyfill`.
 
 - [Upstream release](https://github.com/w3c-oss/webmcp-polyfill/releases/tag/v0.1.1)
 - [npm release archive](https://registry.npmjs.org/@w3c/webmcp-polyfill/-/webmcp-polyfill-0.1.1.tgz)
