@@ -11,6 +11,7 @@ invariants:
     enforced_by:
       - test: battery/service.TestGateRefusesEverythingBeforePin
       - test: battery/service.TestGateRefusesRebindingHost
+      - test: battery/service.TestOpenPrefixKeepsHostPin
   - id: tokens-are-single-use-and-bounded
     rule: A sign-in token works once, expires after loginTokenTTL, a wrong one burns nothing, and at most maxPendingTokens are outstanding.
     enforced_by:
@@ -30,6 +31,16 @@ invariants:
       - test: battery/service.TestGateRefusesForgedSessions
       - test: battery/service.TestGateSessionExpires
       - test: battery/service.TestGateStaleDuplicateCookieDoesNotLogOut
+  - id: no-secret-in-a-refusal-or-log
+    rule: No gate response, error string or log line carries a sign-in token or a session cookie value; only the success response's Set-Cookie holds a session value.
+    enforced_by:
+      - test: battery/service.TestGateRefusalsEchoNoSecret
+    judge: Does this change log a sign-in token or session cookie value, or put one into an error string or a response other than the login door's Set-Cookie?
+  - id: login-door-answers-a-file-page
+    rule: The login path is dispatched before the cross-site check, so the sign-in page's POST from file:// (Origin null) is redeemed, and success answers 200 with a page rather than a redirect, which would arrive at / without the SameSite=Strict cookie.
+    enforced_by:
+      - test: battery/service.TestGateLoginAcceptsFilePageAndAnswersWithAPage
+      - test: battery/service.TestSignInPageLandsSignedIn
   - id: cross-site-writes-refused
     rule: A cross-site unsafe request is refused, and on an open path a forged cross-site write is refused.
     enforced_by:
