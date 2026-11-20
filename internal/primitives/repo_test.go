@@ -229,6 +229,20 @@ var ownedPackages = []string{
 	"framework/experimental/harness/tool/builtins",
 	"framework/experimental/harness/tool/permission",
 	"framework/experimental/harness/tracing",
+	"core-ui/urlsafe",
+	"core-ui/widget/theme",
+	"core-ui/widget/preset",
+	"core-ui/seo",
+	"core-ui/urlprefix",
+	"core-ui/runtime/internal/treegate",
+	"core-ui/runtime/minify",
+	"core-ui/registry",
+	"core-ui/store",
+	"core-ui/uinodev1",
+	"core-ui/runtime",
+	"core-ui/widget",
+	"core-ui/ownstyle",
+	"core-ui/style",
 }
 
 //gofastr:test-reads primitives/ *.go

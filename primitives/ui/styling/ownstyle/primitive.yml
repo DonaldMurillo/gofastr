@@ -1,0 +1,115 @@
+primitive: ui.styling.ownstyle
+summary: Owned stylesheets - the .style.css and .tokens.css files a layout, screen, component or app owns - with their CSS tokenizer and parser, the compiler (scope wrap, custom media against the running theme, @keyframes renaming, dark split, minify), the CSS-only GOFASTR checks, the class model and Go generator, and Must and Sheet.Scope, which register a sheet and stamp its scope marker.
+code:
+  - core-ui/ownstyle/
+docs:
+  - framework/docs/content/codegen.md
+  - framework/docs/content/contracts.md
+  - framework/docs/content/theming.md
+on_change:
+  - A new CSS-only check gets a GOFASTR rule ID in framework/contracts' catalog and a row in framework/docs/content/contracts.md.
+invariants:
+  - id: tokens-keep-their-source
+    rule: Tokenize follows CSS Syntax Level 3, gives every token a 1-based line and rune column (a CR LF pair is one line break), and keeps each token's raw text, escapes included, so the compiler re-emits what the author wrote.
+    enforced_by:
+      - test: core-ui/ownstyle.TestTokenizeIdentsAndFunctions
+      - test: core-ui/ownstyle.TestTokenizePositionsAcrossLines
+      - test: core-ui/ownstyle.TestTokenizeCRPairsCountOneLine
+      - test: core-ui/ownstyle.TestTokenizeEscapesInIdents
+      - test: core-ui/ownstyle.TestTokenizeUnterminatedCommentAndStringEOF
+      - test: core-ui/ownstyle.TestParsePositions
+  - id: parse-refuses-what-the-cascade-would-reorder
+    rule: Parse reads rules, at-rules, nested blocks, declarations and doc comments with positions, and reports a declaration after a nested rule and every malformed construct as a diagnostic.
+    enforced_by:
+      - test: core-ui/ownstyle.TestParseStyleRuleDecls
+      - test: core-ui/ownstyle.TestParseNestedAtRules
+      - test: core-ui/ownstyle.TestParseDeclAfterNestedRuleIsError
+      - test: core-ui/ownstyle.TestParseErrors
+      - test: core-ui/ownstyle.TestParseDocComments
+  - id: compile-scopes-and-expands
+    rule: Compile wraps an owner's rules in its scope (an app sheet's in :root), expands custom media against the running theme's breakpoints and refuses an unknown one or any in @container, renames each @keyframes to <owner>-<name> and rewrites its references, splits --dark rules into a prefers-color-scheme block and the forced-scheme selectors, never drops a non-empty rule and never changes the parsed sheet.
+    enforced_by:
+      - test: core-ui/ownstyle.TestCompileGoldens
+      - test: core-ui/ownstyle.TestCompileAppWrap
+      - test: core-ui/ownstyle.TestCompileCustomMediaFollowTheme
+      - test: core-ui/ownstyle.TestCompileUnknownCustomMediaIsError
+      - test: core-ui/ownstyle.TestContainerRefusesCustomMedia
+      - test: core-ui/ownstyle.TestCompileKeyframesRenamedAndReferencesRewritten
+      - test: core-ui/ownstyle.TestCompileDarkSplit
+      - test: core-ui/ownstyle.TestCompileNonEmptyRulesNeverVanish
+      - test: core-ui/ownstyle.TestCompileDoesNotMutateSheet
+      - test: core-ui/ownstyle.TestDarkChainMatchesInBrowser
+  - id: checks-report-each-rule
+    rule: Check reports an unknown theme token (GOFASTR1806), a hard-coded token value (1807), a drifted var() fallback (1808), a kit class or attribute selector however it is spelled or hidden (1810), a raw media width, an animation without a reduced-motion guard, an app-sheet selector off its subject, !important, a token custom property, a statement at-rule and every parse error, each at the line and column of its cause.
+    enforced_by:
+      - test: core-ui/ownstyle.TestCheckUnknownTokens
+      - test: core-ui/ownstyle.TestCheckHardcodedTokenValues
+      - test: core-ui/ownstyle.TestCheckFallbackDrift
+      - test: core-ui/ownstyle.TestCheckKitClassAndAttributeSelectors
+      - test: core-ui/ownstyle.TestSelectorCommentsCannotHideKitClass
+      - test: core-ui/ownstyle.TestCheckRawMediaWidths
+      - test: core-ui/ownstyle.TestCheckAnimationReducedMotion
+      - test: core-ui/ownstyle.TestCheckAppSheetRules
+      - test: core-ui/ownstyle.TestCheckTokenCustomProperty
+      - test: core-ui/ownstyle.TestCheckStatementAtRule
+      - test: core-ui/ownstyle.TestCheckInboxExample
+      - test: core-ui/ownstyle.TestCheckParseErrorsSurface
+  - id: same-scale-value-is-one-function
+    rule: SameScaleValue compares two lengths or times ASCII case-insensitively, reading rem as 16px and s as 1000ms, and both GOFASTR1808 checks call it.
+    enforced_by:
+      - test: core-ui/ownstyle.TestSameScaleValueFoldsASCIIOnly
+      - test: core-ui/ownstyle.TestCheckFallbackDrift
+  - id: suppression-names-rule-and-line
+    rule: A gofastr:allow comment suppresses a diagnostic only when it names the diagnostic's rule, carries a reason and sits on the diagnostic's line or the one above.
+    enforced_by:
+      - test: core-ui/ownstyle.TestSuppressedHonoursMarkers
+  - id: model-and-generator-are-unambiguous
+    rule: Model refuses a class that is both a base and a variant and variant groups whose values disagree, skips kit and element parts, and the generator refuses a class that would shadow a method of the embedded Sheet or collide with another method.
+    enforced_by:
+      - test: core-ui/ownstyle.TestModelClassBothBaseAndVariantIsError
+      - test: core-ui/ownstyle.TestModelGroupValueMismatchIsError
+      - test: core-ui/ownstyle.TestModelSkipsEveryKitPrefix
+      - test: core-ui/ownstyle.TestGenRefusesEverySheetMethodName
+      - test: core-ui/ownstyle.TestCompileGoldens
+  - id: kit-roots-only-take-placement
+    rule: An owned sheet may style a kit component's root only with placement properties (grid-column, grid-row, margin, inset and min- or max- sizes), and only as a rule's subject.
+    enforced_by:
+      - test: core-ui/ownstyle.TestPlacementPropertyList
+      - test: core-ui/ownstyle.TestKitRootsSubjectOnly
+      - test: core-ui/ownstyle.TestKitRootsScope
+  - id: must-registers-once
+    rule: Must panics on an app sheet not named app, on the app name for any other kind, on a bad name, on CSS that does not parse or compile, and on a name already registered (GOFASTR1816), and registers an app sheet LoadAlways.
+    enforced_by:
+      - test: core-ui/ownstyle.TestMustPanics
+      - test: core-ui/ownstyle.TestMustRegistersScopedSheet
+      - test: core-ui/ownstyle.TestMustRegistersAppSheetLoadAlways
+      - test: core-ui/ownstyle.TestMustPanicsOnDeclAfterNestedRule
+  - id: scope-stamps-one-owner
+    rule: Sheet.Scope adds data-cui-scope to the root, leaves a root already scoped to the same owner alone, and panics on another owner's scope and on the app sheet.
+    enforced_by:
+      - test: core-ui/ownstyle.TestScopeStampsOnlyTheScopeMarker
+      - test: core-ui/ownstyle.TestScopeOnKitRootKeepsCompAndGainsScope
+      - test: core-ui/ownstyle.TestScopePanicsOnDifferentOwner
+      - test: core-ui/ownstyle.TestScopePanicsOnAppAndMalformed
+  - id: app-tokens-are-distinct
+    rule: An app .tokens.css file declares tokens the generator turns into Go, and two app tokens, or an app token and a builtin, with the same value are reported.
+    enforced_by:
+      - test: core-ui/ownstyle.TestGenerateTokensFile
+      - test: core-ui/ownstyle.TestDuplicateTokenValues
+      - test: core-ui/ownstyle.TestCheckTokenFiles
+decisions:
+  - id: raw-token-text
+    date: 2026-11-20
+    status: accepted
+    decision: Tokens keep their raw source slice and nothing is decoded.
+    rejected:
+      - option: Decode escapes and normalise as the tokenizer reads.
+        why: The compiler re-emits tokens, and decoded text would change what the author wrote.
+    upholds: [tokens-keep-their-source]
+  - id: ownstyle-depends-down
+    date: 2026-11-20
+    status: accepted
+    decision: ownstyle imports core-ui/registry and core-ui/style, and neither imports it.
+    rejected:
+      - option: Let the style registry know about owned sheets.
+        why: The kit's registry would depend on a compiler only apps with owned styles need.

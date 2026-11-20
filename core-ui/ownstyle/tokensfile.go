@@ -13,57 +13,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// An app's own theme tokens live in <name>.tokens.css, beside the Go
-// package that owns them, written as CSS @property registrations:
-//
-//	/* The column the header, main and footer share. */
-//	@property --size-page-width { syntax: "<length>"; inherits: true; initial-value: 67.5rem; }
-//	@property --color-highlight { syntax: "<color>"; inherits: true; initial-value: #0F766E; }
-//	@media (--dark) { :root { --color-highlight: #5EEAD4; } }
-//
-// The name's prefix is the token type (style.TokenCategory) and the
-// syntax descriptor must be that type's; initial-value is the token's
-// value, checked by style.ParseToken, the rule ApplyTokens applies.
-// `gofastr gen styles` writes <name>_tokens.gen.go from it: a typed
-// token set the app passes to Theme.Extend. The file is a source, never
-// served: the running theme emits the tokens.
-
-// RuleDuplicateTokenValue is GOFASTR1821: an app token whose value is
-// already another token's of the same type. Two names for one value
-// drift apart the first time one of them changes.
+// RuleDuplicateTokenValue is GOFASTR1821.
 const RuleDuplicateTokenValue = "GOFASTR1821"
 
-// ruleTokensFile labels a tokens file the generator refuses. Like a
-// parse error it carries no GOFASTR id: the Go is not written, so the
-// file's generated sibling is missing or stale, which GOFASTR1814
-// reports at verify time.
 const ruleTokensFile = "tokens-file"
 
-// TokensFileName returns the CSS file name of a token set: "acme" →
-// "acme.tokens.css".
+// TokensFileName returns the CSS file name of a token set.
 func TokensFileName(name string) string { return name + ".tokens.css" }
 
-// GeneratedTokensFileName returns the Go file gen styles writes for a
-// token set: "acme" → "acme_tokens.gen.go". GOFASTR1814 looks for
-// exactly this sibling.
+// GeneratedTokensFileName returns the Go file gen styles writes for a token
+// set.
 func GeneratedTokensFileName(name string) string { return name + "_tokens.gen.go" }
 
 // TokensFile is a parsed <name>.tokens.css.
 type TokensFile struct {
-	Tokens []AppToken // in source order
+	Tokens []AppToken
 }
 
 // AppToken is one token a tokens file declares.
 type AppToken struct {
-	Key   string // the custom property without "--": "size-page-width"
-	Value any    // the typed token: style.Size{Name: "page-width", …}
-	Light string // initial-value as written
-	Dark  string // the @media (--dark) value; "" when none (colours only)
-	Doc   string // the comment above the @property rule
-	Pos   Pos    // the property name in the @property prelude
+	Key   string
+	Value any
+	Light string
+	Dark  string
+	Doc   string
+	Pos   Pos
 }
 
-// tokenSyntax is the @property syntax each token type registers with.
 var tokenSyntax = map[string][]string{
 	"color":       {"<color>"},
 	"size":        {"<length>", "<length-percentage>"},
@@ -82,9 +58,7 @@ var tokenSyntax = map[string][]string{
 	"easing":      {"*"},
 }
 
-// ParseTokens parses and checks one tokens file. Every problem is a
-// diagnostic at its position, all of them in one pass; a file with any
-// error-severity diagnostic must not generate Go.
+// ParseTokens parses and checks one tokens file.
 func ParseTokens(src string) (*TokensFile, []Diagnostic) {
 	sheet, diags := Parse(src)
 	f := &TokensFile{}
@@ -152,8 +126,6 @@ func ParseTokens(src string) (*TokensFile, []Diagnostic) {
 	return f, diags
 }
 
-// parseProperty reads one @property rule into an AppToken, reporting
-// each problem through bad.
 func parseProperty(r *Rule, bad func(Pos, string, ...any)) (AppToken, bool) {
 	var nameTok *Token
 	for i := 1; i < len(r.Prel); i++ {
@@ -197,8 +169,6 @@ func parseProperty(r *Rule, bad func(Pos, string, ...any)) (AppToken, bool) {
 	cat := style.TokenCategory(key)
 	allowed, typed := tokenSyntax[cat]
 	if !typed {
-		// A kind style parses but this table lacks would otherwise
-		// report the message "<nil>".
 		if _, err := style.ParseToken(key, initial); err != nil {
 			bad(pos, "%v", err)
 		} else {
@@ -233,8 +203,6 @@ func parseProperty(r *Rule, bad func(Pos, string, ...any)) (AppToken, bool) {
 	return AppToken{Key: key, Value: value, Light: initial, Doc: r.Doc, Pos: pos}, true
 }
 
-// compactPrelude is a prelude's significant tokens joined with no
-// whitespace: "( --dark )" and "(--dark)" read the same.
 func compactPrelude(toks []Token) string {
 	var b strings.Builder
 	for _, t := range toks {
@@ -245,9 +213,6 @@ func compactPrelude(toks []Token) string {
 	return b.String()
 }
 
-// tokenGroup is where a token type sits in the generated set: the same
-// group names style.Theme uses, so an app token reads like a built-in
-// (acme.Tokens.Colors.Highlight beside theme.Colors.Primary).
 type tokenGroup struct {
 	cat, field, goType string
 }
@@ -279,12 +244,7 @@ func tokenTypeName(cat string) string {
 	return cat
 }
 
-// GenerateTokensFile renders <name>_tokens.gen.go: the token set as a
-// typed value (Tokens, or <Name>Tokens when the package holds several
-// token files), grouped like style.Theme, and a DarkTokens method when
-// the file has dark values. css is the exact bytes of the tokens file
-// (the Source hash line is computed from it). Identifiers are derived
-// and validated; a collision is an error, never a mangled name.
+// GenerateTokensFile renders <name>_tokens.gen.go.
 func GenerateTokensFile(name, css string, f *TokensFile, pkg string, sharedPkg bool) (string, error) {
 	file := TokensFileName(name)
 	if !token.IsIdentifier(pkg) {
@@ -343,7 +303,7 @@ func GenerateTokensFile(name, css string, f *TokensFile, pkg string, sharedPkg b
 		fmt.Fprintf(&b, "\t%s: %s%s{\n", g.field, stem, g.field)
 		for _, fd := range fields {
 			ident := fd.ident
-			if !token.IsIdentifier(ident) { // checked when the field was named; kept beside the emit
+			if !token.IsIdentifier(ident) {
 				return "", fmt.Errorf("gofastr gen styles: %s: %q is not a Go identifier", file, ident)
 			}
 			fmt.Fprintf(&b, "\t\t%s: %s,\n", ident, tokenLiteral(fd.tk.Value))
@@ -399,9 +359,6 @@ func GenerateTokensFile(name, css string, f *TokensFile, pkg string, sharedPkg b
 	return string(formatted), nil
 }
 
-// writeFieldDoc writes a field's doc comment: the custom property it
-// emits, then the tokens file's comment for it, one Go comment line per
-// source line.
 func writeFieldDoc(b *strings.Builder, ident string, tk AppToken) {
 	first := fmt.Sprintf("%s is --%s.", ident, tk.Key)
 	lines := strings.Split(tk.Doc, "\n")
@@ -418,8 +375,6 @@ func writeFieldDoc(b *strings.Builder, ident string, tk AppToken) {
 	}
 }
 
-// commentSafe drops control bytes, so a comment in the CSS cannot end
-// the Go comment line it is copied into.
 func commentSafe(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
@@ -429,7 +384,6 @@ func commentSafe(s string) string {
 	}, s)
 }
 
-// tokenLiteral is the Go composite literal for a typed token value.
 func tokenLiteral(v any) string {
 	switch t := v.(type) {
 	case style.Color:
@@ -466,8 +420,6 @@ func tokenLiteral(v any) string {
 	panic(fmt.Sprintf("ownstyle: no Go literal for %T", v))
 }
 
-// durationLiteral spells a duration the way a person would: 260 *
-// time.Millisecond, 2 * time.Second, or nanoseconds when neither fits.
 func durationLiteral(d time.Duration) string {
 	switch {
 	case d%time.Second == 0:
@@ -478,8 +430,8 @@ func durationLiteral(d time.Duration) string {
 	return fmt.Sprintf("time.Duration(%d)", int64(d))
 }
 
-// AppTokenAt is one app token and the tokens file declaring it, for
-// the program-wide checks.
+// AppTokenAt is one app token and the tokens file declaring it, for the
+// program-wide checks.
 type AppTokenAt struct {
 	File  string
 	Token AppToken
@@ -491,12 +443,7 @@ type FileDiagnostic struct {
 	Diag Diagnostic
 }
 
-// DuplicateTokenValues runs GOFASTR1821 across a program: an app token
-// whose value (case-folded) is already a token's of the same type,
-// built-in first, then app tokens in the order given. The first holder
-// owns the value; each later one is reported, naming it. Keyword values
-// (none, auto) are skipped, the same carve-out GOFASTR1807 makes: a
-// shared keyword is not a shared decision.
+// DuplicateTokenValues runs GOFASTR1821 across a program.
 func DuplicateTokenValues(app []AppTokenAt, builtins map[string]string) []FileDiagnostic {
 	type slot struct{ cat, value string }
 	owners := map[slot]string{}
