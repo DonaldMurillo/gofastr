@@ -11,32 +11,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
-// The macOS tray: one NSStatusItem on the system status bar, with the
-// planned menu (shared action-id table with the menu bar) and the
-// shell's own selectors for the roles the battery routes here
-// (desktop.RoleShow) and the app menu (desktop.RoleSettings, via settingsAction:).
-//
-// Every call here runs on the main thread (installTray from Run,
-// SetTrayTitle through onMain).
-
-// installTray puts the status item in the menu bar. Call on the main
-// thread, before the run loop starts. rows are the planned tray rows
-// (desktop.PlanTrayMenu, sharing the menu bar's action-id table).
 func (s *darwinShell) installTray(t *desktop.Tray, rows []desktop.MenuItemPlan) {
 	bar := objc.ID(objc.Send(objc.Class("NSStatusBar"), objc.Sel("systemStatusBar")))
 	if bar == 0 {
 		s.logger.Warn("desktop: no system status bar; the tray is not installed")
 		return
 	}
-	// NSVariableStatusItemLength is a CGFloat (-1.0), so the argument
-	// travels through SendF's float registers.
 	item := objc.ID(objc.SendF(bar, objc.Sel("statusItemWithLength:"), nil, []float64{-1.0}))
 	if item == 0 {
 		s.logger.Warn("desktop: statusItemWithLength returned nil; the tray is not installed")
 		return
 	}
-	// Retain: a released status item vanishes from the bar (the
-	// process-lifetime autorelease pool is no guarantee here).
 	objc.Send(item, objc.Sel("retain"))
 	button := objc.ID(objc.Send(item, objc.Sel("button")))
 	if button == 0 {
@@ -69,9 +54,6 @@ func (s *darwinShell) installTray(t *desktop.Tray, rows []desktop.MenuItemPlan) 
 	s.mu.Unlock()
 }
 
-// templateImage builds the 18x18 template NSImage from PNG bytes.
-// NSData copies the buffer during the call, so the Go slice only has
-// to stay alive across it (runtime.KeepAlive, the NSString pattern).
 func templateImage(png []byte) objc.ID {
 	buf := png
 	data := objc.Send(objc.Class("NSData"), objc.Sel("dataWithBytes:length:"), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
@@ -79,9 +61,6 @@ func templateImage(png []byte) objc.ID {
 	if data == 0 {
 		return 0
 	}
-	// alloc first: initWithData: is an instance initializer, and sending
-	// it to the class raises NSInvalidArgumentException (the first
-	// bundled run with a tray icon died on exactly that at startup).
 	img := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSImage"), objc.Sel("alloc"))), objc.Sel("initWithData:"), data))
 	if img == 0 {
 		return 0
@@ -91,15 +70,12 @@ func templateImage(png []byte) objc.ID {
 	return img
 }
 
-// SetTrayTitle changes the tray button's title.
 func (s *darwinShell) SetTrayTitle(title string) error {
 	s.mu.Lock()
 	item := s.statusItem
 	s.trayTitle = title
 	s.mu.Unlock()
 	if item == 0 {
-		// No tray configured (or not installed yet): unsupported, the
-		// named answer the battery logs.
 		return errNoTray()
 	}
 	err := s.onMain(func() {
@@ -113,14 +89,10 @@ func (s *darwinShell) SetTrayTitle(title string) error {
 	return nil
 }
 
-// errNoTray is the fixed answer for tray calls without a tray.
 func errNoTray() *desktop.Error {
 	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "no tray is configured on this host"}
 }
 
-// statusItemButtonAttr reads a string attribute off the tray's status
-// item button (its title or toolTip) on the main thread; "" when no
-// tray is configured.
 func (s *darwinShell) statusItemButtonAttr(attr string) string {
 	s.mu.Lock()
 	item := s.statusItem
@@ -137,15 +109,10 @@ func (s *darwinShell) statusItemButtonAttr(attr string) string {
 	return out
 }
 
-// statusItemButtonTitle reads the tray button's title natively: the
-// e2e seam for "the status item exists with the configured title" and
-// for tray.setTitle round-trips.
 func (s *darwinShell) statusItemButtonTitle() string {
 	return s.statusItemButtonAttr("title")
 }
 
-// showMainWindow is desktop.RoleShow: order the main window front and
-// activate the app. Main thread.
 func (s *darwinShell) showMainWindow() {
 	if win := s.windowID(); win != 0 {
 		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
