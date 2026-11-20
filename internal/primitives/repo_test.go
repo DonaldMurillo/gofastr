@@ -157,6 +157,7 @@ var ownedPackages = []string{
 	"battery/telemetry/telemetryui",
 	"battery/telemetry/telemetryadmin",
 	"battery/rtc",
+	"battery/log",
 }
 
 //gofastr:test-reads primitives/ *.go

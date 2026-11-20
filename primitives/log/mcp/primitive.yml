@@ -1,0 +1,21 @@
+primitive: log.mcp
+summary: The log_* MCP tools over the ring buffer and the file history, with the mutating log_set_level behind its own opt-in.
+code:
+  - battery/log/mcp.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: set-level-is-opt-in
+    rule: log_set_level is registered only with AllowMCPMutation or the dev switch.
+    enforced_by:
+      - test: battery/log.TestMCPMutationGated
+  - id: host-gate-holds-in-dev
+    rule: A host MCPGate gates the read tools, and a dev-implied enable does not replace it with its own.
+    enforced_by:
+      - test: battery/log.TestLogMCPGateHoldsInDev
+      - test: battery/log.TestLogMCPGateOverridesRole
+  - id: tools-require-admin
+    rule: Without MCPGate, every tool refuses an anonymous or non-admin caller.
+    enforced_by:
+      - test: battery/log.TestLogToolsRequireAdmin
+      - test: battery/log.TestLogReadToolsRefuseAnonCaller
