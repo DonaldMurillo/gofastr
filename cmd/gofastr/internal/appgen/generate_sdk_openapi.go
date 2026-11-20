@@ -217,6 +217,15 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 		if sop.Body, sop.BodyNullable, err = ts.typeOf(body, op.GoName+"Request"); err != nil {
 			return sop, fmt.Errorf("request body: %w", err)
 		}
+		if version, _ := ts.root["openapi"].(string); strings.HasPrefix(version, "3.1.") {
+			resolved, err := oaResolve(ts.root, body)
+			if err != nil {
+				return sop, fmt.Errorf("request body: %w", err)
+			}
+			if _, typed := resolved["type"]; !typed {
+				sop.BodyNullable = true
+			}
+		}
 	}
 
 	result, schema, accept, err := oaResponse(ts.root, op.node)

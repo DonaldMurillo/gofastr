@@ -101,3 +101,92 @@ await assert.rejects(() => client.plainRequired(null), /request body is required
 		})
 	}
 }
+
+func TestOpenAPISDKTypelessBody(t *testing.T) {
+	for _, version := range []string{"3.0.3", "3.1.0"} {
+		for _, schema := range []string{`{}`, `{"description":"Any JSON value"}`, `{"$ref":"#/components/schemas/Any"}`, `{"properties":{"name":{"type":"string"}}}`} {
+			t.Run(version+"/"+schema, func(t *testing.T) {
+				doc := fmt.Sprintf(`{"openapi":%q,"info":{"title":"Any","version":"1"},"components":{"schemas":{"Any":{}}},"paths":{`, version)
+				for i, name := range []string{"required", "optional"} {
+					if i > 0 {
+						doc += ","
+					}
+					doc += fmt.Sprintf(`"/%s":{"post":{"operationId":"%s","requestBody":{"required":%t,"content":{"application/json":{"schema":%s}}},"responses":{"204":{"description":"ok"}}}}`, name, name, i == 0, schema)
+				}
+				spec, err := oaSDKSpecFor(t, doc+"}}")
+				if err != nil {
+					t.Fatal(err)
+				}
+				files := renderOASDKJSFiles(spec)
+				for _, file := range files[:2] {
+					for _, line := range strings.Split(file.Content, "\n") {
+						if strings.Contains(line, `"bodyNullable"`) || strings.Contains(line, "required(body:") || strings.Contains(line, "optional(body?:") {
+							t.Log(strings.TrimSpace(line))
+						}
+					}
+				}
+				if strings.Contains(files[1].Content, "unknown | null") {
+					t.Error("unknown already admits null")
+				}
+				goFiles, err := renderOASDKGoFiles(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := range spec.Ops {
+					spec.Ops[i].BodyNullable = false
+				}
+				unchanged, err := renderOASDKGoFiles(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for i := range goFiles {
+					if goFiles[i] != unchanged[i] {
+						t.Errorf("Go output changed: %s", goFiles[i].Name)
+					}
+				}
+				node, err := exec.LookPath("node")
+				if err != nil {
+					t.Skip("node is not installed")
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					fmt.Fprintf(w, `{"body":%q,"contentType":%q}`, body, r.Header.Get("Content-Type"))
+				}))
+				defer server.Close()
+				probe := fmt.Sprintf(`import {Client} from './client.mjs';
+import assert from 'node:assert/strict';
+const seen = [];
+const client = new Client({baseURL: %q, fetch: async (...args) => {
+  const r = await fetch(...args); seen.push(await r.clone().json()); return r;
+}});
+if (%t) {
+  for (const name of ['required', 'optional']) {
+    await client[name](null);
+    assert.deepEqual(seen.at(-1), {body:'null', contentType:'application/json'});
+  }
+} else {
+  await assert.rejects(() => client.required(null), /request body is required/);
+  await client.optional(null);
+  assert.deepEqual(seen.at(-1), {body:'', contentType:''});
+}
+await client.optional(undefined);
+assert.deepEqual(seen.at(-1), {body:'', contentType:''});
+await assert.rejects(() => client.required(undefined), /request body is required/);
+await client.required({name:'ok'});
+assert.deepEqual(seen.at(-1), {body:'{"name":"ok"}', contentType:'application/json'});
+`, server.URL, version == "3.1.0")
+				dir := t.TempDir()
+				for name, content := range map[string]string{"client.mjs": files[0].Content, "probe.mjs": probe} {
+					if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cmd := exec.Command(node, "probe.mjs")
+				cmd.Dir = dir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("node: %v\n%s", err, out)
+				}
+			})
+		}
+	}
+}

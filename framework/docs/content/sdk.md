@@ -510,7 +510,12 @@ Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
 absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
-`| null`. For non-nullable bodies, `null` still means absent.
+`| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1,
+a JSON request body schema without a `type`, including `{}`, also admits
+null; this does not change response or field typing. OpenAPI 3.0 `{}`
+bodies retain their existing behavior: JS treats null as absent (and
+throws when required), while Go keeps its existing nil behavior described
+below. For other non-nullable bodies, `null` still means absent.
 
 The Go SDK does not model request-body nullability separately from
 presence, so nullable scalar bodies cannot send an explicit JSON `null`.
