@@ -301,18 +301,25 @@
 
   // The top layer, or the page when none is left, has just been
   // uncovered: re-render it if a save above it went stale on it.
+  // The leave guard asks first: the re-render discards its edits.
   function uncover(focus) {
     const lay = top();
+    if (!(lay ? lay.stale : pageStale)) return;
+    if (!(NS._leaveGuard?.ok(lay ? lay.el : document, () => uncover(focus)) ?? true)) return;
     if (!lay) {
-      if (pageStale) { pageStale = false; NS.refresh?.(); }
+      pageStale = false;
+      NS.refresh?.();
       return;
     }
-    if (!lay.stale) return;
     lay.stale = false;
     const e = epoch;
     fetchOverlay(lay.url, lay.fromURL)
-      .then((res) => { if (e === epoch && res) refresh(lay, res, focus); })
-      .catch(() => {});
+      .then((res) => {
+        if (e !== epoch) return;
+        if (!res) { fallbackNav(lay.url, ''); return; }
+        refresh(lay, res, focus);
+      })
+      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
   }
 
   // Drop every layer without a history move: a real navigation has

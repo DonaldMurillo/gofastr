@@ -232,3 +232,48 @@ func TestSaveElsewhereLeavesTheStack(t *testing.T) {
 		t.Fatalf("a save navigating out of the stack left %d layers", len(snap.Layers))
 	}
 }
+
+// Re-rendering an uncovered record discards its edits, so the leave
+// guard asks first; declined, the record keeps what it shows.
+func TestUncoveredStaleLayerAsksTheLeaveGuard(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__asked = 0; __gofastr._leaveGuard = { ok: (s) => !(s.querySelector && s.querySelector('#rec-a') && ++window.__asked) }`, nil),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-b') && window.__asked === 1`) {
+		t.Fatalf("closing the upper record never asked the guard about the lower one: %+v", readStack(ctx))
+	}
+	time.Sleep(300 * time.Millisecond)
+	var count string
+	if err := chromedp.Run(ctx, chromedp.Text(`#rec-count`, &count, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if count != "REC 0" {
+		t.Fatalf("a declined guard still re-rendered the lower record: %q", count)
+	}
+}
+
+// An uncovered record whose refetch fails falls back to a plain
+// navigation to it rather than going on showing what it showed.
+func TestUncoveredStaleLayerFallsBackWhenItsRefetchFails(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`{ const f = __gofastr.fetch; let once = true;
+			__gofastr.fetch = (u, o) => once && String(u).endsWith('/rec/a') && o?.headers?.['X-Gofastr-Intercept'] ? (once = false, Promise.reject(new Error('down'))) : f(u, o); }`, nil),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "away", "AWAY /rec/a")) {
+		t.Fatalf("a failed refetch left the lower record stale: %+v", readStack(ctx))
+	}
+}
