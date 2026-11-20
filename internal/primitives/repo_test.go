@@ -181,6 +181,7 @@ var ownedPackages = []string{
 	"core-ui/compute",
 	"core-ui/di",
 	"core-ui/localdb",
+	"core-ui/node",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

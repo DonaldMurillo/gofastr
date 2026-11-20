@@ -7,10 +7,7 @@ import (
 	"maps"
 )
 
-// AssignNodeIDs walks the tree and assigns a stable ID to every node
-// missing one. User-provided IDs are preserved; the idGen callback
-// produces a fresh ID for nodes that need one. Idempotent: calling
-// twice on the same tree is a no-op after the first call.
+// AssignNodeIDs gives every node without an ID one from idGen.
 func AssignNodeIDs(n *Node, idGen func() string) {
 	if n == nil {
 		return
@@ -23,31 +20,17 @@ func AssignNodeIDs(n *Node, idGen func() string) {
 	}
 }
 
-// NewElementID produces a fresh stable handle for a new node. The
-// format ("el_" + 12 hex chars) is intentionally short for terminal
-// readability and short tool calls; collisions inside a single page
-// would require ~10^14 IDs to be likely, far beyond any plausible
-// page size. Falls back to a counter-derived id on rand failure so
-// callers never see an empty ID.
+// NewElementID returns a fresh element ID, "el_" and 12 hex characters.
 func NewElementID() string {
 	var buf [6]byte
 	if _, err := rand.Read(buf[:]); err != nil {
-		// rand.Read should never fail on supported platforms; keep
-		// a defensive fallback so element-id assignment can't fail
-		// silently and produce duplicate "" IDs.
 		return fmt.Sprintf("el_fallback_%x", &buf)
 	}
 	return "el_" + hex.EncodeToString(buf[:])
 }
 
-// FindNodeByID returns a pointer to the node with the given ID, plus
-// (parent, indexInParent) so callers can mutate sibling order. parent
-// is nil and index is -1 when the matched node is the tree root.
-// Returns ok=false when no node matches.
-//
-// Linear walk over the tree, pages aren't large enough for this to
-// matter; an index lookup would just add bookkeeping cost on every
-// other op.
+// FindNodeByID returns the node with the given ID, its parent and its
+// index in the parent; nil and -1 for the root.
 func FindNodeByID(root *Node, id string) (target *Node, parent *Node, index int, ok bool) {
 	if root == nil || id == "" {
 		return nil, nil, -1, false
@@ -71,8 +54,7 @@ func findNodeByIDRec(parent *Node, id string) (*Node, *Node, int, bool) {
 	return nil, nil, -1, false
 }
 
-// CloneNode produces a deep copy of n so a mutation doesn't share memory
-// with the source tree.
+// CloneNode returns a deep copy of n.
 func CloneNode(n Node) Node {
 	out := Node{
 		ID:   n.ID,
