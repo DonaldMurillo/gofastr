@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -196,5 +197,23 @@ func TestMemoryNackKeepsJobWhenEnqueueFails(t *testing.T) {
 			"(nack err=%v): the job is in no store — not pending, not dead, not in-flight — and a retried Nack is "+
 			"the documented no-op; the same lossless ordering Replay, RedisQueue.Nack, and processJob's own retry "+
 			"path already implement was skipped here", nackErr)
+	}
+}
+
+func TestMemoryDeadLetterListIsBounded(t *testing.T) {
+	q := NewMemoryQueue(0)
+	t.Cleanup(func() { q.Close() })
+	for i := range maxDeadJobs + 1 {
+		q.retainDead(Job{ID: "j" + strconv.Itoa(i), Type: "t"})
+	}
+	dead, err := q.ListJobs(context.Background(), "failed", 2*maxDeadJobs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maxDeadJobs != 1000 || len(dead) != maxDeadJobs {
+		t.Fatalf("kept %d dead jobs under cap %d, want 1000", len(dead), maxDeadJobs)
+	}
+	if dead[0].ID != "j1000" || dead[len(dead)-1].ID != "j1" {
+		t.Errorf("kept %s..%s, want j1000..j1 with the oldest evicted", dead[0].ID, dead[len(dead)-1].ID)
 	}
 }

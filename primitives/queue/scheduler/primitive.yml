@@ -15,6 +15,13 @@ invariants:
     enforced_by:
       - test: battery/queue.TestSchedulerRefusesSubMillisecondInterval
       - test: battery/queue.TestDurableIntervalFloor
+  - id: commit-rechecks-the-lease
+    rule: A DurableScheduler commits a schedule's occurrences only while the lease row still names its owner, under the fence it acquired, and unexpired at its own clock, so a replica that lost the lease writes no job and no occurrence.
+    enforced_by:
+      - test: battery/queue.TestCommitNeedsTheSameFenceAndAnUnexpiredLease
+      - test: battery/queue.TestPG_CommitNeedsTheSameFenceAndAnUnexpiredLease
+      - test: battery/queue.TestLeaseStealFencesWithoutVersionBump
+      - test: battery/queue.TestPGLeaseSkewStillFencesOldOwner
   - id: only-loadable-zones-persist
     rule: A durable cron schedule persists its zone only as a loadable IANA name; UTC, Local and a fixed offset persist as "" and evaluate in UTC.
     enforced_by:

@@ -10,6 +10,12 @@ invariants:
     enforced_by:
       - test: battery/queue.TestRedisStaleAckCannotDeleteReclaimant
       - test: battery/queue.TestRedisStaleNackCannotTouchReclaimant
+      - analyzer: secretcompare
+  - id: missing-claim-settles-as-a-no-op
+    rule: Ack and Nack of a job whose claim HGet reports as ErrRedisEmpty return nil and change nothing, and any other HGet error is returned to the caller.
+    enforced_by:
+      - test: battery/queue.TestRedisSettleOfUnclaimedJobIsANoOp
+      - test: battery/queue.TestEraseRemovesRedisJobs
   - id: redis-refuses-unique-and-sequence-keys
     rule: RedisQueue refuses a UniqueKey with ErrUniqueUnsupported and a SequenceKey with ErrSequenceUnsupported.
     enforced_by:

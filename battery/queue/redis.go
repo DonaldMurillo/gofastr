@@ -25,7 +25,8 @@ import (
 type RedisClient interface {
 	LPush(ctx context.Context, key string, values ...any) error
 	RPop(ctx context.Context, key string) (string, error)
-	// HGet returns the value at field in the hash at key.
+	// HGet returns the value at field in the hash at key, and ErrRedisEmpty
+	// when the hash or the field is missing.
 	HGet(ctx context.Context, key, field string) (string, error)
 	HSet(ctx context.Context, key string, values ...any) error
 	// HGetAll returns every field and value in the hash.
@@ -72,7 +73,7 @@ type ScriptRunner interface {
 }
 
 // ErrRedisEmpty is the sentinel a RedisClient returns or wraps when a read
-// finds nothing.
+// finds nothing: RPop on an empty list, HGet on a missing hash or field.
 var ErrRedisEmpty = errors.New("redis: list is empty")
 
 // RedisQueue implements Queue on Redis lists and hashes.
