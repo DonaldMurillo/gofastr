@@ -20,3 +20,12 @@ invariants:
     enforced_by:
       - test: battery/log.TestRotationTreatsZeroPaddedBackupsAsForeign
       - test: battery/log.TestFileSinkRespectsMaxBackups
+  - id: existing-file-tightened-never-loosened
+    rule: Opening an existing log file the process owns narrows its mode to the bits both it and FileMode allow, never widens it, and leaves a file another user owns as it is.
+    enforced_by:
+      - test: battery/log.TestFileSinkTightensExistingLooseFile
+      - test: battery/log.TestFileSinkLeavesSharedLogFileMode
+  - id: entries-flushed-and-rotated-first
+    rule: Write flushes each entry to the file before it returns, and rotates before an entry that would take a non-empty file past MaxSize, not after.
+    enforced_by:
+      - test: battery/log.TestFileSinkFlushesAndRotatesBeforeWrite
