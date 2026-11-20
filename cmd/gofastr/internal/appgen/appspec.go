@@ -27,9 +27,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/markdown"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // appSpecHasEntityAccess reports whether any entity declares an `access:`
@@ -4223,6 +4225,13 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		fieldID := "field-" + field.Name
 		inputName := appspec.WireKey(field.Name)
 		req := fmt.Sprintf("%t", field.Required)
+		// value and selected are the config fragments that start a
+		// control at its field's Default; empty for a field with none.
+		var value, selected string
+		def, defStep := appSpecFormDefault(field)
+		if def != "" {
+			value, selected = fmt.Sprintf(", Value: %q", def), fmt.Sprintf(", Selected: %q", def)
+		}
 		var expr string
 		switch field.Type {
 		case "enum":
@@ -4232,16 +4241,16 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
-				inputName, label, fieldID, opts.String(), req)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s%s})",
+				inputName, label, fieldID, opts.String(), req, selected)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
-				inputName, label, fieldID, req, field.To)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s%s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+				inputName, label, fieldID, req, selected, field.To)
 		case "text":
-			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
-				inputName, label, fieldID, req)
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s%s})",
+				inputName, label, fieldID, req, value)
 		case "bool", "boolean":
 			// entityui's pair: a checked box submits "true" (with no
 			// Value it posted "on", which the bool validator refuses),
@@ -4250,7 +4259,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			// default. The box starts as that default. Required stays off
 			// the checkbox: it would make unticked unsubmittable.
 			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
-				inputName, inputName, label, fieldID, fmt.Sprint(field.Default) == "true")
+				inputName, inputName, label, fieldID, fieldtext.Truthy(def))
 		case "int", "integer", "float", "decimal":
 			// The step admits what the column holds, as entityui's form
 			// does: at the browser's default of 1, native validation
@@ -4262,21 +4271,51 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			if step == "" {
 				step = "1"
 			}
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q, Step: %q}) }})",
-				label, fieldID, req, inputName, step)
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q%s, Step: %q}) }})",
+				label, fieldID, req, inputName, value, step)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
-				inputName, label, fieldID, req)
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s%s})",
+				inputName, label, fieldID, req, value)
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
-				label, fieldID, req, appSpecFormInputType(field.Type), inputName)
+			if defStep != "" {
+				value += fmt.Sprintf(", Step: %q", defStep)
+			}
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q%s}) }})",
+				label, fieldID, req, appSpecFormInputType(field.Type), inputName, value)
 		}
 		fields = append(fields, expr)
 	}
 	form := fmt.Sprintf("ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, "Create"), extraAttrs, strings.Join(fields, ", "))
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
+}
+
+// appSpecFormDefault is the value a create control starts with and the
+// step it needs to hold it, read from the field's Default by the same
+// fieldtext calls entityui's create form makes. A file input takes no
+// value.
+func appSpecFormDefault(field framework.FieldDeclaration) (value, step string) {
+	if field.Default == nil || appSpecFormInputType(field.Type) == "file" {
+		return "", ""
+	}
+	f, err := field.Field()
+	if err != nil {
+		f = schema.Field{Name: field.Name, Type: schema.String, Default: field.Default}
+	}
+	text := fieldtext.Form(f, field.Default)
+	switch f.Type {
+	case schema.Date:
+		return fieldtext.DateInput(text), ""
+	case schema.Timestamp:
+		value = fieldtext.TimestampInput(text)
+		if s := fieldtext.TimestampStep(value); s != 0 {
+			step = strconv.FormatFloat(s, 'f', -1, 64)
+		}
+		return value, step
+	default:
+		return text, ""
+	}
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a
@@ -4351,10 +4390,13 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
         if (row[t.key] == null) continue;
-        const opt = document.createElement('option');
-        opt.value = row[t.key];
+        const value = String(row[t.key]);
+        // The field's Default is drawn as an option of its own: name it.
+        const drawn = Array.from(sel.options).find((o) => o.value === value);
+        const opt = drawn || document.createElement('option');
+        opt.value = value;
         opt.textContent = labelFor(row);
-        sel.appendChild(opt);
+        if (!drawn) sel.appendChild(opt);
       }
       sel.dataset.relLoaded = '1';
     } catch (_) {}

@@ -2,6 +2,7 @@ primitive: entityui
 summary: The entity list, record and create screens drawn from the schema, and the handlers their forms post to beside the CRUD routes.
 code:
   - framework/entityui/
+  - internal/fieldtext/
 docs:
   - framework/docs/content/entityui.md
 invariants:

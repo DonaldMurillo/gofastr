@@ -2,8 +2,6 @@ package entityui
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func param(key, name string) string {
@@ -20,44 +19,6 @@ func param(key, name string) string {
 		return name
 	}
 	return key + "_" + name
-}
-
-func cell(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return t
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	case time.Time:
-		if t.IsZero() {
-			return ""
-		}
-		return t.Format(time.RFC3339)
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case float32:
-		return strconv.FormatFloat(float64(t), 'f', -1, 32)
-	case map[string]any, []any:
-		if b, err := json.Marshal(t); err == nil {
-			return string(b)
-		}
-		return fmt.Sprint(v)
-	default:
-		return fmt.Sprint(v)
-	}
-}
-
-func truthy(s string) bool {
-	switch strings.ToLower(s) {
-	case "true", "1", "yes", "on", "t":
-		return true
-	}
-	return false
 }
 
 func formatDate(ctx context.Context, raw any, withTime bool) string {
@@ -70,14 +31,14 @@ func formatDate(ctx context.Context, raw any, withTime bool) string {
 		}
 		return i18n.Date(ctx, t, i18n.DateMedium)
 	}
-	return cell(raw)
+	return fieldtext.Cell(raw)
 }
 
 func parseTime(raw any) (time.Time, bool) {
 	if t, ok := raw.(time.Time); ok {
 		return t, !t.IsZero()
 	}
-	val := cell(raw)
+	val := fieldtext.Cell(raw)
 	for _, l := range []string{
 		time.RFC3339Nano,
 		"2006-01-02 15:04:05.999999999 -0700 MST",
