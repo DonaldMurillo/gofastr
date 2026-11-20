@@ -508,7 +508,8 @@ document deriving more than 5000 struct types is refused.
 **JS/TS.** `client.js` has one async method per operation, named by the
 `operationId` (or the Go name with its first letter lowered when the
 `operationId` is not a JS identifier). It takes the parameters as one
-object keyed by their names in the document, then the body:
+object keyed by their names in the document, then the body. Only the
+parameter object's own properties count; inherited properties are ignored.
 
 ```js
 import { Client, APIPrefix } from "./client.js";
