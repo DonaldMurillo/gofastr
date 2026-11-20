@@ -251,10 +251,10 @@ Attributes injected: `data-cui-rpc` (on the form element),
 
 `interactive.LiveSearch(form, action, debounceMs)` wraps a search form
 so typing fires debounced RPCs. The input event triggers the fetch
-after the specified debounce interval (default 300ms).
+after the specified debounce interval (default 250ms).
 
 Attributes injected: `data-cui-rpc-trigger="input"`,
-`data-cui-rpc-debounce-ms` (milliseconds; default 300).
+`data-cui-rpc-debounce-ms` (milliseconds; default 250).
 
 ### Optimistic Update (immediate visual + background RPC)
 

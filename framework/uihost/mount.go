@@ -286,7 +286,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 						}
 					} else if !seekable && !strings.HasSuffix(path, "/index.html") {
 						if info, err := f.Stat(); err == nil && info.Mode().IsRegular() {
-							serveStaticStream(w, r, cleanPath, f, info.Size())
+							serveStaticStream(w, r, cleanPath, f, info.Size(), info.ModTime())
 							_ = f.Close()
 							return
 						}

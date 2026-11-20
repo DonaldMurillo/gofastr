@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 
@@ -119,8 +120,17 @@ func devStaticNoStore(w http.ResponseWriter) {
 	}
 }
 
-func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body io.Reader, size int64) {
+func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body io.Reader, size int64, mod time.Time) {
 	h := w.Header()
+	if !mod.IsZero() && !mod.Equal(time.Unix(0, 0)) {
+		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
+		if r.Header.Get("If-None-Match") == "" {
+			if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); err == nil && !mod.Truncate(time.Second).After(t) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+	}
 	h.Set("Content-Type", corestatic.DetectFromName(name))
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Length", strconv.FormatInt(size, 10))
