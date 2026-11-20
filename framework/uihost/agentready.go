@@ -616,6 +616,7 @@ func acceptsMarkdown(r *http.Request) bool {
 			switch mediaType {
 			case "text/markdown":
 				best, specificity = &markdown, 6
+				delete(params, "variant")
 			case "text/html":
 				best, specificity = &html, 6
 			case "text/*":

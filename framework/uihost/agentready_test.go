@@ -462,6 +462,9 @@ func TestMarkdownNegotiation_EndToEnd(t *testing.T) {
 		want   string
 	}{
 		{"markdown only", []string{"text/markdown"}, "text/markdown"},
+		{"markdown variant", []string{"text/markdown; variant=GFM"}, "text/markdown"},
+		{"markdown charset and variant", []string{"text/markdown; charset=UTF-8; variant=CommonMark;q=0.8, text/html;q=0.5"}, "text/markdown"},
+		{"lower weight markdown variant", []string{"text/markdown; variant=GFM;q=0.1, text/html"}, "text/html"},
 		{"HTML preferred", []string{"text/html;q=1, text/markdown;q=0.1"}, "text/html"},
 		{"markdown preferred", []string{"text/markdown;q=0.9, text/html;q=0.1"}, "text/markdown"},
 		{"implicit HTML weight", []string{"text/markdown;q=0.1, text/html"}, "text/html"},
