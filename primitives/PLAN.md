@@ -229,7 +229,7 @@ twice), and two docs that said the opposite of the code (`search.md` on
 a non-string weighted field, webhook's `Options` on a caller's HTTP
 client). Left unproven on Linux: the macOS and Windows desktop rules,
 whose tests run only there, and storage's case-folded keys, whose tests
-skip on a case-sensitive filesystem. EVAL_RESULT
+skip on a case-sensitive filesystem.
 
 Next: `cmd/`, `internal/`. The repository as a whole is at 10.4%.
 
