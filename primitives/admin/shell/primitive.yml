@@ -24,10 +24,9 @@ invariants:
       - test: battery/admin.TestNavRowsCountRecords
       - test: battery/admin.TestNavCountAndCrumbReadElevated
   - id: record-crumb-reads-elevated
-    rule: A record page's crumb is the record's title read under the admin's elevation, or the entity's singular name when the record cannot be read.
+    rule: A record page's crumb is the record's title read under the admin's elevation.
     enforced_by:
       - test: battery/admin.TestNavCountAndCrumbReadElevated
-      - test: battery/admin.TestEntityRecordTitleInCrumbs
   - id: no-account-menu-without-a-user
     rule: The account menu draws nothing when no one is signed in.
     enforced_by:
