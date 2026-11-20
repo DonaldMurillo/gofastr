@@ -517,6 +517,8 @@ Omitting `additionalProperties` or setting it to `false` does not add a map.
 When flattening `allOf`, the generator keeps an explicit allowance from
 the wrapper or any member. An unrestricted allowance or differing typed
 allowances use raw JSON, so the generated type does not drop values.
+Flattened objects with no named properties keep their existing raw JSON
+map type.
 Encoding a recursive Go value with a cycle returns a JSON encoding error.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a

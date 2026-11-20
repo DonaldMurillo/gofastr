@@ -61,6 +61,7 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
         "additionalProperties":true
       },
       "mergedTyped":{"$ref":"#/components/schemas/TypedExtras"},
+      "mergedDictionary":{"$ref":"#/components/schemas/TypedDictionary"},
       "closed":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":false},
       "implicit":{"type":"object","properties":{"label":{"type":"string"}}}
     },
@@ -69,7 +70,12 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
   "TypedExtras":{
     "allOf":[
       {"$ref":"#/components/schemas/Identified"},
-      {"type":"object","additionalProperties":{"type":["integer","null"]}}
+      {"$ref":"#/components/schemas/TypedDictionary"}
+    ]
+  },"TypedDictionary":{
+    "allOf":[
+      {"type":"object","additionalProperties":{"type":["integer","null"]}},
+      {"type":"object"}
     ]
   },"Node":{
     "type":"object",
@@ -116,7 +122,8 @@ import (
 func TestRoundTrip(t *testing.T) {
 	const common = "{\"known\":\"x\",\"count\":9007199254740993,\"missing\":null," +
 		"\"flex\":{\"label\":\"y\",\"extra\":{\"n\":9007199254740993}},\"emptySchema\":{\"other\":[true,null]}," +
-		"\"merged\":{\"id\":\"1\",\"label\":\"x\",\"extra\":1},\"mergedTyped\":{\"id\":\"2\",\"count\":3,\"missing\":null},"
+		"\"merged\":{\"id\":\"1\",\"label\":\"x\",\"extra\":1},\"mergedTyped\":{\"id\":\"2\",\"count\":3,\"missing\":null}," +
+		"\"mergedDictionary\":{\"count\":4,\"missing\":null},"
 	const want = common + "\"closed\":{\"label\":\"z\"},\"implicit\":{\"label\":\"w\"}}"
 	const response = common + "\"closed\":{\"label\":\"z\",\"ignored\":1},\"implicit\":{\"label\":\"w\",\"ignored\":2}}"
 	post := make(chan string, 1)
@@ -142,6 +149,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var _ map[string]json.RawMessage = record.MergedDictionary
 	if err := c.PostRecord(ctx, *record); err != nil {
 		t.Fatal(err)
 	}

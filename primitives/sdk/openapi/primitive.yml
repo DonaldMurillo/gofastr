@@ -50,6 +50,10 @@ invariants:
     rule: Generated Go structs, including flattened allOf objects, preserve explicitly allowed additional properties as sibling JSON keys while reserving exact declared names for their named fields.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
+  - id: allof-dictionary-stays-raw
+    rule: A flattened allOf object with no named properties stays a raw JSON dictionary even when a member declares a typed additional-properties schema.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: go-sdk-additional-property-name-collision
     rule: The Go renderer refuses a named field that collides with an additional-properties member instead of renaming it.
     enforced_by:

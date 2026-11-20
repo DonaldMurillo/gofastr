@@ -285,6 +285,7 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		merged := map[string]any{"type": "object"}
 		props := map[string]any{}
 		var required []any
+		var additional any
 		// OpenAPI 3.1 allows sibling properties next to allOf; merge
 		// the node's own schema last so it wins.
 		own := map[string]any{}
@@ -323,9 +324,7 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if rq, ok := pm["required"].([]any); ok {
 				required = append(required, rq...)
 			}
-			if extra := oaMergeAdditionalProperties(merged["additionalProperties"], pm["additionalProperties"]); extra != nil {
-				merged["additionalProperties"] = extra
-			}
+			additional = oaMergeAdditionalProperties(additional, oaMixedAdditionalProperties(pm))
 		}
 		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
 			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
@@ -334,6 +333,9 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			merged["properties"] = props
 			if len(required) > 0 {
 				merged["required"] = required
+			}
+			if additional != nil {
+				merged["additionalProperties"] = oaComposedAdditional{schema: additional}
 			}
 			node = merged
 		}
@@ -356,6 +358,16 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 	}
 	return node, nil
+}
+
+type oaComposedAdditional struct{ schema any }
+
+func oaMixedAdditionalProperties(schema map[string]any) any {
+	extra := schema["additionalProperties"]
+	if composed, ok := extra.(oaComposedAdditional); ok {
+		return composed.schema
+	}
+	return extra
 }
 
 func oaMergeAdditionalProperties(current, next any) any {

@@ -317,7 +317,7 @@ func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
 		desc, _ := ps["description"].(string)
 		st.Fields = append(st.Fields, oaField{Wire: wire, Go: g, Type: ft, Required: required[wire], Nullable: nullable, Description: desc})
 	}
-	switch additional := s["additionalProperties"].(type) {
+	switch additional := oaMixedAdditionalProperties(s).(type) {
 	case bool:
 		if additional {
 			st.Additional = oaRaw
