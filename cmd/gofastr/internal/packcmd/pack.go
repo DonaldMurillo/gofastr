@@ -3279,6 +3279,8 @@ func AppDir(args []string) (string, error) {
 	return opts.dir, err
 }
 
+var errEmptyPackDirectory = errors.New("app directory must not be empty (" + packUsage + ")")
+
 func parsePackArgs(args []string) (packArgs, error) {
 	var opts packArgs
 	for i := 0; i < len(args); i++ {
@@ -3306,7 +3308,7 @@ func parsePackArgs(args []string) (packArgs, error) {
 				return packArgs{}, fmt.Errorf("expected at most one app directory (%s)", packUsage)
 			}
 			if arg == "" {
-				return packArgs{}, fmt.Errorf("app directory must not be empty (%s)", packUsage)
+				return packArgs{}, errEmptyPackDirectory
 			}
 			opts.dir = arg
 		}
@@ -3321,7 +3323,11 @@ func parsePackArgs(args []string) (packArgs, error) {
 func RunPack(args []string) {
 	opts, err := parsePackArgs(args)
 	if err != nil {
-		packFail(true, "pack: %v", err)
+		if errors.Is(err, errEmptyPackDirectory) {
+			packFail(true, "pack: %v", err)
+		} else {
+			cli.UsageFail("pack: %v", err)
+		}
 		return
 	}
 	if opts.help {

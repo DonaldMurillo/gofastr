@@ -470,3 +470,20 @@ func TestDocsServeHelpPrintsToStdout(t *testing.T) {
 		t.Fatalf("docs serve --help wrote to stderr:\n%s", errOut)
 	}
 }
+
+func TestDocsServeUsageErrorsWriteOnlyToStderr(t *testing.T) {
+	for _, arg := range []string{"--bogus", "extra", "--port=bad"} {
+		t.Run(arg, func(t *testing.T) {
+			var code int
+			var errOut string
+			out := clitest.CovT_capStdout(t, func() {
+				errOut = clitest.CovT_capStderr(t, func() {
+					code = clitest.CovT_capExit(t, func() { RunDocs([]string{"serve", arg}) })
+				})
+			})
+			if code != 2 || out != "" || !strings.Contains(errOut, "Usage:") {
+				t.Errorf("exit %d, stdout %q, stderr %q; want usage on stderr and exit 2", code, out, errOut)
+			}
+		})
+	}
+}

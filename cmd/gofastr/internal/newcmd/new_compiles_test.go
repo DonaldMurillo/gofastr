@@ -71,6 +71,27 @@ func TestScaffoldHandlerUsesTheDirectorysPackage(t *testing.T) {
 	}
 }
 
+func TestScaffoldHandlerSelectsPackageFromParsedGoSources(t *testing.T) {
+	for _, name := range []string{".scratch.go", "_scratch.go", "a_unfinished.go"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := "package old\n"
+			if name == "a_unfinished.go" {
+				src += "func broken(\n"
+			}
+			writeGo(t, dir, name, src)
+			writeGo(t, dir, "main.go", "package main\n")
+			if err := scaffoldHandler(dir, "Hello", "GET", "/hello", false); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "hello_handler.go"))
+			if err != nil || !strings.Contains(string(got), "\npackage main\n") {
+				t.Fatalf("want a package main handler, got %q, error %v", got, err)
+			}
+		})
+	}
+}
+
 func writeGo(t *testing.T, dir, name, src string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o600); err != nil {

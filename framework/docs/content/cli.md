@@ -199,8 +199,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating
-  (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
-  a second path or a flag is a usage error, exit 2.
+  (exit 0 = valid, exit 1 = failed validation, including the unscoped-PII
+  lint). A missing path, a first argument starting with `--`, or an extra
+  path or flag exits 2.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -248,7 +249,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   back to the framework's package, delete the copy and its entry.
   Refuses a copy that changed since unmount unless `--force`.
 - `gofastr pack [app-dir]`: snapshot a generated app into a
-  best-effort `gofastr.yml`. Lossy; not an inverse of `generate`.
+  best-effort `gofastr.yml`. The snapshot is lossy. An unknown option,
+  missing output name or second app directory exits 2. Packing failures exit 1.
 
 ### Owned styles (`generate styles`)
 
@@ -338,7 +340,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr test [flags] [packages]`: run the project's tests (`./...`
   when no packages are named). Flags: `--run`, `--bench`, `--timeout`
   (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
-  unknown flag is an error.
+  unknown flag is an error. If test output exceeds the per-line limit,
+  the command stops the test process, reports truncation and exits 1.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` or `--grep=<term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
@@ -355,7 +358,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (Go toolchain and network on first run, `--refresh` to rebuild) and
   starts the live site, so every demo works; it needs a fixed `--port`,
   refuses one that is already taken, and serves v0.82.0 or later. A local or `@main` build has
-  no release, so it needs `--release` or `--dir`.
+  no release, so it needs `--release` or `--dir`. Help goes to stdout.
+  Usage errors print to stderr and exit 2.
 
 ## Ship
 
@@ -662,11 +666,12 @@ report, and static lint findings in the original audit format.
   strings built for `render.HTML`, discarded Exec results, and test skips.
   Audit reports all unannotated skips outside recognized test lanes.
   Lane detection reads skip arguments and recognizes nearby
-  `testing.Short()` guards. The shared detectors honor legacy annotations
-  such as `// safe-sql: <why>`, `// allow-skip: <why>`, and
-  `// ignore the error` for Exec.
-- `gofastr audit deps`: list dependencies that perform init-time
-  global registrations, then the [unmounted](unmount.md) packages.
+  `testing.Short()` guards. A `// safe-sql: <reason>` comment at the end of
+  the SQL statement or directly above it waives that statement. Other
+  legacy annotations include `// allow-skip: <why>` and `// ignore the error`
+  for Exec.
+- `gofastr audit deps`: list candidate global registration calls found
+  anywhere in the Go source, then the [unmounted](unmount.md) packages.
 
 Static audit, sandbox, recursive CSP, behavior discovery, and provenance
 walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but

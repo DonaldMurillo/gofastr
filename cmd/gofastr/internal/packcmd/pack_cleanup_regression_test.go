@@ -213,11 +213,23 @@ func TestPackRejectsExtraAppDirectory(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "snapshot.yml")
 	exit := recordPackExit(t)
 	RunPack([]string{t.TempDir(), "-o", out, dir})
-	if *exit != 1 {
-		t.Errorf("pack with two app directories exited %d, want 1", *exit)
+	if *exit != 2 {
+		t.Errorf("pack with two app directories exited %d, want 2", *exit)
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Errorf("pack with two app directories wrote output, stat error = %v", err)
+	}
+}
+
+func TestPackFlagUsageErrorsExit2(t *testing.T) {
+	for _, arg := range []string{"-zzz", "-o", "--out="} {
+		t.Run(arg, func(t *testing.T) {
+			exit := recordPackExit(t)
+			RunPack([]string{arg})
+			if *exit != 2 {
+				t.Errorf("pack %s exited %d, want 2", arg, *exit)
+			}
+		})
 	}
 }
 

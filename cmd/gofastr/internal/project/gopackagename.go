@@ -8,11 +8,8 @@ import (
 	"strings"
 )
 
-// FirstGoPackageName returns the package clause of the first non-test
-// .go file in dir, in name order, skipping skipName when it is not
-// empty. The clause-only parse takes a package name from a file whose
-// body has a syntax error later on, so a half-edited file still names
-// the package its neighbours share.
+// FirstGoPackageName finds the first eligible package clause by file name.
+// A syntax error after the clause does not prevent package discovery.
 func FirstGoPackageName(dir, skipName string) (string, bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -20,7 +17,7 @@ func FirstGoPackageName(dir, skipName string) (string, bool, error) {
 	}
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() || n == skipName || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+		if e.IsDir() || n == skipName || !IsNonTestGoFile(n) {
 			continue
 		}
 		f, perr := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.PackageClauseOnly)
@@ -29,4 +26,10 @@ func FirstGoPackageName(dir, skipName string) (string, bool, error) {
 		}
 	}
 	return "", false, nil
+}
+
+// IsNonTestGoFile reports whether name is eligible for Go source discovery.
+func IsNonTestGoFile(name string) bool {
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") &&
+		!strings.HasPrefix(name, ".") && !strings.HasPrefix(name, "_")
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -32,6 +33,7 @@ func RunTest(args []string) {
 	cmd.Stdout = nil // We'll pipe and colorize
 	stderr := &scrubWriter{out: os.Stderr}
 	cmd.Stderr = stderr
+	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GOFASTR_TEST=1")
 
 	// Capture stdout and colorize
@@ -69,6 +71,7 @@ func RunTest(args []string) {
 
 	scanErr := scanner.Err()
 	if scanErr != nil {
+		_ = cmd.Process.Kill()
 		_ = stdout.Close()
 	}
 	waitErr := cmd.Wait()

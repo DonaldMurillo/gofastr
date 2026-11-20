@@ -324,16 +324,22 @@ func unusableFuncName(name string) string {
 // contributes only its package clause when no other file supplies one.
 func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
 	dir := root.Name()
-	pkg, _, _ := project.FirstGoPackageName(dir, skip)
+	var pkg string
 	declared := map[string]bool{}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+		if e.IsDir() || n == skip || !project.IsNonTestGoFile(n) {
 			continue
 		}
 		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
-		if err != nil || f.Name.Name != pkg {
+		if err != nil {
+			continue
+		}
+		if pkg == "" {
+			pkg = f.Name.Name
+		}
+		if f.Name.Name != pkg {
 			continue
 		}
 		for _, d := range f.Decls {

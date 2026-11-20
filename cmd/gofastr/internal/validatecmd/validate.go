@@ -13,7 +13,7 @@ import (
 
 // RunValidate implements `gofastr validate <gofastr.yml|dir>`: parse the
 // app spec, run every generate-time validation (including the app.module /
-// go.mod consistency check and a full render pass), and exit 0/1. Errors are
+// go.mod consistency check and a full render pass). Errors are
 // written for agents iterating on an app spec: each names the file (and line
 // where the parser provides one), what is wrong, and the remedy.
 func RunValidate(args []string) {
@@ -121,9 +121,8 @@ Checks:
   a complete in-memory render of generated files
 
 Exit status is 0 for a valid app spec or when --help or -h appears in any
-position. Otherwise, a failed check, no arguments, or a first argument
-starting with -- exits 1. An extra path or flag after the app spec path
-exits 2 (validate one app spec per run).`)
+position. A failed check exits 1. Exit status 2 indicates a missing app
+spec path, a first argument starting with --, or an extra path or flag.`)
 }
 
 // failAppSpecValidation prints a validation failure prefixed with the

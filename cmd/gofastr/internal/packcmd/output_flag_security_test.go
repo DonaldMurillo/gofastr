@@ -24,8 +24,8 @@ func TestPackRefusesFlagAsOutput(t *testing.T) {
 				t.Cleanup(func() { cli.OsExit = previous })
 				cli.OsExit = func(code int) { exitCode = code }
 				output := clitest.CaptureStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
-				if exitCode != 1 {
-					t.Errorf("%s %q exited %d, want refusal", flag, value.argument, exitCode)
+				if exitCode != 2 {
+					t.Errorf("%s %q exited %d, want usage error 2", flag, value.argument, exitCode)
 				}
 				if data, err := os.ReadFile("--help"); !os.IsNotExist(err) {
 					t.Errorf("flag became an output file containing secret=%t: %v", strings.Contains(string(data), "never-write-this-secret"), err)

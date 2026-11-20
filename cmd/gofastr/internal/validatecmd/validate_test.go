@@ -26,16 +26,20 @@ func TestValidateCmdParseErrorHasLine(t *testing.T) {
 	}
 }
 
-func TestValidateCmdNoArgsExits2(t *testing.T) {
-	var code int
-	out := clitest.CovT_capOutput(t, func() {
-		code = clitest.CovT_capExit(t, func() { RunValidate(nil) })
-	})
-	if code != 2 {
-		t.Fatalf("want exit 2, got %d", code)
+func TestValidateCmdMissingOrFlagOperandExits2(t *testing.T) {
+	for _, args := range [][]string{nil, {"--bogus"}, {"app.yml", "extra.yml"}, {"app.yml", "--bogus"}} {
+		var code int
+		out := clitest.CovT_capOutput(t, func() {
+			code = clitest.CovT_capExit(t, func() { RunValidate(args) })
+		})
+		if code != 2 || !strings.Contains(out, "Usage") {
+			t.Errorf("validate %q: exit %d, want usage error 2:\n%s", args, code, out)
+		}
 	}
-	if !strings.Contains(out, "Usage") {
-		t.Fatalf("expected usage text, got:\n%s", out)
+	help := clitest.CovT_capStdout(t, func() { RunValidate([]string{"--help"}) })
+	want := "Exit status 2 indicates a missing app spec path, a first argument starting with --, or an extra path or flag."
+	if !strings.Contains(strings.Join(strings.Fields(help), " "), want) {
+		t.Errorf("help should describe the usage errors observed above:\n%s", help)
 	}
 }
 

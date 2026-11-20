@@ -92,17 +92,21 @@ func runDocsServe(args []string) {
 	flags.BoolVar(&opts.full, "full", false, "build and run the live site with `go install` (every demo works)")
 	flags.BoolVar(&opts.refresh, "refresh", false, "discard the cached copy and download it again")
 	flags.BoolVar(&opts.open, "open", false, "open the site in the default browser")
-	flags.Usage = printDocsServeHelp
+	flags.SetOutput(io.Discard)
+	flags.Usage = func() {}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			printDocsServeHelp(os.Stdout)
 			return
 		}
+		cli.Fprintf(os.Stderr, "%v\n", err)
+		printDocsServeHelp(os.Stderr)
 		cli.OsExit(2)
 		return
 	}
 	if flags.NArg() > 0 {
 		cli.Fprintf(os.Stderr, "unexpected argument %q\n\n", flags.Arg(0))
-		printDocsServeHelp()
+		printDocsServeHelp(os.Stderr)
 		cli.OsExit(2)
 		return
 	}
@@ -112,8 +116,8 @@ func runDocsServe(args []string) {
 	}
 }
 
-func printDocsServeHelp() {
-	fmt.Fprint(os.Stdout, `gofastr docs serve: browse the docs site offline
+func printDocsServeHelp(out io.Writer) {
+	fmt.Fprint(out, `gofastr docs serve: browse the docs site offline
 
 Usage:
   gofastr docs serve [flags]

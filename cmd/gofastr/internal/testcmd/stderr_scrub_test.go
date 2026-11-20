@@ -6,9 +6,61 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
+
+func TestRunTestStopsOnTruncatedOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Go command uses a POSIX shell")
+	}
+	dir := t.TempDir()
+	clitest.WriteFileAll(t, filepath.Join(dir, "go"), `#!/bin/sh
+/usr/bin/awk 'BEGIN { printf "%70000s\n", "x" }'
+exec /bin/sleep 5
+`)
+	if err := os.Chmod(filepath.Join(dir, "go"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	start := time.Now()
+	var code int
+	out := clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunTest(nil) })
+	})
+	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+		t.Errorf("truncation waited %s for the child to exit", elapsed)
+	}
+	if code != 1 || !strings.Contains(out, "test output truncated") {
+		t.Errorf("exit %d, output %q: want a truncation failure", code, out)
+	}
+}
+
+func TestRunTestBoundsWaitForInheritedStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Go command uses a POSIX shell")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(`#!/bin/sh
+/bin/sleep 5 >/dev/null &
+exit 7
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	start := time.Now()
+	var code int
+	clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunTest(nil) })
+	})
+	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+		t.Errorf("waited %s for a descendant to close stderr", elapsed)
+	}
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+}
 
 // A malformed import path spells an ESC byte into `go test`'s build
 // diagnostics, which arrive on the child's stderr. That copy must pass
