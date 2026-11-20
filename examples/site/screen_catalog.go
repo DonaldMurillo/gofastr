@@ -104,6 +104,14 @@ type CatalogItemScreen struct {
 
 func (s *CatalogItemScreen) SetParams(p map[string]string) { s.id = p["id"] }
 func (s *CatalogItemScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *CatalogItemScreen) StaticPaths(ctx context.Context) []map[string]string {
+	paths := make([]map[string]string, 0, len(catalogItems))
+	for _, item := range catalogItems {
+		paths = append(paths, map[string]string{"id": item.ID})
+	}
+	return paths
+}
+
 func (s *CatalogItemScreen) ScreenTitle(ctx context.Context) string {
 	if it, ok := catalogByID(s.id); ok {
 		return it.Name
