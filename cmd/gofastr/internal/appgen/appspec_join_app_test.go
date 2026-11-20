@@ -167,6 +167,9 @@ func checkLoginDestination(t *testing.T, base string) {
 	if got := readNext("/login"); got != "/app" {
 		t.Errorf("direct login form next = %q, want /app", got)
 	}
+	if got := readNext("/login?next=not-a-path"); got != "/app" {
+		t.Errorf("login form next for rejected destination = %q, want /app", got)
+	}
 
 	const target = "/app/invoices"
 	resp, err := client.Get(base + target)
@@ -180,6 +183,29 @@ func checkLoginDestination(t *testing.T, base string) {
 	}
 
 	next := readNext(loginPath)
+	referer := base + loginPath + "&unrelated=discard"
+	badForm := url.Values{"email": {"admin@example.com"}, "password": {"wrong-password"}, "next": {next}}
+	req, err := http.NewRequest(http.MethodPost, base+"/account/login", strings.NewReader(badForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", referer)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	retry, err := resp.Location()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantQuery := url.Values{"error": {"invalid_credentials"}, "next": {target}}.Encode()
+	if resp.StatusCode != http.StatusSeeOther || retry.Path != "/login" || retry.Query().Encode() != wantQuery {
+		t.Fatalf("wrong password = %d Location %q, want 303 to /login?%s", resp.StatusCode, resp.Header.Get("Location"), wantQuery)
+	}
+
+	next = readNext(retry.RequestURI())
 	resp, err = client.PostForm(base+"/account/login", url.Values{
 		"email": {"admin@example.com"}, "password": {"roster-pw-123"}, "next": {next},
 	})

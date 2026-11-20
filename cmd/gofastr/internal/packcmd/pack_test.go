@@ -1112,7 +1112,7 @@ func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated login screen: %v", err)
 	}
-	if !strings.Contains(string(screensSrc), `html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: cmp.Or(app.QueryFromContext(ctx).Get("next"), "/app")})`) {
+	if !strings.Contains(string(screensSrc), `html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: handler.SafeRelativePathOr(app.QueryFromContext(ctx).Get("next"), "/app")})`) {
 		t.Fatalf("the hidden next input is not emitted through html.Input:\n%s", screensSrc)
 	}
 	if strings.Contains(string(screensSrc), "render.Raw(") {

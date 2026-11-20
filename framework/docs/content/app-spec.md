@@ -1758,14 +1758,15 @@ screens:
         text: Sign in            # form heading
         props:
           action: /auth/login    # default <base_path>/login; any other path is refused
-          next: /admin           # fallback when the login URL has no next value (default /)
+          next: /admin           # fallback when the login URL has no safe next value (default /)
           register_href: /signup  # optional link
           forgot_href: /forgot-password  # optional: a "Forgot your password?" link under the field
 ```
 
-The form carries a non-empty `?next=` from the login URL into the sign-in
-request. The auth battery only redirects to safe same-site paths and
-uses `/` if it rejects the submitted destination.
+The form submits the login URL's `?next=` only if it is a safe same-site
+path. Otherwise it submits the configured fallback. The auth battery
+validates the submitted destination again and keeps a valid destination
+when returning the user to the login page after a wrong password.
 
 The email field asks for `autocomplete="username"`, so a password manager
 pairs it with the password, plus `enterkeyhint="next"` and

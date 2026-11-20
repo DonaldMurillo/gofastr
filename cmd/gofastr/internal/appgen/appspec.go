@@ -2391,9 +2391,6 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMo
 	sb.WriteString("import (\n")
 	// Every screen takes a context: ScreenTitle(ctx) is always emitted.
 	if hasScreens {
-		if needs.cmp {
-			sb.WriteString("\t\"cmp\"\n")
-		}
 		sb.WriteString("\t\"context\"\n")
 		if needs.url {
 			sb.WriteString("\t\"net/url\"\n")
@@ -2415,6 +2412,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMo
 	}
 	if hasScreens && needs.interactive {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/interactive\"\n")
+	}
+	if hasScreens && needs.handler {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if hasScreens && needs.i18n {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/i18n\"\n")
@@ -3192,7 +3192,7 @@ func countEntityListBlocks(screen appspec.AppSpecScreen) int {
 }
 
 type screenImportNeeds struct {
-	cmp         bool
+	handler     bool
 	component   bool
 	island      bool
 	html        bool
@@ -3224,7 +3224,7 @@ func (n *screenImportNeeds) readCode(code string, p *appspec.AppSpecPhrases) {
 	n.i18nui = emitsPkgRef(code, "i18nui")
 	n.framework = emitsPkgRef(code, "framework")
 	n.url = emitsPkgRef(code, "url")
-	n.cmp = emitsPkgRef(code, "cmp")
+	n.handler = emitsPkgRef(code, "handler")
 	n.i18n = p.Used()
 }
 
@@ -4029,7 +4029,7 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	if heading == "" {
 		heading = "Sign in"
 	}
-	nextExpr := fmt.Sprintf(`cmp.Or(app.QueryFromContext(ctx).Get("next"), %q)`, next)
+	nextExpr := fmt.Sprintf(`handler.SafeRelativePathOr(app.QueryFromContext(ctx).Get("next"), %q)`, next)
 	return appSpecAuthFormExpr(bp, heading, action, nextExpr, "Sign in", "current-password", 0, propStr("forgot_href"), propStr("register_href"), "Create an account")
 }
 

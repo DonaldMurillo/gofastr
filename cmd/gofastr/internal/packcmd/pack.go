@@ -3060,8 +3060,8 @@ func reverseAuthCard(call *ast.CallExpr) appspec.AppSpecBlock {
 				ic := cfgOf(in, 0)
 				if appspec.AstString(ic["Name"]) == "next" {
 					value := ic["Value"]
-					if or, ok := value.(*ast.CallExpr); ok && callSel(or) == "cmp.Or" && len(or.Args) == 2 {
-						value = or.Args[1]
+					if pathOr, ok := value.(*ast.CallExpr); ok && callSel(pathOr) == "handler.SafeRelativePathOr" && len(pathOr.Args) == 2 {
+						value = pathOr.Args[1]
 					}
 					next = appspec.AstString(value)
 				}
