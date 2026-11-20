@@ -279,7 +279,9 @@ func (q *DBQueue) ensureTable() error {
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
 	}
+	// best-effort: the column already existing is the only expected failure.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN claimed_at %s", q.qt(), tsType))
+	// best-effort: the column already existing is the only expected failure.
 	_, _ = q.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN updated_at %s", q.qt(), tsType))
 	if err := q.addTextColumn("lane"); err != nil {
 		return err
