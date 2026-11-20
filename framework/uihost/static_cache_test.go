@@ -152,6 +152,13 @@ func TestStaticFSNonSeekingFile(t *testing.T) {
 	if recPost.Code == http.StatusNotModified {
 		t.Fatalf("non-seeking POST with If-Modified-Since answered 304; the date condition applies to GET and HEAD only")
 	}
+	postStar := httptest.NewRequest(http.MethodPost, "/app.css", nil)
+	postStar.Header.Set("If-None-Match", "*")
+	recPostStar := httptest.NewRecorder()
+	ds.ServeHTTP(recPostStar, postStar)
+	if recPostStar.Code != http.StatusPreconditionFailed {
+		t.Fatalf("non-seeking POST with If-None-Match *: status = %d, want 412", recPostStar.Code)
+	}
 	star := httptest.NewRequest(http.MethodGet, "/app.css", nil)
 	star.Header.Set("If-None-Match", "*")
 	recStar := httptest.NewRecorder()

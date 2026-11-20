@@ -126,7 +126,12 @@ func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body
 	if known {
 		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
 	}
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if inm := r.Header.Get("If-None-Match"); !safe && strings.TrimSpace(inm) == "*" {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	}
+	if safe {
 		notModified := false
 		if inm := r.Header.Get("If-None-Match"); inm != "" {
 			notModified = strings.TrimSpace(inm) == "*"
