@@ -461,6 +461,33 @@ roles there would let a tool read across owners. A tool can do nothing an HTTP
 route with the same grants couldn't; there is no separate tool-permission
 vocabulary.
 
+Each `moduleproto.Tool` in `module.tool.list` may carry `annotations`, its
+MCP behaviour hints, in the same JSON shape `tools/list` serves (see
+[tool annotations](mcp.md#tool-annotations)):
+
+```go
+moduleproto.Tool{
+    ID: "total", Name: "Total", InputSchema: schema,
+    Annotations: &moduleproto.ToolAnnotations{
+        ReadOnlyHint: moduleproto.Bool(true), DestructiveHint: moduleproto.Bool(false),
+        IdempotentHint: moduleproto.Bool(true), OpenWorldHint: moduleproto.Bool(false),
+    },
+}
+```
+
+The host serves them on `module.<name>.<tool>` as sent. A tool with no
+annotations serves none, and in dev mode the app logs a warning naming
+the missing hints; ChatGPT's directory review requires `readOnlyHint`,
+`destructiveHint` and `openWorldHint` on every tool. `ModuleToolDigest`
+hashes the annotations when they are set, so the descriptor's digest pins
+them and a child that changes a hint is quarantined like one that
+reshapes its schema. A tool that sends no `annotations` key hashes exactly
+as before; a module that already sent the key before the host read it
+must recompute its digests, because the key is now part of them. The
+host treats the title as untrusted: one longer than 128 bytes, or holding
+invalid UTF-8, a control character or an invisible character, refuses
+the module's whole tool list.
+
 ## UI rendering
 
 A module owns *screen logic* only. It returns a bounded, declarative
@@ -554,7 +581,10 @@ The callback fires synchronously, after the pending entry is registered and
 before the frame is written, so a watcher armed inside it cannot miss a
 response. It must not block — the write is waiting on it. It is not called
 when no id was allocated (the peer is closed, the method is empty, the
-context has already ended, or the in-flight cap is reached). Plain `Call` is unchanged and still correct
+context has already ended, the params fail to marshal, or the in-flight cap
+is reached). It does not promise a write: a context already ended when
+the callback returns gives `ctx.Err()` with nothing sent, while one that
+ends a moment later can give `ctx.Err()` though the frame was written. Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
 Either call returns once its context ends, even while its request frame

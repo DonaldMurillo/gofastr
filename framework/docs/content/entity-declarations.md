@@ -2816,6 +2816,25 @@ entity.Endpoint{
 
 See [plugins](plugins.md) → MCP tool gating.
 
+`MCPAnnotations` sets the twin's behaviour hints in `tools/list`
+(`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`;
+see [MCP server](mcp.md#tool-annotations)). A twin without them gets
+none, and in dev mode the app logs a warning naming the missing hints.
+An endpoint declared in `gofastr.settings.yml` gets them from its method
+and its `hints:` block; see [custom endpoints](endpoints.md#mcp-tool-hints).
+
+```go
+entity.Endpoint{
+    Method: "GET", Path: "{id}/summary", MCP: true,
+    Handler:    summaryHTTP,
+    MCPHandler: summaryTool,
+    MCPAnnotations: &mcp.Annotations{
+        ReadOnlyHint: mcp.Bool(true), DestructiveHint: mcp.Bool(false),
+        OpenWorldHint: mcp.Bool(false),
+    },
+}
+```
+
 ### Endpoints from another file
 
 `App.EntityEndpoints` queues endpoints for an entity that a later

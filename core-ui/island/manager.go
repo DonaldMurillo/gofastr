@@ -555,12 +555,9 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 
 	// Island lane: re-deliver remote updates to local session streams.
 	islandCancel, subErr := f.Subscribe(islandFanoutTopic, func(raw []byte) {
-		origin, body, uerr := fanout.Unwrap(raw)
-		if uerr != nil {
+		_, body, ok := fanout.UnwrapForeign(nodeID, raw)
+		if !ok {
 			return
-		}
-		if origin == nodeID {
-			return // own-node: drop to avoid echo
 		}
 		var msg islandFanoutMsg
 		if jerr := json.Unmarshal(body, &msg); jerr != nil {
@@ -583,12 +580,9 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 
 	// Presence lane: merge remote announcements into the local roster table.
 	presenceCancel, presenceSubErr := f.Subscribe(presenceFanoutTopic, func(raw []byte) {
-		origin, body, uerr := fanout.Unwrap(raw)
-		if uerr != nil {
+		origin, body, ok := fanout.UnwrapForeign(nodeID, raw)
+		if !ok {
 			return
-		}
-		if origin == nodeID {
-			return // own-node: drop; this replica's rosters are already local
 		}
 		var msg presenceFanoutMsg
 		if jerr := json.Unmarshal(body, &msg); jerr != nil {

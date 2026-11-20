@@ -1,78 +1,46 @@
 primitive: fanout
-summary: PostgresFanout, the lossy cross-replica message bus on one LISTEN/NOTIFY channel, with a fallback table for payloads too large to NOTIFY.
+summary: The lossy cross-replica message bus of core/fanout - the Fanout interface and its in-process and Redis backends; the Postgres backend, the node-id envelope and the shared queues are its parts.
 code:
-  - framework/fanout/
+  - core/fanout/doc.go
+  - core/fanout/fanout.go
+  - core/fanout/inprocess.go
+  - core/fanout/redis.go
 docs:
+  - framework/docs/content/core-packages.md
   - framework/docs/content/scaling.md
   - framework/docs/content/events.md
 invariants:
-  - id: large-payload-spills-to-the-table
-    rule: Publish NOTIFYs a wrapper of at most 7000 bytes inline and stores a larger one in the fallback table, NOTIFYing a t:<id> pointer that receivers SELECT.
+  - id: inprocess-delivers-in-order-per-topic
+    rule: InProcess hands each subscriber only its own topic's payloads, in publish order, and a cancelled subscriber receives nothing more.
     enforced_by:
-      - test: framework/fanout.TestPostgres_BigPayloadFallsBackToTable
-      - test: framework/fanout.TestPostgresPublishNotifiesInlineAndSpill
-  - id: channel-is-the-table-name
-    rule: LISTEN and NOTIFY use the canonical ASCII-lowercase fallback table name, so aliases for one physical table share a channel and different tables remain isolated.
+      - test: core/fanout.TestInProcessTopicIsolation
+      - test: core/fanout.TestInProcessOrderedDelivery
+      - test: core/fanout.TestInProcessCancelStopsDelivery
+  - id: redis-subscriber-behind-a-queue
+    rule: NewRedis runs each subscriber behind its own SubscriberQueue, so a slow subscriber never stalls the Redis reader goroutine or another subscriber of the topic.
     enforced_by:
-      - test: framework/fanout.TestPostgresListenUsesCanonicalFallbackTableName
-      - test: framework/fanout.TestPostgres_InlineMessageStaysOnItsTable
-      - test: framework/fanout.TestPostgres_TableNameIsolatesChannel
-  - id: construction-refuses-bad-config
-    rule: NewPostgres errors on a nil db, an empty dsn, a table name SafeIdent refuses or longer than 63 bytes, and a case-kept table an older build left, naming both spellings when the older table and this build's table both exist.
-    enforced_by:
-      - test: framework/fanout.TestLongTableNameRefusedForItsLength
-      - test: framework/fanout.TestPostgres_LongTableNameRejected
-      - test: framework/fanout.TestPostgres_CaseKeptTableRefused
-      - test: framework/fanout.TestPostgres_QualifiedCaseKeptBothRefused
-  - id: listen-is-bounded
-    rule: NewPostgres closes the listener and errors when LISTEN is not up within the listen timeout, instead of retrying an unreachable dsn forever.
-    enforced_by:
-      - test: framework/fanout.TestPostgres_BadDSNTimeout
-      - test: framework/fanout.TestNewPostgresUnreachableFailsFast
-  - id: utf8-only
-    rule: Publish refuses a topic or payload that is not valid UTF-8 before it touches the database, and Subscribe refuses such a topic.
-    enforced_by:
-      - test: framework/fanout.TestPostgres_PublishRejectsInvalidUTF8
-      - test: framework/fanout.TestPublishValidatesBeforeTransport
-      - test: framework/fanout.TestSubscribeRejectsNilAndNonUTF8Topic
-      - test: framework/fanout.TestPostgres_SubscribeRejectsBadUTF8Topic
-  - id: subscriber-cannot-stall-the-dispatcher
-    rule: Each subscriber's callback runs on its own goroutine behind a drop-oldest core/fanout.SubscriberQueue, whose worker recovers a panic in the callback, and the dispatcher recovers a panic from a subscriber's send, so a slow, stuck or panicking subscriber holds back no other topic.
-    enforced_by:
-      - test: framework/fanout.TestDeliverSurvivesStuckSubscriber
-      - test: framework/fanout.TestPostgres_SlowSubDoesNotStallOtherTopic
-      - test: framework/fanout.TestDeliverSurvivesPanickingSubscriber
-  - id: spill-rows-expire
-    rule: Fallback rows older than two minutes by the database clock are purged on the dispatcher's ticker even when nothing is published, and pgPurgeAgeSQL names the same age as pgPurgeAge.
-    enforced_by:
-      - test: framework/fanout.TestPostgres_PurgeRemovesOldRows
-      - test: framework/fanout.TestPurgeRunsWithoutPublish
-      - test: framework/fanout.TestPurgeAgeSQLMatchesPurgeAge
-  - id: close-ends-everything
-    rule: Close cancels an in-flight fallback fetch, waits for the dispatcher, stops every subscriber queue including those whose cancel was dropped, and makes later Subscribe calls fail.
-    enforced_by:
-      - test: framework/fanout.TestCloseCancelsFallbackFetch
-      - test: framework/fanout.TestPostgres_CloseStopsSubQueues
-      - test: framework/fanout.TestSubscribeAfterCloseRefused
-      - test: framework/fanout.TestPostgres_SubscribeAfterCloseErrors
-  - id: without-ensure-creates-no-table
-    rule: With WithoutEnsureTable, NewPostgres creates no fallback table.
-    enforced_by:
-      - test: framework/fanout.TestPostgres_WithoutEnsureTable
+      - test: core/fanout.TestRedisAdapterSlowSubDoesNotStallOthers
 decisions:
-  - id: one-channel-topic-in-payload
-    date: 2026-11-17
+  - id: fanout-is-lossy
+    date: 2026-11-19
     status: accepted
-    decision: One LISTEN channel per fanout carries every topic inside the NOTIFY payload.
+    decision: Fanout is the lossy real-time lane and may drop a message published while a subscriber is away or queue-full; durable at-least-once delivery is the transactional outbox's job and never rides fanout.
     rejected:
-      - option: A Postgres channel per topic.
-        why: Dynamic topic strings would each have to be validated as a channel identifier and LISTENed on separately.
-    upholds: [channel-is-the-table-name]
-  - id: purge-by-database-clock
-    date: 2026-11-17
+      - option: At-least-once delivery inside fanout.
+        why: Every subscriber would need acknowledgements and replay storage, and real-time consumers (island pushes, presence heartbeats) heal on the next message anyway.
+    revisit_if: A real-time consumer cannot heal from a dropped message on its own.
+  - id: transport-is-trusted
+    date: 2026-11-19
     status: accepted
-    decision: The purge compares created_at with the database's now(), the clock that wrote it.
+    decision: Fanout payloads are not authenticated; write access to the channel (a NOTIFY channel, a Redis channel) is trusted, and the channel is secured by network isolation and credentials.
     rejected:
-      - option: Compare with the replica's time.Now().
-        why: Clock skew between a replica and the database would purge rows early or keep them late.
-    upholds: [spill-rows-expire]
+      - option: Sign every envelope with a shared replica key.
+        why: Every backend and every replica would need key distribution and rotation for a channel that is already behind database or Redis credentials.
+    revisit_if: Fanout runs over a channel that untrusted clients can publish on.
+  - id: no-redis-import
+    date: 2026-11-19
+    status: accepted
+    decision: NewRedis takes a RedisPubSub the host adapts from its own client instead of importing a Redis library.
+    rejected:
+      - option: Depend on go-redis directly.
+        why: Every app that imports core/fanout would link a Redis client, and hosts on redigo would carry two.

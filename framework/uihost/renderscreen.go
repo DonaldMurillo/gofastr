@@ -76,6 +76,9 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			status = code
 		}
 	}
+	if status >= 400 {
+		ctx = withoutRouteMeta(ctx)
+	}
 
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

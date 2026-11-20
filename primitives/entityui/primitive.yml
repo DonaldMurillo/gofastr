@@ -103,6 +103,10 @@ invariants:
   - id: bulk-resume-grace-has-one-declaration
     rule: The resume grace window is entityui.BulkResumeGrace, used by App start's resume and battery/admin's Init alike; no second window is declared.
     judge: Does a new resume caller take entityui.BulkResumeGrace instead of declaring its own window?
+  - id: exact-kinds-name-their-fill
+    rule: The email, tel and url kinds render an input of that type with the autocomplete token of the same name and spellcheck false and autocapitalize off; the color kind names no fill.
+    enforced_by:
+      - test: framework/entityui.TestExactKindsCarryAutocomplete
 decisions:
   - id: scriptless-edit-through-an-entityui-route
     date: 2026-11-16

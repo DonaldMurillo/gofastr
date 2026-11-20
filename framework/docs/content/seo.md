@@ -170,6 +170,8 @@ it installs the route match and resolver state, runs the eager
 resolvers and the policy chain, and applies region-guard redirects. A
 policy that reads resolver state decides the same way here, and a
 resolver error leaves the page out, including one a region guard reads.
+When it returns an error (a failed resolver, or a policy answering
+`decide.NotFound()`), the `Decision` beside it is a Block, never Allow.
 Under `WithLocalePrefixes` each locale is judged in the context its
 prefixed request carries, so a policy that reads the path locale
 decides per variant; only readable variants are listed, each naming

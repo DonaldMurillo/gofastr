@@ -1,0 +1,137 @@
+primitive: fileserver
+summary: core/static's file server - GET and HEAD of an fs.FS with refused spellings, kernel-contained disk opens, content-hash ETags, preconditions, ranges, the SPA fallback and a 404 page.
+code:
+  - core/static/
+docs:
+  - framework/docs/content/core-packages.md
+on_change:
+  - framework/static's copy step and framework/uihost's asset routes call Refuses and RefusesIn; a new refusal reaches what they publish and serve.
+invariants:
+  - id: get-and-head-only
+    rule: Handler answers any method but GET and HEAD 405 with Allow GET, HEAD.
+    enforced_by:
+      - test: core/static.TestMethodNotAllowed
+      - test: core/static.TestRefusedMethodsAdvertiseAllow
+  - id: raw-traversal-refused
+    rule: A .. segment in the raw request path, split on / and on backslash, is a 404 before path.Clean can collapse it.
+    enforced_by:
+      - test: core/static.TestStatic_TraversalBlocked
+      - test: core/static.TestDirectoryTraversalBlocked
+  - id: prefix-on-segment-boundary
+    rule: Prefix, normalised to one leading and no trailing slash, is stripped only on a segment boundary, a path without it is served as it is, and Mount registers the one pattern Prefix/{path...}.
+    enforced_by:
+      - test: core/static.TestHandlerStripsPrefixOnSegmentBoundary
+      - test: core/static.TestMountWithPrefixServes
+  - id: refused-spellings
+    rule: Refuses is true for a segment that starts with a dot, names web.config, global.asax, app.config, machine.config or applicationhost.config in any ASCII case, ends in a dot or a space or holds a colon, with backslash a separator on every OS, and RefusesIn also for a ~digit segment its directory does not list (an embed.FS is never listed); Handler answers each as a miss.
+    enforced_by:
+      - test: core/static.TestStatic_DotfileNotExposed
+      - test: core/static.TestHiddenFilesStayPrivate
+      - test: core/static.TestStatic_BlocksServerConfigFiles
+      - test: core/static.TestStatic_RefusesBackslashSeparatedHiddenFiles
+      - test: core/static.TestStaticRefusesBackslashDotfileOnDisk
+      - test: core/static.TestStaticRefusesWindowsPathAliases
+      - test: core/static.TestRefusesWindowsNameEndings
+      - test: core/static.TestStaticRefusesWindowsShortNames
+      - test: core/static.TestStaticServesRealTildeDigitName
+      - test: core/static.TestStaticEmbedSkipsShortNameListing
+  - id: disk-opens-contained
+    rule: A disk-backed FS is opened per request through an *os.Root over its resolved root, refused 404 when the directory there is no longer the one bound, bound again on a later request when it did not exist yet, and an open without a root refuses a file that resolves outside it.
+    enforced_by:
+      - test: core/static.TestStatic_SymlinkEscapeRefused
+      - test: core/static.TestStatic_SymlinkSwapWindowRefused
+      - test: core/static.TestStaticContainsRootCreatedAfterHandler
+      - test: core/static.TestHandlerReleasesRootBetweenRequests
+      - test: core/static.TestFileInRootFallbacks
+      - test: core/static.TestSweepFallbackOpenRefusesSymlinkEscape
+  - id: miss-or-fault
+    rule: A missing name, one fs.ValidPath refuses (ErrInvalid) and one holding a NUL is a miss that may fall back; a FIFO or device is a 404 without being opened; any other open or stat error, and a read error while the ETag is hashed before the status is written, is a 500; a read that fails during body copying (a large file served before its hash, a range, the unseekable path) is not mapped to an error status; the 200, 206 or not-found page's 404 is or becomes the response, and the body may end short of its Content-Length.
+    enforced_by:
+      - test: core/static.TestInvalidPathIsNotAServerError
+      - test: core/static.TestSweepInvalidPathIsAMiss
+      - test: core/static.TestServeRefusesFIFO
+      - test: core/static.TestStatic_ReadErrorMapsTo500
+  - id: directory-redirect
+    rule: A directory requested without a trailing slash is redirected 301 to ./<last segment>/ with its query kept and control bytes escaped, only when its index exists.
+    enforced_by:
+      - test: core/static.TestDirectoryWithoutSlashRedirects
+      - test: core/static.TestDirectoryRedirectStaysOnHost
+      - test: core/static.TestDirectoryRedirectOnDisk
+  - id: content-hash-etag
+    rule: The ETag is a SHA-256 content hash streamed from the file, memoised per handler under name, size, modtime, inode and ctime only when ctime is at least one second old before hashing; a missing or future ctime needs no settling window. Nanosecond ctime fields can repeat within a filesystem clock tick, so recent revisions are hashed without memoisation and background workers wait a second before validating and hashing them.
+    enforced_by:
+      - test: core/static.TestDigestCacheDoesNotLeakAcrossHandlers
+      - test: core/static.TestDigestCacheServesRepeatRequests
+      - test: core/static.TestRewriteKeepingModTimeNewETag
+      - test: core/static.TestDigestRevisionSettled
+      - test: core/static.TestRewriteKeepingRevisionNewETag
+      - test: core/static.TestLargeFileFutureCTimeGetsETag
+      - test: core/static.TestStatic_ServesLargeFileUntruncated
+  - id: large-file-hashed-off-request
+    rule: A file over 16 MiB missing from the cache is served without an ETag while at most two background hashes per handler run, each storing its digest only when the file kept its revision through the read, and a panic in the FS's Open, Stat, Read or Close during that hash costs only that ETag.
+    enforced_by:
+      - test: core/static.TestLargeFileHashesOffRequest
+      - test: core/static.TestBackgroundHashRespectsSlots
+      - test: core/static.TestBackgroundHashSkipsReplacedFile
+      - test: core/static.TestLargeDiskFileETagLandsAfterQuickAnswers
+      - test: core/static.TestSweepBackgroundHashPanicCostsOnlyTheETag
+  - id: preconditions-in-rfc-order
+    rule: If-Match (strong) and If-Unmodified-Since answer 412 before If-None-Match (weak) and If-Modified-Since answer 304, dates compared at one-second precision, and an empty ETag matches only *.
+    enforced_by:
+      - test: core/static.TestPreconditionOrder
+      - test: core/static.Test304ForMatchingIfNoneMatch
+      - test: core/static.Test304ForWildcardIfNoneMatch
+      - test: core/static.TestRangeWithMatchingETagIs304
+  - id: ranges-and-unseekable
+    rule: A seekable file goes through http.ServeContent for Range, multi-range and If-Range, a HEAD ignores Range, and a handle that cannot seek gets the whole body with a Content-Length, reopened when the ETag read consumed it.
+    enforced_by:
+      - test: core/static.TestRangeAnswers206
+      - test: core/static.TestMultiRangeIsMultipart
+      - test: core/static.TestIfRangeResumesOnlyUnchanged
+      - test: core/static.TestHeadIgnoresRange
+      - test: core/static.TestServesFullBodyFromNonSeekableFS
+      - test: core/static.TestNonSeekableFSSecondRequestOK
+      - test: core/static.TestUnseekableHandleServesFull
+  - id: platform-independent-type-and-nosniff
+    rule: Every served file carries X-Content-Type-Options nosniff and the Content-Type of the built-in table before mime.TypeByExtension, so the host's mime database never changes a listed type.
+    enforced_by:
+      - test: core/static.TestStatic_NoSniffHeader
+      - test: core/static.TestDetectIgnoresHostMimeDB
+      - test: core/static.TestDetectFromName
+  - id: spa-fallback-for-routes-only
+    rule: In SPA mode a miss whose last segment has no asset extension (js, mjs, css, map, images, fonts, json, wasm, txt, xml, in any case) gets IndexFile with Cache-Control no-cache whatever MaxAge says, and an asset miss gets 404.
+    enforced_by:
+      - test: core/static.TestSPAFallbackOnlyForExtensionlessPaths
+      - test: core/static.TestSPAFallbackIsNotCachedUnderMaxAge
+  - id: not-found-page
+    rule: Outside SPA mode NotFoundFile answers a miss 404 with no ETag, Last-Modified or Accept-Ranges and no-cache, ignoring the request's Range and conditional headers, and a missing NotFoundFile leaves the plain 404.
+    enforced_by:
+      - test: core/static.TestNotFoundFileServedWith404
+      - test: core/static.TestNotFoundPageIgnoresRange
+      - test: core/static.TestNotFoundFileMissingFallsBackToPlain404
+      - test: core/static.TestNotFoundFileIgnoredInSPAMode
+decisions:
+  - id: hash-etag-at-every-size
+    date: 2026-11-19
+    status: accepted
+    decision: The ETag is a content hash at every size, computed off the request path for a large file.
+    rejected:
+      - option: A size-and-modtime ETag for large files.
+        why: It repeats across releases under pinned build modtimes and same-size rewrites, so a strong If-Range would splice a download from two revisions, and it differs between replicas.
+    upholds: [content-hash-etag, large-file-hashed-off-request]
+  - id: refuse-windows-spellings-everywhere
+    date: 2026-11-19
+    status: accepted
+    decision: Windows aliases, short names and backslash separators are refused on every OS.
+    rejected:
+      - option: Refuse them only on Windows.
+        why: Every platform must give one answer, and a tree served from Windows later would open web.config through them.
+    upholds: [refused-spellings]
+  - id: platform-mime-table
+    date: 2026-11-19
+    status: accepted
+    decision: DetectFromName consults its own table before mime.TypeByExtension.
+    rejected:
+      - option: mime.TypeByExtension alone.
+        why: Linux merges /etc/mime.types and answers image/vnd.microsoft.icon for .ico, so one file would be served under different types per host.
+    upholds: [platform-independent-type-and-nosniff]

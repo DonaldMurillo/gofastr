@@ -1,0 +1,23 @@
+primitive: a2a.wire
+summary: The A2A v1.0 wire types and error codes - method names, task states, parts, timestamps, stream responses and the request and response objects.
+code:
+  - core/a2a/types.go
+  - core/a2a/errors.go
+docs:
+  - framework/docs/content/a2a.md
+invariants:
+  - id: part-has-one-content
+    rule: A Part decodes and validates only with exactly one of text, raw, url and a non-null data, and a StreamResponse validates only with exactly one of task, message, statusUpdate and artifactUpdate.
+    enforced_by:
+      - test: core/a2a.TestPartDecodeTypeConfusionRefused
+      - test: core/a2a.TestStreamResponseCarriesExactlyOneEvent
+  - id: timestamp-millis-utc
+    rule: A Timestamp marshals as RFC 3339 in UTC with exactly three fraction digits.
+    enforced_by:
+      - test: core/a2a.TestTimestampFormatMillis
+      - test: core/a2a.TestSweepTimestampKeepsZeroMillis
+  - id: proto-spellings
+    rule: Method names are the PascalCase RPC names, and states and roles serialize as their proto enum names.
+    enforced_by:
+      - test: core/a2a.TestMethodNamesArePascalCase
+      - test: core/a2a.TestEnumsAndTimestampsUseProtoSpellings

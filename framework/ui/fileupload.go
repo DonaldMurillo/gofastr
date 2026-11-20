@@ -84,7 +84,6 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		children = append(children, render.Tag("p", html.Attrs{
 			"id":                id + "-error",
 			"class":             "fui-upload__error",
-			"role":              "alert",
 			"data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
@@ -181,7 +180,7 @@ func fileUploadCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0,0,0,0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

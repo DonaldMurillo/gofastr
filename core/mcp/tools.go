@@ -16,8 +16,9 @@ type toolsListResult struct {
 }
 
 type toolsCallParams struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments,omitempty"`
+	Name      string          `json:"name"`
+	Arguments map[string]any  `json:"arguments,omitempty"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
 }
 
 type toolsCallResult struct {
@@ -51,6 +52,11 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	if params.Name == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing tool name")
 	}
+	meta, err := decodeRequestMeta(params.Meta)
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+	}
+	ctx = context.WithValue(ctx, requestMetaKey{}, meta)
 
 	result, err := s.callTool(ctx, params.Name, params.Arguments)
 	if err != nil {

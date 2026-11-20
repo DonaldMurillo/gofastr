@@ -184,9 +184,12 @@ These are the guide's Hard rules 10 to 12 in full.
 
 **Stacked PRs.** A series of PRs that build on each other lands as one
 GitHub stack, merged all or nothing. Base each PR on the one below it,
-then `./scripts/stack.sh create <bottom> ... <top>`, and when every
-layer is green and triaged, `./scripts/stack.sh merge <top>`.
-`scripts/stack.sh view <N>` shows a PR's stack. `gh stack` does the same
+then `./scripts/stack.sh create <bottom> ... <top>`. A PR opened later
+joins the top with `./scripts/stack.sh add <stack> <pr>`: `create`
+refuses a PR already in a stack, so never create a second stack for
+the same series. When every layer is green and triaged,
+`./scripts/stack.sh merge <top>`. `scripts/stack.sh view <N>` shows a
+PR's stack, and `scripts/stack.sh unstack <stack>` dissolves one. `gh stack` does the same
 where GraphQL is reachable; Claude Code cloud sessions cannot reach it,
 so there the script, and the REST fallback in `pr-review-findings.sh`,
 are the way.

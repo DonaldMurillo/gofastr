@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
@@ -183,20 +183,11 @@ func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Requ
 }
 
 func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
+	if netguard.OriginAllowed(r, nil) {
 		return false
 	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
-		return true
-	}
-	if !strings.EqualFold(u.Host, r.Host) {
-		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
-		return true
-	}
-	return false
+	i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+	return true
 }
 
 func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {

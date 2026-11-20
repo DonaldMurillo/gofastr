@@ -132,7 +132,7 @@ func runDesktopRun(args []string) {
 	buildEnv := append(os.Environ(), "CGO_ENABLED=0")
 
 	launch := func() bool {
-		buildCmd := exec.Command("go", "build", "-o", bin, f.pkg)
+		buildCmd := devcmd.BuildCommand(bin, f.pkg)
 		buildCmd.Dir = f.dir
 		buildCmd.Env = buildEnv
 		buildCmd.Stdout = os.Stdout

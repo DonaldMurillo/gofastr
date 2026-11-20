@@ -1,11 +1,38 @@
 package newcmd
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
+
+func TestNewRouteValidatesPattern(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	for _, path := range []string{"/{wx", "", "/{}/", "/{id}/{id}", "/{rest...}/more", "/a/../b", "POST /x", "/a b", "users", "example.com/x", "/a\tb", "/a\u00a0b"} {
+		t.Run(path, func(t *testing.T) {
+			code, out := runRoute(t, path)
+			if code != 1 || !strings.Contains(out, "invalid route") || strings.Contains(out, "app.Router()") {
+				t.Errorf("path %q: exit = %d, want 1 and an invalid route error without a snippet:\n%s", path, code, out)
+			}
+		})
+	}
+	for _, path := range []string{"/users/{id}", "/", "/files/{rest...}", "/{$}"} {
+		code, out := runRoute(t, path)
+		if code != -1 || !strings.Contains(out, routeSnippet("GET", path, "handler")) {
+			t.Errorf("path %q: exit = %d, want success and a snippet:\n%s", path, code, out)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("new route wrote files: %v", entries)
+	}
+}
 
 // runRoute runs `gofastr new route` and returns its exit code and output.
 func runRoute(t *testing.T, args ...string) (int, string) {
@@ -18,14 +45,14 @@ func runRoute(t *testing.T, args ...string) (int, string) {
 }
 
 func TestNewRouteRefusesMalformedPattern(t *testing.T) {
-	for _, path := range []string{"things", "/things/{id}/{id}", "/things/{rest...}/child"} {
+	for _, path := range []string{"things", "example.com/things/{rest...}", "/things/{id}/{id}", "/things/{rest...}/child"} {
 		code, out := runRoute(t, path)
 		if code != 1 || !strings.Contains(out, "invalid route") || strings.Contains(out, "app.Router()") {
 			t.Errorf("new route %q exited %d, want a route refusal without a snippet:\n%s", path, code, out)
 		}
 	}
-	if code, out := runRoute(t, "example.com/things/{rest...}"); code != -1 || !strings.Contains(out, "app.Router()") {
-		t.Errorf("valid host and wildcard pattern exited %d:\n%s", code, out)
+	if code, out := runRoute(t, "/things/{rest...}"); code != -1 || !strings.Contains(out, "app.Router()") {
+		t.Errorf("valid wildcard pattern exited %d:\n%s", code, out)
 	}
 }
 

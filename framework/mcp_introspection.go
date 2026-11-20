@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -25,6 +26,7 @@ type mcpToolSpec struct {
 	description string
 	schema      map[string]any
 	handler     mcp.ToolHandler
+	hints       mcp.ToolOption // per-tool annotations, after the shared options
 }
 
 func (a *App) registerBuiltinTools(kind string, tools []mcpToolSpec, opts ...mcp.ToolOption) error {
@@ -32,7 +34,11 @@ func (a *App) registerBuiltinTools(kind string, tools []mcpToolSpec, opts ...mcp
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
+		toolOpts := opts
+		if t.hints != nil {
+			toolOpts = append(slices.Clip(opts), t.hints)
+		}
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, toolOpts...); err != nil {
 			return fmt.Errorf("framework: register MCP %s %q: %w", kind, t.name, err)
 		}
 	}
@@ -40,10 +46,11 @@ func (a *App) registerBuiltinTools(kind string, tools []mcpToolSpec, opts ...mcp
 }
 
 func (a *App) introspectionToolOptions() []mcp.ToolOption {
+	opts := []mcp.ToolOption{readOnlyToolHints()}
 	if a.mcpIntrospectionDevImplied {
-		return []mcp.ToolOption{mcp.WithDevImplied()}
+		opts = append(opts, mcp.WithDevImplied())
 	}
-	return nil
+	return opts
 }
 
 func (a *App) registerIntrospectionTools() error {
@@ -368,4 +375,13 @@ func dialectStringForTool(d migrate.Dialect) string {
 		return "all"
 	}
 	return string(d)
+}
+
+func readOnlyToolHints() mcp.ToolOption {
+	return mcp.WithAnnotations(mcp.Annotations{
+		ReadOnlyHint:    mcp.Bool(true),
+		DestructiveHint: mcp.Bool(false),
+		IdempotentHint:  mcp.Bool(true),
+		OpenWorldHint:   mcp.Bool(false),
+	})
 }

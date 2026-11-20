@@ -98,6 +98,34 @@ func TestWriteFormAuthError_StripsRefererQuery(t *testing.T) {
 	}
 }
 
+func TestWriteLoginFormError_PreservesOnlySafeSubmittedNext(t *testing.T) {
+	const destination = "/documents?tab=files&sort=old"
+	for _, tc := range []struct {
+		name, queryNext, formNext, want string
+	}{
+		{"form", "", destination, destination},
+		{"query override", destination, "/app", destination},
+		{"rejected", "", "not-a-path", ""},
+		{"missing", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/auth/login?next="+url.QueryEscape(tc.queryNext), nil)
+			req.Header.Set("Referer", "http://example.com/login?next=%2Fother&view=discard")
+			req.PostForm = url.Values{"next": {tc.formNext}}
+			rec := httptest.NewRecorder()
+			writeLoginFormError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
+
+			want := url.Values{"error": {"invalid_credentials"}}
+			if tc.want != "" {
+				want.Set("next", tc.want)
+			}
+			if got := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || got != "/login?"+want.Encode() {
+				t.Errorf("login error = %d Location %q, want 303 to /login?%s", rec.Code, got, want.Encode())
+			}
+		})
+	}
+}
+
 // TestWriteFormAuthError_AcceptsSameOriginReferer confirms the happy
 // path: a legit form on the same host, user hits Submit, password is
 // wrong → 303 back to the same page with ?error=.

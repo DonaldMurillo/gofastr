@@ -248,18 +248,22 @@ func TestCLIRefusesSymlinkedClientDir(t *testing.T) {
 }
 
 func TestWatchHashesCLIOpenAPIDoc(t *testing.T) {
-	dir := cliTempModule(t)
-	clitest.WriteSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        from_openapi: openapi.json\n")
-	doc := filepath.Join(dir, "openapi.json")
-	if err := os.WriteFile(doc, []byte(`{"a":1}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	before := hashGenerateInputs(appgen.GenerateOptions{})
-	if err := os.WriteFile(doc, []byte(`{"a":2}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if hashGenerateInputs(appgen.GenerateOptions{}) == before {
-		t.Fatal("editing the cli entry's OpenAPI document did not change the watch hash")
+	for _, entry := range []string{"cli", "sdk"} {
+		t.Run(entry, func(t *testing.T) {
+			dir := cliTempModule(t)
+			clitest.WriteSettings(t, dir, "codegen:\n  generators:\n    - name: "+entry+"\n      config:\n        from_openapi: openapi.json\n")
+			doc := filepath.Join(dir, "openapi.json")
+			if err := os.WriteFile(doc, []byte(`{"a":1}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := hashGenerateInputs(appgen.GenerateOptions{})
+			if err := os.WriteFile(doc, []byte(`{"a":2}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if hashGenerateInputs(appgen.GenerateOptions{}) == before {
+				t.Fatalf("editing the %s entry's OpenAPI document did not change the watch hash", entry)
+			}
+		})
 	}
 }
 

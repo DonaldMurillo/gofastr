@@ -43,7 +43,7 @@ func TestPackStdoutIsOnlyYAML(t *testing.T) {
 	origExit := cli.OsExit
 	cli.OsExit = func(c int) { exitCode = c }
 	defer func() { cli.OsExit = origExit }()
-	out := clitest.CaptureStdout(t, func() { RunPack([]string{dir}) })
+	out := clitest.CovT_capStdout(t, func() { RunPack([]string{dir}) })
 	if exitCode != 0 {
 		t.Fatalf("runPack exited %d", exitCode)
 	}
@@ -75,7 +75,7 @@ func TestPackRefusesBadOutFlag(t *testing.T) {
 		exitCode := 0
 		origExit := cli.OsExit
 		cli.OsExit = func(c int) { exitCode = c }
-		out := clitest.CaptureStdout(t, func() { RunPack(args) })
+		out := clitest.CovT_capStdout(t, func() { RunPack(args) })
 		cli.OsExit = origExit
 		if exitCode != 2 || strings.Contains(out, "entities:") {
 			t.Errorf("pack %q exited %d with stdout:\n%s", args, exitCode, out)

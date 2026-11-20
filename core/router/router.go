@@ -69,6 +69,18 @@ func New() *Router {
 	return r
 }
 
+// ValidatePattern checks method and pattern using ServeMux syntax, without checking for conflicts with other routes.
+func ValidatePattern(method, pattern string) (err error) {
+	fullPattern := method + " " + pattern
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("router: invalid route %q: %v", fullPattern, rec)
+		}
+	}()
+	http.NewServeMux().Handle(fullPattern, http.NotFoundHandler())
+	return nil
+}
+
 // Handle registers handler for method and pattern (ServeMux syntax under r's prefix); middleware added later still wraps it.
 // It panics on a pattern conflict or a malformed pattern.
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
@@ -78,15 +90,15 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 // HandleAbsolute registers a full ServeMux path without adding r's prefix.
 // The route still uses r's middleware chain and resource.
 func (r *Router) HandleAbsolute(method, fullPath string, handler http.Handler) {
+	if err := ValidatePattern(method, fullPath); err != nil {
+		panic(err)
+	}
 	fullPattern := method + " " + fullPath
 	route := newCachedRoute(handler, r, method, fullPath)
 	route.gateKey = fullPattern
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				if !strings.Contains(fmt.Sprint(rec), "conflicts with") {
-					panic(fmt.Sprintf("router: invalid route %q: %v", fullPattern, rec))
-				}
 				panic(fmt.Sprintf("router: route conflict registering %q: %v\n"+
 					"Two registrations want the same path (commonly an auto-generated "+
 					"entity/CRUD route and a page at the same name). Mount one elsewhere, "+

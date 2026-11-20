@@ -130,6 +130,34 @@ invariants:
       - test: framework.TestDevExplicitCollisionStillFails
       - test: framework.TestReplacedDevToolCollisionFails
       - test: framework.TestSweepAgentsExplicitEntityCollisionFails
+  - id: app-wires-instructions-and-hint-warnings
+    rule: NewApp hands WithMCPInstructions to whichever MCP server the options leave installed, and turns on SetAnnotationWarnings when the dev gate is on and only then.
+    enforced_by:
+      - test: framework.TestWithMCPInstructionsReachesInitialize
+      - test: framework.TestDevModeWarnsOnUnannotatedTools
+      - test: framework.TestDevWarningsCoverToolsOnACustomServer
+    applies:
+      - framework/app.go
+  - id: builtin-tools-carry-hints
+    rule: Every introspection, contract and control tool the framework registers, the dev-only contracts_verify and contracts_fix included, sets all four hints with openWorldHint false, read-only and idempotent except contracts_fix (destructive, not idempotent) and the control tools (not read-only, not destructive), and an entity Endpoint's MCPAnnotations, through App.Entity and GroupEntity alike, are served unchanged in tools/list.
+    enforced_by:
+      - test: framework.TestBuiltinMCPToolsCarryListingHints
+      - test: framework.TestEndpointMCPAnnotationsServed
+  - id: battery-tools-carry-hints
+    rule: The battery/log and battery/telemetry MCP tools set all four hints with openWorldHint false, read-only and idempotent except log_set_level, which is not read-only, whether they were opted into or implied by dev mode.
+    enforced_by:
+      - test: battery/log.TestMCPToolsCarryListingHints
+      - test: battery/telemetry.TestMCPToolsCarryListingHints
+    applies:
+      - battery/log/mcp.go
+      - battery/telemetry/mcp.go
+  - id: kiln-tools-carry-hints
+    rule: Every Kiln tool kiln/agent/mcp registers sets readOnlyHint, destructiveHint and openWorldHint, read-only only for world_get, destructive exactly when its protocol descriptor is Destructive (delete_*, update_entity, reset_session and undo, which nothing redoes), and openWorldHint false.
+    enforced_by:
+      - test: kiln/agent/mcp.TestEveryToolCarriesListingHints
+    applies:
+      - kiln/agent/mcp/mcp.go
+      - kiln/protocol/descriptors.go
 decisions:
   - id: control-separate-from-introspection
     date: 2026-11-16
@@ -240,3 +268,12 @@ decisions:
       - option: Read core/mcp's dev-implied marker.
         why: Dev-only read tools are not marked, because they survive the bind withdrawal on purpose.
     upholds: [dev-entity-collision-skips-builtin]
+  - id: reversible-toggles-not-destructive
+    date: 2026-11-19
+    status: accepted
+    decision: app_module_disable and log_set_level carry destructiveHint false, as do the Kiln edits whose descriptor is not Destructive; Kiln's undo, which nothing redoes, is Destructive and so destructive.
+    rejected:
+      - option: Mark every state-changing tool destructive.
+        why: Each of these is undone by a counterpart call (app_module_enable, another log_set_level, Kiln's undo) and drops no stored data, and a destructive hint makes a client ask the user to confirm a call that loses nothing.
+    revisit_if: Disabling a module or changing a log level starts discarding data, such as a module's queued work.
+    upholds: [builtin-tools-carry-hints, battery-tools-carry-hints, kiln-tools-carry-hints]

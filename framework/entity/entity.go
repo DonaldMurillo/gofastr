@@ -178,6 +178,9 @@ type Endpoint struct {
 	// visibility; nil requires an authenticated caller unless Public.
 	MCPGate func(ctx context.Context) error `json:"-"`
 
+	// MCPAnnotations are the MCP tool's behaviour hints; nil serves none.
+	MCPAnnotations *mcp.Annotations `json:"-"`
+
 	// Public serves both doors to anonymous callers.
 	Public bool `json:"public,omitempty"`
 

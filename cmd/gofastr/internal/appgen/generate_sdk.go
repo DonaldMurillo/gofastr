@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
@@ -34,16 +36,19 @@ import (
 // Point --out somewhere private to keep an old build.
 
 type SdkOptions struct {
-	OutDir     string
-	name       string
-	apiPrefix  string
-	module     string
-	baseURL    string
-	sdkVersion string
-	targets    []string
-	only       []string
-	exclude    []string
-	noArchive  bool
+	OutDir string
+	name   string
+	// fromOpenAPI names the OpenAPI document an SDK is generated from in
+	// place of the entity set.
+	fromOpenAPI string
+	apiPrefix   string
+	module      string
+	baseURL     string
+	sdkVersion  string
+	targets     []string
+	only        []string
+	exclude     []string
+	noArchive   bool
 	// stampTime writes the generation time into manifest.json. Off by
 	// default so a rerun over an unchanged schema is byte-identical.
 	stampTime bool
@@ -164,9 +169,13 @@ func validateSDKModulePath(module string) error {
 
 var sdkValidTargets = map[string]bool{"go": true, "js": true}
 
+// sdkDefaultOut is where a run writes when neither --out nor a settings
+// entry names a directory.
+const sdkDefaultOut = "gen/sdk"
+
 // RunGenerateSDK implements `gofastr generate sdk`.
 func RunGenerateSDK(args []string) {
-	const usage = "Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]"
+	const usage = "Usage: gofastr generate sdk [--from-openapi=<path|url>] [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]"
 	if showGenerateHelp(args, usage) {
 		return
 	}
@@ -179,6 +188,28 @@ func RunGenerateSDK(args []string) {
 	if err := ApplySDKConfigDefaults(&opts); err != nil {
 		failGenerate(opts.json, err)
 		cli.OsExit(1)
+		return
+	}
+
+	if opts.fromOpenAPI != "" {
+		root := ""
+		if !opts.set["from-openapi"] {
+			root = "." // the settings entry named it: a file in the project
+		}
+		files, err := renderOpenAPISDK(&opts, root)
+		if err != nil {
+			// The error quotes names from the document, which may come
+			// from a URL: encode its control bytes for the terminal.
+			failGenerate(opts.json, fmt.Errorf("SDK generation failed: %s", textsafe.ScrubControlBytes(err.Error())))
+			cli.OsExit(1)
+			return
+		}
+		if err := validateOutputDir(opts.OutDir); err != nil {
+			failGenerate(opts.json, err)
+			cli.OsExit(1)
+			return
+		}
+		emitSDKFiles(opts, files, "the OpenAPI document")
 		return
 	}
 
@@ -213,7 +244,13 @@ func RunGenerateSDK(args []string) {
 		cli.OsExit(1)
 		return
 	}
+	emitSDKFiles(opts, files, "the entity declarations")
+}
 
+// emitSDKFiles is the write tail of both SDK sources: a dry run lists the
+// files, a real one overwrites them in place. source names what the
+// files derive from.
+func emitSDKFiles(opts SdkOptions, files []GeneratedFile, source string) {
 	if opts.dryRun {
 		if opts.json {
 			printGeneratedFilesJSON(files)
@@ -229,7 +266,7 @@ func RunGenerateSDK(args []string) {
 	if !opts.json {
 		for _, f := range files {
 			if existing, rerr := readFileUnder(opts.OutDir, f.Name); rerr == nil {
-				warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), "the entity declarations")
+				warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), source)
 			}
 		}
 	}
@@ -256,7 +293,13 @@ func RunGenerateSDK(args []string) {
 	cli.Success("Generated %d file(s) in %s", len(files), opts.OutDir)
 	fmt.Println()
 	fmt.Println("  Next steps:")
-	cli.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", filepath.ToSlash(filepath.Join(opts.OutDir, "dist")))
+	dist := filepath.ToSlash(filepath.Join(opts.OutDir, "dist"))
+	if opts.fromOpenAPI != "" {
+		cli.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q), OpenAPI: <the document's JSON>})\n", dist)
+		fmt.Println("    re-run this command whenever the OpenAPI document changes: output regenerates in place")
+		return
+	}
+	cli.Printf("    serve the downloads: sdkdocs.Mount(site, app.Router(), sdkdocs.Config{Registry: app.Registry, Artifacts: os.DirFS(%q)})\n", dist)
 	fmt.Println("    re-run this command whenever entities change: output regenerates in place")
 }
 
@@ -306,6 +349,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 				opts.sdkVersion = v
 			} else if v, ok := value("--target"); ok {
 				opts.targets = splitCommaList(v)
+			} else if v, ok := value("--from-openapi"); ok {
+				opts.fromOpenAPI = v
 			} else if v, ok := value("--only"); ok {
 				opts.only = splitCommaList(v)
 			} else if v, ok := value("--exclude"); ok {
@@ -342,6 +387,11 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 func ApplySDKConfigDefaults(opts *SdkOptions) error {
 	if err := applySDKConfigDefaults(opts); err != nil {
 		return err
+	}
+	if opts.fromOpenAPI != "" {
+		// The document's servers[0].url carries its API prefix; the app
+		// spec's prefix describes the entity routes.
+		return checkOpenAPISDKOptions(*opts)
 	}
 	return applySDKAppDefaults(".", opts)
 }
@@ -388,56 +438,137 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 	if !discovery.Found || !sameDir(discovery.ProjectDir, ".") {
 		return nil
 	}
+	type sdkEntry struct {
+		opts   SdkOptions
+		outDir string
+	}
+	var entries []sdkEntry
 	for i, gen := range discovery.Config.Codegen.Generators {
 		if gen.Name != "sdk" || gen.Extension != "" {
 			continue
 		}
-		entry, err := decodeSDKEntry(i, gen)
+		decoded, err := decodeSDKEntry(i, gen)
 		if err != nil {
 			return err
 		}
-		if opts.OutDir == "" {
-			out := gen.Output
-			if out == "" {
-				out = "sdk"
-			}
-			opts.OutDir = filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))
+		out := gen.Output
+		if out == "" {
+			out = "sdk"
 		}
-		for _, field := range []struct {
-			flag       string
-			dst, entry *string
-		}{
-			{"name", &opts.name, &entry.name},
-			{"api-prefix", &opts.apiPrefix, &entry.apiPrefix},
-			{"module", &opts.module, &entry.module},
-			{"base-url", &opts.baseURL, &entry.baseURL},
-			{"sdk-version", &opts.sdkVersion, &entry.sdkVersion},
-		} {
-			if *field.dst == "" && !opts.set[field.flag] {
-				*field.dst = *field.entry
-				if entry.set[field.flag] {
-					if opts.set == nil {
-						opts.set = map[string]bool{}
-					}
-					opts.set[field.flag] = true
-				}
-			}
+		entries = append(entries, sdkEntry{decoded, filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))})
+	}
+	// A run takes one entry's settings, never a mix of two: --from-openapi
+	// picks the entry for the same document, --out the entry writing there,
+	// each or none; with neither, the only entry. Two or more need a flag.
+	picked := entries
+	if opts.fromOpenAPI != "" {
+		picked = slices.DeleteFunc(slices.Clone(picked), func(e sdkEntry) bool { return !sameOpenAPISource(e.opts.fromOpenAPI, opts.fromOpenAPI) })
+	}
+	if opts.OutDir != "" && (opts.fromOpenAPI == "" || len(picked) > 1) {
+		picked = slices.DeleteFunc(slices.Clone(picked), func(e sdkEntry) bool { return !samePath(e.outDir, opts.OutDir) })
+	}
+	if len(picked) > 1 {
+		var dirs []string
+		for _, e := range picked {
+			dirs = append(dirs, e.outDir)
 		}
-		for _, field := range []struct {
-			flag       string
-			dst, entry *[]string
-		}{
-			{"target", &opts.targets, &entry.targets},
-			{"only", &opts.only, &entry.only},
-			{"exclude", &opts.exclude, &entry.exclude},
-		} {
-			if len(*field.dst) == 0 && !opts.set[field.flag] {
-				*field.dst = *field.entry
-			}
+		return fmt.Errorf("gofastr.settings.yml lists %d sdk entries (%s); pass --out with one of those directories, or --from-openapi with an entry's document, to pick one", len(picked), strings.Join(dirs, ", "))
+	}
+	if len(picked) == 1 && opts.OutDir == "" {
+		opts.OutDir = picked[0].outDir
+	}
+	// Another entry's output directory holds another SDK and its manifest.
+	out := cmp.Or(opts.OutDir, sdkDefaultOut)
+	for _, e := range entries {
+		if !pathsOverlap(e.outDir, out) || len(picked) == 1 && e.outDir == picked[0].outDir {
+			continue
 		}
+		source := "the entity set"
+		if e.opts.fromOpenAPI != "" {
+			source = "the OpenAPI document " + e.opts.fromOpenAPI
+		}
+		return fmt.Errorf("%s is where the sdk entry for %s in gofastr.settings.yml writes, and this run is not that entry; pass --out to write somewhere else", out, source)
+	}
+	if len(picked) == 0 {
 		return nil
 	}
+	entry := picked[0].opts
+	for _, field := range []struct {
+		flag       string
+		dst, entry *string
+	}{
+		{"name", &opts.name, &entry.name},
+		{"api-prefix", &opts.apiPrefix, &entry.apiPrefix},
+		{"module", &opts.module, &entry.module},
+		{"base-url", &opts.baseURL, &entry.baseURL},
+		{"sdk-version", &opts.sdkVersion, &entry.sdkVersion},
+		{"from-openapi", &opts.fromOpenAPI, &entry.fromOpenAPI},
+	} {
+		if *field.dst == "" && !opts.set[field.flag] {
+			*field.dst = *field.entry
+			if entry.set[field.flag] {
+				if opts.set == nil {
+					opts.set = map[string]bool{}
+				}
+				opts.set[field.flag] = true
+			}
+		}
+	}
+	for _, field := range []struct {
+		flag       string
+		dst, entry *[]string
+	}{
+		{"target", &opts.targets, &entry.targets},
+		{"only", &opts.only, &entry.only},
+		{"exclude", &opts.exclude, &entry.exclude},
+	} {
+		if len(*field.dst) == 0 && !opts.set[field.flag] {
+			*field.dst = *field.entry
+		}
+	}
 	return nil
+}
+
+// resolvedAbs is p made absolute with the symlinks in its longest existing
+// prefix resolved, so /var/x and /private/var/x on macOS name one path
+// even when x does not exist yet.
+func resolvedAbs(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	rest := ""
+	for dir := abs; ; dir = filepath.Dir(dir) {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest), nil
+		}
+		if filepath.Dir(dir) == dir {
+			return abs, nil
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+	}
+}
+
+// samePath reports whether two project-relative or absolute paths name
+// one directory.
+func samePath(a, b string) bool {
+	absA, errA := resolvedAbs(a)
+	absB, errB := resolvedAbs(b)
+	return errA == nil && errB == nil && absA == absB
+}
+
+// pathsOverlap reports whether one directory is the other or holds it.
+func pathsOverlap(a, b string) bool {
+	absA, errA := resolvedAbs(a)
+	absB, errB := resolvedAbs(b)
+	if errA != nil || errB != nil {
+		return true
+	}
+	inside := func(dir, p string) bool {
+		rel, err := filepath.Rel(dir, p)
+		return err == nil && filepath.IsLocal(rel)
+	}
+	return inside(absA, absB) || inside(absB, absA)
 }
 
 // buildSDKSpec validates selection and derives the renderer input. It
@@ -447,6 +578,16 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 	if err != nil {
 		return sdkSpec{}, err
 	}
+	spec, err := settleSDKSpec(opts)
+	if err != nil {
+		return sdkSpec{}, err
+	}
+	return addSDKEntities(spec, selected)
+}
+
+// settleSDKSpec settles the options both SDK sources share (targets, out
+// dir, name, module, version, API prefix) into the spec they start.
+func settleSDKSpec(opts *SdkOptions) (sdkSpec, error) {
 	for _, t := range opts.targets {
 		if !sdkValidTargets[t] {
 			return sdkSpec{}, fmt.Errorf("--target: unknown target %q (valid: go, js)", t)
@@ -457,7 +598,7 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 	}
 	sort.Strings(opts.targets)
 	if opts.OutDir == "" {
-		opts.OutDir = "gen/sdk"
+		opts.OutDir = sdkDefaultOut
 	}
 
 	abs, err := filepath.Abs(".")
@@ -509,7 +650,11 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 	if opts.stampTime {
 		spec.GeneratedAt = time.Now().UTC()
 	}
+	return spec, nil
+}
 
+// addSDKEntities adds the selected entity declarations to spec.
+func addSDKEntities(spec sdkSpec, selected []framework.EntityDeclaration) (sdkSpec, error) {
 	structOwners := map[string]string{} // derived Go type name → declaring entity
 	propOwners := map[string]string{}   // derived client.js property → declaring entity
 	for _, decl := range selected {
@@ -589,12 +734,37 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 	return spec, nil
 }
 
-// renderSDKFiles produces every generated file, out-dir-relative: the go/
-// and js/ source trees for the requested targets, plus dist/ (archives +
-// manifest) unless archives are disabled. It stamps the provenance marker
-// on the sources before it zips or hashes them, so the manifest describes
-// the bytes the app serves.
+// renderSDKFiles produces every generated file of the entity SDK.
 func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile, error) {
+	return renderSDKSource(spec, sdkSource{
+		goFiles: func() ([]GeneratedFile, error) { return renderSDKGoFiles(spec) },
+		jsFiles: func() []GeneratedFile { return renderSDKJSFiles(spec) },
+		scope: func(m *sdk.Manifest) error {
+			for _, decl := range spec.Decls {
+				m.Entities = append(m.Entities, decl.Name)
+			}
+			sort.Strings(m.Entities)
+			hash, err := SdkSchemaHash(spec.Decls)
+			m.SchemaHash = hash
+			return err
+		},
+	}, targets, dist)
+}
+
+// sdkSource is one SDK source's renderers and the manifest scope it
+// records: the entities and their schema hash, or the OpenAPI document's.
+type sdkSource struct {
+	goFiles func() ([]GeneratedFile, error)
+	jsFiles func() []GeneratedFile
+	scope   func(*sdk.Manifest) error
+}
+
+// renderSDKSource produces every generated file, out-dir-relative: the
+// go/ and js/ source trees for the requested targets, plus dist/
+// (archives + manifest) unless archives are disabled. It stamps the
+// provenance marker on the sources before it zips or hashes them, so the
+// manifest describes the bytes the app serves.
+func renderSDKSource(spec sdkSpec, src sdkSource, targets []string, dist bool) ([]GeneratedFile, error) {
 	want := map[string]bool{}
 	for _, t := range targets {
 		want[t] = true
@@ -613,7 +783,7 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 	}
 
 	if want["go"] {
-		goFiles, err := renderSDKGoFiles(spec)
+		goFiles, err := src.goFiles()
 		if err == nil {
 			goFiles, err = StampGeneratedFiles("sdk", goFiles)
 		}
@@ -637,7 +807,7 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 	}
 
 	if want["js"] {
-		jsFiles, err := StampGeneratedFiles("sdk", renderSDKJSFiles(spec))
+		jsFiles, err := StampGeneratedFiles("sdk", src.jsFiles())
 		if err != nil {
 			return nil, err
 		}
@@ -656,24 +826,16 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 	}
 
 	if dist {
-		var names []string
-		for _, decl := range spec.Decls {
-			names = append(names, decl.Name)
-		}
-		sort.Strings(names)
-		hash, err := SdkSchemaHash(spec.Decls)
-		if err != nil {
-			return nil, err
-		}
 		manifest := sdk.Manifest{
 			SchemaVersion:  sdk.SchemaVersion,
 			App:            spec.App,
 			SDKVersion:     spec.SDKVersion,
 			GofastrVersion: spec.GofastrVersion,
 			GeneratedAt:    spec.GeneratedAt,
-			Entities:       names,
-			SchemaHash:     hash,
 			Artifacts:      artifacts,
+		}
+		if err := src.scope(&manifest); err != nil {
+			return nil, err
 		}
 		raw, err := json.MarshalIndent(manifest, "", "  ")
 		if err != nil {
@@ -855,13 +1017,6 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	if dir == "" {
 		dir = "."
 	}
-	decls, err := ReadAppDecls(dir)
-	if err != nil {
-		return nil, err
-	}
-	if len(decls) == 0 {
-		return nil, fmt.Errorf("no entities package found in %s", dir)
-	}
 	// splitCLIEntries already decoded this entry with its index; -1 only
 	// drops the index from an error an embedder's config would reach.
 	opts, err := decodeSDKEntry(-1, cfg)
@@ -871,15 +1026,12 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	// The runner prefixes output itself (cfg.Output); outDir only matters
 	// for the direct command path.
 	opts.OutDir = "gen/sdk"
-	if err := applySDKAppDefaults(dir, &opts); err != nil {
-		return nil, err
+	var files []GeneratedFile
+	if opts.fromOpenAPI != "" {
+		files, err = renderOpenAPISDK(&opts, dir)
+	} else {
+		files, err = renderEntitySDK(dir, &opts)
 	}
-
-	spec, err := buildSDKSpec(decls, &opts)
-	if err != nil {
-		return nil, err
-	}
-	files, err := renderSDKFiles(spec, opts.targets, true)
 	if err != nil {
 		return nil, err
 	}
@@ -888,4 +1040,24 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 		out = append(out, codegen.GeneratedFile{Path: f.Name, Content: f.Content})
 	}
 	return out, nil
+}
+
+// renderEntitySDK renders the entity SDK of the app in dir for the
+// codegen engine.
+func renderEntitySDK(dir string, opts *SdkOptions) ([]GeneratedFile, error) {
+	decls, err := ReadAppDecls(dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(decls) == 0 {
+		return nil, fmt.Errorf("no entities package found in %s", dir)
+	}
+	if err := applySDKAppDefaults(dir, opts); err != nil {
+		return nil, err
+	}
+	spec, err := buildSDKSpec(decls, opts)
+	if err != nil {
+		return nil, err
+	}
+	return renderSDKFiles(spec, opts.targets, true)
 }

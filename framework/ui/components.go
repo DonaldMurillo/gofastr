@@ -155,7 +155,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 type FormFieldConfig struct {
 	Label    string // required → <label>
 	For      string // required → <label for=…> matches the control ID
-	Help     string // optional helper text under the field
+	Help     string // optional helper text between the label and the control
 	Error    string // optional error message; non-empty marks the control invalid
 	Required bool   // marks the label and the control
 	// Input builds the control from the field's wiring (id, described-by,
@@ -169,7 +169,8 @@ type FormFieldConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// FormField renders a labelled field; when both are set, Error renders before Help.
+// FormField renders a labelled field: label, Help, the control, then Error;
+// the control is described by Error before Help.
 func FormField(cfg FormFieldConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: FormField requires Label")

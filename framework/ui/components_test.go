@@ -151,9 +151,11 @@ func TestFormFieldErrorSwitchesStyling(t *testing.T) {
 			return Control(ControlConfig{Field: c, Type: "text", Name: "n"})
 		},
 	})
-	mustContain(t, h, `role="alert"`)
+	if strings.Contains(string(h), `role="alert"`) {
+		t.Errorf("an error is no alert of its own: the runtime reads a refusal from one polite region:\n%s", h)
+	}
 	mustContain(t, h, "Required field")
-	// Help text is present alongside the error, after it.
+	// Help text is present alongside the error.
 	mustContain(t, h, "fui-field__hint")
 	mustContain(t, h, "Your legal name")
 }
@@ -167,8 +169,8 @@ func TestFormFieldHelpRendersWhenNoError(t *testing.T) {
 	mustContain(t, h, "fui-field__hint")
 }
 
-// The both-visible contract, order included: the error paragraph
-// precedes the hint, and the control's described-by lists the error's
+// The both-visible contract, order included: the hint sits above the
+// control and the error below it, and the control's described-by lists the error's
 func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
 	h := FormField(FormFieldConfig{
 		Label: "Name", For: "n",
@@ -186,8 +188,8 @@ func TestFormFieldHelpRendersAlongsideError(t *testing.T) {
 	if errAt == -1 || hintAt == -1 {
 		t.Fatalf("the error node or the hint node is missing (error at %d, hint at %d):\n%s", errAt, hintAt, s)
 	}
-	if errAt > hintAt {
-		t.Errorf("the error must be drawn before the hint:\n%s", s)
+	if ctlAt := strings.Index(s, "<input"); !(hintAt < ctlAt && ctlAt < errAt) {
+		t.Errorf("the hint must sit above the control and the error below it:\n%s", s)
 	}
 	if !strings.Contains(s, `aria-describedby="n-error n-hint"`) {
 		t.Errorf("the control must carry both ids, error first:\n%s", s)
@@ -237,8 +239,7 @@ func TestFormFieldReserveErrorRendersAnEmptyWiredNode(t *testing.T) {
 		},
 	})
 	s := string(h)
-	if !strings.Contains(s, `id="tok-error" role="alert"></p>`) &&
-		!strings.Contains(s, `role="alert" id="tok-error"></p>`) {
+	if !strings.Contains(s, `id="tok-error"></p>`) {
 		t.Errorf("the reserved node must render empty, so the stylesheet can take it out of the grid until a script fills it:\n%s", s)
 	}
 	if !strings.Contains(s, `data-hui-field-error=""`) {

@@ -1,0 +1,59 @@
+primitive: stream.statechannel
+summary: StateChannel - hydration snapshots and sequenced, per-role filtered events over WebSocketConn, for core-ui/runtime's createSequencedReducer.
+code:
+  - core/stream/state_channel.go
+docs:
+  - framework/docs/content/live-dashboards.md
+on_change:
+  - The envelope's field names and the strictly-greater sequence rule are read by core-ui/runtime/src/ws.js createSequencedReducer; change both together.
+invariants:
+  - id: snapshot-sorts-above-sent-events
+    rule: A snapshot goes out at the larger of the source's version and one above every sequence the channel sent, from one SnapshotFor call, and later events sort above it.
+    enforced_by:
+      - test: core/stream.TestReconnectSnapshotAboveSentEvents
+      - test: core/stream.TestStateChannelSnapshotSingleRead
+  - id: events-strictly-increase
+    rule: Each connection receives events in strictly increasing sequence order.
+    enforced_by:
+      - test: core/stream.TestStateChannelEventSequencesIncrease
+  - id: filter-before-wire
+    rule: FilterEvent runs once per role before serialization, and a role it refuses gets nothing.
+    enforced_by:
+      - test: core/stream.TestStateChannelFiltersOncePerRole
+      - test: core/stream.TestStateChannelFilterHidesRoleEntirely
+  - id: unhydratable-connection-closed
+    rule: A connection whose send buffer cannot take its snapshot is closed, and a Connect after Stop closes the connection.
+    enforced_by:
+      - test: core/stream.TestStateChannelFullBufferClosesConn
+      - test: core/stream.TestStateChannelConnectAfterStopCloses
+  - id: overflow-policy
+    rule: Without CloseOnOverflow a full queue (64 jobs) or send buffer drops the event; with it a full send buffer closes that connection and an event refused by a full queue (4096 jobs) closes every connection registered when it would have been dequeued.
+    enforced_by:
+      - test: core/stream.TestLossyQueueStillDrops
+      - test: core/stream.TestStateChannelOverflowClosesWhenAsked
+      - test: core/stream.TestQueueOverflowClosesListeners
+  - id: source-panics-recovered
+    rule: A panicking SnapshotFor closes only its connection and a panicking FilterEvent drops only its event; the Run loop keeps serving.
+    enforced_by:
+      - test: core/stream.TestStateChannelRedPanicNet
+  - id: watcher-ends-with-registration
+    rule: Unregister stops the connection's close watcher.
+    enforced_by:
+      - test: core/stream.TestStateChannelUnregisterStopsCloseWatcher
+decisions:
+  - id: sequence-is-a-json-number
+    date: 2026-11-19
+    status: accepted
+    decision: The sequence is a uint64 sent as a JSON number, exact in the browser up to 2^53.
+    rejected:
+      - option: Send it as a string or BigInt.
+        why: Every consumer would pay a conversion for a limit no deployment reaches.
+    upholds: [events-strictly-increase]
+  - id: one-fifo-for-snapshots-and-events
+    date: 2026-11-19
+    status: accepted
+    decision: Snapshot and event jobs share one FIFO drained by one loop, which assigns sequences at dequeue.
+    rejected:
+      - option: Send snapshots from the Connect caller's goroutine.
+        why: An event published after the snapshot could pass it on the wire.
+    upholds: [snapshot-sorts-above-sent-events, events-strictly-increase]

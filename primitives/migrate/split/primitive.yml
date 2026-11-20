@@ -1,0 +1,35 @@
+primitive: migrate.split
+summary: Running a NoTransaction migration body outside a transaction, statement by statement on Postgres, and the SQL lexing it shares with the query redactor.
+code:
+  - core/migrate/split.go
+  - internal/sqllex/
+invariants:
+  - id: split-at-real-boundaries
+    rule: splitStatements cuts a Postgres body only at a semicolon outside quoted strings (E'' with backslash escapes), dollar-quoted bodies, comments with /* */ nesting, parentheses and BEGIN ATOMIC bodies, dropping pieces that hold only comments.
+    enforced_by:
+      - test: core/migrate.TestSplitStatementsKeepsQuotedSemis
+      - test: core/migrate.TestSplitStatementsKeepsRuleBody
+  - id: notx-statement-per-exec
+    rule: A NoTransaction body runs one Exec per statement on Postgres, so each CREATE INDEX CONCURRENTLY runs outside an implicit transaction, and as one Exec on SQLite, where a trigger body holds semicolons.
+    enforced_by:
+      - test: core/migrate.TestPG_NoTxRunsEachStatement
+      - test: core/migrate.TestSweepMigrateSQLiteNoTxTriggerIsOneExec
+  - id: one-sql-lexer
+    rule: sqllex is the one reader of quoted strings, block comments and dollar tags for both the statement splitter and internal/sqlredact.
+    enforced_by:
+      - test: internal/sqllex.TestSkipQuoted
+      - test: internal/sqllex.TestSkipBlockComment
+      - test: internal/sqllex.TestDollarTag
+      - test: internal/sqlredact.TestTextMasksEachDialectsLiterals
+    judge: Does this change scan SQL quotes, block comments or dollar tags with its own loop instead of internal/sqllex?
+    applies:
+      - internal/sqlredact/sqlredact.go
+decisions:
+  - id: one-lexer-for-split-and-redact
+    date: 2026-11-19
+    status: accepted
+    decision: internal/sqllex holds SkipQuoted, SkipBlockComment and DollarTag; it replaced the copies in core/migrate's splitter and internal/sqlredact.
+    rejected:
+      - option: Keep a lexer in each package.
+        why: A fix to how Postgres quotes text would have to land twice, and the two already differed in signature.
+    upholds: [one-sql-lexer]

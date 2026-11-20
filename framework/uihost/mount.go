@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -193,10 +194,15 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 				w.Write([]byte(md))
 				return
 			}
+			ctx := app.WithRequest(req.Context(), req)
+			d := coreApp.PatternPolicy(ctx, sc)
+			if d.Kind == app.DecisionBlock && d.NotFound {
+				ds.ServeNotFound(w, req)
+				return
+			}
 			setPageMarkdownHeaders(w)
 			var md string
-			ctx := app.WithRequest(req.Context(), req)
-			if coreApp.PatternPolicy(ctx, sc).Kind != app.DecisionAllow {
+			if d.Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
 				prefix := ds.llmMDSEOPrefix(ctx, base, sc, sc.Title, nil)
@@ -417,6 +423,9 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	ctx = store.WithValues(ctx)
 	ctx, recorded := app.TrackStatus(ctx)
 	res, err := ds.App.RenderPageResult(ctx, path)
+	if pe, ok := errors.AsType[*app.PageError](err); ok && pe.Policy {
+		return "", nil, &PolicyBlockedError{Path: path, Decision: "not found"}
+	}
 	if err != nil {
 		return "", nil, err
 	}
@@ -449,7 +458,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
-	ctx = store.WithValues(ctx)
+	ctx = withoutRouteMeta(store.WithValues(ctx))
 	res, err := ds.App.RenderNotFoundPageResult(ctx, path, ds.notFoundBodyComponent(""))
 	if err != nil {
 		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)

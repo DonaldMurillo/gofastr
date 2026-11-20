@@ -96,7 +96,9 @@ resolves `.` and `..` segments in it, as in any URL, before the frame
 loads: `/files/a/../b` loads `/files/b`. An encoded dot segment that
 reaches the server (`%2E%2E`, from a client that does not resolve it)
 is a 404. A static surface takes no path:
-`/__gofastr/embed/<surface>/<anything>` is a 404 for it.
+`/__gofastr/embed/<surface>/<anything>` is a 404 for it. A page whose
+policy answers `decide.NotFound()` is a 404 too, and logs nothing: the
+policy chose it.
 
 The grant is per surface, not per path. A grant for `report` renders any
 path its route matches, `/reports/7` as well as `/reports/42`, and

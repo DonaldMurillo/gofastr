@@ -1,7 +1,23 @@
 primitive: appgen
 summary: The app-spec reader and application and client generators.
 code:
-  - cmd/gofastr/internal/appgen/
+  - cmd/gofastr/internal/appgen/[a-f]*.go
+  - cmd/gofastr/internal/appgen/generate.go
+  - cmd/gofastr/internal/appgen/generate_[a-n]*.go
+  - cmd/gofastr/internal/appgen/generate_output*.go
+  - cmd/gofastr/internal/appgen/generate_[p-r]*.go
+  - cmd/gofastr/internal/appgen/generate_sdk.go
+  - cmd/gofastr/internal/appgen/generate_sdk_test.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs.go
+  - cmd/gofastr/internal/appgen/generate_*_test.go
+  - cmd/gofastr/internal/appgen/generate_s[t-z]*.go
+  - cmd/gofastr/internal/appgen/generate_[t-z]*.go
+  - cmd/gofastr/internal/appgen/generated*.go
+  - cmd/gofastr/internal/appgen/generators*.go
+  - cmd/gofastr/internal/appgen/gen_*.go
+  - cmd/gofastr/internal/appgen/gencli_*.go
+  - cmd/gofastr/internal/appgen/[h-z]*.go
+  - cmd/gofastr/internal/appgen/testdata/
   - cmd/gofastr/internal/appspec/appspec.go
   - cmd/gofastr/internal/appspec/doc_examples_test.go
 docs:

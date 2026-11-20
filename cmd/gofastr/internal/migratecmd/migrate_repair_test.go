@@ -82,7 +82,7 @@ func repairT_run(t *testing.T, args ...string) (string, int) {
 }
 
 func TestMigrateRepairHelp(t *testing.T) {
-	out := clitest.CaptureStdout(t, func() { RunMigrate([]string{"repair", "--help"}) })
+	out := clitest.CovT_capStdout(t, func() { RunMigrate([]string{"repair", "--help"}) })
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "repair ") &&
 			strings.Contains(line, "--from=<yml>") && strings.Contains(line, "--apply") {

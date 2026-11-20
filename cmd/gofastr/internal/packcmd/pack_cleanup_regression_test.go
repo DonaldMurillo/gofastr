@@ -104,7 +104,7 @@ func TestPackWritesDecodableNumericStrings(t *testing.T) {
 	bp.Seed = []appspec.AppSpecSeedEntity{{Entity: "notes", Rows: []map[string]any{{"title": "1e999"}}}}
 	dir := materializeAppSpec(t, bp)
 	exit := recordPackExit(t)
-	out := clitest.CaptureStdout(t, func() { RunPack([]string{dir}) })
+	out := clitest.CovT_capStdout(t, func() { RunPack([]string{dir}) })
 	if *exit != 0 {
 		t.Fatalf("pack exited %d", *exit)
 	}
@@ -262,7 +262,7 @@ func TestPackWritesQuotedEntityPropertyKey(t *testing.T) {
 	bp.Entities[0].Properties = map[string]any{"host:port": "localhost"}
 	dir := materializeAppSpec(t, bp)
 	exit := recordPackExit(t)
-	out := clitest.CaptureStdout(t, func() { RunPack([]string{dir}) })
+	out := clitest.CovT_capStdout(t, func() { RunPack([]string{dir}) })
 	if *exit != 0 {
 		t.Fatalf("pack exited %d", *exit)
 	}

@@ -7,19 +7,10 @@ import (
 	"sync"
 )
 
-// countParams are the params a plural message reads its count from, in
-// order.
 var countParams = []string{"count", "n", "Count", "N"}
 
-// pluralNames are the categories cldrLocale.plural holds conditions
-// for, in its order.
 var pluralNames = [5]string{"zero", "one", "two", "few", "many"}
 
-// pluralCategory is the CLDR cardinal category ("zero", "one", "two",
-// "few", "many" or "other") of count in the language tag names. The
-// rules are CLDR 47's, generated into the table: Russian's 21 is "one",
-// French's 1.5 is "one" and its million "many", English's 1.0 is
-// "other". A language CLDR has no rules for reads as English.
 func pluralCategory(tag string, ops operands) string {
 	rules := pluralRulesFor(tag)
 	for i, cond := range rules {
@@ -30,9 +21,6 @@ func pluralCategory(tag string, ops operands) string {
 	return "other"
 }
 
-// pluralRulesFor is the rule set of the locale tag names: its CLDR
-// locale's, or, for a language CLDR has rules for and no modern locale,
-// that language's.
 func pluralRulesFor(tag string) *[5]string {
 	m := resolveCLDR(tag)
 	if m.id == "en" {
@@ -45,12 +33,8 @@ func pluralRulesFor(tag string) *[5]string {
 	return &m.loc.plural
 }
 
-// pluralCond is a parsed CLDR plural condition: or-ed groups of and-ed
-// relations.
 type pluralCond [][]pluralRel
 
-// pluralRel is one relation, "i % 10 = 2..4" or "v != 0": an operand,
-// an optional modulus, and the values and ranges it is (or is not) in.
 type pluralRel struct {
 	operand byte
 	mod     int
@@ -58,8 +42,6 @@ type pluralRel struct {
 	ranges  [][2]int
 }
 
-// compiled holds each condition parsed once. Conditions come from the
-// generated table only, so the map is bounded by it.
 var compiled sync.Map // condition → pluralCond
 
 func compiledPlural(cond string) pluralCond {
@@ -68,19 +50,12 @@ func compiledPlural(cond string) pluralCond {
 	}
 	c, err := parsePluralCond(cond)
 	if err != nil {
-		// The generated samples test parses every table condition, so
-		// no table condition lands here; one that does not parse
-		// matches nothing.
 		c = nil
 	}
 	compiled.Store(cond, c)
 	return c
 }
 
-// parsePluralCond reads CLDR's plural rule syntax: conditions joined by
-// "or", relations by "and", each relation an operand (n i v w f t e c),
-// an optional "% m", "=" or "!=", and a comma list of values and
-// "a..b" ranges.
 func parsePluralCond(s string) (pluralCond, error) {
 	var out pluralCond
 	for _, or := range strings.Split(s, " or ") {
@@ -162,9 +137,6 @@ func (r pluralRel) match(ops operands) bool {
 	var x int
 	switch r.operand {
 	case 'n':
-		// n is the absolute value itself: with a nonzero fraction it is
-		// no integer, so it equals no value and lies in no range (CLDR's
-		// "=" is integer membership), and neither does n % m.
 		if ops.f != 0 {
 			return r.negate
 		}
@@ -180,8 +152,6 @@ func (r pluralRel) match(ops operands) bool {
 	case 't':
 		x = ops.t
 	}
-	// e and c, the compact exponent, stay 0: a count is never written
-	// in compact notation.
 	if r.mod > 0 {
 		x %= r.mod
 	}
@@ -195,15 +165,8 @@ func (r pluralRel) match(ops operands) bool {
 	return in != r.negate
 }
 
-// operands are CLDR's plural operands of a number: i its integer digits,
-// v the count of visible fraction digits, w the same without trailing
-// zeros, f and t the fraction digits as integers with and without
-// trailing zeros. "1.50" is i=1 v=2 w=1 f=50 t=5.
 type operands struct{ i, v, w, f, t int }
 
-// countOperands finds the count among params and returns its operands.
-// A count is an integer, a finite float, or a decimal string ("1.50",
-// whose written zeros count). Anything else is no count.
 func countOperands(p map[string]any) (operands, bool) {
 	for _, k := range countParams {
 		v, ok := p[k]
@@ -247,8 +210,6 @@ func countOperands(p map[string]any) (operands, bool) {
 	return operands{}, false
 }
 
-// finiteDecimal writes f in plain decimal, or "" for NaN and the
-// infinities, which have no plural category.
 func finiteDecimal(f float64, bits int) string {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return ""
@@ -256,19 +217,11 @@ func finiteDecimal(f float64, bits int) string {
 	return strconv.FormatFloat(f, 'f', -1, bits)
 }
 
-// maxOperandDigits caps each operand's digits so it fits an int: 18 on a
-// 64-bit int, 9 on a 32-bit one. CLDR rules read an integer's last six
-// digits at most (i % 1000000), so a longer run keeps its last
-// maxOperandDigits-1 digits and adds operandOverflow
-// (10^maxOperandDigits): every modulus a rule takes is unchanged, and
-// the value never equals a small number.
 const (
 	maxOperandDigits = 9 + 9*(strconv.IntSize/64)
 	operandOverflow  = 1_000_000_000 * (1 + 999_999_999*(strconv.IntSize/64))
 )
 
-// decimalOperands reads a plain decimal ("-12", "1.50") into operands.
-// The sign is dropped: plural rules read the absolute value.
 func decimalOperands(s string) (operands, bool) {
 	s = strings.TrimPrefix(s, "-")
 	ip, fp, _ := strings.Cut(s, ".")
@@ -294,9 +247,6 @@ func allDigits(s string) bool {
 	return true
 }
 
-// digitsInt reads a run of digits as an int. Leading zeros are no
-// digits of the value; a run longer than maxOperandDigits reads as
-// operandOverflow plus its last maxOperandDigits-1 digits.
 func digitsInt(s string) int {
 	s = strings.TrimLeft(s, "0")
 	if s == "" {

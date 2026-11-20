@@ -257,6 +257,26 @@ invariants:
       - test: framework/headless.TestE2E_ActionFailureIsAnnounced
       - test: framework/headless.TestE2E_ActionRebindsAfterSwap
       - test: framework/headless.TestSweepCoreBehaviorReplaysColdSortAndPageClicks
+  - id: field-hint-above-control
+    rule: headless.Field renders label, hint, control, then error, and its error node, rendered or reserved, is no live region of its own.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
+      - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
+      - test: framework/headless.TestSpecGolden
+  - id: slider-valuetext-follows-its-output
+    rule: A Slider with an output speaks the output words on its thumb as aria-valuetext and headless-controls keeps both live; a Slider without one renders no aria-valuetext, and the thumb is named by its visible label alone.
+    enforced_by:
+      - test: framework/headless.TestE2E_ControlsSliderMirrorsItsOutput
+      - test: framework/headless.TestE2E_SliderOutputsUsePageDigits
+      - test: framework/ui.TestSliderIsNamedByItsLabelAndSpeaksItsValue
+  - id: user-invalid-mirrors-to-aria-invalid
+    rule: The headless-validity module, for a control in a Field or a Choice, copies the browser verdict onto aria-invalid, "true" under :user-invalid and "false" under :user-valid, only after the reader left the field or tried to submit; a script checkValidity() marks nothing, a radio group takes one verdict for all its radios, and a control whose described data-hui-field-error node, its field's own error node or the one after its bare choice holds words keeps the server "true".
+    enforced_by:
+      - test: framework/headless.TestE2E_UserInvalidMirrorsToAriaInvalid
+      - test: framework/headless.TestE2E_BlockedSubmitMarksRefusedControls
+      - test: framework/headless.TestE2E_ServerVerdictStandsOverNativeValid
+      - test: framework/headless.TestE2E_RadioGroupSharesOneVerdict
+      - test: framework/headless.TestE2E_ServerVerdictStandsWithoutAnID
 decisions:
   - id: classes-live-in-the-styled-layer
     date: 2026-11-16

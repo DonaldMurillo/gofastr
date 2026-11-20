@@ -23,7 +23,7 @@ func TestPackRefusesFlagAsOutput(t *testing.T) {
 				previous := cli.OsExit
 				t.Cleanup(func() { cli.OsExit = previous })
 				cli.OsExit = func(code int) { exitCode = code }
-				output := clitest.CaptureStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
+				output := clitest.CovT_capStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
 				if exitCode != 2 {
 					t.Errorf("%s %q exited %d, want usage error 2", flag, value.argument, exitCode)
 				}

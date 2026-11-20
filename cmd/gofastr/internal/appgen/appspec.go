@@ -2354,6 +2354,9 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMo
 	if hasScreens && needs.interactive {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/interactive\"\n")
 	}
+	if hasScreens && needs.handler {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
+	}
 	if hasScreens && needs.i18n {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/i18n\"\n")
 	}
@@ -3130,6 +3133,7 @@ func countEntityListBlocks(screen appspec.AppSpecScreen) int {
 }
 
 type screenImportNeeds struct {
+	handler     bool
 	component   bool
 	island      bool
 	html        bool
@@ -3161,6 +3165,7 @@ func (n *screenImportNeeds) readCode(code string, p *appspec.AppSpecPhrases) {
 	n.i18nui = emitsPkgRef(code, "i18nui")
 	n.framework = emitsPkgRef(code, "framework")
 	n.url = emitsPkgRef(code, "url")
+	n.handler = emitsPkgRef(code, "handler")
 	n.i18n = p.Used()
 }
 
@@ -3882,13 +3887,13 @@ func isSignupFormBlock(block appspec.AppSpecBlock) bool {
 // The fields are built through FormField's builder with ui.Control, so the
 // label association and any future description wiring arrive by construction
 // rather than by raw input strings.
-func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, forgotHref, footerHref, footerText string) string {
+func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, nextExpr, submitLabel, pwAutocomplete string, pwMinLength int, forgotHref, footerHref, footerText string) string {
 	// html.Input, NOT a hand-rolled <input> string through render.Raw:
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
 	// goes through. gofastr pack reads this expression back —
 	// reverseAuthCard knows exactly this shape.
-	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
+	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %s})`, nextExpr)
 	emailField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true,` +
 		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true}) }})`
 	minLen := ""
@@ -3942,11 +3947,11 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	if heading == "" {
 		heading = "Create your account"
 	}
-	return appSpecAuthFormExpr(bp, heading, action, next, "Create account", "new-password", 8, "", propStr("login_href"), "Already have an account? Sign in")
+	return appSpecAuthFormExpr(bp, heading, action, strconv.Quote(next), "Create account", "new-password", 8, "", propStr("login_href"), "Already have an account? Sign in")
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
-// <auth base>/login), next (post-login redirect, default /), register_href and
+// <auth base>/login), next (fallback post-login redirect, default /), register_href and
 // forgot_href (optional links: the footer, and the password reset under the field).
 func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
@@ -3962,7 +3967,8 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	if heading == "" {
 		heading = "Sign in"
 	}
-	return appSpecAuthFormExpr(bp, heading, action, next, "Sign in", "current-password", 0, propStr("forgot_href"), propStr("register_href"), "Create an account")
+	nextExpr := fmt.Sprintf(`handler.SafeRelativePathOr(app.QueryFromContext(ctx).Get("next"), %q)`, next)
+	return appSpecAuthFormExpr(bp, heading, action, nextExpr, "Sign in", "current-password", 0, propStr("forgot_href"), propStr("register_href"), "Create an account")
 }
 
 // appSpecAPIBase returns the URL path prefix entity CRUD mounts at:

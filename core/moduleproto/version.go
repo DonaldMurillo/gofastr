@@ -4,37 +4,27 @@ import (
 	"fmt"
 )
 
-// ProtoRange is the integer protocol-version window a peer advertises in
-// module.handshake (design §4.5). Versions are plain integers: there is no
-// MCP-style "YYYY-MM-DD" string and no semver. [Min, Max] is inclusive.
-//
-// A peer that speaks exactly one version sets Min == Max. The floor for v1 of
-// this package is [ProtoV1Min, ProtoV1Max].
+// ProtoRange is the inclusive integer protocol-version window a peer
+// advertises in module.handshake.
 type ProtoRange struct {
 	Min int `json:"min"`
 	Max int `json:"max"`
 }
 
-// Protocol versions understood by this package. Bump ProtoV1Max when a new
-// version is added; [Negotiate] picks the highest mutually-supported one.
+// Protocol versions this package speaks.
 const (
-	// ProtoV1 is the single v1 protocol version number.
-	ProtoV1 = 1
-	// ProtoV1Min is the lowest version this package's Peer can speak.
+	ProtoV1    = 1
 	ProtoV1Min = 1
-	// ProtoV1Max is the highest version this package's Peer can speak.
 	ProtoV1Max = 1
 )
 
-// DefaultProtoRange is the range advertised by a v1 moduleproto Peer that has
-// not been narrowed by configuration.
+// DefaultProtoRange is the range a v1 Peer advertises.
 var DefaultProtoRange = ProtoRange{Min: ProtoV1Min, Max: ProtoV1Max}
 
 // Contains reports whether v falls in [r.Min, r.Max] inclusive.
 func (r ProtoRange) Contains(v int) bool { return v >= r.Min && v <= r.Max }
 
-// Validate enforces the structural invariant Min ≤ Max. A malformed range is
-// treated as a terminal handshake fault by [Negotiate].
+// Validate returns ErrNegotiation unless 1 <= Min <= Max.
 func (r ProtoRange) Validate() error {
 	if r.Min > r.Max {
 		return fmt.Errorf("%w: proto range min=%d > max=%d", ErrNegotiation, r.Min, r.Max)
@@ -45,19 +35,9 @@ func (r ProtoRange) Validate() error {
 	return nil
 }
 
-// Negotiate implements the version intersection rule from design §4.5:
-//
-//	negotiated = min(host.Max, child.Max)
-//	             if that value >= max(host.Min, child.Min)
-//	             else terminal
-//
-// Both ranges are validated first; a malformed range is terminal. The returned
-// version is what both peers MUST use for the rest of the connection; it is
-// the highest mutually-supported version that is also at or above the joint
-// floor (the stricter of the two minimums).
-//
-// Negotiate is pure. It makes no decision about feature policy; see
-// [CheckCritical] for the critical-feature half of negotiation.
+// Negotiate returns min(host.Max, child.Max) when it is at least
+// max(host.Min, child.Min), and ErrNegotiation otherwise or for an invalid
+// range.
 func Negotiate(host, child ProtoRange) (int, error) {
 	if err := host.Validate(); err != nil {
 		return 0, err
@@ -74,17 +54,8 @@ func Negotiate(host, child ProtoRange) (int, error) {
 	return ceiling, nil
 }
 
-// CheckCritical implements the critical-feature half of §4.5 negotiation.
-//
-// In the handshake, a peer may declare names in `critical` for features it
-// REQUIRES the other endpoint to support. The receiver rejects the handshake
-// if any of the sender's critical names are absent from its own supported set
-// (`supported`). Unknown non-critical fields are ignored; only critical names
-// force rejection.
-//
-// For v1 only the host→child direction is wired (the handshake result has no
-// critical field). The supervisor calls CheckCritical(hostSupported, childCritical)
-// when validating a child-declared critical set if/when one is added.
+// CheckCritical returns ErrCriticalFeature for the first required name not
+// in supported.
 func CheckCritical(supported, required []string) error {
 	if len(required) == 0 {
 		return nil
@@ -101,9 +72,7 @@ func CheckCritical(supported, required []string) error {
 	return nil
 }
 
-// FeatureAck selects the intersection of two peers' advertised non-critical
-// feature lists. This is the agreed feature set both sides may rely on. Names
-// not in both lists are simply not available; they are not errors.
+// FeatureAck returns the names in both lists, in a's order, each once.
 func FeatureAck(a, b []string) []string {
 	if len(a) == 0 || len(b) == 0 {
 		return nil

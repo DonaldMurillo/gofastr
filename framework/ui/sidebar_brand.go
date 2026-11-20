@@ -64,7 +64,7 @@ func sidebarBrandCSS(_ style.Theme) string {
   block-size: 1px;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 `

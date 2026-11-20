@@ -605,7 +605,9 @@ func (a *App) renderNotFoundFromResultIDs(ctx context.Context, path, fromPath st
 // layout like every page..
 func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
 	RefuseRetiredScreenMethods("error body", comp)
-	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
+	screen := NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
+	screen.errorOutcome = true
+	return screen
 }
 
 // RenderErrorPageResult renders comp as the whole-page error body for
@@ -910,6 +912,12 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 		render.VoidTag("meta", map[string]string{
 			"name":    "viewport",
 			"content": "width=device-width, initial-scale=1.0",
+		}),
+		// The OS text size scales the root font, so every rem follows
+		// it (Chrome and Edge; other engines ignore the name).
+		render.VoidTag("meta", map[string]string{
+			"name":    "text-scale",
+			"content": "scale",
 		}),
 	)
 	// Title: effectiveTitle was resolved before the render (see the

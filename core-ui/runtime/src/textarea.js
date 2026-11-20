@@ -4,14 +4,21 @@
 // on the rescan loops for widget-mounted textareas).
 //
 // Loaded on-demand when a [data-cui-autogrow] textarea is on the page.
+//
+// Where the engine sizes a field to its content (field-sizing:
+// content), the module hands each textarea to it, with its rows and
+// cols as the floor, and measures nothing after: no observer, no
+// listener, no inline height. Everywhere else the
+// scrollHeight fallback below grows it.
 (function () {
   'use strict';
+  const native = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('field-sizing', 'content');
 
   // Track wired textareas to avoid double-binding when this module
   // runs alongside the widget-scope handler.
   const wired = new WeakMap();
   const observed = new Set();
-  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+  const observer = !native && typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
     for (const entry of entries) {
       const state = wired.get(entry.target);
       if (state && state.width !== entry.contentRect.width) {
@@ -27,11 +34,23 @@
       observed.delete(textarea);
     }
   };
-  window.addEventListener('gofastr:navigate', prune);
-  new MutationObserver(prune).observe(document, { childList: true, subtree: true });
+  if (observer) {
+    window.addEventListener('gofastr:navigate', prune);
+    new MutationObserver(prune).observe(document, { childList: true, subtree: true });
+  }
 
   function wire(ta) {
     if (!ta) return;
+    if (native) {
+      // field-sizing ignores rows and cols, so they become the floor:
+      // an empty box keeps the size it was rendered at.
+      const cs = getComputedStyle(ta);
+      const px = (a, b, c, d) => cs.boxSizing === 'border-box' ? ' + ' + (parseFloat(cs[a]) + parseFloat(cs[b]) + parseFloat(cs[c]) + parseFloat(cs[d])) + 'px' : '';
+      ta.style.minBlockSize = 'calc(' + ta.rows + 'lh' + px('paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth') + ')';
+      ta.style.minInlineSize = 'calc(' + ta.cols + 'ch' + px('paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth') + ')';
+      ta.style.fieldSizing = 'content';
+      return;
+    }
     if (observer && !observed.has(ta)) {
       observed.add(ta);
       observer.observe(ta);

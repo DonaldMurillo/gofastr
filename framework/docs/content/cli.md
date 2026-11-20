@@ -119,7 +119,13 @@ stats use the single-document contract without needing an output flag.
   files already declare (`package main` when there are none). It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
   predeclared name such as `string`, or a name that package already
-  declares. `new route` prints the line without writing anything; it
+  declares. `new route` validates the method and path with the router before
+  printing anything, rejecting malformed ServeMux patterns such as `/{wx`.
+  The path must start with `/` and contain no whitespace; host-qualified
+  patterns and method-prefixed paths such as `POST /x` are refused.
+  Go callers can use `router.ValidatePattern(method, pattern)` for the same
+  error-returning validation, without checking conflicts with existing routes.
+  It prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
   them (`h.List`), and a bare name `new handler` would refuse. The
   printed line passes the handler as written, since `Router.Handle`
@@ -326,7 +332,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (`-p abc`, `-p 99999`, `--addr localhost:`), or a `--dir` that is not
   an existing directory. While the app is building, failed to build, or exited,
   the address answers 503 with what happened (the build error
-  included) instead of refusing connections.
+  included) instead of refusing connections. The dev loop's `go list` and
+  `go build` run with `-buildvcs=false`: they never run git in your
+  repository, so a save cannot hold `.git/index.lock` while you commit,
+  and the dev binary carries no `vcs.*` build settings.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
   server-action gate + contract verification + `go build`. Only
   error-severity contract findings stop the build (`gofastr verify` is
@@ -389,8 +398,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `entities/client/client.go`, the app's typed Go client, from
   `entities/*.go`. Plain `gofastr generate` and `gofastr build` run it
   whenever that file exists ([app spec](app-spec.md)).
-- `gofastr generate sdk`: Go + JS/TS clients your app can host behind
-  a live docs page ([sdk](sdk.md)).
+- `gofastr generate sdk [--from-openapi <path|url>]`: Go + JS/TS clients
+  your app can host behind a live docs page, from the entity set or an
+  OpenAPI document ([sdk](sdk.md)).
 - `gofastr upgrade`: move to a newer release. Lists every migration
   note between your `go.mod` version and the target (`--to vX.Y.Z`;
   without it the newest tagged release is resolved via the proxy) and

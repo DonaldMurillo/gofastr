@@ -1,0 +1,64 @@
+primitive: featureflag.store
+summary: The bundled flag stores - MemoryStore, a map, and SQLStore, one table with JSON allow lists - which check every flag through one function and return copies.
+code:
+  - core/featureflag/memory.go
+  - core/featureflag/sql.go
+  - core/featureflag/store.go
+docs:
+  - framework/docs/content/feature-flags.md
+twins:
+  - job: Store and return flag definitions for the evaluator and admin listings.
+    why: One keeps flags in a map and the other in SQL rows, so only the checks on Set can be shared; checkFlag holds them and TestSweepFeatureflagStoreParity pins what the two return.
+    sites:
+      - path: core/featureflag/memory.go
+        note: MemoryStore.
+      - path: core/featureflag/sql.go
+        note: SQLStore.
+invariants:
+  - id: one-flag-check
+    rule: MemoryStore.Set and SQLStore.Set check a flag only through checkFlag, which refuses an empty key or a malformed Users entry and clamps Rollout to 0..100.
+    enforced_by:
+      - test: core/featureflag.TestSweepFeatureflagStoreParity
+      - test: core/featureflag.TestMemoryStore_SetEmptyKeyErrors
+      - test: core/featureflag.TestMemoryStore_RolloutClamped
+  - id: stores-agree
+    rule: For the same flags, MemoryStore and SQLStore refuse the same Sets with the same error and answer every Bool and BoolDefault the same.
+    enforced_by:
+      - test: core/featureflag.TestSweepFeatureflagStoreParity
+  - id: memory-store-copies
+    rule: MemoryStore keeps its own copy of a flag's lists on Set and hands out copies from Get and All, so changing either side never changes the other.
+    enforced_by:
+      - test: core/featureflag.TestSweepFeatureflagGetReturnsACopy
+      - test: core/featureflag.TestAllSnapshotDoesNotShareSlices
+  - id: sql-rows-decode-once
+    rule: SQLStore.Get and All decode a row through scanFlag, which refuses a malformed JSON list rather than reading it as empty.
+    enforced_by:
+      - test: core/featureflag.TestSQLCorruptListColumnsFailLoud
+  - id: sql-store-shape
+    rule: NewSQLStore refuses an unsafe table name and a dialect other than postgres or sqlite, and a key with SQL syntax round-trips as data.
+    enforced_by:
+      - test: core/featureflag.TestSQLTableNameGuardShapes
+      - test: core/featureflag.TestSQLStore_UnsafeTableRejected
+      - test: core/featureflag.TestSQLAdversarialKeyRoundTrips
+  - id: erase-removes-cohort-member
+    rule: Erasing a user removes their entries from every flag's users list and keeps the flag, a tenant's erase sparing another tenant's same id.
+    enforced_by:
+      - test: core/featureflag.TestEraseRemovesFlagCohortMember
+      - test: core/featureflag.TestEraseRemovesTenantQualifiedMember
+decisions:
+  - id: one-set-check
+    date: 2026-11-19
+    status: accepted
+    decision: Both stores' Set call checkFlag, which replaced the key, Users and Rollout checks each Set had written out, and SQLStore's Get and All share scanFlag, which replaced the two copies of the row decode.
+    rejected:
+      - option: Keep the checks in each store.
+        why: The copies had already drifted in their error text, and a third store would add a third.
+    upholds: [one-flag-check, sql-rows-decode-once]
+  - id: list-columns-fail-loud
+    date: 2026-11-19
+    status: accepted
+    decision: A malformed JSON list column is an error from Get and All.
+    rejected:
+      - option: Read it as an empty list.
+        why: An allow list silently emptied changes who sees the flag.
+    upholds: [sql-rows-decode-once]

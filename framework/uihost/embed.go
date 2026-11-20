@@ -677,10 +677,12 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 			ds.serveServerError(w, r, page)
 			return
 		}
-		slog.Default().Warn("uihost: embed surface screen render failed; serving 404",
-			"surface", s.Name,
-			"path", textsafe.ScrubControlBytes(page),
-			"err", textsafe.Recovered(err))
+		if pe, ok := errors.AsType[*app.PageError](err); !ok || !pe.Policy {
+			slog.Default().Warn("uihost: embed surface screen render failed; serving 404",
+				"surface", s.Name,
+				"path", textsafe.ScrubControlBytes(page),
+				"err", textsafe.Recovered(err))
+		}
 		http.NotFound(w, r)
 		return
 	}

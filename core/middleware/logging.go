@@ -31,7 +31,7 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 			logger.Info("request",
 				"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 				"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-				"status", wrapped.statusCode,
+				"status", wrapped.status,
 				"duration", duration.String(),
 			)
 		})
@@ -79,11 +79,11 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 				}
 			}
 
-			if wrapped.statusCode >= 400 || duration > slowThreshold {
+			if wrapped.status >= 400 || duration > slowThreshold {
 				logger.Info("request",
 					"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-					"status", wrapped.statusCode,
+					"status", wrapped.status,
 					"duration", duration.String(),
 					"sampled", false,
 				)
@@ -95,7 +95,7 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 				logger.Info("request",
 					"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-					"status", wrapped.statusCode,
+					"status", wrapped.status,
 					"duration", duration.String(),
 					"sampled", true,
 				)
@@ -117,42 +117,21 @@ func DiscardLogging() Middleware {
 	}
 }
 
+// responseWriter is the statusRecorder the logging middleware wraps the
+// response in; reveal offers Flush, Hijack and Push only when the
+// underlying writer has them.
 type responseWriter struct {
-	http.ResponseWriter
-	statusCode  int
-	wroteHeader bool
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	if rw.wroteHeader {
-		return
-	}
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		rw.ResponseWriter.WriteHeader(code)
-		return
-	}
-	rw.statusCode = code
-	rw.wroteHeader = true
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	if !rw.wroteHeader {
-		rw.WriteHeader(http.StatusOK)
-	}
-	return rw.ResponseWriter.Write(b)
+	statusRecorder
 }
 
 func (rw *responseWriter) ReadFrom(src io.Reader) (int64, error) {
 	copied, err := io.Copy(rw.ResponseWriter, src)
 	if copied > 0 && !rw.wroteHeader {
-		rw.statusCode = http.StatusOK
+		rw.status = http.StatusOK
 		rw.wroteHeader = true
 	}
 	return copied, err
 }
-
-func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
 type flushWriter struct{ *responseWriter }
 
@@ -194,7 +173,7 @@ type flushHijackPushWriter struct {
 }
 
 func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	return &responseWriter{statusRecorder{ResponseWriter: w, status: http.StatusOK}}
 }
 
 func reveal(rw *responseWriter) http.ResponseWriter {

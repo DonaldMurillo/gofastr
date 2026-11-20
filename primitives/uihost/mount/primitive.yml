@@ -72,7 +72,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestSweepCoreLLMMDOptOuts
   - id: refused-pattern-doc-is-withheld
-    rule: A dynamic screen's pattern llm.md, for a request its policies do not allow, is the metadata-free withheld doc.
+    rule: A dynamic screen's pattern llm.md, for a request its policies do not allow, is the metadata-free withheld doc, unless the pattern policy answers not-found, which answers the not-found page.
     enforced_by:
       - test: framework/uihost.TestSweepCorePatternLLMMDWithheldByPolicy
   - id: pattern-llm-md-resolves-seo-before-render

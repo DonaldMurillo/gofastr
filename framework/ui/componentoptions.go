@@ -51,11 +51,13 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		decls = append(decls,
 			style.Declaration{Name: "--fui-field-columns", Value: "minmax(0, 1fr)"},
 			style.Declaration{Name: "--fui-field-message-column", Value: "1 / -1"},
+			style.Declaration{Name: "--fui-field-label-row", Value: "auto"},
 		)
 	case theme.Inline:
 		decls = append(decls,
 			style.Declaration{Name: "--fui-field-columns", Value: "minmax(8rem, 1fr) minmax(0, 3fr)"},
 			style.Declaration{Name: "--fui-field-message-column", Value: "2"},
+			style.Declaration{Name: "--fui-field-label-row", Value: "2"},
 		)
 	case theme.LayoutUnset:
 	}

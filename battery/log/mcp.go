@@ -96,7 +96,12 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		})
 	}
 	for _, t := range tools {
-		var opts []mcp.ToolOption
+		opts := []mcp.ToolOption{mcp.WithAnnotations(mcp.Annotations{
+			ReadOnlyHint:    mcp.Bool(t.name != "log_set_level"),
+			DestructiveHint: mcp.Bool(false),
+			IdempotentHint:  mcp.Bool(true),
+			OpenWorldHint:   mcp.Bool(false),
+		})}
 		if t.gate != nil {
 			opts = append(opts, mcp.WithToolGate(t.gate))
 		}

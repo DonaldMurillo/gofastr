@@ -247,6 +247,45 @@ Useful options:
   borrowing the failed route's title.
   An unmatched route retains its request path even if the root layout has
   a `FallbackNotFound` outlet; it is already rendering the not-found page.
+- **Make a route look like one that does not exist.** A policy that
+  returns `decide.NotFound()` answers what a URL no route matches gets:
+  the `WithNotFoundScreen` page, the client-navigation partial, problem
+  JSON or markdown, as the request asks, with status 404 and no title,
+  content, hreflang or other meta from the route. Its server actions
+  refuse with 404 too, the `/llm-pages.md` index leaves the route out,
+  and `gofastr export` skips the page as it skips any page a policy
+  refuses. A method the page does not take (POST, OPTIONS) still
+  answers 405 with `Allow: GET, HEAD`, because no screen code runs for
+  it, the policy included; to hide the route from every method, call
+  `ServeNotFound` from middleware instead. Two things still name the
+  route's pattern: the client route manifest (`/__gofastr/manifest.js`)
+  lists every route, so set `NoSPA` on a screen whose path itself is
+  secret (its links then load full pages), and a route registered with
+  a trailing slash redirects the slashless URL to it. On a dynamic
+  route, a region guard's `NotFound` hides each URL but not the pattern
+  in the llm.md docs, since a guard needs a URL to decide; hide a
+  dynamic route with a screen or group policy. The guarantee covers the pages the UI host
+  serves: another handler that reuses the same policy (the SDK docs
+  pages, an embed surface) refuses with a plain 404. A resolver that
+  fails before the policy decides still answers the error page, as it
+  does on any route, so keep a hidden route's resolvers behind its
+  policy. A group's `Requires` resolvers run before the policy, so on a
+  hidden route either declare none or have them answer `ErrNotFound`
+  for a caller who may not see the route. `decide.Block(404)` is different: it answers the
+  status phrase as a plain body. Middleware gets the same answer from
+  `host.ServeNotFound(w, r)` on the `*uihost.UIHost` the app mounted:
+
+  ```go
+  admin := app.PolicyFunc(func(ctx context.Context) app.Decision {
+      if isAdmin(ctx) {
+          return decide.Allow()
+      }
+      return decide.NotFound()
+  })
+  ```
+
+  Widgets mounted on the path, and the layout's chrome, still render,
+  as they do for any unknown URL at that path.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.

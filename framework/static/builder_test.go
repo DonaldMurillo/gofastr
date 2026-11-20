@@ -515,6 +515,15 @@ func TestBuildBasePathRewritesURLs(t *testing.T) {
 	}
 }
 
+func TestRewriteBaseURLsPreservesDollarInBasePath(t *testing.T) {
+	b := &Builder{BasePath: "/sub$2026"}
+	in := `<a href="/login">Sign in</a><script type="application/json" id="gofastr-routes">[{"path":"/login"}]</script>`
+	want := `<a href="/sub$2026/login">Sign in</a><script type="application/json" id="gofastr-routes">[{"path":"/sub$2026/login"}]</script>`
+	if got := b.rewriteBaseURLs(in); got != want {
+		t.Errorf("rewriteBaseURLs = %s; want %s", got, want)
+	}
+}
+
 func TestRewriteBaseURLs_PrefixesCatalogJSON(t *testing.T) {
 	b := &Builder{BasePath: "/gofastr"}
 	// The component catalog seeds inline JSON with stylePath values the

@@ -9,11 +9,13 @@
 // class: aria-invalid and aria-describedby on the control, the words
 // in the field's error node ([data-hui-field-error], which
 // headless.Field renders filled, reserved and empty, or not at all).
-// A field with no error node gets one: a role=alert paragraph carrying
-// the hook with the value "live", so clear() can tell it from the
-// server's, placed where the rendered one would sit (last in a
-// [data-hui-field], right after a bare [data-hui-choice] label). The
-// kit's sheet styles the hook, so this module names no class and the
+// A field with no error node gets one: a paragraph carrying the hook
+// with the value "live", so clear() can tell it from the server's,
+// placed where the rendered one would sit (last in a [data-hui-field],
+// right after a bare [data-hui-choice] label). No error node is a live
+// region: every refusal is read once, as one sentence per field, from
+// the document's one polite region (#cui-form-errors). The kit's sheet
+// styles the hook, so this module names no class of the kit's and the
 // kit may rename every one of its own. When no field matched, the
 // error text is toasted (module or fallback). Before this module a
 // refused Save did nothing the user could see.
@@ -24,6 +26,26 @@
   const FIELD = '[data-hui-field]';
   const CHOICE = '[data-hui-choice]';
   const ERR = '[data-hui-field-error]';
+
+  // say writes text into the one polite region, emptied first and
+  // filled a beat later so the same words twice are read twice.
+  let sayTimer = 0;
+  let seq = 0;
+  function say(text) {
+    clearTimeout(sayTimer);
+    let r = document.getElementById('cui-form-errors');
+    if (!r) {
+      if (!text) return;
+      r = document.createElement('div');
+      r.id = 'cui-form-errors';
+      r.setAttribute('role', 'status');
+      r.setAttribute('aria-live', 'polite');
+      r.className = 'cui-visually-hidden';
+      document.body.appendChild(r);
+    }
+    r.textContent = '';
+    if (text) sayTimer = setTimeout(() => { r.textContent = text; }, 50);
+  }
 
   // describe adds id to a control's aria-describedby tokens (on) or
   // drops it, keeping every other token: a hint stays described.
@@ -41,6 +63,7 @@
   // back to reserved.
   function clear(form) {
     if (!form) return;
+    say('');
     // The form's own error nodes and described controls, plus those of
     // every control associated from outside it (form="id"), which
     // report() marks like any other: its field's, or the node right after
@@ -112,6 +135,7 @@
     // typed handler answers through, alike.
     const fields = d && d.fields && typeof d.fields === 'object' ? d.fields : {};
     let placed = 0;
+    const said = [];
     for (const name of Object.keys(fields)) {
       let el = form.elements.namedItem(name);
       // A repeated name (the hidden+checkbox pair) answers a list; the
@@ -128,15 +152,20 @@
       } else {
         p = document.createElement('p');
         p.setAttribute('data-hui-field-error', 'live');
-        p.setAttribute('role', 'alert');
-        if (el.id) p.id = el.id + '-error';
+        // Always an id, so the control is described by its message.
+        p.id = (el.id || 'cui-fe-' + ++seq) + '-error';
         if (field) field.appendChild(p);
         else choice.after(p);
       }
       if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
+      // A radio is named by its group's legend, never one option.
+      const g = el.type === 'radio' && el.closest('fieldset');
+      const l = (g && g.querySelector(':scope > legend')) || (el.labels && el.labels[0]);
+      said.push(((l && l.textContent.trim()) || el.getAttribute('aria-label') || name) + ': ' + p.textContent);
       placed++;
     }
+    if (placed) say(said.join('. '));
     if (placed && opts && 'submitter' in opts) {
       const a = document.activeElement;
       // form.elements, not a descendant query: it is in tree order and
@@ -159,6 +188,8 @@
     }
   }
 
+  // A page the reader navigated to keeps no other page's refusal.
+  window.addEventListener('gofastr:navigate', () => say(''));
   NS._formErrors = { clear, report };
   (NS.loadedModules ||= {}).formerrors = true;
 })();

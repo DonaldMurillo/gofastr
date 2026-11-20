@@ -2,8 +2,6 @@ package handler
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The request-binding refusals, under "error.<code>". ReasonInvalidJSON's
-// detail param is a JSONErrorDetail phrase, never the decoder's own text.
 var (
 	ReasonInvalidJSON          = i18n.Define("error.invalid_json", "invalid JSON: {{detail}}")
 	ReasonJSONNotUTF8          = i18n.Define("error.json_not_utf8", "invalid JSON: the body is not valid UTF-8")
@@ -17,17 +15,11 @@ var (
 	ReasonInvalidParams        = i18n.Define("error.invalid_params", "invalid params: {{detail}}")
 )
 
-// The duplicate and folded key refusals for an object below the top
-// level, naming where it sits. The code (the last key segment) is the
-// top-level one's, so a client branching on "reason" sees no difference.
 var (
 	reasonJSONDuplicateKeyAt = i18n.Define("error.nested.json_duplicate_key", "invalid JSON: duplicate key {{key}} in {{path}}")
 	reasonJSONFoldedKeysAt   = i18n.Define("error.nested.json_folded_keys", "invalid JSON: keys {{first}} and {{second}} in {{path}} name the same field")
 )
 
-// The {{detail}} of a JSON decode refusal (JSONErrorDetail): what was
-// wrong and where, in JSON's own terms. A path is the client's key
-// spelling (items[2].price); a type is one of JSON's six.
 var (
 	jsonWrongType          = i18n.Define("json.decode.wrong_type", "{{path}}: expected {{expected}}, got {{got}}")
 	jsonWrongTypeRoot      = i18n.Define("json.decode.wrong_type_root", "expected {{expected}}, got {{got}}")
@@ -59,7 +51,6 @@ var (
 // its one JSON value, for a decode site with its own trailing check.
 func JSONTrailingData() error { return i18n.NewError(jsonTrailingData) }
 
-// Refusals shared by every route family that guards a write or a caller.
 var (
 	ReasonCrossSiteRefused       = i18n.Define("error.cross_site", "cross-site request refused")
 	ReasonAuthenticationRequired = i18n.Define("error.authentication_required", "authentication required")

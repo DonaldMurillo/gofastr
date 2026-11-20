@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -24,6 +25,8 @@ type Tool struct {
 	Description  string         `json:"description"`
 	InputSchema  map[string]any `json:"inputSchema"`
 	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	// Annotations are the tool's behaviour hints in tools/list; see WithAnnotations.
+	Annotations *Annotations `json:"annotations,omitempty"`
 	// Meta is the tool's `_meta` in tools/list.
 	Meta    map[string]any `json:"_meta,omitempty"`
 	Handler ToolHandler    `json:"-"`
@@ -78,8 +81,9 @@ type Server struct {
 
 	resources map[string]Resource
 
-	name    string
-	version string
+	name         string
+	version      string
+	instructions string
 
 	prompts map[string]Prompt
 
@@ -92,6 +96,8 @@ type Server struct {
 	registerHook func(toolName string)
 
 	devImpliedBarred bool
+	warnUnannotated  bool
+	annotationWarned map[string]struct{}
 	callGate         func(toolName string) error
 
 	serverGate func(ctx context.Context) error
@@ -137,6 +143,64 @@ func (s *Server) SetServerName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.name = name
+}
+
+// SetInstructions sets the instructions initialize returns, which tell a client when to use the server's tools; empty omits them.
+func (s *Server) SetInstructions(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.instructions = text
+}
+
+// Instructions returns the text SetInstructions set.
+func (s *Server) Instructions() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.instructions
+}
+
+// SetAnnotationWarnings logs a warning, once per tool, for each tool other than a WithDevImplied one that leaves readOnlyHint,
+// destructiveHint or openWorldHint unset: for the tools already registered when it is turned on, and for each later RegisterTool.
+func (s *Server) SetAnnotationWarnings(on bool) {
+	type pending struct{ name, missing string }
+	var warn []pending
+	s.mu.Lock()
+	s.warnUnannotated = on
+	if on {
+		for _, name := range slices.Sorted(maps.Keys(s.tools)) {
+			if missing := s.claimAnnotationWarning(s.tools[name]); missing != "" {
+				warn = append(warn, pending{name, missing})
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, w := range warn {
+		logUnhintedTool(w.name, w.missing)
+	}
+}
+
+func (s *Server) claimAnnotationWarning(t Tool) string {
+	if !s.warnUnannotated || t.devImplied {
+		return ""
+	}
+	if _, done := s.annotationWarned[t.Name]; done {
+		return ""
+	}
+	missing := missingListingHints(t.Annotations)
+	if len(missing) == 0 {
+		return ""
+	}
+	if s.annotationWarned == nil {
+		s.annotationWarned = make(map[string]struct{})
+	}
+	s.annotationWarned[t.Name] = struct{}{}
+	return strings.Join(missing, ", ")
+}
+
+func logUnhintedTool(name, missing string) {
+	slog.Warn("mcp: tool leaves annotation hints unset; directory listings such as ChatGPT's require them",
+		slog.String("tool", textsafe.SanitizeControlBytes(name)),
+		slog.String("missing", missing))
 }
 
 // ServerInfo returns the serverInfo name and version.
@@ -196,7 +260,11 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 
 	s.tools[name] = tool
 	hook := s.registerHook
+	missing := s.claimAnnotationWarning(tool)
 	s.mu.Unlock()
+	if missing != "" {
+		logUnhintedTool(name, missing)
+	}
 	if hook != nil {
 		hook(name)
 	}
@@ -213,6 +281,7 @@ func (s *Server) UnregisterTool(name string) bool {
 	tool, ok := s.tools[name]
 	if ok {
 		delete(s.tools, name)
+		delete(s.annotationWarned, name)
 	}
 	s.mu.Unlock()
 	if !ok {
@@ -237,6 +306,7 @@ func (s *Server) UnregisterDevImpliedTools() []string {
 	for name, tool := range s.tools {
 		if tool.devImplied {
 			delete(s.tools, name)
+			delete(s.annotationWarned, name)
 			out = append(out, withdrawn{name: name, gate: tool.Gate})
 		}
 	}
@@ -289,6 +359,7 @@ func (s *Server) listTools(ctx context.Context) []Tool {
 	gate := s.callGate
 	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
+		t.Annotations = clonedAnnotations(t.Annotations)
 		snapshot = append(snapshot, t)
 	}
 	s.mu.RUnlock()
@@ -364,6 +435,7 @@ func (s *Server) listToolsUnfiltered() []Tool {
 	gate := s.callGate
 	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
+		t.Annotations = clonedAnnotations(t.Annotations)
 		snapshot = append(snapshot, t)
 	}
 	s.mu.RUnlock()

@@ -211,7 +211,7 @@ func TestEveryCellRunsUnderTheDenyPolicy(t *testing.T) {
 			if err := json.Unmarshal(raw, &settings); err != nil {
 				t.Fatalf("%s/%s: %v", suite, cond, err)
 			}
-			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") {
+			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") || !slices.Contains(settings.Permissions.Deny, "Bash(go clean *)") {
 				t.Errorf("%s/%s runs without the deny policy: %v", suite, cond, settings.Permissions.Deny)
 			}
 			fullHarness := cond == conditionHarness || cond == conditionGuideLong || cond == conditionGuideShort
@@ -650,6 +650,7 @@ func TestGitErrorsCarryGitsOwnMessage(t *testing.T) {
 }
 
 func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
+	noHostGit(t)
 	dir := t.TempDir()
 	git := func(args ...string) string {
 		t.Helper()
@@ -670,7 +671,8 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock := filepath.Join(dir, ".git", "index.lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	held, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 	seen := make(chan struct{})
@@ -684,7 +686,12 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Error("restoreTests never waited on the held index lock")
 		}
+		time.Sleep(300 * time.Millisecond)
+		if _, err := os.Stat(lock); err != nil {
+			t.Errorf("grading removed an index lock a live git still held: %v", err)
+		}
 		_ = os.Remove(lock)
+		_ = held.Close()
 	}()
 	defer func() { <-removed }()
 	root, err := os.OpenRoot(dir)
@@ -858,4 +865,121 @@ func TestStopCellProcessesKeepsALockAWriterOutsideTheCellHolds(t *testing.T) {
 	if _, err := os.Stat(lock); err != nil {
 		t.Error("index.lock was removed while a writer outside the cell still held it")
 	}
+}
+
+func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
+	noHostGit(t)
+	if runtime.GOOS != "linux" {
+		t.Skip("lock holders are found through /proc")
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "index.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, time.Second); err != nil {
+		t.Fatalf("a lock left by a killed git failed the cell: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "index.lock")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the stale lock is still there: %v", err)
+	}
+}
+
+func TestWaitIndexUnlockedKeepsALockWhileACellProcessLives(t *testing.T) {
+	noHostGit(t)
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	ready := filepath.Join(t.TempDir(), "ready")
+	// Git closes index.lock before running commit hooks and renames it
+	// afterwards: the lock exists, no descriptor holds it, the writer lives.
+	startInCell(t, dir, `: > .git/index.lock; : > `+ready+`; while :; do sleep 0.05; done`)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, 300*time.Millisecond); err == nil {
+		t.Error("grading went ahead while a git in the cell still owned index.lock")
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Errorf("index.lock was removed while a git in the cell was alive: %v", err)
+	}
+}
+
+func TestWaitIndexUnlockedKeepsALockAGitOutsideTheCellOwns(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("git processes are found through /proc")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	bin := filepath.Join(t.TempDir(), "git")
+	data, err := os.ReadFile(sh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command(bin, "-c", `: > `+lock+`; : > `+ready+`; while :; do sleep 0.05; done`)
+	cmd.Dir = t.TempDir()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, 300*time.Millisecond); err == nil {
+		t.Error("grading went ahead while a git outside the cell still owned index.lock")
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Errorf("index.lock was removed while its git was alive: %v", err)
+	}
+}
+
+// noHostGit stubs out git processes elsewhere on the host, so a guard test
+// sees only the process it starts.
+func noHostGit(t *testing.T) {
+	saved := gitRunning
+	gitRunning = func() bool { return false }
+	t.Cleanup(func() { gitRunning = saved })
 }

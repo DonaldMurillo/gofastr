@@ -84,7 +84,12 @@ func (a *App) controlToolNames() []string {
 }
 
 func (a *App) registerControlTools() error {
-	var opts []mcp.ToolOption
+	opts := []mcp.ToolOption{mcp.WithAnnotations(mcp.Annotations{
+		ReadOnlyHint:    mcp.Bool(false),
+		DestructiveHint: mcp.Bool(false),
+		IdempotentHint:  mcp.Bool(true),
+		OpenWorldHint:   mcp.Bool(false),
+	})}
 	if gate := controlToolGate(a.mcpControlDevImplied, a.mcpControlGate); gate != nil {
 		opts = append(opts, mcp.WithToolGate(gate))
 	}

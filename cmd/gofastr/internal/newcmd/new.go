@@ -6,14 +6,15 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/net/http/httpguts"
 )
@@ -161,8 +162,13 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	if err := checkRoutePattern(method, path); err != nil {
-		cli.Fail("%v", err)
+	if !strings.HasPrefix(path, "/") || strings.ContainsFunc(path, unicode.IsSpace) {
+		cli.Fail("invalid route pattern %q: path must start with / and must not contain whitespace", path)
+		cli.OsExit(1)
+		return
+	}
+	if err := router.ValidatePattern(method, path); err != nil {
+		cli.Fail("invalid route pattern %q: %v", path, err)
 		cli.OsExit(1)
 		return
 	}
@@ -181,16 +187,6 @@ func normalizeRouteMethod(method string) (string, error) {
 		return "", fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
 	}
 	return strings.ToUpper(method), nil
-}
-
-func checkRoutePattern(method, path string) (err error) {
-	defer func() {
-		if cause := recover(); cause != nil {
-			err = fmt.Errorf("invalid route %q: %v", path, cause)
-		}
-	}()
-	http.NewServeMux().Handle(method+" "+path, http.NotFoundHandler())
-	return nil
 }
 
 // checkRouteHandler refuses a --handler that is not a Go identifier or a

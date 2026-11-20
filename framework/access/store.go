@@ -395,12 +395,9 @@ func (s *GrantStore) publish(role string) {
 }
 
 func (a *grantFanout) handleRemote(raw []byte) {
-	fromNode, body, err := fanout.Unwrap(raw)
-	if err != nil {
+	_, body, ok := fanout.UnwrapForeign(a.nodeID, raw)
+	if !ok {
 		return
-	}
-	if fromNode == a.nodeID {
-		return // own publish, drop the echo
 	}
 	var msg accessInvalidateMsg
 	if err := json.Unmarshal(body, &msg); err != nil {

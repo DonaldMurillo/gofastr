@@ -56,6 +56,11 @@ type Config struct {
 	// Nil mounts the site without downloads.
 	Artifacts fs.FS
 
+	// OpenAPI is the JSON OpenAPI document the app publishes. SDKs
+	// generated with `gofastr generate sdk --from-openapi` are served
+	// only with it, and are checked for drift against it.
+	OpenAPI []byte
+
 	// AppName labels the site; defaults to the core-ui app's name.
 	AppName string
 	// BaseURL is the public origin in install and usage snippets. Empty
@@ -91,6 +96,7 @@ type site struct {
 	provenance   bool
 
 	undocumentedOnce sync.Once
+	unpublishedOnce  sync.Once
 }
 
 func (s *site) readOnly(e *entity.Entity) bool {
@@ -134,7 +140,7 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 			WithDescription("Client SDKs and API reference for " + cfg.AppName),
 		app.NewScreen(base+"/auth", &authScreen{site: s}).
 			WithTitle("API authentication: " + cfg.AppName).
-			WithDescription("Bearer-token authentication for the " + cfg.AppName + " API"),
+			WithDescription("API-token authentication for the " + cfg.AppName + " API"),
 		app.NewScreen(base+"/errors", &errorsScreen{site: s}).
 			WithTitle("API errors: " + cfg.AppName).
 			WithDescription("Error envelope and status codes for the " + cfg.AppName + " API"),
@@ -265,6 +271,18 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 			s.provenance = true
 			return
 		}
+		if mf.Source == sdk.SourceOpenAPI {
+			if s.cfg.OpenAPI == nil {
+				return
+			}
+			live, err := sdk.OpenAPIHash(s.cfg.OpenAPI)
+			if err != nil || live != mf.SchemaHash {
+				s.drift = true
+				slog.Warn("sdkdocs: SDK artifacts were generated from another OpenAPI document: re-run `gofastr generate sdk --from-openapi`",
+					"manifest", mf.SchemaHash, "live", live, "err", err)
+			}
+			return
+		}
 		jsonCase := ""
 		if s.cfg.SnakeCase {
 			jsonCase = "snake_case"
@@ -303,6 +321,13 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 		m, _, _ := s.resolved()
+		if m != nil && m.Source == sdk.SourceOpenAPI && s.cfg.OpenAPI == nil {
+			s.unpublishedOnce.Do(func() {
+				slog.Warn("sdkdocs: SDK downloads withheld: they were generated from an OpenAPI document and Config.OpenAPI does not publish one")
+			})
+			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKUnpublishedOpenAPI)
+			return
+		}
 		if !s.artifactsDocumented(m) {
 			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKUndocumented)
 			return

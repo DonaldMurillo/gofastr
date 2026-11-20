@@ -484,7 +484,7 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 func packageName(dir, pkg string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
 	defer cancel()
-	list := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", pkg)
+	list := exec.CommandContext(ctx, "go", "list", "-buildvcs=false", "-f", "{{.Name}}", pkg)
 	list.Dir = dir
 	list.WaitDelay = 5 * time.Second
 	out, err := list.Output()
@@ -517,7 +517,7 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 		fmt.Fprintln(out, msg)
 		return false
 	}
-	buildCmd := exec.Command("go", "build", "-o", tmpBin, pkg)
+	buildCmd := BuildCommand(tmpBin, pkg)
 	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
 	buildCmd.Stdout = io.MultiWriter(os.Stdout, out)
 	buildCmd.Stderr = io.MultiWriter(os.Stderr, out)
@@ -530,6 +530,11 @@ func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, m
 	mu.Unlock()
 
 	return RunBuildWithHeartbeat(buildCmd, dir, interrupt) == nil
+}
+
+// BuildCommand is the dev loops' go build of pkg into bin.
+func BuildCommand(bin, pkg string) *exec.Cmd {
+	return exec.Command("go", "build", "-buildvcs=false", "-o", bin, pkg)
 }
 
 // RunBuildWithHeartbeat waits out the dev build, printing a progress
@@ -691,7 +696,7 @@ var listDeps = func(ctx context.Context, dir, pkg string, env []string) ([]strin
 	defer cancel()
 	// No -e: a package that does not load fails the query, and a failed
 	// query keeps the last graph rather than a partial one.
-	list := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", pkg)
+	list := exec.CommandContext(ctx, "go", "list", "-buildvcs=false", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", pkg)
 	list.Dir = dir
 	list.Env = env
 	list.WaitDelay = 5 * time.Second

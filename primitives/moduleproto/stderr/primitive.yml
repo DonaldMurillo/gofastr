@@ -1,0 +1,23 @@
+primitive: moduleproto.stderr
+summary: RingSink, the bounded never-blocking sink that keeps the tail of a module child's stderr.
+code:
+  - core/moduleproto/stderrsink.go
+invariants:
+  - id: ring-keeps-the-tail
+    rule: RingSink keeps only the last cap bytes written, in write order.
+    enforced_by:
+      - test: core/moduleproto.TestRingSinkRetainsLastN
+  - id: drain-ends-clean-on-eof
+    rule: Drain returns nil at EOF and returns any other read error, keeping what it copied.
+    enforced_by:
+      - test: core/moduleproto.TestRingSinkDrainToEOF
+      - test: core/moduleproto.TestRingSinkDrainReadError
+decisions:
+  - id: trim-not-circular
+    date: 2026-11-19
+    status: accepted
+    decision: The ring is one slice trimmed to the last cap bytes on each write.
+    rejected:
+      - option: A circular buffer.
+        why: stderr is low volume next to the protocol path, so it adds code for no measurable gain.
+    revisit_if: A child's stderr carries enough volume for the trim to show in a profile.

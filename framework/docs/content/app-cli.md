@@ -458,4 +458,7 @@ field or exclude the entity.
 
 `gofastr generate sdk` is the library twin of this command: a
 downloadable Go module and JS/TS client for the same API, hosted by the
-app itself behind a live docs site. See [sdk](sdk.md).
+app itself behind a live docs site. `gofastr generate sdk --from-openapi`
+reads the same document this command does, through the same code, and
+its Go SDK's `client.go` is this CLI's `internal/client`. See
+[sdk](sdk.md).

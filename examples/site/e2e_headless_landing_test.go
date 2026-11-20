@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	cdplog "github.com/chromedp/cdproto/log"
 	cdnetwork "github.com/chromedp/cdproto/network"
@@ -509,8 +510,8 @@ func fmtHL(format, selector string) string {
 
 // TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint is the
 // FieldOptions acceptance pass: the long label wraps rather than
-// widening its track, both messages render at once with the error
-// first, the choice row sits beside the ordinary fields, and nothing
+// widening its track, both messages render at once with the hint
+// above the control and the error below it, the choice row sits beside the ordinary fields, and nothing
 // overflows — in a narrow grid CELL at a wide viewport (the
 // container case) as well as at a narrow viewport.
 func TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint(t *testing.T) {
@@ -534,7 +535,6 @@ func TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint(t *testing.T) {
 					Overflow        bool
 					HintVisible     bool
 					ErrorVisible    bool
-					ErrorFirst      bool
 					LongWraps       bool
 					CheckboxVisible bool
 					CellOverflow    bool
@@ -558,7 +558,6 @@ func TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint(t *testing.T) {
 						overflow: de.scrollWidth > window.innerWidth + 1,
 						hintVisible: !!hint && hint.offsetParent !== null,
 						errorVisible: !!err && err.offsetParent !== null,
-						errorFirst: !!hint && !!err && (err.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
 						longWraps: !!longLabel && !!bothLabel && longLabel.offsetHeight > bothLabel.offsetHeight + 4,
 						checkboxVisible: !!cb && cb.offsetParent !== null,
 						cellOverflow,
@@ -575,8 +574,18 @@ func TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint(t *testing.T) {
 				if !got.HintVisible || !got.ErrorVisible {
 					t.Errorf("both messages must be visible at once: hint=%v error=%v", got.HintVisible, got.ErrorVisible)
 				}
-				if !got.ErrorFirst {
-					t.Error("the error must be drawn before the hint")
+				// Polled, not read once: a field sheet the page loads on
+				// demand can land after the first layout.
+				if err := chromedp.Run(ctx, chromedp.Poll(`(() => {
+					const both = document.getElementById('hl-field-both').closest('.fui-field');
+					const hint = both.querySelector('.fui-field__hint');
+					const err = both.querySelector('.fui-field__error');
+					const ctl = both.querySelector('input,select,textarea');
+					const before = (a, b) => !!a && !!b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+					const top = (el) => el.getBoundingClientRect().top;
+					return before(hint, ctl) && before(ctl, err) && top(hint) < top(ctl) && top(ctl) < top(err);
+				})()`, nil, chromedp.WithPollingTimeout(3*time.Second))); err != nil {
+					t.Errorf("the hint must be drawn above the control and the error below it: %v", err)
 				}
 				if !got.LongWraps {
 					t.Error("the long label did not wrap to more lines than the short one")

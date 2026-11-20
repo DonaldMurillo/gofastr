@@ -1,6 +1,5 @@
-// Package static provides a static file server for Go's embed.FS (or any fs.FS),
-// with ETag-based caching, configurable Cache-Control headers, MIME type
-// detection, SPA fallback, and optional directory listing.
+// Package static serves files from an fs.FS with content-hash ETags,
+// Cache-Control, ranges, MIME detection and an SPA fallback.
 package static
 
 import (
@@ -27,90 +26,44 @@ import (
 
 // Config holds the configuration for serving static files.
 type Config struct {
-	// FS is the filesystem to serve files from (e.g. an embed.FS).
-	// When the backing store is disk-based (os.DirFS), requests are
-	// opened through an *os.Root over the resolved root, so a symlink
-	// pointing outside the root — including one swapped in mid-request —
-	// is refused by the kernel at Open time. embed.FS cannot carry
-	// symlinks and is unaffected.
+	// FS is the filesystem served. A disk-backed one is opened through an
+	// *os.Root, so a symlink out of it is refused.
 	FS fs.FS
-	// Prefix is the URL path prefix to strip when mapping to filesystem paths.
-	// For example, with Prefix="/static", a request for "/static/app.js"
-	// serves "app.js" from FS.
+	// Prefix is stripped, on a segment boundary, from the request path.
 	Prefix string
 
 	// MaxAge is the default cache duration for Cache-Control headers.
 	// Zero means "no-cache".
 	MaxAge time.Duration
 
-	// IndexFile is the name of the default file to serve for directory paths.
-	// Defaults to "index.html".
+	// IndexFile answers a directory path. Defaults to "index.html".
 	IndexFile string
 
-	// SPA enables single-page application mode. When true, a request
-	// that matches no file is a client route (/dashboard/settings,
-	// /users/42, /u/jane.doe, /blog/v1.2) and is answered with IndexFile
-	// instead of 404, unless its last path segment ends in a well-known
-	// asset extension, in any case: .js .mjs .css .map, .png .jpg .jpeg
-	// .gif .svg .webp .avif .ico, .woff .woff2 .ttf, .json .wasm .txt
-	// .xml. A missing asset (/app.3f2a.js, /x.css,
-	// /logo.png) is a 404: the index in its place is HTML a browser
-	// would run as a script or a stylesheet, and a cache would store it
-	// under the asset's URL.
+	// SPA answers a miss with IndexFile unless its last segment ends in
+	// an asset extension (.js, .css, .png, .woff2, .json, ...).
 	SPA bool
 
-	// NotFoundFile, when set, names a file in FS whose body answers a
-	// request that matches no file, with status 404 (a static export's
-	// "404.html"). Ignored in SPA mode, which answers misses with
-	// IndexFile. When the file itself is missing the plain 404 stands.
+	// NotFoundFile, outside SPA mode, names a file that answers a miss
+	// with status 404.
 	NotFoundFile string
 
-	// DirListing is reserved for a future release.
-	// When implemented, enabling it will render an HTML directory listing
-	// instead of returning 404 for directory paths that lack an index file.
-	// Do not set this field. It is currently ignored.
+	// DirListing is reserved and ignored.
 	DirListing bool
 
-	// digests memoises content digests for THIS handler's FS so the ETag
-	// is not recomputed on every request. Handler allocates one per call;
-	// see digestKey for why it must not be shared across filesystems.
-	// Copying a Config shares the same cache, which is correct. The FS
-	// travels with it.
 	digests *digestCache
 
-	// resolvedRoot is the FS root's on-disk path with every symlink
-	// resolved, bound by Handler (see rootBinding). Empty when the FS is not
-	// disk-backed (embed.FS, fstest.MapFS), which disables the
-	// read-containment check in serveFile — those filesystems cannot
-	// carry symlinks, so there is nothing to contain.
 	resolvedRoot string
 	rootIdentity fs.FileInfo
 
-	// root, when non-nil, is an *os.Root opened for one request.
-	// Every request-time open then goes through root.Open and is
-	// contained by the KERNEL: a symlink pointing outside the root is
-	// refused by the open itself, so there is no window between an
-	// open and a later containment check for a symlink swap to slip
-	// through. Nil for non-disk filesystems (embed.FS, MapFS — no
-	// symlinks to follow) and for a disk FS whose root could not be
-	// opened; those keep the plain FS.Open path.
 	root *os.Root
 
-	// dirRequest is the request's file path when the URL did not end in
-	// a slash, set per request. serveFile answers a directory of that
-	// name with a redirect to the slash form instead of its index.
 	dirRequest string
 }
 
-// defaults fills in zero-value fields with sensible defaults.
 func (c Config) defaults() Config {
 	if c.IndexFile == "" {
 		c.IndexFile = "index.html"
 	}
-	// Normalise the prefix to "/seg[/seg...]": a leading slash and no
-	// trailing one. "/" and "" both mean the root. A trailing slash used to
-	// survive into Mount's patterns ("/static//"), which ServeMux refuses
-	// as unclean.
 	c.Prefix = strings.TrimRight(c.Prefix, "/")
 	if c.Prefix != "" && !strings.HasPrefix(c.Prefix, "/") {
 		c.Prefix = "/" + c.Prefix
@@ -118,11 +71,6 @@ func (c Config) defaults() Config {
 	return c
 }
 
-// stripPrefix removes prefix from p only on a segment boundary: "/static"
-// and "/static/app.js" lose it, "/staticsecret.txt" keeps every byte. A
-// bare TrimPrefix read "/staticsecret.txt" as "secret.txt", a file the URL
-// never named. A path that does not carry the prefix at all is served
-// as-is, so the handler also works behind an http.StripPrefix.
 func stripPrefix(p, prefix string) string {
 	if prefix == "" {
 		return p
@@ -133,25 +81,20 @@ func stripPrefix(p, prefix string) string {
 	return p
 }
 
-// Handler returns an http.Handler that serves static files according to the
-// given Config.
+// Handler returns an http.Handler that serves config's files to GET and
+// HEAD.
 func Handler(config Config) http.Handler {
 	config = config.defaults()
 	config.digests = newDigestCache()
 	binding := &rootBinding{}
 	binding.load(config.FS)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 
-		// Reject `..` segments on the *raw* URL: running path.Clean
-		// first (the previous behaviour) silently collapses
-		// /static/../secret to /secret and lets the prefix check miss
-		// the traversal entirely.
 		if hasDotDotSegment(r.URL.Path) {
 			http.NotFound(w, r)
 			return
@@ -163,30 +106,16 @@ func Handler(config Config) http.Handler {
 			reqPath = config.IndexFile
 		}
 
-		// Refuse to serve dotfiles (.env, .git, .htpasswd, etc.): these
-		// typically hold secrets or VCS metadata and must not be exposed
-		// via the public static handler.
 		if hasDotfileSegment(reqPath) {
 			http.NotFound(w, r)
 			return
 		}
-		// Refuse to serve well-known server-side config / metadata files
-		// (web.config, .htaccess equivalents, ASP.NET app files). Even
-		// when the backing FS is innocuous, an embed of a project tree
-		// can accidentally ship these, and probing for them is a
-		// standard fingerprinting step.
 		if hasForbiddenConfigSegment(reqPath) {
 			http.NotFound(w, r)
 			return
 		}
-		// A name Windows opens as another one (a trailing dot or space,
-		// or a ":stream" suffix: app.css. and app.css::$DATA open
-		// app.css) is never opened. It is a miss: in SPA mode a client
-		// route such as /trailing. still gets the index.
 		aliased := hasWindowsAliasSegment(reqPath)
 
-		// Reopen the original directory for this request. No idle handle
-		// pins it on Windows, and identity checking refuses a replacement.
 		config := config
 		config.resolvedRoot, config.rootIdentity = binding.load(config.FS)
 		if config.rootIdentity != nil {
@@ -211,9 +140,6 @@ func Handler(config Config) http.Handler {
 			}
 			config.root = root
 		}
-		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
-		// ENV~1 opens .env), which the refusals above cannot read. The
-		// directory listing runs through the same root as the open.
 		listed := config.FS
 		if config.root != nil {
 			listed = config.root.FS()
@@ -226,23 +152,11 @@ func Handler(config Config) http.Handler {
 			config.dirRequest = reqPath
 		}
 
-		// Try to open and serve the file.
 		served := !aliased && serveFile(w, r, config, reqPath)
 		if served {
 			return
 		}
 
-		// If SPA mode, try serving the index file as fallback, for a
-		// client route only: a last segment ending in a well-known asset
-		// extension names a file (a fingerprinted asset a newer replica
-		// links mid-deploy, a stale bundle), and the shell in its place
-		// is HTML the browser would run as a script or a stylesheet.
-		// Those get the 404. Any other dot (/u/jane.doe, /blog/v1.2) is
-		// part of a route.
-		// The fallback is no-cache whatever MaxAge says: MaxAge is for the
-		// files the URLs name, and a long one here would store the shell
-		// under a client route for that long. The index's ETag keeps each
-		// revalidation a body-less 304.
 		if config.SPA && reqPath != config.IndexFile && !isAssetPath(reqPath) {
 			fallback := config
 			fallback.MaxAge = 0
@@ -259,12 +173,6 @@ func Handler(config Config) http.Handler {
 	})
 }
 
-// assetExtensions are the file extensions the SPA fallback treats as an
-// asset rather than a client route: a missing path whose last segment
-// ends in one gets 404, never IndexFile. Matching ignores ASCII case.
-// The list is the assets a page loads by URL: scripts and source maps,
-// stylesheets, images, fonts, data and WebAssembly. Any other extension
-// is part of a route.
 var assetExtensions = []string{
 	".js", ".mjs", ".css", ".map",
 	".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif", ".ico",
@@ -272,20 +180,11 @@ var assetExtensions = []string{
 	".json", ".wasm", ".txt", ".xml",
 }
 
-// isAssetPath reports whether p's last segment ends in one of
-// [assetExtensions], ignoring ASCII case.
 func isAssetPath(p string) bool {
 	ext := asciicase.Lower(path.Ext(path.Base(p)))
 	return ext != "" && slices.Contains(assetExtensions, ext)
 }
 
-// rootBinding is where a disk-backed FS lives: its resolved root and the
-// identity of the directory first opened there. Handler binds it when it
-// is built, but a root that does not exist yet (a build step or a dev
-// watcher creates the public directory after the server starts) cannot
-// be bound then. Binding once at construction left such a handler on the
-// bare os.DirFS for good, which follows a symlink anywhere on disk, so
-// an unbound root is retried on every request until it binds.
 type rootBinding struct {
 	mu       sync.Mutex
 	bound    bool
@@ -293,9 +192,6 @@ type rootBinding struct {
 	identity fs.FileInfo
 }
 
-// load returns the resolved root and its identity, binding them first if
-// they are not bound yet. Both are empty for a filesystem that is not
-// disk-backed (embed.FS, fstest.MapFS), which binds at once.
 func (b *rootBinding) load(fsys fs.FS) (string, fs.FileInfo) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -304,19 +200,12 @@ func (b *rootBinding) load(fsys fs.FS) (string, fs.FileInfo) {
 	}
 	resolved, known := resolveFSRoot(fsys)
 	if !known {
-		// Open(".") failed: the root is missing for now, or this FS
-		// cannot say. Try again on the next request.
 		return "", nil
 	}
 	if resolved == "" {
 		b.bound = true
 		return "", nil
 	}
-	// Kernel-enforced containment for the disk-backed branch (see
-	// Config.root). An OpenRoot failure — the root vanished between the
-	// resolve and this call — leaves resolvedRoot set for this request,
-	// so serveFile falls back to the post-open containment check, and
-	// the next request tries to bind again.
 	root, err := os.OpenRoot(resolved)
 	if err != nil {
 		return resolved, nil
@@ -339,11 +228,6 @@ func openedRootInfo(root *os.Root) (os.FileInfo, error) {
 	return f.Stat()
 }
 
-// serveNotFoundFile answers a miss with config.NotFoundFile under status
-// 404. The request loses its Range and conditional headers: they name the
-// missing URL, not the page, so a cached ETag must not turn the miss into
-// a 304, an If-Match into a 412, or a Range into a slice of the page. The
-// page carries no validators of its own.
 func serveNotFoundFile(w http.ResponseWriter, r *http.Request, config Config) bool {
 	r2 := r.Clone(r.Context())
 	for _, h := range []string{"Range", "If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
@@ -352,8 +236,6 @@ func serveNotFoundFile(w http.ResponseWriter, r *http.Request, config Config) bo
 	return serveFile(&notFoundWriter{ResponseWriter: w}, r2, config, strings.TrimPrefix(config.NotFoundFile, "/"))
 }
 
-// notFoundWriter rewrites serveFile's success status to 404. An error
-// status (a 500 from a read fault) passes through unchanged.
 type notFoundWriter struct {
 	http.ResponseWriter
 	wrote bool
@@ -382,12 +264,7 @@ func (w *notFoundWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// serveFile attempts to serve a file from the filesystem. Returns true if
-// the file was successfully served.
 func serveFile(w http.ResponseWriter, r *http.Request, config Config, name string) bool {
-	// No file name holds a NUL byte, and a disk open of one (/a%00b)
-	// fails with EINVAL, which is neither ErrNotExist nor ErrInvalid and
-	// would surface as a 500 below. It names no file: a miss.
 	if strings.IndexByte(name, 0) >= 0 {
 		return false
 	}
@@ -398,28 +275,12 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	var f fs.File
 	var err error
 	if config.root != nil {
-		// Disk-backed root: open through *os.Root so the KERNEL contains
-		// the resolution. A symlink pointing outside the root — planted
-		// long ago or swapped in mid-request — is refused here, at the
-		// open itself; there is no window between this open and a later
-		// check for the swap to slip through.
 		f, err = config.root.Open(filepath.FromSlash(name))
 	} else {
 		//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 		f, err = config.FS.Open(name)
 	}
 	if err != nil {
-		// A genuinely missing file is a 404 (let the handler fall
-		// through). Any other open error, permission denied, I/O
-		// fault, unreadable backing store, is a server fault and must
-		// surface as 500, not be masked as "not found".
-		//
-		// fs.ErrInvalid is on the 404 side of that line: fs.ValidPath
-		// rejects any name that is not valid UTF-8, so os.DirFS and
-		// embed.FS answer ErrInvalid for a URL like /%ff. That is a
-		// malformed request, not a server fault. Treating it as one let
-		// any client drive a 5xx with a two-character URL, and skipped
-		// the SPA fallback on the way.
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
 			return false
 		}
@@ -428,14 +289,6 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	}
 	defer f.Close()
 
-	// Contain the read at the sink, not the spelling — for the branch
-	// that did NOT open through *os.Root (embed.FS and other fs.FS
-	// values cannot carry symlinks; a disk FS whose root failed to open
-	// can): Open already followed any symlink on the chain, so verify
-	// the target that was actually opened still resolves under the root
-	// and 404 otherwise, consistent with the other hidden-content
-	// refusals above. The *os.Root branch needs no post-open check: the
-	// kernel already refused every escape shape at Open time.
 	if config.root == nil && !config.fileInRoot(f) {
 		http.NotFound(w, r)
 		return true
@@ -447,14 +300,9 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 
-	// If it's a directory, try to serve the index file.
 	if stat.IsDir() {
 		indexPath := path.Join(name, config.IndexFile)
 		if config.dirRequest != "" && name == config.dirRequest {
-			// /docs names a directory: send the client to /docs/, as
-			// net/http's FileServer does, so the index's relative links
-			// resolve under it rather than under its parent. Only when
-			// there is an index to serve there.
 			if !config.hasFile(indexPath) {
 				return false
 			}
@@ -464,58 +312,30 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return serveFile(w, r, config, indexPath)
 	}
 
-	// ETag from a cached content digest. On a cache miss the file is
-	// streamed through SHA-256 (never held in RAM); previously the whole
-	// file was read and re-hashed on every request, and capped at 32MB,
-	// which silently truncated larger files to a 200 with a
-	// Content-Length/ETag that matched the truncated body. A large file
-	// is hashed in the background instead and served without an ETag
-	// until the digest lands.
 	etag, consumed, err := fileETag(config.digests, f, stat, name, func() (fs.File, error) {
 		return config.reopen(name)
 	})
 	if err != nil {
-		// A read fault that is not "not found" is a 500, not a 404.
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return true
 	}
 
-	// Get modification time.
 	modTime := stat.ModTime()
 
-	// Set cache headers.
 	setCacheHeaders(w, etag, modTime, config.MaxAge)
 
-	// Conditional request: 412 for a failed If-Match/If-Unmodified-Since,
-	// 304 when the client's copy is current. One evaluator serves both
-	// branches below; ServeContent re-runs the same checks and agrees.
 	if code := preconditionStatus(r, etag, modTime); code != 0 {
 		w.WriteHeader(code)
 		return true
 	}
 
-	// Set content type. X-Content-Type-Options: nosniff prevents browsers
-	// from MIME-sniffing a non-HTML response into HTML (e.g. promoting a
-	// .jpg with embedded HTML into a script execution context). Cheap to
-	// set on every response and required by every modern static guide.
 	contentType := DetectFromName(name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	// A seekable handle (every *os.File, embed.FS and fstest.MapFS file)
-	// goes to http.ServeContent, which answers Range, multi-range and
-	// If-Range, sets Accept-Ranges, and sizes Content-Length to the part
-	// it sends. Setting Content-Length here would put the full size on a
-	// 206. ServeContent seeks the handle itself, so the read fileETag did
-	// on a cache miss needs no rewind. It also seeks to the end to find
-	// the size, so a handle that can only rewind falls through to the
-	// full-body copy instead of a 500.
 	if rs, ok := f.(io.ReadSeeker); ok {
 		if _, err := rs.Seek(0, io.SeekEnd); err == nil {
 			if r.Method == http.MethodHead && r.Header.Get("Range") != "" {
-				// RFC 9110 §14.2 defines Range for GET only, and a
-				// server MUST ignore it on any other method.
-				// ServeContent would answer a HEAD with a 206.
 				r = r.Clone(r.Context())
 				r.Header.Del("Range")
 			}
@@ -525,28 +345,16 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		consumed = true
 	}
 
-	// fs.FS promises no seeking, so a conforming filesystem may hand back
-	// a read-only handle. It gets the whole body every time and no
-	// Accept-Ranges, since it cannot serve a range.
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 
-	// HEAD: headers only, no body.
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return true
 	}
 
-	// fileETag consumed the file on a cache miss, and this handle cannot
-	// rewind, so reopen it. Copying from the exhausted reader would answer
-	// 200 with an EMPTY body under the full Content-Length, a corrupt
-	// response. The body streams to the ResponseWriter, so arbitrarily
-	// large files are never buffered in memory.
 	if consumed {
 		reopened, err := config.reopen(name)
 		if errors.Is(err, errOutsideRoot) {
-			// Only reachable if the tree was swapped mid-request. Drop
-			// Content-Length before the 404 so the reframed answer is
-			// not corrupt.
 			w.Header().Del("Content-Length")
 			http.NotFound(w, r)
 			return true
@@ -558,17 +366,10 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		defer reopened.Close()
 		f = reopened
 	}
-	if _, err := io.Copy(w, f); err != nil {
-		// Headers (and possibly part of the body) are already on the
-		// wire. The status can no longer change. A mid-stream write
-		// fault surfaces to the client as a truncated transfer, which
-		// is the only honest signal left.
-		return true
-	}
+	_, _ = io.Copy(w, f)
 	return true
 }
 
-// hasFile reports whether name opens, inside the root, as a regular file.
 func (c Config) hasFile(name string) bool {
 	if st, err := c.stat(name); err != nil || !st.Mode().IsRegular() {
 		return false
@@ -582,8 +383,6 @@ func (c Config) hasFile(name string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// stat reports name's file info without opening it, so a FIFO or device
-// is known before an open that would block on it.
 func (c Config) stat(name string) (fs.FileInfo, error) {
 	if c.root != nil {
 		return c.root.Stat(filepath.FromSlash(name))
@@ -591,36 +390,20 @@ func (c Config) stat(name string) (fs.FileInfo, error) {
 	return fs.Stat(c.FS, name) //gofastr:allow(rootread) type check only, no bytes read: the open after it and fileInRoot contain the read itself
 }
 
-// redirectToDir answers 301 with the request's own path plus a slash,
-// query kept. The Location is relative, "./<last segment>/", so it
-// resolves under whatever prefix the client used, including one an outer
-// http.StripPrefix removed before this handler saw the path. It can
-// never leave the origin. The "./" is the guard: it keeps a segment like
-// "http:evil.com" from reading as a scheme, and a slash or a backslash
-// (which a browser folds into one) after it only starts a path. Escaping
-// is a second layer that keeps such bytes out of the header at all.
 func redirectToDir(w http.ResponseWriter, r *http.Request) {
 	base := path.Base(path.Clean("/" + r.URL.Path))
 	loc := "./" + (&url.URL{Path: base}).EscapedPath() + "/"
 	if r.URL.RawQuery != "" {
-		// net/http refuses a control byte in the request target, so
-		// this is a no-op for a served request; for a hand-built one it
-		// percent-encodes the byte rather than splitting the header.
 		loc += "?" + textsafe.ScrubControlBytes(r.URL.RawQuery)
 	}
 	w.Header().Set("Location", loc)
 	w.WriteHeader(http.StatusMovedPermanently)
 }
 
-// errOutsideRoot is reopen's answer for a file that opened but resolves
-// outside the root: the tree was swapped since the first open.
 var errOutsideRoot = errors.New("static: file resolves outside the root")
 
-// reopen opens name again with the same containment as serveFile's first
-// open, for a handle that cannot rewind and for the background hash.
 func (c Config) reopen(name string) (fs.File, error) {
 	if c.root != nil {
-		// Kernel containment, as on the first open.
 		return c.root.Open(filepath.FromSlash(name))
 	}
 	//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
@@ -635,15 +418,6 @@ func (c Config) reopen(name string) (fs.File, error) {
 	return f, nil
 }
 
-// resolveFSRoot returns the on-disk path of fsys's root with every
-// symlink resolved, or "" when the filesystem is not disk-backed.
-// os.DirFS opens root+"/"+name and hands the *os.File back verbatim, so
-// the handle's Name() carries the real path the kernel will resolve —
-// that is what makes the containment check in serveFile possible
-// without knowing the DirFS argument here. embed.FS and fstest.MapFS
-// return their own file types, cannot carry symlinks, and land on "".
-// known is false when the answer is not settled yet: the root could not
-// be opened or resolved, as when the directory does not exist yet.
 func resolveFSRoot(fsys fs.FS) (resolved string, known bool) {
 	f, err := fsys.Open(".")
 	if err != nil {
@@ -661,15 +435,6 @@ func resolveFSRoot(fsys fs.FS) (resolved string, known bool) {
 	return resolved, true
 }
 
-// fileInRoot reports whether an already-opened file still resolves
-// inside the configured root once symlinks are followed. It is the
-// FALLBACK posture, consulted only when the handler could not open
-// through *os.Root (see Config.root): a check that runs after the open
-// can be defeated by swapping the symlink for an in-root file between
-// the two, which is exactly why the *os.Root branch refuses escapes at
-// open time instead. Non-disk handles (embed.FS, MapFS, wrappers) have
-// no symlinks to follow and pass trivially; so does a disk FS whose
-// root could not be resolved at Handler construction.
 func (c Config) fileInRoot(f fs.File) bool {
 	of, ok := f.(*os.File)
 	if !ok || c.resolvedRoot == "" {
@@ -677,9 +442,6 @@ func (c Config) fileInRoot(f fs.File) bool {
 	}
 	resolved, err := filepath.EvalSymlinks(of.Name())
 	if err != nil {
-		// The file opened, but its chain can no longer be resolved: the
-		// tree changed under us. Refuse rather than stream whatever the
-		// handle happens to point at.
 		return false
 	}
 	rel, err := filepath.Rel(c.resolvedRoot, resolved)
@@ -689,22 +451,14 @@ func (c Config) fileInRoot(f fs.File) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// Mount registers the static file handler on the given router using the
-// Config's Prefix as the path pattern.
+// Mount registers Handler(config) on r under config.Prefix.
 func Mount(r *router.Router, config Config) {
 	config = config.defaults()
 	handler := Handler(config)
 
-	// One pattern: "{path...}" matches the empty remainder too, so
-	// Prefix+"/" is already covered. Registering both used to panic at
-	// boot, since ServeMux reads them as the same pattern. A request for
-	// the bare prefix ("/static") is redirected (307) to "/static/" by ServeMux.
 	r.Get(config.Prefix+"/{path...}", handler)
 }
 
-// hasDotDotSegment reports whether the *raw* (uncleaned) path contains a
-// `..` segment. Run this before path.Clean so traversal segments can't be
-// collapsed silently.
 func hasDotDotSegment(p string) bool {
 	for _, component := range pathSegments(p) {
 		if component == ".." {
@@ -714,38 +468,20 @@ func hasDotDotSegment(p string) bool {
 	return false
 }
 
-// Refuses reports whether the handler refuses p, a slash-separated path
-// below the served root, by its spelling alone: one with a dot segment
-// (.env, .git/config), a well-known server config file (web.config), or
-// a segment Windows opens under another name (a trailing dot or space, or
-// a colon: web.config. and web.config::$DATA). Code that publishes a file
-// tree it walked calls it: a walk yields each entry's real name, so no
-// 8.3 short name can appear. Code that serves a requested path calls
-// [RefusesIn], which also refuses short names.
+// Refuses reports whether the handler refuses p by its spelling: a dot
+// segment, a server config file name, or a Windows alias (a trailing dot
+// or space, or a colon). A walked tree checks with it; a requested path
+// with [RefusesIn].
 func Refuses(p string) bool {
 	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasWindowsAliasSegment(p)
 }
 
-// RefusesIn reports whether the handler refuses p, a requested path below
-// fsys's root: [Refuses], or a segment shaped like a Windows 8.3 short
-// name (WEB~1.CON) that no entry of its directory in fsys carries
-// exactly. Code that serves a requested path by another route calls it.
+// RefusesIn reports [Refuses], or a segment shaped like a Windows 8.3
+// short name (a "~" and a digit) that its directory in fsys does not list.
 func RefusesIn(fsys fs.FS, p string) bool {
 	return Refuses(p) || shortNameAlias(fsys, p)
 }
 
-// shortNameAlias reports whether a segment of p holds a "~" followed by a
-// digit, the shape of an NTFS 8.3 short name, while the directory it sits
-// in, listed through fsys, has no entry with exactly that name. On a
-// volume that generates them, Windows opens WEB~1.CON as web.config and
-// ENV~1 as .env, names the dotfile and config refusals never see; which
-// long name a short one stands for is the volume's choice, and a listing
-// shows only long names, so a name the listing lacks is refused. A real
-// photo~1.png is listed and served. The comparison is exact, so a
-// case-insensitive volume's PHOTO~1.PNG is refused too. It runs on every
-// OS, so every platform gives one answer. An embed.FS cannot hold an
-// alias and is not listed (see listsShortNames). A directory that cannot
-// be listed refuses the name.
 func shortNameAlias(fsys fs.FS, p string) bool {
 	if !listsShortNames(fsys) {
 		return false
@@ -770,10 +506,6 @@ func shortNameAlias(fsys fs.FS, p string) bool {
 	return false
 }
 
-// listsShortNames reports whether shortNameAlias must list fsys to judge
-// a "~digit" name. An embed.FS holds the files the compiler embedded,
-// under their own names, with no volume to alias them, so it is opened
-// without a listing. Every other FS may be disk-backed or wrap one.
 func listsShortNames(fsys fs.FS) bool {
 	switch fsys.(type) {
 	case embed.FS, *embed.FS:
@@ -782,8 +514,6 @@ func listsShortNames(fsys fs.FS) bool {
 	return fsys != nil
 }
 
-// hasShortNameShape reports whether segment holds a "~" followed by a
-// digit.
 func hasShortNameShape(segment string) bool {
 	for i := strings.IndexByte(segment, '~'); i >= 0; {
 		if i+1 < len(segment) && segment[i+1] >= '0' && segment[i+1] <= '9' {
@@ -798,13 +528,6 @@ func hasShortNameShape(segment string) bool {
 	return false
 }
 
-// hasWindowsAliasSegment reports whether a segment of p ends in a dot or
-// a space, or holds a colon. Windows strips trailing dots and spaces from
-// each component (GetFullPathName) and NTFS opens "name:stream" as a data
-// stream of name, so "app.css.", "app.css " and "app.css::$DATA" open
-// app.css, and "web.config." opens web.config past a refusal that reads
-// the spelling. Such a segment is refused on every OS, whatever file it
-// would reach, so every platform gives one answer.
 func hasWindowsAliasSegment(p string) bool {
 	for _, component := range pathSegments(p) {
 		if component == "." || component == ".." {
@@ -817,11 +540,6 @@ func hasWindowsAliasSegment(p string) bool {
 	return false
 }
 
-// hasDotfileSegment reports whether any path component starts with a
-// dot (excluding the bare "." and ".." segments path.Clean would have
-// already resolved). Dotfiles routinely hold secrets (.env, .htpasswd)
-// or VCS metadata (.git) and must not be served by a public static
-// handler.
 func hasDotfileSegment(p string) bool {
 	for _, component := range pathSegments(p) {
 		if component == "" || component == "." || component == ".." {
@@ -834,22 +552,14 @@ func hasDotfileSegment(p string) bool {
 	return false
 }
 
-// forbiddenConfigFiles is the set of well-known server-side config and
-// app-metadata files we refuse to serve via the static handler. None of
-// these have a legitimate reason to live behind the public file server,
-// and probing for them is a standard reconnaissance step.
 var forbiddenConfigFiles = map[string]struct{}{
-	"web.config":             {}, // IIS site config
-	"global.asax":            {}, // ASP.NET app entry
-	"app.config":             {}, // .NET application config
-	"machine.config":         {}, // .NET machine-wide config
-	"applicationhost.config": {}, // IIS Express host config
+	"web.config":             {},
+	"global.asax":            {},
+	"app.config":             {},
+	"machine.config":         {},
+	"applicationhost.config": {},
 }
 
-// hasForbiddenConfigSegment matches the forbidden-config list ignoring
-// ASCII case, so a request for `/Web.Config` is treated the same as
-// `/web.config`. The Windows spellings of the name (web.config.,
-// web.config::$DATA) are refused by hasWindowsAliasSegment.
 func hasForbiddenConfigSegment(p string) bool {
 	for _, component := range pathSegments(p) {
 		if _, ok := forbiddenConfigFiles[asciicase.Lower(component)]; ok {
@@ -859,15 +569,6 @@ func hasForbiddenConfigSegment(p string) bool {
 	return false
 }
 
-// pathSegments splits p on "/" and on "\", dropping empty segments.
-// The backslash is a separator on every platform because it is one
-// where the open runs on Windows: *os.Root resolves a name through
-// GetFullPathName there, so "assets\..\.env" opens .env while a check
-// that splits on "/" alone sees one segment with no leading dot. On
-// another OS a file whose name holds a backslash is judged by the same
-// split, so every platform gives one answer: "a\b.txt" is served, while
-// a name whose backslash-separated pieces include a dotfile or a config
-// name ("a\.env", "x\web.config") is refused.
 func pathSegments(p string) []string {
 	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
 }

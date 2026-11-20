@@ -17,6 +17,7 @@ func pivotGateApp(t *testing.T, pivotExposure *entity.ExposureConfig) *App {
 	if err != nil {
 		t.Skip("sqlite3 driver not available")
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	app := NewApp(WithConfig(AppConfig{Name: "pivotgate", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("posts", EntityConfig{

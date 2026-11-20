@@ -24,7 +24,7 @@ func KillUnder(dir string, grace time.Duration) {
 	}
 	root = filepath.Clean(root)
 	for range 2 {
-		pids := pidsUnder(root)
+		pids := PidsUnder(root)
 		if len(pids) == 0 {
 			return
 		}
@@ -47,7 +47,7 @@ func waitPidsGone(root string, grace time.Duration) []int {
 	deadline := time.Now().Add(grace)
 	empty := false
 	for {
-		pids := pidsUnder(root)
+		pids := PidsUnder(root)
 		if !time.Now().Before(deadline) || (empty && len(pids) == 0) {
 			return pids
 		}
@@ -57,9 +57,9 @@ func waitPidsGone(root string, grace time.Duration) []int {
 	}
 }
 
-// pidsUnder lists processes whose working directory is root or below
+// PidsUnder lists processes whose working directory is root or below
 // it: from /proc on Linux, from lsof elsewhere.
-func pidsUnder(root string) []int {
+func PidsUnder(root string) []int {
 	under := func(cwd string) bool {
 		return cwd == root || strings.HasPrefix(cwd, root+string(filepath.Separator))
 	}

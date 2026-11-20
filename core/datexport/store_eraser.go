@@ -7,34 +7,7 @@ import (
 	"sort"
 )
 
-// StoreEraser removes a user's data from a store outside the SQL database:
-// a file the process writes (battery/semantic's snapshot and WAL), or a
-// Redis key space (battery/queue's RedisQueue). A DataEraser cannot reach
-// such a store, since the framework only builds SQL. App.EraseUserData runs
-// every registered StoreEraser after the SQL erasure commits.
-//
-//   - Name is the report label. Every registration stays until its
-//     unregister func runs: one registered while another of the same
-//     Name is live is listed as Name#2 (the first free #n), so two
-//     stores of one kind, such as two RedisQueues with one queue name on
-//     different servers, are both erased.
-//   - Source is the owning module ("semantic", "queue"), recorded in the
-//     report.
-//   - Erase removes everything in the store that names userID and returns
-//     how many items it removed. With dryRun it removes nothing and returns
-//     how many it would. A re-run finds nothing and returns 0.
-//   - Producer marks a store that puts items into other stores, such as an
-//     in-memory scheduler enqueueing jobs. Producers are erased first, so
-//     one cannot refill a store already erased with the user's data. A
-//     producer's Erase also waits out a dispatch already in progress
-//     before it returns.
-//
-// Erase runs after the commit, so its failure cannot roll the SQL erasure
-// back: EraseUserData returns an error naming the store, and the caller
-// erases again once the store is reachable.
-//
-// EraseResolved runs in place of Erase and also gets the identities the
-// erasure resolved before its SQL part. Set exactly one of the two.
+// StoreEraser removes a user's data from a store outside SQL; set Erase or EraseResolved.
 type StoreEraser struct {
 	Name          string
 	Source        string
@@ -43,8 +16,7 @@ type StoreEraser struct {
 	Producer      bool
 }
 
-// ErasedUser is the user an erasure removes: the id and each identity
-// that resolved for it.
+// ErasedUser is the erased user's id and each identity that resolved.
 type ErasedUser struct {
 	ID         string
 	Identities map[IdentityKind]string
@@ -56,18 +28,9 @@ func (u ErasedUser) Identity(kind IdentityKind) (string, bool) {
 	return v, ok && v != ""
 }
 
-// storeErasers holds the registered entries. Each is a distinct pointer,
-// so an unregister func removes its own registration and no other.
 var storeErasers []*StoreEraser
 
-// RegisterStoreEraser adds e and returns the name it is listed under and
-// the func that removes it. A store calls the func when it closes, so an
-// erasure never reaches a closed store; until then the registration
-// stays, and it keeps the store reachable. A Name already live is
-// suffixed "#2", "#3", ... (the first free one). An empty Name or a nil
-// Erase panics: the registration is developer code, and a silent skip
-// would leave the store out of every erasure. Calling the returned func
-// again does nothing.
+// RegisterStoreEraser adds e under a free name and returns it with e's own unregister func.
 func RegisterStoreEraser(e StoreEraser) (name string, unregister func()) {
 	if e.Name == "" || (e.Erase == nil) == (e.EraseResolved == nil) {
 		panic(fmt.Sprintf("datexport: RegisterStoreEraser: %q needs a Name and exactly one of Erase and EraseResolved", e.Name))
@@ -90,9 +53,7 @@ func RegisterStoreEraser(e StoreEraser) (name string, unregister func()) {
 	}
 }
 
-// AllStoreErasers returns a copy of the registered store erasers in the
-// order an erasure runs them: producers first, then the rest, each part
-// sorted by Name.
+// AllStoreErasers returns the store erasers in run order, producers first.
 func AllStoreErasers() []StoreEraser {
 	mu.RLock()
 	defer mu.RUnlock()

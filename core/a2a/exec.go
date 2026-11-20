@@ -15,37 +15,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// cloneTask deep-copies a Task so a caller mutating a returned record
-// cannot change what the store or a run holds. The copy goes through
-// JSON because Task carries maps and pointers (Part.Data is an *any that
-// may hold decoded maps). A Task holding a value JSON cannot marshal
-// (a channel smuggled into metadata by a handler) falls back to a
-// shallow copy: the same value would fail store persistence anyway, so
-// the failure surfaces there instead of here.
-func cloneTask(t Task) Task {
-	b, err := json.Marshal(t)
+func jsonClone[T any](v T) T {
+	b, err := json.Marshal(v)
 	if err != nil {
-		return t
+		return v
 	}
-	var out Task
+	var out T
 	if err := jsonexact.Unmarshal(b, &out); err != nil {
-		return t
+		return v
 	}
 	return out
 }
 
-// cloneMessage deep-copies a Message, for the same reason as cloneTask.
-func cloneMessage(m Message) Message {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return m
-	}
-	var out Message
-	if err := jsonexact.Unmarshal(b, &out); err != nil {
-		return m
-	}
-	return out
-}
+func cloneTask(t Task) Task { return jsonClone(t) }
+
+func cloneMessage(m Message) Message { return jsonClone(m) }
 
 // Clone deep-copies the record: the Task via cloneTask, the scalars
 // plainly.
@@ -55,9 +39,6 @@ func (r *TaskRecord) Clone() *TaskRecord {
 	return &c
 }
 
-// appendHistory appends m to the task's history, capped at max: the
-// OLDEST entries are dropped, never the newest, so the message the
-// client just sent and the agent's latest answer always survive.
 func appendHistory(task *Task, m *Message, max int) {
 	if m == nil {
 		return
@@ -68,35 +49,17 @@ func appendHistory(task *Task, m *Message, max int) {
 	}
 }
 
-// taskRun is the TaskContext a handler sees, and the state machine the
-// handler drives. Its mutex serializes every mutation so a handler
-// calling into the TaskContext from two goroutines cannot interleave a
-// persist with a publish.
 type taskRun struct {
 	srv   *Server
 	owner string
 	req   *http.Request
 
-	mu sync.Mutex
-	// rec is this run's view of the stored record. It advances only
-	// after Store.UpdateTask accepts the version, so a competing write
-	// (CancelTask, another replica) makes the next mutation fail with a
-	// conflict instead of silently forking the task.
-	rec *TaskRecord
-	msg *Message
-	// interrupted is set when this run paused the task
-	// (RequireInput/RequireAuth). Working after that is an error: the
-	// handler already handed control back to the client.
+	mu          sync.Mutex
+	rec         *TaskRecord
+	msg         *Message
 	interrupted bool
-	// rn is the in-process run this task executes under, set when the
-	// run starts. Its halted flag refuses every mutation once
-	// CancelTask has claimed the task.
-	rn *run
-	// runCtx is the handler's context, set with rn. Once its
-	// TaskTimeout deadline passes every mutation is refused, so a
-	// handler that outlives the ceiling cannot settle the task over
-	// finalize's "task timed out".
-	runCtx context.Context
+	rn          *run
+	runCtx      context.Context
 }
 
 func (t *taskRun) attach(rn *run, runCtx context.Context) {
@@ -106,16 +69,13 @@ func (t *taskRun) attach(rn *run, runCtx context.Context) {
 	t.runCtx = runCtx
 }
 
-// haltedLocked reports whether CancelTask has claimed this run. The
-// caller holds t.mu.
 func (t *taskRun) haltedLocked() bool { return t.rn != nil && t.rn.halted.Load() }
 
 func newTaskRun(s *Server, rec *TaskRecord, msg *Message, r *http.Request, owner string) *taskRun {
 	return &taskRun{srv: s, rec: rec, msg: msg, req: r, owner: owner}
 }
 
-// Task returns a snapshot of the task as currently persisted. The
-// snapshot is deep: mutating it cannot corrupt the run.
+// Task returns a snapshot of the task as currently persisted.
 func (t *taskRun) Task() *Task {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -134,28 +94,19 @@ func (t *taskRun) Message() *Message {
 // Owner returns the principal that owns the task.
 func (t *taskRun) Owner() string { return t.owner }
 
-// taskID reads the id under the lock: a handler may still be calling
-// into the TaskContext from a goroutine it spawned when the runner logs.
 func (t *taskRun) taskID() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.rec.Task.ID
 }
 
-// storeOpTimeout bounds one Store call made on the run's behalf. The
-// run context is deliberately not used (a canceled run must still
-// persist its final state), so this is the only thing standing between
-// a wedged database and a goroutine that never returns.
 var storeOpTimeout = 30 * time.Second
 
 // Request returns the HTTP request that started or resumed this run.
-// Its Context is deliberately not the handler's context, so handlers
-// re-dispatching into the app with the caller's credentials do not
-// inherit the run's timeout.
 func (t *taskRun) Request() *http.Request { return t.req }
 
-// Working moves the task to TASK_STATE_WORKING with an optional agent
-// status message. Idempotent once working.
+// Working moves the task to TASK_STATE_WORKING with an optional agent status
+// message.
 func (t *taskRun) Working(parts ...Part) error {
 	if err := validateParts(parts); err != nil {
 		return err
@@ -165,8 +116,6 @@ func (t *taskRun) Working(parts ...Part) error {
 		case state.Terminal():
 			return nil, errTerminalRefusal(task.ID, state, TaskStateWorking)
 		case state == TaskStateWorking:
-			// Already announced; repeating would only duplicate the
-			// event on every stream.
 			return nil, nil
 		case t.interrupted:
 			return nil, errors.New("a2a: task paused for input in this run; Working refused until resumed")
@@ -210,11 +159,6 @@ func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
 		if !found {
 			task.Artifacts = append(task.Artifacts, a)
 		}
-		// The event carries what the client must apply, and for an
-		// append that is the DELTA: spec §7.2 says a receiver appends
-		// the event's parts to the artifact it already holds, so sending
-		// the merged artifact with append=true would double every part
-		// already delivered. The stored task holds the merged result.
 		ev := StreamResponse{ArtifactUpdate: &TaskArtifactUpdateEvent{
 			TaskID:    task.ID,
 			ContextID: task.ContextID,
@@ -250,11 +194,6 @@ func (t *taskRun) RequireAuth(parts ...Part) error {
 	return t.mutate(t.pauseFn(TaskStateAuthRequired, parts))
 }
 
-// errConcurrentChange marks a mutation refused because the task moved
-// concurrently — a version conflict, or a terminal state reached under
-// us. The caller's honest answer is "changed concurrently, retry"; any
-// OTHER persist error is a backend failure and must surface as the
-// generic internal error, not as this.
 var errConcurrentChange = errors.New("a2a: task changed concurrently")
 
 func errTerminalRefusal(id string, state, want TaskState) error {
@@ -286,9 +225,6 @@ func (t *taskRun) pauseFn(state TaskState, parts []Part) func(*Task) (*StreamRes
 	}
 }
 
-// setStatusInPlace writes the new status onto task (state, optional
-// agent status message appended to history, fresh timestamp) and
-// returns the status-update event for it. The caller persists.
 func (t *taskRun) setStatusInPlace(task *Task, state TaskState, parts []Part) *StreamResponse {
 	var msg *Message
 	if len(parts) > 0 {
@@ -310,22 +246,15 @@ func (t *taskRun) setStatusInPlace(task *Task, state TaskState, parts []Part) *S
 	return &ev
 }
 
-// resumeWorking is the resume transition: append the new message, move
-// to WORKING, publish.
 func (t *taskRun) resumeWorking(msg *Message) error {
 	return t.mutate(func(task *Task) (*StreamResponse, error) {
 		if state := task.Status.State; state.Terminal() {
-			// The caller just checked this task was non-terminal; a
-			// terminal state here means it moved under us.
 			return nil, fmt.Errorf("%w: task %s is %s", errConcurrentChange, task.ID, state)
 		}
 		in := *msg
 		in.TaskID = task.ID
 		in.ContextID = task.ContextID
-		task.History = append(task.History, in)
-		if t.srv.maxHist > 0 && len(task.History) > t.srv.maxHist {
-			task.History = task.History[len(task.History)-t.srv.maxHist:]
-		}
+		appendHistory(task, &in, t.srv.maxHist)
 		task.Status = TaskStatus{State: TaskStateWorking, Timestamp: t.srv.stamp()}
 		ev := StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
 			TaskID:    task.ID,
@@ -336,15 +265,6 @@ func (t *taskRun) resumeWorking(msg *Message) error {
 	})
 }
 
-// mutate is the one path every TaskContext mutation goes through:
-// build the next task state on a copy, persist it with the version
-// check, and only then publish to subscribers and push configs. Two
-// invariants follow. A subscriber is never told something the store
-// does not hold (persist-before-publish), and a mutation that loses the
-// version race (the task was canceled under us) changes nothing — the
-// run's in-memory copy stays at the refused candidate's parent, so the
-// NEXT call fails the same way instead of building on a write the store
-// rejected.
 func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -366,8 +286,6 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	defer cancel()
 	if err := t.srv.store.UpdateTask(ctx, cand); err != nil {
 		if errors.Is(err, ErrConflict) {
-			// The store moved on without us: the task was canceled or
-			// another replica resumed it. This run's writes are done.
 			return fmt.Errorf("%w: task %s update refused (canceled or resumed elsewhere)", errConcurrentChange, t.rec.Task.ID)
 		}
 		return fmt.Errorf("a2a: persist task %s: %w", t.rec.Task.ID, err)
@@ -379,9 +297,6 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	if ev != nil {
 		t.srv.publish(t.owner, t.rec, *ev)
 	}
-	// A persist that left the task terminal is the retention hook: the
-	// oldest terminal rows past Config.TerminalTaskRetention go now.
-	// A pause is the paused-retention hook the same way.
 	switch state := cand.Task.Status.State; {
 	case state.Terminal():
 		t.srv.trimTerminalTasks(t.owner, TierOf(cand))
@@ -391,10 +306,6 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	return nil
 }
 
-// invoke runs the skill handler, converting a panic into a failure so
-// one poison skill cannot take the process down. The panic is logged
-// with its stack; the task gets a generic message (the panic value can
-// be anything, including an internal error string).
 var errHandlerPanicked = errors.New("a2a: skill handler panicked")
 
 func (s *Server) invoke(ctx context.Context, t *taskRun, h Handler) (err error) {
@@ -409,16 +320,6 @@ func (s *Server) invoke(ctx context.Context, t *taskRun, h Handler) (err error) 
 	return h(ctx, t)
 }
 
-// finalize settles the task after the handler returns. Terminal and
-// interrupted states are the handler's own last word and stand.
-// Everything else is decided by why the handler returned: deadline →
-// FAILED "task timed out", cancellation → CANCELED (CancelTask already
-// wrote it; this only matters if something else canceled the context),
-// error → FAILED, clean return → COMPLETED.
-//
-// The decision is made against the STORE, not the run's possibly stale
-// copy: after CancelTask the local copy still says WORKING, and it must
-// not resurrect a task the client was told was canceled.
 func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 	t.mu.Lock()
 	local := t.rec.Task.Status.State
@@ -438,11 +339,8 @@ func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 		final, msg = TaskStateFailed, "skill handler failed"
 		var ae *Error
 		if errors.As(err, &ae) {
-			// The handler chose this message; it is client-safe.
 			msg = ae.Message
 		} else {
-			// Not an *Error the handler chose: log the real text, tell
-			// the client only that the skill failed.
 			s.log.Error("a2a: skill handler failed", "taskId", t.taskID(), "err", err)
 		}
 	default:
@@ -451,17 +349,9 @@ func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 	t.setFinalAgainstStore(final, msg)
 }
 
-// setFinalAgainstStore writes a final state via read-modify-write with
-// bounded retries, so a concurrent CancelTask cannot be silently
-// overwritten by a late completion and vice versa: whichever write lands
-// first makes the task terminal, and the loser's re-read sees a
-// terminal state and leaves it alone.
 func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 	const attempts = 8
 	taskID := t.taskID()
-	// attempt returns done=true when the loop should stop: the task was
-	// already settled, the write landed, or a non-conflict error ended
-	// it. A conflict returns false so the caller re-reads.
 	attempt := func() (done bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 		defer cancel()
@@ -471,13 +361,6 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 			return true
 		}
 		if cur := rec.Task.Status.State; cur.Terminal() || cur.Interrupted() {
-			// Settled elsewhere (CancelTask, another replica): adopt the
-			// stored record, so a SendMessage waiting on this run answers
-			// with it rather than with the run's stale WORKING copy. A
-			// halted run's state was announced by whoever halted it (a
-			// local CancelTask, or watchRemoteCancel); an unhalted one was
-			// settled on another replica after the watch ended, so this
-			// replica's subscribers hear it here.
 			t.mu.Lock()
 			announce := t.rn != nil && !t.haltedLocked() && cur.Terminal() && rec.Version > t.rec.Version
 			t.rec = rec
@@ -510,8 +393,6 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 		t.rec = cand
 		t.mu.Unlock()
 		t.srv.publish(t.owner, cand, *ev)
-		// The finalize write left the task terminal: same retention
-		// hook as mutate.
 		t.srv.trimTerminalTasks(t.owner, TierOf(cand))
 		return true
 	}
@@ -523,8 +404,6 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 	t.srv.log.Error("a2a: finalize gave up after repeated conflicts", "taskId", taskID)
 }
 
-// stamp is the injectable clock entry: one place to make timestamps
-// deterministic in tests.
 func (s *Server) stamp() *Timestamp {
 	return &Timestamp{s.now().UTC().Truncate(time.Millisecond)}
 }

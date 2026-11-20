@@ -33,18 +33,34 @@ type Manifest struct {
 	GofastrVersion string `json:"gofastrVersion"`
 	// GeneratedAt is set only by --stamp-time; zero means unstamped.
 	GeneratedAt time.Time `json:"generatedAt,omitzero"`
-	// Entities lists, sorted, the entities the SDKs and the hash cover.
+	// Source is what the SDKs were generated from: empty for the entity
+	// set, SourceOpenAPI for an OpenAPI document.
+	Source string `json:"source,omitempty"`
+	// Entities lists, sorted, the entities the SDKs and the hash cover;
+	// empty for an OpenAPI source.
 	Entities []string `json:"entities"`
-	// SchemaHash is SchemaHash over Entities at generation time.
+	// SchemaHash is SchemaHash over Entities at generation time, or
+	// OpenAPIHash over the document for an OpenAPI source.
 	SchemaHash string `json:"schemaHash"`
+	// TokenHeader and TokenPrefix are what an OpenAPI source's SDKs send
+	// the token as (X-Api-Key and "", or Authorization and "Bearer "); empty
+	// for the entity source, whose SDKs send a bearer token.
+	TokenHeader string `json:"tokenHeader,omitempty"`
+	TokenPrefix string `json:"tokenPrefix,omitempty"`
 	// Artifacts is keyed "go", "js" and "js-types", for those generated.
 	Artifacts map[string]Artifact `json:"artifacts"`
 }
 
 var archiveDirectory = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
 
-// ReadManifest loads ManifestFile from fsys and rejects incomplete artifact
-// records or a Go archive without a safe top-level directory.
+// SourceOpenAPI is Manifest.Source for SDKs generated from an OpenAPI
+// document.
+const SourceOpenAPI = "openapi"
+
+// ReadManifest loads ManifestFile from fsys, erroring when it is missing,
+// malformed, or lacks a version, artifacts or a file or sha256, names an
+// unknown source, lists no entities for the entity source and some for an
+// OpenAPI one, or gives a Go archive without a safe top-level directory.
 func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	raw, err := fs.ReadFile(fsys, ManifestFile)
 	if err != nil {
@@ -58,8 +74,17 @@ func ReadManifest(fsys fs.FS) (*Manifest, error) {
 		return nil, fmt.Errorf("sdk: %s: missing schemaVersion", ManifestFile)
 	}
 
-	if len(m.Entities) == 0 {
-		return nil, fmt.Errorf("sdk: %s: no entities listed", ManifestFile)
+	switch m.Source {
+	case "":
+		if len(m.Entities) == 0 {
+			return nil, fmt.Errorf("sdk: %s: no entities listed", ManifestFile)
+		}
+	case SourceOpenAPI:
+		if len(m.Entities) > 0 {
+			return nil, fmt.Errorf("sdk: %s: an OpenAPI source lists no entities", ManifestFile)
+		}
+	default:
+		return nil, fmt.Errorf("sdk: %s: unknown source %q", ManifestFile, m.Source)
 	}
 	if len(m.Artifacts) == 0 {
 		return nil, fmt.Errorf("sdk: %s: no artifacts listed", ManifestFile)

@@ -120,12 +120,25 @@ type cliOp struct {
 	// own security names another scheme than the client's default; both
 	// empty sends it the default way.
 	AuthHeader, AuthPrefix string
+	// node is the operation's own object in the document, which the SDK
+	// generator reads for response and body schemas.
+	node map[string]any
 }
 
 // loadOpenAPIDoc reads and decodes the spec from a local path or an
 // http(s) URL. YAML documents decode through core/yaml (strict YAML 1.2
 // booleans; no new dependencies).
 func loadOpenAPIDoc(src string) (map[string]any, error) {
+	data, err := readOpenAPISource(src)
+	if err != nil {
+		return nil, err
+	}
+	return decodeOpenAPIDoc(data, src)
+}
+
+// readOpenAPISource returns the document's bytes from a local path or an
+// http(s) URL.
+func readOpenAPISource(src string) ([]byte, error) {
 	var data []byte
 	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
 		fetcher := &http.Client{Timeout: 30 * time.Second}
@@ -148,6 +161,11 @@ func loadOpenAPIDoc(src string) (map[string]any, error) {
 			return nil, err
 		}
 	}
+	return data, nil
+}
+
+// decodeOpenAPIDoc decodes a JSON or YAML document; src names it in errors.
+func decodeOpenAPIDoc(data []byte, src string) (map[string]any, error) {
 	trimmed := strings.TrimSpace(string(data))
 	if strings.HasPrefix(trimmed, "{") {
 		var doc map[string]any
@@ -573,6 +591,36 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	if binary == "" {
 		return cliSpec{}, fmt.Errorf("--binary must not be empty")
 	}
+	if strings.ContainsFunc(binary, isControlByte) {
+		return cliSpec{}, fmt.Errorf("%q contains a control character: it is interpolated into generated source", binary)
+	}
+	spec, err := buildOpenAPIModel(doc, oaModelOptions{
+		Source: opts.FromOpenAPI, APIPrefix: opts.ApiPrefix, APIPrefixSet: opts.apiPrefixSet, CLI: true,
+	})
+	if err != nil {
+		return spec, err
+	}
+	spec.Binary = binary
+	spec.EnvPrefix = CLIEnvPrefix(binary)
+	spec.ClientImport = clientImport
+	spec.SelfClient = true
+	return spec, nil
+}
+
+// oaModelOptions configures buildOpenAPIModel. CLI adds the refusals
+// only a command line needs: reserved command words and flag names.
+type oaModelOptions struct {
+	Source       string
+	APIPrefix    string
+	APIPrefixSet bool
+	CLI          bool
+}
+
+// buildOpenAPIModel walks an OpenAPI 3 document into the operation model
+// the --from-openapi CLI and SDK generators both render from: the default
+// server and API prefix, the token header the document's security names,
+// and one cliOp per operation, sorted by command word.
+func buildOpenAPIModel(doc map[string]any, o oaModelOptions) (cliSpec, error) {
 	// A Swagger 2.0 document reads as OpenAPI 3 without an error and
 	// loses its basePath, its body and formData parameters and every
 	// parameter's type; refuse it, and any other major version.
@@ -584,21 +632,12 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			return cliSpec{}, fmt.Errorf("the document is openapi %q; --from-openapi reads OpenAPI 3", fmt.Sprint(v))
 		}
 	}
-	for _, v := range []string{binary, opts.FromOpenAPI} {
-		for _, r := range v {
-			if r < 0x20 || r == 0x7f {
-				return cliSpec{}, fmt.Errorf("%q contains a control character: it is interpolated into generated source", v)
-			}
-		}
+	if strings.ContainsFunc(o.Source, isControlByte) {
+		return cliSpec{}, fmt.Errorf("%q contains a control character: it is interpolated into generated source", o.Source)
 	}
-	opts.Binary = binary
 	spec := cliSpec{
-		Binary:       opts.Binary,
-		EnvPrefix:    CLIEnvPrefix(opts.Binary),
-		ClientImport: clientImport,
-		SelfClient:   true,
-		TokenHeader:  "Authorization",
-		TokenPrefix:  "Bearer ",
+		TokenHeader: "Authorization",
+		TokenPrefix: "Bearer ",
 	}
 
 	// servers[0].url splits in two: an absolute URL's origin seeds the
@@ -623,10 +662,10 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			}
 		}
 	}
-	if opts.apiPrefixSet {
-		spec.APIPrefix = cliAPIPrefix(opts.ApiPrefix)
+	if o.APIPrefixSet {
+		spec.APIPrefix = cliAPIPrefix(o.APIPrefix)
 		if strings.ContainsFunc(spec.APIPrefix, isControlByte) {
-			return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.ApiPrefix)
+			return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", o.APIPrefix)
 		}
 	}
 
@@ -671,7 +710,7 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 				return spec, fmt.Errorf("%s %s: want an object, got %T", strings.ToUpper(m), p, v)
 			}
 			where := strings.ToUpper(m) + " " + p
-			op, err := oaBuildOp(doc, opNode, baseParams, strings.ToUpper(m), p)
+			op, err := oaBuildOp(doc, opNode, baseParams, strings.ToUpper(m), p, o.CLI)
 			if err == nil {
 				err = oaOpAuth(doc, opNode, spec, &op)
 			}
@@ -681,11 +720,11 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 			if prev, dup := seen[op.Command]; dup {
 				return spec, fmt.Errorf("%s: operationId %q maps to command %q, already used by %s; operationIds must be unique (no auto-renaming)", where, op.ID, op.Command, prev)
 			}
-			if oaReservedCommands[op.Command] {
+			if o.CLI && oaReservedCommands[op.Command] {
 				return spec, fmt.Errorf("%s: operationId %q maps to reserved command %q; rename the operation", where, op.ID, op.Command)
 			}
 			if prev, dup := goSeen[op.GoName]; dup {
-				return spec, fmt.Errorf("%s: operationId %q and %s both derive the Go name %s, and the generated CLI would declare runOp%s twice; rename one operation", where, op.ID, prev, op.GoName, op.GoName)
+				return spec, fmt.Errorf("%s: operationId %q and %s both derive the Go name %s, and the generated code would declare it twice; rename one operation", where, op.ID, prev, op.GoName)
 			}
 			seen[op.Command] = where
 			goSeen[op.GoName] = fmt.Sprintf("operationId %q (%s)", op.ID, where)
@@ -805,7 +844,10 @@ func oaOpAuth(doc, opNode map[string]any, spec cliSpec, op *cliOp) error {
 	return nil
 }
 
-func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path string) (cliOp, error) {
+// oaBuildOp derives one operation. cli claims each parameter's flag:
+// a reserved, unusable or repeated flag name fails a CLI and is no
+// concern of an SDK, which names parameters by their Go fields.
+func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path string, cli bool) (cliOp, error) {
 	id, _ := opNode["operationId"].(string)
 	if id == "" {
 		return cliOp{}, fmt.Errorf("missing operationId; every operation needs one (no auto-naming)")
@@ -816,11 +858,12 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		Command:      oaKebab(id),
 		Method:       method,
 		PathTemplate: path,
+		node:         opNode,
 	}
 	// Derived names land in generated Go source and command tables:
 	// reject anything outside the plain grammar instead of munging.
 	if !oaValidIdent(op.GoName) || !oaValidFlag(op.Command) {
-		return op, fmt.Errorf("operationId %q does not derive a usable command name (letters, digits, - and _ only, not digit-led); rename the operation", id)
+		return op, fmt.Errorf("operationId %q does not derive a usable %s name (letters, digits, - and _ only, not digit-led); rename the operation", id, oaWord(cli, "command", "method"))
 	}
 	summary := method + " " + path
 	if s, ok := opNode["summary"].(string); ok && s != "" {
@@ -839,7 +882,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 	// accepted). The 8-bit C1 spellings (U+0080–U+009F: CSI as U+009B,
 	// OSC as U+009D) drive the same escapes without an ESC prefix, so
 	// they are refused too (2026-09-05 red-probe round).
-	if strings.ContainsFunc(summary, func(r rune) bool {
+	if cli && strings.ContainsFunc(summary, func(r rune) bool {
 		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f || textsafe.IsC1(r)
 	}) {
 		return op, fmt.Errorf("operation %q has a summary carrying terminal-control bytes (ESC, CR, BEL or another C0/DEL, or the 8-bit C1 forms U+0080–U+009F): summaries are printed verbatim in the generated CLI's help output. Remove them from the spec", id)
@@ -848,6 +891,9 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 
 	flagSeen := map[string]string{}
 	claim := func(flag, owner string) error {
+		if !cli {
+			return nil
+		}
 		if !oaValidFlag(flag) {
 			return fmt.Errorf("%s derives flag --%s, which is not a usable flag name (lowercase letters, digits, dashes); rename it in the spec (no auto-renaming)", owner, flag)
 		}
@@ -911,7 +957,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		// Any other in (Swagger 2's body/formData, a typo) matched no case
 		// below and the parameter vanished from the CLI, required or not.
 		if in != "path" && in != "query" && in != "header" {
-			return op, fmt.Errorf("parameter %q has in %q; the CLI sends path, query or header parameters", name, in)
+			return op, fmt.Errorf("parameter %q has in %q; %s sends path, query or header parameters", name, in, oaWord(cli, "the CLI", "the SDK"))
 		}
 		schema, _ := pm["schema"].(map[string]any)
 		if schema != nil {
@@ -925,10 +971,10 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		if !ok {
 			for _, union := range []string{"oneOf", "anyOf"} {
 				if _, present := schema[union]; present {
-					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch maps to a flag", name, union)
+					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch %s", name, union, oaWord(cli, "maps to a flag", "is a parameter value"))
 				}
 			}
-			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings map to flags", name)
+			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings %s", name, oaWord(cli, "map to flags", "are sent as parameters"))
 		}
 		if repeated {
 			if in == "path" {
@@ -937,7 +983,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 			if goType != "string" {
 				// A repeatable flag collects strings; typed validation
 				// would be silently skipped, so refuse rather than lie.
-				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings map to repeatable flags", name, goType)
+				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings %s", name, goType, oaWord(cli, "map to repeatable flags", "are sent as repeated parameters"))
 			}
 		}
 		joined, err := oaParamJoined(pm, name, in, repeated)
@@ -950,7 +996,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		// control byte is refused like a summary's.
 		desc, _ := pm["description"].(string)
 		desc = strings.Join(strings.Fields(desc), " ")
-		if strings.ContainsFunc(desc, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
+		if cli && strings.ContainsFunc(desc, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
 			return op, fmt.Errorf("parameter %q has a description carrying terminal-control bytes: descriptions are printed verbatim in the generated CLI's help output. Remove them from the spec", name)
 		}
 		cp := cliOpParam{
@@ -1108,7 +1154,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 					// must be a plain media type: no control byte (C0, DEL
 					// or C1) that would rewrite the operator's terminal.
 					if strings.ContainsFunc(ct, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
-						return op, fmt.Errorf("request body content type %q carries control bytes: it is printed in the generated CLI's help output and sent as a header. Remove them from the spec", ct)
+						return op, fmt.Errorf("request body content type %q carries control bytes: it is %s. Remove them from the spec", ct, oaWord(cli, "printed in the generated CLI's help output and sent as a header", "sent as a header"))
 					}
 					if _, _, err := mime.ParseMediaType(ct); err != nil || !strings.Contains(ct, "/") {
 						return op, fmt.Errorf("request body content type %q is not a media type (type/subtype)", ct)
@@ -1119,11 +1165,22 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				}
 			}
 			if op.BodyKind == "" && len(content) > 0 {
-				return op, fmt.Errorf("request body offers %s; supported are application/json and binary (application/octet-stream / format: binary)", strings.Join(slices.Sorted(maps.Keys(content)), ", "))
+				return op, fmt.Errorf("request body offers %s; %s", strings.Join(slices.Sorted(maps.Keys(content)), ", "), oaWord(cli,
+					"supported are application/json and binary (application/octet-stream / format: binary)",
+					"the SDK sends application/json and binary (application/octet-stream / format: binary) bodies"))
 			}
 		}
 	}
 	return op, nil
+}
+
+// oaWord picks a refusal's wording for the generator that reads the
+// document: the CLI, or the SDK.
+func oaWord(cli bool, forCLI, forSDK string) string {
+	if cli {
+		return forCLI
+	}
+	return forSDK
 }
 
 func orEmpty(m map[string]any) map[string]any {

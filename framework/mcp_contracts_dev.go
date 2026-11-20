@@ -47,6 +47,7 @@ func (a *App) registerContractDevTools() error {
 				},
 			},
 			handler: a.toolContractsVerify,
+			hints:   readOnlyToolHints(),
 		},
 		{
 			name: "contracts_fix",
@@ -66,6 +67,12 @@ func (a *App) registerContractDevTools() error {
 				"required": []string{"rule"},
 			},
 			handler: a.toolContractsFix,
+			hints: mcp.WithAnnotations(mcp.Annotations{
+				ReadOnlyHint:    mcp.Bool(false),
+				DestructiveHint: mcp.Bool(true),
+				IdempotentHint:  mcp.Bool(false),
+				OpenWorldHint:   mcp.Bool(false),
+			}),
 		},
 	}
 	return a.registerBuiltinTools("contract dev tool", tools, mcp.WithDevImplied())
