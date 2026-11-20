@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -126,5 +127,31 @@ func TestSignatureRejectsWrongMAC(t *testing.T) {
 		if VerifyTimestamped("wrong-key", signature, "created", "delivery-1", body, time.Minute) {
 			t.Fatal("signature under a different key was accepted")
 		}
+	}
+}
+
+func TestVerifyRefusesANewlineInEventOrID(t *testing.T) {
+	ts := time.Now().Unix()
+	body := []byte(`{}`)
+	for _, c := range [][2]string{{"a\nb", "d1"}, {"a", "d\n1"}} {
+		h := SignWithTimestamp("s3cret", ts, c[0], c[1], body)
+		if VerifyTimestamped("s3cret", h, c[0], c[1], body, time.Minute) {
+			t.Errorf("event %q, id %q verified though a newline makes the signed parts ambiguous", c[0], c[1])
+		}
+	}
+}
+
+func TestSSRFRefusesInternalSuffixHosts(t *testing.T) {
+	if err := validateSubscriberURL("https://billing.internal/hook", false); err == nil {
+		t.Error("a .internal host was accepted")
+	}
+}
+
+func TestVerifyRefusesARepeatedV1EvenWhenBothMatch(t *testing.T) {
+	ts := time.Now().Unix()
+	h := SignWithTimestamp("s3cret", ts, "e", "d1", []byte(`{}`))
+	_, sig, _ := strings.Cut(h, "v1=")
+	if VerifyTimestamped("s3cret", h+",v1="+sig, "e", "d1", []byte(`{}`), time.Minute) {
+		t.Error("a header carrying v1= twice verified")
 	}
 }

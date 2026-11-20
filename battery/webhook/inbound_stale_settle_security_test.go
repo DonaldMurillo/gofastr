@@ -137,3 +137,24 @@ func TestInboundRedStaleSettleFenced(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessingClaimSkipsAProcessedEnvelopeOnEveryStore(t *testing.T) {
+	_, sqlStore := openInboundSQLStore(t)
+	for name, store := range map[string]interface {
+		InboundStore
+		envelopeProcessingClaimer
+	}{"sqlstore": sqlStore, "memorystore": NewMemoryInboundStore()} {
+		ctx := context.Background()
+		now := time.Now().UTC()
+		env := InboundEnvelope{ID: "e1", Source: "s", Payload: []byte(`{}`), Status: InboundStatusProcessed, Attempts: 1, ReceivedAt: now, UpdatedAt: now}
+		if err := store.AddEnvelope(ctx, env); err != nil {
+			t.Fatal(err)
+		}
+		if admitted, err := store.MarkEnvelopeProcessing(ctx, "e1"); err != nil || admitted {
+			t.Errorf("%s: a processed envelope was admitted again (%v, %v)", name, admitted, err)
+		}
+		if got, _ := store.GetEnvelope(ctx, "e1"); got == nil || got.Status != InboundStatusProcessed || got.Attempts != 1 {
+			t.Errorf("%s: the processed envelope changed: %+v", name, got)
+		}
+	}
+}

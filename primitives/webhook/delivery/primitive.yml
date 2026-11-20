@@ -1,0 +1,148 @@
+primitive: webhook.delivery
+summary: The outbound Manager - Subscribe and Publish, the worker's tick, claim and attempt, signing in the GoFastr or a receiver's format, subscriber credentials and the SSRF guard on every target.
+code:
+  - battery/webhook/webhook.go
+  - battery/webhook/auth.go
+  - battery/webhook/sign.go
+  - battery/webhook/format.go
+  - battery/webhook/ssrf.go
+docs:
+  - framework/docs/content/webhooks.md
+invariants:
+  - id: subscribe-refuses-what-cannot-be-sent
+    rule: Subscribe refuses an unstorable or empty secret or id, a malformed credential, a credential on an http URL without AllowPlaintextAuth or on a header the signature writes, an internal or userinfo URL, and an event pattern holding any textsafe unsafe rune.
+    enforced_by:
+      - test: battery/webhook.TestSubscriberRefusesUnstorableText
+      - test: battery/webhook.TestSubscribeRefusesMalformedAuth
+      - test: battery/webhook.TestPlaintextAuthRefused
+      - test: battery/webhook.TestSubscribeRefusesAuthOnSigHeader
+      - test: battery/webhook.TestSubscribe_RejectsSSRFURL
+      - test: battery/webhook.TestSubscribe_RejectsCRLFEventPattern
+  - id: paused-wins-over-active
+    rule: Subscribe stores a Paused subscriber inactive and any other one active, and Publish queues nothing for an inactive subscriber.
+    enforced_by:
+      - test: battery/webhook.TestSubscribe_HonorsPausedFlag
+      - test: battery/webhook.TestPublish_SkipsPausedSubscribers
+  - id: publish-checks-the-payload
+    rule: Publish refuses an event name holding a C0, DEL, C1 or invisible rune, a payload over MaxPayloadBytes and a non-empty payload that is not JSON, and PublishFor stamps every delivery with its owner.
+    enforced_by:
+      - test: battery/webhook.TestEventNameRejectsC1Controls
+      - test: battery/webhook.TestPublish_RejectsOversizedPayload
+      - test: battery/webhook.TestPublish_RejectsInvalidJSONPayload
+      - test: battery/webhook.TestEraseRemovesOwnedDeliveries
+  - id: every-client-is-ssrf-guarded
+    rule: Without AllowPrivateNetworks every delivery client refuses internal targets at dial or round-trip time, a caller-supplied client and transport included, and Subscribe refuses localhost, .localhost and .internal hosts and internal IPs while leaving a DNS failure to the dial-time guard.
+    enforced_by:
+      - test: battery/webhook.TestSSRF_CustomClientStillGuarded
+      - test: battery/webhook.TestSSRF_CustomRoundTripperGuarded
+      - test: battery/webhook.TestSSRFRefusesInternalSuffixHosts
+      - test: battery/webhook.TestSSRF_PublicURLAccepted
+      - test: battery/webhook.TestSSRF_AllowPrivateOverrides
+  - id: scheme-and-userinfo-checked-in-every-mode
+    rule: A subscriber URL needs an http or https scheme and no userinfo, AllowPrivateNetworks or not.
+    enforced_by:
+      - test: battery/webhook.TestSSRF_UnsupportedSchemesRejected
+      - test: battery/webhook.TestSSRF_URLWithUserinfoRejected
+  - id: credential-never-follows-a-redirect
+    rule: A delivery carrying Subscriber.Auth goes through a client that answers a 3xx as the response instead of following it.
+    enforced_by:
+      - test: battery/webhook.TestDeliveryWithAuthRefusesRedirect
+  - id: stored-bad-credential-fails-the-attempt
+    rule: A stored subscriber whose credential would cross plain HTTP or overwrite a signature header fails the attempt without sending.
+    enforced_by:
+      - test: battery/webhook.TestPlaintextAuthRefused
+      - test: battery/webhook.TestStoredAuthOnSigHeaderFails
+  - id: past-budget-claim-is-dead-unsent
+    rule: A claimed delivery whose attempts already exceed MaxAttempts is dead-lettered without a request, and a failed attempt at MaxAttempts is dead.
+    enforced_by:
+      - test: battery/webhook.TestExpiredClaimPastBudgetIsDead
+      - test: battery/webhook.TestFallbackTickReachesMaxAttempts
+  - id: fallback-dequeue-consumes-an-attempt
+    rule: A tick over a store without LeasedStore consumes one attempt per dequeued delivery, which the settle adds to the stored count.
+    enforced_by:
+      - test: battery/webhook.TestFallbackTickReachesMaxAttempts
+  - id: gone-subscriber-is-dead
+    rule: A delivery whose subscriber is gone or inactive is dead-lettered.
+    enforced_by:
+      - test: battery/webhook.TestManager_DeadIfSubscriberRemoved
+  - id: shutdown-refunds-the-attempt
+    rule: An attempt Stop cancels mid-POST, and claims a shutdown tick never started, go back to pending with their attempt refunded.
+    enforced_by:
+      - test: battery/webhook.TestStopMidPOSTRefundsTheAttempt
+      - test: battery/webhook.TestShutdownTickRefundsUnstarted
+  - id: no-start-without-lease-to-finish
+    rule: The tick hands back, refunded, every claim whose lease has less left than one attempt may take, the client timeout capped at half the lease, and a claim with no lease recorded is never too short.
+    enforced_by:
+      - test: battery/webhook.TestTickStartBarFollowsClientTimeout
+      - test: battery/webhook.TestTickReleasesClaimsItCannotRun
+      - test: battery/webhook.TestUnknownLeaseIsNotTooShort
+  - id: lease-outlives-the-client-timeout
+    rule: New raises a LeasePeriod no longer than the client timeout to twice that timeout, only for a LeasedStore, and logs it.
+    enforced_by:
+      - test: battery/webhook.TestNewRaisesShortLeaseOnlyForLeasedStore
+      - test: battery/webhook.TestLeaseOutlivesClientTimeout
+  - id: worker-survives-store-panics
+    rule: A panic in store code on the worker loop is logged scrubbed and never kills the worker.
+    enforced_by:
+      - test: battery/webhook.TestStorePanicLogsAreScrubbed
+  - id: lost-writes-are-logged
+    rule: A failed due-deliveries read and a failed settle write are logged through Options.Logger, never swallowed.
+    enforced_by:
+      - test: battery/webhook.TestTickLogsDueDeliveriesError
+      - test: battery/webhook.TestManager_DeliveryUpdateFailureLogged
+  - id: negative-retention-is-off
+    rule: New clamps a negative Retention to zero, which keeps every row.
+    enforced_by:
+      - test: battery/webhook.TestNegativeRetentionIsOff
+  - id: invalid-format-panics-at-new
+    rule: SignatureFormat.Validate refuses a format with no Header, a header the delivery sets or one named twice, a Prefix with a placeholder other than one {timestamp}, a Signed without exactly one {body} or without {timestamp}, and a timestamp the receiver cannot read, and New panics on such a format.
+    enforced_by:
+      - test: battery/webhook.TestFormatValidateRefuses
+      - test: battery/webhook.TestNewPanicsOnBadFormat
+  - id: verify-refuses-ambiguous-headers
+    rule: VerifyTimestamped refuses a blank secret, a non-positive tolerance, a timestamp outside it, an event or id holding a newline, and a header that repeats t= or v1=.
+    enforced_by:
+      - test: battery/webhook.TestVerifyTimestampedBlankSecretRefuses
+      - test: battery/webhook.TestVerifyTimestamped_RejectsNonPositiveTolerance
+      - test: battery/webhook.TestSignature_ExpiredTimestampRejected
+      - test: battery/webhook.TestVerifyRefusesANewlineInEventOrID
+      - test: battery/webhook.TestVerify_RejectsDuplicateFields
+      - test: battery/webhook.TestVerifyRefusesARepeatedV1EvenWhenBothMatch
+  - id: patterns-match-by-segment
+    rule: In an event pattern "*" matches exactly one dot-separated segment and "**" one or more, and either alone matches every event.
+    enforced_by:
+      - test: battery/webhook.TestMatch_Patterns
+      - test: battery/webhook.TestMatch_DoubleStarMatchesAnyDepth
+  - id: ids-come-from-crypto-rand
+    rule: newID panics when crypto/rand fails instead of minting an all-zero id.
+    enforced_by:
+      - test: battery/webhook.TestNewID_NotAllZero
+  - id: counters-count-attempts
+    rule: DeliveriesTotal counts every processed attempt and FailuresTotal every one that did not succeed, never more.
+    enforced_by:
+      - test: battery/webhook.TestWebhookMetrics_CountersAndCollector
+decisions:
+  - id: wrap-custom-clients
+    date: 2026-11-20
+    status: accepted
+    decision: A caller-supplied HTTPClient keeps its routing and gets the SSRF guard added, through the dial-time hook on a plain transport and a resolving RoundTripper otherwise.
+    rejected:
+      - option: Use a caller-supplied client as-is.
+        why: A proxy, tracing or timeout customization would silently reopen loopback, RFC 1918 and metadata targets through DNS rebinding.
+    upholds: [every-client-is-ssrf-guarded]
+  - id: dns-failure-left-to-the-dial
+    date: 2026-11-20
+    status: accepted
+    decision: Subscribe accepts a hostname that does not resolve, and the dial-time guard checks whatever it resolves to later.
+    rejected:
+      - option: Refuse a hostname that does not resolve.
+        why: Registration would require the receiver to be live.
+    upholds: [every-client-is-ssrf-guarded]
+  - id: newline-joined-signature
+    date: 2026-11-20
+    status: accepted
+    decision: The GoFastr signature covers timestamp, event, delivery id and body joined by newlines, which no header value carries.
+    rejected:
+      - option: Join with dots.
+        why: Event names carry dots, so one event and body could be re-split as another.
+    upholds: [verify-refuses-ambiguous-headers]

@@ -8,10 +8,8 @@ import (
 	"time"
 )
 
-// MemoryInboundStore is the in-process InboundStore. Envelopes live in a
-// map guarded by a single mutex, suitable for single-instance apps and
-// tests; nothing is persistent. Mirrors MemoryStore's conventions: a mutex,
-// a map, upsert-on-add, nil-pointer-on-miss.
+// MemoryInboundStore is the in-process InboundStore, for single-instance apps
+// and tests.
 type MemoryInboundStore struct {
 	mu        sync.RWMutex
 	envelopes map[string]InboundEnvelope
@@ -22,8 +20,7 @@ func NewMemoryInboundStore() *MemoryInboundStore {
 	return &MemoryInboundStore{envelopes: map[string]InboundEnvelope{}}
 }
 
-// AddEnvelope stores e, replacing any existing record with the same ID
-// (upsert semantics, matching MemoryStore.AddSubscriber).
+// AddEnvelope stores e, replacing a record with the same ID.
 func (m *MemoryInboundStore) AddEnvelope(_ context.Context, e InboundEnvelope) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -43,15 +40,8 @@ func (m *MemoryInboundStore) GetEnvelope(_ context.Context, id string) (*Inbound
 	return &cp, nil
 }
 
-// UpdateEnvelope overwrites the stored envelope for e.ID, except attempts:
-// the counter is owned by the processing transition (MarkEnvelopeProcessing),
-// so an existing row's count survives the write. Persisting a caller
-// snapshot absolutely let two overlapping processing passes both write the
-// same snapshot+1 and record two invocations as one. A stored dedupe key
-// also survives a keyless write: a worker's settle carries the snapshot it
-// loaded before IngestHandler registered the key. A missing envelope is a
-// no-op, as SQLInboundStore's UPDATE is: retention may have reaped a
-// processed one, and a stale runner's settle must not put it back.
+// UpdateEnvelope overwrites the stored envelope except its attempts, and never
+// regresses a processed one.
 func (m *MemoryInboundStore) UpdateEnvelope(_ context.Context, e InboundEnvelope) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -64,21 +54,14 @@ func (m *MemoryInboundStore) UpdateEnvelope(_ context.Context, e InboundEnvelope
 		e.DedupeKey = cur.DedupeKey
 	}
 	if isTerminalInboundStatus(cur.Status) && e.Status != InboundStatusProcessed {
-		// Fenced no-op: a stale runner's late settle must not regress a
-		// terminal row (isTerminalInboundStatus) — the memory twin of the
-		// outbound UpdateDelivery fence. Only a processed settle lands on
-		// a terminal row (a runner that really did succeed); the stale
-		// runner's failure write is dropped. No error: the write is
-		// stale, not failed, the same fenced no-op the queue's
-		// completions report.
 		return nil
 	}
 	m.envelopes[e.ID] = cloneEnvelope(e)
 	return nil
 }
 
-// RegisterDedupeKey sets the envelope's dedupe key and nothing else, at any
-// status (see dedupeKeyRegistrar). A missing id is a no-op.
+// RegisterDedupeKey sets the envelope's dedupe key and nothing else; a missing
+// id is a no-op.
 func (m *MemoryInboundStore) RegisterDedupeKey(_ context.Context, id, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -89,11 +72,8 @@ func (m *MemoryInboundStore) RegisterDedupeKey(_ context.Context, id, key string
 	return nil
 }
 
-// MarkEnvelopeProcessing transitions an envelope to "processing" and
-// consumes one attempt under the store's lock — the memory twin of
-// SQLInboundStore's `attempts = attempts + 1` processing UPDATE. It
-// reports false, writing nothing, for a missing id or a processed
-// envelope, so ProcessInbound does not run the handler again.
+// MarkEnvelopeProcessing marks an envelope processing and consumes one
+// attempt; false for a missing or processed one.
 func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -101,10 +81,6 @@ func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string
 	if !ok {
 		return false, nil
 	}
-	// Terminal fence, the memory twin of SQLInboundStore's predicate in
-	// MarkEnvelopeProcessing: a stale runner marking an already-settled
-	// envelope processing would regress the row and consume an attempt
-	// against it.
 	if isTerminalInboundStatus(e.Status) {
 		return false, nil
 	}
@@ -116,8 +92,8 @@ func (m *MemoryInboundStore) MarkEnvelopeProcessing(_ context.Context, id string
 	return true, nil
 }
 
-// ListEnvelopes returns envelopes filtered by status (empty = all),
-// newest-received first, capped at limit (0 = no cap).
+// ListEnvelopes returns envelopes with status (empty for all), newest first,
+// at most limit (0 for no cap).
 func (m *MemoryInboundStore) ListEnvelopes(_ context.Context, status string, limit int) ([]InboundEnvelope, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -135,14 +111,7 @@ func (m *MemoryInboundStore) ListEnvelopes(_ context.Context, status string, lim
 	return out, nil
 }
 
-// SeenDedupeKey reports whether a key was already persisted for source.
-// Empty key returns (false, nil) without scanning.
-//
-// NOTE: linear scan with no DB constraint, this is the race window the
-// SQL store documents too: a concurrent request between SeenDedupeKey and
-// AddEnvelope can still double-insert. Acceptable for single-instance use;
-// the SQL store's index makes the lookup cheap but the check-then-insert
-// race is inherent without a unique constraint.
+// SeenDedupeKey reports whether key was already persisted for source.
 func (m *MemoryInboundStore) SeenDedupeKey(_ context.Context, source, key string) (bool, error) {
 	if key == "" {
 		return false, nil
@@ -157,10 +126,7 @@ func (m *MemoryInboundStore) SeenDedupeKey(_ context.Context, source, key string
 	return false, nil
 }
 
-// ReapTerminalBefore implements [RetentionSweeper]: it deletes processed
-// envelopes whose UpdatedAt is older than cutoff, the memory twin of
-// SQLInboundStore.ReapTerminalBefore. Failed envelopes are retained as
-// forensic records.
+// ReapTerminalBefore deletes processed envelopes older than cutoff.
 func (m *MemoryInboundStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -169,9 +135,6 @@ func (m *MemoryInboundStore) ReapTerminalBefore(_ context.Context, cutoff time.T
 	}), nil
 }
 
-// cloneEnvelope deep-copies Payload and Headers so callers can't mutate the
-// stored envelope through aliased slices/maps (same defensive copy
-// discipline as the outbound store).
 func cloneEnvelope(e InboundEnvelope) InboundEnvelope {
 	cp := e
 	cp.Payload = cloneBytes(e.Payload)
@@ -182,5 +145,4 @@ func cloneEnvelope(e InboundEnvelope) InboundEnvelope {
 	return cp
 }
 
-// Compile-time interface satisfaction.
 var _ InboundStore = (*MemoryInboundStore)(nil)

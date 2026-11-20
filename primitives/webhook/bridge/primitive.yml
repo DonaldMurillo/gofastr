@@ -1,0 +1,24 @@
+primitive: webhook.bridge
+summary: Bridge, which publishes framework event bus events to a webhook Manager, with its redactor and error callbacks.
+code:
+  - battery/webhook/bridge.go
+docs:
+  - framework/docs/content/webhooks.md
+invariants:
+  - id: queued-once-per-event
+    rule: The bridge skips an event another replica fanned out (event.IsRemote), so only the emitting replica queues its deliveries.
+    enforced_by:
+      - test: battery/webhook.TestBridgeQueuesOncePerEvent
+  - id: owner-read-before-redaction
+    rule: The bridge reads the event's owner before the redactor runs and publishes with PublishFor under it.
+    enforced_by:
+      - test: battery/webhook.TestBridgeOwnerSurvivesRedactor
+      - test: battery/webhook.TestBridgeRecordsEventOwner
+decisions:
+  - id: bridge-errors-are-silent-by-default
+    date: 2026-11-20
+    status: accepted
+    decision: A marshal or publish error is dropped unless WithBridgeMarshalError or WithBridgePublishError installs a callback.
+    rejected:
+      - option: Return the error to the bus.
+        why: A buggy emitter or a store blip would then fail the event for every other subscriber on the bus.
