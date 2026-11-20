@@ -1,0 +1,112 @@
+primitive: auth.magiclink
+summary: Magic-link sign-in, the memory and SQL token stores the mailed flows share, the purpose tags that keep their tokens apart, and the mail queue.
+code:
+  - battery/auth/magiclink.go
+  - battery/auth/magiclink_sql.go
+  - battery/auth/mailbox_signin.go
+  - battery/auth/mailqueue.go
+  - battery/auth/token_purpose.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: plugin-config
+    rule: A link lives 15 minutes by default, send gets a 10/min and verify a 30/min per-IP floor, and Init refuses a bad BaseURL, the in-memory token store in production, and a missing or unsafe TwoFactorURL next to a 2FA plugin.
+    enforced_by:
+      - test: battery/auth.TestMagicLinkPlugin_Defaults
+      - test: battery/auth.TestMagicLinkSendDefaultThrottle
+      - test: battery/auth.TestMagicLinkVerifyDefaultThrottle
+      - test: battery/auth.TestMagicLinkInitRefusesBadBaseURL
+      - test: battery/auth.TestLinkPluginsRefuseMemoryStore
+      - test: battery/auth.TestMagicLinkInitRequiresTwoFactorURLWith2FA
+      - test: battery/auth.TestTwoFactorURLThatCannotBeRedirectedToIsRefusedAtInit
+  - id: send-tells-nothing
+    rule: Send spends the shared per-address budget, keyed by a SHA-256 digest of the address, and answers the same uncached 200 whether it mailed or not; without a sender it answers 503 unless DevMode, which logs hashes only.
+    enforced_by:
+      - test: battery/auth.TestMagicLinkSendPerAddressLimit
+      - test: battery/auth.TestMailAddressLimitKeyIsADigest
+      - test: battery/auth.TestMagicLinkSendIsNotCached
+      - test: battery/auth.TestMagicLink_NilSenderWithoutDevMode_FailsClosed
+      - test: battery/auth.TestMagicLink_DevModeDoesNotLogLiveURL
+      - test: battery/auth.TestMagicLinkRequestedEventCarriesUserID
+  - id: get-confirms-post-signs-in
+    rule: GET verify only peeks the token and renders the confirmation, refusing a token of another flow; only the POST redeems it, after refusing a cross-site form and capping the body.
+    enforced_by:
+      - test: battery/auth.TestMagicLinkVerifyNeedsConfirmation
+      - test: battery/auth.TestConfirmPageRefusesOtherFlowToken
+      - test: battery/auth.TestVerifyRejectsCrossSiteTextPlain
+      - test: battery/auth.TestMagicLinkConfirmRejectsCrossSite
+      - test: battery/auth.TestMagicLinkVerifyCapsBody
+  - id: confirm-form-carries-csrf
+    rule: The confirmation form carries the CSRF field, from the context when this request minted the cookie and from the cookie otherwise.
+    enforced_by:
+      - test: battery/auth.TestConfirmPageFormWorksBehindCSRF
+  - id: pending-goes-to-two-factor
+    rule: A verify that mints a pending session redirects to TwoFactorURL, and every redirect target passes safeRedirectURL's same-origin grammar.
+    enforced_by:
+      - test: battery/auth.TestMagicLinkPendingSignInGoesToTwoFactorURL
+      - test: battery/auth.TestSafeRedirectRedFullGrammar
+  - id: tokens-single-use-and-expiring
+    rule: Both token stores consume a token on its first redeem, refuse an expired one at redeem and peek, and purge by exact payload; the SQL store keeps only the SHA-256 digest of each token.
+    enforced_by:
+      - test: battery/auth.TestMemoryMagicLinkTokenStore_DoubleRedeemFails
+      - test: battery/auth.TestMemoryMagicLinkTokenStore_ExpiredTokenFails
+      - test: battery/auth.TestMemoryMagicLinkPeekRefusesExpired
+      - test: battery/auth.TestSQLMagicLink_SingleUse
+      - test: battery/auth.TestSQLMagicLink_Expired
+      - test: battery/auth.TestMagicLinkStoresPurgeByPayload
+      - test: battery/auth.TestMagicLinkRedStoredOpaque
+  - id: stores-reap-expired
+    rule: Both stores sweep expired tokens on mint at most every 15 minutes, a failed SQL sweep still returns the token and retries after a minute, Cleanup deletes expired rows, and the reaper recovers a panicking store and stops with the plugin, which then refuses to start again.
+    enforced_by:
+      - test: battery/auth.TestMemoryMagicLinkStoreReapsExpiredOnMint
+      - test: battery/auth.TestMagicLinkStoreSweepsExpired
+      - test: battery/auth.TestSQLMagicLinkCreateTokenSurvivesSweepFailure
+      - test: battery/auth.TestSQLMagicLink_Cleanup
+      - test: battery/auth.TestMagicLinkReaperPanicScrubbed
+      - test: battery/auth.TestAuthManagerStopsMagicLinkReaper
+      - test: battery/auth.TestMagicLinkPluginRefusesStartAfterStop
+  - id: purposes-keep-flows-apart
+    rule: Every mailed or passkey token is tagged with its flow, a redeem refuses an untagged or foreign token (before consuming it where the store can peek), and a purge matches the tagged payload.
+    enforced_by:
+      - test: battery/auth.TestSharedStoreStillServesOwnFlows
+      - test: battery/auth.TestMagicLinkTokenCannotResetPassword
+      - test: battery/auth.TestNonPeekingStoreRefusesVerificationTokenAtReset
+      - test: battery/auth.TestNonPeekingStoreRefusesResetTokenElsewhere
+      - test: battery/auth.TestResetDropsMagicLinks
+  - id: mail-queue-bounded
+    rule: The mail queue detaches sends from the request, gives each a 30-second deadline cancelled by stop, drops a send when full or stopped instead of blocking, and recovers a panicking sender.
+    enforced_by:
+      - test: battery/auth.TestForgotPasswordReturnsBeforeEmailDelivery
+      - test: battery/auth.TestDuplicateNoticeBoundedAndStopped
+      - test: battery/auth.TestPasswordResetDeliveryDroppedWhenQueueFull
+      - test: battery/auth.TestPasswordResetDeliveryRefusedAfterStop
+      - test: battery/auth.TestMailQueueRecoversSenderPanic
+decisions:
+  - id: confirmation-step
+    date: 2026-11-20
+    status: accepted
+    decision: Following a link renders a confirmation and only its POST signs in.
+    rejected:
+      - option: Sign in on the GET.
+        why: An attacker's own link opened by a victim signed the victim into the attacker's account, and scanners that prefetch links spent them.
+      - option: Bind the link to the requesting browser with a cookie.
+        why: It breaks a link requested on a laptop and opened on a phone.
+      - option: Refuse Sec-Fetch-Site cross-site.
+        why: Every webmail click is cross-site.
+    upholds: [get-confirms-post-signs-in]
+  - id: purpose-in-the-payload
+    date: 2026-11-20
+    status: accepted
+    decision: The purpose tag is a prefix of the payload, so the host's MagicLinkTokenStore needs no new method.
+    rejected:
+      - option: Add a purpose argument to the store interface.
+        why: Every host store would have to change, and the payload already round-trips.
+    upholds: [purposes-keep-flows-apart]
+twins:
+  - job: Store mailed tokens with single use, expiry, peek and purge by payload.
+    why: MemoryMagicLinkTokenStore keeps a map and SQLMagicLinkTokenStore a table of digests; they share the MagicLinkTokenStore contract, pinned by TestMagicLinkStoresPurgeByPayload over both.
+    sites:
+      - path: battery/auth/magiclink.go
+        note: MemoryMagicLinkTokenStore.
+      - path: battery/auth/magiclink_sql.go
+        note: SQLMagicLinkTokenStore.

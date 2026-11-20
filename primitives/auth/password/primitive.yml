@@ -1,0 +1,127 @@
+primitive: auth.password
+summary: Password hashing, the signed-in password change and the forgot/reset flow.
+code:
+  - battery/auth/password.go
+  - battery/auth/password_change.go
+  - battery/auth/password_reset.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: hash-policy
+    rule: HashPassword refuses the empty password, ValidatePasswordStrength counts characters against an eight-character floor, and a bcrypt input over 72 bytes is SHA-256 pre-hashed at hash and verify alike.
+    enforced_by:
+      - test: battery/auth.TestPassword_EmptyPasswordRejected
+      - test: battery/auth.TestPasswordFloorCountsCharacters
+      - test: battery/auth.TestPassword_ShortPasswordRejectedByStrengthCheck
+      - test: battery/auth.TestPassword_VeryLongPasswordHandled
+  - id: verify-detects-the-format
+    rule: CheckPassword verifies "$argon2id$" hashes with argon2id and everything else with bcrypt; verifyPassword asks a custom DefaultHasher first and then CheckPassword, without recursing when the custom Verify calls CheckPassword.
+    enforced_by:
+      - test: battery/auth.TestCheckPassword_AutoDetectsArgon2
+      - test: battery/auth.TestVerifyPasswordConsultsCustomDefaultHasher
+      - test: battery/auth.TestCustomVerifyCallingCheckPasswordDoesNotRecurse
+  - id: argon2-bounds
+    rule: Argon2Hasher.Hash refuses parameters past the caps Verify enforces on a stored hash (1 GiB, 100 iterations, 16 threads, 128-byte key), Verify refuses such a hash before deriving, compares in constant time, and every hash gets a fresh salt.
+    enforced_by:
+      - test: battery/auth.TestArgon2HashRefusesParamsVerifyRefuses
+      - test: battery/auth.TestArgon2_VerifyRejectsResourceExhaustionParams
+      - test: battery/auth.TestArgon2_HashAndVerify
+      - test: battery/auth.TestArgon2_DifferentSaltPerHash
+  - id: dummies-track-the-hasher
+    rule: The unknown-account dummy and the passwordless placeholder are made by DefaultHasher and cached once per hasher configuration (a custom hasher keyed by type alone); clearing a password writes a fresh unusable hash, not the shared placeholder.
+    enforced_by:
+      - test: battery/auth.TestLoginDummyHashTracksDefaultHasher
+      - test: battery/auth.TestPasswordlessPlaceholderTracksDefaultHasher
+      - test: battery/auth.TestCustomHasherDummyCachedOnce
+      - test: battery/auth.TestJWTDiesWithCredentialChange
+  - id: change-needs-the-interactive-session
+    rule: POST {base}/password refuses a cross-site form, an API-token or embed caller, a pending session, a session that has not passed an enabled second factor, and a failed 2FA-state lookup.
+    enforced_by:
+      - test: battery/auth.TestPasswordChangeCrossSiteRefused
+      - test: battery/auth.TestPasswordChangeRefusesTokenAndEmbedCallers
+      - test: battery/auth.TestPasswordChangePendingTwoFARefused
+      - test: battery/auth.TestPasswordChangeNeedsTwoFAProof
+      - test: battery/auth.TestPasswordChangeTwoFALookupErrorRefuses
+  - id: change-checks-the-body
+    rule: The change answers 422 for a missing, over-128-byte, too short or unconfirmed new password, a wrong current one and a new one equal to it, and spends the per-account login limiter before the check.
+    enforced_by:
+      - test: battery/auth.TestPasswordChangeRefusesOverlongPassword
+      - test: battery/auth.TestPasswordChangeConfirmMustMatch
+      - test: battery/auth.TestPasswordChangeWrongCurrentRefused
+      - test: battery/auth.TestPasswordChangeWeakRefused
+      - test: battery/auth.TestPasswordChangeRateLimited
+  - id: change-swaps-only-the-checked-hash
+    rule: The new hash is written only while the hash just verified is stored, through PasswordSwapper in one statement where the store has it.
+    enforced_by:
+      - test: battery/auth.TestPasswordChangeLosesToReset
+  - id: change-revokes-and-remints
+    rule: A change drops the user's reset links and mailed sign-ins and revokes every session (answering 500 when that fails), then remints the caller's session keeping a second factor it had passed, and drops the remint if the hash moved meanwhile.
+    enforced_by:
+      - test: battery/auth.TestPasswordChangeDropsOutstandingResetLinks
+      - test: battery/auth.TestChangeDropsMagicLinks
+      - test: battery/auth.TestPasswordChangeRevokesOthers
+      - test: battery/auth.TestPasswordChangeFailsWhenRevokeFails
+      - test: battery/auth.TestPasswordChangeKeepsTwoFAProof
+      - test: battery/auth.TestChangeRemintOvertakenByReset
+  - id: reset-config
+    rule: The reset link lives one hour by default, both endpoints get a 10/min per-IP floor, Init refuses a bad BaseURL, a LinkPath that is not a same-origin path without query, and the in-memory token store in production.
+    enforced_by:
+      - test: battery/auth.TestPasswordResetDefaultTTLIsOneHour
+      - test: battery/auth.TestResetRequestDefaultThrottle
+      - test: battery/auth.TestEmailBaseURLRedSchemeValidated
+      - test: battery/auth.TestPasswordResetLinkPathMustBeAPath
+      - test: battery/auth.TestLinkPluginsRefuseMemoryStore
+  - id: forgot-tells-nothing
+    rule: Forgot-password refuses a cross-site form, answers the same 200 or 303 for every address, spends the shared per-address mail budget, burns token-store work for an unknown address, and mails off the request path through the bounded queue; DevMode logs hashes, never the link.
+    enforced_by:
+      - test: battery/auth.TestForgotPasswordCrossSiteRefused
+      - test: battery/auth.TestPasswordReset_ForgotDoesNotEnumerate
+      - test: battery/auth.TestForgotPasswordPerAddressLimit
+      - test: battery/auth.TestForgotPasswordBranchWorkParity
+      - test: battery/auth.TestForgotPasswordReturnsBeforeEmailDelivery
+      - test: battery/auth.TestPasswordReset_DevModeDoesNotLogLiveURL
+  - id: reset-spends-the-token-last
+    rule: Reset validates the new password (at most 128 bytes, the strength floor) before redeeming the single-use token, so a refused password keeps the link.
+    enforced_by:
+      - test: battery/auth.TestPasswordReset_TokenSurvivesBadPassword
+      - test: battery/auth.TestPasswordResetRefusesOverlongPasswordKeepingToken
+  - id: reset-evicts-everything
+    rule: A completed reset drops the user's other reset links, removes passkeys, unlinks every OAuth identity, revokes sessions, drops mailed sign-ins and revokes API tokens, running each step even after one fails and answering 500 when any failed; it then claims an unverified account and mails a notice.
+    enforced_by:
+      - test: battery/auth.TestPasswordReset_KillsSiblingTokens
+      - test: battery/auth.TestPasskeyResetPurgesBeforeRevoke
+      - test: battery/auth.TestResetUnlinksOAuthOnVerified
+      - test: battery/auth.TestResetRevokesIdPSessionMidUnlink
+      - test: battery/auth.TestPasswordReset_RevokesExistingSessions
+      - test: battery/auth.TestResetFailsWhenRevokeFails
+      - test: battery/auth.TestResetDropsMagicLinks
+      - test: battery/auth.TestResetPurgeFailStillRevokes
+      - test: battery/auth.TestPasswordResetRevokesAPITokens
+      - test: battery/auth.TestPasswordResetFailsIfTokensStay
+      - test: battery/auth.TestResetClaimsUnverifiedAccount
+      - test: battery/auth.TestPasswordResetMailsANotice
+decisions:
+  - id: bcrypt-default-argon2-opt-in
+    date: 2026-11-20
+    status: accepted
+    decision: BcryptHasher is the default and Argon2Hasher an opt-in; verification detects the format so a table can hold both.
+    rejected:
+      - option: Switch the default to argon2id.
+        why: Every existing row is bcrypt, and detection lets a deployment migrate gradually instead.
+    upholds: [verify-detects-the-format]
+  - id: claim-after-the-password-write
+    date: 2026-11-20
+    status: accepted
+    decision: A reset claims an unverified account after writing the new password.
+    rejected:
+      - option: Claim first.
+        why: A failed password write would leave the account verified under the old password.
+    upholds: [reset-evicts-everything]
+  - id: api-tokens-survive-a-change
+    date: 2026-11-20
+    status: accepted
+    decision: A password change leaves the user's API tokens alone; a reset revokes them.
+    rejected:
+      - option: Revoke them on a change too.
+        why: The user minted them on purpose and revokes them on their own; a change proves the caller already holds the account.
+    upholds: [change-revokes-and-remints]

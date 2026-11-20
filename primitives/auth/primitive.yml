@@ -87,6 +87,67 @@ invariants:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
+  - id: production-needs-a-jwt-secret
+    rule: Init refuses an empty JWTSecret outside DevMode, and New in DevMode mints a random per-process secret when none is set.
+    enforced_by:
+      - test: battery/auth.TestInit_ProdEmptySecretFailsClosed
+      - test: battery/auth.TestAuthManager_DevModeMintsJWT
+  - id: lifetimes-default-and-refuse-negative
+    rule: A zero SessionTTL means seven days and a zero JWTExpiry one hour, BasePath defaults to /auth, and Init refuses a negative SessionTTL or JWTExpiry.
+    enforced_by:
+      - test: battery/auth.TestZeroSessionTTLDefaultsToSevenDays
+      - test: battery/auth.TestNegativeSessionTTLRefused
+      - test: battery/auth.TestNegativeJWTExpiryRefused
+  - id: cookie-defaults-by-mode
+    rule: Outside DevMode the session cookie defaults to __Host-session and Secure; in DevMode to session_id and not Secure.
+    enforced_by:
+      - test: battery/auth.TestAuthConfig_DefaultsAreSecure
+      - test: battery/auth.TestAuthConfig_DevMode_RelaxedDefaults
+  - id: default-throttles-in-every-mode
+    rule: A nil LoginRateLimit, LoginRateLimitPerAccount, RegisterRateLimit or MailAddressRateLimit gets its default (30/min with a 5-minute block; 10/min, 15 minutes; 10/min, 15 minutes; one mail per address per two minutes) in DevMode and production alike.
+    enforced_by:
+      - test: battery/auth.TestDefaultThrottlesInstalledInDevModeToo
+      - test: battery/auth.TestAuthBypass_DefaultBruteForceLimiter
+      - test: battery/auth.TestRegisterRateLimitedByDefault
+  - id: production-refuses-memory-sessions
+    rule: Outside DevMode and AllowInMemoryStores, Init refuses the default in-memory session store, including one a plugin installed during its own Init.
+    enforced_by:
+      - test: battery/auth.TestProdRefusesMemorySessionStoreInstalledByPlugin
+      - test: battery/auth.TestNoMemoryStoreWarnWhenOptedIn
+  - id: default-roles-are-server-config
+    rule: DefaultRoles returns a fresh copy of AuthConfig.DefaultRoles, or ["user"] when it is empty, and every account-creating flow reads it, never the request.
+    enforced_by:
+      - test: battery/auth.TestDefaultRolesReturnsACopy
+      - test: battery/auth.TestRegisterUsesConfiguredRoles
+      - test: battery/auth.TestDefaultRolesIgnoreClientInput
+  - id: set-user-roles-audited
+    rule: SetUserRoles refuses a user id that is not storable text with ErrUserNotFound and emits roles.updated only after the store changed the roles.
+    enforced_by:
+      - test: battery/auth.TestSetUserRolesAuditsMutation
+      - test: battery/auth.TestSetUserRolesRefusesUnstorableID
+  - id: jwt-helper-built-in-new
+    rule: New builds the manager's JWTAuth when JWTSecret is set, so RequireAuth(mgr.JWT()) wired before Init holds the same value Init finishes; after plugin Init the helper resolves owners against the user store the app runs with.
+    enforced_by:
+      - test: battery/auth.TestRequireAuthWiredBeforeInit
+      - test: battery/auth.TestJWTResolvesAgainstStoreAPluginInstalled
+  - id: auth-noted-only-when-resolving
+    rule: The app is told an authenticator is wired only once Init has run with it and a resolving middleware (SessionMiddleware, Middleware, or RequireAuth over the manager's JWT) exists, in either order.
+    enforced_by:
+      - test: battery/auth.TestAuthNotedOnlyWithMiddleware
+  - id: plugin-order
+    rule: Use panics on a duplicate plugin name; Middleware makes the first registered plugin outermost; OnStop stops plugins in reverse order, returns the first failure, and unregisters the manager's in-memory store eraser.
+    enforced_by:
+      - test: battery/auth.TestAuthManager_UseDuplicatePanics
+      - test: battery/auth.TestPluginMiddlewareFirstRegisteredOutermostAndStopReversed
+      - test: battery/auth.TestMemoryStoresReachedByErasure
+  - id: base-path-reserved-from-embeds
+    rule: ReservedEmbedPrefixes on the manager and on TokensPlugin report the configured BasePath, so no embed grant sits over or reaches an auth route.
+    enforced_by:
+      - test: battery/auth.TestAuthReservesItsBasePathFromEmbeds
+  - id: owner-extractor-is-current-user
+    rule: Importing battery/auth installs framework/owner's extractor, which answers the ID of the context user and no owner for no user or an empty ID.
+    enforced_by:
+      - test: battery/auth.TestOwnerExtractorReadsCurrentUser
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17
@@ -121,3 +182,19 @@ decisions:
         why: A policy that sends / to /en is no refusal, and its cross-site visitors got the hop page in place of the plain 303.
     revisit_if: A gate outside the framework needs the hop and cannot reach handler.NoteSessionRefusal, or browsers stop sending Fetch Metadata on navigations.
     upholds: [cross-site-arrival-reloads-same-site, hop-only-on-a-401-or-a-marked-redirect]
+  - id: mail-address-limit-is-a-cooldown
+    date: 2026-11-20
+    status: accepted
+    decision: The default per-address mail budget is one mail every two minutes with a two-minute block, shared by magic-link send and forgot-password.
+    rejected:
+      - option: Five mails an hour, then an hour's block.
+        why: Anyone can spend an address's budget, so six requests from a stranger stopped every link to the victim for an hour, which locks a passwordless user out.
+    upholds: [default-throttles-in-every-mode]
+  - id: throttles-on-in-dev
+    date: 2026-11-20
+    status: accepted
+    decision: The default login and register throttles are installed in DevMode too; only the per-IP login limiter is relaxed there.
+    rejected:
+      - option: No throttles in DevMode.
+        why: Credential stuffing is a network attack, not a config-mode one, and the per-account limiter is the one that stops it.
+    upholds: [default-throttles-in-every-mode]

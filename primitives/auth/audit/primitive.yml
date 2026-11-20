@@ -1,0 +1,28 @@
+primitive: auth.audit
+summary: Security events, the one delivery path to an AuditSink, the SQL audit sink, and the hashed identifiers logs and audit rows carry.
+code:
+  - battery/auth/audit.go
+  - battery/auth/devlog.go
+docs:
+  - framework/docs/content/audit-log.md
+invariants:
+  - id: one-delivery-path
+    rule: Every event goes through deliverAudit, which no-ops on a nil sink, recovers and scrubs a sink panic, and calls the sink on the request's values without its cancellation under a five-second deadline.
+    enforced_by:
+      - test: battery/auth.TestAudit_NilSinkNoPanic
+      - test: battery/auth.TestAudit_PanickingSinkRecovered
+      - test: battery/auth.TestAuthAuditRedPanicScrubbed
+      - test: battery/auth.TestAuditRowSurvivesCancelledRequest
+      - test: battery/auth.TestAuditCustomSinkContextBounded
+      - test: battery/auth.TestTokenAuditGoesThroughDeliverAudit
+  - id: actorless-rows-hold-a-digest
+    rule: The SQL sink writes "-" as record_id for an event with no user, and such a row carries a digest of the canonical address, never the address.
+    enforced_by:
+      - test: battery/auth.TestSQLAuditSink_EmptyUserIDRecordDash
+      - test: battery/auth.TestAuditActorlessRowHoldsNoAddress
+      - test: battery/auth.TestAuditEmailHashIsCanonical
+  - id: closed-vocabulary
+    rule: Every SecurityEvent Kind the battery emits is listed in audit-log.md's event taxonomy, and Meta carries no secret or user-supplied value but the address.
+    enforced_by:
+      - test: battery/auth.TestAudit_NoSecretsLeak
+    judge: Does this change emit a SecurityEvent with a Kind not in audit-log.md's taxonomy, or put a secret or a user-supplied value other than Email into an event?

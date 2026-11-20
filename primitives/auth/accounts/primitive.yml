@@ -1,0 +1,44 @@
+primitive: auth.accounts
+summary: The linked-accounts list and unlink routes, and the account claim that hands an unverified account to the proven mailbox owner.
+code:
+  - battery/auth/accounts.go
+  - battery/auth/account_claim.go
+  - battery/auth/account_routes.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: routes-need-the-principals-full-session
+    rule: The account routes act on the context principal's session only, refuse a pending one, and refuse a provider name that is not storable text.
+    enforced_by:
+      - test: battery/auth.TestAccountsBoundToPrincipal
+      - test: battery/auth.TestAccountsRefusePendingSession
+      - test: battery/auth.TestUnlinkRefusesUnstorableProvider
+  - id: unlink-keeps-a-way-in
+    rule: Unlink refuses to remove the user's last login method, deciding and deleting in one store operation through AtomicUnlinker when the store has it, and drops the provider's stored tokens on success.
+    enforced_by:
+      - test: battery/auth.TestAccounts_Unlink_RefusesLast
+      - test: battery/auth.TestUnlinkAtomicMethodCount
+      - test: battery/auth.TestUnlinkDropsStoredProviderTokens
+  - id: claim-evicts-the-squatter
+    rule: A claim revokes sessions, unlinks every OAuth identity and drops its tokens, clears a password it was asked to, removes passkeys, revokes API tokens and revokes sessions again; it runs every step even after one fails and marks the address verified only when all succeeded.
+    enforced_by:
+      - test: battery/auth.TestMagicLinkClaimKillsSquatter
+      - test: battery/auth.TestClaimDropsSquatterOAuthLink
+      - test: battery/auth.TestAccountClaimDropsProviderTokens
+      - test: battery/auth.TestAccountClaimFailsWhenTokensSurvive
+      - test: battery/auth.TestPasskeyClaimRemovesPasskeys
+      - test: battery/auth.TestMagicLinkClaimRevokesSquatterAPITokens
+      - test: battery/auth.TestClaimSessionFailStillPurges
+      - test: battery/auth.TestClaimPurgeFailStillRevokes
+      - test: battery/auth.TestLinkLandsMidClaim
+decisions:
+  - id: claim-revokes-twice
+    date: 2026-11-20
+    status: accepted
+    decision: The claim revokes the user's sessions both first and last.
+    rejected:
+      - option: Revoke once, first.
+        why: A sign-in that landed between the revoke and the unlink or passkey purge kept its session.
+      - option: Revoke once, last.
+        why: A live squatter session could act during the purges.
+    upholds: [claim-evicts-the-squatter]

@@ -1,0 +1,28 @@
+primitive: auth.ratelimit
+summary: The auth battery's rate limiter with its 429 answer, and the SQL store that shares a budget across replicas.
+code:
+  - battery/auth/ratelimit.go
+  - battery/auth/sql_ratelimit_store.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: insert-then-count
+    rule: SQLRateLimitStore.Allow records the attempt before counting the key's in-window attempts, blocks past MaxAttempts, and refuses on a store error.
+    enforced_by:
+      - test: battery/auth.TestSQLRateLimit_BlocksAtMax
+      - test: battery/auth.TestSQLRateLimit_StoreErrorFailsClosed
+  - id: schema-retried
+    rule: The store retries EnsureSchema on the next Allow after a failure and stops once it succeeded.
+    enforced_by:
+      - test: battery/auth.TestSQLRateLimit_RecoversAfterTransientSchemaError
+  - id: sweep-scoped-and-escaped
+    rule: The amortized sweep touches only its own scope's keys, with LIKE metacharacters in the scope escaped, and clears attempts under an expired block with the block.
+    enforced_by:
+      - test: battery/auth.TestSQLRateLimit_SweepScopedNotCrossWindow
+      - test: battery/auth.TestSQLRateLimit_SweepEscapesScopeMetacharacters
+      - test: battery/auth.TestSQLRateLimitSweepClearsAttemptsUnderExpiredBlock
+  - id: expired-block-clears-what-it-covered
+    rule: An expired block is cleared with the attempts before it, deleting only the block that was read, so attempts after it stay counted.
+    enforced_by:
+      - test: battery/auth.TestSQLRateLimit_BlockExpiryResetsBudget
+      - test: battery/auth.TestSQLRateLimitExpiryKeepsNewerAttempts

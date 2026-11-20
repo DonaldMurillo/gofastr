@@ -1,0 +1,16 @@
+primitive: auth.ui
+summary: authui, which draws the battery's magic-link confirmation and same-site hop as ui.AuthCard pages through a UIHost.
+code:
+  - battery/auth/authui/
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: confirm-form
+    rule: The confirmation screen POSTs the token to Action, carrying the CSRF field the battery read from the cookie only when the context holds no token (ui.Form stamps that one itself).
+    enforced_by:
+      - test: battery/auth/authui.TestConfirmScreenSignsIn
+      - test: battery/auth/authui.TestConfirmScreenCSRFFallback
+  - id: hop-links-to-target
+    rule: The hop screen links to the target the battery is reloading.
+    enforced_by:
+      - test: battery/auth/authui.TestHopScreenLinksBack

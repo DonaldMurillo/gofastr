@@ -1,0 +1,25 @@
+primitive: auth.emailverify
+summary: The email-verification plugin that mails a link to the signed-in user's address and marks it verified when that user opens it.
+code:
+  - battery/auth/email_verification.go
+  - battery/auth/verify_private.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: send-needs-a-full-session
+    rule: send-verification has a 10/min per-IP floor, refuses a cross-site form and a pending session, logs hashes only in DevMode, and Init refuses the in-memory token store in production.
+    enforced_by:
+      - test: battery/auth.TestVerifyEmailSendDefaultThrottle
+      - test: battery/auth.TestSendVerificationRejectsCrossSite
+      - test: battery/auth.TestSendVerificationNeedsStepUp
+      - test: battery/auth.TestEmailVerification_DevModeDoesNotLogLiveURL
+      - test: battery/auth.TestLinkPluginsRefuseMemoryStore
+  - id: link-proves-only-its-owner
+    rule: verify-email marks an address verified only with the session of the user the link was minted for, leaving the link redeemable for its owner when another account opens it.
+    enforced_by:
+      - test: battery/auth.TestVerifyEmailNeedsOwnSession
+  - id: webmail-click-hops
+    rule: A cross-site or metadata-less arrival at verify-email gets a same-origin hop to the same link before anything is redeemed.
+    enforced_by:
+      - test: battery/auth.TestVerifyLinkFromWebmailHops
+      - test: battery/auth.TestVerifyLinkWithoutFetchMetaHops
