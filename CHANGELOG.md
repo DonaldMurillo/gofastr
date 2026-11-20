@@ -44,11 +44,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
-- **Static export refuses a route whose output file name is not
+- **BREAKING: static export refuses a route whose output file name is not
   portable,** such as one holding `:` or `?`, before writing anything,
   and names the route. Such a route used to export on Linux and macOS
   and abort the build on Windows.
-- **A custom `auth.UserStore` must implement `auth.RoleSwapper`** for
+- **BREAKING: a custom `auth.UserStore` must implement `auth.RoleSwapper`** for
   the admin role editor to save role changes. `EntityUserStore`
   implements it.
 - **Every `gofastr` usage error exits 2, and every `✗` error line prints
@@ -116,7 +116,7 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Removed
 
-- **`analyzers.EntityInfo.Scoped` and `EntityInfo.HasAccess` are gone.**
+- **BREAKING: `analyzers.EntityInfo.Scoped` and `EntityInfo.HasAccess` are gone.**
   They counted a gate on any operation as scoping reads. GOFASTR1901 now
   needs an owner field, tenant scope or a read permission; nothing in
   the framework called either method.
@@ -236,7 +236,7 @@ few lines, and link the PR or the docs page for the rest.
 - **Large SQLite outbox claims no longer fail past 1,000 deliveries,**
   and Postgres claim checks accept attempt budgets above the 32-bit
   range.
-- **Custom outboxes get the same delivery table name on SQLite and
+- **BREAKING: custom outboxes get the same delivery table name on SQLite and
   Postgres,** fitted to 63 bytes. A table name part over 63 bytes is
   refused. Before upgrading, rename a SQLite delivery table over 63
   bytes, or the Postgres delivery table of a parent named 55 to 62 bytes
@@ -540,7 +540,7 @@ few lines, and link the PR or the docs page for the rest.
   skipped an index whose details it failed to read, so a column held by
   that index was proposed as a plain `DROP COLUMN`. Quoted and dotted
   index names now read correctly, and a read failure stops the diff.
-- **Grouped entity endpoints serve the path OpenAPI publishes.** Under
+- **BREAKING: grouped entity endpoints serve the path OpenAPI publishes.** Under
   `app.GroupEntity`, an absolute `Endpoint.Path` was mounted under the
   group prefix while the spec showed it without, and `.`/`..` segments
   reached the route pattern. Absolute paths now bypass the group prefix

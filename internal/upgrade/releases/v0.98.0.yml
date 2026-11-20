@@ -1,0 +1,33 @@
+version: v0.98.0
+title: Pending release
+notes:
+  - change: "BREAKING - the admin role editor saves a role change through auth.RoleSwapper, a compare-and-set on the roles it read; a custom auth.UserStore that does not implement it refuses every role edit"
+    breaking: true
+    nodetect: "any type satisfying auth.UserStore can be passed in; whether it also has SwapRoles is a fact of the host's own type, and EntityUserStore already implements it"
+    guidance: "Add SwapRoles(ctx, userID, old, new []string) (bool, error) to a custom store: update the roles only when the stored set still equals old, and return false when it does not. The editor answers a false with 409 roles-conflict."
+  - change: "BREAKING - outbox delivery table names are fitted to 63 bytes on SQLite and Postgres alike, and a table name part over 63 bytes is refused at boot"
+    breaking: true
+    nodetect: "the table name is a runtime string passed to outbox.WithTable; only names near or over 63 bytes change"
+    guidance: "Before upgrading, rename a SQLite delivery table over 63 bytes, or the Postgres delivery table of a parent named 55 to 62 bytes (old name left('<parent>_delivery', 63)), to the fitted name. A SQLite parent over 63 bytes needs a new parent name of 63 bytes or fewer: rename the parent, rename <old parent>_delivery to the delivery name the new parent gets, and pass the new name to outbox.WithTable."
+  - change: "BREAKING - a grouped entity endpoint with an absolute Path takes its default MCP tool name from the path without the group prefix (v1.posts_get_v1_health_posts becomes v1.posts_get_health_posts)"
+    breaking: true
+    nodetect: "the tool name is derived at runtime from the group prefix and the endpoint path; MCP clients hold the old name outside the app's source"
+    guidance: "Update MCP clients to the new name, or set Endpoint.Name to the old name without the namespace (posts_get_v1_health_posts) to keep it."
+  - change: "a // safe-sql: waiver covers only the statement it is attached to, in gofastr verify and gofastr audit lint alike"
+    guidance: "Put the waiver, with its reason, on the statement that builds the SQL or on the line above it. A waiver that used to reach a query a few lines further down no longer does."
+    nodetect: "the waiver is a comment; which statement it reaches depends on layout"
+  - change: "every gofastr usage error exits 2 and prints its error line on stderr"
+    guidance: "Scripts that test for exit 1 or read error text from stdout after a bad flag or missing argument should test for 2 and read stderr. --help output stays on stdout."
+    nodetect: "the change is in CLI exit codes, outside the app's Go source"
+  - change: "BREAKING - static export refuses a route whose output file name is not portable (one holding : or ? after expansion, a locale prefix included) before writing anything; such a route used to export on Linux and macOS"
+    breaking: true
+    nodetect: "the route string and its expanded StaticPaths values decide it at build time"
+    guidance: "Rename the route, or give it StaticPaths values whose output names hold no : or ?. The build error names the route."
+  - change: "BREAKING - framework/contracts/analyzers EntityInfo.Scoped and EntityInfo.HasAccess are removed"
+    breaking: true
+    hits: edit
+    guidance: "Check OwnerField, MultiTenant and the entity's read permission yourself; a gate on create, update or delete does not scope reads."
+    find:
+      uses:
+        - gofastr/framework/contracts/analyzers.EntityInfo.Scoped
+        - gofastr/framework/contracts/analyzers.EntityInfo.HasAccess
