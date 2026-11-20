@@ -6,7 +6,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,8 +167,8 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	if err := checkRoutePattern(method, path); err != nil {
-		cli.Fail("%v", err)
+	if err := router.ValidatePattern(method, path); err != nil {
+		cli.Fail("invalid route pattern %q: %v", path, err)
 		cli.OsExit(1)
 		return
 	}
@@ -180,16 +179,6 @@ func runNewRoute(args []string) {
 	// func, which needs the conversion; a handler value does not, and the
 	// command cannot tell which the name is.
 	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
-}
-
-func checkRoutePattern(method, path string) (err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("invalid route pattern %q: %v", path, rec)
-		}
-	}()
-	router.New().Handle(method, path, http.NotFoundHandler())
-	return nil
 }
 
 // checkRouteMethod refuses a method that is not an HTTP token (RFC 9110

@@ -121,6 +121,8 @@ stats use the single-document contract without needing an output flag.
   predeclared name such as `string`, or a name that package already
   declares. `new route` validates the method and path with the router before
   printing anything, rejecting malformed ServeMux patterns such as `/{wx`.
+  Go callers can use `router.ValidatePattern(method, pattern)` for the same
+  error-returning validation, without checking conflicts with existing routes.
   It prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
   them (`h.List`), and a bare name `new handler` would refuse. The
