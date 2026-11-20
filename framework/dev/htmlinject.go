@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"mime"
 	"net"
 	"net/http"
 	"slices"
@@ -77,8 +78,8 @@ func (w *injectWriter) decide() {
 	}
 	w.decided = true
 	h := w.Header()
-	ct := h.Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/html") {
+	mt, _, err := mime.ParseMediaType(h.Get("Content-Type"))
+	if err != nil || mt != "text/html" {
 		return
 	}
 	if ce := h.Get("Content-Encoding"); ce != "" && !strings.EqualFold(ce, "identity") {

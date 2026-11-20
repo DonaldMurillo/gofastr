@@ -23,6 +23,21 @@ func injected(t *testing.T, handler http.HandlerFunc) *httptest.ResponseRecorder
 	return injectedReq(t, httptest.NewRequest(http.MethodGet, "/", nil), handler)
 }
 
+func TestInjectorMixedCaseHTML(t *testing.T) {
+	for _, ct := range []string{"Text/HTML; charset=utf-8", "", "text/htmlish", "text/html; charset"} {
+		t.Run(ct, func(t *testing.T) {
+			rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", ct)
+				_, _ = w.Write([]byte("<html><body>page</body></html>"))
+			})
+			got := strings.Contains(rec.Body.String(), `<script src="`+LiveReloadScriptURL+`"`)
+			if want := ct == "Text/HTML; charset=utf-8"; got != want {
+				t.Fatalf("injected = %v, want %v: %s", got, want, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestInjectorAddsScriptBeforeBodyClose(t *testing.T) {
 	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

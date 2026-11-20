@@ -354,7 +354,7 @@ func wantsHTML(r *http.Request) bool {
 		if i := strings.IndexByte(part, ';'); i >= 0 {
 			part = part[:i]
 		}
-		if part == "text/html" || part == "application/xhtml+xml" {
+		if strings.EqualFold(part, "text/html") || strings.EqualFold(part, "application/xhtml+xml") {
 			return true
 		}
 	}

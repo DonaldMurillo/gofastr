@@ -102,7 +102,7 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 // anything else (an image, CSV, plain text) streams raw to stdout so
 // redirects work: ` + "`" + spec.Binary + " <op> > out.png`" + `.
 func printResponse(data []byte, contentType string) int {
-	if strings.Contains(contentType, "json") {
+	if strings.Contains(strings.ToLower(contentType), "json") {
 		var v any
 		if jsonErr := decodeJSON(data, &v); jsonErr == nil {
 			return printJSON(v)

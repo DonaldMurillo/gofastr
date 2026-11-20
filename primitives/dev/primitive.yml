@@ -43,6 +43,7 @@ invariants:
     rule: The injector splices each dev script missing from the page's src attributes before the last </body> of a text/html response and fixes Content-Length, and leaves alone non-HTML, encoded bodies other than identity, X-Gofastr-Partial responses, fragments without </body>, HEAD and Range requests.
     enforced_by:
       - test: framework/dev.TestInjectorAddsScriptBeforeBodyClose
+      - test: framework/dev.TestInjectorMixedCaseHTML
       - test: framework/dev.TestInjectorRewritesContentLength
       - test: framework/dev.TestInjectorLeavesFragmentsAlone
       - test: framework/dev.TestInjectorSkipsEncodedBodies

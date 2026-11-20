@@ -34,6 +34,8 @@ invariants:
       - test: core-ui/urlprefix.TestRefreshRuleIdempotent
       - test: core-ui/urlprefix.TestRefreshHeaderGainsPrefix
       - test: core-ui/urlprefix.TestMetaRefreshGainsPrefix
+      - test: core-ui/urlprefix.TestMiddlewareRewritesMixedCaseHTML
+      - test: core-ui/urlprefix.TestMiddlewareRejectsInvalidHTMLMediaType
       - test: battery/setup.TestHopUnderLocalePrefixReloadsSamePath
     judge: Does this change write a same-origin URL into a response header or attribute that core-ui/urlprefix does not rewrite, or prepend the locale prefix to a hop target by hand?
     applies:

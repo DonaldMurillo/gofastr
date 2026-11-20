@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -668,7 +669,7 @@ func wantsHTML(r *http.Request) bool {
 			t = t[:i]
 		}
 		t = trimSpace(t)
-		if t == "text/html" || t == "*/*" {
+		if strings.EqualFold(t, "text/html") || t == "*/*" {
 			return true
 		}
 	}
