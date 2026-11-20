@@ -83,6 +83,24 @@ func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	}
 }
 
+func TestPhysicalSideBuilderDirOverride(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{"\tss.Rule(\".a:dir(rtl)\").Set(\"margin-left\", \"4px\").End()\n", 0},
+		{"\tss.Rule(\".a\").Pseudo(\":dir(rtl)\", \"left\", \"8px\").End()\n", 0},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tss.Set(\"margin-left\", \"4px\")\n", 0},
+		{"\tss.Rule(\".a:dir(rtl)\").End()\n\tss.Rule(\".b\")\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a\").Pseudo(\":hover\", \"left\", \"8px\").End()\n", 1},
+	} {
+		ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet) {\n"+tc.body+"}\n")
+		if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != tc.want {
+			t.Errorf("%q: want %d GOFASTR1824, got %d: %v", tc.body, tc.want, len(found), found)
+		}
+	}
+}
+
 func TestPhysicalSideIgnoresGoCompositeFields(t *testing.T) {
 	ds := designFixture(t, "battery/desktop/windows/shell_windows.go", "package windows\n\n"+
 		"func resize(width, height int) {\n"+

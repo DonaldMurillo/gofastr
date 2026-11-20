@@ -130,7 +130,11 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 		scope ast.Node
 		name  string
 	}
-	ruleReceivers := make(map[receiver]bool)
+	type ruleCall struct {
+		pos token.Pos
+		dir bool
+	}
+	ruleReceivers := make(map[receiver][]ruleCall)
 	var calls []builderCall
 	ast.PreorderStack(file, nil, func(node ast.Node, stack []ast.Node) bool {
 		recv, method, call, ok := selectorCall(node)
@@ -142,7 +146,8 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 		switch method {
 		case "Rule":
 			if id, ok := recv.(*ast.Ident); ok {
-				ruleReceivers[receiver{scope, id.Name}] = true
+				key := receiver{scope, id.Name}
+				ruleReceivers[key] = append(ruleReceivers[key], ruleCall{call.Pos(), dirSelectorArg(call)})
 			}
 			return true
 		case "Set":
@@ -156,8 +161,21 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 	})
 	pairs := make(map[int][]cssDeclaration)
 	for _, candidate := range calls {
-		id, isIdent := candidate.recv.(*ast.Ident)
-		if !(isIdent && ruleReceivers[receiver{candidate.scope, id.Name}]) && !hasStyleRule(candidate.recv) {
+		inDir, chained := styleRuleChain(candidate.recv)
+		if id, isIdent := candidate.recv.(*ast.Ident); isIdent && !chained {
+			rules, known := ruleReceivers[receiver{candidate.scope, id.Name}]
+			if !known {
+				continue
+			}
+			for _, rule := range rules {
+				if rule.pos < candidate.call.Pos() {
+					inDir = rule.dir
+				}
+			}
+		} else if !chained {
+			continue
+		}
+		if inDir || (candidate.first == 1 && dirSelectorArg(candidate.call)) {
 			continue
 		}
 		args := candidate.call.Args
@@ -173,19 +191,29 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 	return pairs
 }
 
-func hasStyleRule(recv ast.Expr) bool {
+func dirSelectorArg(call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	selector, ok := stringLit(call.Args[0])
+	return ok && reDirOverride.MatchString(selector)
+}
+
+// styleRuleChain reports whether recv chains back to a Rule call and
+// whether that Rule's selector is a :dir() override.
+func styleRuleChain(recv ast.Expr) (inDir, ok bool) {
 	for {
-		next, method, _, ok := selectorCall(recv)
-		if !ok {
-			return false
+		next, method, call, isCall := selectorCall(recv)
+		if !isCall {
+			return false, false
 		}
 		switch method {
 		case "Rule":
-			return true
+			return dirSelectorArg(call), true
 		case "Set", "Pseudo", "Child", "End":
 			recv = next
 		default:
-			return false
+			return false, false
 		}
 	}
 }

@@ -2263,12 +2263,12 @@ Per-user data must be scoped before auto-CRUD/MCP exposure. When an entity
 is auto-exposed (`crud` defaults on, or `mcp: true`), declares PII-shaped
 fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 `password`, `token`, `secret`, `card`, …), and sets none of `owner_field`,
-`access` (with at least one non-blank permission), or `multi_tenant`,
-every *authenticated* user could read and write every other user's row on
-the generated API (the secure-by-default gate already stops anonymous
-callers; the exposure here is cross-user). Enabling `app.auth` alone does
-**not** suppress the rule: a session is necessary to reach the API but
-not sufficient to scope it; only per-entity scoping does that.
+`access.read` (a non-blank permission other than `anyone`), or
+`multi_tenant`, it leaves reads unscoped. Without an access declaration,
+the default session gate allows any signed-in user to read other users'
+rows. An access declaration with only write permissions can allow public
+reads. To satisfy the check, declare ownership, tenant scoping, or a read
+permission on the entity.
 `gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
@@ -2427,9 +2427,8 @@ fails with the redirect's 303 instead of passing on the login page.
   validation, and the generated app's auth battery would refuse to boot.)
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
-  per-entity `owner_field`, `access`, or `multi_tenant` gate the
-  generated CRUD and MCP endpoints; that's why the unscoped-PII check fires
-  even with auth enabled.
+  per-entity `owner_field`, `access.read`, or `multi_tenant` satisfy
+  the unscoped-PII check for generated CRUD and MCP reads.
 - **Copying an entity-screen engine into a generated app.** The screens
   draw through `appUI` (`framework/entityui`, built in `extensions.go`):
   keep the generated builders and your `appExtensions` hooks there, and

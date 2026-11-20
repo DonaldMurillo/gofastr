@@ -178,17 +178,22 @@ func TestPIINoPIIFieldsPasses(t *testing.T) {
 
 func TestPIIAgreesWithPermissionsContract(t *testing.T) {
 	for _, tc := range []struct {
-		name, field, permission, goPermission string
-		want                                  bool
+		name, field, permission, goAccess string
+		write                             bool
+		want                              bool
 	}{
-		{"leading acronym", "SSNBackup", "", `""`, true},
-		{"anyone literal", "email", "anyone", `"anyone"`, true},
-		{"anyone constant", "SSNBackup", "anyone", "fw.Anyone", true},
-		{"permission gate", "SSNBackup", "people:read", `"people:read"`, false},
+		{"leading acronym", "SSNBackup", "", `Read: ""`, false, true},
+		{"anyone literal", "email", "anyone", `Read: "anyone"`, false, true},
+		{"anyone constant", "SSNBackup", "anyone", "Read: fw.Anyone", false, true},
+		{"permission gate", "SSNBackup", "people:read", `Read: "people:read"`, false, false},
+		{"write-only gate", "email", "people:create", `Create: "people:create"`, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			decl := piiEntity("people", tc.field)
 			decl.Exposure.Access = &fwentity.AccessDeclaration{Read: tc.permission}
+			if tc.write {
+				decl.Exposure.Access = &fwentity.AccessDeclaration{Create: tc.permission}
+			}
 			got := LintUnscopedPII(AppSpec{Entities: []framework.EntityDeclaration{decl}})
 			if tc.want {
 				if len(got) != 1 || len(got[0].Fields) != 1 || got[0].Fields[0] != tc.field {
@@ -207,10 +212,10 @@ import (
 func wire(app *fw.App) {
 	app.Entity("people", fw.EntityConfig{
 		Fields: []schema.Field{{Name: %q, Type: schema.String}},
-		Exposure: &fw.ExposureConfig{Access: fw.AccessControl{Read: %s}},
+		Exposure: &fw.ExposureConfig{Access: fw.AccessControl{%s}},
 	})
 }
-`, tc.field, tc.goPermission)
+`, tc.field, tc.goAccess)
 			if err := os.WriteFile(filepath.Join(dir, "people.go"), []byte(src), 0o600); err != nil {
 				t.Fatal(err)
 			}

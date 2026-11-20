@@ -49,6 +49,7 @@ type EntityInfo struct {
 	MCP          bool
 	Public       bool
 	HasAccess    bool
+	readGated    bool
 	OwnerField   string
 	MultiTenant  bool
 	// AccessPermissions are the non-blank permission strings the Access block names.
@@ -371,15 +372,15 @@ func readExposure(e ast.Expr, info *EntityInfo, aliases map[string]string) {
 		case "CRUD":
 			info.CRUDDisabled = pointsToFalse(kv.Value)
 		case "Access":
-			info.AccessPermissions, info.HasAccess = readAccess(kv.Value, aliases)
+			info.AccessPermissions, info.HasAccess, info.readGated = readAccess(kv.Value, aliases)
 		}
 	}
 }
 
-func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, gated bool) {
+func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, gated, readGated bool) {
 	lit := compositeOf(e)
 	if lit == nil {
-		return nil, true
+		return nil, true, true
 	}
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -387,16 +388,21 @@ func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, ga
 			continue
 		}
 		value := unparen(kv.Value)
+		gatesOperation := !isAnyoneConstant(value, aliases)
 		if s, isString := stringLit(value); isString {
 			if strings.TrimSpace(s) != "" {
 				permissions = append(permissions, s)
 			}
-			gated = gated || piicheck.GatesAccess(s)
-		} else if !isAnyoneConstant(value, aliases) {
+			gatesOperation = piicheck.GatesAccess(s)
+		}
+		if gatesOperation {
 			gated = true
+			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Read" {
+				readGated = true
+			}
 		}
 	}
-	return permissions, gated
+	return permissions, gated, readGated
 }
 
 func isAnyoneConstant(e ast.Expr, aliases map[string]string) bool {
@@ -504,7 +510,8 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}
-		if !e.Exposed() || e.Scoped() || e.Public || !e.FieldsResolved {
+		readScoped := piicheck.Scoped(e.OwnerField, e.MultiTenant, e.readGated)
+		if !e.Exposed() || readScoped || e.Public || !e.FieldsResolved {
 			continue
 		}
 		var pii []string
@@ -517,7 +524,7 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		d := diag(p, contracts.RuleUnscopedPII, e.File, e.Pos, fmt.Sprintf(
-			"entity %q exposes %s through auto-CRUD with no owner field, tenant, or access rule: every signed-in user can read and write every other user's row",
+			"entity %q exposes %s through auto-CRUD/MCP with no owner field, tenant scope, or read permission",
 			e.Name, strings.Join(pii, ", ")))
 		d.Evidence = map[string]string{"entity": e.Name, "fields": strings.Join(pii, ",")}
 		out = append(out, d)

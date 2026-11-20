@@ -79,12 +79,13 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 }
 
 func sharedSecurityRules(src lintSource) []contracts.Diagnostic {
-	sql := ruleSQLConcat(src)
+	waivers := sqlWaiverSpans(src)
+	sql := ruleSQLConcat(src, waivers)
 	html := ruleHTMLConcat(src)
 	out := append(ruleFormCSRF(src), sql...)
 	out = append(out, html...)
 	if src.file != nil {
-		out = append(out, ruleSQLConcatAST(src, sql)...)
+		out = append(out, ruleSQLConcatAST(src, sql, waivers)...)
 		out = append(out, ruleHTMLBuiltAST(src, html)...)
 	}
 	return out
@@ -109,15 +110,24 @@ var taintMarkers = []string{
 	"pathvalue", "formvalue",
 }
 
-func ruleSQLConcat(src lintSource) []contracts.Diagnostic {
+func ruleSQLConcat(src lintSource, waivers []sourceSpan) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	for i, line := range strings.Split(stripComments(src.body), "\n") {
+	body := src.body
+	if len(waivers) > 0 {
+		masked := []byte(body)
+		for _, span := range waivers {
+			for i := span.start; i < span.end; i++ {
+				if masked[i] != '\n' {
+					masked[i] = ' '
+				}
+			}
+		}
+		body = string(masked)
+	}
+	for i, line := range strings.Split(stripComments(body), "\n") {
 		if !reSQLConcatLiteral.MatchString(line) &&
 			!reSQLSprintf.MatchString(line) &&
 			!reSQLBuilderConcat.MatchString(line) {
-			continue
-		}
-		if hasLegacyAnnotation(src.lines, i+1, "safe-sql:") {
 			continue
 		}
 		lower := strings.ToLower(line)
@@ -149,7 +159,7 @@ var sqlCallNames = map[string]bool{
 var reSQLVerbText = regexp.MustCompile(`(?i)\b` + sqlVerb)
 
 // ruleSQLConcatAST covers what the line scan cannot see: raw-string literals and concatenations split across lines.
-func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic) []contracts.Diagnostic {
+func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic, waivers []sourceSpan) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
 		seen[d.Line] = true
@@ -159,6 +169,14 @@ func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic) []contract
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
+		}
+		if len(waivers) > 0 {
+			offset := src.fset.PositionFor(call.Pos(), false).Offset
+			for _, span := range waivers {
+				if span.start <= offset && offset < span.end {
+					return true
+				}
+			}
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || !sqlCallNames[sel.Sel.Name] {
@@ -173,7 +191,7 @@ func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic) []contract
 			end := src.fset.Position(arg.End())
 			reported := false
 			for ln := start.Line; ln <= end.Line && ln <= len(src.lines); ln++ {
-				if seen[ln] || hasLegacyAnnotation(src.lines, ln, "safe-sql:") {
+				if seen[ln] {
 					reported = true
 					break
 				}

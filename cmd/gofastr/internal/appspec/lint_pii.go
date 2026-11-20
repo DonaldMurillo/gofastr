@@ -19,7 +19,7 @@ type piiFinding struct {
 // pass-through, so auth alone leaves the rows world-readable.
 func (f piiFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, add access: permissions (RBAC), or set multi_tenant: true",
+		"entity %q exposes PII-shaped field(s) %s via auto-CRUD/MCP with no scoping. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
@@ -33,7 +33,8 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 		if !EntityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
-		if piicheck.Scoped(scope.OwnerField, scope.MultiTenant, HasAccessGate(exposure.Access)) {
+		access := exposure.Access
+		if piicheck.Scoped(scope.OwnerField, scope.MultiTenant, access != nil && piicheck.GatesAccess(access.Read)) {
 			continue
 		}
 		var pii []string

@@ -216,4 +216,87 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 
 func stripComments(src string) string { return codetext.Strip(src, false) }
 
+type sourceSpan struct{ start, end int }
+
+func sqlWaiverSpans(src lintSource) []sourceSpan {
+	if src.file == nil || !strings.Contains(strings.ToLower(src.body), "safe-sql:") {
+		return nil
+	}
+	comments := ast.NewCommentMap(src.fset, src.file, src.file.Comments)
+	var spans []sourceSpan
+	ast.Inspect(src.file, func(node ast.Node) bool {
+		for _, group := range comments[node] {
+			for _, comment := range group.List {
+				if !sqlWaiverHasReason(comment.Text) {
+					continue
+				}
+				stmt := sqlWaiverStatement(node, comment, src)
+				if stmt != nil && !containsFuncLiteral(stmt) {
+					start := src.fset.PositionFor(stmt.Pos(), false).Offset
+					end := src.fset.PositionFor(stmt.End(), false).Offset
+					spans = append(spans, sourceSpan{start, end})
+					return true
+				}
+			}
+		}
+		return true
+	})
+	return spans
+}
+
+func sqlWaiverHasReason(comment string) bool {
+	text := strings.TrimPrefix(comment, "//")
+	if body, ok := strings.CutPrefix(text, "/*"); ok {
+		text = strings.TrimSuffix(body, "*/")
+	}
+	text = strings.TrimSpace(text)
+	const marker = "safe-sql:"
+	return len(text) >= len(marker) && strings.EqualFold(text[:len(marker)], marker) &&
+		strings.TrimSpace(text[len(marker):]) != ""
+}
+
+func sqlWaiverStatement(node ast.Node, comment *ast.Comment, src lintSource) ast.Node {
+	if file, ok := node.(*ast.File); ok && len(file.Decls) > 0 {
+		node = file.Decls[len(file.Decls)-1]
+	}
+	start := src.fset.PositionFor(node.Pos(), false)
+	end := src.fset.PositionFor(node.End(), false)
+	commentStart := src.fset.PositionFor(comment.Pos(), false)
+	commentEnd := src.fset.PositionFor(comment.End(), false)
+	trailing := commentStart.Line == end.Line && commentStart.Offset >= end.Offset &&
+		strings.TrimSpace(src.body[end.Offset:commentStart.Offset]) == ""
+	preceding := commentEnd.Line+1 == start.Line && commentEnd.Offset <= start.Offset &&
+		strings.TrimSpace(src.body[commentEnd.Offset:start.Offset]) == "" &&
+		strings.TrimSpace(src.body[commentStart.Offset-commentStart.Column+1:commentStart.Offset]) == ""
+	if !trailing && !preceding {
+		return nil
+	}
+	switch n := node.(type) {
+	case *ast.FuncDecl:
+		if trailing && n.Body != nil && len(n.Body.List) == 1 && start.Line == end.Line {
+			node = n.Body.List[0]
+		}
+	case *ast.GenDecl:
+		if len(n.Specs) == 1 {
+			node = n.Specs[0]
+		}
+	}
+	switch node.(type) {
+	case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.ValueSpec, *ast.DeclStmt:
+		return node
+	}
+	return nil
+}
+
+func containsFuncLiteral(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(child ast.Node) bool {
+		if _, ok := child.(*ast.FuncLit); ok {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
 func stripScriptComments(src string) string { return codetext.Strip(src, true) }

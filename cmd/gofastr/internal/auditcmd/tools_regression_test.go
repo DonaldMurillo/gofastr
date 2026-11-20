@@ -3,11 +3,60 @@ package auditcmd
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
+
+func TestSQLWaiverAppliesOnlyToItsStatement(t *testing.T) {
+	for _, tc := range []struct {
+		name, statements string
+		want             []int
+	}{
+		{"inline", "db.Query(\"SELECT \" + userInput) // safe-sql: checked column\ndb.Query(\"SELECT \" + userInput)", []int{4}},
+		{"preceding", "// safe-sql: checked column\ndb.Query(\"SELECT \" + userInput)\ndb.Query(\"SELECT \" + userInput)", []int{5}},
+		{"multiline", "db.Query(\"SELECT \" +\nuserInput) // safe-sql: checked column\ndb.Query(`SELECT ` + userInput)", []int{5}},
+		{"empty reason", "db.Query(\"SELECT \" + userInput) // safe-sql: \ndb.Query(\"SELECT \" + userInput)", []int{3, 4}},
+		{"string", "db.Query(\"SELECT safe-sql: checked column \" + userInput)\ndb.Query(\"SELECT \" + userInput)", []int{3, 4}},
+		{"same line", "db.Query(\"SELECT \" + userInput); db.Query(\"SELECT \" + userInput) // safe-sql: checked column", []int{3}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			src := "package app\nfunc query(userInput string) {\n" + tc.statements + "\n}\n"
+			if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte(src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			audit, err := auditLint(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pass, err := contracts.NewPass(dir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			verify, err := contracts.Run(pass, contracts.RunOptions{Analyzers: []string{"security"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var auditLines, verifyLines []int
+			for _, f := range audit {
+				if f.Rule == "sql-concat-user-input" {
+					auditLines = append(auditLines, f.Line)
+				}
+			}
+			for _, d := range verify.Diagnostics {
+				if d.RuleID == contracts.RuleSQLStringConcat {
+					verifyLines = append(verifyLines, d.Line)
+				}
+			}
+			if !slices.Equal(auditLines, tc.want) || !slices.Equal(verifyLines, tc.want) {
+				t.Errorf("want lines %v, got audit %v and verify %v", tc.want, auditLines, verifyLines)
+			}
+		})
+	}
+}
 
 func TestAuditLintTracksContractDetectors(t *testing.T) {
 	for _, tc := range []struct {

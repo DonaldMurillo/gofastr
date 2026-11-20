@@ -43,7 +43,7 @@ counts as stale only when all the contract rules it waives were in scope.
 | Capability | Catches |
 |---|---|
 | `routing` | duplicate routes, `:id` where ServeMux wants `{id}`, lowercase methods, in-page state modelled as navigation, routes no test mentions, path prefixes matched without a segment boundary |
-| `permissions` | auto-exposed entities with PII-shaped fields and no owner field, tenant scope, or access gate, mutating routes outside any guarded group, auth configured but never mounted |
+| `permissions` | auto-exposed entities with PII-shaped fields and no owner field, tenant scope, or read permission, mutating routes outside any guarded group, auth configured but never mounted |
 | `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials, `X-Forwarded-Proto` spliced into a URL without an http/https check, request bodies decoded with `encoding/json` outside `core/handler`'s strict binder |
 | `data` | writes whose result and error are both discarded (`_, _ = db.Exec(…)`, or a bare `db.Exec(…)` statement) |
 | `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
@@ -87,6 +87,10 @@ file. A directive on its own line above a multi-line string literal
 covers the whole literal. A directive must start its comment: one quoted
 in prose, or written inside a string (raw strings included), silences
 nothing.
+
+The SQL concatenation check also accepts `// safe-sql: <reason>` at the
+end of the statement or on the line directly above it. The comment
+applies to that statement and requires a reason.
 
 `GOFASTR1809` checks `.css` files discovered under the verification
 root outside the styling-owner paths, including embedded stylesheets and

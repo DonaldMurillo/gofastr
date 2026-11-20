@@ -499,9 +499,15 @@ handler)` + `ob.StartRelay(ctx)`.
   name when supplied. The delivery table sits in the same schema and uses
   the parent name plus `_delivery` when it fits. Both engines use
   `query.FitIdent` on that name when it exceeds 63 bytes. If the fitted
-  name equals the parent, the last character is dropped. Rename a longer
-  delivery table created by an older SQLite deployment to the fitted name
-  before starting the upgraded app. If your policy forbids
+  name equals the parent, the last character is dropped. Older releases
+  named the delivery table `<parent>_delivery` with no fitting, and
+  Postgres cut that name to its first 63 bytes. Before you start the
+  upgraded app, rename an old delivery table whose name no longer matches
+  to the fitted name: on SQLite, one named `<parent>_delivery` over 63
+  bytes; on Postgres, a parent name of 55 to 62 bytes, whose old delivery
+  table is `left('<parent>_delivery', 63)`. Otherwise the app creates an
+  empty delivery table, delivers every pending row again, and leaves the
+  old dead letters out of counts and replay. If your policy forbids
   unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
   and create them yourself before the app stages any event. The schema:
 

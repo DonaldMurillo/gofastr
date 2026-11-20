@@ -78,7 +78,7 @@ func auditLint(root string) ([]LintFinding, error) {
 
 func lintFile(rel string, body []byte) []LintFinding {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, rel, body, 0)
+	file, err := parser.ParseFile(fset, rel, body, parser.ParseComments)
 	if err != nil {
 		line := 1
 		if failures, ok := err.(goscanner.ErrorList); ok && len(failures) > 0 {
