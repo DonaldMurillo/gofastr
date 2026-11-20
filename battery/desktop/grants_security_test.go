@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -294,5 +298,41 @@ func TestUnknownStoredDecisionReadsAsDeny(t *testing.T) {
 	}
 	if got := len(fake.prompts()); got != 0 {
 		t.Fatalf("%d alerts, want 0: a stored value is an answer", got)
+	}
+}
+
+// failingReadStore fails the Nth Get and answers every other one from an empty store.
+type failingReadStore struct {
+	*memGrantStore
+	failOn int
+	gets   int
+}
+
+func (s *failingReadStore) Get(ctx context.Context, capability, permission string) (string, bool, error) {
+	s.gets++
+	if s.gets == s.failOn {
+		return "", false, errors.New("disk I/O error")
+	}
+	return s.memGrantStore.Get(ctx, capability, permission)
+}
+
+func TestGrantReadErrorFailsClosed(t *testing.T) {
+	for _, failOn := range []int{1, 2} {
+		t.Run(fmt.Sprintf("read %d", failOn), func(t *testing.T) {
+			b, shell, called := newChokepointBattery(t)
+			b.grants = &failingReadStore{memGrantStore: newMemGrantStore(), failOn: failOn}
+			shell.promptDecisions = []Decision{DecisionAllow}
+			srv := serveBridge(t, b)
+			status, body := postCall(t, srv, "/__gofastr/desktop/call/testcap/gated", "application/json", "{}")
+			if status != http.StatusInternalServerError || !strings.Contains(body, `"`+CodeInternal+`"`) {
+				t.Fatalf("grant read %d failed: %d %s, want 500 %s", failOn, status, body, CodeInternal)
+			}
+			if n := len(shell.prompts()); n != 0 {
+				t.Fatalf("grant read %d failed and the user was prompted %d times", failOn, n)
+			}
+			if called.Load() != 0 {
+				t.Fatalf("grant read %d failed and the handler ran", failOn)
+			}
+		})
 	}
 }

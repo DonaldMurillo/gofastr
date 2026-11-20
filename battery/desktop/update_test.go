@@ -330,6 +330,11 @@ func TestCheckComparesAgainstRunningVersion(t *testing.T) {
 	if err != nil || res2.Available {
 		t.Fatalf("same-version check = %+v, %v; want not available", res2, err)
 	}
+	b3, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "2.0.0", "Notes.app", t.TempDir())
+	res3, err := b3.CheckForUpdates(context.Background())
+	if err != nil || res3.Available {
+		t.Fatalf("older-feed check = %+v, %v; want not available", res3, err)
+	}
 }
 
 func TestScheduledCheckEmitsEventOncePerVersion(t *testing.T) {

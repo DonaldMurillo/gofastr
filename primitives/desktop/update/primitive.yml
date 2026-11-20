@@ -22,8 +22,22 @@ invariants:
     rule: install is single-flight through TryLock, so a concurrent call is refused at once, and every call after a completed swap is refused.
     enforced_by:
       - test: battery/desktop.TestInstallRefusesConcurrentInstall
+  - id: only-a-strictly-newer-release
+    rule: Check and install treat the feed release as an update only when it is strictly newer than the running version by semver precedence, so an equal or older feed is never offered or installed.
+    enforced_by:
+      - test: battery/desktop.TestCheckComparesAgainstRunningVersion
+      - test: battery/desktop.TestInstallRefusesDowngrade
+  - id: archive-matches-the-feed
+    rule: install refuses a downloaded archive whose sha256 or size is not the feed entry's before extracting it or running the signature check.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusesArchiveOffTheFeed
+      - test: battery/desktop/internal/update.TestVerifyArchiveChecksSumAndSize
+  - id: signature-check-gates-the-swap
+    rule: install runs the platform's signature check on the extracted bundle and, when it fails, refuses with the archive error before anything is swapped or relaunched.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusesFailedSignatureCheck
   - id: bundle-is-the-feed-release
-    rule: An install refuses a bundle whose version is not the feed release's or whose identifier is not the running app's, and refuses when the running app reports no identifier.
+    rule: An install refuses a bundle whose version is not the feed release's or whose identifier is not the running app's, and refuses when the running app reports no identifier, even when the bundle carries none either.
     enforced_by:
       - test: battery/desktop.TestInstallRefusesMislabelledBundle
       - test: battery/desktop.TestInstallRefusesWithoutRunningIdentifier

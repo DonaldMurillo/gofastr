@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -117,6 +118,13 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 	)
 	app.Mount(host)
 	app.RegisterBattery(b)
+	// Ready hooks run in order before Serve, and this one precedes the battery's.
+	var armedAtReady atomic.Bool
+	var cookieAtReady string
+	app.OnReady(func(string) {
+		armedAtReady.Store(b.gateArmed.Load())
+		cookieAtReady = b.sessionCookieKey
+	})
 
 	runErr := make(chan error, 1)
 	go func() { runErr <- b.Run(app) }()
@@ -136,6 +144,12 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 	enterURL := win().navURLs()[0]
 	if !strings.Contains(enterURL, "/__gofastr/desktop/enter?t=") {
 		t.Fatalf("enter URL = %q", enterURL)
+	}
+	if !armedAtReady.Load() {
+		t.Fatal("the listener was ready before Run armed the boot gate")
+	}
+	if cookieAtReady != sessionCookieName+"_"+b.sessionValue {
+		t.Fatalf("session cookie name at listener-ready = %q, want the per-run name", cookieAtReady)
 	}
 
 	// A real HTTP client walks the handshake and gets the page.
