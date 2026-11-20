@@ -41,6 +41,11 @@ few lines, and link the PR or the docs page for the rest.
   panic that reaches the tracing middleware sets it to `"panic"`, the new
   `tracing.ErrorTypePanic` constant that queue job spans use too. See
   [Observability](framework/docs/content/observability.md).
+- **battery/storage: a failed rename no longer names the temp file.** With
+  `WithTempDir` outside the base directory, a `Save` whose final rename
+  failed returned an error quoting the temp file's absolute path, which
+  the CRUD handlers echo into a 400 body. The rename error is now
+  scrubbed like every other `LocalStorage` error.
 
 ## [0.97.0] - 2026-11-19
 
