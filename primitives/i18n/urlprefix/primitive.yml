@@ -2,6 +2,7 @@ primitive: i18n.urlprefix
 summary: The response rewrite that keeps a reader in their locale - Path, Refresh and HTML put a locale prefix in front of the root-relative navigation URLs a response carries, and Middleware applies them to every response under a prefixed locale.
 code:
   - core-ui/urlprefix/
+  - internal/mediatype/
 docs:
   - framework/docs/content/i18n.md
   - core-ui/ARCHITECTURE.md
@@ -63,6 +64,15 @@ invariants:
       - test: core-ui/urlprefix.TestMiddlewareFlushKeepsBuffer
       - test: core-ui/urlprefix.TestFlushHoldsBufferedHTML
       - test: core-ui/urlprefix.TestFlushWhileSniffingSettlesTheType
+  - id: html-detection-is-case-insensitive
+    rule: HTML detection is case-insensitive and ignores parameters, including malformed or whitespace-delimited parameters, accepting surrounding whitespace but rejecting text/htmlish, an empty type, application/json and application/xhtml+xml.
+    enforced_by:
+      - test: internal/mediatype.TestIsHTML
+      - test: core-ui/urlprefix.TestMiddlewareRewritesMixedCaseHTML
+      - test: core-ui/urlprefix.TestMiddlewareRejectsInvalidHTMLMediaType
+      - test: framework/dev.TestInjectorMixedCaseHTML
+    applies:
+      - framework/dev/htmlinject.go
 decisions:
   - id: rewrite-on-the-way-out
     date: 2026-11-20
