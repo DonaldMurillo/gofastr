@@ -67,8 +67,8 @@ func ValidateAppSpecEndpoints(bp AppSpec) error {
 		if !EntityDeclarationCRUDEnabled(decl) {
 			ownMount = ""
 		}
-		noLLMMD := bp.App.EntityLLMMD != nil && !*bp.App.EntityLLMMD
-		if err := framework.ValidateEntityEndpointRoutes(ownMount, crud.CrudRouteOptions{NoLLMMD: noLLMMD, States: cfg.States, Key: cfg.PrimaryKey}, true, routes); err != nil {
+		// Generated apps leave NoLLMMD false and always enable EntityUI.
+		if err := framework.ValidateEntityEndpointRoutes(ownMount, crud.CrudRouteOptions{NoLLMMD: false, States: cfg.States, Key: cfg.PrimaryKey}, true, routes); err != nil {
 			var routeErr *framework.EndpointRouteError
 			if errors.As(err, &routeErr) {
 				errs = append(errs, fmt.Errorf("app spec: endpoints[%d].path: %w", indices[decl.Name][routeErr.Index], err))

@@ -1,9 +1,11 @@
 package appspec
 
 import (
+	"strings"
 	"testing"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 func TestDecodeEntityLLMMD(t *testing.T) {
@@ -30,5 +32,22 @@ func TestDecodeEntityLLMMD(t *testing.T) {
 				t.Fatalf("entity_llm_md did not decode %s", value)
 			}
 		})
+	}
+}
+
+func TestEntityLLMMDFreesIndexScreenRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		setting *bool
+		refused bool
+	}{{"omitted", nil, true}, {"true", new(true), true}, {"false", new(false), false}} {
+		bp := AppSpec{App: AppSpecApp{Name: "Demo", EntityLLMMD: tc.setting},
+			Entities: []framework.EntityDeclaration{{Name: "tickets", Exposure: &framework.ExposureDeclaration{CRUD: new(true)}, Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}},
+			Screens:  []AppSpecScreen{{Name: "index", Route: "/api/llm.md", Body: []AppSpecBlock{{Type: "heading", Text: "Index"}}}},
+		}
+		err := ValidateAppSpec(bp)
+		if refused := err != nil && strings.Contains(err.Error(), "framework serves"); refused != tc.refused {
+			t.Errorf("entity_llm_md %s: validate = %v; want refused=%v", tc.name, err, tc.refused)
+		}
 	}
 }
