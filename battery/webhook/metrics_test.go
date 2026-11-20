@@ -42,11 +42,11 @@ func TestWebhookMetrics_CountersAndCollector(t *testing.T) {
 	// One due delivery → one attempt → 500 → one delivery, one failure.
 	mgr.tick(ctx)
 
-	if got := mgr.DeliveriesTotal(); got < 1 {
-		t.Fatalf("DeliveriesTotal = %d, want >= 1 (delivery attempt not counted)", got)
+	if got := mgr.DeliveriesTotal(); got != 1 {
+		t.Fatalf("DeliveriesTotal = %d, want 1 (one attempt counted once)", got)
 	}
-	if got := mgr.FailuresTotal(); got < 1 {
-		t.Fatalf("FailuresTotal = %d, want >= 1 (failed attempt not counted)", got)
+	if got := mgr.FailuresTotal(); got != 1 {
+		t.Fatalf("FailuresTotal = %d, want 1 (one failed attempt counted once)", got)
 	}
 	if mgr.FailuresTotal() > mgr.DeliveriesTotal() {
 		t.Fatalf("FailuresTotal %d > DeliveriesTotal %d (failures must be a subset of attempts)",
