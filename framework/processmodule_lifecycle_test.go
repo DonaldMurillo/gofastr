@@ -61,7 +61,13 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 	}
 	store := &redLeaseFlakyStore{SQLProcessModuleStore: newTestStore(t)}
 	d := descriptorForChild(t, childModeEcho)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	// Each outage respawns the child. A race-built child on a loaded
+	// runner can miss the shared 3s spawn deadline, and that honest
+	// handshake timeout charges the circuit after the outage, which this
+	// test would then blame on the drain.
+	sup := newTestSupervisorWith(t, store, childModeEcho, func(c *SupervisorConfig) {
+		c.SpawnDeadline = 20 * time.Second
+	})
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -115,6 +121,11 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 		}
 		if pid := redLeaseSlotPID(sup, d.Name); pid > 0 {
 			t.Fatalf("outage %d: lease never drained the child (pid %d)", outage, pid)
+		}
+		// The child is cleared under the same lock that records its exit,
+		// so the drain's verdict is already in place.
+		if info, _ := sup.Info(d.Name); info.State == StateCrashed || info.LastExit != "lease-expired-drain" {
+			t.Fatalf("outage %d: the drained child was recorded as state %s, last exit %q", outage, info.State, info.LastExit)
 		}
 		// Let the exit watcher run before the store returns.
 		time.Sleep(100 * time.Millisecond)

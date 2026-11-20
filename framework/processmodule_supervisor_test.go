@@ -97,7 +97,14 @@ func descriptorForChild(t *testing.T, mode childMode) ProcessModuleDescriptor {
 // re-exec receives GOFASTR_PROCESS_MODULE_CHILD=<mode>.
 func newTestSupervisor(t *testing.T, store ProcessModuleStore, mode childMode) *ProcessModuleSupervisor {
 	t.Helper()
-	sup, err := NewProcessModuleSupervisor(SupervisorConfig{
+	return newTestSupervisorWith(t, store, mode, nil)
+}
+
+// newTestSupervisorWith is newTestSupervisor with tweak applied to the
+// config before the supervisor is built.
+func newTestSupervisorWith(t *testing.T, store ProcessModuleStore, mode childMode, tweak func(*SupervisorConfig)) *ProcessModuleSupervisor {
+	t.Helper()
+	cfg := SupervisorConfig{
 		Store:             store,
 		Runner:            &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(mode, nil)},
 		Broker:            NopBroker{},
@@ -111,7 +118,11 @@ func newTestSupervisor(t *testing.T, store ProcessModuleStore, mode childMode) *
 		CircuitThreshold:  5,
 		CircuitWindow:     10 * time.Second,
 		Logf:              safeLogf(t),
-	})
+	}
+	if tweak != nil {
+		tweak(&cfg)
+	}
+	sup, err := NewProcessModuleSupervisor(cfg)
 	if err != nil {
 		t.Fatalf("new supervisor: %v", err)
 	}
