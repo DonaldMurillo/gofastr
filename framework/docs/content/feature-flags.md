@@ -1,199 +1,64 @@
-# Feature flags
+# Feature flags (`core/featureflag`)
 
-`core/featureflag` is GoFastr's feature-flag package. It stays
-in-process and covers the cases that come up in real projects: global
-kill switches, percentage rollouts, per-user overrides for beta
-testers, per-tenant enablement for design partners, and
-per-environment restriction so a staging-only flag never reaches
-production.
+`core/featureflag` is an in-process feature-flag evaluator supporting global kill switches, percentage rollouts, per-user and per-tenant allowlists, and environment restrictions.
 
-The package is named `featureflag` to avoid colliding with the standard
-library's `flag` package; users who want a shorter local name can alias
-on import.
-
-For anything richer (multi-arm experiments, scheduled ramps, dependent
-flags) wrap the supplied `Evaluator` rather than extending this
-package.
-
-## Wiring
+## Quickstart
 
 ```go
 import flag "github.com/DonaldMurillo/gofastr/core/featureflag"
 
-app := framework.NewApp(framework.WithDB(db))
-
-// Default backing store is in-memory; call SetFlagStore for redis/db.
-store := flag.NewMemoryStore()
+store := flag.NewMemoryStore() // or flag.NewSQLStore(db) for durable/admin-editable flags
 _ = store.Set(flag.Flag{Key: "new-checkout", Enabled: true, Rollout: 25})
 app.SetFlagStore(store)
 ```
 
-The first call to `app.Flags()` (or `app.IsEnabled`, or
-`app.SetFlagStore`) lazily wires the evaluator and also installs it as
-`featureflag.Default()` so package-level helpers work from anywhere.
-
-The default middleware also puts the App's evaluator on every request
-context (`featureflag.WithEvaluator`), and `featureflag.Bool` reads the
-context's evaluator before `Default()`. With two Apps in one process,
-`flag.Bool(r.Context(), ...)` in each App's handlers reads that App's
-store, and an App that has not wired flags yet reads every flag as off.
-`Default()` serves only contexts that never passed through a request,
-such as a queue job or a cron run, and there the last App wired wins:
-pass `app.Flags()` to that code instead. An app built with
-`WithoutDefaultMiddleware` adds `app.FlagContextMiddleware()` to its
-own chain.
-
-## Using a flag
-
-Inside a handler:
+Evaluate inside a handler:
 
 ```go
 ctx := flag.WithContext(r.Context(), flag.EvalContext{
-    UserID:   sess.UserID,
-    TenantID: tenant.ID,
-    Env:      "production",
+	UserID:   sess.UserID,
+	TenantID: tenant.ID,
+	Env:      "production",
 })
 
-if app.IsEnabled(ctx, "new-checkout") {
-    return newCheckout(w, r)
+if app.IsEnabled(ctx, "new-checkout") { // or flag.Bool(ctx, "new-checkout")
+	return newCheckout(w, r)
 }
 return oldCheckout(w, r)
 ```
 
-Or, equivalently, the package-level form:
+Default middleware attaches the app's evaluator to every request context (`featureflag.WithEvaluator`). In background jobs or cron runs outside HTTP requests, pass `app.Flags()` explicitly rather than relying on `featureflag.Default()`.
 
-```go
-if flag.Bool(ctx, "new-checkout") { ... }
-```
-
-Both consult the same evaluator.
-
-## Flag rules
+## Flag rules and evaluation order
 
 <!-- gofastr:compile
 -->
 ```go
 type Flag struct {
-    Key     string
-    Enabled bool      // global kill switch
-    Rollout int       // 0..100; stable hash of (key, subject)
-    Users   []string  // allow list: "tenant:user", or a bare id with no tenant
-    Tenants []string  // allow list of tenant ids
-    Envs    []string  // restrict to deployment environments (empty = any)
+	Key     string
+	Enabled bool     // global kill switch
+	Rollout int      // 0..100; stable FNV-1a hash of (key, subject)
+	Users   []string // allowlist: "tenant:user" (via flag.UserEntry) or bare id
+	Tenants []string // allowlist of tenant ids
+	Envs    []string // environment allowlist (empty = any)
 }
 ```
 
 Evaluation order:
+1. `Enabled == false` → off.
+2. `Envs` non-empty and `EvalContext.Env` not listed → off (outermost guard so staging flags never leak to prod testers).
+3. User matches `Users` (`flag.UserEntry(tenantID, userID)` formats multi-tenant entries safely) → on.
+4. Tenant matches `Tenants` (falls back to `handler.GetTenantID` when `EvalContext.TenantID` is empty) → on.
+5. `Rollout` percentage of stable FNV-1a hash → on or off (anonymous empty subjects stay off for partial 1–99% rollouts).
 
-1. `Enabled` false → always off.
-2. `Envs` non-empty AND `EvalContext.Env` not in the list → off.
-3. A `Users` entry names this tenant's user (below) → on.
-4. The tenant matches `Tenants` (non-empty) → on.
-5. `Rollout` percentage of the stable hash → on or off.
+## Stores and GDPR erasure
 
-### The tenant
-
-The tenant a flag is evaluated for is `EvalContext.TenantID`. When that
-is empty, it is the tenant the framework resolved for the request: the
-`core/handler` tenant slot that `tenant.ResolveMiddleware` and
-`tenant.TenantMiddleware` fill (`handler.GetTenantID`). An explicit
-`TenantID` wins. A context with neither has no tenant: a single-tenant
-app.
-
-### User entries
-
-User ids are per tenant in a multi-tenant app, so a `Users` entry names
-one tenant's user:
-
-| Entry | Matches |
-|---|---|
-| `acme:42` | user `42` of tenant `acme` only |
-| `42` | user `42` when the context has **no** tenant |
-| `:google:42` | user `google:42` when the context has no tenant |
-
-The entry splits at its **first** `:`. The part before it is the tenant
-id with `%` and `:` percent-escaped (tenant `a:b` is written `a%3Ab`);
-the part after it is the user id as is, `:` included. A bare `42` never
-matches inside a tenant, and a bare id that holds a `:` must be written
-with an empty tenant part, or it names a tenant. Build entries with
-`flag.UserEntry(tenantID, userID)` and read them with
-`flag.ParseUserEntry(entry)`; both stores refuse a flag whose entry is
-empty, has no user id after the `:` (`acme:`), or has a malformed
-escape (`%zz:42`), and an entry a custom store hands over malformed
-never matches.
-
-The `Tenants` list names tenants and is unchanged.
-
-### Rollout
-
-The hash is FNV-1a over `key + 0x00 + subject`. The subject is the user
-as a `Users` entry spells it (`flag.UserEntry(tenant, user)`, so
-`acme:42` inside a tenant and the bare `42` without one), otherwise the
-tenant id, otherwise empty. Keying on the pair puts user `42` of two
-tenants in independent buckets; a single-tenant app's subject is the
-bare user id, as before. An
-empty subject is forced off at any partial rollout (1–99): anonymous
-traffic hashes to a single constant bucket per flag key, so a "50%
-rollout" would be 100% or 0% of anonymous traffic depending on the
-key. Apps that want anonymous traffic in a rollout derive a stable
-pseudo-subject (session, request signature) and put it in
-`EvalContext.UserID`; for anonymous-sensitive flags, use allow-list
-gating.
-
-The `Envs` filter is the **outermost** rule: even a user that appears
-in the `Users` allow list does not see the flag if their request's
-`Env` is not in `Envs`. This keeps a staging-only feature from leaking
-into production for testers whose user-id sits in both environments'
-identity provider.
-
-## Stores
-
-`featureflag.Store` is the read interface, `featureflag.MutableStore`
-adds writes. The bundled `MemoryStore` implements both, exposes `All()`
-for admin listings, and is safe for concurrent use.
-
-Two stores are bundled:
-
-- `NewMemoryStore()`: in-process map.
-- `NewSQLStore(db, opts...)`: SQL-backed (sqlite + postgres),
-  creates `feature_flags` on first use. Pass `WithSQLTable(...)` to
-  override the table name, or `WithSQLDialect("postgres"|"sqlite")` to
-  pin the dialect when the runtime probe is unreliable. Also implements
-  `MutableStore` and `All(ctx)` for admin tooling.
-
-Both stores check a flag the same way on `Set`: an empty key or a
-malformed `Users` entry is refused with a `featureflag:` error, and
-`Rollout` is clamped to 0..100.
-
-The SQL store registers its table with `App.ExportData` and
-`App.EraseUserData`. Erasing a user removes their id from every flag's
-`users` list and keeps the flag. With a tenant (`WithEraseTenant`, or
-the request's resolved tenant) it removes the bare entries and that
-tenant's `<tenant>:<id>` only, since another tenant's `beta:42` is a
-different user. With no tenant it removes every tenant's entry. An entry
-equal to the whole erased id (a pre-upgrade `google:42`) always goes.
-The `tenants` list names tenants, not users, and is left alone. See [data export](data-export.md#registering-an-eraser).
-
-For Redis or other backends, wrap `featureflag.Store`. Only `Get` is
-required; add `MutableStore` for admin-edit support.
+- `NewMemoryStore()` — in-process concurrent map.
+- `NewSQLStore(db, opts...)` — SQLite/Postgres table (`feature_flags`), implements `MutableStore` for `battery/admin`, and registers automatically with `App.ExportData` and `App.EraseUserData` (scrubbing erased user IDs from `users` allowlists — see [Data export](data-export.md#registering-an-eraser)).
 
 ## Common mistakes
 
-- **Don't read flags inside hot loops without caching the bool.** The
-  evaluator is fast but every call hits the store. Hoist the decision.
-- **Don't rely on flags for security gating.** Flags are for *rolling
-  out features*, not for access control. Use `framework/access` for
-  permissions. The rollout hash is FNV-1a and is not adversary-resistant;
-  an attacker who can choose their subject id can grind into a 1%
-  cohort with ~100 tries.
-- **Don't share an EvalContext across requests.** It's per-call; build
-  it from the request's authenticated subject.
-- **Don't bake user ids into the flag definition long-term.** The
-  allow lists are great for beta testers; they're not how you maintain
-  a permanent VIP segment.
-- **Don't treat a missing key as "off" for a kill switch.** A typo or
-  accidental delete returns `false`, so for `if !IsEnabled(...) { dangerous() }`
-  you'd silently enable the dangerous path. Use the explicit
-  `Flags().BoolDefault(ctx, key, defaultIfMissing)` form to set the
-  safe default per call site. It is also the answer when the store
-  errors, so pick the value that is safe during an outage too.
+- **Using feature flags as access control:** flags are for rollouts, not security boundaries (FNV-1a is not adversary-resistant). Use `framework/access` for permissions.
+- **Using `IsEnabled` as a kill switch without a safe missing-key default:** a typo or store outage returns `false`. Use `app.Flags().BoolDefault(ctx, key, safeDefault)` when the default must be fail-closed.
+- **Evaluating flags inside tight loops:** hoist the boolean once per request.
+- **Mixing multi-tenant and bare user IDs:** build `Users` entries with `flag.UserEntry(tenantID, userID)`.

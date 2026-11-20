@@ -1,175 +1,25 @@
 # Health and readiness
 
-Every `framework.App` exposes two probes wired during `Start`:
+Every `framework.App` exposes two built-in probes during `Start` with `Cache-Control: no-store`:
 
-| Endpoint   | Status   | Purpose                                  |
-|------------|----------|------------------------------------------|
-| `/healthz` | Liveness | "Is the process up?" Always returns 200 |
-| `/readyz`  | Readiness | "Should it receive traffic?" 200 / 503 |
+| Endpoint | Kind | Behavior |
+| --- | --- | --- |
+| `/healthz` | Liveness | Always returns `200 ok` while the HTTP server is accepting connections (even during shutdown drain) |
+| `/readyz` | Readiness | Runs registered dependency checks in parallel (default 5s timeout); returns `200` (`status: "ready"`) or `503` (`status: "not_ready"` / `"draining"`) |
 
-Both endpoints set `Cache-Control: no-store`. They run through the
-root middleware chain, including the default middleware and every
-`app.Use` middleware, regardless of registration order. Timeouts, recovery,
-and authentication middleware can therefore affect a probe's response.
+Both endpoints run through the **root middleware chain** (default middleware plus every `app.Use` middleware) regardless of registration order. Scope authentication middleware to **route groups** (or explicitly exempt `/healthz` and `/readyz`) so orchestrator probes stay reachable.
 
-## Liveness
+## Registering readiness checks
 
-```
-GET /healthz
-200 ok
-```
-
-Unconditional 200, through shutdown until the process exits. The
-contract is: "the HTTP server is accepting connections." Liveness
-probes that fail should restart the pod.
-
-## Readiness
-
-```
-GET /readyz
-200 OK
-Content-Type: application/json
-
-{
-  "status": "ready",
-  "checks": [
-    { "name": "db", "status": "ok", "durationMs": 1 },
-    { "name": "queue", "status": "ok", "durationMs": 0 }
-  ]
-}
-```
-
-If any check returns a non-nil error, status flips to `not_ready`
-and the response code becomes `503 Service Unavailable`. Load
-balancers should drain the instance: the process is still up but
-its dependencies aren't.
-
-All checks run in parallel under a 5-second overall deadline.
-Per-check duration is reported in `durationMs` so a slow probe is
-visible without a full timeout.
-
-## Draining on shutdown
-
-When `App.Shutdown` starts (the default `SIGTERM` handler calls it),
-`/readyz` answers `503` at once, without running the checks:
-
-```
-GET /readyz
-503 Service Unavailable
-
-{"status": "draining", "checks": []}
-```
-
-The app then keeps serving for a grace period, so a load balancer
-probing `/readyz` notices and stops sending new requests before the
-listener closes. Requests that arrive during the grace are served as
-usual, and `/healthz` stays `200`. After the grace, the normal drain
-runs: stop accepting, finish in-flight requests, stop batteries.
-
-The grace is 5 seconds by default. Set it with `WithReadinessDrain`;
-`0` skips the wait. The default is `0` wherever no balancer probes: in a
-Go test binary (and a process one starts), under `gofastr dev`, for a
-`battery/service` run, for an app whose listener is bound to a
-loopback address only (`127.0.0.1`, `::1`; the desktop battery always
-is), and for an in-process listener handed to `App.Serve` (network
-`memory` or `pipe`, a mobile shell's). An explicit `WithReadinessDrain` wins over all of these.
-
-The grace counts against `Shutdown`'s context. It takes at most half of
-the time that context has left, so the HTTP drain, batteries and
-`OnStop` hooks after it keep the other half, and it ends early if the
-context does. With a 5s grace, `app.Shutdown(ctx)` under a 5s deadline
-serves for 2.5s, then gives the drain the remaining 2.5s. The default
-`SIGTERM` handler adds the grace to `AppConfig.ShutdownTimeout`, so
-there a grace no longer than `ShutdownTimeout` runs in full and a stop
-takes up to the grace longer than before. When you call `Shutdown`
-yourself, add the grace to your deadline the same way, or pass
-`WithReadinessDrain(0)` if nothing probes `/readyz`.
-
-<!-- gofastr:compile
-stmt: _ = app
-import "github.com/DonaldMurillo/gofastr/framework"
-import "time"
--->
-```go
-app := framework.NewApp(
-    // Match the balancer: probe period x failure threshold, plus a margin.
-    framework.WithReadinessDrain(10*time.Second),
-)
-```
-
-Size it to how fast your balancer reacts: Kubernetes removes a pod from
-its Service endpoints once the readiness probe fails `failureThreshold`
-times, `periodSeconds` apart. Keep the grace plus `ShutdownTimeout`
-inside the pod's `terminationGracePeriodSeconds` (30s by default).
-
-## Registering checks
+When `WithDB` is set, GoFastr auto-registers a `db` ping check. Add custom checks with `App.RegisterReadiness` or by implementing `framework.ReadinessRegistrar` (`RegisterReadinessChecks(app *framework.App)`) on a plugin/battery:
 
 ```go
-app := framework.NewApp(framework.WithDB(db))
-
 app.RegisterReadiness("redis", func(ctx context.Context) error {
-    return redisClient.Ping(ctx).Err()
-})
-
-app.RegisterReadiness("upstream-api", func(ctx context.Context) error {
-    return apiClient.Health(ctx)
+	return redisClient.Ping(ctx).Err()
 })
 ```
 
-When `WithDB` is set, the framework auto-registers a `db` check that
-calls `DB.PingContext(ctx)`. You don't need to add it yourself.
-
-### From a plugin or battery
-
-Implement the optional `framework.ReadinessRegistrar` interface:
-
-```go
-func (b *myBattery) RegisterReadinessChecks(app *framework.App) {
-    app.RegisterReadiness("my-thing", b.checkReady)
-}
-```
-
-The framework's plugin/battery init loop invokes
-`RegisterReadinessChecks` automatically. The method name is plural and
-distinct from `App.RegisterReadiness(name, fn)` so an embedded `*App`
-inside your battery type does not produce an ambiguous selector.
-
-## Verbose error reporting (opt-in)
-
-By default, `/readyz` reports failures with `"error": "check failed"`.
-It does **not** include the underlying `error.Error()` string. The
-probe is typically reachable without authentication, and raw error
-strings frequently leak internal IPs (`dial tcp 10.0.3.17:5432:
-connect: connection refused`), connection strings, or other
-infrastructure detail useful only to an attacker doing recon.
-
-To turn on verbose reporting (e.g. behind an internal listener or with
-auth in front of `/readyz`), pass the option at app construction:
-
-<!-- gofastr:compile
-stmt: _ = app
-import "github.com/DonaldMurillo/gofastr/framework"
--->
-```go
-app := framework.NewApp(framework.WithVerboseReadiness())
-```
-
-The status field still distinguishes `"ok"`, `"error"`, and
-`"timeout"` regardless of verbose mode. Only the human-readable
-`error` value differs.
-
-## Timeouts and ctx-ignoring checks
-
-`/readyz` and the `app_readiness` MCP tool apply the same overall deadline
-(default 5 seconds; override with `WithReadinessTimeout`). An earlier
-request or tool-call deadline still wins. Each check runs in its own goroutine
-under `recover()`, so a panicking check marks that row as
-`"error"` without taking the process down. A check that ignores
-`ctx.Done()` and runs past the deadline is reported as
-`"timeout"` immediately. The response does not wait for the
-straggler, and the straggler's late result is dropped, never written
-into a response already sent. Checks that finished before the deadline
-keep their own rows, named or not.
+Each check runs in a panic-recovered goroutine under the shared deadline (`framework.WithReadinessTimeout`). By default, failing checks emit `"error": "check failed"` so public `/readyz` probes never leak internal IPs or DSNs; opt into full error messages on private networks with `framework.WithVerboseReadiness()`:
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -178,22 +28,31 @@ import "time"
 -->
 ```go
 app := framework.NewApp(
-    framework.WithReadinessTimeout(2*time.Second),
-    framework.WithVerboseReadiness(),
+	framework.WithReadinessTimeout(2*time.Second),
+	framework.WithVerboseReadiness(),
 )
 ```
+
+## Graceful drain on shutdown
+
+When `App.Shutdown` begins (or `SIGTERM` arrives), `/readyz` immediately answers `503 {"status":"draining","checks":[]}` while the server keeps accepting requests for the readiness drain grace period (default `5s` on exposed production listeners; `0s` in tests, `gofastr dev`, `battery/service`, and loopback/in-process listeners) so load balancers stop routing traffic before the listener closes:
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "time"
+-->
+```go
+app := framework.NewApp(
+	framework.WithReadinessDrain(10*time.Second),
+)
+```
+
+Keep `ReadinessDrain + ShutdownTimeout` within your orchestrator's `terminationGracePeriodSeconds`.
 
 ## Common mistakes
 
-- **Don't put expensive work in `/readyz`.** It's polled often. A
-  check should return in well under a second.
-- **Don't make `/healthz` conditional.** Liveness should fail only
-  when the process itself is wedged. File `/readyz` failures
-  there and orchestrators will restart pods unnecessarily.
-- **Don't gate `/healthz` or `/readyz` behind auth.** Probes from k8s,
-  Fly, ELB are anonymous. Scope authentication to route groups, or
-  explicitly exempt both probe paths in root authentication middleware.
-  Registering middleware later does not bypass it for existing routes.
-- **Don't enable `WithVerboseReadiness` on a public listener.** The
-  default redacted form is the right choice when probes can be
-  reached from outside the cluster.
+- **Putting slow or heavy queries in `/readyz`:** probes run every few seconds; keep checks fast pings.
+- **Making `/healthz` fail when the database blips:** failing liveness restarts pods unnecessarily instead of letting `/readyz` drain traffic.
+- **Putting auth middleware on the root middleware chain without exempting probes:** breaks Kubernetes/Fly/ELB health checks. Attach auth to route groups or exempt `/healthz` and `/readyz`.
+- **Enabling `WithVerboseReadiness()` on a public endpoint:** exposes internal hostnames and connection errors.

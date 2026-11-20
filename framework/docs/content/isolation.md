@@ -1,11 +1,8 @@
-# Worktree isolation
+# Worktree isolation (`framework/isolation`)
 
-GoFastr can isolate local runtime resources for linked Git worktrees so a
-feature worktree can run beside the main checkout without port or database
-collisions.
+GoFastr automatically isolates listen ports and databases in **linked Git worktrees** so multiple feature branches or coding-agent worktrees can run side by side without port or database collisions.
 
-Isolation is the `isolation:` section of
-[`gofastr.settings.yml`](settings.md):
+Configure isolation in the `isolation:` section of [`gofastr.settings.yml`](settings.md):
 
 ```yaml
 version: 1
@@ -15,65 +12,23 @@ isolation:
   port:
     offset: 1000
     range: 1000
-    scan: 20      # capped server-side at 64
+    scan: 20
   services:
     redis: 6379
   env:
     REDIS_URL: "redis://localhost:{port:redis}/0"
 ```
 
-With `mode: worktree`, the main checkout keeps normal resources and linked
-worktrees get deterministic replacements. `GOFASTR_ISOLATION=off` disables
-isolation for a process.
+## How auto-isolation works
 
-**Worktree isolation auto-activates with no opt-in.** On any linked git
-worktree checkout, `mode: worktree` turns on by default and deterministically
-remaps the listen port — so `PORT=8080 ./app` run from a worktree serves on a
-*different* port, and anything pointed at `8080` (a test, a reverse proxy, you)
-never reaches the application. Two things make this visible: `App.Start` logs a
-`slog.Warn` ("isolation remapped the listen address") naming both ports and the
-kill switches whenever it remaps an explicitly-assigned address, and you can
-turn the remap off with `GOFASTR_ISOLATION=off` (all isolation) or
-`GOFASTR_ISOLATION_REWRITE=0` (keep DB/worktree isolation, honor the explicit
-listen `PORT` and explicit env overrides). This is the checkout style agents
-use most, so a boot that "hangs" from a worktree is almost always this.
+- **Linked worktrees only:** the main checkout keeps its normal port and database. Inside any linked git worktree, `mode: worktree` auto-activates, deterministically remapping the listen port (logging a warning naming both ports) and isolating database paths.
+- **SQLite & Postgres:** SQLite DSNs move into owner-only `.gofastr/isolation/{id}/` (`0700`); Postgres database names gain a stable `_{id}` suffix within Postgres's 63-byte identifier limit.
+- **Safe `isolation.env`:** only template values (`{id}`, `{project_dir}`, `{port}`, `{port:name}`) are allowed; static secrets and process-shaping vars (`PATH`, `HOME`, proxies, `GOFASTR_ISOLATION*`) are rejected, and exported shell env vars always win.
+- **Overrides:** set `GOFASTR_ISOLATION=off` to disable all isolation for a process, or `GOFASTR_ISOLATION_REWRITE=0` to keep DB/worktree isolation while honoring your explicit `PORT` and `DATABASE_URL`.
 
-## What is isolated
+## Public Go API
 
-- `framework.App.Start(addr)` remaps the requested listen port in linked
-  worktrees.
-- `gofastr dev` resolves isolation before launching the app and passes
-  isolated child env values.
-- Generated apps from `gofastr init` and app generator output use
-  `framework/isolation` to resolve `PORT` and database DSNs.
-- SQLite DSNs move under `.gofastr/isolation/{id}/` (the directory is
-  created owner-only, or tightened to it when it already exists, `0700` or a protected owner-only ACL on Windows, so the isolated app's database state is not
-  readable by local co-users of a shared checkout). On Unix, when the
-  directory exists and chmod is refused with a permission error (for
-  example, it belongs to another user), isolation logs a warning and uses it with
-  its current mode, so it may stay readable by others.
-- Postgres URL database names get a stable `_{id}` suffix while query params
-  are preserved. The result stays within Postgres's 63-byte identifier
-  limit: a long base name is cut on a character boundary, and an id longer
-  than 62 bytes (so `_` plus the id passes 63) becomes `_wt_` plus 16 hex
-  digits of its SHA-1. A shorter id keeps its literal suffix, so an
-  existing database name does not change.
-- Env templates support `{id}`, `{project_dir}`, `{port}`, and
-  `{port:name}` for named services.
-
-`isolation.env` is read from the project directory, which for a cloned
-repo is untrusted input, so it is constrained three ways: entries may
-only carry template values (a static value is refused — it is never an
-isolated resource), process-shaping names (proxies, `PATH`, loader
-variables, `HOME`, `GOFASTR_ISOLATION*`) are refused outright, and an
-environment variable the operator already exported always wins over a
-file entry. Export anything static yourself; `GOFASTR_ISOLATION_REWRITE`
-now governs only the `PORT` and `DATABASE_URL` remaps.
-
-## Public API
-
-Use `framework/isolation` when app code opens resources before calling
-`App.Start`:
+When opening a database or picking a listen address before `App.Start`, use `framework/isolation` so `go run .` and `gofastr dev` agree on the exact same port and DB:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -84,21 +39,15 @@ import "database/sql"
 ```go
 runtimeIsolation, err := isolation.Resolve(".")
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 
 driver, dsn, err := runtimeIsolation.Database("sqlite3", "file:app.db")
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 db, err := sql.Open(driver, dsn)
 ```
-
-For the listen address, `isolation.ListenAddr` is the whole recipe: it
-reads `$PORT` (a bare `8088` from a PaaS or a `localhost:8088` from
-`gofastr dev`), falls back to the address you pass when it is unset, and
-applies the port remap. Every example app binds this way, so `go run .`
-and `gofastr dev` agree on where the server is:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -108,43 +57,12 @@ stmt: _ = addr
 ```go
 addr, err := isolation.ListenAddr(".", ":8080")
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 ```
 
-A port is remapped once. `App.Start` resolves isolation again, but every
-active runtime in one process with the same project directory, isolation
-ID and port config shares the mappings already recorded, so passing it
-the result of `ListenAddr` keeps that address. The flip side: two
-servers in one process get the same port when they ask for the same base
-port, or when one asks for a port that is already the other's mapped
-port (with the default offset, `:8080` maps near `:9080`, and a second
-server asking for that port keeps it). Give servers in one process base
-ports that are far apart.
-`Runtime.Env` hands each recorded mapping to a child process as a
-`GOFASTR_ISOLATION_PORT_<base>` marker, which is how the app that
-`gofastr dev --addr localhost:8791` launches binds the port the dev banner
-prints.
-
-Hand-written apps still get automatic port isolation through `App.Start`.
-Database isolation is automatic when the app either runs through `gofastr dev`
-and reads env, or opens the database through `Runtime.Database`.
-
 ## Common mistakes
 
-- **Opening the database before `App.Start` without resolving
-  isolation.** `App.Start` remaps the port, but a DSN you opened
-  yourself is untouched, so two worktrees end up writing the same
-  database. Open it through `isolation.Resolve(".")` →
-  `Runtime.Database(driver, dsn)`, or run under `gofastr dev` and read
-  the env it injects.
-- **Expecting an explicit `PORT` / `DATABASE_URL` to win inside a
-  linked worktree.** Explicit env values are rewritten by default so
-  worktrees never collide. Set `GOFASTR_ISOLATION_REWRITE=0` if you
-  really want your override honored.
-- **Looking for isolation effects in the main checkout.** With
-  `mode: worktree`, only *linked* worktrees get remapped resources.
-  The main checkout keeps its normal port and database on purpose.
-- **Fighting isolation instead of switching it off.** For a one-off
-  un-isolated run (e.g. comparing against the main checkout's DB),
-  `GOFASTR_ISOLATION=off` disables it for that process.
+- **Wondering why `PORT=8080 ./app` inside a worktree listens on another port:** worktree isolation auto-remaps ports; check the startup log or pass `GOFASTR_ISOLATION_REWRITE=0` / `GOFASTR_ISOLATION=off`.
+- **Opening SQLite directly in `main.go` before `App.Start` without `runtimeIsolation.Database`:** bypasses DB isolation so two worktrees write the same file.
+- **Expecting isolation in the main checkout:** only linked worktrees remap resources.

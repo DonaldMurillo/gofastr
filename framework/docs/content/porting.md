@@ -1,22 +1,12 @@
 # Porting an app with an existing frontend
 
-Sometimes the job is not "build a GoFastr app" but "move an existing app
-onto GoFastr without breaking its DOM contract" — a frontend whose tests
-pin attributes like `data-slot="card-title"`, whose CSS is a compiled
-design system, whose markup the framework's components will never emit.
+If you are migrating an existing app onto GoFastr and tests or stylesheets pin an exact legacy DOM structure, you can render `html/template` markup inside GoFastr screens while keeping GoFastr's backend, auth, sessions, and routing.
 
-That is possible today, and this page shows the pieces. It is also
-**deliberately not a supported use case**: the framework has one styling
-surface (`framework/ui` + the theme tokens), and everything on this page
-steps outside it. The contracts pipeline, the design system, and the
-upgrade notes make no promises about markup and stylesheets you bring
-yourself. You own the drift.
+> **Escape hatch, not the recommended path:** GoFastr has one supported styling surface (`framework/ui` + theme tokens). Ported foreign markup and CSS sit outside the design system, contracts pipeline, and upgrade guarantees. Migrate screens onto `framework/ui` one at a time when ready — both produce `render.HTML` and coexist cleanly.
 
-## A screen is anything that returns render.HTML
+## Rendering `html/template` inside a screen
 
-There is no special template feature to enable. A screen component's
-render is a `render.HTML` string; executing an `html/template` into one
-is plain Go:
+Any screen returns `render.HTML`; embed `.tmpl` files with `//go:embed` rather than scattering inline strings:
 
 <!-- gofastr:compile
 stmt: _ = render.HTML(buf.String())
@@ -32,177 +22,25 @@ var buf bytes.Buffer
 if err := page.Execute(&buf, struct{ Title string }{"March"}); err != nil {
 	panic(err)
 }
-// buf.String() is the screen's markup, verbatim.
 ```
 
-Embed `.tmpl` files instead of inline strings — the markup stays
-reviewable as markup, and designers can edit it without touching Go:
+Serve legacy compiled CSS/JS/fonts with `static.Mount(app.Router(), static.Config{FS: assets, Prefix: "/static"})` (see [Core packages](core-packages.md)).
 
-```go
-import (
-	"embed"
-	"html/template"
-)
+## Opting legacy pages out of soft navigation
 
-//go:embed templates/*.tmpl
-var templatesFS embed.FS
+Pages whose legacy JS binds handlers only on initial document load can opt out of client-side SPA swaps:
+- **Whole screen:** set `screen.NoSPA = true` so links to it perform a full document load.
+- **Single link:** add `ExtraAttrs: html.Attrs{"data-cui-nav": "off"}`.
 
-var pages = template.Must(template.ParseFS(templatesFS, "templates/*.tmpl"))
-// pages.ExecuteTemplate(&buf, "invoice.tmpl", data) as above.
-```
+Mount a registered screen from a custom wildcard router path with `site.PageHandler("/legacy")`.
 
-The executed HTML renders inside the App layout like any other screen,
-so navigation, sessions, and auth all still work.
+## Returning custom HTTP statuses (`404`, `410`) from screens
 
-`html/template` escapes interpolated data contextually; that part of the
-safety story survives the port. What does not survive: none of the
-framework's UI guarantees (theming, dark mode, a11y patterns, the
-runtime's island wiring) apply to markup it did not emit.
-
-## Serving the foreign design system
-
-A compiled stylesheet, fonts, and static JS mount without adopting any
-of `uihost`:
-
-```go
-static.Mount(app.Router(), static.Config{FS: assets, Prefix: "/static"})
-```
-
-Reference them from your templates like any static asset. See
-[core packages](core-packages.md) for `core/static`'s cache headers and
-fingerprinting.
-
-## Where the line is
-
-- Data layer, auth, routing, jobs, CRUD APIs: fully supported — nothing
-  on this page changes how the backend works.
-- Attributes on framework components: supported. If you only need extra
-  `data-*` / ARIA attributes on components you otherwise adopt, use
-  `ExtraAttrs` (see [UI getting started](ui-getting-started.md)) — that
-  path IS covered by the contract and its tests.
-- Bespoke markup + bespoke CSS via this page: possible, unsupported.
-  `gofastr verify` will flag bespoke-CSS and inline-style patterns in
-  app code; keep ported surfaces in clearly separated packages so the
-  findings stay legible, and expect to re-verify the frontend yourself
-  on every framework upgrade.
-
-If a port later migrates surfaces onto `framework/ui`, each migrated
-screen rejoins the supported world one at a time — the two styles can
-coexist during the transition because both are just `render.HTML`.
-
-## Keeping a page's own scripts alive
-
-A ported page whose behavior is built at script load breaks under soft
-navigation: the runtime swaps the content without re-running the
-destination's scripts, so every handler the old page bound is gone. Two
-opt-outs, at different grains.
-
-`Screen.NoSPA` excludes a route from the client route manifest, so the
-runtime treats it as unknown and *every* link to it is a full document
-load:
-
-```go
-legacy := app.NewScreen("/reports", &ReportsScreen{})
-legacy.NoSPA = true
-site.RegisterScreen(legacy, appLayout)
-```
-
-`data-cui-nav="off"` does the same for one link, when the destination is
-otherwise a normal SPA route:
-
-```go
-ui.Link(ui.LinkConfig{Href: "/reports", Text: "Reports",
-    ExtraAttrs: html.Attrs{"data-cui-nav": "off"}})
-```
-
-Reach for the screen-level form when the page can never be soft-loaded;
-the per-link form when one entry point is special.
-
-## Rendering a screen from a route you own
-
-`UIHost.PageHandler(path)` returns an `http.HandlerFunc` that renders a
-registered screen as a full page, chrome included, from a route mounted
-on the framework router:
-
-```go
-r.Get("/legacy/{path...}", site.PageHandler("/legacy"))
-```
-
-Use it when a wildcard subtree claims a path the normal screen dispatch
-never resolves — the mux redirects the bare path to a trailing-slash
-form, and the NotFound screen answers instead of the screen you
-registered. A dynamic pattern (`/thing/{id}`, or the `/thing/:id`
-spelling a registered screen's `Path` holds) is passed through rather
-than forced, so param capture still reads the real request path.
-
-## Answering with a status other than 200
-
-A screen whose route resolved but whose record is gone should render a
-body *and* say 404. Implement `ScreenStatusCode`:
-
-```go
-func (s *ThingScreen) ScreenStatusCode() int {
-    if s.thing == nil {
-        return http.StatusNotFound
-    }
-    return 0 // 0 or 200 keeps the default
-}
-```
-
-The body still renders through the layout, so the user gets the real
-not-found page while crawlers and clients get the real status.
-
-A component that only learns the answer while it draws sets the status
-from its render instead, with `app.SetStatus` (`core-ui/app`):
-
-```go
-func (c *ThingCard) RenderCtx(ctx context.Context) render.HTML {
-    thing, ok := c.lookup(ctx)
-    if !ok {
-        app.SetStatus(ctx, http.StatusNotFound)
-        return notFoundBody(ctx)
-    }
-    return drawThing(ctx, thing)
-}
-```
-
-The entity views do this already: `entityui` Record and a Create
-duplicating a row answer 404 when the row is missing or hidden from the
-caller, so a generated record screen and an admin record page need no
-code for it. The first `SetStatus` in a render wins. A screen's own
-`ScreenStatusCode` outranks it, and a 404-outlet outcome outranks both.
-It applies on the full page, a client navigation, a drawer and
-`RenderScreen`, and on the markdown a request with
-`Accept: text/markdown` gets under `WithMarkdownNegotiation`. A dynamic
-route's `llm.md` for such a page answers 404, the way it does when
-`Load` returns `app.ErrNotFound`. A static export (`gofastr export`) skips a page that
-answers anything but 200, with a warning, the way it skips a 404
-outlet. The embed content route keeps answering 200 with the body the
-screen drew: the embed loader mounts only a 2xx, and anything else
-shows its "could not load" state instead. Outside a page render (an
-island RPC, a component rendered on its own) the call does nothing.
-
-A drawer opened onto a missing record falls back to an ordinary
-navigation: the runtime mounts an overlay only from a 2xx, so the
-reader lands on the record's own URL and sees its 404 page. A 404 or
-410 drawer answer also drops the record's cached page first, so the
-fallback fetches the 404 instead of replaying the record from before
-it was deleted.
+Implement `ScreenStatusCode() int` on a screen, or call `app.SetStatus(ctx, http.StatusNotFound)` inside `RenderCtx(ctx)` when a record is missing so crawlers, drawers, `llm.md`, and static export receive the true status code while rendering your full layout.
 
 ## Common mistakes
 
-- **Inline `template.Must` strings scattered through Go files.** Embed
-  `.tmpl` files with `go:embed` + `template.ParseFS`. One real port
-  accumulated 40 files of inline strings; the markup became invisible
-  to every markup tool.
-- **Expecting framework/ui components to emit a foreign DOM.** They
-  emit their own DOM and always will; `ExtraAttrs` attaches attributes,
-  it does not reshape markup. If the test suite pins someone else's
-  structure, render that structure from templates instead.
-- **Adopting half of `uihost` for the styling.** If the port brings its
-  own design system, serve it with `static.Mount` and skip the
-  framework's styling surface entirely on those screens — mixing the
-  two on one surface means neither owns the result.
-- **Treating this page as the recommended path.** It is the escape
-  hatch. A new app, or a port free to change its DOM, should build on
-  `framework/ui` and get theming, dark mode, and a11y for free.
+- **Mixing `framework/ui` styles and a foreign CSS framework on the same screen:** keep legacy screens isolated in their own package until migrated.
+- **Forgetting `NoSPA = true` on legacy jQuery/DOMContentLoaded screens:** SPA swaps replace `<main>` without re-running legacy load listeners.
+- **Using `ExtraAttrs` hoping to rewrite `framework/ui` DOM structure:** `ExtraAttrs` adds attributes; use `html/template` only if external tests require foreign DOM markup.
+- **Scattering inline `template.Must` strings across dozens of Go files:** embed `.tmpl` files with `//go:embed`.

@@ -1,258 +1,63 @@
-# Printable documents
+# Printable documents (`battery/print`)
 
-`battery/print` adds printing to a GoFastr app. You **declare
-a printable document** the same way you declare a screen/route, a named,
-route-addressable document, and the battery server-renders it into a
-clean, chrome-free, **print-friendly HTML** page: its own `@page` size and
-margins, the browser's native print dialog, and none of the host's
-nav/sidebar/runtime. The HTML core is pure Go with no extra dependencies.
+`battery/print` renders named, route-addressable GoFastr components into clean, chrome-free, print-friendly HTML pages (`@page` rules, theme tokens, inlined component CSS, zero `runtime.js`) — with optional headless-Chromium PDF rendering via the separate `battery/print/chromepdf` module.
 
-Real PDF output (invoices to email, receipts to archive, "Download PDF"
-buttons) is **opt-in** through a pluggable renderer. The headless-Chromium
-implementation lives in the separate `battery/print/chromepdf` subpackage,
-so the core battery never imports `chromedp`.
-
-## Wiring
+## Quickstart
 
 ```go
 import "github.com/DonaldMurillo/gofastr/battery/print"
 
 pb := print.New(print.Config{
-    // All optional; defaults shown.
-    PathPrefix:    "/print",
-    DefaultPage:   print.A4Portrait(print.MM(12)),
-    DefaultAccess: print.RequireAuth,        // per-user docs aren't public
-    AppCSSURL:     "/__gofastr/app.css",     // inherit host design tokens
-    // PDFRenderer: nil,                      // nil → /pdf routes return 501
-    // MaxConcurrentRenders: 4,               // render cap; see PDF output
+	PathPrefix:    "/print",
+	DefaultPage:   print.A4Portrait(print.MM(12)),
+	DefaultAccess: print.RequireAuth,
+	AppCSSURL:     "/__gofastr/app.css",
+})
+
+pb.Document(print.Document{
+	Name:  "invoice",
+	Path:  "/invoice/{id}",
+	Title: "Invoice",
+	Build: func(r *http.Request) (component.Component, error) {
+		inv, err := invoices.Load(r.Context(), router.Param(r, "id"))
+		if err != nil {
+			return nil, print.ErrNotFound
+		}
+		return &InvoiceDoc{Inv: inv}, nil
+	},
 })
 
 app.RegisterBattery(pb)
 ```
 
-`AppCSSURL` links the host's single stylesheet into every print page so
-documents inherit your theme's `var(--*)` tokens. `runtime.js` is **never**
-linked; a print document is inert.
+This mounts `GET /print/invoice/{id}` (HTML) and `GET /print/invoice/{id}/pdf` (`501` until a `PDFRenderer` is wired). Link to printable pages in a new tab with `pb.PrintLink(ctx, "invoice", map[string]string{"id": inv.ID}, "Print invoice")` (set `Document.AutoPrint: true` to open the browser print dialog via a CSP-safe external script).
 
-### Component styles are preserved
+## Page setup and access control
 
-A print document has no runtime to lazy-load component CSS, but the battery
-still renders styled components faithfully: it scans the rendered body for
-`data-cui-comp` markers and **inlines the scoped CSS** for every registered
-`framework/ui` component it finds. So a `Build` that
-returns, say, a `DataTable` prints with its real styling: you get tokens
-from `AppCSSURL` plus the component's own rules. What you don't get is
-interactivity (sort/expand/RPC): a print page is static by design.
+- **Paper sizes & margins:** `print.A4Portrait(m)`, `print.LetterPortrait(m)`, or `print.Custom` (e.g. `80mm` × `auto` thermal receipts); built-in helpers `.page-break`, `.avoid-break`, `.print-only`, `.screen-only`.
+- **Safe-by-default access:** defaults to `print.RequireAuth` (use `print.RequireOwner(...)` for per-user records, or `print.Public` for brochures). Scoped API tokens/embed grants also require `print.Scope` (`"print:read"`). Access checks run *before* `Build` and apply to both HTML and PDF routes.
 
-## Declaring documents
-
-Call `Document` once per printable document, before `RegisterBattery`:
-
-```go
-pb.Document(print.Document{
-    Name:  "invoice",            // unique; PDF filename stem
-    Path:  "/invoice/{id}",      // Go 1.22 {param} syntax, under PathPrefix
-    Title: "Invoice",
-    Build: func(r *http.Request) (component.Component, error) {
-        inv, err := invoices.Load(r.Context(), router.Param(r, "id"))
-        if err != nil {
-            return nil, print.ErrNotFound      // → clean 404
-        }
-        return &InvoiceDoc{Inv: inv}, nil      // a normal core-ui component
-    },
-})
-```
-
-This mounts:
-
-- `GET /print/invoice/{id}`: print-friendly HTML
-- `GET /print/invoice/{id}/pdf`: PDF (when a `PDFRenderer` is configured)
-
-### Why `Build` is a closure
-
-A battery cannot reach the UI app's DI container or render pipeline;
-`framework.App` holds no reference to the `core-ui/app.App`. So the
-document body is produced by your `Build` closure, which already has the
-request and closes over your own services. It reads route params via
-`router.Param`, which panics on a name `Path` does not declare, loads
-data, and returns a `component.Component`. The
-battery renders it with `component.SafeRenderCtx` (panic-safe). Return
-`print.ErrNotFound` or `print.ErrForbidden` to get clean status pages
-instead of a 500 with a stack trace.
-
-### Printing from a host page
-
-A print document is a legitimately separate, bookmarkable resource, so you
-link to it; you do **not** make it an in-page island or a SPA route swap:
-
-```go
-pb.PrintLink(r.Context(), "invoice", map[string]string{"id": inv.ID}, "Print invoice")
-// → <a href="/print/invoice/42" target="_blank" rel="noopener">Print invoice</a>
-```
-
-`target="_blank"` opens the print view in a new tab so your SPA is
-untouched. Set `Document.AutoPrint: true` to open the browser print dialog
-automatically on load (served as an external, CSP-safe script, never
-inline).
-
-## Page setup
-
-`PageConfig` becomes the `@page` rule in the rendered HTML and the paper
-flags for the PDF renderer:
-
-```go
-pb.Document(print.Document{
-    Name: "receipt", Path: "/receipt/{id}",
-    Page: (&print.PageConfig{
-        Size:         print.Custom,   // A4 | Letter | Legal | Custom
-        CustomWidth:  "80mm",
-        CustomHeight: "auto",
-        Margin:       print.Margins{Top: "4mm", Right: "4mm", Bottom: "4mm", Left: "4mm"},
-    }).Ptr(),
-    Build: /* ... */,
-})
-```
-
-Convenience constructors: `print.A4Portrait(m)`, `print.LetterPortrait(m)`,
-and `print.MM(n)` for uniform millimetre margins. A document's `Page`
-inherits any unset field from `Config.DefaultPage`. Custom lengths are
-validated against an allow-list (`<number><mm|cm|in|px|pt>` or `auto`), so
-a page config can never inject arbitrary CSS into the `@page` block.
-
-Built-in CSS utilities available in your document components:
-`.page-break` (force a page break), `.avoid-break` (keep a block together),
-`.print-only` / `.screen-only` (show content only in one medium).
-
-## Access control
-
-Printable documents usually contain per-user data, so access is
-**safe-by-default**: `Config.DefaultAccess` is `print.RequireAuth`. A
-document is never world-readable unless you explicitly opt in:
-
-```go
-// Public marketing one-pager: no per-user data:
-pb.Document(print.Document{Name: "brochure", Path: "/brochure",
-    Access: print.Public, Build: /* ... */})
-
-// Only the owner may print their invoice:
-pb.Document(print.Document{Name: "invoice", Path: "/invoice/{id}",
-    Access: print.RequireOwner(func(r *http.Request, user any) bool {
-        return ownsInvoice(user, router.Param(r, "id"))
-    }),
-    Build: /* ... */})
-```
-
-An API token carries its owner's user, so both built-in gates
-(`RequireAuth`, `RequireOwner`) also refuse a scope-restricted caller (an
-API token or embed grant) that does not hold `print.Scope`
-(`"print:read"`; `"print:*"`, `"*:read"` and `"*:*"` cover it) with
-`403`. A token an admin minted for `customers:read` does not print their
-documents. Sessions and JWTs carry no scopes and are unaffected. A custom
-`AccessPolicy` decides for itself; `access.ScopeAllows(r.Context(),
-print.Scope)` is the same check.
-
-The access policy runs **before** `Build`, so an unauthorized caller never
-triggers a data load. The PDF route enforces the same gate; there's no
-way to fetch the PDF of a document you can't see. Per-user pages are served
-`Cache-Control: no-store`.
-
-The print routes mount a CSP that allows inline `<style>` (the shell emits
-server-generated `@page` rules and the print base) but keeps `script-src`
-at `'self'` only, which is why auto-print is an external script, not an
-inline `window.print()`.
-
-## PDF output
-
-Wire the headless-Chromium adapter to enable the `/pdf` routes:
+## Optional PDF rendering (`battery/print/chromepdf`)
 
 ```go
 import "github.com/DonaldMurillo/gofastr/battery/print/chromepdf"
 
 pb := print.New(print.Config{
-    BaseURL:     "https://app.example.com", // for PDF token fidelity; see below
-    AppCSSURL:   "/__gofastr/app.css",
-    PDFRenderer: chromepdf.New(chromepdf.Options{
-        AllowedHosts: []string{"app.example.com"}, // BaseURL's host, so app.css loads
-        // ExecPath:   "/usr/bin/chromium",   // "" → auto-detect
-        // Timeout:    30 * time.Second,
-        // ExtraFlags: []string{"no-sandbox"}, // common in containers
-    }),
+	BaseURL:     "https://app.example.com",
+	AppCSSURL:   "/__gofastr/app.css",
+	PDFRenderer: chromepdf.New(chromepdf.Options{
+		AllowedHosts: []string{"app.example.com"},
+	}),
 })
 ```
 
-`RenderPDF` opens `about:blank` in Chromium and sets the already-shelled
-HTML as the page's content over the DevTools protocol. The document bytes
-never touch disk, which matters for per-user invoices, and no URL length
-cap applies, so a long report prints the same as a short receipt. It
-waits for the document's load event, so its stylesheets, images and
-fonts have loaded or failed, then prints with
-`WithPreferCSSPageSize`, so the shell's `@page` size and margins win. Without a renderer, `/pdf` returns
-`501 Not Implemented` (the route exists, the capability is unwired) rather
-than a misleading 404.
-
-Every render is a whole headless-Chromium process, so the battery caps
-how many run at once: `Config.MaxConcurrentRenders` (default `4`,
-battery-wide across all documents' `/pdf` routes). A request that finds
-all slots busy is answered `503` with `Retry-After: 1` — before the
-document's `Build` runs — instead of queueing another browser the node
-has to find room for. The access policy runs before a slot is taken, so
-a request it refuses never holds one and gets its `401` or `403`, not a
-`503`. Raise it only on hardware that can actually run
-that many Chromiums concurrently.
-
-**`Config.BaseURL` and PDF tokens.** The PDF document is `about:blank` to
-Chromium, with no origin of its own, so it can't resolve a relative
-`/__gofastr/app.css` link; design tokens would be missing from the PDF.
-Set `BaseURL` to your app's canonical origin and the battery makes the
-app.css link absolute against it on the PDF path only. The PDF
-document's CSP then adds that origin to `style-src` (its `'self'` matches
-nothing under an opaque origin); images, fonts and scripts stay
-`'self'`, and the HTML route's policy is unchanged. A `BaseURL` that is
-not a plain `http(s)://host[:port]` origin (userinfo, an IPv6 literal,
-any byte outside `[A-Za-z0-9.-]` in the host) leaves the policy as it
-is, so the stylesheet stays blocked. Two more pieces have to line up for
-the fetch to happen:
-
-- `chromepdf` resolves no hostname by default, so name `BaseURL`'s host
-  in `Options.AllowedHosts`.
-- Chrome's Local Network Access check refuses a subresource on a
-  loopback or private address from the print document regardless of the
-  allow-list. A `BaseURL` that resolves to `127.0.0.1` or an RFC1918
-  address (a sidecar Chromium pointed at `http://localhost:8080`, say)
-  does not load; point it at the app's public origin.
-
-This origin is taken from `BaseURL` and **never** from the request
-`Host` header; trusting `Host` would let a spoofed header point the
-server-side stylesheet fetch at an internal/arbitrary address (an SSRF).
-If `BaseURL` is unset, the PDF link stays relative (PDFs render with the
-print base + inlined component CSS, just without app.css tokens).
-
-`chromepdf` is the only package in this feature that imports `chromedp`;
-apps that don't need PDF never pull it in. It is also its own Go module
-(`battery/print/chromepdf/go.mod`, same import path) so its dependency surface
-is isolated from the print battery's core; the nested module can declare its
-own `go` directive and be built/tested independently of the root module.
+- `chromepdf` lives in its own Go module so apps that don't need PDF never pull in `chromedp`.
+- Renders over DevTools directly from memory (document bytes never touch disk) with a concurrency cap (`MaxConcurrentRenders`, default `4`, returning `503` + `Retry-After: 1` when saturated).
+- Set `Config.BaseURL` (never derived from `Host`, preventing SSRF) and list its host in `AllowedHosts` so headless Chromium can load `/__gofastr/app.css` tokens.
 
 ## Common mistakes
 
-- **Hand-rolling a print handler.** Writing a one-off `http.HandlerFunc`
-  that emits `<!doctype html>` plus print CSS for a single page;
-  declare a `print.Document` instead and get page setup, access, and PDF
-  for free.
-- **Re-implementing PDF generation.** Don't add a Go PDF library or shell
-  out yourself; set `Config.PDFRenderer` to `chromepdf.New(...)`.
-- **Making print an island or SPA route.** Print is a separate resource;
-  link to it with `PrintLink` / `target="_blank"`, not a `data-cui-rpc`
-  island or a `location.href` swap.
-- **Mounting print at the root.** `PathPrefix: "/"` (or a prefix with
-  no leading slash) fails the mount. The battery reserves its prefix
-  from embed grants, because every request under it can start headless
-  Chrome, and a root mount would leave its routes outside that
-  reservation.
-- **`print.Public` on per-user data.** Leaves invoices/receipts
-  world-readable. Keep `RequireAuth` or use `RequireOwner`.
-- **Expecting interactivity or host chrome.** Print pages are deliberately
-  inert and chrome-free: no nav, no `runtime.js`, no sort/expand/RPC.
-  Component *styles* are preserved (scoped CSS is inlined), but anything
-  that needs hydration won't run. Build document bodies that read well as
-  static output.
+- **Mounting `PathPrefix: "/"`:** rejected at startup so print routes stay cleanly isolated from app routes and embed grants.
+- **Using `print.Public` on invoices or receipts:** leaves private documents world-readable. Use `RequireOwner`.
+- **Expecting interactive islands or sorting inside a print view:** print pages inline component CSS for faithful layout but omit `runtime.js` by design.
+- **Opening print views inside a SPA swap or island:** link to them as separate resources (`PrintLink` / `target="_blank"`).
