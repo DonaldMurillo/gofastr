@@ -531,3 +531,22 @@ func TestRewriteKeepingModTimeNewETag(t *testing.T) {
 		t.Errorf("If-Range with the old ETag: status %d, want 200 (whole new file)", rec.Code)
 	}
 }
+
+func TestDigestRevisionSettled(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ctime int64
+		want  bool
+	}{
+		{"no disk revision", 0, true},
+		{"old revision", time.Now().Add(-2 * time.Second).UnixNano(), true},
+		{"current revision", time.Now().UnixNano(), false},
+		{"future revision", time.Now().Add(time.Hour).UnixNano(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (digestKey{ctime: tc.ctime}).settled(); got != tc.want {
+				t.Errorf("settled = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

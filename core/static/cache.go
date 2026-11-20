@@ -26,6 +26,10 @@ func keyOf(name string, stat fs.FileInfo) digestKey {
 	return digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size(), ino: ino, ctime: ctime}
 }
 
+func (k digestKey) settled() bool {
+	return k.ctime == 0 || time.Since(time.Unix(0, k.ctime)) >= time.Second
+}
+
 type digestCache struct {
 	done     sync.Map
 	inflight sync.Map
@@ -42,8 +46,9 @@ const backgroundHashSlots = 2
 
 func fileETag(cache *digestCache, f fs.File, stat fs.FileInfo, name string, reopen func() (fs.File, error)) (string, bool, error) {
 	key := keyOf(name, stat)
+	settled := key.settled()
 	if cache != nil {
-		if v, ok := cache.done.Load(key); ok {
+		if v, ok := cache.done.Load(key); ok && settled {
 			return v.(string), false, nil
 		}
 		if stat.Size() > largeFileETagThreshold {
@@ -55,7 +60,7 @@ func fileETag(cache *digestCache, f fs.File, stat fs.FileInfo, name string, reop
 	if err != nil {
 		return "", true, err
 	}
-	if cache != nil {
+	if cache != nil && settled {
 		cache.done.Store(key, etag)
 	}
 	return etag, true, nil
@@ -92,6 +97,12 @@ func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, erro
 		defer release()
 		defer func() { _ = recover() }()
 		defer f.Close()
+		if !key.settled() {
+			time.Sleep(time.Second)
+			if !key.settled() {
+				return
+			}
+		}
 		if !sameRevision(f, key) {
 			return
 		}
