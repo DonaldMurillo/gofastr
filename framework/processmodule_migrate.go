@@ -336,6 +336,9 @@ func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 		return "", errors.New("admin DSN must be a valid URL (redacted)")
 	}
 	if u.Scheme == "" || !strings.HasPrefix(u.Scheme, "postgres") {
+		if u.Opaque != "" {
+			return "", errors.New("admin DSN must be URL-form (postgres://...), got (redacted)")
+		}
 		return "", fmt.Errorf("admin DSN must be URL-form (postgres://...), got scheme %q", u.Scheme)
 	}
 	u.User = url.UserPassword(role, password)

@@ -144,6 +144,9 @@ func collectSecrets(v reflect.Value, t reflect.Type, prefix string, src Source, 
 			for fv.Kind() == reflect.Pointer && !fv.IsNil() {
 				fv = fv.Elem()
 			}
+			if fv.Kind() == reflect.String {
+				*secrets = append(*secrets, fv.String())
+			}
 			*secrets = append(*secrets, fmt.Sprint(fv.Interface()))
 		}
 	}

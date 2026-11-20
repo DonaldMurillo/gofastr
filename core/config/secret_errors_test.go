@@ -19,6 +19,21 @@ func TestNonSecretParseErrorPreservesChain(t *testing.T) {
 	}
 }
 
+type maskedSecret string
+
+func (maskedSecret) String() string { return "[hidden]" }
+
+func TestSensitiveNamedStringPresetRedacted(t *testing.T) {
+	c := struct {
+		Token maskedSecret `sensitive:"true"`
+		Port  int          `config:"PORT"`
+	}{Token: "named-string-credential"} // not-a-secret: fixture asserting redaction of the underlying string
+	err := config.Load(&c, config.MapSource{"PORT": string(c.Token)})
+	if err == nil || strings.Contains(err.Error(), string(c.Token)) || !strings.Contains(err.Error(), "(redacted)") {
+		t.Fatalf("Load = %v, want redacted underlying named string", err)
+	}
+}
+
 func TestPresetSensitiveRedactedInValidator(t *testing.T) {
 	for _, src := range []config.MapSource{{}, {"DSN": ""}} {
 		c := nestedSecretCfg{DSN: "preset-credential", Plain: "diagnostic-context"}

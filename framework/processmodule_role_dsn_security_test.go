@@ -11,6 +11,7 @@ func TestModuleRoleDSNErrorsHideAdminCredentials(t *testing.T) {
 		"mysql://admin:admin-credential@host/db",
 		"postgres://admin:admin-credential@host/%zz",
 		"host=localhost password=admin-credential",
+		"admin-credential:password@host/db",
 	} {
 		_, err := moduleRoleDSN(dsn, "role", "role-credential")
 		if err == nil || strings.Contains(err.Error(), "admin-credential") || strings.Contains(err.Error(), "role-credential") {
