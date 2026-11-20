@@ -2,8 +2,10 @@ package desktop
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -76,5 +78,29 @@ func TestOpenAppDBCreatesFile(t *testing.T) {
 	var name string
 	if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='desktop_grants'`).Scan(&name); err != nil || name != "desktop_grants" {
 		t.Fatalf("table = (%q, %v)", name, err)
+	}
+}
+
+func TestConfigDataDirMustBeAbsolute(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), "Config.DataDir") {
+			t.Fatalf("New accepted a relative Config.DataDir: %v", r)
+		}
+	}()
+	New(Config{ID: "rel.example.app", DataDir: "data"})
+}
+
+func TestConfigDataDirIsCreatedPrivate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "made", "here")
+	got, err := resolveDataDir(dir, "priv.example.app")
+	if err != nil || got != dir {
+		t.Fatalf("resolveDataDir = (%q, %v), want (%q, nil)", got, err, dir)
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
+		t.Fatalf("override data dir mode = %v, want 0700", fi.Mode().Perm())
 	}
 }

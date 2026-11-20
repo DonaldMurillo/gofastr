@@ -24,6 +24,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING - desktop: `New` panics on a relative `Config.DataDir`**, which
+  used to resolve against the working directory at launch. `Init` now
+  creates a missing `Config.DataDir` owner-only (0700) instead of failing.
+  Pass an absolute path, or leave the field empty for
+  `desktop.DataDir(Config.ID)`.
+
 ## [0.97.0] - 2026-11-19
 
 ### Added

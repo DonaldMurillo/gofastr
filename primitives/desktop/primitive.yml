@@ -101,6 +101,11 @@ invariants:
     rule: GOFASTR_DESKTOP_DATA_DIR replaces the OS user config dir as the data dir base only when it is absolute, and DataDir errors otherwise.
     enforced_by:
       - test: battery/desktop.TestDataDirEnvMustBeAbsolute
+  - id: config-data-dir-absolute-and-private
+    rule: New panics on a relative Config.DataDir, and Init creates a missing override directory owner-only, as it does the default one.
+    enforced_by:
+      - test: battery/desktop.TestConfigDataDirMustBeAbsolute
+      - test: battery/desktop.TestConfigDataDirIsCreatedPrivate
   - id: persistent-profile-explicit
     rule: Config.PersistentProfile on a shell without profile support makes Run return ErrUnsupported before the App starts, and with support Run prepares the profile under the resolved data dir, commits the bound address and releases the profile on every return.
     enforced_by:

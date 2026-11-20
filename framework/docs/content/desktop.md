@@ -131,7 +131,9 @@ set every one-person host opens.
 
 `GOFASTR_DESKTOP_DATA_DIR` overrides the base directory (absolute
 paths only); tests and CI use it to avoid touching a real profile.
-`Config.DataDir` overrides the whole path per battery.
+`Config.DataDir` overrides the whole path per battery. It must be
+absolute (`New` panics otherwise), and `Init` creates it owner-only
+(0700) when it is missing, as it does the default directory.
 
 ### Persistent browser profiles on Linux
 

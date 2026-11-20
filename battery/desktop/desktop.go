@@ -186,6 +186,9 @@ func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
 		panic(err.Error())
 	}
+	if cfg.DataDir != "" && !filepath.IsAbs(cfg.DataDir) {
+		panic(fmt.Sprintf("desktop: Config.DataDir %q must be absolute", cfg.DataDir))
+	}
 	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
 	for _, p := range cfg.OpenPrefixes {
 		if err := gatepath.Validate("desktop: Config.OpenPrefixes", p); err != nil {
@@ -364,13 +367,9 @@ func (b *Battery) Init(app *framework.App) error {
 		return errors.New("desktop: no *uihost.UIHost among the App's mountables; mount one (app.Mount(uihost.New(site))) BEFORE app.RegisterBattery(desktop.New(...)); the desktop host serves the app's pages through the UI host")
 	}
 
-	dir := b.dataDir
-	if dir == "" {
-		d, err := DataDir(b.cfg.ID)
-		if err != nil {
-			return err
-		}
-		dir = d
+	dir, err := resolveDataDir(b.dataDir, b.cfg.ID)
+	if err != nil {
+		return err
 	}
 	b.dataDir = dir
 	user, err := localapp.LoadOrMint(dir)

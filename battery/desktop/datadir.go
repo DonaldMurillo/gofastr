@@ -27,6 +27,16 @@ func DataDir(id string) (string, error) {
 	return dir, nil
 }
 
+func resolveDataDir(override, id string) (string, error) {
+	if override == "" {
+		return DataDir(id)
+	}
+	if err := fileperm.MkdirPrivate(override); err != nil {
+		return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
+	}
+	return override, nil
+}
+
 func dataDirPath(id string) (string, error) {
 	if err := validateAppID(id); err != nil {
 		return "", err
