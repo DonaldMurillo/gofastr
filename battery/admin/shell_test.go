@@ -236,3 +236,33 @@ func TestAccountMenuWithNoUser(t *testing.T) {
 		t.Errorf("account menu with no user = %q, want nothing", got)
 	}
 }
+
+func TestNavCountAndCrumbReadElevated(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()}, Config{Entities: []string{"posts"}}, nil)
+	x.insert("posts", map[string]any{"id": "p1", "title": "Locked one", "status": "draft"})
+	h := withPolicy(x.as(theAdmin))
+	link := regexp.MustCompile(`href="/admin/entities/posts"[^>]*>.*?</a>`).FindString(get(h, "/admin").Body.String())
+	if !regexp.MustCompile(`~count-posts"[^>]*>1</span>`).MatchString(link) {
+		t.Errorf("the nav row did not count a record the admin reads only through its elevation:\n%s", link)
+	}
+	crumbs := regexp.MustCompile(`(?s)<nav[^>]*fui-breadcrumbs.*?</nav>`).FindString(get(h, "/admin/entities/posts/p1").Body.String())
+	if !strings.Contains(crumbs, "Locked one") {
+		t.Errorf("the crumb did not name a record the admin reads only through its elevation:\n%s", crumbs)
+	}
+}
+
+func TestFeatureConfigRefusals(t *testing.T) {
+	ok := New(Config{}).cfg
+	for name, cfg := range map[string]Config{
+		"a table name that is not a lowercase identifier": {SavedViewsTable: "Views-1"},
+		"saved views with no database":                    {SavedViewsTable: ok.SavedViewsTable, SavedViews: true},
+		"bulk jobs with no UI":                            {SavedViewsTable: ok.SavedViewsTable, BulkJobs: &BulkJobs{}},
+	} {
+		if err := (&Battery{cfg: cfg}).checkFeatureConfig(); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if err := (&Battery{cfg: ok}).checkFeatureConfig(); err != nil {
+		t.Errorf("the default config was refused: %v", err)
+	}
+}

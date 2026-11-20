@@ -26,6 +26,22 @@ invariants:
     rule: A single replay makes one call to the queue and never reads the job list, and a queue without ReplayReporter replays and audits as a plain Replay does.
     enforced_by:
       - test: battery/admin.TestSingleReplayNeverScansTheFailedList
+  - id: init-refuses-what-it-cannot-draw
+    rule: Init errors, naming what is missing, on an app with no UI host, an exposed entity without Config.UI, an app page path the admin owns, and a Link whose Href is not a same-origin path.
+    enforced_by:
+      - test: battery/admin.TestInitNeedsAUIHost
+      - test: battery/admin.TestEntitiesNeedTheUI
+      - test: battery/admin.TestPageRefusesTheAdminsOwnPaths
+      - test: battery/admin.TestLinksMustBeSameOrigin
+  - id: embed-reserves-the-mounted-prefix
+    rule: ReservedEmbedPrefixes reports the prefix the battery mounted, Config.PathPrefix included, so no embed grant reaches a relocated back office.
+    enforced_by:
+      - test: battery/admin.TestReservedEmbedPrefixFollowsPathPrefix
+  - id: queued-runs-write-where-the-admin-writes
+    rule: A bound BulkJobs writes an entity under the admin's write base when the admin serves its writes, writes no entity the admin exposes read-only, and otherwise writes under the app's own REST routes.
+    enforced_by:
+      - test: battery/admin.TestBulkQueuedRunsOnCRUDOffEntity
+      - test: battery/admin.TestBulkQueuedRunsOnAppOnlyEntity
   - id: audit-ops-cover-admin-writes
     rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
     enforced_by:

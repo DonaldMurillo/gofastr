@@ -1,0 +1,83 @@
+primitive: admin.shell
+summary: The one frame every admin page draws in - the screens it mounts on the UI host, the sidebar with its counts, the toolbar's crumbs, palette, help sheet and account menu - and the app's own pages, cards and links drawn in it.
+code:
+  - battery/admin/shell.go
+  - battery/admin/pages.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new admin page mounts through b.screen, so the gate policy, the gate recheck in RenderCtx and the elevation rule cover it, and its path joins reservedPagePath and trail.
+invariants:
+  - id: screens-recheck-the-gate
+    rule: An admin screen's policy refuses, or redirects to LoginPath?next=, a caller the gate refuses, and the screen itself resolves no title, draws nothing and lifts no elevation for such a caller.
+    enforced_by:
+      - test: battery/admin.TestScreenRechecksTheGate
+      - test: battery/admin.TestGateSendsSignedOutToLogin
+      - test: battery/admin.TestGateLoginRedirectKeepsQuery
+  - id: widgets-are-admin-only
+    rule: The nav drawer, the palette and the help sheet are offered only on paths under the prefix and listed in the widget catalog only to a caller the gate admits.
+    enforced_by:
+      - test: battery/admin.TestCatalogHidesAdminWidgets
+  - id: counts-live-in-the-inline-sidebar
+    rule: The inline sidebar's entity rows carry the count of records the caller reads under the admin's elevation, refreshed as a fill on every client navigation, and the phone drawer draws no count.
+    enforced_by:
+      - test: battery/admin.TestNavRowsCountRecords
+      - test: battery/admin.TestNavCountAndCrumbReadElevated
+  - id: record-crumb-reads-elevated
+    rule: A record page's crumb is the record's title read under the admin's elevation, or the entity's singular name when the record cannot be read.
+    enforced_by:
+      - test: battery/admin.TestNavCountAndCrumbReadElevated
+      - test: battery/admin.TestEntityRecordTitleInCrumbs
+  - id: no-account-menu-without-a-user
+    rule: The account menu draws nothing when no one is signed in.
+    enforced_by:
+      - test: battery/admin.TestAccountMenuWithNoUser
+  - id: app-pages-keep-off-admin-paths
+    rule: Init refuses an app page whose path is "/", starts with "/_", or is or sits under one of the admin's own paths.
+    enforced_by:
+      - test: battery/admin.TestPageRefusesTheAdminsOwnPaths
+  - id: app-code-runs-unelevated
+    rule: A page's Access, Build, Part and TabTitle and a card's Build run on the caller's context with the admin's elevation removed.
+    enforced_by:
+      - test: battery/admin.TestPageAccessIsNotElevated
+      - test: battery/admin.TestPageBuildIsNotElevated
+  - id: app-slot-failure-is-contained
+    rule: A Build, Part or card that panics, errors or returns nil draws a generic danger callout in its place, never the error's text, and the rest of the page still draws.
+    enforced_by:
+      - test: battery/admin.TestPageBuildFailureIsContained
+  - id: page-access-is-a-screen-policy
+    rule: A page's Access is its screen's policy, so a refused caller gets 403 before Build runs, and the Part route asks the same Access itself.
+    enforced_by:
+      - test: battery/admin.TestPageAccessRefuses
+      - test: battery/admin.TestPagePartIsServedAloneBehindTheSameGates
+  - id: tab-title-falls-back-to-title
+    rule: An empty or panicking TabTitle answer gives the page's Title in the caller's language.
+    enforced_by:
+      - test: battery/admin.TestPageTabTitleFallsBackInTheCallersLanguage
+  - id: only-polled-cards-have-a-route
+    rule: The card route serves a card only when its Poll is positive and answers 404 otherwise.
+    enforced_by:
+      - test: battery/admin.TestCardsDrawAndPoll
+decisions:
+  - id: drawer-draws-no-count
+    date: 2026-11-20
+    status: accepted
+    decision: The phone nav drawer, a widget outside the layout, draws no entity counts.
+    rejected:
+      - option: Draw the counts in the drawer as in the inline column.
+        why: No client navigation re-renders the drawer, so its counts would keep the figures of the page it loaded with.
+    upholds: [counts-live-in-the-inline-sidebar]
+  - id: account-panel-is-a-dropdown
+    date: 2026-11-20
+    status: accepted
+    decision: The account panel is a dropdown, not a menu.
+    rejected:
+      - option: A role=menu panel.
+        why: A menu holds only menu rows, and the panel holds the theme switches too.
+  - id: crumbs-swap-instantly
+    date: 2026-11-20
+    status: accepted
+    decision: The crumbs area swaps with appui.Instant on navigation.
+    rejected:
+      - option: The layout's default fade.
+        why: The trail's root is the same on every page, and a fade blinks it.

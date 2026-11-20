@@ -16,24 +16,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// The dashboard: a card per exposed entity under its nav group, each
-// polling its own count; the failed jobs; the recent activity; then the
-// app's own cards. Everything refreshes by polling, never by a push.
-
-// dashboardRows is how many failed jobs and audit rows the dashboard
-// shows.
 const dashboardRows = 5
 
-// countDeadline bounds one card's count, so a slow table cannot hold the
-// dashboard; a count past it reads "—" until the next poll.
 var countDeadline = 2 * time.Second
 
-// probeDeadline bounds the read a card falls back to when its count is
-// late: at most manyRows ids, which a slow COUNT(*) on a large table
-// usually is not.
 const probeDeadline = time.Second
 
-// dashboardNew is the header's New button for Config.DashboardNew.
 func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 	e, ok := b.exposedNamed(b.cfg.DashboardNew)
 	if b.cfg.DashboardNew == "" || !ok || !b.canCreateEntity(ctx, e) {
@@ -47,7 +35,6 @@ func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 	})
 }
 
-// renderDashboard draws the dashboard.
 func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
@@ -77,8 +64,6 @@ func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) rend
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, parts...)
 }
 
-// entityCards are the entity cards, a section per nav group in the
-// sidebar's order.
 func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 	var order []string
 	byGroup := map[string][]render.HTML{}
@@ -108,8 +93,6 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 	return out
 }
 
-// entityCard is one entity's card inside the element that polls it:
-// the poll answer replaces the card with a fresh one.
 func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML {
 	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
 		"data-cui-poll":     countPoll,
@@ -117,10 +100,6 @@ func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML 
 	}}, b.entityStat(ctx, e))
 }
 
-// probeCount is a late count's fallback: a bounded read of at most
-// manyRows ids in the caller's scope, its own deadline apart from the
-// one the count spent. It reads the number when there are fewer,
-// "10,000+" past it, and "—" when the read fails too.
 func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 	pctx, cancel := context.WithTimeout(ctx, probeDeadline)
 	defer cancel()
@@ -131,9 +110,6 @@ func (b *Battery) probeCount(ctx context.Context, e *entity.Entity) string {
 	return countText(ctx, n, ok)
 }
 
-// entityStat is the card itself: the plural, the count read in the
-// caller's scope, when the newest of those records was written, a link
-// to the list and, when the caller may create one, New.
 func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML {
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
@@ -173,8 +149,6 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	})
 }
 
-// canCreateEntity reports whether a New link for e leads to a form: the
-// caller in ctx may read e and create one, and the admin serves the write.
 func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
 	if !b.writable(e) {
 		return false
@@ -183,9 +157,6 @@ func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
 	return err == nil && handler.CanReadScoped(ctx) && handler.CanCreateScoped(ctx)
 }
 
-// failedJobs is Needs attention's failed jobs: the count, a link to
-// the failed filter and the newest rows, each with Replay. Nothing
-// failed draws nothing; a list the queue could not give says so.
 func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
@@ -212,7 +183,6 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	)
 }
 
-// recentCard is the newest audit rows, scoped as the Audit log page is.
 func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	title := i18nui.AdminRecent.Text(ctx)
 	all := headerLink(i18nui.AdminAudit.Text(ctx), b.cfg.PathPrefix+"/audit")
@@ -229,8 +199,6 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
 	events := make([]ui.TimelineEvent, len(rows))
-	// One answer per record from the app's read hooks, however many of
-	// the rows name it.
 	ctx = entityui.WithChangeCache(ctx)
 	for i, r := range rows {
 		before, after := b.scopedSides(ctx, r)
@@ -245,13 +213,10 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2, Action: all}, ui.Timeline(ui.TimelineConfig{Events: events}))
 }
 
-// headerLink is a dashboard card's way to its full page, at the end of
-// the card's header.
 func headerLink(label, href string) render.HTML {
 	return ui.LinkButton(ui.LinkButtonConfig{Label: label, Href: href, Variant: ui.ButtonGhost, Size: ui.ButtonSizeSmall})
 }
 
-// opIcon is the icon an audit operation's activity marker draws.
 func opIcon(op string) string {
 	switch opKind(op) {
 	case "create":
@@ -270,7 +235,6 @@ func opIcon(op string) string {
 	return "activity"
 }
 
-// timelineVariant tints an audit operation's dot.
 func timelineVariant(op string) ui.TimelineEventVariant {
 	switch opVariant(op) {
 	case ui.StatusSuccess:
@@ -283,8 +247,6 @@ func timelineVariant(op string) ui.TimelineEventVariant {
 	return ui.TimelineNeutral
 }
 
-// appCards are the app's own dashboard cards, each in a Card; a polled
-// one sits in the element that re-fetches its body.
 func (b *Battery) appCards(ctx context.Context) render.HTML {
 	if len(b.cfg.Cards) == 0 {
 		return ""
@@ -303,8 +265,6 @@ func (b *Battery) appCards(ctx context.Context) render.HTML {
 	return ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG}, cards...)
 }
 
-// mountOps mounts the ops posts, each only when its page is drawn, and
-// the fragments the dashboard polls.
 func (b *Battery) mountOps(r *router.Router) {
 	p := b.cfg.PathPrefix
 	post := func(path string, h http.HandlerFunc) { r.Post(p+path, h) }
@@ -331,8 +291,6 @@ func (b *Battery) mountOps(r *router.Router) {
 	b.mountMetrics(r)
 }
 
-// pathSegment escapes one path segment.
 func pathSegment(s string) string { return url.PathEscape(s) }
 
-// urlQueryEscape escapes a query value.
 func urlQueryEscape(s string) string { return url.QueryEscape(s) }

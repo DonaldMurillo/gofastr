@@ -195,3 +195,13 @@ func TestAdminSavedViewsPerAdmin(t *testing.T) {
 		t.Fatal("SECURITY: the store listed views for a context with no user")
 	}
 }
+
+func TestAdminSavesAViewOfALockedEntity(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()}, Config{Entities: []string{"posts"}, SavedViews: true}, nil)
+	rr := serve(withPolicy(x.as(theAdmin)), newPost("/admin/api/posts/_views", url.Values{
+		"name": {"Drafts only"}, "filter": {`status = "draft"`}, "back": {"/admin/entities/posts"},
+	}))
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("saving a view of a list the admin reads through its elevation = %d %s", rr.Code, rr.Body.String())
+	}
+}

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -491,5 +492,21 @@ func TestRBACUnwiredHasNoPages(t *testing.T) {
 		if rr := post(x.as(theAdmin), p, url.Values{"role": {"a"}}); rr.Code == http.StatusSeeOther || rr.Code == http.StatusNoContent {
 			t.Errorf("unwired %s answered %d", p, rr.Code)
 		}
+	}
+}
+
+func TestWildcardHolderMayRevokeAnyPermission(t *testing.T) {
+	p := access.NewRolePolicy()
+	_ = p.Grant("admin", access.Wildcard, "posts:write")
+	b := &Battery{cfg: Config{Policy: p}}
+	ctx := handler.SetUser(context.Background(), theAdmin)
+	if c, lost := b.ownPermissionLost(ctx, []grantChange{{role: "admin", perm: "posts:write"}}); lost {
+		t.Errorf("a caller holding Wildcard was refused revoking %s from its own role", c.perm)
+	}
+}
+
+func TestIDlessAdminIsAuditedAsUnknown(t *testing.T) {
+	if got := adminActorID(handler.SetUser(context.Background(), "a user with no id")); got != "unknown" {
+		t.Errorf("adminActorID for a user with no id = %q, want unknown", got)
 	}
 }
