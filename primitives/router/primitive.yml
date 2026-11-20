@@ -9,6 +9,11 @@ docs:
 on_change:
   - core/router is framework-agnostic; an error or warning it raises names the generic fix, not a framework type.
 invariants:
+  - id: shared-pattern-validation
+    rule: ValidatePattern returns malformed ServeMux patterns as invalid-route errors without checking other registrations, and Handle uses it on the prefixed path before registering.
+    enforced_by:
+      - test: core/router.TestValidatePattern
+      - test: core/router.TestUncleanPatternPanicIsNotAConflict
   - id: late-middleware-wraps-every-route
     rule: Middleware added after a route was registered, or after it served a request, wraps that route on its next request when added with Use on the route's router or an ancestor, or with UseInner anywhere in the tree; Use on a sibling Group does not.
     enforced_by:

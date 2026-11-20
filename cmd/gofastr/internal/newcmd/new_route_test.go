@@ -11,7 +11,7 @@ import (
 func TestNewRouteValidatesPattern(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
-	for _, path := range []string{"/{wx", "", "/{}/", "/{id}/{id}", "/{rest...}/more", "/a/../b"} {
+	for _, path := range []string{"/{wx", "", "/{}/", "/{id}/{id}", "/{rest...}/more", "/a/../b", "POST /x", "/a b", "users", "example.com/x", "/a\tb", "/a\u00a0b"} {
 		t.Run(path, func(t *testing.T) {
 			code, out := runRoute(t, path)
 			if code != 1 || !strings.Contains(out, "invalid route") || strings.Contains(out, "app.Router()") {
