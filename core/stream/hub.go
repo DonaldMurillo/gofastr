@@ -5,26 +5,9 @@ import (
 	"sync/atomic"
 )
 
-// Hub manages a set of WebSocket connections and broadcasts messages
-// to all of them. Multiple hubs can coexist (one per room, channel, etc.).
-//
-// Usage:
-//
-//	hub := stream.NewHub()
-//	go hub.Run()
-//
-//	// On connect:
-//	hub.Register(conn)
-//
-//	// Broadcast (text must be valid UTF-8; BroadcastBinary sends bytes):
-//	if err := hub.Broadcast([]byte("hello everyone")); err != nil { ... }
-//
-//	// On disconnect:
-//	hub.Unregister(conn)
+// Hub holds a set of WebSocket connections and broadcasts to them.
 type Hub struct {
-	mu sync.RWMutex
-	// connections maps each registered connection to the stop channel
-	// of its close watcher; Unregister closes it so the watcher exits.
+	mu          sync.RWMutex
 	connections map[*WebSocketConn]chan struct{}
 	broadcast   chan wsMessage
 	stop        chan struct{}
@@ -40,20 +23,11 @@ func NewHub() *Hub {
 	}
 }
 
-// Run starts the hub's event loop. Block until Stop is called.
-// Must be called in a goroutine:
-//
-//	go hub.Run()
-//
-// Register/Unregister are now mutex-only ops on the connections map,
-// so Run is only responsible for draining the broadcast channel and
-// shutting down on Stop.
+// Run is the hub's broadcast loop; run it in a goroutine until Stop.
 func (h *Hub) Run() {
 	for {
 		select {
 		case <-h.stop:
-			// Snapshot conns under lock, then close them OUTSIDE the
-			// lock so a slow Close() can't pin Stop on the lock.
 			h.mu.Lock()
 			conns := make([]*WebSocketConn, 0, len(h.connections))
 			for conn := range h.connections {
@@ -62,7 +36,6 @@ func (h *Hub) Run() {
 			h.connections = nil
 			h.mu.Unlock()
 
-			// Close in parallel; a single slow conn doesn't pin Stop.
 			var wg sync.WaitGroup
 			for _, c := range conns {
 				wg.Add(1)
@@ -71,32 +44,20 @@ func (h *Hub) Run() {
 					cc.Close()
 				}(c)
 			}
-			// We don't wait: Stop returns immediately. Closers run
-			// concurrently and finish at their own pace.
 			return
 
 		case msg := <-h.broadcast:
 			h.mu.RLock()
 			for conn := range h.connections {
-				// Skip conns that have already closed: their sendBuffer
-				// drains nothing and a dead conn would otherwise silently
-				// absorb broadcasts until GC. The closed-channel check
-				// races benignly with concurrent Close(): worst case we
-				// queue one extra message on a closed conn, which the
-				// writePump (already exited) ignores.
 				select {
 				case <-conn.Closed():
 					continue
 				default:
 				}
-				// Non-blocking send: drop if buffer full (backpressure)
-				// or the conn closed between the check and the send.
 				select {
 				case <-conn.Closed():
-					// Conn closed mid-broadcast; drop without blocking.
 				case conn.sendBuffer <- msg:
 				default:
-					// Buffer full, drop the message for this connection
 				}
 			}
 			h.mu.RUnlock()
@@ -104,20 +65,17 @@ func (h *Hub) Run() {
 	}
 }
 
-// Register adds a connection to the hub. Non-blocking. Returns immediately
-// if the hub has been stopped.
+// Register adds a connection until it closes; a no-op after Stop.
 func (h *Hub) Register(conn *WebSocketConn) {
 	if h.stopped.Load() {
 		return
 	}
 	h.mu.Lock()
 	if h.connections == nil {
-		// Stop closed the map already; bail.
 		h.mu.Unlock()
 		return
 	}
 	if _, ok := h.connections[conn]; ok {
-		// Already registered: its watcher is still running.
 		h.mu.Unlock()
 		return
 	}
@@ -125,9 +83,6 @@ func (h *Hub) Register(conn *WebSocketConn) {
 	h.connections[conn] = stop
 	h.mu.Unlock()
 
-	// Auto-unregister when the connection closes. The watcher ends with
-	// the registration: a connection moved between hubs (Unregister
-	// here, Register there) leaves no goroutine behind per move.
 	go func() {
 		select {
 		case <-conn.Closed():
@@ -138,8 +93,7 @@ func (h *Hub) Register(conn *WebSocketConn) {
 	}()
 }
 
-// Unregister removes a connection from the hub and stops its close
-// watcher. Non-blocking.
+// Unregister removes a connection without closing it.
 func (h *Hub) Unregister(conn *WebSocketConn) {
 	h.mu.Lock()
 	if stop, ok := h.connections[conn]; ok {
@@ -149,14 +103,9 @@ func (h *Hub) Unregister(conn *WebSocketConn) {
 	h.mu.Unlock()
 }
 
-// Broadcast sends a text message to all registered connections.
-// Non-blocking: if the hub's broadcast channel is full, the message is
-// dropped, and a connection whose send buffer is full drops it too.
-//
-// A text message must be valid UTF-8 (RFC 6455 §5.6). Broadcast checks
-// msg first and returns ErrInvalidUTF8, sending it to no one, when it
-// is not; send arbitrary bytes with BroadcastBinary. Any other return
-// is nil: a dropped message is not an error.
+// Broadcast queues a text message for every connection without blocking;
+// a full queue drops it. It returns ErrInvalidUTF8, sending nothing, for
+// msg that is not valid UTF-8.
 func (h *Hub) Broadcast(msg []byte) error {
 	m, err := textMessage(msg)
 	if err != nil {
@@ -166,17 +115,12 @@ func (h *Hub) Broadcast(msg []byte) error {
 	return nil
 }
 
-// BroadcastBinary is Broadcast for a binary message (opcode 0x2): the
-// bytes reach every connection exactly as given, with no UTF-8 check.
-// It shares each connection's send queue, so text and binary keep the
-// order they were broadcast in.
+// BroadcastBinary is Broadcast for a binary message, with no UTF-8 check.
 func (h *Hub) BroadcastBinary(msg []byte) {
 	h.send(wsMessage{opcode: wsopcodeBinary, data: msg})
 }
 
-// BroadcastWait sends a text message to all connections, blocking if
-// the broadcast channel is full. Like Broadcast, it returns
-// ErrInvalidUTF8 and sends nothing for msg that is not valid UTF-8.
+// BroadcastWait is Broadcast that blocks while the hub's queue is full.
 func (h *Hub) BroadcastWait(msg []byte) error {
 	m, err := textMessage(msg)
 	if err != nil {
@@ -191,7 +135,6 @@ func (h *Hub) BroadcastBinaryWait(msg []byte) {
 	h.sendWait(wsMessage{opcode: wsopcodeBinary, data: msg})
 }
 
-// send queues one message for Run without blocking.
 func (h *Hub) send(m wsMessage) {
 	if h.stopped.Load() {
 		return
@@ -199,14 +142,10 @@ func (h *Hub) send(m wsMessage) {
 	select {
 	case h.broadcast <- m:
 	case <-h.stop:
-		// hub stopped while we were waiting
 	default:
-		// Hub broadcast channel full, drop
 	}
 }
 
-// sendWait queues one message for Run, blocking while the channel is
-// full.
 func (h *Hub) sendWait(m wsMessage) {
 	if h.stopped.Load() {
 		return
@@ -214,7 +153,6 @@ func (h *Hub) sendWait(m wsMessage) {
 	select {
 	case h.broadcast <- m:
 	case <-h.stop:
-		// hub stopped while we were blocked
 	}
 }
 

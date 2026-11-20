@@ -484,10 +484,11 @@ func formFieldCSS(_ style.Theme) string {
   grid-template-columns: var(--fui-field-columns);
   gap: var(--fui-density-gap) var(--spacing-md, 8px);
 }
-@media (max-width: 33rem) {
-  .fui-field { grid-template-columns: minmax(0, 1fr); }
-  .fui-field__hint, .fui-field__error { grid-column: auto; }
-}
+/* The hint sits between the label and the control (headless.Field's
+   order), so the inline layout pins a hinted field's label to the
+   control's row: the hint takes the first row of the control track
+   and the label lines up with the control under it. */
+.fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: var(--fui-field-label-row, auto); }
 .fui-field__label {
   align-self: center;
   font-weight: var(--font-weight-medium);
@@ -504,16 +505,22 @@ func formFieldCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
 .fui-field--label-hidden { grid-template-columns: minmax(0, 1fr); }
+/* One column: the messages sit in it, never in an implicit second one. */
+.fui-field--label-hidden > :is(.fui-field__hint, .fui-field__error, [data-hui-field-error]) { grid-column: 1 / -1; }
 /* The required mark is drawn from the state attribute: an asterisk
    whose alternative text is empty, so the label's accessible name
    stays clean (the parser is told the rule by the control's own
    required attribute, not by a spoken "*"). */
+/* The single-value line first: an engine without alternative text for
+   generated content drops the whole second declaration and keeps the
+   asterisk from this one. */
 .fui-field__label[data-required]::after {
+  content: " *";
   content: " *" / "";
   color: var(--color-danger, #B91C1C);
 }
@@ -543,6 +550,15 @@ func formFieldCSS(_ style.Theme) string {
    anything is written into it, because :empty stops matching. */
 .fui-field__error:empty,
 .fui-field > [data-hui-field-error]:empty { display: none; }
+/* Below a stated width every field stacks, whatever the theme asked
+   for. After the placement rules above on purpose: at equal
+   specificity the later rule wins, and a hint or error left in column
+   2 of a one-column grid makes an implicit second column. */
+@media (max-width: 33rem) {
+  .fui-field { grid-template-columns: minmax(0, 1fr); }
+  .fui-field__hint, .fui-field__error, .fui-field > [data-hui-field-error] { grid-column: auto; }
+  .fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: auto; }
+}
 .fui-input {
   /* Fill the field track: the control track is minmax(0, 1fr), so an
      unsized <input> otherwise keeps its intrinsic ~20ch width
@@ -570,7 +586,7 @@ func formFieldCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-.fui-input[aria-invalid="true"] {
+.fui-input:is(:user-invalid, [aria-invalid="true"]) {
   /* Non-color affordance: stack an inset 1px ring so the error state
      reads as a thicker border without bumping border-width and
      shifting the input's internal text by 1px on every validation
@@ -988,7 +1004,7 @@ func notificationCSS(t style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-notification"] {
@@ -1142,7 +1158,7 @@ func toastStackCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-toast-stack"] {
@@ -1450,7 +1466,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   /* Clipped, not removed: a header control that takes focus (a sort
@@ -1462,7 +1478,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: auto;
     block-size: auto;
     overflow: visible;
-    clip: auto;
+    clip-path: none;
     /* Room for the focus ring inside the scroll wrapper's clip. */
     padding-block-start: var(--spacing-sm, 4px);
   }
@@ -1563,7 +1579,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   /* Clipped, not removed: a header control that takes focus (a sort
@@ -1575,7 +1591,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: auto;
     block-size: auto;
     overflow: visible;
-    clip: auto;
+    clip-path: none;
     /* Room for the focus ring inside the scroll wrapper's clip. */
     padding-block-start: var(--spacing-sm, 4px);
   }
@@ -2064,7 +2080,7 @@ func backToTopCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }`
 }

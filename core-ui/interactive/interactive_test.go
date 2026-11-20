@@ -300,34 +300,31 @@ func TestSetLocalOnEmptyHTML(t *testing.T) {
 	}
 }
 
-func TestEditToggle(t *testing.T) {
-	span := render.Tag("span", nil, render.Text("Click to edit"))
-	result := EditToggle(span, "editing")
-	s := string(result)
-	if !strings.Contains(s, `data-cui-signal-toggle="editing"`) {
-		t.Fatalf("EditToggle missing attribute: %s", s)
+// assertSignalWrap checks an interactive wrapper: it must carry its
+// signal attribute, keep the wrapped content, and never emit an RPC
+// attribute (these wrappers are purely client-side).
+func assertSignalWrap(t *testing.T, name, attr, content string, got render.HTML) {
+	t.Helper()
+	s := string(got)
+	if !strings.Contains(s, attr) {
+		t.Fatalf("%s missing attribute: %s", name, s)
 	}
-	if !strings.Contains(s, "Click to edit") {
-		t.Fatal("EditToggle lost original content")
+	if !strings.Contains(s, content) {
+		t.Fatalf("%s lost original content", name)
 	}
 	if strings.Contains(s, "data-cui-rpc") {
-		t.Fatal("EditToggle should not emit data-cui-rpc")
+		t.Fatalf("%s should not emit data-cui-rpc", name)
 	}
+}
+
+func TestEditToggle(t *testing.T) {
+	span := render.Tag("span", nil, render.Text("Click to edit"))
+	assertSignalWrap(t, "EditToggle", `data-cui-signal-toggle="editing"`, "Click to edit", EditToggle(span, "editing"))
 }
 
 func TestCancelEdit(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Cancel"))
-	result := CancelEdit(btn, "editing")
-	s := string(result)
-	if !strings.Contains(s, `data-cui-signal-set="editing:false"`) {
-		t.Fatalf("CancelEdit missing attribute: %s", s)
-	}
-	if !strings.Contains(s, "Cancel") {
-		t.Fatal("CancelEdit lost original content")
-	}
-	if strings.Contains(s, "data-cui-rpc") {
-		t.Fatal("CancelEdit should not emit data-cui-rpc")
-	}
+	assertSignalWrap(t, "CancelEdit", `data-cui-signal-set="editing:false"`, "Cancel", CancelEdit(btn, "editing"))
 }
 
 // ─── LiveSearch tests ─────────────────────────────────────────────────

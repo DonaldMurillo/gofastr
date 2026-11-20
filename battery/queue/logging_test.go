@@ -58,92 +58,81 @@ func newMemoryQueueWithLogger(t *testing.T, workers int) (*MemoryQueue, *bytes.B
 
 // ─── DBQueue logging ─────────────────────────────────────────────────
 
-// A failing handler logs a WARN per attempt even while retries remain.
-func TestDBQueueLogsHandlerFailure(t *testing.T) {
-	_, q, buf := openDBQueueWithLogger(t, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var calls atomic.Int32
-	q.RegisterHandler("flaky", func(_ context.Context, _ Job) error {
-		calls.Add(1)
-		return errors.New("boom")
-	})
-	q.Start(ctx)
-	if err := q.Enqueue(ctx, Job{Type: "flaky", MaxAttempts: 5}); err != nil {
-		t.Fatalf("enqueue: %v", err)
+// A failing handler logs a WARN per attempt even while retries remain;
+// when attempts are exhausted the worker loop escalates to ERROR
+// dead-letter.
+func TestDBQueueLogsHandlerFailureAndDeadLetter(t *testing.T) {
+	cases := []struct {
+		name        string
+		jobType     string
+		err         error
+		maxAttempts int
+		wantLevel   string
+		wantMsg     string
+	}{
+		{"handler failure", "flaky", errors.New("boom"), 5, "WARN", "queue: handler failed"},
+		{"exhausted dead-letter", "doomed", errors.New("fatal"), 1, "ERROR", "queue: job dead-lettered"},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, q, buf := openDBQueueWithLogger(t, 1)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-	waitFor(t, func() bool { return calls.Load() >= 1 }, 5*time.Second,
-		"handler was never called")
-	q.Close()
+			var calls atomic.Int32
+			q.RegisterHandler(tc.jobType, func(_ context.Context, _ Job) error {
+				calls.Add(1)
+				return tc.err
+			})
+			q.Start(ctx)
+			if err := q.Enqueue(ctx, Job{Type: tc.jobType, MaxAttempts: tc.maxAttempts}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
 
-	assertLogLine(t, buf, "WARN", "queue: handler failed")
-}
+			waitFor(t, func() bool { return calls.Load() >= 1 }, 5*time.Second,
+				"handler was never called")
+			q.Close()
 
-// When attempts are exhausted the worker loop escalates to ERROR dead-letter.
-func TestDBQueueLogsDeadLetterAtError(t *testing.T) {
-	_, q, buf := openDBQueueWithLogger(t, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var calls atomic.Int32
-	q.RegisterHandler("doomed", func(_ context.Context, _ Job) error {
-		calls.Add(1)
-		return errors.New("fatal")
-	})
-	q.Start(ctx)
-	if err := q.Enqueue(ctx, Job{Type: "doomed", MaxAttempts: 1}); err != nil {
-		t.Fatalf("enqueue: %v", err)
+			assertLogLine(t, buf, tc.wantLevel, tc.wantMsg)
+		})
 	}
-
-	waitFor(t, func() bool { return calls.Load() >= 1 }, 5*time.Second,
-		"handler was never called")
-	q.Close()
-
-	assertLogLine(t, buf, "ERROR", "queue: job dead-lettered")
 }
 
 // ─── MemoryQueue logging ─────────────────────────────────────────────
 
-// A failing handler logs a WARN per attempt while retries remain.
-func TestMemoryQueueLogsHandlerFailure(t *testing.T) {
-	q, buf := newMemoryQueueWithLogger(t, 1)
-
-	var attempts atomic.Int32
-	q.RegisterHandler("flaky", func(_ context.Context, _ Job) error {
-		attempts.Add(1)
-		return fmt.Errorf("boom")
-	})
-	q.Start()
-	if err := q.Enqueue(context.Background(), Job{Type: "flaky", MaxAttempts: 5}); err != nil {
-		t.Fatalf("enqueue: %v", err)
+// A failing handler logs a WARN per attempt while retries remain; a job
+// that exhausts MaxAttempts logs an ERROR dead-letter.
+func TestMemoryQueueLogsHandlerFailureAndDeadLetter(t *testing.T) {
+	cases := []struct {
+		name        string
+		jobType     string
+		err         error
+		maxAttempts int
+		wantLevel   string
+		wantMsg     string
+	}{
+		{"handler failure", "flaky", fmt.Errorf("boom"), 5, "WARN", "queue: handler failed"},
+		{"exhausted dead-letter", "doomed", fmt.Errorf("fatal"), 1, "ERROR", "queue: job dead-lettered"},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q, buf := newMemoryQueueWithLogger(t, 1)
 
-	waitFor(t, func() bool { return attempts.Load() >= 1 }, 5*time.Second,
-		"handler was never called")
-	q.Close()
+			var attempts atomic.Int32
+			q.RegisterHandler(tc.jobType, func(_ context.Context, _ Job) error {
+				attempts.Add(1)
+				return tc.err
+			})
+			q.Start()
+			if err := q.Enqueue(context.Background(), Job{Type: tc.jobType, MaxAttempts: tc.maxAttempts}); err != nil {
+				t.Fatalf("enqueue: %v", err)
+			}
 
-	assertLogLine(t, buf, "WARN", "queue: handler failed")
-}
+			waitFor(t, func() bool { return attempts.Load() >= 1 }, 5*time.Second,
+				"handler was never called")
+			q.Close()
 
-// A job that exhausts MaxAttempts logs an ERROR dead-letter.
-func TestMemoryQueueLogsDeadLetter(t *testing.T) {
-	q, buf := newMemoryQueueWithLogger(t, 1)
-
-	var attempts atomic.Int32
-	q.RegisterHandler("doomed", func(_ context.Context, _ Job) error {
-		attempts.Add(1)
-		return fmt.Errorf("fatal")
-	})
-	q.Start()
-	if err := q.Enqueue(context.Background(), Job{Type: "doomed", MaxAttempts: 1}); err != nil {
-		t.Fatalf("enqueue: %v", err)
+			assertLogLine(t, buf, tc.wantLevel, tc.wantMsg)
+		})
 	}
-
-	waitFor(t, func() bool { return attempts.Load() >= 1 }, 5*time.Second,
-		"handler was never called")
-	q.Close()
-
-	assertLogLine(t, buf, "ERROR", "queue: job dead-lettered")
 }

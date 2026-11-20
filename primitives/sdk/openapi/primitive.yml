@@ -1,0 +1,240 @@
+primitive: sdk.openapi
+summary: The Go and JS/TS SDKs gofastr generate sdk --from-openapi renders from an OpenAPI 3 document, and the client renderer and document walk it shares with gofastr generate cli --from-openapi.
+code:
+  - cmd/gofastr/internal/appgen/generate_cli_openapi.go
+  - cmd/gofastr/internal/appgen/generate_openapi_client.go
+  - cmd/gofastr/internal/appgen/generate_sdk_openapi.go
+  - cmd/gofastr/internal/appgen/generate_sdk_openapi_types.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs_openapi.go
+docs:
+  - framework/docs/content/sdk.md
+  - framework/docs/content/app-cli.md
+on_change:
+  - A change to renderOpenAPIClient or writeOARequestParts changes the --from-openapi CLI's generated output too; say so in CHANGELOG.
+  - A new refusal in buildOpenAPIModel applies to both generators; a refusal only a command line needs goes behind oaModelOptions.CLI.
+twins:
+  - job: The JS client's raw escape hatch, do(method, path, body), that sends a JSON body with the token and parses the answer.
+    why: The entity client.js sends only a bearer token and turns a body holding a Blob into multipart FormData; merging them needs the entity Client to carry the token scheme the OpenAPI one reads from the document.
+    sites:
+      - path: cmd/gofastr/internal/appgen/generate_sdkjs.go
+        note: jsClientMethods, the entity Client's do.
+      - path: cmd/gofastr/internal/appgen/generate_sdkjs_openapi.go
+        note: jsOAClientTail, the OpenAPI Client's do over _send.
+invariants:
+  - id: one-client-renderer
+    rule: The Go SDK's client.go declares every function the --from-openapi CLI's internal/client declares with the same text, both from renderOpenAPIClient, and adds only DoStream and the streamBody type that releases its context on Close.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientIsTheCLIClient
+  - id: same-refusals-as-the-cli
+    rule: The SDK refuses a missing or duplicate operationId, an unsupported parameter style, a cookie parameter and an external $ref through the walk the CLI uses, and refuses an operation or parameter whose Go or client.js name the client already declares or another one derives.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
+  - id: cli-only-refusals-stay-cli
+    rule: A reserved CLI command word or flag name is an ordinary method or field in the SDK.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSkipsCLIOnlyRefusals
+  - id: untypeable-schema-is-raw
+    rule: An object whose property names do not all make distinct Go field names is json.RawMessage in Go and unknown in TypeScript, never a struct missing or renaming a property.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKUnnameableObjectIsRaw
+  - id: json-answer-is-typed
+    rule: The lowest 2xx response with content decides the result; a JSON media type in it, or a */* or application/* one carrying a reference, object, array or non-string scalar schema, types the result and is asked for with Accept, whatever else it offers, and with none the answer is binary and Accept lists its types.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKResponseKinds
+  - id: go-sdk-wire
+    rule: The generated Go module passes go vet and sends each operation's parameters, body and token as the document describes, keeps integers past 2^53 exact, streams a binary answer unbuffered, caps a JSON one at 1 MiB, and returns a redirect as *APIError without following it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+      - test: cmd/gofastr/internal/appgen.TestUnionApp
+  - id: go-sdk-additional-properties-round-trip
+    rule: Generated Go structs, including flattened allOf objects, preserve explicitly allowed additional properties as raw JSON sibling keys, including nulls inside arrays and dictionaries, while reserving exact case-sensitive declared names for their named fields.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
+  - id: allof-dictionary-stays-raw
+    rule: A flattened allOf object with no named properties stays a raw JSON dictionary even when a member declares a typed additional-properties schema.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
+  - id: go-sdk-additional-property-name-collision
+    rule: The Go renderer refuses a named field that collides with an additional-properties member instead of renaming it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertyNameCollision
+  - id: go-sdk-additional-property-cycles
+    rule: Marshaling a recursive Go object with additional properties returns an encoding error for a cycle through named fields without rejecting shared children.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
+  - id: stream-timeout-bounds-the-headers
+    rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams a 2xx body for as long as the caller's context allows, while a non-2xx error body and every buffered call keep the Timeout.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+  - id: nullable-at-every-use
+    rule: A nullable component is nullable at every use, and a struct result is nil for an empty or literal null answer.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableRefPerUse
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+  - id: inline-component-typed-once
+    rule: A component typed in place is typed once, its inline objects named after it, so every use shares one type and the number of types grows with the document, and a document deriving more than oaMaxStructs struct types is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKInlineComponentTypedOnce
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKStructCap
+  - id: single-allof-is-its-member
+    rule: An allOf of one member with no properties of its own is typed as that member, nullable when the wrapper is.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSingleAllOfIsTheMember
+  - id: self-reference-is-typed-once
+    rule: A component met again while it is being typed in place is raw JSON, and an object component refers to its own named struct, so a recursive document generates in both SDKs and the CLI.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRecursiveSchemas
+  - id: one-entry-per-run
+    rule: gofastr generate sdk takes its defaults from at most one sdk entry, the one --from-openapi or --out names (both together telling apart two entries for one document) or else the only one, refuses to guess between two or more, and never writes into, inside or above another entry's output directory, compared as absolute paths.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntrySelection
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryOutputsDoNotOverlap
+  - id: only-the-stream-is-unread
+    rule: Every read of a response body in the Go SDK's client goes through the 1 MiB cap, except the 2xx body DoStream returns after refusing a non-2xx status.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientBodiesBounded
+  - id: js-types-compile
+    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null; the check skips without tsc only when GOFASTR_REQUIRE_TSC is unset, and fails when tsc reports another version than GOFASTR_TSC_VERSION, which CI's test job sets beside GOFASTR_REQUIRE_TSC and installs, so a TypeScript bump is a test-cache input.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypesCompile
+      - test: cmd/gofastr.TestCITypeScriptIsPinned
+  - id: sdk-refusals-name-the-sdk
+    rule: A refusal the shared walk raises for the SDK names the SDK and its parameters, never a flag or the CLI's help output, and terminal-control bytes in a summary or description are dropped from the SDK's comments instead of refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSkipsCLIOnlyRefusals
+  - id: js-sdk-wire
+    rule: The generated client.js sends each operation as the Go SDK does except that nullable JSON request bodies distinguish explicit null from absence, resolves a binary answer to a Blob read under maxBlobBytes, reads every other body under 1 MiB, and throws ApiError for a non-2xx answer or a redirect and TypeError for a missing required parameter.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKJSWireBrowser
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableBody
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypelessBody
+  - id: manifest-records-the-document
+    rule: The manifest of an OpenAPI SDK has source openapi, no entities, and sdk.OpenAPIHash of the document as its schemaHash.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKLayoutAndManifest
+  - id: settings-entry
+    rule: An sdk settings entry's from_openapi names a file in the project, relative and read through os.Root so neither ../ nor a symlink leaves it, takes no only or exclude, and runs under gofastr generate --config and as gofastr generate sdk's defaults.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSettingsEntry
+      - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryDocumentStaysInProject
+decisions:
+  - id: lossless-mixed-object-extras
+    date: 2026-11-20
+    status: accepted
+    decision: Mixed Go objects keep extra keys as json.RawMessage regardless of the additionalProperties value schema.
+    rejected:
+      - option: Derive a Go type for each additionalProperties value schema.
+        why: Typed decoding can silently coerce nested nulls to zero and adds generated code without improving round-trip fidelity.
+    upholds: [go-sdk-additional-properties-round-trip, allof-dictionary-stays-raw]
+  - id: refuse-generated-member-collisions
+    date: 2026-11-20
+    status: accepted
+    decision: Refuse an OpenAPI named property that derives a reserved mixed-object Go member.
+    rejected:
+      - option: Suffix colliding field or method names.
+        why: Silent renaming changes the generated API and conflicts with the generator's no-auto-renaming rule.
+    upholds: [go-sdk-additional-property-name-collision]
+  - id: guard-recursive-mixed-object-encoding
+    date: 2026-11-20
+    status: accepted
+    decision: Check for cycles through named fields only in mixed Go types that can reach themselves.
+    rejected:
+      - option: Leave cycle detection to encoding/json without a guard.
+        why: A generated marshaler re-enters json.Marshal, restarting its cycle tracking; a cyclic value can exhaust the process stack instead of returning an error.
+    revisit_if: The mixed-object encoding can use one cycle-aware traversal without repeatedly scanning recursive subtrees.
+    upholds: [go-sdk-additional-property-cycles]
+  - id: preserve-openapi-30-typeless-body-behavior
+    date: 2026-11-20
+    status: accepted
+    decision: A type-less JSON request body is implicitly nullable only in OpenAPI 3.1 and later and only when every keyword in the resolved schema and its reference siblings is an annotation, schema metadata or definitions, a type-specific assertion that ignores null, or an x- extension. Conditional, composition and unknown keywords prevent implicit nullability. OpenAPI 3.0 keeps the JS TypeError for a required null body and the existing Go behavior.
+    rejected:
+      - option: Treat an OpenAPI 3.0 {} body as nullable in JS.
+        why: OpenAPI 3.0 admits null only via nullable true, which 3.0.3 ties to an explicit type, so the JS TypeError matches the specification.
+      - option: Reject nil raw JSON request bodies in the Go SDK for OpenAPI 3.0.
+        why: Making Go reject nil would change its existing runtime behavior.
+    upholds: [js-sdk-wire]
+  - id: preserve-go-body-signatures
+    date: 2026-11-20
+    status: accepted
+    decision: Go signatures stay unchanged for nullable request bodies, so only the JS SDK models explicit JSON null separately from absence for nullable schemas.
+    rejected:
+      - option: Add pointer levels such as *T or **T to nullable Go body parameters.
+        why: Changing signatures would break existing callers of regenerated Go SDKs and double-pointer body parameters are not idiomatic.
+    revisit_if: An idiomatic backwards-compatible representation of nullable and optional Go request bodies becomes available.
+    upholds: [js-sdk-wire]
+  - id: one-client-for-cli-and-sdk
+    date: 2026-11-19
+    status: accepted
+    decision: The SDK's client.go comes from the renderer that writes the --from-openapi CLI's internal/client, and both assemble parameters through writeOARequestParts; the CLI's DoRaw now sends through send, readCapped and statusError, which DoStream also uses.
+    rejected:
+      - option: A second client renderer in the SDK generator.
+        why: The two would drift on the cap, the redirect refusal and the token header, the twin class twin-sweep hunts.
+      - option: Make the CLI import the SDK.
+        why: The CLI is generated into a module that may not want a second one, and its internal/client already works.
+    upholds: [one-client-renderer]
+  - id: binary-go-is-a-readcloser
+    date: 2026-11-19
+    status: accepted
+    decision: A binary answer returns an io.ReadCloser from DoStream, read by the caller and outside the 1 MiB cap.
+    rejected:
+      - option: Return []byte.
+        why: A batch archive or a large image is past 1 MiB, and buffering it without a cap would undo the cap.
+    upholds: [only-the-stream-is-unread]
+  - id: binary-js-is-a-blob
+    date: 2026-11-19
+    status: accepted
+    decision: client.js resolves a binary answer to a Blob carrying the response's Content-Type, read under maxBlobBytes, 32 MiB unless the constructor sets it.
+    rejected:
+      - option: Resolve to an ArrayBuffer.
+        why: It drops the Content-Type, which tells a PNG from an SVG, and blob.arrayBuffer() is one call away.
+      - option: No cap on the Blob.
+        why: The SDK, not the caller, buffers it, so a hostile endpoint could fill the page's memory.
+    upholds: [js-sdk-wire]
+  - id: json-wins-over-text
+    date: 2026-11-19
+    status: accepted
+    decision: A response offering a JSON media type beside others is typed from the JSON one and asked for with Accept.
+    rejected:
+      - option: Treat any non-JSON media type as a binary answer.
+        why: Swashbuckle lists text/plain and text/json beside application/json on every response, so no operation of such a document got a typed result.
+    upholds: [json-answer-is-typed]
+  - id: wildcard-with-a-schema-is-json
+    date: 2026-11-19
+    status: accepted
+    decision: A */* or application/* response whose schema is a reference, object, array or non-string scalar is JSON, asked for as application/json.
+    rejected:
+      - option: Treat */* as binary like any non-JSON type.
+        why: springdoc-openapi, Spring Boot's default, writes */* on every response, so every operation of such a document returned an io.ReadCloser.
+    upholds: [json-answer-is-typed]
+  - id: unnameable-object-is-raw
+    date: 2026-11-19
+    status: accepted
+    decision: An object with a property name no Go field can carry is typed raw JSON.
+    rejected:
+      - option: Refuse the document.
+        why: A property name is wire data nobody can change, as the CLI's --json-only body fields already decided.
+      - option: Rename or drop the property.
+        why: The struct would send and read a different key than the API.
+    upholds: [untypeable-schema-is-raw]
+  - id: stream-bounds-headers-not-body
+    date: 2026-11-19
+    status: accepted
+    decision: DoStream sends through a copy of the HTTP client without its Timeout and cancels the request when that Timeout passes before the headers arrive, leaving the CLI's client and every buffered call unchanged.
+    rejected:
+      - option: A default client with no Timeout and a transport with dial, TLS and header timeouts.
+        why: It changes NewClient, which the CLI shares, and a caller's own *http.Client would still cut its downloads at its Timeout.
+      - option: Keep the 30-second Timeout on streams.
+        why: It covers reading the whole body, so any download slower than 30 seconds failed partway.
+    upholds: [stream-timeout-bounds-the-headers]
+  - id: refuse-to-guess-an-sdk-entry
+    date: 2026-11-19
+    status: accepted
+    decision: With two or more sdk entries, gofastr generate sdk needs --from-openapi or --out to pick one, as gofastr generate cli needs --out or --binary; a flag that names no entry takes none, and no run writes into another entry's output directory.
+    rejected:
+      - option: Take the first entry, as before.
+        why: The run then mixed entries, reading from_openapi from one and the output directory from another, and wrote the OpenAPI SDK over the entity SDK.
+      - option: Run every entry.
+        why: Flags such as --module or --name would apply to SDKs they were not meant for; gofastr generate already runs every entry.
+    upholds: [one-entry-per-run]

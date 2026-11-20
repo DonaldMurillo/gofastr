@@ -75,6 +75,18 @@ re-renders anything. The runtime drops the current screen's cached copy
 itself after any successful RPC whose method is not `GET`, so Back to it
 fetches the page instead of replaying the copy from before the write.
 
+The screen cache is why Back and Forward inside an app are instant,
+without relying on the browser's own back/forward cache (bfcache). The
+runtime keeps the last 20 screens per tab and shows them on `popstate`
+without asking the server. Every page document the UI host serves is
+`Cache-Control: no-store`, which keeps it out of HTTP caches; it is not
+a bfcache rule, and a browser may still keep an eligible page there.
+The framework does not change pages to make them bfcache-eligible:
+that would only help when the user leaves the site and comes back.
+Static exports are cached however their host decides, and the runtime
+handles a bfcache restore on any page. See
+[Security defaults](security.md), "Recovery screens and cache policy".
+
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 
@@ -123,6 +135,13 @@ no fanout, no shared infrastructure, and no held connection.
   polled region an `id` if it should keep focus across refreshes.
 - The interval is jittered so a fleet of tabs does not synchronize on a wall
   clock.
+- A region more than 200px outside the viewport is not fetched. The
+  tick that came due while it was away fetches as soon as the reader
+  scrolls it near, so what they see is never older than one interval.
+- A scheduled tick fetches at `priority: 'low'`, so it never holds up a
+  request the user is waiting on. The refresh when the tab becomes
+  visible again, and a widget's refresh after its own RPC succeeds, use
+  the default priority.
 - The poller pauses while the tab is hidden and resumes when it returns.
 - A failed fetch doubles the interval (capped at 5x the base, reset on the
   next success); the runtime keeps polling rather than

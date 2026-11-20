@@ -2,9 +2,15 @@ primitive: rtc
 summary: The WebRTC signaling rooms, covering joins, seats, displacement and the fanout between replicas.
 code:
   - battery/rtc/
+  - internal/tokenbucket/
 docs:
   - framework/docs/content/rtc.md
 invariants:
+  - id: frame-flood-closes-the-socket
+    rule: Each signaling socket passes its frames through a tokenbucket.Bucket that starts full at twice MaxFramesPerSecond and refills at MaxFramesPerSecond, and the first frame the bucket refuses closes the socket.
+    enforced_by:
+      - test: internal/tokenbucket.TestBucketRefillsAtRate
+      - test: battery/rtc.TestFrameFloodClosesSocket
   - id: displaced-socket-closes-off-the-caller
     rule: A socket a rejoin, a seat cap or Kick pushes out is closed by closeDetached on another goroutine, and one a join displaces is first unregistered from its room by detachLocked, so no join and no Kick waits out the old socket's close handshake, and the old socket still gets its Close frame.
     enforced_by:

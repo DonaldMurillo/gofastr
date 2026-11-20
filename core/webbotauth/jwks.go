@@ -1,14 +1,5 @@
 package webbotauth
 
-// jwks.go: JWK Set parsing and the RFC 7638 / RFC 8037 A.3 thumbprint.
-//
-// Web Bot Auth's keyid is the base64url, unpadded SHA-256 thumbprint of
-// the JWK. Selection is always by computed thumbprint, never by the
-// directory's kid label: a conformant well-known directory sets kid to
-// the same thumbprint anyway, and a jwks_uri directory may carry an
-// operator-chosen kid that means nothing to a verifier. Trusting key
-// material over labelling is the conservative direction.
-
 import (
 	"bytes"
 	"crypto/ed25519"
@@ -23,8 +14,6 @@ const (
 	maxDirectoryKeys = 32 // draft section 6.7: bound the O(n) key search
 )
 
-// jwk is one parsed OKP Ed25519 verification key with its thumbprint
-// and optional time bounds.
 type jwk struct {
 	thumbprint string
 	kid        string
@@ -32,14 +21,11 @@ type jwk struct {
 	pub        ed25519.PublicKey
 }
 
-// jwkSet is a parsed directory response along with the freshness the
-// response asked for (used only on the fetch path).
 type jwkSet struct {
 	keys []jwk
 	ttl  time.Duration
 }
 
-// validAt reports whether the key's optional nbf/exp bounds admit t.
 func (k *jwk) validAt(t time.Time) bool {
 	unix := t.Unix()
 	if k.nbf != nil && unix < *k.nbf {
@@ -51,10 +37,6 @@ func (k *jwk) validAt(t time.Time) bool {
 	return true
 }
 
-// parseJWKS parses a JSON Web Key Set body and keeps the Ed25519 OKP
-// keys. Non-Ed25519 keys are skipped, not rejected: the set is foreign
-// input and other consumers may use the rest of it. A body that is not
-// a JSON object with a keys array is malformed and fails outright.
 func parseJWKS(body []byte) (*jwkSet, error) {
 	var raw struct {
 		Keys []map[string]json.RawMessage `json:"keys"`
@@ -82,8 +64,6 @@ func parseJWKS(body []byte) (*jwkSet, error) {
 	return set, nil
 }
 
-// jwkString reads an optional string member of a JWK. Absent is "";
-// present and anything but a JSON string (null included) is an error.
 func jwkString(m map[string]json.RawMessage, name string) (string, error) {
 	raw, ok := m[name]
 	if !ok {
@@ -96,9 +76,6 @@ func jwkString(m map[string]json.RawMessage, name string) (string, error) {
 	return s, nil
 }
 
-// parseJWK parses one JWK. It returns (nil, nil) for key types this
-// verifier does not handle and an error for a key that claims to be
-// OKP/Ed25519 but is malformed.
 func parseJWK(m map[string]json.RawMessage) (*jwk, error) {
 	var kty, crv, x string
 	_ = json.Unmarshal(m["kty"], &kty)
@@ -120,8 +97,6 @@ func parseJWK(m map[string]json.RawMessage) (*jwk, error) {
 	if err != nil || len(raw) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("x is not a 32-byte base64url value")
 	}
-	// A use or alg that is present but not a string is malformed, not
-	// absent: read as "" it passed both restriction checks below.
 	use, err := jwkString(m, "use")
 	if err != nil {
 		return nil, err
@@ -154,9 +129,6 @@ func parseJWK(m map[string]json.RawMessage) (*jwk, error) {
 	return k, nil
 }
 
-// selectKey returns the key whose thumbprint equals keyid and whose
-// time bounds admit now, per the (URL, key) lookup rule of draft
-// section 5.4: the URL half is the cache entry this set came from.
 func (s *jwkSet) selectKey(keyid string, now time.Time) *jwk {
 	for i := range s.keys {
 		if s.keys[i].thumbprint == keyid && s.keys[i].validAt(now) {
@@ -166,19 +138,12 @@ func (s *jwkSet) selectKey(keyid string, now time.Time) *jwk {
 	return nil
 }
 
-// okpThumbprint computes the RFC 8037 Appendix A.3 thumbprint: the
-// SHA-256 of the canonical JSON containing exactly crv, kty, x in
-// lexicographic order, base64url-encoded without padding.
 func okpThumbprint(crv, kty, x string) string {
 	canonical := fmt.Sprintf(`{"crv":%s,"kty":%s,"x":%s}`, quoteJSON(crv), quoteJSON(kty), quoteJSON(x))
 	sum := sha256.Sum256([]byte(canonical))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// quoteJSON renders s as a JSON string. The thumbprint inputs are
-// ASCII (curve name, "OKP", base64url) so no escaping can occur; the
-// json package is used anyway so a non-ASCII input fails loudly
-// instead of corrupting the digest.
 func quoteJSON(s string) string {
 	b, err := json.Marshal(s)
 	if err != nil {

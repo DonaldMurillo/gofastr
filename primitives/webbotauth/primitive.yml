@@ -1,0 +1,74 @@
+primitive: webbotauth
+summary: The Web Bot Auth verifier - per-signature profile checks of draft-meunier-webbotauth-httpsig-protocol-02, the observe and require middleware, the agent context and the rate-limit key.
+code:
+  - core/webbotauth/webbotauth.go
+  - core/webbotauth/ratelimitkey.go
+docs:
+  - framework/docs/content/web-bot-auth.md
+on_change:
+  - The profile tracks a moving IETF draft; a change to a rule here names the draft revision and section it follows, in the package doc.
+invariants:
+  - id: signature-profile
+    rule: A signature verifies only with tag web-bot-auth, created no more than 60s in the future, expires in the future and at most MaxValidity after created, a keyid equal to the thumbprint of a key its directory serves, coverage of @authority or @target-uri, an Ed25519 signature over the RFC 9421 base, and a covered Signature-Agent member resolved as the draft's D.2 and E vectors key it.
+    enforced_by:
+      - test: core/webbotauth.TestGateC_FlippedSignedByte
+      - test: core/webbotauth.TestGateC_ExpiredSignature
+      - test: core/webbotauth.TestGateC_WrongKey
+      - test: core/webbotauth.TestGateC_MissingCoveredComponent
+      - test: core/webbotauth.TestGateC_CreatedInFuture
+      - test: core/webbotauth.TestGateC_NoAuthorityCoverage
+      - test: core/webbotauth.TestSignatureValidityWindowCapped
+      - test: core/webbotauth.TestWBA_DraftVector_E21
+      - test: core/webbotauth.TestWBA_DraftVector_E22
+      - test: core/webbotauth.TestWBA_DraftVector_E23
+  - id: outcome-triad
+    rule: The first verified signature attributes the request, otherwise the first invalid one is reported, otherwise the request is unverified, retryable when any signature's discovery hit ErrResolverBusy; a wrong tag or algorithm is unverified, not invalid.
+    enforced_by:
+      - test: core/webbotauth.TestResolverBusy_IsUnverifiedAndRetryable
+      - test: core/webbotauth.TestResolverBusy_SurvivesTheLegacyAgentHeader
+  - id: signatures-capped
+    rule: A request presenting more than 4 Signature-Input members is invalid before any discovery runs.
+    enforced_by:
+      - test: core/webbotauth.TestVerifyRequest_CapsSignatureCount
+  - id: observe-or-require
+    rule: Observe mode never blocks and puts a verified Agent on the context; require mode answers an unverified or invalid request 403 with Accept-Signature, a retryable one 503 with Retry-After, and always lets the key directory path through.
+    enforced_by:
+      - test: core/webbotauth.TestMiddleware_ObserveAnnotatesContextForVerifiedAgent
+      - test: core/webbotauth.TestMiddleware_ObservePassesUnsignedThrough
+      - test: core/webbotauth.TestMiddleware_RequireBlocksUnverified
+      - test: core/webbotauth.TestMiddleware_RequireBlocksInvalidSignature
+      - test: core/webbotauth.TestRequireMode_AnswersUnavailableWhenResolverIsBusy
+      - test: core/webbotauth.TestRequireMode_LeavesTheKeyDirectoryReachable
+  - id: rate-key-by-agent-url
+    rule: RateLimitKey keys a verified agent by agent plus its directory URL and anything else by the fallback, the remote host with IPv6 cut to its /64 when the fallback is nil.
+    enforced_by:
+      - test: core/webbotauth.TestRateLimitKeyVerifiedAgentIsKeyedByURL
+      - test: core/webbotauth.TestRateLimitKeyUnverifiedUsesFallback
+      - test: core/webbotauth.TestRateLimitKeyNilFallbackCollapsesIPv6
+      - test: core/webbotauth.TestRateLimitKeyNilFallbackIsRemoteHost
+decisions:
+  - id: ed25519-only
+    date: 2026-11-19
+    status: accepted
+    decision: Only Ed25519 signatures and OKP keys are verified.
+    rejected:
+      - option: RSA and ECDSA too.
+        why: Every implementation in the draft's registry uses Ed25519, and the draft is not stable.
+    revisit_if: The draft stabilizes with another required algorithm.
+    upholds: [signature-profile]
+  - id: busy-is-503
+    date: 2026-11-19
+    status: accepted
+    decision: Our own resolver backpressure is a retryable unverified outcome, answered 503 in require mode.
+    rejected:
+      - option: 403 like any unverified request.
+        why: It tells a correctly signed agent to fix credentials that are fine.
+    upholds: [outcome-triad, observe-or-require]
+  - id: rate-key-is-directory-url
+    date: 2026-11-19
+    status: accepted
+    decision: The rate-limit identity is the directory URL, not the key id, and the key is meant to sit behind an IP-keyed limiter.
+    rejected:
+      - option: The key id.
+        why: A rotated key is the same agent and must not reset its window.
+    upholds: [rate-key-by-agent-url]

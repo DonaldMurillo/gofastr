@@ -22,58 +22,37 @@ const (
 	SeverityInfo    Severity = "info"
 )
 
-// Rule identifiers. GOFASTR1806-1808 and the CSS-only rules match the
-// owned-styles design; the two rule strings that are not GOFASTR ids
-// (RuleParseError, RuleClassTwice, RuleGroupMismatch) are this
-// package's own labels — the design doc assigns them no number yet.
 const (
-	// RuleParseError marks CSS that did not parse (unterminated string,
-	// unclosed block, a run that is neither declaration nor rule).
+	// RuleParseError marks CSS that did not parse (unterminated string, unclosed
+	// block, a run that is neither declaration nor rule).
 	RuleParseError = "parse"
-	// RuleUnknownThemeToken is GOFASTR1806: var(--name) the theme does
-	// not emit. An invalid var() resolves to nothing and the
-	// declaration is silently dropped.
+	// RuleUnknownThemeToken is GOFASTR1806.
 	RuleUnknownThemeToken = "GOFASTR1806" // not-a-secret: a contract rule ID
-	// RuleHardcodedTokenValue is GOFASTR1807: a value that is exactly a
-	// theme token's value.
+	// RuleHardcodedTokenValue is GOFASTR1807.
 	RuleHardcodedTokenValue = "GOFASTR1807"
-	// RuleFallbackDrift is GOFASTR1808: a var() fallback that restates
-	// a scale token at a value the theme does not declare.
+	// RuleFallbackDrift is GOFASTR1808.
 	RuleFallbackDrift = "GOFASTR1808"
-	// RuleKitClassSelector is GOFASTR1810: a selector naming a kit
-	// class (.fui-*) or a runtime attribute ([data-cui-*]).
+	// RuleKitClassSelector is GOFASTR1810.
 	RuleKitClassSelector = "GOFASTR1810"
 	// RuleImportant is GOFASTR1811: !important.
 	RuleImportant = "GOFASTR1811"
-	// RuleRawMediaWidth is GOFASTR1812: a raw width feature in @media
-	// instead of a custom media name (raw widths stay legal in
-	// @container).
+	// RuleRawMediaWidth is GOFASTR1812.
 	RuleRawMediaWidth = "GOFASTR1812"
-	// RuleAnimationWithoutReducedMotion is GOFASTR1813 (warn): an
-	// animation with no @media (--reduced-motion) block for the same
-	// selector.
+	// RuleAnimationWithoutReducedMotion is GOFASTR1813 (warn).
 	RuleAnimationWithoutReducedMotion = "GOFASTR1813"
-	// RuleAppSheetSelector is GOFASTR1819: app sheet — a selector whose
-	// subject is not a class, or a custom property declaration.
+	// RuleAppSheetSelector is GOFASTR1819.
 	RuleAppSheetSelector = "GOFASTR1819"
-	// RuleTokenCustomProperty is GOFASTR1820: an owned sheet declaring
-	// a custom property whose name is a theme token.
+	// RuleTokenCustomProperty is GOFASTR1820.
 	RuleTokenCustomProperty = "GOFASTR1820"
-	// RuleStatementAtRule is GOFASTR1825: @import, @charset or
-	// @namespace, which count only at the top of a stylesheet. An owned
-	// sheet compiles after the kit's rules, a scoped one inside its
-	// @scope, so the browser drops them.
+	// RuleStatementAtRule is GOFASTR1825.
 	RuleStatementAtRule = "GOFASTR1825"
-	// RuleClassTwice: a class used as both base and variant in one file
-	// (model error).
+	// RuleClassTwice.
 	RuleClassTwice = "class-base-and-variant"
-	// RuleGroupMismatch: one group name with different value sets
-	// under different bases (model error).
+	// RuleGroupMismatch.
 	RuleGroupMismatch = "group-value-mismatch"
 )
 
-// Diagnostic is one finding. Line and Col are 1-based positions in the
-// checked source.
+// Diagnostic is one finding.
 type Diagnostic struct {
 	Rule     string
 	Severity Severity
@@ -86,12 +65,7 @@ func (d Diagnostic) String() string {
 	return fmt.Sprintf("%d:%d %s %s %s", d.Line, d.Col, d.Severity, d.Rule, d.Message)
 }
 
-// Check parses src and runs every CSS-only owned-style check against
-// it: GOFASTR1806, 1807, 1808, 1810, 1811, 1812, 1813 (warn), 1819
-// (Kind App only), 1820, plus parse errors. tokens is the running
-// theme's token map (style.ThemeToTokens); breakpoints come from its
-// --breakpoint-* entries. file is reserved for the caller's own
-// reporting and is not used — the Diagnostic carries only positions.
+// Check parses src and runs every CSS-only owned-style check against it.
 func Check(file string, src string, kind Kind, tokens map[string]string) []Diagnostic {
 	sheet, diags := Parse(src)
 	c := &checker{
@@ -130,11 +104,10 @@ func Check(file string, src string, kind Kind, tokens map[string]string) []Diagn
 	return c.out
 }
 
-// checker carries the per-file check state.
 type checker struct {
 	kind          Kind
 	tokens        map[string]string
-	known         []string // sorted light token names
+	known         []string
 	valueIndex    map[string][]string
 	declaredProps map[string]bool
 	rmSelectors   map[string]bool
@@ -142,15 +115,11 @@ type checker struct {
 	out           []Diagnostic
 }
 
-// breakpoint is one --breakpoint-* token, parsed.
 type breakpoint struct {
-	name string // "md"
+	name string
 	px   float64
 }
 
-// knownTokenNames extracts the token names a var() may reference: the
-// map's keys that contain no "." (dark.* and component.* entries are
-// not CSS custom-property names).
 func knownTokenNames(tokens map[string]string) []string {
 	names := make([]string, 0, len(tokens))
 	for k := range tokens {
@@ -162,7 +131,6 @@ func knownTokenNames(tokens map[string]string) []string {
 	return names
 }
 
-// breakpointsFromTokens parses the theme's --breakpoint-* entries.
 func breakpointsFromTokens(tokens map[string]string) []breakpoint {
 	var out []breakpoint
 	for k, v := range tokens {
@@ -179,11 +147,6 @@ func breakpointsFromTokens(tokens map[string]string) []breakpoint {
 	return out
 }
 
-// buildValueIndex inverts the token map the way GOFASTR1807 reads it:
-// value (lower case) → the tokens declaring it. dark.* entries are
-// excluded (a literal equal to a dark-only value must not become a
-// light var() reference) and so are bare keyword values (box-shadow:
-// none is idiomatic CSS, not a token bypass).
 func buildValueIndex(tokens map[string]string) map[string][]string {
 	out := map[string][]string{}
 	for k, v := range tokens {
@@ -199,13 +162,8 @@ func buildValueIndex(tokens map[string]string) map[string][]string {
 	return out
 }
 
-// reNumberLiteral is one CSS number with an optional unit.
 var reNumberLiteral = regexp.MustCompile(`^([+-]?)(\d*\.?\d+)([a-z%]*)$`)
 
-// normalizeNumber spells a single number the one way: .6, 0.60 and
-// +0.6 are all 0.6, and -.01em is -0.01em, so a value the browser
-// reads as a token's is found whatever its spelling. Anything that is
-// not one number comes back unchanged.
 func normalizeNumber(v string) string {
 	m := reNumberLiteral.FindStringSubmatch(v)
 	if m == nil {
@@ -221,10 +179,6 @@ func normalizeNumber(v string) string {
 	return strconv.FormatFloat(n, 'f', -1, 64) + m[3]
 }
 
-// bareKeyword reports whether v is a single CSS identifier and nothing
-// else: no digit, hex marker, string quote, comma, or parenthesis
-// anywhere. Such a value cannot be distinctive evidence of a token
-// bypass.
 func bareKeyword(v string) bool {
 	if v == "" {
 		return true
@@ -238,17 +192,10 @@ func bareKeyword(v string) bool {
 	return true
 }
 
-// tokenCategory is style.TokenCategory: the longest token-type prefix
-// of a key, so font-weight-bold is a weight and never a font family.
 func tokenCategory(key string) string { return style.TokenCategory(key) }
 
-// PropTokenCategories maps a CSS property to the theme-token
-// categories whose value can legally replace that property's through
-// var(): GOFASTR1807 offers a token only for a property it can serve.
-// The contracts pipeline reads this same table for CSS in Go strings.
-// breakpoint-* stays absent (var() is invalid in @media); padding,
-// margin and gap stay spacing-only, since a size token equal to a
-// padding is a coincidence far more often than a decision.
+// PropTokenCategories maps a CSS property to the theme-token categories whose
+// value can legally replace that property's through var().
 var PropTokenCategories = map[string][]string{
 	"font-size":     {"text"},
 	"border-radius": {"radii"},
@@ -288,20 +235,10 @@ var PropTokenCategories = map[string][]string{
 	"flex-basis": {"size"},
 }
 
-// propTokenCategories is the package's own name for the table.
 var propTokenCategories = PropTokenCategories
 
-// driftCategories are the token categories GOFASTR1808 judges: the ones
-// whose values are lengths or times, where a fallback either restates
-// the token or teaches a scale the theme does not declare. Colour and
-// font fallbacks stay out: they are degraded-mode choices on purpose.
 var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
 
-// collectDeclaredCustomProperties gathers every custom property the
-// sheet declares (in rule blocks, not in @supports conditions, which
-// ask whether a browser can parse a declaration rather than making
-// one) plus every @property registration. A var() reference to one of
-// these names is not an unknown-token error.
 func collectDeclaredCustomProperties(sheet *Stylesheet) map[string]bool {
 	declared := map[string]bool{}
 	var visit func(rules []*Rule)
@@ -309,7 +246,6 @@ func collectDeclaredCustomProperties(sheet *Stylesheet) map[string]bool {
 		for _, r := range rules {
 			if r.At && r.Name == "property" {
 				for _, t := range r.Prel {
-					// Decoded before the prefix test: \2d-foo registers --foo.
 					if name, ok := strings.CutPrefix(cssUnescape(t.Text), "--"); t.Type == TokenIdent && ok {
 						declared[name] = true
 						break
@@ -328,9 +264,6 @@ func collectDeclaredCustomProperties(sheet *Stylesheet) map[string]bool {
 	return declared
 }
 
-// collectReducedMotionSelectors returns the selector texts of every
-// style rule nested under an @media whose query names the
-// --reduced-motion custom medium, at any nesting depth.
 func collectReducedMotionSelectors(sheet *Stylesheet) map[string]bool {
 	out := map[string]bool{}
 	var visit func(rules []*Rule, inRM bool)
@@ -350,8 +283,6 @@ func collectReducedMotionSelectors(sheet *Stylesheet) map[string]bool {
 	return out
 }
 
-// preludeNamesCustomMedia reports whether the token run contains the
-// given custom media name as a standalone ident.
 func preludeNamesCustomMedia(prel []Token, name string) bool {
 	for _, t := range prel {
 		if t.Type == TokenIdent && t.Text == name {
@@ -361,10 +292,6 @@ func preludeNamesCustomMedia(prel []Token, name string) bool {
 	return false
 }
 
-// walk visits a rule and its descendants, running the per-rule and
-// per-declaration checks. inRM reports whether an enclosing @media
-// named --reduced-motion; inKF whether an enclosing @keyframes holds
-// the rule (keyframe selectors are not style-rule selectors).
 func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	if err := containerMediaError(r); err != nil {
 		c.report(Diagnostic{Rule: RuleParseError, Severity: SeverityError, Line: r.Pos.Line, Col: r.Pos.Col, Message: err.Error()})
@@ -394,8 +321,6 @@ func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	}
 }
 
-// checkMediaWidths runs GOFASTR1812: inside an @media prelude, a
-// min-width / max-width / width feature with a raw length.
 func (c *checker) checkMediaWidths(r *Rule) {
 	prel := significantTokens(mediaQueryTokens(r.Prel))
 	for i := 0; i < len(prel); i++ {
@@ -408,8 +333,6 @@ func (c *checker) checkMediaWidths(r *Rule) {
 		default:
 			continue
 		}
-		// Reversed range syntax: 768px <= min-width. The value stands
-		// before the feature name, across the comparison operator run.
 		k := i - 1
 		for k >= 0 && isComparisonDelim(prel[k]) {
 			k--
@@ -425,12 +348,10 @@ func (c *checker) checkMediaWidths(r *Rule) {
 				})
 			}
 		}
-		// The feature's value: after ':' or a comparison operator.
 		j := i + 1
 		if j < len(prel) && prel[j].Type == TokenColon {
 			j++
 		} else {
-			// Range syntax: width > 768px, or 768px < width.
 			for j < len(prel) && isComparisonDelim(prel[j]) {
 				j++
 			}
@@ -452,17 +373,12 @@ func (c *checker) checkMediaWidths(r *Rule) {
 	}
 }
 
-// isComparisonDelim reports whether t is <, > or = (range syntax).
 func isComparisonDelim(t Token) bool {
 	return t.Type == TokenDelim && (t.Text == "<" || t.Text == ">" || t.Text == "=")
 }
 
-// reWidth is a width literal in the units media features carry. rem
-// and em resolve at the browser's 16px root default, the same scale
-// sameScaleValue uses.
 var reWidth = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|em)$`)
 
-// widthToPx converts a media-feature width literal to pixels.
 func widthToPx(raw string) (float64, string, bool) {
 	m := reWidth.FindStringSubmatch(raw)
 	if m == nil {
@@ -479,10 +395,6 @@ func widthToPx(raw string) (float64, string, bool) {
 	return n, m[2], true
 }
 
-// rawWidthMessage names the theme breakpoints that bracket the raw
-// width, in the design doc's voice. A width that EQUALS a breakpoint
-// (the kit's own sheets spell it in rem: min-width: 48rem) names that
-// breakpoint and its custom medium.
 func (c *checker) rawWidthMessage(raw string) string {
 	px, unit, ok := widthToPx(raw)
 	msg := fmt.Sprintf("%s is not a theme breakpoint", raw)
@@ -524,8 +436,6 @@ func (c *checker) rawWidthMessage(raw string) string {
 	return msg
 }
 
-// checkSelector runs GOFASTR1810 (kit class / runtime attribute) and,
-// for the app sheet, GOFASTR1819 (class-only subjects).
 func (c *checker) checkSelector(r *Rule) {
 	var prel []Token
 	for _, tok := range r.Prel {
@@ -537,7 +447,6 @@ func (c *checker) checkSelector(r *Rule) {
 		t := prel[i]
 		switch {
 		case t.Type == TokenDelim && t.Text == "." && i+1 < len(prel) && prel[i+1].Type == TokenIdent:
-			// The name as the browser reads it: .\66 ui-card is .fui-card.
 			if isKitClass(cssUnescape(prel[i+1].Text)) {
 				c.report(Diagnostic{
 					Rule:     RuleKitClassSelector,
@@ -567,7 +476,6 @@ func (c *checker) checkSelector(r *Rule) {
 	if c.kind != KindApp {
 		return
 	}
-	// GOFASTR1819: every subject must be a bare class compound.
 	for _, sel := range splitSelectors(prel) {
 		compounds := splitCompounds(sel)
 		if len(compounds) == 0 {
@@ -595,8 +503,6 @@ func (c *checker) checkSelector(r *Rule) {
 	}
 }
 
-// splitSelectors splits a prelude into comma-separated selectors at
-// bracket depth 0.
 func splitSelectors(prel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -624,9 +530,6 @@ func splitSelectors(prel []Token) [][]Token {
 	return out
 }
 
-// splitCompounds splits one selector into compound selectors at
-// descendant whitespace and the > + ~ combinators. A comment alone
-// separates tokens without separating compounds.
 func splitCompounds(sel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -660,7 +563,6 @@ func splitCompounds(sel []Token) [][]Token {
 	return out
 }
 
-// checkDecl runs the per-declaration checks.
 func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 	if d.Important {
 		c.report(Diagnostic{
@@ -671,10 +573,7 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 			Message:  "!important: owned sheets load in the design system's order; specificity never needs it",
 		})
 	}
-	// Names are compared decoded, as the browser reads them:
-	// --\63 olor-primary declares --color-primary.
 	if name, isCustom := strings.CutPrefix(cssUnescape(d.Name), "--"); isCustom {
-		// GOFASTR1820: a custom property whose name is a theme token.
 		if _, known := slices.BinarySearch(c.known, name); known {
 			c.report(Diagnostic{
 				Rule:     RuleTokenCustomProperty,
@@ -684,8 +583,6 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 				Message:  fmt.Sprintf("--%s is a theme token; an owned sheet may not redeclare it", name),
 			})
 		}
-		// GOFASTR1819 (app sheet): no custom property declarations at
-		// all; new values are tokens.
 		if c.kind == KindApp {
 			c.report(Diagnostic{
 				Rule:     RuleAppSheetSelector,
@@ -698,8 +595,6 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 	}
 	c.checkVarRefs(d)
 	c.checkHardcodedValue(d)
-	// GOFASTR1813: animation without a reduced-motion block for the
-	// same selector.
 	if prop := propName(d); (prop == "animation" || prop == "animation-name") && !inRM {
 		if first := firstIdent(d.Value); first != nil && first.Text != "none" && first.Text != "unset" {
 			if !c.rmSelectors[r.Text] {
@@ -715,10 +610,6 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 	}
 }
 
-// propName is a declaration's property name as the browser reads it:
-// escapes decoded (\61 nimation is animation) and, for a standard
-// property, ASCII case folded (ANIMATION is animation). A custom
-// property's name is case-sensitive and keeps its case.
 func propName(d *Decl) string {
 	name := cssUnescape(d.Name)
 	if strings.HasPrefix(name, "--") {
@@ -727,7 +618,6 @@ func propName(d *Decl) string {
 	return asciicase.Lower(name)
 }
 
-// firstIdent returns the first ident token of a value run.
 func firstIdent(toks []Token) *Token {
 	for i := range toks {
 		if toks[i].Type == TokenIdent {
@@ -737,8 +627,6 @@ func firstIdent(toks []Token) *Token {
 	return nil
 }
 
-// checkVarRefs runs GOFASTR1806 (unknown theme token) and GOFASTR1808
-// (fallback drift) over every var() reference in the value.
 func (c *checker) checkVarRefs(d *Decl) {
 	val := significantTokens(d.Value)
 	for i := 0; i < len(val); i++ {
@@ -751,16 +639,12 @@ func (c *checker) checkVarRefs(d *Decl) {
 		}
 		nameTok := val[i+1]
 		name := strings.TrimPrefix(cssUnescape(nameTok.Text), "--")
-		// Scan the var() arguments for a top-level comma (a fallback)
-		// and capture the fallback run.
 		depth := 1
 		var fallback []Token
 		afterComma := false
 		for j := i + 2; j < len(val) && depth > 0; j++ {
 			switch val[j].Type {
 			case TokenFunction, TokenOpenParen:
-				// A nested function ("var(", "clamp(") is one token whose
-				// ")" arrives as a close-paren, like "(".
 				depth++
 			case TokenCloseParen:
 				depth--
@@ -777,11 +661,6 @@ func (c *checker) checkVarRefs(d *Decl) {
 		}
 		fallback = trimTokens(fallback)
 		hasFallback := afterComma
-		// GOFASTR1806. A fallback does not waive it: var(--typo, 4px)
-		// paints the fallback forever and reads like a theme read. A
-		// value of the app's own is a token in a <name>.tokens.css; the
-		// one other way out is a gofastr:allow(GOFASTR1806) marker with
-		// its reason.
 		if !c.declaredProps[name] &&
 			//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt runtime-owned properties
 			!runtimeOwnedVarPrefix(name) {
@@ -799,31 +678,24 @@ func (c *checker) checkVarRefs(d *Decl) {
 				})
 			}
 		}
-		// GOFASTR1808: a simple literal fallback restating a length- or
-		// time-scale token at an undeclared value.
 		if hasFallback && len(fallback) == 1 {
 			c.checkFallbackDrift(d, t, name, fallback[0].Text)
 		}
 	}
 }
 
-// runtimeOwnedVarPrefix reports whether a custom-property name belongs
-// to a layer that writes it at runtime (the ui kit's fui-* knobs, the
-// kernel's cui-*, headless's hui-*): the theming doc exempts all four
-// prefixes beside the theme's own tokens.
 func runtimeOwnedVarPrefix(name string) bool {
 	//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt them
 	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
 		strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-")
 }
 
-// checkFallbackDrift is GOFASTR1808.
 func (c *checker) checkFallbackDrift(d *Decl, varTok Token, name, fallback string) {
 	if !driftCategories[tokenCategory(name)] {
 		return
 	}
 	declared, ok := c.lightTokenValue(name)
-	if !ok || sameScaleValue(fallback, declared) {
+	if !ok || SameScaleValue(fallback, declared) {
 		return
 	}
 	c.report(Diagnostic{
@@ -836,16 +708,11 @@ func (c *checker) checkFallbackDrift(d *Decl, varTok Token, name, fallback strin
 	})
 }
 
-// lightTokenValue is the theme's light value for a token name.
 func (c *checker) lightTokenValue(name string) (string, bool) {
 	v, ok := c.tokens[name]
 	return v, ok
 }
 
-// checkHardcodedValue runs GOFASTR1807 on the declaration's whole
-// value: exactly a theme token's value, judged as the browser reads it
-// (d.ValueSrc, comments included, !important excluded) with the
-// contracts pipeline's property-category gate.
 func (c *checker) checkHardcodedValue(d *Decl) {
 	cats, ok := propTokenCategories[propName(d)]
 	if !ok {
@@ -885,17 +752,11 @@ func (c *checker) checkHardcodedValue(d *Decl) {
 
 func (c *checker) report(d Diagnostic) { c.out = append(c.out, d) }
 
-// reLengthOrTime is a bare CSS length or time literal in the four units
-// the theme emits and authors write.
 var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
 
-// sameScaleValue reports whether two CSS literals denote the same
-// length or time. rem is compared to px at the browser's 16px root
-// default, and s to ms, so `1rem` is the right fallback for a `16px`
-// token and `.5s` for a `500ms` one. Anything the regex does not parse
-// is compared as an ASCII case-folded string, the way CSS matches
-// keywords and units.
-func sameScaleValue(a, b string) bool {
+// SameScaleValue reports whether two CSS literals denote the same length or
+// time.
+func SameScaleValue(a, b string) bool {
 	a, b = asciicase.Lower(strings.TrimSpace(a)), asciicase.Lower(strings.TrimSpace(b))
 	if a == b {
 		return true
@@ -922,11 +783,6 @@ func sameScaleValue(a, b string) bool {
 	return ua == ub && math.Abs(na-nb) < 1e-6
 }
 
-// closestToken returns the token within edit distance 2 of name, if
-// any. names must be sorted, so equal distances resolve
-// deterministically to the first. Distance 2 is enough for the typo
-// class this rule exists for (`radius-lg` vs `radii-lg` is 2) without
-// proposing nonsense for every unknown name.
 func closestToken(name string, names []string) (string, bool) {
 	best, bestDist := "", 3
 	for _, n := range names {
@@ -940,8 +796,6 @@ func closestToken(name string, names []string) (string, bool) {
 	return "", false
 }
 
-// editDistance is Levenshtein with an early exit once the distance
-// exceeds cutoff (returns cutoff+1).
 func editDistance(a, b string, cutoff int) int {
 	ra, rb := []rune(a), []rune(b)
 	if len(ra) == 0 {
@@ -969,7 +823,6 @@ func editDistance(a, b string, cutoff int) int {
 	return min(prev[len(rb)], cutoff+1)
 }
 
-// significantTokens filters whitespace and comment tokens out of a run.
 func significantTokens(toks []Token) []Token {
 	out := make([]Token, 0, len(toks))
 	for _, t := range toks {
@@ -980,9 +833,6 @@ func significantTokens(toks []Token) []Token {
 	return out
 }
 
-// runTextAsWritten renders a token run as the author wrote it:
-// significant token texts with a space where whitespace stood (no
-// space inside a compound, so ":scope" never prints as ": scope").
 func runTextAsWritten(toks []Token) string {
 	var sb strings.Builder
 	pendingWS := false
@@ -1003,38 +853,21 @@ func runTextAsWritten(toks []Token) string {
 	return sb.String()
 }
 
-// isScopeCompound reports whether a compound is rooted at :scope.
 func isScopeCompound(comp []Token) bool {
 	sig := significantTokens(comp)
 	return len(sig) >= 2 && sig[0].Type == TokenColon &&
 		sig[1].Type == TokenIdent && sig[1].Text == "scope"
 }
 
-// isKitClass reports whether a class name belongs to the kit: the
-// kernel's cui-* classes, headless's hui-*, and the ui kit's fui-*. An
-// owned sheet styles the content it passes into a slot, never the
-// kit's own markup, so all three prefixes are barred from its
-// selectors and kept out of its vocabulary.
 func isKitClass(name string) bool {
 	//gofastr:allow(layerprefix) the owned-style checker names kit classes to bar an app sheet from them
 	return strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-") || strings.HasPrefix(name, "fui-")
 }
 
-// kitPrefixes are the kit's class prefixes, isKitClass's list.
-//
 //gofastr:allow(layerprefix) the owned-style checker names the kit prefixes to bar an app sheet from them
 var kitPrefixes = []string{"cui-", "hui-", "fui-"}
 
-// kitAttrSelector judges the tokens inside one [ ] and returns the
-// GOFASTR1810 message when the selector reaches kit markup, else "".
-// Attribute names fold to ASCII lower case, as HTML's do. Two shapes
-// reach the kit: a runtime attribute ([data-cui-*], [data-fui-*],
-// [data-hui-*]) and a class attribute match whose value names a kit
-// class or prefix: [class~="fui-card"], [class^="fui-"], [class|="hui"],
-// [class*="ui-"]. A class match on an app name ([class*="card"]) stays
-// quiet: it may also hit a kit class, but so may any type selector.
 func kitAttrSelector(sig []Token) string {
-	// Skip a namespace prefix: [*|class], [svg|class].
 	if len(sig) >= 3 && sig[1].Type == TokenDelim && sig[1].Text == "|" &&
 		(sig[0].Type == TokenIdent || (sig[0].Type == TokenDelim && sig[0].Text == "*")) && sig[2].Type == TokenIdent {
 		sig = sig[2:]
@@ -1080,8 +913,6 @@ func kitAttrSelector(sig []Token) string {
 		op, rest[0].Text)
 }
 
-// classValueReachesKit reports whether [class<op>value] can match an
-// element by one of its kit classes.
 func classValueReachesKit(op, value string) bool {
 	fields := strings.Fields(value)
 	if slices.ContainsFunc(fields, isKitClass) {
@@ -1093,21 +924,15 @@ func classValueReachesKit(op, value string) bool {
 	last := fields[len(fields)-1]
 	switch op {
 	case "|=":
-		// [class|="fui"] matches "fui" and every "fui-…".
 		return slices.Contains(kitPrefixes, value+"-")
 	case "^=":
-		// The value's last word may be the start of a kit class.
 		return slices.ContainsFunc(kitPrefixes, func(p string) bool { return strings.HasPrefix(p, last) })
 	case "*=":
-		// A substring anywhere: a fragment of a prefix ("fui", "ui-") also
-		// lands inside every kit class under it.
 		return len(last) >= 2 && slices.ContainsFunc(kitPrefixes, func(p string) bool { return strings.Contains(p, last) })
 	}
 	return false
 }
 
-// stripStringEscapedNewlines drops the backslash-newline pairs a CSS
-// string uses to continue a line; they stand for nothing.
 func stripStringEscapedNewlines(s string) string {
 	for _, nl := range []string{"\\\r\n", "\\\n", "\\\r", "\\\f"} {
 		s = strings.ReplaceAll(s, nl, "")
@@ -1115,12 +940,6 @@ func stripStringEscapedNewlines(s string) string {
 	return s
 }
 
-// cssUnescape decodes the escapes in a raw ident or string body the way
-// the CSS syntax spec consumes them: a backslash and one to six hex
-// digits (plus one whitespace after them) is that code point, U+FFFD for
-// zero, a surrogate or anything past U+10FFFF; a backslash and any other
-// character is that character. Tokens keep their raw text, so a check on
-// a name decodes it first: .\66 ui-card names the class fui-card.
 func cssUnescape(raw string) string {
 	if !strings.Contains(raw, `\`) {
 		return raw

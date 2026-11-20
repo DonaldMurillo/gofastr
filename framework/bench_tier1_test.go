@@ -227,6 +227,20 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 // 1.2: Cursor pagination at depth vs offset
 // ----------------------------------------------------------------------------
 
+// benchGet200 times authed GETs of path against app's router, failing
+// the bench on any non-200 answer.
+func benchGet200(b *testing.B, app *App, path string) {
+	b.Helper()
+	req := benchAuthed(b, http.MethodGet, path, nil)
+	for b.Loop() {
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			b.Fatalf("status %d", rec.Code)
+		}
+	}
+}
+
 // BenchmarkTier1_PaginationDepth compares offset and cursor pagination at
 // the same page depth. Offset should degrade linearly with depth; cursor
 // should stay flat.
@@ -262,56 +276,20 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 		}
 
 		b.Run("offset/page=1", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?page=1&limit=%d", pageSize), nil)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
-				}
-			}
+			benchGet200(b, app, fmt.Sprintf("/posts?page=1&limit=%d", pageSize))
 		})
 
 		b.Run("offset/page=180", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?page=180&limit=%d", pageSize), nil)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
-				}
-			}
+			benchGet200(b, app, fmt.Sprintf("/posts?page=180&limit=%d", pageSize))
 		})
 
 		b.Run("cursor/page=1", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?cursor=&limit=%d", pageSize), nil)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
-				}
-			}
+			benchGet200(b, app, fmt.Sprintf("/posts?cursor=&limit=%d", pageSize))
 		})
 
 		if deepCursor != "" {
 			b.Run("cursor/page=180", func(b *testing.B) {
-				req := benchAuthed(b, http.MethodGet,
-					fmt.Sprintf("/posts?cursor=%s&limit=%d", deepCursor, pageSize), nil)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					rec := httptest.NewRecorder()
-					app.Router().ServeHTTP(rec, req)
-					if rec.Code != http.StatusOK {
-						b.Fatalf("status %d", rec.Code)
-					}
-				}
+				benchGet200(b, app, fmt.Sprintf("/posts?cursor=%s&limit=%d", deepCursor, pageSize))
 			})
 		}
 	})
@@ -408,34 +386,23 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 
 		const limit = 100 // ceiling enforced by parsePagination
 
-		b.Run("buffered", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?limit=%d", limit), nil)
-			b.ResetTimer()
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
+		for _, mode := range []struct{ name, query string }{
+			{"buffered", fmt.Sprintf("/posts?limit=%d", limit)},
+			{"streaming", fmt.Sprintf("/posts?limit=%d&stream=true", limit)},
+		} {
+			b.Run(mode.name, func(b *testing.B) {
+				req := benchAuthed(b, http.MethodGet, mode.query, nil)
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					rec := httptest.NewRecorder()
+					app.Router().ServeHTTP(rec, req)
+					if rec.Code != http.StatusOK {
+						b.Fatalf("status %d", rec.Code)
+					}
+					b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
 				}
-				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
-			}
-		})
-
-		b.Run("streaming", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?limit=%d&stream=true", limit), nil)
-			b.ResetTimer()
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
-				}
-				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
-			}
-		})
+			})
+		}
 	})
 }

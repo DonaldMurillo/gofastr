@@ -261,23 +261,8 @@ func TestE2E_MenuRadioArbitrationSpansSubmenus(t *testing.T) {
 	if !pollTrue(ctx, menuLoaded) {
 		t.Fatal("the module never loaded")
 	}
-	var checked string
 	read := func() map[string]string {
-		t.Helper()
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(Array.from(
-			document.querySelectorAll('[data-hui-menu="rd"] [role="menuitemradio"]')
-		).map(r => [r.textContent.trim(), r.getAttribute('aria-checked')]))`, &checked)); err != nil {
-			t.Fatal(err)
-		}
-		var pairs [][2]string
-		if err := json.Unmarshal([]byte(checked), &pairs); err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]string{}
-		for _, p := range pairs {
-			out[p[0]] = p[1]
-		}
-		return out
+		return readMenuRadioStates(t, ctx, `[data-hui-menu="rd"] [role="menuitemradio"]`)
 	}
 	// Activate Light in the Palette submenu: Dark (same group, same
 	// submenu) unchecks, both density rows (other group) and the
@@ -954,23 +939,8 @@ func TestE2E_MenuUngroupedRadioSelfChecks(t *testing.T) {
 	if !pollTrue(ctx, menuLoaded) {
 		t.Fatal("the module never loaded")
 	}
-	var state string
 	read := func() map[string]string {
-		t.Helper()
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(Array.from(
-			document.querySelectorAll('#ug-panel [role="menuitemradio"]')
-		).map(r => [r.textContent.trim(), r.getAttribute('aria-checked')]))`, &state)); err != nil {
-			t.Fatal(err)
-		}
-		var pairs [][2]string
-		if err := json.Unmarshal([]byte(state), &pairs); err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]string{}
-		for _, p := range pairs {
-			out[p[0]] = p[1]
-		}
-		return out
+		return readMenuRadioStates(t, ctx, `#ug-panel [role="menuitemradio"]`)
 	}
 	clickRow := func(label string) {
 		t.Helper()

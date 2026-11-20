@@ -7,23 +7,6 @@ import (
 	"time"
 )
 
-// Typed token value types.
-//
-// Every theme token (color, spacing, shadow, …) is a struct carrying
-// both a Name (used to derive the CSS custom property identifier)
-// and a Value (the concrete value). Each type exposes a .CSS()
-// method that emits `var(--<category>-<name>)`, a reference, never
-// the literal value, so the CSS cascade can override the variable at
-// any subtree (section-level theme override).
-//
-// The .Value field stays available for non-CSS contexts: dynamically
-// constructing image-generation payloads, exporting tokens to JSON
-// for design tools, computing derived colors at startup, etc.
-//
-// Each category has its own type, distinct from each other so the
-// compiler catches accidentally passing a Color where Spacing was
-// expected.
-
 // Color holds a CSS color value (hex, rgb, hsl, named, oklch, etc.).
 type Color struct {
 	Name  string
@@ -54,12 +37,7 @@ type Radius struct {
 func (r Radius) CSS() string    { return varRef("radii", r.Name) }
 func (r Radius) String() string { return r.CSS() }
 
-// Stroke is a line-width token: a border, a divider, a focus outline
-// and its offset. Value is a non-negative CSS length ("1px", "0.125rem")
-// or "0", which is a real width (a borderless theme). The set is
-// optional: a token left fully zero emits the default theme's width, so
-// a theme written before strokes existed keeps its borders and every
-// var(--stroke-*) reader resolves.
+// Stroke is a line-width token.
 type Stroke struct {
 	Name  string
 	Value string
@@ -68,10 +46,7 @@ type Stroke struct {
 func (s Stroke) CSS() string    { return varRef("stroke", s.Name) }
 func (s Stroke) String() string { return s.CSS() }
 
-// LineHeight is a line-height token, emitted as --leading-<name>. Value
-// is a unitless multiplier ("1.5") or a px/rem/em length. Optional like
-// Stroke: a token left fully zero is not emitted and the kit's var()
-// fallback draws the default.
+// LineHeight is a line-height token, emitted as --leading-<name>.
 type LineHeight struct {
 	Name  string
 	Value string
@@ -81,8 +56,6 @@ func (l LineHeight) CSS() string    { return varRef("leading", l.Name) }
 func (l LineHeight) String() string { return l.CSS() }
 
 // LetterSpacing is a letter-spacing token, emitted as --tracking-<name>.
-// Value is "0" or a signed px/rem/em length ("-0.02em"). Optional like
-// Stroke.
 type LetterSpacing struct {
 	Name  string
 	Value string
@@ -91,8 +64,7 @@ type LetterSpacing struct {
 func (l LetterSpacing) CSS() string    { return varRef("tracking", l.Name) }
 func (l LetterSpacing) String() string { return l.CSS() }
 
-// Opacity is an opacity token, emitted as --opacity-<name>. Value is a
-// number from 0 to 1. Optional like Stroke.
+// Opacity is an opacity token, emitted as --opacity-<name>.
 type Opacity struct {
 	Name  string
 	Value string
@@ -128,8 +100,7 @@ type Shadow struct {
 func (s Shadow) CSS() string    { return varRef("shadow", s.Name) }
 func (s Shadow) String() string { return s.CSS() }
 
-// ZIndexValue is a z-index layer. Use a distinct type name to avoid
-// shadowing the ZIndex theme struct.
+// ZIndexValue is a z-index layer.
 type ZIndexValue struct {
 	Name  string
 	Value int
@@ -148,18 +119,14 @@ type Duration struct {
 func (d Duration) CSS() string    { return varRef("duration", d.Name) }
 func (d Duration) String() string { return d.CSS() }
 
-// FormattedValue returns the duration as a CSS <time> in milliseconds,
-// at full precision ("150ms", "2.5ms", "0.5ms"). CSS has no microsecond
-// unit, so a sub-millisecond value is a fraction of a millisecond. Used
-// by CSSCustomProperties when emitting the :root block.
+// FormattedValue returns the duration as a CSS <time> in milliseconds, at full
+// precision ("150ms", "2.5ms", "0.5ms").
 func (d Duration) FormattedValue() string {
 	ms := d.Value / time.Millisecond
 	ns := d.Value % time.Millisecond
 	if ns == 0 {
 		return strconv.FormatInt(int64(ms), 10) + "ms"
 	}
-	// Integer arithmetic keeps every digit: a float64 of the nanosecond
-	// count rounds past 2^53.
 	sign := ""
 	if d.Value < 0 {
 		sign, ms, ns = "-", -ms, -ns
@@ -168,9 +135,7 @@ func (d Duration) FormattedValue() string {
 	return sign + strconv.FormatInt(int64(ms), 10) + "." + frac + "ms"
 }
 
-// Easing is a CSS timing-function token (e.g. "cubic-bezier(...)",
-// "linear", "ease-out"). Used by widget chrome to keep animation
-// curves theme-driven rather than hard-coded in stylesheets.
+// Easing is a CSS timing-function token (e.g.
 type Easing struct {
 	Name  string
 	Value string
@@ -179,8 +144,7 @@ type Easing struct {
 func (e Easing) CSS() string    { return varRef("easing", e.Name) }
 func (e Easing) String() string { return e.CSS() }
 
-// FontSize is a typography-scale token. Value is the CSS size string
-// (e.g. "1rem", "0.875rem", "clamp(...)" for fluid scales).
+// FontSize is a typography-scale token.
 type FontSize struct {
 	Name  string
 	Value string
@@ -189,11 +153,7 @@ type FontSize struct {
 func (f FontSize) CSS() string    { return varRef("text", f.Name) }
 func (f FontSize) String() string { return f.CSS() }
 
-// Size is a length token: a page column, a bar height, a measure. Value
-// is a CSS length ("66rem", "56px") or a calc()/clamp()/min()/max()
-// expression over lengths, emitted as --size-<name>. Spacing stays the
-// pixel scale for gaps and padding; Size is for the dimensions a layout
-// is built around.
+// Size is a length token.
 type Size struct {
 	Name  string
 	Value string
@@ -202,8 +162,8 @@ type Size struct {
 func (s Size) CSS() string    { return varRef("size", s.Name) }
 func (s Size) String() string { return s.CSS() }
 
-// FontWeight is a font-weight token, 1 to 1000, emitted as
-// --font-weight-<name>.
+// FontWeight is a font-weight token, 1 to 1000, emitted as --font-
+// weight-<name>.
 type FontWeight struct {
 	Name  string
 	Value int
@@ -212,13 +172,7 @@ type FontWeight struct {
 func (w FontWeight) CSS() string    { return varRef("font-weight", w.Name) }
 func (w FontWeight) String() string { return w.CSS() }
 
-// CodeColor is a syntax-highlight palette token. It emits
-// `var(--tk-<name>)`, the --tk-* variables the framework
-// highlighter's .tk-* spans (ui.CodeBlock, markdown code fences)
-// read. Unlike the other token groups the Code group is OPTIONAL:
-// a zero CodeColor is skipped by validation and never emitted, and
-// the component CSS falls back to its built-in palette, so themes
-// predating the group keep working unchanged.
+// CodeColor is a syntax-highlight palette token.
 type CodeColor struct {
 	Name  string
 	Value string
@@ -227,8 +181,6 @@ type CodeColor struct {
 func (c CodeColor) CSS() string    { return varRef("tk", c.Name) }
 func (c CodeColor) String() string { return c.CSS() }
 
-// varRef builds `var(--<category>-<name>)`. Centralized so the
-// var-naming convention has exactly one definition.
 func varRef(category, name string) string {
 	return "var(--" + category + "-" + name + ")"
 }

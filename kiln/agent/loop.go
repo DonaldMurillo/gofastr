@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -131,155 +132,25 @@ func (l *Loop) dispatchTool(ctx context.Context, call ToolCall) protocol.Result 
 	return res
 }
 
-// dispatch is shared by the Loop and the MCP/ACP adapters. Single switch.
+// dispatch is shared by the Loop and the MCP/ACP adapters. The tool table
+// is toolargs.Call, the same one the chat HTTP endpoint uses.
 func dispatch(ctx context.Context, t *protocol.Tools, call ToolCall) protocol.Result {
 	buf, err := json.Marshal(call.Args)
 	if err != nil {
 		return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
 	}
-	// The model is an untrusted-ish peer for decode purposes, the same
-	// posture the HTTP twin (kiln/chat server.go dispatch) takes: args
-	// carrying two spellings of one field that differ only by case are
-	// ambiguity, not data. A plain json.Unmarshal folds them last-wins
-	// (map marshalling sorts keys, so the fold is even deterministic),
-	// which redirected the journaled edit to whatever spelling happened
-	// to sort last. Strict decode refuses them as validation errors, and
-	// the exact decode keeps an integer past 2^53 in an `any` slot.
-	dec := func(out any) error { return toolargs.Decode(buf, out) }
-
-	switch call.Name {
-	case "world_get":
-		var a protocol.WorldGetArgs
-		if err := dec(&a); err != nil && len(buf) > 2 {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.WorldGet(ctx, a)
-	case "set_app_config":
-		var a protocol.SetAppConfigArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.SetAppConfig(ctx, a)
-	case "set_scaffold":
-		var a protocol.SetScaffoldArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.SetScaffold(ctx, a)
-	case "add_entity":
-		var a protocol.AddEntityArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddEntity(ctx, a)
-	case "update_entity":
-		var a protocol.UpdateEntityArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.UpdateEntity(ctx, a)
-	case "delete_entity":
-		var a protocol.DeleteEntityArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.DeleteEntity(ctx, a)
-	case "add_field":
-		var a protocol.AddFieldArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddField(ctx, a)
-	case "delete_field":
-		var a protocol.DeleteFieldArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.DeleteField(ctx, a)
-	case "add_page":
-		var a protocol.AddPageArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddPage(ctx, a)
-	case "delete_page":
-		var a protocol.DeletePageArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.DeletePage(ctx, a)
-	case "update_page_element":
-		var a protocol.UpdatePageElementArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.UpdatePageElement(ctx, a)
-	case "add_hook":
-		var a protocol.AddHookArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddHook(ctx, a)
-	case "delete_hook":
-		var a protocol.DeleteHookArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.DeleteHook(ctx, a)
-	case "add_route":
-		var a protocol.AddRouteArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddRoute(ctx, a)
-	case "delete_route":
-		var a protocol.DeleteRouteArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.DeleteRoute(ctx, a)
-	case "add_seed":
-		var a protocol.AddSeedArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.AddSeed(ctx, a)
-	case "propose_plan":
-		var a protocol.ProposePlanArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.ProposePlan(ctx, a)
-	case "approve_plan":
-		var a protocol.ApprovePlanArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.ApprovePlan(ctx, a)
-	case "reject_plan":
-		var a protocol.RejectPlanArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.RejectPlan(ctx, a)
-	case "undo":
-		return t.Undo(ctx, protocol.UndoArgs{})
-	case "reset_session":
-		return t.ResetSession(ctx, protocol.ResetSessionArgs{})
-	case "set_theme":
-		var a protocol.SetThemeArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.SetTheme(ctx, a)
-	case "chat":
-		var a protocol.ChatArgs
-		if err := dec(&a); err != nil {
-			return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
-		}
-		return t.Chat(ctx, a)
+	// The model is an untrusted-ish peer for decode purposes: toolargs
+	// decodes strictly (case-folded duplicate keys are refused, never
+	// folded last-wins onto the typed args) and exactly (an integer past
+	// 2^53 keeps its digits).
+	res, err := toolargs.Call(ctx, t, call.Name, buf)
+	if errors.Is(err, toolargs.ErrUnknownTool) {
+		return protocol.Result{OK: false, Error: "unknown tool: " + call.Name, Kind: "not_found", Hint: "call only the tool names listed in the framework slab"}
 	}
-	return protocol.Result{OK: false, Error: "unknown tool: " + call.Name, Kind: "not_found", Hint: "call only the tool names listed in the framework slab"}
+	if err != nil {
+		return protocol.Result{OK: false, Error: err.Error(), Kind: "validation"}
+	}
+	return res
 }
 
 // Dispatch is exposed for the MCP/ACP transports to share the same

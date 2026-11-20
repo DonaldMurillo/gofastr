@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,15 +22,7 @@ import (
 // once instead of blocking for the default 5s.
 func openBusyQueueDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "busy.db")) +
-		"?_busy_timeout=1&_journal_mode=WAL"
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(4)
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return openQueueFileDB(t, "busy.db", 1, 4)
 }
 
 func TestNackRetriesSQLiteBusy(t *testing.T) {

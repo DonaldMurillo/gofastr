@@ -35,31 +35,25 @@ func TestCORS_SanitizesConfigTokens(t *testing.T) {
 	}
 }
 
-func TestCORS_RejectedOriginOmitsAllowMethods(t *testing.T) {
-	h := CORS(CORSConfig{AllowedOrigins: []string{"https://good.example"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Origin", "https://evil.example")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+// Property: a request whose Origin is not in the allow-list must not
+// receive the CORS metadata a preflight would echo. The allow-methods and
+// allow-headers lists name the app's trusted surface; disclosing them to
+// an arbitrary origin is reconnaissance for free.
+func TestCORS_RejectedOriginOmitsAllowMetadata(t *testing.T) {
+	for _, header := range []string{"Access-Control-Allow-Methods", "Access-Control-Allow-Headers"} {
+		t.Run(header, func(t *testing.T) {
+			h := CORS(CORSConfig{AllowedOrigins: []string{"https://good.example"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Origin", "https://evil.example")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "" {
-		t.Fatalf("SECURITY: [cors] rejected origin received Access-Control-Allow-Methods=%q. Attack: permissive CORS metadata leakage.", got)
-	}
-}
-
-func TestCORS_RejectedOriginOmitsAllowHeaders(t *testing.T) {
-	h := CORS(CORSConfig{AllowedOrigins: []string{"https://good.example"}})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Origin", "https://evil.example")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "" {
-		t.Fatalf("SECURITY: [cors] rejected origin received Access-Control-Allow-Headers=%q. Attack: permissive CORS metadata leakage.", got)
+			if got := rec.Header().Get(header); got != "" {
+				t.Fatalf("SECURITY: [cors] rejected origin received %s=%q. Attack: permissive CORS metadata leakage.", header, got)
+			}
+		})
 	}
 }
 

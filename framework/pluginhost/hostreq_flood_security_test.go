@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/jstest"
 )
 
 // Pins: frame→host request dispatch is bounded (contract answer, round 5:
@@ -30,7 +32,7 @@ import (
 // The predicate below accepts any recognizable bound mechanism, mirroring
 // how channel_security_test accepts its guards.
 func TestBrokerRedInboundSaturation(t *testing.T) {
-	code := nonCommentJS(string(brokerJSBytes))
+	code := jstest.NonCommentJS(string(brokerJSBytes))
 
 	// Scope to handleRequest's body: the file already contains a bound
 	// (MAX_INFLIGHT / E_SATURATED) for the OUTBOUND request() direction, so

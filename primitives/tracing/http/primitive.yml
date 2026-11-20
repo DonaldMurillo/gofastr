@@ -1,0 +1,35 @@
+primitive: tracing.http
+summary: Transport, an http.RoundTripper wrapper that records a client span per outbound request, and PropagateTraceContext, which opts it into sending traceparent.
+code:
+  - core/tracing/http.go
+docs:
+  - framework/docs/content/observability.md
+invariants:
+  - id: url-without-secret-parts
+    rule: url.full is the request URL without its user info, query string or fragment.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingURLDropsSecretParts
+      - test: core/tracing.TestTransportSpanAndNoTraceHeader
+  - id: status-400-and-up-fails
+    rule: A response status of 400 or more marks the span an error with the status code as error.type and an empty status description, and a lower status does not.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingStatusMarksError
+  - id: no-traceparent-by-default
+    rule: Transport injects no traceparent header unless PropagateTraceContext is given, and then injects it into a clone so the caller's request is not changed, while without it a traceparent the caller set is forwarded unchanged.
+    enforced_by:
+      - test: core/tracing.TestTransportSpanAndNoTraceHeader
+      - test: core/tracing.TestTransportPropagatesWhenAsked
+      - test: core/tracing.TestSweepTracingCallerTraceparentForwardedUnchanged
+  - id: close-idle-reaches-base
+    rule: CloseIdleConnections on the wrapper reaches the base transport.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingCloseIdleConnectionsForwards
+decisions:
+  - id: propagation-is-opt-in
+    date: 2026-11-19
+    status: accepted
+    decision: Transport injects traceparent only when PropagateTraceContext is given, for calls between the app's own services; without it a traceparent the caller set is forwarded unchanged, and with it the injected header replaces the caller's on the outgoing clone.
+    rejected:
+      - option: Propagate by default, as the server middleware extracts by default.
+        why: The header hands the caller's trace and span ids to whatever host the request reaches, which for a webhook or third-party API is someone else's server.
+    upholds: [no-traceparent-by-default]

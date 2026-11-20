@@ -27,18 +27,27 @@ func builtinKind(name string) Kind {
 			return ""
 		}
 		return Kind{Input: moneyInput, Cell: show, Text: text}
-	case "email", "url", "color":
-		kindType := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
+	case "email", "tel", "url", "color":
+		kindType := name
+		// An address, a number or a link is typed exactly: the browser
+		// offers the reader's own as a fill (the autocomplete token of
+		// the same name), and nothing spell-checks or capitalizes it.
+		exact := name != "color"
 		return Kind{Input: func(ic InputContext) render.HTML {
 			t := kindType
 			if t == "color" && !simpleColor(ic.Value) {
 				t = "text"
+			}
+			auto := ""
+			if exact {
+				auto = kindType
 			}
 			return ui.FormField(ui.FormFieldConfig{
 				Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
 						Field: c, Type: t, Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
+						AutoComplete: auto, NoSpellCheck: exact,
 						ExtraAttrs: patternAttr(ic.Field.Pattern),
 					})
 				},

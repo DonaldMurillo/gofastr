@@ -23,19 +23,33 @@ func TestModalDefaults(t *testing.T) {
 	}
 }
 
-func TestDrawerDefaults(t *testing.T) {
-	d := Drawer("d").Build()
-	if d.Position != widget.Edge {
-		t.Errorf("Drawer Position = %q, want %q", d.Position, widget.Edge)
+// Drawer and BottomSheet share the overlay contract: a backdrop, the
+// dialog role, and close on Escape or click-outside.
+func TestDrawerAndBottomSheetDefaults(t *testing.T) {
+	overlays := []struct {
+		name     string
+		preset   func(string) *widget.Builder
+		position widget.Position
+	}{
+		{"Drawer", Drawer, widget.Edge},
+		{"BottomSheet", BottomSheet, widget.Bottom},
 	}
-	if !d.Backdrop {
-		t.Errorf("Drawer must have Backdrop=true")
-	}
-	if d.Role != "dialog" {
-		t.Errorf("Drawer Role = %q, want dialog", d.Role)
-	}
-	if !d.CloseOnEscape || !d.CloseOnClickOutside {
-		t.Errorf("Drawer must close on ESC + outside")
+	for _, o := range overlays {
+		t.Run(o.name, func(t *testing.T) {
+			d := o.preset(strings.ToLower(o.name)).Build()
+			if d.Position != o.position {
+				t.Errorf("%s Position = %q, want %q", o.name, d.Position, o.position)
+			}
+			if !d.Backdrop {
+				t.Errorf("%s must have Backdrop=true", o.name)
+			}
+			if d.Role != "dialog" {
+				t.Errorf("%s Role = %q, want dialog", o.name, d.Role)
+			}
+			if !d.CloseOnEscape || !d.CloseOnClickOutside {
+				t.Errorf("%s must close on ESC + click-outside", o.name)
+			}
+		})
 	}
 }
 
@@ -95,22 +109,6 @@ func TestToastStackSlotEscapesName(t *testing.T) {
 	// legitimate use case.
 	if !strings.Contains(got, `&quot;`) {
 		t.Fatalf("expected escaped quote in attr value:\n%s", got)
-	}
-}
-
-func TestBottomSheetDefaults(t *testing.T) {
-	d := BottomSheet("bs").Build()
-	if d.Position != widget.Bottom {
-		t.Errorf("BottomSheet Position = %q, want %q", d.Position, widget.Bottom)
-	}
-	if !d.Backdrop {
-		t.Errorf("BottomSheet must have Backdrop=true")
-	}
-	if d.Role != "dialog" {
-		t.Errorf("BottomSheet Role = %q, want dialog", d.Role)
-	}
-	if !d.CloseOnEscape || !d.CloseOnClickOutside {
-		t.Errorf("BottomSheet must close on ESC + click-outside")
 	}
 }
 

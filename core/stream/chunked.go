@@ -12,8 +12,7 @@ type ChunkedWriter struct {
 	flush http.Flusher
 }
 
-// NewChunkedWriter creates a ChunkedWriter wrapping w.
-// It panics if w does not implement http.Flusher.
+// NewChunkedWriter wraps w. It panics if w is not an http.Flusher.
 func NewChunkedWriter(w http.ResponseWriter) *ChunkedWriter {
 	flush, ok := w.(http.Flusher)
 	if !ok {

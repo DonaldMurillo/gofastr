@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/reexectest"
 )
 
 // A Fanout.Publish that panics (a host backend bug, a closed client) runs
@@ -26,17 +26,10 @@ func TestPublishPanicDoesNotKillProcess(t *testing.T) {
 		publishPanicChild()
 		return
 	}
-	cmd := exec.Command(os.Args[0],
-		"-test.run", "^TestPublishPanicDoesNotKillProcess$",
-		"-test.count=1")
-	cmd.Env = append(os.Environ(), publishPanicChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("a panicking Publish killed the process: %v\n--- child output ---\n%s", err, out)
-	}
-	if strings.Contains(string(out), "panic:") {
-		t.Fatalf("child reported an unrecovered panic:\n%s", out)
-	}
+	reexectest.RunChild(t, "TestPublishPanicDoesNotKillProcess", publishPanicChildEnv,
+		"[fanout-publish-panic]",
+		"[fanout-publish-panic] a panicking Publish killed the process: "+
+			"the PublishQueue drainer did not survive it")
 }
 
 // panicFanout panics on its first Publish and succeeds afterwards.

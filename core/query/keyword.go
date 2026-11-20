@@ -6,29 +6,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// Keyword names
-//
-// AutoMigrate writes its DDL with names unquoted, so Postgres folds a
-// declared Widgets to widgets and every bare reader names the same table.
-// A name that is a keyword cannot go bare: CREATE TABLE posts (order TEXT)
-// and INSERT INTO posts (order) are syntax errors on both engines, a
-// column named end or desc fails on Postgres, and SELECT user FROM posts
-// on Postgres reads the session user, not the column. Such a name is
-// written with QuoteFolded, which names exactly what the folded bare
-// spelling would. Every other name stays bare, so the SQL a schema without
-// keyword names produces is byte-identical to that of releases before
-// this. The migrator (framework/migrate) and the statement builders use
-// this one set, so a column the DDL quoted is quoted by every query that
-// reads or writes it.
-
-// keywords is every word that cannot stand bare as a table, column or
-// index name in the statements the framework writes, on either engine:
-// Postgres's reserved and type/function-name keywords (pg_get_keywords()
-// catcode R and T, Postgres 16), and the SQLite keywords that fail at
-// least one statement the migrator writes (CREATE TABLE, CREATE INDEX,
-// ADD/RENAME/DROP COLUMN, REFERENCES, the rebuild's INSERT and RENAME TO),
-// found by running each. Keywords either engine takes bare (key, action,
-// index on Postgres, status, name) stay bare.
 var keywords = func() map[string]struct{} {
 	words := strings.Fields(`
 		add all alter analyse analyze and any array as asc asymmetric
@@ -52,21 +29,13 @@ var keywords = func() map[string]struct{} {
 	return m
 }()
 
-// IsKeyword reports whether name, ASCII-folded, is a word that cannot
-// stand bare as a table, column or index name on SQLite or Postgres
-// (order, group, user, end, desc, limit, …). A dotted name is not one;
-// QuoteKeyword reads each part.
+// IsKeyword reports whether name, ASCII-folded, cannot stand bare as a table, column or index name on SQLite or Postgres.
 func IsKeyword(name string) bool {
 	_, ok := keywords[asciicase.Lower(name)]
 	return ok
 }
 
-// QuoteKeyword renders an identifier the caller has validated (SafeIdent)
-// for a statement: each dot-separated part that is a keyword quoted and
-// folded (QuoteFolded), every other part bare. It is the spelling the
-// migrator writes its DDL in, so a query that names a column through it
-// names the column the DDL created. A part already quoted is no keyword,
-// so QuoteKeyword of its own output changes nothing.
+// QuoteKeyword renders a validated identifier with each keyword part quoted and folded (QuoteFolded) and every other part bare.
 //
 //	QuoteKeyword("title")       → title
 //	QuoteKeyword("order")       → "order"
@@ -96,10 +65,6 @@ func QuoteKeywords(names []string) []string {
 	return out
 }
 
-// identSlot renders a builder's identifier slot (a table, a column, an
-// ORDER BY or cursor column) after its scrub: a plain or dotted
-// identifier goes through QuoteKeyword, and anything else (*, a quoted
-// name, an expression a caller put in the slot) is left as it is.
 func identSlot(s string) string {
 	if !identRe.MatchString(s) {
 		return s

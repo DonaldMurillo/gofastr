@@ -60,7 +60,7 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepFormsFieldRefusesALabelThatNamesNothing
   - id: field-describes-error-then-hint
-    rule: A Field's control is described by the error's id and then the hint's, the hint stays rendered after an error, and the error node is a role=alert paragraph with id For+"-error".
+    rule: A Field's control is described by the error's id and then the hint's, the hint stays rendered beside an error, and the error node is a paragraph with id For+"-error" and no role of its own.
     enforced_by:
       - test: framework/headless.TestFieldWiresLabelHintAndErrorToTheControl
       - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
@@ -70,7 +70,7 @@ invariants:
       - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
       - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
   - id: field-reserved-error-is-wired
-    rule: ReserveError with no Error renders one empty role=alert error node with id For+"-error" and the data-hui-field-error hook, puts that id first in the control's description, and leaves the control valid.
+    rule: ReserveError with no Error renders one empty error node with id For+"-error" and the data-hui-field-error hook, puts that id first in the control's description, and leaves the control valid.
     enforced_by:
       - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
       - test: framework/ui.TestFormFieldReserveErrorRendersAnEmptyWiredNode
@@ -287,11 +287,21 @@ decisions:
     upholds: [field-describes-error-then-hint]
   - id: field-error-is-an-alert
     date: 2026-11-16
-    status: accepted
+    status: superseded
+    superseded_by: refusal-is-read-from-one-polite-region
     decision: A Field's error node is role=alert, because it is inserted after a failed submit and has to interrupt.
     rejected:
       - option: An aria-live region updated in place.
         why: The node is inserted rather than updated, and a polite region would not interrupt.
+    upholds: [field-describes-error-then-hint]
+  - id: refusal-is-read-from-one-polite-region
+    date: 2026-11-19
+    status: accepted
+    decision: No field or choice error node is role=alert; the runtime's formerrors module reads a refused submission once, one sentence per field, from the document's one polite region, and focus moves to the first refused control.
+    rejected:
+      - option: A role=alert per error node.
+        why: A form with ten refused fields is ten interruptions read in no useful order, and a server-rendered alert on page load is not announced by most screen readers anyway.
+    revisit_if: A screen reader in common use stops announcing a polite region filled right after a submit.
     upholds: [field-describes-error-then-hint]
   - id: reserved-error-is-not-an-interrupt
     date: 2026-11-16

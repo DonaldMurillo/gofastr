@@ -1,0 +1,82 @@
+primitive: openapi.serve
+summary: The handlers that serve a spec - Handler, PublicHandler, GatedHandler - and the server-rendered API reference page of DocsHandlerWith.
+code:
+  - core/openapi/handler.go
+  - core/openapi/docspage.go
+docs:
+  - framework/docs/content/api-versioning.md
+invariants:
+  - id: spec-is-gated-by-default
+    rule: Handler and a non-public docs page answer 401 to a request with no user, and the gated paths serve the spec's RequestView when it has one.
+    enforced_by:
+      - test: framework.TestOpenAPISpecHandler_RequiresAuth
+      - test: framework.TestOpenAPI_GatedByDefault
+      - test: core/openapi.TestDocsPageGatedUsesRequestView
+      - test: core/openapi.TestGatedHandlerUsesRequestView
+  - id: gate-refusal-is-404
+    rule: GatedHandler answers 404 to a request allow refuses and to every request when allow is nil.
+    enforced_by:
+      - test: core/openapi.TestOpenAPI_GatedHandlerHidesSpec
+      - test: core/openapi.TestOpenAPI_GatedHandlerNilAllowDenies
+  - id: static-spec-built-once
+    rule: PublicHandler, and GatedHandler for a spec with no RequestView, serve the document built when the handler was made.
+    enforced_by:
+      - test: core/openapi.TestGatedHandlerStaticSpecBuiltOnce
+  - id: docs-page-is-script-free
+    rule: The docs page carries no script, stylesheet, inline style or third-party asset, and every response, the 401 included, sends a CSP of default-src 'self', nosniff, DENY framing, no-referrer and no-store.
+    enforced_by:
+      - test: core/openapi.TestDocsPageIsCSPClean
+      - test: core/openapi.TestDocsHandler_DoesNotLoadThirdPartyCDNAssets
+      - test: core/openapi.TestDocsHandler_CarriesContentSecurityPolicy
+  - id: docs-link-is-safe
+    rule: The page escapes every spec value and BasePath, and links the spec through the urlsafe anchor allow-list, falling back to the bare SpecPath.
+    enforced_by:
+      - test: core/openapi.TestDocsLinkRefusesUnsafeScheme
+      - test: core/openapi.TestSwaggerUI_EscapesBasePath
+  - id: docs-paths-are-clean
+    rule: DocsHandlerWith panics on a SpecPath or PagePath that is not an absolute clean path of plain segments or on the two being equal, and drops a trailing slash from BasePath so /docs and /docs/ mount the same tree.
+    enforced_by:
+      - test: core/openapi.TestDocsHandlerWithRefusesBadPaths
+      - test: core/openapi.TestDocsHandlerWithTrailingSlashBasePath
+      - test: core/openapi.TestDocsHandlerWithRootBasePath
+  - id: docs-refusals-are-i18n
+    rule: Under BasePath only the page paths and SpecPath answer, an unknown path gets the i18n 404 and a method other than GET or HEAD the i18n 405 with Allow GET, HEAD.
+    enforced_by:
+      - test: core/openapi.TestDocsHandlerWithRefusalsAreI18n
+  - id: docs-page-groups-by-tag
+    rule: The page lists operations grouped by first tag with untagged operations last, and shows the description as one paragraph per blank-line-separated block.
+    enforced_by:
+      - test: core/openapi.TestDocsPageListsOperations
+decisions:
+  - id: public-spec-ignores-the-view
+    date: 2026-11-19
+    status: accepted
+    decision: PublicHandler serves the whole spec and ignores RequestView.
+    rejected:
+      - option: Filter the public spec per request too.
+        why: The public opt-in is full disclosure and its document is the same for every caller, so it is built once.
+    upholds: [static-spec-built-once]
+  - id: refuse-with-404
+    date: 2026-11-19
+    status: accepted
+    decision: GatedHandler refuses with 404.
+    rejected:
+      - option: Refuse with 401 or 403.
+        why: Either tells the caller the spec endpoint exists, which is the disclosure the gate exists to prevent.
+    upholds: [gate-refusal-is-404]
+  - id: docs-page-without-swagger-ui
+    date: 2026-11-19
+    status: accepted
+    decision: The reference page is server-rendered semantic HTML that links the spec for external viewers.
+    rejected:
+      - option: Serve Swagger UI.
+        why: It needs script and styles from a CDN or a bundled asset, which the default Content-Security-Policy refuses.
+    upholds: [docs-page-is-script-free]
+  - id: one-view-resolver
+    date: 2026-11-19
+    status: accepted
+    decision: Spec.viewFor is the one place a request's RequestView is resolved and given the base info; it replaced the copies in serveSpec and the docs page.
+    rejected:
+      - option: Resolve the view in each handler.
+        why: The docs page and the JSON handler would drift on whether a nil view or the inherited info applies.
+    upholds: [spec-is-gated-by-default, openapi.spec/view-inherits-info-without-writing-it]

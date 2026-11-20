@@ -87,14 +87,14 @@ func inputGroupCSS(_ style.Theme) string {
    input would, and the input inside draws none, or the addon sits
    outside the red box. The input selectors outweigh the control's own
    [aria-invalid] rule, whose sheet may load after this one. */
-.fui-input-group:has(> [aria-invalid="true"]) {
+.fui-input-group:has(> :is(:user-invalid, [aria-invalid="true"])) {
   border-color: var(--color-danger, #B91C1C);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }
 .fui-input-group > input,
 .fui-input-group > select,
-.fui-input-group > input[aria-invalid="true"],
-.fui-input-group > select[aria-invalid="true"] { box-shadow: none; }
+.fui-input-group > input:is(:user-invalid, [aria-invalid="true"]),
+.fui-input-group > select:is(:user-invalid, [aria-invalid="true"]) { box-shadow: none; }
 .fui-input-group > input:focus-visible,
 .fui-input-group > select:focus-visible {
   outline: none;

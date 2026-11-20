@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+// assertBashBlocked runs cmd through the Bash tool and asserts the
+// credential-exfil blocklist refuses it with a "blocked" diagnostic;
+// label carries the leg's own wording into the failure message.
+func assertBashBlocked(t *testing.T, label, cmd string) {
+	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
+		"cmd": cmd,
+	}), nil)
+	if res == nil || !res.IsError || !strings.Contains(res.Content[0].Text, "blocked") {
+		t.Errorf("Bash allowed %s %q: %+v", label, cmd, res)
+	}
+}
+
+// assertBashClean runs cmd through the Bash tool and asserts it executes
+// clean, proving the blocklist refuses by content, not blunt rejection.
+func assertBashClean(t *testing.T, cmd string) {
+	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
+		"cmd": cmd,
+	}), nil)
+	if res.IsError {
+		t.Errorf("Bash blocked benign command: %+v", res)
+	}
+}
+
 // TestBashBlocklistBypass asserts the credential-exfil blocklist
 // blocks a banned command regardless of invocation form: absolute
 // path, benign-token-then-separator, or `command`/`env` prefix.
@@ -18,20 +41,10 @@ func TestBashBlocklistBypass(t *testing.T) {
 		"echo a && keyctl list @u",             // && chained after benign token
 	}
 	for _, cmd := range blocked {
-		res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
-			"cmd": cmd,
-		}), nil)
-		if res == nil || !res.IsError || !strings.Contains(res.Content[0].Text, "blocked") {
-			t.Errorf("Bash allowed blocklist-bypass command %q: %+v", cmd, res)
-		}
+		assertBashBlocked(t, "blocklist-bypass command", cmd)
 	}
 	// Happy path: a benign command that merely shares a prefix is allowed.
-	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
-		"cmd": "echo securely",
-	}), nil)
-	if res.IsError {
-		t.Errorf("Bash blocked benign command: %+v", res)
-	}
+	assertBashClean(t, "echo securely")
 }
 
 // TestBashBlocklistShellForms asserts the blocklist also catches a
@@ -47,18 +60,8 @@ func TestBashBlocklistShellForms(t *testing.T) {
 		`\security dump-keychain`,               // leading backslash
 	}
 	for _, cmd := range blocked {
-		res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
-			"cmd": cmd,
-		}), nil)
-		if res == nil || !res.IsError || !strings.Contains(res.Content[0].Text, "blocked") {
-			t.Errorf("Bash allowed shell-form blocklist bypass %q: %+v", cmd, res)
-		}
+		assertBashBlocked(t, "shell-form blocklist bypass", cmd)
 	}
 	// Happy path: a benign substitution is allowed.
-	res, _ := (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
-		"cmd": "echo $(echo hi)",
-	}), nil)
-	if res.IsError {
-		t.Errorf("Bash blocked benign substitution: %+v", res)
-	}
+	assertBashClean(t, "echo $(echo hi)")
 }

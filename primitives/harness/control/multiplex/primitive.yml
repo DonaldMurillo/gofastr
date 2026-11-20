@@ -1,0 +1,49 @@
+primitive: harness.control.multiplex
+summary: The multiplexer between the control transports and the session engines - it tracks the clients attached to each session, runs one turn at a time per session, routes CancelTurn to the running turn, and lets only an allowed client answer a permission prompt.
+code:
+  - framework/experimental/harness/control/multiplex/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: one-turn-per-session
+    rule: A SendInput that arrives while a turn runs on the session is refused with *TurnInProgressError naming the client that started the running turn, whatever transport either came from.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestSendInputRejectsMidTurn
+  - id: slot-free-before-turn-ended
+    rule: The turn slot is released through the engine's OnTurnEnd hook before TurnEnded is published, so a client that sends on seeing TurnEnded is never refused as mid-turn.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestSlotFreeWhenTurnEndedArrives
+  - id: turn-outlives-its-request
+    rule: A turn runs on a context derived from the engine's cancel tree, not the Dispatch context, so the end of the HTTP request or MCP call that started it does not end the turn.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestTurnOutlivesDispatchContext
+  - id: cancel-ends-only-that-turn
+    rule: CancelTurn cancels only the context of the turn that is running, so the next turn, and one after a CancelTurn sent while idle, run to completion.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestCancelEndsOnlyThatTurn
+  - id: agent-cannot-self-approve
+    rule: An agent-class client cannot answer a permission prompt raised in a turn it started; Dispatch returns ErrAgentCannotSelfApprove.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestAnswerPermissionAgentCannotSelfApprove
+  - id: human-answers-prompts
+    rule: A permission prompt is answered only by a human-class client, so any other agent gets ErrHumanAnswerRequired.
+    enforced_by:
+      - test: framework/experimental/harness/control/multiplex.TestOtherAgentNeedsHumanToAnswer
+      - test: framework/experimental/harness/control/multiplex.TestAnswerPermissionHumanAllowed
+decisions:
+  - id: mux-runs-per-turn-commands-only
+    date: 2026-11-18
+    status: accepted
+    decision: Dispatch runs SendInput, CancelTurn and AnswerPermission and returns ErrUnhandledCommand for every other command, leaving session lifecycle and model changes to the harness composition.
+    rejected:
+      - option: Route every Command through the Mux.
+        why: Session creation needs the session store, profiles and providers, which the Mux does not hold.
+    revisit_if: SetModel, EnterPlanMode or ExitPlanMode get a handler; today rest, ws and mcpserver accept them and the Mux refuses each one.
+  - id: originator-is-atomic
+    date: 2026-11-18
+    status: accepted
+    decision: The running turn's originator is an atomic.Value, read without a lock by the mid-turn refusal and the permission path.
+    rejected:
+      - option: A plain field guarded only by turnBusy.
+        why: The turn goroutine clears it on release while other goroutines read it, which is a data race; a slightly stale originator in a refusal is acceptable, a torn read is not.
+    upholds: [one-turn-per-session, agent-cannot-self-approve]

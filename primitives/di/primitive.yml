@@ -1,0 +1,66 @@
+primitive: di
+summary: The core-ui dependency-injection Container - Provide registers a constructor or value per type, Resolve and Inject hand out the one singleton per type, filling inject-tagged fields through embedded structs.
+code:
+  - core-ui/di/
+on_change:
+  - core-ui/app injects screens through Inject before the render pipeline's recover runs, so a wiring mistake here must come back as an error, never a panic.
+invariants:
+  - id: constructor-runs-unlocked
+    rule: A constructor runs without the container's lock held, so it may Resolve or Inject the services it needs.
+    enforced_by:
+      - test: core-ui/di.TestFactoryResolvesDependency
+  - id: one-build-at-a-time
+    rule: A constructor is called at most once per type at a time; a second caller for a type still building waits and shares the first call's value or error.
+    enforced_by:
+      - test: core-ui/di.TestColdResolveCallsFactoryOnce
+      - test: core-ui/di.TestInjectConcurrentColdStart
+  - id: panic-caches-nothing
+    rule: A constructor that panics caches nothing and releases its waiters with an error, so the next caller calls it again.
+    enforced_by:
+      - test: core-ui/di.TestPanickingFactoryReleasesBuild
+      - test: core-ui/di.TestWaiterOnPanickedBuildErrs
+  - id: nil-interface-is-an-error
+    rule: A constructor that returns a nil interface makes Resolve and Inject return an error and is not cached, so a corrected Provide stays usable.
+    enforced_by:
+      - test: core-ui/di.TestDiRedNilProviderErrors
+  - id: provide-once-before-use
+    rule: Provide errors for a type whose constructor is running or whose value is cached, while an unresolved constructor may still be replaced.
+    enforced_by:
+      - test: core-ui/di.TestDI_ProvideAfterResolveRefused
+      - test: core-ui/di.TestProvideRefusesBuildingType
+  - id: provide-checks-constructor-shape
+    rule: Provide errors on nil, on a function that does not return exactly one value and on a function that takes parameters.
+    enforced_by:
+      - test: core-ui/di.TestDI_ProvideNil
+      - test: core-ui/di.TestDI_ProvideMultiReturnFunc
+      - test: core-ui/di.TestDI_ProvideRefusesParameters
+  - id: inject-never-panics-on-wiring
+    rule: Inject returns an error, never panics, for an unexported inject-tagged field, a missing provider and a nil unexported embedded pointer whose struct holds inject tags.
+    enforced_by:
+      - test: core-ui/di.TestInjectUnexportedFieldErrors
+      - test: core-ui/di.TestDI_InjectErrorsOnMissingProvider
+      - test: core-ui/di.TestInjectRefusesNilHiddenEmbed
+  - id: inject-walks-embeds
+    rule: Inject fills inject-tagged fields promoted from embedded structs, allocating a nil exported embedded pointer whose struct holds inject tags, stops at a struct already on the path, and InjectTagCount counts the same fields.
+    enforced_by:
+      - test: core-ui/di.TestInjectFillsEmbeddedFields
+      - test: core-ui/di.TestInjectSelfEmbedTerminates
+      - test: core-ui/di.TestInjectTagCountSeesEmbeds
+decisions:
+  - id: constructors-take-no-arguments
+    date: 2026-11-20
+    status: accepted
+    decision: A constructor takes no parameters and resolves its own dependencies inside, and Provide refuses one with parameters.
+    rejected:
+      - option: Accept constructors with parameters and fill them by type.
+        why: Resolution called every constructor with no arguments, so one with parameters passed Provide and panicked in reflect on every request that injected it.
+    upholds: [provide-checks-constructor-shape]
+  - id: build-outside-the-lock
+    date: 2026-11-20
+    status: accepted
+    decision: The container records an in-flight build per type and runs the constructor after unlocking, so waiters block on the build, not on the container.
+    rejected:
+      - option: Call the constructor under the container's lock.
+        why: A constructor that resolves another service deadlocked on the lock it was called under.
+    revisit_if: A constructor needs its own type, directly or through another constructor; it waits on itself forever today.
+    upholds: [constructor-runs-unlocked, one-build-at-a-time]

@@ -17,33 +17,14 @@ import (
 type EncryptionMode int
 
 const (
-	// EncryptionNone: plaintext SQLite file. The default for v0.1.
+	// EncryptionNone stores a plaintext SQLite file.
 	EncryptionNone EncryptionMode = iota
 
-	// EncryptionAtRest: the SQLite file is encrypted in place
-	// using file-level AES-GCM whenever the harness is not running.
-	// On Open(), the file is decrypted to a sidecar; on Close(), the
-	// sidecar is re-encrypted and the decrypted copy is removed.
-	//
-	// The architecture doc notes that whole-file encryption + VACUUM
-	// is a problem for very large logs; this mode accepts that
-	// limitation in exchange for a real defense against laptop theft.
-	// Page-level encryption requires a custom SQLite VFS and is a
-	// genuinely larger sub-project (acknowledged in the spec but not
-	// blocking v0.1).
+	// EncryptionAtRest keeps the file AES-GCM encrypted as <path>.enc while the store is closed.
 	EncryptionAtRest
 )
 
-// OpenEncrypted opens a SQLite session log with the requested
-// encryption mode. The key (32 bytes) protects the at-rest file when
-// mode == EncryptionAtRest.
-//
-//   - mode = EncryptionNone: behaves exactly like Open.
-//   - mode = EncryptionAtRest: if `<path>.enc` exists, decrypt to
-//     `path` first; then open. The encrypted form is written on Close.
-//
-// The unencrypted `path` is created with mode 0600 and lives in the
-// XDG state dir, which is owner-readable only on every supported OS.
+// OpenEncrypted opens the log like Open; with EncryptionAtRest and a 32-byte key it first decrypts <path>.enc to an owner-only path.
 func OpenEncrypted(path string, mode EncryptionMode, key []byte) (*Store, error) {
 	switch mode {
 	case EncryptionNone:
@@ -69,9 +50,7 @@ func OpenEncrypted(path string, mode EncryptionMode, key []byte) (*Store, error)
 	return nil, fmt.Errorf("sqlite: unknown encryption mode %d", mode)
 }
 
-// CloseEncrypted closes the Store and re-encrypts the file when
-// EncryptionAtRest is active. The plaintext file is removed
-// afterwards.
+// CloseEncrypted closes the store and, under EncryptionAtRest, writes <path>.enc and removes the plaintext file.
 func (s *Store) CloseEncrypted() error {
 	if s.encMode != EncryptionAtRest {
 		return s.Close()
@@ -79,24 +58,19 @@ func (s *Store) CloseEncrypted() error {
 	if err := s.Close(); err != nil {
 		return err
 	}
-	// Best effort: encrypt the file in place.
 	encPath := s.path + ".enc"
 	if err := encryptFile(s.path, encPath, s.encKey); err != nil {
 		return err
 	}
-	// Remove the plaintext file. The user keeps only the .enc.
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Zero the key in memory.
 	for i := range s.encKey {
 		s.encKey[i] = 0
 	}
 	return nil
 }
 
-// encryptFile encrypts inPath → outPath using AES-GCM. The first
-// 12 bytes of outPath are the nonce, followed by ciphertext+tag.
 func encryptFile(inPath, outPath string, key []byte) error {
 	plain, err := os.ReadFile(inPath)
 	if err != nil {
@@ -115,10 +89,6 @@ func encryptFile(inPath, outPath string, key []byte) error {
 		return err
 	}
 	ct := gcm.Seal(nonce, nonce, plain, nil)
-	// Atomic write via .tmp + rename; WriteOwnerOnly so the tmp (and
-	// therefore the renamed ciphertext) is 0600 on create AND
-	// overwrite — a pre-existing weaker tmp keeps its mode under bare
-	// os.WriteFile.
 	tmp := outPath + ".tmp"
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
@@ -153,12 +123,6 @@ func decryptFile(encPath, outPath string, key []byte) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
 	}
-	// Mirror encryptFile's tmp+rename, with the handle tightened to
-	// 0600 BEFORE plaintext lands: the recurring outPath is the full
-	// decrypted session DB, and OpenEncrypted's own doc promises mode
-	// 0600 — a leftover/restored 0644 plaintext path must not stay
-	// group/world-readable for the session lifetime, and a reader of
-	// the recurring path must never see a half-written plaintext.
 	tmp := outPath + ".tmp"
 	if err := fileperm.WriteOwnerOnly(tmp, plain); err != nil {
 		return err

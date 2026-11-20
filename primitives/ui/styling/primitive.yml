@@ -2,8 +2,6 @@ primitive: ui.styling
 summary: The one styling surface, theme tokens, component sheets and the owned style sheets an app may add.
 code:
   - framework/ui/theme/
-  - core-ui/style/
-  - core-ui/ownstyle/
 docs:
   - core-ui/ARCHITECTURE.md
   - framework/docs/content/codegen.md
@@ -102,6 +100,15 @@ invariants:
     rule: Brutal's radii are zero and its shadows are hard offsets drawn in var(--color-border), so they flip with the colour scheme.
     enforced_by:
       - test: framework/ui/theme.TestBrutalReskinsTheTokens
+  - id: visually-hidden-clips-with-clip-path
+    rule: No kit sheet and no built-in host sheet uses the deprecated clip property; content hidden from view and kept for assistive tech is clipped with clip-path inset(50%).
+    enforced_by:
+      - test: framework/ui.TestKitHidesWithClipPath
+      - test: framework/uihost.TestBuiltinCSSHidesWithClipPath
+  - id: required-mark-keeps-a-fallback
+    rule: Every required-mark rule that writes content " *" / "" has the single-value content " *" line right before it.
+    enforced_by:
+      - test: framework/ui.TestRequiredMarkKeepsAFallback
 decisions:
   - id: generator-ships-no-css
     status: accepted

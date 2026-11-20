@@ -121,7 +121,7 @@ func exportConfiguredStores(t *testing.T, userTable string) {
 	})
 	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twofa}))
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true,
 		RPID: "example.com", Origins: []string{"https://example.com"},
 		Store: passkeys, ChallengeStore: challenges, TwoFactorURL: "/2fa",
 	}))

@@ -16,6 +16,42 @@ func writeTempGoFile(t *testing.T, dir, name, content string) string {
 	return path
 }
 
+// lintFixture lints a temp .ui.go file holding content and fails the
+// test on an unexpected error.
+func lintFixture(t *testing.T, name, content string) *Result {
+	t.Helper()
+	path := writeTempGoFile(t, t.TempDir(), name, content)
+	result, err := LintFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return result
+}
+
+// requireViolation fails unless result reports a violation whose message
+// is exactly want.
+func requireViolation(t *testing.T, result *Result, want string) {
+	t.Helper()
+	for _, v := range result.Violations {
+		if v.Message == want {
+			return
+		}
+	}
+	t.Errorf("expected violation %q, got: %v", want, result.Violations)
+}
+
+// requireViolationContaining fails unless result reports a violation
+// whose message contains want.
+func requireViolationContaining(t *testing.T, result *Result, want string) {
+	t.Helper()
+	for _, v := range result.Violations {
+		if strings.Contains(v.Message, want) {
+			return
+		}
+	}
+	t.Errorf("expected a violation containing %q, got: %v", want, result.Violations)
+}
+
 func TestLintValidFile(t *testing.T) {
 	dir := t.TempDir()
 	content := `package test
@@ -34,27 +70,10 @@ func Render() string { return fmt.Sprintf("hello") }
 }
 
 func TestLintGoroutine(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "goroutine.ui.go", `package test
 func Render() { go func() {}() }
-`
-	path := writeTempGoFile(t, dir, "goroutine.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for goroutine, got none")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if v.Message == "goroutines not allowed in .ui.go files" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected goroutine violation, got: %v", result.Violations)
-	}
+`)
+	requireViolation(t, result, "goroutines not allowed in .ui.go files")
 }
 
 func TestLintChannel(t *testing.T) {
@@ -98,53 +117,19 @@ func Bad() {
 }
 
 func TestLintForbiddenImport(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "os_import.ui.go", `package test
 import "os"
 func Bad() { _ = os.Args }
-`
-	path := writeTempGoFile(t, dir, "os_import.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for os import, got none")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if v.Message == "os package not allowed in .ui.go files" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected os import violation, got: %v", result.Violations)
-	}
+`)
+	requireViolation(t, result, "os package not allowed in .ui.go files")
 }
 
 func TestLintReflectImport(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "reflect.ui.go", `package test
 import "reflect"
 func Bad() { reflect.TypeOf(42) }
-`
-	path := writeTempGoFile(t, dir, "reflect.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for reflect import")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if v.Message == "reflect package not allowed in .ui.go files" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected reflect import violation, got: %v", result.Violations)
-	}
+`)
+	requireViolation(t, result, "reflect package not allowed in .ui.go files")
 }
 
 func TestLintAllowedImports(t *testing.T) {
@@ -230,27 +215,10 @@ func Ok(x int) {
 }
 
 func TestLintMakeChan(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "makechan.ui.go", `package test
 func Bad() { _ = make(chan int) }
-`
-	path := writeTempGoFile(t, dir, "makechan.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for make(chan)")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if strings.Contains(v.Message, "channel creation (make(chan))") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected channel creation violation, got: %v", result.Violations)
-	}
+`)
+	requireViolationContaining(t, result, "channel creation (make(chan))")
 }
 
 func TestLintPackage(t *testing.T) {
@@ -307,53 +275,19 @@ func TestResultError(t *testing.T) {
 }
 
 func TestLintNetHTTP(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "nethttp.ui.go", `package test
 import "net/http"
 func Bad() { http.Get("http://example.com") }
-`
-	path := writeTempGoFile(t, dir, "nethttp.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for net/http import")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if v.Message == "net/http package not allowed in .ui.go files" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected net/http violation, got: %v", result.Violations)
-	}
+`)
+	requireViolation(t, result, "net/http package not allowed in .ui.go files")
 }
 
 func TestLintContextImport(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "context.ui.go", `package test
 import "context"
 func Bad() { _ = context.Background() }
-`
-	path := writeTempGoFile(t, dir, "context.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violations for context import")
-	}
-	found := false
-	for _, v := range result.Violations {
-		if v.Message == "context package not allowed in .ui.go files" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected context violation, got: %v", result.Violations)
-	}
+`)
+	requireViolation(t, result, "context package not allowed in .ui.go files")
 }
 
 // ===========================================================================
@@ -496,31 +430,14 @@ func Bad() {
 }
 
 func TestLintLinkMissingHref(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	result := lintFixture(t, "link_no_href.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Bad() {
 	html.Link(html.LinkConfig{Text: "Click"})
 }
-`
-	path := writeTempGoFile(t, dir, "link_no_href.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.HasErrors() {
-		t.Fatal("expected violation for Link without Href")
-	}
+`)
 	// Should report missing Href
-	found := false
-	for _, v := range result.Violations {
-		if strings.Contains(v.Message, "Href") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected missing Href violation, got: %v", result.Violations)
-	}
+	requireViolationContaining(t, result, "Href")
 }
 
 func TestLintLinkComplete(t *testing.T) {

@@ -80,12 +80,22 @@ func TestLightboxNavArrowsAddsButtons(t *testing.T) {
 	}
 }
 
+// renderSlot renders the probe lightbox slot with mods applied, the
+// off/on pair every option test compares.
+func renderSlot(mods ...func(*lightboxSlot)) string {
+	s := lightboxSlot{name: "x", label: "x"}
+	for _, mod := range mods {
+		mod(&s)
+	}
+	return string(s.Render())
+}
+
 func TestLightboxShowCaptionAddsFigcaption(t *testing.T) {
-	off := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	off := renderSlot()
 	if strings.Contains(off, "<figcaption") {
 		t.Errorf("ShowCaption=false should NOT emit <figcaption>:\n%s", off)
 	}
-	on := string((&lightboxSlot{name: "x", label: "x", showCaption: true}).Render())
+	on := renderSlot(func(s *lightboxSlot) { s.showCaption = true })
 	if !strings.Contains(on, "<figcaption") {
 		t.Errorf("ShowCaption=true should emit <figcaption>:\n%s", on)
 	}
@@ -95,11 +105,11 @@ func TestLightboxShowCaptionAddsFigcaption(t *testing.T) {
 }
 
 func TestLightboxAllowDownloadAddsAnchor(t *testing.T) {
-	off := string((&lightboxSlot{name: "x", label: "x"}).Render())
+	off := renderSlot()
 	if strings.Contains(off, "fui-lightbox__download") {
 		t.Errorf("AllowDownload=false should NOT emit download anchor:\n%s", off)
 	}
-	on := string((&lightboxSlot{name: "x", label: "x", allowDownload: true}).Render())
+	on := renderSlot(func(s *lightboxSlot) { s.allowDownload = true })
 	if !strings.Contains(on, `class="fui-lightbox__download"`) {
 		t.Errorf("AllowDownload=true should emit download anchor:\n%s", on)
 	}

@@ -748,7 +748,9 @@ global rule would let one approval of `go test ./...` in your own repo
 run a cloned repo's tests with no prompt. A rule saved before rules
 carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
-`/permissions:promote <rule>`.
+`/permissions:promote <rule>`. Promotion is refused, and the session
+rule kept, when a persistent rule or an earlier preset rule with a
+different action would still decide the same calls.
 
 ### 3. Event bus
 
@@ -1638,7 +1640,7 @@ Transport-specific framing:
 | `Command` body fields | **Ignore unknown** (additive evolution) |
 | `Event` body fields | **Ignore unknown** |
 | Token claim set | **Reject token if any claim listed in its own `critical_claims: []` is unrecognized; ignore other unknowns.** Fail-closed on capability-restricting claims. |
-| Profile TOML | **Warn, do not error** on unknown keys (forward-compat for downgrades). Require explicit `schema_version` bump for breaking renames. |
+| Profile TOML | **Error** on unknown keys, top-level and inside `mcp_servers` entries, so a misspelled `sha256` never drops a pin. Require explicit `schema_version` bump for breaking renames. |
 | MCP resource bodies | **Ignore unknown** |
 
 Field-name reservations:
@@ -2218,6 +2220,11 @@ allow_project_hooks = false
 Selection: `gofastr harness --framework` or `gofastr harness` (default).
 Override: `--profile <path>`.
 
+`resources.Catalog.ListProfiles()` returns the names of the built-in
+profiles, `framework` and `default`. Both `GET /v1/profiles` and the
+MCP resource `harness/v1://profiles` return this list. A profile
+loaded with `--profile <path>` is not in it.
+
 ### Mid-session profile switching
 
 `/profiles:framework` (or any other profile) **does not morph the
@@ -2402,7 +2409,8 @@ Hooks are shell commands with explicit deadlines:
 Override per-hook in the TOML: `{ event = "PreToolUse", cmd =
 "…", timeout_ms = 60000 }`. `timeout_ms = 0` keeps the per-event
 default; a negative value is rejected at registration. At deadline:
-SIGTERM, then SIGKILL at deadline+5 s. Hook stdout/stderr capped at
+SIGTERM to the hook's process group (Unix), then SIGKILL to the group
+by deadline+5 s. A timed-out hook holds the turn at most the 5 s grace past its deadline, less when the whole group exits on SIGTERM and closes its output. Hook stdout/stderr capped at
 64 KB; truncated
 output is logged with a marker. A hook exiting non-zero emits
 `HookTimeout` (when killed) or `HookError{exit_code}` (when it

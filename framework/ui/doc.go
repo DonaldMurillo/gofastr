@@ -30,5 +30,5 @@
 // StepWizard, Sticky, Switch, TableOfContents, TabNav, Tabs, Tag, TagInput,
 // TerminalBlock, TextArea, TextField, Themed, ThemePicker, ThemeToggle,
 // Thumbnail, Timeline, TimePicker, ToggleAction, Toolbar, Tooltip, Tree,
-// ValidationSummary, Waterfall, Workbench.
+// ValidationSummary, Video, Waterfall, Workbench.
 package ui

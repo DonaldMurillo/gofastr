@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,23 +12,7 @@ import (
 )
 
 func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) {
-		if c.Scope == nil {
-			c.Scope = &entity.ScopeConfig{}
-		}
-		if c.Exposure == nil {
-			c.Exposure = &entity.ExposureConfig{}
-		}
-		c.Scope.SoftDelete = true
-		c.Exposure.Public = true
-	}),
-		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
-	seedRows(t, db, "announcements", []map[string]any{
-		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
-	})
+	ch, _ := setupSoftDeletePublicAnnouncements(t)
 
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
@@ -48,23 +33,7 @@ func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
 }
 
 func TestSoftDelete_PublicGetWithTrashedReturnsNotFound(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) {
-		if c.Scope == nil {
-			c.Scope = &entity.ScopeConfig{}
-		}
-		if c.Exposure == nil {
-			c.Exposure = &entity.ExposureConfig{}
-		}
-		c.Scope.SoftDelete = true
-		c.Exposure.Public = true
-	}),
-		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
-	seedRows(t, db, "announcements", []map[string]any{
-		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
-	})
+	ch, _ := setupSoftDeletePublicAnnouncements(t)
 
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
@@ -80,7 +49,10 @@ func TestSoftDelete_PublicGetWithTrashedReturnsNotFound(t *testing.T) {
 		"anonymous caller fetched a soft-deleted public record directly via GET ?trashed=true")
 }
 
-func TestSoftDelete_PublicStreamingListDoesNotExposeDeletedRecords(t *testing.T) {
+// setupSoftDeletePublicAnnouncements builds a public, soft-deleting
+// announcements handler seeded with one trashed row.
+func setupSoftDeletePublicAnnouncements(t *testing.T) (*CrudHandler, *sql.DB) {
+	t.Helper()
 	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
 		{Name: "title", Type: schema.String},
 	}, func(c *entity.EntityConfig) {
@@ -94,56 +66,36 @@ func TestSoftDelete_PublicStreamingListDoesNotExposeDeletedRecords(t *testing.T)
 		c.Exposure.Public = true
 	}),
 		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
 	seedRows(t, db, "announcements", []map[string]any{
 		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
 	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/announcements?trashed=true&stream=true&limit=100000",
-	})
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected stream list status 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "deleted announcement") {
-		t.Fatalf("SECURITY: [softdelete] streaming list exposed deleted public record. Attack: stream=true bypassed soft-delete visibility controls.")
-	}
+	return ch, db
 }
 
-func TestSoftDelete_PublicCursorListDoesNotExposeDeletedRecords(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) {
-		if c.Scope == nil {
-			c.Scope = &entity.ScopeConfig{}
-		}
-		if c.Exposure == nil {
-			c.Exposure = &entity.ExposureConfig{}
-		}
-		c.Scope.SoftDelete = true
-		c.Exposure.Public = true
-	}),
-		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
-	seedRows(t, db, "announcements", []map[string]any{
-		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
-	})
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/announcements?trashed=true&cursor=",
-	})
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected cursor list status 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "deleted announcement") {
-		t.Fatalf("SECURITY: [softdelete] cursor list exposed deleted public record. Attack: anonymous caller paged through deleted rows via ?trashed=true.")
+// TestSoftDelete_PublicPagedListDoesNotExposeDeletedRecords pins both
+// non-buffered list paths (?stream=true and ?cursor=): a public entity's
+// trashed rows stay hidden even when the caller asks for ?trashed=true.
+func TestSoftDelete_PublicPagedListDoesNotExposeDeletedRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		path   string
+		attack string
+	}{
+		{"stream", "/announcements?trashed=true&stream=true&limit=100000",
+			"stream=true bypassed soft-delete visibility controls."},
+		{"cursor", "/announcements?trashed=true&cursor=",
+			"anonymous caller paged through deleted rows via ?trashed=true."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, _ := setupSoftDeletePublicAnnouncements(t)
+			rec := httptest.NewRecorder()
+			ch.List()(rec, makeRequest(t, RequestOpts{Method: http.MethodGet, Path: tc.path}))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected %s list status 200, got %d body=%s", tc.name, rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "deleted announcement") {
+				t.Fatalf("SECURITY: [softdelete] %s list exposed deleted public record. Attack: %s", tc.name, tc.attack)
+			}
+		})
 	}
 }

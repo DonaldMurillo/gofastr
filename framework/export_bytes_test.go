@@ -135,16 +135,9 @@ func TestImportAdvancesRawSerial(t *testing.T) {
 	build := rawTableApp("tallies",
 		`CREATE TABLE tallies (id INTEGER PRIMARY KEY, label TEXT)`,
 		`CREATE TABLE tallies (id SERIAL PRIMARY KEY, label TEXT)`, "id", "label")
-	forEachRestore(t, build, func(t *testing.T, db *sql.DB) {
-		cascadeExec(t, db, `INSERT INTO tallies (label) VALUES ('a')`, `INSERT INTO tallies (label) VALUES ('b')`,
-			`INSERT INTO tallies (label) VALUES ('c')`)
-	}, func(t *testing.T, dst *sql.DB, _ migrate.Dialect) {
-		var id int64
-		if err := dst.QueryRow(`INSERT INTO tallies (label) VALUES ('next') RETURNING id`).Scan(&id); err != nil {
-			t.Fatalf("insert after restore: %v", err)
-		}
-		if id != 4 {
-			t.Errorf("next id after restore = %d, want 4", id)
-		}
-	})
+	forEachRestore(t, build,
+		func(t *testing.T, db *sql.DB) { seedSerialRows(t, db, "tallies") },
+		func(t *testing.T, dst *sql.DB, _ migrate.Dialect) {
+			nextSerialIDFollowsRestore(t, dst, "tallies")
+		})
 }

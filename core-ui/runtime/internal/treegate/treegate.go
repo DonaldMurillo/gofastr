@@ -1,12 +1,4 @@
-// Package treegate holds the core-ui/runtime gates that read the repo
-// tree: attribute parity against core-ui/ARCHITECTURE.md, and every
-// registered behaviour's source and size budget. They live apart from core-ui/runtime so that a change
-// in one of the trees they read selects this small package, not the
-// runtime's browser suite.
-//
-// The non-test half is the source scanning both packages share: the
-// runtime's own fragment-map tests read the same attribute set, and its
-// lightbox e2e reads the same registration.
+// Package treegate holds the core-ui/runtime gates that read the repo tree, and the source scanners they share.
 package treegate
 
 import (
@@ -24,14 +16,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
 
-// ModuleGoalGZ is the gzip goal, in bytes, for one demand module: an
-// embedded runtime module or a registered behaviour's source.
+// ModuleGoalGZ is the gzip goal, in bytes, for one demand module.
 const ModuleGoalGZ = 3 * 1024
 
-// AttrPattern matches a full data-cui-* attribute token. It is greedy on
-// the name body, so a comment that wraps mid-name (`data-cui-foo-` at the
-// end of a line) yields a trailing-dash token; AttrNames drops those.
-// Real attributes never end in a dash.
+// AttrPattern matches a data-cui-* attribute token.
 var AttrPattern = regexp.MustCompile(`data-cui-[a-z0-9-]+`)
 
 // AttrNames adds every data-cui-* attribute in src to set.
@@ -44,13 +32,7 @@ func AttrNames(src string, set map[string]struct{}) {
 	}
 }
 
-// RuntimeJSAttrs returns every data-cui-* attribute literally referenced
-// in the runtime sources under dir (the core-ui/runtime directory): every
-// on-demand src/*.js module and every frag/*.js fragment, including the
-// fragments the full composition omits (boot-embed, rpc-stub,
-// widgets-boot-static). Comments count: several attributes are read
-// through the camelCase dataset API and appear hyphenated only in a
-// documenting comment.
+// RuntimeJSAttrs returns every data-cui-* attribute named in dir's src/*.js and frag/*.js, comments included.
 func RuntimeJSAttrs(dir string) ([]string, error) {
 	var files []string
 	for _, sub := range []string{"src", "frag"} {
@@ -88,12 +70,6 @@ func Sorted(set map[string]struct{}) []string {
 // RegistryImportPath is the package whose calls the scanners below read.
 const RegistryImportPath = "github.com/DonaldMurillo/gofastr/core-ui/registry"
 
-// registryCalls parses src and calls visit with every call of the
-// registry function name, bound through the file's own import of the
-// registry package, so an alias or a dot import is seen and a
-// same-named function from another package is not. A file that does not
-// import the registry has no calls; one that does not parse reports
-// itself through the returned string.
 func registryCalls(src, name string, visit func(call *ast.CallExpr)) string {
 	f, err := parser.ParseFile(token.NewFileSet(), "", src, 0)
 	if err != nil {
@@ -131,7 +107,6 @@ func registryCalls(src, name string, visit func(call *ast.CallExpr)) string {
 	return ""
 }
 
-// stringLit unquotes a string literal, or reports the expression.
 func stringLit(e ast.Expr) (string, bool) {
 	b, ok := e.(*ast.BasicLit)
 	if !ok || b.Kind != token.STRING {
@@ -141,12 +116,7 @@ func stringLit(e ast.Expr) (string, bool) {
 	return s, err == nil
 }
 
-// MarkerSelectors returns every selector literal passed to the
-// registry's Markers in one Go file, and every argument that is not a
-// string literal. A non-literal argument (a constant, a variable, a
-// call) cannot be read, and the gates refuse it: markers are declared as
-// literals so the tree scan can read them, the same reason the attribute
-// table is prose and not code.
+// MarkerSelectors returns the selector literals passed to registry.Markers in src, and every argument that is not one.
 func MarkerSelectors(src string) (selectors, nonLiteral []string) {
 	if bad := registryCalls(src, "Markers", func(call *ast.CallExpr) {
 		for _, a := range call.Args {
@@ -162,8 +132,7 @@ func MarkerSelectors(src string) (selectors, nonLiteral []string) {
 	return selectors, nonLiteral
 }
 
-// Requires lists the string literals a file's registry.Requires call
-// names, and every argument that is not one.
+// Requires returns the names passed to registry.Requires in src, and every argument that is not a literal.
 func Requires(src string) (names, nonLiteral []string) {
 	if bad := registryCalls(src, "Requires", func(call *ast.CallExpr) {
 		for _, a := range call.Args {
@@ -179,11 +148,7 @@ func Requires(src string) (names, nonLiteral []string) {
 	return names, nonLiteral
 }
 
-// Interactions parses every registry.Interactions(...) call in one Go
-// file, returning each spec's fields and every argument it could not
-// read. The composite literals it reads carry the bridge's own spec
-// shape (registry.Interaction), so a field added there is a field this
-// walk must be taught to refuse rather than silently skip.
+// Interactions returns the specs passed to registry.Interactions in src, and every argument or field it cannot read.
 func Interactions(src string) (specs []registry.Interaction, nonLiteral []string) {
 	if bad := registryCalls(src, "Interactions", func(call *ast.CallExpr) {
 		for _, a := range call.Args {

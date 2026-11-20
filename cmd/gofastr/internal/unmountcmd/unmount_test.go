@@ -2,7 +2,6 @@ package unmountcmd
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	"github.com/DonaldMurillo/gofastr/internal/heldfiletest"
 )
 
 func TestUnmountSourcePathForms(t *testing.T) {
@@ -616,7 +616,7 @@ func TestRemountRefusesMissingUpstream(t *testing.T) {
 func TestApplyImportRewireReplacesWhole(t *testing.T) {
 	dir := t.TempDir()
 	clitest.WriteTestFile(t, filepath.Join(dir, "a.go"), "package a\n")
-	old := heldRewire(t, filepath.Join(dir, "a.go"))
+	old := heldfiletest.Held(t, filepath.Join(dir, "a.go"))
 	plan := []importRewire{{name: "a.go", mode: 0o644, old: "package a\n", new: "package a // new\n"}}
 	if _, err := applyImportRewire(dir, plan, false); err != nil {
 		t.Fatal(err)
@@ -642,24 +642,5 @@ func TestApplyImportRewireReplacesWhole(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
 		t.Fatalf("left %d entries, want a.go and d.go: the temporary file stayed", len(entries))
-	}
-}
-
-// heldRewire opens path and returns a reader of what that handle sees: a
-// file renamed over path leaves it reading the old content, one
-// truncated in place leaves it reading the new.
-func heldRewire(t *testing.T, path string) func() string {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return func() string {
-		b, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
 	}
 }

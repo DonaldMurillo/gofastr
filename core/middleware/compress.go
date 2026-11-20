@@ -16,50 +16,14 @@ import (
 	"sync"
 )
 
-// compressMinBytes is the smallest body Compress encodes. Below it the
-// gzip header and trailer (18 bytes) plus the lost Content-Length cost
-// more than the deflate saving.
 const compressMinBytes = 1024
 
-// compressCacheMaxBody and compressCacheMaxBytes bound the compressed
-// copies kept for immutable responses: one entry never exceeds the
-// first, all entries together never exceed the second.
 const (
 	compressCacheMaxBody  = 4 << 20
 	compressCacheMaxBytes = 32 << 20
 )
 
-// Compress gzips response bodies for clients that accept gzip.
-//
-// It encodes only text-like types (HTML, CSS, JavaScript, JSON, XML,
-// SVG, plain text, wasm) at least compressMinBytes long, and leaves
-// alone: HEAD and Range requests, SSE (text/event-stream), bodies a
-// handler already encoded, 204/206/304 and 1xx answers, and hijacked
-// connections. Every compressible answer gets Vary: Accept-Encoding,
-// compressed or not, so a shared cache never hands gzip to a client
-// that did not ask for it.
-//
-// The gzip representation gets its own entity tag: a strong "x"
-// becomes "x-gzip" (weak tags keep their W/ prefix). An If-None-Match
-// or If-Match naming the gzip tag is rewritten back to the handler's
-// tag before the handler runs, so a handler's own ETag comparison still
-// answers 304 (which echoes the gzip tag), and a conditional write that
-// names the tag the client was handed is not refused with 412.
-//
-// A Flush from the handler flushes the gzip stream, so progressive
-// rendering keeps painting. A body under a strong ETag is held until
-// the handler returns and compressed in one pass, since a stream's
-// bytes depend on where the handler flushes and a strong tag names one
-// encoding. A held body that flushes streams instead, and its tag
-// turns weak.
-//
-// Responses marked Cache-Control: immutable are compressed once at
-// the best level, from the second time the same bytes are served, and
-// the compressed copy is reused (keyed by the SHA-256 of the body,
-// bounded in size). The handler
-// still runs on every request; only the deflate work is skipped.
-//
-// Only gzip is offered: the standard library has no Brotli encoder.
+// Compress gzips text-like response bodies of at least 1 KiB for clients that accept gzip, giving the gzip representation its own ETag and Vary: Accept-Encoding.
 func Compress() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,8 +31,6 @@ func Compress() Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Every Accept-Encoding line: Header.Get reads only the
-			// first, and a client may list its codings across lines.
 			accepts := acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ","))
 			revalidatingGzip := false
 			if accepts {
@@ -77,10 +39,6 @@ func Compress() Middleware {
 					//gofastr:allow(controlbytes) rewrites the inbound request's own header, already CTL-checked by net/http; it never reaches a response or a log.
 					r.Header.Set("If-None-Match", stripGzipETags(inm))
 				}
-				// If-Match too: a client that read the gzip representation
-				// echoes its tag on the PUT that follows, and the handler
-				// compares against its own tag, so without the rewrite every
-				// optimistic-concurrency write from that client was 412.
 				if im := r.Header.Get("If-Match"); strings.Contains(im, gzipETagSuffix) {
 					//gofastr:allow(controlbytes) rewrites the inbound request's own header, already CTL-checked by net/http; it never reaches a response or a log.
 					r.Header.Set("If-Match", stripGzipETags(im))
@@ -92,13 +50,7 @@ func Compress() Middleware {
 				if returned {
 					return
 				}
-				// A panic before anything was sent stays as it is, for
-				// Recovery's 500. One after the headers went out is
-				// re-raised as abortedStream (the original frames are
-				// still below this one, so the stack Recovery logs
-				// holds them).
 				if cw.abort() {
-					// nil: runtime.Goexit, which must keep unwinding.
 					switch v := recover(); v {
 					case nil:
 					case http.ErrAbortHandler:
@@ -117,10 +69,6 @@ func Compress() Middleware {
 
 const gzipETagSuffix = `-gzip"`
 
-// acceptsGzip reports whether an Accept-Encoding value admits gzip: a
-// gzip (or x-gzip) coding whose q-value is not zero, or, when neither
-// is named, a * whose q-value is not zero. A named gzip wins over the
-// wildcard in either order, so "gzip;q=0, *" refuses gzip.
 func acceptsGzip(header string) bool {
 	if header == "" {
 		return false
@@ -155,18 +103,10 @@ func acceptsGzip(header string) bool {
 	return starQ > 0
 }
 
-// stripGzipETags turns every gzip entity tag in an If-None-Match or
-// If-Match list back into the handler's tag ("x-gzip" → "x").
 func stripGzipETags(inm string) string {
 	return strings.ReplaceAll(inm, gzipETagSuffix, `"`)
 }
 
-// gzipETag derives the gzip representation's tag from the handler's.
-// The suffix goes on every quoted tag, one already ending in -gzip
-// included, because stripGzipETags takes exactly one off: skipping it
-// here made such a tag lose its own -gzip on revalidation and never
-// match. The one ambiguity left: a client revalidating an identity
-// copy whose handler tag ends in -gzip gets a 200, never a wrong 304.
 func gzipETag(etag string) string {
 	if !strings.HasSuffix(etag, `"`) {
 		return etag
@@ -174,7 +114,6 @@ func gzipETag(etag string) string {
 	return strings.TrimSuffix(etag, `"`) + gzipETagSuffix
 }
 
-// compressibleType reports whether a Content-Type is worth deflating.
 func compressibleType(ct string) bool {
 	mt, _, err := mime.ParseMediaType(ct)
 	if err != nil {
@@ -202,21 +141,18 @@ var gzipWriters = sync.Pool{New: func() any {
 	return zw
 }}
 
-// compressWriter holds the response until it can decide: the decision
-// waits for compressMinBytes of body, a Flush, or the end of the
-// handler, whichever comes first.
 type compressWriter struct {
 	rw               http.ResponseWriter
 	accepts          bool
 	revalidatingGzip bool
 
 	status      int
-	wroteHeader bool // the status is committed: later WriteHeader calls are no-ops
+	wroteHeader bool
 	decided     bool
-	encoding    bool // gzip chosen
-	held        bool // buffer the whole body: one encoding per strong tag
-	cacheable   bool // a held body marked immutable: use the compressed-copy cache
-	passthrough bool // identity, headers sent
+	encoding    bool
+	held        bool
+	cacheable   bool
+	passthrough bool
 	hijacked    bool
 	headerSent  bool
 	buf         bytes.Buffer
@@ -225,18 +161,14 @@ type compressWriter struct {
 
 func (w *compressWriter) Header() http.Header { return w.rw.Header() }
 
-// Unwrap lets http.ResponseController reach the underlying writer for
-// the calls this wrapper does not intercept (deadlines).
 func (w *compressWriter) Unwrap() http.ResponseWriter { return w.rw }
 
-// WriteHeader keeps the first final status, as net/http does: a second
-// call, or one after the first Write, changes nothing.
 func (w *compressWriter) WriteHeader(status int) {
 	if w.wroteHeader || w.headerSent || w.decided {
 		return
 	}
 	if status >= 100 && status < 200 {
-		w.rw.WriteHeader(status) // informational: forward, keep waiting
+		w.rw.WriteHeader(status)
 		return
 	}
 	w.wroteHeader = true
@@ -252,7 +184,7 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 		w.buf.Write(p)
 		if w.needsSniff() {
 			if w.buf.Len() < sniffLen {
-				return len(p), nil // not enough to sniff yet
+				return len(p), nil
 			}
 			w.sniff()
 		}
@@ -265,7 +197,7 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 		switch {
 		case w.buf.Len() > compressCacheMaxBody:
 			_ = w.decide(true)
-			if w.held { // too big to hold: stream it
+			if w.held {
 				w.spill(false)
 			}
 		case w.buf.Len() >= compressMinBytes && !w.holdsWhole():
@@ -279,7 +211,7 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 	if w.held {
 		w.buf.Write(p)
 		if w.buf.Len() > compressCacheMaxBody {
-			w.spill(false) // too big to hold: stream the rest
+			w.spill(false)
 		}
 		return len(p), nil
 	}
@@ -317,13 +249,8 @@ func (w *compressWriter) ReadFrom(source io.Reader) (int64, error) {
 	return copied + rest, err
 }
 
-// sniffLen is how much body net/http's DetectContentType reads.
 const sniffLen = 512
 
-// needsSniff reports whether net/http would sniff a Content-Type for
-// this response: no Content-Type key (a nil value is the handler
-// suppressing it), no Content-Encoding (go.dev/issue/31753), no
-// Transfer-Encoding, and a status that allows a body.
 func (w *compressWriter) needsSniff() bool {
 	h := w.Header()
 	if _, ok := h["Content-Type"]; ok {
@@ -339,18 +266,12 @@ func (w *compressWriter) needsSniff() bool {
 	return true
 }
 
-// sniff sets the Content-Type net/http would, from the buffered body,
-// so the type decision sees the type the client gets. Sniffing the
-// first Write alone typed a template that opens with a newline as
-// text/plain.
 func (w *compressWriter) sniff() {
 	if w.buf.Len() > 0 && w.needsSniff() {
 		w.Header().Set("Content-Type", http.DetectContentType(w.buf.Bytes()))
 	}
 }
 
-// eligible reports whether the response could be compressed, before
-// its size is known.
 func (w *compressWriter) eligible() bool {
 	h := w.Header()
 	switch w.status {
@@ -374,10 +295,6 @@ func (w *compressWriter) eligible() bool {
 	return true
 }
 
-// holdsWhole reports whether the body is held until the handler
-// returns and compressed in one pass: an immutable body, for the
-// compressed-copy cache, or one under a strong ETag, which must name
-// one encoding. A stream's bytes depend on where the handler flushes.
 func (w *compressWriter) holdsWhole() bool {
 	if !w.accepts || w.status != http.StatusOK {
 		return false
@@ -390,10 +307,6 @@ func (w *compressWriter) holdsWhole() bool {
 	return et != "" && !strings.HasPrefix(et, "W/")
 }
 
-// spill turns a held body into a stream, with the headers still
-// unsent. A body that outgrew the hold streams on every request, so
-// its stream is its one encoding and the tag stays. A flush streams
-// only this request, so the tag turns weak: it now names two.
 func (w *compressWriter) spill(flushed bool) {
 	w.held, w.cacheable = false, false
 	if flushed {
@@ -408,10 +321,6 @@ func weakenETag(h http.Header) {
 	}
 }
 
-// decide commits the encoding choice and sends the headers. An
-// identity body held so far is written here; a compressed one by the
-// caller's path (finish or stream start). The error is the identity
-// write's.
 func (w *compressWriter) decide(compress bool) error {
 	if w.decided {
 		return nil
@@ -438,8 +347,6 @@ func (w *compressWriter) decide(compress bool) error {
 	}
 	w.encoding = true
 	h.Del("Content-Length")
-	// A byte range of this body would index the identity bytes (Range
-	// requests skip compression), so it advertises none.
 	h.Del("Accept-Ranges")
 	h.Set("Content-Encoding", "gzip")
 	if et := h.Get("ETag"); et != "" {
@@ -448,21 +355,16 @@ func (w *compressWriter) decide(compress bool) error {
 	if w.holdsWhole() {
 		w.held = true
 		w.cacheable = cacheControlImmutable(h)
-		return nil // headers go out with the body in finish
+		return nil
 	}
 	w.startStream()
 	return nil
 }
 
-// cacheControlImmutable reports whether any Cache-Control line of h
-// carries immutable: a handler that Adds it on a second line is as
-// immutable as one that sets it on the first.
 func cacheControlImmutable(h http.Header) bool {
 	return strings.Contains(strings.Join(h.Values("Cache-Control"), ","), "immutable")
 }
 
-// startStream sends the headers and starts deflating, writing whatever
-// is buffered first.
 func (w *compressWriter) startStream() {
 	w.sendHeader()
 	w.zw = gzipWriters.Get().(*gzip.Writer)
@@ -509,23 +411,16 @@ func (w *compressWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	conn, rw, err := http.NewResponseController(w.rw).Hijack()
 	if err == nil {
-		// Only a hijack that happened owns the connection: after
-		// ErrNotSupported the handler still answers through this writer.
 		w.hijacked = true
 	}
 	return conn, rw, err
 }
 
-// finish runs after the handler returns: it settles an undecided
-// response and closes the gzip stream.
 func (w *compressWriter) finish() {
 	if w.hijacked {
 		return
 	}
 	if !w.decided {
-		// Sniff here too: sendHeader calls WriteHeader before the body,
-		// so a writer below that sniffs only on an implicit header
-		// would never type it.
 		w.sniff()
 		big := w.buf.Len() >= compressMinBytes
 		if big && w.holdsWhole() && w.eligible() {
@@ -564,12 +459,6 @@ func (w *compressWriter) finish() {
 	}
 }
 
-// abort runs when the handler panics, and reports whether the headers
-// were already sent. A gzip stream in progress is dropped without its
-// trailer: the response is cut short, and a complete-looking gzip
-// member would hide that. A response still buffered is dropped:
-// Recovery's 500 replaces it. (A held body sets its gzip headers only
-// in finish, so a panic never finds them set and unsent.)
 func (w *compressWriter) abort() bool {
 	if w.zw != nil {
 		w.zw.Reset(nil)
@@ -580,18 +469,12 @@ func (w *compressWriter) abort() bool {
 	return w.headerSent
 }
 
-// abortedStream carries a handler's panic past a response whose
-// headers were already sent. Recovery logs v and cuts the connection
-// (http.ErrAbortHandler) instead of writing a 500. Without Recovery,
-// net/http logs it and closes the connection all the same.
 type abortedStream struct{ v any }
 
 func (a abortedStream) Error() string { return fmt.Sprint(a.v) }
 
-// Unwrap hands an outer recover the handler's own error.
 func (a abortedStream) Unwrap() error { e, _ := a.v.(error); return e }
 
-// addVary appends a token to Vary unless it is already listed.
 func addVary(h http.Header, token string) {
 	for _, v := range h.Values("Vary") {
 		for part := range strings.SplitSeq(v, ",") {
@@ -604,21 +487,8 @@ func addVary(h http.Header, token string) {
 	h.Add("Vary", token)
 }
 
-// compressSeenMax bounds the doorkeeper set of body hashes seen once.
 const compressSeenMax = 4096
 
-// The compressed-copy cache for immutable responses: content-addressed
-// by the SHA-256 of the identity body, so two URLs serving the same
-// bytes share one entry and a changed body can never hit a stale one.
-//
-// A body enters only on its second sighting (the seen set is the
-// doorkeeper), so one-off bodies from a client that mints immutable
-// URLs (the component bundle takes any list of names) never displace
-// the hot entries. A client that asks for each minted URL twice still
-// can; the byte bound is what caps the cache then. Every sighting
-// compresses at the same level: flate is deterministic, so the one
-// strong "-gzip" ETag always names the same bytes, before admission
-// and after an eviction alike.
 var compressCache = struct {
 	sync.Mutex
 	entries map[[sha256.Size]byte][]byte
@@ -665,8 +535,6 @@ func cachedGzip(body []byte) []byte {
 	return gz
 }
 
-// gzipOnce compresses a held body in one pass, so the same bytes at the
-// same level always encode the same way.
 func gzipOnce(body []byte, level int) []byte {
 	var out bytes.Buffer
 	zw, _ := gzip.NewWriterLevel(&out, level)
@@ -675,7 +543,6 @@ func gzipOnce(body []byte, level int) []byte {
 	return out.Bytes()
 }
 
-// compressCacheLen reports how many compressed copies are cached.
 func compressCacheLen() int {
 	compressCache.Lock()
 	defer compressCache.Unlock()

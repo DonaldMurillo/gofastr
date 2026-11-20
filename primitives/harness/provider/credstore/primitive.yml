@@ -1,0 +1,66 @@
+primitive: harness.provider.credstore
+summary: Provider credentials at rest - an AES-GCM encrypted JSON file keyed by (provider, account), with passphrase and machine key derivation and migration of the legacy "provider|account" keys.
+code:
+  - framework/experimental/harness/provider/credstore/
+twins:
+  - job: Persist a small owner-only JSON file under the harness config directory.
+    why: Work not yet done; credstore writes a temp file and renames it, the approvals file is written in place, so a crash mid-write can truncate the approvals but not the store.
+    sites:
+      - path: framework/experimental/harness/provider/credstore/credstore.go
+        note: EncryptedFileStore.saveLocked, tmp plus rename.
+      - path: framework/experimental/harness/secrets/consent.go
+        note: approvalList.remember, direct fileperm.WriteOwnerOnly.
+invariants:
+  - id: components-cannot-collide
+    rule: An entry key encodes provider and account separately as v1:<base64url>:<base64url>, so no two different pairs share a key whatever characters they hold.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestDelimiterComponentsDoNotCollide
+  - id: legacy-key-read-then-migrated
+    rule: Get still reads an unambiguous legacy "provider|account" entry, and Put or Delete on the pair removes it.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestLegacyCredentialKeysRemainReadableAndMigrateOnWrite
+      - test: framework/experimental/harness/provider/credstore.TestDeleteRemovesAmbiguousLegacyKey
+  - id: ambiguous-legacy-key-not-handed-out
+    rule: A legacy key holding more than one '|' is never returned by Get (ErrAmbiguousLegacyKey), and List shows every pair that could own it.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestAmbiguousLegacyKeyNeedsReentry
+      - test: framework/experimental/harness/provider/credstore.TestListShowsAmbiguousLegacyKeyWithV1Prefix
+  - id: failed-load-not-latched
+    rule: The store is marked loaded only after a successful read and decrypt, so after a wrong key every Get and Put fails again and Put never re-encrypts an empty map over the real file.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestLoadFailureNotLatched
+      - test: framework/experimental/harness/provider/credstore.TestWrongKeyFailsDecrypt
+  - id: file-owner-only-ciphertext
+    rule: The store file is written 0600 through a temp file and a rename, holds no plaintext, and NewEncryptedFileStore refuses a key that is not 32 bytes.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestSweepStoreFileIsOwnerOnlyCiphertext
+  - id: key-derivation-stable
+    rule: DeriveKey (PBKDF2-SHA256, 200000 rounds) and MachineKey (SHA-256 over a versioned label, the hostname, a NUL and the extra bytes) give the same bytes on every release, so an existing store still decrypts after an upgrade.
+    enforced_by:
+      - test: framework/experimental/harness/provider/credstore.TestSweepKeyDerivationIsStable
+      - test: framework/experimental/harness/provider/credstore.TestMachineKey
+decisions:
+  - id: encrypted-file-store
+    date: 2026-11-18
+    status: accepted
+    decision: Credentials live in an AES-GCM encrypted file whose ciphertext is base64 text, so editors that mangle binary leave it intact.
+    rejected:
+      - option: The OS keychain as the primary store.
+        why: It needs a per-platform build and is not there in headless CI; keychain support stays an opt-in for later.
+    upholds: [file-owner-only-ciphertext]
+  - id: machine-key-for-headless
+    date: 2026-11-18
+    status: accepted
+    decision: A run with no passphrase uses a key derived from machine-stable inputs, and accepts that root on that machine can derive it too.
+    rejected:
+      - option: Require a passphrase on every run.
+        why: CI and headless runs have nobody to type it.
+    upholds: [key-derivation-stable]
+  - id: slow-passphrase-derivation
+    date: 2026-11-18
+    status: accepted
+    decision: DeriveKey runs 200000 PBKDF2 rounds, because the store is unlocked once per harness start.
+    rejected:
+      - option: A low iteration count for a faster start.
+        why: It makes guessing a passphrase from a copied store file cheap.
+    upholds: [key-derivation-stable]

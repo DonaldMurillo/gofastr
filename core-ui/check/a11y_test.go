@@ -17,25 +17,31 @@ func writeA11yFixture(t *testing.T, src string) string {
 	return path
 }
 
-func TestLintA11yFlagsMissingAlt(t *testing.T) {
-	path := writeA11yFixture(t, `package app
-
-import "github.com/DonaldMurillo/gofastr/core-ui/html"
-
-func view() any {
-	return html.Image(html.ImageConfig{Src: "/x.png"})
-}
-`)
-	res, err := LintA11yFile(path)
+// lintA11yNaming lints src and asserts exactly one violation naming
+// want (the missing a11y field).
+func lintA11yNaming(t *testing.T, src, want string) {
+	t.Helper()
+	res, err := LintA11yFile(writeA11yFixture(t, src))
 	if err != nil {
 		t.Fatalf("LintA11yFile: %v", err)
 	}
 	if len(res.Violations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %s", len(res.Violations), res.Error())
 	}
-	if !strings.Contains(res.Violations[0].Message, `"Alt"`) {
-		t.Errorf("violation should name Alt, got %q", res.Violations[0].Message)
+	if !strings.Contains(res.Violations[0].Message, want) {
+		t.Errorf("violation should name %s, got %q", want, res.Violations[0].Message)
 	}
+}
+
+func TestLintA11yFlagsMissingAlt(t *testing.T) {
+	lintA11yNaming(t, `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+
+func view() any {
+	return html.Image(html.ImageConfig{Src: "/x.png"})
+}
+`, `"Alt"`)
 }
 
 func TestLintA11ySkipsNonHTMLPackages(t *testing.T) {
@@ -78,24 +84,14 @@ func view() any {
 }
 
 func TestLintA11yAliasedImport(t *testing.T) {
-	path := writeA11yFixture(t, `package app
+	lintA11yNaming(t, `package app
 
 import h "github.com/DonaldMurillo/gofastr/core-ui/html"
 
 func view() any {
 	return h.Button(h.ButtonConfig{})
 }
-`)
-	res, err := LintA11yFile(path)
-	if err != nil {
-		t.Fatalf("LintA11yFile: %v", err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("aliased import must be linted, got %d: %s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, `"Label"`) {
-		t.Errorf("violation should name Label, got %q", res.Violations[0].Message)
-	}
+`, `"Label"`)
 }
 
 func TestLintA11yOrFieldsSatisfiedByEither(t *testing.T) {

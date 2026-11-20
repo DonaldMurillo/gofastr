@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -230,6 +233,15 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		if !textsafe.Storable(canonical) {
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
+		// The boot probe covers only its sample addresses; an address the
+		// override moves again would miss its own tokens at reset and
+		// erasure, so it is refused here.
+		if again, err := canonicalize(canonical); err != nil || again != canonical {
+			// No digest of the address: an unkeyed one would let anyone
+			// reading the log confirm a guess.
+			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address")
+			return "", i18n.NewError(reasonInvalidEmail)
+		}
 		return canonical, nil
 	}
 	canonical := norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email))))
@@ -237,6 +249,38 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		return "", i18n.NewError(reasonInvalidEmail)
 	}
 	return canonical, nil
+}
+
+// canonicalizerProbes are the addresses Init runs an
+// AuthConfig.CanonicalizeEmail override over: mixed case, padding,
+// dots and plus tags, a decomposed accent, a zero-width space and an
+// IDN domain, the shapes a hand-written rule tends to fold one step at
+// a time.
+var canonicalizerProbes = []string{
+	"Alice@Example.COM", "  bob@example.org ", "first.last+news@gmail.com", "F.I.R.S.T@GoogleMail.com",
+	"zoe\u0308@example.com", "ow\u200bner@example.com", "user@xn--bcher-kva.example", "MiXeD.Case+Tag@Sub.Example.co.uk",
+}
+
+// checkCanonicalizerIdempotent refuses an override that changes an
+// address it already canonicalized: erasure and password reset fold
+// the stored address again before matching it, so a second fold that
+// moves it misses the user's tokens. An address the override refuses
+// is skipped; one it accepts must come back unchanged and accepted.
+func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) error {
+	if canonicalize == nil {
+		return nil
+	}
+	for _, in := range canonicalizerProbes {
+		once, err := canonicalize(in)
+		if err != nil {
+			continue
+		}
+		twice, err := canonicalize(once)
+		if err != nil || twice != once {
+			return fmt.Errorf("auth: AuthConfig.CanonicalizeEmail is not idempotent: %q canonicalizes to %q, and that to %q (err %v); a canonical address must map to itself, since erasure and password reset canonicalize the stored address again", in, once, twice, err)
+		}
+	}
+	return nil
 }
 
 // addressShaped reports whether email is one local@domain pair: exactly
@@ -315,10 +359,7 @@ func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) st
 			next = r.PostFormValue("next")
 		}
 	}
-	if handler.IsSafeRelativePath(next) {
-		return next
-	}
-	return fallback
+	return handler.SafeRelativePathOr(next, fallback)
 }
 
 // defaultLoginErrorPath is the operator-configured fallback used by
@@ -413,6 +454,16 @@ func errorFallbackPath(r *http.Request) string {
 // error path (SetDefaultRegisterErrorPath for a register form when set,
 // SetDefaultLoginErrorPath otherwise) or JSON when neither is set.
 func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	redirectFormAuthError(w, r, status, reason, "")
+}
+
+// writeLoginFormError carries the submitted destination after login form decoding.
+func writeLoginFormError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	next := cmp.Or(r.URL.Query().Get("next"), r.PostForm.Get("next"))
+	redirectFormAuthError(w, r, status, reason, handler.SafeRelativePathOr(next, ""))
+}
+
+func redirectFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, next string) {
 	target := safeReferer(r)
 	if target == "" {
 		fallback := errorFallbackPath(r)
@@ -428,7 +479,11 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reas
 	if strings.Contains(target, "?") {
 		sep = "&"
 	}
-	http.Redirect(w, r, target+sep+"error="+sanitiseErr(reason.Code()), http.StatusSeeOther)
+	target += sep + "error=" + sanitiseErr(reason.Code())
+	if next != "" {
+		target += "&next=" + url.QueryEscape(next)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // safeReferer returns the request's Referer when its host matches the
@@ -437,8 +492,7 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reas
 // from the Referer into the redirect Location is a state-confusion
 // vector (the attacker plants `?return=evil` on the referring page,
 // the auth-error redirect echoes it, the login page reads `?return=`
-// and uses it as the next form action). The error context the caller
-// passes via msg is the only query value the redirect carries.
+// and uses it as the next form action).
 func safeReferer(r *http.Request) string {
 	ref := r.Referer()
 	if ref == "" {

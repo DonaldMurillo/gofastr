@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,10 +52,10 @@ func bulkCtx(u string, policy *access.RolePolicy, roles ...string) context.Conte
 	return ctx
 }
 
-// invoiceIDs reads the invoice ids left, sorted.
-func invoiceIDs(t *testing.T, x *testUI) []string {
+// sortedIDs runs query (one id column) and returns the ids it read.
+func sortedIDs(t *testing.T, db *sql.DB, query string) []string {
 	t.Helper()
-	rows, err := x.db.Query(`SELECT id FROM invoices ORDER BY id`)
+	rows, err := db.Query(query)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +72,12 @@ func invoiceIDs(t *testing.T, x *testUI) []string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// invoiceIDs reads the invoice ids left, sorted.
+func invoiceIDs(t *testing.T, x *testUI) []string {
+	t.Helper()
+	return sortedIDs(t, x.db, `SELECT id FROM invoices ORDER BY id`)
 }
 
 func invoiceStatus(t *testing.T, x *testUI, id string) string {

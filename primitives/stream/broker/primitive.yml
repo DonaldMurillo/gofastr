@@ -1,0 +1,106 @@
+primitive: stream.broker
+summary: SSEBroker, the fan-out of SSE events to subscribers on this replica and others, and the per-principal seat helpers AdmitSeat and SpliceSeat other stream owners share.
+code:
+  - core/stream/sse_broker.go
+  - core/stream/seats.go
+docs:
+  - framework/docs/content/events.md
+twins:
+  - job: Seat a long-lived stream for a principal under a per-principal cap, refusing or evicting the oldest at the cap.
+    why: SSEBroker's eviction must also delete the subscribers-map entry and cut a write parked on the evicted stream after the lock is released, battery/rtc runs room teardown outside its lock, and kiln/live keeps a plain counter; AdmitSeat only closes a done channel under the caller's lock.
+    sites:
+      - path: core/stream/seats.go
+        note: AdmitSeat and SpliceSeat, used by framework/crud and the harness control plane.
+      - path: core/stream/sse_broker.go
+        note: The seat-cap block in Subscribe.
+      - path: core/mcp/seats.go
+        note: The notification-stream seat admission.
+      - path: battery/rtc/seats.go
+        note: The room seat admission.
+      - path: kiln/live/sse.go
+        note: The per-principal stream counter.
+invariants:
+  - id: replace-only-own-stream
+    rule: A Subscribe whose subscriber_id matches a live stream replaces it only when both carry the same non-empty principal; anonymous or foreign collisions get separate entries.
+    enforced_by:
+      - test: core/stream.TestSSEEvictionScopedByPrincipal
+      - test: core/stream.TestSubscriberIDCannotEvictOther
+      - test: core/stream.TestSSESubscriberIDCollision
+  - id: max-subscribers-is-exact
+    rule: With MaxSubscribers set, a Subscribe at the cap that replaces nothing is answered 503 and holds no seat, and the count never passes the cap.
+    enforced_by:
+      - test: core/stream.TestSubscriberCapIsExact
+      - test: core/stream.TestMaxSubscribersRejectsRatherThanEvicts
+  - id: per-principal-seat-cap
+    rule: A principal at MaxSeatsPerPrincipal (0 = 16) is answered 429 under SeatOverflowRefuse, and under SeatOverflowEvictOldest its oldest stream ends and the new one is seated.
+    enforced_by:
+      - test: core/stream.TestSSEPerPrincipalSubscriberCap
+      - test: core/stream.TestSweepEvictOldestSeatsTheNewStream
+      - test: core/stream.TestSweepAdmitSeatPolicies
+  - id: admit-seat-policies
+    rule: AdmitSeat refuses at the cap under Refuse, splices the oldest member and closes its SeatDone channel under EvictOldest, counts each principal apart, and never refuses under a negative cap; SpliceSeat deletes an emptied key.
+    enforced_by:
+      - test: core/stream.TestSweepAdmitSeatPolicies
+  - id: eviction-cuts-a-parked-write
+    rule: Evicting or replacing a stream cuts a write its handler is parked in by setting the response's write deadline, after the broker lock is released, and never once that handler has returned. A response writer that cannot set write deadlines (http.ErrNotSupported) is not cut, so there a parked write ends only at the http.Server's WriteTimeout, which such a deployment must set.
+    enforced_by:
+      - test: core/stream.TestEvictionEndsBlockedHandler
+      - test: core/stream.TestLateCutSkipsReturnedHandler
+  - id: block-mode-is-opt-in-and-bounded
+    rule: A request can choose block mode only when AllowClientSlowMode is set, and a block-mode send waits at most BlockTimeout (5s by default) before moving on.
+    enforced_by:
+      - test: core/stream.TestSSESlowModeIgnoredWhenNotOptedIn
+      - test: core/stream.TestSweepBlockModeSendIsBounded
+  - id: fanout-delivery-never-blocks
+    rule: Events from other replicas reach every subscriber with drop-oldest, block-mode ones included, and Publish hands its fanout copy to a non-blocking publish queue.
+    enforced_by:
+      - test: core/stream.TestFanoutReceiveSurvivesBlockSubscriber
+      - test: core/stream.TestSSEBrokerPublishNonBlockingOnStall
+  - id: own-echo-dropped
+    rule: A fanout message carrying this broker's own node id is dropped, so one Publish reaches a local subscriber once.
+    enforced_by:
+      - test: core/stream.TestSweepOwnFanoutEchoIsDropped
+  - id: filter-before-buffer
+    rule: An event a subscriber's ?event= filter excludes never enters its buffer.
+    enforced_by:
+      - test: core/stream.TestFilteredOutEventsDoNotEvictWantedOnes
+  - id: principal-rechecked
+    rule: handler.RecheckPrincipal runs on every heartbeat and before every delivery, and a stream whose principal no longer holds ends.
+    enforced_by:
+      - test: core/stream.TestBrokerClosesRevokedStream
+  - id: heartbeat-reclaims-seats
+    rule: Every HeartbeatInterval the stream writes a comment, and a failed heartbeat ends the stream and frees its seat.
+    enforced_by:
+      - test: core/stream.TestSSEHeartbeatEmits
+      - test: core/stream.TestHeartbeatReclaimsDeadSubscriberSeat
+  - id: client-input-bounded
+    rule: A requested buffer is clamped to MaxBuf, a subscriber_id is cut to 256 bytes, and a generated subscriber id is 16 random bytes in hex.
+    enforced_by:
+      - test: core/stream.TestSSEBufferClampedToMax
+      - test: core/stream.TestSSESubscriberIDLengthCap
+      - test: core/stream.TestSSEGeneratedIDUnguessable
+decisions:
+  - id: replacement-needs-a-principal
+    date: 2026-11-19
+    status: accepted
+    decision: Without a Principal the broker never replaces a stream by subscriber_id.
+    rejected:
+      - option: Key the principal on RemoteAddr's host by default.
+        why: Behind a proxy every request shares one TCP peer, so ?subscriber_id=<victim> dropped the victim's stream.
+    upholds: [replace-only-own-stream]
+  - id: slow-mode-is-the-hosts-choice
+    date: 2026-11-19
+    status: accepted
+    decision: Block mode is offered to requests only when the host sets AllowClientSlowMode.
+    rejected:
+      - option: Let any request ask for ?slow=block.
+        why: deliver walks subscribers on the publisher's goroutine, so one stalled block-mode subscriber stalls every other one and the handler that called Publish.
+    upholds: [block-mode-is-opt-in-and-bounded]
+  - id: cap-refuses-rather-than-reserves
+    date: 2026-11-19
+    status: accepted
+    decision: MaxSubscribers refuses past the cap; a half-open stream's seat is reclaimed by its failing heartbeat.
+    rejected:
+      - option: Reserve a slot for a reconnect keyed on its requested subscriber_id.
+        why: The client runtime sends no id so it never fired, it scanned every subscriber under the write lock, and it let the cap be passed by one.
+    upholds: [max-subscribers-is-exact, heartbeat-reclaims-seats]

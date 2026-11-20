@@ -9,14 +9,8 @@ import (
 	"sync"
 )
 
-// Phrase is one user-facing string: the catalog key it is looked up
-// under and the English text used when no catalog has it. Make one with
-// [Define] at package level; every Phrase the program can show is then
-// in [Phrases], which is what catalog completeness tests read.
-//
-// The last segment of the key is the phrase's stable code: an error
-// body names "not_found" for the phrase under "error.not_found", so a
-// client can branch on it whatever language the message is in.
+// Phrase is one user-facing string: its catalog key and English text. Make
+// one with [Define] at package level.
 type Phrase struct {
 	key, english string
 }
@@ -26,9 +20,8 @@ var (
 	phrases   = map[string]string{}
 )
 
-// Define registers a phrase and returns it. It panics on a malformed
-// key or empty English, and on a key already defined with different
-// English: two packages cannot claim one key for two sentences.
+// Define registers a phrase; it panics on a malformed key, empty English, or
+// a key already defined with other English.
 func Define(key, english string) Phrase {
 	if err := checkPhraseKey(key); err != nil {
 		panic("i18n.Define: " + err.Error())
@@ -45,8 +38,6 @@ func Define(key, english string) Phrase {
 	return Phrase{key: key, english: english}
 }
 
-// checkPhraseKey accepts dot-separated segments of ASCII letters,
-// digits, '_' and '-', with at least two segments.
 func checkPhraseKey(key string) error {
 	segs := strings.Split(key, ".")
 	if len(segs) < 2 {
@@ -82,8 +73,7 @@ func (p Phrase) English() string { return p.english }
 // Code is the key's last segment, the stable code clients branch on.
 func (p Phrase) Code() string { return p.key[strings.LastIndexByte(p.key, '.')+1:] }
 
-// Format is p's English text with params interpolated: the locale-free
-// rendering an error's Error() method and a log line use.
+// Format is p's English text with params filled.
 func (p Phrase) Format(params ...map[string]any) string {
 	return Fill(p.english, mergeParams(params))
 }
@@ -91,14 +81,8 @@ func (p Phrase) Format(params ...map[string]any) string {
 // IsZero reports whether p was never defined.
 func (p Phrase) IsZero() bool { return p.key == "" }
 
-// Text translates p for ctx's locale through the translator on ctx (see
-// [WithTranslator]), else the [Default] one, interpolating {{name}}
-// placeholders from params. A param that is a [Phrased] error renders
-// as its own Text, so a wrapped cause translates with its frame. A
-// number param is written the way the text's language writes numbers:
-// pass the count itself, which also picks the plural form. A catalog
-// miss renders the English text with the same params, numbers written
-// as English writes them. The zero Phrase renders "".
+// Text translates p for ctx's locale through ctx's translator, else
+// [Default], filling params; the zero Phrase renders "".
 func (p Phrase) Text(ctx context.Context, params ...map[string]any) string {
 	if p.key == "" {
 		return ""
@@ -116,8 +100,6 @@ func (p Phrase) Text(ctx context.Context, params ...map[string]any) string {
 	return fill(p.english, merged, cldrEnglish().loc)
 }
 
-// innermostCode walks the [Phrased] errors under outer and returns the
-// last non-zero code, or code when none is deeper.
 func innermostCode(outer Phrased, code string) string {
 	var cur error = outer
 	for next := errors.Unwrap(cur); next != nil; next = errors.Unwrap(cur) {
@@ -133,9 +115,6 @@ func innermostCode(outer Phrased, code string) string {
 	return code
 }
 
-// translateParams replaces each [Phrased] value in params with its text
-// for ctx. Format needs no twin: interpolate prints a value with
-// fmt.Fprint, which is the error's English Error().
 func translateParams(ctx context.Context, params map[string]any) map[string]any {
 	for k, v := range params {
 		if e, ok := v.(Phrased); ok {
@@ -147,16 +126,13 @@ func translateParams(ctx context.Context, params map[string]any) map[string]any 
 	return params
 }
 
-// Phrased is an error that names the phrase its message is. An error
-// writer translates any error in whose chain one sits ([ErrorText]).
+// Phrased is an error whose message is a phrase.
 type Phrased interface {
 	error
 	Phrased() (Phrase, map[string]any)
 }
 
-// Error is the plain [Phrased] error. A package whose errors reach a
-// client (a filter parser, a cursor decoder) returns one, and the error
-// writer translates it; Error() is the English message.
+// Error is the plain [Phrased] error; Error() is the English message.
 type Error struct {
 	Reason Phrase
 	Params map[string]any
@@ -168,10 +144,7 @@ func NewError(p Phrase, params ...map[string]any) *Error {
 	return &Error{Reason: p, Params: mergeParams(params)}
 }
 
-// Wrap returns an *Error for p that wraps err. err fills p's {{detail}}
-// (translated when it is [Phrased]) and stays reachable through
-// errors.Is and errors.As. Use it where fmt.Errorf("context: %w", err)
-// would put English in front of a phrased cause.
+// Wrap returns an *Error for p whose {{detail}} is err, which it wraps.
 func Wrap(p Phrase, err error, params ...map[string]any) *Error {
 	m := mergeParams(params)
 	m["detail"] = err
@@ -185,14 +158,8 @@ func (e *Error) Unwrap() error { return e.Err }
 // Phrased implements [Phrased].
 func (e *Error) Phrased() (Phrase, map[string]any) { return e.Reason, e.Params }
 
-// ErrorText renders err for ctx's locale and names its code. The text
-// is the first [Phrased] error in err's chain, which renders the causes
-// it wraps (see [Wrap]); the code is the innermost one's, the most
-// specific: a nested filter refusal that wraps an unknown filter
-// answers unknown_filter. With no phrased error, a non-zero frame
-// renders with err's text as its {{detail}}; with a zero frame the text
-// is err's own and the code is empty: an app's own wording, sent as
-// written.
+// ErrorText renders err for ctx's locale with the innermost phrased code; an
+// unphrased err fills frame's {{detail}}, or with a zero frame is its own text.
 func ErrorText(ctx context.Context, err error, frame Phrase) (text, code string) {
 	if e, ok := errors.AsType[Phrased](err); ok {
 		if p, params := e.Phrased(); !p.IsZero() {
@@ -207,9 +174,7 @@ func ErrorText(ctx context.Context, err error, frame Phrase) (text, code string)
 
 type translatorCtxKey struct{}
 
-// WithTranslator attaches tr to ctx, so [Phrase.Text] and the
-// framework's UI strings resolve through it. [Middleware] does this for
-// every request.
+// WithTranslator attaches tr to ctx.
 func WithTranslator(ctx context.Context, tr *Translator) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -217,8 +182,7 @@ func WithTranslator(ctx context.Context, tr *Translator) context.Context {
 	return context.WithValue(ctx, translatorCtxKey{}, tr)
 }
 
-// TranslatorFrom returns the translator attached by [WithTranslator],
-// or nil.
+// TranslatorFrom returns the translator on ctx, or nil.
 func TranslatorFrom(ctx context.Context) *Translator {
 	if ctx == nil {
 		return nil

@@ -6,7 +6,7 @@
 //
 // This module is framework/ui's: SearchInput has no headless
 // counterpart by binding decision (the icon, the clear button and the
-// role="search" wrap are its own), so the module that drives it lives
+// <search> landmark wrap are its own), so the module that drives it lives
 // beside the component and binds the component's own classes. The
 // kernel reaches no kit class; that is the whole reason this file left
 // core-ui/runtime/src.

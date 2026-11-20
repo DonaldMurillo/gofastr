@@ -1,0 +1,106 @@
+primitive: schema.validate
+summary: Validate, ValidateAll and ValidatePartial, the per-type value checks behind every entity write, and the Violation they return.
+code:
+  - core/schema/validate.go
+  - core/schema/violation.go
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/i18n.md
+twins:
+  - job: Recognise a canonical decimal literal (optional sign, digits with an optional fraction or a bare fraction, optional base-10 exponent).
+    why: Both packages hold the same regexp unexported; nothing but work not yet done keeps them apart.
+    sites:
+      - path: core/schema/validate.go
+        note: decimalRe, the Decimal write check.
+      - path: framework/filter/typed.go
+        note: decimalLiteral, the Decimal filter value coercion.
+invariants:
+  - id: decimal-canonical-text-only
+    rule: A Decimal value is a string matching the canonical decimal form, so underscore separators, hex floats, Inf and NaN are refused before any parse.
+    enforced_by:
+      - test: core/schema.TestDecimalCanonicalForm
+      - test: core/schema.TestValidateDecimal
+  - id: decimal-fits-its-column
+    rule: A Decimal write is refused when its exponent is past ±MaxDecimalExponent, or when its digits after or before the point exceed the scale or precision minus scale of the column DecimalColumn reports.
+    enforced_by:
+      - test: core/schema.TestDecimalExponentPastPostgresRangeRefused
+      - test: core/schema.TestDecimalFractionDigitsPastColumnRefused
+      - test: core/schema.TestDecimalIntegerDigitsPastColumnRefused
+      - test: core/schema.TestDecimalRawTypePrecisionIsTheColumn
+  - id: decimal-bounds-compare-exactly
+    rule: A Decimal Min or Max compares against the value as an exact rational, the bound taken at its shortest decimal spelling unless it is integral with more than 15 significant digits, where its exact binary value is the bound, and a NaN or Inf bound refuses every value.
+    enforced_by:
+      - test: core/schema.TestDecimalBoundPrecision
+      - test: core/schema.TestDecimalHumanReadableBounds
+      - test: core/schema.TestDecimalShortIntegralBoundAsWritten
+      - test: core/schema.TestDecimalIntegralBoundPreservesExactInteger
+  - id: int-bounds-compare-in-integer-space
+    rule: An Int value compares with Min and Max as an int64, each bound clamped to the int64 range and rounded so it never widens the admitted range, and a NaN bound refuses every value.
+    enforced_by:
+      - test: core/schema.TestSweepSchemaIntMinComparesInIntegerSpace
+      - test: core/schema.TestIntBoundPrecision
+      - test: core/schema.TestIntegerImpossibleBounds
+  - id: int-refuses-unrepresentable-values
+    rule: An Int value that does not fit int64 is refused, a uint or uint64 past MaxInt64 and a float that is non-integral, non-finite or outside [MinInt64, MaxInt64) alike, never wrapped or saturated.
+    enforced_by:
+      - test: core/schema.TestIntUintWrapBypassesMaxBound
+      - test: core/schema.TestIntFloatOverflowRejected
+      - test: core/schema.TestIsInt64Representable
+  - id: float-refuses-non-finite
+    rule: A Float value that is NaN or Inf is refused before any bound comparison.
+    enforced_by:
+      - test: core/schema.TestNonFiniteBoundsBypass
+  - id: string-length-counts-runes
+    rule: A String or Text Min and Max count runes, not bytes.
+    enforced_by:
+      - test: core/schema.TestStringLengthRuneCount
+  - id: text-values-are-storable
+    rule: String, Text, Relation, Image and File values that textsafe.Storable refuses, and JSON whose text is not UTF-8 or holds a string with a NUL, are refused, a []byte JSON value checked as the text it binds as.
+    enforced_by:
+      - test: core/schema.TestTextRefusesUnstorableBytes
+      - test: core/schema.TestJSONRefusesUnstorableStrings
+      - test: core/schema.TestReferenceRefusesUnstorableBytes
+  - id: year-zero-refused
+    rule: A Timestamp whose UTC instant falls before year 1, and a Date in year 0000, are refused.
+    enforced_by:
+      - test: core/schema.TestValidateYearZeroRefused
+  - id: bool-accepts-int64-zero-one
+    rule: A Bool accepts int64 0 and 1, the form crud decodes a body's integer literal to, and refuses any other int64.
+    enforced_by:
+      - test: core/schema.TestSweepSchemaBoolAcceptsInt64ZeroOne
+decisions:
+  - id: decimal-text-checks-before-parse
+    date: 2026-11-18
+    status: accepted
+    decision: The Decimal exponent and column-digit checks read the literal's text ahead of strconv.ParseFloat and big.Rat, so Postgres and SQLite accept and keep the same values.
+    rejected:
+      - option: Parse first and check the number.
+        why: ParseFloat reads 1e-1001 as 0 with no error and big.Rat builds 10^|exp| in full, while Postgres answered 22P02 or 22003 (a 500) and SQLite stored the value (a 201).
+    upholds: [decimal-fits-its-column]
+  - id: decimal-parse-checks-kept-fail-closed
+    date: 2026-11-18
+    status: accepted
+    decision: validateDecimal keeps its ParseFloat, finiteness and big.Rat failure checks although the canonical-form regexp makes them unreachable today.
+    rejected:
+      - option: Delete the unreachable checks.
+        why: A loosened regexp would then admit a value the bounds cannot compare, failing open.
+    revisit_if: Decimal validation stops going through the canonical-form regexp.
+    upholds: [decimal-canonical-text-only]
+  - id: decimal-bound-shortest-spelling
+    date: 2026-11-18
+    status: accepted
+    decision: A Decimal bound is its float64's shortest decimal spelling, except an integral bound needing more than 15 significant digits, which keeps its exact binary value.
+    rejected:
+      - option: The float64's exact binary value always.
+        why: Min 1e30 became 1000000000000000019884624838656 and refused 1e30 itself.
+      - option: Compare through float64.
+        why: Precision is lost above 2^53, admitting values strictly over Max or under Min.
+    upholds: [decimal-bounds-compare-exactly]
+  - id: int-bounds-in-integer-space
+    date: 2026-11-18
+    status: accepted
+    decision: Int bounds stay *float64 on Field and are clamped to int64 for the comparison.
+    rejected:
+      - option: Widen the value to float64.
+        why: Above 2^53 the widened value rounds, admitting values strictly over Max or under Min.
+    upholds: [int-bounds-compare-in-integer-space]

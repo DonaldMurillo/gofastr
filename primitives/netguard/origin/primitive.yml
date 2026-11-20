@@ -1,0 +1,28 @@
+primitive: netguard.origin
+summary: The inbound checks - whether a browser Origin is the request's own or allow-listed, and whether a Host names loopback.
+code:
+  - core/netguard/origin.go
+  - core/netguard/authority.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: origin-own-host-or-listed
+    rule: OriginAllowed admits no Origin, an Origin whose parsed host equals the request's Host case-insensitively, and one equal to an allow-list entry case-insensitively, and refuses every other Origin, a hostless one such as null included even on a request with no Host.
+    enforced_by:
+      - test: core/netguard.TestOriginAllowed
+      - test: core/netguard.TestSweepOriginWithoutHostRefusedOnHostlessRequest
+      - test: framework/uihost.TestUIHost_CreateSessionRejectsCrossOriginRequest
+  - id: loopback-authority
+    rule: IsLoopbackAuthority is true only for localhost in any case and a loopback IP literal, with or without a port and brackets.
+    enforced_by:
+      - test: core/netguard.TestIsLoopbackAuthority
+      - test: core/netguard.TestSweepLoopbackAuthorityBracketsWithoutPort
+decisions:
+  - id: pin-host-on-loopback
+    date: 2026-11-19
+    status: accepted
+    decision: An unauthenticated loopback server pins Host to loopback with IsLoopbackAuthority, replacing the copies in cmd/kiln, kiln/chat and core/mcp.
+    rejected:
+      - option: Check Origin alone.
+        why: A DNS-rebinding page's Origin matches the attacker-named Host, but a browser cannot forge Host.
+    upholds: [loopback-authority]

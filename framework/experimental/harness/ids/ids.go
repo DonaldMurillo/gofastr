@@ -1,15 +1,3 @@
-// Package ids defines the typed identifier strings used across the
-// harness wire protocol and persistence layer. All IDs are
-// ULID-derived with a typed prefix so a string can be inspected
-// without context.
-//
-// Formats (normative. See docs/harness-architecture.md § Glossary):
-//
-//	SessionID    sess_<ULID>   one per EngineRun
-//	LogID        log_<ULID>    persistence-layer ID
-//	CallID       call_<ULID>   one per tool call
-//	JTI          tok_<ULID>    token ID (revocation key)
-//	ClientID     cli_<ULID>    stable for the lifetime of a client attach
 package ids
 
 import (
@@ -19,7 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/internal/ulid"
 )
 
-// Prefix constants, keep in lockstep with the doc.
+// Prefixes of the ID types, joined to a ULID with "_".
 const (
 	PrefixSession = "sess"
 	PrefixLog     = "log"
@@ -28,10 +16,7 @@ const (
 	PrefixClient  = "cli"
 )
 
-// Typed ID strings. These are stringly-typed so they serialize naturally
-// over JSON without custom marshalers, but separate Go types so the
-// compiler catches misuse (e.g. passing a SessionID where a LogID is
-// expected).
+// Typed ID strings, one Go type per prefix.
 type (
 	SessionID string
 	LogID     string

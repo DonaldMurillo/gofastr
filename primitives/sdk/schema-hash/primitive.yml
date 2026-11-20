@@ -2,6 +2,7 @@ primitive: sdk.schema-hash
 summary: The schema hash the SDK generator records and the serving app recomputes to detect drift between generated SDKs and the live API.
 code:
   - framework/sdk/schemahash.go
+  - framework/sdk/openapihash.go
 docs:
   - framework/docs/content/sdk.md
 on_change:
@@ -27,6 +28,10 @@ invariants:
       - test: framework/sdk.TestStatesEntityDisplayStillIgnored
       - test: framework/sdk.TestSchemaHashIgnoresMountPoint
       - test: framework/sdk.TestNoDriftForGroupMountedEntity
+  - id: openapi-hash-is-canonical
+    rule: OpenAPIHash digests the document's RFC 8785 canonical JSON, so key order and whitespace never move it, any changed value does, and bytes that are not one JSON value are an error.
+    enforced_by:
+      - test: framework/sdk.TestOpenAPIHashIsCanonical
   - id: declaration-hashes-as-defined-entity
     rule: Each config passes entity.Define before projection, so a raw declaration and its registered entity hash alike.
     enforced_by:
@@ -59,3 +64,11 @@ decisions:
       - option: fmt.Sprint as the sort key.
         why: It is not injective ([]string{"a b"} and {"a","b"} print alike), so divergent enums collapsed and the digest depended on input order.
     upholds: [order-independent-and-collapsing]
+  - id: openapi-hash-is-canonical-json
+    date: 2026-11-19
+    status: accepted
+    decision: An OpenAPI SDK's drift hash is SHA-256 over the document's RFC 8785 canonical JSON, and a YAML document is hashed as its JSON form.
+    rejected:
+      - option: Hash the document's bytes.
+        why: A committed file and the copy an app serves differ in whitespace and key order, which would report drift that regenerating cannot clear.
+    upholds: [openapi-hash-is-canonical]

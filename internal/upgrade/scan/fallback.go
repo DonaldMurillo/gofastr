@@ -382,20 +382,27 @@ func errNamesImport(msg, entry string) bool {
 	return containsPathToken(msg, entry)
 }
 
-// containsWord reports whether word occurs in s delimited by
-// non-word bytes on both sides.
-func containsWord(s, word string) bool {
-	for i := 0; i+len(word) <= len(s); i++ {
-		if s[i:i+len(word)] != word {
+// containsDelimited reports whether sub occurs in s delimited on both
+// sides by bytes the delim predicate refuses (a boundary counts as a
+// side), so one spelling is not found inside a longer one.
+func containsDelimited(s, sub string, delim func(byte) bool) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] != sub {
 			continue
 		}
-		left := i == 0 || !isWordByte(s[i-1])
-		right := i+len(word) == len(s) || !isWordByte(s[i+len(word)])
+		left := i == 0 || !delim(s[i-1])
+		right := i+len(sub) == len(s) || !delim(s[i+len(sub)])
 		if left && right {
 			return true
 		}
 	}
 	return false
+}
+
+// containsWord reports whether word occurs in s delimited by
+// non-word bytes on both sides.
+func containsWord(s, word string) bool {
+	return containsDelimited(s, word, isWordByte)
 }
 
 func isWordByte(c byte) bool {
@@ -406,17 +413,7 @@ func isWordByte(c byte) bool {
 // containsPathToken reports whether p occurs in s delimited by
 // non-path bytes, so "pkg/tree" does not match inside "pkg/treeview".
 func containsPathToken(s, p string) bool {
-	for i := 0; i+len(p) <= len(s); i++ {
-		if s[i:i+len(p)] != p {
-			continue
-		}
-		left := i == 0 || !isPathByte(s[i-1])
-		right := i+len(p) == len(s) || !isPathByte(s[i+len(p)])
-		if left && right {
-			return true
-		}
-	}
-	return false
+	return containsDelimited(s, p, isPathByte)
 }
 
 // containsPathPrefix reports whether s names a path equal to or under

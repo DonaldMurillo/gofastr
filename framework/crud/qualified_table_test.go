@@ -93,17 +93,6 @@ func qualifiedHandler(t *testing.T, db *sql.DB, posts, tags, pivot string) *Crud
 	return ch
 }
 
-func qualifiedList(t *testing.T, ch *CrudHandler, path string) ListResponse {
-	t.Helper()
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path, UserID: "u1"})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("GET %s = %d: %s", path, rr.Code, rr.Body.String())
-	}
-	return decodeListResponse(t, rr.Body.String())
-}
-
 func tagNamesOf(row map[string]any) []string {
 	list, _ := row["tags"].([]any)
 	var out []string
@@ -127,7 +116,7 @@ func rowByID(resp ListResponse, id string) map[string]any {
 
 func TestPGQualifiedScopedM2MInclude(t *testing.T) {
 	ch := pgQualifiedWorld(t)
-	resp := qualifiedList(t, ch, "/posts?include=tags(name=go)")
+	resp := listOK(t, ch, "/posts?include=tags(name=go)")
 	if got := tagNamesOf(rowByID(resp, "p1")); !slices.Equal(got, []string{"go"}) {
 		t.Fatalf("p1 tags(name=go) = %v, want [go]", got)
 	}
@@ -135,7 +124,7 @@ func TestPGQualifiedScopedM2MInclude(t *testing.T) {
 
 func TestPGQualifiedOwnerScopedM2MInclude(t *testing.T) {
 	ch := pgQualifiedWorld(t)
-	resp := qualifiedList(t, ch, "/posts?include=tags")
+	resp := listOK(t, ch, "/posts?include=tags")
 	if got := tagNamesOf(rowByID(resp, "p1")); !slices.Equal(got, []string{"db", "go"}) {
 		t.Fatalf("p1 tags = %v, want [db go]", got)
 	}
@@ -143,7 +132,7 @@ func TestPGQualifiedOwnerScopedM2MInclude(t *testing.T) {
 
 func TestPGQualifiedNestedM2MFilter(t *testing.T) {
 	ch := pgQualifiedWorld(t)
-	resp := qualifiedList(t, ch, "/posts?tags.name=go")
+	resp := listOK(t, ch, "/posts?tags.name=go")
 	if len(resp.Data) != 1 || resp.Data[0]["id"] != "p1" {
 		t.Fatalf("?tags.name=go = %v, want [p1]", resp.Data)
 	}
@@ -151,7 +140,7 @@ func TestPGQualifiedNestedM2MFilter(t *testing.T) {
 
 func TestPGQualifiedSelfJoinFilter(t *testing.T) {
 	ch := pgQualifiedWorld(t)
-	resp := qualifiedList(t, ch, "/posts?parent.title=root")
+	resp := listOK(t, ch, "/posts?parent.title=root")
 	if len(resp.Data) != 1 || resp.Data[0]["id"] != "p2" {
 		t.Fatalf("?parent.title=root = %v, want [p2]", resp.Data)
 	}

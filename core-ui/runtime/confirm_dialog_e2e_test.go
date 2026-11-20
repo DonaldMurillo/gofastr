@@ -42,6 +42,19 @@ const confirmDialogState = `(() => {
 	};
 })()`
 
+// confirmOpenActions navigates to the page, stubs window.confirm, clicks
+// #b, waits for the confirm dialog to open, and captures its state.
+func confirmOpenActions(base string, opened *map[string]any) []chromedp.Action {
+	return []chromedp.Action{
+		chromedp.Navigate(base + "/"),
+		chromedp.WaitVisible(`#b`, chromedp.ByID),
+		chromedp.Evaluate(confirmStubJS(true), nil),
+		chromedp.Click(`#b`, chromedp.ByID),
+		chromedp.Poll(`!!document.querySelector('body > dialog[open]')`, nil),
+		chromedp.Evaluate(confirmDialogState, opened),
+	}
+}
+
 func TestConfirmDialogGatesRPCButton(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
@@ -60,17 +73,11 @@ func TestConfirmDialogGatesRPCButton(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	var opened map[string]any
 	var afterCancel, afterAccept bool
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		chromedp.Evaluate(confirmStubJS(true), nil),
-		chromedp.Click(`#b`, chromedp.ByID),
-		chromedp.Poll(`!!document.querySelector('body > dialog[open]')`, nil),
-		chromedp.Evaluate(confirmDialogState, &opened),
+	if err := chromedp.Run(ctx, append(confirmOpenActions(base, &opened),
 		chromedp.Click(`body > dialog [data-cui-confirm-part="cancel"]`),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`!document.querySelector('body > dialog')`, &afterCancel),
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if opened["open"] != true || opened["title"] != "Delete this invoice?" || opened["message"] != "It cannot be undone." {
@@ -122,17 +129,11 @@ func TestConfirmDialogEscapeDeclines(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	var opened map[string]any
 	var gone bool
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		chromedp.Evaluate(confirmStubJS(true), nil),
-		chromedp.Click(`#b`, chromedp.ByID),
-		chromedp.Poll(`!!document.querySelector('body > dialog[open]')`, nil),
-		chromedp.Evaluate(confirmDialogState, &opened),
+	if err := chromedp.Run(ctx, append(confirmOpenActions(base, &opened),
 		chromedp.KeyEvent("\x1b"),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`!document.querySelector('body > dialog')`, &gone),
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	// No title on the control keeps the template's; no tone keeps the

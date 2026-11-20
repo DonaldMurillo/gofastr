@@ -1,5 +1,2 @@
-// Package tool is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package tool defines the Tool interface, the Registry that merges tool sources, and the middleware Chain.
 package tool

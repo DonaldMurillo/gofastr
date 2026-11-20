@@ -2,9 +2,6 @@ package zai
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -18,19 +15,8 @@ import (
 // message. Unlike OpenRouter, ZAI must NOT send HTTP-Referer or
 // X-Title.
 func TestChatRequestShape(t *testing.T) {
-	var gotAuth, gotReferer, gotTitle string
-	var body providertest.RequestBody
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotReferer = r.Header.Get("HTTP-Referer")
-		gotTitle = r.Header.Get("X-Title")
-		body = providertest.DecodeRequestBody(t, r.Body)
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, providertest.StopUsageSSE(1, 1))
-	}))
-	defer srv.Close()
-
-	p := &Provider{APIKey: "sk-test", BaseURL: srv.URL}
+	url, got := providertest.CaptureChatServer(t, "Authorization", "HTTP-Referer", "X-Title")
+	p := &Provider{APIKey: "sk-test", BaseURL: url}
 	ch, err := p.Chat(context.Background(), &provider.Request{
 		Model:  "m",
 		System: "sys",
@@ -45,32 +31,16 @@ func TestChatRequestShape(t *testing.T) {
 	for range ch {
 	}
 
-	if want := "Bearer sk-test"; gotAuth != want {
-		t.Errorf("Authorization = %q, want %q", gotAuth, want)
+	if want := "Bearer sk-test"; got.Headers["Authorization"] != want {
+		t.Errorf("Authorization = %q, want %q", got.Headers["Authorization"], want)
 	}
-	if gotReferer != "" {
-		t.Errorf("HTTP-Referer = %q; ZAI must not send it", gotReferer)
+	if got.Headers["HTTP-Referer"] != "" {
+		t.Errorf("HTTP-Referer = %q; ZAI must not send it", got.Headers["HTTP-Referer"])
 	}
-	if gotTitle != "" {
-		t.Errorf("X-Title = %q; ZAI must not send it", gotTitle)
+	if got.Headers["X-Title"] != "" {
+		t.Errorf("X-Title = %q; ZAI must not send it", got.Headers["X-Title"])
 	}
-	if body.Model != "m" {
-		t.Errorf("body.model = %q, want %q", body.Model, "m")
-	}
-	if !body.Stream {
-		t.Errorf("body.stream = false, want true (streaming request)")
-	}
-	if len(body.Messages) != 2 {
-		t.Fatalf("messages len = %d, want 2: %+v", len(body.Messages), body.Messages)
-	}
-	if body.Messages[0].Role != "system" || body.Messages[0].Content != "sys" {
-		t.Errorf("messages[0] = {role:%q content:%q}, want {system sys}",
-			body.Messages[0].Role, body.Messages[0].Content)
-	}
-	if body.Messages[1].Role != "user" || body.Messages[1].Content != "hello world" {
-		t.Errorf("messages[1] = {role:%q content:%q}, want {user hello world}",
-			body.Messages[1].Role, body.Messages[1].Content)
-	}
+	providertest.AssertChatRequestBody(t, got.Body)
 }
 
 // TestChatStreamingParse drains the event channel and asserts at
@@ -85,15 +55,7 @@ func TestChatStreamingParse(t *testing.T) {
 // TestChatHTTPError401: the shared client owns the 401 path; what is this
 // adapter's own is the provider name the error carries.
 func TestChatHTTPError401(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("invalid key"))
-	}))
-	defer srv.Close()
-
-	p := &Provider{APIKey: "bad", BaseURL: srv.URL}
-	_, err := p.Chat(context.Background(), &provider.Request{Model: "m"})
-	if want := "zai: HTTP 401: invalid key"; err == nil || err.Error() != want {
-		t.Fatalf("err = %v, want %q", err, want)
-	}
+	providertest.AssertChatHTTPError401(t, func(baseURL string) provider.Provider {
+		return &Provider{APIKey: "bad", BaseURL: baseURL}
+	}, "zai")
 }

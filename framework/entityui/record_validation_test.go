@@ -36,6 +36,40 @@ func contactEntities() map[string]entity.EntityConfig {
 	return map[string]entity.EntityConfig{"contacts": contacts.WithTimestamps(false)}
 }
 
+// The email, tel and url kinds name the reader's own fill with the
+// autocomplete token of the same name and keep spell check and
+// autocapitalize off; color names none (#704).
+func TestExactKindsCarryAutocomplete(t *testing.T) {
+	cfg := entity.EntityConfig{
+		Table: "people",
+		Fields: []schema.Field{
+			{Name: "mail", Type: schema.String},
+			{Name: "phone", Type: schema.String},
+			{Name: "home", Type: schema.String},
+			{Name: "tint", Type: schema.String},
+		},
+		Display: &entity.DisplayConfig{
+			Singular: "Person", Plural: "People", TitleFields: []string{"mail"},
+			Fields: map[string]entity.FieldDisplay{
+				"mail": {Input: "email"}, "phone": {Input: "tel"}, "home": {Input: "url"}, "tint": {Input: "color"},
+			},
+		},
+	}
+	x := newTestUI(t, map[string]entity.EntityConfig{"people": cfg.WithTimestamps(false)}, nil, withAPI(map[string]string{"people": "/api/people"}))
+	body := string(x.ui.Create("people").Base("/rec/people").RenderCtx(x.userCtx("/rec/people/create", "", "u1")))
+	for name, kind := range map[string]string{"mail": "email", "phone": "tel", "home": "url"} {
+		tag := tagFor(t, body, name)
+		for _, want := range []string{`type="` + kind + `"`, `autocomplete="` + kind + `"`, `spellcheck="false"`, `autocapitalize="off"`} {
+			if !strings.Contains(tag, want) {
+				t.Errorf("%s lacks %s: %s", name, want, tag)
+			}
+		}
+	}
+	if tag := tagFor(t, body, "tint"); strings.Contains(tag, "autocomplete=") || strings.Contains(tag, "spellcheck=") {
+		t.Errorf("the color kind names a fill or a spell-check hint: %s", tag)
+	}
+}
+
 // tagFor is the opening tag of the control named name.
 func tagFor(t *testing.T, body, name string) string {
 	t.Helper()

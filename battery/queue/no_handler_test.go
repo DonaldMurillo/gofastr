@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // A DBQueue worker that claimed a job whose type had no handler acked it:
@@ -20,18 +18,7 @@ import (
 // reached when the handler is gone between the claim and the lookup;
 // the test removes it in that gap.
 func TestNoHandlerJobIsDeadLettered(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		db, q := openDBQueueOpts(t, WithWorkers(0))
-		assertNoHandlerDeadLetters(t, db, q)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		db := pgtest.DB(t)
-		q, err := NewDBQueue(db, WithWorkers(0))
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertNoHandlerDeadLetters(t, db, q)
-	})
+	forBackendQueues(t, []DBQueueOption{WithWorkers(0)}, assertNoHandlerDeadLetters)
 }
 
 func assertNoHandlerDeadLetters(t *testing.T, db *sql.DB, q *DBQueue) {

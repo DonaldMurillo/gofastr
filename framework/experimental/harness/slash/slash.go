@@ -1,11 +1,3 @@
-// Package slash implements the slash-command parser + the built-in
-// command catalog.
-//
-// Per § Slash commands, parsing happens at the client: a /-prefixed
-// input is converted to a typed wire Command before being sent to the
-// engine. Built-in commands (bare /foo, no namespace) ship with the
-// harness; user/plugin commands live under namespaces like
-// /custom:bar, /super-skill:baz.
 package slash
 
 import (
@@ -14,29 +6,16 @@ import (
 	"strings"
 )
 
-// Cmd is a parsed slash-command invocation.
+// Cmd is a parsed command: "/skills:foo a b" has Namespace "skills", Name "foo", Args [a b]; "/help" is a built-in.
 type Cmd struct {
-	// IsBuiltin reports whether Namespace is empty.
 	IsBuiltin bool
-	// Namespace is the prefix before the colon ("skills" in
-	// "/skills:foo"). Empty for built-ins.
 	Namespace string
-	// Name is the verb after the colon (or after the slash for
-	// built-ins). "foo" in "/skills:foo".
-	Name string
-	// Args is the remaining whitespace-delimited tokens, preserving
-	// quoted segments as single tokens.
-	Args []string
-	// Raw is the original input including leading slash.
-	Raw string
+	Name      string
+	Args      []string
+	Raw       string
 }
 
-// Parse converts a slash-prefixed input to a Cmd. Returns
-// ErrNotSlashCommand if the input doesn't start with '/'.
-//
-// Quoting: arguments may be wrapped in double quotes to preserve
-// whitespace ("path with spaces"). Escapes inside quotes: \\ → \, \"
-// → ", \n → newline.
+// Parse parses "/[namespace:]name args..." with double-quoted args and \\, \", \n, \t escapes; ErrNotSlashCommand without a leading "/".
 func Parse(input string) (Cmd, error) {
 	if !strings.HasPrefix(input, "/") {
 		return Cmd{}, ErrNotSlashCommand
@@ -45,7 +24,6 @@ func Parse(input string) (Cmd, error) {
 	if body == "" {
 		return Cmd{}, errors.New("slash: empty command")
 	}
-	// Split head from args at the first space.
 	head, rest := splitHead(body)
 	c := Cmd{Raw: input, Args: splitArgs(rest)}
 	if before, after, ok := strings.Cut(head, ":"); ok {
@@ -70,7 +48,6 @@ func splitHead(s string) (head, rest string) {
 	return s, ""
 }
 
-// splitArgs tokenizes a string into args, respecting double quotes.
 func splitArgs(s string) []string {
 	var out []string
 	var cur strings.Builder
@@ -117,18 +94,14 @@ func splitArgs(s string) []string {
 	return out
 }
 
-// Builtin is one shipped command's metadata.
+// Builtin describes one built-in command.
 type Builtin struct {
 	Name        string
 	Description string
-	ArgsHelp    string // one-line argument summary
+	ArgsHelp    string
 }
 
-// AllBuiltins returns the v0.1 built-in command catalog, as documented
-// at § Slash commands → Built-in commands shipped in v0.1.
-//
-// The handlers are wired by the harness composition layer; this
-// catalog is what clients display via GET /v1/slash-commands.
+// AllBuiltins returns the built-in command catalog clients list; the handlers live elsewhere.
 func AllBuiltins() []Builtin {
 	return []Builtin{
 		{"help", "List all commands grouped by namespace.", ""},
@@ -144,17 +117,15 @@ func AllBuiltins() []Builtin {
 	}
 }
 
-// AllNamespaces returns the reserved namespaces shipped in v0.1.
-// Plugins claim additional namespaces via Plugin.Register.
+// AllNamespaces returns the namespaces reserved by the harness.
 func AllNamespaces() []string {
 	return []string{
 		"skills", "agents", "profiles", "sessions", "mcp", "permissions",
 	}
 }
 
-// ErrNotSlashCommand signals an input didn't start with '/'.
+// ErrNotSlashCommand is returned by Parse for input without a leading "/".
 var ErrNotSlashCommand = errors.New("slash: not a slash command")
 
-// ErrUnknownNamespace is returned by the resolver when a namespace
-// isn't claimed by built-ins or any plugin.
+// ErrUnknownNamespace reports a namespace nothing has claimed.
 var ErrUnknownNamespace = errors.New("slash: unknown namespace")

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -43,20 +44,22 @@ func splitModuleTool(name string) (moduleName, toolID string, ok bool) {
 }
 
 // ModuleToolDigest is the hex SHA-256 of the tool's canonical JSON
-// ({id,name,description,input_schema}), the value [ToolDigest.SHA256] pins.
-// It returns "" when the tool cannot be encoded.
+// ({id,name,description,input_schema}, then annotations when set), the value
+// [ToolDigest.SHA256] pins. It returns "" when the tool cannot be encoded.
 func ModuleToolDigest(tool moduleproto.Tool) string {
 	type canon struct {
-		ID          string          `json:"id"`
-		Name        string          `json:"name"`
-		Description string          `json:"description"`
-		InputSchema json.RawMessage `json:"input_schema"`
+		ID          string                       `json:"id"`
+		Name        string                       `json:"name"`
+		Description string                       `json:"description"`
+		InputSchema json.RawMessage              `json:"input_schema"`
+		Annotations *moduleproto.ToolAnnotations `json:"annotations,omitempty"`
 	}
 	c := canon{
 		ID:          tool.ID,
 		Name:        tool.Name,
 		Description: tool.Description,
 		InputSchema: tool.InputSchema,
+		Annotations: tool.Annotations,
 	}
 	raw, err := json.Marshal(c)
 	if err != nil {
@@ -158,10 +161,25 @@ func (r *ModuleToolRegistry) RegisterTools(moduleName string, tools []moduleprot
 	r.mu.Unlock()
 
 	for _, p := range toInstall {
+		if err := validModuleToolAnnotations(p.tool.Annotations); err != nil {
+			return fmt.Errorf("processmodule: tool %q: %w", p.namespaced, err)
+		}
+	}
+	for _, p := range toInstall {
 		schema := decodeModuleToolSchema(p.tool.InputSchema)
 		h := r.newToolHandler(moduleName, p.tool.ID)
+		var opts []mcp.ToolOption
+		if a := p.tool.Annotations; a != nil {
+			opts = append(opts, mcp.WithAnnotations(mcp.Annotations{
+				Title:           a.Title,
+				ReadOnlyHint:    a.ReadOnlyHint,
+				DestructiveHint: a.DestructiveHint,
+				IdempotentHint:  a.IdempotentHint,
+				OpenWorldHint:   a.OpenWorldHint,
+			}))
+		}
 		if r.server != nil {
-			if err := r.server.RegisterTool(p.namespaced, p.tool.Description, schema, h); err != nil {
+			if err := r.server.RegisterTool(p.namespaced, p.tool.Description, schema, h, opts...); err != nil {
 				return fmt.Errorf("processmodule: register tool %q: %w", p.namespaced, err)
 			}
 		}
@@ -198,6 +216,21 @@ func (r *ModuleToolRegistry) newToolHandler(moduleName, toolID string) mcp.ToolH
 		}
 		return raw, nil
 	}
+}
+
+const maxModuleToolTitleBytes = 128
+
+func validModuleToolAnnotations(a *moduleproto.ToolAnnotations) error {
+	if a == nil {
+		return nil
+	}
+	if len(a.Title) > maxModuleToolTitleBytes {
+		return fmt.Errorf("annotations title is longer than %d bytes", maxModuleToolTitleBytes)
+	}
+	if !utf8.ValidString(a.Title) || textsafe.ContainsUnsafe(a.Title) {
+		return errors.New("annotations title holds invalid UTF-8, a control character or an invisible character")
+	}
+	return nil
 }
 
 func decodeModuleToolSchema(raw json.RawMessage) map[string]any {

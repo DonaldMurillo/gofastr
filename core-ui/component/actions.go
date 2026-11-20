@@ -18,19 +18,7 @@ type ActionDef struct {
 	Server   bool                    // if true, this action must run on the server
 	Debounce int                     // debounce in milliseconds (0 = no debounce)
 
-	// ClientJS is the JavaScript handler body. This is what gets compiled
-	// into the actions.js bundle. It receives a `params` object with:
-	//   params.value  : input value (for input/change events)
-	//   params.*      : any data-param-* attributes from the trigger element
-	//
-	// Available runtime helpers via `G` (window.__gofastr):
-	//   G.getState(key, default)   G.setState(key, value)
-	//   G.updateText(sel, text)    G.updateHTML(sel, html)
-	//   G.toast(msg)               G.navigate(path)
-	//   G.addClass(sel, cls)       G.removeClass(sel, cls)
-	//
-	// Example: "G.setState('count', G.getState('count', 0) + 1); G.updateText('[data-count]', G.getState('count', 0));"
-	ClientJS string
+	ClientJS string // the browser-side handler body, compiled into actions.js
 }
 
 // ServerCall represents a call that should be executed on the server.
@@ -39,9 +27,7 @@ type ServerCall struct {
 	Params map[string]string
 }
 
-// Server marks an action as requiring server-side execution.
-// When the compiler sees this, it generates JS that POSTs to the server
-// instead of running locally. The server handler runs in a goroutine.
+// Server returns a ServerCall for action with alternating key, value params.
 func Server(action string, params ...string) *ServerCall {
 	p := make(map[string]string)
 	for i := 0; i+1 < len(params); i += 2 {
@@ -52,7 +38,7 @@ func Server(action string, params ...string) *ServerCall {
 
 // ActionRegistry holds all registered actions for a component.
 type ActionRegistry struct {
-	actions map[string]ActionDef // eventName → ActionDef
+	actions map[string]ActionDef
 }
 
 // NewActionRegistry creates a new action registry.
@@ -88,14 +74,9 @@ func (r *ActionRegistry) HasActions() bool {
 	return len(r.actions) > 0
 }
 
-// currentRegistry is the package-level registry used by On() during
-// ExtractActions calls. It is set temporarily and restored after extraction.
 var currentRegistry *ActionRegistry
 
-// On registers an event handler into the current registry.
-// This is the primary API for .ui.go files.
-//
-// Usage: On("click", func(ctx *ComponentContext) { ... }, WithClientJS("G.setState('x', 1)"))
+// On registers an event handler into the registry ExtractActions is filling.
 func On(event string, handler func(*ComponentContext), opts ...ActionOption) ActionDef {
 	def := ActionDef{
 		Event:   event,
@@ -113,8 +94,7 @@ func On(event string, handler func(*ComponentContext), opts ...ActionOption) Act
 // ActionOption is a functional option for ActionDef.
 type ActionOption func(*ActionDef)
 
-// WithClientJS sets the client-side JavaScript handler body.
-// This JS runs in the browser when the action is triggered.
+// WithClientJS sets the browser-side handler body.
 func WithClientJS(js string) ActionOption {
 	return func(def *ActionDef) {
 		def.ClientJS = js
@@ -123,11 +103,7 @@ func WithClientJS(js string) ActionOption {
 
 var extractMu sync.Mutex
 
-// ExtractActions analyzes a component and extracts its action definitions.
-// It calls the Actions() method if the component implements InteractiveComponent,
-// collecting the registered actions into an ActionRegistry.
-// A panic logs the component, scrubbed value and stack and returns an empty registry.
-// Thread-safe: uses a mutex to protect the package-level registry.
+// ExtractActions calls an InteractiveComponent's Actions and returns what it registered.
 func ExtractActions(c Component) (reg *ActionRegistry) {
 	ic, ok := c.(InteractiveComponent)
 	if !ok {

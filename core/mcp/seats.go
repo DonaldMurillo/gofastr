@@ -9,81 +9,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
-// defaultSSESeatCap is the per-caller cap on concurrent SSE notification
-// streams when SetSSESeatCap has not been called (or was called with 0).
-// Sixteen covers every legitimate MCP client shape (a client holds ONE
-// notification stream; the surplus is multi-client hosts), while binding
-// the per-connection cost — one handler goroutine plus a
-// sseSubBufferSize buffered channel — that an unauthenticated peer
-// could otherwise grow without end.
 const defaultSSESeatCap = 16
 
-// SeatOverflowPolicy selects what a caller at the SSE seat cap does with
-// its next stream. It is core/stream's policy type under this package's
-// name: the two were verbatim copies, and the SSE bus, the crud event
-// streams, and this server all seat by the same rule.
+// SeatOverflowPolicy is what a caller at the SSE seat cap gets on its next stream; it is core/stream's type.
 type SeatOverflowPolicy = stream.SeatOverflowPolicy
 
 const (
-	// SeatOverflowRefuse answers the connection with 429 and holds no
-	// seat. The default: a caller at the cap learns it is at the cap.
+	// SeatOverflowRefuse answers the new stream 429; the default.
 	SeatOverflowRefuse = stream.SeatOverflowRefuse
-	// SeatOverflowEvictOldest closes that caller's oldest stream and
-	// seats the new one, the reconnect-friendly policy for hosts whose
-	// clients churn streams.
+	// SeatOverflowEvictOldest closes the caller's oldest stream and admits the new one.
 	SeatOverflowEvictOldest = stream.SeatOverflowEvictOldest
 )
 
-// SetSSESeatCap bounds how many concurrent SSE notification streams
-// (ServeSSE's GET half) one caller may hold. The caller is the resolved
-// user when middleware put one in the request context (its GetID), else
-// the TCP peer. n == 0 restores the default (16); n < 0 lifts the cap
-// for deployments that bound seats elsewhere — every held stream still
-// costs a goroutine and a buffered channel, so lifting it is a deliberate
-// decision, not the zero-value accident.
+// SetSSESeatCap bounds one caller's concurrent SSE notification streams; 0 restores the default of 16 and a negative n lifts the cap.
 func (s *Server) SetSSESeatCap(n int) {
 	s.sseMu.Lock()
 	s.sseSeatCap = n
 	s.sseMu.Unlock()
 }
 
-// SetSSEStreamLimit bounds how many SSE notification streams the server
-// holds across every caller; a connect past it is answered 429. n == 0
-// restores the default (1024); n < 0 lifts the limit for deployments
-// that bound connections elsewhere.
+// SetSSEStreamLimit bounds the SSE notification streams of all callers together; 0 restores the default of 1024 and a negative n lifts it.
 func (s *Server) SetSSEStreamLimit(n int) {
 	s.sseMu.Lock()
 	s.sseStreamLimit = n
 	s.sseMu.Unlock()
 }
 
-// SetSSESeatOverflow selects the seat overflow policy; see
-// SeatOverflowPolicy. The zero value (SeatOverflowRefuse) is the
-// default.
+// SetSSESeatOverflow sets the seat overflow policy; the zero value is SeatOverflowRefuse.
 func (s *Server) SetSSESeatOverflow(p SeatOverflowPolicy) {
 	s.sseMu.Lock()
 	s.sseSeatOverflow = p
 	s.sseMu.Unlock()
 }
 
-// Why addSSESubscriber (notifications.go) is not stream.AdmitSeat: the
-// cap and the EvictOldest splice are the same rule, but eviction here
-// must also delete the oldest subscriber from the sseSubs set and
-// re-run expireResourceSubsIfIdleLocked, because the caller's last
-// notification stream may have been the one holding its resource
-// subscriptions open. AdmitSeat's contract is splice plus close the
-// done channel; it cannot reach the set or the expiry.
-
-// sseSeatKey derives the per-caller seat key: the authenticated user's
-// id when upstream middleware resolved one into the request context,
-// else the TCP peer's host. The prefixes keep the two namespaces from
-// colliding (a user id never aliases a RemoteAddr and back).
-//
-// The host, never host:port: every HTTP/1.1 stream is its own
-// connection with its own source port, so a port-keyed seat gave each
-// stream a bucket of its own and the cap never applied. Behind a proxy
-// every anonymous stream shares the proxy's host, one bucket for all
-// callers the server cannot tell apart, as in core/stream's broker.
 func sseSeatKey(ctx context.Context, r *http.Request) string {
 	if u, ok := handler.GetUser(ctx); ok {
 		if id, ok := u.(interface{ GetID() string }); ok && id.GetID() != "" {
@@ -99,8 +57,6 @@ func sseSeatKey(ctx context.Context, r *http.Request) string {
 	return "anon"
 }
 
-// seatCapLocked resolves the configured cap; the caller holds sseMu.
-// Zero means the default; negative means unlimited.
 func (s *Server) seatCapLocked() int {
 	if s.sseSeatCap == 0 {
 		return defaultSSESeatCap
@@ -108,19 +64,10 @@ func (s *Server) seatCapLocked() int {
 	return s.sseSeatCap
 }
 
-// spliceSeatLocked removes sub from its caller's seat FIFO without
-// touching sseSubs or the channel; the caller holds sseMu. Used by
-// removeSSESubscriber (voluntary departure), the admission eviction
-// path, and notifySubscribers' backpressure drop, so the FIFO never
-// retains a departed subscriber and a seat is freed exactly once.
-// The splice itself is stream.SpliceSeat, shared with core/stream's
-// broker and framework/crud's stream-seat registry.
 func (s *Server) spliceSeatLocked(sub *sseSubscriber) {
 	stream.SpliceSeat(s.sseSeatOrder, sub.seatKey, sub)
 }
 
-// streamLimitLocked resolves the configured stream limit; the caller
-// holds sseMu. Zero means the default; negative means unlimited.
 func (s *Server) streamLimitLocked() int {
 	if s.sseStreamLimit == 0 {
 		return defaultSSEStreamLimit

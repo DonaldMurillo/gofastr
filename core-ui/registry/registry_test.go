@@ -478,3 +478,42 @@ func TestRegisterBehaviorAfterFreezePanics(t *testing.T) {
 	}()
 	RegisterBehavior("late-behavior", `(function(){})();`, Markers("[data-late]"))
 }
+
+func TestRuntimeStyleRegistersAfterFreeze(t *testing.T) {
+	IsolateForTest(t)
+	Freeze()
+	s := RegisterRuntimeStyle("late-sheet", func(style.Theme) string { return ".a{}" })
+	if got, ok := Lookup("late-sheet"); !ok || got != s.Entry() {
+		t.Fatal("a runtime style registered after Freeze is missing")
+	}
+}
+
+func TestEvictThemeDropsTheServedSheet(t *testing.T) {
+	IsolateForTest(t)
+	n := 0
+	s := RegisterStyle("evict-served", func(style.Theme) string {
+		n++
+		return fmt.Sprintf(".a { order: %d }", n)
+	})
+	th := style.DefaultTheme()
+	first := s.Entry().ServedCSSFor(th)
+	EvictTheme(style.ThemeHash(th))
+	if again := s.Entry().ServedCSSFor(th); again == first {
+		t.Fatalf("ServedCSSFor after EvictTheme still serves %q", again)
+	}
+}
+
+func TestIsolateForTestHidesAndRestoresDataBlocks(t *testing.T) {
+	IsolateForTest(t)
+	RegisterDataBlock("gofastr-outer", func() []byte { return []byte(`{}`) })
+	t.Run("inner", func(t *testing.T) {
+		IsolateForTest(t)
+		if DataBlocksHTML() != "" {
+			t.Fatal("an isolated registry sees the outer data block")
+		}
+		RegisterDataBlock("gofastr-inner", func() []byte { return []byte(`{}`) })
+	})
+	if got := DataBlocksHTML(); !strings.Contains(got, "gofastr-outer") || strings.Contains(got, "gofastr-inner") {
+		t.Fatalf("after restore: %s", got)
+	}
+}

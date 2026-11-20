@@ -824,7 +824,7 @@ func TestInProcessAccountOperations(t *testing.T) {
 	plugins := []AuthPlugin{
 		NewAccountsPlugin(),
 		NewTokensPlugin(tokens),
-		NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}, TwoFactorURL: "/2fa"}),
+		NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}, TwoFactorURL: "/2fa"}),
 		NewOAuth2Plugin(OAuth2Config{TwoFactorURL: "/2fa"}),
 		NewEmailVerificationPlugin(EmailVerificationConfig{BaseURL: "https://example.com"}),
 		NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "https://example.com"}),

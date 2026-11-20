@@ -34,9 +34,12 @@ const (
 // alg records which signature family it belongs to (derived from kty/crv).
 type oidcKey struct {
 	kid string
-	alg string // "RS256" or "ES256"
-	rsa *rsa.PublicKey
-	ec  *ecdsa.PublicKey
+	// issuer is the key's own issuer member, which Microsoft's
+	// tenant-independent key set uses to scope a key to some issuers.
+	issuer string
+	alg    string // "RS256" or "ES256"
+	rsa    *rsa.PublicKey
+	ec     *ecdsa.PublicKey
 }
 
 // jwksSet is a fetched-and-parsed key set.
@@ -321,6 +324,8 @@ type rawJWK struct {
 	Crv string `json:"crv"`
 	X   string `json:"x"`
 	Y   string `json:"y"`
+	// Issuer is Microsoft's per-key issuer restriction.
+	Issuer string `json:"issuer"`
 }
 
 // parseJWKS parses a JWKS document. Unparsable keys are skipped, an IdP may
@@ -339,6 +344,7 @@ func parseJWKS(body []byte) (*jwksSet, error) {
 		if !ok {
 			continue
 		}
+		pk.issuer = k.Issuer
 		set.list = append(set.list, pk)
 		if k.Kid != "" {
 			set.byKid[k.Kid] = pk
@@ -536,5 +542,27 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 	if err := p.verifyClaims(claims); err != nil {
 		return nil, err
 	}
+	if err := p.checkKeyIssuer(key, claims); err != nil {
+		return nil, err
+	}
 	return claims, nil
+}
+
+// checkKeyIssuer holds a multi-tenant token to the issuer its signing key
+// is scoped to. Microsoft's tenant-independent key set can carry keys
+// restricted to one issuer, or to the "{tenantid}" template, in an
+// issuer member; a key that names one signs only for it. Exact-issuer
+// providers keep their own path: verifyClaims already pinned iss.
+func (p *OIDCProvider) checkKeyIssuer(key oidcKey, claims map[string]any) error {
+	if key.issuer == "" || p.tenantTemplate() == "" {
+		return nil
+	}
+	want := normalizeIssuer(key.issuer)
+	if strings.Contains(want, tenantPlaceholder) {
+		want = strings.Replace(want, tenantPlaceholder, claimString(claims, "tid"), 1)
+	}
+	if want != normalizeIssuer(claimString(claims, "iss")) {
+		return errors.New("oidc: id_token signing key is scoped to another issuer")
+	}
+	return nil
 }

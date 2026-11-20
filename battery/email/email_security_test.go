@@ -175,43 +175,49 @@ func TestLogSender_DoesNotExposeSensitiveHeaders(t *testing.T) {
 	}
 }
 
-func TestLogSender_DoesNotExposeLiveResetLinksInTextBody(t *testing.T) {
-	var buf bytes.Buffer
-	sender := NewLogSender(&buf)
-	email := Email{
-		From:     "a@b.test",
-		To:       []string{"primary@example.com"},
-		Subject:  "reset",
-		TextBody: "Reset your password: http://localhost/reset-password?token=live-secret-token",
+// TestLogSender_DoesNotExposeLiveResetLinks pins the LogSender redaction
+// for live reset links in both bodies: the token value and the
+// reset-password path must never reach the log stream.
+func TestLogSender_DoesNotExposeLiveResetLinks(t *testing.T) {
+	cases := []struct {
+		name  string
+		email Email
+		token string
+	}{
+		{
+			name: "text body",
+			email: Email{
+				From:     "a@b.test",
+				To:       []string{"primary@example.com"},
+				Subject:  "reset",
+				TextBody: "Reset your password: http://localhost/reset-password?token=live-secret-token",
+			},
+			token: "live-secret-token", // not-a-secret: fixture; this test pins it never reaches the logs
+		},
+		{
+			name: "HTML body",
+			email: Email{
+				From:     "a@b.test",
+				To:       []string{"primary@example.com"},
+				Subject:  "reset",
+				HTMLBody: `<a href="http://localhost/reset-password?token=html-live-secret">Reset password</a>`,
+			},
+			token: "html-live-secret", // not-a-secret: fixture; this test pins it never reaches the logs
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			sender := NewLogSender(&buf)
+			if err := sender.Send(context.Background(), tc.email); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
 
-	if err := sender.Send(context.Background(), email); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
-
-	logs := buf.String()
-	if strings.Contains(logs, "token=live-secret-token") || strings.Contains(logs, "/reset-password?token=") {
-		t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in text body logs: %q", logs)
-	}
-}
-
-func TestLogSender_DoesNotExposeLiveResetLinksInHTMLBody(t *testing.T) {
-	var buf bytes.Buffer
-	sender := NewLogSender(&buf)
-	email := Email{
-		From:     "a@b.test",
-		To:       []string{"primary@example.com"},
-		Subject:  "reset",
-		HTMLBody: `<a href="http://localhost/reset-password?token=html-live-secret">Reset password</a>`,
-	}
-
-	if err := sender.Send(context.Background(), email); err != nil {
-		t.Fatalf("Send: %v", err)
-	}
-
-	logs := buf.String()
-	if strings.Contains(logs, "token=html-live-secret") || strings.Contains(logs, "/reset-password?token=") {
-		t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in HTML body logs: %q", logs)
+			logs := buf.String()
+			if strings.Contains(logs, "token="+tc.token) || strings.Contains(logs, "/reset-password?token=") { // not-a-secret: asserts the token never appears
+				t.Fatalf("SECURITY: [email-log] LogSender exposed live reset link in %s logs: %q", tc.name, logs)
+			}
+		})
 	}
 }
 

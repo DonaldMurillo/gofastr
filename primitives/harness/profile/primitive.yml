@@ -1,0 +1,54 @@
+primitive: harness.profile
+summary: Harness profiles - a stdlib-only parser for the TOML subset a schema_version 1 profile uses, its validation, and the default and framework profiles embedded in the binary.
+code:
+  - framework/experimental/harness/profile/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: unknown-keys-fail
+    rule: Parse returns an error naming any key it does not know, at the top level and inside an mcp_servers entry, so a misspelled setting is never dropped silently.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsUnknownKey
+      - test: framework/experimental/harness/profile.TestParseRejectsUnknownInlineTableKey
+  - id: only-the-supported-subset
+    rule: Parse accepts only key = value lines whose value is a string, triple-quoted string, bool, integer, string array or array of inline tables, and fails on a [table] header or any other TOML form.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsTableHeader
+      - test: framework/experimental/harness/profile.TestParseTripleQuoted
+      - test: framework/experimental/harness/profile.TestParseMCPServersWithArgs
+  - id: value-ends-the-line
+    rule: After a top-level value only whitespace or a comment may follow on its line; anything else, such as the .5 of schema_version = 1.5, fails Parse instead of being skipped.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsTrailingContentAfterValue
+  - id: mcp-server-key-types-checked
+    rule: Inside an mcp_servers entry, name, cmd, sha256 and discovery must be strings and args an array of strings; a value of another type fails Parse with an error naming the key instead of leaving the field empty.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsMCPServerKeyOfWrongType
+  - id: schema-version-one
+    rule: Validate fails a profile whose schema_version is not 1, or that lacks name or default_model.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsUnsupportedSchemaVersion
+  - id: built-ins-parse
+    rule: Embedded returns the parsed default and framework profiles and an error for any other name.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestEmbeddedDefault
+      - test: framework/experimental/harness/profile.TestEmbeddedFramework
+      - test: framework/experimental/harness/profile.TestEmbeddedUnknown
+decisions:
+  - id: hand-written-toml-subset
+    date: 2026-11-18
+    status: accepted
+    decision: Profiles are read by a small parser for exactly the TOML the schema uses, failing on anything else.
+    rejected:
+      - option: A third-party TOML library.
+        why: The harness stays standard-library only, and a full parser would accept nested tables and types the schema never uses without complaint.
+    revisit_if: The profile schema needs nested tables, datetimes or multi-line table arrays.
+    upholds: [only-the-supported-subset, unknown-keys-fail, value-ends-the-line, mcp-server-key-types-checked]
+  - id: embedded-built-ins
+    date: 2026-11-18
+    status: accepted
+    decision: The default and framework profiles are compiled into the binary with go:embed.
+    rejected:
+      - option: Read them from repo-relative paths at run time.
+        why: An installed gofastr binary has no source tree beside it.
+    upholds: [built-ins-parse]

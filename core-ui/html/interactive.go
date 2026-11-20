@@ -16,15 +16,8 @@ type SelectOption struct {
 }
 
 // ButtonConfig configures a <button> element.
-// A button needs an accessible name: Label, AriaLabel, or an aria-label in
-// ExtraAttrs. Button panics when all three are empty.
 type ButtonConfig struct {
-	Label string // visible text; also the accessible name unless AriaLabel is set
-	// AriaLabel overrides the accessible name when it must differ from
-	// the visible Label — several buttons sharing a visible label
-	// ("Revoke") that need distinct accessible names. Empty ⇒ the
-	// accessible name is Label, or an ExtraAttrs aria-label when Label
-	// is also empty (the icon-only case).
+	Label      string // visible text; also the accessible name unless AriaLabel is set
 	AriaLabel  string
 	Type       string // defaults to "button"
 	Class      string
@@ -32,8 +25,7 @@ type ButtonConfig struct {
 	ExtraAttrs Attrs
 }
 
-// LinkConfig configures an <a> element.
-// Required: Href and Text.
+// LinkConfig configures an <a> element. Required: Href and Text.
 type LinkConfig struct {
 	Href       string // required
 	Text       string // required (visible text content)
@@ -42,8 +34,7 @@ type LinkConfig struct {
 	ExtraAttrs Attrs
 }
 
-// LinkHTMLConfig configures an <a> element with raw HTML content.
-// Required: Href and Content.
+// LinkHTMLConfig configures an <a> element with raw HTML content. Required: Href and Content.
 type LinkHTMLConfig struct {
 	Href       string      // required
 	Content    render.HTML // required (raw HTML content)
@@ -52,8 +43,7 @@ type LinkHTMLConfig struct {
 	ExtraAttrs Attrs
 }
 
-// FormConfig configures a <form> element.
-// Required: Method.
+// FormConfig configures a <form> element. Required: Method.
 type FormConfig struct {
 	Method     string // required: "GET" or "POST"
 	Action     string // optional: form action URL
@@ -62,8 +52,7 @@ type FormConfig struct {
 	ExtraAttrs Attrs
 }
 
-// InputConfig configures a void <input> element.
-// Required: Type and Name.
+// InputConfig configures a void <input> element. Required: Type and Name.
 type InputConfig struct {
 	Type        string // required: "text", "email", "password", etc.
 	Name        string // required: form field name
@@ -74,8 +63,7 @@ type InputConfig struct {
 	ExtraAttrs  Attrs // escape hatch for attributes not covered by typed fields
 }
 
-// LabelConfig configures a <label> element.
-// Required: For (the ID of the form control) and Text.
+// LabelConfig configures a <label> element. Required: For (the ID of the form control) and Text.
 type LabelConfig struct {
 	For        string // required: ID of the associated form control
 	Text       string // required: label text
@@ -84,8 +72,7 @@ type LabelConfig struct {
 	ExtraAttrs Attrs
 }
 
-// SelectConfig configures a <select> element.
-// Required: Name and Options.
+// SelectConfig configures a <select> element. Required: Name and Options.
 type SelectConfig struct {
 	Name       string         // required: form field name
 	Options    []SelectOption // required: at least one option
@@ -94,8 +81,7 @@ type SelectConfig struct {
 	ExtraAttrs Attrs
 }
 
-// TextAreaConfig configures a <textarea> element.
-// Required: Name.
+// TextAreaConfig configures a <textarea> element. Required: Name.
 type TextAreaConfig struct {
 	Name        string // required: form field name
 	Content     string // optional: initial text content (HTML-escaped on render)
@@ -107,8 +93,7 @@ type TextAreaConfig struct {
 	ExtraAttrs  Attrs // escape hatch for attributes not covered by typed fields
 }
 
-// FieldSetConfig configures a <fieldset> element.
-// Required: Legend.
+// FieldSetConfig configures a <fieldset> element. Required: Legend.
 type FieldSetConfig struct {
 	Legend     string // required: becomes <legend> text
 	Class      string
@@ -117,7 +102,6 @@ type FieldSetConfig struct {
 }
 
 // ButtonGroupConfig configures a <div> with role="group" containing buttons.
-// No required fields.
 type ButtonGroupConfig struct {
 	AriaLabel  string
 	Class      string
@@ -125,11 +109,7 @@ type ButtonGroupConfig struct {
 	ExtraAttrs Attrs
 }
 
-// Button produces a <button> element.
-// Required: Label (used as both visible text and aria-label). Icon-only
-// buttons may omit Label but must then supply an accessible name via
-// AriaLabel or an ExtraAttrs aria-label; an empty <button> with no
-// accessible name is always a bug, so Button panics on it.
+// Button produces a <button> element. Required: Label (used as both visible text and aria-label).
 func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" && cfg.AriaLabel == "" && cfg.ExtraAttrs["aria-label"] == "" {
 		panic("html: Button requires Label (or AriaLabel / an aria-label in ExtraAttrs for icon-only buttons)")
@@ -140,9 +120,6 @@ func Button(cfg ButtonConfig) render.HTML {
 		btnType = "button"
 	}
 	setAttr(attrs, "type", btnType)
-	// AriaLabel wins over the Label-derived accessible name; otherwise
-	// Label is the accessible name. Both override any ExtraAttrs
-	// aria-label, which is why the framework offers these fields.
 	if cfg.AriaLabel != "" {
 		setAttr(attrs, "aria-label", cfg.AriaLabel)
 	} else if cfg.Label != "" {
@@ -151,8 +128,7 @@ func Button(cfg ButtonConfig) render.HTML {
 	return render.Tag("button", attrs, render.Text(cfg.Label))
 }
 
-// Link produces an <a> element with the given href and text content.
-// Required: Href and Text.
+// Link produces an <a> element with the given href and text content. Required: Href and Text.
 func Link(cfg LinkConfig) render.HTML {
 	if cfg.Href == "" {
 		panic("html: Link requires Href")
@@ -165,8 +141,7 @@ func Link(cfg LinkConfig) render.HTML {
 	return render.Tag("a", attrs, render.Text(cfg.Text))
 }
 
-// LinkHTML produces an <a> element with raw HTML content (not escaped).
-// Required: Href and Content.
+// LinkHTML produces an <a> element with raw HTML content (not escaped). Required: Href and Content.
 func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 	if cfg.Href == "" {
 		panic("html: LinkHTML requires Href")
@@ -176,8 +151,7 @@ func LinkHTML(cfg LinkHTMLConfig) render.HTML {
 	return render.Tag("a", attrs, cfg.Content)
 }
 
-// Form produces a <form> element.
-// Required: Method.
+// Form produces a <form> element. Required: Method.
 func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 	if cfg.Method == "" {
 		panic("html: Form requires Method")
@@ -190,8 +164,7 @@ func Form(cfg FormConfig, children ...render.HTML) render.HTML {
 	return render.Tag("form", attrs, children...)
 }
 
-// Input produces a void <input> element.
-// Required: Type and Name.
+// Input produces a void <input> element. Required: Type and Name.
 func Input(cfg InputConfig) render.HTML {
 	if cfg.Type == "" {
 		panic("html: Input requires Type")
@@ -211,9 +184,8 @@ func Input(cfg InputConfig) render.HTML {
 	return render.VoidTag("input", attrs)
 }
 
-// Label produces a <label> element with a for attribute linking it to
-// the form control with the given ID.
-// Required: For and Text.
+// Label produces a <label> element with a for attribute linking it to the form control with the
+// given ID. Required: For and Text.
 func Label(cfg LabelConfig) render.HTML {
 	if cfg.For == "" {
 		panic("html: Label requires For")
@@ -226,8 +198,7 @@ func Label(cfg LabelConfig) render.HTML {
 	return render.Tag("label", attrs, render.Text(cfg.Text))
 }
 
-// Select produces a <select> element containing the given options.
-// Required: Name.
+// Select produces a <select> element containing the given options. Required: Name.
 func Select(cfg SelectConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Select requires Name")
@@ -251,9 +222,7 @@ func Option(value, text string, selected bool) render.HTML {
 	return render.Tag("option", attrs, render.Text(text))
 }
 
-// TextArea produces a <textarea> element.
-// Required: Name. Content is HTML-escaped on render; for unescaped content
-// (rare) drop to render.Tag("textarea", ...) directly.
+// TextArea produces a <textarea> element. Required: Name.
 func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: TextArea requires Name")
@@ -272,11 +241,6 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Content == "" {
 		return render.Tag("textarea", attrs)
 	}
-	// The HTML parser drops ONE newline straight after <textarea>, so
-	// content that opens on a line break lost it on every render and
-	// save. One extra newline is what the parser eats. CR and CRLF
-	// count: the tokenizer folds both to LF before the drop. The same
-	// rule as framework/headless.Textarea.
 	content := cfg.Content
 	if strings.HasPrefix(content, "\n") || strings.HasPrefix(content, "\r") {
 		content = "\n" + content
@@ -294,9 +258,7 @@ func ButtonGroup(cfg ButtonGroupConfig, children ...render.HTML) render.HTML {
 	return render.Tag("div", attrs, children...)
 }
 
-// FieldSet produces a <fieldset> element with a <legend> derived from
-// cfg.Legend.
-// Required: Legend.
+// FieldSet produces a <fieldset> element with a <legend> derived from cfg.Legend. Required: Legend.
 func FieldSet(cfg FieldSetConfig, children ...render.HTML) render.HTML {
 	if cfg.Legend == "" {
 		panic("html: FieldSet requires Legend")
@@ -313,8 +275,7 @@ func Legend(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("legend", attrs, children...)
 }
 
-// CheckboxConfig configures a void <input type="checkbox"> element.
-// Required: Name.
+// CheckboxConfig configures a void <input type="checkbox"> element. Required: Name.
 type CheckboxConfig struct {
 	Name       string // required
 	Value      string // optional
@@ -324,8 +285,7 @@ type CheckboxConfig struct {
 	ExtraAttrs Attrs
 }
 
-// Checkbox produces an <input type="checkbox"> element.
-// Required: Name.
+// Checkbox produces an <input type="checkbox"> element. Required: Name.
 func Checkbox(cfg CheckboxConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Checkbox requires Name")
@@ -342,8 +302,7 @@ func Checkbox(cfg CheckboxConfig) render.HTML {
 	return render.VoidTag("input", attrs)
 }
 
-// RadioConfig configures a void <input type="radio"> element.
-// Required: Name and Value.
+// RadioConfig configures a void <input type="radio"> element. Required: Name and Value.
 type RadioConfig struct {
 	Name       string // required
 	Value      string // required
@@ -353,8 +312,7 @@ type RadioConfig struct {
 	ExtraAttrs Attrs
 }
 
-// Radio produces an <input type="radio"> element.
-// Required: Name and Value.
+// Radio produces an <input type="radio"> element. Required: Name and Value.
 func Radio(cfg RadioConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("html: Radio requires Name")

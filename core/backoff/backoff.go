@@ -1,18 +1,9 @@
-// Package backoff holds the retry-delay policies shared by the outbox
-// relay, the queue and webhook batteries, and the log webhook sink. It is
-// dependency-free and low-level so the framework tree and the batteries
-// (which sit above it but not above each other) reuse one implementation
-// instead of maintaining copies.
+// Package backoff holds the retry-delay policies shared by the outbox, queue, webhook and log batteries.
 package backoff
 
 import "time"
 
-// Exponential returns the delay before the next retry for the attempt
-// that just failed (attempts >= 1): base*2^(attempts-1), clamped to max
-// when max is positive. attempts <= 1 yields base. A zero base yields
-// zero. Callers gate on base > 0 before applying backoff. Doubling
-// stops at the largest value whose next doubling could overflow int64,
-// so any attempt count is safe.
+// Exponential returns base*2^(attempts-1) for a base of zero or more, clamped to a positive max and never overflowing.
 func Exponential(base, max time.Duration, attempts int) time.Duration {
 	if base == 0 {
 		return 0
@@ -30,8 +21,6 @@ func Exponential(base, max time.Duration, attempts int) time.Duration {
 			return max
 		}
 		if d > (1<<63-1)/2 {
-			// The next doubling would overflow; clamp to max (or this
-			// value when uncapped).
 			if max > 0 {
 				return max
 			}
@@ -45,10 +34,7 @@ func Exponential(base, max time.Duration, attempts int) time.Duration {
 	return d
 }
 
-// At returns the wait after the given attempt from a positional
-// schedule: table[attempts-1], reusing the final entry once attempts
-// runs past the table. attempts < 1 reads as the first attempt; an
-// empty table yields zero.
+// At returns table[attempts-1], reusing the last entry past the end; an empty table yields zero.
 func At(table []time.Duration, attempts int) time.Duration {
 	if len(table) == 0 {
 		return 0
@@ -62,12 +48,7 @@ func At(table []time.Duration, attempts int) time.Duration {
 	return table[attempts-1]
 }
 
-// Jitter spreads d across d×(1-fraction) to d×(1+fraction), so retries
-// that failed together do not all come back at once. r picks the point:
-// 0 is the bottom of the range, 0.5 is d itself, and values toward 1 the
-// top; a caller passes a uniform random number in [0, 1), and an r
-// outside that range is clamped into it. fraction is clamped to [0, 1],
-// with NaN read as 0. The result never exceeds the largest Duration.
+// Jitter maps r in [0, 1) onto d×(1-fraction) to d×(1+fraction); r=0.5 returns d.
 func Jitter(d time.Duration, fraction, r float64) time.Duration {
 	if d <= 0 || !(fraction > 0) {
 		return d

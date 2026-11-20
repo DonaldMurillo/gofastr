@@ -50,3 +50,21 @@ func TestControlSignInHints(t *testing.T) {
 		}
 	}
 }
+
+// AutoCapitalize lands on the input, wins over NoSpellCheck's "off",
+// and a value outside the attribute's vocabulary is refused.
+func TestControlAutoCapitalize(t *testing.T) {
+	out := string(Control(ControlConfig{Field: headless.FieldControl{ID: "n"}, Name: "name", AutoCapitalize: AutoCapitalizeWords, NoSpellCheck: true}))
+	if !strings.Contains(out, `autocapitalize="words"`) || strings.Contains(out, `autocapitalize="off"`) {
+		t.Errorf("the control should carry autocapitalize=words only: %s", out)
+	}
+	if out := string(Control(ControlConfig{Field: headless.FieldControl{ID: "n"}, Name: "name"})); strings.Contains(out, "autocapitalize") {
+		t.Errorf("an unset AutoCapitalize should leave the browser default: %s", out)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("an AutoCapitalize outside off, sentences, words and characters was not refused")
+		}
+	}()
+	Control(ControlConfig{Field: headless.FieldControl{ID: "n"}, Name: "name", AutoCapitalize: "shout"})
+}

@@ -5,9 +5,7 @@ import (
 	"sync"
 )
 
-// Layout is a function that wraps page content with a common chrome
-// (head, navigation, footer, etc.). The title parameter allows the
-// page to specify its own <title>.
+// Layout wraps page content, under the page's title, in shared chrome.
 type Layout func(title string, content HTML) HTML
 
 var (
@@ -15,8 +13,7 @@ var (
 	layoutRegistry = make(map[string]Layout)
 )
 
-// RegisterLayout registers a Layout under the given name for later
-// retrieval via [RenderWithLayout].
+// RegisterLayout stores layout under name for [RenderWithLayout]; it panics on a nil layout.
 func RegisterLayout(name string, layout Layout) {
 	if layout == nil {
 		panic("render: RegisterLayout called with nil layout")
@@ -26,9 +23,7 @@ func RegisterLayout(name string, layout Layout) {
 	layoutMu.Unlock()
 }
 
-// RenderWithLayout looks up a registered Layout by name and applies it
-// to the given title and content. Panics if no layout is registered
-// under the given name.
+// RenderWithLayout applies the layout registered under layoutName, panicking when there is none.
 func RenderWithLayout(layoutName, title string, content HTML) HTML {
 	layoutMu.RLock()
 	layout, ok := layoutRegistry[layoutName]

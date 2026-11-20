@@ -13,8 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Glob returns paths matching a glob pattern. Uses doublestar-compatible
-// semantics: `**` matches any number of directories.
+// Glob returns the sorted paths under a root that match a pattern, where a ** segment matches any number of directories.
 type Glob struct{}
 
 func (Glob) Name() string { return "Glob" }
@@ -54,9 +53,8 @@ func (Glob) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	var matches []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // ignore unreadable subtrees
+			return nil
 		}
-		// Use a tiny doublestar-style match: split on **/, match each segment with filepath.Match.
 		rel, _ := filepath.Rel(root, path)
 		if doublestarMatch(args.Pattern, rel) {
 			matches = append(matches, path)
@@ -70,9 +68,6 @@ func (Glob) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	return textResult(strings.Join(matches, "\n")), nil
 }
 
-// doublestarMatch is a minimal `**`-aware matcher. The pattern's path
-// segments are matched against the path's segments; a `**` segment
-// matches zero or more path segments.
 func doublestarMatch(pattern, path string) bool {
 	pat := strings.Split(filepath.ToSlash(pattern), "/")
 	p := strings.Split(filepath.ToSlash(path), "/")
@@ -82,10 +77,9 @@ func doublestarMatch(pattern, path string) bool {
 func doublestarRec(pat, p []string) bool {
 	for len(pat) > 0 {
 		if pat[0] == "**" {
-			// Match zero or more path segments.
 			rest := pat[1:]
 			if len(rest) == 0 {
-				return true // ** at end matches everything
+				return true
 			}
 			for i := 0; i <= len(p); i++ {
 				if doublestarRec(rest, p[i:]) {

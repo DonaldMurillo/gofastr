@@ -33,14 +33,7 @@ var testTwoFAKey = EntityTwoFAStoreConfig{EncryptionKey: []byte("0123456789abcde
 // its name; a configured "<it>.Name" is then schema-qualified.
 func pgQualifier(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	var cur string
-	if err := db.QueryRow(`SELECT current_schema()`).Scan(&cur); err != nil {
-		t.Fatal(err)
-	}
-	q := cur + "_q"
-	mustExec(t, db, "CREATE SCHEMA "+q)
-	t.Cleanup(func() { _, _ = db.Exec("DROP SCHEMA " + q + " CASCADE") })
-	return q
+	return pgtest.SideSchema(t, db, "_q")
 }
 
 func mustExec(t *testing.T, db *sql.DB, stmts ...string) {

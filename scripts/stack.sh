@@ -2,7 +2,9 @@
 # stack.sh: GitHub stacked PRs over REST only.
 #
 #   stack.sh create <pr> <pr> [<pr>...]   link open PRs into a stack, bottom to top
+#   stack.sh add <stack> <pr> [<pr>...]   add open PRs to the top of an existing stack
 #   stack.sh view <pr>                    show the stack a PR belongs to
+#   stack.sh unstack <stack>              dissolve a stack, leaving its PRs open
 #   stack.sh merge <pr> [merge|squash|rebase]
 #                                         merge the stack up to and including <pr>,
 #                                         all or nothing, and wait for the result
@@ -13,7 +15,7 @@
 set -euo pipefail
 
 REPO="${GOFASTR_REPO:-DonaldMurillo/gofastr}"
-usage() { sed -n '2,8p' "$0" >&2; exit 2; }
+usage() { sed -n '2,10p' "$0" >&2; exit 2; }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
@@ -22,6 +24,21 @@ case "$cmd" in
     prs=$(printf '%s\n' "$@" | jq -R 'tonumber' | jq -sc '{pull_requests: .}')
     gh api -X POST "repos/$REPO/stacks" --input - <<<"$prs" \
       --jq '"stack #\(.number) on \(.base.ref): " + ([.pull_requests[] | "#\(.number)"] | join(" -> "))'
+    ;;
+  add)
+    [ "$#" -ge 2 ] || usage
+    stack="$1"; shift
+    prs=$(printf '%s\n' "$@" | jq -R 'tonumber' | jq -sc '{pull_requests: .}')
+    gh api -X POST "repos/$REPO/stacks/$stack/add" --input - <<<"$prs" \
+      --jq '"stack #\(.number) on \(.base.ref): " + ([.pull_requests[] | "#\(.number)"] | join(" -> "))'
+    ;;
+  unstack)
+    [ "$#" -eq 1 ] || usage
+    # A 204 with no body means the stack is gone; otherwise the body
+    # lists the PRs GitHub kept in it (merged or queued ones).
+    kept=$(gh api -X POST "repos/$REPO/stacks/$1/unstack" \
+      --jq '[.pull_requests[]? | "#\(.number)"] | join(" ")')
+    if [ -z "$kept" ]; then echo "stack #$1 dissolved"; else echo "stack #$1 kept: $kept"; fi
     ;;
   view)
     [ "$#" -eq 1 ] || usage

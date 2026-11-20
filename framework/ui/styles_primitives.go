@@ -510,8 +510,8 @@ func toggleCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-.fui-choice__input[aria-invalid="true"],
-.fui-switch__input[aria-invalid="true"] {
+.fui-choice__input:is(:user-invalid, [aria-invalid="true"]),
+.fui-switch__input:is(:user-invalid, [aria-invalid="true"]) {
   border-color: var(--color-danger, #B91C1C);
 }
 .fui-choice__input:disabled,
@@ -563,6 +563,7 @@ func toggleCSS(_ style.Theme) string {
    legend's accessible name stays clean. The rule itself is on the
    leaves' required attributes; this is the cue beside it. */
 .fui-choice-group__legend[data-required]::after {
+  content: " *";
   content: " *" / "";
   color: var(--color-danger, #B91C1C);
 }
@@ -880,7 +881,7 @@ func spinnerCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

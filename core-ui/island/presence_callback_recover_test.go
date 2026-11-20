@@ -2,7 +2,6 @@ package island
 
 import (
 	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -63,20 +62,7 @@ func TestRemoteMergeRecoversHookPanic(t *testing.T) {
 	m, stop := fanoutManager(t)
 	defer stop()
 	now := time.Now()
-	m.mu.Lock()
-	for i := range maxRemoteRosterTopics {
-		topic := "t:" + strconv.Itoa(i)
-		entry := remoteRosterEntry{members: []PresenceMember{{UserID: "u"}}, expiresAt: now.Add(time.Hour)}
-		touched := now
-		if i == 0 {
-			// Past its TTL: only an expired topic gives up its slot.
-			entry.expiresAt = now.Add(-time.Second)
-			touched = now.Add(-time.Minute)
-		}
-		m.remoteRosters[topic] = map[string]remoteRosterEntry{"r1": entry}
-		m.remoteRosterTouch[topic] = touched
-	}
-	m.mu.Unlock()
+	seedFullRemoteRosters(m, now)
 	var fired []string
 	m.SetOnPresenceChange(panickyHook("t:0", &fired))
 

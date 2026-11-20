@@ -1,0 +1,48 @@
+primitive: markdown.frontmatter
+summary: The leading key-value frontmatter block of a markdown document and the Unquote helper the skill parser shares.
+code:
+  - core/markdown/frontmatter.go
+twins:
+  - job: Read a leading --- frontmatter block of key value pairs, unquoting each value.
+    why: SKILL.md frontmatter needs list values and refuses a malformed line with an error, while Render has no error channel and reads a malformed block as body; they share only Unquote, and they differ on a repeated key (first wins here, last wins in skillmd).
+    sites:
+      - path: core/markdown/frontmatter.go
+        note: splitFrontmatter, the document's frontmatter.
+      - path: framework/experimental/harness/skill/skillmd/skillmd.go
+        note: parseFrontmatter, a skill's name, description and triggers.
+invariants:
+  - id: frontmatter-or-body
+    rule: A leading --- pair is frontmatter only when every non-blank line between them is a key value pair with a non-blank key, a comment line opening with a hash, or an indented or - item line continuing a key; otherwise the whole block is body.
+    enforced_by:
+      - test: core/markdown.TestLeadingRuleWithProseIsNotFrontmatter
+      - test: core/markdown.TestFrontmatterBlankKeyIsBody
+      - test: core/markdown.TestFrontmatterKeepsYAMLComments
+      - test: core/markdown.TestMarkdown_FrontmatterDelimShapes
+  - id: continuation-is-skipped
+    rule: A key's continuation lines are skipped and never rendered, so a key with a list reads as empty.
+    enforced_by:
+      - test: core/markdown.TestFrontmatterListStaysOffPage
+      - test: core/markdown.TestMarkdown_FrontmatterNotInOutput
+  - id: first-key-wins
+    rule: A key defined twice keeps its first value.
+    enforced_by:
+      - test: core/markdown.TestFrontmatterDupKeysNotLastWins
+decisions:
+  - id: first-wins-without-errors
+    date: 2026-11-19
+    status: accepted
+    decision: A repeated frontmatter key resolves to its first value.
+    rejected:
+      - option: Last value wins, as YAML parsers do.
+        why: A line lower in the block would override the value a reviewer read first, and Title reaches <title> and page chrome.
+      - option: Refuse the document.
+        why: Render has no error channel.
+    upholds: [first-key-wins]
+  - id: pairs-not-yaml
+    date: 2026-11-19
+    status: accepted
+    decision: Frontmatter is top-level key value pairs with quotes unwrapped, not YAML.
+    rejected:
+      - option: Parse full YAML.
+        why: It needs a YAML dependency in core for lists and maps the docs do not use.
+    upholds: [frontmatter-or-body]

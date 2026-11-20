@@ -1,14 +1,3 @@
-// Package logging implements the harness's own operational logs
-// (distinct from the per-session event log in package session).
-//
-// Per § Logging:
-//
-//   - Structured JSON, one object per line.
-//   - Daily-rotated files at
-//     ~/.local/state/gofastr/harness/log/harness-YYYYMMDD.log.
-//   - Components: engine, multiplex, provider.<name>, transport.<name>,
-//     mcpclient, mcpserver, skill, hook, auth.
-//   - Per-component level via --log-level engine=debug,provider.copilot=trace.
 package logging
 
 import (
@@ -23,7 +12,7 @@ import (
 	"time"
 )
 
-// Level is the log level enum.
+// Level is a log level, ordered Trace < Debug < Info < Warn < Error.
 type Level uint8
 
 const (
@@ -34,7 +23,7 @@ const (
 	LevelError
 )
 
-// String returns the lowercase name.
+// String returns the lowercase name, "info" for an unknown level.
 func (l Level) String() string {
 	switch l {
 	case LevelTrace:
@@ -52,7 +41,7 @@ func (l Level) String() string {
 	}
 }
 
-// ParseLevel parses a level string.
+// ParseLevel parses a level name, case-insensitive, accepting "warning" for warn.
 func ParseLevel(s string) (Level, error) {
 	switch strings.ToLower(s) {
 	case "trace":
@@ -69,14 +58,12 @@ func ParseLevel(s string) (Level, error) {
 	return LevelInfo, fmt.Errorf("logging: unknown level %q", s)
 }
 
-// Logger writes structured JSON log lines.
+// Logger writes one JSON object per line, filtered by a default and per-component level.
 type Logger struct {
-	mu        sync.Mutex
-	out       io.Writer
-	component string
-	level     Level
-
-	// perComponent overrides level per component name.
+	mu           sync.Mutex
+	out          io.Writer
+	component    string
+	level        Level
 	perComponent map[string]Level
 }
 
@@ -89,8 +76,7 @@ func New(out io.Writer, defaultLevel Level) *Logger {
 	}
 }
 
-// WithComponent returns a child Logger tagged with the given
-// component name. Component levels override the default.
+// WithComponent returns a Logger that tags records with component and shares the parent's writer and overrides.
 func (l *Logger) WithComponent(component string) *Logger {
 	return &Logger{
 		out:          l.out,
@@ -107,9 +93,7 @@ func (l *Logger) SetComponentLevel(component string, level Level) {
 	l.perComponent[component] = level
 }
 
-// ApplyOverrides parses a string like
-// "engine=debug,provider.openrouter=trace" and updates component
-// levels accordingly.
+// ApplyOverrides applies a spec like "engine=debug,provider.openrouter=trace" as component levels.
 func (l *Logger) ApplyOverrides(spec string) error {
 	if spec == "" {
 		return nil
@@ -132,7 +116,6 @@ func (l *Logger) ApplyOverrides(spec string) error {
 	return nil
 }
 
-// effective returns the level for the logger's current component.
 func (l *Logger) effective() Level {
 	if l.component == "" {
 		return l.level
@@ -146,8 +129,7 @@ func (l *Logger) effective() Level {
 	return l.level
 }
 
-// Log writes one structured record. Use Trace/Debug/Info/Warn/Error
-// helpers for level-tagged shortcuts.
+// Log writes one record with ts, level, msg, component and fields when level passes the filter.
 func (l *Logger) Log(level Level, msg string, fields map[string]any) {
 	if level < l.effective() {
 		return
@@ -171,7 +153,7 @@ func (l *Logger) Log(level Level, msg string, fields map[string]any) {
 	_, _ = l.out.Write([]byte{'\n'})
 }
 
-// Trace / Debug / Info / Warn / Error are level-tagged shortcuts.
+// Trace, Debug, Info, Warn and Error log at their level with alternating key, value pairs.
 func (l *Logger) Trace(msg string, kv ...any) { l.Log(LevelTrace, msg, kvToMap(kv)) }
 func (l *Logger) Debug(msg string, kv ...any) { l.Log(LevelDebug, msg, kvToMap(kv)) }
 func (l *Logger) Info(msg string, kv ...any)  { l.Log(LevelInfo, msg, kvToMap(kv)) }
@@ -183,7 +165,6 @@ func kvToMap(kv []any) map[string]any {
 		return nil
 	}
 	if len(kv)%2 != 0 {
-		// Odd kv list: bag the leftover under "extra".
 		kv = append(kv, "<missing>")
 	}
 	m := make(map[string]any, len(kv)/2)
@@ -197,18 +178,16 @@ func kvToMap(kv []any) map[string]any {
 	return m
 }
 
-// DailyFileWriter writes to a per-day file at the given directory,
-// rotating at UTC midnight.
+// DailyFileWriter appends to <dir>/harness-YYYYMMDD.log, switching file at UTC midnight.
 type DailyFileWriter struct {
 	dir string
 
 	mu      sync.Mutex
 	current *os.File
-	day     string // YYYY-MM-DD that current was opened on
+	day     string
 }
 
-// NewDailyFileWriter returns a writer that opens
-// `<dir>/harness-YYYYMMDD.log` and rotates on day change.
+// NewDailyFileWriter creates dir (0700) and returns a writer into it.
 func NewDailyFileWriter(dir string) (*DailyFileWriter, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -235,14 +214,6 @@ func (w *DailyFileWriter) Write(p []byte) (int, error) {
 	return w.current.Write(p)
 }
 
-// openDailyFile opens the daily log for append with the two rules
-// battery/log's fileSink and the kiln journal already pin: refuse a
-// symlinked leaf (a planted link redirects harness log lines —
-// request paths, panic stacks — into whatever file it names; Lstat is
-// the refusal spelling, openJournalFile's), and chmod the HANDLE to
-// 0600 so a pre-existing weaker mode (operator chmod, restored backup,
-// umask drift) is tightened before another line lands — O_APPEND's
-// mode argument only applies at create.
 func openDailyFile(path string) (*os.File, error) {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("logging: %s is a symlink; refusing to write the harness log through it", path)

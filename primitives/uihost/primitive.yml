@@ -95,6 +95,11 @@ invariants:
     rule: phraseAround splits a template at the node's placeholder before it fills params, so a param value holding that placeholder never moves the node.
     enforced_by:
       - test: framework/uihost.TestSweepCorePhraseAroundValueCannotPoseAsPlaceholder
+  - id: pages-carry-text-scale-meta
+    rule: Every full page the app renders and the host fallback document shell carry one meta name=text-scale content=scale.
+    enforced_by:
+      - test: core-ui/app.TestAppRenderPage
+      - test: framework/uihost.TestPagesCarryTheTextScaleMeta
 decisions:
   - id: page-llm-md-opt-in
     date: 2026-11-16

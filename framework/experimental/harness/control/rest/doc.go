@@ -1,5 +1,2 @@
-// Package rest is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package rest is the HTTP+SSE control transport: catalog listings, per-session commands as POSTs, and a session's events as a server-sent event stream.
 package rest

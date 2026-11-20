@@ -1,5 +1,4 @@
-// Package compute registers content-addressed Web Worker and WebAssembly
-// assets for GoFastr applications.
+// Package compute registers content-addressed Web Worker and WebAssembly assets.
 package compute
 
 import (
@@ -43,13 +42,11 @@ var (
 )
 
 // RegisterWorker registers a self-contained Web Worker script under name.
-// Re-registering identical bytes is a no-op; conflicting bytes panic.
 func RegisterWorker(name string, js []byte) {
 	register(name, js, true)
 }
 
-// RegisterWASM registers a WebAssembly module under name. Re-registering
-// identical bytes is a no-op; conflicting bytes panic.
+// RegisterWASM registers a WebAssembly module under name.
 func RegisterWASM(name string, wasm []byte) {
 	register(name, wasm, false)
 }
@@ -128,13 +125,7 @@ func Manifest() map[string]Versions {
 	return out
 }
 
-// ValidName reports whether name is a legal asset name: 1-64 bytes of
-// lowercase letters, digits, '-' or '_'. It is the single grammar
-// behind both the compute asset registry (formerly its unexported
-// validName) and the runtime's split-module names (formerly
-// runtime.validModuleName), which are identical by design: a compute
-// asset is served under the same name-shape contract as a runtime
-// module URL.
+// ValidName reports whether name is 1-64 bytes of [a-z0-9_-].
 func ValidName(name string) bool {
 	if name == "" || len(name) > 64 {
 		return false

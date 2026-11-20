@@ -149,8 +149,8 @@ func TestSelectHelpAndErrorBothVisible(t *testing.T) {
 	if errAt == -1 || hintAt == -1 {
 		t.Fatalf("the error node or the hint node is missing (error at %d, hint at %d):\n%s", errAt, hintAt, h)
 	}
-	if errAt > hintAt {
-		t.Errorf("the error must be drawn before the hint:\n%s", h)
+	if ctlAt := strings.Index(h, "<select"); !(hintAt < ctlAt && ctlAt < errAt) {
+		t.Errorf("the hint must sit above the control and the error below it:\n%s", h)
 	}
 }
 

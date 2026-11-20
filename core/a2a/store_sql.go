@@ -21,13 +21,9 @@ const (
 	dialectPostgres
 )
 
-// SQLStore persists tasks and push configs in an existing *sql.DB
-// (SQLite or Postgres, probed like battery/queue's detectDBDialect).
-// The wire Task lives in a task_json column; the scalar columns exist
-// only for owner scoping, filtering, and paging, so the JSON shape can
-// evolve without a migration for every field. Construct with
-// NewSQLStore; tables are created IF NOT EXISTS. Safe for concurrent
-// use and shared across replicas.
+// SQLStore persists tasks and push configs in an existing *sql.DB (SQLite or
+// Postgres), creating its tables if they do not exist. It is safe for
+// concurrent use and shared across replicas.
 type SQLStore struct {
 	db        *sql.DB
 	dialect   sqlDialect
@@ -71,11 +67,6 @@ func NewSQLStore(db *sql.DB, opts ...SQLStoreOption) (*SQLStore, error) {
 	return s, nil
 }
 
-// registerData declares both tables to App.ExportData and
-// App.EraseUserData under their configured names. The owner column is
-// the caller's user id (framework a2aOwnerPrincipal), and every task
-// and push config holds that caller's messages, artifacts and callback
-// URLs, so an erasure deletes them.
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("a2a_tasks", s.taskTable), Source: "a2a", Table: s.taskTable, PrimaryKey: "id",
@@ -95,10 +86,6 @@ func (s *SQLStore) registerData() {
 	})
 }
 
-// detectSQLDialect maps the shared query.IsPostgres probe onto the local
-// dialect enum: a driver whose SELECT version() banner contains
-// "postgresql" is Postgres, everything else (SQLite drivers return an
-// error or a SQLite banner) is treated as SQLite.
 func detectSQLDialect(db *sql.DB) sqlDialect {
 	if query.IsPostgres(db) {
 		return dialectPostgres
@@ -106,8 +93,6 @@ func detectSQLDialect(db *sql.DB) sqlDialect {
 	return dialectSQLite
 }
 
-// ph renders placeholder number n for the dialect: $n on Postgres, ?
-// on SQLite.
 func (s *SQLStore) ph(n int) string {
 	if s.dialect == dialectPostgres {
 		return fmt.Sprintf("$%d", n)
@@ -115,8 +100,6 @@ func (s *SQLStore) ph(n int) string {
 	return "?"
 }
 
-// where is a tiny WHERE builder that keeps placeholder numbering
-// aligned with the argument slice across dialects.
 type where struct {
 	store *SQLStore
 	claus []string
@@ -140,12 +123,6 @@ func (w *where) sql() string {
 	return strings.Join(w.claus, " AND ")
 }
 
-// addTextColumn upgrades a task table an earlier release created
-// without column (scope, tenant): a TEXT NOT NULL column defaulting to
-// the empty string, so the old rows read as made by an unscoped caller in
-// no tenant. A scoped token, or a caller in a tenant, no longer sees the
-// tasks it ran before the upgrade. column is one of this file's
-// constants, never input.
 func (s *SQLStore) addTextColumn(column string) error {
 	if s.dialect == dialectPostgres {
 		_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.taskTable), column))
@@ -199,7 +176,6 @@ func (s *SQLStore) ensureTables() error {
 	if _, err := s.db.Exec(push); err != nil {
 		return err
 	}
-	// Serves ListTasks' owner filter plus its newest-first ordering.
 	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (owner, status_ts)",
 		query.IndexOn(s.dialect == dialectSQLite, query.QuoteIndexName(s.taskTable+"_owner_ts_idx"), query.QuoteFolded(s.taskTable)))
 	if _, err := s.db.Exec(idx); err != nil {
@@ -208,9 +184,6 @@ func (s *SQLStore) ensureTables() error {
 	return nil
 }
 
-// statusTsOf extracts the ordering timestamp. The server always stamps
-// a status; a nil timestamp (only possible via direct store use)
-// degrades to the zero instant.
 func statusTsOf(t Task) time.Time {
 	if t.Status.Timestamp != nil {
 		return t.Status.Timestamp.Time
@@ -279,10 +252,8 @@ func (s *SQLStore) GetTask(ctx context.Context, owner, id string) (*TaskRecord, 
 	return scanTask(s.db.QueryRowContext(ctx, stmt, id, owner), owner)
 }
 
-// UpdateTask persists rec only when its Version matches the stored row;
-// on success rec.Version is the new stored version and UpdatedAt is
-// refreshed. Zero rows updated means conflict or absence, distinguished
-// by one follow-up select on that path only.
+// UpdateTask persists rec only when its Version matches the stored row; on
+// success rec.Version is the new stored version and UpdatedAt is refreshed.
 func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 	if rec == nil {
 		return errors.New("a2a: nil task record")
@@ -309,8 +280,6 @@ func (s *SQLStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
 		return err
 	}
 	if n == 0 {
-		// Distinguish a missing row from a version clash; both are
-		// failures, with different meanings to the caller.
 		var stored int64
 		stmt := fmt.Sprintf(`SELECT version FROM %s WHERE id = %s AND owner = %s`,
 			query.QuoteFolded(s.taskTable), s.ph(1), s.ph(2))
@@ -367,7 +336,6 @@ func (s *SQLStore) ListTasks(ctx context.Context, owner string, q ListQuery) ([]
 		listStmt += fmt.Sprintf(" LIMIT %s", s.ph(w.n))
 		args = append(args, q.Limit)
 	} else if q.Offset > 0 && s.dialect == dialectSQLite {
-		// SQLite takes OFFSET only after a LIMIT; -1 is none.
 		listStmt += " LIMIT -1"
 	}
 	if q.Offset > 0 {
@@ -470,12 +438,9 @@ func (s *SQLStore) DeletePushConfig(ctx context.Context, owner, taskID, id strin
 	return nil
 }
 
-// TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
-// `keep` terminal rows of owner in tier (tenant and scope columns equal)
-// and deletes the older ones; other tiers' rows are never read or
-// deleted. The id walk then delete (instead of one DELETE ... LIMIT
-// statement) keeps both dialects happy; ids are deleted in bounded
-// batches.
+// TrimTerminalTasks implements RetentionTrimmer: it keeps the newest `keep`
+// terminal rows of owner in tier (tenant and scope columns equal) and deletes
+// the older ones; other tiers' rows are never read or deleted.
 func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, tier RetentionTier, keep int) error {
 	if keep < 0 {
 		return nil
@@ -509,11 +474,6 @@ func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, tier Ret
 	if err := s.deleteTasksByID(ctx, owner, pastKeep); err != nil {
 		return err
 	}
-	// A config registered while a trim deleted its task lands after the
-	// task and its configs are gone: the handler's task check ran first.
-	// Sweep the owner's configs whose task no longer exists, so a client
-	// racing the trim cannot grow the table past the bound. A config newer
-	// than orphanPushGrace may be a send whose task row is still to come.
 	pt, tt := query.QuoteFolded(s.pushTable), query.QuoteFolded(s.taskTable)
 	sweep := fmt.Sprintf(`DELETE FROM %s WHERE owner = %s AND created_at < %s AND NOT EXISTS (SELECT 1 FROM %s WHERE %s.id = %s.task_id)`,
 		pt, s.ph(1), s.ph(2), tt, tt, pt)
@@ -521,10 +481,6 @@ func (s *SQLStore) TrimTerminalTasks(ctx context.Context, owner string, tier Ret
 	return err
 }
 
-// deleteTasksByID removes owner-scoped rows by id in bounded batches,
-// each batch's push configs with it in one transaction: a config whose
-// task is gone can never fire again, and leaving it behind grew the
-// push table without bound.
 func (s *SQLStore) deleteTasksByID(ctx context.Context, owner string, ids []string) error {
 	for len(ids) > 0 {
 		n := min(len(ids), 100)
@@ -599,8 +555,6 @@ func (s *SQLStore) TrimPushConfigs(ctx context.Context, owner, taskID string, ke
 	return s.deletePushConfigsByID(ctx, owner, taskID, ids[:len(ids)-keep])
 }
 
-// deletePushConfigsByID removes (owner, taskID)-scoped config rows by
-// id in bounded batches.
 func (s *SQLStore) deletePushConfigsByID(ctx context.Context, owner, taskID string, ids []string) error {
 	for len(ids) > 0 {
 		n := min(len(ids), 100)
@@ -622,9 +576,6 @@ func (s *SQLStore) deletePushConfigsByID(ctx context.Context, owner, taskID stri
 	return nil
 }
 
-// isDuplicateRowErr reports whether err is a unique-constraint failure
-// from INSERT, for the SQLite ("UNIQUE constraint failed") and Postgres
-// ("duplicate key value") drivers.
 func isDuplicateRowErr(err error) bool {
 	if err == nil {
 		return false

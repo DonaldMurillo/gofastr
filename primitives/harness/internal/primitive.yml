@@ -1,0 +1,4 @@
+primitive: harness.internal
+summary: Small helpers private to the harness - a swappable clock, a JSON string redactor and a ULID generator.
+code:
+  - framework/experimental/harness/internal/

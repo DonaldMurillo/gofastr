@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,104 +13,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
-// RateLimitConfig controls the in-memory token-bucket rate limiter.
-//
-// KeyFunc selects the per-bucket identity (per IP, per session, per API
-// key, etc.). When KeyFunc is nil the default extractor uses
-// r.RemoteAddr, an IPv6 peer collapsed to its /64; X-Forwarded-For is
-// *ignored* unless TrustProxyHeaders
-// is set, because a caller in front of the origin can spoof XFF freely
-// and would otherwise get a fresh bucket per request.
-//
-// Capacity is the maximum number of tokens a bucket can hold (= peak burst
-// allowed). RefillEvery / RefillBy together define the steady-state rate:
-// "RefillBy tokens are added every RefillEvery". Defaults: 60 tokens, +60
-// every minute (i.e., 1 req/sec sustained with a 60-req burst).
-//
-// When a request is rate-limited the handler responds 429 with a
-// Retry-After header (whole seconds, rounded up) covering the next
-// refill tick — the earliest instant a retry can actually succeed,
-// since tokens arrive RefillBy at a time, not one by one.
+// RateLimitConfig controls the in-memory token-bucket rate limiter: Capacity tokens per key (default 60), refilled RefillBy every RefillEvery (default all of them every minute); a refused request gets StatusCode (default 429) and a Retry-After.
 type RateLimitConfig struct {
 	KeyFunc     func(*http.Request) string
 	Capacity    int
 	RefillEvery time.Duration
 	RefillBy    int
 	StatusCode  int
-	// Message is the refusal body, translated per request. Zero means
-	// "rate limit exceeded" (catalog key error.rate_limited).
+	// Message is the refusal body; zero means "rate limit exceeded" (error.rate_limited).
 	Message i18n.Phrase
 
-	// TrustProxyHeaders enables reading the client IP from
-	// X-Forwarded-For (or X-Real-IP). Only set this when the origin
-	// is behind a reverse proxy you control that rewrites or appends
-	// the header. Otherwise an attacker can trivially defeat per-IP
-	// limiting by sending random XFF values.
-	//
-	// X-Forwarded-For is read from the RIGHT: the key is the first
-	// hop that is not itself in TrustedProxies, the address your
-	// outermost trusted proxy observed. Entries left of it are
-	// whatever the client sent (an appending proxy keeps them), so
-	// they never pick the bucket. List every proxy tier you run
-	// (CDN ranges included) in TrustedProxies, or the key lands on
-	// your own inner tier and all clients share one bucket.
-	//
-	// SECURITY: TrustProxyHeaders alone is NOT sufficient. The
-	// middleware will only trust the header when r.RemoteAddr (the
-	// immediate TCP peer) is one of TrustedProxies. See below.
-	// Without a trusted-proxy whitelist, XFF/X-Real-IP are ignored
-	// and the key falls back to r.RemoteAddr, so an attacker sending
-	// rotating header values from the same source can't get fresh
-	// buckets per request.
+	// TrustProxyHeaders keys on X-Forwarded-For (read from the right) or X-Real-IP, only when the TCP peer is in TrustedProxies.
 	TrustProxyHeaders bool
 
-	// TrustedProxies is the set of TCP peer addresses (r.RemoteAddr,
-	// port stripped) whose X-Forwarded-For / X-Real-IP headers are
-	// trusted when TrustProxyHeaders is true. CIDR notation is
-	// accepted; bare IPs are matched exactly. If empty, no proxy is
-	// trusted and the header values are ignored (the key falls back
-	// to r.RemoteAddr).
+	// TrustedProxies lists the peer IPs or CIDRs whose forwarding headers are trusted; empty trusts none.
 	TrustedProxies []string
-	// OmitBudgetHeaders, when true, suppresses the IETF-draft
-	// RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
-	// that the middleware otherwise emits on every response (both
-	// allowed and 429). Set this when the per-response header cost
-	// matters at very high request rates, or when an upstream cache
-	// keys on these headers and would shard its cache by remaining
-	// budget. Retry-After on the 429 path is unaffected. Default is
-	// false (headers on) so well-behaved API clients can self-pace.
+	// OmitBudgetHeaders drops the RateLimit-Limit, -Remaining and -Reset headers; Retry-After on a refusal stays.
 	OmitBudgetHeaders bool
 
-	// MaxKeys caps how many distinct keys the in-memory bucket store
-	// tracks at once. The default key is the client address, and an
-	// IPv6 peer rotates source addresses without limit (a single host
-	// owns a /64), so an attacker can mint a fresh bucket per request;
-	// the reap only drops buckets that have refilled to capacity and
-	// never catches a flood whose keys are all still refilling. Past
-	// the cap the store sheds the buckets nearest to full first down
-	// to a low-water mark, so a flood sheds its own one-token-spent
-	// buckets before a key that spent its whole budget. 0 keeps the
-	// default, 100_000 — the
-	// framework/ratelimit maxKeys convention, far above any legitimate
-	// concurrent client count.
+	// MaxKeys caps the buckets held at once, shedding the fullest first; zero means 100_000.
 	MaxKeys int
 }
 
-// RateLimit returns Middleware that enforces a token-bucket rate limit per
-// extracted key. Each key gets its own bucket; a bucket is reclaimed once
-// it has refilled to capacity, never while it still owes tokens.
-//
-// Usage:
-//
-//	r.Use(middleware.RateLimit(middleware.RateLimitConfig{
-//	    Capacity:    30,
-//	    RefillEvery: time.Second,
-//	    RefillBy:    1,
-//	}))
-//
-// or via the default:
-//
-//	r.Use(middleware.RateLimit(middleware.RateLimitConfig{}))   // 60/min/IP
+// RateLimit returns middleware that enforces a per-key token bucket, keyed by default on the peer address with an IPv6 peer collapsed to its /64.
 func RateLimit(cfg RateLimitConfig) Middleware {
 	if cfg.Capacity <= 0 {
 		cfg.Capacity = 60
@@ -149,9 +73,6 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 			}
 			if !allowed {
 				if retryAfter > 0 {
-					// ceilSeconds, not truncation: 9.999s of real wait
-					// advertised as 9 sends every honouring client back
-					// one sub-second too early, into another 429.
 					w.Header().Set("Retry-After", strconv.Itoa(ceilSeconds(retryAfter)))
 				}
 				i18n.HTTPError(w, r, cfg.StatusCode, cfg.Message)
@@ -162,10 +83,6 @@ func RateLimit(cfg RateLimitConfig) Middleware {
 	}
 }
 
-// bucketStore is a tiny per-key token-bucket pool with passive refill.
-// Buckets are kept in memory; nothing here is persistent. Suitable for
-// single-instance deployments and tests; multi-instance setups should swap
-// for a Redis-backed implementation behind the same KeyFunc.
 type bucketStore struct {
 	capacity int
 	rate     time.Duration
@@ -181,12 +98,6 @@ type bucket struct {
 	lastSeen time.Time
 }
 
-// defaultRateLimitMaxKeys caps the resident bucket count of the
-// in-memory store: an attacker-mintable keyed map gets an absolute cap
-// (the framework/ratelimit maxKeys convention, mirrored by the
-// idempotency store's defaultMaxIdemEntries), because memory use must
-// be bounded by configuration, not by how many distinct keys an
-// anonymous client can churn out over a 5-minute reap window.
 const defaultRateLimitMaxKeys = 100_000
 
 func newBucketStore(capacity int, rate time.Duration, refill int) *bucketStore {
@@ -206,14 +117,6 @@ func newBucketStoreCapped(capacity int, rate time.Duration, refill int, maxKeys 
 	}
 }
 
-// take attempts to consume one token from the bucket for key. Returns
-// (allowed, retryAfter, remaining, resetAfter), all computed under the store
-// lock so a request never takes it twice. retryAfter is the duration
-// until the next refill tick lands, i.e. the earliest moment a token can
-// exist again (0 on success); remaining is the token
-// count AFTER this request consumed its token (0 on the deny path); resetAfter
-// is the duration until the bucket is back at full capacity (0 when already
-// full).
 func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration) {
 	now := time.Now()
 	s.mu.Lock()
@@ -221,13 +124,8 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 
 	b, ok := s.buckets[key]
 	if !ok {
-		// Fresh bucket starts full; this request consumes its token.
 		remaining := s.capacity - 1
 		s.buckets[key] = &bucket{tokens: remaining, lastSeen: now}
-		// Opportunistic reclaim: full buckets on every 64th insert,
-		// and an absolute cap shedding the nearest-to-full first, so
-		// key churn cannot grow the map (a flood's fresh buckets are
-		// not full yet when the reap runs, so only the cap bounds it).
 		if len(s.buckets)%64 == 0 {
 			s.reapLocked(now)
 		}
@@ -237,15 +135,12 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		return true, 0, remaining, s.timeToFull(remaining, now, now)
 	}
 
-	// Refill: add floor(elapsed / rate) * refill tokens, capped at capacity.
 	if elapsed := now.Sub(b.lastSeen); elapsed > 0 {
 		gained := int(elapsed/s.rate) * s.refill
 		if gained > 0 {
 			b.tokens += gained
 			b.lastSeen = b.lastSeen.Add(time.Duration(gained/s.refill) * s.rate)
 			if b.tokens >= s.capacity {
-				// A full bucket earns nothing while it waits: the tick clock
-				// restarts here, or a refill could land right after this burst.
 				b.tokens = s.capacity
 				b.lastSeen = now
 			}
@@ -253,14 +148,6 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 	}
 
 	if b.tokens <= 0 {
-		// No token available. Tokens arrive in whole ticks of s.refill
-		// every s.rate, the next one landing at lastSeen+s.rate — the
-		// same model timeToFull prices below. Quote THAT instant minus
-		// the time already elapsed into the tick, never a per-token
-		// rate/refill slice: with refill > 1 (the default 60/60s
-		// included) the per-token price under-waits by up to nearly a
-		// whole refill window, and every client that honours
-		// Retry-After re-hammers the exact endpoint being protected.
 		retry := max(s.rate-now.Sub(b.lastSeen), time.Second)
 		return false, retry, 0, s.timeToFull(0, b.lastSeen, now)
 	}
@@ -268,24 +155,12 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 	return true, 0, b.tokens, s.timeToFull(b.tokens, b.lastSeen, now)
 }
 
-// timeToFull returns the duration until the bucket is back at full capacity,
-// given its current token count and the lastSeen timestamp (the moment the
-// last consumed refill tick landed). Returns 0 when the bucket is already at
-// capacity.
-//
-// The refill model adds s.refill tokens every s.rate, with the next tick at
-// lastSeen+s.rate. Recovering a deficit of D tokens therefore takes
-// ceil(D/refill) ticks, landing at lastSeen.Add(ceilTicks*rate); the time
-// remaining is that moment minus now, clamped at 0. The result is thus
-// monotonically non-decreasing in the deficit (more missing tokens ⇒ a longer
-// or equal reset) and consistent with the ticks take actually consumes during
-// refill.
 func (s *bucketStore) timeToFull(remaining int, lastSeen, now time.Time) time.Duration {
 	deficit := s.capacity - remaining
 	if deficit <= 0 {
 		return 0
 	}
-	ticks := (deficit + s.refill - 1) / s.refill // ceil(deficit / refill)
+	ticks := (deficit + s.refill - 1) / s.refill
 	resetAt := lastSeen.Add(time.Duration(ticks) * s.rate)
 	if d := resetAt.Sub(now); d > 0 {
 		return d
@@ -293,23 +168,18 @@ func (s *bucketStore) timeToFull(remaining int, lastSeen, now time.Time) time.Du
 	return 0
 }
 
-// tokensAt is the token count b would hold at now once the refill ticks
-// that have landed since lastSeen are added, capped at capacity: what
-// take would see, without moving the bucket's clock.
 func (s *bucketStore) tokensAt(b *bucket, now time.Time) int {
 	elapsed := now.Sub(b.lastSeen)
 	if elapsed <= 0 || s.rate <= 0 {
 		return b.tokens
 	}
 	ticks := int64(elapsed / s.rate)
-	if ticks >= int64(s.capacity) { // refill >= 1: this many ticks fill any bucket
+	if ticks >= int64(s.capacity) {
 		return s.capacity
 	}
 	return min(b.tokens+int(ticks)*s.refill, s.capacity)
 }
 
-// ceilSeconds renders d as whole seconds rounded up, with a floor of 0. Used
-// for RateLimit-Reset so a client never under-waits the reset window.
 func ceilSeconds(d time.Duration) int {
 	secs := int64(d / time.Second)
 	if d%time.Second > 0 {
@@ -321,12 +191,6 @@ func ceilSeconds(d time.Duration) int {
 	return int(secs)
 }
 
-// reapLocked drops buckets whose refill has caught up to capacity. Such a
-// bucket holds nothing a fresh one would not, so dropping it is lossless.
-// A bucket that still owes tokens stays, however long its key has been
-// quiet: lastSeen is the refill clock, not the last request, and an
-// exhausted key that keeps getting denied never moves it. Caller must
-// hold mu.
 func (s *bucketStore) reapLocked(now time.Time) {
 	for k, b := range s.buckets {
 		if s.timeToFull(b.tokens, b.lastSeen, now) == 0 {
@@ -335,21 +199,6 @@ func (s *bucketStore) reapLocked(now time.Time) {
 	}
 }
 
-// evictLocked sheds buckets down to a low-water mark of the cap, so the
-// shed runs at most once per ~10% of new-key inserts under a sustained
-// flood instead of on every insert. It sheds the buckets with the most
-// tokens left first: a full one loses nothing, and one that spent a
-// single token loses less enforcement than an exhausted one. A flood's
-// fresh keys have each spent one token, so the flood sheds itself before
-// a key that spent more. Among buckets holding the same tokens, the one
-// nearest to full goes first. At Capacity 1 that one token is a whole
-// budget, so the bucket nearest refill goes first, flood or not.
-//
-// Tokens rank before the time to full because the time is counted in
-// refill ticks: with RefillBy == Capacity (the default) one tick refills
-// any deficit, so an exhausted bucket and a one-token-spent one both owe
-// one tick, and the older one, the exhausted key that was there before
-// the flood, owed less and was shed first. Caller must hold mu.
 func (s *bucketStore) evictLocked(now time.Time) {
 	lowWater := s.maxKeys * 9 / 10
 	if len(s.buckets) <= lowWater {
@@ -368,7 +217,7 @@ func (s *bucketStore) evictLocked(now time.Time) {
 	}
 	slices.SortFunc(pending, func(a, b owingBucket) int {
 		if c := cmp.Compare(b.tokens, a.tokens); c != 0 {
-			return c // most tokens left first
+			return c
 		}
 		return cmp.Compare(a.owing, b.owing)
 	})
@@ -377,50 +226,16 @@ func (s *bucketStore) evictLocked(now time.Time) {
 	}
 }
 
-// defaultRateLimitKey extracts a per-client identity from the request
-// using r.RemoteAddr only (port stripped). X-Forwarded-For / X-Real-IP
-// are deliberately ignored: a client talking directly to the origin
-// can put any value in those headers and would otherwise get a fresh
-// bucket per request, defeating per-IP rate limiting entirely.
-//
-// Set TrustProxyHeaders=true on RateLimitConfig (paired with a
-// TrustedProxies whitelist) only when the origin sits behind a
-// reverse proxy you control.
-//
-// An IPv6 peer is keyed on its /64 (clientip.RateKey): one subscriber
-// is routinely handed a whole /64, so keying the full address let a
-// single client rotate past the limit with a fresh source address per
-// request. IPv4 stays the address itself.
 func defaultRateLimitKey(r *http.Request) string {
 	return clientip.RateKey(stripPort(r.RemoteAddr))
 }
 
-// newProxyAwareRateLimitKey returns a KeyFunc that reads the client from
-// X-Forwarded-For (then X-Real-IP) ONLY when r.RemoteAddr matches one of
-// the configured trusted proxies.
-//
-// X-Forwarded-For is walked from the right (clientip.Forwarded): hops that
-// are themselves trusted proxies are skipped and the key is the first hop
-// no trusted proxy vouches past, the address the outermost trusted proxy
-// observed. Everything left of that hop is client-supplied when the proxy
-// appends, so it never decides the key. The chosen hop must also be a
-// well-formed public IP: private / loopback / link-local ranges are
-// rejected so a misconfigured hop can't mint fresh buckets per request.
-//
-// When the header is not trusted (no proxy match, no value, or value
-// fails validation), the key falls back to r.RemoteAddr so rotating
-// header values from the same TCP source can't bypass the limit.
-//
-// Whichever address wins, an IPv6 one is keyed on its /64, as in
-// defaultRateLimitKey.
 func newProxyAwareRateLimitKey(trusted clientip.Proxies) func(*http.Request) string {
 	return func(r *http.Request) string {
 		return clientip.RateKey(proxyAwareClient(r, trusted))
 	}
 }
 
-// proxyAwareClient is the client address newProxyAwareRateLimitKey keys
-// on, before the /64 collapse.
 func proxyAwareClient(r *http.Request, trusted clientip.Proxies) string {
 	peer := stripPort(r.RemoteAddr)
 	if trusted.Empty() || !trusted.ContainsAddr(peer) {
@@ -440,8 +255,6 @@ func proxyAwareClient(r *http.Request, trusted clientip.Proxies) string {
 	return peer
 }
 
-// isTrustablePublicIP returns true iff ip is non-nil and neither
-// loopback, link-local, nor in a private RFC1918 / ULA range.
 func isTrustablePublicIP(ip net.IP) bool {
 	if ip == nil {
 		return false
@@ -453,22 +266,12 @@ func isTrustablePublicIP(ip net.IP) bool {
 	return true
 }
 
-// stripPort returns the host portion of addr in the canonical form used
-// as a rate-limit / proxy-trust key. Both bracketed IPv6 ("[::1]:8080")
-// and bare-IPv6 forms ("::1", "2001:db8::1") must round-trip cleanly;
-// a last-colon split mangles "2001:db8::1" to "2001:db8:" and silently
-// shards the rate-limit bucket per-address.
 func stripPort(addr string) string {
 	if addr == "" {
 		return addr
 	}
 	if host, _, err := net.SplitHostPort(addr); err == nil {
 		return host
-	}
-	// SplitHostPort rejects unbracketed IPv6 (too many colons) and bare
-	// hosts (no colon). Distinguish: bare-IPv6 has >=2 colons, no port.
-	if strings.Count(addr, ":") >= 2 {
-		return addr
 	}
 	return addr
 }

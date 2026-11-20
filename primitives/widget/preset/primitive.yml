@@ -1,0 +1,39 @@
+primitive: widget.preset
+summary: The one-call widget builders (FloatingPanel, Modal, Drawer, BottomSheet, Banner, Popover, ToastStack), the toast stack container, and the registry names of the toast row and confirm dialog templates a kit registers.
+code:
+  - core-ui/widget/preset/
+docs:
+  - framework/docs/content/widgets.md
+invariants:
+  - id: overlay-presets-dismiss
+    rule: Modal, Drawer and BottomSheet have a backdrop and close on Escape and click-outside, Drawer and BottomSheet with role dialog; Popover is hidden until opened, has no backdrop and closes on Escape and click-outside.
+    enforced_by:
+      - test: core-ui/widget/preset.TestModalDefaults
+      - test: core-ui/widget/preset.TestDrawerAndBottomSheetDefaults
+      - test: core-ui/widget/preset.TestPopoverDefaults
+  - id: corner-panels-paint-their-surface
+    rule: Popover and FloatingPanel paint the panel surface on their root wherever they mount, and a toast stack does not.
+    enforced_by:
+      - test: core-ui/widget.TestCornerPanelsPaintSurface
+  - id: toast-stack-is-recognisable
+    rule: IsToastStack is true only for a definition built by ToastStack, so a host never mounts a default stack beside the app's own.
+    enforced_by:
+      - test: core-ui/widget/preset.TestIsToastStackRecognisesOnlyThisPackagesStack
+  - id: toast-slot-escapes-and-carries-the-template
+    rule: ToastSlotHTML escapes the stack name into data-cui-toast-stack and holds the kit's registered toast row template, or nothing when none is registered; it carries no class of its own.
+    enforced_by:
+      - test: core-ui/widget/preset.TestToastStackSlotEscapesName
+      - test: core-ui/widget/preset.TestToastSlotRendersTheRegisteredTemplate
+  - id: confirm-dialog-only-when-registered
+    rule: ConfirmTemplateHTML wraps the kit's registered confirm dialog in <template data-cui-confirm-dialog> and renders nothing when no kit registered one, so the runtime falls back to window.confirm.
+    enforced_by:
+      - test: core-ui/widget/preset.TestConfirmTemplateWrapsTheRegisteredDialog
+decisions:
+  - id: toasts-are-client-side
+    date: 2026-11-20
+    status: accepted
+    decision: Toasts are pushed on the client, from window.__gofastr.toast or an X-Gofastr-Toast header on an RPC response, into a stack the runtime fills; the server keeps no queue.
+    rejected:
+      - option: A server-side toast queue delivered over SSE.
+        why: It costs a connection per page and server state for messages that only the current page shows.
+    upholds: [runtime/sse-is-push-only]

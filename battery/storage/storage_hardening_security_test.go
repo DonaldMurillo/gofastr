@@ -13,43 +13,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
-func TestLocalStorage_DefaultFilesAreNotWorldReadable(t *testing.T) {
-	requirePOSIXPermissions(t)
-	t.Parallel()
+// saveAndStatPerm saves a secret through a fresh LocalStorage rooted at a
+// temp dir and returns the permission bits of rel (slash-separated,
+// relative to the root), so each default-mode pin below asserts only its
+// own mask and failure text.
+func saveAndStatPerm(t *testing.T, key, rel string) os.FileMode {
+	t.Helper()
 	dir := t.TempDir()
 	ls := newTestLocalStorage(t, dir)
 
-	if err := ls.Save(context.Background(), "private/report.txt", strings.NewReader("secret")); err != nil {
+	if err := ls.Save(context.Background(), key, strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Join(dir, "private", "report.txt"))
+	info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
+	return info.Mode().Perm()
+}
 
-	if info.Mode().Perm()&0o044 != 0 {
-		t.Fatalf("SECURITY: [storage-local] default saved file mode is too permissive: %o", info.Mode().Perm())
+func TestLocalStorage_DefaultFilesAreNotWorldReadable(t *testing.T) {
+	requirePOSIXPermissions(t)
+	t.Parallel()
+	if perm := saveAndStatPerm(t, "private/report.txt", "private/report.txt"); perm&0o044 != 0 {
+		t.Fatalf("SECURITY: [storage-local] default saved file mode is too permissive: %o", perm)
 	}
 }
 
 func TestLocalStorage_DefaultDirectoriesAreNotWorldTraversable(t *testing.T) {
 	requirePOSIXPermissions(t)
 	t.Parallel()
-	dir := t.TempDir()
-	ls := newTestLocalStorage(t, dir)
-
-	if err := ls.Save(context.Background(), "tenant-a/private/report.txt", strings.NewReader("secret")); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	info, err := os.Stat(filepath.Join(dir, "tenant-a", "private"))
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-
-	if info.Mode().Perm()&0o055 != 0 {
-		t.Fatalf("SECURITY: [storage-local] default directory mode is too permissive: %o", info.Mode().Perm())
+	if perm := saveAndStatPerm(t, "tenant-a/private/report.txt", "tenant-a/private"); perm&0o055 != 0 {
+		t.Fatalf("SECURITY: [storage-local] default directory mode is too permissive: %o", perm)
 	}
 }
 

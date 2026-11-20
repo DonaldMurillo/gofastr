@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-// WCAG 2.x contrast arithmetic, shared by Theme.Validate (the filled-
-// control ink-pair guard), ControlBoundaryGaps and the theme tests.
-
-// contrastRatio returns the WCAG 2.x relative-luminance contrast ratio
-// between two colours. ok is false when either value is not a colour
-// parseColor can resolve exactly: var() references, named colours,
-// color-mix() and translucent colours are not approximated, so a caller
-// guarding a contract must skip what it cannot compute, never guess it.
 func contrastRatio(a, b string) (ratio float64, ok bool) {
 	ar, ag, ab, okA := parseColor(a)
 	br, bg, bb, okB := parseColor(b)
@@ -28,10 +20,6 @@ func contrastRatio(a, b string) (ratio float64, ok bool) {
 	return (lb + 0.05) / (la + 0.05), true
 }
 
-// parseColor resolves an opaque CSS colour to 0–1 sRGB components: hex
-// (#RGB, #RRGGBB, and #RRGGBBAA / #RGBA when fully opaque), rgb(), rgba(),
-// hsl(), hsla(), oklab() and oklch(), in both the comma and the space
-// syntax. A colour outside the sRGB gamut is clipped per channel.
 func parseColor(s string) (r, g, b float64, ok bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if strings.HasPrefix(s, "#") {
@@ -82,7 +70,7 @@ func parseColor(s string) (r, g, b float64, ok bool) {
 		if !okL || !okC || !okH {
 			return 0, 0, 0, false
 		}
-		c = math.Max(c, 0) // CSS clamps a negative chroma to zero
+		c = math.Max(c, 0)
 		rad := h * math.Pi / 180
 		r, g, b := oklabToSRGB(l, c*math.Cos(rad), c*math.Sin(rad))
 		return r, g, b, true
@@ -90,8 +78,6 @@ func parseColor(s string) (r, g, b float64, ok bool) {
 	return 0, 0, 0, false
 }
 
-// colorArgs splits a colour function's arguments in either syntax and
-// reads the alpha after "/" (or a fourth comma argument); no alpha is 1.
 func colorArgs(args string) (comps []string, alpha float64, ok bool) {
 	alpha = 1
 	if strings.Contains(args, "var(") || strings.Contains(args, "(") {
@@ -112,8 +98,6 @@ func colorArgs(args string) (comps []string, alpha float64, ok bool) {
 	return comps, alpha, true
 }
 
-// cssNumber reads a number or a percentage, where 100% is full; "none"
-// is zero, as CSS Color 4 defines it.
 func cssNumber(s string, full float64) (float64, bool) {
 	if s == "none" {
 		return 0, true
@@ -126,7 +110,6 @@ func cssNumber(s string, full float64) (float64, bool) {
 	return v, err == nil
 }
 
-// cssHue reads a hue in degrees, bare or with a deg, turn or rad unit.
 func cssHue(s string) (float64, bool) {
 	scale := 1.0
 	switch {
@@ -141,8 +124,6 @@ func cssHue(s string) (float64, bool) {
 	return v * scale, ok
 }
 
-// isPlainHex reports whether s is #RGB or #RRGGBB, the spellings
-// Validate's refusal judges.
 func isPlainHex(s string) bool {
 	h := trimHex(s)
 	if len(h) != 3 && len(h) != 6 || !strings.HasPrefix(strings.TrimSpace(s), "#") {
@@ -164,8 +145,6 @@ func hslToRGB(h, s, l float64) (r, g, b float64) {
 	return f(0), f(8), f(4)
 }
 
-// oklabToSRGB converts OKLab to gamma-encoded sRGB with the matrices of
-// CSS Color 4, clipping each channel into the gamut.
 func oklabToSRGB(l, a, b float64) (float64, float64, float64) {
 	l_ := l + 0.3963377774*a + 0.2158037573*b
 	m_ := l - 0.1055613458*a - 0.0638541728*b
@@ -184,9 +163,6 @@ func oklabToSRGB(l, a, b float64) (float64, float64, float64) {
 	return enc(lr), enc(lg), enc(lb)
 }
 
-// hexRGB parses #RGB and #RRGGBB (case-insensitive) into 0–1 sRGB
-// components, expanding each short-form digit to its full byte. #RGBA and
-// #RRGGBBAA parse only when the alpha is fully opaque.
 func hexRGB(s string) (r, g, b float64, ok bool) {
 	s = trimHex(s)
 	switch {
@@ -217,10 +193,6 @@ func hexRGB(s string) (r, g, b float64, ok bool) {
 	return comps[0], comps[1], comps[2], true
 }
 
-// hexPair parses one short-form digit or a long-form digit pair. The
-// short form expands the nibble (F → FF, 0 → 00): CSS defines #RGB as
-// each digit doubled, so returning the bare nibble divided by 255 read
-// #FFF as near-black and a valid #000 × #FFF pair as ~1.1:1.
 func hexPair(a, b byte, short bool) (float64, bool) {
 	hi, ok := hexVal(a)
 	if !ok {
@@ -248,8 +220,6 @@ func hexVal(c byte) (int, bool) {
 	return 0, false
 }
 
-// trimHex strips surrounding spaces and one leading '#'; CSS allows
-// both around a colour value in a token slot.
 func trimHex(s string) string {
 	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
 		s = s[1:]
@@ -263,8 +233,6 @@ func trimHex(s string) string {
 	return s
 }
 
-// srgbLuminance is the WCAG 2.x relative luminance of an sRGB colour
-// given as 0–1 components.
 func srgbLuminance(r, g, b float64) float64 {
 	conv := func(v float64) float64 {
 		if v <= 0.03928 {

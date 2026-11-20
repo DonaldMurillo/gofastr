@@ -18,26 +18,14 @@ import (
 type Migration struct {
 	Version uint64
 	Name    string
-	Up      string // SQL to apply the migration
-	Down    string // SQL to roll back the migration
+	Up      string
+	Down    string
 
-	// Group is the migration group this migration belongs to. An empty value
-	// means the DEFAULT group: the single flat, version-ordered list every
-	// existing app uses. A non-empty group lets an optional feature or module
-	// own an independent migration stream that can be applied selectively
-	// (e.g. apply the knowledge module's migrations only when that module is
-	// enabled). Version uniqueness is scoped PER GROUP: two groups may both
-	// have a version 1. Set via the `-- +migrate Group <name>` directive.
+	// Group names the migration's stream; empty is the default group.
 	Group string
 
-	// NoTransaction runs Up/Down WITHOUT wrapping them in a transaction. The
-	// escape hatch for statements that cannot run inside a transaction:
-	// CREATE INDEX CONCURRENTLY, VACUUM, CREATE DATABASE on Postgres. The cost
-	// is that a failure mid-statement leaves the database partially migrated:
-	// the runner records the migration dirty before running it and only clears
-	// that flag on success, so a later run refuses to proceed (ErrDirty) until
-	// an operator reconciles and calls Force. Set via the `-- +migrate
-	// NoTransaction` directive in a SQL migration file.
+	// NoTransaction runs Up and Down outside a transaction, recording the
+	// row dirty until the SQL succeeds.
 	NoTransaction bool
 }
 
@@ -67,16 +55,14 @@ type Migrator struct {
 	dialect    Dialect
 }
 
-// WithDialect sets the SQL dialect for the migrator.
-// Defaults to DialectPostgres if not specified.
+// WithDialect sets the SQL dialect; the default is DialectPostgres.
 func WithDialect(d Dialect) Option {
 	return func(m *Migrator) {
 		m.dialect = d
 	}
 }
 
-// New creates a new Migrator with the given database connection and options.
-// By default the tracking table is "_migrations".
+// New returns a Migrator on db whose tracking table defaults to _migrations.
 func New(db *sql.DB, opts ...Option) *Migrator {
 	m := &Migrator{
 		db:      db,
@@ -91,17 +77,8 @@ func New(db *sql.DB, opts ...Option) *Migrator {
 	return m
 }
 
-// groupNameRe limits group names to identifier-safe characters: letters,
-// digits, underscores, and hyphens. Non-empty, capped at 64 runes so a group
-// name never overflows an identifier slot.
 var groupNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// validateGroupName accepts the empty string (the DEFAULT group) or a
-// non-empty name matching groupNameRe. It is the single chokepoint for group
-// naming at both parse and Register time. The literal name "default" is
-// RESERVED: it is how the default group renders in every human-facing message
-// and how selections address it (see normalizeGroupSelection), so a group
-// registered under that literal name would be unaddressable.
 func validateGroupName(name string) error {
 	if name == "" {
 		return nil
@@ -115,14 +92,8 @@ func validateGroupName(name string) error {
 	return nil
 }
 
-// defaultGroupAlias is the human-facing name of the default ("") group. It
-// is accepted in selections (Up/Down/Status/Force group args, the CLI's
-// --group flag) and rejected as a registered group name.
 const defaultGroupAlias = "default"
 
-// normalizeGroupSelection maps the "default" alias to the empty (default)
-// group in a selection, so `--group=default` / Up(ctx, "default") address
-// the default group, otherwise the CLI has no syntax for it at all.
 func normalizeGroupSelection(groups []string) []string {
 	out := make([]string, len(groups))
 	for i, g := range groups {
@@ -134,15 +105,11 @@ func normalizeGroupSelection(groups []string) []string {
 	return out
 }
 
-// ValidateGroupName is the exported form of validateGroupName, for callers
-// outside the package (e.g. the CLI generate command validating --group
-// before writing a migration file).
+// ValidateGroupName reports whether name may name a migration group.
 func ValidateGroupName(name string) error {
 	return validateGroupName(name)
 }
 
-// groupDisplayName renders a group name for human-facing messages, showing
-// "default" for the empty (default) group.
 func groupDisplayName(g string) string {
 	if g == "" {
 		return "default"
@@ -150,19 +117,6 @@ func groupDisplayName(g string) string {
 	return g
 }
 
-// validateGroupSelection checks that every group name in the selection is
-// syntactically valid and, when mustBeRegistered is true, matches at least
-// one registered migration's group. An empty selection (no args) means "all
-// groups" and always passes. An unknown group (e.g. a typo) returns a
-// descriptive error naming the known groups, instead of silently no-op-ing.
-//
-// Up and Down require registration: applying or rolling back needs the
-// migration's SQL, and a typo silently doing nothing is the failure mode
-// this guards. Status passes mustBeRegistered=false. It is a read, and a
-// de-registered (disabled) module's rows are still legitimately inspectable
-// (an unknown group then simply shows an empty status). Force skips this
-// entirely: it is the escape hatch for reconciling exactly the rows no
-// registered migration describes.
 func (m *Migrator) validateGroupSelection(groups []string, mustBeRegistered bool) error {
 	if len(groups) == 0 {
 		return nil
@@ -187,21 +141,12 @@ func (m *Migrator) validateGroupSelection(groups []string, mustBeRegistered bool
 	return nil
 }
 
-// Register adds a migration, rejecting an invalid group name, an empty Up, or
-// a duplicate (Group, Version) pair. Migrations are kept sorted by (Version,
-// Group) so the pending list is already in apply order: within a group
-// versions ascend, and when multiple groups run together the tiebreak is group
-// name, deterministic and byte-identical to the pre-group sort when everything
-// is in the default group. A returned error does not mutate the migrator.
+// Register adds mig, refusing an invalid group, an empty Up and a
+// (Group, Version) already registered.
 func (m *Migrator) Register(mig Migration) error {
 	if err := validateGroupName(mig.Group); err != nil {
 		return err
 	}
-	// An empty Up applies nothing yet would still be recorded applied, so
-	// the tracking table would assert schema state that was never created.
-	// Refuse it the same way an invalid group name is refused: the author
-	// almost certainly mis-spelled a directive (parseMigration reports that
-	// with a sharper message; this guard covers programmatic registration).
 	if strings.TrimSpace(mig.Up) == "" {
 		return fmt.Errorf("migrate: migration %q (version %d in group %q) has no Up SQL; a migration that applies nothing must not be recorded applied", mig.Name, mig.Version, groupDisplayName(mig.Group))
 	}
@@ -220,15 +165,7 @@ func (m *Migrator) Register(mig Migration) error {
 	return nil
 }
 
-// RegisterFromReader parses migration SQL from a reader and registers it.
-// The expected format uses comment directives:
-//
-//	-- +migrate Version <n>
-//	-- +migrate Name <description>
-//	-- +migrate Up
-//	<up SQL statements>
-//	-- +migrate Down
-//	<down SQL statements>
+// RegisterFromReader parses a "-- +migrate" directive file and registers it.
 func (m *Migrator) RegisterFromReader(r io.Reader) error {
 	mig, err := parseMigration(r)
 	if err != nil {
@@ -237,21 +174,13 @@ func (m *Migrator) RegisterFromReader(r io.Reader) error {
 	return m.Register(*mig)
 }
 
-// IsDirectiveLine reports whether the migration parser reads line as a
-// directive: a "-- +migrate" line, known or not (an unknown one fails the
-// parse), or a comment that reads as one with its spacing or case off,
-// which fails the parse too. A generator that embeds SQL bodies it did not
-// write refuses one holding such a line, since the parser is line-based
-// and cannot tell a line inside a string literal from a directive.
+// IsDirectiveLine reports whether the parser reads line as a directive,
+// a malformed one included.
 func IsDirectiveLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return strings.HasPrefix(trimmed, "-- +migrate") || isNearMissDirective(trimmed)
 }
 
-// isNearMissDirective reports whether a line that is not a directive reads
-// as one with its spacing or case off ("--+migrate Down", "-- +Migrate
-// Down"): a comment the parser would pass over while the author meant it
-// to open a section.
 func isNearMissDirective(trimmed string) bool {
 	if !strings.HasPrefix(trimmed, "--") {
 		return false
@@ -260,7 +189,6 @@ func isNearMissDirective(trimmed string) bool {
 	return len(rest) >= len("+migrate") && asciicase.Lower(rest[:len("+migrate")]) == "+migrate"
 }
 
-// parseMigration reads a migration from a reader using comment directives.
 func parseMigration(r io.Reader) (*Migration, error) {
 	scanner := bufio.NewScanner(r)
 	var version uint64
@@ -268,9 +196,9 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	var noTx bool
 	var group string
 	var upSQL, downSQL strings.Builder
-	var section string // "up" or "down"
+	var section string
 	upOpened := false
-	orphanedSQL := false // a real SQL line arrived while no section was open, so it is being discarded
+	orphanedSQL := false
 
 	first := true
 	for scanner.Scan() {
@@ -305,10 +233,6 @@ func parseMigration(r io.Reader) (*Migration, error) {
 			} else if directive == "NoTransaction" {
 				noTx = true
 			} else {
-				// An unknown directive used to be skipped, leaving the
-				// section above it open: "-- +migrate down" under Up put
-				// the Down statements into Up, so the rollback ran as part
-				// of the apply and the version was recorded applied.
 				return nil, fmt.Errorf("unknown migration directive %q: the directives are -- +migrate Version, Name, Group, Up, Down and NoTransaction, spelled with that case", trimmed)
 			}
 			continue
@@ -329,12 +253,6 @@ func parseMigration(r io.Reader) (*Migration, error) {
 			}
 			downSQL.WriteString(line)
 		default:
-			// Directives are case-sensitive ("-- +migrate up" is not an Up
-			// directive), and SQL that arrives before any section opens has
-			// nowhere to go. Either shape silently discarded the file's DDL
-			// while the runner still recorded the version as applied, so the
-			// tracking table asserted schema state that was never created.
-			// Track it and refuse below instead of dropping it.
 			if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
 				orphanedSQL = true
 			}
@@ -349,11 +267,6 @@ func parseMigration(r io.Reader) (*Migration, error) {
 		return nil, fmt.Errorf("migration version is required (-- +migrate Version <n>)")
 	}
 
-	// A file whose Up section never opened applies nothing: a missing or
-	// misspelled directive ("-- +migrate Up" is case-sensitive) means the
-	// parsed Up is empty while the runner would still record the version
-	// applied. Fail loud at parse time, the same posture as RoutinesFS
-	// rejecting a routine with no Up body.
 	if !upOpened {
 		return nil, fmt.Errorf("migration %q (version %d) has no Up section: the -- +migrate Up directive is missing or misspelled (directives are case-sensitive); refusing a migration whose SQL would be silently discarded", name, version)
 	}

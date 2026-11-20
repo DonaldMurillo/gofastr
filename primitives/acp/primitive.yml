@@ -1,0 +1,126 @@
+primitive: acp
+summary: The ACP v1 agent-side server, which reads newline-delimited JSON-RPC from one connection, runs sessions and prompt turns on an embedder's Agent and asks the client for permission.
+code:
+  - core/acp/
+docs:
+  - framework/docs/content/acp.md
+on_change:
+  - kiln/acp adapts Kiln's tool surface onto this package; a change to Agent, Session or Client reaches it.
+invariants:
+  - id: envelope-is-strict
+    rule: A frame whose envelope repeats a key, holds two keys that case-fold together or holds an unknown key is answered -32700, and a frame naming a method whose jsonrpc is not "2.0" or whose id is not a string, number or null is answered -32600 with a null id.
+    enforced_by:
+      - test: core/acp.TestServeRejectsDuplicateEnvelopeKeys
+      - test: core/acp.TestSweepEnvelopeRefusesUnknownKey
+      - test: core/acp.TestEnvelopeRefusesInvalidRequest
+  - id: params-refuse-ambiguous-keys
+    rule: Every params decode runs decodeParams, which refuses a duplicate or case-folded key pair at any depth and tolerates unknown fields; a refused request is answered -32602 under its id, and a session/cancel notification whose params are refused is ignored.
+    enforced_by:
+      - test: core/acp.TestACPParamsRedRefuseFoldedKeys
+  - id: handshake-gates-sessions
+    rule: authenticate before initialize answers -32600 without running Options.Authenticate, and when AuthMethods is non-empty session/new, session/load and session/prompt answer -32000 until one authenticate call on the connection succeeds.
+    enforced_by:
+      - test: core/acp.TestAuthenticateRequiresReady
+      - test: core/acp.TestSessionsRequireAuthenticate
+      - test: core/acp.TestAuthenticateFailureUsesAuthRequiredCode
+  - id: initialize-declares-absences
+    rule: initialize answers promptCapabilities and mcpCapabilities with explicit false values, and loadSession true only when the Agent implements SessionLoader.
+    enforced_by:
+      - test: core/acp.TestInitializeDeclaresAbsencesExplicitly
+      - test: core/acp.TestInitializeWithoutLoaderAdvertisesNoLoad
+  - id: session-setup-refuses-unadvertised
+    rule: session/new and session/load refuse a missing or relative cwd, a non-empty mcpServers list and non-empty additionalDirectories with -32602 before the Agent runs.
+    enforced_by:
+      - test: core/acp.TestSessionNewRejectsRelativeCwd
+      - test: core/acp.TestSessionSetupCwdParity
+      - test: core/acp.TestSessionNewRejectsMCPServers
+      - test: core/acp.TestSessionNewRejectsAdditionalDirectories
+  - id: prompt-accepts-baseline-content
+    rule: session/prompt refuses an empty prompt and any block whose type is not text or resource_link with -32602, and an unknown session with -32002.
+    enforced_by:
+      - test: core/acp.TestSessionPromptRejectsImageBlocks
+      - test: core/acp.TestSessionPromptEmptyPromptIsRejected
+      - test: core/acp.TestSessionPromptUnknownSessionIsNotFound
+  - id: session-cap
+    rule: One connection holds at most Options.MaxSessions live sessions (1024 when zero, none when negative); past it session/new and session/load are refused -32602 before the Agent runs, or under SessionOverflowEvictOldest the oldest session is dropped and its turn canceled.
+    enforced_by:
+      - test: core/acp.TestSessionMintingPerConnIsBounded
+      - test: core/acp.TestSessionCapEvictOldest
+  - id: session-entry-never-replaced-mid-turn
+    rule: session/load of a session whose turn is running (live or evicted and draining) answers -32600, a loader answering a different id than requested is refused, and session/new returning an id the connection already holds is refused.
+    enforced_by:
+      - test: core/acp.TestLoadRefusedDuringPrompt
+      - test: core/acp.TestLoadRefusedWhileEvictedTurnRuns
+      - test: core/acp.TestLoadRefusesDifferentSessionID
+      - test: core/acp.TestNewSessionRefusesHeldID
+  - id: one-turn-per-session
+    rule: A second session/prompt while a turn runs answers -32600, the turn is released before its response is written so the next prompt is not refused, and the next prompt waits for that response so a stalled client parks one responder per session.
+    enforced_by:
+      - test: core/acp.TestSessionPromptSecondTurnWhileBusyIsRejected
+      - test: core/acp.TestPromptAfterResponseNotRefused
+      - test: core/acp.TestStalledReaderBoundsPromptResponders
+  - id: cancel-answers-cancelled
+    rule: A turn whose context session/cancel canceled is answered stopReason cancelled whatever Prompt returned.
+    enforced_by:
+      - test: core/acp.TestSessionCancelReturnsCancelledStopReason
+  - id: embedder-errors-stay-inside
+    rule: An error from NewSession, LoadSession (other than ErrSessionNotFound) or Prompt is answered -32603 with a fixed message, and a panic in Authenticate, NewSession, LoadSession or Prompt is recovered through recoverCallback into an error for that one request.
+    enforced_by:
+      - test: core/acp.TestSweepSessionSetupErrorTextStaysInside
+      - test: core/acp.TestPromptErrorTextStaysInside
+      - test: core/acp.TestEmbedderPanicBecomesInternalError
+      - test: core/acp.TestCallbackPanicsAreLogged
+  - id: permission-fails-closed
+    rule: RequestPermission returns OutcomeCancelled for any answer that is not a selection with an optionId or a cancellation, and an answer that is not a JSON-RPC 2.0 response settles its request as an error.
+    enforced_by:
+      - test: core/acp.TestRequestPermissionFailClosed
+      - test: core/acp.TestPermissionErrorDataSettles
+  - id: requests-run-in-read-order
+    rule: Requests other than session/prompt run one at a time in read order while the reader keeps delivering permission answers and acting on session/cancel at once; at most 256 frames or 16 MiB wait behind a running request, past which a request is refused -32603.
+    enforced_by:
+      - test: core/acp.TestLoadCanAskPermission
+      - test: core/acp.TestCancelPassesWaitingLoad
+      - test: core/acp.TestHeldFramesBounded
+      - test: core/acp.TestHeldBytesReleased
+  - id: eof-ends-everything
+    rule: EOF of the input cancels the running request and every prompt turn, and frames still held are dropped unanswered.
+    enforced_by:
+      - test: core/acp.TestLoadEndsAtEOF
+      - test: core/acp.TestHeldLoadDroppedAtEOF
+      - test: core/acp.TestServeEOFCancelsPrompts
+  - id: frames-never-interleave
+    rule: Writes go through a one-slot lock; a partial write or a panicking writer breaks the stream for every later frame, a write after close or queued behind a stalled one at close returns errConnClosed, and a permission request whose context ends while queued or before its write sends nothing.
+    enforced_by:
+      - test: core/acp.TestPartialWriteLatches
+      - test: core/acp.TestWriterPanicBreaksStream
+      - test: core/acp.TestCloseFreesCallsQueuedOnStall
+      - test: core/acp.TestPermissionCancelsQueuedWrite
+      - test: core/acp.TestCancelledPermissionSendsNothing
+      - test: core/acp.TestClientAfterCloseWritesNothing
+decisions:
+  - id: one-callback-guard
+    date: 2026-11-19
+    status: accepted
+    decision: runAuthenticate, runNewSession, runLoadSession and runPrompt all defer one recoverCallback that logs the scrubbed panic and returns a fixed error.
+    rejected:
+      - option: A hand-written recover block per callback.
+        why: There were four copies of the same defer, each a place to forget the stack, the scrub or the zero result.
+    upholds: [embedder-errors-stay-inside]
+  - id: envelope-check-stops-at-top-level
+    date: 2026-11-19
+    status: accepted
+    decision: decodeEnvelope checks only the envelope's own keys, and the full-depth duplicate-key walk runs in decodeParams.
+    rejected:
+      - option: Walk the whole frame at the envelope.
+        why: A refusal there has no usable id, so an ambiguous key inside params would be answered with a null id the client cannot match to its request.
+    upholds: [envelope-is-strict, params-refuse-ambiguous-keys]
+  - id: session-cap-default
+    date: 2026-11-19
+    status: accepted
+    decision: The per-connection session cap defaults to 1024.
+    rejected:
+      - option: No cap.
+        why: session/new is a cheap frame and the zero Options needs no authentication, so one client grew the process for the connection's life.
+      - option: A small cap.
+        why: Editors mint one session per task over a connection that lives for hours.
+    upholds: [session-cap]

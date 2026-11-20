@@ -116,6 +116,14 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestSweepAgentAcceptQZeroRefuses
       - test: framework/uihost.TestNotFound_JSONProblemAcceptVariants
+  - id: markdown-respects-accept-weights
+    rule: Markdown requires an explicit positive Accept weight at least as high as HTML's weight, with more specific ranges overriding wildcards.
+    enforced_by:
+      - test: framework/uihost.TestMarkdownNegotiation_EndToEnd
+  - id: problem-json-respects-accept-weights
+    rule: Problem JSON requires an explicit positive Accept weight at least as high as the weight of HTML and any available Markdown. A valid application/problem+json range takes precedence over the application/json alias, even at q=0.
+    enforced_by:
+      - test: framework/uihost.TestNotFound_JSONProblemAcceptVariants
   - id: page-markdown-not-storable
     rule: Negotiated page markdown is sent private, no-store, with Vary Cookie added to any Vary already set.
     enforced_by:
@@ -182,9 +190,27 @@ decisions:
     upholds: [llms-default-links-served-index]
   - id: accept-zero-only
     date: 2026-11-16
-    status: accepted
+    status: superseded
+    superseded_by: compare-markdown-with-html
     decision: Accept matching honours only the q=0 exclusion of RFC 9110.
     rejected:
       - option: Full quality-value ranking.
         why: The only question asked is whether the client wants the representation at all.
     upholds: [accept-q-zero-refuses]
+  - id: compare-markdown-with-html
+    date: 2026-11-20
+    status: superseded
+    superseded_by: compare-error-format-weights
+    decision: Compare Markdown and HTML quality values while keeping ties in favor of explicit Markdown and leaving problem JSON matching unchanged.
+    rejected:
+      - option: Treat any positive Markdown q as a preference over HTML.
+        why: A client can accept Markdown while explicitly preferring HTML.
+    upholds: [markdown-respects-accept-weights, accept-q-zero-refuses]
+  - id: compare-error-format-weights
+    date: 2026-11-20
+    status: accepted
+    decision: Use the same Accept parser for Markdown and problem JSON. Explicit machine formats win equal weights over HTML; problem JSON wins a tie with Markdown. Keep application/json as a compatibility alias, and continue tolerating parameters on both JSON ranges.
+    rejected:
+      - option: Select problem JSON on any positive explicit JSON range.
+        why: Accepting a JSON error does not mean the client prefers it to a higher-weight format.
+    upholds: [markdown-respects-accept-weights, problem-json-respects-accept-weights, accept-q-zero-refuses]

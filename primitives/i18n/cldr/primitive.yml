@@ -1,0 +1,71 @@
+primitive: i18n.cldr
+summary: The CLDR 47 locale data generated into cldr_tables.gen.go by internal/cldrgen, and the formatters that read it - plural categories, numbers, percents, currencies, dates, times, weekdays, lists and language names.
+code:
+  - core/i18n/cldr.go
+  - core/i18n/cldr_tables.gen.go
+  - core/i18n/plural.go
+  - core/i18n/number.go
+  - core/i18n/date.go
+  - core/i18n/calendar.go
+  - core/i18n/list.go
+  - core/i18n/langname.go
+  - core/i18n/internal/cldrgen/
+docs:
+  - framework/docs/content/i18n.md
+on_change:
+  - A CLDR upgrade bumps cldrVersion in core/i18n/internal/cldrgen and reruns go generate ./core/i18n/, which rewrites the table and its plural samples test.
+invariants:
+  - id: plural-rules-match-cldr
+    rule: Every plural rule in the table puts each of CLDR's samples in its category, and a count is an integer, a finite float or a plain decimal string, anything else being no count.
+    enforced_by:
+      - test: core/i18n.TestPluralRulesMatchCLDRSamples
+      - test: core/i18n.TestPluralCategoryCLDR
+      - test: core/i18n.TestTranslator_PluralRussianCLDR
+      - test: core/i18n.TestCountOperandsRefusesNonNumbers
+      - test: core/i18n.TestPluralCountHostileShapesSafe
+  - id: locale-resolution-bounded
+    rule: A tag resolves to its most specific CLDR locale without crossing scripts or inferring a region it does not name, and the resolution caches hold at most 1024 tags, concurrent misses included.
+    enforced_by:
+      - test: core/i18n.TestMatchCLDR
+      - test: core/i18n.TestCLDRCacheBounded
+  - id: numbers-the-locale-way
+    rule: Number, Decimal, Percent and Currency write the locale's digits, marks, grouping and NaN symbol, Decimal never passes through a float64, fraction options clamp to 0..20, and a currency rounds to its CLDR 47 digits.
+    enforced_by:
+      - test: core/i18n.TestNumberPerLocale
+      - test: core/i18n.TestNumberIntegerKinds
+      - test: core/i18n.TestNumberFractionOptions
+      - test: core/i18n.TestDecimalExact
+      - test: core/i18n.TestNumberNonFinite
+      - test: core/i18n.TestNaNIsLocaleSymbol
+      - test: core/i18n.TestNumberNoGrouping
+      - test: core/i18n.TestPercent
+      - test: core/i18n.TestCurrency
+      - test: core/i18n.TestCurrencyCLDR47Digits
+      - test: core/i18n.TestNumberingSystemsKnown
+  - id: dates-the-locale-way
+    rule: Date, Time and DateTime write CLDR's patterns in t's own zone with quoted literals and flexible day periods, and the weekday helpers and FirstWeekday follow the tag's extension, region or likely region.
+    enforced_by:
+      - test: core/i18n.TestDateStyles
+      - test: core/i18n.TestTimeAndZones
+      - test: core/i18n.TestDateTimeJoin
+      - test: core/i18n.TestDatePatternFields
+      - test: core/i18n.TestFlexibleDayPeriod
+      - test: core/i18n.TestDateYearMonthLong
+      - test: core/i18n.TestWeekdayNames
+      - test: core/i18n.TestFirstWeekday
+      - test: core/i18n.TestFirstWeekdayCLDR47
+  - id: lists-and-names
+    rule: List and ListOr join with the locale's CLDR list patterns, and LanguageName is the tag's endonym, adding the region where CLDR names a regional variant no differently.
+    enforced_by:
+      - test: core/i18n.TestList
+      - test: core/i18n.TestLanguageNameIsEndonym
+      - test: core/i18n.TestLanguageNameSplitsRegionTwins
+decisions:
+  - id: own-cldr-table
+    date: 2026-11-19
+    status: accepted
+    decision: core/i18n generates its own table from the CLDR JSON release and uses golang.org/x/text only for language tags and currency symbols.
+    rejected:
+      - option: Read numbers, plurals and currency digits from golang.org/x/text.
+        why: Its data predates CLDR 47 (Latin digits for ar-EG, 1.234 grouping for es, a French million read as other, no digits for AMD) and it has no date or list data.
+    upholds: [plural-rules-match-cldr, numbers-the-locale-way]

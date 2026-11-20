@@ -5,12 +5,12 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/internal/reexectest"
 )
 
 func TestEventBus_EmitNilHandlerDoesNotPanic(t *testing.T) {
@@ -210,17 +210,10 @@ func TestBridgePublishPanicContained(t *testing.T) {
 		return // unreachable; the child exits
 	}
 
-	cmd := exec.Command(os.Args[0],
-		"-test.run", "^TestBridgePublishPanicContained$",
-		"-test.count=1")
-	cmd.Env = append(os.Environ(), bridgePanicChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("SECURITY: [bridge-publish-panic] a panicking fanout backend killed the whole process from the bridge's publisher goroutine: %v\n--- child output ---\n%s", err, out)
-	}
-	if strings.Contains(string(out), "panic:") {
-		t.Fatalf("SECURITY: [bridge-publish-panic] child reported a panic:\n%s", out)
-	}
+	reexectest.RunChild(t, "TestBridgePublishPanicContained", bridgePanicChildEnv,
+		"[bridge-publish-panic]",
+		"[bridge-publish-panic] a panicking fanout backend killed the whole process "+
+			"from the bridge's publisher goroutine")
 }
 
 // panicFanout panics on its first Publish (a backend bug) and succeeds

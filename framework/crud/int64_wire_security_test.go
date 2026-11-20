@@ -47,6 +47,24 @@ func storedAmount(t *testing.T, db *sql.DB) int64 {
 	return got
 }
 
+// intJSONViaHTTP drives an HTTP write surface with the sentinel integer
+// and returns the stored amount, or refused=true when the surface answers
+// an explicit 400.
+func intJSONViaHTTP(t *testing.T, method, path, body string, serve func(*CrudHandler) http.HandlerFunc, ok int) (int64, bool) {
+	t.Helper()
+	ch, db := intLedger(t)
+	req := makeRequest(t, RequestOpts{Method: method, Path: path, Body: body, UserID: "alice"})
+	rr := httptest.NewRecorder()
+	serve(ch)(rr, req)
+	if rr.Code == http.StatusBadRequest {
+		return 0, true
+	}
+	if rr.Code != ok {
+		t.Fatalf("%s status=%d body=%s", path, rr.Code, rr.Body.String())
+	}
+	return storedAmount(t, db), false
+}
+
 // TestIntJSONRoundTripsOrRefuses drives every write surface with the same
 // JSON integer and requires exact persistence (or an explicit refusal).
 func TestIntJSONRoundTripsOrRefuses(t *testing.T) {
@@ -57,18 +75,9 @@ func TestIntJSONRoundTripsOrRefuses(t *testing.T) {
 		{
 			name: "http create",
 			run: func(t *testing.T) (int64, bool) {
-				ch, db := intLedger(t)
-				req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/wire_ledger",
-					Body: `{"amount": 9007199254740993}`, UserID: "alice"})
-				rr := httptest.NewRecorder()
-				ch.Create()(rr, req)
-				if rr.Code == http.StatusBadRequest {
-					return 0, true
-				}
-				if rr.Code != http.StatusCreated {
-					t.Fatalf("create status=%d body=%s", rr.Code, rr.Body.String())
-				}
-				return storedAmount(t, db), false
+				return intJSONViaHTTP(t, http.MethodPost, "/wire_ledger",
+					`{"amount": 9007199254740993}`, func(ch *CrudHandler) http.HandlerFunc { return ch.Create() },
+					http.StatusCreated)
 			},
 		},
 		{
@@ -93,18 +102,9 @@ func TestIntJSONRoundTripsOrRefuses(t *testing.T) {
 		{
 			name: "batch create item",
 			run: func(t *testing.T) (int64, bool) {
-				ch, db := intLedger(t)
-				req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/wire_ledger/_batch",
-					Body: `{"items":[{"amount":9007199254740993}]}`, UserID: "alice"})
-				rr := httptest.NewRecorder()
-				ch.BatchCreate()(rr, req)
-				if rr.Code == http.StatusBadRequest {
-					return 0, true
-				}
-				if rr.Code != http.StatusOK {
-					t.Fatalf("batch status=%d body=%s", rr.Code, rr.Body.String())
-				}
-				return storedAmount(t, db), false
+				return intJSONViaHTTP(t, http.MethodPost, "/wire_ledger/_batch",
+					`{"items":[{"amount":9007199254740993}]}`, func(ch *CrudHandler) http.HandlerFunc { return ch.BatchCreate() },
+					http.StatusOK)
 			},
 		},
 		{

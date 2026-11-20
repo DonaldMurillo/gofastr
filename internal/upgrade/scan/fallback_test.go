@@ -105,6 +105,38 @@ func runBroken(t *testing.T, src string, n *upgrade.Note) *Result {
 	return res
 }
 
+// runBrokenOver is runBroken over a caller-supplied kit.
+func runBrokenOver(t *testing.T, kit map[string]string, src string, n *upgrade.Note) *Result {
+	t.Helper()
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return res
+}
+
+// detailsConfigKit is the stub kit the DetailsConfig field tests share:
+// its hypothetical v2 drops the Disclosure field the app still sets.
+var detailsConfigKit = map[string]string{
+	"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n",
+}
+
+// assertDetailsConfigFieldHit scans src over detailsConfigKit with the one
+// DetailsConfig.Disclosure field note and asserts its hit lands on the
+// Disclosure literal with nothing unexplained.
+func assertDetailsConfigFieldHit(t *testing.T, src string) {
+	t.Helper()
+	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
+	res := runBrokenOver(t, detailsConfigKit, src, n)
+	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
+	if len(res.Unexplained) != 0 {
+		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
+	}
+}
+
 // TestFallbackNestedModulePaths proves a nested module's compile errors
 // land on root-relative paths: the go command echoes them relative to
 // the module the load ran in, tools/ here, not the root module.
@@ -287,7 +319,6 @@ func TestFallbackPositionlessErrorKept(t *testing.T) {
 func TestFallbackQuotedPathFieldExplained(t *testing.T) {
 	// Two imports sharing the name html make go/types write the type
 	// with its quoted import path; qualified must spell that too.
-	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
 	src := `package main
 
 import (
@@ -301,7 +332,7 @@ func main() {
 	_ = html.DetailsConfig{Title: "t", Disclosure: true}
 }
 `
-	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	root := newWorkspace(t, detailsConfigKit, map[string]string{"main.go": src})
 	testEnv(t)
 	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
 	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
@@ -344,25 +375,12 @@ func TestFallbackDotImportFieldExplained(t *testing.T) {
 	// go/types still qualifies the type with its package name under a
 	// dot import, so the declared-name spelling matches; the bare
 	// spelling is what a bare message would need.
-	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
-	src := `package main
+	assertDetailsConfigFieldHit(t, `package main
 
 import . "example.com/kit/html"
 
 func main() { _ = DetailsConfig{Title: "t", Disclosure: true} }
-`
-	root := newWorkspace(t, kit, map[string]string{"main.go": src})
-	testEnv(t)
-	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
-	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
-	if len(res.Unexplained) != 0 {
-		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
-	}
+`)
 }
 
 func TestFallbackUnrelatedErrorKept(t *testing.T) {
@@ -421,25 +439,12 @@ func main() { _ = ui.FormFieldConfig{Input: "oops"} }
 func TestFallbackLocalAliasFieldExplained(t *testing.T) {
 	// go/types writes a type alias declared in the erroring package
 	// bare, under the alias name: "... of type LocalConfig".
-	kit := map[string]string{"html/html.go": "package html\n\ntype DetailsConfig struct{ Title string }\n"}
-	src := `package main
+	assertDetailsConfigFieldHit(t, `package main
 
 import "example.com/kit/html"
 
 type LocalConfig = html.DetailsConfig
 
 func main() { _ = LocalConfig{Title: "t", Disclosure: true} }
-`
-	root := newWorkspace(t, kit, map[string]string{"main.go": src})
-	testEnv(t)
-	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
-	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
-	if len(res.Unexplained) != 0 {
-		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
-	}
+`)
 }

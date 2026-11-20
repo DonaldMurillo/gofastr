@@ -1,5 +1,2 @@
-// Package ids is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package ids defines the prefixed ULID identifiers (sess_, log_, call_, tok_, cli_) of the harness wire protocol and store.
 package ids

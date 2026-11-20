@@ -22,34 +22,46 @@ func BenchmarkRouter_Lookup(b *testing.B) {
 	sizes := []int{1, 10, 100, 1000}
 
 	for _, n := range sizes {
-		b.Run(fmt.Sprintf("gofastr-static-N=%d", n), func(b *testing.B) {
-			r := New()
-			for i := range n {
-				r.GetFunc(fmt.Sprintf("/route-%d", i), noop)
-			}
-			target := fmt.Sprintf("/route-%d", n-1)
-			req := httptest.NewRequest(http.MethodGet, target, nil)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				r.ServeHTTP(rec, req)
-			}
-		})
+		// The gofastr axis: static literal routes and parameterized
+		// routes, both hit on the last registered route.
+		variants := []struct {
+			name     string
+			register func(*Router)
+			target   string
+		}{
+			{
+				name: "gofastr-static",
+				register: func(r *Router) {
+					for i := range n {
+						r.GetFunc(fmt.Sprintf("/route-%d", i), noop)
+					}
+				},
+				target: fmt.Sprintf("/route-%d", n-1),
+			},
+			{
+				name: "gofastr-param",
+				register: func(r *Router) {
+					for i := range n {
+						r.GetFunc(fmt.Sprintf("/users/{id}/route-%d", i), noop)
+					}
+				},
+				target: fmt.Sprintf("/users/42/route-%d", n-1),
+			},
+		}
+		for _, v := range variants {
+			b.Run(fmt.Sprintf("%s-N=%d", v.name, n), func(b *testing.B) {
+				r := New()
+				v.register(r)
+				req := httptest.NewRequest(http.MethodGet, v.target, nil)
+				b.ResetTimer()
+				for range b.N {
+					rec := httptest.NewRecorder()
+					r.ServeHTTP(rec, req)
+				}
+			})
+		}
 
-		b.Run(fmt.Sprintf("gofastr-param-N=%d", n), func(b *testing.B) {
-			r := New()
-			for i := range n {
-				r.GetFunc(fmt.Sprintf("/users/{id}/route-%d", i), noop)
-			}
-			target := fmt.Sprintf("/users/42/route-%d", n-1)
-			req := httptest.NewRequest(http.MethodGet, target, nil)
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				r.ServeHTTP(rec, req)
-			}
-		})
-
+		// Baseline: stdlib ServeMux, static routes only.
 		b.Run(fmt.Sprintf("servemux-static-N=%d", n), func(b *testing.B) {
 			mux := http.NewServeMux()
 			for i := range n {
@@ -58,7 +70,7 @@ func BenchmarkRouter_Lookup(b *testing.B) {
 			target := fmt.Sprintf("/route-%d", n-1)
 			req := httptest.NewRequest(http.MethodGet, target, nil)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				rec := httptest.NewRecorder()
 				mux.ServeHTTP(rec, req)
 			}

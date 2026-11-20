@@ -1,0 +1,36 @@
+primitive: webmcp.handle
+summary: Host.Handle declares a tool and binds its endpoint route in one call, with per-tool HTTP middleware.
+code:
+  - framework/experimental/webmcp/handle.go
+docs:
+  - framework/docs/content/webmcp.md
+twins:
+  - job: Refuse a route already on the router before registering, because core/router panics on a conflict.
+    why: Mount checks its three fixed GET asset routes and Handle checks one tool route and also recovers ServeMux overlap panics; sharing one pre-flight helper is work not yet done.
+    sites:
+      - path: framework/experimental/webmcp/webmcp.go
+        note: The rt.Routes loop in Mount.
+      - path: framework/experimental/webmcp/handle.go
+        note: The rt.Routes loop and registerRoute in Handle.
+invariants:
+  - id: handle-is-atomic
+    rule: A Handle that fails on validation, on a route already on the router, or on a ServeMux overlap panic (which comes back as an error) registers neither the manifest entry nor the route; a panic from the router's register hook, which runs after the route is installed, leaves the route without a manifest entry.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestHandleRejectsDuplicateRoute
+      - test: framework/experimental/webmcp.TestHandleRejectsExistingRouterRoute
+      - test: framework/experimental/webmcp.TestHandleOverlappingPatternsIsAnError
+      - test: framework/experimental/webmcp.TestHandleRefusesWhatRegisterRefuses
+  - id: middleware-outermost-first-observer-outside
+    rule: WithHTTPMiddleware runs its middleware outermost first, and the observer wraps outside all of them so it reports a middleware's refusal as the call's outcome.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestHandleAppliesHTTPMiddlewareOutermostFirst
+      - test: framework/experimental/webmcp.TestObserverSeesMiddlewareRefusal
+  - id: route-pattern-is-path-only
+    rule: Handle registers the route at the path without its query string, while the manifest keeps the query for the bridge to send.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestHandleGETBindsQueryParams
+  - id: manifest-path-carries-prefix
+    rule: On a grouped router the manifest entry's Path carries the group prefix the route registered under.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestHandleOnGroupedRouterKeepsPrefix
+      - test: framework/experimental/webmcp.TestGroupedToolPathReachesRoute

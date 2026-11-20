@@ -1,3 +1,2 @@
-// Package openai is an internal OpenAI-compatible adapter used by
-// the OpenRouter and ZAI providers (both speak the same wire shape).
+// Package openai is the OpenAI Chat Completions client the openrouter and zai providers share.
 package openai

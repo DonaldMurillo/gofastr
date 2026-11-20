@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-// DateStyle picks a date format. The zero value is DateMedium.
+// DateStyle picks a date format; the zero value is DateMedium.
 type DateStyle int
 
 const (
-	// DateMedium is "Mar 5, 2026" in English, "5 mars 2026" in French.
+	// DateMedium is "Mar 5, 2026" in English.
 	DateMedium DateStyle = iota
-	// DateShort is "3/5/26" in English, "05/03/2026" in French.
+	// DateShort is "3/5/26" in English.
 	DateShort
 	// DateLong is "March 5, 2026" in English.
 	DateLong
@@ -25,28 +25,24 @@ const (
 	DateMonthDay
 	// DateWeekdayMonthDay is "Thu, Mar 5" in English.
 	DateWeekdayMonthDay
-	// DateYearMonthLong is "March 2026" in English, "marzo de 2026" in
-	// Spanish: CLDR's year with the wide month (yMMMM), what a
-	// calendar's caption says. A locale whose CLDR format keeps the
-	// month numeric keeps it numeric here too.
+	// DateYearMonthLong is "March 2026" in English.
 	DateYearMonthLong
 )
 
-// TimeStyle picks a time format. The zero value is TimeShort.
+// TimeStyle picks a time format; the zero value is TimeShort.
 type TimeStyle int
 
 const (
-	// TimeShort is "2:05 PM" in English, "14:05" in French.
+	// TimeShort is "2:05 PM" in English.
 	TimeShort TimeStyle = iota
 	// TimeMedium adds seconds.
 	TimeMedium
-	// TimeLong adds the zone: "2:05:09 PM PST", "14:05:09 UTC+1".
+	// TimeLong adds the zone.
 	TimeLong
-	// TimeFull adds the zone as an offset: "14:05:09 UTC+01:00".
+	// TimeFull adds the zone as an offset.
 	TimeFull
 )
 
-// lengthIndex maps a style onto the full, long, medium, short arrays.
 func (s DateStyle) lengthIndex() int {
 	switch s {
 	case DateFull:
@@ -85,24 +81,19 @@ func (l *cldrLocale) datePattern(s DateStyle) string {
 	return l.date[s.lengthIndex()]
 }
 
-// Date writes t's date in the context's locale, in t's own time zone:
-// convert with t.In first to show another zone's date.
+// Date writes t's date in ctx's locale and t's own zone.
 func Date(ctx context.Context, t time.Time, style DateStyle) string {
 	m := cldrFor(ctx)
 	return m.formatDate(m.loc.datePattern(style), t)
 }
 
-// Time writes t's time of day in the context's locale and t's zone.
-// Zone names come from Go's zone abbreviations in English and from the
-// locale's GMT format elsewhere ("UTC+1" in French), since CLDR's zone
-// names are not in the table.
+// Time writes t's time of day in ctx's locale and t's zone.
 func Time(ctx context.Context, t time.Time, style TimeStyle) string {
 	m := cldrFor(ctx)
 	return m.formatDate(m.loc.time[style.lengthIndex()], t)
 }
 
-// DateTime writes t's date and time joined the locale's way: "Mar 5,
-// 2026, 2:05 PM" in English, "5 mars 2026, 14:05" in French.
+// DateTime writes t's date and time joined the locale's way.
 func DateTime(ctx context.Context, t time.Time, date DateStyle, tm TimeStyle) string {
 	m := cldrFor(ctx)
 	d := m.formatDate(m.loc.datePattern(date), t)
@@ -110,10 +101,6 @@ func DateTime(ctx context.Context, t time.Time, date DateStyle, tm TimeStyle) st
 	return joinPattern(m.loc.dateTime[date.lengthIndex()], c, d, true)
 }
 
-// joinPattern fills a {0}/{1} pattern in one pass, so an argument that
-// itself holds "{1}" stays as written. quoted honours CLDR's
-// apostrophe quoting, which date-time combiners use ("{1} 'kl'. {0}")
-// and list patterns do not.
 func joinPattern(p, a0, a1 string, quoted bool) string {
 	var b strings.Builder
 	for i := 0; i < len(p); i++ {
@@ -133,9 +120,6 @@ func joinPattern(p, a0, a1 string, quoted bool) string {
 	return b.String()
 }
 
-// writeQuoted writes the quoted run starting at p[i] (an apostrophe)
-// and returns the index of its closing apostrophe. "”" is one
-// apostrophe, inside quotes or out.
 func writeQuoted(b *strings.Builder, p string, i int) int {
 	if i+1 < len(p) && p[i+1] == '\'' {
 		b.WriteByte('\'')
@@ -157,8 +141,6 @@ func writeQuoted(b *strings.Builder, p string, i int) int {
 	return j
 }
 
-// formatDate interprets a CLDR date pattern: runs of an ASCII letter are
-// fields, quoted text is literal, and everything else passes through.
 func (m cldrMatch) formatDate(p string, t time.Time) string {
 	var b strings.Builder
 	for i := 0; i < len(p); i++ {
@@ -180,8 +162,6 @@ func (m cldrMatch) formatDate(p string, t time.Time) string {
 	return b.String()
 }
 
-// dateField writes one field. Letters CLDR defines that the table's
-// patterns never use write their own letters back.
 func (m cldrMatch) dateField(c byte, n int, t time.Time) string {
 	l := m.loc
 	num := func(v, width int) string {
@@ -299,9 +279,6 @@ func (m cldrMatch) dateField(c byte, n int, t time.Time) string {
 	return strings.Repeat(string(c), n)
 }
 
-// shortZone is the zone's abbreviation in English when Go knows one
-// (PST, CET, UTC), and the short GMT offset otherwise: Go's
-// abbreviations are English, and many zones have only "+05".
 func (m cldrMatch) shortZone(t time.Time) string {
 	name, _ := t.Zone()
 	if m.lang() == "en" && len(name) >= 2 && strings.Trim(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "" {
@@ -310,8 +287,6 @@ func (m cldrMatch) shortZone(t time.Time) string {
 	return m.gmtOffset(t, true)
 }
 
-// gmtOffset writes t's offset in the locale's GMT format: "UTC+1"
-// short, "UTC+01:00" long, and the zero format at offset zero.
 func (m cldrMatch) gmtOffset(t time.Time, short bool) string {
 	l := m.loc
 	_, off := t.Zone()
@@ -356,8 +331,6 @@ func (m cldrMatch) gmtOffset(t time.Time, short bool) string {
 	return joinPattern(l.gmt, l.localDigits(s), "", false)
 }
 
-// dropMinutes removes ":00" (or ".00", or a bare "00") after the hours
-// in a short offset written from pattern p.
 func dropMinutes(p, s string, h int) string {
 	mm := strings.Index(p, "mm")
 	hEnd := strings.LastIndexByte(p[:max(mm, 0)], 'H')
@@ -372,9 +345,6 @@ func dropMinutes(p, s string, h int) string {
 	return s
 }
 
-// flexiblePeriod names the flexible day period t falls in ("下午"), or
-// "" for a locale with none. An "at" period (midnight) names only its
-// exact minute; otherwise the range t's minute lies in.
 func (l *cldrLocale) flexiblePeriod(t time.Time) string {
 	m := t.Hour()*60 + t.Minute()
 	for _, p := range l.periods {

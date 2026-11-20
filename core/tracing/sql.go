@@ -15,18 +15,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
 )
 
-// maxQueryText caps db.query.text. A bulk insert's placeholder list can
-// run to megabytes; the head names the statement well enough.
 const maxQueryText = 4096
 
-// OpenDB is sql.Open with a span per statement. driverName is a driver
-// registered with database/sql ("sqlite3", "postgres"); the database
-// opens the same way sql.Open would open it.
-//
-// Each Exec and Query, prepared or not, gets a client span named by the
-// statement's first keyword (SELECT, INSERT, ...), and a transaction's
-// BEGIN, COMMIT and ROLLBACK get one each. A Query span covers the
-// driver call, not the reading of its rows.
+// OpenDB is sql.Open with a client span per Exec, Query, BEGIN, COMMIT and
+// ROLLBACK, named by the statement's first keyword.
 func OpenDB(driverName, dsn string) (*sql.DB, error) {
 	probe, err := sql.Open(driverName, dsn)
 	if err != nil {
@@ -45,15 +37,12 @@ func OpenDB(driverName, dsn string) (*sql.DB, error) {
 	return sql.OpenDB(WrapConnector(c, dbSystem(driverName))), nil
 }
 
-// WrapConnector traces every connection c opens, for a driver reached
-// through its own connector (pgx's stdlib.GetConnector, say) rather than
-// a registered name. system is the db.system.name attribute:
-// "postgresql", "sqlite", "mysql".
+// WrapConnector traces every connection c opens; system is the
+// db.system.name attribute ("postgresql", "sqlite", "mysql").
 func WrapConnector(c driver.Connector, system string) driver.Connector {
 	return &connector{inner: c, system: attribute.String("db.system.name", system), dialect: sqlredact.ForSystem(system)}
 }
 
-// dbSystem maps a database/sql driver name to its db.system.name value.
 func dbSystem(driverName string) string {
 	switch driverName {
 	case "sqlite3", "sqlite":
@@ -90,8 +79,6 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 
 func (c *connector) Driver() driver.Driver { return c.inner.Driver() }
 
-// Close closes the inner connector when it holds resources, as
-// database/sql does for an unwrapped one on DB.Close.
 func (c *connector) Close() error {
 	if cl, ok := c.inner.(io.Closer); ok {
 		return cl.Close()
@@ -99,19 +86,12 @@ func (c *connector) Close() error {
 	return nil
 }
 
-// tracedConn implements every optional interface database/sql looks for,
-// answering driver.ErrSkip (or the neutral value) where the inner
-// connection lacks one so database/sql takes the path it would have taken
-// without the wrapper.
 type tracedConn struct {
 	inner   driver.Conn
 	system  attribute.KeyValue
 	dialect sqlredact.Dialect
 }
 
-// end records the span for one call that started at start. The query text
-// is only scanned for a span that records, so an app with no
-// TracerProvider pays for the span name and nothing else.
 func (c *tracedConn) end(ctx context.Context, query string, start time.Time, err error) {
 	span := startAt(ctx, spanName(query), start, c.system)
 	defer span.End()
@@ -146,9 +126,6 @@ func (c *tracedConn) PrepareContext(ctx context.Context, query string) (driver.S
 	return ts, nil
 }
 
-// convertingStmt keeps a statement's ColumnConverter visible to
-// database/sql. Only statements that have one get it: database/sql
-// converts arguments differently once the method exists.
 type convertingStmt struct {
 	*tracedStmt
 	cc driver.ColumnConverter
@@ -186,7 +163,7 @@ func (c *tracedConn) ExecContext(ctx context.Context, query string, args []drive
 	switch e := c.inner.(type) {
 	case driver.ExecerContext:
 		return traced(c, ctx, query, args, e.ExecContext)
-	case driver.Execer: // a legacy driver
+	case driver.Execer:
 		return traced(c, ctx, query, args, withoutCtx(e.Exec))
 	}
 	return nil, driver.ErrSkip
@@ -196,14 +173,12 @@ func (c *tracedConn) QueryContext(ctx context.Context, query string, args []driv
 	switch q := c.inner.(type) {
 	case driver.QueryerContext:
 		return traced(c, ctx, query, args, q.QueryContext)
-	case driver.Queryer: // a legacy driver
+	case driver.Queryer:
 		return traced(c, ctx, query, args, withoutCtx(q.Query))
 	}
 	return nil, driver.ErrSkip
 }
 
-// traced runs one statement and records its span. A driver.ErrSkip answer
-// records nothing: database/sql takes its fallback and traces that.
 func traced[T any](c *tracedConn, ctx context.Context, query string, args []driver.NamedValue,
 	run func(context.Context, string, []driver.NamedValue) (T, error)) (T, error) {
 	start := time.Now()
@@ -247,7 +222,7 @@ func (c *tracedConn) CheckNamedValue(nv *driver.NamedValue) error {
 type tracedTx struct {
 	inner driver.Tx
 	conn  *tracedConn
-	ctx   context.Context // the BeginTx context, which parents COMMIT and ROLLBACK
+	ctx   context.Context
 }
 
 func (t *tracedTx) Commit() error {
@@ -295,8 +270,6 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 	return traced(s.conn, ctx, s.query, args, withoutCtx(stmtLegacy(s.inner.Query)))
 }
 
-// stmtCtx and stmtLegacy fit a prepared statement's methods, which
-// already hold their query, to the shapes that take one.
 func stmtCtx[T any](f func(context.Context, []driver.NamedValue) (T, error)) func(context.Context, string, []driver.NamedValue) (T, error) {
 	return func(ctx context.Context, _ string, args []driver.NamedValue) (T, error) { return f(ctx, args) }
 }
@@ -312,9 +285,6 @@ func (s *tracedStmt) CheckNamedValue(nv *driver.NamedValue) error {
 	return s.conn.CheckNamedValue(nv)
 }
 
-// withoutCtx adapts a legacy driver method, which takes no context and
-// positional values only. A context already done fails the call before
-// it runs, as database/sql does for those drivers itself.
 func withoutCtx[T any](f func(string, []driver.Value) (T, error)) func(context.Context, string, []driver.NamedValue) (T, error) {
 	return func(ctx context.Context, query string, named []driver.NamedValue) (T, error) {
 		if err := ctx.Err(); err != nil {
@@ -330,8 +300,6 @@ func withoutCtx[T any](f func(string, []driver.Value) (T, error)) func(context.C
 	}
 }
 
-// namedToValues is database/sql's own conversion for legacy drivers,
-// which take positional values only.
 func namedToValues(named []driver.NamedValue) ([]driver.Value, error) {
 	out := make([]driver.Value, len(named))
 	for i, nv := range named {
@@ -351,9 +319,6 @@ func valuesToNamed(vals []driver.Value) []driver.NamedValue {
 	return out
 }
 
-// spanName is the statement's first keyword in upper case, after any
-// leading comments: SELECT, INSERT, WITH. A statement that opens with
-// anything else is "SQL".
 func spanName(query string) string {
 	q := skipComments(query)
 	end := 0
@@ -366,7 +331,6 @@ func spanName(query string) string {
 	return strings.ToUpper(q[:end])
 }
 
-// skipComments drops leading whitespace and -- or /* */ comments.
 func skipComments(q string) string {
 	for {
 		q = strings.TrimLeft(q, " \t\r\n\f\v")
@@ -389,9 +353,6 @@ func skipComments(q string) string {
 	}
 }
 
-// queryText is the statement's shape for db.query.text: every literal
-// replaced by ? under the engine's quoting rules (internal/sqlredact,
-// which framework/slowquery's line shares), capped at maxQueryText.
 func queryText(query string, d sqlredact.Dialect) string {
 	return textsafe.Truncate(sqlredact.Text(query, d), maxQueryText)
 }

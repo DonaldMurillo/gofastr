@@ -7,11 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 )
 
-func requireBrowser(t *testing.T) {
-	t.Helper()
-	_ = browserExecutable(t)
-}
-
 // browserExecutable resolves the browser chromedp launches. See
 // internal/browserpath for why resolution is centralised.
 func browserExecutable(t *testing.T) string {

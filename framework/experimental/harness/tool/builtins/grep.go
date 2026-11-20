@@ -16,8 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Grep finds lines matching a regex across files. Tiny ripgrep
-// substitute, exact line matches per file.
+// Grep returns the lines matching a Go regexp in a file or in the regular files under a directory.
 type Grep struct{}
 
 func (Grep) Name() string        { return "Grep" }
@@ -63,8 +62,6 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	matched := 0
 	capped := false
 	walk := func(path string, d fs.DirEntry, walkErr error) error {
-		// A cancelled turn (CancelTurn, shutdown) ends the walk: Grep
-		// over "/" otherwise keeps the turn busy until it finishes.
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -90,18 +87,12 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 		scanner.Buffer(make([]byte, 1024*64), 1024*1024)
 		lineNo := 0
 		defer func() {
-			// Scan stops on a line past the buffer cap and reports it
-			// only through Err. Silently returning the matches found so
-			// far tells the caller this file held nothing more.
 			if capped {
-				return // the match cap says so for the whole search
+				return
 			}
 			if err := scanner.Err(); err != nil {
 				fmt.Fprintf(&out, "%s: results truncated: %v\n", path, err)
 			} else if limited.N == 0 && moreToRead(f) {
-				// The byte cap is read off the reader, not summed from
-				// line lengths: a CRLF line is two bytes longer than its
-				// text, and a sum that assumed one never reached the cap.
 				fmt.Fprintf(&out, "%s: results truncated: read the first %d bytes\n", path, int64(maxGrepFileBytes))
 			}
 		}()
@@ -128,9 +119,6 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	}
 	switch {
 	case info.IsDir():
-		// WalkDir does not follow a link it is handed as its root: it
-		// visits the link itself, which is no regular file, and the
-		// search of a linked directory answered "(no matches)".
 		if resolved, err := filepath.EvalSymlinks(root); err == nil {
 			root = resolved
 		}
@@ -152,27 +140,16 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	return textResult(out.String()), nil
 }
 
-// maxGrepFileBytes caps how much of one file Grep reads, so a huge log
-// or a sparse file cannot hold the turn.
 const maxGrepFileBytes = 8 << 20
 
-// maxGrepMatches caps the matching lines one search returns. The search
-// stops there, across files, and says so.
 const maxGrepMatches = 1000
 
-// moreToRead reports whether f holds a byte past what was read from it.
-// A read that fails (end of file included) is no more to read.
 func moreToRead(f *os.File) bool {
 	var one [1]byte
 	n, err := f.Read(one[:])
 	return err == nil && n > 0
 }
 
-// openRegular opens path only when it is a regular file. FIFOs, devices
-// and sockets are skipped: opening a FIFO blocks until a writer appears,
-// and /dev/tty or /dev/urandom never end. A symlink counts when its
-// target is a regular file. The open handle is checked again so a path
-// swapped after the first check is still refused.
 func openRegular(path string, d fs.DirEntry) (*os.File, bool) {
 	mode := d.Type()
 	if mode&fs.ModeSymlink != 0 {

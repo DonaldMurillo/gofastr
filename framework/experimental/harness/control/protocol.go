@@ -1,12 +1,3 @@
-// Package control hosts the engine-as-a-service control plane.
-//
-// This file defines the transport-agnostic wire protocol: the
-// canonical event envelope, the Command and Event sealed unions, the
-// handshake, and the JSON codec. Every transport carries the same
-// canonical event JSON verbatim; envelopes are framing only.
-//
-// See docs/harness-architecture.md § Control plane + § Protocol
-// versioning & evolution.
 package control
 
 import (
@@ -19,30 +10,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// ProtocolVersion is the SemVer string identifying the wire protocol.
-// Minor bumps are additive-only; major bumps require client
-// re-implementation. See docs § Protocol versioning → Handshake.
+// ProtocolVersion is the SemVer of the wire protocol.
 const ProtocolVersion = "0.1.0"
 
-// CanonicalFormVersion is the version of the internal Anthropic-shape
-// canonical message form. Provider adapters target an explicit
-// version; the engine asserts they match.
+// CanonicalFormVersion is the version of the canonical message form provider adapters target.
 const CanonicalFormVersion = 1
 
-// Schema versions of independently-evolving sub-schemas, surfaced in
-// the handshake response.
+// Schema versions of the sub-schemas reported in the handshake response.
 const (
 	SchemaVersionTokenClaim = 1
 	SchemaVersionProfile    = 1
 	SchemaVersionSessionLog = 1
 )
 
-// ResourceURIScheme is the URI scheme for MCP-server-exposed
-// resources. Pinned to v1 so a v2 scheme can coexist later.
+// ResourceURIScheme is the URI scheme of MCP-server resources.
 const ResourceURIScheme = "harness/v1"
 
-// IdentityClass distinguishes human-driven clients from agent-driven
-// ones. See hard rule 11 in the architecture doc.
+// IdentityClass distinguishes human-driven clients from agent-driven ones.
 type IdentityClass uint8
 
 const (
@@ -84,31 +68,25 @@ func (c *IdentityClass) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ---------- Content blocks (Anthropic-shape canonical form) ----------
-
-// ContentBlock is a typed content item in a message. Blocks have a
-// "type" discriminator on the wire.
+// ContentBlock is a content item in a message; Type selects which field is set.
 type ContentBlock struct {
-	Type string `json:"type"`
-
-	// Type-specific fields. Only the field matching Type is meaningful.
+	Type       string          `json:"type"`
 	Text       string          `json:"text,omitempty"`
 	ToolUse    *ToolUse        `json:"tool_use,omitempty"`
 	ToolResult *ToolResultBlk  `json:"tool_result,omitempty"`
-	Thinking   json.RawMessage `json:"thinking,omitempty"` // opaque, provider-stamped
+	Thinking   json.RawMessage `json:"thinking,omitempty"`
 	Image      *ImageBlock     `json:"image,omitempty"`
-	Yield      *YieldBlock     `json:"yield,omitempty"` // explicit end-turn signal
+	Yield      *YieldBlock     `json:"yield,omitempty"`
 }
 
 // ToolUse is a model-emitted tool invocation.
 type ToolUse struct {
-	ID    string          `json:"id"`    // matches a tool_use id later in ToolResultBlk
-	Name  string          `json:"name"`  // tool name
-	Input json.RawMessage `json:"input"` // tool-call arguments
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
-// ToolResultBlk is the result of a tool invocation, fed back to the
-// model on the next turn.
+// ToolResultBlk is the result of a tool invocation, fed back to the model.
 type ToolResultBlk struct {
 	ToolUseID string         `json:"tool_use_id"`
 	Content   []ContentBlock `json:"content"`
@@ -126,23 +104,17 @@ type YieldBlock struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-// ---------- Commands (client → engine) ----------
-
-// Command is a sealed union of wire-level verbs sent from clients to
-// the engine. Per hard rule 14, this set is closed in `control/`;
-// plugins extend via CustomCommand.
+// Command is the closed union of client-to-engine verbs; plugins extend it with CustomCommand.
 type Command interface {
 	isCommand()
-	// CommandKind returns the kind discriminator used on the wire
-	// (matches handshake.command_kinds entries).
+	// CommandKind is the wire discriminator, one of handshake.command_kinds.
 	CommandKind() string
 }
 
 type SendInput struct {
 	SessionID ids.SessionID  `json:"sessionId"`
 	Content   []ContentBlock `json:"content"`
-	// Wait controls REST/MCP synchronous vs streaming behavior.
-	// "" / "none" → returns immediately; "turn" → blocks until TurnEnded.
+	// Wait is "" or "none" to return at once, "turn" to block until TurnEnded.
 	Wait string `json:"wait,omitempty"`
 }
 
@@ -154,7 +126,7 @@ type AnswerPermission struct {
 	SessionID ids.SessionID `json:"sessionId"`
 	CallID    ids.CallID    `json:"callId"`
 	Decision  Decision      `json:"decision"`
-	Scope     PermitScope   `json:"scope,omitempty"` // for argv-glob/tool/session allow buttons
+	Scope     PermitScope   `json:"scope,omitempty"`
 }
 
 // Decision is the user's answer to a permission prompt.
@@ -173,16 +145,13 @@ const (
 	ScopeArgvGlob    PermitScope = "argv_glob"
 	ScopeTool        PermitScope = "tool"
 	ScopeSessionWide PermitScope = "session"
-	// ScopeAlways persists the rule to disk so subsequent harness
-	// runs honor it without re-prompting. The persistence layer
-	// (XDG_CONFIG_HOME/gofastr/harness/permissions.json) is loaded
-	// on Engine boot.
+	// ScopeAlways persists the rule so later harness runs honor it without asking.
 	ScopeAlways PermitScope = "always"
 )
 
 type CreateSession struct {
 	Profile string `json:"profile"`
-	// Resume, when non-nil, attaches the new EngineRun to an existing LogID.
+	// Resume, when non-nil, attaches the new run to an existing log.
 	Resume *ids.LogID `json:"resume,omitempty"`
 }
 
@@ -208,17 +177,14 @@ type ExitPlanMode struct {
 	Approve   bool          `json:"approve"`
 }
 
-// CustomCommand is the open extension verb for plugin-defined wire
-// commands. The engine routes by Namespace to the registered plugin
-// handler.
+// CustomCommand is a plugin-defined command, routed by Namespace.
 type CustomCommand struct {
 	SessionID ids.SessionID   `json:"sessionId"`
-	Namespace string          `json:"namespace"` // matches a claimed slash-command namespace
+	Namespace string          `json:"namespace"`
 	Verb      string          `json:"verb"`
 	Payload   json.RawMessage `json:"payload"`
 }
 
-// Mark each command type as implementing the Command interface.
 func (SendInput) isCommand()        {}
 func (CancelTurn) isCommand()       {}
 func (AnswerPermission) isCommand() {}
@@ -241,8 +207,7 @@ func (EnterPlanMode) CommandKind() string    { return "EnterPlanMode" }
 func (ExitPlanMode) CommandKind() string     { return "ExitPlanMode" }
 func (CustomCommand) CommandKind() string    { return "CustomCommand" }
 
-// AllCommandKinds returns the closed set of built-in command kinds, in
-// the order they appear in the handshake response.
+// AllCommandKinds returns the built-in command kinds in handshake order.
 func AllCommandKinds() []string {
 	return []string{
 		"SendInput", "CancelTurn", "AnswerPermission",
@@ -252,40 +217,30 @@ func AllCommandKinds() []string {
 	}
 }
 
-// ---------- Events (engine → client) ----------
-
-// Event is a sealed union of engine-emitted events. Per hard rule 14,
-// this set is closed in `control/`; plugins extend via CustomEvent.
+// Event is the closed union of engine-emitted events; plugins extend it with CustomEvent.
 type Event interface {
 	isEvent()
 	EventKind() string
 }
 
-// EventEnvelope is the canonical JSON wrapper used by every transport.
-// Transports may add their own framing on top (SSE `id:`/`event:`/`data:`,
-// WS `{"frame":"event","body":...}`, MCP `notifications/resources/updated`),
-// but the body is always this envelope.
+// EventEnvelope is the event JSON every transport carries inside its own framing.
 type EventEnvelope struct {
-	ID         uint64          `json:"id"`   // monotonic per SessionID
-	Kind       string          `json:"kind"` // matches handshake.event_kinds
+	ID         uint64          `json:"id"`
+	Kind       string          `json:"kind"`
 	Session    ids.SessionID   `json:"session"`
 	Originator ids.ClientID    `json:"originator,omitempty"`
 	TS         time.Time       `json:"ts"`
 	Payload    json.RawMessage `json:"payload"`
-	// SubAgent names the sub-agent (Agent tool) run that published the
-	// event; empty for the session's own events. Sub-agent events go to
-	// the session log and export, not to the live client stream.
+	// SubAgent names the sub-agent run that published the event; empty for the session's own.
 	SubAgent string `json:"subAgent,omitempty"`
 }
-
-// --- Event payload types ---
 
 type TextDelta struct {
 	Text string `json:"text"`
 }
 
 type ThinkingDelta struct {
-	Block json.RawMessage `json:"block"` // opaque, provider-stamped
+	Block json.RawMessage `json:"block"`
 }
 
 type ToolCallStarted struct {
@@ -309,21 +264,16 @@ type ToolResult struct {
 type TurnStarted struct {
 	Turn       int          `json:"turn"`
 	Originator ids.ClientID `json:"originator"`
-	// Content is the input that started this turn. Lets non-originator
-	// clients (browser sidecar attached to the same session as the TUI,
-	// or vice-versa) render the user message without round-tripping
-	// through a separate "echo" event. Optional for backwards
-	// compatibility, older publishers may omit it.
+	// Content is the input that started the turn, so other attached clients can render it.
 	Content []ContentBlock `json:"content,omitempty"`
 }
 
 type TurnEnded struct {
 	Turn   int    `json:"turn"`
-	Reason string `json:"reason"` // "complete" | "cancelled" | "error" | "yield"
+	Reason string `json:"reason"`
 }
 
-// TurnTiming is emitted at TurnEnded with per-component duration
-// data. Operators answer "where was the time?" from a single event.
+// TurnTiming carries per-component durations for a finished turn.
 type TurnTiming struct {
 	Turn       int                      `json:"turn"`
 	Components map[string]time.Duration `json:"components"`
@@ -355,7 +305,7 @@ type PermissionRequested struct {
 	Tool       string          `json:"tool"`
 	Args       json.RawMessage `json:"args"`
 	Originator ids.ClientID    `json:"originator"`
-	Reason     string          `json:"reason,omitempty"` // e.g. why this is being asked
+	Reason     string          `json:"reason,omitempty"`
 }
 
 type Cancelled struct {
@@ -365,15 +315,15 @@ type Cancelled struct {
 }
 
 type Error struct {
-	Reason  string          `json:"reason"`  // stable error code
-	Message string          `json:"message"` // human-friendly text
+	Reason  string          `json:"reason"`
+	Message string          `json:"message"`
 	Details json.RawMessage `json:"details,omitempty"`
 }
 
 type StreamGap struct {
 	From   uint64 `json:"from"`
 	To     uint64 `json:"to"`
-	Reason string `json:"reason"` // "ttl" | "compaction" | "unavailable"
+	Reason string `json:"reason"`
 }
 
 type TokenExpiring struct {
@@ -401,7 +351,7 @@ type MCPServerDown struct {
 }
 
 type SessionEnded struct {
-	Reason string `json:"reason"` // "idle" | "user" | "error" | "binary-shutdown"
+	Reason string `json:"reason"`
 }
 
 // CustomEvent is the open extension event for plugin-defined wire events.
@@ -411,7 +361,6 @@ type CustomEvent struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
-// Mark each event type as implementing the Event interface.
 func (TextDelta) isEvent()           {}
 func (ThinkingDelta) isEvent()       {}
 func (ToolCallStarted) isEvent()     {}
@@ -466,10 +415,7 @@ func AllEventKinds() []string {
 	}
 }
 
-// ---------- Handshake ----------
-
-// Handshake is the response to GET /v1/handshake (or the first frame
-// on a WS/MCP session). Required before any other command.
+// Handshake is the response to GET /v1/handshake and the first WS/MCP frame.
 type Handshake struct {
 	ProtocolVersion         string   `json:"protocol_version"`
 	CanonicalFormVersion    int      `json:"canonical_form_version"`
@@ -482,9 +428,7 @@ type Handshake struct {
 	ResourceURIScheme       string   `json:"resource_uri_scheme"`
 }
 
-// CurrentHandshake returns the handshake advertised by this binary.
-// The Features list is provided by the caller so different builds
-// (e.g. v0.1 vs v0.2) can advertise different optional capabilities.
+// CurrentHandshake returns this binary's handshake with the given feature list.
 func CurrentHandshake(features []string) Handshake {
 	return Handshake{
 		ProtocolVersion:         ProtocolVersion,
@@ -499,13 +443,7 @@ func CurrentHandshake(features []string) Handshake {
 	}
 }
 
-// FeaturesV01 is the feature flag set advertised by v0.1 builds.
-//
-// Per the build-order section of the architecture doc:
-//   - inproc + rest transports are first-class in v0.1
-//   - ws + mcpserver_stdio land in v0.2
-//   - mcpserver_http lands in v0.3
-//   - delegate ships with v0.3
+// FeaturesV01 is the feature set v0.1 builds advertise.
 var FeaturesV01 = []string{
 	"rest",
 	"branching",
@@ -513,11 +451,6 @@ var FeaturesV01 = []string{
 	"plan_mode",
 }
 
-// ---------- JSON codec for Commands ----------
-
-// commandEnvelope is the wire shape used to round-trip a typed
-// Command through JSON: a "kind" discriminator plus the type-specific
-// body.
 type commandEnvelope struct {
 	Kind string          `json:"kind"`
 	Body json.RawMessage `json:"body"`
@@ -532,16 +465,6 @@ func MarshalCommand(c Command) ([]byte, error) {
 	return json.Marshal(commandEnvelope{Kind: c.CommandKind(), Body: body})
 }
 
-// unmarshalCommandBody decodes a wire object under the no-ambiguity
-// key rule at EVERY nesting depth — duplicate and case-folded keys
-// are refused, because stdlib json resolves them last-wins and a
-// frame whose first spelling an intermediary read differs from the
-// value the engine executes must be rejected, not silently
-// normalized — while keeping the documented ignore-unknown posture
-// for body fields (§ Unknown-field policy: additive evolution).
-// handler.CheckObjectKeys is the walk, the same any-depth rule the
-// harness MCP server's unmarshalMCPObject and core/mcp's HandleRequest
-// chokepoint run; the value decode itself stays plain stdlib.
 func unmarshalCommandBody(data []byte, dst any) error {
 	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return err
@@ -549,8 +472,7 @@ func unmarshalCommandBody(data []byte, dst any) error {
 	return json.Unmarshal(data, dst)
 }
 
-// UnmarshalCommand decodes a wire JSON envelope back into a typed Command.
-// Unknown command kinds return an error (closed-union enforcement).
+// UnmarshalCommand decodes a wire envelope into a typed Command; an unknown kind errors.
 func UnmarshalCommand(data []byte) (Command, error) {
 	var env commandEnvelope
 	if err := unmarshalCommandBody(data, &env); err != nil {
@@ -608,8 +530,7 @@ func EncodeEvent(id uint64, e Event, session ids.SessionID, originator ids.Clien
 	}, nil
 }
 
-// DecodeEvent extracts the typed event payload from a canonical
-// envelope. Unknown event kinds return an error.
+// DecodeEvent decodes an envelope's typed payload; an unknown kind errors.
 func DecodeEvent(env EventEnvelope) (Event, error) {
 	switch env.Kind {
 	case "TextDelta":
@@ -677,10 +598,7 @@ func DecodeEvent(env EventEnvelope) (Event, error) {
 	}
 }
 
-// ---------- Error reason codes ----------
-
-// Stable Reason codes used in Error events. Strings are documented in
-// docs/harness-architecture.md § User-facing errors.
+// Stable Reason codes used in Error events.
 const (
 	ReasonHandshakeRequired        = "HandshakeRequired"
 	ReasonHandshakeVersionMismatch = "HandshakeVersionMismatch"

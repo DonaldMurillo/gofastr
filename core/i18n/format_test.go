@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -358,6 +359,43 @@ func TestCLDRCacheBounded(t *testing.T) {
 	}
 	if n := cldrCacheSize.Load(); n > cldrCacheMax {
 		t.Fatalf("cache holds %d tags, cap %d", n, cldrCacheMax)
+	}
+	t.Cleanup(func() {
+		cldrCache.Clear()
+		cldrCacheSize.Store(0)
+		scriptCache.Clear()
+		scriptCacheSize.Store(0)
+	})
+	for round := range 200 {
+		cldrCache.Clear()
+		cldrCacheSize.Store(0)
+		scriptCache.Clear()
+		scriptCacheSize.Store(0)
+		for i := range cldrCacheMax - 1 {
+			cldrCache.Store("en-x-"+strconv.Itoa(i), cldrMatch{})
+			scriptCache.Store("en-x-"+strconv.Itoa(i), scriptStep{})
+		}
+		cldrCacheSize.Store(cldrCacheMax - 1)
+		scriptCacheSize.Store(cldrCacheMax - 1)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for g := range 16 {
+			wg.Go(func() {
+				<-start
+				tag := "en-x-r" + strconv.Itoa(round) + "g" + strconv.Itoa(g)
+				resolveCLDR(tag)
+				scriptFallback(tag, "en")
+			})
+		}
+		close(start)
+		wg.Wait()
+		for name, m := range map[string]*sync.Map{"resolution": &cldrCache, "script": &scriptCache} {
+			n := 0
+			m.Range(func(any, any) bool { n++; return true })
+			if n > cldrCacheMax {
+				t.Fatalf("round %d: concurrent misses left the %s cache holding %d tags, cap %d", round, name, n, cldrCacheMax)
+			}
+		}
 	}
 }
 

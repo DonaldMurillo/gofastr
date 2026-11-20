@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
@@ -103,15 +104,21 @@ func assertPanic500(t *testing.T, tag, path, panicText string, rec *httptest.Res
 	}
 }
 
-func TestScreenRenderPanicPageWithLayoutIs500(t *testing.T) {
-	a := app.NewApp("panic500")
+// servePanicScreen hosts comp at path on the ctl layout and serves a
+// production-status GET — the scaffold the plain-page panic arms share.
+func servePanicScreen(t *testing.T, name, path string, comp component.Component) (*httptest.ResponseRecorder, *bytes.Buffer) {
+	t.Helper()
+	a := app.NewApp(name)
 	a.SetDefaultLayout(bareLayout("ctl"))
-	a.Register("/boom", panicRenderScreen{msg: "test: render boom"}, nil)
-	ds := New(a)
-
+	a.Register(path, comp, nil)
 	logs := captureLogs(t)
 	rec := httptest.NewRecorder()
-	renderdiag.ProductionStatus(t, ds).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	renderdiag.ProductionStatus(t, New(a)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec, logs
+}
+
+func TestScreenRenderPanicPageWithLayoutIs500(t *testing.T) {
+	rec, logs := servePanicScreen(t, "panic500", "/boom", panicRenderScreen{msg: "test: render boom"})
 	assertPanic500(t, "page+layout", "/boom", "test: render boom", rec, logs)
 }
 
@@ -186,14 +193,7 @@ func TestScreenRenderPanicEmbedRouteIs500(t *testing.T) {
 }
 
 func TestScreenLoadPanicPageIs500(t *testing.T) {
-	a := app.NewApp("panic500-load")
-	a.SetDefaultLayout(bareLayout("ctl"))
-	a.Register("/loadboom", &panicLoadScreen{}, nil)
-	ds := New(a)
-
-	logs := captureLogs(t)
-	rec := httptest.NewRecorder()
-	renderdiag.ProductionStatus(t, ds).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/loadboom", nil))
+	rec, logs := servePanicScreen(t, "panic500-load", "/loadboom", &panicLoadScreen{})
 	assertPanic500(t, "load-panic", "/loadboom", "test: load boom", rec, logs)
 }
 
@@ -362,13 +362,6 @@ func TestErrorBoundaryScreenKeepsFallback(t *testing.T) {
 }
 
 func TestErrorBoundaryLoadPanicIs500(t *testing.T) {
-	a := app.NewApp("boundary-load")
-	a.SetDefaultLayout(bareLayout("ctl"))
-	a.Register("/boom", &boundaryLoadScreen{}, nil)
-	ds := New(a)
-
-	logs := captureLogs(t)
-	rec := httptest.NewRecorder()
-	renderdiag.ProductionStatus(t, ds).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	rec, logs := servePanicScreen(t, "boundary-load", "/boom", &boundaryLoadScreen{})
 	assertPanic500(t, "boundary-load", "/boom", "test: boundary load boom", rec, logs)
 }

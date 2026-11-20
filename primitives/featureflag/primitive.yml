@@ -1,0 +1,99 @@
+primitive: featureflag
+summary: The core/featureflag evaluator - a kill switch, environment gate, tenant-scoped user and tenant allow lists and a hashed percentage rollout - with the process default, the per-context evaluator and the EvalContext plumbing; this root owns evaluation and the Users entry spelling.
+code:
+  - core/featureflag/flag.go
+  - core/featureflag/entry.go
+docs:
+  - framework/docs/content/feature-flags.md
+invariants:
+  - id: kill-switch-then-env-gate
+    rule: A disabled flag is off for every caller, and a flag with Envs is off for a caller whose Env is not listed even when an allow list names the caller.
+    enforced_by:
+      - test: core/featureflag.TestEvaluator_DisabledKillsEverything
+      - test: core/featureflag.TestEvaluator_EnvAllowlistGatesByEvalContextEnv
+      - test: core/featureflag.TestEvaluator_EnvAllowlistOverridesUserAllowlist
+  - id: user-entries-are-tenant-scoped
+    rule: A Users entry matches only the user of the tenant it names, a bare id only a caller with no tenant, and a malformed entry matches nobody.
+    enforced_by:
+      - test: core/featureflag.TestUserAllowListRefusesOtherTenants
+      - test: core/featureflag.TestUserAllowListBareIDWithoutTenant
+      - test: core/featureflag.TestMalformedUserEntries
+  - id: empty-tenant-reads-request
+    rule: An EvalContext with no TenantID is evaluated for the tenant handler.GetTenantID resolved on the context.
+    enforced_by:
+      - test: core/featureflag.TestUserAllowListReadsRequestTenant
+  - id: tenant-list-needs-a-tenant
+    rule: The Tenants list turns a flag on only for a caller with a non-empty tenant.
+    enforced_by:
+      - test: core/featureflag.TestSweepFeatureflagEmptyTenantNeverMatches
+      - test: core/featureflag.TestEvaluator_TenantAllowlist
+  - id: rollout-buckets
+    rule: Rollout 0 is off and 100 is on for every caller, and a partial rollout hashes salt, key and subject (the tenant user's entry, else the user id, else the tenant id) into a stable bucket, and is off for a caller with no subject.
+    enforced_by:
+      - test: core/featureflag.TestEvaluator_RolloutZeroOff
+      - test: core/featureflag.TestEvaluator_RolloutHundredOn
+      - test: core/featureflag.TestEvaluator_RolloutStableAcrossCalls
+      - test: core/featureflag.TestEvaluator_EmptySubjectOffBelowFullRollout
+      - test: core/featureflag.TestEvaluator_EmptySubjectOnAtFullRollout
+      - test: core/featureflag.TestRolloutBucketsPerTenantUser
+      - test: core/featureflag.TestEvaluator_SaltShiftsBuckets
+  - id: bool-default-one-read
+    rule: BoolDefault reads the store once and returns its fallback when the key is missing or the read errors, and evaluates an existing flag normally.
+    enforced_by:
+      - test: core/featureflag.TestBoolDefaultFailsClosed
+      - test: core/featureflag.TestEvaluator_BoolDefaultReturnsFallbackWhenKeyMissing
+      - test: core/featureflag.TestEvaluator_BoolDefaultRespectsExplicitDisabled
+  - id: bool-fails-off
+    rule: Bool is false for a missing key, a store error, a nil store and a nil evaluator.
+    enforced_by:
+      - test: core/featureflag.TestBoolStoreErrorFailsClosed
+      - test: core/featureflag.TestEvaluator_MissingFlagFalse
+      - test: core/featureflag.TestEvaluator_NilStoreFalse
+  - id: context-evaluator-wins
+    rule: The package-level Bool reads the evaluator WithEvaluator attached to the context, a nil one included, and Default only when the context carries none.
+    enforced_by:
+      - test: core/featureflag.TestSweepFeatureflagContextEvaluatorWins
+  - id: user-entry-round-trips
+    rule: UserEntry percent-escapes ':' and '%' in the tenant and writes a ':'-holding user with no tenant as ":user", so ParseUserEntry reads back the same tenant and user.
+    enforced_by:
+      - test: core/featureflag.TestUserEntrySpellingIsUnambiguous
+decisions:
+  - id: users-are-per-tenant
+    date: 2026-11-19
+    status: accepted
+    decision: A Users entry names one tenant's user as "tenant:user", and a bare id names a user only where there is no tenant.
+    rejected:
+      - option: Match a bare user id in any tenant.
+        why: User ids are per tenant, so "42" turned the flag on for user 42 of every tenant.
+    upholds: [user-entries-are-tenant-scoped]
+  - id: anonymous-off-at-partial-rollout
+    date: 2026-11-19
+    status: accepted
+    decision: A caller with no user or tenant is off at any partial rollout; an app that wants anonymous traffic in a rollout puts a stable pseudo-subject in UserID.
+    rejected:
+      - option: Hash the empty subject like any other.
+        why: Every anonymous request would land in one bucket, so a 50% rollout would be all or none of them.
+    upholds: [rollout-buckets]
+  - id: bool-default-reads-once
+    date: 2026-11-19
+    status: accepted
+    decision: BoolDefault evaluates the flag it fetched instead of calling Bool for a second read.
+    rejected:
+      - option: Check presence with one Get, then call Bool.
+        why: The second read could error and fail open, or see a changed definition.
+    upholds: [bool-default-one-read]
+  - id: small-flag-model
+    date: 2026-11-19
+    status: accepted
+    decision: A flag is a kill switch, a rollout and allow lists, and the default evaluator ignores EvalContext.Attrs.
+    rejected:
+      - option: Weighted variants, dependent flags and scheduled ramps.
+        why: Those belong in a separate evaluator over the same Store; this one answers whether a feature is on for a caller.
+  - id: fnv-rollout-optional-salt
+    date: 2026-11-19
+    status: accepted
+    decision: Rollout buckets use FNV-1a over the key and subject, with an optional salt from NewEvaluatorWithSalt.
+    rejected:
+      - option: A cryptographic hash.
+        why: The bucket is not a security boundary, and an unsalted FNV cohort can be ground in about 100 tries, which the docs say; a salt makes it unpredictable where that matters.
+    upholds: [rollout-buckets]

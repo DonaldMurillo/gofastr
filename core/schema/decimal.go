@@ -7,23 +7,14 @@ import (
 	"strings"
 )
 
-// DecimalColumnType is the column a Decimal field gets when it sets no
-// RawType: 19 significant digits, 4 of them after the point, so 15
-// before it. The migrators emit it and [DecimalColumn] reads it, so the
-// write check and the DDL cannot drift.
+// DecimalColumnType is the column a Decimal field with no RawType gets.
 const DecimalColumnType = "DECIMAL(19,4)"
 
-// MaxDecimalExponent is the largest exponent magnitude Postgres
-// numeric_in reads (NUMERIC_MAX_PRECISION). Past it the literal is
-// 22P02 even for an unconstrained NUMERIC, while SQLite stores it and
-// strconv.ParseFloat reads "1e-1001" as 0 with no error. The write check
-// and the filter coercion (framework/filter) share it.
+// MaxDecimalExponent is the largest exponent magnitude Postgres numeric_in reads.
 const MaxDecimalExponent = 1000
 
-// DecimalExponentFits reports whether a decimal literal's exponent, if
-// it has one, is within ±[MaxDecimalExponent]. It reads the exponent
-// text alone, so it is safe ahead of big.Rat, whose SetString builds
-// 10^|exp| in full.
+// DecimalExponentFits reports whether a decimal literal's exponent, if any,
+// is within ±[MaxDecimalExponent], reading the exponent text alone.
 func DecimalExponentFits(s string) bool {
 	i := strings.IndexAny(s, "eE")
 	if i < 0 {
@@ -33,18 +24,11 @@ func DecimalExponentFits(s string) bool {
 	return err == nil && e >= -MaxDecimalExponent && e <= MaxDecimalExponent
 }
 
-// decimalTypeRe reads a DECIMAL(p) / DECIMAL(p,s) / NUMERIC(p,s) column
-// type. A negative scale, or anything after the closing paren, does not
-// match and leaves the column unbounded for the check.
 var decimalTypeRe = regexp.MustCompile(`(?i)^\s*(?:decimal|numeric)\s*\(\s*(\d{1,4})\s*(?:,\s*(\d{1,4})\s*)?\)\s*$`)
 
-// DecimalColumn reports the precision and scale of the column a Decimal
-// field is stored in: [DecimalColumnType] when RawType is empty, or the
-// field's own RawType when it is DECIMAL(p[,s]) or NUMERIC(p[,s]) (a
-// missing scale is 0, as in SQL). bounded is false for any other RawType
-// (a bare NUMERIC, TEXT, a domain) or a precision/scale pair outside
-// 1 <= p <= 1000, 0 <= s <= p: the write check then bounds the exponent
-// alone.
+// DecimalColumn reports the precision and scale of a Decimal field's column,
+// [DecimalColumnType] when RawType is empty; bounded is false when RawType is
+// not DECIMAL(p[,s]) or NUMERIC(p[,s]) with 1 <= p <= 1000 and s <= p.
 func DecimalColumn(f Field) (precision, scale int, bounded bool) {
 	raw := f.RawType
 	if raw == "" {
@@ -71,40 +55,21 @@ func DecimalColumn(f Field) (precision, scale int, bounded bool) {
 }
 
 // SQLiteDecimalDigits is how many significant digits a SQLite column keeps
-// of a decimal it stores as a float. SQLite has no exact decimal type: a
-// DECIMAL or NUMERIC column stores a value with a fraction or an exponent
-// as a 64-bit float, which holds any 15 significant digits exactly and
-// not every 16.
+// of a decimal it stores as a 64-bit float.
 const SQLiteDecimalDigits = 15
 
 // SQLiteDecimalMinMagnitude is the smallest nonzero magnitude a SQLite
-// numeric column keeps as sent. Below the smallest normal 64-bit float
-// (about 2.2e-308) the float is subnormal or zero: "1e-320" read back as
-// 9.99988671826831e-321 and "1e-400" was stored as the integer 0.
+// numeric column keeps as sent.
 const SQLiteDecimalMinMagnitude = 1e-307
 
-// DecimalExactOnSQLite reports whether a SQLite column of type colType
-// (a Decimal field's RawType, or [DecimalColumnType] when it has none)
-// stores the decimal literal exactly. It is [SQLiteDecimalRefusal]
-// answering no refusal.
+// DecimalExactOnSQLite reports whether [SQLiteDecimalRefusal] finds no refusal.
 func DecimalExactOnSQLite(colType, literal string) bool {
 	_, refused := SQLiteDecimalRefusal(colType, literal)
 	return !refused
 }
 
-// SQLiteDecimalRefusal reports why a SQLite column of type colType (a
-// Decimal field's RawType, or [DecimalColumnType] when it has none) would
-// not store the decimal literal as sent, following SQLite's type
-// affinity (datatype3.html, 3.1 and 3.2). A column with TEXT or BLOB
-// affinity stores the text as sent. INTEGER and NUMERIC affinity store
-// literal digits, with no point or exponent, that fit a signed 64-bit
-// integer as that integer, so "-9223372036854775808" is exact. REAL
-// affinity always uses a 64-bit float. Everything else also goes
-// through a 64-bit float, even a whole value: "123456789012345678.0" was
-// stored as 123456789012345680. That float keeps [SQLiteDecimalDigits]
-// significant digits ([ReasonDecimalSignificantDigits]) of a nonzero value
-// no smaller than [SQLiteDecimalMinMagnitude] ([ReasonDecimalUnderflow]).
-// literal is one the Decimal validator accepted.
+// SQLiteDecimalRefusal reports why a SQLite column of type colType (empty is
+// [DecimalColumnType]) would not store a validated decimal literal as sent.
 func SQLiteDecimalRefusal(colType, literal string) (Violation, bool) {
 	if colType == "" {
 		colType = DecimalColumnType
@@ -137,8 +102,6 @@ func SQLiteDecimalRefusal(colType, literal string) (Violation, bool) {
 	return Violation{}, false
 }
 
-// decimalSignificant counts the significant digits of a decimal literal,
-// from the first non-zero digit to the last. Zero has none.
 func decimalSignificant(literal string) int {
 	mantissa := strings.TrimLeft(literal, "+-")
 	if exponentAt := strings.IndexAny(mantissa, "eE"); exponentAt >= 0 {
@@ -148,12 +111,6 @@ func decimalSignificant(literal string) int {
 	return len(strings.Trim(digits, "0"))
 }
 
-// decimalDigits counts the digits a decimal literal (one decimalRe
-// matched, exponent within ±MaxDecimalExponent) needs on each side of
-// the point once leading integer zeros and trailing fraction zeros are
-// dropped: "0012.3400" is 2 and 2, "1e16" is 17 and 0, "15e-5" is 0 and
-// 5. Zero is 0 and 0. It reads the text only, so it costs the length of
-// s whatever the exponent.
 func decimalDigits(s string) (intDigits, fracDigits int) {
 	s = strings.TrimLeft(s, "+-")
 	exp := 0
@@ -163,7 +120,6 @@ func decimalDigits(s string) (intDigits, fracDigits int) {
 	}
 	intPart, fracPart, _ := strings.Cut(s, ".")
 	digits := intPart + fracPart
-	// The value is 0.<digits> × 10^point.
 	point := len(intPart) + exp
 	trimmed := strings.TrimLeft(digits, "0")
 	point -= len(digits) - len(trimmed)

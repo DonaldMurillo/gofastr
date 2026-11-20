@@ -144,6 +144,27 @@ func pollTrue(ctx context.Context, js string) bool {
 	return false
 }
 
+// readMenuRadioStates reads every menuitemradio matching selector into a
+// label → aria-checked map, the read the menu radio-group tests share.
+func readMenuRadioStates(t *testing.T, ctx context.Context, selector string) map[string]string {
+	t.Helper()
+	var state string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify(Array.from(
+		document.querySelectorAll('`+selector+`')
+	).map(r => [r.textContent.trim(), r.getAttribute('aria-checked')]))`, &state)); err != nil {
+		t.Fatal(err)
+	}
+	var pairs [][2]string
+	if err := json.Unmarshal([]byte(state), &pairs); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, p := range pairs {
+		out[p[0]] = p[1]
+	}
+	return out
+}
+
 const moduleLoadedExpr = `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.headless)`
 
 // bootSettledExpr is true once the kernel's initial pass has run:

@@ -1,0 +1,57 @@
+primitive: screen.routing
+summary: The Router - path patterns with :param, constrained params and a final catch-all, the decoded Match a render reads from its context, route seeding, and exact and pattern redirects resolved through chains.
+code:
+  - core-ui/app/router.go
+  - core-ui/app/match.go
+  - core-ui/app/routepath.go
+  - core-ui/app/route_seed.go
+  - core-ui/app/redirect.go
+docs:
+  - framework/docs/content/layouts.md
+invariants:
+  - id: catch-all-needs-a-remainder
+    rule: A catch-all segment must be final and carry no constraint, and it matches only a non-empty remainder, decoded once.
+    enforced_by:
+      - test: core-ui/app.TestResolveCatchAllNeedsRemainder
+      - test: core-ui/app.TestCatchAllRefusesEmptyRemainder
+      - test: core-ui/app.TestRegisterCatchAllNotFinalPanics
+      - test: core-ui/app.TestConstraintOnCatchAllPanics
+      - test: core-ui/app.TestResolveCatchAllDecodesOnce
+  - id: constraints-are-a-closed-set
+    rule: A param constraint is int, uuid, alpha or alnum, an unknown one panics at registration, and a value failing its constraint falls through to the next route.
+    enforced_by:
+      - test: core-ui/app.TestConstraintUnknownPanics
+      - test: core-ui/app.TestConstraintIntFallsThroughToNextRoute
+      - test: core-ui/app.TestConstraintUUIDNonMatch
+  - id: dynamic-screen-takes-params
+    rule: Registering a dynamic route, directly or in a group, whose component is not a ParamSetter panics.
+    enforced_by:
+      - test: core-ui/app.TestGuardDynamicNoSetParamsPanics
+      - test: core-ui/app.TestGuardGroupDynamicNoSetParamsPanics
+  - id: match-is-a-copy
+    rule: MatchFor and the context match hold their own copy of the params, so a caller's map change or a second match never alters another.
+    enforced_by:
+      - test: core-ui/app.TestMatchParamsCopiedFromSource
+      - test: core-ui/app.TestMatchForMatchesAreIndependent
+      - test: core-ui/app.TestRouteParamsNotMutatedOnSecondResolve
+  - id: empty-segments-never-match
+    rule: A path with an empty param segment resolves no dynamic route.
+    enforced_by:
+      - test: core-ui/app.TestResolveRejectsEmptyParamSegs
+  - id: redirects-are-safe-local-paths
+    rule: A redirect target is a local path with no control byte or backslash, a collision with a screen or another redirect panics, a substituted unsafe target and a cycle fail closed, and a chain resolves to its final target.
+    enforced_by:
+      - test: core-ui/app.TestResolveRedirectRefusesControlBytes
+      - test: core-ui/app.TestRedirectTargetControlBytePanics
+      - test: core-ui/app.TestRedirectAbsoluteTargetPanics
+      - test: core-ui/app.TestRedirectBackslashTargetPanics
+      - test: core-ui/app.TestRedirectCollisionWithScreenPanics
+      - test: core-ui/app.TestRedirectSubstitutedUnsafeFailsClosed
+      - test: core-ui/app.TestRedirectCycleFailsClosed
+      - test: core-ui/app.TestRedirectChainResolvesToFinal
+  - id: escaped-slashes-survive
+    rule: An escaped slash in a param stays inside that param through resolve, match and redirect.
+    enforced_by:
+      - test: core-ui/app.TestRoutePathKeepsEscapedSlash
+      - test: core-ui/app.TestRedirectCarriesSlashKey
+      - test: core-ui/app.TestRedirectKeepsCatchAllSegments

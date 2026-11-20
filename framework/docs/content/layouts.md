@@ -464,8 +464,11 @@ missing entity rendering half a page.
 A `Policy` can attach to one region instead of the whole screen:
 `OutletOptions.Policy`, `AreaSpec.Policy`, or `app.FillPolicy(p)` on one
 fill declaration. Every region guard runs in the policy phase, before
-any `Load`. The first `Redirect` moves the whole page; `RenderAlt` and
-`Block` are recorded and applied to their region alone. Every surface
+any `Load`. The first `Redirect` moves the whole page, and so does
+`decide.NotFound()`, which makes the page the not-found page; `RenderAlt`
+and `Block` are recorded and applied to their region alone. On the
+not-found and error pages themselves, a guard's `NotFound` blocks its
+region. Every surface
 that answers for the page runs them: the render, deferred part
 requests, server actions (a redirect refuses the action with 403), the
 sitemap and the llm.md documents. `(*App).PagePolicy(ctx, path)` is
@@ -948,13 +951,15 @@ what the rail lists on that request. The `DrawerName` from the first
 call, made at mount with `context.Background()`, is kept. `InlineTrigger: true` keeps the pill in flow instead, for
 a menu shown inside a card or a demo. The knobs are
 `--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
-`--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`
-(the current page's dot). The pill is `interactive.SheetPill` and the
+`--ui-section-menu-inset` (the link inset), `--ui-section-menu-dot`
+(the current page's dot) and `--ui-section-menu-chevron-opacity` (0.7,
+the sheet's group chevrons). The pill is `interactive.SheetPill` and the
 sheet's title row is shared with `interactive.PhoneSheet` (below), so
 their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
 pill's gap above the screen edge; set it on `:root`, where the page's
-end padding reads it too) and `--ui-sheet-close-size` (the close
-button).
+end padding reads it too), `--ui-sheet-close-size` (the close
+button) and `--ui-sheet-head-inset` (the gap before the sheet's title:
+0 in a `PhoneSheet`, the link inset in a SectionMenu's sheet).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint. Set it when the sidebar's phone navigation lives outside
 the column: a SectionMenu, whose pill floats over the page, or a
@@ -987,7 +992,8 @@ bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
 the rail's in-view band start below it; a theme that sets
 `--ui-section-scroll-margin` adds it itself
 (`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
-Knobs: `--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
+Knobs: `--ui-sheet-max-height` (75vh, how far the sheet rises),
+`--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
 offset reads it) and `--ui-sheet-bar-bleed`
 (0; set it to a padded column's gutter so the bar runs edge to edge
 and the list hanging from it lines up with the bar's text).

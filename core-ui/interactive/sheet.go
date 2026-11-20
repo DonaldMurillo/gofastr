@@ -1,24 +1,5 @@
 package interactive
 
-// The phone half of a navigation surface, shared by SectionMenu and any
-// component that folds into a bottom sheet on a phone (ui.TableOfContents
-// with PhoneSheet):
-//
-//   SheetPill:  the pill floating at the bottom of the viewport. It names
-//     where the reader is and opens the sheet.
-//   PhoneSheet: a pill plus a sheet the page renders inline. Below the
-//     swap width the sheet is a native popover rising from the bottom;
-//     at and above it the sheet's body sits in normal flow and the pill
-//     and the sheet's chrome are gone. Content that changes per page (a
-//     contents list) goes here. A menu that is the same on every page
-//     can use a mounted widget sheet instead, as SectionMenuDrawer does.
-//   sheetHead:  the sheet's title row and close button, drawn the same
-//     in both sheets.
-//
-// The phonesheet behaviour (phone_sheet.js) keeps a PhoneSheet's pill on
-// the entry its body marks current, closes the sheet when a link in it
-// is followed, and closes it when the viewport grows past the swap.
-
 import (
 	"context"
 	_ "embed"
@@ -36,25 +17,19 @@ var phoneSheetJS string
 var _ = registry.RegisterBehavior("phonesheet", phoneSheetJS,
 	registry.Markers(`[data-cui-comp="cui-phone-sheet"]`))
 
-// SwapWidth picks the viewport width where a desktop surface (a
-// SectionMenu's rail, a PhoneSheet's inline body) gives way to the
-// phone pill and its sheet.
+// SwapWidth picks the viewport width where a desktop surface (a SectionMenu's rail, a PhoneSheet's
+// inline body) gives way to the phone pill and its sheet.
 type SwapWidth string
 
 const (
-	// SwapDefault swaps below 900px: a surface in normal flow, beside a
-	// column the page lays out itself.
+	// SwapDefault swaps below 900px.
 	SwapDefault SwapWidth = ""
-	// SwapMD swaps below 48rem, where a ui.ContentRow with the default
-	// Breakpoint stacks its columns.
+	// SwapMD swaps below 48rem, a ui.ContentRow's default Breakpoint.
 	SwapMD SwapWidth = "md"
-	// SwapLG swaps below 64rem, where a ui.ContentRow with
-	// Breakpoint: ui.StackBelowLG stacks.
+	// SwapLG swaps below 64rem, ui.StackBelowLG.
 	SwapLG SwapWidth = "lg"
 )
 
-// swapWidths are the widths either side of each swap, in the order the
-// generated stylesheets list them.
 var swapWidths = []struct {
 	w          SwapWidth
 	maxw, minw string
@@ -64,8 +39,6 @@ var swapWidths = []struct {
 	{SwapLG, "63.99rem", "64rem"},
 }
 
-// swapClass is the modifier a component adds for a swap width, or ""
-// for the default. An unknown width panics, naming the component.
 func swapClass(component, block string, w SwapWidth) string {
 	switch w {
 	case SwapDefault:
@@ -77,8 +50,6 @@ func swapClass(component, block string, w SwapWidth) string {
 		`. Pick one of: "" (900px), md (48rem), lg (64rem)`)
 }
 
-// swapScope is the :where() scope selecting a component root at one swap
-// width: the default matches a root with neither modifier.
 func swapScope(root, block string, w SwapWidth) string {
 	if w == SwapDefault {
 		return root + ":where(:not(." + block + "--swap-md, ." + block + "--swap-lg))"
@@ -86,43 +57,27 @@ func swapScope(root, block string, w SwapWidth) string {
 	return root + ":where(." + block + "--swap-" + string(w) + ")"
 }
 
-// ─── SheetPill ──────────────────────────────────────────────────────
-
 // SheetPillConfig configures a SheetPill.
 type SheetPillConfig struct {
-	// Name is what the pill opens ("Components", "On this page"). It
-	// starts the pill's accessible name, so a screen reader hears what
-	// the control opens before where the reader is, and it is the
-	// visible label while nothing is current. Required.
+	// Name is what the pill opens; it starts the pill's accessible name. Required.
 	Name string
-	// Label names the current entry. Empty shows Name.
+	// Label names the current entry; empty shows Name.
 	Label string
-	// Detail is a muted second part after the label, such as the
-	// current entry's group. Optional.
+	// Detail is a muted second part after the label.
 	Detail string
-	// Opens names the mounted widget the pill opens (data-cui-open).
+	// Opens names the mounted widget the pill opens.
 	Opens string
-	// Popover is the id of the inline popover the pill opens
-	// (popovertarget). Set exactly one of Opens and Popover.
+	// Popover is the id of the inline popover the pill opens; set exactly one of Opens and Popover.
 	Popover string
-	// Inline keeps the pill in flow where it sits. By default it floats
-	// at the bottom of the viewport, centred, and the page ends one
-	// pill's height lower so the pill never covers its last line.
+	// Inline keeps the pill in flow instead of floating it.
 	Inline bool
-	// Bar pins the pill as a full-width bar under the page's sticky
-	// header (--ui-sticky-top) instead of floating it, the name shown
-	// before the current entry ("On this page: Overview"). A page whose
-	// bottom edge already holds a floating pill (a SectionMenu's) shows
-	// its second navigation this way. Bar and Inline are exclusive.
+	// Bar pins the pill as a full-width bar under the sticky header; exclusive with Inline.
 	Bar bool
-	// SwapAt is the width at and above which the pill hides: the
-	// desktop surface it stands in for takes over there.
+	// SwapAt is the width at and above which the pill hides.
 	SwapAt SwapWidth
 }
 
-// SheetPill renders the phone pill: an icon, the current entry and its
-// detail, and a chevron. A behaviour that tracks the current entry
-// rewrites the label and detail spans in place.
+// SheetPill renders the phone pill: an icon, the current entry and its detail, and a chevron.
 func SheetPill(cfg SheetPillConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("interactive: SheetPill requires Name: it starts the pill's accessible name")
@@ -159,24 +114,12 @@ func SheetPill(cfg SheetPillConfig) render.HTML {
 	))
 }
 
-// SheetChipClass marks a part of a sheet entry's link that is not its
-// name, such as a rail link's number or count: the pill that names the
-// current entry reads the link's text without it.
+// SheetChipClass marks a part of a sheet entry's link that is not its name, such as a rail link's
+// number or count: the pill that names the current entry reads the link's text without it.
 const SheetChipClass = "cui-sheet-chip"
 
 var sheetPillStyle = registry.RegisterStyle("cui-sheet-pill", sheetPillCSS)
 
-// Knobs:
-//   - --ui-sheet-pill-bottom (16px; set it on :root, where the page's
-//     end padding reads it too): the floating pill's gap above the
-//     viewport's bottom edge (the safe-area inset is added to it).
-//   - --ui-sheet-bar-height (2.75rem; set it on :root, where the
-//     offset reads it): a Bar's height, which it publishes below the
-//     swap as --ui-sheet-bar-offset, the extra top offset anchored
-//     sections and the rail's in-view band clear.
-//   - --ui-sheet-bar-bleed (0): how far a Bar reaches past its column
-//     on each side, and its inline padding: a padded page column sets
-//     its gutter so the bar runs edge to edge and its text lines up.
 func sheetPillCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`[data-cui-comp="cui-sheet-pill"] {
@@ -304,12 +247,6 @@ func sheetPillCSS(_ style.Theme) string {
 	return b.String()
 }
 
-// ─── Sheet head ─────────────────────────────────────────────────────
-
-// sheetHead is a sheet's title row: the title, which labels the sheet's
-// dialog through id, and a close button whose attrs say what it closes
-// (a widget's data-cui-action, a popover's popovertarget). The dialog's
-// name says what "Close" closes.
 func sheetHead(ctx context.Context, title, id string, closeAttrs map[string]string) render.HTML {
 	return sheetHeadWithLabel(ctx, title, id, "", closeAttrs)
 }
@@ -331,11 +268,6 @@ func sheetHeadWithLabel(ctx context.Context, title, id, label string, closeAttrs
 
 var sheetHeadStyle = registry.RegisterStyle("cui-sheet-head", sheetHeadCSS)
 
-// Knobs:
-//   - --ui-sheet-close-size (36px, both axes of the close button, and
-//     the row's height).
-//   - --ui-sheet-head-inset (0): the gap before the title, so a sheet
-//     lines its title up with its own content.
 func sheetHeadCSS(_ style.Theme) string {
 	return `[data-cui-comp="cui-sheet-head"] {
   display: flex;
@@ -366,42 +298,24 @@ func sheetHeadCSS(_ style.Theme) string {
 }`
 }
 
-// ─── PhoneSheet ─────────────────────────────────────────────────────
-
 // PhoneSheetConfig configures a PhoneSheet.
 type PhoneSheetConfig struct {
-	// CloseLabel names the dismiss control. Empty is "Close" in the
-	// language of Ctx.
+	// CloseLabel names the dismiss control; empty is the localized "Close".
 	CloseLabel string
-	// Ctx carries the per-request context the default close label is
-	// written in. When nil, English applies.
+	// Ctx is the request context the default close label is written in; nil is English.
 	Ctx context.Context
-	// ID is the sheet's element id, which the pill names to open it.
-	// Unique on the page. Required.
+	// ID is the sheet's element id, unique on the page. Required.
 	ID string
-	// Title names the sheet: its heading, its dialog's name and the
-	// pill's Name. Required.
+	// Title names the sheet, its dialog and its pill. Required.
 	Title string
 	// SwapAt is the width below which the body folds into the sheet.
-	// In a ui.ContentRow column, match the row's Breakpoint.
 	SwapAt SwapWidth
-	// Top pins the pill as a bar under the page's sticky header
-	// (SheetPillConfig.Bar) and hangs the sheet from it, for a page
-	// whose bottom edge already holds a SectionMenu's pill.
+	// Top pins the pill as a bar under the sticky header and hangs the sheet from it.
 	Top bool
 }
 
-// PhoneSheet renders body in normal flow at and above the swap width,
-// and below it as a bottom sheet a floating SheetPill opens. The sheet
-// is a native popover: it opens with no script, closes on Escape and on
-// a tap outside it, and holds the page still while it is open. The
-// pill names the entry the body marks aria-current, so a list that
-// marks where the reader is (a table of contents, a menu) shows it on
-// the pill. Following a link in the sheet closes it.
-//
-// The pill floats at the bottom of the screen, so a page carries one
-// floating pill: beside a SectionMenu's, set Top and the pill becomes a
-// bar under the sticky header with the sheet hanging from it.
+// PhoneSheet renders body in normal flow at and above the swap width, and below it as a bottom
+// sheet a floating SheetPill opens.
 func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 	if cfg.ID == "" {
 		panic("interactive: PhoneSheet requires ID: the pill opens the sheet by its id")
@@ -435,15 +349,6 @@ func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 
 var phoneSheetStyle = registry.RegisterStyle("cui-phone-sheet", phoneSheetCSS)
 
-// The root, and above the swap the sheet and its body, are
-// display: contents: the body lays out as if it sat in the sheet's
-// parent, so a sticky list inside it sticks to that column as it would
-// with no sheet around it.
-//
-// Knobs:
-//   - --ui-sheet-max-height (75vh): how far the sheet rises.
-//   - --ui-scrim (rgba(0,0,0,0.45)): the dim behind the open sheet,
-//     shared with the widget sheets.
 func phoneSheetCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`[data-cui-comp="cui-phone-sheet"] { display: contents; }
@@ -534,9 +439,6 @@ func phoneSheetCSS(_ style.Theme) string {
 `)
 	for _, s := range swapWidths {
 		scope := swapScope(`[data-cui-comp="cui-phone-sheet"]`, "cui-phone-sheet", s.w)
-		// Below the swap an open sheet holds the page still; above it the
-		// body is back in the page, and a sheet left open there (no
-		// script to close it on a resize) must not lock the scroll.
 		b.WriteString(strings.NewReplacer("SCOPE", scope, "MINW", s.minw, "MAXW", s.maxw).Replace(`@media (max-width: MAXW) {
   html:has(SCOPE .cui-phone-sheet__sheet:popover-open) { overflow: hidden; }
 }
