@@ -122,13 +122,20 @@ func devStaticNoStore(w http.ResponseWriter) {
 
 func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body io.Reader, size int64, mod time.Time) {
 	h := w.Header()
-	if !mod.IsZero() && !mod.Equal(time.Unix(0, 0)) {
+	known := !mod.IsZero() && !mod.Equal(time.Unix(0, 0))
+	if known {
 		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
-		if r.Header.Get("If-None-Match") == "" {
-			if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); err == nil && !mod.Truncate(time.Second).After(t) {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
+	}
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		notModified := false
+		if inm := r.Header.Get("If-None-Match"); inm != "" {
+			notModified = strings.TrimSpace(inm) == "*"
+		} else if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); known && err == nil {
+			notModified = !mod.Truncate(time.Second).After(t)
+		}
+		if notModified {
+			w.WriteHeader(http.StatusNotModified)
+			return
 		}
 	}
 	h.Set("Content-Type", corestatic.DetectFromName(name))

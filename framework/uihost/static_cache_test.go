@@ -145,6 +145,21 @@ func TestStaticFSNonSeekingFile(t *testing.T) {
 		t.Fatalf("non-seeking conditional: status = %d, body = %q, want 304 with no body", rec304.Code, rec304.Body.String())
 	}
 
+	post := httptest.NewRequest(http.MethodPost, "/app.css", nil)
+	post.Header.Set("If-Modified-Since", modified.Format(http.TimeFormat))
+	recPost := httptest.NewRecorder()
+	ds.ServeHTTP(recPost, post)
+	if recPost.Code == http.StatusNotModified {
+		t.Fatalf("non-seeking POST with If-Modified-Since answered 304; the date condition applies to GET and HEAD only")
+	}
+	star := httptest.NewRequest(http.MethodGet, "/app.css", nil)
+	star.Header.Set("If-None-Match", "*")
+	recStar := httptest.NewRecorder()
+	ds.ServeHTTP(recStar, star)
+	if recStar.Code != http.StatusNotModified || recStar.Body.Len() != 0 {
+		t.Fatalf("non-seeking If-None-Match *: status = %d, body = %q, want 304 with no body", recStar.Code, recStar.Body.String())
+	}
+
 	ds.SetStaticFS(fsys)
 	req := httptest.NewRequest(http.MethodGet, "/app.css", nil)
 	req.Header.Set("Range", "bytes=0-3")
