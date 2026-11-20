@@ -281,6 +281,14 @@ A request that matches no route gets a 404 shaped like the client asked:
   `text/markdown` body with recovery links (`[Home](/)`,
   `[Site map](/sitemap.xml)`, `[llms.txt](/llms.txt)`).
 
+The host picks the available format with the highest `Accept` weight.
+Problem JSON and Markdown must be named explicitly and have a positive
+weight. A valid `application/problem+json` range takes precedence over
+the `application/json` alias, even at `q=0`. On a tie, problem JSON wins
+over Markdown, and either wins over HTML. For example, `Accept: text/html,
+application/json;q=0.5` gets HTML. The same weight comparison applies to
+HTML and problem JSON on 405 and 500 errors.
+
 Every 404 arm carries `Vary: Accept`. Neither machine arm reflects the
 requested path back into the body — the markdown arm deliberately says
 nothing about the URL, and the problem document omits it, so a hostile path

@@ -128,13 +128,15 @@ func (ds *UIHost) ServeNotFound(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
 	r = r.WithContext(withoutRouteMeta(r.Context()))
 	w.Header().Add("Vary", "Accept")
-	if acceptsProblemJSON(r) {
+	preferences := readAcceptPreferences(r)
+	markdownAvailable := ds.agentReady != nil && ds.agentReady.contentNeg
+	if preferences.prefersProblemJSON(markdownAvailable) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusNotFound, problemNotFound, problemNoRoute))
 		return
 	}
-	if ds.agentReady != nil && ds.agentReady.contentNeg && acceptsMarkdown(r) {
+	if markdownAvailable && preferences.prefersMarkdown() {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, "# Not found\n\nNo page lives at this address. Try:\n\n"+

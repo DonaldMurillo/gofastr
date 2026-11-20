@@ -7,7 +7,9 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -205,6 +207,15 @@ func checkRouteHandler(handler string) error {
 		if reason := unusableFuncName(handler); reason != "" {
 			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
 		}
+		root, err := os.OpenRoot(".")
+		if err != nil {
+			return fmt.Errorf("open current directory: %w", err)
+		}
+		defer root.Close()
+		_, _, imports := dirPackage(root, "")
+		if conflict := imports[handler]; conflict != "" {
+			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, conflict)
+		}
 	}
 	return nil
 }
@@ -242,9 +253,6 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if reason := unusableFuncName(rawName); reason != "" {
 		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
 	}
-	if rawName == "http" {
-		return fmt.Errorf("invalid handler name %q: it conflicts with the net/http import; pick another name", rawName)
-	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected
@@ -274,9 +282,12 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	// beside main.go, package entities under entities/); writing package
 	// main everywhere broke the build with "found packages entities and
 	// main". A name that package already declares would be redeclared.
-	pkg, declared := dirPackage(root, leaf)
+	pkg, declared, imports := dirPackage(root, leaf)
 	if declared[name] {
 		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
+	}
+	if conflict := imports[name]; conflict != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", name, conflict)
 	}
 
 	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
@@ -293,6 +304,14 @@ func %s(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("{\"ok\": true}"))
 }
 `, name, pkg, name, method, path, name)
+
+	f, err := parser.ParseFile(token.NewFileSet(), filename, content, parser.ImportsOnly)
+	if err != nil {
+		return fmt.Errorf("parse generated handler: %w", err)
+	}
+	if conflict := importNames(f, "the generated handler")[name]; conflict != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", name, conflict)
+	}
 
 	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
@@ -316,12 +335,14 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage finds the package and its top-level names. The scaffold target
-// contributes only its package clause when no other file supplies one.
-func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
+// dirPackage finds the package, its top-level names and the names its
+// imports bind. The scaffold target contributes only its package clause
+// when no other file supplies one.
+func dirPackage(root *os.Root, skip string) (string, map[string]bool, map[string]string) {
 	dir := root.Name()
 	var pkg string
 	declared := map[string]bool{}
+	imports := map[string]string{}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		n := e.Name()
@@ -337,6 +358,11 @@ func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
 		}
 		if f.Name.Name != pkg {
 			continue
+		}
+		for name, conflict := range importNames(f, n) {
+			if imports[name] == "" {
+				imports[name] = conflict
+			}
 		}
 		for _, d := range f.Decls {
 			switch d := d.(type) {
@@ -361,7 +387,39 @@ func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
 	if pkg == "" {
 		pkg = scaffoldTargetPackage(root, skip)
 	}
-	return pkg, declared
+	return pkg, declared, imports
+}
+
+func importNames(f *ast.File, source string) map[string]string {
+	names := map[string]string{}
+	for _, spec := range f.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := assumedImportName(importPath)
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name != "_" && name != "." {
+			names[name] = fmt.Sprintf("conflicts with the import of %q in %s", importPath, source)
+		}
+	}
+	return names
+}
+
+func assumedImportName(importPath string) string {
+	name := path.Base(importPath)
+	if len(name) > 1 && name[0] == 'v' && strings.Trim(name[1:], "0123456789") == "" && path.Dir(importPath) != "." {
+		name = path.Base(path.Dir(importPath))
+	}
+	name = strings.TrimPrefix(name, "go-")
+	for i, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return name[:i]
+		}
+	}
+	return name
 }
 
 func scaffoldTargetPackage(root *os.Root, leaf string) string {
