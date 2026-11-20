@@ -82,8 +82,8 @@ func TestAppSpecQuotesApostropheInList(t *testing.T) {
 	}
 }
 
-func TestAppSpecPrefixedIntegerStringsRoundTrip(t *testing.T) {
-	w := seedWorld(map[string]any{"title": "0x10", "tags": []any{"0o10"}})
+func TestAppSpecStringScalarsRoundTrip(t *testing.T) {
+	w := seedWorld(map[string]any{"title": "0x10", "tags": []any{"0o10", "1e999"}})
 	buf, err := freeze.AppSpecYAML(w)
 	if err != nil {
 		t.Fatal(err)
@@ -92,8 +92,9 @@ func TestAppSpecPrefixedIntegerStringsRoundTrip(t *testing.T) {
 	if got := row.Map["title"].Value; got != "0x10" {
 		t.Errorf("title = %#v, want string %q", got, "0x10")
 	}
-	if tags := row.Map["tags"]; tags == nil || len(tags.List) != 1 || tags.List[0].Value != "0o10" {
-		t.Errorf("tags did not round-trip as a list containing the string %q:\n%s", "0o10", buf)
+	if tags := row.Map["tags"]; tags == nil || len(tags.List) != 2 ||
+		tags.List[0].Value != "0o10" || tags.List[1].Value != "1e999" {
+		t.Errorf("tags did not round-trip as the strings %q and %q:\n%s", "0o10", "1e999", buf)
 	}
 }
 

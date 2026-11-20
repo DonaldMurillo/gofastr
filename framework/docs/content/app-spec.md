@@ -213,6 +213,11 @@ not silently disabled constraints. Omitted flags still default to false.
   `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
   the string.
 
+If an older spec or Pack/Kiln snapshot uses an unquoted hex or octal number
+as a string, quote it before loading. For example, write
+`values: ["0x01", "0x02"]` to keep those enum values instead of `"1"` and
+`"2"`, and `default: "0x10"` for a string field to avoid an invalid default.
+
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
 (`- - a`), and mixed advanced YAML forms are not part of the app spec format.

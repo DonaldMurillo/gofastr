@@ -68,10 +68,12 @@ func TestCoreSchemaIntegerResolution(t *testing.T) {
 		"0x+10":                    "0x+10",
 		"0o-10":                    "0o-10",
 		"-0x10":                    "-0x10",
+		"+0x1F":                    "+0x1F",
 		"+0o10":                    "+0o10",
 		"0X10":                     "0X10",
 		"0O10":                     "0O10",
 		"0b10":                     "0b10",
+		"1_000":                    "1_000",
 		"0x1_0":                    "0x1_0",
 		"0o1_0":                    "0o1_0",
 		`"0x10"`:                   "0x10",
@@ -104,6 +106,25 @@ func TestCoreSchemaOutOfRangeFloatRefused(t *testing.T) {
 	node, err := Parse(`v: "1e999"` + "\n")
 	if err != nil || node.Map["v"].Value != "1e999" {
 		t.Errorf(`quoted "1e999" = %v, %v`, node, err)
+	}
+}
+
+func TestNeedsQuote(t *testing.T) {
+	for _, s := range []string{
+		"True", "FALSE", "Null", "~", "+010", "0x10", "0o10", ".5", "1e3", "1e999",
+		"", " leading", "trailing ", "interior\ttab", "first\nsecond", "a\x7fb", "a\xffb",
+		"#comment", "a #comment", "a: b", "trailing:", "- list", "a,b", "a[b]", "a{b}", "it's", `"quote"`,
+	} {
+		if !NeedsQuote(s) {
+			t.Errorf("NeedsQuote(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{
+		"tRuE", "yes", "open", "+0x1F", "1_000", "0x1.8p1", "1_000.5", "9:30", "café", "a#b",
+	} {
+		if NeedsQuote(s) {
+			t.Errorf("NeedsQuote(%q) = true, want false", s)
+		}
 	}
 }
 

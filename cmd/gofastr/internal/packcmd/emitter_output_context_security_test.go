@@ -20,7 +20,7 @@ import (
 // surface. `values:` (the enum value set) is the one with no such check, hence
 // the assertion below.
 //
-// needsQuote decides whether to quote a scalar. It checks `,` only as the FIRST
+// The old quoting predicate checked `,` only as the FIRST
 // byte (`strings.ContainsAny(s[:1], "…,…")`), so an interior comma is emitted
 // bare, and bare is exactly where a comma is a flow-list ITEM SEPARATOR. One
 // item becomes two on re-parse.
@@ -67,13 +67,13 @@ func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 	// scalar, not only as its first byte, because writeFlowList emits scalars
 	// into `[a, b]`. Testing only s[:1] was the bug.
 	for _, s := range []string{"open,closed", "a[b", "a]b", "a{b", "a}b"} {
-		if !needsQuote(s) {
-			t.Errorf("needsQuote(%q) = false — an interior flow indicator is emitted bare", s)
+		if quoteYAMLString(s) == s {
+			t.Errorf("quoteYAMLString(%q) emits an interior flow indicator bare", s)
 		}
 	}
 	// Control: an ordinary scalar still emits bare, so pack output stays close
 	// to hand-written YAML.
-	if needsQuote("open") || needsQuote("in_progress") {
-		t.Error("needsQuote now quotes plain scalars — pack output would churn")
+	if quoteYAMLString("open") != "open" || quoteYAMLString("in_progress") != "in_progress" {
+		t.Error("quoteYAMLString quotes ordinary plain scalars — pack output would churn")
 	}
 }

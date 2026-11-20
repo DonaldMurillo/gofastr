@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -362,7 +363,7 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	case "null", "Null", "NULL", "~":
 		return &Node{Kind: Scalar, Value: nil, Line: line, Column: column}, nil
 	}
-	if i, ok := ParsePlainInt(raw); ok {
+	if i, ok := parsePlainInt(raw); ok {
 		return &Node{Kind: Scalar, Value: i, Line: line, Column: column}, nil
 	}
 	if isCoreFloat(raw) {
@@ -379,8 +380,20 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
 }
 
-// ParsePlainInt reports whether an unquoted YAML 1.2 integer fits in an int64.
-func ParsePlainInt(raw string) (int64, bool) {
+// NeedsQuote reports whether s needs quoting to round-trip as a string value
+// in a mapping or flow list. A block list item also needs quotes around colons.
+func NeedsQuote(s string) bool {
+	if s == "" || strings.ContainsAny(s[:1], "&*!|>'\"%@`#?: -") ||
+		strings.ContainsAny(s, ",'\"[]{}") || strings.Contains(s, " #") ||
+		strings.HasSuffix(s, ":") || !utf8.ValidString(s) ||
+		strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) {
+		return true
+	}
+	node, err := parseScalar(s, 1, 1, 0)
+	return err != nil || node.Kind != Scalar || node.Value != s
+}
+
+func parsePlainInt(raw string) (int64, bool) {
 	var base int
 	switch {
 	case strings.HasPrefix(raw, "0o"):

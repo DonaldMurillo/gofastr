@@ -808,7 +808,7 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 	// map entry (`- postgres://u@h/db` re-parses as {postgres: "//u@h/db"}),
 	// because ':' is the item grammar's key/value delimiter. Block VALUES
 	// follow the laxer rule — parseScalar only rejects ": " — and
-	// needsQuote encodes exactly that, so it cannot carry this rule without
+	// NeedsQuote encodes exactly that, so it cannot carry this rule without
 	// quoting every URL-shaped block value in every real pack. Quote here,
 	// in the one context the list rule governs.
 	if s, ok := item.(string); ok && strings.Contains(s, ":") {
@@ -943,14 +943,14 @@ func allScalars(list []any) bool {
 // \UNNNNNN); printable multi-byte runes (café, 日本語) pass through
 // literally, and an apostrophe needs no escape inside double quotes.
 func quoteYAMLString(s string) string {
-	if !needsQuote(s) {
+	if !coreyaml.NeedsQuote(s) {
 		return s
 	}
 	return quoteYAMLStringEscaped(s)
 }
 
 // quoteYAMLStringEscaped is quoteYAMLString's always-quote form, for callers
-// that have a context-specific reason to quote beyond needsQuote's
+// that have a context-specific reason to quote beyond NeedsQuote's
 // value-context rules (writeYAMLListItem: a ':' anywhere in a block-list
 // item is the map-cut delimiter). Same escaping contract as
 // quoteYAMLString: exact bytes back through parseQuoted's strconv.Unquote.
@@ -994,76 +994,6 @@ func quoteYAMLStringEscaped(s string) string {
 // exactly this set, so a quoted value never carries one raw.
 func hasUnprintable(s string) bool {
 	return !utf8.ValidString(s) || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
-}
-
-// needsQuote reports whether emitting s bare would re-parse as a non-string (or
-// break the line/map grammar). Conservative but minimal: keeps the output close
-// to hand-written YAML while guaranteeing string values survive the round-trip.
-func needsQuote(s string) bool {
-	if s == "" {
-		return true
-	}
-	switch strings.ToLower(s) {
-	case "true", "false", "null", "~":
-		return true
-	}
-	if _, ok := coreyaml.ParsePlainInt(s); ok {
-		return true
-	}
-	if _, err := strconv.ParseFloat(s, 64); err == nil && strings.ContainsAny(s, ".eE") {
-		return true
-	}
-	// Indicators that are only special as the FIRST character of a scalar:
-	// block/flow openers, anchors (&), aliases (*), tags (!), block scalars
-	// (| >), quotes, directives (%), reserved (@ `), a leading comment (#),
-	// complex keys (?), and a leading ":" or "-".
-	if strings.ContainsAny(s[:1], "&*!|>'\"%@`#?: -") {
-		return true
-	}
-	// Flow indicators are special ANYWHERE rather than only at the front, because
-	// writeFlowList emits scalars inside `[a, b]`. An interior comma there is
-	// an ITEM SEPARATOR: "open,closed" emitted bare re-parses as two items,
-	// which breaks the exact-inverse contract this file's banner claims for
-	// encodeAppSpecYAML/decodeAppSpec and lets a `values:` enum set gain a
-	// member the app never declared (unlike search_fields/fields/filters/
-	// columns, `values:` is not re-checked against the declaration on decode).
-	// Testing only s[:1] was the bug. Quoting these in block context too costs
-	// a pair of quotes and keeps ONE predicate for both contexts.
-	if strings.ContainsAny(s, ",[]{}") {
-		return true
-	}
-	// A quote character ANYWHERE, not only leading. In a flow list the
-	// apostrophe in a bare `60'` OPENS a quoted region (splitInline tracks
-	// quote state across the whole list): [60', 90'] re-parses as ONE member
-	// "60', 90'" — two enum values silently become one — and a lone [60']
-	// fails to parse at all. Values can be quoted, so quote them rather than
-	// refuse; quoteYAMLString double-quotes the value, escaping `"` (plus
-	// backslash and the control/no-UTF-8 cases) — the apostrophe itself needs
-	// no escape inside double quotes and passes through verbatim. Mirror
-	// image of the KEY-side rule in yamlKeyRejectReason, which refuses
-	// because core/yaml never unquotes keys (#323 vs #317).
-	if strings.ContainsAny(s, "'\"") {
-		return true
-	}
-	if strings.Contains(s, ": ") || strings.Contains(s, " #") {
-		return true
-	}
-	if strings.ContainsAny(s, "\n\t") {
-		return true
-	}
-	// A non-printable rune or an invalid byte. Pack prints its YAML to the
-	// terminal, and the strings come from the app's source: bare, an ESC
-	// or 8-bit CSI/OSC (U+009B, U+009D) drives the terminal (an OSC 52
-	// writes the clipboard), a CR rewinds the line, and a bidi override
-	// reorders what the reader sees. Quoted, quoteYAMLStringEscaped writes
-	// each as an escape that reads back to the exact bytes.
-	if hasUnprintable(s) {
-		return true
-	}
-	if s != strings.TrimSpace(s) || strings.HasSuffix(s, ":") {
-		return true
-	}
-	return false
 }
 
 // ----- key orders (readability; semantics are order-independent) -------------

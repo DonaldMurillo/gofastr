@@ -287,13 +287,13 @@ func TestPackEncodeDecodeRoundTripProperty(t *testing.T) {
 	}
 }
 
-func TestPackPrefixedIntegerStringsRoundTrip(t *testing.T) {
+func TestPackStringScalarsRoundTrip(t *testing.T) {
 	spec, err := decodeAppSpecString(`app:
   name: probe
 entities:
   - name: posts
     properties:
-      codes: ["0x10", "0o10"]
+      codes: ["0x10", "0o10", "1e999"]
     fields:
       - name: title
         type: string
@@ -309,8 +309,9 @@ entities:
 	if err != nil {
 		t.Fatalf("re-decode: %v\n%s", err, out)
 	}
-	if codes := got.Entities[0].Properties["codes"]; !reflect.DeepEqual(codes, []any{"0x10", "0o10"}) {
-		t.Errorf("codes = %#v, want hex and octal strings\n%s", codes, out)
+	want := []any{"0x10", "0o10", "1e999"}
+	if codes := got.Entities[0].Properties["codes"]; !reflect.DeepEqual(codes, want) {
+		t.Errorf("codes = %#v, want %#v\n%s", codes, want, out)
 	}
 }
 
@@ -403,7 +404,7 @@ entities:
 // the document stays readable.
 func TestPackValueContextFidelityMatrix(t *testing.T) {
 	for _, v := range hostileValueCorpus {
-		if needsQuote(v) {
+		if quoteYAMLString(v) != v {
 			continue // the quoted path is covered by the corpus round-trip above
 		}
 		// Context A: block map value.
