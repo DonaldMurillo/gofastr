@@ -13,7 +13,7 @@ notes:
     breaking: true
     nodetect: "the tool name is derived at runtime from the group prefix and the endpoint path; MCP clients hold the old name outside the app's source"
     guidance: "Update MCP clients to the new name, or set Endpoint.Name to the old name without the namespace (posts_get_v1_health_posts) to keep it."
-  - change: "a // safe-sql: waiver covers only the statement it is attached to, in gofastr verify and gofastr audit lint alike"
+  - change: "a // safe-sql: waiver covers only the statement it is attached to, in gofastr verify"
     guidance: "Put the waiver, with its reason, on the statement that builds the SQL or on the line above it. A waiver that used to reach a query a few lines further down no longer does."
     nodetect: "the waiver is a comment; which statement it reaches depends on layout"
   - change: "every gofastr usage error exits 2 and prints its error line on stderr"
@@ -26,6 +26,17 @@ notes:
   - change: "on Postgres, opening a queue widens the jobs table's priority, attempts and max_attempts columns (and the durable schedule's option columns) from INTEGER to BIGINT"
     guidance: "The ALTER rewrites the table once and holds its lock while it runs. On a large jobs table, run the first boot of the new release in a quiet window, or widen the columns yourself beforehand with ALTER TABLE ... ALTER COLUMN ... TYPE BIGINT."
     nodetect: "the column types live in the database, not the app's source"
+  - change: "BREAKING - gofastr audit lint is removed; gofastr verify security data testing permissions entities runs its checks and honors gofastr.settings.yml and //gofastr:allow"
+    breaking: true
+    nodetect: "the command is called from scripts, CI files and Makefiles outside the app's Go source"
+    guidance: "Replace gofastr audit lint with gofastr verify security data testing permissions entities, and gofastr validate for unscoped PII in gofastr.yml. A Public Go entity with PII-shaped fields is reported as the public-entity warning GOFASTR1702 instead of unscoped PII. A t.Skip whose message does not read as deferred work, and a bare t.SkipNow, are no longer reported."
+  - change: "BREAKING - framework/contracts/analyzers.AuditLint is removed with gofastr audit lint"
+    breaking: true
+    hits: edit
+    guidance: "Blank-import github.com/DonaldMurillo/gofastr/framework/contracts/analyzers so its rules register. Then load the settings with cfg, err := contracts.LoadConfig(root, \"\") (it reads gofastr.settings.yml), build pass, err := contracts.NewPass(root, cfg), and call contracts.Run(pass, contracts.RunOptions{}), checking each error. The Report covers the whole tree with the same rules and honors //gofastr:allow."
+    find:
+      uses:
+        - gofastr/framework/contracts/analyzers.AuditLint
   - change: "BREAKING - framework/contracts/analyzers EntityInfo.Scoped and EntityInfo.HasAccess are removed"
     breaking: true
     hits: edit

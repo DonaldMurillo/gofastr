@@ -42,12 +42,12 @@ invariants:
   - id: legacy-annotations-are-comments
     rule: Legacy annotation markers are read case-insensitively from Go comments, so marker text inside a literal leaves the finding active.
     enforced_by:
-      - test: cmd/gofastr/internal/auditcmd.TestLintIgnoredExecLiteralIsNotAnAnnotation
-      - test: cmd/gofastr/internal/auditcmd.TestLintRenderHTMLConcatLiteralIsNotAnAnnotation
+      - test: framework/contracts/analyzers.TestAuditRuleIgnoredExecLiteralIsNotAnAnnotation
+      - test: framework/contracts/analyzers.TestAuditRuleRenderHTMLConcatLiteralIsNotAnAnnotation
   - id: sql-concatenation-waiver-is-statement-local
-    rule: Verify and audit lint accept a safe-sql comment with a reason directly above a statement or trailing a line of that statement, including within a multi-line call. A control header's waiver covers its own expressions and statements through the opening brace, including range headers. The body is checked separately. A trailing waiver on a line with two statements applies to the last one.
+    rule: Verify accepts a safe-sql comment with a reason directly above a statement or trailing a line of that statement, including within a multi-line call. A control header's waiver covers its own expressions and statements through the opening brace, including range headers. The body is checked separately. A trailing waiver on a line with two statements applies to the last one.
     enforced_by:
-      - test: cmd/gofastr/internal/auditcmd.TestSQLWaiverAppliesOnlyToItsStatement
+      - test: framework/contracts/analyzers.TestSQLWaiverAppliesOnlyToItsStatement
   - id: handrolled-crud-bar
     rule: GOFASTR handrolled-CRUD needs three of GET, POST, PUT, PATCH and DELETE on one collection path, trailing {param} or :param segments folded into it, with no declared entity of that name and outside /__gofastr, /mcp, /health, /metrics and /.well-known.
     enforced_by:

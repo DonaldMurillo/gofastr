@@ -92,12 +92,6 @@ few lines, and link the PR or the docs page for the rest.
 - **verify: `hostport` and `waitgroup` run once, in plain `go vet`.** The
   suite stage no longer runs them a second time; the standalone vettool
   and `make analyze` keep both.
-- **cli: `gofastr audit lint` uses the same detectors as `gofastr verify`.**
-  It now reports raw-string and multiline SQL concatenation, `render.HTML`
-  built with `Sprintf`, `Join` or a local string, and CSRF deficits that a
-  comment inside a template literal used to hide. It honors verify's
-  annotations, such as `// ignore the error` on a discarded Exec, and reads
-  test-lane reasons from the skip call's arguments.
 - **ui: `Toolbar` and `FilterChipBar` render a labelled `role="group"`
   instead of `role="toolbar"`.** The toolbar role promises arrow-key
   movement with one Tab stop, which neither component has; Tab now visits
@@ -118,6 +112,19 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Removed
 
+- **BREAKING: `gofastr audit lint` is gone.** `gofastr verify security
+  data testing permissions entities` runs its checks (SQL and
+  `render.HTML` built by concatenation, POST forms without CSRF,
+  discarded Exec, deferred-work skips, unscoped PII on Go entities) and
+  honors `gofastr.settings.yml` and `//gofastr:allow`, which audit lint
+  ignored. A `Public` Go entity with PII-shaped fields is reported as a
+  public-entity warning (`GOFASTR1702`), not as unscoped PII.
+  `gofastr validate` reports unscoped PII on app-spec entities.
+  `gofastr audit lint` now exits 2 as an unknown subcommand, with or
+  without `--help`. The exported `analyzers.AuditLint` function it used
+  is removed too: blank-import the analyzers package, load
+  `contracts.LoadConfig`, and run `contracts.Run` over a
+  `contracts.NewPass`, as `gofastr verify` does.
 - **BREAKING: `analyzers.EntityInfo.Scoped` and `EntityInfo.HasAccess` are gone.**
   They counted a gate on any operation as scoping reads. GOFASTR1901 now
   needs an owner field, tenant scope or a read permission; nothing in
@@ -159,7 +166,7 @@ few lines, and link the PR or the docs page for the rest.
   the body cannot be read, instead of `invalid JSON body`.
 - **Analyzer fixes.** A `// safe-sql:` waiver on an `if` or `switch`
   header, or on a line of a multi-line call, covers that statement in
-  `gofastr verify` and `gofastr audit lint`. A stand-alone CSS waiver
+  `gofastr verify`. A stand-alone CSS waiver
   skips comment-only lines. GOFASTR1824 credits a `:dir()` rule only when
   it is in effect on every path and covers every selector in the list.
   The body-cap check credits a middleware only when it caps the body
@@ -175,8 +182,8 @@ few lines, and link the PR or the docs page for the rest.
   stderr only.
 - **`gofastr new handler` takes its package from Go files that parse**
   and skips the `_` and `.` files Go ignores.
-- **A `// safe-sql: <reason>` waiver in `gofastr audit lint` and
-  `verify` covers only the statement it sits on,** and a waiver without
+- **A `// safe-sql: <reason>` waiver in `gofastr verify` covers only
+  the statement it sits on,** and a waiver without
   a reason waives nothing.
 - **The unscoped-PII check in `gofastr validate` and `verify` looks for
   a read gate:** an entity whose access gates only writes is reported.

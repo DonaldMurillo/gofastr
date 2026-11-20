@@ -56,7 +56,7 @@ func AuditA11y(root string) ([]A11yFinding, error) {
 			return err
 		}
 		// Generated files are the generator's responsibility, not the
-		// developer's. Same policy as `gofastr audit lint`.
+		// developer's. Same policy as `gofastr verify`.
 		if contracts.IsGeneratedSource(body) {
 			return nil
 		}

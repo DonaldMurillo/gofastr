@@ -669,8 +669,8 @@ the registry — the check has no serving cost and no link on
 
 ## Audit
 
-The `audit` subcommands provide a runtime browser scan, a dependency
-report, and static lint findings in the original audit format.
+The `audit` subcommands run a browser accessibility scan against a
+running app and report global registration calls.
 
 - `gofastr audit a11y --url <base>`: axe-core scan of a running app in
   both color schemes (`--email`/`--password` log in first). The
@@ -679,17 +679,6 @@ report, and static lint findings in the original audit format.
   works but warns that argv is visible to every local process via
   ps. The *static* accessibility rules are part of
   `gofastr verify accessibility`.
-- `gofastr audit lint` reports malformed Go files and uses the same
-  detectors as `gofastr verify` for SQL concatenation, missing CSRF inputs,
-  strings built for `render.HTML`, discarded Exec results, and test skips.
-  Audit reports all unannotated skips outside recognized test lanes.
-  Lane detection reads skip arguments and recognizes nearby
-  `testing.Short()` guards. A `// safe-sql: <reason>` comment directly above
-  the SQL statement or at the end of one of its lines waives that statement.
-  The same rule covers SQL in an `if`, `switch`, or `for` header, including
-  the expression after `range`. Other legacy annotations also use Go
-  comments, including `// safe-html: <why>`, `// allow-skip: <why>`, and
-  `// best-effort: <why>` or `// ignore the error` for Exec.
 - `gofastr audit deps`: list candidate global registration calls found
   anywhere in the Go source, then the [unmounted](unmount.md) packages.
 

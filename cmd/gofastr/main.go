@@ -114,7 +114,6 @@ func printHelp() {
                         --list catalog · --explain <rule> · --json · --sarif <file> · --fix
   audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations
-                        lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
   deploy <user@host>    Put the app on a Linux server over SSH as a systemd service:

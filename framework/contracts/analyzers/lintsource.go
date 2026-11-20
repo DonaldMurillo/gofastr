@@ -8,15 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// AuditLint runs the legacy audit rules against one parsed Go file.
-func AuditLint(rel string, body []byte, fset *token.FileSet, file *ast.File) []contracts.Diagnostic {
-	src := newLintSource(rel, string(body), fset, file)
-	if strings.HasSuffix(rel, "_test.go") {
-		return ruleDisabledTests(src, true)
-	}
-	return append(sharedSecurityRules(src), ruleIgnoredExec(src)...)
-}
-
 type lintSource struct {
 	rel, body string
 	lines     []string

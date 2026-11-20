@@ -860,6 +860,31 @@ func wire(app *framework.App) {
 	}
 }
 
+func TestBadOnDeleteKeepsPIIFinding(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"e.go": entityImports + `
+func wire(app *framework.App) {
+	app.Entity("customers", entity.EntityConfig{
+		Fields: []schema.Field{
+			{Name: "id", Type: schema.String},
+			{Name: "email", Type: schema.String},
+		},
+		Relations: []entity.Relation{{
+			Type:     entity.RelManyToOne,
+			Name:     "company",
+			Entity:   "companies",
+			OnDelete: entity.OnDeleteAction("UnsupportedAction"),
+		}},
+	})
+}
+`,
+	})
+	d := assertHas(t, ds, contracts.RuleUnscopedPII)
+	if !strings.Contains(d.Message, "customers") || !strings.Contains(d.Message, "email") {
+		t.Errorf("message does not name the entity and field: %q", d.Message)
+	}
+}
+
 func TestOwnerScopedEntityIsClean(t *testing.T) {
 	ds := fixture(t, map[string]string{
 		"e.go": entityImports + `

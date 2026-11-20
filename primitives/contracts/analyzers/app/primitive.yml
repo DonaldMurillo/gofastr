@@ -156,12 +156,10 @@ invariants:
       - test: framework/contracts/analyzers.TestSweepAppOnlyPermissionShapedArgumentsAreDeclared
       - test: framework/contracts/analyzers.TestSweepAppEntityAccessPermissionsAreDeclared
   - id: disabled-test-is-deferred-work
-    rule: Audit and verify share skip-call detection, allow-skip annotations, lane phrases from the actual arguments and nearby testing.Short guards, while audit reports every remaining skip and GOFASTR1105 requires deferred-work wording.
-    applies:
-      - cmd/gofastr/internal/auditcmd/audit_lint.go
+    rule: GOFASTR1105 reads skip calls, allow-skip annotations, lane phrases from the actual arguments and nearby testing.Short guards, and reports a remaining skip only when its message is deferred-work wording.
     enforced_by:
-      - test: cmd/gofastr/internal/auditcmd.TestAuditLintTracksContractDetectors
-      - test: cmd/gofastr/internal/auditcmd.TestAuditSkipDoesNotRequireDebtVocabulary
+      - test: framework/contracts/analyzers.TestAuditRuleCases
+      - test: framework/contracts/analyzers.TestAuditRuleFlagsSkipAndSkipf
       - test: framework/contracts/analyzers.TestSweepAppEveryStringArgumentOfASkipIsRead
       - test: framework/contracts/analyzers.TestSweepAppShortGuardIsALaneBoundary
   - id: coverage-is-statement-weighted

@@ -210,12 +210,12 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 			continue
 		}
 		body, _ := p.Source(f.Rel)
-		out = append(out, ruleDisabledTests(newLintSource(f.Rel, string(body), p.FileSet(), file), false)...)
+		out = append(out, ruleDisabledTests(newLintSource(f.Rel, string(body), p.FileSet(), file))...)
 	}
 	return out
 }
 
-func ruleDisabledTests(src lintSource, reportAllNonLane bool) []contracts.Diagnostic {
+func ruleDisabledTests(src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	ast.Inspect(src.file, func(n ast.Node) bool {
 		recv, method, args, isCall := selectorCall(n)
@@ -260,7 +260,7 @@ func ruleDisabledTests(src lintSource, reportAllNonLane bool) []contracts.Diagno
 				break
 			}
 		}
-		if !reportAllNonLane && !isDebt {
+		if !isDebt {
 			return true
 		}
 		out = append(out, src.diagnostic(contracts.RuleDisabledTest, n.Pos(),

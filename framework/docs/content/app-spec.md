@@ -2278,9 +2278,7 @@ permission on the entity.
 `gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
-to keep stdout machine-parseable). `gofastr audit lint` also reports it
-(rule `unscoped-pii`) when a conventional `gofastr.yml` / `gofastr.yaml` /
-`gofastr.json` sits at the audited root. Fix it with any of:
+to keep stdout machine-parseable). Fix it with any of:
 
 ```yaml
 entities:
