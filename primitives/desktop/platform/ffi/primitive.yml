@@ -33,6 +33,12 @@ invariants:
     rule: A slot registered with NewCallbackAnyThread skips ThreadCheck, so a callback on a thread Go did not create runs through needm instead of the main-thread assertion.
     enforced_by:
       - test: battery/desktop/internal/ffi.TestCallbackFromForeignThread
+  - id: any-thread-callbacks-stay-off-the-ui
+    rule: A function registered with NewCallbackAnyThread runs on whatever thread the native side picks, so it signals a channel, starts a goroutine or makes thread-safe GLib and GIO calls, and reaches AppKit, WebKit or GTK widgets only through a Main hop.
+    judge: Does a function passed to NewCallbackAnyThread call AppKit, WebKit or a GTK widget directly, or touch state that is safe only on the UI thread?
+    applies:
+      - battery/desktop/linux/*.go
+      - battery/desktop/macos/*.go
   - id: nocgo-links-fakecgo
     rule: Without cgo the package imports internal/fakecgo, and with cgo it imports runtime/cgo, so exactly one provider defines the runtime's _cgo hooks.
     enforced_by:

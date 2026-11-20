@@ -5,11 +5,17 @@ code:
 docs:
   - framework/docs/content/desktop.md
 on_change:
-  - Its tests run on darwin only; run them on a Mac before merging a change here.
+  - Its tests run on darwin only and CI does not run them; run them on a Mac before merging a change here.
 invariants:
   - id: main-thread-locked-at-init
     rule: The package's init locks the main goroutine to the main OS thread for the life of the process and records its pthread, and loads no framework, so a blank import never loads AppKit.
     judge: Does this change release the main-thread lock, or make init or ensureRuntime dlopen a framework?
+  - id: callbacks-assert-main-thread
+    rule: init installs ffi.ThreadCheck as AssertMainThread, so a NewCallback slot entered on a thread other than the main one panics naming the callback instead of touching AppKit state.
+    judge: Does this change remove, replace or defer the ffi.ThreadCheck hook that init installs, or register a main-thread-only callback through NewCallbackAnyThread?
+  - id: late-main-job-writes-are-unsafe
+    rule: A Main job the drain has already taken cannot be recalled and still runs after its caller's deadline, so a caller that timed out reads what the closure writes only through a lock, as Prompt does with its result.
+    judge: Does this change read a variable a Main or MainWithTimeout closure writes, after that call returned a timeout, without holding a lock the closure also takes?
   - id: nsstring-never-panics
     rule: NSString answers the nil NSString for a string carrying a NUL and NSStringErr an error, never a panic, because the crossing runs inside a trampoline where a Go panic is fatal.
     enforced_by:

@@ -8,6 +8,7 @@ docs:
   - framework/docs/content/desktop.md
 on_change:
   - No error, log line or bridge message from the updater carries a path or a URL; the bridge errors are fixed words and paths go through LogDetail.
+  - The tests behind darwin-signature-pin run only on a Mac and those behind windows-layout-is-closed only on Windows; CI runs neither, so run them on that machine before merging a change to the signature check or the Windows layout.
 invariants:
   - id: update-config-validated
     rule: New panics on an Update config whose FeedURL is not https or http to 127.0.0.1, whose PublicKey is not 64 hex characters, whose Channel is over 64 bytes or holds a control character, whose MacOSTeamID is not ten uppercase letters and digits, or that sets both MacOSTeamID and MacOSAllowAdHoc.
