@@ -29,3 +29,14 @@ func TestSensitiveRedactedInOtherFieldParseError(t *testing.T) {
 		}
 	}
 }
+
+func TestUnsetSensitiveIntPreservesParseErrorDigits(t *testing.T) {
+	var c struct {
+		Secret int `config:"SECRET" sensitive:"true"`
+		Port   int `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"PORT": "0-invalid"})
+	if err == nil || !strings.Contains(err.Error(), "0-invalid") || strings.Contains(err.Error(), "(redacted)") {
+		t.Fatalf("Load = %v, want unchanged parse error containing 0-invalid", err)
+	}
+}

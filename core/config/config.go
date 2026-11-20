@@ -136,7 +136,7 @@ func collectSecrets(v reflect.Value, t reflect.Type, prefix string, src Source, 
 				*secrets = append(*secrets, value)
 			}
 		}
-		if fv.IsValid() && fv.CanInterface() {
+		if fv.IsValid() && fv.CanInterface() && !fv.IsZero() {
 			for fv.Kind() == reflect.Pointer && !fv.IsNil() {
 				fv = fv.Elem()
 			}
