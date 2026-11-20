@@ -199,11 +199,16 @@ and carries these attributes:
 | `http.status_code` | final response status |
 | `http.target` | request URL path |
 
-Responses with status `>= 500` set the span status to `codes.Error`. A
-panicking handler's span ends with `codes.Error` and the status the client
-got (`500`, or the one already sent), and the SDK records the panic as the
-span's `exception` event. The span also carries `exception.stacktrace`: the
-call stack from the function that panicked, at most 8 KiB.
+Responses with status `>= 500` set the span status to `codes.Error` and
+`error.type` to the status code as a string (e.g. `"503"`). Lower response
+codes alone don't mark the span as an error or set `error.type`.
+
+A panicking handler's span ends with `codes.Error` and `error.type` set to
+`"panic"`, even if the handler already sent a non-5xx response.
+`http.status_code` still holds the status the client got (`500`, or the one
+already sent). The SDK records the panic as the span's `exception` event.
+The span also carries `exception.stacktrace`: the call stack from the
+function that panicked, at most 8 KiB.
 
 Incoming trace context is extracted with the global propagator you set
 with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one

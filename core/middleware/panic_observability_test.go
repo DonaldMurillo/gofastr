@@ -137,13 +137,20 @@ func TestTracingMarksPanickedSpan(t *testing.T) {
 				t.Fatalf("span status %v, want Error", span.Status().Code)
 			}
 			var status int64
+			var errorType string
 			for _, kv := range span.Attributes() {
-				if kv.Key == "http.status_code" {
+				switch kv.Key {
+				case "http.status_code":
 					status = kv.Value.AsInt64()
+				case "error.type":
+					errorType = kv.Value.AsString()
 				}
 			}
 			if status != tc.want {
 				t.Fatalf("span http.status_code = %d, want %d", status, tc.want)
+			}
+			if errorType != "panic" {
+				t.Errorf("span error.type = %q, want %q", errorType, "panic")
 			}
 			exceptions := 0
 			for _, ev := range span.Events() {
