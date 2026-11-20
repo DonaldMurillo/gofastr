@@ -552,7 +552,7 @@ func (b *Battery) nextWindowIDLocked(path string) string {
 }
 
 func (b *Battery) handleWindowClosed(id string) {
-	if id == "main" {
+	if id == MainWindowID {
 		return
 	}
 	b.openMu.Lock()

@@ -122,6 +122,7 @@ func (p capPlugin) Init(*framework.App) error {
 
 func TestManifestModeIncludesPluginCapabilities(t *testing.T) {
 	t.Setenv(ManifestEnv, "1")
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
 	site := appui.NewApp("ManifestPlugin")
 	site.Register("/", manifestScreen{}, containerLayout("public"))
 	b := New(Config{ID: "manifestplug.example.app", Shell: newFakeShell()})
@@ -170,6 +171,7 @@ func TestRunRefusesAnUnregisteredBattery(t *testing.T) {
 
 func TestRunTurnsWorktreeIsolationOff(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "probe")
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
 	site := appui.NewApp("Isolation")
 	site.Register("/", manifestScreen{}, containerLayout("public"))
 	shell := newFakeShell()

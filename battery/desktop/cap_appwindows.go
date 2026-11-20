@@ -97,7 +97,7 @@ func (b *Battery) windowsCapability() Capability {
 					if err != nil {
 						return nil, err
 					}
-					if id == "main" {
+					if id == MainWindowID {
 						return nil, &Error{Code: CodeInvalidInput, Message: "the main window closes through the OS, not through the page"}
 					}
 					b.openMu.Lock()
@@ -175,7 +175,7 @@ func (s *windowsStyleInput) toWindowStyle() (WindowStyle, *Error) {
 func (b *Battery) windowByID(id string) (Window, bool) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
-	if id == "main" {
+	if id == MainWindowID {
 		return b.window, b.window != nil
 	}
 	w, ok := b.windows[id]

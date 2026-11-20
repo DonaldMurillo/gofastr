@@ -3,6 +3,7 @@ package desktoptest_test
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -248,5 +249,27 @@ func TestCloseMainWindowQuitsWithoutTray(t *testing.T) {
 	h.CloseMainWindow()
 	if err := h.Quit(); err != nil {
 		t.Fatalf("Run returned %v", err)
+	}
+}
+
+func TestFocusShowsAHiddenMainWindow(t *testing.T) {
+	ta := newTestApp(t, desktop.Config{Tray: &desktop.Tray{Title: "T", CloseHidesWindow: true}})
+	h := desktoptest.Run(t, ta.app, ta.d)
+	h.CloseMainWindow()
+	if err := h.Window("main").Focus(); err != nil {
+		t.Fatal(err)
+	}
+	if h.Window("main").Hidden() {
+		t.Fatal("Focus left the hidden main window hidden, unlike the native shells")
+	}
+}
+
+func TestRunPointsTheDataDirAtATempDir(t *testing.T) {
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", "")
+	os.Unsetenv("GOFASTR_DESKTOP_DATA_DIR")
+	ta := newTestApp(t, desktop.Config{})
+	desktoptest.Run(t, ta.app, ta.d)
+	if dir := os.Getenv("GOFASTR_DESKTOP_DATA_DIR"); dir == "" || !strings.HasPrefix(dir, os.TempDir()) {
+		t.Fatalf("GOFASTR_DESKTOP_DATA_DIR = %q, want a test temp dir so the suite never writes a real profile", dir)
 	}
 }
