@@ -245,8 +245,9 @@ func oaImplicitlyNullableBody(schema map[string]any) bool {
 	for key := range schema {
 		switch key {
 		case "$ref", "title", "description", "examples", "default", "deprecated", "readOnly", "writeOnly", "$comment", "format", "externalDocs", "xml", "example", "discriminator",
+			"contentEncoding", "contentMediaType", "contentSchema", "$id", "$schema", "$anchor", "$dynamicAnchor", "$defs",
 			"properties", "patternProperties", "additionalProperties", "required", "minProperties", "maxProperties", "propertyNames", "dependentRequired",
-			"items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems", "minContains", "maxContains",
+			"items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems", "minContains", "maxContains", "unevaluatedProperties", "unevaluatedItems",
 			"minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf":
 		default:
 			if !strings.HasPrefix(key, "x-") {

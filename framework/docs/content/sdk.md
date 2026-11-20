@@ -512,7 +512,8 @@ absence. In JS/TS, pass `null` to send the literal JSON `null` with
 and rejects a required one. The body parameter's TypeScript type includes
 `| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1,
 a type-less JSON request body is implicitly nullable only when its keywords
-are annotations, type-specific assertions that ignore null, or `x-` extensions.
+are annotations, schema metadata or definitions, type-specific assertions that
+ignore null, or `x-` extensions.
 This includes `{}` and properties-only schemas, but excludes conditional,
 composition and unknown keywords. Both the resolved schema and `$ref` siblings
 must qualify; this does not change response or field typing. OpenAPI 3.0 `{}`

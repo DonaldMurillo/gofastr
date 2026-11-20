@@ -110,6 +110,8 @@ func TestOpenAPISDKTypelessBody(t *testing.T) {
 		}{
 			{`{}`, true},
 			{`{"description":"Any JSON value"}`, true},
+			{`{"contentMediaType":"application/json"}`, true},
+			{`{"contentEncoding":"base64","contentSchema":false,"$id":"https://example.com/any","$schema":"https://json-schema.org/draft/2020-12/schema","$anchor":"any","$dynamicAnchor":"anyDynamic","$defs":{"Never":false},"$comment":"Any value","unevaluatedProperties":false,"unevaluatedItems":false}`, true},
 			{`{"$ref":"#/components/schemas/Any"}`, true},
 			{`{"properties":{"name":{"type":"string"}}}`, true},
 			{`{"oneOf":[{"$ref":"#/components/schemas/A"},{"$ref":"#/components/schemas/B"}]}`, false},
