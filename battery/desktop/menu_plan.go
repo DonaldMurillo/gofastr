@@ -7,29 +7,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// The pure menu planning pass: WindowConfig.Menu (plus the standard
-// app and Edit menus) resolved into a platform-neutral description a
-// native shell renders with its own toolkit calls. Keeping the mapping
-// here, key-equivalent splitting, modifier masks, role resolution,
-// action-tag assignment, means it is unit-testable on every GOOS
-// with no AppKit, GTK, or Win32 in the process (the same fake-shell
-// posture as the rest of the battery's tests).
-//
-// The macos package (battery/desktop/macos) renders a MenuPlan with
-// NSMenu/NSMenuItem. The masks carry darwin's NSEventModifierFlag
-// values, the one platform-specific datum, spelled out per constant so
-// a future windows/linux renderer reuses everything but the mask bits.
-// MenuPlan, MenuItemPlan, PlanMenuBar, and PlanTrayMenu are exported
-// for exactly those platform packages; everything else here stays
-// internal to the planning pass.
-
 // MenuPlan is one top-level menu resolved for native rendering.
 type MenuPlan struct {
 	// Title is the menu-bar title (the app name, "File", "Edit").
 	Title string
-	// English is Title in English: the name a native test driver
-	// matches (desktoptest's ClickMenu), whatever language the shell
-	// renders.
+	// English is Title in English, the name a native test driver matches.
 	English string
 	// Items are the rows, in order.
 	Items []MenuItemPlan
@@ -39,35 +21,25 @@ type MenuPlan struct {
 type MenuItemPlan struct {
 	// Title is the displayed label; empty for separators.
 	Title string
-	// English is Title in English, the name a native test driver
-	// matches.
+	// English is Title in English, the name a native test driver matches.
 	English string
-	// Key is the key-equivalent glyph (the last +-token of the
-	// accelerator); "" when the item has none.
+	// Key is the key-equivalent glyph (the last +-token of the accelerator); "" when the item has none.
 	Key string
-	// Mask is the modifier mask for Key (darwin
-	// NSEventModifierFlags). Zero with a non-empty Key is a bare
-	// key equivalent; zero with an empty Key means no equivalent.
+	// Mask is the modifier mask for Key (darwin NSEventModifierFlags).
 	Mask uintptr
 	// Sep marks a separator row (no title, no action).
 	Sep bool
-	// Role is the shell-native role (RoleQuit, RoleAbout) the shell
-	// implements itself; "" for action items and plain labels.
+	// Role is the role the shell implements itself; "" for action items and labels.
 	Role string
-	// Action is true for Navigate/Handler items the shell wires to
-	// its action selector; Tag is then the index into the plan's
-	// action-ID table (setTag: on darwin).
+	// Action marks a Navigate or Handler row; Tag then indexes the plan's action-ID table.
 	Action bool
 	Tag    int
-	// FirstResponder is a selector routed to the responder chain with
-	// no target (the Edit menu's cut:/paste:/…: the WebView's editor
-	// answers). Mutually exclusive with Role and Action.
+	// FirstResponder is a selector sent to the responder chain with no target.
 	FirstResponder string
 	// Submenu holds nested rows; nil for leaf rows.
 	Submenu []MenuItemPlan
 }
 
-// NSEventModifierFlags (AppKit), used as MenuItemPlan.Mask values.
 const (
 	nsModifierCommand = 1 << 20
 	nsModifierShift   = 1 << 17
@@ -75,11 +47,6 @@ const (
 	nsModifierControl = 1 << 18
 )
 
-// keyEquivalent splits a validated accelerator ("cmd+shift+t") into
-// the key-equivalent glyph (last token) and the darwin modifier mask
-// (the remaining tokens). The menu validator already enforced the
-// grammar; unknown modifier tokens contribute nothing (defensive: the
-// planner is also reached by hand-built test menus).
 func keyEquivalent(key string) (string, uintptr) {
 	if key == "" {
 		return "", 0
@@ -102,7 +69,6 @@ func keyEquivalent(key string) (string, uintptr) {
 	return eq, mask
 }
 
-// splitMenuKey lower-cases and splits a validated accelerator on '+'.
 func splitMenuKey(key string) []string {
 	var parts []string
 	start := 0
@@ -115,10 +81,6 @@ func splitMenuKey(key string) []string {
 	return parts
 }
 
-// editMenuRows are the standard text-editing commands every WebView
-// app needs inside the page. They target the first responder (the
-// WKWebView's internal editor), not the bridge.
-// Their titles come from editMenuTitles, in the plan's locale.
 var editMenuRows = []MenuItemPlan{
 	{Key: "z", Mask: nsModifierCommand, FirstResponder: "undo:"},
 	{Key: "z", Mask: nsModifierCommand | nsModifierShift, FirstResponder: "redo:"},
@@ -129,7 +91,6 @@ var editMenuRows = []MenuItemPlan{
 	{Key: "a", Mask: nsModifierCommand, FirstResponder: "selectAll:"},
 }
 
-// editMenuTitles names each editMenuRows row by its FirstResponder.
 var editMenuTitles = map[string]i18n.Phrase{
 	"undo:":      menuUndo,
 	"redo:":      menuRedo,
@@ -139,7 +100,6 @@ var editMenuTitles = map[string]i18n.Phrase{
 	"selectAll:": menuSelectAll,
 }
 
-// editMenu is the Edit menu in ctx's locale.
 func editMenu(ctx context.Context) MenuPlan {
 	rows := make([]MenuItemPlan, len(editMenuRows))
 	for i, row := range editMenuRows {
@@ -151,24 +111,9 @@ func editMenu(ctx context.Context) MenuPlan {
 	return MenuPlan{Title: menuEdit.Text(ctx), Items: rows}
 }
 
-// PlanMenuBar resolves a validated Menu plus the shell-owned standard
-// menus into the render plan a platform shell renders natively: the
-// app menu (first, holding the standard Quit item and, when
-// hasSettings, the Settings item), the caller's menus, and the Edit
-// menu (last). actionIDs is the tag
-// table: an action row's Tag indexes into it and yields the
-// MenuItem.ID OnMenu receives.
-//
-// appTitle names the app menu and its Quit item ("Quit <Title>"). A
-// nil Menu still yields a working bar (app + Edit): a macOS app
-// without a menu bar has no keyboard escape and no standard way to
-// quit. The shell-owned words (the app menu's items, role items'
-// default titles, the Edit menu) are in ctx's locale: see
-// [ShellContext]. Every menu and row also carries its English, the
-// name a native test driver matches.
+// PlanMenuBar plans the app menu, m's menus and the Edit menu, and returns the action-ID table their Tags index.
 func PlanMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
 	plans, actionIDs = planMenuBar(ctx, appTitle, m, hasSettings)
-	// planning twice keeps the two trees the same shape by construction.
 	en, _ := planMenuBar(englishContext, appTitle, m, hasSettings)
 	for i := range plans {
 		plans[i].English = en[i].Title
@@ -177,13 +122,8 @@ func PlanMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool
 	return plans, actionIDs
 }
 
-// englishContext renders every phrase in its own English. A bare
-// context is not that: a phrase then asks the process's default
-// translator, whose fallback locale need not be English.
 var englishContext = i18n.WithTranslator(context.Background(), i18n.NewTranslator(i18n.NewMapCatalog(), "en"))
 
-// withEnglish copies en's titles into rows' English fields, row for
-// row; both come from planRows over the same items.
 func withEnglish(rows, en []MenuItemPlan) {
 	for i := range rows {
 		rows[i].English = en[i].Title
@@ -206,16 +146,12 @@ func planMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool
 	if m != nil {
 		for _, it := range m.Items {
 			if it.Role == RoleSeparator {
-				// A separator between menu-bar titles is not a thing;
-				// drop it rather than render an empty untitled menu.
 				continue
 			}
 			mp := MenuPlan{Title: defaultRoleTitle(ctx, it, appTitle)}
 			if len(it.Children) > 0 {
 				mp.Items = planRows(ctx, it.Children, appTitle, &actionIDs)
 			} else {
-				// A childless top-level item becomes its own
-				// single-row menu so its action stays reachable.
 				mp.Items = planRows(ctx, []MenuItem{it}, appTitle, &actionIDs)
 			}
 			plans = append(plans, mp)
@@ -226,7 +162,6 @@ func planMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool
 	return plans, actionIDs
 }
 
-// planRows maps menu items to planned rows, assigning action tags.
 func planRows(ctx context.Context, items []MenuItem, appTitle string, actionIDs *[]string) []MenuItemPlan {
 	rows := make([]MenuItemPlan, 0, len(items))
 	for _, it := range items {
@@ -252,8 +187,6 @@ func planRows(ctx context.Context, items []MenuItem, appTitle string, actionIDs 
 	return rows
 }
 
-// defaultRoleTitle fills the OS-standard label, in ctx's locale, for a
-// role item whose Title is empty.
 func defaultRoleTitle(ctx context.Context, it MenuItem, appTitle string) string {
 	if !it.Title.IsZero() {
 		return it.Title.Text(ctx)
@@ -272,7 +205,6 @@ func defaultRoleTitle(ctx context.Context, it MenuItem, appTitle string) string 
 	return ""
 }
 
-// itemTitle is an item's label in ctx's locale, "" when it has none.
 func itemTitle(ctx context.Context, it MenuItem) string {
 	if it.Title.IsZero() {
 		return ""
@@ -280,10 +212,7 @@ func itemTitle(ctx context.Context, it MenuItem) string {
 	return it.Title.Text(ctx)
 }
 
-// PlanTrayMenu plans the tray menu's rows for a platform shell. It
-// shares the caller's action-ID table with the menu bar plan, so a
-// tray Navigate/Handler row's Tag resolves through the same table
-// OnMenu dispatches on.
+// PlanTrayMenu plans the tray menu's rows for a platform shell.
 func PlanTrayMenu(ctx context.Context, t *Tray, appTitle string, actionIDs *[]string) []MenuItemPlan {
 	if t == nil {
 		return nil

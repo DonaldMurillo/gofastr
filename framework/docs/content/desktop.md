@@ -114,7 +114,10 @@ if err := d.Run(app); err != nil {
 ## The data dir
 
 `os.UserConfigDir()/<id>` (`~/Library/Application Support/<id>` on
-macOS), created 0700. Four files live there:
+macOS), created 0700. The id is reverse-DNS: `[A-Za-z0-9.-]+` with at
+least one dot, at most 253 characters, and not made only of dots and
+dashes (`..` would name the parent directory). `New`, `DataDir` and
+`AppOptions` refuse any other id. Four files live there:
 
 | File | What it is |
 |---|---|

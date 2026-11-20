@@ -5,26 +5,12 @@ import (
 	"runtime"
 )
 
-// The unsupported shell: the answer for every platform without a native
-// layer. It is exported (NewUnsupportedShell) because the platform
-// packages' New() hand it back off their platform: battery/desktop/macos
-// outside darwin/arm64 and darwin/amd64, battery/desktop/windows outside windows/amd64,
-// and battery/desktop/linux outside linux/amd64 or linux/arm64. desktop.New also picks it when Config.Shell is nil;
-// the real shell for a host is native.Shell()'s to choose
-// (battery/desktop/native).
-
-// unsupportedShell is the no-native-layer Shell. Every interesting
-// method returns ErrUnsupported naming the platform, so an app that runs
-// on an OS without a native layer fails with a real, named error instead
-// of a nil-pointer panic.
 type unsupportedShell struct {
 	goos   string
 	goarch string
 }
 
-// NewUnsupportedShell returns the Shell every platform without a native
-// layer answers with. Platform packages return it from their New()
-// off-platform; desktop.New selects it when Config.Shell is nil.
+// NewUnsupportedShell returns the Shell every platform without a native layer answers with.
 func NewUnsupportedShell() Shell {
 	return &unsupportedShell{goos: runtime.GOOS, goarch: runtime.GOARCH}
 }
@@ -36,9 +22,6 @@ func (s *unsupportedShell) Run(context.Context, WindowConfig, func(Window)) erro
 func (s *unsupportedShell) Quit() {}
 
 func (s *unsupportedShell) Main(fn func()) error {
-	// There is no UI thread to hop to; run inline so callers that only
-	// need sequencing keep working, and report the platform honestly
-	// everywhere else.
 	fn()
 	return nil
 }
@@ -55,9 +38,6 @@ func (s *unsupportedShell) Prompt(context.Context, PermissionRequest) (Decision,
 	return DecisionDeny, unsupportedErrorf(s.goos, s.goarch)
 }
 
-// Appearance implements desktop.Shell: no native layer, no appearance
-// state to read; the zero value means every CSS-invisible setting is
-// off.
 func (s *unsupportedShell) Appearance() Appearance { return Appearance{} }
 
 func (s *unsupportedShell) Clipboard() Clipboard { return s }

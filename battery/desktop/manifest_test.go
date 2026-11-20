@@ -1,8 +1,12 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -104,4 +108,126 @@ func captureExitFree(t *testing.T, fn func()) {
 		}
 	}()
 	fn()
+}
+
+type capPlugin struct{ b *Battery }
+
+func (p capPlugin) Name() string { return "capplugin" }
+func (p capPlugin) Init(*framework.App) error {
+	return p.b.Register(Capability{Name: "plugcap", Version: 1, Methods: []Method{{
+		Name:    "go",
+		Handler: func(context.Context, json.RawMessage) (any, error) { return nil, nil },
+	}}})
+}
+
+func TestManifestModeIncludesPluginCapabilities(t *testing.T) {
+	t.Setenv(ManifestEnv, "1")
+	site := appui.NewApp("ManifestPlugin")
+	site.Register("/", manifestScreen{}, containerLayout("public"))
+	b := New(Config{ID: "manifestplug.example.app", Shell: newFakeShell()})
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "manifestplug"}))
+	app.Mount(uihost.New(site))
+	app.RegisterBattery(b)
+	app.RegisterPlugin(capPlugin{b})
+	var out string
+	captureExitFree(t, func() {
+		out = captureStdout(t, func() {
+			if err := b.Run(app); err != nil {
+				t.Errorf("Run in manifest mode: %v", err)
+			}
+		})
+	})
+	if !strings.Contains(out, `"plugcap"`) {
+		t.Fatalf("a capability a plugin registers from Init is missing from the manifest:\n%s", out)
+	}
+}
+
+func TestInitTwiceIsRefused(t *testing.T) {
+	site := appui.NewApp("Twice")
+	site.Register("/", manifestScreen{}, containerLayout("public"))
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "twice"}))
+	app.Mount(uihost.New(site))
+	b := New(Config{ID: "twice.example.app", Shell: newFakeShell(), DataDir: t.TempDir()})
+	if err := b.Init(app); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Init(app); err == nil {
+		t.Fatal("a second Init was accepted")
+	}
+}
+
+func TestRunRefusesAnUnregisteredBattery(t *testing.T) {
+	shell := newFakeShell()
+	b := New(Config{ID: "unregistered.example.app", Shell: shell})
+	err := b.Run(framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "unregistered"})))
+	if err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("Run on an App without the battery = %v, want the not-registered error", err)
+	}
+	if _, ran := shell.config(); ran {
+		t.Fatal("Run reached the shell")
+	}
+}
+
+func TestRunTurnsWorktreeIsolationOff(t *testing.T) {
+	t.Setenv("GOFASTR_ISOLATION", "probe")
+	site := appui.NewApp("Isolation")
+	site.Register("/", manifestScreen{}, containerLayout("public"))
+	shell := newFakeShell()
+	b := New(Config{ID: "isolation.example.app", Shell: shell})
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "isolation"}))
+	app.Mount(uihost.New(site))
+	app.RegisterBattery(b)
+	done := make(chan error, 1)
+	go func() { done <- b.Run(app) }()
+	waitFor(t, "the shell to run", func() bool { _, ok := shell.config(); return ok })
+	got := os.Getenv("GOFASTR_ISOLATION")
+	shell.Quit()
+	<-done
+	if got != "off" {
+		t.Fatalf("GOFASTR_ISOLATION during Run = %q, want off unless KeepIsolation", got)
+	}
+}
+
+type failingEvalWindow struct{ *fakeWindow }
+
+func (failingEvalWindow) Eval(string) error { return fmt.Errorf("eval failed") }
+
+func TestEmitKeepsGoingPastAFailedWindow(t *testing.T) {
+	b, _ := newTestBattery(t)
+	main := failingEvalWindow{&fakeWindow{id: MainWindowID}}
+	w2 := &fakeWindow{id: "w2"}
+	b.window = main
+	b.windows[MainWindowID] = main
+	b.windows["w2"] = w2
+	b.winOrder = []string{"w2"}
+	if err := b.Emit("ping", nil); err == nil {
+		t.Fatal("Emit hid the failed window's error")
+	}
+	if len(w2.evaluated) != 1 {
+		t.Fatalf("the window after a failed one got %d evals, want 1", len(w2.evaluated))
+	}
+}
+
+func TestFocusBeforeAnyWindowIsDroppedQuietly(t *testing.T) {
+	b, _ := newTestBattery(t)
+	var buf bytes.Buffer
+	b.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	b.emitWindowFocus(MainWindowID)
+	b.emitAppearance(Appearance{ReduceTransparency: true})
+	if buf.Len() != 0 {
+		t.Fatalf("a focus report during startup was logged:\n%s", buf.String())
+	}
+}
+
+func TestEmitAfterStopFails(t *testing.T) {
+	b, _ := newTestBattery(t)
+	w := &fakeWindow{id: MainWindowID}
+	b.window = w
+	b.windows[MainWindowID] = w
+	if err := b.OnStop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Emit("late", nil); err == nil {
+		t.Fatal("Emit after OnStop reached the stopped window")
+	}
 }

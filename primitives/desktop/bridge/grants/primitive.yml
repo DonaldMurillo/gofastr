@@ -1,0 +1,56 @@
+primitive: desktop.bridge.grants
+summary: The permission gate in front of every gated bridge method, its OS prompt and the stored allow and deny decisions.
+code:
+  - battery/desktop/grants.go
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: grant-keyed-on-capability
+    rule: A grant is stored and read under the pair (capability, permission) in separate columns, so a second capability declaring the same permission string still prompts.
+    enforced_by:
+      - test: battery/desktop.TestGrantIsKeyedOnItsCapability
+  - id: allow-and-deny-persist-once-does-not
+    rule: Allow and Deny are persisted and answer later calls with no prompt, Allow once is never persisted, and any other stored value reads as deny.
+    enforced_by:
+      - test: battery/desktop.TestChokepointPermissionGate
+      - test: battery/desktop.TestAllowOnceStillNeverPersists
+      - test: battery/desktop.TestUnknownStoredDecisionReadsAsDeny
+  - id: decision-persists-off-the-request
+    rule: The user's decision is written on a context detached from the request and bounded by grantWriteTimeout, so a page that aborts its fetch while the alert is up cannot make the Deny unwritable.
+    enforced_by:
+      - test: battery/desktop.TestDenyPersistsWhenPageAborts
+      - test: battery/desktop.TestAllowPersistsWhenPageAborts
+  - id: one-alert-at-a-time
+    rule: Prompts are serialized through a one-slot semaphore and the store is read again once the slot is held, so two concurrent first calls show one alert and the second reads the first one's decision.
+    enforced_by:
+      - test: battery/desktop.TestConcurrentFirstCallsShowOneAlert
+  - id: queued-call-gives-up-with-its-request
+    rule: A call waiting for the prompt slot returns cancelled as soon as its request context ends, without prompting or reading the store.
+    enforced_by:
+      - test: battery/desktop.TestQueuedPromptGivesUpWithItsRequest
+  - id: store-accepts-only-allow-or-deny
+    rule: Both grant stores refuse to Set a decision other than allow or deny, through one checkDecision.
+    enforced_by:
+      - test: battery/desktop.TestSQLGrantStoreRoundTrip
+      - test: battery/desktop.TestMemGrantStore
+  - id: set-replaces-the-decision
+    rule: Set replaces the stored decision for the same (capability, permission) pair.
+    enforced_by:
+      - test: battery/desktop.TestSQLGrantStoreRoundTrip
+decisions:
+  - id: deny-is-persisted
+    date: 2026-11-20
+    status: accepted
+    decision: A Deny is stored like an Allow.
+    rejected:
+      - option: Treat Deny as a one-call refusal.
+        why: A page could then re-prompt in a loop until the user gives in.
+    upholds: [allow-and-deny-persist-once-does-not]
+  - id: prompt-slot-is-a-channel
+    date: 2026-11-20
+    status: accepted
+    decision: The prompt lock is a one-slot channel made on first use.
+    rejected:
+      - option: A sync.Mutex.
+        why: A call waiting on a mutex cannot give up when its request ends, and the alert can stay up for minutes.
+    upholds: [queued-call-gives-up-with-its-request]

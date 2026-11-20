@@ -29,23 +29,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 )
 
-// validateAppID enforces the reverse-DNS app id grammar.
 var reAppID = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
 
 func validateAppID(id string) error {
 	if !reAppID.MatchString(id) || !strings.Contains(id, ".") {
 		return fmt.Errorf("desktop: app id %q must be reverse-DNS: [A-Za-z0-9.-]+ with at least one dot", id)
 	}
-	// The id becomes a PATH SEGMENT under the OS user config dir
-	// (DataDir joins it onto the base), and ".", "..", "..." and
-	// "..-.." all satisfy the grammar AND the "contains a dot" rule.
-	// DataDir("..") then resolves to the PARENT of the base and creates
-	// it, so app.db, the 0600 session secret and the identity file that
-	// IS the local owner id all land outside the app's own directory -
-	// and `gofastr desktop build --id ..` bakes that into
-	// CFBundleIdentifier, so a built bundle does it on every launch.
-	// The grammar excludes "/", so this is the whole escape surface:
-	// an id made of nothing but dots and dashes.
 	if strings.Trim(id, ".-") == "" {
 		return fmt.Errorf("desktop: app id %q must not be a bare dot/dash sequence: "+
 			"it names a directory under the OS user config dir", id)
@@ -56,9 +45,6 @@ func validateAppID(id string) error {
 	return nil
 }
 
-// validateWindowStyle enforces the phase 13 chrome grammar: a Material
-// from the closed set and a TrafficLightInset that is nil (the system
-// position) or non-negative on both axes.
 func validateWindowStyle(style WindowStyle) error {
 	switch style.Material {
 	case MaterialNone, MaterialSidebar, MaterialWindow, MaterialGlass:
@@ -71,12 +57,9 @@ func validateWindowStyle(style WindowStyle) error {
 	return nil
 }
 
-// Config constructs a desktop Battery. The zero value is invalid: ID
-// is required. New panics on a bad Config (relay's posture: a wiring
-// error you want at construction, not at first window).
+// Config constructs a desktop Battery; ID is required and New panics on a bad Config.
 type Config struct {
-	// ID is the reverse-DNS app id ("dev.gofastr.notes"). It names the
-	// data directory under the OS user config dir. Required.
+	// ID is the reverse-DNS app id ("dev.gofastr.notes").
 	ID string
 
 	// Title is the window title; defaults to ID.
@@ -85,179 +68,91 @@ type Config struct {
 	// Width and Height of the first window; defaults 1024 x 768.
 	Width, Height int
 
-	// Style is the main window's chrome (frameless, floating,
-	// transparent, ...). The zero value is the host's standard window.
+	// Style is the main window's chrome.
 	Style WindowStyle
 
-	// SidebarWidth is the main window's initial sidebar zone in screen
-	// points: the area MaterialSidebar puts the effect under. 0 means
-	// no zone; the page updates it through window.setChrome (a
-	// ResizeObserver on the sidebar element). New refuses a value
-	// outside 0..MaxSidebarWidth.
+	// SidebarWidth is the main window's initial sidebar zone in points, 0..MaxSidebarWidth.
 	SidebarWidth int
 
-	// Widgets are secondary windows opened at launch, in order, after
-	// the main window's boot navigation (desktop.Widget builds the
-	// typical floating-widget spec). Ids follow OpenWindow's normal
-	// rule.
+	// Widgets are secondary windows opened, in order, after the main window's boot navigation.
 	Widgets []WindowSpec
 
-	// DataDir overrides DataDir(ID). Must be absolute when set.
+	// DataDir overrides DataDir(ID); it must be absolute.
 	DataDir string
 
-	// PersistentProfile opts into a private, AppID-scoped browser profile on
-	// Linux. The default remains ephemeral. Other shells must explicitly
-	// support this option or Run returns ErrUnsupported before app startup.
-	// The profile remembers its first loopback port, retaining the origin for
-	// cookies and website storage; a busy port is an error, never a fallback.
-	// Exit the process before reopening this profile. See the desktop reference
-	// for storage/reset semantics and the limits of native write acknowledgement.
+	// PersistentProfile opts into a persistent AppID-scoped browser profile; Run returns ErrUnsupported on a shell without one.
 	PersistentProfile bool
 
-	// Shell is the native layer. nil selects NewUnsupportedShell() on
-	// every platform: the darwin default moved to battery/desktop/native
-	// with the platform split, so a host that wants the real shell
-	// passes native.New(cfg) or Shell: native.Shell(). A test double
-	// goes here.
+	// Shell is the native layer; nil selects NewUnsupportedShell.
 	Shell Shell
 
-	// Menu is the optional native menu tree. Validated (and ID-assigned
-	// on a copy) at New; an invalid item panics.
+	// Menu is the optional native menu tree; New panics on an invalid item.
 	Menu *Menu
 
-	// Settings, when set, enables the app-menu "Settings…" item
-	// (cmd+,), the RoleSettings menu role, and windows.openSettings on
-	// the bridge. Path is validated like a menu Navigate path; New
-	// panics on a bad one.
+	// Settings, when set, enables the app-menu Settings item, RoleSettings and windows.openSettings.
 	Settings *WindowSpec
 
-	// Tray, when set, requests an OS status item. Linux requires a live
-	// StatusNotifierItem host; without one the window stays accessible and
-	// closes normally. Hosts without a tray report an actionable warning.
+	// Tray, when set, requests an OS status item.
 	Tray *Tray
 
-	// DeepLink, when set, makes the app answer URLs on its own scheme
-	// (see DeepLinkConfig).
+	// DeepLink, when set, makes the app answer URLs on its own scheme.
 	DeepLink *DeepLinkConfig
 
-	// RememberWindows persists the main and settings windows' frames
-	// (position and size, screen points) and the main window's last path under the
-	// "windows" key of the app state store (state.json in the data dir,
-	// 0600), and restores them on the next launch. Frames for transient
-	// secondary ids are discarded at startup to avoid reusing unrelated placements. The
-	// boot handshake redirects to the main window's last path instead
-	// of "/". A remembered frame that no longer intersects any screen
-	// (the monitor was unplugged) is dropped and the window centers.
+	// RememberWindows persists window frames and the main window's last path, and restores them on the next launch.
 	RememberWindows bool
 
-	// DangerouslyAllowForeignNavigation lets a window's page navigate in
-	// place to another origin. By default each shell cancels a
-	// main-frame navigation off the app's own origin, so an external
-	// link does nothing: a foreign page in the app's window looks like
-	// the app to the user, and every native event is evaluated into
-	// that window. Native events stay gated by origin either way.
+	// DangerouslyAllowForeignNavigation lets a window's page navigate in place to another origin.
 	DangerouslyAllowForeignNavigation bool
 
-	// Preferences declares the app's settings screen: typed values
-	// (bool, int, string, choice) stored in the app state under
-	// "settings", read through (*Battery).Preferences, and rendered by
-	// desktop.PreferencesScreen (the screen builder the host mounts,
-	// typically at the path Config.Settings names). New panics on a
-	// declaration whose Default does not match its Kind, whose key is
-	// off the grammar or duplicated, whose Choice carries no Choices,
-	// or whose Int carries Min > Max.
+	// Preferences declares the app's typed settings; New panics on an invalid declaration.
 	Preferences []Preference
 
-	// Update, when set, enables the auto-updater (see UpdateConfig).
+	// Update, when set, enables the auto-updater.
 	Update *UpdateConfig
 
-	// OpenPrefixes lists path prefixes ("/api") the boot gate lets
-	// through without the window's session cookie, for a local client
-	// with no window (a CLI, a script, an editor plugin) that the app
-	// authenticates itself: an API key, a bearer token, battery/auth.
-	// The Host pin stays (Host must name the app's own loopback
-	// address, so DNS rebinding stays blocked), a forged cross-site
-	// write is refused (a preflighted JSON call is left to CORS), and a request with no session reaches the app with no
-	// user: the local identity is only put on the window's requests.
-	// The listener stays on 127.0.0.1. Each entry is an absolute path
-	// of plain segments; New panics on "/", on anything under
-	// /__gofastr/ (the bridge, the runtime, the handshake), and on a
-	// malformed entry. The match is on whole segments of the clean,
-	// unescaped path, so /apix and /api/../admin stay gated. Logged as
-	// a warning when Run starts.
+	// OpenPrefixes lists path prefixes the boot gate lets through without the window's session cookie.
 	OpenPrefixes []string
 
-	// KeepIsolation stops Run from forcing GOFASTR_ISOLATION=off.
-	//
-	// Run sets GOFASTR_ISOLATION=off in the PROCESS environment before
-	// starting the app (a desktop app never runs from a linked git
-	// worktree, and the isolation remap would silently move the
-	// loopback port the window is about to load). That env change is
-	// process-wide: any other App started afterwards in the same
-	// process loses worktree isolation too. Set KeepIsolation to keep
-	// the ambient environment untouched.
+	// KeepIsolation stops Run from setting GOFASTR_ISOLATION=off in the process environment.
 	KeepIsolation bool
 
-	// Logger defaults to slog.Default() until Init swaps in the app's
-	// logger.
+	// Logger defaults to slog.Default() until Init swaps in the app's logger.
 	Logger *slog.Logger
 }
 
-// Battery is the desktop host. Construct with New, register with
-// app.RegisterBattery, then Run (which replaces app.Start).
+// Battery is the desktop host: New it, app.RegisterBattery it, then Run it in place of app.Start.
 type Battery struct {
-	cfg    Config
-	shell  Shell
-	logger *slog.Logger
-	// Handshake state, minted at New.
+	cfg              Config
+	shell            Shell
+	logger           *slog.Logger
 	bootToken        string
 	sessionValue     string
 	sessionCookieKey string
 	tokenUsed        atomic.Bool
 	hostPin          atomicString
 	gateArmed        atomic.Bool
-	// Capability registry and grants.
-	reg    *registry
-	grants GrantStore
-	// promptSem serializes permission prompts so two concurrent first
-	// calls do not show two dialogs. It is a one-slot channel, not a
-	// mutex, so a call whose request ends while it waits behind an alert
-	// can give up its place (see promptSlot).
-	promptOnce sync.Once
-	promptSem  chan struct{}
+	reg              *registry
+	grants           GrantStore
+	promptOnce       sync.Once
+	promptSem        chan struct{}
 
-	// Menu (validated copy) and the local identity.
-	menu *Menu
-	user *localapp.User
-	// authOwnsIdentity is set by installOwnerExtractor (from Init) when
-	// another battery had already installed the framework/owner
-	// extractor, battery/auth does it from its package init. When it is
-	// set, localUserMiddleware installs no identity at all: auth's
-	// "this request is anonymous" is a DECISION, and a fallback that
-	// cannot see it turns a signed-out desktop window into the local
-	// admin. Read-only after Init.
+	menu             *Menu
+	user             *localapp.User
 	authOwnsIdentity bool
 
 	dataDir string
 
-	// bridgeScriptURL query nonce + lazily built artifacts.
 	scriptNonce string
 	script      bridgeScript
 	manifestMu  sync.Mutex
 	manifest    *Manifest
 
-	// App wiring, filled by Init.
 	host        *uihost.UIHost
 	app         *framework.App
 	readyCh     chan string
 	initMu      sync.Mutex
 	initialized bool
 
-	// Window bookkeeping. window is the MAIN window (set by the shell's
-	// ready callback); windows/winOrder/winPaths cover the secondaries
-	// OpenWindow opened. openMu serializes OpenWindow so two callers
-	// racing on the same path get one window and one Focus. addr is the
-	// loopback address Run resolved, the base of every window URL.
 	windowMu   sync.Mutex
 	window     Window
 	windows    map[string]Window
@@ -267,60 +162,30 @@ type Battery struct {
 	addr       string
 	openMu     sync.Mutex
 
-	// The validated tray copy (its Menu carries the tray rows only).
-	tray *Tray
-	// runMenu is the validated MAIN menu handed to the shell (b.menu
-	// keeps both trees so dispatchMenu finds tray items too).
+	tray    *Tray
 	runMenu *Menu
 
-	// fs allow-list (cap_fs.go) and picked folders, clean and resolved
-	// path to the resolution at the pick (cap_fs_folder.go).
 	allowMu      sync.Mutex
 	allowPaths   map[string]struct{}
 	allowFolders map[string]string
 
-	// deepLinks queues links that arrive before the window is up
-	// (deeplink.go).
 	deepLinks deepLinkQueue
 
-	// updater is the auto-update state (update.go), built on first use.
 	updater     *updater
 	updaterOnce sync.Once
 
-	// state is the app state store (battery/desktop/appstate), opened
-	// by Run after the app reports ready: Init, which resolves the data
-	// dir, runs inside app.Start. Run assigns it while the app's
-	// listener is already answering, and handler goroutines read it
-	// through stateStore(), so the field is an atomic pointer: the
-	// handoff is synchronized by construction. Nil before Run; State()
-	// documents that.
 	state atomic.Pointer[appstate.Store]
 
-	// prefs is the validated preference list (Config.Preferences),
-	// built at New; Preferences() hands it out. Its reads consult
-	// state, so before Run they answer the declared defaults.
 	prefs *Preferences
 
-	// winStore is the remembered window state (windowstate.go), a thin
-	// client over the app state store, set by Run when
-	// Config.RememberWindows is on, after the app's listener is
-	// answering (same handoff shape as state, so same atomic). nil
-	// when the app does not remember windows.
 	winStore atomic.Pointer[windowStore]
 }
 
-// New validates cfg and constructs the Battery, registering the eight
-// core capabilities. A nil cfg.Shell selects the unsupported shell on
-// every platform; the platform-aware default is native.New
-// (battery/desktop/native). New panics on invalid configuration with a
-// message prefixed "desktop:", the same construction-time posture as
-// framework.NewApp's registration panics.
+// New validates cfg, registers the core capabilities, and panics with a "desktop:" message on a bad Config.
 func New(cfg Config) *Battery {
 	if err := validateAppID(cfg.ID); err != nil {
 		panic(err.Error())
 	}
-	// An own copy, validated: a caller that edits its slice after New
-	// must not change what the gate opens.
 	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
 	for _, p := range cfg.OpenPrefixes {
 		if err := gatepath.Validate("desktop: Config.OpenPrefixes", p); err != nil {
@@ -339,10 +204,6 @@ func New(cfg Config) *Battery {
 		logger = slog.Default()
 	}
 
-	// One validation pass over the main menu AND the tray menu, so
-	// item ids are unique across both (the shell dispatches both
-	// through the same action-id table). menu keeps every tree for
-	// dispatch lookup; runMenu holds only the main rows for the shell.
 	var merged Menu
 	if cfg.Menu != nil {
 		merged.Items = append(merged.Items, cfg.Menu.Items...)
@@ -444,8 +305,6 @@ func New(cfg Config) *Battery {
 	}
 	prefs.b = b
 	b.prefs = prefs
-	// Register the core capabilities; a plugin adding a colliding name
-	// gets an error naming both sites.
 	for _, cap := range []Capability{
 		b.windowCapability(),
 		b.windowsCapability(),
@@ -471,35 +330,21 @@ func New(cfg Config) *Battery {
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "desktop" }
 
-// ReservedEmbedPrefixes reports the bridge prefix. The bridge drives native
-// capabilities on the user's machine for the app's own window; no embed grant
-// from a third-party page may reach it. See framework.EmbedReserving.
+// ReservedEmbedPrefixes reports the bridge prefix, which no embed grant may reach.
 func (b *Battery) ReservedEmbedPrefixes() []string { return []string{bridgePrefix} }
 
-// FromApp fetches the registered desktop battery off an App, the seam
-// plugins use to register capabilities from their own Init.
+// FromApp returns the desktop battery registered on app.
 func FromApp(app *framework.App) (*Battery, error) {
 	return framework.GetAs[*Battery](app.Batteries, "desktop")
 }
 
-// State returns the app state store Run opened in the data dir
-// (state.json, one store for the battery and the page). nil BEFORE
-// Run: the data dir is resolved by Init inside app.Start, so no store
-// exists to hand out yet. Call it from menu handlers, capability
-// handlers, or goroutines that outlive Run's start.
+// State returns the app state store Run opened, or nil before Run.
 func (b *Battery) State() *appstate.Store { return b.state.Load() }
 
-// Preferences returns the declared preferences (Config.Preferences):
-// typed reads of the stored-or-default values plus Set. Usable from
-// New on; before Run opens the app state store the reads answer the
-// declared defaults and Set answers unsupported (the --serve shape:
-// no desktop host, no store). Bool/Int/String panic on an undeclared
-// key or a kind mismatch, a programming error.
+// Preferences returns the declared preferences; before Run reads answer the defaults.
 func (b *Battery) Preferences() *Preferences { return b.prefs }
 
-// Init wires the battery into the App: routes, gate + local-identity
-// middleware, the bridge script rail entry, the owner extractor
-// fallback, and the OnReady hook that hands Run the bound address.
+// Init wires the battery into app; it errors when called twice or when no *uihost.UIHost is mounted.
 func (b *Battery) Init(app *framework.App) error {
 	b.initMu.Lock()
 	defer b.initMu.Unlock()
@@ -519,8 +364,6 @@ func (b *Battery) Init(app *framework.App) error {
 		return errors.New("desktop: no *uihost.UIHost among the App's mountables; mount one (app.Mount(uihost.New(site))) BEFORE app.RegisterBattery(desktop.New(...)); the desktop host serves the app's pages through the UI host")
 	}
 
-	// Data dir + local identity (best effort to surface config errors
-	// now rather than mid-boot).
 	dir := b.dataDir
 	if dir == "" {
 		d, err := DataDir(b.cfg.ID)
@@ -536,9 +379,6 @@ func (b *Battery) Init(app *framework.App) error {
 	}
 	b.user = user
 
-	// Grants: persisted when the app has a database, in-memory (with a
-	// Warn) otherwise, the framework-screams convention for accepted
-	// configuration it cannot act on.
 	if app.DB != nil {
 		b.grants = newSQLGrantStore(app.DB)
 	} else {
@@ -547,7 +387,6 @@ func (b *Battery) Init(app *framework.App) error {
 			"fix", "pass framework.WithDB through desktop.AppOptions or your own wiring")
 	}
 
-	// Gate first (outermost), then the local identity inside it.
 	app.Use(b.gateMiddleware())
 	app.Use(b.localUserMiddleware())
 	b.installOwnerExtractor()
@@ -568,7 +407,6 @@ func (b *Battery) Init(app *framework.App) error {
 }
 
 // OnStart creates the grants table once the app has a database.
-// Implements framework.BatteryLifecycle.
 func (b *Battery) OnStart(ctx context.Context) error {
 	if s, ok := b.grants.(*sqlGrantStore); ok {
 		return s.ensureSchema(ctx)
@@ -576,9 +414,7 @@ func (b *Battery) OnStart(ctx context.Context) error {
 	return nil
 }
 
-// OnStop implements framework.BatteryLifecycle. The window and app are
-// torn down by Run; nothing to drain here beyond dropping the window
-// references so a late Emit fails instead of touching a dead view.
+// OnStop drops the window references, so a later Emit fails.
 func (b *Battery) OnStop(_ context.Context) error {
 	b.windowMu.Lock()
 	b.window = nil
@@ -590,24 +426,17 @@ func (b *Battery) OnStop(_ context.Context) error {
 	return nil
 }
 
-// Shell returns the configured native shell (the test double, in
-// tests).
+// Shell returns the configured native shell.
 func (b *Battery) Shell() Shell { return b.shell }
 
-// Window returns the live MAIN window once the shell's ready callback
-// has run.
+// Window returns the main window once the shell's ready callback has run.
 func (b *Battery) Window() (Window, bool) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
 	return b.window, b.window != nil
 }
 
-// OpenWindow opens a secondary window on one of the app's own screens
-// (spec.Path is validated like a menu Navigate path). A window with
-// the same path that is already open is focused and returned, so the
-// call is idempotent per path. The returned Window's ID is "settings"
-// for the configured settings path, else "w2", "w3", ... in opening
-// order.
+// OpenWindow opens, or focuses the already open window on, spec.Path; ids are "settings" or "w2", "w3", ...
 func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	if !validNavigatePath(spec.Path) {
 		return nil, &Error{Code: CodeInvalidInput, Message: "path must be a same-origin absolute path (leading /, no scheme, no //, no .. segments)"}
@@ -618,8 +447,6 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	if spec.SidebarWidth < 0 || spec.SidebarWidth > MaxSidebarWidth {
 		return nil, &Error{Code: CodeInvalidInput, Message: fmt.Sprintf("sidebarWidth must be between 0 and %d", MaxSidebarWidth)}
 	}
-	// Serialize opens so two callers racing on the same path get one
-	// window and one Focus, not two windows.
 	b.openMu.Lock()
 	defer b.openMu.Unlock()
 
@@ -644,16 +471,6 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 			return w, nil
 		}
 	}
-	// Every count created from request input is capped. windows.open is
-	// UNGATED, OpenWindow de-dupes per path STRING, and
-	// validNavigatePath accepts a query, so "/n?i=0", "/n?i=1", ... are
-	// all distinct paths: without this bound one page script allocates
-	// native windows without limit (measured: 1000, no refusal), and
-	// b.windows / b.winOrder / b.winPaths grow with them. The cap lives
-	// here rather than in the capability handler because OpenWindow is
-	// also the in-process API (menu handlers, OpenSettings), and a bound
-	// applied at one of two callers is the drift this package keeps
-	// producing.
 	if len(b.winOrder) >= maxSecondaryWindows {
 		b.windowMu.Unlock()
 		return nil, &Error{Code: CodeDenied, Message: "too many windows are open"}
@@ -661,8 +478,6 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	id := b.nextWindowIDLocked(spec.Path)
 	b.windowMu.Unlock()
 
-	// A stable window id can restore a saved frame when Frame is nil.
-	// Transient ids from earlier runs were discarded when the store opened.
 	if s := b.winStore.Load(); s != nil && spec.Frame == nil {
 		spec.Frame = s.frameFor(id)
 	}
@@ -681,8 +496,7 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	return w, nil
 }
 
-// Windows returns every live window: the main window first, then the
-// secondaries in opening order.
+// Windows returns every live window, the main window first, then secondaries in opening order.
 func (b *Battery) Windows() []Window {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
@@ -698,31 +512,16 @@ func (b *Battery) Windows() []Window {
 	return out
 }
 
-// maxSecondaryWindows bounds the secondary windows one process may have
-// open at once (the main window is not one of them). See OpenWindow.
 const maxSecondaryWindows = 16
 
-// emitWindowFocus is WindowConfig.OnWindowFocus: the shell reported a
-// window becoming key. App-wide on the Emit rail, like every native
-// event.
 func (b *Battery) emitWindowFocus(id string) {
 	b.emitWindowActivity("window_focus", id)
 }
 
-// emitWindowBlur is WindowConfig.OnWindowBlur: the shell reported a
-// window resigning key.
 func (b *Battery) emitWindowBlur(id string) {
 	b.emitWindowActivity("window_blur", id)
 }
 
-// emitWindowActivity ships one focus event to every open window. The
-// shell fires the key-window delegates during its own startup (its
-// makeKeyAndOrderFront) before the battery has registered any window;
-// that early report is dropped silently, not Warned, because it is the
-// normal boot sequence, not a failed emit. A report after the first
-// window registers goes through, so a window manager that activates the
-// window late in startup reaches the page as window_focus; desktop.md
-// tells pages to read document.hasFocus() rather than count the events.
 func (b *Battery) emitWindowActivity(name, id string) {
 	if len(b.Windows()) == 0 {
 		return
@@ -732,9 +531,6 @@ func (b *Battery) emitWindowActivity(name, id string) {
 	}
 }
 
-// emitAppearance is WindowConfig.OnAppearance: an appearance setting
-// the page cannot read through CSS changed. Same startup rule as the
-// focus events.
 func (b *Battery) emitAppearance(a Appearance) {
 	if len(b.Windows()) == 0 {
 		return
@@ -744,9 +540,6 @@ func (b *Battery) emitAppearance(a Appearance) {
 	}
 }
 
-// nextWindowIDLocked assigns the id for a new secondary window:
-// "settings" for the configured settings path, else the next "w<N>"
-// (starting at w2; "main" and "settings" are reserved).
 func (b *Battery) nextWindowIDLocked(path string) string {
 	if s := b.cfg.Settings; s != nil && s.Path == path {
 		return "settings"
@@ -758,30 +551,20 @@ func (b *Battery) nextWindowIDLocked(path string) string {
 	return fmt.Sprintf("w%d", b.nextWinNum)
 }
 
-// handleWindowClosed drops a secondary window's registration so the
-// next OpenWindow on the same path opens a fresh one. WindowConfig's
-// OnWindowClosed, never called for the main window.
 func (b *Battery) handleWindowClosed(id string) {
 	if id == "main" {
 		return
 	}
-	// OpenWindow holds openMu until it registers the window. A close callback
-	// can arrive first during WebView startup, so wait on the same lock before
-	// removing the registration.
 	b.openMu.Lock()
 	defer b.openMu.Unlock()
 	b.handleWindowClosedLocked(id)
 }
 
-// handleWindowClosedLocked removes a closed window while the caller holds
-// openMu, so an id cannot be reused between lookup and cleanup.
 func (b *Battery) handleWindowClosedLocked(id string) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
 	if w := b.windows[id]; w != nil {
 		if closed, known := windowClosed(w); known && !closed {
-			// A delayed close callback may belong to an older window that
-			// reused this id. Keep the current, still-open registration.
 			return
 		}
 	}
@@ -796,8 +579,6 @@ func windowClosed(w Window) (closed, known bool) {
 	return state.IsClosed(), true
 }
 
-// removeWindowLocked removes a registration while the caller holds
-// windowMu.
 func (b *Battery) removeWindowLocked(id string) {
 	delete(b.windows, id)
 	if s := b.winStore.Load(); s != nil {
@@ -816,9 +597,6 @@ func (b *Battery) removeWindowLocked(id string) {
 	}
 }
 
-// handleWindowFrame is WindowConfig.OnWindowFrame: the shell reported a
-// user move or resize. It runs on a goroutine (the delegate hands it
-// off), and the store debounces the write.
 func (b *Battery) handleWindowFrame(id string, f Frame) {
 	if s := b.winStore.Load(); s != nil {
 		s.setFrame(id, f)
@@ -840,9 +618,7 @@ func (b *Battery) rememberedFrame(id string) *Frame {
 	return s.frameFor(id)
 }
 
-// OpenSettings opens (or focuses) the window Config.Settings
-// describes. ErrUnsupported when Config.Settings is nil. A spec with no
-// Title gets the desktop.settings_title phrase in ctx's locale.
+// OpenSettings opens or focuses the Config.Settings window; unsupported when Config.Settings is nil.
 func (b *Battery) OpenSettings(ctx context.Context) (Window, error) {
 	if b.cfg.Settings == nil {
 		return nil, &Error{Code: CodeUnsupported, Message: "no Settings window is configured (desktop.Config.Settings)"}
@@ -854,8 +630,7 @@ func (b *Battery) OpenSettings(ctx context.Context) (Window, error) {
 	return b.OpenWindow(spec)
 }
 
-// SetTrayTitle changes the tray item's title. ErrUnsupported when
-// Config.Tray is nil.
+// SetTrayTitle changes the tray item's title; unsupported when Config.Tray is nil.
 func (b *Battery) SetTrayTitle(title string) error {
 	if b.cfg.Tray == nil {
 		return &Error{Code: CodeUnsupported, Message: "no tray is configured (desktop.Config.Tray)"}
@@ -863,14 +638,12 @@ func (b *Battery) SetTrayTitle(title string) error {
 	return b.shell.SetTrayTitle(title)
 }
 
-// Notify shows an OS notification through the shell's notifier: the
-// Go-side entry the bridge's notifications.show capability uses.
+// Notify shows an OS notification through the shell's notifier.
 func (b *Battery) Notify(ctx context.Context, n Notification) error {
 	return b.shell.Notifier().Show(ctx, n)
 }
 
-// Register adds a capability. Valid until Run freezes the registry;
-// duplicate names are refused naming the first registrant's site.
+// Register adds a capability; it errors after Run froze the registry or on a duplicate name.
 func (b *Battery) Register(cap Capability) error {
 	origin, _ := callerSite(2)
 	return b.reg.register(cap, origin)
@@ -884,8 +657,7 @@ func (b *Battery) MustRegister(cap Capability) {
 	}
 }
 
-// Manifest returns the frozen manifest; before Run froze the registry
-// it is an error.
+// Manifest returns the frozen manifest; before Run froze the registry it is an error.
 func (b *Battery) Manifest() (Manifest, error) {
 	if !b.reg.isFrozen() {
 		return Manifest{}, errors.New("desktop: Manifest before Run froze the registry")
@@ -893,21 +665,7 @@ func (b *Battery) Manifest() (Manifest, error) {
 	return b.frozenManifest()
 }
 
-// Emit dispatches a native event to the page-side listener API
-// (window.__gofastr.desktop._dispatch) in EVERY open window, the main
-// window first: a native event (a menu action, an update tick) is
-// app-wide, and every page that asked to hear about it does. The
-// payload is marshaled to JSON once and handed to each page as a
-// QUOTED STRING parsed by JSON.parse, never as an object literal:
-// __proto__ is a setter in a literal, and duplicate __proto__ keys
-// are a SyntaxError json.Valid accepts.
-//
-// An eval failure in one window is logged and does not stop the
-// others; Emit returns the first error after trying every window.
-// EmitTo delivers to one window only.
-//
-// Emit is for the page-side listener API only; island refreshes after a
-// native event stay server-driven through island Manager.PushUpdate.
+// Emit dispatches a native event to every open window, main first, and returns the first error.
 func (b *Battery) Emit(name string, payload any) error {
 	if !reCapabilityName.MatchString(name) {
 		return fmt.Errorf("desktop: event name %q must match %s", name, reCapabilityName.String())
@@ -934,9 +692,7 @@ func (b *Battery) Emit(name string, payload any) error {
 	return firstErr
 }
 
-// EmitTo dispatches a native event to ONE window's page listeners
-// (window.__gofastr.desktop._dispatch). A window id that is not open
-// is a *Error with Code not_found.
+// EmitTo dispatches a native event to one window; an unknown id is a not_found *Error.
 func (b *Battery) EmitTo(windowID, name string, payload any) error {
 	if !reCapabilityName.MatchString(name) {
 		return fmt.Errorf("desktop: event name %q must match %s", name, reCapabilityName.String())
@@ -948,9 +704,6 @@ func (b *Battery) EmitTo(windowID, name string, payload any) error {
 	return b.emitToWindowID(windowID, name, data)
 }
 
-// marshalJSONForEval marshals v to compact JSON for embedding in a JS
-// string literal; callers still quote the result before splicing it
-// into evaluated code.
 func marshalJSONForEval(v any) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -959,14 +712,9 @@ func marshalJSONForEval(v any) (string, error) {
 	return string(data), nil
 }
 
-// runTimeout bounds the wait for the app's listener.
 const runTimeout = 30 * time.Second
 
-// Run is the host entry point: it owns the process's main flow for the
-// lifetime of the window. It starts the App on a loopback port, pins
-// the gate, freezes the registry, opens the native window on the boot
-// URL, and blocks until the window closes. Call it instead of
-// app.Start; do not call both.
+// Run starts the App on loopback, opens the window and blocks until it closes; call it instead of app.Start.
 func (b *Battery) Run(app *framework.App) error {
 	b.initMu.Lock()
 	initialized := b.initialized
@@ -980,23 +728,12 @@ func (b *Battery) Run(app *framework.App) error {
 		return errors.New("desktop: Run: Init found no *uihost.UIHost; mount one (app.Mount(uihost.New(site))) before app.RegisterBattery(desktop.New(...))")
 	}
 
-	// `gofastr desktop types` runs the app with ManifestEnv set: freeze
-	// the registry, print the manifest JSON to stdout, and stop. No
-	// listener, no window, no shell. Everything a generator needs and
-	// nothing a headless CI run cannot do.
 	if os.Getenv(ManifestEnv) == "1" {
 		return b.runManifestMode(app, os.Stdout)
 	}
-	// An update relaunch names the instance it replaces: wait for it to
-	// exit before claiming the single-instance lock, the database, or the
-	// listener it still holds (Windows; a no-op without the variable).
 	if update.AwaitPredecessor() {
 		b.logger.Info("desktop: started after an update; the previous instance has exited")
 	}
-	// A packaged native app may forward activation to a running instance.
-	// Check for an existing instance before app.Start opens the database or
-	// listener, so a second activation can be forwarded without starting a
-	// duplicate app process.
 	if builtDeepLinkScheme != "" {
 		if activator, ok := b.shell.(interface {
 			PrepareLaunch(appID, appName, scheme string) (handled bool, startupURLs []string, err error)
@@ -1008,11 +745,6 @@ func (b *Battery) Run(app *framework.App) error {
 			if handled {
 				return nil
 			}
-			// Primary launch resources can outlive PrepareLaunch before Run
-			// ever starts (for example, a native activation broker). Release
-			// them on every later return or panic, including app.Start failure.
-			// Implementations must make ReleaseLaunch idempotent. A handled
-			// secondary launch, or failed preparation, cleans up before return.
 			if launch, ok := b.shell.(interface{ ReleaseLaunch() }); ok {
 				defer launch.ReleaseLaunch()
 			}
@@ -1030,21 +762,12 @@ func (b *Battery) Run(app *framework.App) error {
 		defer profile.ReleaseProfile()
 	}
 
-	// Arm the boot gate BEFORE the listener opens (see gateMiddleware):
-	// from the moment the port answers, every request needs the session
-	// cookie. An app that never calls Run keeps the gate unarmed and its
-	// routes open, which is the --serve host-independence mode.
-	// Cookie names are unique to this running battery. WebView2 profiles
-	// persist across launches and cookies are shared across loopback ports,
-	// so a fixed name would let a second instance replace this session.
 	b.sessionCookieKey = sessionCookieName + "_" + b.sessionValue
 	b.armGate()
 	if len(b.cfg.OpenPrefixes) > 0 {
 		b.logger.Warn("desktop: these paths answer without the window's session; the app's own auth must protect them (Config.OpenPrefixes)", "prefixes", b.cfg.OpenPrefixes)
 	}
 
-	// Deviation 7: worktree isolation off for this Start. Process-wide
-	// effect; see Config.KeepIsolation.
 	if !b.cfg.KeepIsolation {
 		os.Setenv("GOFASTR_ISOLATION", "off")
 	}
@@ -1088,18 +811,10 @@ func (b *Battery) Run(app *framework.App) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	b.startUpdater(ctx)
-	// The app state store opens after the app reports ready (Init,
-	// which resolves the data dir, runs inside app.Start) and before
-	// the shell opens: the remembered windows, the state capability,
 	b.state.Store(appstate.Open(filepath.Join(b.dataDir, stateFileName), b.logger))
 	if b.cfg.RememberWindows {
 		b.winStore.Store(newWindowStore(b.state.Load(), b.logger))
 	}
-	// app.Start returns when the server stops. Read only before the
-	// window opened and after it closed, a server that stopped in between
-	// (a listener failure, a Shutdown from elsewhere) left the window up
-	// on a dead app. The watcher quits the window on a stop Run did not
-	// start, and hands the result to the drain below.
 	var closing atomic.Bool
 	startDone := make(chan error, 1)
 	go func() {
@@ -1108,8 +823,6 @@ func (b *Battery) Run(app *framework.App) error {
 		if closing.Load() {
 			return
 		}
-		// Quit is the host shell's, on a bare goroutine: a panic in it
-		// must not end the process.
 		defer func() {
 			if v := recover(); v != nil {
 				b.logger.Error("desktop: quitting the window panicked", "panic", textsafe.Recovered(v))
@@ -1152,17 +865,12 @@ func (b *Battery) Run(app *framework.App) error {
 			b.logger.Error("desktop: initial navigation failed", "error", err)
 		}
 		b.flushDeepLinks(w)
-		// Config.Widgets open after the boot navigation, in order,
-		// through the same OpenWindow everything else uses (path
-		// validation, id assignment, per-path dedupe included).
 		for _, spec := range b.cfg.Widgets {
 			if _, err := b.OpenWindow(spec); err != nil {
 				b.logger.Error("desktop: opening a configured widget window failed",
 					"path", spec.Path, "error", err)
 			}
 		}
-		// A configured tray on a host with none (a Shell without a
-		// status-item surface) is a named Warn, not a silent miss.
 		if b.tray != nil {
 			if err := b.shell.SetTrayTitle(b.tray.Title); err != nil {
 				b.logger.Warn("desktop: Config.Tray is set but this host has no tray; ignoring it",
@@ -1171,12 +879,10 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	})
 
-	// The last state write happens here, after the shell returned and
 	if s := b.state.Load(); s != nil {
 		_ = s.Flush() // a failed write was already Warned inside
 	}
 
-	// Drain the app: Start returns once Shutdown completes.
 	closing.Store(true)
 	shutdownErr := b.shutdownApp()
 	select {
@@ -1188,8 +894,6 @@ func (b *Battery) Run(app *framework.App) error {
 			return fmt.Errorf("desktop: app start returned: %w", err)
 		}
 	case <-time.After(runTimeout):
-		// Shutdown force-closed the server; Start should have returned.
-		// Do not block the exit path on it.
 	}
 	if shellErr != nil {
 		return shellErr
@@ -1200,17 +904,9 @@ func (b *Battery) Run(app *framework.App) error {
 	return nil
 }
 
-// ManifestEnv, when set to "1" in the process environment, makes Run
-// print the frozen manifest JSON to stdout and return without starting
-// the App or touching the Shell. `gofastr desktop types` sets it so one
-// headless run of the real app yields the exact capability surface the
-// built app will serve.
+// ManifestEnv set to "1" makes Run print the frozen manifest JSON and return without starting the App.
 const ManifestEnv = "GOFASTR_DESKTOP_MANIFEST"
 
-// runManifestMode is the ManifestEnv path of Run. Plugins register
-// their capabilities from Init, which normally runs inside app.Start;
-// with no Start on this path, InitPlugins runs here (idempotent, so a
-// later Start in the same process is unaffected).
 func (b *Battery) runManifestMode(app *framework.App, w io.Writer) error {
 	if err := app.InitPlugins(); err != nil {
 		return fmt.Errorf("desktop: manifest mode: init plugins: %w", err)
@@ -1225,10 +921,7 @@ func (b *Battery) runManifestMode(app *framework.App, w io.Writer) error {
 	return enc.Encode(m)
 }
 
-// LocalUserID returns the per-installation local identity the battery
-// installs into request contexts ("" before Init). Menu handlers and
-// other code outside a request needs it to scope direct queries to the
-// same rows the screens show.
+// LocalUserID returns the per-installation local identity, or "" before Init.
 func (b *Battery) LocalUserID() string {
 	if b.user == nil {
 		return ""
@@ -1236,7 +929,6 @@ func (b *Battery) LocalUserID() string {
 	return b.user.GetID()
 }
 
-// shutdownApp drains the app with a bounded context.
 func (b *Battery) shutdownApp() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1246,7 +938,6 @@ func (b *Battery) shutdownApp() error {
 	return nil
 }
 
-// windowTitle/Width/Height resolve the effective Config values.
 func (b *Battery) windowTitle() string {
 	if b.cfg.Title != "" {
 		return b.cfg.Title
@@ -1268,18 +959,7 @@ func (b *Battery) windowHeight() int {
 	return 768
 }
 
-// AppOptions resolves the zero-config desktop database + secret: it
-// creates the app's data dir, opens app.db through sqlite/stdlib (the
-// caller's blank import of that package registers the driver), and
-// reads or mints the secret file so sessions survive restarts.
-//
-//	opts, err := desktop.AppOptions("dev.gofastr.notes")
-//	if err != nil { log.Fatal(err) }
-//	app := framework.NewApp(append(opts,
-//	    framework.WithConfig(framework.AppConfig{Name: "notes"}))...)
-//
-// New cannot do this itself (WithDB is a constructor option and the DB
-// must exist before NewApp runs), so the main.go assembles it.
+// AppOptions creates the data dir and returns WithDB on its app.db and WithSecret on its secret file.
 func AppOptions(id string) ([]framework.AppOption, error) {
 	if err := validateAppID(id); err != nil {
 		return nil, err
@@ -1300,8 +980,6 @@ func AppOptions(id string) ([]framework.AppOption, error) {
 	return []framework.AppOption{framework.WithDB(db), framework.WithSecret(secret)}, nil
 }
 
-// buildVersion returns the module version from the build info, or ""
-// outside a versioned build.
 func buildVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -1314,8 +992,6 @@ func buildVersion() string {
 	return v
 }
 
-// callerSite formats the file:line skip frames above its caller, for
-// duplicate-registration error messages.
 func callerSite(skip int) (string, bool) {
 	if _, file, line, ok := runtime.Caller(skip); ok {
 		return file + ":" + strconv.Itoa(line), true

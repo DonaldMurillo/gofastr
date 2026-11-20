@@ -258,3 +258,41 @@ func TestQueuedPromptGivesUpWithItsRequest(t *testing.T) {
 		t.Fatalf("%d alerts, want 1: the aborted waiter must not prompt", got)
 	}
 }
+
+func TestConcurrentFirstCallsShowOneAlert(t *testing.T) {
+	b, fake := newTestBattery(t)
+	shell := &blockingPromptShell{fakeShell: fake, entered: make(chan struct{}, 2), release: make(chan Decision, 2)}
+	b.shell = shell
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	results := make(chan bool, 2)
+	go func() { proceed, _ := b.authorizeCall(context.Background(), c, m); results <- proceed }()
+	<-shell.entered
+	go func() { proceed, _ := b.authorizeCall(context.Background(), c, m); results <- proceed }()
+	time.Sleep(50 * time.Millisecond)
+	shell.release <- DecisionAllow
+	shell.release <- DecisionDeny
+	for i := 0; i < 2; i++ {
+		if !<-results {
+			t.Fatal("a call waiting behind the answered alert was refused: it must read the persisted allow")
+		}
+	}
+	if got := len(fake.prompts()); got != 1 {
+		t.Fatalf("%d alerts for two concurrent first calls, want 1", got)
+	}
+}
+
+func TestUnknownStoredDecisionReadsAsDeny(t *testing.T) {
+	b, fake := newTestBattery(t)
+	store := newSQLiteGrants(t)
+	b.grants = store
+	if _, err := store.db.Exec(`INSERT INTO desktop_grants (capability, permission, decision, granted_at) VALUES ('clipboard', 'clipboard:write', 'garbage', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	if proceed, code := b.authorizeCall(context.Background(), c, m); proceed || code != CodeDenied {
+		t.Fatalf("a garbage grant value: proceed=%v code=%q, want refused with %q", proceed, code, CodeDenied)
+	}
+	if got := len(fake.prompts()); got != 0 {
+		t.Fatalf("%d alerts, want 0: a stored value is an answer", got)
+	}
+}

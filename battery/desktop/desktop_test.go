@@ -307,6 +307,32 @@ func TestNewValidatesConfig(t *testing.T) {
 	}
 }
 
+func TestNewRefusesConfigEdges(t *testing.T) {
+	previous := builtDeepLinkScheme
+	t.Cleanup(func() { builtDeepLinkScheme = previous })
+	cases := map[string]func() Config{
+		"id past 253": func() Config { return Config{ID: "a." + strings.Repeat("b", 252)} },
+		"settings path off the grammar": func() Config {
+			return Config{ID: "ok.example.app", Settings: &WindowSpec{Path: "//evil.example"}}
+		},
+		"scheme unlike the built one": func() Config {
+			builtDeepLinkScheme = "built"
+			return Config{ID: "ok.example.app", DeepLink: &DeepLinkConfig{Scheme: "other"}}
+		},
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				builtDeepLinkScheme = previous
+				if r := recover(); r == nil {
+					t.Fatal("New accepted it")
+				}
+			}()
+			New(cfg())
+		})
+	}
+}
+
 func TestNewDefaultsAndAccessors(t *testing.T) {
 	shell := newFakeShell()
 	b := New(Config{ID: "ok.example.app", Shell: shell})
