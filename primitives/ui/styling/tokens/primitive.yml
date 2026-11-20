@@ -1,0 +1,90 @@
+primitive: ui.styling.tokens
+summary: The core-ui/style Theme - its typed tokens and their CSS custom properties, the dark palette and colour-scheme declarations, the flat token map (ThemeToTokens, ApplyTokens, ParseToken), app token extensions, component options, contrast checks, web font faces, ThemeHash and the registered theme overrides.
+code:
+  - core-ui/style/doc.go
+  - core-ui/style/theme.go
+  - core-ui/style/tokens.go
+  - core-ui/style/tokens_typed.go
+  - core-ui/style/tokenmap.go
+  - core-ui/style/tokennames.go
+  - core-ui/style/optional_defaults.go
+  - core-ui/style/darkpalette.go
+  - core-ui/style/scheme.go
+  - core-ui/style/contrast.go
+  - core-ui/style/extend.go
+  - core-ui/style/components.go
+  - core-ui/style/fontface.go
+  - core-ui/style/theme_override.go
+docs:
+  - framework/docs/content/theming.md
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: token-values-cannot-break-a-declaration
+    rule: ApplyTokens, ParseToken and the component and knob setters refuse an unknown key and any value holding a declaration-breaking sequence, matched without case, a colour value must fit the colour grammar, and a web font family loses every quote, backslash, semicolon, brace and angle bracket.
+    enforced_by:
+      - test: core-ui/style.TestApplyTokens_UnknownKeyErrors
+      - test: core-ui/style.TestApplyTokens_RejectsDeclarationBreakers
+      - test: core-ui/style.TestDeclBreakerIsCaseInsensitive
+      - test: core-ui/style.TestApplyTokens_ColorGrammar
+      - test: core-ui/style.TestColor_RejectsTrailingCallAndResourceFunctions
+      - test: core-ui/style.TestParseTokenRefusesBadValues
+      - test: core-ui/style.TestBadKnobsRefused
+      - test: core-ui/style.TestComponentCompilerInvalidDeclarationPanicsAtEmit
+      - test: core-ui/style.TestFontFaceCSSRejectsDeclarationBreakers
+  - id: token-map-round-trips
+    rule: ThemeToTokens is deterministic with keys equal to the CSS variable names, ApplyTokens of it rebuilds the theme, and ApplyTokens never shares the base theme's dark, component, knob or extension maps.
+    enforced_by:
+      - test: core-ui/style.TestApplyTokens_RoundTrip_DefaultTheme
+      - test: core-ui/style.TestThemeToTokens_Deterministic
+      - test: core-ui/style.TestThemeToTokens_KeysMatchCSSVarNames
+      - test: core-ui/style.TestApplyTokens_DoesNotMutateBaseDarkMaps
+      - test: core-ui/style.TestApplyTokensDoesNotShareComponentsMap
+      - test: core-ui/style.TestTokenNamesMatchThemeToTokens
+  - id: validate-refuses-unreadable-themes
+    rule: Validate refuses a zero theme, a theme without a name and a filled-control ink pair, light or dark, under 4.5:1.
+    enforced_by:
+      - test: core-ui/style.TestThemeValidate_RejectsZeroValue
+      - test: core-ui/style.TestThemeValidate_RejectsMissingName
+      - test: core-ui/style.TestThemeValidate_RefusesLowContrastInkPairs
+      - test: core-ui/style.TestThemeValidate_RefusesLowContrastDarkPairs
+      - test: core-ui/style.TestDefaultTheme_WCAGContrast
+  - id: theme-hash-is-identity
+    rule: ThemeHash covers the token CSS and the flat component options without the options compiler, so two themes that differ in any token or option hash apart in every binary.
+    enforced_by:
+      - test: core-ui/style.TestThemeHashSeparatesComponentOptions
+      - test: core-ui/style.TestThemeHashSeparatesOptionsWithoutCompiler
+      - test: core-ui/style.TestExtendChangesThemeHash
+  - id: extend-is-copy-on-write
+    rule: Extend panics on an input with no typed token fields and on two tokens, built-in or extension, that emit one variable, copies its inputs, and never shares its extensions with the theme it extends; Clone is deep, and a registered theme override stores a clone.
+    enforced_by:
+      - test: core-ui/style.TestExtendCollisionWithBuiltIn
+      - test: core-ui/style.TestExtendCollisionAcrossExtensions
+      - test: core-ui/style.TestExtendRefusesNonTokenInput
+      - test: core-ui/style.TestExtendCopiesItsInputs
+      - test: core-ui/style.TestExtendNeverSharesTheBaseExtensions
+      - test: core-ui/style.TestThemeCloneIsDeep
+      - test: core-ui/style.TestRegisterThemeOverrideClonesComponents
+      - test: core-ui/style.TestOverrideCopiesExtensions
+  - id: dark-gaps-are-reported
+    rule: DarkPaletteGaps is nil for a light-only theme and otherwise lists, sorted, every colour token whose dark value is missing or blank.
+    enforced_by:
+      - test: core-ui/style.TestDarkPaletteGapsLightOnlyNil
+      - test: core-ui/style.TestDarkPaletteGapsSortedMissing
+      - test: core-ui/style.TestEmptyDarkValueIsAGap
+      - test: core-ui/style.TestDefaultDarkColorsIsComplete
+  - id: overrides-wrap-in-their-class
+    rule: A registered theme override renders under its cui-theme-<hash> class, registering one does not hash it, and AllThemeOverridesCSS is deterministic.
+    enforced_by:
+      - test: core-ui/style.TestThemeOverrideCSSWrapsInClass
+      - test: core-ui/style.TestRegisterThemeOverrideDoesNotHash
+      - test: core-ui/style.TestAllThemeOverridesCSSDeterministic
+      - test: core-ui/style.TestRegisterThemeOverrideIdempotent
+decisions:
+  - id: hash-without-the-compiler
+    date: 2026-11-20
+    status: accepted
+    decision: ThemeHash reads the flat component options over the compiler-independent token CSS.
+    rejected:
+      - option: Hash the compiled custom properties.
+        why: The compiled block exists only once framework/ui registers its compiler, so a theme would hash differently by which layers a binary links, and a hash taken during init could freeze the hook.
+    upholds: [theme-hash-is-identity]

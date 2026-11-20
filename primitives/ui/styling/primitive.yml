@@ -2,8 +2,6 @@ primitive: ui.styling
 summary: The one styling surface, theme tokens, component sheets and the owned style sheets an app may add.
 code:
   - framework/ui/theme/
-  - core-ui/style/
-  - core-ui/ownstyle/
 docs:
   - core-ui/ARCHITECTURE.md
   - framework/docs/content/codegen.md

@@ -113,6 +113,22 @@ func TestBehaviorsListingAndIsolation(t *testing.T) {
 	}()
 }
 
+// Isolation hides the outer markers from IsMarkerAttr and drops the inner ones on restore.
+func TestIsolationScopesMarkerAttrs(t *testing.T) {
+	IsolateForTest(t)
+	RegisterBehavior("outer-probe", "x", Markers("[data-outer-probe]"))
+	t.Run("inner", func(t *testing.T) {
+		IsolateForTest(t)
+		if IsMarkerAttr("data-outer-probe") {
+			t.Fatal("an isolated registry reports the outer marker")
+		}
+		RegisterBehavior("inner-probe", "x", Markers("[data-inner-probe]"))
+	})
+	if IsMarkerAttr("data-inner-probe") || !IsMarkerAttr("data-outer-probe") {
+		t.Fatalf("after restore: inner %v, outer %v", IsMarkerAttr("data-inner-probe"), IsMarkerAttr("data-outer-probe"))
+	}
+}
+
 // A style and a behaviour may share a name: a component registers both
 // under its own.
 func TestStyleAndBehaviorMayShareAName(t *testing.T) {
@@ -310,4 +326,14 @@ func TestRegisterBehaviorOnRequest(t *testing.T) {
 	if again := RegisterBehavior("api", "x", OnRequest()); again.Entry() != b.Entry() {
 		t.Fatal("an identical OnRequest registration must be a no-op")
 	}
+}
+
+func TestDuplicateWithOtherInteractionKeysPanics(t *testing.T) {
+	IsolateForTest(t)
+	spec := func(key string) BehaviorOption {
+		return Interactions(Interaction{Event: "keydown", Keys: []string{key}, Scope: "[data-k-open]"})
+	}
+	RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Enter"))
+	RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Enter"))
+	mustPanic(t, "different definition", func() { RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Escape")) })
 }

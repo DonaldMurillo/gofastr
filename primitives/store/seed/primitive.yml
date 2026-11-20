@@ -1,0 +1,49 @@
+primitive: store.seed
+summary: Which slices a page's inert gofastr-signals block carries - ScanReferenced reads the rendered markup, SeedFor and SeedSplit add the globals and, when due, the route family, and ResolveSeed turns names into the request's values.
+code:
+  - core-ui/store/scan.go
+docs:
+  - framework/docs/content/signal-store.md
+  - framework/docs/content/reactivity.md
+invariants:
+  - id: scan-reads-attribute-positions
+    rule: ScanReferenced returns the sorted, deduplicated slice names of data-cui-signal, signal-set, signal-inc, signal-toggle and computed attributes at attribute positions, the part before any :value, and never a mention in text.
+    enforced_by:
+      - test: core-ui/store.TestScanReferencedFindsAllForms
+      - test: core-ui/store.TestScanIgnoresAttrInTextContent
+  - id: resolve-declared-values
+    rule: ResolveSeed gives each declared, non-computed name the request's value or its default, skips an undeclared name, and settles any element id placeholder the value holds, as a string, a named string type or JSON.
+    enforced_by:
+      - test: core-ui/store.TestResolveSeedPrefersRequestValue
+      - test: core-ui/store.TestResolveSeedFallsBackToDefault
+      - test: core-ui/store.TestResolveSeedSkipsUnregistered
+      - test: core-ui/store.TestSeedCarriesSettledIDs
+      - test: core-ui/store.TestGlobalNamesOnlyGlobalScope
+  - id: seed-split-by-scope
+    rule: SeedFor seeds the referenced and every global slice, and SeedSplit returns the same names split into page and global by scope.
+    enforced_by:
+      - test: core-ui/store.TestSeedSplitSeparatesGlobals
+  - id: route-family-seeds-when-due
+    rule: The declared route.* names join a seed only when the render read a route slice, the chain carries a RouteArea, or a data-cui-computed-deps list names one as a whole entry.
+    enforced_by:
+      - test: core-ui/store.TestRouteSeedDueGatesTheWriters
+      - test: core-ui/store.TestRouteDepMustStartAName
+decisions:
+  - id: globals-seed-once-on-the-client
+    date: 2026-11-20
+    status: accepted
+    decision: A partial render's seed is split, so the client merges page values every time and a global only the first time it sees it.
+    rejected:
+      - option: One merged seed.
+        why: A client navigation would overwrite a global the user changed on an earlier page.
+    upholds: [seed-split-by-scope]
+  - id: route-seed-is-opt-in
+    date: 2026-11-20
+    status: accepted
+    decision: A render that never reads a route slice seeds no route.* name.
+    rejected:
+      - option: Seed the route family on every page.
+        why: A marketing page or a blog would ship route state nothing reads.
+      - option: Seed only the names the scan finds.
+        why: A kept layer's route binding travels in no payload and a computed's deps list is one comma-joined name the scan cannot split, so their values would go stale or be clobbered on boot.
+    upholds: [route-family-seeds-when-due]

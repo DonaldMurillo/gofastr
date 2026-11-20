@@ -1,0 +1,110 @@
+primitive: uiregistry
+summary: The process-global component catalog of core-ui/registry - RegisterStyle and its handle, which stamps data-cui-comp on a component root, the per-theme CSS and version caches, the SSR marker scan and the freeze - and IsolateForTest, which swaps every registry the package holds.
+code:
+  - core-ui/registry/registry.go
+  - core-ui/registry/render.go
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/ui-new-components.md
+  - framework/docs/content/testkit.md
+invariants:
+  - id: style-names-are-url-segments
+    rule: RegisterStyle panics on a name outside ^[a-z][a-z0-9-]{0,63}$, on a nil builder and on a second registration of a name with another builder or load mode, and an identical one returns the first entry.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterStyleRefusesBadName
+      - test: core-ui/registry.TestConflictingRegistrationPanics
+      - test: core-ui/registry.TestIdempotentRegistration
+  - id: catalog-freezes
+    rule: After Freeze, RegisterStyle and RegisterBehavior panic on a new name, an identical re-registration stays a no-op, and RegisterRuntimeStyle still registers.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterAfterFreezePanics
+      - test: core-ui/registry.TestRegisterBehaviorAfterFreezePanics
+      - test: core-ui/registry.TestRuntimeStyleRegistersAfterFreeze
+  - id: version-addresses-served-bytes
+    rule: An entry's CSS, served CSS and version are cached per theme hash, the version is the hash of the theme hash and the served (minified when Enabled) bytes, and EvictTheme drops all three for that hash from every entry.
+    enforced_by:
+      - test: core-ui/registry.TestCSSAndVersionCacheStable
+      - test: core-ui/registry.TestHashVariantsMatchThemeVariants
+      - test: core-ui/registry.TestVersionCoversServedBytes
+      - test: core-ui/registry.TestEvictThemeDropsTheServedSheet
+      - test: framework/uihost.TestReleaseThemeVariantEvictsComponentCSSCaches
+  - id: render-stamps-one-root
+    rule: Style.Render and WrapHTML add data-cui-comp to the component's outermost tag and panic, with a fix in the message, on nil, bare text or output that does not open with an element.
+    enforced_by:
+      - test: core-ui/registry.TestRenderInjectsMarker
+      - test: core-ui/registry.TestRenderRejectsBareText
+      - test: core-ui/registry.TestRenderRejectsMultiSibling
+      - test: core-ui/registry.TestStyleRenderNilPanicHelpful
+  - id: scan-reads-rendered-markers
+    rule: Scan returns the sorted, deduplicated names of data-cui-comp and data-cui-scope attributes at attribute positions, refusing a name outside [a-zA-Z0-9_:.-], and leaves out markers inside an inert <template>, which ScanSplit returns as held unless the page renders them too; a declarative shadow root renders, and a template tag inside a comment, attribute value or raw-text element is not one.
+    enforced_by:
+      - test: core-ui/registry.TestScanFindsAllMarkers
+      - test: core-ui/registry.TestScanReadsScopeMarkers
+      - test: core-ui/registry.TestScanRefusesUnsafeScopeNames
+      - test: core-ui/registry.TestScanIgnoresOtherAttrs
+      - test: core-ui/registry.TestScanRequiresAttributeBoundary
+      - test: core-ui/registry.TestScanSkipsInertTemplates
+  - id: eager-is-load-always
+    rule: EagerNames lists exactly the LoadAlways entries, sorted.
+    enforced_by:
+      - test: core-ui/registry.TestEagerNamesOnlyLoadAlways
+  - id: isolation-swaps-every-registry
+    rule: IsolateForTest gives the test empty, unfrozen styles, behaviours, marker attributes, reserved names, templates and data blocks, and restores each when the test ends, so nothing registered inside survives and nested isolations compose.
+    enforced_by:
+      - test: core-ui/registry.TestIsolateForTest_HidesExistingEntriesAndRestores
+      - test: core-ui/registry.TestIsolateForTest_PremiseUnderPollution
+      - test: core-ui/registry.TestIsolateForTest_RegistrationsDoNotLeak
+      - test: core-ui/registry.TestIsolateForTestStartsUnfrozen
+      - test: core-ui/registry.TestBehaviorsListingAndIsolation
+      - test: core-ui/registry.TestIsolationScopesMarkerAttrs
+      - test: core-ui/registry.TestIsolateForTestHidesAndRestoresTemplates
+      - test: core-ui/registry.TestIsolateForTestHidesAndRestoresDataBlocks
+      - test: core-ui/runtime.TestBehaviorShadowingAnEmbeddedModuleIsRefused
+    judge: Does this change add a package-level registry to core-ui/registry without saving and restoring it in IsolateForTest?
+  - id: one-theme-hash
+    rule: Component CSS and app.css are keyed on style.ThemeHash, and the registry calls it rather than hashing a theme itself.
+    judge: Does this change hash a theme in core-ui/registry some other way than style.ThemeHash?
+  - id: package-lock-before-entry-lock
+    rule: Where both are held, the package mutex is taken before an entry's mutex, and no entry method takes the package mutex.
+    judge: Does this change take core-ui/registry's package mutex while holding an Entry's mutex, or call a package-level registry function from an Entry method?
+decisions:
+  - id: handle-based-registration
+    date: 2026-11-20
+    status: accepted
+    decision: RegisterStyle returns a *Style the package keeps in a var and renders through, so a component's name is written in one place.
+    rejected:
+      - option: Pass the name as a string at every render site.
+        why: A misspelt site would mark the component with a sheet that does not exist, and a rename would have to find every site.
+    upholds: [style-names-are-url-segments]
+  - id: freeze-after-catalog
+    date: 2026-11-20
+    status: accepted
+    decision: A style or behaviour registered after the host built its catalog panics, except a runtime style registered on purpose.
+    rejected:
+      - option: Accept late registrations silently.
+        why: The runtime loads sheets and modules from the catalog it was handed, so a soft navigation to the late component's first page shows it unstyled and its marker stays dead.
+    upholds: [catalog-freezes]
+  - id: version-over-served-bytes
+    date: 2026-11-20
+    status: accepted
+    decision: The ?v= version is hashed over the served bytes, not the readable source.
+    rejected:
+      - option: Hash the source.
+        why: A minifier change would ship new bytes under an old URL the browser caches as immutable.
+    upholds: [version-addresses-served-bytes]
+  - id: templates-are-not-scanned
+    date: 2026-11-20
+    status: accepted
+    decision: Markers inside an inert <template> do not make their sheet render-blocking; the host prefetches them as held.
+    rejected:
+      - option: Count them like any marker.
+        why: A confirm dialog or toast kept in a template would make its sheet render-blocking on every page that carries it, though the runtime's boot scan never reaches it either.
+    upholds: [scan-reads-rendered-markers]
+  - id: isolation-is-sequential
+    date: 2026-11-20
+    status: accepted
+    decision: IsolateForTest swaps package globals and supports sequential tests only.
+    rejected:
+      - option: Detect a concurrent registration during isolation.
+        why: It needs the testing package in production code; a sibling registering while another test isolates writes into the throwaway map and silently loses its entries, so registry tests stay non-parallel.
+    upholds: [isolation-swaps-every-registry]

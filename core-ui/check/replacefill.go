@@ -6,28 +6,8 @@ import (
 	"strings"
 )
 
-// LintReplaceFill fires when a String.prototype.replace/replaceAll
-// call takes a computed replacement string: anything other than a
-// string or numeric literal, or a function.
-//
-// Bug class: a template filled with fmt.replace('%s', value) treats
-// the value as a replacement PATTERN, so $$, $&, $' and $` in it
-// expand instead of landing literally. The headless tag input built
-// its chip's remove label from "Remove %s".replace('%s', v): a chip
-// value "a$&b$$c" became "Remove a%sb$c", and the added sentence
-// "{name} added" became "a{name}b$c added". The same shape sat in
-// the toast dismiss label, the copy button's sentence, the file drop
-// zone's names, the multiselect chip labels and the range slider
-// output. The fix spelling passes a function, whose return value is
-// inserted as-is: fmt.replace('%s', () => v).
-//
-// Silent on:
-//   - a string, template (no ${…}) or numeric literal replacement:
-//     an author-written pattern such as '\\$1' or '$2' is the point
-//     of the call, not a value carrying user bytes;
-//   - a function or arrow-function replacement: the fix spelling;
-//   - one-argument calls (location.replace(path)) and
-//     classList.replace, which is DOMTokenList's, not a string's.
+// LintReplaceFill fires when a String.prototype.replace/replaceAll call takes a computed
+// replacement string: anything other than a string or numeric literal, or a function.
 func LintReplaceFill(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -55,11 +35,8 @@ func LintReplaceFill(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// reReplaceCall matches .replace( and .replaceAll( on the blank view.
 var reReplaceCall = regexp.MustCompile(`\.\s*replace(?:All)?\s*\(`)
 
-// reFuncArg matches a function or arrow-function expression at the
-// start of an argument.
 var reFuncArg = regexp.MustCompile(`^(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)`)
 
 func replacementSafe(arg string) bool {

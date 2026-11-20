@@ -1,0 +1,42 @@
+primitive: appspec.routes
+summary: Refuses screen routes, auth form actions, base URLs and static dirs that a browser cannot reach, that collide with a route the framework or an entity API mounts, or that would serve the app's own files.
+code:
+  - cmd/gofastr/internal/appspec/screenroute.go
+  - cmd/gofastr/internal/appspec/appspec_authform.go
+  - cmd/gofastr/internal/appspec/appspec_baseurl.go
+  - cmd/gofastr/internal/appspec/staticdir.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - "A route the generated main starts mounting (a new uihost or framework option appgen emits) joins frameworkRoutes in screenroute.go."
+  - "baseURLProblem changes together with invalidSitemapBaseURL in framework/uihost/strict.go, which panics the generated app's boot on the same shapes."
+  - "A directory the generator starts writing Go into joins generatedSourceDirs in staticdir.go."
+twins:
+  - job: The default mount prefix of the auth battery (/auth) and of the admin back office (/admin) is filled in wherever an empty app.auth.base_path or app.admin.path is read.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec_authform.go
+        note: validateAuthFormActions, base defaults to /auth for the login and register action check.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: ValidateAppSpec auth me-route check and AppSpecLoginScreen action, both defaulting to /auth.
+      - path: cmd/gofastr/internal/appgen/appspec.go
+        note: appSpecAuthBase for auth, and the sitemap exclude and admin mount code that default adminPath to /admin.
+      - path: cmd/gofastr/internal/appspec/screenroute.go
+        note: screenRouteOnFrameworkRoute, admin defaults to /admin.
+      - path: cmd/gofastr/internal/appspec/generated_app.go
+        note: ReadGeneratedApp reads an admin path of /admin back as unset.
+      - path: battery/admin/admin.go
+        note: the battery's own PathPrefix default of /admin.
+invariants:
+  - id: auth-form-posts-to-mounted-route
+    rule: An explicit login_form or signup_form action must be base_path plus /login or /register (default base /auth), and an absolute one must sit on app.base_url.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestAuthFormActionFollowsBasePath
+  - id: screen-route-is-a-reachable-path
+    rule: A screen route that does not start with a slash or holds an empty, dot, query, fragment, backslash, space or repeated-param segment is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenRoutesRefused
+  - id: screen-not-on-framework-route
+    rule: A screen at or under a route the generated app's framework serves (robots, sitemap, mcp, PWA files, llm.md, the admin path) is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenAtFrameworkRouteRefused

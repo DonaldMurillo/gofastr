@@ -9,8 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// HeadingConfig configures an <h1>–<h6> element.
-// Required: Level (1-6).
+// HeadingConfig configures an <h1>–<h6> element. Required: Level (1-6).
 type HeadingConfig struct {
 	Level      int // required: 1-6
 	Class      string
@@ -19,15 +18,13 @@ type HeadingConfig struct {
 }
 
 // TextConfig configures a text container element (Paragraph, Span, Strong, Em, etc.).
-// No required fields, used for generic text containers.
 type TextConfig struct {
 	Class      string
 	ID         string
 	ExtraAttrs Attrs
 }
 
-// AbbrConfig configures an <abbr> element.
-// Required: Title.
+// AbbrConfig configures an <abbr> element. Required: Title.
 type AbbrConfig struct {
 	Title      string // required: full expansion
 	Class      string
@@ -35,8 +32,7 @@ type AbbrConfig struct {
 	ExtraAttrs Attrs
 }
 
-// TimeConfig configures a <time> element.
-// Required: Datetime.
+// TimeConfig configures a <time> element. Required: Datetime.
 type TimeConfig struct {
 	Datetime   string // required: machine-readable datetime
 	Class      string
@@ -44,13 +40,8 @@ type TimeConfig struct {
 	ExtraAttrs Attrs
 }
 
-// nonAlphaNum matches runs of non-alphanumeric characters for slug generation.
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
-// slugify converts a string to a URL-friendly slug for use as an HTML id.
-// It first unescapes HTML entities (e.g. &#39; → ') so that escaped
-// apostrophes and other characters don't leak numeric entity codes
-// into the slug.
 func slugify(s string) string {
 	s = html.UnescapeString(s)
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -62,17 +53,7 @@ func slugify(s string) string {
 	return s
 }
 
-// Heading produces an <h1> through <h6> element.
-// Required: Level (1-6). Auto-generates an id attribute from the text content
-// of children for aria-labelledby references. If cfg.ID is set, it is used instead.
-//
-// The auto-generated id is content-derived and deterministic, the same
-// text always yields the same id, so anchor links survive re-renders and
-// SPA partial swaps. The trade-off: two headings with EQUAL text on one
-// page produce duplicate ids (render functions have no page-wide context
-// to de-dupe against, and a stateful counter would make ids drift across
-// requests, breaking deep links). When a page repeats heading text, set
-// cfg.ID explicitly on at least one of them.
+// Heading produces an <h1> through <h6> element. Required: Level (1-6).
 func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 	level := cfg.Level
 	if level < 1 || level > 6 {
@@ -82,7 +63,6 @@ func Heading(cfg HeadingConfig, children ...render.HTML) render.HTML {
 
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 
-	// Auto-generate id from children if not already set.
 	if _, ok := attrs["id"]; !ok {
 		var text strings.Builder
 		for _, c := range children {
@@ -133,9 +113,7 @@ func Pre(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("pre", attrs, children...)
 }
 
-// Kbd produces a <kbd> element for keyboard input, a single key, a chord,
-// or a sequence. Pairs with framework/ui.ShortcutHint for rendering
-// shortcut chips. Pure semantic markup, no scripting.
+// Kbd produces a <kbd> element for keyboard input, a single key, a chord, or a sequence.
 func Kbd(cfg TextConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("kbd", attrs, children...)
@@ -165,9 +143,8 @@ func Mark(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("mark", attrs, children...)
 }
 
-// Abbr produces an <abbr> element with a title attribute for the full
-// expansion of the abbreviation.
-// Required: Title.
+// Abbr produces an <abbr> element with a title attribute for the full expansion of the
+// abbreviation. Required: Title.
 func Abbr(cfg AbbrConfig, children ...render.HTML) render.HTML {
 	if cfg.Title == "" {
 		panic("html: Abbr requires Title")
@@ -177,8 +154,7 @@ func Abbr(cfg AbbrConfig, children ...render.HTML) render.HTML {
 	return render.Tag("abbr", attrs, children...)
 }
 
-// Time produces a <time> element with a machine-readable datetime attribute.
-// Required: Datetime.
+// Time produces a <time> element with a machine-readable datetime attribute. Required: Datetime.
 func Time(cfg TimeConfig, children ...render.HTML) render.HTML {
 	if cfg.Datetime == "" {
 		panic("html: Time requires Datetime")

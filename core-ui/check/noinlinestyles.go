@@ -1,6 +1,5 @@
 // check-csp:ignore-file
-// The linter itself references `style="…"` in regex patterns and
-// error messages; the directive exempts this file from its own checks.
+
 package check
 
 import (
@@ -11,85 +10,14 @@ import (
 	"strings"
 )
 
-// Inline-style ban, compile-rule enforcement of the framework's
-// strict-CSP contract.
-//
-// The framework's default Content-Security-Policy is
-// `default-src 'self'` with no `'unsafe-inline'` for `style-src`,
-// which forbids inline `style="…"` attributes on every HTML element.
-// A demo page or production screen that ships such an attribute
-// silently breaks in the browser: the layout collapses because the
-// attribute is stripped before paint.
-//
-// LintNoInlineStyles walks every .go file in dir (recursive variant
-// below) and reports any source location that would emit a forbidden
-// inline style attribute. Four detection paths:
-//
-//   1. Raw string literals containing `style="…"` or `style='…'`
-//      anywhere in the body. Catches `render.HTML("<div style=…>")`
-//      and back-tick raw strings alike.
-//   2. Map / composite literals with a "style" key passed to any of
-//      the HTML helpers, render.Tag(…, map[string]string{"style": …},
-//      html.Attrs{"style": …}, html.DivConfig{ExtraAttrs: html.Attrs{"style":
-//      …}}, etc.
-//   3. html.* config struct literals whose Attrs field literal carries
-//      a "style" key (covered by case 2 because Attrs is a map).
-//   4. Index assignments onto an attribute map, `attrs["style"] = …` —
-//      the computed-value spelling the literal scans cannot see, and
-//      the one a component reaches for when it "owns" the attribute:
-//      ui.FormFrame shipped its rail width exactly this way and the
-//      default CSP silently ignored it.
-//
-// Files that legitimately need to embed a style string (the linter
-// itself, the CSP-test fixtures, the style-builder package emitting
-// stylesheets) opt out with the `//check-csp:ignore-file` directive,
-// which exempts the whole file. A single deliberate inline style
-// instead carries the marker `gofastr verify` honours for the same
-// finding, `//gofastr:allow(GOFASTR1804) <reason>` on its line, so the
-// two gates agree instead of forcing a file-wide exemption.
-// _test.go files are skipped automatically since they often build
-// fixtures that intentionally contain known-bad strings for
-// assertion.
-//
-// Usage mirrors LintNoInlineScripts, run from `cmd/check-csp` and
-// from any package test that wants the rule enforced on every
-// `go test ./...`.
-
 var (
-	// inlineStyleAttrRe matches a `style="…"` or `style='…'` attribute
-	// inside a raw HTML string literal. Anchored to start-of-string,
-	// whitespace, or `/` (the HTML5 tokenizer treats a solidus between
-	// attributes as whitespace, so `<img/src=x/style=…>` applies the
-	// style exactly like a space-separated twin) so prefixes like
-	// `data-cui-style=`, `font-style=`, `text-style=` (CSS,
-	// data-attributes, custom-named props) don't trigger false
-	// positives. The value is quoted, or an UNQUOTED run containing a
-	// `:` (a CSS declaration shape, `style=color:red`): unquoted
-	// attribute values apply in browsers too, and requiring the colon
-	// keeps JS assignments inside embedded scripts (`style =
-	// getComputedStyle(el)`) out of the gate. The non-greedy quoted
-	// body keeps the match short, we just need to know IT EXISTS.
-	// Case-insensitive: HTML attribute names are, and a browser applies
-	// STYLE="…" exactly as it applies style="…".
-	//
-	// The last arm is the concatenated attribute: "<div style=\"" + css
-	// + "\">" leaves `style="` (or a bare `style=`) at the very end of
-	// its literal, the value arriving from the next operand.
 	inlineStyleAttrRe = regexp.MustCompile(`(?si)(?:^|[\s/])style\s*=\s*("[^"]*"|'[^']*'|[^\s>]*:[^\s>]*|["']?$)`)
 )
 
-// LintNoInlineStyles scans every .go file in dir (non-recursive) for
-// inline style attributes in HTML, and for "style" keys passed as
-// attrs to render.Tag / html.Attrs literals. Returns one violation
-// per offending source location.
+// LintNoInlineStyles scans every .go file in dir (non-recursive) for inline style attributes in
+// HTML, and for "style" keys passed as attrs to render.Tag / html.Attrs literals.
 func LintNoInlineStyles(dir string) (*Result, error) {
 	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
-		// One deliberate inline style carries the marker gofastr verify
-		// already honours for this rule, GOFASTR1804, rather than opting
-		// the whole file out with ignore-file. ScanInlineStylesIn leaves
-		// the marker alone: the contracts pass applies it, and reports
-		// it stale when it matches nothing — the same split the script
-		// lane made for GOFASTR1805.
 		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
 		for index, line := range strings.Split(string(raw), "\n") {
 			if allowed[index+1] && strings.TrimSpace(line) == "" {
@@ -106,11 +34,7 @@ func LintNoInlineStyles(dir string) (*Result, error) {
 	})
 }
 
-// ScanInlineStylesIn is the single-file entry point a contracts pass
-// calls with its own cached AST: one detector behind both the build
-// gate and GOFASTR1804, so the two cannot drift apart again. Files
-// carrying the ignore-file directive report nil. The gofastr:allow
-// marker is NOT applied here; the caller that owns suppression does.
+// ScanInlineStylesIn runs the inline-style detector over one parsed file, for a contracts pass.
 func ScanInlineStylesIn(fset *token.FileSet, file *ast.File, filename string, raw []byte) *Result {
 	if fset == nil || file == nil || hasCSPIgnoreDirective(raw) {
 		return nil
@@ -121,8 +45,6 @@ func ScanInlineStylesIn(fset *token.FileSet, file *ast.File, filename string, ra
 }
 
 // LintNoInlineStylesRecursive walks dir and every subdirectory.
-// Skips dependency, build-output, hidden, underscore, and testdata trees,
-// matching the script linter's recursion contract.
 func LintNoInlineStylesRecursive(root string) (*Result, error) {
 	return lintRecursive(root, LintNoInlineStyles)
 }
@@ -134,10 +56,6 @@ func scanInlineStyles(fset *token.FileSet, file *ast.File, filename string, resu
 			if node.Kind != token.STRING {
 				return true
 			}
-			// Use strconv.Unquote so escape sequences in double-quoted
-			// strings (e.g. `\"`) are resolved to their literal chars
-			// before the regex scan. stripStringLiteral leaves them
-			// escaped, which would hide `style=\"…\"` from the pattern.
 			val, err := strconv.Unquote(node.Value)
 			if err != nil {
 				val = stripStringLiteral(node.Value)
@@ -152,12 +70,6 @@ func scanInlineStyles(fset *token.FileSet, file *ast.File, filename string, resu
 	})
 }
 
-// checkStyleIndexAssignment flags `x["style"] = …` assignments, the
-// computed-value twin of checkStyleKeyInComposite: an attrs map built
-// empty and filled key by key evades the composite-literal scan while
-// shipping exactly the attribute the CSP strips. Only string-valued
-// right-hand sides count, mirroring the composite check, so a
-// map[string]bool denylist keyed by "style" stays quiet.
 func checkStyleIndexAssignment(node *ast.AssignStmt, fset *token.FileSet, filename string, result *Result) {
 	for i, lhs := range node.Lhs {
 		idx, ok := lhs.(*ast.IndexExpr)
@@ -168,8 +80,6 @@ func checkStyleIndexAssignment(node *ast.AssignStmt, fset *token.FileSet, filena
 		if !ok || key.Kind != token.STRING {
 			continue
 		}
-		// Attribute names are case-insensitive: attrs["Style"] emits the
-		// same attribute the browser strips under strict CSP.
 		if !strings.EqualFold(stripStringLiteral(key.Value), "style") {
 			continue
 		}
@@ -184,12 +94,6 @@ func checkStyleIndexAssignment(node *ast.AssignStmt, fset *token.FileSet, filena
 	}
 }
 
-// checkInlineStyleInString flags any string literal whose body
-// contains a `style="…"` attribute. False positives are rare, the
-// pattern is specific enough that it almost only appears in actual
-// HTML emission contexts. When it does fire in a legitimate non-CSP
-// context (printing diagnostic HTML, generating an SVG icon for a
-// non-CSP'd surface), use `//check-csp:ignore-file` on the file.
 func checkInlineStyleInString(s string, line int, filename string, result *Result) {
 	if !inlineStyleAttrRe.MatchString(s) {
 		return
@@ -202,16 +106,6 @@ func checkInlineStyleInString(s string, line int, filename string, result *Resul
 			"/ framework theme.go) and reference via a class name.")
 }
 
-// checkStyleKeyInComposite flags `{"style": "…"}` in composite
-// literals, typically `render.Tag(…, map[string]string{"style": …}, …)`
-// or `html.Attrs{"style": …}`. Catches the case where the value is
-// computed at runtime (string concat, fmt.Sprintf) which the
-// string-literal scan can't see.
-//
-// Skips composites whose "style" entry has a non-string value
-// (e.g. `map[string]bool{"style": true}` in a sanitizer's forbidden-
-// attribute set, which is metadata about the attribute name, not an
-// emission of one).
 func checkStyleKeyInComposite(node *ast.CompositeLit, fset *token.FileSet, filename string, result *Result) {
 	for _, el := range node.Elts {
 		kv, ok := el.(*ast.KeyValueExpr)
@@ -222,8 +116,6 @@ func checkStyleKeyInComposite(node *ast.CompositeLit, fset *token.FileSet, filen
 		if !ok || key.Kind != token.STRING {
 			continue
 		}
-		// HTML attribute names are case-insensitive: {"Style": …} emits
-		// the same attribute the browser strips under strict CSP.
 		if !strings.EqualFold(stripStringLiteral(key.Value), "style") {
 			continue
 		}
@@ -238,16 +130,11 @@ func checkStyleKeyInComposite(node *ast.CompositeLit, fset *token.FileSet, filen
 	}
 }
 
-// valueLooksLikeString returns true when the expression is plausibly
-// a string at runtime, string literal, fmt.Sprintf, concatenation,
-// identifier of a string-typed variable, etc. False for bool/int
-// literals (which appear in metadata maps like sanitizer denylists).
 func valueLooksLikeString(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.BasicLit:
 		return v.Kind == token.STRING
 	case *ast.Ident:
-		// `true`/`false`/`nil` are predeclared idents, skip those.
 		switch v.Name {
 		case "true", "false", "nil", "iota":
 			return false

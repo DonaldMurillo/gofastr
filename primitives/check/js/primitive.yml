@@ -1,0 +1,66 @@
+primitive: check.js
+summary: The JavaScript idiom lints over the runtime and every registered behaviour - no var, no legacy idioms, no layer-prefix literals, key guards for Escape, IME and RTL, awaited clipboard writes, UTC year parts, localized number fills and replace fills, prose through the strings table - and RegisteredBehaviorSources, which finds the behaviour modules beside their Go packages.
+code:
+  - core-ui/check/novarjs.go
+  - core-ui/check/legacyidioms.go
+  - core-ui/check/layerprefix.go
+  - core-ui/check/behaviors.go
+  - core-ui/check/keyguard.go
+  - core-ui/check/clipboardawait.go
+  - core-ui/check/dateutcyear.go
+  - core-ui/check/numberfill.go
+  - core-ui/check/replacefill.go
+  - core-ui/check/runtimeprose.go
+docs:
+  - framework/docs/content/runtime-contract.md
+invariants:
+  - id: each-lint-fires-on-its-shape
+    rule: LintNoVarJS, LintLegacyIdioms, LintLayerPrefixJS and LintLayerPrefixGo, LintKeyGuard, LintClipboardAwait, LintDateUTCYear, LintNumberFill, LintReplaceFill and LintRuntimeProse each report their bug shape in a fixture and stay quiet on its fixed spelling.
+    enforced_by:
+      - test: core-ui/check.TestLintNoVarJS_FlagsBareVar
+      - test: core-ui/check.TestLintNoVarJS_IgnoresStringsAndComments
+      - test: core-ui/check.TestNoVarJS_SeesInsideTemplateInterpolations
+      - test: core-ui/check.TestLegacyIdiomsFlagsEachShape
+      - test: core-ui/check.TestLegacyIdiomsQuietOnModernForms
+      - test: core-ui/check.TestLintLayerPrefixJS_FiresOnKitLiteralsOnly
+      - test: core-ui/check.TestLintLayerPrefixGo_FiresOnKitLiteralsOnly
+      - test: core-ui/check.TestLintKeyGuardEscape
+      - test: core-ui/check.TestLintKeyGuard_IME
+      - test: core-ui/check.TestLintKeyGuard_RTL
+      - test: core-ui/check.TestLintClipboardAwait_FiresOnDroppedWrite
+      - test: core-ui/check.TestLintDateUTCYear_FiresOnYearParts
+      - test: core-ui/check.TestLintNumberFill_FiresOnASCIIFill
+      - test: core-ui/check.TestLintReplaceFill_FiresOnComputed
+      - test: core-ui/check.TestLintRuntimeProseFiresOnLiterals
+  - id: the-tree-is-clean
+    rule: Every one of these lints passes over the live runtime and registered behaviour sources.
+    enforced_by:
+      - test: core-ui/check.TestLintNoVarJS_RepoIsClean
+      - test: core-ui/check.TestLegacyIdiomsRepoIsClean
+      - test: core-ui/check.TestLintLayerPrefix_RepoIsClean
+      - test: core-ui/check.TestLintKeyGuard_Repo
+      - test: core-ui/check.TestLintClipboardAwait_Repo
+      - test: core-ui/check.TestLintDateUTCYear_Repo
+      - test: core-ui/check.TestLintNumberFill_Repo
+      - test: core-ui/check.TestLintReplaceFill_RepoIsClean
+      - test: core-ui/check.TestLintRuntimeProseRepoIsClean
+  - id: behaviour-modules-are-found
+    rule: RegisteredBehaviorSources follows each registry.RegisterBehavior call, under the file's import name of core-ui/registry or a dot import, through its source variable to the //go:embed file, stripping all:, once per file, and skips what the walkers skip.
+    enforced_by:
+      - test: core-ui/check.TestRegisteredBehaviorSources_FindsTheTreesModules
+      - test: core-ui/check.TestRegisteredBehaviorSources_FollowsTheRegisteredVariable
+      - test: core-ui/check.TestRegisteredBehaviorSources_ResolvesTheRegistryImport
+      - test: core-ui/check.TestRegisteredBehaviorSources_StripsTheAllPrefix
+      - test: core-ui/check.TestRegisteredBehaviorSources_ReportsOneFileOnce
+      - test: core-ui/check.TestRegisteredBehaviorSources_SkipsWhatTheWalkersSkip
+      - test: core-ui/check.TestRegisteredBehaviorSources_RefusesWhatItCannotRead
+      - test: core-ui/check.TestLintNoVarJSFiles_HoldsARegisteredBehaviour
+decisions:
+  - id: behaviours-are-runtime-modules
+    date: 2026-11-20
+    status: accepted
+    decision: A behaviour module embedded beside its Go package is held to the runtime's JavaScript lints by finding it through its RegisterBehavior call.
+    rejected:
+      - option: Lint core-ui/runtime only.
+        why: Behaviours live beside the Go that renders their markup, outside every lint that walks the runtime directory.
+    upholds: [behaviour-modules-are-found]

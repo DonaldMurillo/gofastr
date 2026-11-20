@@ -726,6 +726,9 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 		{"dot", fmt.Sprintf(head, ".") + "var b = RegisterBehavior(\"x\", js, Markers(\"[data-hui-probe]\"))", 1, 0},
 		{"other package", fmt.Sprintf(head, "registry") + "var b = other.Markers(\"[data-cui-not-ours]\")", 0, 0},
 		{"constant", fmt.Sprintf(head, "registry") + "var b = registry.RegisterBehavior(\"x\", js, registry.Markers(k, \"[data-hui-probe]\"))", 1, 1},
+		{"another registry", "package p\nimport registry \"example.com/registry\"\nvar b = registry.Markers(\"[data-cui-not-ours]\")", 0, 0},
+		{"blank import", fmt.Sprintf(head, "_") + "var b = other.Markers(\"[data-cui-not-ours]\")", 0, 0},
+		{"unparseable", "package p\nvar b = registry.Markers(", 0, 1},
 	}
 	for _, c := range cases {
 		sel, non := MarkerSelectors(c.src)
@@ -737,5 +740,13 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	got := undocumentedDataFuiMarkers(sel, doc)
 	if len(got) != 1 || got[0] != "[data-cui-not-in-the-table-probe]" {
 		t.Fatalf("the check missed the undocumented marker or flagged a documented one: %v", got)
+	}
+}
+
+func TestAttrNamesDropsAWrappedName(t *testing.T) {
+	set := map[string]struct{}{}
+	AttrNames("// reads data-cui-\n// data-cui-poll-src and data-cui-foo-\n", set)
+	if got := Sorted(set); !slices.Equal(got, []string{"data-cui-foo", "data-cui-poll-src"}) {
+		t.Fatalf("AttrNames = %v", got)
 	}
 }

@@ -1,0 +1,84 @@
+primitive: island
+summary: core-ui/island's Manager - the per-session subscriber channels PushUpdate delivers island HTML to, the stream caps that bound them, the cross-replica island lane SetFanout attaches, and Island, the data-island region it renders.
+code:
+  - core-ui/island/
+docs:
+  - framework/docs/content/reactivity.md
+  - framework/docs/content/live-dashboards.md
+invariants:
+  - id: every-tab-gets-the-update
+    rule: Each subscriber of a session has its own buffered channel and PushUpdate offers the update to every one, dropping it for a full channel and counting the drop in DroppedUpdates, so a slow tab never stalls its siblings.
+    enforced_by:
+      - test: core-ui/island.TestTwoTabsBothReceiveUpdates
+      - test: core-ui/island.TestManager_DroppedUpdatesCounter
+  - id: caps-reject-not-evict
+    rule: A subscribe over the per-session, per-client or global stream cap is refused with ErrSessionStreamLimit, ErrPeerStreamLimit or ErrGlobalStreamLimit and every held stream is left alone; Subscribe returns a closed channel for a refusal, and the server's own subscription counts under no client.
+    enforced_by:
+      - test: core-ui/island.TestStreamCapRejectsPerSessionOverflow
+      - test: core-ui/island.TestStreamCapRejectsGlobalOverflow
+      - test: core-ui/island.TestPeerCapRefusesOneClient
+      - test: core-ui/island.TestSubscribeCapRefusalObservable
+      - test: core-ui/island.TestSubscribeHasNoPeer
+  - id: cancel-releases-every-slot
+    rule: A subscription's cancel frees its session, client and global slots and drops a session or client entry with its last stream.
+    enforced_by:
+      - test: core-ui/island.TestStreamCapCancelReleasesSlot
+      - test: core-ui/island.TestCancelReleasesGlobalAndPeerSlots
+  - id: bound-exceeds-heartbeat
+    rule: NewManager raises a stream bound at or below the heartbeat to DefaultSSEStreamBound, or to heartbeat plus DefaultSSEStreamBound when the heartbeat exceeds even that.
+    enforced_by:
+      - test: core-ui/island.TestStreamBoundRestoresDefaultSubHeartbeat
+  - id: fanout-delivers-never-republishes
+    rule: With a fanout attached PushUpdate also publishes the update, and a received update from another replica is delivered to the local session streams only, never published again and never delivered back to its own sender.
+    enforced_by:
+      - test: core-ui/island.TestIslandFanoutCrossDelivery
+      - test: core-ui/island.TestIslandFanoutOwnNodeNoDup
+      - test: core-ui/island.TestIslandFanoutStopDetaches
+  - id: push-never-waits-on-the-backend
+    rule: PushUpdate enqueues its fanout publish without blocking, so a stalled backend never stalls a request goroutine.
+    enforced_by:
+      - test: core-ui/island.TestPushUpdateNonBlockingOnStalledFanout
+  - id: one-fanout-per-manager
+    rule: SetFanout refuses a nil fanout and a second fanout while one is attached.
+    enforced_by:
+      - test: core-ui/island.TestSetFanoutTwiceIsRefused
+  - id: island-ids-are-escaped
+    rule: Island renders its id escaped into data-island, an explicit id wins over the derived one, and ids match between the page and a rerender.
+    enforced_by:
+      - test: core-ui/island.TestSecurity_IslandID_AttributeInjection
+      - test: core-ui/island.TestIslandIDIsEscapedInIDs
+      - test: core-ui/island.TestIslandExplicitIDWins
+      - test: core-ui/island.TestIslandIDsMatchOnRerender
+  - id: render-panic-is-contained
+    rule: A panicking island component renders a fallback instead of taking the page down.
+    enforced_by:
+      - test: core-ui/island.TestSecurity_PanicInRender_DuringIslandRender
+decisions:
+  - id: channel-per-subscriber
+    date: 2026-11-20
+    status: accepted
+    decision: Each SSE connection gets its own buffered channel, never closed, and cancel removes it from the map.
+    rejected:
+      - option: One shared channel per session.
+        why: Tabs sharing the session cookie competed for updates and only the first receiver got each one.
+      - option: Close the channel on cancel.
+        why: A send racing the cancel would panic; an unread buffered send is simply collected.
+    upholds: [every-tab-gets-the-update]
+  - id: reject-not-evict
+    date: 2026-11-20
+    status: accepted
+    decision: A stream over a cap is refused and no held stream is dropped to make room; the per-client cap is a sixteenth of the global one.
+    rejected:
+      - option: Evict the oldest stream.
+        why: A new connection could then silently cut a reader's live stream.
+      - option: Cap per session only.
+        why: A session costs one same-origin POST, so 256 sessions of 16 streams took every global slot.
+    upholds: [caps-reject-not-evict]
+  - id: manager-holds-no-islands
+    date: 2026-11-20
+    status: accepted
+    decision: The manager keeps no island objects; callers render from reconstructable state and PushUpdate only transports HTML, so any replica serves any request and delivery is lossy best-effort.
+    rejected:
+      - option: Sticky routing to the replica holding the island.
+        why: Server state stays out of server RAM, and durable delivery is the outbox's job.
+    upholds: [fanout-delivers-never-republishes]
