@@ -1899,6 +1899,20 @@ screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
 
+### Entity LLM markdown (`app.entity_llm_md`)
+
+```yaml
+app:
+  entity_llm_md: false
+```
+
+Controls entity API markdown routes, including each entity's `llm.md` and
+the aggregate `/api/llm.md`. Omitted or `true` keeps these routes on, with
+their existing authentication rules. `false` emits
+`framework.AppConfig.NoLLMMD: true` and does not register these routes.
+This setting is separate from `app.llm_md`, which controls public page
+documentation only. Changing either setting leaves the other unchanged.
+
 ### Locale in the URL (`app.locale_prefixes`)
 
 ```yaml

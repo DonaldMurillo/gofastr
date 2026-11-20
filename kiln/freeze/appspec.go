@@ -38,6 +38,9 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 }
 
 func validateGraduation(w *world.World) error {
+	if w.App.DebugEndpoints {
+		return fmt.Errorf("freeze: app.debug_endpoints cannot be expressed by the current app spec; set debug_endpoints to false before freezing, then set framework.AppConfig.DebugEndpoints = true in owned Go if debug routes are needed")
+	}
 	switch w.App.JSONCase {
 	case "", "camel", "camelCase":
 	case "snake", "snake_case":
@@ -198,6 +201,7 @@ func appMap(a world.AppConfig) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	m["entity_llm_md"] = a.LLMMD
 	return m
 }
 
@@ -1037,7 +1041,7 @@ func OrderedKeys(m map[string]any, order []string) []string {
 
 var (
 	topLevelOrder = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
-	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md"}
+	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md"}
 	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "cross_owner_read", "search_fields", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}

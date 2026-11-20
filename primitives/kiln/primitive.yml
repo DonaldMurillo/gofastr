@@ -9,3 +9,14 @@ invariants:
     rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
     enforced_by:
       - test: kiln/freeze.TestFreezeJSONCaseContract
+  - id: graduation-preserves-entity-docs
+    rule: Freeze explicitly carries the preview entity-doc setting into generated configuration without changing omitted hand-written app-spec defaults or the UI-doc switch.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeEntityLLMMD
+      - test: cmd/gofastr/internal/appspec.TestDecodeEntityLLMMD
+      - test: cmd/gofastr/internal/appgen.TestGeneratedEntityLLMMDConfig
+      - test: cmd/gofastr/internal/packcmd.TestEntityLLMMDRoundTrip
+  - id: graduation-refuses-debug-endpoint-loss
+    rule: Freeze refuses debug_endpoints true with owned-Go instructions rather than silently dropping the routes.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeDebugEndpoints

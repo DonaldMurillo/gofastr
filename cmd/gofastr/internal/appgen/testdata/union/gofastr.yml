@@ -10,6 +10,7 @@ app:
   static_dir: public
   locale_prefixes: true
   llm_md: true
+  entity_llm_md: true
   pwa:
     enabled: true
     short_name: Union
