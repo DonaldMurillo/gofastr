@@ -49,6 +49,47 @@ func TestCoreSchemaScalarResolution(t *testing.T) {
 	}
 }
 
+func TestCoreSchemaIntegerResolution(t *testing.T) {
+	cases := map[string]any{
+		"0x10":                     int64(16),
+		"0xAf":                     int64(175),
+		"0o10":                     int64(8),
+		"0x7fffffffffffffff":       int64(1<<63 - 1),
+		"0o777777777777777777777":  int64(1<<63 - 1),
+		"010":                      int64(10),
+		"+010":                     int64(10),
+		"-010":                     int64(-10),
+		"0x8000000000000000":       "0x8000000000000000",
+		"0o1000000000000000000000": "0o1000000000000000000000",
+		"0x":                       "0x",
+		"0o":                       "0o",
+		"0xg":                      "0xg",
+		"0o8":                      "0o8",
+		"0x+10":                    "0x+10",
+		"0o-10":                    "0o-10",
+		"-0x10":                    "-0x10",
+		"+0o10":                    "+0o10",
+		"0X10":                     "0X10",
+		"0O10":                     "0O10",
+		"0b10":                     "0b10",
+		"0x1_0":                    "0x1_0",
+		"0o1_0":                    "0o1_0",
+		`"0x10"`:                   "0x10",
+		"'0o10'":                   "0o10",
+	}
+	for raw, want := range cases {
+		t.Run(raw, func(t *testing.T) {
+			node, err := Parse("v: " + raw + "\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := node.Map["v"].Value; got != want {
+				t.Errorf("got %T(%v), want %T(%v)", got, got, want, want)
+			}
+		})
+	}
+}
+
 // A float the core schema names but float64 cannot hold is refused, not
 // read as a string or as +Inf: a bound like max: 1e999 is a typo, and an
 // infinite one passes every range check downstream.

@@ -200,8 +200,12 @@ not silently disabled constraints. Omitted flags still default to false.
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
   a string.
-- a run of digits is an integer; a decimal with a fraction or exponent
-  (`1.5`, `.5`, `-2.5e3`) is a float. A float too large for 64 bits
+- decimal integers may have a sign. Unsigned `0o10` and `0x10` are
+  octal and hexadecimal integers (8 and 16); `010` is decimal 10.
+  Integers must fit in an `int64` to resolve as numbers. Quote them to
+  keep them as strings.
+- a decimal with a fraction or exponent (`1.5`, `.5`, `-2.5e3`) is
+  a float. A float too large for 64 bits
   (`1e999`) is an error, not infinity. Go-only spellings stay strings:
   a hex float (`0x1.8p1`), digit underscores (`1_000.5`), `Infinity`.
   `.inf` and `.nan` are strings too: nothing in a spec reads one.

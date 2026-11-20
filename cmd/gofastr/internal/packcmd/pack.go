@@ -1007,7 +1007,7 @@ func needsQuote(s string) bool {
 	case "true", "false", "null", "~":
 		return true
 	}
-	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+	if _, ok := coreyaml.ParsePlainInt(s); ok {
 		return true
 	}
 	if _, err := strconv.ParseFloat(s, 64); err == nil && strings.ContainsAny(s, ".eE") {

@@ -362,7 +362,7 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	case "null", "Null", "NULL", "~":
 		return &Node{Kind: Scalar, Value: nil, Line: line, Column: column}, nil
 	}
-	if i, err := strconv.ParseInt(raw, 10, 64); err == nil {
+	if i, ok := ParsePlainInt(raw); ok {
 		return &Node{Kind: Scalar, Value: i, Line: line, Column: column}, nil
 	}
 	if isCoreFloat(raw) {
@@ -377,6 +377,22 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 		return nil, fmt.Errorf("yaml:%d:%d: nested mapping must be on an indented line", line, column)
 	}
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
+}
+
+// ParsePlainInt reports whether an unquoted YAML 1.2 integer fits in an int64.
+func ParsePlainInt(raw string) (int64, bool) {
+	var base int
+	switch {
+	case strings.HasPrefix(raw, "0o"):
+		base = 8
+	case strings.HasPrefix(raw, "0x"):
+		base = 16
+	default:
+		i, err := strconv.ParseInt(raw, 10, 64)
+		return i, err == nil
+	}
+	i, err := strconv.ParseUint(raw[2:], base, 63)
+	return int64(i), err == nil
 }
 
 func isCoreFloat(raw string) bool {

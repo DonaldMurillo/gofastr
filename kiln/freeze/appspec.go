@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -932,7 +933,7 @@ func needsQuote(value string) bool {
 	case "true", "false", "null", "~":
 		return true
 	}
-	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+	if _, ok := coreyaml.ParsePlainInt(value); ok {
 		return true
 	}
 	if _, err := strconv.ParseFloat(value, 64); err == nil && strings.ContainsAny(value, ".eE") {
