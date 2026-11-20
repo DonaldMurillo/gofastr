@@ -301,6 +301,34 @@ func TestUnknownStoredDecisionReadsAsDeny(t *testing.T) {
 	}
 }
 
+// deadlineStore records the deadline each Set is given.
+type deadlineStore struct {
+	*memGrantStore
+	deadline time.Time
+	bounded  bool
+}
+
+func (s *deadlineStore) Set(ctx context.Context, capability, permission, decision string) error {
+	s.deadline, s.bounded = ctx.Deadline()
+	return s.memGrantStore.Set(ctx, capability, permission, decision)
+}
+
+func TestGrantWriteIsBoundedByGrantWriteTimeout(t *testing.T) {
+	b, fake := newTestBattery(t)
+	store := &deadlineStore{memGrantStore: newMemGrantStore()}
+	b.grants = store
+	fake.promptDecisions = []Decision{DecisionDeny}
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	before := time.Now()
+	b.authorizeCall(context.Background(), c, m)
+	if !store.bounded {
+		t.Fatal("the grant write ran with no deadline; a hung store would hold the call forever")
+	}
+	if store.deadline.After(time.Now().Add(grantWriteTimeout)) || store.deadline.Before(before) {
+		t.Fatalf("grant write deadline %v is not within grantWriteTimeout (%v) of the write", store.deadline, grantWriteTimeout)
+	}
+}
+
 // failingReadStore fails the Nth Get and answers every other one from an empty store.
 type failingReadStore struct {
 	*memGrantStore
