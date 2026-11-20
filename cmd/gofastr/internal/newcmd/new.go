@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -163,6 +165,16 @@ func runNewRoute(args []string) {
 	// prints a line that does not compile.
 	if err := checkRouteHandler(handler); err != nil {
 		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if !strings.HasPrefix(path, "/") || strings.ContainsFunc(path, unicode.IsSpace) {
+		cli.Fail("invalid route pattern %q: path must start with / and must not contain whitespace", path)
+		cli.OsExit(1)
+		return
+	}
+	if err := router.ValidatePattern(method, path); err != nil {
+		cli.Fail("invalid route pattern %q: %v", path, err)
 		cli.OsExit(1)
 		return
 	}
