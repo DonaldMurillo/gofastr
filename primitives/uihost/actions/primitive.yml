@@ -29,6 +29,10 @@ invariants:
     rule: A screen with no ComponentID gets the action id of its path with slashes turned to dashes and colons dropped, and / gets home.
     enforced_by:
       - test: framework/uihost.TestUIHostMountAutoCompilesScreenActions
+  - id: declared-component-id-wins
+    rule: A screen declaring ComponentID compiles its actions under that id whatever other screen methods it has, so a page rendering it as data-component gets its widget script.
+    enforced_by:
+      - test: framework/uihost.TestDeclaredComponentIDNeedsNoDescription
   - id: action-output-sorted-by-id
     rule: GetActionJS and the page's widget script tags list components in id order.
     enforced_by:

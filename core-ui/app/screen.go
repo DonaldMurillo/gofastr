@@ -74,10 +74,9 @@ type ScreenSpec interface {
 	ScreenTyper
 }
 
-// ScreenComponentID is an optional extension of ScreenSpec that lets a screen declare its component
-// ID for action compilation.
+// ScreenComponentID is an optional interface for screens that declare their component ID for action
+// compilation.
 type ScreenComponentID interface {
-	ScreenSpec
 	// ComponentID returns the ID used for action registration and data-component.
 	ComponentID() string
 }
