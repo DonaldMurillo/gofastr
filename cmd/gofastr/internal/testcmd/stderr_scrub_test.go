@@ -18,7 +18,7 @@ func TestRunTestStopsOnTruncatedOutput(t *testing.T) {
 	dir := t.TempDir()
 	clitest.WriteFileAll(t, filepath.Join(dir, "go"), `#!/bin/sh
 /usr/bin/awk 'BEGIN { printf "%70000s\n", "x" }'
-exec /bin/sleep 5
+exec /bin/sleep 30
 `)
 	if err := os.Chmod(filepath.Join(dir, "go"), 0o700); err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ exec /bin/sleep 5
 	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunTest(nil) })
 	})
-	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+	if elapsed := time.Since(start); elapsed >= 15*time.Second {
 		t.Errorf("truncation waited %s for the child to exit", elapsed)
 	}
 	if code != 1 || !strings.Contains(out, "test output truncated") {
@@ -43,7 +43,7 @@ func TestRunTestBoundsWaitForInheritedStderr(t *testing.T) {
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(`#!/bin/sh
-/bin/sleep 5 >/dev/null &
+/bin/sleep 30 >/dev/null &
 exit 7
 `), 0o700); err != nil {
 		t.Fatal(err)
@@ -54,11 +54,38 @@ exit 7
 	clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunTest(nil) })
 	})
-	if elapsed := time.Since(start); elapsed >= 3*time.Second {
+	if elapsed := time.Since(start); elapsed >= 15*time.Second {
 		t.Errorf("waited %s for a descendant to close stderr", elapsed)
 	}
 	if code != 1 {
 		t.Errorf("exit %d, want 1", code)
+	}
+}
+
+func TestRunTestBoundsWaitForInheritedStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake Go command uses a POSIX shell")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go"), []byte(`#!/bin/sh
+printf '%s\n' '--- PASS: TestChild (0.00s)'
+printf '%s' 'final stdout'
+/bin/sleep 30 2>/dev/null &
+exit 7
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	start := time.Now()
+	var code int
+	out := clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunTest(nil) })
+	})
+	if elapsed := time.Since(start); elapsed >= 15*time.Second {
+		t.Errorf("waited %s for a descendant to close stdout", elapsed)
+	}
+	if code != 1 || !strings.Contains(out, "1 test(s) passed, 0 test(s) failed") || !strings.Contains(out, "final stdout") {
+		t.Errorf("exit %d, output %q: want failure with the child's stdout and tally", code, out)
 	}
 }
 

@@ -760,22 +760,14 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			piiFlagged[f.Entity] = true
 			cli.Warn("%s", f.Message())
 		}
-		// Broader net: any unscoped auto-exposed entity lets every OTHER
-		// authenticated user read/write its rows; warn even when no
-		// field name looks like PII (the token list can't know
-		// "journal_entry" is private). Auto-CRUD already requires a
-		// session by default (issue #65), so this is cross-user
-		// exposure, not anonymous access.
+		// Warn when reads are unscoped, even without PII-shaped fields.
 		for _, f := range lintUnscopedEntities(bp) {
 			if piiFlagged[f.Entity] {
 				continue // already carried the stronger PII warning
 			}
 			cli.Warn("%s", f.Message())
 		}
-		// public: true is a full, deliberate opt-out of the session
-		// requirement: the ACTUAL anonymous-access surface. Always
-		// surfaced (never suppressed by the PII/unscoped warnings above)
-		// so a generated app's open surface is never silent.
+		// Explicitly public entities always get a warning about open writes.
 		for _, f := range lintPublicEntities(bp) {
 			cli.Warn("%s", f.Message())
 		}

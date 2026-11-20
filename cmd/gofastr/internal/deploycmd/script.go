@@ -229,13 +229,29 @@ ORDER="$APP/.release-order"
 release_dirs() {
   find "$APP/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n'
 }
-init_order() {
-  if [ -f "$ORDER" ]; then return; fi
-  {
-    if [ -d "$APP/releases" ]; then
-      release_dirs | LC_ALL=C sort -r
-    fi
-  } > "$ORDER.new"
+reconcile_order() {
+  local current="" recorded=/dev/null
+  if [ -f "$ORDER" ]; then
+    recorded="$ORDER"
+    current="$1"
+  fi
+  if [ -d "$APP/releases" ]; then
+    release_dirs | LC_ALL=C sort -r | while IFS= read -r release; do
+      dir="$APP/releases/$release"
+      if [ -f "$dir/$NAME" ] && [ -x "$dir/$NAME" ] && [ ! -e "$dir/.failed" ]; then
+        printf '%s\n' "$release"
+      fi
+    done | awk -v cur="$current" '
+      FILENAME != "-" { if (NF && !($0 in known)) { known[$0] = 1; recorded[++n] = $0 }; next }
+      { retained[$0] = 1; if (!($0 in known)) missing[++m] = $0 }
+      END {
+        if (cur in retained && !(cur in known)) print cur
+        for (i = 1; i <= m; i++) if (missing[i] != cur) print missing[i]
+        for (i = 1; i <= n; i++) if (recorded[i] in retained) print recorded[i]
+      }' "$recorded" - > "$ORDER.new"
+  else
+    : > "$ORDER.new"
+  fi
   mv -T "$ORDER.new" "$ORDER"
 }
 ` + script + "GOFASTR_LOCKED\n"
@@ -247,8 +263,8 @@ func (p plan) install() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "REL=%s\nUPLOAD=%s\nKEEP=%d\n", p.release, shellQuote(p.upload), p.keep)
 	b.WriteString(`
-init_order
 PREV="$(running)"
+reconcile_order "$PREV"
 # The app's own user: no login, no shell, home in its state directory.
 if ! id -u "$NAME" >/dev/null 2>&1; then
   useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin "$NAME"
@@ -298,6 +314,9 @@ cat > "$APP/releases/$REL/units/$NAME.service" <<'GOFASTR_UNIT'
 } > "$ORDER.new"
 
 if ! activate "$REL" enable; then
+  if ! touch "$APP/releases/$REL/.failed"; then
+    echo "Could not record failed release $REL" >&2
+  fi
   echo "--- the last lines the new release logged ---"
   said
   if [ -n "$PREV" ] && [ "$PREV" != "$REL" ] && [ -x "$APP/releases/$PREV/$NAME" ]; then
@@ -327,16 +346,14 @@ echo "DEPLOYED $REL"
 // the running one and starts it.
 func (p plan) rollback() string {
 	return p.locked(`
-init_order
 CUR="$(running)"
+reconcile_order "$CUR"
 PREV="$(
-  while IFS= read -r release; do
-    if [ "$release" = "$CUR" ] || [ -x "$APP/releases/$release/$NAME" ]; then printf '%s\n' "$release"; fi
-  done < "$ORDER" | awk -v cur="$CUR" '
+  awk -v cur="$CUR" '
     NR == 1 { latest = $0 }
     $0 == cur { found = 1; next }
     found && !done { print; done = 1 }
-    END { if (!found && NR > 0) print latest }'
+    END { if (!found && NR > 0) print latest }' "$ORDER"
 )"
 if [ -z "$CUR" ] || [ -z "$PREV" ]; then
   echo "NO-PREVIOUS"

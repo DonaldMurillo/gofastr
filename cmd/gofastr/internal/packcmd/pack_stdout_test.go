@@ -77,7 +77,7 @@ func TestPackRefusesBadOutFlag(t *testing.T) {
 		cli.OsExit = func(c int) { exitCode = c }
 		out := clitest.CaptureStdout(t, func() { RunPack(args) })
 		cli.OsExit = origExit
-		if exitCode != 1 || strings.Contains(out, "entities:") {
+		if exitCode != 2 || strings.Contains(out, "entities:") {
 			t.Errorf("pack %q exited %d with stdout:\n%s", args, exitCode, out)
 		}
 	}

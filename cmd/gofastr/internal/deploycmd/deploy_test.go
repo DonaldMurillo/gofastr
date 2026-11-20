@@ -386,6 +386,14 @@ func TestFirstReleaseThatFails(t *testing.T) {
 	if strings.Contains(out, "/dev/tcp") || strings.Contains(out, "Connection refused") {
 		t.Errorf("the health check's own errors reached the output:\n%s", out)
 	}
+
+	s.broken = false
+	if out, err := s.run(t0.Add(time.Minute), "prod", "--name", "shop"); err != nil {
+		t.Fatalf("deploy after the failure: %v\n%s", err, out)
+	}
+	if kept := s.releases(); !slices.Equal(kept, []string{s.current()}) {
+		t.Errorf("kept %v, want only the successful release %s", kept, s.current())
+	}
 }
 
 // The health check is the app answering 2xx on the path given, not the
@@ -1019,6 +1027,62 @@ func TestRetentionFollowsServerOrderForEqualClientTimestamps(t *testing.T) {
 	}
 	if got := s.releases(); !slices.Equal(got, releases[1:]) {
 		t.Fatalf("kept %q, want %q", got, releases[1:])
+	}
+}
+
+func TestDeployReconcilesUnrecordedReleases(t *testing.T) {
+	const (
+		recorded = "20261114T040003Z"
+		previous = "20261114T040002Z"
+		running  = "20261114T040001Z"
+		next     = "20261114T040004Z"
+		missing  = "20261114T040005Z"
+	)
+	for _, tc := range []struct {
+		name      string
+		keep      int
+		wantOrder []string
+		wantLink  string
+	}{
+		{"rollback", 0, []string{running, previous, recorded}, previous},
+		{"retain-running", 1, []string{next, running}, next},
+		{"retain-older", 2, []string{next, running, previous}, next},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newServer(t)
+			for _, release := range []string{recorded, previous, running} {
+				p := s.uploadPlan(release)
+				if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+					t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+				}
+			}
+			order := filepath.Join(s.dir, "opt/shop/.release-order")
+			// Re-create the stale order left by two deploys from an older client.
+			if err := os.WriteFile(order, []byte(missing+"\n"+recorded+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if s.current() != running {
+				t.Fatalf("fixture current = %q, want %q", s.current(), running)
+			}
+			p := s.uploadPlan(next)
+			p.keep = tc.keep
+			script := p.install
+			if tc.keep == 0 {
+				script = p.rollback
+			}
+			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script())); code != 0 || err != nil || s.current() != tc.wantLink {
+				t.Fatalf("%s: exit %d, error %v, current %q, want %q\n%s", tc.name, code, err, s.current(), tc.wantLink, out)
+			}
+			gotOrder, err := os.ReadFile(order)
+			if want := strings.Join(tc.wantOrder, "\n") + "\n"; err != nil || string(gotOrder) != want {
+				t.Errorf("release order %q, error %v, want %q", gotOrder, err, want)
+			}
+			wantDirs := slices.Clone(tc.wantOrder)
+			slices.Sort(wantDirs)
+			if got := s.releases(); !slices.Equal(got, wantDirs) {
+				t.Errorf("kept %q, want %q", got, wantDirs)
+			}
+		})
 	}
 }
 

@@ -127,8 +127,13 @@ gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
 ```
 
 `rollback` starts the release before the running one in the server's
-recorded deployment order and checks it the same way. An older
-installation initializes that order from its retained release IDs.
+recorded deployment order and checks it the same way. Before a deploy or
+rollback, the server updates that order to account for missing releases
+and releases left unrecorded by an older client or interrupted deploy.
+An unrecorded running release goes first, followed by other unrecorded
+releases in descending release ID order. Previously recorded releases
+keep their relative order. An installation without a recorded order
+starts with descending release ID order.
 If activation or the health check fails, it tries to restore
 the release it left. Each release uses its own environment and saved
 `--port` and `--health` settings. For a release without saved health

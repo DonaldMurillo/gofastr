@@ -221,13 +221,13 @@ func TestPackRejectsExtraAppDirectory(t *testing.T) {
 	}
 }
 
-func TestPackFlagUsageErrorsExit2(t *testing.T) {
-	for _, arg := range []string{"-zzz", "-o", "--out="} {
+func TestPackUsageErrorsExit2(t *testing.T) {
+	for _, arg := range []string{"-zzz", "-o", "--out=", ""} {
 		t.Run(arg, func(t *testing.T) {
 			exit := recordPackExit(t)
 			RunPack([]string{arg})
 			if *exit != 2 {
-				t.Errorf("pack %s exited %d, want 2", arg, *exit)
+				t.Errorf("pack %q exited %d, want 2", arg, *exit)
 			}
 		})
 	}

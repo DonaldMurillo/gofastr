@@ -24,8 +24,9 @@ func sitemapFixture(documents map[string]string) func(string) (a11ySitemap, erro
 func TestA11ySitemapDiscoversURLSet(t *testing.T) {
 	read := sitemapFixture(map[string]string{"/sitemap.xml": `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://example.com/</loc></url>
+  <url><loc>https://example.com</loc></url>
   <url><loc>https://example.com/about</loc></url>
+  <url><loc> </loc></url>
   <url><loc>https://example.com/docs/intro</loc></url>
 </urlset>`})
 	pages, err := discoverA11yPages(read)
@@ -53,6 +54,12 @@ func TestA11ySitemapRootFailuresFailDiscovery(t *testing.T) {
 		{"malformed", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset>"})},
 		{"wrong document", sitemapFixture(map[string]string{"/sitemap.xml": "<html/>"})},
 		{"empty", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset/>"})},
+		{"empty location", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset><url><loc></loc></url></urlset>"})},
+		{"blank location", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset><url><loc> </loc></url></urlset>"})},
+		{"blank location in part", sitemapFixture(map[string]string{
+			"/sitemap.xml": "<sitemapindex><sitemap><loc>/part.xml</loc></sitemap></sitemapindex>",
+			"/part.xml":    "<urlset><url><loc> </loc></url></urlset>",
+		})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pages, err := discoverA11yPages(tc.read)

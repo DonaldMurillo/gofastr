@@ -30,30 +30,14 @@ func RunTest(args []string) {
 	}
 
 	cmd := exec.Command("go", testArgs...)
-	cmd.Stdout = nil // We'll pipe and colorize
+	stdout, output := io.Pipe()
+	defer stdout.Close()
+	defer output.Close()
+	cmd.Stdout = output
 	stderr := &scrubWriter{out: os.Stderr}
 	cmd.Stderr = stderr
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GOFASTR_TEST=1")
-
-	// Capture stdout and colorize
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cli.Fail("Failed to pipe stdout: %v", err)
-		// Fallback: run without colorization, still scrubbed.
-		stdout := &scrubWriter{out: os.Stdout}
-		cmd.Stdout = stdout
-		runErr := cmd.Run()
-		stdoutErr := stdout.flush()
-		stderrErr := stderr.flush()
-		if runErr != nil || stdoutErr != nil || stderrErr != nil {
-			cli.Fail("Tests failed")
-			cli.OsExit(1)
-			return
-		}
-		cli.Success("All tests passed!")
-		return
-	}
 
 	if err := cmd.Start(); err != nil {
 		cli.Fail("Failed to start tests: %v", err)
@@ -61,20 +45,24 @@ func RunTest(args []string) {
 		return
 	}
 
-	// Colorize test output
 	passed := 0
 	failed := 0
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		fmt.Println(colorizeTestLine(scanner.Text(), &passed, &failed))
-	}
-
-	scanErr := scanner.Err()
-	if scanErr != nil {
-		_ = cmd.Process.Kill()
-		_ = stdout.Close()
-	}
+	scanDone := make(chan error, 1)
+	go func() {
+		defer stdout.Close()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			fmt.Println(colorizeTestLine(scanner.Text(), &passed, &failed))
+		}
+		if scanner.Err() != nil {
+			_ = cmd.Process.Kill()
+		}
+		scanDone <- scanner.Err()
+	}()
+	// exec owns both child pipes, so WaitDelay can close either after exit.
 	waitErr := cmd.Wait()
+	_ = output.Close()
+	scanErr := <-scanDone
 	stderrErr := stderr.flush()
 
 	if scanErr != nil {

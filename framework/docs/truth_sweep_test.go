@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,34 +18,43 @@ func TestSDKStaticExportStagesDownloadURLs(t *testing.T) {
 		t.Fatal("static export needs a staging recipe that maps the dist archive to the download URL")
 	}
 	recipe, _, _ = strings.Cut(recipe, "```")
-	root := t.TempDir()
-	dist := filepath.Join(root, "gen/sdk/dist")
-	if err := os.MkdirAll(dist, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	files := map[string]string{
-		"go.zip": sdk.GoArtifact, sdk.JSArtifact: sdk.JSArtifact,
-		sdk.JSTypesArtifact: sdk.JSTypesArtifact, sdk.ManifestFile: sdk.ManifestFile,
-	}
-	for _, source := range files {
-		if err := os.WriteFile(filepath.Join(dist, source), []byte(source), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	command := exec.Command("sh", "-eu", "-c", recipe)
-	command.Dir = root
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("static SDK staging failed: %v\n%s", err, output)
-	}
 	if !strings.Contains(doc, `"/docs/api/sdk": os.DirFS("gen/sdk/export")`) {
 		t.Error("the static builder must mount the staged files under the SDK download path")
 	}
-	for public, source := range files {
-		got, err := os.ReadFile(filepath.Join(root, "gen/sdk/export", public))
-		if err != nil || string(got) != source {
-			t.Errorf("staged %s = %q, %v; want contents of %s", public, got, err, source)
+	t.Run("staging recipe", func(t *testing.T) {
+		shell, err := exec.LookPath("sh")
+		if errors.Is(err, exec.ErrNotFound) {
+			t.Skip("staging recipe requires sh")
 		}
-	}
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := t.TempDir()
+		dist := filepath.Join(root, "gen/sdk/dist")
+		if err := os.MkdirAll(dist, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{
+			"go.zip": sdk.GoArtifact, sdk.JSArtifact: sdk.JSArtifact,
+			sdk.JSTypesArtifact: sdk.JSTypesArtifact, sdk.ManifestFile: sdk.ManifestFile,
+		}
+		for _, source := range files {
+			if err := os.WriteFile(filepath.Join(dist, source), []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := exec.Command(shell, "-eu", "-c", recipe)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("static SDK staging failed: %v\n%s", err, output)
+		}
+		for public, source := range files {
+			got, err := os.ReadFile(filepath.Join(root, "gen/sdk/export", public))
+			if err != nil || string(got) != source {
+				t.Errorf("staged %s = %q, %v; want contents of %s", public, got, err, source)
+			}
+		}
+	})
 }
 
 func TestSDKDriftDocsDescribeMountLifetimeAndSchemaVersion(t *testing.T) {

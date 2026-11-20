@@ -98,7 +98,11 @@ func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]st
 	var pages []string
 	seen := map[string]bool{}
 	for _, loc := range locations {
-		u, err := url.Parse(strings.TrimSpace(loc))
+		loc = strings.TrimSpace(loc)
+		if loc == "" {
+			continue
+		}
+		u, err := url.Parse(loc)
 		if err != nil {
 			continue
 		}
