@@ -210,26 +210,30 @@ directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 
 In `fakecgo`, starred, what remains is a one-line doc on each exported
 function and the package. The four groups (desktop; auth; admin, queue,
-semantic and webhook; the thirteen others) added 122 primitives, 801
-invariants (16 judged only) and 131 decisions, plus 168 tests for rules
+semantic and webhook; the thirteen others) added 122 primitives, 802
+invariants (16 judged only) and 131 decisions, plus 171 tests for rules
 that had none. Twelve batteries got their first top-level primitive
 (`desktop`, `log`, `cache`, `email`, `search`, `sitesearch`, `storage`,
 `setup`, `relay`, `print`, `notify`, `telemetry`); the seven that had one
 were extended. They recorded 18 twins and merged two (desktop's two grant
 stores now share `checkDecision`, and `desktoptest` uses
-`desktop.MainWindowID`). No code changed behaviour; outside new tests the
-only code changes are those two merges, an unused helper removed from
-`desktop/datadir.go`, and two moves that split files by job
-(`admin.go` into `gate.go` and `opspost.go`, `email/smtp.go` into
-`message.go`). Fixed on the way: three tests that passed for the wrong
-reason (`TestOAuth2Plugin_StateExpiry` minted a state that failed to
-parse before its expiry was read, `TestOIDCSec_WeakRSAKey` signed with the
+`desktop.MainWindowID`). Outside new tests the only other code changes are
+two moves that split files by job (`admin.go` into `gate.go` and
+`opspost.go`, `email/smtp.go` into `message.go`) and one bug fix: a
+relative `desktop.Config.DataDir` was accepted though its doc said it
+must be absolute, because the helper that checked it was never called
+(breaking: `New` now panics on one, and `Init` creates a missing one
+owner-only). Also fixed on the way: six tests weaker than their rules
+(`TestOAuth2Plugin_StateExpiry` minted a state that failed to parse
+before its expiry was read, `TestOIDCSec_WeakRSAKey` signed with the
 strong key, `TestWebhookMetrics_CountersAndCollector` let an attempt count
-twice), and two docs that said the opposite of the code (`search.md` on
-a non-string weighted field, webhook's `Options` on a caller's HTTP
-client). Left unproven on Linux: the macOS and Windows desktop rules,
-whose tests run only there, and storage's case-folded keys, whose tests
-skip on a case-sensitive filesystem.
+twice, two mail-queue panic tests returned before the worker's fate was
+known, and a search test named for a clause it did not check), and two
+docs that said the opposite of the code (`search.md` on a non-string
+weighted field, webhook's `Options` on a caller's HTTP client). Every
+proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Left
+unproven on Linux: the macOS and Windows desktop rules, whose tests run
+only there, and storage's case-folded keys, whose tests skip on a case-sensitive filesystem.
 
 Next: `cmd/`, `internal/`. The repository as a whole is at 10.4%.
 
