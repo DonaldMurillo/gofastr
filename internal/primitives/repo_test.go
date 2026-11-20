@@ -182,6 +182,7 @@ var ownedPackages = []string{
 	"core-ui/di",
 	"core-ui/localdb",
 	"core-ui/node",
+	"core-ui/noderender",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
