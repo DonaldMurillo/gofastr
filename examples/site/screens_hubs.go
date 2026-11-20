@@ -517,14 +517,14 @@ func agentsHub() *TeachHubScreen {
 	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 	return &TeachHubScreen{
 		Name:  "Agents",
-		Title: "Built for two kinds of agents",
-		Desc:  "GoFastr's agent surface: production MCP tools your users' agents call with their own login, and dev MCP that hands your coding agent the running app's routes, config, and logs.",
-		Lede:  "Two kinds of agents, two layers of MCP. In production, the agents your users bring call your data with the same login and permissions the users have. While you build, gofastr dev hands your coding agent the running app.",
+		Title: "Built for coding agents and the agentic web",
+		Desc:  "GoFastr's agent surface: dev MCP and contract verification while you build, plus /mcp tools and discovery endpoints once you ship.",
+		Lede:  "Two sides of the same coin. While you build, gofastr dev hands your coding agent live routes, config, logs, and contract checks. Once you ship, user agents call /mcp under the exact same login and permissions as your HTTP API.",
 		Moves: []string{"production MCP", "dev MCP", "auto llm.md", "discovery", "local search"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Production MCP tools",
-				Body:     []render.HTML{hubP("Turn on MCP and every CRUD entity gets tools an agent can call. The tools run through the same auth, owner, and tenant checks as your HTTP API. An agent gets exactly the access its user has, and nothing more.")},
+				Body:     []render.HTML{hubP("Turn on MCP to serve custom core/mcp tools and optional entity CRUD tools at /mcp. Entity tools dispatch through the app router so session auth, RBAC, and owner/tenant scoping apply identically to HTTP.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `fwApp := framework.NewUIHostApp(host,

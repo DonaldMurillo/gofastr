@@ -30,6 +30,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -338,6 +340,12 @@ var embeddedDocCount = sync.OnceValue(func() string {
 	return strconv.Itoa(n)
 })
 
+// contractRuleCount counts the registered contract rules checked by
+// `gofastr verify`, measured live from the catalog this binary links.
+var contractRuleCount = sync.OnceValue(func() string {
+	return strconv.Itoa(len(contracts.AllRules()))
+})
+
 // numberClaim is one countable claim: the value, what it counts, and how a
 // reader can check it.
 type numberClaim struct{ value, label, check string }
@@ -348,10 +356,10 @@ func numberClaims() []numberClaim {
 			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."},
 		{embeddedDocCount(), "docs embedded in every binary",
 			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."},
-		{"5", "MCP tools per entity",
-			"list, get, create, update, delete. Each dispatches through the app router, so the caller's login and permissions apply."},
+		{contractRuleCount(), "contract rules in gofastr verify",
+			"Static and semantic checks covering routing, permissions, security, rendering, and accessibility—built to catch human and agent mistakes early."},
 		{"2", "databases",
-			"SQLite and Postgres. No MySQL, no Mongo."},
+			"SQLite (pure Go, CGO_ENABLED=0) and Postgres. No MySQL, no Mongo."},
 		{"1", "binary to deploy",
 			"go build emits it. No Node, no platform, no telemetry."},
 		{"0", "npm packages",
@@ -374,7 +382,7 @@ func numbersSection() render.HTML {
 	}
 	bands := ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		band("Measured by this binary", claims[:2]),
-		band("Agents and databases", claims[2:4]),
+		band("Guardrails and databases", claims[2:4]),
 		band("Deploy and dependencies", claims[4:]),
 	)
 
@@ -491,22 +499,22 @@ func exploreSection() render.HTML {
 	code := ui.InlineCode
 	grid := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
 		routeCard("/primitives", "core · core-ui", "The primitives",
-			render.Join(render.Text("Router, query builder, schema, "), code("render"), render.Text(", the MCP server, HTML primitives, and signals. These are stdlib-first Go packages you can use on their own.")), false,
+			render.Join(render.Text("Router, typed handlers, "), code("render"), render.Text(", query builder, MCP server, and signals. Stdlib-first Go packages you can use standalone.")), false,
 		),
 		routeCard("/framework", "framework · framework/ui", "Framework",
-			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations, framework/ui components, and theming."), false,
+			render.Text("Turn on the full stack when you want speed: themed UI components, auth, access control, migrations, and optional entities."), false,
 		),
-		routeCard("/agents", "mcp · llm.md · well-known", "Agent-ready",
-			render.Join(render.Text("Per-entity MCP tools, auto "), code("llm.md"), render.Text(", tools that read the running app, and the agent-discovery endpoints your app serves.")), false,
+		routeCard("/agents", "mcp · llm.md · verify", "Agent-ready",
+			render.Join(render.Text("Dev MCP and contract checks while you build; "), code("/mcp"), render.Text(" tools, "), code("llm.md"), render.Text(", and discovery endpoints once you ship.")), false,
 		),
 		routeCard("/interactivity", "ssr · islands · signals", "Interactivity",
-			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE. There is no client framework to ship."), false,
+			render.Text("Server-rendered HTML with client signals, island RPCs, polling, and SSE push—no React, Vue, or JS build pipeline."), false,
 		),
-		routeCard("/generator", "generate", "The code generator",
-			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."), false,
+		routeCard("/generator", "init · generate · sdk", "Generators & SDKs",
+			render.Text("Scaffold an entire app, Go/TS client SDKs, or a branded customer CLI as plain Go you own and edit."), false,
 		),
 		routeCard("/examples", "examples/", "The example apps",
-			render.Text(fmt.Sprintf("%d runnable reference apps, including a blog, a SaaS console, a storefront, an API tour, an entity admin, a process-isolated module, a WebMCP support console, and this site. Each starts with one command.", len(exRowItems()))), false,
+			render.Text(fmt.Sprintf("%d runnable reference apps—Meridian (a full SaaS console) and this docs site—plus interactive demos. Each starts in one command.", len(exRowItems()))), false,
 		),
 	)
 

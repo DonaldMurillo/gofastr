@@ -232,16 +232,15 @@ func gsBody() render.HTML {
 
 	li := func(s string) render.HTML { return html.ListItem(html.ListItemConfig{}, render.Text(s)) }
 	step6 := step(6, "now",
-		p(t("Four minutes in, this is on disk and running:")),
+		p(t("Four minutes in, here is what is on disk and running:")),
 		ui.Card(ui.CardConfig{Heading: "Running, on disk, yours", Variant: ui.CardOutlined},
 			html.UnorderedList(html.ListConfig{},
-				li("A server-rendered home screen (plus yours from step 5)"),
-				li("A posts entity: REST CRUD at /api/posts, session-gated by default"),
-				li("Sign-in screens at /login and /register, backed by the auth battery"),
-				li("A versioned SQL migration, already applied"),
-				li("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)"),
-				li("MCP under gofastr dev: posts_list/posts_create plus app_routes, and the framework docs through framework_docs_search (the generated main.go registers them), so your coding agent reads the running app"),
-				li("AGENTS.md + .agents/ + DESIGN.md, generated for the agent you build with"),
+				li("Server-rendered home and about screens in plain Go"),
+				li("Sign-in and registration at /login and /register over battery/auth"),
+				li("A session-gated sample entity at /api/posts with a versioned migration (skip with --no-entity)"),
+				li("An OpenAPI 3 spec at /openapi.json and interactive reference at /api/docs/"),
+				li("Dev MCP tools under gofastr dev so Claude Code or Codex can read routes, logs, and framework docs"),
+				li("AGENTS.md, .agents/, and DESIGN.md ready for your coding agent"),
 			),
 		),
 	)

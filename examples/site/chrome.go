@@ -36,7 +36,7 @@ func siteFooter() render.HTML {
 		Tagline: "Go from idea to a full-stack app, fastr. Simple for humans, built for agents.",
 		Columns: siteFooterColumns(),
 		Bottom: []render.HTML{
-			html.Span(html.TextConfig{}, render.Text("© 2026. A research project, not a company.")),
+			html.Span(html.TextConfig{}, render.Text("© 2026 GoFastr · MIT License.")),
 		},
 	})
 }

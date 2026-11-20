@@ -1,10 +1,9 @@
 package main
 
 // Gate for the home page's "Numbers you can check" strip. The measured
-// values (runtime size, doc count) are computed from the same embedded
-// sources the site serves, so they can't drift, this file sanity-checks
-// them and pins the values the page states as constants: 5 MCP tools per
-// entity and 0 npm packages in the repo.
+// values (runtime size, doc count, contract rule count) are computed from the
+// same embedded sources the site serves, so they can't drift; this file
+// sanity-checks them and pins the 0 npm packages claim.
 
 import (
 	"bytes"
@@ -16,12 +15,8 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
-
-	"github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
 
 func TestNumbersStripRendersMeasuredValues(t *testing.T) {
@@ -55,18 +50,14 @@ func TestNumbersStripRendersMeasuredValues(t *testing.T) {
 	}
 }
 
-func TestNumbersStripFiveMCPToolsPerEntity(t *testing.T) {
-	ent := entity.Define("widgets", entity.EntityConfig{
-		Name: "widgets", Table: "widgets",
-		Fields: []schema.Field{{Name: "name", Type: schema.String}},
-	}.WithTimestamps(false))
-	srv := mcp.NewServer()
-	ch := crud.NewCrudHandler(ent, nil)
-	if err := crud.RegisterEntityMCPTools(srv, ch, router.New()); err != nil {
-		t.Fatalf("register entity MCP tools: %v", err)
+func TestNumbersStripContractRuleCount(t *testing.T) {
+	section := string(numbersSection())
+	got := strconv.Itoa(len(contracts.AllRules()))
+	if !strings.Contains(section, got) {
+		t.Errorf("strip does not render the live contract rule count %q", got)
 	}
-	if got := len(srv.ListTools()); got != 5 {
-		t.Fatalf("MCP tools per entity = %d; the home page claims 5 — update both", got)
+	if len(contracts.AllRules()) < 50 {
+		t.Errorf("contract rule count = %d — expected at least 50 rules", len(contracts.AllRules()))
 	}
 }
 
