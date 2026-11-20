@@ -80,8 +80,9 @@
   // instead of a silently wrong cadence.
   function parseGoDuration(s) {
     if (!s) return NaN;
-    const re = /(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|ms|s|m|h)/y;
-    const MUL = { ns: 1e-6, us: 1e-3, 'µs': 1e-3, ms: 1, s: 1000, m: 60000, h: 3600000 };
+    if (s[0] === '+') s = s.slice(1);
+    const re = /(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)/y;
+    const MUL = { ns: 1e-6, us: 1e-3, 'µs': 1e-3, 'μs': 1e-3, ms: 1, s: 1000, m: 60000, h: 3600000 };
     let total = 0;
     let consumed = 0; // exec resets lastIndex to 0 on its final miss
     let m;
