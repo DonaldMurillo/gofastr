@@ -410,10 +410,10 @@ count := cart.Int("count", 0)`,
 func frameworkHub() *TeachHubScreen {
 	return &TeachHubScreen{
 		Name:  "Framework",
-		Title: "The framework layer, on top of core",
-		Desc:  "The framework layer of GoFastr: entities and CRUD on the backend, composed components on the front: auth, access control, migrations, and theming.",
-		Lede:  "framework and framework/ui sit on top of the primitives. Declare an entity and get the database, API, and tools; compose screens from components that already match your theme.",
-		Moves: []string{"entities", "auth", "access control", "migrations", "components", "theming"},
+		Title: "Turn on the full stack when you want it",
+		Desc:  "The framework layer of GoFastr: UI components, theming, auth, access control, migrations, and optional CRUD entities on top of core.",
+		Lede:  "framework and framework/ui compose the core primitives into a productive full-stack app: themed UI components, auth, access control, migrations, and optional entity declarations—while letting you drop to plain Go anywhere.",
+		Moves: []string{"components", "theming", "auth", "access control", "migrations", "entities"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Entities",

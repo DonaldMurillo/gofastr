@@ -125,8 +125,8 @@ func gsHero() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		ui.Hero(ui.HeroConfig{
 			Eyebrow:   "Get started · v" + siteVersion,
-			Title:     "From cold machine to a running app in four minutes.",
-			Subtitle:  "Install the CLI, scaffold an app, declare an entity, run it. Every command in this guide is real. Paste it into a terminal and it works.",
+			Title:     "From zero to a running app in four minutes.",
+			Subtitle:  "Install the CLI, scaffold plain Go you own, run gofastr dev, and add your first screen. Prefer barebones? Pass --no-entity or import core/ directly.",
 			AriaLabel: "Get started",
 		}),
 		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
@@ -176,17 +176,17 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step(2, "~45s",
-		p(t("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, sign-in screens in screens_auth.go, a versioned migration, DESIGN.md, gofastr.settings.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
+		p(t("Scaffold a flat project in plain Go: main.go, a home screen in screens.go, auth screens, a sample entity (skip with --no-entity), DESIGN.md, and agent onboarding files (AGENTS.md, CLAUDE.md, .agents/).")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
 			ok("✓ Created project blog in ./blog/: main.go, screens.go, screens_auth.go, entities/entities.go, gofastr.settings.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
 			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
-		p(t("Open the scaffolded "), codeText("main.go"), t(". It's short, it's yours, and every registration in it is plain Go. Read it.")),
+		p(t("Open "), codeText("main.go"), t(". Everything in it is normal Go you can read, edit, or replace with plain net/http.")),
 	)
 
 	step3 := step(3, "~60s",
-		p(t("The scaffold already declared one. Open "), codeText("entities/entities.go"), t(". One declaration is the table, REST CRUD, validation, an OpenAPI spec, and a typed query builder:")),
+		p(t("Need CRUD right away? The scaffold includes a sample entity in "), codeText("entities/entities.go"), t(". One declaration wires the table, REST API, validation, OpenAPI, and MCP tools—optional, and removable anytime:")),
 		codeBlock("blog/entities/entities.go", []render.HTML{
 			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
 			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
@@ -758,12 +758,12 @@ func (s *PhilosophyScreen) Render() render.HTML {
 func phHero() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.Hero(ui.HeroConfig{
-			Eyebrow:   "Essay · Volume 01 · 2026-05",
-			Title:     "Why this framework exists.",
-			Subtitle:  "Most web frameworks assume a human will hand-write every route, query, validator, migration, and form. AI agents already generate that code, but no framework treats their output as the canonical source. GoFastr inverts that. The agent's output is canonical source, same as the human's. The framework is what they both write to.",
+			Eyebrow:   "Philosophy",
+			Title:     "Simple for humans. Built for agents.",
+			Subtitle:  "Go from idea to a full-stack app, fastr—without locking yourself into a black box. GoFastr stays plain Go on disk so you can be as barebones or as batteries-included as the app needs, and your coding agents can work in the same repo without leaving a mess.",
 			AriaLabel: "Philosophy",
 		}),
-		html.Paragraph(html.TextConfig{}, ui.Muted(render.Text("By Donald Murillo · Updated 2026-05-26"))),
+		html.Paragraph(html.TextConfig{}, ui.Muted(render.Text("By Donald Murillo"))),
 	)
 }
 
@@ -791,38 +791,36 @@ func phTOC() render.HTML {
 // phEssay is the essay body. It is prose, so it is markdown: ui.Markdown
 // owns the reading rhythm, the pull quote, the lists and the roadmap table.
 const phEssay = "## Why this exists\n\n" +
-	"In 2026, you can describe an app and have it generated. The output is usually a tangle: hand-rolled handlers, magic ORMs, custom-DSL config files, and an opaque server runtime that fights both you and the agent. The next thing you do is throw most of it away.\n\n" +
-	"The pattern is fixable. If the framework names what an entity is, a typed declaration that becomes SQL, REST, MCP tools, OpenAPI, and a typed Go model, then the agent's output is the declaration. Everything else is read-only generated code you can grep, debug, and step through.\n\n" +
-	"> The right abstraction makes the simple case trivial and the complex case possible. The wrong abstraction makes both unreadable.\n\n" +
+	"Building a prototype or a small-to-medium web app shouldn't require stitching together a React SPA, a Node build pipeline, a separate backend repo, hand-rolled auth, and a pile of glue code before you ship your first screen. And when coding agents help write that glue, opaque frameworks and magic conventions turn messy fast.\n\n" +
+	"GoFastr takes the opposite bet: one Go binary, plain Go files you own on disk, server-rendered UI with interactive islands (no JS build step), and built-in rails for both humans and agents.\n\n" +
+	"> The right abstraction makes the simple case fast and the custom case plain Go. The wrong abstraction traps you in both.\n\n" +
 	"## The two layers\n\n" +
-	"Two packages, no more. `core/` is stdlib-only Go primitives, router, query, schema, mcp, openapi, and more, each independently usable, with no dependencies outside the standard library. `framework/` is the opinionated entity layer composed on top. When the framework is in your way, you drop down to core and write plain Go.\n\n" +
-	"No reflection magic. Generated code is regular Go you can read. The framework's job is to make the typed declaration so expressive that the generated code is shorter than the framework call that produced it.\n\n" +
+	"GoFastr doesn't force an all-or-nothing buy-in. `core/` and `core-ui/` are stdlib-first building blocks—router, typed handlers, HTML rendering, SQL query builder, schema, migrations, MCP, signals—that work completely standalone. `framework/` and `battery/` compose them when you want full-stack speed: UI components, auth, queues, search, optional CRUD entities, and contract checks.\n\n" +
+	"You pick your altitude per feature. Use `framework/` where it saves hours; drop down to `core/`, `net/http`, or `database/sql` anywhere in the same app.\n\n" +
 	"## Convictions\n\n" +
-	"1. **Declare once, generate the rest.** Database, REST, MCP, OpenAPI, typed Go: all from one source.\n" +
-	"2. **No reflection magic.** If the framework looks like it's doing something opaque, open the generated file.\n" +
-	"3. **Drop down to core.** If the framework is in your way, the layer below is stdlib-only Go with nothing else to fight.\n" +
-	"4. **Batteries included, not embedded.** Auth, cache, email, queue, search, storage: narrow interfaces, swappable drivers.\n" +
-	"5. **AI agents are authors too.** MCP tools, Kiln, agent notes. Every entity ships MCP tools from day one.\n" +
-	"6. **Strong opinions, small scope.** Some things we explicitly will not do.\n\n" +
+	"1. **Barebones or batteries-included, your call.** Start with a 30-line `core/` server or `gofastr init` a full app; mix both freely.\n" +
+	"2. **Plain Go you own.** No reflection magic, no hidden runtime schema store, no `DO NOT EDIT` scaffold lock-in. Even `gofastr generate app` scaffolds once and gets out of the way.\n" +
+	"3. **Server-rendered UI without a JS framework.** Go renders HTML on first load; a tiny runtime handles client-side navigation, server islands, signals, polling, and SSE.\n" +
+	"4. **Batteries are opt-in packages.** Auth, queues, search, email, storage, admin, webhooks—narrow interfaces, import only what you use.\n" +
+	"5. **Optimized for agents on both sides.** `gofastr dev` and `gofastr verify` keep coding agents grounded while building; `/mcp` and `llm.md` serve user agents in production under the same permissions.\n" +
+	"6. **One static binary to ship.** SQLite (`CGO_ENABLED=0`) or Postgres, `go build`, deploy anywhere.\n\n" +
 	"## Where agents fit\n\n" +
-	"Agents drive the framework the same way humans do. The MCP tools are the REST endpoints in a different shape; the typed Kiln tools are the framework's mutate API exposed for code-generating agents. Destructive operations require an approved plan. The agent cannot drop your tables without you clicking Approve.\n\n" +
-	"The framework also leaves clear breadcrumbs for the agent: doc files embedded in the binary and structured MCP introspection at /mcp. An agent that connects to a running GoFastr app can read its own state and reason about it.\n\n" +
+	"While you build, `gofastr dev` exposes your running app's routes, config, docs, and logs to Claude Code or Codex over MCP, and `gofastr verify` runs static and semantic contract checks so security, routing, and UI mistakes fail loudly instead of slipping into main.\n\n" +
+	"Once you ship, your app participates in the agentic ecosystem out of the box: `/mcp` tools share the exact same sessions, RBAC, and owner/tenant scopes as your HTTP API, alongside automatic `llm.md` and `llms.txt` discovery.\n\n" +
 	"## What's next\n\n" +
-	"| When | What | Status |\n" +
+	"| Area | Focus | Status |\n" +
 	"| --- | --- | --- |\n" +
-	"| Shipped | Two-layer core/ + framework/ split | ✓ shipped |\n" +
-	"| Shipped | Auto-CRUD + MCP + OpenAPI | ✓ shipped |\n" +
-	"| Shipped | Kiln agent build mode (experimental) | ✓ shipped |\n" +
-	"| Q3 2026 | Lock framework/entity ABI | next |\n" +
-	"| Q4 2026 | Land core-ui 1.0 | later |\n" +
-	"| 2027 | First version we'd suggest shipping to customers | later |\n\n" +
+	"| Core + UI + Batteries | Layered Go stack, SSR + islands, auth, SQLite/Postgres | ✓ shipped |\n" +
+	"| Agent loop + Contracts | Dev/prod MCP, `llm.md`, `gofastr verify` contract catalog | ✓ shipped |\n" +
+	"| Production dogfooding | Barcode Maker, this docs site, Meridian flagship | ✓ live |\n" +
+	"| v1.0 freeze | Lock public `framework` + `core-ui` APIs after external adoption | in progress |\n\n" +
 	"## A note on this site\n\n" +
-	"This site is built with GoFastr itself. Every interactive element is a registered component; the CSS is generated by the typed style.StyleSheet DSL against the theme; every page is server-rendered with the same runtime any consumer of the framework gets.\n\n" +
-	"If something on this site doesn't work, the bug is in the framework, and the fix lands here first, then everywhere else.\n\n" +
+	"This site is built with GoFastr itself. Every page is server-rendered from `framework/ui` components on the stock theme with zero separate frontend build, and every code sample in the hero, `/get-started`, and `/framework` is compiled and tested in CI.\n\n" +
+	"If something feels clunky here, we fix it in the framework so every app gets better.\n\n" +
 	"## Notes & references\n\n" +
-	"1. The framework's principles trace from net/http: pattern routing, middleware chains, explicit handler signatures.\n" +
-	"2. MCP: Anthropic's Model Context Protocol; how agents call the app's tools.\n" +
-	"3. The two-layer pattern echoes Rich Hickey's distinction between simple and easy.\n"
+	"1. The HTTP and handler model builds directly on Go's `net/http` standard library.\n" +
+	"2. MCP: the Model Context Protocol, powering both dev-time introspection and production agent tools.\n" +
+	"3. The barebones-to-framework layering follows Rich Hickey's distinction between simple and easy.\n"
 
 func phBody() render.HTML {
 	return ui.Markdown(ui.MarkdownConfig{Source: phEssay, ID: "philosophy-essay"})
