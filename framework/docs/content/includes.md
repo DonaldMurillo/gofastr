@@ -1,399 +1,48 @@
-# Includes & eager loading
+# Includes (eager loading)
 
-The `?include=` query parameter eager-loads related entities in a
-single response, avoiding N+1 queries. The framework runs one
-follow-up query per relation per nesting level, never one per parent
-row.
-
-Repeated mentions of one relation merge their attached rows before read hooks
-run. Each relation's `AfterList` chain runs once over the combined rows,
-including when mentions have different filters. For to-one relations, the
-`AfterGet` chain runs once per distinct attached row.
-
-## Quickstart
-
-```bash
-# Single relation:
-curl 'http://localhost:8080/posts?include=author'
-
-# Multiple relations:
-curl 'http://localhost:8080/posts?include=author,comments'
-
-# Nested:
-curl 'http://localhost:8080/posts?include=author.profile,comments.replies'
-
-# Scoped: only published comments
-curl 'http://localhost:8080/posts?include=comments(status=published)'
-
-# Scoped with operators:
-curl 'http://localhost:8080/posts?include=comments(created_at_gte=2026-01-01,score_gt=5)'
-```
-
-The response embeds the loaded relations inline under each parent row:
-
-```json
-{
-  "id": "p1", "title": "First",
-  "author": { "id": "u1", "name": "Carol" },
-  "comments": [
-    { "id": "c1", "body": "…", "score": 12 }
-  ]
-}
-```
-
-A relation sits under its name's wire key. A `belongs_to` derived from
-a relation field (`author_id` → `relation` to `users`) shares the
-field's key, so `?include=author_id` replaces the `authorId` key with
-the record it names. `/openapi.json` documents the read view that way:
-such a property is `anyOf` the key, the related record's schema, or
-null, and a relation with no field of its own is an optional property
-(an array of records for has-many and many-to-many). Request bodies
-still take the key.
-
-Cascade-write validation errors use dotted wire paths in `fields` and
-`field_reasons`. Each relation and field uses its owning entity's wire names,
-including explicit `WireName` overrides, and to-many items retain their numeric
-index: a child's `display_name` field with `WireName: "display"` is reported as
-`author.display` or `authors.0.display`, not `author.displayName`.
-
-A relation behind a Hidden field (a Hidden relation field, or a
-`belongs_to` whose foreign key is Hidden) is not includable: its record
-would carry the hidden key out. `?include=` on it, at any depth and in
-the in-process `GetOne`, `ListAll` and `TypedQuery.Include`, answers
-`unknown_include` the way a name that is no relation does, a nested
-filter across it (`?owner_ref.email=`) answers `nested_unknown_relation`,
-and no near-miss hint names it. `entity.HidesRelation` is the rule;
-`/openapi.json` and llm.md leave such a relation out too.
-
-A `belongs_to` whose foreign key is `no_query`, which every field with a
-`Mask` is, is refused the same way on all of those surfaces. The related
-record's key is the column's stored value, so `?include=account` would
-answer `"account": {"id": "ACCT-0001"}` beside `"account_id": "****0001"`,
-and `?account.id_like=0001` would filter on the column `no_query` keeps
-off the query surface. A nested write through the relation is refused
-too, with 400 `validation.cascade_relation_hidden`; the key itself stays
-writable, and server code writes through the relation under
-`crud.WithServerWrites`. To load the related record anyway, read it by
-its key in Go.
-
-A has-many or has-one whose foreign key is Hidden or `no_query` on the
-*target* stays includable: `users` has_many `notes` through a Hidden
-`notes.owner_ref` still answers `?include=notes` with the user's notes,
-which is usually the point ("my notes"). To keep such a relation out of reads, set
-`Hidden: true` on the relation (`hidden: true` under the relation in
-`gofastr.yml`): it is then refused like any hidden relation, on every
-surface above.
-
-Generation and packing preserve this relation-level flag. It accepts only
-`true` or `false` (including their quoted literal strings); ambiguous values
-such as `yes`, `on`, null, and lists are rejected rather than exposing rows.
-
-## Path syntax
+Pass `?include=` on any CRUD `GET /<table>` or `GET /<table>/{id}` request to embed related records in the same response without an N+1 round trip.
 
 ```
-includes := path ("," path)*
-path     := segment ("." segment)*
-segment  := name [ "(" filter ("," filter)* ")" ]
-filter   := field ("_gt"|"_gte"|"_lt"|"_lte"|"_ne"|"_like"|"_in")? "=" value
+GET /api/posts?include=author,comments
+GET /api/posts/42?include=author,comments.author
 ```
 
-- Top-level commas separate sibling includes.
-- Dots descend into nested relations on the previously-named target.
-- Parentheses scope filters to the include's target entity.
-- `field_in=a|b|c` becomes `field IN (a, b, c)` (pipe-separated).
-- Naming one relation more than once with different filters returns
-  the union, each row once: `comments(status=draft),comments(status=archived)`
-  loads both, and `comments(status=draft),comments` loads every comment.
-  A repeat of the same filters continues on the same load, so
-  `comments(status=draft).author,comments(status=draft).likes` attaches
-  both children to the draft comments.
+Supported relation types (declared in `EntityConfig.Relations`):
+- `belongs_to` and `has_one` — attached as a nested JSON object (or `null`)
+- `has_many` and `many_to_many` — attached as a JSON array (empty `[]` when no rows match)
 
-## Supported relations
+Nested paths (`comments.author`) use dot notation up to the configured depth limit.
 
-`include` understands every relation declared on the entity:
+## Security and scoping
 
-- `HasOne` / `BelongsTo`: attaches a single object (`null` if missing).
-- `HasMany`: attaches an array (`[]` if empty).
-- `ManyToMany`: attaches an array via the join table declared in the
-  relation.
+Every included relation runs through the target entity's full read pipeline:
+- **Exposure check:** including a `CRUD: false` entity returns `403`.
+- **Access control:** the caller must satisfy the target entity's `Exposure.Access.Read` permission and any per-row `Decider`.
+- **Row isolation:** `Scope.OwnerField`, `Scope.MultiTenant`, `Scope.SoftDelete`, `ReadScope`, and `AfterGet` hooks all apply to included rows. Rows the caller may not read are filtered out (for `has_many`/`many_to_many`) or returned as `null` (for `belongs_to`/`has_one`).
+- **Hidden fields:** `Hidden` columns on included entities are stripped just like on top-level reads.
 
-Every relation named in an `?include=`, nested or top-level, must
-resolve to an entity registered with the framework's `Registry`. The
-target's declaration is what drives the column allow-list, owner and
-tenant scoping, the soft-delete filter, and the scoped-filter field
-allow-list, so a target the registry cannot resolve is refused with
-**400** rather than loaded without those guards.
+## Caps and limits
 
-An included row carries the columns the target's own read route serves:
-its declared, non-Hidden fields plus its primary key. A column the table
-holds but the resolved target does not declare is left out, whether it
-belongs to another API version sharing the table, to a field removed from
-the declaration (boot migration is additive, so the column and its data
-stay), or to an unmanaged table's extra columns.
+Includes are bounded to keep queries predictable:
+- **Depth cap:** nested chains deeper than the configured maximum (default `2`) return `400`.
+- **Per-relation row cap:** `has_many` and `many_to_many` includes cap how many child rows are loaded per parent batch so a single list request cannot blow up memory.
+- **Unknown relations:** requesting a name not declared in `EntityConfig.Relations` returns `400`.
+- **Batching:** GoFastr collects parent keys per level and fetches each included entity in one batched `IN (...)` query (composite keys use tuple comparisons).
 
-`Relation.Entity` is the target's **entity name** (the registry key),
-which is not necessarily its table name. An entity declared with
-`Name` different from `Table` is reached by its `Name`; the eager-load
-query targets its `Table`.
+## Eager loading from Go
 
-## Filter scope
+In-process Go code can run the same batched loader directly without HTTP serialization, and can include `CRUD: false` entities that HTTP callers cannot reach:
 
-Scoped filters use the same suffix operators as top-level entity
-filters:
+```go
+// Use the entity's CRUD handler or generated repository helpers to eager-load
+// declared relations in Go, applying the caller's context and scopes.
+```
 
-| Suffix   | Operator        |
-|----------|-----------------|
-| `_gt`    | `>`             |
-| `_gte`   | `>=`            |
-| `_lt`    | `<`             |
-| `_lte`   | `<=`            |
-| `_ne`    | `!=` (same NULL semantics as `=`: a NULL column matches neither) |
-| `_like`  | case-insensitive literal `contains`: `LOWER(col) LIKE '%value%' ESCAPE '\'` with the value lowered and the caller's `%`/`_`/`\` escaped (matches the substring literally, not as a wildcard pattern; mirrors the DSL `contains` operator). **Identical at every depth**: top-level, `?rel.field_like=`, and `include=rel(field_like=…)` all mean literal substring. Nested filters used to pass the value through as a raw pattern, so the same parameter meant two different things depending on whether a dot appeared in it |
-| `_in`    | `IN (...)`. Separator differs by surface: a top-level or `?rel.field_in=` query param takes COMMA-separated values, while a scoped include filter `include=rel(field_in=a\|b)` takes pipe-separated ones, because a comma already separates the filters inside the parentheses |
-
-Filters validate against the **target** entity's fields, not the
-parent's. `include=comments(post_id=x)` validates `post_id` on
-`comments`, not on `posts`. Keys split the way top-level keys do: a
-suffix counts only when the name before it is a field, so a field
-named `opt_in` (with no `opt` field) filters as itself, both here and
-in `?rel.opt_in=`. The bracket form works here too, with the same
-words as the top level (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`,
-`in`): `include=members(check_in[eq]=2026-11-01,check[in]=a|b)`. A
-term that reads two ways (fields `check` and `check_in`, term
-`check_in=x`) is a 400 naming `check_in[eq]` and `check[in]`, as is an
-unknown bracket word. Values must be of the column's type, as at the top
-level: `include=members(opt_in=maybe)` is a 400 naming the field.
-
-## Behaviour & guarantees
-
-- Each unique relation runs one SQL query regardless of parent count.
-  Loading `comments` for 50 posts is 1 query, not 50.
-- Soft-deleted rows in the related entity are excluded (the include
-  honours the target entity's `SoftDelete` config).
-- Multi-tenant scoping is applied to includes. If both parent and
-  child are tenant-scoped, the child query filters on the same tenant.
-- Result key casing matches the entity's `JSONCase` setting
-  (`camel` or `snake`); nested rows are deep-converted, except `json`
-  fields, whose documents keep their stored keys. On Postgres a
-  target with mixed-case column names comes back under its declared
-  field names with decoded values, as its own route answers.
-- Includes are bounded. A single path may take at most **4** relation
-  hops, and one request's includes may materialise at most **20,000**
-  related-row references in total. Either limit is a **400**. Narrow
-  the include or reduce the page size. Without them a short path over a
-  self-referencing relation multiplies at every hop.
-- Nullable foreign keys (optional relations) are supported: a parent
-  whose FK column is `NULL` comes back with that relation **absent**
-  (`null`), not an error. `BelongsTo`/`HasOne` relations over columns
-  like `milestone_id` or `assignee_id` load normally for rows that
-  reference a target and are simply omitted for rows that don't.
-
-> **Low-level helper:** the HTTP `?include=` path scrubs soft-deleted
-> rows, keeps only the target's declared non-Hidden columns, and scopes related rows to the ctx owner and
-> tenant automatically. The exported `EagerLoad` helper
-> (`framework.EagerLoad`) only does so when you pass the optional
-> `entity.Registry` argument, `EagerLoad(ctx, db, ent, rels, ids, registry)`,
-> which lets it resolve each relation's target to apply the
-> `deleted_at IS NULL` filter, keep only declared non-Hidden columns, and AND in the
-> owner (`OwnerField`) and tenant (`MultiTenant`) predicates from ctx,
-> exactly as the include path does. With the registry it also decodes
-> each row the way the include path does (a `date` as `YYYY-MM-DD`, a
-> `json` field as its document, a `decimal` as text) and keys it by
-> declared field names. With no user or tenant in ctx those
-> predicates match nothing, so the helper fails closed. Always pass the registry when
-> loading relations whose targets are soft-deletable, carry Hidden
-> columns, are owner-scoped, or are multi-tenant; without it the helper
-> returns unscrubbed, unscoped rows.
-
-## Not supported with streaming
-
-The streaming list path (`?stream=true`) skips include resolution to
-keep memory bounded. Combining `?stream=true` with `?include=` is
-refused with **400** rather than silently returning rows without their
-relations. Drop one of the two. (When a list auto-streams because the
-requested `limit` is very large, the framework instead falls back to
-the buffered path so includes still resolve. Only the explicit
-`?stream=true` opt-in 400s.)
-
-## Errors
-
-Each refusal's body carries its `reason` code (in brackets below)
-beside the message, which is in the request's locale (see
-[i18n](i18n.md) → "The error contract").
-
-- `unknown include "x"` (`unknown_include`, or `unknown_include_hint`
-  when a near miss is suggested): the named relation does not exist on
-  the entity at that depth, or sits behind a Hidden field or a
-  `no_query` foreign key.
-- `streaming list does not support include` (`stream_include`):
-  `?stream=true` was combined with `?include=`.
-- `relation "y" targets entity "z", which is not registered`
-  (`include_target_unregistered`): a segment named a relation whose
-  target is not in the registry.
-- `include "x" requires an entity registry` (`include_no_registry`):
-  the handler has no `Registry` set, so no target can be resolved.
-  Framework apps wire this automatically; a hand-built
-  `crud.NewCrudHandler` must set `.Registry`.
-- `include "x" is N relations deep; the maximum is 4`
-  (`include_too_deep`): the path exceeded the depth cap.
-- A scoped filter (`?include=comments(status=open)`) on a field the
-  target hides or refuses answers `include_scoped_unknown_field` or
-  `include_scoped_not_filterable`; an operator that does not suit the
-  column answers `op_type_mismatch` inside its `include "x": scoped`
-  frame.
-- `include exceeds the maximum number of related rows`
-  (`include_budget`): the assembled response would carry more than
-  20,000 related-row references.
-- `include is sent N times; send it once with comma-separated paths`
-  (`include_repeated`): the query repeated the `include` key
-  (`?include=author&include=comments`), even if values are equal or empty.
-  Every CRUD HTTP read checks this at entry, including offset, cursor,
-  streaming and read-one requests. Name every path in one value,
-  `?include=author,comments`. Other single-value controls use
-  `query_key_repeated`; `sort` may repeat, as may host-owned `q` under
-  the [query control rules](entity-declarations.md).
-- `too many include paths: N (max 32)` (`include_too_many_paths`): the
-  request named more comma-separated include paths than one response
-  may eager-load.
-  Every mention carrying a distinct scoped-filter set is its own
-  eager-load node and its own SELECT, so breadth is capped like depth
-  and total rows are.
-- `scoped field "x" not on target entity`: the filter referenced a
-  field that does not exist on the target's schema.
+See [Entity declarations](entity-declarations.md#relations-and-composite-keys) for declaring relations and composite foreign keys, and [Query DSL](query-dsl.md) for filtering across relations (`?author.role=editor`).
 
 ## Common mistakes
 
-- **Forgetting parentheses for filters.** `comments(status=draft)` is
-  scoped; `comments,status=draft` is two unrelated query parameters.
-- **Filtering with the wrong field name.** Scoped filters validate
-  against the target, not the parent. Use the target's column names.
-- **Including through unregistered entities.** Register every entity
-  the relations point at, including tables a battery self-migrates,
-  such as the auth battery's user table. An unregistered target is
-  refused, not loaded unscrubbed.
-- **Expecting `?include=` to control SELECT projection.** It does
-  not. Use field projections separately. Includes only attach
-  related data.
-
-
-## Authorization
-
-An include is a read of the RELATED entity's rows, so that entity's own posture
-governs it, not the entity in the path.
-
-`?include=rel` answers **403** when the caller may not read the target, naming
-the entity that failed:
-
-```json
-{"code":403,"error":"access denied: include targets entity users, which you may not read","reason":"include_forbidden","success":false}
-```
-
-A scope-restricted request (an API token or an embed grant) also needs
-`<target table>:read` for every include target, so a `["customers:read"]`
-token is refused `?include=invoices`. Nested filters apply the same rule to
-every hop. See [auth](auth.md) → "Service accounts & scoped API tokens" for the scope grammar.
-
-A target declared `Exposure.CRUD: false` (`auth.UserEntityConfig()` among them)
-is refused the same way for every caller: opting an entity out of generated
-routes also keeps it out of other entities' includes and nested filters.
-
-The check runs at every depth, so `?include=comments.author` cannot reach a
-gated `author` through a readable `comments`, and it runs before any rows are
-loaded, including before the shortcut for an empty parent, so the answer never
-depends on whether the parent table happens to have rows.
-
-Owner and tenant scoping are applied differently: the eager loaders scope the
-related rows per node, so an include of an owner-scoped entity returns the rows
-the caller owns rather than a refusal. An anonymous caller owns nothing, so the
-same include returns an EMPTY relation rather than an error.
-
-The two predicates lift independently, each by its own grant. A caller marked
-cross-owner, or holding the entity's `CrossOwnerRead` permission, sees every
-owner's rows; a caller marked cross-tenant sees every tenant's. Neither lifts
-the other, so a target carrying both scopes needs both grants to see every row.
-Soft-deleted rows are hidden regardless.
-
-This applies to requests arriving over HTTP. In-process callers such as the
-programmatic API, typed repos, seeds, and jobs are trusted server-side code and
-skip these AUTHORIZATION checks, exactly as the baseline session requirement is
-an HTTP concern.
-
-The write side resolves the same predicate now: a CRUD create or
-update whose body sets a BelongsTo FK naming a scoped row the caller
-cannot read answers 404, mirroring the read-side boundary (see
-[entity declarations](entity-declarations.md) → "A BelongsTo FK is
-a write-side trust boundary too" for the exemptions).
-
-What they do not skip is data-layer scoping. `EagerLoad(..., registry)` still
-applies the soft-delete, owner and tenant predicates described above, so an
-in-process eager load is scoped even though no posture was consulted. Only
-`Exposure.Access` and the relation-disclosure refusal are HTTP-only.
-
-## Filtering across a relation (`?rel.field=`)
-
-`?author.email=someone@example.com` filters the parent by a field on a related
-entity. It is subject to the same posture check, and to one additional rule.
-
-Filtering across a relation whose target declares `Scope.OwnerField` or
-`Scope.MultiTenant` narrows the subquery to your own rows. The filter compiles
-to an `EXISTS` clause that counts rows without selecting them, so it cannot
-narrow them by selecting; instead it carries the same owner and tenant
-predicates the include and eager paths apply. The result is that
-`?comments.body=x` counts exactly the comments you could list yourself:
-
-```text
-GET /api/posts?comments.body=my+note      → your posts with that comment
-GET /api/posts?comments.body=their+note   → 0 rows, identical to a value
-                                            that exists nowhere
-```
-
-A guess that matches another owner's row is indistinguishable from a guess that
-matches nothing, so the row count is not an oracle. A caller holding a
-cross-owner or cross-tenant grant gets no predicate on that axis, because they
-can already list the target wholesale, and the axes are independent, so a
-cross-owner grant does not lift the tenant narrowing.
-
-Earlier releases refused this shape outright for any scoped target, which closed
-the oracle but also refused an owner filtering their own rows.
-
-Soft-deleted rows never match a nested filter, matching every other read
-surface.
-
-### Multi-hop filtering and relation-hop limit
-
-Nested filters can span multiple relation hops using dot notation (e.g. `?author.profile.city=Berlin` or `?posts.comments.author.name=Carol`). Each hop compiles to a correlated `EXISTS` subquery that validates identifiers and enforces tenant and owner boundaries at each level.
-
-To prevent unbounded recursion or denial-of-service query plans, nested filtering is bounded to a maximum of **4** relation hops (`maxIncludeDepth = 4`). Exceeding this limit returns a **400 Bad Request** validation error.
-
-### Programmatic API (`framework.NestedFilter` & `WhereNested`)
-
-In-process and typed queries can apply nested filters directly:
-
-- **`framework.NestedFilter`**: Structured declaration representing a filter across relations:
-  ```go
-  type NestedFilter struct {
-      Relation string          // declared relation on the entity (supports dot-paths up to 4 hops)
-      Field    string          // field name on the target entity
-      Op       filter.FilterOp // operator: filter.OpEq, filter.OpIn, filter.OpLike, etc.
-      Value    string          // filter value
-      Values   []string        // filter values for filter.OpIn
-  }
-  ```
-
-- **`TypedQuery.WhereNested`**: Fluent query builder method to filter typed collections across relations:
-  ```go
-  import (
-      "github.com/DonaldMurillo/gofastr/framework"
-      "github.com/DonaldMurillo/gofastr/framework/filter"
-  )
-
-  posts, err := repo.Query().
-      WhereNested(framework.NestedFilter{
-          Relation: "author.profile",
-          Field:    "verified",
-          Op:       filter.OpEq,
-          Value:    "true",
-      }).
-      Find(ctx)
-  ```
-  `WhereNested` accepts one or more `framework.NestedFilter` objects (set `NestedFilter.Values` for `filter.OpIn`) and is supported on all `TypedQuery` execution methods, including `Find`, `First`, `Count`, `Exists`, `UpdateAll`, and `DeleteAll`.
+- **Including a `CRUD: false` entity over HTTP:** returns `403` by design so hidden entities cannot be read sideways through a parent route.
+- **Using the foreign key column name instead of the relation name:** `?include=author_id` fails with `400`; pass the relation's `Name` (`?include=author`).
+- **Expecting unbounded `has_many` lists inside `?include=`:** large child collections should be fetched via the child entity's own paginated list route (`GET /api/comments?post_id=42`).
+- **Forgetting that target scopes apply to includes:** if a parent row points at a soft-deleted or another user's child record, the included object comes back `null` (or absent from the slice).

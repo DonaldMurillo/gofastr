@@ -1,241 +1,73 @@
 # Cursor pagination
 
-Cursor responses contain `data`, `cursor`, and `hasMore`, not `total`.
-The registry `/api/llm.md` index and per-entity reference describe this same shape.
+Cursor (keyset) pagination gives stable, constant-time paging over large or changing tables without `OFFSET` drift or deep-skip scans.
 
-Cursor (keyset) pagination is the default for high-volume entities and
-the only way to page consistently when rows are being inserted while
-the user pages.
+## Enabling cursor pagination
 
-## Two pagination modes
-
-Both are exposed on every CRUD list endpoint. The mode is chosen by
-which query parameters you send.
-
-| Mode    | Query parameters         | Response shape   |
-|---------|--------------------------|------------------|
-| Offset  | `?page=2&limit=20`       | `ListResponse`   |
-| Cursor  | `?cursor=<opaque>&limit=20` | `CursorPage`  |
-
-If both are sent, `cursor` wins.
-
-`ListResponse` always carries `data`, `total`, `page`, `perPage` and
-`totalPages`; `CursorPage` always carries `data`, `cursor` and
-`hasMore`. The OpenAPI document describes the list route's 200 as
-`oneOf` the two and marks those keys `required`, so a body matches
-exactly one of them.
-
-## Opting in
-
-```bash
-# First page: send empty cursor to choose cursor mode:
-curl 'http://localhost:8080/posts?cursor=&limit=20'
-# → {"data":[…], "cursor":"<opaque>", "hasMore":true}
-
-# Subsequent page:
-curl 'http://localhost:8080/posts?cursor=<opaque>&limit=20'
-
-# Backward:
-curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
-```
-
-## Defaults & caps
-
-- The crud list routes (offset and cursor) default to 20 rows when no
-  `limit` is sent. `pagination.DefaultPageSize` is 25: it is the
-  default of the standalone parse helpers
-  (`pagination.ParsePagination`, `pagination.ParseCursorPagination`) a
-  handler of your own calls, not of the entity list routes.
-- `pagination.MaxPageSize = 100` caps the standalone parse helpers
-  (`limit` is clamped silently). The crud list routes clamp to the
-  entity's `Pagination.MaxListLimit` instead (100 when unset, at most
-  1000), on the cursor path as on the offset and streaming list paths.
-  (An oversized `limit` is clamped, never reset to the default; a cap
-  below 20 also lowers the default to the cap.)
-- A `cursor` longer than 16 KiB, or a multi-field cursor carrying more
-  than 64 fields, is rejected as invalid (400 on the list routes).
-  Cursors are client-echoed input, so decode work is bounded by these
-  fixed caps, never by the payload size the client chose. A cursor the
-  server mints carries the last row's sort values and key when they fit
-  both caps, and the key alone when they do not, so a long sort value
-  (a Text column) never pushes it past the cap. A key that does not fit
-  (a key value of more than about 12 KiB, which only a Text or unbounded
-  String key on SQLite can hold) answers 500 with reason
-  `cursor_key_too_long` on the page that would mint the cursor, rather
-  than a token the next request refuses; page such a list with `?page=`.
-  `pagination.CursorFits` is the check, for code that mints its own
-  cursors. `pagination.NewCursorPage`, the helper for building a cursor
-  page by hand, returns an error wrapping `pagination.ErrCursorTooLong`
-  in that case, and the page carries no cursor:
-
-  ```go
-  page, err := pagination.NewCursorPage(rows, "id", limit)
-  if errors.Is(err, pagination.ErrCursorTooLong) {
-      // key the list on a shorter column, or page it by offset
-  }
-  ```
-
-  It refuses the two other cursors no next request can use, again with
-  no cursor on the page: a last row whose key is NULL (`nil` or a nil
-  pointer) wraps `pagination.ErrCursorKeyNull`, since the token would
-  carry the text `null` and the next page would compare the key against
-  it, and a last row with no such field wraps
-  `pagination.ErrCursorKeyMissing`, since `HasMore` with an empty cursor
-  sends a client that echoes it back to page 1. Neither is an error on
-  the last page, which mints no cursor.
-- `direction` defaults to `"forward"` when absent or empty; only
-  `"forward"` and `"backward"`, spelled exactly, are accepted. Any other
-  value (`back`, `Backward`, or one that does not decode, such as
-  `%ZZ`) answers 400 `bad_direction`, and so does a second `direction`
-  pair that is not one of the two words. The
-  `pagination.ParseCursorPagination` helper itself still reads an
-  unknown value as `"forward"`; the crud list checks the raw parameter.
-
-## Cursor field configuration
-
-Cursor mode keysets on the entity's primary key by default. Override
-with `EntityConfig`:
+Declare `Pagination.CursorFields` on your entity with the columns that form the deterministic sort order (always include a unique tie-breaker such as `id` as the last column):
 
 ```go
-// Single-field cursor on created_at:
-framework.EntityConfig{
-    Name: "posts",
-    Pagination: &framework.PaginationConfig{CursorField: "created_at"},
-    …
-}
+app.Entity("events", framework.EntityConfig{
+	Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "created_at", Type: schema.Time},
+	},
+	Pagination: &framework.PaginationConfig{
+		CursorFields: []string{"created_at", "id"},
+		MaxListLimit: 100,
+	},
+})
+```
 
-// Composite cursor: tuple-compare on (created_at, id):
-framework.EntityConfig{
-    Name: "posts",
-    Pagination: &framework.PaginationConfig{CursorFields: []string{"created_at", "id"}},
-    …
+In `gofastr.yml`:
+
+```yaml
+pagination:
+  cursor_fields: [created_at, id]
+  max_list_limit: 100
+```
+
+## Page size defaults
+
+- CRUD entity list endpoints (`GET /<table>`) **default to 20 rows** per page on both offset and cursor requests (including an empty `?cursor=`), clamped to `Pagination.MaxListLimit` **(100 when unset**, hard cap `1000`).
+- Lower-level `core/pagination` helpers use their own defaults: `pagination.DefaultPageSize` is 25 and `pagination.MaxPageSize = 100`.
+
+## Using cursors over HTTP
+
+Start a cursor walk by passing `?cursor=` (empty string) or omitting `page`/`offset` and reading `next_cursor` from the response:
+
+```bash
+# First page
+curl "http://localhost:8080/api/events?cursor=&limit=20"
+
+# Next page
+curl "http://localhost:8080/api/events?cursor=<next_cursor>&limit=20"
+```
+
+Response envelope:
+
+```json
+{
+  "data": [ /* ... */ ],
+  "next_cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNi0xMS0yMFQxMDowMDowMFoiLCJpZCI6NDJ9",
+  "has_more": true
 }
 ```
 
-Both spellings guarantee unique ordering by appending each primary-key
-column the list does not already name: `CursorField: "created_at"`
-pages on `(created_at, id)`. Without a unique tiebreak, the second of
-two rows with identical sort keys would be skipped. The key columns are
-cursor columns like any other, so `entity.Define` refuses a `Hidden` or
-`NoQuery` key column behind a `CursorField` too: the token carries the
-key. A `CursorFields` list that names one column twice fails `Define`.
+When `has_more` is `false`, `next_cursor` is empty and you have reached the end.
 
-**A cursor column must never hold NULL.** The keyset comparison
-`(created_at, id) > ($1, $2)` is never true for a row whose
-`created_at` is NULL, so those rows would be skipped. `entity.Define`
-panics on a cursor column that is not a key column, not `Required`, and not
-framework-generated (`AutoGenerate`, which covers the injected
-`created_at` and an auto id); the app spec refuses the same column at
-decode time. If a row's keyset value is NULL anyway (a raw INSERT that
-bypassed the API), the page answers 500 and logs the column rather than
-minting a cursor that compares against `null`.
+## Rules and guarantees
 
-## Wire format
-
-The cursor is opaque base64 JSON. Clients must not decode or modify
-it, only echo it back on the next request. It carries the last row
-served (the anchor): its `CursorField(s)` values and its key, and the
-next page starts after those values. When the values would push the
-token past the 16 KiB cap (a long Text sort column), the cursor carries
-the anchor's key alone, and the next request reads the sort values back
-from the table by that key, one indexed read per page. An entity
-cursored on its own key always carries just the key. One column uses
-the single-field encoding, several the multi-field one.
-
-The values, carried or read back, are bound the way crud stores them. A timestamp
-is written in the layout crud stores timestamps with, UTC with six
-fractional digits kept (`2026-10-27T07:05:07.500000Z`), so on SQLite,
-which compares `DATETIME` columns as text, the keyset compares against
-the stored string byte for byte. crud writes every Timestamp in that
-layout, a client's `2026-10-27T09:05:07+02:00` included (same instant,
-stored as `2026-10-27T07:05:07.000000Z`). A SQLite table can also hold
-text crud did not write: rows a seed script or a migration inserted, or
-an `Unmanaged` entity's table that another writer fills
-(`2026-03-03 09:00:00`, `2026-01-02T12:00:00Z`). So on SQLite a
-Timestamp cursor column carries and binds the anchor row's stored text,
-whether crud manages the entity or not: the keyset compares the
-same text `ORDER BY` sorts, and the walk serves the rows in the sorted
-list's order, each once. That order is the text's, which is time order
-only while every row is in one layout: `…05.5Z` sorts before `…05Z`.
-Rewrite seeded rows in the layout above to get time order. The carried
-text must still read as a
-timestamp (RFC 3339 or a form SQLite's date functions read), or the
-cursor is a 400. Postgres compares a timestamp column as an instant and
-binds the canonical value either way. A Date value is the date
-(`2026-10-27`). A key
-value that is not of its column's type (an edited token naming `id`
-`"abc"` on an integer key) is a 400, the same check a filter value
-gets. A token the server
-did not mint is decoded under the same no-ambiguity rule as every
-other client-borne JSON: duplicate and case-folded keys, at any
-depth of the token, are rejected as invalid (the 16 KiB / 64-field
-caps above bound the work). Stdlib `encoding/json` resolves such
-keys last-wins; the keyset must not resume paging under a token any
-first-read intermediary parsed differently.
-
-## Behaviour & guarantees
-
-- **Consistent under inserts.** Rows inserted after the current page
-  appear on a later page, never as duplicates on the current one.
-- **A cursor that carries its values survives edits to the anchor.**
-  If the anchor row is deleted, or its sort value changes, between
-  pages, the next page still starts after the values the cursor holds,
-  so no row between is skipped. A row whose sort value moved past the
-  cursor (an `updated_at` feed) is served again on a later page.
-- **A key-only cursor needs its anchor row.** When the cursor carries
-  only the key and that row is deleted (or soft-deleted) between pages,
-  the next request answers 400 with reason `cursor_anchor_gone`: start
-  again from the first page (`?cursor=`). Serving a page from a guessed
-  position would skip or repeat rows without saying so. A cursor naming
-  a row the caller may not read (another owner's or tenant's, or one a
-  read scope or `BeforeList` hook excludes) gets the same answer, so a
-  crafted cursor never reveals where such a row sorts. The client's
-  own `?q=` and `?where=` do not apply to that lookup: an anchor row
-  edited so it no longer matches the search still marks the position,
-  the same as with a plain `?status=open` filter. If a key-only
-  cursor's anchor changed its sort value, the next page continues after
-  the new value, so rows between the old and the new position are
-  skipped (moved forward) or served again (moved back). Keep sort
-  columns short enough for the cap when a feed must see every row.
-- **`?sort=` is ignored in cursor mode.** Keyset pagination requires
-  the ORDER BY to match the cursor key. Configure cursor fields
-  instead.
-- **No total count.** `CursorPage.Total` is reserved but not
-  populated. Cursor mode's point is avoiding the table scan a count
-  requires. Use offset mode if you need a total.
-- **Backward paging starts from `hasMore`'s end.** Backward responses
-  use `<` instead of `>` and reverse the ORDER BY direction.
-- **Offset pages break ties on the key.** Every offset-paged read (the
-  list endpoint, `?stream=true`, `ListAll`, and a typed query with
-  `Offset`) orders by the `?sort=` columns and then by each primary-key
-  column the sort does not name, ascending. With no `?sort=` the list
-  pages oldest first (`created_at`, then the key) when the entity has
-  timestamps, and in key order when it has none. Without the key, rows
-  tied on the sort column can come back in a different order for each
-  page on Postgres, so a walk would serve some rows twice and others
-  never. Rows with no value in a sort column come last ascending and
-  first descending on both databases
-  ([entity declarations](entity-declarations.md), "sort").
-
-## When to use which mode
-
-- **Offset**: for admin tables with stable data, "page 5 of 23", or
-  any UI that exposes the page number to the user.
-- **Cursor**: for infinite-scroll feeds, real-time-ish lists, or
-  anything where the source data churns while users page.
+- **Sort order:** cursor queries order by `CursorFields` (or their exact reverse when descending). Requesting a `?sort=` that does not match `CursorFields` returns `400`.
+- **Opaque tokens:** treat cursors as opaque strings. Tampered, malformed, or column-mismatched tokens return `400`.
+- **Filters stay in the query string:** pass the same filter parameters (`?status=open&cursor=...`) on each subsequent page; the cursor encodes only the keyset position.
+- **Scopes apply on every page:** `Scope.OwnerField`, `Scope.MultiTenant`, `Scope.SoftDelete`, and `ReadScope` apply identically to cursor queries.
+- **Index your cursor columns:** add a composite SQL index matching `CursorFields` (for example `(created_at, id)`) so keyset seeks stay `O(log N)`.
 
 ## Common mistakes
 
-- **Forgetting to send `cursor=` on the first request.** Without it,
-  the endpoint serves offset mode. The empty string is the opt-in
-  signal.
-- **Caching cursors across schema changes.** A cursor is tied to the
-  entity's key columns. Changing the key invalidates every outstanding
-  cursor. After a change to which columns `CursorField(s)` names, a
-  cursor that carries sort values answers 400 (start again with
-  `cursor=`), and a key-only one pages from its anchor under the new
-  order. Reordering the same columns keeps a cursor working: it names
-  the anchor row's values by column, and the next page starts after
-  that row in the new order.
-- **Trying to "jump to page N" with cursor mode.** You can't. Cursors
-  are sequential by design.
+- **Omitting a unique tie-breaker column from `CursorFields`:** if two rows share the same `created_at`, paging without `id` as the final column can skip or duplicate rows.
+- **Mixing `?cursor=` with `?page=` or `?offset=`:** pick one pagination mode per request.
+- **Changing `?sort=` while passing `?cursor=`:** cursor pagination requires the sort order to match `CursorFields`.
+- **Confusing CRUD defaults with `core/pagination`:** CRUD routes default to 20 rows (capped by `MaxListLimit`, 100 when unset), whereas `core/pagination` uses `pagination.DefaultPageSize` (25) and `pagination.MaxPageSize = 100`.
+- **Forgetting a composite index on `CursorFields`:** without an index on `(created_at, id)`, the database still has to sort the table.

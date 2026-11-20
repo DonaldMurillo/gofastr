@@ -1,106 +1,27 @@
 # Batch endpoints
 
-Any entity with `CRUD` enabled gets three transactional batch
-endpoints under the `_batch` suffix. All items in one request run in
-a single database transaction: the first per-item failure rolls back
-the whole transaction.
+Every CRUD-enabled entity mounts batch routes at `/<table>/_batch` so callers can create, update, or delete multiple rows in a single atomic transaction.
 
-## Routes
+| Method & path | Action | Request body |
+| --- | --- | --- |
+| `POST /<table>/_batch` | Bulk create | `{"items": [ {...}, ... ]}` |
+| `PUT /<table>/_batch` | Bulk update | `{"items": [ {"id": ..., ...}, ... ]}` |
+| `DELETE /<table>/_batch` | Bulk delete | `{"ids": [ ... ]}` |
 
-| Method   | Path             | Body                              |
-|----------|------------------|-----------------------------------|
-| `POST`   | `/{table}/_batch`| `{"items":[ {…}, {…}, … ]}`       |
-| `PATCH`  | `/{table}/_batch`| `{"items":[ {"id":"x", …}, … ]}`  |
-| `DELETE` | `/{table}/_batch`| `{"ids":["x","y", …]}`            |
+## Transaction and validation semantics
 
-## Response envelope
-
-```json
-{
-  "committed": true,
-  "results": [
-    { "index": 0, "data": { "id": "p1", "title": "A" } },
-    { "index": 1, "data": { "id": "p2", "title": "B" } }
-  ]
-}
-```
-
-- `committed: true` → HTTP 200, the transaction was applied.
-- `committed: false` → HTTP 400, the transaction was rolled back.
-- `results` is always in input order; every input index appears.
-- Every batch response carries `Cache-Control: no-store`, as the
-  single-row writes do, and audit rows a batch writes carry the
-  request's client IP and user agent.
-- The first per-item failure populates `error` on that index, and
-  `reason` when the refusal has a code (a hook's own wording has none):
-  the same message and code the single-row write answers for that
-  item. A validation, state, transition, unique or foreign-key
-  refusal says what was wrong, with `fields` and `field_reasons` where
-  the single write names fields. Any other error reads
-  `internal server error`, and the cause stays in the server log.
-  Later indices are marked `"skipped": true`.
-- On `committed: false` no result carries `data`. Errors and
-  `fields` remain.
+- **All-or-nothing:** batch writes execute inside one database transaction. If any item fails validation, access control, a `Before*` hook, or a constraint check, the entire batch rolls back and no rows change.
+- **Same security pipeline:** every item goes through the entity's `Exposure.Access`, per-row `Decider`, `Scope.OwnerField` (auto-stamped on create, scoped on update/delete), `Scope.MultiTenant`, `Scope.SoftDelete`, and hooks.
+- **Wire names:** item payloads use the mount's configured JSON casing (`WireName` or default camelCase).
+- **Read-only mounts:** entities registered via `App.View` or `CrudRouteOptions{ReadOnly: true}` do not mount `_batch` routes.
 
 ## Limits
 
-- `MaxBatchSize = 100` items per request. Go over that and you get
-  `400 Bad Request` before any item runs.
-- `items` (or `ids`) can't be empty.
-- A batch update item names its record by every key column, under the
-  column's wire name. An item that omits one answers `missing <key>`
-  with `reason: "missing_key"`. Two keys in one item that name the same
-  column (`bodyText` and `body_text` on a camelCase handler) refuse the
-  batch with 400 before it runs, naming both spellings. For a composite key, a batch delete's `ids` are
-  `entity.JoinKey` strings (`"s1/c1"`).
-
-## Behaviour & guarantees
-
-- **Atomic.** One transaction; one commit or one rollback.
-- **Hooks run inside the transaction.** `BeforeCreate`, `AfterUpdate`,
-  etc. fire per item. A hook error rolls back the whole batch.
-- **Permission is checked per item.** With an `Exposure.Access` block, the
-  route checks the op's permission once up front, then `PATCH` and `DELETE`
-  ask again for every item with `Ref{Type: <entity>, ID: <item id>}`, so a
-  resource-aware Decider that denies one record refuses it here as it does
-  on `PATCH /<entity>/{id}`. A refused item reports `"error": "access denied"`
-  and the batch rolls back.
-- **Events fire only on commit.** `entity.created` etc. fire after a
-  successful commit, in input order, one per item. They never fire on
-  rollback.
-- **No partial success.** If you need "skip failures and keep the
-  rest", make `MaxBatchSize` individual calls instead.
-
-## Examples
-
-```bash
-curl -X POST http://localhost:8080/posts/_batch \
-  -H 'Content-Type: application/json' \
-  -d '{"items":[
-        {"title":"First"},
-        {"title":"Second"},
-        {"title":"Third"}
-      ]}'
-
-curl -X PATCH http://localhost:8080/posts/_batch \
-  -H 'Content-Type: application/json' \
-  -d '{"items":[
-        {"id":"p1","status":"published"},
-        {"id":"p2","status":"archived"}
-      ]}'
-
-curl -X DELETE http://localhost:8080/posts/_batch \
-  -H 'Content-Type: application/json' \
-  -d '{"ids":["p1","p2","p3"]}'
-```
+Batch size is bounded to protect memory and lock duration (default max 100 items per request; requests exceeding the cap or sending an empty array return `400`). Larger imports should chunk client-side or run as a background job (see [Queue](queue.md)).
 
 ## Common mistakes
 
-- **Treating a non-committed response as a 200.** It's a 400. Check
-  `committed` before you trust `results[*].data`.
-- **Counting on event ordering across batches.** Within a batch,
-  events fire in input order. Across overlapping batches, order
-  depends on transaction commit order, so don't count on it.
-- **Sending more than 100 items.** Split it client-side.
-- **Mixing batch and per-item requests in a saga.** Mixing makes
-  rollback semantics ambiguous. Pick one.
+- **Expecting partial success:** a single invalid item rolls back the entire batch. Validate payloads or split independent items when partial progress is desired.
+- **Sending a top-level JSON array instead of `{"items": [...]}` / `{"ids": [...]}`:** batch endpoints expect the envelope object.
+- **Trying to set `OwnerField` or tenant columns in batch creates:** those columns are stamped from the authenticated caller just like single-row creates.
+- **Sending thousands of rows in one request:** keep batches at or below the per-request cap and chunk larger imports.

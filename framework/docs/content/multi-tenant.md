@@ -1,212 +1,48 @@
-# Multi-tenant scoping
+# Multi-tenancy
 
-Marking an entity multi-tenant adds a `tenant_id` column, auto-injects
-it on writes, filters reads by it, and scopes lifecycle events to it.
-The tenant ID is resolved server-side from the authenticated context,
-never from a client-sent header.
+GoFastr supports shared-database, column-scoped multi-tenancy: every query, create, update, delete, include, and event stream on a multi-tenant entity is automatically scoped to the active tenant on the request context.
 
-## Quickstart
+## Enabling multi-tenancy
+
+1. **Resolve the tenant per request** with middleware (from the authenticated session, JWT claim, subdomain, or organization header — never blindly from an unverified request body):
 
 ```go
-app.Entity("posts", framework.EntityConfig{
-    Scope: &framework.ScopeConfig{MultiTenant: true},
-    Fields: []schema.Field{
-        {Name: "title", Type: schema.String, Required: true},
-    },
-})
-
-// Add the middleware once on the app. The argument is ignored;
-// no header is ever read (see "How tenants get into the request"):
-app.Use(framework.TenantMiddleware(""))
+// Register your tenant resolver middleware on the app or route group so
+// every request carries the verified tenant ID in context before entity
+// handlers run.
 ```
 
-Once both are wired:
-
-- `INSERT` auto-populates `tenant_id` from the request context.
-- `SELECT` adds `WHERE tenant_id = $tenant`.
-- `UPDATE` / `DELETE` cannot touch rows owned by other tenants.
-- The SSE `_events` stream filters to the requester's tenant.
-
-## How tenants get into the request
+2. **Mark each tenant-scoped entity** with `Scope.MultiTenant: true`:
 
 ```go
-func TenantMiddleware(header string) func(http.Handler) http.Handler
-```
-
-The middleware never reads a request header. The `header` parameter
-is ignored; it is retained only so call sites from the era when the
-header was consulted keep compiling. Trusting a client-sent header
-would let any caller impersonate any tenant by setting one header, so
-the tenant is resolved exclusively from server-side authenticated
-state.
-
-What the middleware does: when the authenticated context resolves a
-tenant (`handler.GetTenant`, a non-empty string), it copies that value
-to the tenant context that CRUD scoping reads. Framework auth paths
-that resolve a tenant set it via a server-side lookup keyed on the
-authenticated subject: grant-authenticated embeds do this through
-their tenant resolver; nothing the request carried chooses the tenant.
-Downstream handlers and hooks call `framework.GetTenantID(ctx)` to
-read it.
-
-If your tenants come from a membership table, a session field, or any
-other server-side lookup on the signed-in caller, mount
-`tenant.ResolveMiddleware` after the auth middleware:
-
-```go
-app.Use(tenant.ResolveMiddleware(func(ctx context.Context) string {
-    return memberships.TenantOf(ctx) // "" when the caller has none
-}))
-```
-
-It sets the tenant from `resolve` (replacing any set before it) and
-runs `resolve` again for the refreshed principal whenever a held request
-re-checks it (`handler.RecheckPrincipal`). A tenant-scoped entity's CRUD
-event stream re-checks on an interval and the MCP notification stream
-before each delivery; both close when the tenant changed, so a member removed from a tenant stops
-receiving its events at the next check instead of at disconnect.
-
-A middleware of your own that calls `framework.SetTenantID(ctx, id)`
-works for ordinary requests too. It installs no re-check, so a stream
-opened under it keeps the tenant it connected with; add one with
-`handler.AddPrincipalCheck` if your tenants change while a session lives.
-
-## Custom tenant column
-
-The tenant column defaults to `tenant_id`. To use a different name, set
-`Scope.TenantField` on the entity; it's the single source of the column name
-across injection, auto-migrate, and the CRUD insert/scope/filter paths:
-
-```go
-app.Entity("docs", framework.EntityConfig{
-    Scope: &framework.ScopeConfig{
-        MultiTenant: true,
-        TenantField: "org_id",   // injected, created, written, and scoped by this column
-    },
-    Fields:      []schema.Field{{Name: "title", Type: schema.String}},
+app.Entity("projects", framework.EntityConfig{
+	Fields: []schema.Field{
+		{Name: "name", Type: schema.String, Required: true},
+	},
+	Scope: &framework.ScopeConfig{
+		MultiTenant: true,
+	},
 })
 ```
 
-A `TenantField` that isn't a valid SQL identifier fails loud at
-definition time. If you configure tenancy via `tenant.WithMultiTenant(ent,
-TenantConfig{Field: "org_id"})`, the `Field` flows into `TenantField`
-automatically, and the column is added to the entity's fields the way
-`Define` adds it, so auto-migrate creates it. A `tenant_id` column
-`Define` already injected is renamed to the custom one rather than kept
-beside it.
+You can combine `MultiTenant: true` with `Scope.OwnerField` (per-user rows inside a tenant) and `Scope.SoftDelete: true`.
 
-> The standalone helpers `framework.ApplyTenantFilter` / `InjectTenantID`
-> always use the default `tenant_id` column (they have no entity context).
-> `InjectTenantID` fails closed: with no tenant in the context it deletes
-> a body-supplied `tenant_id` rather than letting the caller name the
-> row's tenant.
-> A custom `TenantField` is honored by the automatic CRUD scoping, which is
-> the path you normally use; reach for the standalone helpers only with the
-> default column.
+## What multi-tenancy enforces
 
-## Configuration
+- **Schema:** GoFastr adds the tenant ID column (`tenant_id` by default) and indexes it.
+- **Create:** stamps `tenant_id` from the request context, ignoring any client-supplied value.
+- **Read / List / Update / Delete / Batch / Transitions:** appends `WHERE tenant_id = <active_tenant>` so cross-tenant IDs return `404`.
+- **Includes & relation filters:** `?include=` and `?rel.field=` enforce the target entity's tenant scope too.
+- **Fail-closed:** a request without a resolved tenant in context is rejected (`401`/`403`) rather than falling back to an unscoped query.
+- **EntityUI & Admin forms:** tenant columns are server-owned and never rendered as editable form inputs.
 
-`TenantConfig` / `DefaultTenantConfig()` carry the tenant column and
-`AutoScope`. The tenant ID always comes from the authenticated
-server-side context, never from a request header. The defaults are:
+## Background jobs and cross-tenant admin tasks
 
-| Field        | Default       |
-|--------------|---------------|
-| `Field`      | `tenant_id`   |
-| `AutoScope`  | `true`        |
-
-`AutoScope=false` lets you read across tenants from admin routes
-while still writing scoped, which is handy for support/admin tooling.
-
-## Helpers
-
-- `framework.SetTenantID(ctx, id)`: stash a tenant on context.
-- `framework.GetTenantID(ctx)`: read it back; returns `""` when not
-  set.
-- `framework.InjectTenantID(data, ctx)`: set `data["tenant_id"]`
-  from context. Used internally on writes; expose-yourself helper for
-  custom endpoints that bypass the auto path.
-- `framework.ApplyTenantFilter(qb, tenantID)`: add
-  `WHERE tenant_id = $1` to a query builder.
-
-## Audit log
-
-When `WithAuditLog` is enabled, every audit row stamps the current
-tenant into its own `tenant_id` column, resolved from
-`tenant.GetTenantID(ctx)` at write time. This keeps the audit trail
-scoped per tenant rather than mixing all tenants' rows in one table;
-scope your audit queries with `WHERE tenant_id = $1`. The stamp does
-not require the audited entity to be `MultiTenant`; any tenant present
-in the request context (e.g. set by your auth middleware) is recorded.
-See [audit-log](audit-log.md) for the schema and query examples.
-
-## Cross-tenant access
-
-**Secure by default (since the tenant-gate change).** A `MultiTenant`
-entity served over HTTP with **no tenant id in the request context is
-refused with `401`**: on every operation (list, get, create, update,
-delete, batch, stream, SSE) and through the in-process CRUD API. A
-missing tenant context can no longer silently return or mutate every
-tenant's rows.
-
-> **BREAKING:** earlier versions failed *open*: an empty tenant id
-> disabled filtering and returned all tenants' rows. If you relied on
-> "admin routes just omit the header to see across tenants", you must
-> now opt in explicitly (below). Auto-scope by tenant id is unchanged
-> for the normal request path.
-
-To read or write across tenants deliberately (admin tooling), mark the
-context with `tenant.AllowCrossTenant`; **server-side only**, never
-from a client-controlled header:
-
-<!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework/tenant"
-import "net/http"
-var r *http.Request
--->
-```go
-// inside an admin-gated handler / middleware, AFTER your own role check:
-ctx := tenant.AllowCrossTenant(r.Context())
-r = r.WithContext(ctx)
-// CRUD on this request now spans every tenant (scope helpers no-op on
-// the empty tenant id) instead of being refused with 401.
-```
-
-There is no built-in role check linking permissions to tenant scope.
-`AllowCrossTenant` only lifts the tenant *requirement*; you must still
-gate the route with `RequirePermission` (or equivalent) so only the
-right role can reach it. Creating a row while cross-tenant with no
-tenant id is still refused: there's no tenant to stamp it with.
-
-## Schema implications
-
-When you declare `MultiTenant: true`, `framework.AutoMigrate` adds the
-column. If you migrated the table manually, add:
-
-```sql
-ALTER TABLE posts
-ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '';
-CREATE INDEX posts_tenant_idx ON posts (tenant_id);
-```
-
-The index is recommended on any table that filters by tenant_id on
-every read.
+Background workers and CLI jobs do not have an HTTP request. Pass the target tenant explicitly in the job payload and attach it to the `context.Context` before querying multi-tenant entities. For cross-tenant operational reports, use an explicit admin bypass only in trusted server-side code.
 
 ## Common mistakes
 
-- **Adding `MultiTenant: true` to an existing entity without
-  backfilling `tenant_id`.** Existing rows have empty string and
-  match every tenant. Backfill before flipping the flag.
-- **Setting the tenant from a client-controlled value.** A request
-  body field, a plain header, anything the caller sends is trivially
-  spoofable. Resolve the tenant server-side (a verified JWT claim, a
-  session lookup) and call `SetTenantID` from your own middleware.
-- **Forgetting tenant resolution.** Auto-scope only fires when the
-  context has a tenant: without one every request now gets a `401`
-  (secure by default), not silent cross-tenant access. Seed the tenant
-  from your auth layer or your own middleware, or set
-  `tenant.AllowCrossTenant` deliberately on admin routes.
-- **Cross-tenant joins via `?include=`.** If both parent and child
-  are multi-tenant, includes scope on the parent's tenant only.
-  Non-multi-tenant child entities are returned unfiltered; model
-  carefully.
+- **Trusting a client-supplied `X-Tenant-ID` header without checking membership:** always verify the authenticated user actually belongs to the requested tenant before putting it in context.
+- **Forgetting to index `(tenant_id, ...)` on high-traffic entities:** include `tenant_id` as the leading column in composite indexes and unique constraints (for example unique `(tenant_id, slug)` rather than global `slug`).
+- **Running background jobs without attaching a tenant to `ctx`:** queries against multi-tenant entities fail closed when no tenant is present in context.
+- **Confusing `MultiTenant` with `OwnerField`:** `MultiTenant` isolates organizations/workspaces; `OwnerField` isolates individual users. Use both when a workspace has private per-user records.
