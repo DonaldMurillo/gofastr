@@ -22,9 +22,10 @@ invariants:
       - test: framework/static.TestExportRefusesCaseFoldedRedirect
       - test: framework/static.TestContributorRefusesPageFile
   - id: contributor-contract
-    rule: A contributor's ExportStart error fails the build, ExportPage gets each page's HTML before the static rewrites, and a file it returns must be a root-absolute path other than _headers or _redirects in any case, written and recorded under its cleaned path.
+    rule: A contributor's ExportStart runs before any route is planned or any StaticPaths is called, and its error fails the build; ExportPage gets each page's HTML before the static rewrites, and a file it returns must be a root-absolute path other than _headers or _redirects in any case, written and recorded under its cleaned path.
     enforced_by:
       - test: framework/static.TestSweepStaticContributorContract
+      - test: framework/static.TestExportStartRunsBeforeStaticPaths
       - test: framework/static.TestContributorRecordsCleanPath
       - test: framework/static.TestContributorRefusesHostRules
   - id: runtime-assets-on-disk-query-free
@@ -74,9 +75,10 @@ invariants:
       - test: framework/static.TestSSGParamNoTraversal
       - test: framework/static.TestSweepStaticDiskValueRefusals
   - id: walk-matches-build
-    rule: Walk hands fn the pages Build would write, skips any route or path its skip func names, and hands fn each render failure with an empty page instead of stopping.
+    rule: Walk hands fn the pages Build would write, plus pages whose output name Build refuses as non-portable, skips any route or path its skip func names, and hands fn each render failure with an empty page instead of stopping.
     enforced_by:
       - test: framework/static.TestWalkHandsFailuresToFn
+      - test: framework/static.TestWalkKeepsNonPortablePages
       - test: framework/static.TestSweepStaticWalkSkipAndNilHost
 decisions:
   - id: contained-fill-failure-refuses

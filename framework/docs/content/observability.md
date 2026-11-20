@@ -129,7 +129,9 @@ code as a trace span's `db.query.text`: every string and number literal
 (`'…'`, `E'…'`, `$tag$…$tag$`, `42`) printed as `?`, comments dropped,
 whitespace collapsed, cut at 240 bytes plus a trailing ellipsis, and bound
 arguments counted. A slow statement that fails records
-`err=database_error` and adds `sqlstate` or `driver_code` when available.
+`err=deadline_exceeded` or `err=canceled` when its context ended, and
+`err=database_error` otherwise, and adds `sqlstate` or `driver_code` when
+available; it never logs the driver's error text.
 `ExecContext` and `QueryContext` return the original error.
 `QueryRowContext` leaves it on the row for `Scan`. Pass the database
 engine to apply its literal quoting rules.

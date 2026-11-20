@@ -62,7 +62,7 @@ type Builder struct {
 }
 
 // Contributor adds files to an export from its pages. ExportStart runs
-// when a build begins, ExportPage gets each page's HTML before the static
+// when a build begins, before any StaticPaths call, ExportPage gets each page's HTML before the static
 // rewrites, and ExportFiles runs after the last page and returns files
 // keyed by root-absolute URL path.
 type Contributor interface {
@@ -99,6 +99,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if _, _, err := b.pageManifest(); err != nil {
 		return Result{}, err
 	}
+	for _, c := range b.Contributors {
+		if err := c.ExportStart(ctx); err != nil {
+			return Result{}, fmt.Errorf("static: contributor start: %w", err)
+		}
+	}
 	redirects := b.exportRedirects()
 	locales, err := b.planLocales(ctx, redirects)
 	if err != nil {
@@ -117,12 +122,6 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	rendered := newFileSet()
 	pageOwner := map[string]string{}
 	docs := map[string]bool{}
-
-	for _, c := range b.Contributors {
-		if err := c.ExportStart(ctx); err != nil {
-			return res, fmt.Errorf("static: contributor start: %w", err)
-		}
-	}
 
 	for _, locale := range locales {
 		expand := func(route string) ([]string, error) { return locale.paths[route], nil }
@@ -422,12 +421,6 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 			}
 			if _, redirected := host.App.ResolveRedirect(p); redirected {
 				logf("skipped %s: a redirect takes its path", p)
-				continue
-			}
-			if err := checkRouteOutput(route.Path, p); err != nil {
-				if err := fail(p, err); err != nil {
-					return err
-				}
 				continue
 			}
 			page, fillFailures, err := host.RenderStaticPageResult(ctx, p)

@@ -72,10 +72,10 @@ invariants:
     rule: Enabled and List snapshot the process coordinator under ModuleManager.mu and invoke its methods after releasing that mutex.
     enforced_by:
       - test: framework.TestModuleCoordinatorReadsReenterManager
-  - id: process-module-listing-bulk-read
-    rule: ModuleManager.List and app_modules make at most one supervisor desired-state read under a shared deadline, respect any earlier caller deadline and cancellation, and keep local snapshots when the read fails.
+  - id: process-module-listing-reads-local-state
+    rule: ModuleManager.List and app_modules read no supervisor desired state, since neither returns a desired generation; they report each process module's local slot snapshot and do not wait on a hanging store.
     enforced_by:
-      - test: framework.TestModuleListingsShareOneDesiredRead
+      - test: framework.TestModuleListingsMakeNoStoreRead
   - id: toggle-respects-dependencies
     rule: Enable refuses a module whose DependsOn names an unregistered or disabled module, and Disable refuses a module an enabled module depends on, without cascading.
     enforced_by:

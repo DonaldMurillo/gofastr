@@ -198,22 +198,30 @@ func TestStaticFSPreconditionParity(t *testing.T) {
 		name, method string
 		headers      map[string]string
 		want         int
+		etag         string
 	}{
-		{"if-match stale", http.MethodGet, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed},
-		{"if-match star", http.MethodGet, map[string]string{"If-Match": "*"}, http.StatusOK},
-		{"if-match list with star", http.MethodGet, map[string]string{"If-Match": `"a", *`}, http.StatusOK},
-		{"if-match malformed before star", http.MethodGet, map[string]string{"If-Match": "junk, *"}, http.StatusPreconditionFailed},
-		{"unmodified-since before", http.MethodGet, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed},
-		{"unmodified-since before head", http.MethodHead, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed},
-		{"unmodified-since after", http.MethodGet, map[string]string{"If-Unmodified-Since": after}, http.StatusOK},
-		{"unmodified-since bad date", http.MethodGet, map[string]string{"If-Unmodified-Since": "yesterday"}, http.StatusOK},
-		{"if-match star beats unmodified-since", http.MethodGet, map[string]string{"If-Match": "*", "If-Unmodified-Since": before}, http.StatusOK},
-		{"if-match stale beats none-match star", http.MethodGet, map[string]string{"If-Match": `"stale"`, "If-None-Match": "*"}, http.StatusPreconditionFailed},
-		{"unmodified-since beats none-match star", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-None-Match": "*"}, http.StatusPreconditionFailed},
-		{"unmodified-since beats modified-since", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-Modified-Since": after}, http.StatusPreconditionFailed},
-		{"none-match list with star", http.MethodGet, map[string]string{"If-None-Match": `"a", *`}, http.StatusNotModified},
-		{"post if-match stale", http.MethodPost, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed},
-		{"post if-match star", http.MethodPost, map[string]string{"If-Match": "*"}, http.StatusOK},
+		{"if-match stale", http.MethodGet, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed, ""},
+		{"if-match star", http.MethodGet, map[string]string{"If-Match": "*"}, http.StatusOK, ""},
+		{"if-match list with star", http.MethodGet, map[string]string{"If-Match": `"a", *`}, http.StatusOK, ""},
+		{"if-match malformed before star", http.MethodGet, map[string]string{"If-Match": "junk, *"}, http.StatusPreconditionFailed, ""},
+		{"unmodified-since before", http.MethodGet, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed, ""},
+		{"unmodified-since before head", http.MethodHead, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed, ""},
+		{"unmodified-since after", http.MethodGet, map[string]string{"If-Unmodified-Since": after}, http.StatusOK, ""},
+		{"unmodified-since bad date", http.MethodGet, map[string]string{"If-Unmodified-Since": "yesterday"}, http.StatusOK, ""},
+		{"if-match star beats unmodified-since", http.MethodGet, map[string]string{"If-Match": "*", "If-Unmodified-Since": before}, http.StatusOK, ""},
+		{"if-match stale beats none-match star", http.MethodGet, map[string]string{"If-Match": `"stale"`, "If-None-Match": "*"}, http.StatusPreconditionFailed, ""},
+		{"unmodified-since beats none-match star", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-None-Match": "*"}, http.StatusPreconditionFailed, ""},
+		{"unmodified-since beats modified-since", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-Modified-Since": after}, http.StatusPreconditionFailed, ""},
+		{"none-match list with star", http.MethodGet, map[string]string{"If-None-Match": `"a", *`}, http.StatusNotModified, ""},
+		{"post if-match stale", http.MethodPost, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed, ""},
+		{"post if-match star", http.MethodPost, map[string]string{"If-Match": "*"}, http.StatusOK, ""},
+		{"if-match response etag", http.MethodGet, map[string]string{"If-Match": `"a", "v1"`}, http.StatusOK, `"v1"`},
+		{"if-match weak response etag", http.MethodGet, map[string]string{"If-Match": `W/"v1"`}, http.StatusPreconditionFailed, `W/"v1"`},
+		{"none-match response etag", http.MethodGet, map[string]string{"If-None-Match": `"v1"`}, http.StatusNotModified, `"v1"`},
+		{"none-match weak response etag", http.MethodGet, map[string]string{"If-None-Match": `W/"v1"`}, http.StatusNotModified, `"v1"`},
+		{"none-match other etag", http.MethodGet, map[string]string{"If-None-Match": `"v2"`}, http.StatusOK, `"v1"`},
+		{"post none-match response etag", http.MethodPost, map[string]string{"If-None-Match": `"v1"`}, http.StatusPreconditionFailed, `"v1"`},
+		{"if-match response etag beats unmodified-since", http.MethodGet, map[string]string{"If-Match": `"v1"`, "If-Unmodified-Since": before}, http.StatusOK, `"v1"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			serve := func(ds *UIHost) *httptest.ResponseRecorder {
@@ -222,6 +230,9 @@ func TestStaticFSPreconditionParity(t *testing.T) {
 					req.Header.Set(k, v)
 				}
 				rec := httptest.NewRecorder()
+				if tc.etag != "" {
+					rec.Header().Set("ETag", tc.etag)
+				}
 				ds.ServeHTTP(rec, req)
 				return rec
 			}

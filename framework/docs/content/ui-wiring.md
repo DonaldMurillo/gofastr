@@ -177,8 +177,9 @@ Useful options:
   `docs/` directory of images never shadows a `/docs` screen (and a
   directory with no screen answers 404, never a redirect or a listing).
   A regular file whose handle cannot seek is served as a whole body,
-  with headers only on HEAD. Seekable files support byte ranges and
-  conditional requests.
+  with headers only on HEAD. Seekable files also support byte ranges.
+  Both answer conditional requests alike, matching any `ETag` a wrapper
+  already set on the response.
 - `host.AssetURL("/logo.svg")`: the URL of a static file with its
   content hash appended (`/logo.svg?v=3f2a9c01b7d4`). Use it wherever a
   page links a file from the static directory or static FS. A request

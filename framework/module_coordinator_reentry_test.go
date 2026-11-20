@@ -18,7 +18,7 @@ func (c reentrantModuleCoordinator) DesiredEnabled(string) bool {
 func (reentrantModuleCoordinator) SetDesiredEnabled(context.Context, string, bool) error {
 	return nil
 }
-func (c reentrantModuleCoordinator) Info(string) (ProcessModuleInfo, bool) {
+func (c reentrantModuleCoordinator) LocalInfo(string) (ProcessModuleInfo, bool) {
 	if c.info == nil {
 		return ProcessModuleInfo{}, false
 	}

@@ -11,7 +11,7 @@ import (
 type remoteToggleCoordinator struct{ reconciles *atomic.Int32 }
 
 func (c remoteToggleCoordinator) Reconcile(string) { c.reconciles.Add(1) }
-func (remoteToggleCoordinator) Info(string) (ProcessModuleInfo, bool) {
+func (remoteToggleCoordinator) LocalInfo(string) (ProcessModuleInfo, bool) {
 	return ProcessModuleInfo{}, false
 }
 

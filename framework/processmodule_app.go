@@ -124,14 +124,10 @@ func (a processCoordinatorAdapter) SetDesiredEnabled(ctx context.Context, name s
 	return a.sup.Disable(ctx, name)
 }
 
-func (a processCoordinatorAdapter) Info(name string) (ProcessModuleInfo, bool) {
-	info, err := a.sup.Info(name)
-	if err != nil {
+func (a processCoordinatorAdapter) LocalInfo(name string) (ProcessModuleInfo, bool) {
+	sl := a.sup.Slot(name)
+	if sl == nil {
 		return ProcessModuleInfo{}, false
 	}
-	return info, true
-}
-
-func (a processCoordinatorAdapter) list(ctx context.Context) []ProcessModuleInfo {
-	return a.sup.list(ctx)
+	return sl.info(), true
 }

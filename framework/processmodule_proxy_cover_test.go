@@ -304,7 +304,7 @@ func (s *introspectionTestStore) ListDesired(ctx context.Context) ([]DesiredStat
 	return s.ProcessModuleStore.ListDesired(ctx)
 }
 
-func TestModuleListingsShareOneDesiredRead(t *testing.T) {
+func TestModuleListingsMakeNoStoreRead(t *testing.T) {
 	app := NewApp(WithMCPIntrospection())
 	store := &introspectionTestStore{ProcessModuleStore: newTestStore(t)}
 	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
@@ -319,49 +319,28 @@ func TestModuleListingsShareOneDesiredRead(t *testing.T) {
 		app.Modules().markProcess(name)
 	}
 	app.InitPlugins()
+	store.listCalls, store.getCalls = 0, 0
+	store.readErr = errors.New("store must not be read")
+	store.bulkRead = func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 
-	t.Run("manager", func(t *testing.T) {
-		store.bulkRead = func(ctx context.Context) error {
-			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > desiredStateReadTimeout {
-				t.Errorf("bulk read deadline = %v, want at most %v from now", deadline, desiredStateReadTimeout)
-			}
-			return errors.New("store unavailable")
-		}
-		list := app.Modules().List()
-		if len(list) != 2 || list[0].ProcessState != StateInstalledDisabled.String() || list[0].Enabled {
-			t.Errorf("List = %+v, want local snapshots after a store failure", list)
-		}
-		if store.listCalls != 1 || store.getCalls != 0 {
-			t.Errorf("List made %d bulk and %d single reads, want 1 and 0", store.listCalls, store.getCalls)
-		}
-	})
-	t.Run("MCP", func(t *testing.T) {
-		store.listCalls, store.getCalls = 0, 0
-		ctx, stop := context.WithTimeout(context.Background(), time.Second)
-		defer stop()
-		wantDeadline, _ := ctx.Deadline()
-		store.bulkRead = func(readCtx context.Context) error {
-			if deadline, ok := readCtx.Deadline(); !ok || !deadline.Equal(wantDeadline) {
-				t.Errorf("bulk read deadline = %v, want caller deadline %v", deadline, wantDeadline)
-			}
-			stop()
-			if !errors.Is(readCtx.Err(), context.Canceled) {
-				t.Errorf("bulk read context = %v after caller cancellation", readCtx.Err())
-			}
-			return readCtx.Err()
-		}
-		res, err := app.MCP.CallTool(ctx, "app_modules", nil)
-		if err != nil {
-			t.Fatalf("app_modules: %v", err)
-		}
-		mods := res.(map[string]any)["modules"].([]map[string]any)
-		if len(mods) != 2 || mods[0]["enabled"] != false {
-			t.Errorf("app_modules = %v, want local snapshots after cancellation", mods)
-		}
-		if store.listCalls != 1 || store.getCalls != 0 {
-			t.Errorf("app_modules made %d bulk and %d single reads, want 1 and 0", store.listCalls, store.getCalls)
-		}
-	})
+	start := time.Now()
+	list := app.Modules().List()
+	if len(list) != 2 || list[0].ProcessState != StateInstalledDisabled.String() || list[0].Enabled {
+		t.Errorf("List = %+v, want local snapshots", list)
+	}
+	res, err := app.MCP.CallTool(context.Background(), "app_modules", nil)
+	if err != nil {
+		t.Fatalf("app_modules: %v", err)
+	}
+	if mods := res.(map[string]any)["modules"].([]map[string]any); len(mods) != 2 || mods[0]["enabled"] != false {
+		t.Errorf("app_modules = %v, want local snapshots", mods)
+	}
+	if elapsed := time.Since(start); elapsed >= desiredStateReadTimeout {
+		t.Errorf("listings took %v behind a hanging store", elapsed)
+	}
+	if store.listCalls != 0 || store.getCalls != 0 {
+		t.Errorf("listings made %d bulk and %d single reads, want none", store.listCalls, store.getCalls)
+	}
 }
 
 func TestInfoAndList_unknownDesiredGenerationPreservesLocalSnapshot(t *testing.T) {

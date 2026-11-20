@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -25,32 +26,42 @@ func (fakeExec) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)       
 func TestSlowLineCountsArgsAndCarriesTheError(t *testing.T) {
 	const secret = "bound-secret"
 	driverErr := &pq.Error{Code: "22P02", Message: "invalid integer: " + secret}
-	inner := sql.OpenDB(failConnector{err: driverErr})
-	t.Cleanup(func() { _ = inner.Close() })
-	for _, kind := range []string{"exec", "query"} {
-		t.Run(kind, func(t *testing.T) {
-			var buf bytes.Buffer
-			s := NewSlowQueryLogger(inner, 1, slog.New(slog.NewJSONHandler(&buf, nil)))
-			ctx := context.Background()
-			var err error
-			if kind == "exec" {
-				_, err = s.ExecContext(ctx, "SELECT $1::int", secret)
-			} else {
-				_, err = s.QueryContext(ctx, "SELECT $1::int", secret)
-			}
-			if !errors.Is(err, driverErr) {
-				t.Fatalf("%s returned %v, want the original driver error", kind, err)
-			}
-			line := buf.String()
-			if strings.Contains(line, secret) {
-				t.Errorf("slow line leaked the bound value: %s", line)
-			}
-			for _, want := range []string{`"args":1`, `"err":"database_error"`, `"sqlstate":"22P02"`} {
-				if !strings.Contains(line, want) {
-					t.Errorf("slow line missing %s: %s", want, line)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{"driver", driverErr, []string{`"err":"database_error"`, `"sqlstate":"22P02"`}},
+		{"deadline", fmt.Errorf("dial: %w", context.DeadlineExceeded), []string{`"err":"deadline_exceeded"`}},
+		{"canceled", context.Canceled, []string{`"err":"canceled"`}},
+	} {
+		inner := sql.OpenDB(failConnector{err: tc.err})
+		t.Cleanup(func() { _ = inner.Close() })
+		for _, kind := range []string{"exec", "query"} {
+			t.Run(tc.name+"/"+kind, func(t *testing.T) {
+				var buf bytes.Buffer
+				s := NewSlowQueryLogger(inner, 1, slog.New(slog.NewJSONHandler(&buf, nil)))
+				ctx := context.Background()
+				var err error
+				if kind == "exec" {
+					_, err = s.ExecContext(ctx, "SELECT $1::int", secret)
+				} else {
+					_, err = s.QueryContext(ctx, "SELECT $1::int", secret)
 				}
-			}
-		})
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("%s returned %v, want the original error", kind, err)
+				}
+				line := buf.String()
+				if strings.Contains(line, secret) || strings.Contains(line, "dial") {
+					t.Errorf("slow line leaked the error text or a bound value: %s", line)
+				}
+				for _, want := range append([]string{`"args":1`}, tc.want...) {
+					if !strings.Contains(line, want) {
+						t.Errorf("slow line missing %s: %s", want, line)
+					}
+				}
+			})
+		}
 	}
 }
 

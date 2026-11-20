@@ -122,7 +122,14 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 }
 
 func appendErrorMetadata(attrs []slog.Attr, err error) []slog.Attr {
-	attrs = append(attrs, slog.String("err", "database_error"))
+	kind := "database_error"
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		kind = "deadline_exceeded"
+	case errors.Is(err, context.Canceled):
+		kind = "canceled"
+	}
+	attrs = append(attrs, slog.String("err", kind))
 	if state, ok := errors.AsType[interface {
 		error
 		SQLState() string
