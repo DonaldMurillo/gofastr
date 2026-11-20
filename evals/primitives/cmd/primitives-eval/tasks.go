@@ -179,7 +179,7 @@ var tasks = []task{
 		Packages: []string{"./battery/admin/"},
 	},
 	{
-		ID: "form-field-typo", Suite: suiteReplay, Ref: "5cbb3145^", Graders: "form-field-typo", Overlay: "appspec",
+		ID: "form-field-typo", Suite: suiteReplay, Ref: "5cbb3145^", Graders: "form-field-typo", Overlay: "appspec-form",
 		Prompt: "In gofastr.yml, an entity_form block whose fields: list has a typo, such as visitor_emial for visitor_email, validates, and the generated form drops that field without a word. " +
 			"entity_list refuses an unknown column when the spec loads. Make entity_form refuse an unknown field name at load too, naming the entry." + replayClosing,
 		Packages: []string{"./cmd/gofastr/internal/appspec/"},

@@ -67,7 +67,8 @@ func ValidateAppSpecEndpoints(bp AppSpec) error {
 		if !EntityDeclarationCRUDEnabled(decl) {
 			ownMount = ""
 		}
-		// Generated apps leave NoLLMMD false and always enable EntityUI.
+		// Generated apps always enable EntityUI. "llm.md" is not a legal
+		// endpoint segment, so NoLLMMD cannot change the result.
 		if err := framework.ValidateEntityEndpointRoutes(ownMount, crud.CrudRouteOptions{NoLLMMD: false, States: cfg.States, Key: cfg.PrimaryKey}, true, routes); err != nil {
 			var routeErr *framework.EndpointRouteError
 			if errors.As(err, &routeErr) {

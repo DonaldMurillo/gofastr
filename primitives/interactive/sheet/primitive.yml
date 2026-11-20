@@ -1,0 +1,48 @@
+primitive: interactive.sheet
+summary: The phone half of a navigation surface - SheetPill, the floating or barred pill naming where the reader is, PhoneSheet, a pill plus an inline popover sheet that sits in normal flow above its swap width, and the swap widths and sheet head they share.
+code:
+  - core-ui/interactive/sheet.go
+  - core-ui/interactive/phone_sheet.js
+docs:
+  - framework/docs/content/layouts.md
+invariants:
+  - id: pill-config-is-checked
+    rule: SheetPill panics without a Name, with both or neither of Opens and Popover, and with Inline and Bar together, and its label falls back to Name.
+    enforced_by:
+      - test: core-ui/interactive.TestSheetPillNeedsName
+      - test: core-ui/interactive.TestSheetPillNeedsOneOpener
+      - test: core-ui/interactive.TestSheetPillInlineOrBar
+      - test: core-ui/interactive.TestSheetPillLabelFallsBackToName
+  - id: swap-widths-are-closed
+    rule: SwapAt is "", md or lg, and any other value panics naming the component that received it.
+    enforced_by:
+      - test: core-ui/interactive.TestSheetPillUnknownSwapPanics
+      - test: core-ui/interactive.TestSectionMenuUnknownSwapAtPanics
+  - id: phone-sheet-is-a-popover
+    rule: PhoneSheet panics without an ID or Title, renders its sheet as a popover the pill targets, and above the swap shows its body in normal flow with no pill or sheet chrome.
+    enforced_by:
+      - test: core-ui/interactive.TestPhoneSheetNeedsIDAndTitle
+      - test: core-ui/interactive.TestPhoneSheetWiresPillToPopover
+      - test: core-ui/interactive.TestPhoneSheetCSSFlowsAboveSwap
+      - test: core-ui/interactive.TestPhoneSheetFlowsAboveSwap
+  - id: scroll-lock-below-the-swap
+    rule: An open PhoneSheet locks the page's scroll only below its swap width.
+    enforced_by:
+      - test: core-ui/interactive.TestPhoneSheetScrollLockBelowSwap
+decisions:
+  - id: body-is-display-contents
+    date: 2026-11-20
+    status: accepted
+    decision: Above the swap the root, the sheet and its body are display contents, so the body lays out as if it sat in the sheet's parent.
+    rejected:
+      - option: Render the body twice, once in the page and once in the sheet.
+        why: The page would carry every entry twice, and a sticky list inside the body would stop sticking to its column.
+    upholds: [phone-sheet-is-a-popover]
+  - id: no-lock-above-the-swap
+    date: 2026-11-20
+    status: accepted
+    decision: The scroll lock is scoped to the widths where the sheet is a sheet.
+    rejected:
+      - option: Lock whenever the popover is open.
+        why: Above the swap the body is back in the page, and a sheet left open by a resize, with no script to close it, would freeze the page.
+    upholds: [scroll-lock-below-the-swap]

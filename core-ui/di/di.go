@@ -7,31 +7,21 @@ import (
 	"sync"
 )
 
-// Container is a simple dependency injection container.
-// It supports registering constructors or values and resolving them
-// by type. Constructor functions are called once and cached as singletons.
-//
-// A constructor runs outside the container's lock, so it may Resolve or
-// Inject the services it needs. A constructor that needs its own type,
-// directly or through another constructor, waits on itself forever.
+// Container holds one singleton per type, built from a provided constructor or value.
 type Container struct {
 	mu         sync.Mutex
-	providers  map[reflect.Type]any    // type → constructor or value
-	singletons map[reflect.Type]any    // type → resolved singleton
-	resolved   map[reflect.Type]bool   // type → whether it's been resolved
-	building   map[reflect.Type]*build // type → constructor call in flight
+	providers  map[reflect.Type]any
+	singletons map[reflect.Type]any
+	resolved   map[reflect.Type]bool
+	building   map[reflect.Type]*build
 }
 
-// build is one in-flight constructor call. Callers that find it wait on
-// done and share its outcome.
 type build struct {
 	done chan struct{}
 	val  any
 	err  error
 }
 
-// errNilSingleton marks a constructor that returned a nil interface;
-// Resolve and Inject each word it for their caller.
 var errNilSingleton = errors.New("di: nil interface singleton")
 
 // NewContainer creates a new DI container.
@@ -44,15 +34,9 @@ func NewContainer() *Container {
 	}
 }
 
-// singleton returns the value for t and whether a provider exists. A
-// constructor is called at most once at a time, never under c.mu; a
-// second caller for a type still building waits for the first and
-// shares its result. A failed or panicking call caches nothing, so the
-// next caller tries again.
 func (c *Container) singleton(t reflect.Type) (any, bool, error) {
 	c.mu.Lock()
 	if c.resolved[t] {
-		// Never a nil interface: one is reported below, not cached.
 		v := c.singletons[t]
 		c.mu.Unlock()
 		return v, true, nil
@@ -76,8 +60,6 @@ func (c *Container) singleton(t reflect.Type) (any, bool, error) {
 		if settled {
 			return
 		}
-		// The constructor panicked: release the waiters before the panic
-		// continues up this caller's stack.
 		b.err = fmt.Errorf("di: constructor for %v panicked", t)
 		c.mu.Lock()
 		delete(c.building, t)
@@ -90,8 +72,6 @@ func (c *Container) singleton(t reflect.Type) (any, bool, error) {
 	}
 	settled = true
 
-	// A nil interface is reported, not cached, so a corrected Provide
-	// stays usable.
 	var err error
 	if !reflect.ValueOf(result).IsValid() {
 		err = errNilSingleton
@@ -108,12 +88,8 @@ func (c *Container) singleton(t reflect.Type) (any, bool, error) {
 	return result, true, err
 }
 
-// Provide registers a constructor or value. The constructor can be:
-//   - A function returning one value (used as singleton factory)
-//   - A direct value (stored as singleton)
-//
-// Registration fails once resolution of the type has started or its value
-// has been cached. An unresolved constructor may still be replaced.
+// Provide registers a no-argument constructor returning one value, or a
+// value itself, for that value's type.
 func (c *Container) Provide(constructor any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -123,16 +99,12 @@ func (c *Container) Provide(constructor any) error {
 		return fmt.Errorf("di: cannot provide nil")
 	}
 
-	// If it's a function, store it as a factory.
 	if v.Kind() == reflect.Func {
 		ft := v.Type()
 		if ft.NumOut() != 1 {
 			return fmt.Errorf("di: constructor must return exactly one value, got %d", ft.NumOut())
 		}
 		outType := ft.Out(0)
-		// Resolution calls the constructor with no arguments: one that
-		// takes any would pass here and panic in reflect on every request
-		// that injects it. A dependency is resolved inside the constructor.
 		if ft.NumIn() != 0 {
 			return fmt.Errorf("di: constructor for %v must take no parameters, got %d; resolve dependencies inside it", outType, ft.NumIn())
 		}
@@ -143,7 +115,6 @@ func (c *Container) Provide(constructor any) error {
 		return nil
 	}
 
-	// Direct value: store as both provider and pre-resolved singleton.
 	outType := v.Type()
 	if err := c.refuseResolvedLocked(outType); err != nil {
 		return err
@@ -154,10 +125,6 @@ func (c *Container) Provide(constructor any) error {
 	return nil
 }
 
-// refuseResolvedLocked refuses a Provide for a type that already has a
-// value, from a resolved constructor or a value provided directly.
-// Resolve serves the cached value, so a later provider was ignored while
-// Provide returned nil. Caller holds c.mu.
 func (c *Container) refuseResolvedLocked(t reflect.Type) error {
 	if c.building[t] != nil {
 		return fmt.Errorf("di: %v is being built; Provide each type before its first use", t)
@@ -168,8 +135,7 @@ func (c *Container) refuseResolvedLocked(t reflect.Type) error {
 	return nil
 }
 
-// Resolve retrieves a value by type. The target must be a pointer.
-// It uses the registered constructor to create the value (singleton pattern).
+// Resolve sets *target to the singleton for its type; target must be a non-nil pointer.
 func (c *Container) Resolve(target any) error {
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Pointer || tv.IsNil() {
@@ -181,8 +147,6 @@ func (c *Container) Resolve(target any) error {
 	case !ok:
 		return fmt.Errorf("di: no provider registered for %v", targetType)
 	case errors.Is(err, errNilSingleton):
-		// reflect.ValueOf(nil) is an invalid Value and Set panics on it;
-		// a typed nil pointer is fine.
 		return fmt.Errorf("di: provider for %v returned a nil interface, cannot resolve it", targetType)
 	case err != nil:
 		return err
@@ -191,15 +155,11 @@ func (c *Container) Resolve(target any) error {
 	return nil
 }
 
-// InjectTagCount reports how many inject-tagged fields Inject would fill
-// in a value of type t (or of the struct t points to), counting fields
-// promoted from an embedded struct. It is 0 for a non-struct type.
+// InjectTagCount reports how many inject-tagged fields Inject would fill in t.
 func InjectTagCount(t reflect.Type) int {
 	return injectTagCount(t, map[reflect.Type]bool{})
 }
 
-// injectTagCount counts through embeds, skipping a struct already on
-// the path (type T struct{ *T } embeds itself).
 func injectTagCount(t reflect.Type, active map[reflect.Type]bool) int {
 	if t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -221,13 +181,8 @@ func injectTagCount(t reflect.Type, active map[reflect.Type]bool) int {
 	return n
 }
 
-// Inject fills struct fields tagged with `inject:""` using the container.
-// target must be a pointer to a struct. Fields promoted from an embedded
-// struct are filled too; a nil embedded pointer whose struct holds
-// inject tags is allocated first.
-//
-// Each field resolves the way Resolve does, so its constructor runs
-// outside the container's lock and may itself Resolve or Inject.
+// Inject fills the `inject:""` fields of the struct target points to,
+// embedded structs included.
 func (c *Container) Inject(target any) error {
 	tv := reflect.ValueOf(target)
 	if tv.Kind() != reflect.Pointer || tv.IsNil() {
@@ -241,8 +196,6 @@ func (c *Container) Inject(target any) error {
 	return c.injectStruct(ev, map[reflect.Type]bool{})
 }
 
-// injectStruct fills the inject-tagged fields of the struct value ev,
-// descending into embedded structs not already on the path (active).
 func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool) error {
 	et := ev.Type()
 	active[et] = true
@@ -258,11 +211,6 @@ func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool)
 			continue
 		}
 		fieldType := field.Type
-		// reflect Value.Set panics on a value obtained from an unexported
-		// field, and Inject runs before the render pipeline's recover
-		// (app.RenderPageResult), so one lowercased tagged field would
-		// take the page down on every request. Report it as the wiring
-		// error it is instead.
 		if !ev.Field(i).CanSet() {
 			return fmt.Errorf("di: injected field %s of type %v is not settable — inject-tagged fields must be exported", field.Name, fieldType)
 		}
@@ -271,8 +219,6 @@ func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool)
 		case !ok:
 			return fmt.Errorf("di: no provider registered for injected field %s of type %v", field.Name, fieldType)
 		case errors.Is(err, errNilSingleton):
-			// Inject runs before the render pipeline's recover, so a
-			// wiring error must be an error, never a Set panic.
 			return fmt.Errorf("di: provider for injected field %s of type %v returned a nil interface, cannot inject", field.Name, fieldType)
 		case err != nil:
 			return err
@@ -282,12 +228,6 @@ func (c *Container) injectStruct(ev reflect.Value, active map[reflect.Type]bool)
 	return nil
 }
 
-// injectEmbedded fills an embedded struct field: a value struct in
-// place, a pointer through its target. A nil pointer is allocated when
-// its struct holds inject tags; one that cannot be set (an unexported
-// embedded pointer type) is reported, since its tags would stay empty.
-// A struct already on the path is left alone: it is a cycle, not a
-// second set of fields.
 func (c *Container) injectEmbedded(fv reflect.Value, active map[reflect.Type]bool) error {
 	switch {
 	case fv.Kind() == reflect.Struct:

@@ -1945,7 +1945,11 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	sb.WriteString("\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n")
 	sb.WriteString("\tif db != nil {\n\t\tdefer db.Close()\n\t}\n\n")
 	sb.WriteString("\toptions := []framework.AppOption{\n")
-	sb.WriteString("\t\tframework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),\n")
+	sb.WriteString("\t\tframework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix")
+	if bp.App.EntityLLMMD != nil {
+		fmt.Fprintf(&sb, ", NoLLMMD: %t", !*bp.App.EntityLLMMD)
+	}
+	sb.WriteString("}),\n")
 	sb.WriteString("\t\t// The app's translations (i18n.go): locales/<tag>.json, picked\n")
 	sb.WriteString("\t\t// by the browser's Accept-Language.\n")
 	sb.WriteString("\t\ttranslatorOption(),\n")

@@ -1,0 +1,90 @@
+primitive: i18n.urlprefix
+summary: The response rewrite that keeps a reader in their locale - Path, Refresh and HTML put a locale prefix in front of the root-relative navigation URLs a response carries, and Middleware applies them to every response under a prefixed locale.
+code:
+  - core-ui/urlprefix/
+docs:
+  - framework/docs/content/i18n.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - A URL a handler writes into a JSON body or an SSE push is not rewritten; code that writes one reads i18n.PathPrefix itself.
+invariants:
+  - id: path-prefixes-root-relative-only
+    rule: Path prefixes a root-relative URL or one on a listed origin, and leaves alone an empty rule, an external, protocol-relative, relative, query-only or fragment URL, the runtime's /__gofastr paths, a path whose first segment, percent-decoded as the router reads it, already names a locale or the prefix itself, and a path Keep claims, its query and fragment cut off for the question.
+    enforced_by:
+      - test: core-ui/urlprefix.TestPathRule
+      - test: core-ui/urlprefix.TestPathKeep
+      - test: core-ui/urlprefix.TestPathOnOrigin
+      - test: core-ui/urlprefix.TestEncodedLocaleNotPrefixedTwice
+      - test: core-ui/urlprefix.TestPrefixedURLNotDoubled
+  - id: refresh-url-found-as-a-browser-does
+    rule: Refresh prefixes the URL of a Refresh value found by the HTML standard's declarative refresh steps (a url token without = starts the URL, quotes are stripped) and returns a value a browser would ignore unchanged; applied twice it changes nothing more.
+    enforced_by:
+      - test: core-ui/urlprefix.TestRefreshRule
+      - test: core-ui/urlprefix.TestRefreshRuleIdempotent
+      - test: core-ui/urlprefix.TestMetaRefreshGainsPrefix
+  - id: html-rewrites-navigation-not-assets
+    rule: HTML rewrites a and area href, form action, button and input formaction, the URLAttrs data-cui-* attributes and a meta refresh, leaves src, srcset, link and every other attribute alone, skips an anchor with hreflang or download, and keeps the bytes of every tag it does not change.
+    enforced_by:
+      - test: core-ui/urlprefix.TestPageLinksKeepPrefix
+      - test: core-ui/urlprefix.TestRewriteLeavesAssetsAndSwitchers
+      - test: core-ui/urlprefix.TestTemplateFillsKeepPrefix
+      - test: core-ui/urlprefix.TestMetaRefreshGainsPrefix
+  - id: url-attrs-follow-the-attribute-table
+    rule: Every data-cui-* attribute the core-ui/ARCHITECTURE.md table documents as taking a <path> or <url> is in URLAttrs or named, with its reason, in the test's notRewritten list.
+    enforced_by:
+      - test: core-ui/urlprefix.TestURLAttrsAllCovered
+  - id: middleware-rewrites-prefixed-responses
+    rule: Under a prefixed locale Middleware rewrites a text/html body through HTML, every Location, Content-Location, X-Gofastr-Location, X-Gofastr-Push-State and X-Gofastr-Document header through Path and every Refresh line through Refresh, on a response with or without a body; it leaves the Link header, a non-HTML body and an encoded body as written, and passes every request without a prefix straight through.
+    enforced_by:
+      - test: core-ui/urlprefix.TestMiddlewareRewritesHTML
+      - test: core-ui/urlprefix.TestLocationGainsPrefix
+      - test: core-ui/urlprefix.TestContentLocationGainsPrefix
+      - test: core-ui/urlprefix.TestPushStateGainsPrefix
+      - test: core-ui/urlprefix.TestDocumentHeaderGainsPrefix
+      - test: core-ui/urlprefix.TestLocationWithoutBody
+      - test: core-ui/urlprefix.TestRefreshHeaderGainsPrefix
+      - test: core-ui/urlprefix.TestEveryRefreshLineGainsPrefix
+      - test: core-ui/urlprefix.TestLinkHeaderLeftAlone
+      - test: core-ui/urlprefix.TestMiddlewarePassesOtherTypes
+      - test: core-ui/urlprefix.TestMiddlewareSkipsEncodedBodies
+      - test: core-ui/urlprefix.TestMiddlewareIdleWithoutPrefix
+  - id: middleware-keeps-net-http-semantics
+    rule: An untyped body is typed by net/http's sniff over its first 512 bytes across writes, even after a status-first WriteHeader, and a nil Content-Type is never sniffed; the header sent is the one at WriteHeader, trailers aside; a 1xx status passes through; a flush never sends a buffered HTML body before it is rewritten and ends a pending sniff.
+    enforced_by:
+      - test: core-ui/urlprefix.TestMiddlewareSniffsUntypedHTML
+      - test: core-ui/urlprefix.TestStatusFirstUntypedHTMLRewritten
+      - test: core-ui/urlprefix.TestStatusFirstOtherBodiesPass
+      - test: core-ui/urlprefix.TestNilContentTypeStaysUnsniffed
+      - test: core-ui/urlprefix.TestSniffSkipsLeadingWhitespace
+      - test: core-ui/urlprefix.TestSniffSpansSplitWrites
+      - test: core-ui/urlprefix.TestSniffHeldBytesForwarded
+      - test: core-ui/urlprefix.TestHeadersAfterWriteHeaderIgnored
+      - test: core-ui/urlprefix.TestInformationalStatusPassesThrough
+      - test: core-ui/urlprefix.TestMiddlewareFlushKeepsBuffer
+      - test: core-ui/urlprefix.TestFlushHoldsBufferedHTML
+      - test: core-ui/urlprefix.TestFlushWhileSniffingSettlesTheType
+decisions:
+  - id: rewrite-on-the-way-out
+    date: 2026-11-20
+    status: accepted
+    decision: Screens, islands and handlers keep writing unprefixed URLs and one middleware adds the locale prefix to the response.
+    rejected:
+      - option: Have every URL writer call i18n.LocalePath.
+        why: Every screen, island, handler and battery would need the change, and one that missed it would send a reader back to the default language.
+    upholds: [middleware-rewrites-prefixed-responses]
+  - id: every-refresh-line
+    date: 2026-11-20
+    status: accepted
+    decision: Every Refresh header line is rewritten, not only the first.
+    rejected:
+      - option: Rewrite the first line, as Header.Get reads it.
+        why: Browsers differ in which line they follow, so any line left unprefixed can take the reader out of their locale.
+    upholds: [middleware-rewrites-prefixed-responses]
+  - id: static-export-keeps-copied-files
+    date: 2026-11-20
+    status: accepted
+    decision: A static export sets Rule.Keep so a link to one of its copied files keeps the unprefixed path.
+    rejected:
+      - option: Copy the files under every locale prefix, as the live router serves them.
+        why: The export would hold one copy of every file per locale for links that can share one.
+    upholds: [path-prefixes-root-relative-only]

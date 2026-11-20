@@ -1,0 +1,111 @@
+primitive: html
+summary: core-ui/html, one builder per HTML tag that renders through core/render with its ARIA role, required accessible name and URL scheme checks, and the attribute helpers (MergeAttrs, Classes, SafeExtraAttrs, SafeCarrierAttrs) components forward caller attributes through.
+code:
+  - core-ui/html/
+docs:
+  - framework/docs/content/accessibility.md
+twins:
+  - job: Add one newline after <textarea> when its content opens on a line break, so the parser's dropped newline is the added one.
+    why: framework/headless is outside the core-ui sweep; the merge is an exported core-ui/html helper that headless, which already imports core-ui/html, calls.
+    sites:
+      - path: core-ui/html/interactive.go
+        note: TextArea.
+      - path: framework/headless/control.go
+        note: Textarea.
+invariants:
+  - id: accessible-name-required
+    rule: Button panics without a Label, AriaLabel or ExtraAttrs aria-label, and Section, Nav and Aside panic without a Label or LabelledBy; AriaLabel wins over Label as the button's aria-label.
+    enforced_by:
+      - test: core-ui/html.TestButtonRequiresLabelOrAriaLabel
+      - test: core-ui/html.TestButton
+      - test: core-ui/html.TestSection
+  - id: url-attrs-are-checked
+    rule: Every URL-valued attribute goes through urlsafe and is omitted, never blanked, when the policy refuses it; img src uses the ImageSource policy, which admits raster data URIs, and script, source and iframe src use Resource, which does not.
+    enforced_by:
+      - test: core-ui/html.TestHTMLBuildersDropJSSchemes
+      - test: core-ui/html.TestImageAcceptsRasterDataButScriptDoesNot
+  - id: iframe-is-sandboxed
+    rule: IFrame renders a sandbox attribute, empty meaning every restriction, unless Unsandboxed is set, and drops src, srcdoc, sandbox and title from ExtraAttrs in any letter case.
+    enforced_by:
+      - test: core-ui/html.TestIFrame
+  - id: landmark-roles
+    rule: Main carries role main, id main-content and tabindex -1 unless the caller sets them, Header carries role banner only with Banner and Footer role contentinfo only with ContentInfo, and an Image with empty alt carries role presentation.
+    enforced_by:
+      - test: core-ui/html.TestMain
+      - test: core-ui/html.TestMainIsAFocusableSkipTarget
+      - test: core-ui/html.TestHeader
+      - test: core-ui/html.TestFooter
+      - test: core-ui/html.TestImage
+  - id: th-scope-and-role
+    rule: TH writes scope lower-cased and defaulting to col, with role rowheader for row and rowgroup and columnheader otherwise.
+    enforced_by:
+      - test: core-ui/html.TestTH
+  - id: heading-id-from-text
+    rule: A Heading without an id gets heading- plus a slug of its unescaped text, at most 64 bytes, the same for the same text on every render.
+    enforced_by:
+      - test: core-ui/html.TestHeadingAutoIDDeterministic
+      - test: core-ui/html.TestHeadingAutoIDIsCappedAndUnescaped
+  - id: textarea-keeps-content
+    rule: TextArea escapes its content and adds one newline before content that opens on a CR or LF.
+    enforced_by:
+      - test: core-ui/html.TestTextAreaContent
+      - test: core-ui/html.TestTextAreaKeepsLeadingNewline
+  - id: extra-attrs-cannot-take-owned-keys
+    rule: SafeExtraAttrs drops every letter-case spelling of class, id and the protected keys and every data-cui-* and data-fui-* key, SafeCarrierAttrs drops class, id, data-cui-comp and the protected keys but keeps other data-cui-* wiring, and both return nil when nothing is left.
+    enforced_by:
+      - test: core-ui/html.TestSafeExtraAttrsDropsProtectedKeys
+      - test: core-ui/html.TestSafeExtraAttrsDropsDataFui
+      - test: core-ui/html.TestSafeCarrierAttrsKeepsWiring
+      - test: core-ui/html.TestSafeExtraAttrsNilOnEmptyResult
+      - test: core-ui/html.TestSafeCarrierAttrsNilOnEmptyResult
+    judge: Does this change forward a caller's ExtraAttrs to a root element that renders its own data-cui-* wiring through SafeCarrierAttrs instead of SafeExtraAttrs?
+  - id: classes-sorted
+    rule: Classes joins the true class names in sorted order.
+    enforced_by:
+      - test: core-ui/html.TestClassesSortedAndStable
+  - id: input-omits-empty-value
+    rule: Input writes no value attribute for an empty Value.
+    enforced_by:
+      - test: core-ui/html.TestInputOmitsEmptyValue
+decisions:
+  - id: one-builder-per-tag
+    date: 2026-11-20
+    status: accepted
+    decision: Each exported builder renders exactly one element; components that compose several live in framework/ui on framework/headless.
+    rejected:
+      - option: Composite widgets (pagination, tabs, breadcrumbs) in this package.
+        why: They would duplicate the headless structure layer and its behaviour hooks.
+  - id: omit-refused-urls
+    date: 2026-11-20
+    status: accepted
+    decision: A refused URL drops its attribute.
+    rejected:
+      - option: Render the attribute empty.
+        why: src="" re-requests the current document in several browsers and href="" is a live link back to the page.
+    upholds: [url-attrs-are-checked]
+  - id: content-derived-heading-ids
+    date: 2026-11-20
+    status: accepted
+    decision: A heading's auto id is derived from its text, so two headings with the same text on one page share an id unless one sets ID.
+    rejected:
+      - option: A per-render counter.
+        why: Ids would drift across requests and break deep links and anchors kept across partial swaps.
+      - option: De-duplicate against the page.
+        why: A builder has no page-wide context to de-duplicate against.
+    upholds: [heading-id-from-text]
+  - id: banner-is-opt-in
+    date: 2026-11-20
+    status: accepted
+    decision: Header and Footer carry the banner and contentinfo roles only when asked.
+    rejected:
+      - option: Always add the role.
+        why: A page has many header and footer elements and only the page-wide one may carry the role.
+    upholds: [landmark-roles]
+  - id: case-variants-dropped
+    date: 2026-11-20
+    status: accepted
+    decision: SafeExtraAttrs and SafeCarrierAttrs compare keys case-insensitively.
+    rejected:
+      - option: Overwrite the lowercase key only.
+        why: A Class or Type key survives as a second map entry, renders as a second attribute and folds back onto the protected one in the parser.
+    upholds: [extra-attrs-cannot-take-owned-keys]

@@ -1,19 +1,5 @@
 package app
 
-// Outlet fills: the resolution side of the tree-layout primitive
-// (docs/DESIGN-layout-outlets.md, "Fills" and the "Render algorithm"
-// loop). A screen or a screen group declares a component for a
-// (layout, outlet) address; the renderer resolves, per outlet of every
-// tree layer in the screen's chain, the FIRST candidate that loads:
-// the screen's fill, then group fills innermost to outermost, then the
-// outlet's Default.
-//
-// The decided policies only (DESIGN "Fills"): candidates load
-// concurrently, one goroutine per outlet, bounded; a failing fill is
-// contained to its outlet. The P2/ prototype switches that once
-// selected page-error and sequential variants are gone — the losing
-// variants were deleted, not flagged.
-
 import (
 	"context"
 	"errors"
@@ -29,34 +15,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
-// ErrNoFill is returned by a fill component's Load to DECLINE the
-// candidate: the outlet falls through to the next candidate (a group
-// fill, the Default, the fallback). Any other Load error is the page's
-// error.
+// ErrNoFill is returned by a fill component's Load to DECLINE the candidate: the outlet falls
+// through to the next candidate (a group fill, the Default, the fallback).
 var ErrNoFill = errors.New("app: no fill for this route")
 
-// Fill is one resolved non-primary fill on the wire: the outlet or area
-// address and its HTML. There is no hash: the runtime re-applies every
-// kept-layer fill on each navigation.
+// Fill is one resolved non-primary fill on the wire: the outlet or area address and its HTML.
 type Fill struct {
 	Addr string
 	HTML render.HTML
 }
 
-// fillDecl is one recorded fill declaration: its component and,
-// optionally, the region guard attached to it (app.FillPolicy,
-// .
 type fillDecl struct {
 	comp   component.Component
 	policy Policy
 }
 
-// Fill declares c as the fill for outlet o on this screen. o must be
-// a handle of a layout in the screen's resolved chain (the render
-// panics otherwise, naming the layout and the outlet). The fill
-// component is instantiated and loaded per request exactly like a
-// screen component (fresh instance, route params, DI, Load). opts
-// attach a region guard (FillPolicy) to this declaration.
+// Fill declares c as the fill for outlet o on this screen.
 func (s *Screen) Fill(o *Outlet, c component.Component, opts ...FillOption) *Screen {
 	if s.fills == nil {
 		s.fills = make(map[*Outlet]fillDecl)
@@ -69,13 +43,8 @@ func (s *Screen) Fill(o *Outlet, c component.Component, opts ...FillOption) *Scr
 	return s
 }
 
-// Fill declares c as the fill for outlet o on every screen of this
-// group (and its sub-groups) that does not fill the outlet itself. o
-// must be a handle of a layout in every member screen's resolved chain
-// (the render panics otherwise, naming the layout and the outlet).
-// Group fills are consulted innermost group first, after the screen's
-// own fill and before the outlet's Default. opts attach a region guard
-// (FillPolicy) to this declaration.
+// Fill declares c as the fill for outlet o on every screen of this group (and its sub-groups) that
+// does not fill the outlet itself.
 func (g *ScreenGroup) Fill(o *Outlet, c component.Component, opts ...FillOption) *ScreenGroup {
 	if g.fills == nil {
 		g.fills = make(map[*Outlet]fillDecl)
@@ -88,17 +57,13 @@ func (g *ScreenGroup) Fill(o *Outlet, c component.Component, opts ...FillOption)
 	return g
 }
 
-// WithLoading declares the group's swap-slot loading default (,
-// every member screen without its own
+// WithLoading declares the group's swap-slot loading default (, every member screen without its own
 // declaration shows this while a navigation to it is in flight.
 func (g *ScreenGroup) WithLoading(ld *Loading) *ScreenGroup {
 	g.loading = ld
 	return g
 }
 
-// screenLoading resolves a screen's effective swap-slot loading
-// declaration (): the screen's own, else the innermost group's,
-// else nil.
 func screenLoading(s *Screen) *Loading {
 	if s.Loading != nil {
 		return s.Loading
@@ -111,28 +76,11 @@ func screenLoading(s *Screen) *Loading {
 	return nil
 }
 
-// treeFill is one recorded fill during a render.
 type treeFill struct {
 	layer int
 	html  render.HTML
 }
 
-// fillSet records the resolved fills of one render, by wire address.
-// Lookups are by exact address; output order comes from walking the
-// chain (exportFillsFor), never from map iteration.
-//
-// failures records the outlets whose fill FAILED and was contained
-// ( variant B, and the streaming resolver's forced containment):
-// the render degrades the outlet and marches on, and the record is
-// how a static export can refuse to bake the degraded bytes in
-// (RenderResult.FillFailures) while a live server keeps containing.
-//
-// notFoundOutlet records the 404-outlet outcome: some FallbackNotFound
-// outlet of the chain had no candidate that renders (every candidate
-// declined with ErrNoFill; NewLayout refuses a Default beside
-// FallbackNotFound). Deferred outlets never decide it on the page
-// request — their candidates never run there; the part request owns
-// that decision (RenderPartResult's whole-page reset).
 type fillSet struct {
 	entries        map[string]treeFill
 	failures       []FillFailure
@@ -158,10 +106,6 @@ func (f *fillSet) set(addr string, tf treeFill) {
 	f.entries[addr] = tf
 }
 
-// newComponentInstance returns a per-request shallow copy of a
-// registered component (the same contract Screen.newInstance gives
-// screen components): construction-time configuration survives, Load
-// mutations land on request-private storage.
 func newComponentInstance(c component.Component) component.Component {
 	if c == nil {
 		return nil
@@ -175,26 +119,15 @@ func newComponentInstance(c component.Component) component.Component {
 	return fresh.Interface().(component.Component)
 }
 
-// maxConcurrentFills bounds the fills' goroutines. Pages carry a
-// handful of outlets; the bound exists so a pathological chain cannot
-// fan out unbounded (DESIGN "Fills load concurrently", bounded).
 const maxConcurrentFills = 8
 
-// fillSlot is one outlet to resolve: its wire address, its spec, and
-// its candidates in resolution order.
 type fillSlot struct {
 	addr       string
 	spec       OutletSpec
 	candidates []component.Component
-	// layer is the chain index of the owning layer; slots are listed in
-	// chain order, so a subtree partial's KEPT layers (0..shared-1)
-	// contribute exactly the first slots.
-	//.
-	layer int
+	layer      int
 }
 
-// fillSlots lists every outlet of every tree layout in chain, in chain
-// order — the declaration order results are re-assembled in.
 func fillSlots(screen *Screen, chain []LayoutLayer) []fillSlot {
 	var slots []fillSlot
 	for i, layer := range chain {
@@ -214,9 +147,6 @@ func fillSlots(screen *Screen, chain []LayoutLayer) []fillSlot {
 	return slots
 }
 
-// fillCandidates lists an outlet's fill candidates in resolution order:
-// the screen's own fill, group fills innermost to outermost, then the
-// outlet's Default.
 func fillCandidates(screen *Screen, o *Outlet) []component.Component {
 	var out []component.Component
 	if screen != nil {
@@ -235,14 +165,6 @@ func fillCandidates(screen *Screen, o *Outlet) []component.Component {
 	return out
 }
 
-// validateFills is the render-time half of "Validation at mount"
-// (DESIGN): every fill the screen or one of its groups declares must
-// name an outlet handle whose owning layout is in the screen's
-// resolved chain — pointer identity, the way app.go compares layers.
-// A fill for a layout outside the chain (or a handle no layout ever
-// declared) is a wiring mistake whose only silent alternative is an
-// outlet that never fills, so it panics here, naming the layout and
-// the outlet, in the voice of router.go's registration checks.
 func validateFills(screen *Screen, chain []LayoutLayer) {
 	owners := make(map[*Layout]bool, len(chain))
 	for _, layer := range chain {
@@ -273,48 +195,12 @@ func validateFills(screen *Screen, chain []LayoutLayer) {
 	}
 }
 
-// fillSlotResult is one slot's outcome: the resolved fill HTML (empty
-// for an unfilled outlet) and, when the fill FAILED and was contained,
-// the error that failed it (containedErr) so the render can record the
-// degraded outlet (RenderResult.FillFailures).
-//
-// notFound marks the 404-outlet outcome (FallbackNotFound, DESIGN
-// "404 outlet"): every candidate declined (ErrNoFill) and the spec has
-// no Default (NewLayout refuses the pair), so the render outcome
-// is not-found, not an empty region. A contained failure is NOT a
-// decline: it never sets notFound.
 type fillSlotResult struct {
 	html         render.HTML
 	containedErr error
 	notFound     bool
 }
 
-// resolveFills resolves the fill HTML of every outlet of every tree
-// layout in chain. Per outlet, candidates load in resolution order:
-// screen fill, then group fills innermost to outermost, then the
-// outlet's Default; a candidate whose Load returns ErrNoFill (or
-// wraps it) declines to the next. An outlet nothing fills renders
-// empty (FallbackNothing) or — for FallbackNotFound — records the
-// 404-outlet outcome on the fill set (fills.notFoundOutlet), which the
-// render turns into the not-found page with status 404 (Decided 5).
-//
-// Outlets load concurrently (DESIGN "Fills load concurrently"): one
-// goroutine per outlet, bounded by maxConcurrentFills, results kept
-// in declaration order. A failing fill is contained to its outlet
-// (DESIGN "A failing fill is contained to its outlet"): the error is
-// logged scrubbed, the outlet renders the failing fill's
-// ErrorBoundary fallback, else the outlet's Default, else nothing,
-// and the page keeps the screen's status.
-//
-// deferOutlets (X-Gofastr-Defer, skips every
-// DEFERRED outlet's candidates entirely - no loader runs - and records
-// the outlet's loading content as its fill, so the payload carries the
-// region's placeholder in place (kept layers as an envelope fill,
-// rendered layers inline in the cell). The fill itself arrives as its
-// own part request.
-//
-// Areas are NOT resolved here: they are recorded by the build itself
-// (LayoutTree.RouteArea runs on every render, kept layers included).
 func (a *App) resolveFills(ctx context.Context, path string, params map[string]string, screen *Screen, chain []LayoutLayer, deferOutlets bool, guards regionGuards) *fillSet {
 	anyTree := false
 	for _, layer := range chain {
@@ -329,9 +215,6 @@ func (a *App) resolveFills(ctx context.Context, path string, params map[string]s
 	fills := &fillSet{}
 	slots := fillSlots(screen, chain)
 	if deferOutlets {
-		// Splice the deferred slots out of the resolution batch: they
-		// resolve to their loading content without touching a single
-		// candidate (the part request owns the real fill).
 		live := slots[:0]
 		for _, slot := range slots {
 			if slot.spec.Deferred {
@@ -358,11 +241,6 @@ func (a *App) resolveFills(ctx context.Context, path string, params map[string]s
 	return fills
 }
 
-// deferredFillHTML renders a deferred outlet's placeholder: the spec's
-// Loading content, rendered once under the same containment every
-// presentational render gets (no Load, no DI, no params - loading
-// content must not fetch). An outlet without a Loading declaration
-// renders nothing in place; the dim alone covers the wait.
 func deferredFillHTML(ctx context.Context, spec OutletSpec) render.HTML {
 	if spec.Loading == nil || spec.Loading.Show == nil {
 		return ""
@@ -374,9 +252,6 @@ func deferredFillHTML(ctx context.Context, spec OutletSpec) render.HTML {
 	return html
 }
 
-// deferredAddrs lists the wire addresses of every deferred outlet in
-// chain, in chain order - the per-route list the manifest carries so
-// the client knows, before any request, which regions travel as parts.
 func deferredAddrs(chain []LayoutLayer) []string {
 	var out []string
 	for _, layer := range chain {
@@ -393,15 +268,6 @@ func deferredAddrs(chain []LayoutLayer) []string {
 	return out
 }
 
-// resolveFillSlot resolves ONE outlet: the first candidate that loads
-// renders, ErrNoFill declines to the next, and a non-ErrNoFill error
-// is contained to the outlet (DESIGN "A failing fill is contained to
-// its outlet"): logged scrubbed, the region degrades to the failing
-// fill's ErrorBoundary fallback, else the outlet's Default, else
-// nothing. The catch-all recover converts an escaped panic (a
-// panicking SetParams, a panicking DI walk) into the same error
-// channel a Load panic already takes: every resolution runs inside a
-// goroutine, where an escaped panic would kill the process.
 func (a *App) resolveFillSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) (res fillSlotResult) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -411,11 +277,6 @@ func (a *App) resolveFillSlot(ctx context.Context, path string, params map[strin
 			}
 		}
 	}()
-	// A region guard's recorded decision replaces the candidate walk
-	//. Block renders the region's fallback (the
-	// outlet's Default, else nothing) without loading a single
-	// candidate; RenderAlt prepends the alt component, which outranks
-	// the screen fill.
 	candidates := slot.candidates
 	if d, ok := guards[slot.addr]; ok {
 		if d.kind == DecisionBlock {
@@ -440,27 +301,12 @@ func (a *App) resolveFillSlot(ctx context.Context, path string, params map[strin
 		}
 		return fillSlotResult{html: html}
 	}
-	// Fallback: FallbackDefault with a Default component was already a
-	// candidate above, so an unfilled outlet renders nothing — except
-	// FallbackNotFound (no Default can be declared beside it,
-	// NewLayout refuses the pair), whose clean fall-through is the
-	// 404-outlet outcome, not an empty region. Only a full decline
-	// reaches here: a contained failure returned above and never set
-	// notFound, and a guard's Block rendered Default-or-nothing without
-	// consulting a single candidate.
 	if slot.spec.Fallback == FallbackNotFound {
 		return fillSlotResult{notFound: true}
 	}
 	return fillSlotResult{html: ""}
 }
 
-// rebuildFillsFromDefaults rewrites the fill set for the 404-outlet
-// outcome: every outlet of every tree layer in chain — the one that
-// 404'd included — renders its Default, if it has one and the Default
-// renders, else nothing. The route's own fills belong to the route's
-// screen, and this outcome is not that screen; the not-found page's
-// regions are the spec's fallbacks (DESIGN "404 outlet"). Areas are
-// untouched: they are recorded later by the builds themselves.
 func (a *App) rebuildFillsFromDefaults(ctx context.Context, path string, params map[string]string, fills *fillSet, chain []LayoutLayer) {
 	if fills == nil {
 		return
@@ -486,26 +332,8 @@ func (a *App) rebuildFillsFromDefaults(ctx context.Context, path string, params 
 	}
 }
 
-// resolveSlotsConcurrent resolves every slot in parallel (DESIGN
-// "Fills load concurrently"): one goroutine per outlet, bounded by
-// maxConcurrentFills, hand-rolled (WaitGroup + semaphore channel;
-// golang.org/x/sync sits in go.mod as an indirect require only). The
-// request context flows into every goroutine unchanged:
-// client-disconnect cancellation reaches every Load, but a failing
-// sibling does NOT cancel the rest — an early spike derived a
-// cancelling context here and the cancellation error then masqueraded
-// as the declaration-order-first failure (and races whichever
-// goroutine recorded first), so the page error was neither
-// deterministic nor the real cause. Siblings run to completion instead
-// (the decided containment needs every outlet's own outcome anyway);
-// results land by index — the slice is never appended under
-// concurrency — so which goroutine finished first is unobservable.
 func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params map[string]string, slots []fillSlot, guards regionGuards) []fillSlotResult {
 	results := make([]fillSlotResult, len(slots))
-	// Element ids the slots derive (render.UniqueID) are settled in slot
-	// order once every slot has rendered, so a second slot's repeat of
-	// the first slot's "features" is "features-2" whichever goroutine
-	// finished first.
 	ids := render.NewRegionBatch(ctx, len(slots))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxConcurrentFills)
@@ -532,13 +360,6 @@ func (a *App) resolveSlotsConcurrent(ctx context.Context, path string, params ma
 	return results
 }
 
-// resolveDeferredSlot resolves a deferred outlet's fill with element ids
-// of its own. A deferred outlet also renders alone, as a part request
-// (RenderPartResult), where nothing else on the page has rendered, so
-// on the full page as in the part its derived ids come from the
-// outlet's namespace (outletIDs, named after the outlet's address):
-// "_l-shell-aside--features", the same in both answers and apart from
-// every other id on the page.
 func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[string]string, slot fillSlot, guards regionGuards) fillSlotResult {
 	ids := render.NewRegionBatch(outletIDs(ctx, slot.addr), 1)
 	res := a.resolveFillSlot(ids.Context(0), path, params, slot, guards)
@@ -547,22 +368,10 @@ func (a *App) resolveDeferredSlot(ctx context.Context, path string, params map[s
 	return res
 }
 
-// outletIDs opens a deferred outlet's id namespace. It is of its own
-// kind (render.WithIDNamespaceKind, "_l-"), so no island, whatever its
-// id, shares it: island "l-shell-aside" is "l-shell-aside--features",
-// outlet l:shell#aside is "_l-shell-aside--features".
 func outletIDs(ctx context.Context, addr string) context.Context {
 	return render.WithIDNamespaceKind(ctx, 'l', idNamespace(addr))
 }
 
-// idNamespace names a deferred outlet's id namespace after its wire
-// address. The common address, a layout and an outlet whose names are
-// letters and digits only ("l:shell#aside"), reads "shell-aside". Any
-// other address is passed as it is, and the namespace spells it in hex
-// escapes ("l:shell#aside-a" is "l_3ashell_23aside-a"); every address
-// holds a "#", so that form always holds a "_" the readable form never
-// does. So two outlets never share a namespace: "aside-a" and
-// "aside_a", or "Aside" and "aside", stay apart.
 func idNamespace(addr string) string {
 	alnum := func(s string) bool {
 		for i := 0; i < len(s); i++ {
@@ -581,12 +390,6 @@ func idNamespace(addr string) string {
 	return addr
 }
 
-// withPageIDs renders one page answer (a document, a partial, an
-// error or not-found body) as a single id region (render.NewRegionBatch)
-// and settles it: every explicit id on the page, reserved by its
-// component or only written in the HTML, is reserved before any
-// derived id is handed out, so a section with ID "features" keeps it
-// even when a section titled "Features" rendered first.
 func withPageIDs(ctx context.Context, fn func(context.Context) (RenderResult, error)) (RenderResult, error) {
 	ids := render.NewRegionBatch(ctx, 1)
 	res, err := fn(ids.Context(0))
@@ -602,14 +405,6 @@ func withPageIDs(ctx context.Context, fn func(context.Context) (RenderResult, er
 	return res, err
 }
 
-// containedFillError renders the degraded outlet of a contained fill
-// failure. The failure is logged with the screen path's own scrubbing
-// (slog.Default, every request-derived value through textsafe); then
-// the outlet renders, in order: the failing fill's own ErrorBoundary
-// fallback, else the outlet's Default, else nothing. The error text
-// reaches the HTML only through the component's own RenderError,
-// whose escaping is the component's business exactly like any Render.
-// failed is nil when the panic escaped before any candidate existed.
 func (a *App) containedFillError(ctx context.Context, path string, params map[string]string, slot fillSlot, failedIdx int, failed component.Component, err error) render.HTML {
 	slog.Default().Error("app: fill failed; outlet degraded to fallback",
 		"addr", slot.addr,
@@ -621,8 +416,6 @@ func (a *App) containedFillError(ctx context.Context, path string, params map[st
 		}
 		return "" // RenderError itself panicked: nothing, not a broken box
 	}
-	// The failing candidate was the Default itself: nothing is left to
-	// try for this outlet.
 	if slot.spec.Default != nil && failedIdx == len(slot.candidates)-1 {
 		return ""
 	}
@@ -637,9 +430,6 @@ func (a *App) containedFillError(ctx context.Context, path string, params map[st
 	return ""
 }
 
-// containedRenderError runs an ErrorBoundary's RenderError under the
-// same panic-to-error containment a component render gets: a
-// panicking fallback renders nothing rather than killing the page.
 func containedRenderError(ctx context.Context, eb component.ErrorBoundary, err error) (out render.HTML, ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -650,14 +440,6 @@ func containedRenderError(ctx context.Context, eb component.ErrorBoundary, err e
 	return eb.RenderError(err), true
 }
 
-// loadFillComponent instantiates and loads ONE fill candidate exactly
-// the way RenderPageResult treats a screen component: fresh instance,
-// route params via SetParams, DI injection, Load under containment,
-// render under containment. It returns the per-request instance (so
-// the caller can consult its ErrorBoundary on failure), the rendered
-// HTML, and the error. ErrNoFill (declined) propagates to the caller;
-// every other error is the page's error via fillFailure under variant
-// A, or contained per outlet under variant B.
 func (a *App) loadFillComponent(ctx context.Context, path string, params map[string]string, c component.Component) (component.Component, render.HTML, error) {
 	comp := newComponentInstance(c)
 	if ps, ok := comp.(ParamSetter); ok && len(params) > 0 {
@@ -678,11 +460,6 @@ func (a *App) loadFillComponent(ctx context.Context, path string, params map[str
 	return comp, html, nil
 }
 
-// exportFillsFor walks the chain outermost to the given limit (the
-// shared depth of a subtree partial) and emits the recorded fills of
-// layers 0..limit-1 in chain order — deterministic, no map iteration.
-// Layers at or below the limit render inline in the payload, their
-// fills are not exported.
 func exportFillsFor(chain []LayoutLayer, fills *fillSet, limit int) []Fill {
 	if fills == nil || limit <= 0 {
 		return nil

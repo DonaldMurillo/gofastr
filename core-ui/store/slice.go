@@ -18,15 +18,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// Slice is a typed handle to one declared shared-state value. It is a
-// renderer first: its binding helpers emit both the data-cui-signal
-// attribute AND the resolved initial value, so the SSR DOM and the
-// seeded client store can never drift.
+// Slice is a typed handle to one declared shared value.
 type Slice[T any] struct {
 	name  string
 	scope Scope
 	def   T
-	comp  *computedCfg // non-nil for Computed slices
+	comp  *computedCfg
 }
 
 type computedCfg struct {
@@ -43,17 +40,14 @@ func (sl *Slice[T]) Default() T { return sl.def }
 // Scope returns the slice's seeding scope.
 func (sl *Slice[T]) Scope() Scope { return sl.scope }
 
-// Global marks the slice app-global: seeded on every page and preserved
-// across client-side navigation.
+// Global marks the slice as seeded on every page and kept across navigation.
 func (sl *Slice[T]) Global() *Slice[T] {
 	sl.scope = ScopeGlobal
 	setScope(sl.name, ScopeGlobal)
 	return sl
 }
 
-// Seed sets the per-request authoritative value (called by the producer,
-// a screen loader or island, at render time). No-op if the request
-// context carries no value bag (i.e. rendered outside the UI host).
+// Seed sets the slice's value for this request; a no-op outside the UI host.
 func (sl *Slice[T]) Seed(ctx context.Context, v T) {
 	if b := valuesFrom(ctx); b != nil {
 		b.mu.Lock()
@@ -62,19 +56,9 @@ func (sl *Slice[T]) Seed(ctx context.Context, v T) {
 	}
 }
 
-// Value returns the slice's value for this request: what a producer
-// passed to Seed on ctx, else the declared default. It is the value
-// Bind stamps and the page's seed carries, so a component that renders
-// its own data-cui-signal binding (ui.Counter, ui.Tabs,
-// ui.SignalToggle) stamps it as its first paint and the server text
-// and the client store agree. Default is the declaration, never the
-// request: stamping it shows the wrong value whenever the request
-// seeded another. A nil ctx, or one from outside the UI host (no
-// value bag), returns the default.
+// Value returns the slice's value for this request, else its default.
 func (sl *Slice[T]) Value(ctx context.Context) T { return sl.resolve(ctx) }
 
-// resolve returns the request value if the producer seeded one, else the
-// declared default.
 func (sl *Slice[T]) resolve(ctx context.Context) T {
 	if b := valuesFrom(ctx); b != nil {
 		if IsRouteName(sl.name) {
@@ -94,8 +78,7 @@ func (sl *Slice[T]) resolve(ctx context.Context) T {
 	return sl.def
 }
 
-// Bind renders a read-only consumer element bound to the slice in text
-// mode, stamping the resolved value as its text content.
+// Bind renders tag bound to the slice in text mode, with the value as its text.
 func (sl *Slice[T]) Bind(ctx context.Context, tag string, attrs map[string]string) render.HTML {
 	a := cloneAttrs(attrs)
 	a["data-cui-signal"] = sl.name
@@ -103,11 +86,6 @@ func (sl *Slice[T]) Bind(ctx context.Context, tag string, attrs map[string]strin
 	return renderEl(tag, a, render.Text(valueString(any(sl.resolve(ctx)))))
 }
 
-// applyComputed stamps the computed-wiring attributes when this slice is
-// a Computed. The runtime's computed module reads them to recompute the
-// value client-side whenever a dependency changes, and loads only when
-// an element carries them, so every bind mode (Bind, BindAttr,
-// BindHTML) stamps them.
 func (sl *Slice[T]) applyComputed(a map[string]string) {
 	if sl.comp == nil {
 		return
@@ -116,20 +94,10 @@ func (sl *Slice[T]) applyComputed(a map[string]string) {
 	a["data-cui-computed-deps"] = strings.Join(sl.comp.deps, ",")
 }
 
-// BindAttr binds the slice value to an HTML attribute (attr mode),
-// stamping the resolved value into that attribute. URL-bearing attrs are
-// guarded against dangerous schemes both at SSR (sanitizeSignalURL below)
-// AND on every client-side update by the runtime (_isUnsafeSignalUrl),
-// defense-in-depth parity, because a producer may Seed a request-
-// influenced URL into a URL-bound slice.
+// BindAttr renders tag with the slice bound to htmlAttr, stamped with the value.
 func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs map[string]string) render.HTML {
 	a := cloneAttrs(attrs)
 	if !interactive.SignalAttrAllowed(htmlAttr) {
-		// The binding is refused outright rather than rendered with a
-		// sanitised value: the attributes below the allow-list execute
-		// regardless of what their value looks like, so there is no
-		// "safe" value to stamp. Emitting the element without the
-		// binding degrades to static markup.
 		return renderEl(tag, a)
 	}
 	a["data-cui-signal"] = sl.name
@@ -138,11 +106,6 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	sl.applyComputed(a)
 	v := any(sl.resolve(ctx))
 	if booleanSignalAttrs[asciicase.Lower(htmlAttr)] {
-		// A boolean attribute is on whenever it is present, so
-		// disabled="false" would ship a disabled control until the
-		// runtime ran. Omit it when off, write it empty when on: the
-		// runtime's attr mode (core-ui/runtime/frag/signals.js) does the
-		// same on every update.
 		if booleanAttrOn(v) {
 			a[htmlAttr] = ""
 		} else {
@@ -154,20 +117,10 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	return renderEl(tag, a)
 }
 
-// booleanSignalAttrs are the HTML boolean attributes on the signal
-// allow-list (interactive.SignalAttrAllowed). They mirror the runtime's
-// attr-mode list exactly so SSR and client updates agree.
 var booleanSignalAttrs = map[string]bool{
 	"disabled": true, "hidden": true, "checked": true, "open": true, "selected": true,
 }
 
-// booleanAttrOn is the runtime's `!!value && value !== 'false'` in Go,
-// decided on the JSON the client receives for v: null, false, "",
-// "false" and a zero number are off; anything else, an empty array or
-// object included, is on. Reading the encoding instead of switching on
-// Go types covers every integer and float width, named types and
-// json.Number. A value that does not encode (NaN) never reaches the
-// client as a value, and is off.
 func booleanAttrOn(v any) bool {
 	b, err := json.Marshal(v)
 	if err != nil || len(b) == 0 {
@@ -185,29 +138,16 @@ func booleanAttrOn(v any) bool {
 		}
 		return str != "" && str != "false"
 	default:
-		// A number past float64 range (1e400) parses to ±Inf with
-		// ErrRange; the client reads Infinity, which is on.
 		f, err := strconv.ParseFloat(string(b), 64)
 		return (err == nil || errors.Is(err, strconv.ErrRange)) && f != 0
 	}
 }
 
-// urlBearingAttrs are the HTML attributes whose value is a URL the
-// browser will navigate/fetch. They mirror the runtime's
-// _isUnsafeSignalUrl allow-list exactly (core-ui/runtime/frag/kernel.js) so
-// the SSR initial paint and client-side updates apply the identical
-// scheme guard.
 var urlBearingAttrs = map[string]bool{
 	"href": true, "src": true, "action": true,
 	"xlink:href": true, "formaction": true,
 }
 
-// sanitizeSignalURL blanks a value bound to a URL-bearing attribute when
-// it carries a dangerous scheme (javascript:/vbscript:/non-image data:).
-// Non-URL attributes are returned unchanged. The strip step removes ASCII
-// whitespace + C0 control bytes before scheme detection, matching the
-// runtime guard (browsers drop those during URL parsing, so an interior
-// tab/newline must not defeat the prefix check).
 func sanitizeSignalURL(htmlAttr, value string) string {
 	if !urlBearingAttrs[strings.ToLower(htmlAttr)] {
 		return value
@@ -224,13 +164,11 @@ func sanitizeSignalURL(htmlAttr, value string) string {
 	return value
 }
 
-// stripURLControlBytes removes every ASCII whitespace and C0 control byte
-// (0x00–0x1f) from s, the chars browsers strip during URL parsing.
 func stripURLControlBytes(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if r <= 0x20 { // covers C0 controls (0x00-0x1f) + space (0x20)
+		if r <= 0x20 {
 			continue
 		}
 		b.WriteRune(r)
@@ -238,15 +176,7 @@ func stripURLControlBytes(s string) string {
 	return b.String()
 }
 
-// BindHTML binds in html mode (innerHTML). TRUSTED VALUES ONLY, the
-// value is written without escaping. Use Bind (text mode) for any value
-// that can be influenced by users.
-//
-// Route slices (route.*) refuse html mode outright: every route value
-// is user-influenced text (the path, params, query) or partially so
-// (the title), so the family is text-only by construction — the
-// refusal happens here, at the emitter, rather than as a runtime
-// warning after the markup shipped.
+// BindHTML binds in html mode, unescaped: trusted values only.
 func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]string) render.HTML {
 	if isRouteSliceName(sl.name) {
 		panic("store: route slices are text-only; BindHTML on " + sl.name + " would render user-influenced route state as markup")
@@ -258,41 +188,23 @@ func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]s
 	return renderEl(tag, a, render.HTML(valueString(any(sl.resolve(ctx)))))
 }
 
-// isRouteSliceName is the BindHTML guard's family test.
 func isRouteSliceName(name string) bool { return IsRouteName(name) }
 
-// Publish connects a producer's RPC to this slice: on a 2xx response the
-// runtime treats the response body as the new signal value and fans it
-// out to every consumer client-side, no server re-render of consumers.
-// Sugar over interactive.SetSignal(sl.Name()).
-//
-//	interactive.OnClick(btn, company.Publish(interactive.Post("/rename")))
+// Publish makes a's 2xx answer the slice's new value on the client.
 func (sl *Slice[T]) Publish(a interactive.Action) interactive.Action {
 	return a.OnSuccess(interactive.SetSignal(sl.name))
 }
 
-// ─── request-scoped value bag ────────────────────────────────────────
-
 type valuesKey struct{}
 
 type values struct {
-	mu sync.Mutex
-	m  map[string]any
-	// routeRead records that this request's render READ a route.*
-	// slice (a Bind or BindAttr resolved one), the wire gate for
-	// seeding the family: routeSeedDue. routeArea is the other arm —
-	// the app marks a chain that carries a RouteArea (its fn runs
-	// every render, its markup can bind route.* anywhere).
+	mu        sync.Mutex
+	m         map[string]any
 	routeRead bool
 	routeArea bool
 }
 
-// WithValues installs a fresh request-scoped value bag on ctx. The UI
-// host calls this before rendering a page so producers can Seed values
-// the seed resolver later reads. When ctx carries no element id scope it
-// starts one (render.WithIDScope): an island or region renders its
-// derived ids as placeholders it settles afterwards, and only a scope on
-// the context the seeds are resolved from can settle them in the seeds.
+// WithValues installs a fresh request value bag, and an id scope when ctx has none.
 func WithValues(ctx context.Context) context.Context {
 	if !render.HasIDScope(ctx) {
 		ctx = render.WithIDScope(ctx)
@@ -307,8 +219,6 @@ func valuesFrom(ctx context.Context) *values {
 	v, _ := ctx.Value(valuesKey{}).(*values)
 	return v
 }
-
-// ─── helpers ─────────────────────────────────────────────────────────
 
 var voidTags = map[string]bool{
 	"img": true, "input": true, "br": true, "hr": true, "meta": true,
@@ -329,9 +239,6 @@ func cloneAttrs(attrs map[string]string) map[string]string {
 	return out
 }
 
-// valueString renders a value to the same string the runtime's text/attr
-// signal renderer would produce, so the stamped SSR value matches the
-// seeded value exactly (the single-source-of-truth invariant).
 func valueString(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -343,8 +250,6 @@ func valueString(v any) string {
 	case int64:
 		return strconv.FormatInt(t, 10)
 	case float32:
-		// Marshaled as float32 (1e-7, not 1.0000000116860974e-7), the
-		// seed's own spelling; negative zero normalized as below.
 		if t == 0 {
 			return "0"
 		}
@@ -354,14 +259,9 @@ func valueString(v any) string {
 		}
 		return string(b)
 	case float64:
-		// encoding/json formats a finite float the way ECMAScript's
-		// Number::toString does (exponential below 1e-6 and from 1e21),
-		// which is what the runtime paints; 'f' formatting printed 1e-7
-		// as 0.0000001 and the text changed on the first client write.
 		if math.IsNaN(t) || math.IsInf(t, 0) {
 			return strconv.FormatFloat(t, 'f', -1, 64)
 		}
-		// Negative zero marshals as -0, but String(-0) is "0".
 		if t == 0 {
 			return "0"
 		}
@@ -371,10 +271,6 @@ func valueString(v any) string {
 		}
 		return string(b)
 	default:
-		// The runtime paints null as '' and anything else through
-		// JSON.stringify, which does not escape <, > or &. json.Marshal
-		// does (a\u003cb), and a nil slice, map or pointer marshals as
-		// null: both stamps changed on the first client write.
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
@@ -386,8 +282,6 @@ func valueString(v any) string {
 		case string(out) == "null":
 			return ""
 		case len(out) > 0 && out[0] == '"':
-			// []byte, *string, a TextMarshaler: the seed parses to a
-			// string, which the runtime paints raw.
 			var str string
 			if json.Unmarshal(out, &str) == nil {
 				return str
@@ -401,11 +295,6 @@ func valueString(v any) string {
 	}
 }
 
-// jsKeyOrder re-lists every object in compact JSON in the order
-// JSON.stringify gives it after JSON.parse: array-index keys ("0" to
-// "4294967294", no leading zero) first, ascending, then the rest in
-// source order. encoding/json sorts map keys as strings ("10" before
-// "9") and lists struct fields as declared. Leaves keep their bytes.
 func jsKeyOrder(raw []byte) ([]byte, error) {
 	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
 		return raw, nil
@@ -479,7 +368,7 @@ func jsKeyOrder(raw []byte) ([]byte, error) {
 		if err := enc.Encode(m.key); err != nil {
 			return nil, err
 		}
-		out.Truncate(out.Len() - 1) // Encode's newline
+		out.Truncate(out.Len() - 1)
 		out.WriteByte(':')
 		out.Write(m.val)
 	}
@@ -487,8 +376,6 @@ func jsKeyOrder(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// arrayIndex reports whether key is an ECMAScript array index: the
-// canonical decimal spelling of an integer from 0 to 2^32-2.
 func arrayIndex(key string) (uint64, bool) {
 	if key == "" || len(key) > 10 || (len(key) > 1 && key[0] == '0') {
 		return 0, false
