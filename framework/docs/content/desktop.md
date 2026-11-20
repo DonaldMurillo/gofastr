@@ -1134,6 +1134,18 @@ Components:
 - For segmented controls, use `ui.SegmentedControl`; the theme's
   tokens restyle it.
 
+The desktop components read these CSS knobs, each with the default
+shown:
+
+| Knob | Default | What it sets |
+|---|---|---|
+| `--ui-glass-rim` | `rgba(255, 255, 255, 0.16)` | The thin `Glass` surface's inset rim highlight. |
+| `--ui-glass-rim-thick` | `rgba(255, 255, 255, 0.18)` | The thick `Glass` surface's inset rim highlight. |
+| `--desktop-sidebar-surface` | `transparent` (a 2% text wash in dark mode) | The sidebar zone's fill. |
+| `--desktop-sourcelist-row` | `28px` | A `SourceList` row's minimum height. |
+| `--desktop-sheet-width` | `420px` | A `Sheet`'s maximum width. |
+| `--desktop-popover-width` | `320px` | A `Popover`'s maximum width. |
+
 Under `desktop-inactive`, glass fills flatten, `--color-accent` dims
 to the muted text color inside glass, and the selected source-list row
 grays. Under `desktop-reduce-transparency`, glass goes to the opaque

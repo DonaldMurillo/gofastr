@@ -10,29 +10,22 @@ import (
 )
 
 type SourceItem struct {
-	// Label is the visible text. Required.
+	// Label is the visible text.
 	Label string
 
-	// Href is the link target. Cleaned the way every framework link
-	// is (urlsafe.CleanAnchor); a rejected value degrades to "#".
+	// Href is the link target.
 	Href string
 
-	// Icon is optional inline HTML rendered before the label inside an
-	// aria-hidden span (it decorates; the label names the row). It
-	// keeps its own color while selected, the native read.
+	// Icon is optional inline HTML rendered aria-hidden before the label.
 	Icon string
 
-	// Count is the optional right-aligned trailing number (a mailbox's
-	// unread count, a folder's item count). Empty renders nothing.
+	// Count is the optional right-aligned trailing number (a mailbox's unread count, a folder's item count).
 	Count string
 }
 
-// SourceSection is one labelled group of rows. A source list is flat:
-// sections group rows, rows do not nest. Deeper trees belong in the
-// content column.
+// SourceSection is one labelled group of rows.
 type SourceSection struct {
-	// Title is the section header. Empty renders the rows with no
-	// header, the unlabeled leading group macOS apps use.
+	// Title is the section header.
 	Title string
 
 	Items []SourceItem
@@ -40,44 +33,20 @@ type SourceSection struct {
 
 // SourceListConfig configures a SourceList.
 type SourceListConfig struct {
-	// Label names the navigation for assistive tech when the list is
-	// used OUTSIDE the desktop layout (which already wraps its sidebar
-	// slot in <nav aria-label="Sidebar">). Rendered as aria-label.
+	// Label is the list's aria-label, for use outside the desktop layout's labelled nav.
 	Label string
 
 	// Sections is the list content, rendered in order.
 	Sections []SourceSection
 
-	// CurrentPath marks the matching row aria-current="page" in the
-	// server-rendered bytes. After hydration the runtime stamps
-	// aria-current on any matching <a> itself, the same fallback
-	// ui.Sidebar relies on.
+	// CurrentPath marks the matching row aria-current="page" in the server-rendered bytes.
 	CurrentPath string
 
 	// Footer renders at the bottom (account row, settings link).
 	Footer render.HTML
 }
 
-// SourceList is the macOS source-list sidebar: rows at the native
-// metrics (28 px rows, the theme's HIG body size, an optional leading
-// icon and trailing count, gray section headers at the caption size),
-// a soft rounded-rect selection whose text keeps its normal color,
-// and a keyboard focus ring in the accent. The surface itself paints
-// NOTHING (background: transparent): the native sidebar material the
-// shell places under the sidebar zone shows through, so the page never
-// fakes the material in CSS.
-//
-// It is not a twin of ui.Sidebar: that component owns the responsive
-// web-sidebar machinery (hamburger drawer, collapse rail, localStorage
-// state) and its fixed square-corner look cannot take the translucent
-// selection treatment through its config. A desktop window is never
-// narrow, so the drawer machinery is dead weight there. Use ui.Sidebar
-// for web apps, SourceList for the desktop layout's sidebar slot.
-//
-// Compose it with the desktop layout:
-//
-//	layout := desktopui.Layout(
-//		app.NewStaticComponent(desktopui.SourceList(cfg)))
+// SourceList is the macOS source-list sidebar, rows grouped in sections on a transparent surface.
 func SourceList(cfg SourceListConfig) render.HTML {
 	var b strings.Builder
 	b.WriteString(`<div class="desktopui-sourcelist"`)
@@ -99,14 +68,6 @@ func SourceList(cfg SourceListConfig) render.HTML {
 			if href == "" {
 				href = "#"
 			}
-			// The current row carries the runtime's own active class
-			// beside aria-current. core-ui's activelink module clears
-			// a stale marker only from links carrying the class it
-			// stamps, so a server-rendered marker without the class
-			// survives the module's first sweep: a navigation that
-			// lands before the module idle-loads would leave two rows
-			// reading as current. The class is the documented
-			// reconciliation contract; nothing styles it here.
 			class := "desktopui-sourcelist__item"
 			current := cfg.CurrentPath != "" && cfg.CurrentPath == it.Href
 			if current {

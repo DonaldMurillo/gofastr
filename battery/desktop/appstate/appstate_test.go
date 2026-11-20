@@ -440,3 +440,36 @@ func TestFailedWriteRetriedOnFlush(t *testing.T) {
 		t.Fatalf("flushed file holds %s, want page.x = 42", f.Entries["page.x"])
 	}
 }
+
+func TestFailedFlushKeepsTheChangeDirty(t *testing.T) {
+	setDelay(t, time.Hour)
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(filepath.Join(dir, "state.json"), new(logBuffer).logger())
+	if err := s.Set("page.x", 42); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(); err == nil {
+		t.Fatal("Flush with its directory replaced by a file returned nil")
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok, err := Get[int](Open(s.Path(), nil), "page.x"); err != nil || !ok || v != 42 {
+		t.Fatalf("after a failed flush the retry stored %v, %v, %v; want 42", v, ok, err)
+	}
+}
