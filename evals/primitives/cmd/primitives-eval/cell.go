@@ -408,6 +408,8 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 	ctx := context.Background()
 	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", ref)
 	extract := command(ctx, dir, "tar", "-x")
+	var stderr bytes.Buffer
+	archive.Stderr, extract.Stderr = &stderr, &stderr
 	pipe, err := archive.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -417,7 +419,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 		return "", err
 	}
 	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
-		return "", fmt.Errorf("extract %s: %w", ref, err)
+		return "", fmt.Errorf("extract %s: %w: %s", ref, err, strings.TrimSpace(stderr.String()))
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
