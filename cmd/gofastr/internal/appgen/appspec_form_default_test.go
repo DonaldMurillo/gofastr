@@ -1,6 +1,9 @@
 package appgen
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -57,15 +60,46 @@ func TestEntityFormStartsAtDefaults(t *testing.T) {
 	}
 }
 
-// The relation select draws its Default as an option of its own before
-// the mount hook loads the related rows, so the hook names that option
-// instead of adding a second one with the same value.
+// A relation select starts with its Default drawn as an option of its
+// own. The mount hook that loads the related rows names that option in
+// place; appending a second option for the same row listed it twice.
 func TestEntityFormRelationMountKeepsDefaultOption(t *testing.T) {
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
 	js := appSpecEntityFormClientJS(appspec.AppSpecBlock{Kind: "entity_form", Entity: "items"}, map[string]framework.EntityDeclaration{
 		"categories": {Name: "categories", Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
 		"items":      {Name: "items", Fields: []framework.FieldDeclaration{{Name: "category", Type: "relation", To: "categories", Default: "3"}}},
 	}, "/api")
-	if !strings.Contains(js, "Array.from(sel.options).find((o) => o.value === value)") {
-		t.Errorf("the mount hook does not reuse an existing option:\n%s", js)
+	probe := `const option = (value, textContent) => ({ value, textContent });
+const sel = {
+  options: [option("", "Select"), option("3", "3")],
+  dataset: {},
+  getAttribute: (name) => (name === "data-rel-entity" ? "categories" : null),
+  appendChild(o) { this.options.push(o); },
+};
+globalThis.window = {};
+globalThis.document = {
+  querySelector: () => ({ querySelectorAll: () => [sel] }),
+  createElement: () => option("", ""),
+};
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ data: [{ id: 3, name: "Cat 3" }, { id: 4, name: "Cat 4" }] }) });
+await ` + strings.TrimSuffix(js, ";") + `;
+console.log(JSON.stringify(sel.options.map((o) => [o.value, o.textContent])));
+`
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "probe.mjs"), []byte(probe), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(nodePath, "probe.mjs")
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v\n%s", err, output)
+	}
+	want := `[["","Select"],["3","Cat 3"],["4","Cat 4"]]`
+	if got := strings.TrimSpace(string(output)); got != want {
+		t.Errorf("relation options after mount = %s; want %s", got, want)
 	}
 }
