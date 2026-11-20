@@ -2,9 +2,14 @@ primitive: kiln
 summary: Kiln authoring and graduation to owned Go.
 code:
   - kiln/freeze/
+  - kiln/live/
 docs:
   - framework/docs/content/kiln.md
 invariants:
+  - id: preview-docs-debug-retain-framework-gates
+    rule: Live mounts enabled aggregate Markdown and debug routes through the framework's shared mounting helper on startup, rebuild and reload; anonymous callers get 401, signed-in callers can read Markdown, and debug requires admin. Disabled routes stay unmounted and aggregate Markdown requires entities.
+    enforced_by:
+      - test: kiln/live.TestLiveDocsDebugRoutes
   - id: graduation-preserves-json-case
     rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
     enforced_by:

@@ -424,6 +424,26 @@ and same-origin requests are allowed. Binding `--addr 0.0.0.0:8765` is an
 explicit decision to expose those endpoints and should only be done behind an
 appropriate network/auth boundary.
 
+The preview still uses the framework's authentication gates for entity Markdown
+(`/api/<entity>/llm.md`), aggregate Markdown (`/api/llm.md`), and debug routes
+(`/.debug/stats` and `/.debug/goroutineleak`). `app.llm_md: true` enables the
+Markdown routes (the aggregate requires at least one entity), and
+`app.debug_endpoints: true` enables debug routes, even without entities. Both
+settings are reapplied on every rebuild and reload. Stock `kiln serve` installs
+no login or authentication chain, even when the world's auth/admin settings
+are enabled, so these enabled routes return **401**, not public documents or
+debug data. Disabling the settings removes their routes. With an authenticated
+context supplied by a custom host, Markdown requires a signed-in user; debug
+routes require an admin and return **403** to signed-in non-admins.
+
+Hosts that bypass framework startup can call
+`app.MountLLMMDAndDebugRoutes()` after registering entities and pages.
+Normal startup uses the same helper, and only the first call mounts routes:
+later calls, including the one inside `Start`, do nothing. It honors `AppConfig.NoLLMMD`,
+`DebugEndpoints`, and the existing `PublicOpenAPI` aggregate-doc policy; it does
+not start the app or install authentication. Kiln keeps `PublicOpenAPI` off:
+its public OpenAPI browser does not make aggregate Markdown public.
+
 Three further postures hold on every surface. JSON request bodies decode
 strictly: a body that fails to parse, or carries duplicate or case-folded
 keys, is refused with `400` rather than resolved last-wins. Every response

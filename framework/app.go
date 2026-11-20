@@ -245,6 +245,9 @@ type App struct {
 
 	initialized atomic.Bool
 
+	docsDebugMounted  atomic.Bool
+	docsDebugHasLLMMD bool
+
 	startHooks []func(ctx context.Context) error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
@@ -2402,6 +2405,41 @@ func (a *App) bootSetup(web bool) (interactive bool, err error) {
 	return true, nil
 }
 
+// MountLLMMDAndDebugRoutes mounts the configured /api/llm.md and /.debug/*
+// routes without starting the app, and reports whether /api/llm.md was
+// mounted. Call it after registering entities and pages. It is safe to
+// call before Start or Run: later calls mount nothing and return the
+// first call's result.
+func (a *App) MountLLMMDAndDebugRoutes() (hasLLMMD bool) {
+	if !a.docsDebugMounted.CompareAndSwap(false, true) {
+		return a.docsDebugHasLLMMD
+	}
+	defer func() { a.docsDebugHasLLMMD = hasLLMMD }()
+	if len(a.Registry.All()) > 0 && !a.Config.NoLLMMD {
+		appName := a.Config.Name
+		if appName == "" {
+			appName = "GoFastr API"
+		}
+		pagesIndex := a.pageIndexPath()
+		if a.Config.PublicOpenAPI {
+			doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount, pagesIndex))
+			a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(doc)))
+				w.Write(doc)
+			}))
+		} else {
+			a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount, pagesIndex))
+		}
+		hasLLMMD = true
+	}
+	if a.Config.DebugEndpoints {
+		a.registerDebugEndpoints()
+	}
+	return hasLLMMD
+}
+
 func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 	hasAPI = len(a.Registry.All()) > 0
 	if hasAPI {
@@ -2416,29 +2454,12 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 			a.router.Get("/openapi.json", coreoa.Handler(spec))
 		}
 		a.router.Get("/api/docs/", coreoa.DocsHandler(spec, "/api/docs", a.Config.PublicOpenAPI))
-		if !a.Config.NoLLMMD {
-			pagesIndex := a.pageIndexPath()
-			if a.Config.PublicOpenAPI {
-				doc := []byte(crud.RegistryLLMMD(a.Registry, appName, a.entityCrudMount, pagesIndex))
-				a.router.Get("/api/llm.md", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					w.Header().Set("Cache-Control", "no-store")
-					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-					w.Header().Set("Content-Length", fmt.Sprintf("%d", len(doc)))
-					w.Write(doc)
-				}))
-			} else {
-				a.router.Get("/api/llm.md", crud.RegistryLLMMDHandler(a.Registry, appName, a.entityCrudMount, pagesIndex))
-			}
-			hasLLMMD = true
-		}
 	}
 	if a.metrics != nil {
 		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
 	}
 
-	if a.Config.DebugEndpoints {
-		a.registerDebugEndpoints()
-	}
+	hasLLMMD = a.MountLLMMDAndDebugRoutes()
 	if a.Config.Name != "" {
 		a.MCP.SetServerName(a.Config.Name)
 	}
