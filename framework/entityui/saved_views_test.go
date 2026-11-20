@@ -423,30 +423,31 @@ func TestSaveViewStoresAndRedirects(t *testing.T) {
 	}
 }
 
-func TestSaveViewRefusesInvalidFilter(t *testing.T) {
-	x, store := savedUI(t)
-	w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
-		"name": {"Bad"}, "filter": {"status ="}, "back": {"/orders"},
-	})
+// assertSaveViewRefused posts form to the saved-views API and proves the
+// save was refused (400) and nothing was stored.
+func assertSaveViewRefused(t *testing.T, x *testUI, store *memSavedViews, form url.Values, desc string) {
+	t.Helper()
+	w := postSavedViews(t, x, "u1", "/api/orders/_views", form)
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("an invalid filter answered %d, want 400", w.Code)
+		t.Fatalf("%s answered %d, want 400", desc, w.Code)
 	}
 	if views, _ := store.List(asUser(context.Background(), "u1"), "orders"); len(views) != 0 {
-		t.Errorf("an invalid filter was stored: %+v", views)
+		t.Errorf("%s was stored: %+v", desc, views)
 	}
+}
+
+func TestSaveViewRefusesInvalidFilter(t *testing.T) {
+	x, store := savedUI(t)
+	assertSaveViewRefused(t, x, store, url.Values{
+		"name": {"Bad"}, "filter": {"status ="}, "back": {"/orders"},
+	}, "an invalid filter")
 }
 
 func TestSaveViewRefusesInvalidColumns(t *testing.T) {
 	x, store := savedUI(t)
-	w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
+	assertSaveViewRefused(t, x, store, url.Values{
 		"name": {"Bad cols"}, "cols": {"name,nosuchfield"}, "back": {"/orders"},
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("an invalid column list answered %d, want 400", w.Code)
-	}
-	if views, _ := store.List(asUser(context.Background(), "u1"), "orders"); len(views) != 0 {
-		t.Errorf("an invalid column list was stored: %+v", views)
-	}
+	}, "an invalid column list")
 }
 
 func TestSaveViewMapsStoreRefusals(t *testing.T) {

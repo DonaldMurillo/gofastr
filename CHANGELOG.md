@@ -24,223 +24,170 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
-### Fixed
-- **`cssweight.Measure` honours an empty first `<base href="">`.** An empty first base let a
-  later `<base>` win, so linked sheets resolved against the wrong path; the first base now wins
-  whatever its value.
-- **testkit's DSN errors no longer quote the DSN.** `ValidateAdminDSN` names only the scheme it
-  refused, and the database-name rewrite drops the URL from its parse error, so a password, in the
-  userinfo or a well-formed or malformed query, never reaches the error text.
-- **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
-  `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
-  world-readable stayed that way; it is now set to 0700 whenever an active SQLite DSN is rewritten
-  into it. A directory owned by another user, which chmod refuses, is logged and used as before.
-- **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
-  in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
-  checked, and the open waited for a writer forever, as did a symlink to one in a static FS or
-  an `ExtraDirs` directory. The build now skips and logs anything that is not a regular file before
-  opening it.
-- **A directory or named pipe in the static source no longer drops a generated file from an
-  export.** A `sitemap.xml`, `robots.txt`, app icon or PWA file of that name that was not a regular
-  file kept the generated one out, and the copy skipped it, so the export held neither. The same
-  held for a symlink in the static dir pointing outside it, which the copy refuses.
-- **A static export's service worker changes when a file under `__gofastr/pwa/` does.** The
-  worker's cache version left out every file under that directory, not only the generated ones, so
-  a static-source file there could change while installed clients kept the old copy.
-- **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
-  request for a FIFO in a served directory opened it and waited for a writer forever; the handler
-  now checks the file's type before opening it.
-- **The SDK docs' example filter names an entity's real key.** An entity with its own `PrimaryKey`
-  and no other filterable column got curl, Go and TypeScript examples filtering on `id`, a column it
-  does not have, so every copy answered 400. The fallback is now the first key column.
-- **The SDK docs page for an entity with several API versions writes each id once.** Every
-  version's section repeated the same heading and table caption ids, so a caption reference named
-  the first version's table. Version sections and their headings now carry an encoded version in their ids (`v-api-v2`;
-  `default` for the unversioned entity) that no two distinct prefixes share; a single-version
-  page is unchanged.
-- **`softdelete.WithSoftDelete` no longer panics on an entity built without `entity.Define`.** An
-  entity whose `Config.Scope` was nil hit a nil pointer; it now gets a scope, as
-  `tenant.WithMultiTenant` already did.
-- **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
-  `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
-  other chains of more than one hop.
-- **GOFASTR1414 skips a sub-select however it is spaced.** A one-line `id IN (SELECT ...)` was
-  compared as text, so it was reported as drift against a twin that wrote `( SELECT ... )`.
-- **A replica that restarted while a permission was revoked allows it
-  again once it is re-granted.** A `GrantStore` replica that booted while
-  a revoke stood kept denying a permission the code grants after the
-  revoke was lifted, while the other replicas allowed it. Nothing to
-  change.
-- **An embed nonce that expires during its exchange answers `ErrExpired`.**
-  `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
-  never used whose retention deadline passed between verification and
-  the burn. Nothing to change.
-- **A `Tooltip` with no id scope on `Ctx` gets a unique id.** Without a
-  scope (no `Ctx`, or `context.Background()`), the derived id now takes a
-  counter suffix (`tip-need-help-3`), so two same-text tooltips never
-  share one. Pass the page's ctx for an id that is the same on every
-  render.
-- **The docs now say that `Accept-Language: fr` never matches a catalog
-  that has only `fr-CA`** ([i18n](framework/docs/content/i18n.md#locale-negotiation)).
-  Ship a bare `fr` catalog, or point `fr` at the `fr-CA` messages.
-- **A dismissed Banner stays dismissed when its `DismissID` holds a space,
-  a slash, `(`, or a letter outside ASCII.** The runtime writes the cookie
-  under `encodeURIComponent(id)` and `Banner` looked it up raw, so it
-  rendered again on the next request. `Banner` now reads the encoded
-  name. Nothing to change.
-- **`BannerConfig.ID` and `NetworkRetryBannerConfig.ID` render as the
-  root's `id`.** They were documented as passed through and were dropped.
-  `headless.SystemBannerProps` gains `DOMID` for this.
-- **Two `Tooltip`s with the same `Text` no longer share an `id`.** Pass the
-  new `TooltipConfig.Ctx` and the derived id is unique on the page
-  (`tip-need-help`, then `tip-need-help-2`). Text with no letters or digits,
-  such as an emoji, gets a hash of the text instead of a bare `tip-`.
-- **`ui.Notification` with an `ID` keeps its classes.** Setting `ID`
-  dropped the `Class`, floating `Position` and registered-variant
-  classes from the root; they now render with it.
-- **`ui.OptimizedImage` no longer rewrites the caller's `Sources`.** It
-  filtered refused sources in place, so the slice the caller passed in
-  came back changed; it now filters into a new slice.
-- **`ui.ConfirmAction` refuses `__proto__`, `constructor` and
-  `prototype` as `SuccessSignal`.** The runtime never writes those
-  names, so the control could not work; it now panics at render like
-  any other invalid signal name.
-- **A `BaseURL` of `/` no longer pins the agent-ready origin.** An
-  `AgentReadyConfig.BaseURL` or `SitemapConfig.BaseURL` made only of
-  slashes used to count as pinned and yield an empty origin; it now
-  counts as unset, so discovery URLs come from the request and card
-  signing refuses to start without a real origin.
-- **A failing audit `Redact` no longer stores the unredacted row.** When
-  `AuditConfig.Redact` panics or returns a map that cannot be marshalled,
-  the audit row keeps its keys and stores `"[redaction failed]"` for
-  every value, where before it stored the row as it was before `Redact`
-  ran. A delete whose `Redact` panics keeps the original `record_id`.
-  See `audit-log.md`.
-- **A typed hook on a struct that cannot be marshalled keeps in-place
-  changes.** `OnBeforeCreate` and its siblings snapshot `*T` to tell what
-  the callback changed; a `T` with a `chan` or `func` field, or a
-  `MarshalJSON` that errors, fell back to a shallow copy, so a change made
-  inside a map, slice or pointer field was dropped. The fallback is now a
-  deep copy.
-- **A dynamic screen registered with a trailing slash no longer panics at
-  mount.** `/items/{slug}/` made `uihost.Mount` panic with a nil pointer
-  in `ValidateIntercepts`, and the same screen was left out of the route
-  manifest, the sitemap, the static export and llm.md. The router now
-  drops the trailing slash from a dynamic pattern at registration, so
-  `Screen.Path`, `ScreenByPattern`, `Paths` and intercept origins all
-  spell it `/items/:slug`. Nothing to change.
-- **A late rtc join mirror no longer kicks a peer that moved replicas.**
-  A replica compared the mirror's publish time, not the old seat's join
-  time, against the local socket, so a replica slow to publish a join
-  could close the peer's live socket on the replica it moved to, and the
-  room heard a second leave for it. The seat's `order` now decides; the
-  lane still carries `t` so older replicas keep working mid-upgrade.
-- **Escape pressed right after a modal opens closes it.** A modal or
-  popover with `CloseOnEscape` ignored an Escape that arrived before the
-  runtime's demand-loaded focus module (`widgetfocus`) had loaded, so
-  the first open of a page could stay up. The widgets module now hands
-  that Escape to the focus module once it loads.
-- **A closed confirm dialog leaves the page at once.** The confirm
-  module waited for the dialog's `close` event, which Chromium fires
-  with the next animation frame, so under load the closed dialog stayed
-  in the DOM and the gated action's answer came 300 to 900 ms late. It
-  now tears down when the dialog's `open` attribute goes. Nothing to
-  change; see the [runtime contract](framework/docs/content/runtime-contract.md).
-- **Cursor pages over seeded SQLite timestamps no longer repeat.** A
-  managed entity paged on `created_at` whose rows a seed script or
-  migration inserted as `2026-01-02T03:04:05Z` served its first page
-  again on every request. On SQLite the cursor now carries the stored
-  text for every entity, not only `Unmanaged` ones. Nothing to change;
-  see [cursor pagination](framework/docs/content/cursor-pagination.md).
-- **No data race when a host rewrites field declarations mid-serve.**
-  A list request read the live declarations in two places (the default
-  `created_at` sort and field masks) instead of the handler's snapshot.
-  Both now read the snapshot. A `Mask` changed after `NewCrudHandler`
-  applies once `VisibleFields()` is called, like a changed `Hidden`;
-  `VisibleFields()` now rebuilds the snapshot on every call.
-- **Two quick clicks during a page transition land on the second.** A
-  click made while a view transition ran was held until the transition
-  finished, and a later click could run first; the held one then
-  overrode it and the first link's page was shown. Held clicks are now
-  delivered in the order they were made. Nothing to change.
-- **Erasure counts a row once when two entities spell its table
-  differently.** With one entity on `Notes` and another on `notes`,
-  `EraseUserData` treated them as two tables and reported each erased
-  row twice. Table names now fold the way export and the SQL already
-  did, so `EraseTableResult.Table` is the lower-case name.
-
-### Changed
-- **A layout's view-transition CSS loads with its layer, not in app.css.**
-  `app.NewLayout` registers the layout's `TransitionCSS()` as a component
-  sheet of its own (`Layout.TransitionSheet()`), and the layer root
-  carries its `data-cui-comp` marker, so only pages that render the layer
-  load it. Before, every page paid for every layout's transitions in
-  app.css. `registry.RegisterRuntimeStyle` is new: it registers a sheet
-  built at run time even after a host froze the catalog. Nothing to
-  change in an app; a layout with transitions must still be registered
-  before the first page renders ([layouts](framework/docs/content/layouts.md#transitions)).
-- **The examples are `examples/meridian` and `examples/site`.** Twelve
-  standalone demos are gone; the apps the framework's tests drive moved
-  to `internal/testapps/`, and Acme Tracker, the tree-layout showcase,
-  is now part of the site at `/examples/tracker`
-  ([examples](examples/README.md)).
-- **CI runs side by side.** The `build · vet · test` job ran every gate
-  in series for 21 minutes. The repo analyzers, cross builds and Linux
-  desktop steps now run in `analyzers · cross-compile · desktop`, the race
-  detector in `race detector`, core-ui/runtime in three shards
-  (`scripts/go-test-shard.sh`) and the axe gate in two. The vettool is
-  built with `-buildvcs=false`, so `go vet` reuses its cached results
-  instead of re-vetting every package on every commit (3.7 minutes a run
-  in CI, about 80 s a local commit). Branch protection on main needs the
-  new check names.
-- **A browser e2e row a pull request does not reach costs seconds.** One
-  `browser e2e scope` job lists the affected packages once; each row
-  checks its pattern against that list before it restores the Go cache or
-  installs anything. Rows used to spend 1 to 1.6 minutes each finding out
-  they had nothing to run.
-- **CI installs one pinned Chromium snapshot.** `latest` moved every few
-  hours, and its new directory on `PATH` made Go's test cache re-run every
-  package whose tests look up a binary: 175 of 403 on a main run that
-  changed three files. `TestChromeIsPinned` keeps every `setup-chrome` step
-  on one fixed version; bump them together.
-- **CI saves only the Go cache entries a run used.** Go drops a cache
-  entry after five days without use, so the `go-test-` entry kept every
-  object built in that time: 5.1 GB where a fresh one is 1.0 GB, 164 s to
-  restore in each of the 18 jobs that read it, and enough to push the
-  lint and race entries out of the repo's 10 GB. On main,
-  `scripts/go-cache-prune.sh` now ages the restored entries and removes
-  the ones no step touched before the save.
-  `TestGoCacheIsPrunedBeforeSave` holds the two steps in each saving job.
-- **The analyzer vet reads each file once.** CI vetted every affected
-  package three times, as linux, windows and darwin. The windows and
-  darwin passes now vet only the packages whose Go files differ from the
-  ones the linux pass read: 41 and 15 of 457
-  (`cmd/affected -files-differ-from`). On the whole tree from a cold
-  cache the three passes took 246 s here, down from 469 s. A finding that
-  depends on another package's OS-specific types, in a package whose own
-  files are the same on every OS, is no longer looked for on windows and
-  darwin.
-- **The Linux desktop steps run when a change reaches them.** Both go
-  through `cmd/affected`: a pull request runs the `battery/desktop`
-  packages its change reaches, main runs them all. They ran in full on
-  every pull request, 2.7 to 4.6 minutes.
-- **`primitives stop` skips testdata modules** when a nested `go.mod`
-  or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
-  are meant not to type-check; `go build ./...` there is no longer a
-  reason to send the session back.
-- **BREAKING: four leftover compatibility spellings are gone.**
-  `tenant.TenantConfig.Header` and `auth.MagicLinkConfig.TokenLength`
-  were read by nothing; delete them from your literals.
-  `migrate.RenderMigrationFile` (and `framework.RenderMigrationFile`) is
-  replaced by `RenderMigrationFileChecked`, which returns
-  `ErrDirectiveInSQL` for SQL that would read as a directive; the
-  `framework` package now re-exports the checked one. `WithAgentCard`
-  serves only `/.well-known/agent-card.json`, not the pre-1.0
-  `/.well-known/agent.json`. The runtime no longer sets
-  `window.__gofastr.textarea`; inserted content is scanned without it.
-  `gofastr upgrade` finds the Go spellings.
+## [0.97.0] - 2026-11-19
 
 ### Added
+- **ui: `ControlConfig.AutoCapitalize` sets the case an on-screen
+  keyboard starts in** (`ui.AutoCapitalizeOff`, `AutoCapitalizeSentences`,
+  `AutoCapitalizeWords`, `AutoCapitalizeCharacters`; any other value
+  panics). Entity `email`, `tel` and `url` fields now carry the
+  `autocomplete` token of that name, no spell check and no
+  autocapitalize. ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **Every page's head carries `<meta name="text-scale" content="scale">`**,
+  so in Chrome and Edge the OS text size scales the root font and every
+  `rem` follows it. ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **`ui.ColorScheme` keeps one part of a page dark on a light page, or
+  light on a dark one.** `ui.ColorScheme(ui.SchemeDark, children...)`
+  renders `<div data-color-scheme="dark">` (`ui.SchemeLight` for
+  `"light"`). The theme CSS declares that scheme's palette again on the
+  wrapper, with its `color-scheme`, text and background colour, so a
+  primary button inside draws the dark primary and native controls
+  follow the wrapper. Wrappers nest. It needs a theme with `DarkColors`
+  and works with JavaScript off. See
+  [theming](framework/docs/content/theming.md#one-part-of-the-page-in-the-other-scheme-uicolorscheme).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **`ui.OneTimeCode` draws the field for a 2FA or emailed code.** It is
+  a `ui.Control` inside a `FormField`: `type="text"`,
+  `autocomplete="one-time-code"`, `inputmode="numeric"`, six digits
+  (`Digits` changes it), posted as `code` (`Name` changes it), with
+  `i18nui.AuthOneTimeCode` ("Authentication code") as the default
+  label. `ui.ControlConfig` gains `EnterKeyHint`, `InputMode` and
+  `NoSpellCheck`, and `ui.PasswordInputConfig` gains `MinLength` and
+  `EnterKeyHint`. `ui.PasswordInput` never spell-checks or
+  auto-capitalises, also while revealed. See
+  [interactive patterns](framework/docs/content/interactive-patterns.md#one-time-code-field).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Password reset and the 2FA challenge work as plain HTML forms.**
+  `POST /auth/forgot-password` (`email`, `next`) answers `303` to `next`
+  for every address, known or not. `POST /auth/reset-password` (`token`,
+  `password`, `next`) and `POST /auth/2fa/challenge` (`code`, `next`)
+  answer `303` to `next` on success and `303` back with `?error=` on a
+  failure; a JSON client gets the JSON answers as before. The new
+  `PasswordResetConfig.LinkPath` names your own page for the emailed
+  link (`?token=` is appended); Init refuses anything but a same-origin
+  path with no query. An app spec `login_form` takes `forgot_href` for
+  a "Forgot your password?" link (`i18nui.AuthForgotPassword`).
+  `examples/meridian/auth_screens.go` has the three pages. See
+  [auth](framework/docs/content/auth.md#password-reset-from-html-forms)
+  and [the 2FA flow](framework/docs/content/auth.md#the-2fa-flow).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **`ui.Video` renders a `<video>` with the browser's player controls.**
+  `Sources` are tried in order and `Width` and `Height` are required, so
+  the box is reserved before anything loads. Nothing downloads until the
+  reader presses play (`preload="none"`); `Eager` fetches the metadata
+  with the page. `Poster`, WebVTT `Tracks` (captions by default),
+  `Label`, `Aspect` and `Rounded` are optional. A source, track or
+  poster whose URL fails the URL policy is dropped. It panics with no
+  `Sources`, no size, or an unknown track `Kind`. See
+  [UI components](framework/docs/content/ui-new-components.md).
+  ([#817](https://github.com/DonaldMurillo/gofastr/pull/817))
+- **`uihost.WithFontPreload` preloads self-hosted web fonts.**
+  `WithFontPreload(dir, fonts...)` adds a
+  `<link rel="preload" as="font" type="font/woff2" crossorigin>` for
+  each font that `style.FontFaceCSS(dir, fonts...)` declares: a family
+  that sanitizes to nothing, or a second font with the same family, gets
+  no link, as it gets no `@font-face` rule. `style.FontURL` returns the
+  URL both use. `style.WebFont.Fallback` (a `style.FontFallback`) adds a
+  local face tuned to the web font's metrics, named
+  `font.FallbackFamily()`, so the swap does not move the page. See
+  [theming](framework/docs/content/theming.md#self-hosting-web-fonts).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **`style.ContrastWarnings(theme)` lists the contrast pairs `Validate`
+  does not refuse**, and the UI host logs them once at boot: primary and
+  danger ink written in `rgb()`, `hsl()`, `oklab()` or `oklch()` below
+  4.5:1, and a form-control edge below 3:1 over `surface`, in the light
+  and the dark palette. `Validate` still refuses plain hex pairs only,
+  so a theme that booted before still boots. See
+  [theming](framework/docs/content/theming.md).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **mcp: tool annotations.** `mcp.WithAnnotations(mcp.Annotations{...})`
+  serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
+  and a nil hint is left out. Entity CRUD tools, Kiln's tools and the framework's own
+  tools now carry them, a process module sends them in
+  `moduleproto.Tool.Annotations`, and `gofastr dev` logs a warning for any tool
+  missing one of the three hints ChatGPT's directory review requires. See
+  [MCP server](framework/docs/content/mcp.md#tool-annotations).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: server instructions.** `Server.SetInstructions` and
+  `framework.WithMCPInstructions` set the `instructions` that `initialize`
+  returns. [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: request `_meta` in tool handlers.** `mcp.RequestMeta(ctx)` returns
+  a copy of the `_meta` a `tools/call` carried, such as ChatGPT's
+  `openai/locale` and `openai/subject`. The values are unauthenticated:
+  never use them as an identity.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **framework: OpenAI apps domain check.**
+  `framework.WithOpenAIAppsChallenge(token)` serves the token as plain
+  text at `/.well-known/openai-apps-challenge`. See
+  [agent-readiness](framework/docs/content/agent-ready.md).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **settings: MCP hints on custom endpoints.** An `endpoints:` entry with
+  `mcp: true` takes an optional `hints:` block (`title`, `read_only`,
+  `destructive`, `idempotent`, `open_world`), and `gofastr generate` now
+  writes `MCPAnnotations` for every MCP endpoint, filling unset hints from
+  the method. Regenerate to pick them up. See
+  [custom endpoints](framework/docs/content/endpoints.md#mcp-tool-hints).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **`gofastr generate sdk --from-openapi <path|url>`, and `from_openapi`
+  on the `sdk` settings entry.** It writes the Go and JS/TS SDKs and
+  `dist/` from an OpenAPI 3 document: one typed method per `operationId`,
+  `io.ReadCloser` in Go and `Blob` in JS for image, zip and other non-JSON
+  answers, and the token under the scheme the document's `security` names.
+  The Go `client.go` comes from the code that writes the `generate cli
+  --from-openapi` client, whose `client.gen.go` now splits `DoRaw` into
+  `send`, `readCapped` and `statusError` with no change in behaviour. The
+  manifest's drift hash covers the document; the docs site serves the
+  downloads only when `sdkdocs.Config.OpenAPI` holds that document, and
+  checks drift against it. The entity JS SDK's `_readBody` now reads
+  through `_readBytes`, so regenerated `client.js` files change bytes.
+  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+- **`decide.NotFound()` and `UIHost.ServeNotFound(w, r)` answer a route
+  with the 404 an unknown URL gets.** A policy returning
+  `decide.NotFound()`, or middleware calling `host.ServeNotFound`, gets
+  the `WithNotFoundScreen` page, partial, problem JSON or markdown, with
+  nothing from the route, so a route the caller may not see looks like
+  one that does not exist. A region guard's `NotFound` takes the whole
+  page to 404, and the `/llm-pages.md` index leaves the route out, as it
+  now does for a static page whose resolver answers `ErrNotFound`. A
+  POST or OPTIONS to the page still answers 405, since no screen code
+  runs for it; middleware calling `ServeNotFound` hides the route from
+  every method. `decide.Block(404)` still answers the plain status
+  phrase.
+  See [UI wiring](framework/docs/content/ui-wiring.md).
+  ([#824](https://github.com/DonaldMurillo/gofastr/issues/824))
+- **fanout: `UnwrapForeign(self, raw)`.** Unwraps a fanout envelope and
+  reports `ok` false for a malformed one or one this node sent. The event
+  bridge, SSE broker, island manager, access store and module manager use
+  it in place of their own origin checks. See
+  [core packages](framework/docs/content/core-packages.md#fanout).
+- **`netguard.OriginAllowed`** is the one cross-origin check `core/mcp`
+  and `core/a2a` share: no Origin, the request's own Host, or a
+  case-insensitive allow-list match passes. Neither server's answers
+  change. See [core packages](framework/docs/content/core-packages.md#netguard).
+- **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
+  `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
+- **Passkeys: autofill sign-in, step-up, rename and password-manager sync
+  ([#708](https://github.com/DonaldMurillo/gofastr/issues/708)).**
+  `auth.PasskeyAutofillAttrs` lists the device's passkeys in the username
+  field's autofill (conditional UI). `PasskeyUpgradeAttrs` saves a passkey
+  without a prompt after a password sign-in, where the browser supports
+  it. `POST /auth/passkey/reauth` and `PasskeyReauthAttrs` confirm a
+  sensitive action with a passkey, and the handler spends the proof with
+  `PasskeyPlugin.RedeemReauthProof`. Only a passkey registered before the
+  session signed in and at least `PasskeyConfig.ReauthMinAge` ago (1 hour
+  by default) can confirm one, so a stolen session cannot add a key and
+  step up with it. `POST /auth/passkey/rename` and
+  `PasskeyRenameAttrs` rename a passkey. Registration stores transports
+  and the AAGUID, and the list answers `rpId`, `userId`, `userName`,
+  `deviceType`, `transports` and `aaguid`. The browser module tells the
+  password manager which passkeys are still valid through the Signal API.
+  See [Passkeys](framework/docs/content/auth.md#passkeys).
+- **`OIDCConfig.Tenants` admits a multi-tenant issuer** such as Microsoft's
+  `common` or `organizations` endpoint: the token's `iss` must be the
+  issuer for its own `tid`, the tenant must be listed (or `"*"`), and a
+  key scoped to another issuer cannot sign it. `Tenants` with an exact
+  issuer fails discovery. The account is keyed by `<tid>/<id claim>`.
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
   now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
   to empty its caches and the origin's storage. Browsers act on it only
@@ -530,7 +477,6 @@ few lines, and link the PR or the docs page for the rest.
   `queue.ErrSequenceUnsupported`. `DBQueue` adds the `max_age_ns` and
   `sequence_key` columns and two partial indexes to an existing table on
   boot.
-
 - **`battery/webhook` signs deliveries in a receiver's existing format**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `Options.Signature` takes a `SignatureFormat`: the signature and
@@ -541,7 +487,6 @@ few lines, and link the PR or the docs page for the rest.
   format writes. `SignatureFormat.Verifier` checks the same format on
   the receiving side. See
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
-
 - **macOS desktop apps run on Intel Macs, and `gofastr desktop build`
   writes a universal app**
   ([#604](https://github.com/DonaldMurillo/gofastr/issues/604)). The
@@ -584,6 +529,262 @@ few lines, and link the PR or the docs page for the rest.
   observers use it.
 
 ### Changed
+- **kiln: `undo` is a destructive tool.** Nothing redoes it, so its
+  descriptor is now `Destructive`: its MCP tool says `destructiveHint: true`
+  and `kiln acp` asks `session/request_permission` before running it. It
+  still needs no plan.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **BREAKING: `gofastr generate sdk` with two or more `sdk` entries in
+  `gofastr.settings.yml` needs `--out` or `--from-openapi` to pick one.**
+  It took the first entry. Each flag picks the entry it names, or none;
+  no run writes into or inside another entry's output directory, and a
+  settings `from_openapi` must name a file inside the project.
+  `gofastr generate` still runs every entry.
+  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+- **Form errors are read once, from one polite region.** No field error
+  node is its own `role="alert"` any more: a refused submit is read from
+  `#cui-form-errors`, one "Label: message" sentence per field, and focus
+  moves to the first refused field. The `headless-validity` module copies
+  the browser's `:user-invalid` onto `aria-invalid`, so a screen reader
+  hears what the border shows. A test or script that looked for
+  `role="alert"` on a field error reads the region instead.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **A field's hint sits between its label and its control.**
+  `headless.Field` renders label, hint, control, error; the inline field
+  layout keeps a hinted label on the control's row
+  (`--fui-field-label-row`), and below 33rem every field stacks, hint and
+  error included. `Slider` with `ShowValue` sets `aria-valuetext`, and
+  `SearchInput` wraps its form in `<search>`.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **`TextArea{Autogrow: true}` uses `field-sizing: content` where the
+  browser supports it**, with `rows` and `cols` as the minimum size; the
+  measuring script is the fallback elsewhere.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **BREAKING: the admin account form asks for the new password once.**
+  The confirm field is gone, and so is the `i18nui.AdminConfirmPassword`
+  phrase. Delete references to it and any catalog entry for
+  `ui.admin.confirmPassword`. The new password field has a show toggle.
+  `POST /auth/password` still accepts `confirm_password` from other
+  clients. `gofastr upgrade` finds the Go uses. See
+  [admin](framework/docs/content/admin.md).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Every page declares `<meta name="color-scheme" content="light dark">`**
+  at the top of its `<head>`, so the browser draws form controls,
+  scrollbars and the page canvas in the right scheme with JavaScript
+  off. A theme with no `DarkColors` now emits `color-scheme: light` on
+  `:root`: on a dark OS, its native controls are light, where they used
+  to turn dark. The color-scheme bootstrap sets the meta to the mode the
+  reader picked, or back to `light dark` while the page follows the OS.
+  The icon `ui.ThemeToggle` no longer stores a choice the OS already
+  shows, so the page follows the OS again when the OS changes. See
+  [theming](framework/docs/content/theming.md#native-controls-color-scheme).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Generated sign-in and sign-up forms carry password-manager hints.**
+  The email field asks for `autocomplete="username"` with
+  `enterkeyhint="next"` and no spell check, and the password is a
+  `ui.PasswordInput` with its show toggle. Regenerate, or copy the field
+  code from [auth](framework/docs/content/auth.md), to pick it up.
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Modal widgets render as native `<dialog>` elements.** A widget with
+  `Backdrop` (`preset.Modal`, `preset.Drawer`, `preset.BottomSheet`,
+  anything at `widget.Center`) renders `<dialog class="cui-widget …">`
+  instead of a `<div>`, and the runtime opens it with `showModal()`. The
+  scrim is `::backdrop` in `--ui-scrim`, not a `[data-cui-backdrop]`
+  element; the root drops `role="dialog"` and `aria-modal`, which
+  `<dialog>` implies (another `Role` such as `alertdialog` stays); and
+  with `CloseOnEscape` off it carries `closedby="none"`. The page behind
+  is inert from the moment the modal opens, so Tab can no longer leave
+  it before the focus module loads. A popover opened over a modal mounts
+  inside the dialog. Check host CSS and tests that select the modal by
+  `div`, `role="dialog"`, `aria-modal` or `[data-cui-backdrop]`, or that
+  set its `z-index`. A host `Skeleton` that returns a `<div>` keeps the
+  old behaviour. See [widgets](framework/docs/content/widgets.md).
+  ([#778](https://github.com/DonaldMurillo/gofastr/pull/778))
+- **Form control edges meet 3:1 contrast.** Text fields, textareas,
+  selects, comboboxes, the grouped, password, search, number, tag,
+  colour and time inputs, checkboxes, radios and the switch track draw
+  their edge in the new `--ui-control-border` knob, which defaults to
+  `--color-text-subtle`, not `--color-border` (about 1.3:1). Edges are
+  darker; a theme can set the knob, and gets a boot warning when the
+  edge misses 3:1 over `surface`. See
+  [theming](framework/docs/content/theming.md).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **Controls keep their meaning under Windows high contrast.** With
+  `forced-colors: active`, the checkbox tick, radio dot, switch thumb,
+  spinner, divider and mask-drawn chevrons and sort icons draw in
+  system colours, and the selected tab, the current `ui.TabNav` link,
+  the checked `ui.SegmentedControl` segment and the current
+  `ui.SegmentedLinks` item are marked in `Highlight`.
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **Type and colour defaults changed.** Colour tints use
+  `color-mix(in oklab, …)` instead of `in srgb`, across the kit, the
+  batteries and generated code. Hero, page-header and card titles use
+  `text-wrap: balance`, and the hero's size mixes rem with vw, so it
+  follows the reader's font-size setting. `accent-color` and
+  `::selection` follow `--color-primary`. `--easing-spring` is now a
+  `linear()` spring that overshoots and settles. Check screenshots of
+  pages that depend on exact tint colours.
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **A polled region off screen is not fetched.** A `data-cui-poll`
+  region more than 200px outside the viewport skips its ticks; the tick
+  that came due while it was away runs as soon as it scrolls near, so
+  it is never more than one interval stale. Widget polls keep their
+  cadence. See [reactivity](framework/docs/content/reactivity.md).
+  ([#817](https://github.com/DonaldMurillo/gofastr/pull/817))
+- **`gofastr test` prints `✓ TestName` without `--- PASS:`.** A passing
+  test's line repeated the `--- PASS:` prefix after the tick, and a
+  failing one `--- FAIL:` after the cross.
+  ([#760](https://github.com/DonaldMurillo/gofastr/pull/760))
+- **`generate app` no longer puts a provenance marker on
+  `gofastr.settings.yml`.** The file is merged into the one you keep,
+  never written whole, so `--json` reported a size that counted a marker
+  the file on disk never got. It now reports the real size. See
+  [app spec](framework/docs/content/app-spec.md).
+  ([#760](https://github.com/DonaldMurillo/gofastr/pull/760))
+- **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
+  that is a string, array or number, or longer than 64 KiB, was ignored;
+  it now answers `-32602` and the tool does not run.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **process modules: a tool's `annotations` key is read and pinned.** A
+  module that already sent `annotations` in `module.tool.list` had it
+  ignored; it is now decoded, served as MCP hints and hashed into
+  `ModuleToolDigest`, so that module's approved digests change and its
+  handshake fails until they are recomputed. A malformed value fails
+  decoding. Modules that never sent the key are unaffected. See
+  [process modules](framework/docs/content/process-modules.md#mcp-tools).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **featureflag: `MemoryStore.Set` errors read like `SQLStore.Set`'s.** Both
+  stores now check a flag through one function, so an empty key reads
+  `featureflag: empty key` (was `flag: empty key`) and a bad `Users` entry
+  `featureflag: flag "k": users[0]: ...`. Code that matched the old text
+  matches the new prefix. ([feature flags](framework/docs/content/feature-flags.md#stores))
+- **The default Content-Security-Policy sends `base-uri 'none'` and
+  `worker-src 'self'`**, live and in static exports. An app that renders a
+  `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
+- **`HighPriority` images load eagerly.** It used to pair
+  `fetchpriority="high"` with `loading="lazy"`, which wastes the hint.
+  `ui.Avatar` images now carry `width`, `height` and `loading="lazy"`.
+- **Scheduled poll ticks and visible or eager prefetches ask for
+  `priority: 'low'`**, so background work yields to what the user is
+  waiting on. A hover prefetch, a widget's refresh after its own RPC and
+  the refresh when a tab becomes visible keep the default priority.
+- **BREAKING: the passkey plugin needs a way to email the account owner
+  when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
+  `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The
+  email is fixed text, sent best effort, and goes only to an address the
+  user store reports verified: with `NoticeSender` set, Init also refuses
+  a user store that does not implement `auth.EmailVerifiedChecker` (the
+  battery's stores do).
+- **BREAKING: `POST /auth/passkey/register` needs the `binding` from its
+  options answer**, and completes only in the session that asked for the
+  options. The battery's browser module sends it; a client of its own
+  copies `binding` from `register/options` into the register body.
+- **The passkey autofill limit is picked by `?autofill=1` on
+  `/auth/passkey/login/options`**, not by a body member, so a blocked
+  client is refused before its body is read. The battery's module sends
+  it. Under an explicit `RateLimit.Scope`, the list and autofill limits
+  use that scope plus `-list` and `-autofill`.
+- **A step-up accepts an assertion with no `userHandle`**, which an
+  authenticator may send when the options name the passkeys.
+- **The passkey module runs one ceremony at a time**, holds the buttons
+  while an autofill sign-in is on its way, lets one autofill field own
+  the request, retries a failing autofill with growing waits and shows
+  its error once, never signals a passkey list read before a change, and
+  submits a step-up form as its button would.
+- **Adding or removing a passkey needs a step-up** once any of the
+  account's passkeys is an hour old (`ReauthMinAge`), from every session:
+  `register/options` and `delete` answer 403 `passkey_reauth_required`
+  without a `proof`, or `passkey_signin_required` for a session that
+  began before every passkey. The battery's browser
+  module runs the step-up itself; a client of its own sends `proof`.
+- **Only the session that earned a step-up proof can redeem it.** Another
+  session's attempt fails and still uses the proof up.
+- **Under `OIDCConfig.Tenants` an email is verified only with both
+  `xms_edov: true` and `email_verified: true`** in the signed id_token,
+  for its own `email` claim, and a tenant identity with no link never
+  joins an existing account by email: the owner links it while signed
+  in. This closes the multi-tenant "nOAuth" email takeover.
+- **BREAKING: `auth.PasskeyStore` gains `RenamePasskey`.** Both built-in
+  stores implement it. A custom store adds it, and may keep the new
+  `PasskeyCredential.Transports` and `AAGUID`.
+- **A passkey sign-in with a credential the server does not hold answers
+  404, not 401.** The message is the same, and the browser can now tell
+  the password manager to drop that passkey.
+- **`AuthConfig.CanonicalizeEmail` must be idempotent, and Init now checks
+  it.** Init runs the override over a fixed set of probe addresses and
+  fails boot, naming the address, when it moves one it already
+  canonicalized. A clean boot does not prove the override idempotent for
+  every address: one it moves at runtime is refused with
+  `invalid_email`.
+- **A layout's view-transition CSS loads with its layer, not in app.css.**
+  `app.NewLayout` registers the layout's `TransitionCSS()` as a component
+  sheet of its own (`Layout.TransitionSheet()`), and the layer root
+  carries its `data-cui-comp` marker, so only pages that render the layer
+  load it. Before, every page paid for every layout's transitions in
+  app.css. `registry.RegisterRuntimeStyle` is new: it registers a sheet
+  built at run time even after a host froze the catalog. Nothing to
+  change in an app; a layout with transitions must still be registered
+  before the first page renders ([layouts](framework/docs/content/layouts.md#transitions)).
+- **The examples are `examples/meridian` and `examples/site`.** Twelve
+  standalone demos are gone; the apps the framework's tests drive moved
+  to `internal/testapps/`, and Acme Tracker, the tree-layout showcase,
+  is now part of the site at `/examples/tracker`
+  ([examples](examples/README.md)).
+- **CI runs side by side.** The `build · vet · test` job ran every gate
+  in series for 21 minutes. The repo analyzers, cross builds and Linux
+  desktop steps now run in `analyzers · cross-compile · desktop`, the race
+  detector in `race detector`, core-ui/runtime in three shards
+  (`scripts/go-test-shard.sh`) and the axe gate in two. The vettool is
+  built with `-buildvcs=false`, so `go vet` reuses its cached results
+  instead of re-vetting every package on every commit (3.7 minutes a run
+  in CI, about 80 s a local commit). Branch protection on main needs the
+  new check names.
+- **A browser e2e row a pull request does not reach costs seconds.** One
+  `browser e2e scope` job lists the affected packages once; each row
+  checks its pattern against that list before it restores the Go cache or
+  installs anything. Rows used to spend 1 to 1.6 minutes each finding out
+  they had nothing to run.
+- **CI installs one pinned Chromium snapshot.** `latest` moved every few
+  hours, and its new directory on `PATH` made Go's test cache re-run every
+  package whose tests look up a binary: 175 of 403 on a main run that
+  changed three files. `TestChromeIsPinned` keeps every `setup-chrome` step
+  on one fixed version; bump them together.
+- **CI saves only the Go cache entries a run used.** Go drops a cache
+  entry after five days without use, so the `go-test-` entry kept every
+  object built in that time: 5.1 GB where a fresh one is 1.0 GB, 164 s to
+  restore in each of the 18 jobs that read it, and enough to push the
+  lint and race entries out of the repo's 10 GB. On main,
+  `scripts/go-cache-prune.sh` now ages the restored entries and removes
+  the ones no step touched before the save.
+  `TestGoCacheIsPrunedBeforeSave` holds the two steps in each saving job.
+- **The analyzer vet reads each file once.** CI vetted every affected
+  package three times, as linux, windows and darwin. The windows and
+  darwin passes now vet only the packages whose Go files differ from the
+  ones the linux pass read: 41 and 15 of 457
+  (`cmd/affected -files-differ-from`). On the whole tree from a cold
+  cache the three passes took 246 s here, down from 469 s. A finding that
+  depends on another package's OS-specific types, in a package whose own
+  files are the same on every OS, is no longer looked for on windows and
+  darwin.
+- **The Linux desktop steps run when a change reaches them.** Both go
+  through `cmd/affected`: a pull request runs the `battery/desktop`
+  packages its change reaches, main runs them all. They ran in full on
+  every pull request, 2.7 to 4.6 minutes.
+- **`primitives stop` skips testdata modules** when a nested `go.mod`
+  or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
+  are meant not to type-check; `go build ./...` there is no longer a
+  reason to send the session back.
+- **BREAKING: five leftover compatibility spellings are gone.**
+  `tenant.TenantConfig.Header` and `auth.MagicLinkConfig.TokenLength`
+  were read by nothing; delete them from your literals.
+  `migrate.RenderMigrationFile` (and `framework.RenderMigrationFile`) is
+  replaced by `RenderMigrationFileChecked`, which returns
+  `ErrDirectiveInSQL` for SQL that would read as a directive; the
+  `framework` package now re-exports the checked one. `WithAgentCard`
+  serves only `/.well-known/agent-card.json`, not the pre-1.0
+  `/.well-known/agent.json`. The runtime no longer sets
+  `window.__gofastr.textarea`; inserted content is scanned without it.
+  `gofastr upgrade` finds the Go spellings.
 - **The pre-commit model review falls back to Claude on Haiku**
   ([CONTRIBUTING](CONTRIBUTING.md)). Without the Codex CLI the hook failed
   every commit. It now runs the same three reviews through the Claude
@@ -606,7 +807,7 @@ few lines, and link the PR or the docs page for the rest.
   on this release finds no list there and removes no stale page; delete
   the old `<OutDir>/.gofastr-pages` and, if a page went private since
   the last build, clear `OutDir` once.
-- **`core/static` serves a real `~digit` file name**
+- **BREAKING: `core/static` serves a real `~digit` file name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [core packages](framework/docs/content/core-packages.md)). A segment
   with `~` followed by a digit, the shape of an NTFS 8.3 short name, is
@@ -848,1517 +1049,166 @@ few lines, and link the PR or the docs page for the rest.
   - two entities whose create-flagged lists share one screen;
   - an entity with `exposure.mcp: true` and `exposure.crud: false`;
   - sibling endpoints whose routes overlap.
-
   It also warns on a `nav[].href` nothing in the spec serves, a
   `custom_form` that POSTs to a screen route, an
   image or file field with no file storage wired, and a screen, auth or
   admin mount, or entity API route whose first segment is a locale tag
   under `locale_prefixes`.
 
-### Security
-- **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
-  Six places stripped control characters from text bound for an
-  operator's terminal, each with its own set: codegen extension stderr
-  and module probe detail kept C1 controls and bidi overrides, and
-  `service logs` kept bidi and zero-width characters. All of them, with
-  the CLI, the contracts report and the harness TUI, now print through
-  `textsafe.ScrubTerminal`.
-- **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,
-  up from `go 1.27.3`. Go 1.27.3's net/http carries GO-2026-6859, an
-  HTTP/1 server crash through a `MaxBytesReader` header race, and every
-  GoFastr app serves HTTP. `go get` of this release raises an app's `go`
-  line, and the default `GOTOOLCHAIN=auto` downloads 1.27.4; with
-  `GOTOOLCHAIN=local`, install 1.27.4 first. `gofastr init` writes
-  `go 1.27.4`, and `gofastr upgrade` flags a go.mod below it.
-- **BREAKING: desktop update feeds expire, and a macOS update must carry
-  the running app's signing identity**
-  ([#649](https://github.com/DonaldMurillo/gofastr/issues/649),
-  [#650](https://github.com/DonaldMurillo/gofastr/issues/650),
-  [desktop](framework/docs/content/desktop.md#auto-update)). A signed
-  manifest verified forever, so a captured one could be replayed to
-  keep an app off the next release; and the macOS install ran
-  `codesign --verify` with no requirement, which an ad-hoc signature
-  from anyone passes.
-  - The manifest carries a signed `expires`. The app refuses it from
-    that instant ("the update feed has expired"), and refuses a
-    manifest without one. `gofastr desktop feed` stamps 30 days, or
-    `--valid-days` (1 to 365). **Sign every live feed again with this
-    release before shipping an app built on it**, and re-run the same
-    command to renew before the expiry. Apps built on older releases
-    ignore the new field.
-  - `desktop.SignUpdateFeed` takes a trailing `validFor time.Duration`
-    (0 is the 30-day default).
-  - On macOS the update must satisfy the running bundle's designated
-    requirement (for a Developer ID signature, its bundle identifier
-    and its team's Developer ID certificate), or carry the Developer ID certificate of the team in
-    the new `UpdateConfig.MacOSTeamID`.
-    An ad-hoc signed or unsigned app has no identity to pin, so its
-    installs are refused unless `UpdateConfig.MacOSAllowAdHoc` is set.
-    That covers every bundle built without `--sign`.
-  - `feed` writes `manifest.json` and `manifest.json.sig` 0644 (they
-    were 0600), and the directories it creates 0755.
-  - `feed` merges into an existing `manifest.json` only when its `.sig`
-    is this key's signature over it. It used to sign whatever manifest
-    the output directory held, entries and channels included.
-- **A refused MCP tool does not disclose its argument schema**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An outermost
-  `Gated` handler checks its gate before argument validation, like `WithToolGate`, so
-  missing or malformed arguments still answer exactly as an unknown tool.
-  Allowed calls keep schema validation before the handler runs.
-- **An endpoint's MCP twin keeps its `Gated` gate ahead of argument validation**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  framework wrapped `entity.Endpoint.MCPHandler` in a plain closure, so a
-  refused caller sending missing or mistyped arguments got the validation
-  error naming the required fields. The new `mcp.Decorate` wraps a handler
-  while keeping its gates outside, and the endpoint twin uses it on root and
-  grouped registration.
-- **Field masks run with the caller's permissions**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). CRUD
-  removes back office elevation before every field mask, including
-  included rows, events and streamed results. A permission-sensitive
-  mask no longer reveals a value solely because an admin can manage
-  the entity.
-- **A repository secrets file cannot name a key that is not an
-  environment variable** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `isProviderCredentialKey` checks the whole name at the source
-  (`^[A-Z][A-Z0-9_]*$`, not just the `_API_KEY`/`_TOKEN` suffix), so a
-  control-byte name never reaches the consent prompt, the environment or
-  `--allow-repo-secrets`, and the CLI no longer unsets such keys after
-  the fact.
-- **The Linux desktop shell checks a navigation before its request**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [desktop](framework/docs/content/desktop.md)). Linux asked
-  `AllowNavigation` only when the main frame's response arrived, so a
-  refused URL's request, path and query had already reached the other
-  host. It now checks every navigation and new-window request with its
-  URL before the request leaves the web view, and keeps the response
-  check as a second line. WebKitGTK does not say which frame a
-  navigation is for, so iframes are checked too: a foreign iframe stays
-  blank on Linux. The default CSP already blocks foreign frames on every
-  shell; an app that loosens `frame-src` sees them load on macOS and
-  Windows only.
-- **The static export no longer follows a symlink out of an `ExtraDirs`
-  directory** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [static export](framework/docs/content/static-export.md)). An
-  `os.DirFS` extra directory was read as it is, so a link inside it
-  published the file it pointed at anywhere on disk. It is now read
-  through `os.Root`, like the static dir and `UIHost.SetStaticFS`: a link
-  that leaves the directory is skipped and logged. A symlink in any
-  other filesystem, an extra dir or static FS such as
-  `fs.Sub(os.DirFS(dir), "docs")` included, is skipped wherever it
-  points, since nothing holds such a link inside its directory.
-- **`core/static` refuses Windows alias spellings of any file**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A path
-  segment that ends in a dot or a space, or holds a colon, is never
-  opened, on every OS: Windows opens `app.css.` and `app.css::$DATA` as
-  `app.css`. The config-file refusal covered these spellings of
-  `web.config` only. In SPA mode such a path is a miss, so a client route
-  still gets the index. `static.Refuses` and the UI host's static
-  directory refuse the same names, and the static export skips such
-  files.
-- **`App.ImportData` restores the bytes it checked**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
-  each archive file on one read and parsed the rows from a second, so a
-  file swapped between the two was restored unchecked. Each file is now
-  read once, in the import's transaction, and a checksum mismatch rolls
-  every source back.
-- **The query DSL refuses `include()` of a hidden relation**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
-  marked `Relation.Hidden`; it now answers relation-not-found, as
-  `?include=` does.
-- **A nested write through a hidden relation is refused**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
-  `cascade_write` relation marked `Relation.Hidden`, or behind a `Hidden`
-  field of its name, took nested creates and links from a client body and
-  returned the written child, though reads and `?include=` never show it.
-  Create and update now answer 400 `validation.cascade_relation_hidden`
-  before any row is written; server code still writes through it under
-  `crud.WithServerWrites`.
-- **BREAKING: `cache.CacheMiddlewareWithLimit` panics on a negative
-  `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  A negative cap read as no cap and buffered every response whole; `0`
-  still means unbounded.
-- **The admin account page needs the caller's user id**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  admin gate admits a caller by roles, so a user type with no `GetID`
-  reached the account routes, where the audit label "unknown" stood in
-  for the id. Saving a display name then named the user whose id is
-  `unknown`. The name route now refuses such a caller, and the account
-  page reads no verified-email or password state for one.
-- **Needs attention skips a view hidden from the caller**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  panel counted a watched view by its `Where` alone. A view whose `Show`
-  hid it from the caller still drew, and its list fell back to All, so
-  the panel listed every row under that view's heading. A filter-func
-  view (no `Where`) was counted as every row. The panel now counts with
-  the new `entityui.UI.CountView`, which runs the view's own filter and
-  reports false for a hidden view.
-- **Audit rows for purged or hard-deleted records follow the read hooks**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `entityui.UI.RecordHidden` answered "not hidden" once no stored row was
-  left, so the admin audit log printed a purged record's stored title and
-  changes to a viewer its `BeforeGet`/`BeforeList` hooks restrict. Such a
-  row now shows its title and changes only when the viewer's hooks append
-  no clause, the rule `_events` applies to a hard delete; otherwise it
-  shows the id, operation and time. A hook error or a failed read hides
-  the record. `crud.CrudHandler.ReadHooksRestrict` is the new check.
-- **The status override writes under the read hooks**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `UI.OverrideHandler` checked the record against the caller's
-  `BeforeGet` hooks before the write, but wrote without
-  `crud.WithReadHooks`, so a row a hook hid by the time the write ran was
-  still changed. The write now carries the opt-in and answers 404, as
-  bulk edits, trash restore and purge, and the JSON write routes do. The
-  `hookedread` analyzer now covers the crud write API (`UpdateOne`,
-  `DeleteOne`, `RestoreOne`, `PurgeOne`, `RunTransition`, `CreateOne`,
-  `UpsertOne`, the `Batch*Many` calls) in framework/entityui and
-  battery/admin, and `TypedQuery.Exists` among the reads. It refuses
-  `TypedQuery.UpdateAll` and `DeleteAll` there under any context: they
-  apply write scopes only and never consult `BeforeGet`, so a screen
-  writes record by record.
-- **netguard checks both IPv4 addresses inside a Teredo address.** A
-  `2001:0::/32` address whose server or (inverted) client IPv4 is
-  internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
-  already were.
-- **BREAKING: the well-known documents no longer take their origin
-  from an arbitrary client** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was #657).
-  The MCP server card, `/.well-known/mcp.json`, the api-catalog,
-  `/auth.md` and the agent extras built their absolute URLs from the
-  request Host and an `X-Forwarded-Proto` header any client could set,
-  painting an attacker-named origin into cacheable discovery documents.
-  New `AppConfig.BaseURL` pins the origin outright (and the documents
-  stop varying on Host/`X-Forwarded-Proto`); without it,
-  `X-Forwarded-Proto` is honored only from a peer listed in the new
-  `AppConfig.TrustedProxies`, the same trust rule the rate limiters
-  apply to `X-Forwarded-For`. Behind a TLS-terminating proxy, list the
-  proxy or set `BaseURL`, or the documents advertise `http://` origins.
-- **BREAKING: uihost's agent card and Link headers take
-  `X-Forwarded-Proto` only from a trusted proxy**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). With no
-  `BaseURL` configured, the agent card's service URL and the page `Link`
-  headers (sitemap, llms.txt, agent card, MCP endpoint) took their
-  scheme from an `X-Forwarded-Proto` header any client could send, so a
-  client could make the host advertise `http://` URLs or poison a cached
-  copy. The header now counts only from a peer listed in
-  `uihost.WithTrustedProxies` or, when the host sets no list, in
-  `AppConfig.TrustedProxies`, which the App puts on each request's
-  context: the rule the framework's well-known documents follow. A host
-  list replaces the App's rather than adding to it. The island stream's
-  per-client cap reads `X-Forwarded-For` through the same fallback.
-  Behind a TLS-terminating proxy, list the proxy in either place or set
-  `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs say
-  `http://`.
-- **BREAKING: a pluginhost framed asset's CSP takes `X-Forwarded-Proto`
-  only from a trusted proxy**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  origin a framed plugin asset's `Content-Security-Policy` names took its
-  scheme from an `X-Forwarded-Proto` header any client could send, with
-  no `Vary`, on a response that may be cached `public, immutable`: one
-  forged request could leave a shared cache serving every later visitor
-  a policy keyed to the wrong origin. The header now counts only from a
-  peer listed in `AppConfig.TrustedProxies`, which the App puts on each
-  request's context so an `AssetServer` on `app.Router()` reads it with
-  no plugin change, and framed responses send
-  `Vary: Host, X-Forwarded-Proto`. Behind a TLS-terminating proxy, list
-  the proxy, or the framed CSP names `http://`.
-- **BREAKING: an entityui record's copy links take `X-Forwarded-Proto`
-  only from a trusted proxy**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
-  record's Copy link, Copy API URL and the drawer's copy link took their
-  scheme from an `X-Forwarded-Proto` header any client could send, after
-  only an `http`/`https` check. The header now counts only from a peer
-  listed in `AppConfig.TrustedProxies`, the list the App already puts
-  on each request's context for pluginhost, so the record screens need
-  no wiring. Behind a TLS-terminating proxy, list the proxy, or the
-  copied links say `http://`. Record pages are already sent
-  `Cache-Control: no-store`, so no cache keys them and they gain no
-  `Vary`.
-- **BREAKING: an MCP item gate answers exactly as an unknown name**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #656). `tools/call`, `resources/read` and `prompts/get` answered an
-  item the caller is gated out of with the gate's message, but an
-  unknown one with not-found — a direct call was an existence oracle
-  over items the listings already hide. An unmarked gate refusal (and a
-  panicking gate) now answers byte-identically to an unknown name, on
-  every item gate (`WithToolGate`, `WithResourceGate`,
-  `WithPromptGate`, `Gated`) and the entity-tool gates. A gate whose
-  words the caller must read ("upgrade your plan") wraps its error with
-  the new `mcp.ShowRefusal(err)`, and only then does the message cross,
-  keeping its `*RPCError` code when it returns one. The server-wide
-  `SetGate` is endpoint-level and still crosses.
-- **One MCP caller cannot fill the resource-subscription cap**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #656). `resources/subscribe` now bounds each caller to 256 distinct
-  uris, a quarter of the shared 1024 cap, so one caller can no longer
-  take every slot and refuse everyone else's subscribe; re-subscribing
-  a held uri is not growth and always works. An anonymous caller is its
-  TCP peer's IPv6 /64 (the grouping the rate limiters use), so rotating
-  hosts inside one prefix does not draw a fresh budget.
-- **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
-  ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
-  `Report.Apply` checked the symlink-resolved path against the project
-  root, then read and wrote the unresolved one, so a link swapped in
-  between the check and the write sent the fix outside the root. Every
-  read, stat and write now goes through an `os.Root` on the report
-  root. `gofastr gen styles` reads its package patterns the same way: a
-  pattern directory that links outside the working directory is
-  refused instead of walked. `os.Root` also refuses an absolute
-  symlink, even one that points back inside the project: make such a
-  link relative.
-- **`rootwrite`, `rootread` and `tightenshared` stop crediting checks
-  that confine nothing** ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
-  A `filepath.EvalSymlinks` call no longer quiets a read or write by
-  itself, and no longer makes a function a symlink guard. The rules
-  accept `os.Root`, `O_NOFOLLOW`, an `Lstat`+`ModeSymlink` leaf check,
-  or a resolved path that is then used for the read or write, after a
-  `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
-  test made after the resolution, in an `if` that refuses an outside
-  path or writes only on the inside branch. The resolution must run on
-  every path to the write, and a `".."` test of a Rel result counts
-  only when Rel's error is refused too (a failed Rel returns `""`);
-  `filepath.IsLocal(rel)` needs no such check. The tested string must be
-  the resolved path itself (or a copy made once, after the
-  resolution, through copies made the same way), not a path rebuilt
-  from it, and a path whose address is taken never counts: a write
-  through the pointer replaces it unseen. The root must be the one
-  the path was joined under, not its parent or another directory, and
-  can't be a constant such as `"/"`, a local holding one, or built from
-  the path. It must hold one value at the test: a local assigned once
-  before it, a parameter not reassigned before it (a write later in
-  the source counts too when a loop holds it and the test but not the
-  resolution), so
-  `if widen { root = "/" }` before the test does not pass, and neither
-  does a `rootSep` local bound to `root + sep` on one branch only. A
-  copy holds the value it was made from (`frozen := baseDir` after the
-  join stays good when `baseDir` changes later; made before a rebind
-  and a join under `baseDir`, it names the old root and doesn't count,
-  while a join under the copy itself does). A root whose address is taken,
-  and a field root assigned before the test, don't count. The separator after it is required: without it
-  `/srv/app-backup` passes a test against `/srv/app`. A resolved
-  parent joined with `filepath.Base` counts only for `os.Mkdir`:
-  `os.MkdirAll` follows a linked leaf and returns nil. A path joined in
-  steps (`dir := filepath.Join(root, id)`, then `filepath.Join(dir, "x")`) and a path rebound in place
-  (`p = filepath.Join(p, x)`) are now checked like a single join.
-  `tightenshared` no longer exempts an `os.Stat`
-  before `MkdirAll`: tighten a directory only inside `if err == nil` on
-  the `os.Mkdir` that made it. Code that `gofastr verify` or
-  `make analyze` passed before can now fail; the messages name the
-  fix.
-- **BREAKING: boot refuses a table that still holds a single-column
-  UNIQUE a composite index replaced**
-  ([migrations](framework/docs/content/migrations.md)). A column that
-  moved from unique on its own into a composite unique index such as
-  `(user_id, email)` kept the old constraint. One account's value was
-  then refused for every other account, and the 409 told the caller
-  what another account stored. Boot now stops and names the column.
-  `DiffSchema` drops the stale constraint on Postgres and rebuilds the
-  table on SQLite; apply it with `ApplySchemaDiffWithOptions`
-  (`AllowDestructive` on SQLite), or drop it in a reviewed migration.
-- **An admin cannot remove their own admin role**
-  ([admin](framework/docs/content/admin.md)). Under the default gate the
-  only admin could drop it in one request and lock every admin out, with
-  no way back short of SQL. Another admin can still remove it.
-- **The widget catalog lists only the widgets a caller can reach, and is
-  never cached** ([widgets](framework/docs/content/widgets.md)). Any
-  session, the guest session an anonymous page view mints included,
-  could ask for `?page=/admin` and read the names of the admin drawer,
-  palette and shortcut sheet. `/__gofastr/widgets` also answers
-  `Cache-Control: no-store` with `Vary: Cookie`.
-- **The Roles grid refuses a revoke that locks the caller out.** An admin
-  could untick a permission their own role held and then could not grant
-  it back. The save is refused before any write when none of the
-  caller's roles would still hold it.
-- **A static export writes no chrome for a widget `ListedFor` hides.**
-  The admin nav drawer, command palette and shortcut sheet were left out
-  of `widgets.json` but their chrome, which renders the back-office nav,
-  was written as public files.
-- **The real-estate example's tours and inquiries declare `states:`**, so
-  an anonymous visitor can no longer book a tour already `confirmed` or
-  file an inquiry already `converted`.
-- **The default email check refuses a value that is not one
-  `local@domain` address** ([auth](framework/docs/content/auth.md)).
-  Registration accepted `notanemail` as an account. Register, login,
-  magic link, password reset and OAuth now answer 400 `invalid_email`
-  for a value with no `@`, more than one, white space or a control
-  character. The upgrade note carries a query that finds stored
-  accounts with no valid address.
-- **An anonymous MCP caller no longer lists permission-gated entity
-  tools.** It saw the full input schema of tools a signed-in caller
-  without the permission had hidden.
-
 ### Fixed
-- **A hop page under a locale prefix reloads the prefixed path**
-  ([i18n](framework/docs/content/i18n.md),
-  [auth](framework/docs/content/auth.md)). With
-  `framework.WithLocalePrefixes`, the same-site hop page answered on
-  `/es/orders` sent `Refresh: 0;url=/orders`, so the reload left the
-  reader's language. The response rewrite now covers the `Refresh`
-  header, a `<meta http-equiv="refresh">` and `Content-Location`, for
-  every handler, as it covers `Location`. A URL that already carries a
-  locale, another site's URL and a `//host` URL stay as written.
-- **A signed-in user who follows an outside link into a guarded page
-  lands on the page** ([auth](framework/docs/content/auth.md),
-  [admin](framework/docs/content/admin.md)). The browser withholds the
-  `SameSite=Strict` session cookie from a page load that starts on
-  another site, so the admin and every guarded page sent them to login.
-  `auth.SessionMiddleware` now answers a cross-site top-level `GET` with
-  no session cookie that is about to get a `401` or a gate's login
-  redirect with the same-site hop page, which reloads the URL with the
-  cookie. A signed-out visitor from another site gets the login redirect
-  one page load later. A guard of your own that redirects to login calls
-  the new `handler.NoteSessionRefusal(ctx)` first; `RequireSession`,
-  `SessionPolicy`, `RolePolicy` and `battery/admin` already do.
-- **Hunt round 12: 37 fixes across queue, migrate, webhook, service,
-  admin, semantic, embed, a2a, mcp, middleware, stream and rtc.** The
-  ones a host can see:
-  - On Postgres, erasing a user while the durable scheduler committed a
-    tick left that user's job behind. The in-memory scheduler fired an
-    interval that was not a multiple of its wake cadence late every
-    cycle (`Every(90s)` ran every 120s).
-  - On Postgres, a generated migration that retypes a column now drops
-    and recreates the declared views that depend on the table. A column
-    named `primary` or `foreign` no longer generates a migration on
-    every run. A view named with a keyword is quoted.
-  - A paused webhook subscriber read back from the SQL store and
-    subscribed again stays paused. A credential a receiver echoes across
-    `ResponseBodyLimit` is redacted before the body is cut.
-  - `battery/admin` mounts no write routes for a read-only view, and a
-    replay of a job that is not failed queues and audits nothing.
-  - `POST /semantic/query` answers 400 (`semantic.InvalidQueryError`)
-    for a caller fault where it answered 500, and a filter number such
-    as `1e999999` no longer costs CPU per stored chunk.
-  - An MCP prompt or resource handler that returns a typed 4xx
-    `*handler.Error` or a wrapped `*mcp.RPCError` answers as a tool
-    does; `WithResourceTemplateGate(nil)` panics as the other gates do.
-  - The memory idempotency store drops expired entries; the SQL one
-    compares expiry in UTC. A rate-limit bucket that sat full no longer
-    allows two `Capacity` bursts back to back.
-  - A `service` localhost tab is sent to `[::1]` for an IPv6 bind.
-- **Reading a record and writing it back stored the mask.** A `Mask`
-  field reads as `****1111`; a client that sent that back had it stored
-  over the card number. A write whose value for a masked field is the
-  masked form of the stored value now leaves that column alone, on REST
-  `PATCH`/`PUT`, `_batch`, cascade children, the MCP update tool,
-  `UpdateOne`, `BatchUpdateMany` and `UpsertOne`. You cannot set a masked
-  field to its own masked form. `TypedQuery.UpdateAll` writes what it is
-  given. See [entity declarations](framework/docs/content/entity-declarations.md),
-  "Writing a masked field back".
-- **A `ui.DataTable` caption wrapped in a narrow box on a phone.** In
-  the card and row phone layouts the caption stayed a table caption
-  inside a table that no longer was one, and shrank to its longest word.
-  It is a full-width block there now.
-- **`ui.BarChart` with `ShowAxis` and `HideValues` cut its top and bottom
-  axis labels in half**, and a chart narrower than its `Width` kept its
-  full height, with a blank band above and below the drawing. The axis
-  labels have room now, and the height follows the width.
-- **`ui.BarChart` with `ShowAxis` cut off long tick labels.** The left
-  gutter was a fixed 30px, so a count in the thousands lost its first
-  digits ("1,500" read ".500"). The gutter is now as wide as the longest
-  tick label.
-- **A chip or code box in a `Truncate` column of `ui.DataTable` was laid
-  out at its full length under the cell's clip.** Its end edge was cut
-  off and the box reached past the screen. It is now held to the cell
-  and ends its own text with an ellipsis.
-- **`tracing.OpenDB` on SQLite stored timestamps the app could not read
-  back.** A database handle opened from another handle's driver, which
-  is how `core/tracing` wraps connections, got the bare SQLite driver
-  with none of `sqlite/stdlib`'s defaults: a `time.Time` went to disk in
-  Go's `String` format and the next start failed on it. The driver a
-  handle reports now carries the defaults. Rows written by an affected
-  build keep the bad format; nothing rewrites them.
-- **The Postgres probe ran on every request.** `framework/crud` asked
-  the database `SELECT version()` each time it needed the dialect. On
-  SQLite that query fails by design, so every such request ran a failing
-  query. The answer is now remembered per database handle.
-- **A refused entity screen keeps its heading.** A list, record or
-  create screen the caller may not read drew the "Not available" notice
-  alone, with no `<h1>`, so an axe run failed `page-has-heading-one`
-  and an app spec with no sign-in generated an app whose own
-  `TestAxeEveryScreen` failed. The screen now draws the entity's
-  heading above the notice, at the level the list was given.
-- **Navigating between two layouts raises no CSP violation**
-  ([runtime contract](framework/docs/content/runtime-contract.md)).
-  Under the default policy a client navigation across layout shells
-  (admin to a marketing page, any page to `/login`) logged one refused
-  `style-src` report per inline head sheet of the fetched page.
-- **A plain `enctype="application/json"` form sends every value of a
-  repeated field.** A checkbox group or `<select multiple>` posted only
-  its last value. A name that repeats is now an array, as on a
-  `data-cui-rpc` form.
-- **An intercepted plain POST form sends a re-submit once.** Three
-  quick submits of an `application/json` or `data-cui-spa` form made
-  three rows. The form now holds while its POST is in flight, as a
-  `data-cui-rpc` form does.
-- **`data-cui-signal-set="name"` sets the empty string**, as the
-  contract says; it did nothing.
-- **A non-form `data-cui-rpc` carrier leaves button inputs out of the
-  request.**
-- **`gofastr migrate generate` writes DDL for the spec's own database**
-  ([migrations](framework/docs/content/migrations.md)). With no `--db`
-  it always wrote SQLite DDL, which a spec on Postgres refused on its
-  first `migrate up`. `app.db.driver` (or a `postgres://` URL) now
-  decides; the flag still wins.
-- **An app spec index over a column the entity does not have is
-  refused at load** ([app spec](framework/docs/content/app-spec.md)).
-  It loaded, and the generated migration failed with "no such column".
-- **`generate app --add` no longer drops a screen.** A fragment adding
-  a screen over an entity that already has its crud file printed
-  "Added" and wrote nothing; it is refused, naming the file. Re-running
-  a fragment with an `entity_list` is the no-op the docs promise, where
-  it failed on its own route.
-- **`/openapi.json` documents a `Many` relation field as one string
-  id** with `x-many: true`, the value the API takes. It documented an
-  array, a body the API answers with 400.
-- **The JS SDK's `ListParams.trashed` is a boolean.** It was typed and
-  documented as `only` or `with`, values the server ignores.
-- **`validate` and `generate` warn when a screen draws an entity nobody
-  can sign in to read.** One entity and one list screen with no
-  `app.auth` generated an app whose list showed "Not available" and
-  whose own axe test failed.
-- **CORS on a `Group` answers the preflight**
-  ([security](framework/docs/content/security.md)). `OPTIONS` to a
-  group path with no `OPTIONS` route ran the root middleware only, so
-  the browser blocked every preflighted call to
-  `Group("/api", middleware.CORS(cfg))`. A 405 now runs the middleware
-  of the group that holds the path's routes. **Behavior change**: auth
-  or rate-limit middleware on a group also sees a wrong-method request
-  to its paths, so a signed-out one answers 401 where it answered 405.
-- **An OAuth sign-in lands signed in**
-  ([auth](framework/docs/content/auth.md)). The callback's redirect
-  continued the provider's cross-site navigation, so the browser
-  withheld the new `SameSite=Strict` session cookie and the landing
-  page rendered signed out. A cross-site callback now answers with a
-  page from this origin that loads the target.
-- **A setup link clicked on another site keeps its token**
-  ([first run](framework/docs/content/first-run.md)). Opened from a
-  hosted log viewer or a chat message, the link spent its token and
-  then answered 403, and "already used" from then on.
-- **The setup wizard stores a password as typed.** It trimmed every
-  field, so an admin password with a space at either end never signed
-  in.
-- **The admin login redirect keeps the query string**, so a signed-out
-  link to a filtered list returns to that list.
-- **The list envelope's `page` follows `?offset=`**
-  ([entities](framework/docs/content/entity-declarations.md)).
-  `?offset=40&limit=20` answered the third page's rows as `"page": 1`.
-- **Markdown list items hold blocks**
-  ([core packages](framework/docs/content/core-packages.md)). A nested
-  `- item` showed its dash, a fenced block under a numbered step ran
-  together as one inline code span, and a blank line between items
-  split the list so steps counted 1, 1. An item now owns the lines
-  indented under it, and an ordered list that does not begin at 1
-  carries `start`. **Check your own markdown**: a wrapped prose line
-  under an item that begins with `+ `, `- ` or `2. ` now reads as a
-  nested list, as it does in CommonMark. Seven such lines in the docs
-  were rewrapped.
-- **Four more markdown fixes.** `\|` in a table cell is a literal pipe
-  (27 rows in the docs split on it); `## #1 priority` keeps its `#1`;
-  `2 * 3 * 4` is not emphasis; a link URL keeps its balanced
-  parentheses.
-- **Web Bot Auth: a Structured Field decimal serializes canonically.**
-  `1.5` came back `1.500` and `1.005` came back `1.004`, so a correct
-  signature over such a field failed.
-- **A static export under a subpath prefixes `srcset`**
-  ([static export](framework/docs/content/static-export.md)).
-  `<picture>` sources asked the apex and drew nothing on a GitHub Pages
-  project site.
-- **`gofastr docs` and `framework_docs_list` summaries are the first
-  paragraph**, not the first hard-wrapped line (one read "```bash").
-- **Singular headings for regular plurals.** "New Aliase", "New
-  Quizze", "New Cach" and "New Heroe" read Alias, Quiz, Cache and Hero.
-- **The harness TUI leaves fenced code as written.** A shell comment in
-  a fence drew as a heading and `**kwargs` lost its stars.
-- **Charts draw what they are given**
-  ([components](framework/docs/content/ui-new-components.md)).
-  `PieChart` drew an empty square when one slice was the whole pie;
-  `BarChart` dropped bars past the right edge once they hit the 3px
-  floor (40 bars in 320px drew 29, the tallest sometimes among the
-  lost); `LineChart` stretched a shorter series across the whole plot,
-  under the wrong x labels. `Sparkline` keeps its `ID` when it has no
-  trend to draw.
-- **A `DataTable` column with `Align: "center"` and `Truncate` is
-  centered and truncated.** The pair had no class, so one long value
-  widened the table.
-- **`llm.md` keeps highlighted code, table links and description
-  lists** ([agent-ready](framework/docs/content/agent-ready.md)). A
-  `<pre>` without `<code>` (every highlighted block) was flattened into
-  one line of prose, a link in a table cell came out escaped, a
-  `DetailList` read `NameAlice`, and a `<link>` tag became a bullet.
-- **A shutdown no longer dead-letters an outbox delivery**
-  ([events](framework/docs/content/events.md)). A handler cancelled by
-  the relay's shutdown was settled as a failure: it spent an attempt,
-  and with `WithMaxAttempts(1)` the delivery went to `dead` on every
-  deploy. It is handed back with the attempt refunded.
-- **`Resize` with `FitInside` or `FitOutside` keeps the side it binds
-  on.** With both sides given, a float scale lost a pixel: a 22×22
-  source inside 15×100 came out 14×14, and `FitOutside` could return
-  less than the box it must cover.
-- **The cache middleware keeps a handler's error when a WebSocket
-  upgrade cannot hijack.** The status and headers written after a
-  refused hijack reached the client as a bare 200.
-- **`WebhookOpts.Headers` cannot replace the log sink's
-  `Content-Type`.** A lowercase `content-type` key did.
-- **A refused GitHub token refresh no longer wipes the stored token**
-  ([auth](framework/docs/content/auth.md)). GitHub answers a refused
-  code or refresh token with HTTP 200 and an error document. The
-  provider read only the status, so the refusal came back as an empty
-  token with no error, and the refresh stored it over a token that could
-  still be good. `GitHubProvider` now returns an error naming GitHub's
-  code, and a refresh from any provider that returns no access token
-  stores nothing.
-- **A token refresh survives the caller hanging up.** The write that
-  stores a refreshed grant ran on the request's context. A client that
-  disconnected after the provider answered cancelled it, and with a
-  provider that rotates refresh tokens the row kept one the provider had
-  just spent, so the user had to reconnect. The write now runs on its
-  own bounded context.
-- **`ExportData` includes service accounts.** The archive carried
-  service tokens but not `auth_service_accounts`, so after a restore
-  every service token answered `owner_missing`.
-- **BREAKING: a two-factor URL that is not a same-origin path fails
-  `Init`.** `WithTwoFactorURL` and the `TwoFactorURL` option of the
-  magic-link, passkey and OAuth plugins accepted an absolute URL, then
-  redirected every two-factor sign-in to `/`, which refuses the pending
-  session. Set a path such as `/login/2fa`.
-- **`ExportData` refuses text that is not valid UTF-8**
-  ([data export](framework/docs/content/data-export.md)). It wrote the
-  cell with U+FFFD in place of each bad byte, so the archive passed its
-  checksum and restored different bytes. The export now fails and names
-  the table, row and column, as it does for a non-finite float.
-- **A `[]byte` field sent text that is not base64 gets a refusal that
-  says so.** The JSON error detail read "expected a string, got a
-  string"; it now reads "the value could not be decoded".
-- **BREAKING: a masked foreign key no longer leaks through its own
-  relation** ([includes](framework/docs/content/includes.md)). With
-  `account_id` masked (a field `Mask`, or `no_query` plus a hook) under a
-  `belongs_to`, `?include=account` answered the account with its full id
-  beside `"account_id":"****0001"`, and `?account.id_like=` selected
-  rows by the stored value. A `belongs_to` whose foreign key is
-  `no_query` is now hidden: include, nested filters and nested writes
-  answer as for a relation that does not exist, and llm.md and
-  `/openapi.json` leave it out. Load the related record by its key in Go.
-- **MCP entity tools take the integer reference they return**
-  ([entities](framework/docs/content/entity-declarations.md)). A
-  Relation field pointing at an integer key was described as a string,
-  so `items_update {shop_id: 1}`, `items_create` and
-  `items_list {shop_id: 1}` refused the number `items_get` had just
-  returned. The tools now type it as an integer, as the record's own key
-  already is; a caller that sent `"1"` sends `1`.
-- **`schema.Field` encodes as JSON again.** The `Mask` func field had no
-  `json:"-"` tag, so `json.Marshal` failed on every `schema.Field`, on
-  an `entity.Endpoint` with an input or output schema, and on the
-  `EntityDeclaration` holding one.
-- **llm.md's filter examples are requests the route accepts.** The
-  example value was fixed per operator, so an entity whose first field
-  is an integer key was documented with `id=active` and `id_in=a,b,c`,
-  each a 400. Examples now use a value of the field's type. The page
-  also warns about an ambiguous filter key when a field sets `WireName`
-  to its own name, which it used to skip.
-- **Idempotency no longer caches a response the handler never wrote**
-  ([idempotency](framework/docs/content/idempotency.md)). A handler that
-  returned without writing after its request ended (the deadline
-  answered 504, or the client hung up) was recorded as `200` with an
-  empty body and replayed with `Idempotent-Replay: true` for the whole
-  TTL, for a write that never ran. The claim is now released and the
-  retry runs the handler. A 2xx the handler did write is still cached,
-  even when it was written after the deadline.
-- **cron: a late tick under leader election no longer loses minutes to
-  its own lease** ([cron](framework/docs/content/cron.md)). The catch-up
-  walk asked for the lease once per missed minute while its release of
-  the previous minute was still in flight, so a real lock refused it: a
-  late tick could skip the current minute and run no `* * * * *` job at
-  all, on a single replica. A tick lease is now taken for each minute
-  only after the previous release has returned; a lease with `Acquire`
-  alone is taken once for the whole walk and held until its jobs finish.
-- **`DBQueue` applies `MaxAge` when a worker dies**
-  ([queue](framework/docs/content/queue.md)). `MaxAge` was read only
-  when an attempt failed; a claim whose lease expired was handed out
-  again after every lost worker until its attempts ran out, however old
-  the job. The pre-claim sweep now dead-letters an expired claim past
-  `CreatedAt + MaxAge`.
-- **`MemoryQueue.Replay` runs the job now.** A job dead-lettered because
-  a handler's `RetryAfter` landed past its `MaxAge` kept that future due
-  time, so a replay did nothing until the stale delay ran out.
-- **`gofastr migrate generate` writes a SQLite migration that applies
-  when a unique field or a relation is removed**
-  ([migrations](framework/docs/content/migrations.md)). SQLite refuses
-  `DROP COLUMN` on a column that is UNIQUE, indexed or named by a foreign
-  key, so the bare `DROP COLUMN` failed `migrate up` with "cannot drop
-  UNIQUE column". Those columns now leave with a table rebuild, which
-  carries a `-- DROP COLUMN t.c by table rebuild` line, and the generate
-  warning names the column. `DiffSchema` does the same from the live
-  table's indexes and foreign keys.
-- **App spec: a catalog block spelled `type:` generates like `kind:`**
-  ([app spec](framework/docs/content/app-spec.md)). `type: card`,
-  `type: page_header`, `type: stat_card` and the controls loaded, then
-  generated a screen file that did not compile (`undefined:
-  noderender`). `type: section` stays the plain `<section>` tag and now
-  compiles with children.
-- **App spec: `entity_list` refuses what its list cannot draw.** A
-  `filter:` on a `json` field, and a `fields:` entry that is hidden,
-  omitted by the entity's `display.fields`, or listed twice, each loaded
-  and then rendered "Couldn't load this section" on every read. They are
-  refused at load. A `fields:` entry in camelCase (`authorName`) now
-  generates as its column.
-- **A generated Local repository hands handlers a non-nil `r.Body`**
-  ([SDK](framework/docs/content/sdk.md)). `List`, `Get` and `Delete`
-  reached the app with a nil body, so middleware that drains or closes
-  `r.Body` panicked under Local while the same call worked on Remote.
-  Regenerate the SDK to pick it up.
-- **Navigation keys on the resolved path**
-  ([runtime contract](framework/docs/content/runtime-contract.md)).
-  `__gofastr.navigate()`, a `data-cui-spa` GET form and an
-  `X-Gofastr-Location` redirect now give the router `pathname+search`,
-  as a link click does. Before, `navigate('?p=2')` could replay another
-  page's cached screen, `navigate('/b#frag')` lost widgets scoped to
-  `/b`, and an in-page `#anchor` link on a page reached with a fragment
-  fetched it again and dropped typed input. `gofastr:navigate`'s
-  `detail.path` and `__gofastr.currentPath` never hold a fragment.
-- **Back after an island write shows the write.** A successful
-  `data-cui-rpc`, toggle or optimistic action whose method is not `GET`
-  now evicts the page it ran on from the screen cache, so Back fetches
-  it. Before, a row an island RPC added was missing after a link away
-  and Back, until a reload. A read-only island sent as `POST` (a pager)
-  fetches on Back too; send it as `GET` to keep the cached replay.
-- **A hidden phone menu no longer traps the keyboard.** A
-  `headless.Disclosure{Trap: true}` (the generated site header's menu)
-  that its sheet hides while open, for example when the window widens
-  past the breakpoint, is now closed and its focus trap released.
-  Before, every Tab on the page was swallowed and the toast stack, route
-  announcer and skip link stayed `inert`.
-- **The `Sunset` header is an HTTP-date**
-  ([API versioning](framework/docs/content/api-versioning.md)).
-  `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local
-  wall time with "EST"), which an HTTP date parser refuses. It now
-  writes GMT, as RFC 8594 asks.
-- **The harness `Grep` tool says when it cut a search short.** A search
-  that stopped at 1000 matches, or at the 8 MiB cap in a file with CRLF
-  line endings, returned what it had with no notice, and a path that is
-  a symlink to a directory answered "(no matches)". The first two now
-  end with a truncation line and the third searches the directory.
-- **`contracts_verify` refuses an unknown capability before it reads the
-  tree.** The MCP dev tool loaded the config and scanned every source
-  file first, so a mistyped capability cost a full scan, and a broken
-  `gofastr.settings.yml` answered with its own error instead of
-  "unknown capability".
-- **An embed below the fold sizes itself on arrival**
-  ([embed](framework/docs/content/embed.md)). The frame reported its
-  height on the next animation frame, and Chrome stops rendering a
-  cross-origin frame outside the viewport, so an embed placed below
-  the fold sat at the loader's 150px start until someone scrolled to
-  it, then pushed the page down. The frame now measures and reports
-  as soon as its content lands.
-- **Toast CSS no longer makes a page fetch the full component bundle**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). When a
-  page's component subset fits the inline budget but app.css takes the
-  head over it, the host links app.css separately and keeps the subset
-  in the document. Offline toasts keep their styles without forcing
-  the page to download unused component rules.
-- **Upserts validate cascade-filled foreign keys before storing the parent**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Both
-  insert and conflict arms enforce the parent's schema after a belongs-to
-  cascade supplies its key. A refusal rolls back nested child writes,
-  including inside a caller-owned transaction, as create does.
-- **A data table's phone rows keep the name whole at 320px**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
-  badge, a price and the row menu, a `ResponsiveRows` title kept a few
-  pixels: the back office listed "Ada…" and "C…", and a short name could
-  vanish. Below 21rem the title, subtitle, meta and detail each take a
-  line, start-aligned, with the columns closed up to `--spacing-md`.
-- **The sidebar drawer's rows stand off its edges**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The phone
-  drawer's body is `display: contents`, so its links sat flush against the
-  panel's left and right edges. Each part of the body now keeps an inline
-  margin of `--ui-sidebar-drawer-inset` (default `--spacing-md`), and the
-  drawer head lines its brand up with the row icons below it.
-- **`textbind` follows request text through method returns, host
-  callbacks and `strings.Builder`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  A method that returns its receiver's field (`ParsedFilter.BindValue`)
-  hands the caller's fill back, so the exported summary now names those
-  fields (`RetFields`) and the caller's marks taint the call result; a
-  call through a func-typed field follows its same-package fill sites'
-  summaries, and a fill-less `func(*http.Request) string` field the
-  package declares (the d6167d1a `IdempotencyConfig.Principal` shape)
-  is request text itself; a `strings.Builder` local's `String`
-  carries string, byte, rune and standard formatted writes until a
-  dominating `Reset`.
-- **`discardeddecode` checks non-envelope JSON encode errors**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  Shared HTTP response helpers encode before committing their status;
-  broker and queue operations return serialization errors, and other
-  output paths log failures.
-  The analyzer now covers fallible values outside JSON-RPC envelopes.
-- **A2A refuses an owner or tenant the store cannot bind**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An
-  `Owner` or `Tenant` callback that returns a NUL byte or invalid
-  UTF-8 (read from the request) is refused with the transport's 401 at
-  resolution; before, the first task write answered Postgres's 22021
-  as a 500 where SQLite silently stored it.
-- **Inbound webhook ingestion refuses an unstorable dedupe key or
-  owner** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A `DedupeKeyFunc` or `Owner` callback result holding
-  a NUL or invalid UTF-8 is a 400 before anything persists, instead of
-  a Postgres 500 on the first store write (SQLite stored it silently).
-- **BREAKING: a semantic store's `ChunkIDsForDoc` returns an error,
-  and `PgVectorStore` indexes its keyword search**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), [semantic search](framework/docs/content/semantic-search.md)).
-  A custom `battery/semantic` store used with `Options.Keyword` now
-  implements `ChunkIDsForDoc(docID) ([]string, error)`: a database error
-  used to read as an empty list, so removing a document left its keyword
-  entries behind. A failed listing now refuses the replacement or
-  removal. `PgVectorStore` creates the GIN index for the keyword leg,
-  on existing tables too at their next `EnsureSchema`, and keeps its
-  index names distinct at PostgreSQL's 63-byte identifier limit.
-- **An app spec `stat_card` filter is refused when a column cannot hold
-  its value** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [app spec](framework/docs/content/app-spec.md)). `source.filter` is a
-  predicate entityui parses on every render, so `featured=yes` on a bool
-  built a card that drew "—" forever, and an enum value outside the
-  field's `values:` counted nothing. The load now checks the value in
-  every comparison with the `entity_list` pin's type and enum rules.
-- **A generated app checks its stat cards at boot**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [app spec](framework/docs/content/app-spec.md)). A `stat_card` the
-  spec load passed but that could never compute, such as a filter
-  naming a column the entity lacks, built an app whose card drew "—"
-  forever with no error. Each generated screen's mount now runs
-  `entityui.CheckStat` for every sourced card it renders and panics
-  naming the screen and the card, as `battery/admin` already does for
-  its metrics. The spec load runs the same rule, the new
-  `entityui.CheckStatFields`, over the fields the generated entity
-  registers: the spec's fields plus the `id`, `created_at`, `updated_at`
-  and `deleted_at` columns `entity.Define` adds. So a card the load
-  passes also passes the boot check. A filter naming a column the
-  entity lacks, or a camel spelling such as `dueOn` for `due_on` (no
-  generated field has a wire alias), is refused at load, naming the card
-  and the parse error; a filter on `created_at` loads and boots. A count
-  card given a `source.field` or a `format`, and a sum whose `format` is
-  not `money`, are refused too: the card ignored them and drew a plain
-  number. `CheckStat` also refuses an `=`, `!=` or `in` comparison whose
-  value is not one of an enum field's values, which the parse let
-  through and which counted nothing.
-- **A generated app checks its charts at boot**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [app spec](framework/docs/content/app-spec.md)). A `bar_chart`,
-  `pie_chart` or `line_chart` grouped on a column the entity lacks, or
-  on one the database cannot group, drew an empty chart with no error.
-  The new `entityui.CheckChart(entity, groupBy)` reports why
-  `GroupBars`, `GroupSlices` and `LineChart` could never draw one, and
-  each generated screen's mount runs it for every sourced chart and
-  panics naming the screen and the chart. The spec load runs the same
-  rule, `entityui.CheckChartFields`, over the generated entity's fields,
-  so it refuses a `group_by` on a `json` field, a many-to-many relation
-  or a hidden column `entity.Define` adds (`deleted_at`). It also
-  refuses a chart or `stat_card` source `entity` written as a route
-  (`/customers`), which the boot checks read as an unknown entity.
-- **Meridian checks its hand-written stats and charts at boot**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  Overview screen, the admin Revenue page and the customer Billing panel
-  draw their figures with their own `StatValue`, `CountInt` and
-  `GroupBars` calls, which no generated check reached. Each surface now
-  keeps its figures in one list that its render reads, and the boot runs
-  `entityui.CheckStat` and `CheckChart` over it: a figure that could
-  never compute stops the start, naming the surface and the figure. A
-  Revenue heatmap cell keyed by a payment status the `payments.status`
-  enum does not list stops it too.
-- **The generated typed repositories chain `WithJSONCase` after
-  `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
-  the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
-  assigning the `JSONCase` field. Assigning still works (crud's field
-  cache rekeys when the case differs); the template now reads the way
-  the framework does. Meridian and ecommerce are regenerated.
-- **`CallWithID` no longer reports an id for a request that cannot be
-  sent** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  was #656). `moduleproto.Peer` marshaled the params after `onID`
-  reported the frame id, so a call whose params failed to marshal armed
-  the supervisor's `module.cancel` for a frame that never crossed the
-  wire. Params now marshal first; `onID` fires only once the request is
-  sendable.
-- **An A2A skill always serializes its required keys**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #659). The A2A AgentSkill schema marks `description` and `tags`
-  required, but `uihost.AgentSkill` carried `omitempty` on both, so a
-  skill with no description and no tags serialized without the keys and
-  failed schema validation downstream. Both keys now always serialize —
-  an unset description as `""`, an unset tags list as `[]`, never
-  `null`.
-- **Navigation fetches bypass the page cache**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #657). `cache.CacheMiddleware`'s key ignored `X-Gofastr-Navigate`,
-  so a cookieless client-side navigation could be answered with the
-  cached full page, and a navigation's partial could be stored under
-  the full page's key and replayed to the next plain GET. Navigation
-  fetches now pass through uncached with `X-Cache: BYPASS`, like Range
-  requests: a navigation is a user action expecting current state.
-- **`Retry-After` never reads 0 while the caller is still limited**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #657). The generic rate-limit middleware and the auth battery's
-  limiters (login, magic-link send, forgot-password, password reset,
-  2FA, password change) formatted the header with `%.0f`, which rounds
-  to nearest, so a block with under half a second left answered
-  `Retry-After: 0` — telling a still-blocked client to retry at once.
-  All sites now format through the new exported
-  `ratelimit.RetryAfterSeconds` (rounds up, floors at 1 while a wait
-  remains).
-- **A panicking `hook.SetObserver` / `event.SetObserver` callback no
-  longer takes down the operation it observes**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
-  #657). The observers ran inline on the hook-firing and event-emission
-  paths with no recover, so a fault in coverage tooling tore down the
-  request goroutine. Both dispatch sites now recover and log the fault;
-  the hooks and subscribers still run.
-- **An endpoint's MCP twin accepts what its route accepts, catch-all
-  included** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  R8-HD-03). Where the framework registers an endpoint's MCP twin it
-  now puts the route pattern on the tool's call context, and a
-  `path`-tagged parameter is sanitized with the route's own catch-all
-  flag: a `/files/{path...}` route's tool takes a slash-bearing value.
-  `..` segments, empty segments and control bytes stay refused, and a
-  tool registered by hand (no route) keeps every path parameter strict.
-  New: `router.IsCatchAllParam`, `handler.WithRoutePattern`.
-- **`?fields=` projections keep required keys**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  The projection parser (`crud.projectFromRequestQ`) now includes every
-  required column beside the primary key, on list, cursor and get routes
-  alike. The OpenAPI response schema marks those keys required, so a
-  projected response that dropped them failed the spec it was documented
-  by; the `?fields=` description says so now. Generated typed clients keep
-  binding required fields to non-optional types on every response.
-- **`/openapi.json` types the list envelopes and documents every list
-  parameter** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  Each entity's list route now answers in its own
-  `<Entity>ListResponse`/`<Entity>CursorPage` envelopes whose `data`
-  items `$ref` the entity's schema, so a typed client generated from the
-  spec reads List() as typed rows, not untyped objects; the shared
-  untyped envelopes are gone. `?offset=`, `?per_page=` and `?stream=`
-  are documented with the semantics the route applies (the offset
-  ceiling, limit-wins-over-per_page, stream's refusals), beside the
-  `?limit=` description that already names the entity's real cap.
-- **BREAKING: llm.md and the MCP tools close their doc gaps**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Enum
-  values in llm.md's field table escape the cell pipe (`a\|b`), a long
-  default truncates on a rune boundary, the multi-tenancy note names the
-  configured tenant column (wire key), and the list parameters document
-  `per_page` and `offset`. The MCP record-key arguments are typed from
-  the key column — an integer key offers an integer `id` prop — and the
-  list tool forwards and documents `per_page` and `offset`. A client that
-  sent an integer key as a string (`{"id": "42"}`) is now refused with
-  invalid params; it sends the number. A key past 1e6 builds its route
-  from its digits, not `1.234567e+06`.
-- **BREAKING: the SDK schema hash covers `JSONCase`**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `sdk.SchemaHash(named, jsonCase)` takes the case the artifacts speak ("camelCase" for
-  the generated clients, the app's own case in sdkdocs via
-  `Config.SnakeCase`), so an app served snake_case no longer reports
-  "in sync" for camel artifacts. Every existing manifest's digest changes
-  with this; re-run `gofastr generate sdk` to re-stamp it.
-- **The upgrade registry's config `value:` matching is documented as
-  parsed** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  The scanner matches the scalar's parsed value, never its source
-  spelling (`theme: 2.0` matches `^2$`), which
-  [upgrading](framework/docs/content/upgrading.md) now spells out per
-  kind; a note written against the source spelling used to report a
-  false clean.
-- **`gofastr agents skill` refuses to overwrite a hand-written
-  `SKILL.md`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  The generated skill carries a header in its frontmatter; an existing
-  file without it is refused unless `--force` is passed, the rule the
-  `.agents/` detail files already follow. `gofastr init --reinit --force`
-  overrides it the same way.
-- **Forms draw no input for the owner or tenant column**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
-  visible `Scope.OwnerField` (or a `MultiTenant` entity's tenant column)
-  drew as an editable input on the create and record forms, though crud
-  stamps it from the caller. The forms now
-  leave it out, and inline editors, bulk set and the picker treat it as
-  locked.
-- **A list of an entity with no fields of its own draws**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A join
-  or marker table with only its key panicked the admin list and
-  `entityui` tables: no column was left to title the phone layout. Such
-  a list now shows its key columns, each row linked to its record.
-- **A field kind's markup no longer prints as tags in a text slot**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A row
-  link's label and a card's title, subtitle and meta line took a kind's
-  `Cell` HTML as text, so a kind that drew `<strong>` showed the tags.
-  The new `entityui.Kind.Text` fills those slots; a kind without one
-  prints the field type's text. The built-in `money` kind has a `Text`,
-  so a money title reads `$1,234.50`.
-- **A list row with an empty title still draws**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An empty
-  value in a table's link column reached `ui.Link` as empty text, which
-  panicked and replaced the whole list with its failure markup. The link
-  now reads the record's id, as a card title already did.
-- **Page-scoped widgets load after a link with a query string**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  catalog re-fetch after a client-side navigation sent the whole URL as
-  `?page=`, so a link to `/b?tab=2` asked for `/b?tab=2` and a widget
-  scoped with `.Pages("/b")` was left out of the catalog. The re-fetch
-  now sends the path alone.
-- **A prefetched page ends with its session**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [layouts](framework/docs/content/layouts.md)). A page prefetched in
-  the last 30 seconds of a session still painted after the session
-  expired, with no server contact, and its islands, actions and SSE
-  then answered 401 until the next network navigation. A prefetch
-  answer now carries `X-Gofastr-Session-Expires-In`, the seconds the
-  session has left, and the preload cache drops the entry at that point
-  when it comes before the TTL, so the click fetches the page and gets a
-  fresh session.
-- **A page carries one `<meta name="description">`**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [SEO](framework/docs/content/seo.md)). `WithDescription` added its tag
-  to every page, so a screen with its own description shipped two and
-  left the choice between them to each crawler. The site description
-  (a description tag in `WithHeadHTML`, else the `WithDescription`
-  text) is now the fallback, and a screen description or a description
-  tag in `SEOScreen.HeadHTML` replaces it; a screen with both keeps the
-  typed one. It rides the page metadata a client navigation swaps, so
-  leaving a described page restores the site description instead of
-  keeping the last page's. Head HTML is read with the HTML tokenizer,
-  so a tag inside a comment does not count and a screen head holding
-  several keeps the first.
-- **A deferred `NOT NULL` is tightened by a later migration** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
-  required field with no default used to be added nullable (so existing
-  rows would not violate the constraint) while the snapshot recorded it
-  as `NOT NULL`, so the tightening was never generated and a later
-  SQLite table rebuild copied NULL rows into a `NOT NULL` column with
-  no change ever naming it. The snapshot now records the column as it
-  was applied, so the next `migrate generate` emits the tightening
-  (`ALTER COLUMN … SET NOT NULL` on Postgres, a named constraint change
-  on the SQLite rebuild). Backfill the rows first: the tightening fails
-  while any row still holds NULL.
-- **`gofastr migrate generate` warns when its output drops tables or columns** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
-  generated Up section running any `DROP TABLE` or `DROP COLUMN` now
-  prints a warning naming each one. An undeclared rename generates as a
-  drop plus a create and loses every row; the warning says so and points
-  at the entity's `renames:` declaration. Comments do not hide real drops,
-  and quoted routine bodies do not produce false warnings. A SQLite
-  rebuild may copy rows before dropping the old table; review that copy.
-- **A failed rollback of an abandoned webhook claim is logged** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `claimSqlite` deferred the `ROLLBACK` for a claim it could not use and
-  dropped the error, so a stuck row that could not hand its claim back
-  left no trace. The rollback error now logs a warning, the way the
-  queue and outbox paths already do.
-- **The webhook manager raises a short `LeasePeriod` only for a leased
-  store** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The raise to twice the HTTP client timeout exists for a
-  shared table a second manager may also claim; a store that is not a
-  `LeasedStore` has no claim path that reads the lease, so the raise
-  and its log line are skipped there and single-instance deployments
-  no longer log an adjustment to a lease they never use.
-- **The log battery surfaces historical read errors and owns only its
-  own backups** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). `log_filter` with `historical=true` no longer swallows
-  a failed file read: an unreadable or symlinked log path returns the
-  error to the tool caller instead of an empty history. The file sink's
-  rotation parses backup indexes exactly: `server.log.01`, a
-  zero-padded index another tool (logrotate) owns, is no longer read as
-  `.1` or moved over another backup. Historical lines over 1 MiB are
-  skipped even when the last line has no newline.
-- **A late cron tick fires the fixed-time jobs it slept through** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A tick that
-  arrived minutes late (the process slept, a GC pause, a slow leader
-  acquire) ran only its own minute, so a fixed-time job whose minute
-  fell inside the gap never fired, most visibly across a DST change
-  where the gap swallows the repeated or skipped hour. The tick loop
-  now walks every missed minute boundary, oldest first, capped at two
-  hours, and replays only fixed-time jobs (minute and hour fields both
-  name values). Every other job is judged once, at the current minute,
-  as vixie cron does after a clock jump: a 90-minute sleep runs
-  `* * * * *` once, not 90 times. Under leader election each walked
-  minute is claimed in order, so a replica that kept ticking refuses
-  the late claims and nothing fires twice. The current boundary is
-  included at an exact one-minute delay, and cancellation or stop
-  interrupts the catch-up walk.
-- **BREAKING: the idempotency in-flight TTL is sized and checked against the
-  enforced request deadline** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The optional `middleware.InFlightTTLStore`
-  interface (`InFlightTTL() time.Duration`, separate from
-  `IdempotencyStore`, so custom stores still compile) is implemented by
-  both built-in stores; the memory store gains
-  `WithMemoryIdempotencyInFlightTTL`. The budget is the deadline the
-  default chain actually enforces: `RequestTimeout`, or its 30s
-  default when unset. The App's default store sizes its in-flight TTL
-  from that budget plus 10s of slack, and `Start` fails naming both
-  values when a store reports a TTL at or below the budget (the
-  `WriteTimeout`-vs-`RequestTimeout` shape). A store without the
-  method, or `DisableRequestTimeout`, logs a startup warning.
-  Combining both also warns. Reusing one `WithIdempotency` option
-  creates independent default stores sized for their respective Apps.
-- **BREAKING: an explicit `WriteTimeout` is refused below the enforced request
-  deadline, not just a configured `RequestTimeout`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The deadline the
-  default chain's timeout middleware actually enforces (the configured
-  `RequestTimeout`, or its 30s default when unset) now pairs with the
-  server's write cut: a `WriteTimeout` below it fails `Start`, because
-  a response the middleware finishes after the write cut (its own 503
-  included) is never delivered. Set `WriteTimeout` above the deadline,
-  set it to 0, or configure `RequestTimeout` explicitly.
-- **Queue, outbox and webhook settles retry SQLite contention** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). On a contended
-  SQLite file, a nack or ack whose write met the database lock after
-  `busy_timeout` failed and left the job `claimed` until its lease
-  expired. The settle writes in `DBQueue` (`Ack`, `Nack`, the gate
-  hand-back), outbox delivery settles and claim refunds, and webhook
-  delivery settles and releases retry `SQLITE_BUSY` or `SQLITE_LOCKED`
-  by result code until they land or the caller's deadline passes (ten
-  seconds on a context with none), so workers claiming around a settle
-  cannot wear it out. The first call keeps the caller's context,
-  including on Postgres. Every settle stays fenced on
-  its claim, so a late retry that lost the race changes nothing.
-- **More unstorable text is refused before it reaches SQL.** A2A task,
-  push-config and context IDs and API-token names and owner IDs that hold
-  a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
-  a Postgres 500 (A2A answers invalid-params, not internal error). An
-  A2A request body that is not valid UTF-8 gets a parse error, so a
-  malformed byte is never stored as U+FFFD.
-  A `Relation`, `Image` or `File` value with a NUL or invalid UTF-8 is
-  refused with `invalid_text`, as `String` and `Text` are, so SQLite no
-  longer stores what Postgres refuses (#669).
-  API-token names are limited to 256 bytes. `webhook.Manager.Subscribe`
-  and `Unsubscribe` return an error for such a URL, secret or ID before
-  the store sees it. Audit text fields replace invalid UTF-8, so a state override
-  with such a reason is kept instead of rolled back.
-- **The HTTP cache middleware follows the origin's freshness.** A response
-  is kept no longer than its `s-maxage` (preferred) or `max-age` allows
-  after `Age` and `Date`, and one already stale, with a duplicate or
-  malformed directive, or with only `Expires` is not stored. There is no
-  revalidation, so cache.md no longer calls the middleware RFC
-  9111-compliant. Non-GET methods and Range requests now carry
-  `X-Cache: BYPASS`.
-- **`core/static` sends `Allow: GET, HEAD` with its 405.**
-- **Relay prefixes and mount paths must be literal.** `{`, `}` and `$` are
-  refused at construction; a brace used to register a ServeMux wildcard
-  that proxied far more paths than the one declared.
-- **MCP and dev tools.** `app_module_enable` and `app_module_disable`
-  (and any `Modules().Enable`/`Disable` call) write an audit row with the
-  actor, as the admin Modules page does. `app_readiness` answers
-  `ready: false`, reason `draining`, during the shutdown grace.
-  `GOFASTR_DEV_MCP_EXPOSE=1` now also accepts a remote `Host`, so the
-  documented network opt-in works. An entity whose tool names match a
-  built-in tool (an entity named `contracts`) no longer fails `gofastr
-  dev`: the built-in is skipped with a warning.
-- **Concurrent writers keep their work.** Two `gofastr` commands updating
-  `gofastr.settings.yml` at once no longer drop each other's section: the
-  update holds a lock in `.gofastr/`. `gofastr verify --baseline-write`
-  replaces the baseline atomically. Two replicas running `migrate up
-  --create-db` against a missing database no longer fail the one that
-  loses the race.
-- **Local storage keeps a re-pinned root open until `Close`**, in both
-  `core/upload` and `battery/storage`, so an operation already running
-  on the old root is not cut off.
-- **A process module's stderr reaches the log.** When a module crashes
-  or fails to start, the supervisor logs the tail of its stderr,
-  scrubbed of control bytes.
-- **An ACP client error that carries JSON-RPC's `data` member settles the
-  pending permission request** instead of failing the decode and hanging
-  the prompt turn.
-- **Headless components.** A sidebar toggle with only one of its two
-  labels set falls back to the nav label after a client-side toggle, not
-  the stale name. Arrow keys from a tab that is disabled and selected
-  move to its neighbour, not the first enabled tab. The leave guard's
-  default question is a registered phrase, so it is translated.
-- **The setup wizard keeps what you typed** when a step is refused;
-  secrets are still never echoed.
-- **`EmailChannel` sends attachments.** A rendered `Extra["attachments"]`
-  holding `[]email.Attachment` goes out with the mail, and any other type
-  refuses the send with `notify.ErrInvalidAttachments`.
-- **Deprecated language codes reach the modern catalog.** An `iw` reader
-  gets the `he` catalog (and `in` gets `id`) when no catalog is named for
-  the old code.
-- **The desktop updater retries a failed `update_available`.** The
-  version is marked notified only after the event is delivered.
-- **Docs corrections**: runtime-contract.md and core-ui/ARCHITECTURE.md
-  give the rail and TOC heading default with `h4[id]`, the popover's
-  real fallback order, the step wizard's attributes instead of an unused
-  `data-wizard-steps`, the RPC trigger on non-form carriers, and the
-  `data-cui-backdrop` shape; every headless hook the JS reads now has a
-  row, enforced by a test. first-run.md says when a crash mid-setup
-  re-enters setup. A test comment in core/mcp no longer describes the
-  removed widget-client script.
-- **`TestDocExamplesCompile` no longer needs the network**
-  ([#684](https://github.com/DonaldMurillo/gofastr/issues/684)). The
-  snippet module pins the OpenTelemetry exporter it imports and carries
-  its go.sum (`framework/docs/testdata/snippet-go.sum`), so the checksum
-  database is never asked; a sum the run had to add fails the test and
-  names the line.
-- **Client phrase interpolation matches Go's placeholder-name grammar**,
-  including surrounding whitespace and hyphenated names. Catalog validation
-  still requires matching spellings for headless component compatibility.
-- **String action messages survive toast fallback**, and global signal
-  bindings repaint their retained values after navigation, cached Back/Forward
-  and envelope fills instead of showing stale server markup. The core runtime
-  grows 203 bytes at gzip level 6; budget increases are itemized and gated.
-  Envelope globals first introduced under prototype names such as `toString`
-  and `valueOf` now receive their own seeded slots, matching core navigation.
-- **Clean server-error WebSocket closes expose `error` and retry**, while
-  unchanged structured widget polls skip redundant binding writes and update
-  hooks. See [reactivity](framework/docs/content/reactivity.md).
-- **Unmanaged SQLite timestamp cursors preserve stored spellings.** Paging
-  now follows the same text ordering as the source table, including legacy
-  timestamp layouts. Base CRUD timestamp comparisons refuse noncanonical
-  columns with 500 `timestamp_layout` rather than silently selecting wrong
-  rows. Normalize legacy data or expose a canonical view before filtering;
-  this does not extend to DSL/typed-query/read-scope or nested-relation
-  comparisons. See [entity declarations](framework/docs/content/entity-declarations.md).
-- **SQLite Decimal admission follows integer storage and rejects underflow.**
-  Whole-digit literals within int64 now pass for INTEGER/NUMERIC affinity,
-  including both bounds. REAL/FLOAT/DOUBLE columns retain the float precision
-  checks even for integer literals, refusing writes that would lose digits.
-  Fractional/exponent spellings retain the 15-significant-digit limit;
-  nonzero magnitudes below the conservative `1e-307` floor now return
-  `decimal_underflow` instead of being rounded into subnormal values or zero.
-  Values such as `123456789012345678.0` are refused as
-  `decimal_significant_digits`. TEXT-backed Decimal and Postgres are unchanged.
-- **Required single-value enums render working forms**, using a select
-  rather than an invalid segmented control. Widgets named `toString` or
-  `valueOf` now mount normally while genuine duplicate mounts stay blocked.
-- **SDK response shapes include injected timestamps**, without adding
-  read-only fields to input/patch shapes. TypeScript single-key relations
-  use the selected target's key type, including `number | string` for
-  integer IDs. `pack` preserves nested table rows as lists so packed specs
-  validate and regenerate. See [SDKs](framework/docs/content/sdk.md).
-- **Cache Vary variants no longer overwrite each other.** Middleware keeps
-  separate variant entries and invalidates their index on unsafe requests.
-  Invalidation remains non-atomic with an in-flight GET store; see
-  [cache limits](framework/docs/content/cache.md).
-- **Derived image dimensions retain the requested side**, including very
-  wide placeholder banners. Log metrics and their HTTP handler return zero
-  counters before initialization rather than panicking.
-- **Locale NaN symbols, standard currency digits and week starts use the
-  pinned CLDR 47 generator.** Nine recognized currency codes gain the proper
-  two-digit precision; CN and AE now default to Monday. Unknown-currency
-  fallback and x/text-sourced currency symbols are unchanged. See
-  [locale formatting](framework/docs/content/i18n.md).
-- **A versioned `SortableList` saves move after move.** The list kept the
-  token it was rendered with, so the second move sent a stale version and
-  conflicted, and a conflict refresh, which returns rows only, could not
-  renew it. A move handler now calls `ui.RenewSortableVersion(w, version)`
-  (or `headless.RenewSortableVersion`) on the 2xx that accepts a move and
-  on the conflict endpoint's response; the list takes the token from the
-  `X-Gofastr-Sortable-Version` header. Linked columns share the board's
-  token: a saved move renews every column still holding the token it sent.
-  A handler that does not call it behaves as before. See
-  [Optimistic UI, recipe 5](framework/docs/content/optimistic-ui.md).
-- **Tab closes a menu whose rows are all disabled.** With no row to
-  focus, Enter left focus on the native summary, and Tab or Shift+Tab
-  from there moved focus on with the menu still open. The summary's Tab
-  now closes the chain, as a caller-owned trigger's already did.
-- **`ui.SegmentedControl` draws its pill on the checked segment for any
-  number of options** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  R8-NC8-02). The sheet sized and moved the pill with one rule per
-  option count (2 to 6) and per position, so with seven options and the
-  seventh checked the pill was too wide and sat on the first segment.
-  The checked option is now a CSS anchor scoped to its control, and the
-  pill takes that option's box and slides to the next one, in either
-  direction. A browser without anchor positioning draws the pill on the
-  checked option itself, without the slide. The
-  `--ui-segmented-min-width-2…6` tokens stay; seven or more options size
-  to their content. The `--fui-segmented-dir` variable and the options'
-  `data-position` attribute are gone.
-- **Lightbox chevrons point the way their buttons go in right-to-left**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  toolbar puts Prev on the right in RTL and the arrow keys follow it,
-  but the chevron glyphs kept their left-to-right direction. They now
-  mirror under `:dir(rtl)`.
-- **Tab and Shift+Tab no longer leave a control behind the sticky header
-  or toolbar** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  WCAG 2.4.11). On a phone the browser counted a control behind the
-  bars as in view and did not scroll it. A focused control inside a
-  `StickyHeader` stack or a `Sticky` content row's workspace now takes a
-  scroll margin of `--ui-sticky-top`, the offset those bars publish, so
-  it scrolls out from under them.
-- **The error toast is styled when the connection is down**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The toast
-  stack's sheets, and the row's inside its template, loaded on demand,
-  so the toast that reports a failed request was drawn as bare text
-  exactly when no sheet could be fetched. The host now links those sheets
-  in the page head with the page's own.
-- **Gallery demo forms land back on their demo**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  selection bar posted to its own page, which answers GET only, so it
-  showed the 405 page, and the sign-in, conditional-field and repeater
-  demos posted to a docs-site route the theme editor does not have.
-  Every demo form now posts to `gallery.DemoFormPath`, which reads
-  nothing and answers 303 to the demo's page. A gallery host mounts it
-  with `gallery.MountDemoFormRoute(router, demoPage)`; `demoPage` maps a
-  demo to its page and must return a local path.
-- **A trapped disclosure open before its module loads is contained**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
-  `headless-disclosure` module made the page under an open
-  `Disclosure{Trap: true}` inert only when it heard the disclosure
-  open, so one rendered `Open`, or a phone menu tapped open before the
-  module arrived, left the page reachable to a screen reader. The module
-  now arms the trap for one it finds open on arrival. The acme-site
-  phone menu gains a test that Tab walks its links and its close button
-  and that Escape closes it.
-- **A TypedQuery comparison on a legacy-layout timestamp is refused**, as
-  the filter surfaces refuse it. On an Unmanaged SQLite table holding
-  `2026-03-03 10:00:00`, `Find` missed the row and `UpdateAll` touched
-  nothing, with no error.
-- **llm.md table cells keep a linked image and a line break inside a
-  link.** An avatar column read `[\x00a0\x00](/users/7)` with two NUL
-  bytes, and `<a>one<br>two</a>` read `[onetwo]`.
-- **A soft navigation keeps the next page's CSRF token when a head script
-  holds a literal `<style>` or `<body`**
-  ([runtime contract](framework/docs/content/runtime-contract.md)). The
-  head-style strip read script text as markup and deleted the metas in
-  between. It now walks the head span by span. The core runtime's gzip
-  budget moves from 19467 to 19588 bytes.
-- **The static boot pass's `gofastr:widgets-synced` names the page it ran
-  for**, not the page a navigation reached while its fetch was out.
-- **A recovered boot panic names the file that holds its stack**
-  ([log](framework/docs/content/log.md)). battery/log's default sink
-  writes to a file under the OS state dir, and the error said only "its
-  stack is logged".
-- **`gofastr pack` round-trips the union spec byte for byte.** It dropped
-  node blocks with their actions and line charts, dropped entity-form
-  fields with multi-word names, and lost the app home the login links
-  point at. Rendering one spec twice also expanded its seed recipe twice.
-  `TestPackUnionRegeneratesSameFiles` holds the round trip.
-- **`generate app --add` keys the added screens' phrases under the
-  project's app name**, not the fallback `app.` namespace.
-- **Every generated screen has an `<h1>`**: a body that draws none starts
-  with a `ui.PageHeader` holding the screen title. The generated e2e test
-  checks `GET /` only when a screen sits there.
-- **Meridian** stamps `issued_on` when an invoice is issued, and its
-  `/es/` pages translate the skip link and the 404, 405, 500 and offline
-  pages.
-- **The ecommerce example** sums order totals exactly or refuses them,
-  takes orders only for active products, refuses item and charge changes
-  on a shipped, delivered, cancelled or refunded order, no longer demands
-  the subtotal and total it derives on create, and copies a line's name
-  from its product.
-- **The `keytrim` analyzer reads `r.PathValue` and identity headers** as
-  request input, so a trimmed path or `X-Tenant-Id` value fires.
-- **The `recovercallback` analyzer reads atomic callback slots** loaded
-  directly, through a `Load` method value, or into an existing local. It
-  credits a deferred guard from another package only when the guard's
-  first statement always recovers and it never panics again, so a
-  helper that recovers after an early return, on the right of `&&`, or
-  re-panics no longer silences it.
-- **Docs:** crud lists default to 20 rows and the pagination parse
-  helpers to 25 ([cursor pagination](framework/docs/content/cursor-pagination.md));
-  `BoolDefault` answers its fallback when the flag store errors
-  ([feature flags](framework/docs/content/feature-flags.md)); the timeout
-  middleware answers 504 ([deploy](framework/docs/content/deploy.md));
-  multipart field names fold like JSON keys and the record stores the
-  storage key, not a URL ([uploads](framework/docs/content/uploads.md));
-  the locale tag bound applies after lower-casing and trimming
-  ([i18n](framework/docs/content/i18n.md)); and the legacy-timestamp
-  check reads the whole column on every filtered request.
-- **A list query pair that does not decode answers 400.** `url.ParseQuery`
-  drops a pair with a malformed percent escape or a `;` separator, so
-  `?cursor=%ZZ` restarted a walk at page 1 and `?name=%ZZ` read as no
-  filter, both with a 200. The crud list and the entity CSV export read
-  their query through the new `filter.ParseQueryStrict` and answer
-  `query_undecodable`; an entityui list screen shows its "Filter not
-  applied" warning when the pair is one of its own params, so a keyed
-  list does not warn for its neighbour's.
-- **A `?where=` leaf with a null or missing value answers 400.**
-  `{"field":"title","value":null}` compiled to `title = ''` on a text
-  column; it and a null `in` entry now answer
-  `filter.where_needs_value`. An explicit `""` still matches the empty
-  string.
-- **The CSV export refuses `?q=` on an entity with no search fields**, as
-  the REST list does, instead of exporting every row.
-- **llm.md text cannot turn control-byte entities into markup**, and a
-  code block in a table cell keeps its row whole. Inline code keeps the
-  spaces at its ends, and a code block inside a paragraph that also
-  holds an entity stays a code block.
-- **Markdown:** a leading `---` with prose under it is body, not
-  frontmatter, and so is a block holding any line that is not a
-  `key: value` pair with a key, a `#` comment or an indented or `- item`
-  continuation ([core packages](framework/docs/content/core-packages.md)).
-  A ten-digit ordinal is paragraph text, not a list.
-- **A long Postgres isolation database name is cut on a rune boundary**,
-  and an isolation id longer than 63 bytes no longer panics: its suffix
-  becomes a hash of the id. A shorter id keeps its database name.
-- **App spec validation** refuses a callout with neither title nor text,
-  a pricing plan with `cta_text` and no safe `cta_href`, and a number in
-  any catalog block's text prop, a pricing plan's text props or its
-  `features` entries (each used to generate a screen that
-  answered 500 or drew nothing) ([app spec](framework/docs/content/app-spec.md)).
-- **`generate app --add` judges a fragment's screen routes by the
-  project's settings**: admin path, PWA files, `llm.md`, the auth `me`
-  route, the entity API prefix and locale prefixes. The signed-out
-  screen warning reads the project's auth too, so a fragment joining a
-  project with auth on is not told nobody can sign in.
-- **An explicit `base_url: http://localhost:8080` is kept.** The
-  generator spelled it and an unset `base_url` as the same literal, so
-  `gofastr pack` dropped it and `generate app --add` read the project as
-  having no base URL, refusing an absolute `login_form` action the whole
-  spec accepts. An unset `base_url` now falls back through a
-  `devBaseURL` constant in `main.go`
-  ([app spec](framework/docs/content/app-spec.md)); an app generated
-  before this change packs its fallback as `base_url:
-  http://localhost:8080` until it is regenerated.
-- **`gofastr pack` keeps** callout and divider blocks, a stat_grid's
-  layout and a static stat value, a hero's image and lone secondary CTA,
-  a card holding a chart, and `type: section` and bare-tag text blocks.
-- **Every 4xx and 5xx status Go names has a translatable phrase**
-  ([i18n](framework/docs/content/i18n.md)); 402, 408, 423, 451, 507 and
-  the rest fell back to English.
-- **App icons from a phone photo come out upright**: uihost applies the
-  EXIF orientation before cropping ([SEO](framework/docs/content/seo.md)).
-- **A dark code-color token takes the same check as its light twin**, so
-  a theme with `DarkCode` set to a value like `inherit` round-trips
-  through `ApplyTokens`.
-- **Owned style sheets decode escaped custom-property names** before the
-  token checks, so `--\63 olor-primary` is refused as a theme token
-  redeclaration and `var(--\63 olor-primary)` is not reported unknown.
-  The same goes for an escaped `@property` name and for standard
-  property names, read decoded and case folded: `\61 nimation` and
-  `ANIMATION` still need a reduced-motion block, and `\70 adding: 16px`
-  is still the `--spacing-lg` value.
-- **A float store slice stamps the text the runtime paints**: SSR writes
-  `1e-7` and `1.23e+23` as JavaScript's `String` does, not fixed notation,
-  and negative zero as `0`.
-- **`gofastr release --pkg=main.go` asks for `--name`** instead of naming
-  the release `command-line-arguments`.
-- **`gofastr docs --grep`, `audit a11y --pages/--url` and `upgrade`
-  refuse a flag as a flag's value** (write `--grep=--serve` to search for
-  one). `audit a11y` and `upgrade` also refuse an empty value
-  (`--to ""`, `--url=`) where it fell back to the default, and name the
-  first argument error: `--url --bogus` reports the missing URL.
-- **Docs:** grouped entities mount at the group prefix
-  ([API versioning](framework/docs/content/api-versioning.md)); an unknown
-  actor stores NULL in `actor_id`, not `-`
-  ([audit log](framework/docs/content/audit-log.md)); the live dashboard
-  loop keeps its own topic set
-  ([live dashboards](framework/docs/content/live-dashboards.md)); BlurHash
-  scales the image itself, so callers do not pre-resize; the
-  `optimistic-ui` events and error line, the core packages with external
-  dependencies, and how `static/` is served.
-- **A create `entity_form` must list every required field**
-  ([app spec](framework/docs/content/app-spec.md)). One that left out a
-  required field with no default validated, and every submit answered
-  400. The real-estate, lms and project-manager examples had four such
-  forms; each now lists its field.
-- **A repeated `?include=` key answers 400 `include_repeated`**
-  ([includes](framework/docs/content/includes.md)); the second key was
-  half-applied.
-- **The CSV export, bulk, list-deleted, saved-views and relation-picker
-  routes refuse as the list route does**: an anonymous caller gets 401,
-  not 403.
-- **A wrong path or method under `/mcp` or on `/openapi.json` answers a
-  JSON problem document** instead of the UI host's HTML page, and opens
-  no guest session.
-- **Record forms carry `enctype="multipart/form-data"`**, so a create
-  form submitted without JavaScript sends a body the CRUD route accepts.
-  An edit form still needs the runtime: its native POST reaches a route
-  that serves PUT and PATCH
-  ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
-- **Every CRUD read refuses a repeated single-value control** with 400
-  `query_key_repeated`: `cursor`, `direction`, `fields`, `limit`,
-  `offset`, `page`, `per_page`, `q`, `stream`, `trashed` and `where`, on
-  list (offset, cursor and stream pages), direct streaming and read-one.
-  The later values were never validated or applied, and
-  `?trashed=true&trashed=false` read `true`. A queryable column that
-  shares a control's name gets the same refusal. `sort` may still repeat
-  (16 clauses at most on an offset list), `include` keeps `include_repeated`, and a `q` the
-  host owns through `AllowedFilterParams` may repeat when the entity has
-  no `SearchFields` and no visible column whose name or wire name is `q`.
-  Each read now parses its query once, strictly; the cursor page used to
-  re-parse it up to eight times, leniently. The exported
-  `CrudHandler.ApplySoftDeleteFilter` and `ApplySoftDeleteFilterCount`
-  fail closed: an undecodable query or a repeated `trashed` keeps
-  `deleted_at IS NULL`. `filter.ListControlParams` lists the reserved
-  keys. **BREAKING** for a client that sent one twice.
-- **A CRUD read-one refuses a query pair that does not decode** with
-  400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
-  returned the full row and `?trashed=true%ZZ` hid a trashed row.
-  **BREAKING** for a client that sent unencoded `;` or `%`.
-- **The admin Audit, Jobs and search pages show "Filter not applied"**
-  when a narrowing query pair does not decode, instead of listing every
-  row.
-- **The app spec refuses an entity or auth block under a node block**
-  (`type: div`, `header`, `article`, …), and **an `entity_form`
-  `fields:` entry the form cannot draw**: an unknown, hidden or
-  repeated name, or a read-only, auto-generated or server-filled field
-  on a create form. Both loaded before and drew nothing.
-- **`gofastr new route` refuses a `--handler` that is not a Go
-  identifier or selector**, and prints a hint to wrap a plain func in
-  `http.HandlerFunc`. `new route` and `new handler` refuse a `--method`
-  that is not an HTTP token.
-- **`gofastr build` names remedies it accepts** when it refuses a
-  settings file's command extension; it told you to pass `--config`,
-  which build does not take.
-- **The docpage pager's label and Previous/Next words translate**
-  through a new `PagerConfig.Ctx`.
-- **The relay never asks upstream for gzip**, so a client that sent no
-  `Accept-Encoding` gets the vendor's bytes as sent
-  ([relay](framework/docs/content/relay.md)).
-- **A plain cron leader lease that errors mid catch-up asks again at
-  the next minute**; one store error dropped the owed fixed-time jobs
-  for good.
-- **A panicking access observer no longer breaks `access.Can`** or the
-  router's serve hook; both recover, as hook and event do.
-- **`openapi.GatedHandler` applies the spec's `RequestView`**, so a
-  caller the predicate admits sees only the entities its session may
-  read. A predicate that admits callers with no session now hands them
-  a spec without the session-gated entities.
-- **`urlprefix.Middleware` rewrites an HTML body whose handler wrote
-  the status before any Content-Type**.
-- **`gofastr verify` reads the semantic-coverage manifest from the
-  go.work root**, where a workspace's tests write it.
-- **The 2FA boot refusal and the scaling guide spell the store's real
-  constructor**, `auth.NewEntityTwoFAStore(db, "auth_twofa",
-  auth.EntityTwoFAStoreConfig{EncryptionKey: key})`.
-- **uinodev1 refuses data-table columns that repeat a key**; the host
-  renderer panicked and the module route answered 500.
-- **Store slices**: a non-scalar slice's SSR stamp matches the
-  runtime's `JSON.stringify` paint (no `<` escapes, `""` for
-  null), and a Computed slice bound through `BindAttr` or `BindHTML`
-  is wired to the runtime.
-- **`html.TextArea` keeps a value's leading newline** through the HTML
-  parser.
-- **noderender**: an option with no `value` submits its text, and the
-  table family renders through the `core-ui/html` builders (`th` gets
-  its scope, `th` and `td` keep their `text`).
-- **repolint gates**: a URL string no longer hides an `Exposure.CRUD`
-  read, a `require (` opener with a comment is read, and every `test`
-  spelling of a `cmd/affected` substitution is flagged.
-- **Docs**: search query terms keep `-` and `_`; backup codes are eight
-  letters and digits; component sheets read the component-option
-  variables; seed references resolve only against one-column keys.
-- **semantic refuses text it cannot store**
-  ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
-  `IndexOwned` and the `/index` route refuse a document whose ID,
-  source, owner or text holds a NUL byte or invalid UTF-8. `Index.Add`
-  also refuses metadata whose JSON Postgres's jsonb cannot hold (an
-  escaped NUL, half a surrogate pair) and a `metadata["kind"]` that is
-  not valid UTF-8 without NUL; other metadata strings are normalized by
-  JSON encoding. A metadata number outside jsonb's numeric range
-  (`1e200000`) gets `*semantic.MetadataNumberRangeError` and 400
-  `document_metadata_number_out_of_range`, and Go metadata JSON cannot
-  encode (NaN) fails with its own error. Go callers get `*semantic.InvalidDocumentTextError`, and the route
-  answers 400 `document_invalid_text` for a NUL sent as `\u0000`, where
-  Postgres answered 500. Raw invalid UTF-8 in the body is still
-  `invalid_json_body`. The
-  memory store refuses the same text. Text a host `Options.Chunker`
-  produces is not re-checked.
-- **A panicking route gate or pre-route hook no longer escapes the
-  router.** A `SetRouteGate` panic is logged and counts as a refusal:
-  404 on the route, and the method is left out of a 405's `Allow`. A
-  `PreRoute` panic is logged and answers a localized 500 without
-  running middleware or the handler. Both used to abort the connection.
-  A CONNECT redirect no longer asks the gate about the bare target path.
-- **`gofastr --json` prints one JSON document on stdout on every
-  path** ([CLI](framework/docs/content/cli.md)). `generate <unknown>
-  --json` and `generate ts --json` printed prose and no document; status
-  lines no longer reach stdout in JSON mode. `generate --watch --json`
-  stays a stream, one document per generation. `--help` with `--json`
-  prints the usage on stderr and no document. Generator reports are
-  compact JSON and keep non-ASCII text as UTF-8.
-- **`gofastr generate entity -h` and `generate screen -h`** generated
-  files named `-h`; every generator answers help before doing work.
-- **`gofastr semantic clear --help` deleted the index**; it prints the
-  usage. `semantic stats` exits 1 when it cannot encode its report,
-  where it printed nothing and exited 0. A `--help` after `--` is text:
-  `semantic query -- --help` searches for it.
-- **A generated app boots with a `display.views` entry that has no
-  `where:`**; the view answers an error naming `extensions.go` until
-  its filter is registered there. Generated apps call
-  `fwApp.EntityUI(withViewStubs(fwApp, appExtensions))` in `app.go`; an app
-  generated earlier makes that edit by hand, since `--add` keeps
-  `app.go`, and copies `view_stubs.go` and the entity's
-  `view_stubs_<entity>_init.go` from a scratch regeneration.
+
+This release carries the bug-hunt rounds since v0.96.0: about 270
+entries across the framework, batteries, CLI and runtime, many holding
+more than one fix. Each bullet names the PRs it came from.
+
+- **The #669 decided items** (#690): one batch. MCP gates and argument
+  schemas, field masks, read hooks on admin writes and audit rows,
+  unstorable text from A2A and webhook callbacks, stat card and chart
+  checks at boot, typed list envelopes in `/openapi.json`, idempotency
+  and `WriteTimeout` sizing, cron catch-up across DST, SQLite lock
+  retries on queue, outbox and webhook settles, and phone, RTL and
+  sticky-header layout fixes.
+- **Round-8 Minors, last layer** (#689) and **reviewed correctness
+  regressions** (#688): HTTP cache freshness and `Vary` variants, relay
+  mount paths, SQLite decimals and legacy timestamp layouts, CLDR 47
+  locale data, `SortableList` versions, and phrase interpolation.
+- **Bug hunts of 2026-11-10** (#694, #699): OAuth token refresh, data
+  export, masked foreign keys, MCP integer references, idempotency,
+  cron, queues, migrations, the app spec, client navigation, JSON forms,
+  markdown, charts, llm.md, and OAuth and setup links opened from
+  another site.
+- **Rounds 9, 10 and 11** (#700, #717, #718): CRUD query refusals
+  (undecodable pairs, null `where` values, repeated controls, `?q=`
+  with no search fields), admin lockouts, the default email check, app
+  spec validation and `gofastr pack`, generated apps, CLI flag parsing
+  and the analyzers.
+- **Twin merges** (#719): `gofastr --json` output, `--help` on the
+  generators, semantic text checks, panicking route gates, and repeated
+  CRUD controls, each now one implementation or one parity test.
+- **Hunt round 12** (#743, with #696 to #698): the queue and
+  scheduler, Postgres migrations, webhooks, the admin, semantic search,
+  MCP, rate limits and rtc, the same-site hop page for a signed-in user
+  arriving from another site, and masked values written back.
+- **Registry sweeps** (#740, #749, #769, #786, #791, #820): bugs
+  found while moving package comments into `primitives/`. The harness
+  and its TUI, webmcp, router `Group` fallbacks, fanout, streams,
+  static export of pipes and device files, UI ids, and audit redaction.
+- **Smaller PRs** (#751, #758, #760, #788, #816, #821) and issue #823:
+  banner and tooltip ids, erasure retries, `gofastr dev` running no git,
+  a handler's invalid status under Recovery answering 500 (it answered
+  200), and not-found, error, 405 and static `404.html` pages carrying no
+  route meta, `host.RenderScreen` at an error status included.
+
+Areas with the most fixes: CRUD query parsing, filters and paging;
+migrations on both dialects; the app spec, the app generator and
+`gofastr pack`; queues, cron, webhooks and the outbox; MCP, A2A and the
+harness; the client runtime, navigation and forms; charts, tables and
+headless components; llm.md and markdown; static export.
+
+#### Breaking fixes
+
+Run `gofastr upgrade` to find the call sites; its v0.97.0 notes carry
+the guidance for each.
+
+- BREAKING: `handler.Bind` refuses duplicate and case-folded JSON keys at every depth (400 `json_duplicate_key` or `json_folded_keys`).
+- BREAKING: a `TwoFactorURL` that is not a same-origin path fails `Init`; set a path such as `/login/2fa`.
+- BREAKING: a `belongs_to` whose foreign key is `no_query` or masked is hidden from includes, nested filters and nested writes.
+- BREAKING: the MCP record tools type a key argument from its column; an integer key takes a JSON number, and `"42"` is refused.
+- BREAKING: `sdk.SchemaHash` takes the JSON case; run `gofastr generate sdk` again to stamp every manifest.
+- BREAKING: a custom `battery/semantic` store used with `Options.Keyword` implements `ChunkIDsForDoc(docID) ([]string, error)`.
+- BREAKING: `Start` fails when an idempotency store's in-flight TTL is at or below the request deadline (`middleware.InFlightTTLStore`).
+- BREAKING: an explicit `WriteTimeout` below the enforced request deadline (30s when `RequestTimeout` is unset) fails `Start`.
+- BREAKING: every CRUD read refuses a repeated single-value control (`cursor`, `limit`, `trashed`, `where` and the rest) with 400 `query_key_repeated`.
+- BREAKING: a CRUD list, read-one or CSV export refuses a query pair that does not decode (`%ZZ`, a `;`) with 400 `filter.query_undecodable` (`query_undecodable` on the CSV export).
+- BREAKING: a repeated `?include=` answers 400 `include_repeated`.
+- BREAKING: a `?where=` leaf with a missing or null value answers 400 `filter.where_needs_value`.
+- BREAKING: the CSV export refuses `?q=` on an entity with no `SearchFields`.
+- BREAKING: the CSV export, bulk, trash, saved-view and relation-picker routes answer 401, not 403, to a caller with no session or tenant, with the CRUD refusal envelope in place of `{"error":"access denied"}`.
+- BREAKING: `battery/semantic` refuses a document whose ID, source, owner or text holds a NUL byte or invalid UTF-8 (400 `document_invalid_text`).
+
+#### Fixes that may need a change in your app
+
+- A guard of your own that redirects to login calls `handler.NoteSessionRefusal(ctx)` first, so a signed-in user arriving from another site lands on the page.
+- Middleware on a `Group` now runs for a wrong-method request to its paths, so a signed-out caller gets the auth 401 where it got 405.
+- MCP entity tools type a reference to an integer key as an integer; send `1`, not `"1"`.
+- A wrapped line under a markdown list item that starts with `+ `, `- ` or `2. ` now reads as a nested list; check your own markdown.
+- An erasure retry stores identities in `gofastr_erase_identities`; a runtime role that cannot create tables needs it made first ([data export](framework/docs/content/data-export.md)).
+- `migrate generate` now writes the deferred `NOT NULL` for a required column; backfill its NULL rows first or the migration fails.
+- A CRUD timestamp filter on an Unmanaged SQLite column in a legacy layout answers 500 `timestamp_layout`, and a `TypedQuery` comparison on one is refused; normalize the data or expose a canonical view.
+- A SQLite Decimal write refuses values below `1e-307` (`decimal_underflow`) and values that lose digits (`decimal_significant_digits`).
+- Rows `tracing.OpenDB` wrote on SQLite with an affected build keep the bad timestamp format; nothing rewrites them.
+- `ExportData` fails on a text cell that is not valid UTF-8 and names the table, row and column; fix the row, then export.
+- A versioned `SortableList` move handler calls `ui.RenewSortableVersion(w, version)` on success and on the conflict response, or the second move conflicts.
+- A gallery host mounts `gallery.MountDemoFormRoute(router, demoPage)`; without it a demo form answers 404.
+- `/openapi.json` list routes answer `<Entity>ListResponse` and `<Entity>CursorPage`; the shared untyped envelopes are gone, so regenerate clients built from the spec.
+- Regenerate the SDK so a generated Local repository hands handlers a non-nil `r.Body`.
+- An app generated earlier changes `app.go` to `fwApp.EntityUI(withViewStubs(fwApp, appExtensions))` and copies the `view_stubs` files from a scratch regeneration.
+- An app spec that loaded before can now be refused at load (an index over a missing column, a create form missing a required field, an entity block under a node block, a number in a text prop); run `gofastr validate`.
+- A generated app panics at mount, naming the screen, for a stat card or chart that can never compute (`entityui.CheckStat`, `CheckChart`).
+- `ui.SegmentedControl` drops the `--fui-segmented-dir` variable and the `data-position` attribute.
+- `EmailChannel` refuses a send whose `Extra["attachments"]` is not `[]email.Attachment` (`notify.ErrInvalidAttachments`).
+- A relay prefix or mount path holding `{`, `}` or `$` is refused at construction.
+- `gofastr agents skill` refuses to overwrite a hand-written `SKILL.md` without `--force`.
+- A server action that names no page, on a static page whose policy or resolver answers not-found, refuses with 404 where it answered 403; the exported `PatternPolicy` returns a 404 Block with `NotFound` for such a route, and `PagePolicy` returns a Block, never a zero Allow, beside its error.
+
+The full per-fix list, with what changed and why, is in
+[CHANGELOG.md at the v0.97.0 roll](https://github.com/DonaldMurillo/gofastr/blob/efae3ba5162fdef4c5993f6cb486c19c40fe994d/CHANGELOG.md#0970---2026-11-19).
+
+### Security
+
+About 35 fixes from the same rounds. MCP gates answer a refused item and
+a refused call with bad arguments exactly as an unknown name, and an
+anonymous caller no longer lists permission-gated entity tools.
+`X-Forwarded-Proto` counts only from a trusted proxy in the well-known
+documents, the agent card, `Link` headers, the framed-asset CSP and
+record copy links. Read hooks and hidden relations now hold for DSL
+includes, nested writes, the needs-attention panel, audit rows of purged
+records and status overrides. Path containment covers Windows alias
+spellings in `core/static`, symlinks in the static export's `ExtraDirs`,
+`verify --fix` through an `os.Root`, and a checked-then-swapped file in
+`App.ImportData`. Desktop update feeds expire and macOS updates check
+the signing identity. An admin cannot remove their own admin role or
+revoke a permission their roles need. The widget catalog lists only
+widgets the caller can reach. Text bound for a terminal goes through one
+scrub, netguard checks both IPv4 addresses inside a Teredo address, and
+a stale single-column UNIQUE no longer tells one account what another
+stored. The head HTML scrub (`WithHeadHTML`, `SEOScreen.HeadHTML`) now reads a
+`<link>`'s real attributes, so text inside another attribute can no
+longer keep a preload link or hide a `javascript:` href, and it strips
+an event handler written right after a closing quote.
+
+#### Breaking security fixes
+
+- BREAKING: Go 1.27.4 is the floor (GO-2026-6859); with `GOTOOLCHAIN=local`, install 1.27.4 first.
+- BREAKING: a desktop update feed carries a signed `expires`; sign every live feed again with `gofastr desktop feed` before shipping an app built on this release, and renew it before it expires (30 days, or `--valid-days`).
+- BREAKING: `desktop.SignUpdateFeed` takes a trailing `validFor time.Duration`.
+- BREAKING: a macOS update must match the running bundle's signing identity or the team in `UpdateConfig.MacOSTeamID`; an ad-hoc signed or unsigned app needs `UpdateConfig.MacOSAllowAdHoc`.
+- BREAKING: the well-known documents take `X-Forwarded-Proto` only from a peer in the new `AppConfig.TrustedProxies`, or use the new `AppConfig.BaseURL`; behind a TLS-terminating proxy set one, or they advertise `http://`.
+- BREAKING: uihost's agent card and `Link` headers take `X-Forwarded-Proto` only from a trusted proxy (`uihost.WithTrustedProxies`, else `AppConfig.TrustedProxies`).
+- BREAKING: a pluginhost framed asset's CSP takes `X-Forwarded-Proto` only from a trusted proxy, and framed responses send `Vary: Host, X-Forwarded-Proto`.
+- BREAKING: entityui record copy links take `X-Forwarded-Proto` only from a trusted proxy.
+- BREAKING: an MCP item gate's refusal answers exactly as an unknown name; wrap an error the caller must read with `mcp.ShowRefusal(err)`.
+- BREAKING: `cache.CacheMiddlewareWithLimit` panics on a negative `maxBodyBytes`.
+- BREAKING: boot refuses a table that still holds a single-column UNIQUE a composite unique index replaced; apply the `DiffSchema` change or drop it in a migration.
+- BREAKING: the default email check refuses a value that is not one `local@domain` address (400 `invalid_email`); the upgrade note has a query that finds stored accounts it would refuse.
+- BREAKING: the admin Roles grid refuses a save that would revoke a permission none of the caller's roles would still hold.
+
+#### Security fixes that may need a change in your app
+
+- The admin account page refuses a caller whose user type has no `GetID` (it saved a display name for the user whose id is `unknown`); give your user type an id.
+- `rootwrite`, `rootread` and `tightenshared` no longer accept `filepath.EvalSymlinks` alone as a guard; code that passed `gofastr verify` or `make analyze` can fail, and the messages name the fix.
+- `gofastr verify --fix`, `contracts_fix` and `gofastr gen styles` refuse an absolute symlink, even one pointing inside the project; make it relative.
+- The Linux desktop shell checks every navigation before its request, iframes included, so a foreign iframe stays blank on Linux.
+- The static export skips a symlink that leaves an `ExtraDirs` directory, and every symlink in a filesystem that is not an `os.DirFS`.
+- `core/static` never serves a path segment that ends in a dot or a space or holds a colon, and the static export skips such files.
+- A client nested write through a hidden relation answers 400 `validation.cascade_relation_hidden`; server code writes through it under `crud.WithServerWrites`.
+- Field masks run without back office elevation, so a mask that checked the caller's permissions no longer shows a value because the caller is an admin.
+- An admin cannot remove their own admin role; another admin can.
+- `resources/subscribe` holds each MCP caller to 256 distinct uris.
+- A repository secrets file key must match `^[A-Z][A-Z0-9_]*$`.
+
+The full list is in
+[CHANGELOG.md at the v0.97.0 roll](https://github.com/DonaldMurillo/gofastr/blob/efae3ba5162fdef4c5993f6cb486c19c40fe994d/CHANGELOG.md#0970---2026-11-19).
 
 ## [0.96.0] - 2026-11-06
 

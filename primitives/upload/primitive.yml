@@ -1,0 +1,77 @@
+primitive: upload
+summary: The multipart upload handler and the filename, extension, size and MIME checks behind it.
+code:
+  - core/upload/doc.go
+  - core/upload/upload.go
+  - core/upload/validate.go
+  - core/upload/phrases.go
+docs:
+  - framework/docs/content/uploads.md
+on_change:
+  - framework/file builds on SanitizeFilename and UniqueFilename; run its tests too.
+twins:
+  - job: Compare a sniffed MIME type against an upload allow list by its base media type.
+    why: Work not yet done; core/upload's mediaType lowercases both sides, while framework/file's mimeBase compares the allow-list entry as written.
+    sites:
+      - path: core/upload/validate.go
+        note: ValidateMIME and mediaType.
+      - path: framework/file/filefield.go
+        note: ProcessFileField's allow check and mimeBase.
+invariants:
+  - id: body-capped-before-parse
+    rule: Handler wraps the body in MaxBytesReader at MaxSize plus 4 KiB of framing, saturating at MaxInt64, before parsing, with DefaultMaxSize for a MaxSize of zero or less, and answers an oversized body 413.
+    enforced_by:
+      - test: core/upload.TestHandler_BodyBoundedBeforeBuffer
+      - test: core/upload.TestUploadZeroMaxSizeHasDefaultCap
+      - test: core/upload.TestUploadMaxIntMaxSizeAcceptsAnUpload
+  - id: spilled-parts-removed
+    rule: Every return of Handler after the parse removes the multipart parts spilled to disk, refusals included.
+    enforced_by:
+      - test: core/upload.TestSweepSpilledPartRemovedAfterRefusal
+  - id: metadata-type-is-sniffed
+    rule: The MimeType Handler records is http.DetectContentType of the body, never the part's Content-Type.
+    enforced_by:
+      - test: core/upload.TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderDangerous
+      - test: core/upload.TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderBenign
+  - id: unique-keys
+    rule: UniqueFilename appends a UnixNano timestamp and 16 crypto-random hex characters to the sanitized stem, keeps the validated extension, and cuts the stem on a rune boundary so the whole name fits MaxFilenameBytes.
+    enforced_by:
+      - test: core/upload.TestSameFilenameDoesNotClobber
+      - test: core/upload.TestStoredKeyKeepsValidatedExtension
+      - test: core/upload.TestUniqueFilenameFitsComponent
+  - id: allow-lists-fold-narrowly
+    rule: ValidateExt folds extensions by ASCII case only, and ValidateMIME compares base media types case-insensitively, parameters dropped, over a 512-byte sniff read in full across short reads.
+    enforced_by:
+      - test: core/upload.TestValidateExtFoldsASCIIOnly
+      - test: core/upload.TestSweepMIMEAllowListIgnoresCase
+      - test: core/upload.TestMIME_PlainTextAllowlistMatches
+      - test: core/upload.TestMIME_DetectedAcrossShortReads
+  - id: sanitized-filename
+    rule: SanitizeFilename bounds its input to SanitizeFilenameInputBound before any other pass, drops C0, DEL, C1, line separators and invisible runes, removes directories and leading dots, defuses interior executable extensions and cuts on a rune boundary to MaxFilenameBytes.
+    enforced_by:
+      - test: core/upload.TestSweepSanitizeBoundsWork
+      - test: core/upload.TestSweepSanitizeStripsC1Controls
+      - test: core/upload.TestSanitize_StripsControlBytes
+      - test: core/upload.TestSanitize_StripsUnicodeLineSeparators
+      - test: core/upload.TestUploadBypass_FilenameSanitization
+      - test: core/upload.TestSanitize_TruncatesOnRuneBoundary
+      - test: core/upload.TestSanitize_NotHiddenAfterSanitize
+decisions:
+  - id: random-suffix-is-the-uniqueness
+    date: 2026-11-19
+    status: accepted
+    decision: UniqueFilename's crypto-random suffix is what keeps keys apart, with no error path since crypto/rand.Read cannot fail; the timestamp is kept only for ordering.
+    rejected:
+      - option: The sanitized client filename as the key.
+        why: Storage.Save truncates, so two users uploading report.txt overwrote each other.
+      - option: A timestamp alone.
+        why: Two requests on one clock tick would share a key.
+    upholds: [unique-keys]
+  - id: ascii-only-extension-fold
+    date: 2026-11-19
+    status: accepted
+    decision: ValidateExt folds ASCII case only.
+    rejected:
+      - option: A Unicode case fold.
+        why: A look-alike such as U+0130, which lowers to i, would pass for an allowed extension.
+    upholds: [allow-lists-fold-narrowly]

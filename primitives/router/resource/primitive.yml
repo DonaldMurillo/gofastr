@@ -1,0 +1,21 @@
+primitive: router.resource
+summary: Naming the REST resource a route serves, so middleware that authorizes by resource reads it from the route instead of parsing the path.
+code:
+  - core/router/resource.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: route-carries-its-resource
+    rule: A request matched by a route registered under ResourceGroup carries the name before the chain runs, a Group under it keeps the name, a nested ResourceGroup replaces it, and a route outside any clears a name its request inherited from a redispatch.
+    enforced_by:
+      - test: core/router.TestResourceGroupNamesItsRoutes
+      - test: core/router.TestRedispatchClearsRouteResource
+decisions:
+  - id: resource-from-route-not-path
+    date: 2026-11-18
+    status: accepted
+    decision: auth.RequireAPIScopes asks the matched route for its resource name.
+    rejected:
+      - option: Derive the resource from the request path.
+        why: A table named v1 with a /_batch subroute reads like a versioned mount of a table named _batch.
+    upholds: [route-carries-its-resource]

@@ -1,0 +1,69 @@
+primitive: settings.endpoints
+summary: The endpoints section - custom entity routes linked to typed handlers in entities/ - decoded and checked by DecodeEndpoints, which the app spec's endpoints key shares, and rewritten by SetEndpoints.
+code:
+  - core/settings/endpoints.go
+  - core/settings/endpoint_hints.go
+docs:
+  - framework/docs/content/endpoints.md
+invariants:
+  - id: every-key-checked
+    rule: An endpoint entry with an unknown key, a missing required key, a value of the wrong kind or a value outside its shape (snake_case name and entity, GET POST PUT PATCH or DELETE, a relative path with a literal segment, a handler entities/<file>.go#<Exported> that is not a test file, a one-line description) is refused.
+    enforced_by:
+      - test: core/settings.TestEndpointsRefuseBadEntries
+      - test: core/settings.TestEndpointNamesFirstMissingField
+  - id: no-shared-name-or-route
+    rule: Two endpoints may not share a name, nor a method and entity route once parameter names are erased, and no path may be the entity's {id}/transitions/{key} state-move route.
+    enforced_by:
+      - test: core/settings.TestEndpointsRefuseDuplicates
+      - test: core/settings.TestSetEndpointsRefusesOneRouteTwice
+      - test: core/settings.TestEndpointsRefuseBadEntries
+  - id: format-quotes-strings
+    rule: FormatEndpoints quotes every string value, so a name such as true reads back as a string.
+    enforced_by:
+      - test: core/settings.TestFormatEndpointsQuotesKeywords
+  - id: write-reads-back
+    rule: SetEndpoints writes nothing unless the rewritten file reads back with exactly the given entries, and keeps the rest of the file's bytes.
+    enforced_by:
+      - test: core/settings.TestSetEndpointsKeepsTheRestOfTheFile
+      - test: core/settings.TestSetEndpointsRefusesBadEntry
+      - test: core/settings.TestSweepSettingsEndpointsQuotedKeyRefused
+  - id: app-spec-decodes-through-settings
+    rule: The app spec's endpoints key is decoded only by settings.DecodeEndpoints, and an entry's shape is checked only by the settings package's Endpoint.Validate, while checks against the rest of the spec, such as a missing entity, a shared handler or a route clash, run in ValidateAppSpecEndpoints, which also checks the entries of a spec built in Go that was never decoded.
+    judge: Does the app spec decode an endpoints entry other than through settings.DecodeEndpoints, or check an entry's field shapes with rules of its own rather than Endpoint.Validate from the settings package (ValidateAppSpecEndpoints, which calls Endpoint.Validate and checks entries against the rest of the spec, including specs built in Go that skip decoding, does not count)?
+    applies:
+      - cmd/gofastr/internal/appspec/appspec.go
+      - cmd/gofastr/internal/appspec/appspec_endpoints.go
+  - id: hints-checked
+    rule: "An endpoint's hints: block takes only title, read_only, destructive, idempotent and open_world, each hint true or false and the title a one-line string of at most 128 bytes, needs mcp: true, and survives SetEndpoints and pack unchanged."
+    enforced_by:
+      - test: core/settings.TestEndpointHintsDecodeAndRoundTrip
+      - test: core/settings.TestEndpointHintsRefusals
+      - test: cmd/gofastr/internal/packcmd.TestPackedEndpointKeepsHints
+    applies:
+      - cmd/gofastr/internal/packcmd/pack.go
+  - id: hints-default-by-method
+    rule: "MCPHints fills each unset hint from the method (GET read-only and idempotent, PUT and DELETE destructive and idempotent, PATCH destructive, POST none of them, open_world false for all), and the generated registration of every mcp: true endpoint sets all four hints in MCPAnnotations and imports core/mcp only then."
+    enforced_by:
+      - test: core/settings.TestEndpointMCPHintsDefaultByMethod
+      - test: cmd/gofastr/internal/appgen.TestRenderedEndpointsCarryMCPHints
+      - test: cmd/gofastr/internal/appgen.TestUnionApp
+    applies:
+      - cmd/gofastr/internal/appgen/generate_endpoints.go
+decisions:
+  - id: check-shape-at-decode
+    date: 2026-11-19
+    status: accepted
+    decision: Every endpoint value is checked against its shape when decoded, and whether the entity and handler exist is left to the generator, which has the source.
+    rejected:
+      - option: Accept any string and escape it when generating Go.
+        why: An entry lands in generated Go, the SDKs and the CLI, and each would have to escape it its own way.
+    upholds: [every-key-checked]
+  - id: overwrite-methods-are-destructive
+    date: 2026-11-19
+    status: accepted
+    decision: An unset destructive hint is true for PUT, PATCH and DELETE and false for GET and POST.
+    rejected:
+      - option: Only DELETE destructive.
+        why: A PUT or PATCH overwrites the values it replaces, which the MCP spec counts as destructive, and the entity CRUD update tool is marked so; the endpoint default follows the same reading.
+    revisit_if: Most declared PUT or PATCH endpoints override the default to false.
+    upholds: [hints-default-by-method]

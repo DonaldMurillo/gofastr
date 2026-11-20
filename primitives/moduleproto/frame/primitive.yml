@@ -1,0 +1,63 @@
+primitive: moduleproto.frame
+summary: The Frame envelope, its validation, the newline-delimited Codec with its frame cap, and the protocol's error values.
+code:
+  - core/moduleproto/frame.go
+  - core/moduleproto/codec.go
+  - core/moduleproto/errors.go
+twins:
+  - job: Decide whether a module.http request frame fits max_frame_bytes.
+    why: The proxy answers 413 before a call id exists, so it marshals the frame with the widest id; the codec measures the real frame at write time.
+    sites:
+      - path: core/moduleproto/codec.go
+        note: Codec.writeFrame's cap check.
+      - path: framework/processmodule_proxy.go
+        note: moduleHTTPFrameFits.
+invariants:
+  - id: envelope-validated
+    rule: Decoding a Frame returns ErrInvalidFrame unless jsonrpc is "2.0", an id is absent or a positive integer (not 0, not null), a method frame carries no result or error, and a response carries an id and exactly one of result or error.
+    enforced_by:
+      - test: core/moduleproto.TestFrameRejectsBadJSONRPC
+      - test: core/moduleproto.TestFrameRejectsIDZero
+      - test: core/moduleproto.TestNotificationRejectsNullID
+      - test: core/moduleproto.TestFrameRejectsMethodWithResult
+      - test: core/moduleproto.TestFrameRejectsResponseMissingID
+      - test: core/moduleproto.TestResponseRejectsBothOutcomes
+      - test: core/moduleproto.TestFrameRejectsResponseNoResultOrError
+  - id: empty-result-is-null
+    rule: NewSuccessResponse with no result encodes "result":null, so the response still carries a result.
+    enforced_by:
+      - test: core/moduleproto.TestNilSuccessResultEncodesNull
+  - id: overcap-is-terminal-never-truncated
+    rule: A frame past max_frame_bytes is not written and returns *OvercapError, a read past it or past the 4 MiB scanner cap returns *OvercapError, a line of exactly the scanner cap is read, and NewCodec refuses a cap above the scanner cap.
+    enforced_by:
+      - test: core/moduleproto.TestCodecWriteOvercapTerminal
+      - test: core/moduleproto.TestCodecReadOvercapTerminal
+      - test: core/moduleproto.TestCodecScannerTooLongTerminal
+      - test: core/moduleproto.TestCodecReadsExactStructuralLimit
+      - test: core/moduleproto.TestCodecRejectsOverScannerCap
+  - id: write-is-one-frame-or-latched
+    rule: WriteFrame writes the frame and its newline in one Write, reports a short write, and after a partial write returns that error for every later frame without writing.
+    enforced_by:
+      - test: core/moduleproto.TestCodecDetectsShortWrite
+      - test: core/moduleproto.TestPartialWriteLatches
+  - id: ambiguous-keys-refused
+    rule: ReadFrame returns ErrInvalidFrame for a frame in which any object repeats a key or holds two keys that case-fold onto each other.
+    enforced_by:
+      - test: core/moduleproto.TestReadFrameRejectsAmbiguousKeysRed
+decisions:
+  - id: id-is-a-pointer
+    date: 2026-11-19
+    status: accepted
+    decision: Frame.ID is a *uint64, omitted when nil, and a decoded id of 0 or null is refused.
+    rejected:
+      - option: A uint64 with omitempty, as harness/mcpclient has.
+        why: It makes 0 the notification sentinel, so a request issued id 0 reads as a notification.
+    upholds: [envelope-validated]
+  - id: never-truncate
+    date: 2026-11-19
+    status: accepted
+    decision: A frame past the cap is a terminal fault on both read and write.
+    rejected:
+      - option: Truncate the frame to the cap.
+        why: A truncated JSON line corrupts the stream for every frame after it.
+    upholds: [overcap-is-terminal-never-truncated]

@@ -1,0 +1,107 @@
+primitive: island.presence
+summary: Who is connected to a topic - the server-derived identities PresenceJoin registers, topic admission through AuthorizeTopic, and the roster merged across replicas from full-roster heartbeats on the gofastr.presence fanout lane.
+code:
+  - core-ui/island/presence.go
+  - core-ui/island/presence_fanout.go
+docs:
+  - framework/docs/content/presence.md
+invariants:
+  - id: identity-is-server-derived
+    rule: A roster identity comes from the request context's authenticated user, and an anonymous connection is "anon:" plus its session id, never from a client parameter.
+    enforced_by:
+      - test: core-ui/island.TestPresenceIdentityServerDerived
+      - test: core-ui/island.TestPresenceIdentityNoUserAnonymous
+      - test: core-ui/island.TestPresenceAnonymousHandled
+  - id: topics-are-bounded
+    rule: Presence topics are trimmed, de-duplicated, dropped when empty or over 128 bytes and capped at 16 per connection, declared and requested alike.
+    enforced_by:
+      - test: core-ui/island.TestParsePresenceTopicsBounds
+      - test: core-ui/island.TestDeclaredTopicsBounded
+  - id: topic-admission
+    rule: With no AuthorizeTopic hook a connection joins only the topics its page declared, and with a hook every topic, declared ones too, passes through it, a refused topic producing no subscription or roster.
+    enforced_by:
+      - test: core-ui/island.TestNilHookRefusesRequestedTopic
+      - test: core-ui/island.TestHookGatesDeclaredTopics
+      - test: core-ui/island.TestAuthorizeTopic_FiltersTopics
+      - test: core-ui/island.TestAuthorizeTopic_UnauthorizedTopicHasNoRoster
+  - id: roster-is-deduped-and-sorted
+    rule: A roster holds each UserID once, sorted by UserID, merged from local connections and every unexpired remote replica, and PresenceSessions is sorted.
+    enforced_by:
+      - test: core-ui/island.TestPresenceDedupByUserID
+      - test: core-ui/island.TestPresenceRosterSorted
+      - test: core-ui/island.TestPresenceFanoutMergedRosterDedup
+      - test: core-ui/island.TestPresenceFanoutRosterExcludesExpired
+      - test: core-ui/island.TestPresenceSessionsForTopic
+  - id: hook-panics-are-recovered
+    rule: A panicking OnPresenceChange hook is recovered and logged on every path that fires it - join, leave, remote merge, the expiry sweep and stop.
+    enforced_by:
+      - test: core-ui/island.TestExpirySweepRecoversHookPanic
+      - test: core-ui/island.TestRemoteMergeRecoversHookPanic
+      - test: core-ui/island.TestFanoutStopRecoversHookPanic
+  - id: remote-table-is-bounded
+    rule: The remote roster holds at most 1024 topics, 512 replicas per topic and 4096 members per replica entry, a new topic past the cap taking only a slot whose every entry has expired.
+    enforced_by:
+      - test: core-ui/island.TestRosterRedBoundsForgedPeer
+      - test: core-ui/island.TestRemoteRosterCapsMembersAndReplicas
+      - test: core-ui/island.TestTopicCapKeepsLiveTopics
+      - test: core-ui/island.TestTopicCapReclaimsOnlyExpired
+  - id: departures-are-reported
+    rule: A TTL expiry, a leave over an expired entry, a cap eviction and a detach each fire OnPresenceChange for the topic whose shown roster shrank.
+    enforced_by:
+      - test: core-ui/island.TestTTLExpiryFiresPresenceChange
+      - test: core-ui/island.TestLeaveOverExpiredFiresChange
+      - test: core-ui/island.TestCapEvictOfExpiredFiresChange
+      - test: core-ui/island.TestDetachFanoutNotifiesViewers
+  - id: rosters-queue-in-order
+    rule: A replica queues each roster under the lock it read it under, so a heartbeat's snapshot never lands after a newer roster, and stop publishes its goodbye only after every other roster.
+    enforced_by:
+      - test: core-ui/island.TestLeaveNotOvertakenByHeartbeat
+      - test: core-ui/island.TestStopGoodbyeLandsLast
+  - id: cross-replica-convergence
+    rule: Joins and leaves reach peers at once, joins made before SetFanout are announced on attach, a silent replica's members expire within the TTL, and an announcement carries only UserID and DisplayName.
+    enforced_by:
+      - test: core-ui/island.TestPresenceFanoutJoinVisibleCrossReplica
+      - test: core-ui/island.TestPresenceFanoutLeaveDropsCrossReplica
+      - test: core-ui/island.TestSetFanoutAnnouncesEarlierJoins
+      - test: core-ui/island.TestPresenceFanoutDeathExpiresByTTL
+      - test: core-ui/island.TestPresenceFanoutAnnouncementCarriesNoSessionID
+      - test: core-ui/island.TestPresenceFanoutNoFanoutByteIdentical
+decisions:
+  - id: full-rosters-not-deltas
+    date: 2026-11-20
+    status: accepted
+    decision: Each replica broadcasts its full local roster per topic on every change and every heartbeat, and receivers keep a per-replica entry with a TTL of three heartbeats.
+    rejected:
+      - option: Join and leave deltas.
+        why: A dropped delta would leave the roster wrong until the next change; a full roster heals on the next beat.
+    upholds: [cross-replica-convergence]
+  - id: separate-presence-lane
+    date: 2026-11-20
+    status: accepted
+    decision: Presence travels on its own fanout topic, gofastr.presence, beside the island lane gofastr.islands.
+    rejected:
+      - option: Share the island lane.
+        why: The two message classes would share one payload shape.
+  - id: live-topics-are-not-evicted
+    date: 2026-11-20
+    status: accepted
+    decision: A full remote table admits a new topic only in place of one whose every entry has expired.
+    rejected:
+      - option: Evict the least recently refreshed live topic.
+        why: A flood of one-member topics, each re-announced every heartbeat, cycled every live topic out of the table.
+    upholds: [remote-table-is-bounded]
+  - id: local-presence-user-interface
+    date: 2026-11-20
+    status: accepted
+    decision: Identity is read through a local GetID and GetEmail interface that battery/auth's users satisfy.
+    rejected:
+      - option: Import battery/auth's User.
+        why: The framework must not depend on a battery.
+    upholds: [identity-is-server-derived]
+  - id: guest-name-from-the-tail
+    date: 2026-11-20
+    status: accepted
+    decision: An anonymous viewer's display name is "Guest " plus the session id's last four characters.
+    rejected:
+      - option: The first four characters.
+        why: A host may prefix its session ids, which would give every guest the same name.

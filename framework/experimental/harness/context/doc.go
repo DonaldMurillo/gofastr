@@ -1,5 +1,2 @@
-// Package context is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package context reads project-instruction files (AGENTS.md and vendor fallbacks) for the system prompt.
 package context

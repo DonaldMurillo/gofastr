@@ -1,0 +1,39 @@
+primitive: harness.internal.jsonredact
+summary: Redacts JSON by running a text redactor over each decoded string value (Strings), optionally with the member name in view (Members), and re-encoding only the strings it changed.
+code:
+  - framework/experimental/harness/internal/jsonredact/
+invariants:
+  - id: output-stays-valid-json
+    rule: Whatever text the redactor returns, Strings and Members return a valid JSON document holding that text as the string's decoded value.
+    enforced_by:
+      - test: framework/experimental/harness/internal/jsonredact.TestRedactionWithQuotesStaysValidJSON
+  - id: untouched-bytes-kept
+    rule: A string the redactor leaves unchanged keeps its original bytes, escapes included, and everything outside strings is copied byte for byte.
+    enforced_by:
+      - test: framework/experimental/harness/internal/jsonredact.TestUnchangedStringsKeepTheirBytes
+      - test: framework/experimental/harness/internal/jsonredact.TestMembersPassesTheMemberName
+  - id: members-passes-member-name
+    rule: Members passes a member's name as key only for that member's string value, and "" for object keys and array elements.
+    enforced_by:
+      - test: framework/experimental/harness/internal/jsonredact.TestMembersPassesTheMemberName
+  - id: invalid-json-refused
+    rule: Strings and Members return ok false for a document that is not valid JSON and never call the redactor on it.
+    enforced_by:
+      - test: framework/experimental/harness/internal/jsonredact.TestStringsRefusesInvalidJSON
+decisions:
+  - id: redact-decoded-strings
+    date: 2026-11-18
+    status: accepted
+    decision: Redaction runs on each decoded JSON string and re-encodes it, never on the serialized document.
+    rejected:
+      - option: Run the redaction regex over the serialized JSON.
+        why: The regex sees escapes instead of text, can swallow a closing quote or start inside an escape, and can leave a payload that no longer parses.
+    upholds: [output-stays-valid-json, untouched-bytes-kept]
+  - id: member-name-in-view
+    date: 2026-11-18
+    status: accepted
+    decision: Members hands the redactor the member name beside the value.
+    rejected:
+      - option: Only Strings, one string at a time.
+        why: A redactor matching NAME=value text cannot see {"NAME":"value"}, where name and value are two strings.
+    upholds: [members-passes-member-name]

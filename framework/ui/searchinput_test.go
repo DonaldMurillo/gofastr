@@ -8,7 +8,7 @@ import (
 )
 
 // TestSearchInputActionVariantKeepsBoxStyle pins #239: with Action set,
-// WrapHTML injects data-cui-comp into the <form> (the outermost tag),
+// WrapHTML injects data-cui-comp into the <search> (the outermost tag),
 // so every rule keyed on the marker attribute as an ANCESTOR stops
 // matching the label — the box shell landed on the form and the label
 // lost all styling. The shell must key on the .fui-search class,
@@ -16,8 +16,8 @@ import (
 func TestSearchInputActionVariantKeepsBoxStyle(t *testing.T) {
 	h := SearchInput(SearchInputConfig{Name: "q", ID: "q", Action: "/search"})
 	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, "<form") || !strings.Contains(root, `data-cui-comp="ui-search-input"`) {
-		t.Fatalf("action variant root should be the marked form:\n%s", root)
+	if !strings.Contains(root, "<search") || !strings.Contains(root, `data-cui-comp="ui-search-input"`) {
+		t.Fatalf("action variant root should be the marked <search> landmark:\n%s", root)
 	}
 	css := searchInputCSS(style.Theme{})
 	if !strings.Contains(css, ".fui-search {") {
@@ -116,8 +116,11 @@ func TestSearchInputWithActionWrapsForm(t *testing.T) {
 	if !strings.Contains(h, `<form`) {
 		t.Errorf("Action set should wrap in form:\n%s", h)
 	}
-	if !strings.Contains(h, `role="search"`) {
-		t.Errorf("expected role=search on form:\n%s", h)
+	if !strings.Contains(h, `<search class="fui-search__landmark" data-cui-comp="ui-search-input"><form action="/search" class="fui-search__form" data-cui-internal=""`) {
+		t.Errorf("expected the form inside a <search> landmark:\n%s", h)
+	}
+	if strings.Contains(h, `role="search"`) {
+		t.Errorf("the <search> element is the landmark; role=search is redundant:\n%s", h)
 	}
 	if !strings.Contains(h, `action="/search"`) {
 		t.Errorf("expected action=/search:\n%s", h)

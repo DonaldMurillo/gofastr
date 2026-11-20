@@ -13,6 +13,40 @@ invariants:
     enforced_by:
       - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
       - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
+  - id: refused-submit-focuses-first-invalid
+    rule: A refused form submit, on the data-cui-rpc path and the plain-form bridge alike, moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input or disabled control (a disabled fieldset's included) skipped, a radio group on its checked or first enabled radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.
+    enforced_by:
+      - test: core-ui/runtime.TestRefusedSubmitFocusesFirstInvalidField
+      - test: core-ui/runtime.TestRefusedInputDispatchKeepsFocus
+      - test: core-ui/runtime.TestRefusedSubmitFocusesAnExternalControl
+      - test: core-ui/runtime.TestLateRefusalLeavesFocusOutsideTheForm
+      - test: core-ui/runtime.TestRefusedClickDispatchKeepsFocus
+      - test: core-ui/runtime.TestRefusedSubmitSkipsAHiddenInput
+      - test: core-ui/runtime.TestRefusedSubmitFocusesTheCheckedRadio
+      - test: core-ui/runtime.TestRefusedSubmitSkipsADisabledControl
+      - test: core-ui/runtime.TestRetryClearsAnExternalControlsError
+      - test: core-ui/runtime.TestRefusedSubmitSkipsADisabledFieldset
+      - test: core-ui/runtime.TestRefusedRadioGroupWithADisabledLastRadio
+      - test: core-ui/runtime.TestRefusedPlainFormSubmitFocusesFirstInvalidField
+  - id: saved-stack-refreshes-what-it-uncovers
+    rule: A save inside an intercept stack that keeps a layer re-renders each layer under it and the page under the stack when a close or Back uncovers it; the navigation guards and the leave guard can stop the re-render to preserve edits, and a failed refetch falls back to a plain navigation. Declining or superseding a refresh does not clear the stale state before the content is replaced.
+    enforced_by:
+      - test: core-ui/runtime.TestSaveInPaneRefreshesTheListOnClose
+      - test: core-ui/runtime.TestSaveInUpperPaneRefreshesTheLayersUnder
+      - test: core-ui/runtime.TestUncoveredStaleLayerAsksTheLeaveGuard
+      - test: core-ui/runtime.TestUncoveredStaleContentAsksNavigationGuards
+      - test: core-ui/runtime.TestUncoveredStalePageSurvivesStartingANewStack
+      - test: core-ui/runtime.TestUncoveredStaleLayerRetriesSupersededRefresh
+      - test: core-ui/runtime.TestUncoveredStaleLayerFallsBackWhenItsRefetchFails
+  - id: off-screen-poll-waits
+    rule: A data-cui-poll region more than 200px outside the viewport is not fetched, and the tick that came due while it was away fetches once the region comes near.
+    enforced_by:
+      - test: core-ui/runtime.TestPoll_PausesOffScreen
+  - id: scroll-store-persists-per-gesture
+    rule: The router writes its scroll store to sessionStorage once per scroll gesture, on scrollend, and whenever the page goes hidden, so a reloaded page, or a background tab the browser discards, keeps its position even where scrollend never fires.
+    enforced_by:
+      - test: core-ui/runtime.TestScrollPersistsOncePerGesture
+      - test: core-ui/runtime.TestReloadRestoresScrollWithoutScrollEnd
   - id: no-hard-navigation
     rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
     enforced_by:
@@ -88,6 +122,28 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestConfirmTeardownRunsInTheClosingTask
       - test: core-ui/runtime.TestConfirmInsideModalWidgetOwnsKeyboard
+  - id: route-constraints-match-server
+    rule: Navigation, route prefetch and intercept selection test typed parameters against the server router's constraints on decoded segment values; a constraint mismatch falls through to the next route.
+    enforced_by:
+      - test: core-ui/runtime.TestTypedSegmentPicksServerRoute
+      - test: core-ui/runtime/hosttest.TestHoverPrefetchUsesServerRouteConstraints
+  - id: background-fetches-yield
+    rule: A scheduled poll tick (data-cui-poll and a widget's state poll) and a visible or eager prefetch ask for priority 'low'; a hover prefetch, a widget's pollNow after its own RPC and the refresh when a hidden tab becomes visible keep the default, since the user is waiting on them.
+    enforced_by:
+      - test: core-ui/runtime.TestPollFetchIsLowPriority
+      - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
+      - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
+  - id: refusal-read-from-one-polite-region
+    rule: A refused form submission is read from the one cui-form-errors region (role=status, aria-live=polite), one sentence per refused field (its label, a radio's group legend, a colon, its messages), every live node it places has an id the control is described by and is no alert of its own, and a successful retry or a client navigation empties the region.
+    enforced_by:
+      - test: core-ui/runtime.TestRefusalIsReadFromOnePoliteRegion
+      - test: core-ui/runtime.TestRefusalNamesTheGroupAndClearsOnNavigation
+      - test: core-ui/runtime.TestRuntimeModule_FormErrors
+  - id: autogrow-defers-to-field-sizing
+    rule: Where CSS.supports reports field-sizing content, the textarea module sets field-sizing content on each autogrow textarea, with its rows and cols as minimum block and inline size so an empty one keeps its rendered size, and measures nothing after (no inline height, no ResizeObserver); elsewhere its scrollHeight fallback grows it, a hidden textarea included.
+    enforced_by:
+      - test: core-ui/runtime.TestAutogrowUsesFieldSizing
+      - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal
 decisions:
   - id: poll-before-push
     status: accepted

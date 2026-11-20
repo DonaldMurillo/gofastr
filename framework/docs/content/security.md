@@ -131,12 +131,17 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 
 | Header                    | Default                                                                          |
 |---------------------------|----------------------------------------------------------------------------------|
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
 | `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
 | `Referrer-Policy`         | `no-referrer`                                                                    |
 | `X-Frame-Options`         | `DENY`                                                                           |
 | `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
+
+A `ContentSecurityPolicy` you set replaces the default whole. Keep
+`worker-src 'self'` and `base-uri 'none'` in it: without `worker-src`,
+workers follow `script-src`, so a CDN added there could also serve
+workers.
 
 `object-src` and `form-action` are named explicitly because `default-src`
 does not cover them: CSP never let `form-action` fall back, and
@@ -199,6 +204,23 @@ external link. Static exports always link.
 If you embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly; do not relax it with
 `'unsafe-inline'` globally.
+
+**Why hashes, not nonces or `'strict-dynamic'`.** The default allows
+scripts from your own origin plus the hashed inline blocks above, and
+no other host. Browser guidance pairs hashes with `'strict-dynamic'`
+to close bypasses through allowlisted third-party hosts, and the
+default allows none. Adding `'strict-dynamic'` would make CSP3
+browsers ignore `'self'`, so `<script src="/__gofastr/runtime.js">`
+would stop loading. A per-response nonce would make every page body
+unique. Leave both out unless your override adds third-party script
+hosts. In that case, `'strict-dynamic'` with nonces or hashes is the
+way to keep those hosts from becoming a bypass. Every script written
+into the HTML then needs its own nonce or hash, `runtime.js` included:
+a hash for an inline block authorizes nothing else, and a hash for an
+external script also needs a matching `integrity` attribute. A script
+an authorized script inserts as an element (`createElement`) needs
+neither; one it writes with `document.write` counts as written into the
+HTML and does. Static exports can't use nonces.
 
 ### Configuring the default chain's headers
 

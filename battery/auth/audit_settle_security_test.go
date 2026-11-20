@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -186,4 +187,68 @@ func (c cancelAfterFind) FindByHash(ctx context.Context, hash string) (*APIToken
 	t, err := c.APITokenStore.FindByHash(ctx, hash)
 	c.cancel()
 	return t, err
+}
+
+// rewritingSink changes an event's address before passing it on.
+type rewritingSink struct{ next AuditSink }
+
+func (s rewritingSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
+	ev.Email = "Support@Example.com"
+	s.next.SecurityEvent(ctx, ev)
+}
+
+// The SQL sink hashes exactly the address the manager's override gave,
+// even one that keeps its case; an address a wrapping sink rewrote after
+// that is folded by the default again.
+func TestAuditDigestFollowsTheManagersFold(t *testing.T) {
+	for name, c := range map[string]struct {
+		wrap func(AuditSink) AuditSink
+		want string
+	}{
+		"manager's fold kept":      {func(s AuditSink) AuditSink { return s }, "Mixed@Example.com"},
+		"rewritten by the wrapper": {func(s AuditSink) AuditSink { return rewritingSink{s} }, "support@example.com"},
+	} {
+		db, err := sql.Open("sqlite3", ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		sink, err := NewSQLAuditSink(db, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		keepCase := func(s string) (string, error) { return strings.TrimSpace(s), nil }
+		mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: keepCase, AuditSink: c.wrap(sink)})
+		if err := mgr.Init(nil); err != nil {
+			t.Fatal(err)
+		}
+		mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: " Mixed@Example.com "})
+		var diff string
+		if err := db.QueryRow(`SELECT diff FROM audit_log`).Scan(&diff); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(diff, hashedIdentifier(c.want)) {
+			t.Errorf("%s: email_hash in %s, want the digest of %q", name, diff, c.want)
+		}
+		_ = db.Close()
+	}
+}
+
+// The event keeps no second plaintext copy of the address: a sink that
+// clears Email and logs the whole event prints none.
+func TestAuditEventKeepsNoSecondAddress(t *testing.T) {
+	sink := &recordingSink{}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AuditSink: sink})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: "victim@example.com"})
+	ev := sink.findByKind("magiclink.requested")
+	if ev == nil {
+		t.Fatal("no event")
+	}
+	ev.Email = ""
+	if s := fmt.Sprintf("%+v", *ev); strings.Contains(s, "victim@example.com") {
+		t.Fatalf("a cleared event still prints the address: %s", s)
+	}
 }

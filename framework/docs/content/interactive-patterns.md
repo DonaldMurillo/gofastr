@@ -167,13 +167,21 @@ default label. See [the 2FA flow](auth.md#the-2fa-flow).
 
 `ui.ControlConfig` carries the hints a sign-in field needs:
 `EnterKeyHint`, `InputMode` and `NoSpellCheck` (`spellcheck="false"`
-and `autocapitalize="off"`).
+and `autocapitalize="off"`). `AutoCapitalize` sets the case an
+on-screen keyboard starts in, one of `ui.AutoCapitalizeOff`,
+`AutoCapitalizeSentences`, `AutoCapitalizeWords` (names) or
+`AutoCapitalizeCharacters` (postcodes); it wins over `NoSpellCheck`'s
+`off`, and any other value panics.
 
 ### Textarea auto-resize
 
-`framework/ui.TextArea` accepts `Autogrow: true`. The runtime module
-(`textarea.js`) listens for input and resizes the textarea to fit its
-content, and refits after reset or focus. A textarea wired in a hidden
+`framework/ui.TextArea` accepts `Autogrow: true`. Where the browser
+supports `field-sizing: content` (`CSS.supports`), the runtime module
+(`textarea.js`) hands the textarea to it, with its `rows` and `cols`
+as the minimum size (the browser ignores both under `field-sizing`),
+and measures nothing after. Elsewhere the module is the fallback: it listens for
+input and resizes the textarea to fit its content, and refits after
+reset or focus. A textarea wired in a hidden
 panel keeps its height until it can be measured. ResizeObserver fits it
 when the panel opens and when its width changes; focus provides a fallback
 where ResizeObserver is unavailable. Detached controls release their
@@ -255,6 +263,14 @@ after the specified debounce interval (default 300ms).
 
 Attributes injected: `data-cui-rpc-trigger="input"`,
 `data-cui-rpc-debounce-ms` (milliseconds; default 300).
+
+### Dropdown (click-toggle panel)
+
+`interactive.Dropdown(trigger, panel)` wraps a trigger and a panel: the
+trigger gets `data-cui-dropdown`, `aria-expanded` and `aria-haspopup`,
+the panel `data-cui-dropdown-panel` and `hidden`. The runtime's dropdown
+module toggles it on click and closes it on a click outside or Escape.
+Knob: `--ui-dropdown-min-width` (11rem).
 
 ### Optimistic Update (immediate visual + background RPC)
 
@@ -747,7 +763,7 @@ For a `<select>` the `input`/`change` distinction doesn't matter (both fire
 once, on selection), so set a small debounce, `data-cui-rpc-debounce-ms="1"`,
 to fire promptly instead of waiting out the 250 ms default meant for
 keystroke typeahead. This recipe is covered end-to-end by
-`TestInputTrigger_SelectFiresRPC` in `core-ui/runtime`.
+`TestInputTrigger/SelectFiresRPC` in `core-ui/runtime`.
 
 ### 4. Route-param syntax: `{id}` on the HTTP router, both on the screen router
 

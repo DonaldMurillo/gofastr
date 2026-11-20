@@ -296,6 +296,11 @@ func (m *AuthManager) allowMailAddress(ctx context.Context, email string) bool {
 	return allowAddress(ctx, m.mailAddressLimit, email)
 }
 
+// CanonicalEmail is email under this manager's canonical rule, the form host code should key addresses by.
+func (m *AuthManager) CanonicalEmail(email string) (string, error) {
+	return m.canonicalizeEmail(email)
+}
+
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
 	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }
@@ -409,6 +414,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 	}
 
 	if err := m.refuseInMemorySessionStore(); err != nil {
+		return err
+	}
+
+	if err := checkCanonicalizerIdempotent(m.config.CanonicalizeEmail); err != nil {
 		return err
 	}
 

@@ -2,11 +2,9 @@ package analyzers
 
 import (
 	"fmt"
-	"math"
 	"path"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -18,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 func init() {
@@ -815,35 +812,6 @@ var reVarFallback = regexp.MustCompile(`var\(\s*--([A-Za-z0-9_-]+)\s*,\s*([^(),]
 
 var reColourFallback = regexp.MustCompile(`var\(\s*--((?:color|tk)-[A-Za-z0-9_-]+)\s*,\s*([^()]*?(?:\([^()]*\))?)\s*\)`)
 
-var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
-
-func sameScaleValue(a, b string) bool {
-	a, b = asciicase.Lower(strings.TrimSpace(a)), asciicase.Lower(strings.TrimSpace(b))
-	if a == b {
-		return true
-	}
-	ma, mb := reLengthOrTime.FindStringSubmatch(a), reLengthOrTime.FindStringSubmatch(b)
-	if ma == nil || mb == nil {
-		return false
-	}
-	na, _ := strconv.ParseFloat(ma[1], 64)
-	nb, _ := strconv.ParseFloat(mb[1], 64)
-	ua, ub := ma[2], mb[2]
-	switch ua {
-	case "rem":
-		na, ua = na*16, "px"
-	case "s":
-		na, ua = na*1000, "ms"
-	}
-	switch ub {
-	case "rem":
-		nb, ub = nb*16, "px"
-	case "s":
-		nb, ub = nb*1000, "ms"
-	}
-	return ua == ub && math.Abs(na-nb) < 1e-6
-}
-
 func checkFallbackDrift(rel string, lineNo int, scan, orig string, ownTheme bool, dark []bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	report := func(name, fallback, declared, scheme string) {
@@ -859,7 +827,7 @@ func checkFallbackDrift(rel string, lineNo int, scan, orig string, ownTheme bool
 	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
 		name, fallback := m[1], strings.TrimSpace(m[2])
 		declared, ok := declaredTokenValues()[name]
-		if !driftCategories[tokenCategory(name)] || !ok || sameScaleValue(fallback, declared) {
+		if !driftCategories[tokenCategory(name)] || !ok || ownstyle.SameScaleValue(fallback, declared) {
 			continue
 		}
 		report(name, fallback, declared, "")

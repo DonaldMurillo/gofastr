@@ -11,6 +11,7 @@ import (
 	acpcore "github.com/DonaldMurillo/gofastr/core/acp"
 	kilnacp "github.com/DonaldMurillo/gofastr/kiln/acp"
 	"github.com/DonaldMurillo/gofastr/kiln/agent"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kilntest"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 )
 
@@ -39,15 +40,15 @@ func convo(msgs []agent.Message) string {
 // text, the tool calls it made and their results (2026-10-27 K7).
 func TestPromptSeesEarlierPrompts(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{ToolCalls: []agent.ToolCall{postsCall("c1")}, StopReason: "tool_use"},
 		{Text: "posts added", StopReason: "end_turn"},
 		{Text: "second reply", StopReason: "end_turn"},
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "add posts"))
+	d.Request(3, "session/prompt", promptParams(sid, "add posts"))
 	d.untilResponseID(3)
-	d.request(4, "session/prompt", promptParams(sid, "now what"))
+	d.Request(4, "session/prompt", promptParams(sid, "now what"))
 	d.untilResponseID(4)
 
 	want := "user:add posts\n" +
@@ -55,7 +56,7 @@ func TestPromptSeesEarlierPrompts(t *testing.T) {
 		"tool_result:c1 ok=true\n" +
 		"assistant:posts added[]\n" +
 		"user:now what\n"
-	if got := convo(prov.seen[2].Messages); got != want {
+	if got := convo(prov.Seen[2].Messages); got != want {
 		t.Errorf("second prompt showed the model:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -63,18 +64,18 @@ func TestPromptSeesEarlierPrompts(t *testing.T) {
 // Sessions keep their own conversations.
 func TestSessionHistoriesAreSeparate(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{Text: "one", StopReason: "end_turn"},
 		{Text: "two", StopReason: "end_turn"},
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "first"))
+	d.Request(3, "session/prompt", promptParams(sid, "first"))
 	d.untilResponseID(3)
-	d.request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	other := d.untilResponseID(4)["result"].(map[string]any)["sessionId"].(string)
-	d.request(5, "session/prompt", promptParams(other, "fresh"))
+	d.Request(5, "session/prompt", promptParams(other, "fresh"))
 	d.untilResponseID(5)
-	if got := convo(prov.seen[1].Messages); got != "user:fresh\n" {
+	if got := convo(prov.Seen[1].Messages); got != "user:fresh\n" {
 		t.Errorf("a new session showed the model:\n%s", got)
 	}
 }
@@ -110,10 +111,10 @@ func TestCancelledCallIsAnsweredNext(t *testing.T) {
 		}, StopReason: "tool_use"}, nil
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "two calls"))
+	d.Request(3, "session/prompt", promptParams(sid, "two calls"))
 	<-held
 	for {
-		f := d.frame()
+		f := d.Frame()
 		if f["method"] != "session/update" {
 			continue
 		}
@@ -122,13 +123,13 @@ func TestCancelledCallIsAnsweredNext(t *testing.T) {
 			break
 		}
 	}
-	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
-	d.request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	d.Request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	d.untilResponseID(4)
 	close(release)
 	d.untilResponseID(3)
 
-	d.request(5, "session/prompt", promptParams(sid, "again"))
+	d.Request(5, "session/prompt", promptParams(sid, "again"))
 	d.untilResponseID(5)
 	want := "user:two calls\n" +
 		"assistant:[c1 c2]\n" +
@@ -167,11 +168,11 @@ func TestCancelBeforeToolsKeepsPrompt(t *testing.T) {
 		return agent.Turn{Text: "done anyway", ToolCalls: []agent.ToolCall{postsCall("c1")}, StopReason: "tool_use"}, nil
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "add posts"))
+	d.Request(3, "session/prompt", promptParams(sid, "add posts"))
 	<-started
-	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	d.Send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
 	d.untilResponseID(3)
-	d.request(4, "session/prompt", promptParams(sid, "next"))
+	d.Request(4, "session/prompt", promptParams(sid, "next"))
 	d.untilResponseID(4)
 	mu.Lock()
 	defer mu.Unlock()
@@ -203,9 +204,9 @@ func TestSessionTurnsSerializeAcrossConnections(t *testing.T) {
 		return agent.Turn{Text: "r2", StopReason: "end_turn"}, nil
 	}}
 	d1, d2, sid := sharedSession(t, kilnacp.NewServer(tools, kilnacp.WithProvider(prov)))
-	d1.request(3, "session/prompt", promptParams(sid, "one"))
+	d1.Request(3, "session/prompt", promptParams(sid, "one"))
 	<-first
-	d2.request(3, "session/prompt", promptParams(sid, "two"))
+	d2.Request(3, "session/prompt", promptParams(sid, "two"))
 	// Give a second prompt that does not wait its turn time to reach
 	// the provider while the first is still running.
 	select {
@@ -227,15 +228,15 @@ func TestSessionTurnsSerializeAcrossConnections(t *testing.T) {
 func sharedSession(t *testing.T, srv *acpcore.Server) (*dialog, *dialog, string) {
 	t.Helper()
 	d1 := startDialog(t, srv)
-	d1.request(1, "initialize", map[string]any{"protocolVersion": 1})
+	d1.Request(1, "initialize", map[string]any{"protocolVersion": 1})
 	d1.untilResponseID(1)
-	d1.request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d1.Request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	sid := d1.untilResponseID(2)["result"].(map[string]any)["sessionId"].(string)
 
 	d2 := startDialog(t, srv)
-	d2.request(1, "initialize", map[string]any{"protocolVersion": 1})
+	d2.Request(1, "initialize", map[string]any{"protocolVersion": 1})
 	d2.untilResponseID(1)
-	d2.request(2, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
+	d2.Request(2, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
 	if f := d2.untilResponseID(2); f["error"] != nil {
 		t.Fatalf("session/load: %v", f["error"])
 	}
@@ -262,10 +263,10 @@ func TestCancelWhileWaitingForTurn(t *testing.T) {
 	}}
 	d1, d2, sid := sharedSession(t, kilnacp.NewServer(tools, kilnacp.WithProvider(prov)))
 	defer close(release)
-	d1.request(3, "session/prompt", promptParams(sid, "one"))
+	d1.Request(3, "session/prompt", promptParams(sid, "one"))
 	<-first
-	d2.request(3, "session/prompt", promptParams(sid, "waiting"))
-	d2.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	d2.Request(3, "session/prompt", promptParams(sid, "waiting"))
+	d2.Send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
 	resp := d2.untilResponseID(3)
 	if got := resp["result"].(map[string]any)["stopReason"]; got != acpcore.StopCancelled {
 		t.Errorf("stopReason = %v, want cancelled", got)

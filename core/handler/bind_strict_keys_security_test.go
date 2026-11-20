@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,28 +19,30 @@ type strictKeysReq struct {
 	IsAdmin bool   `json:"-"`
 }
 
-func TestBind_RejectsDuplicateKeys(t *testing.T) {
-	body := `{"name":"alice","name":"bob"}`
+// mustReject asserts Bind refuses body — the strict-key contract's whole
+// point. reason carries the per-vector smuggling rationale verbatim, so a
+// failure still names the attack it guards against.
+func mustReject(t *testing.T, body, reason string) {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	var dst strictKeysReq
 	if err := Bind(req, &dst); err == nil {
-		t.Fatalf("Bind accepted duplicate key %q; last-key-wins lets validation see one value and the handler another", "name")
+		t.Fatalf("%s", reason)
 	}
+}
+
+func TestBind_RejectsDuplicateKeys(t *testing.T) {
+	mustReject(t, `{"name":"alice","name":"bob"}`,
+		`Bind accepted duplicate key "name"; last-key-wins lets validation see one value and the handler another`)
 }
 
 func TestBind_RejectsCaseFoldedKeys(t *testing.T) {
 	for _, key := range []string{"Name", "NAME", "nAmE", "User_ID", "USER_ID"} {
 		t.Run(key, func(t *testing.T) {
-			body := `{"` + key + `":"alice"}`
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-
-			var dst strictKeysReq
-			if err := Bind(req, &dst); err == nil {
-				t.Fatalf("Bind accepted case-folded key %q; stdlib's case-insensitive match lets a body smuggle into validated fields", key)
-			}
+			mustReject(t, `{"`+key+`":"alice"}`,
+				fmt.Sprintf("Bind accepted case-folded key %q; stdlib's case-insensitive match lets a body smuggle into validated fields", key))
 		})
 	}
 }
@@ -47,14 +50,8 @@ func TestBind_RejectsCaseFoldedKeys(t *testing.T) {
 func TestBind_RejectsUnknownFields(t *testing.T) {
 	for _, key := range []string{"role", "is_admin", "tenant_id", "permissions", "api_key"} {
 		t.Run(key, func(t *testing.T) {
-			body := `{"name":"alice","` + key + `":"x"}`
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-
-			var dst strictKeysReq
-			if err := Bind(req, &dst); err == nil {
-				t.Fatalf("Bind silently ignored unknown field %q; mass-assignment vector if any downstream handler picks the body up as map[string]any", key)
-			}
+			mustReject(t, `{"name":"alice","`+key+`":"x"}`,
+				fmt.Sprintf("Bind silently ignored unknown field %q; mass-assignment vector if any downstream handler picks the body up as map[string]any", key))
 		})
 	}
 }
@@ -62,14 +59,8 @@ func TestBind_RejectsUnknownFields(t *testing.T) {
 // Tag json:"-" must stay off the allow-list: a body with "IsAdmin":true
 // must not bind to a field the author explicitly excluded.
 func TestBind_RejectsJsonDashTaggedFields(t *testing.T) {
-	body := `{"name":"alice","IsAdmin":true}`
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	var dst strictKeysReq
-	if err := Bind(req, &dst); err == nil {
-		t.Fatalf("Bind accepted field tagged json:\"-\"; that tag is the canonical opt-out for sensitive props")
-	}
+	mustReject(t, `{"name":"alice","IsAdmin":true}`,
+		`Bind accepted field tagged json:"-"; that tag is the canonical opt-out for sensitive props`)
 }
 
 type embeddedCommon struct {
@@ -134,53 +125,39 @@ func TestBind_RejectsEscapedDuplicateKeys(t *testing.T) {
 	}
 }
 
-// PIN (documented no-op, bind.go validateBodyKeys: "a no-op when dst is
-// not a struct pointer"): a *map destination accepts duplicate, unknown,
-// and case-folded keys with last-wins semantics — handlers that Bind into
-// a map get NONE of the strict-key protection.
-//
-// FLAG for the owner, not an assertion of the opposite: today the doc
-// comment is the contract. Consider whether map destinations should at
-// least reject duplicate top-level keys (last-wins on a map is a silent
-// mass-assignment seam for {"role":"user","role":"admin"} bodies).
-func TestBind_MapDstSkipsStrictKeys(t *testing.T) {
-	body := `{"name":"a","Name":"b","name":"c","unknown":1}`
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	var dst map[string]any
-	if err := Bind(req, &dst); err != nil {
-		t.Fatalf("map destination rejected a body the documented no-op must accept: %v", err)
+// A *map destination refuses duplicate and case-folded keys, as
+// UnmarshalStrict does; unknown keys are a map's to keep.
+func TestBind_MapDstRefusesDuplicateKeys(t *testing.T) {
+	for _, body := range []string{`{"name":"a","name":"c"}`, `{"name":"a","Name":"b"}`} {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		var dst map[string]any
+		if err := Bind(req, &dst); err == nil {
+			t.Fatalf("map destination accepted %s, last-wins %v", body, dst)
+		}
 	}
-	if dst["name"] != "c" {
-		t.Fatalf("expected documented last-wins on map duplicate, got %v", dst["name"])
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"unknown":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	var dst map[string]any
+	if err := Bind(req, &dst); err != nil || dst["unknown"] == nil {
+		t.Fatalf("map destination refused an ordinary key: %v", err)
 	}
 }
 
-// PIN (documented top-level-only scope, bind.go validateBodyKeys: "strict
-// top-level key handling"): duplicate keys NESTED inside a sub-object are
-// not rejected; encoding/json's last-wins applies. A handler whose struct
-// nests a sub-struct or map gets no protection against
-// {"user":{"role":"a","role":"b"}} smuggling.
-//
-// FLAG for the owner, not an assertion of the opposite: the doc comment
-// promises top-level only. Extending the walk one level (or through
-// struct-typed fields) would close a real last-wins seam.
-func TestBind_NestedDupKeysLastWins(t *testing.T) {
+// Duplicate and case-folded keys nested below the top level are refused,
+// as ToolAdapter refuses them for the same Handler's MCP twin.
+func TestBind_NestedDupKeysRefused(t *testing.T) {
 	type inner struct {
 		Role string `json:"role"`
 	}
 	var dst struct {
 		User inner `json:"user"`
 	}
-	body := `{"user":{"role":"member","role":"admin"}}`
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	if err := Bind(req, &dst); err != nil {
-		t.Fatalf("nested duplicate rejected, contradicting documented top-level-only scope: %v", err)
-	}
-	if dst.User.Role != "admin" {
-		t.Fatalf("expected documented last-wins, got %q", dst.User.Role)
+	for _, body := range []string{`{"user":{"role":"member","role":"admin"}}`, `{"user":{"role":"member","Role":"admin"}}`} {
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if err := Bind(req, &dst); err == nil {
+			t.Fatalf("nested duplicate accepted in %s, role=%q", body, dst.User.Role)
+		}
 	}
 }

@@ -39,20 +39,26 @@ func setupSearchHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	return ch, db
 }
 
+// searchBody runs alice's search against the handler and returns the raw
+// body, failing on any non-200 status.
+func searchBody(t *testing.T, ch *CrudHandler, path string) string {
+	t.Helper()
+	req := withTestUser(httptest.NewRequest(http.MethodGet, path, nil), "alice")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
 // TestSearch_QRespectsOwnerScope: alice's search for "go" returns only
 // her own Go rows, never bob's.
 func TestSearch_QRespectsOwnerScope(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupSearchHandler(t)
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/sarticles?q=go", nil), "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
+	body := searchBody(t, ch, "/api/sarticles?q=go")
 	if !strings.Contains(body, "a1") {
 		t.Fatalf("alice's Go article missing: %s", body)
 	}
@@ -67,13 +73,8 @@ func TestSearch_QComposesWithFieldFilters(t *testing.T) {
 	ch, _ := setupSearchHandler(t)
 
 	// Search "go" AND title_like="concurrency" → only a1 matches.
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/sarticles?q=go&title_like=concurrency", nil), "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	lr := decodeListResponse(t, rec.Body.String())
+	body := searchBody(t, ch, "/api/sarticles?q=go&title_like=concurrency")
+	lr := decodeListResponse(t, body)
 	if len(lr.Data) != 1 {
 		t.Fatalf("composed search returned %d rows, want 1 (a1 only)", len(lr.Data))
 	}
@@ -104,13 +105,7 @@ func TestSearch_CursorHonorsQ(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, _ := setupSearchHandler(t)
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/sarticles?q=go&cursor=&limit=10", nil), "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("cursor status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
+	body := searchBody(t, ch, "/api/sarticles?q=go&cursor=&limit=10")
 	if !strings.Contains(body, "cursor") {
 		t.Fatalf("cursor envelope missing: %s", body)
 	}
@@ -197,13 +192,8 @@ func TestSearch_MultiTokenAND(t *testing.T) {
 
 	// "go concurrency" → both tokens must match (in title OR body).
 	// a1 title="Go concurrency" matches both. a2 doesn't match either.
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/sarticles?q=go%20concurrency", nil), "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	lr := decodeListResponse(t, rec.Body.String())
+	body := searchBody(t, ch, "/api/sarticles?q=go%20concurrency")
+	lr := decodeListResponse(t, body)
 	if len(lr.Data) != 1 {
 		t.Fatalf("multi-token AND returned %d rows, want 1", len(lr.Data))
 	}

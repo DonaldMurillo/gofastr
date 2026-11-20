@@ -1,0 +1,43 @@
+primitive: harness.tool.builtins.tasks
+summary: The TaskList tool - the model's plan for the session, replaced whole on every call and read by transports through TaskListSnapshot.
+code:
+  - framework/experimental/harness/tool/builtins/tasks*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: replace-whole-list
+    rule: Each TaskList call replaces the session's whole list, and a call with an empty content or a status other than pending, in_progress or completed changes nothing.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestTaskListReplaceAndSnapshot
+      - test: framework/experimental/harness/tool/builtins.TestTaskListRejectsBadStatus
+  - id: per-session-list
+    rule: TaskListSnapshot returns only the list written by calls whose context carried that session.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestTaskListIsolatesBySession
+      - test: framework/experimental/harness/tool/builtins.TestTaskListNoSessionInCtxReturnsError
+decisions:
+  - id: replace-not-crud
+    date: 2026-11-18
+    status: accepted
+    decision: TaskList has one action, write the full list.
+    rejected:
+      - option: Separate create, update, delete and list actions.
+        why: More calls and more state for the model to track, where the model already re-plans the whole list.
+    upholds: [replace-whole-list]
+  - id: plan-in-process-memory
+    date: 2026-11-18
+    status: accepted
+    decision: The lists live in a package-level map guarded by a mutex, lost on restart.
+    rejected:
+      - option: Persist them in the session store.
+        why: The model re-sends the whole list on every change, so the store is never the source of truth and a lost list is rewritten on the next call.
+    revisit_if: A transport needs the plan after a restart or across replicas.
+    upholds: [per-session-list]
+  - id: tasklist-not-mutating
+    date: 2026-11-18
+    status: accepted
+    decision: TaskList reports Mutating false.
+    rejected:
+      - option: Report it mutating like Write.
+        why: It changes no file, command or remote state, and a mutating flag would put a permission prompt and an intent record on every plan update.
+    upholds: [harness.tool.builtins/mutating-flags]

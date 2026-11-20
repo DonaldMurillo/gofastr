@@ -1,0 +1,11 @@
+primitive: kiln
+summary: Kiln authoring and graduation to owned Go.
+code:
+  - kiln/freeze/
+docs:
+  - framework/docs/content/kiln.md
+invariants:
+  - id: graduation-preserves-json-case
+    rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeJSONCaseContract

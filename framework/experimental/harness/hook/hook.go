@@ -1,14 +1,3 @@
-// Package hook implements lifecycle hooks: shell commands the
-// harness runs at well-known event points. Per § Hook timeouts:
-//
-//   - Per-event default timeouts (5/30/30/60/5/5).
-//   - SIGTERM at deadline, SIGKILL at deadline+5s.
-//   - stdout/stderr capped at 64KB.
-//   - Non-zero exit emits HookError; deadline emits HookTimeout.
-//
-// Hooks are SHA-256 hashed (rule 13). Project-local hooks
-// (`<repo>/.gofastr/harness/hooks/`) are off unless
-// --allow-project-hooks is set.
 package hook
 
 import (
@@ -17,13 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
-// Event names; constants mirror the doc.
+// Event names a point in a session where hooks run.
 type Event string
 
 const (
@@ -35,8 +22,7 @@ const (
 	EventStop             Event = "Stop"
 )
 
-// DefaultTimeout returns the per-event default timeout. Profiles may
-// override per-hook via timeout_ms in TOML.
+// DefaultTimeout returns the timeout a hook with a zero Timeout gets for event e.
 func DefaultTimeout(e Event) time.Duration {
 	switch e {
 	case EventSessionStart, EventUserPromptSubmit, EventStop:
@@ -56,10 +42,7 @@ type Hook struct {
 	Command string        // shell command, run via /bin/sh -c
 	Timeout time.Duration // 0 = use DefaultTimeout(Event); negative is rejected by Register
 	SHA256  string        // populated by the TOFU loader
-
-	// Source tells the runner where the hook came from for the
-	// --allow-project-hooks gate. "user" = ~/.config/...; "project"
-	// = <repo>/.gofastr/...; "builtin" = ships with the binary.
+	// Source is "user", "project" or "builtin"; a "project" hook needs Runner.AllowProjectHooks.
 	Source string
 }
 
@@ -85,19 +68,12 @@ func New() *Runner {
 	return &Runner{byEvent: make(map[Event][]Hook)}
 }
 
-// Register adds a hook. Returns an error if Event/Command are empty or
-// Timeout is negative; if the hook's Source is "project" and
-// AllowProjectHooks is false, the hook is silently skipped (no error
-// returned to keep callers simple).
+// Register adds a hook, errors on an empty Event or Command or a negative Timeout, and skips a "project" hook without error unless AllowProjectHooks is set.
 func (r *Runner) Register(h Hook) error {
 	if h.Event == "" || h.Command == "" {
 		return errors.New("hook: Event and Command are required")
 	}
 	if h.Timeout < 0 {
-		// A negative timeout can only be a sign or unit error (e.g. a
-		// computed timeout_ms that went negative); folding it onto the
-		// per-event default would hand the hook the longest deadline
-		// instead of the shortest one the caller asked for.
 		return fmt.Errorf("hook: Timeout must be >= 0 (got %v)", h.Timeout)
 	}
 	if h.Source == "project" && !r.AllowProjectHooks {
@@ -118,9 +94,7 @@ func (r *Runner) HooksFor(e Event) []Hook {
 	return cp
 }
 
-// Run executes every hook for the given event sequentially. Returns
-// a slice of results. The caller is expected to publish HookTimeout
-// / HookError events to the bus based on each Result.
+// Run runs every hook for e in registration order and returns one Result per hook; the caller publishes HookTimeout and HookError events.
 func (r *Runner) Run(ctx context.Context, e Event, env []string) []Result {
 	hooks := r.HooksFor(e)
 	results := make([]Result, 0, len(hooks))
@@ -131,11 +105,12 @@ func (r *Runner) Run(ctx context.Context, e Event, env []string) []Result {
 	return results
 }
 
+const killGrace = 5 * time.Second
+
 func runOne(ctx context.Context, h Hook, env []string) Result {
 	timeout := h.Timeout
 	//gofastr:allow(optzero) Register rejects a negative Timeout before a hook can reach runOne
 	if timeout == 0 {
-		// Register rejects negatives, so 0 is the only default arm.
 		timeout = DefaultTimeout(h.Event)
 	}
 	deadline := time.Now().Add(timeout)
@@ -146,14 +121,8 @@ func runOne(ctx context.Context, h Hook, env []string) Result {
 	if len(env) > 0 {
 		cmd.Env = append(cmd.Environ(), env...)
 	}
-	// On Linux, this sets a process group so we can signal children.
 	setProcGroup(cmd)
-	// WaitDelay bounds cmd.Run once the deadline kills the shell: a
-	// hook that backgrounds a pipe-holding descendant would otherwise
-	// keep Run blocked on the output copier past the deadline the
-	// timeout already promised (the codegen/extension_command.go
-	// shape; the 5s grace matches killAfter's).
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = killGrace
 
 	var buf bytes.Buffer
 	cmd.Stdout = capped(&buf, 64*1024)
@@ -171,8 +140,7 @@ func runOne(ctx context.Context, h Hook, env []string) Result {
 	}
 	if cmdCtx.Err() == context.DeadlineExceeded {
 		res.TimedOut = true
-		// SIGTERM, then SIGKILL after a 5s grace.
-		killAfter(cmd, 5*time.Second)
+		killProcGroup(cmd)
 		return res
 	}
 	if err != nil {
@@ -187,8 +155,6 @@ func runOne(ctx context.Context, h Hook, env []string) Result {
 	return res
 }
 
-// capped wraps an io.Writer with a byte limit. Writes past the limit
-// are dropped silently (and a truncation marker appended exactly once).
 type cappedWriter struct {
 	w      *bytes.Buffer
 	max    int
@@ -201,9 +167,6 @@ func capped(w *bytes.Buffer, max int) *cappedWriter {
 }
 
 func (c *cappedWriter) Write(p []byte) (int, error) {
-	if c.wrote >= c.max {
-		return len(p), nil
-	}
 	remaining := c.max - c.wrote
 	if len(p) > remaining {
 		_, _ = c.w.Write(p[:remaining])
@@ -217,24 +180,6 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.wrote += n
 	return n, err
-}
-
-// killAfter does best-effort SIGKILL grace handling. On platforms
-// without process groups (Windows) this falls back to whatever
-// CommandContext already did.
-func killAfter(cmd *exec.Cmd, grace time.Duration) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	// CommandContext fires SIGKILL when ctx is done; we want SIGTERM
-	// first. Best effort.
-	_ = cmd.Process.Signal(syscall.SIGTERM)
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		_ = cmd.Process.Signal(syscall.SIGKILL)
-	}
 }
 
 // Summary returns a short human-readable description for the cost meter / TUI.
@@ -255,6 +200,3 @@ func (r Result) TrimOutput(n int) string {
 	}
 	return r.Output[:n] + "…"
 }
-
-// Lint-suppress unused param.
-var _ = strings.Contains

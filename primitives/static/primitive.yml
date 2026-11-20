@@ -31,7 +31,7 @@ invariants:
     rule: Build writes runtime.js, color-scheme.js, every split runtime module and every compute worker and WebAssembly module at its path without the ?v= query, and a WebAssembly module skips the base-path rewrite.
     enforced_by:
       - test: framework/static.TestBuildEmitsSplitRuntimeModules
-      - test: framework/static.TestBuildEmitsColorSchemeJS
+      - test: framework/static.TestBuildEmitsBootAssets
       - test: framework/static.TestBuildExportsComputeAssets
   - id: not-found-page-exported
     rule: When the host has a not-found page, Build writes it to 404.html through the same static rewrites as a page, slashes its page links and records it in Result.Assets.

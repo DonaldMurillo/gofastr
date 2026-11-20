@@ -16,9 +16,15 @@ const (
 
 	purposeEmailCode tokenPurpose = "emailcode"
 
-	purposePasskeyRegister tokenPurpose = "passkeyreg"
-	purposePasskeyLogin    tokenPurpose = "passkeylogin"
+	purposePasskeyRegister        tokenPurpose = "passkeyreg"
+	purposePasskeyLogin           tokenPurpose = "passkeylogin"
+	purposePasskeyRegisterQuiet   tokenPurpose = "passkeyregc"
+	purposePasskeyReauth          tokenPurpose = "passkeyreauth"
+	purposePasskeyProof           tokenPurpose = "passkeyproof"
+	purposePasskeyRegisterSession tokenPurpose = "passkeyregsess"
 )
+
+var userPurposes = []tokenPurpose{purposeReset, purposeVerify, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth}
 
 var errTokenPurpose = errors.New("auth: token is not valid for this flow")
 
@@ -27,24 +33,37 @@ func createPurposeToken(ctx context.Context, store MagicLinkTokenStore, p tokenP
 }
 
 func redeemPurposeToken(ctx context.Context, store MagicLinkTokenStore, p tokenPurpose, token string) (string, error) {
+	_, payload, err := redeemAnyPurpose(ctx, store, token, p)
+	return payload, err
+}
+
+func redeemAnyPurpose(ctx context.Context, store MagicLinkTokenStore, token string, ps ...tokenPurpose) (tokenPurpose, string, error) {
+	match := func(raw string) (tokenPurpose, string, bool) {
+		for _, p := range ps {
+			if payload, ok := strings.CutPrefix(raw, string(p)+":"); ok {
+				return p, payload, true
+			}
+		}
+		return "", "", false
+	}
 	if peeker, ok := store.(MagicLinkTokenPeeker); ok {
 		raw, err := peeker.PeekToken(ctx, token)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		if _, ok := peekPurposePayload(raw, p); !ok {
-			return "", errTokenPurpose
+		if _, _, ok := match(raw); !ok {
+			return "", "", errTokenPurpose
 		}
 	}
 	raw, err := store.RedeemToken(ctx, token)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	payload, ok := strings.CutPrefix(raw, string(p)+":")
+	p, payload, ok := match(raw)
 	if !ok {
-		return "", errTokenPurpose
+		return "", "", errTokenPurpose
 	}
-	return payload, nil
+	return p, payload, nil
 }
 
 func peekPurposePayload(raw string, p tokenPurpose) (string, bool) {

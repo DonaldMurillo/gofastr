@@ -19,7 +19,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
-	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 type aeadSealer struct {
@@ -198,17 +197,8 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 }
 
 func (s *SQLOAuthTokenStore) addColumn(ctx context.Context, def string) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, query.QuoteFolded(s.table), def)
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, query.QuoteFolded(s.table), def)
-	}
-	if _, err := s.db.ExecContext(ctx, alter); err != nil {
-		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
-			return nil
-		}
-		return err
-	}
-	return nil
+	col, typ, _ := strings.Cut(def, " ")
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, typ)
 }
 
 // LeaseRefresh implements OAuthTokenLeaser with one conditional UPDATE.
@@ -232,15 +222,8 @@ func (s *SQLOAuthTokenStore) ReleaseRefresh(ctx context.Context, userID, provide
 }
 
 func (s *SQLOAuthTokenStore) migrateRefreshSHA(ctx context.Context) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
-	}
-	if _, err := s.db.ExecContext(ctx, alter); err != nil {
-		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
-		} else {
-			return err
-		}
+	if err := s.addColumn(ctx, "refresh_sha TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
 	}
 	rows, err := s.db.QueryContext(ctx,
 		fmt.Sprintf(`SELECT user_id, provider, refresh_token FROM %s WHERE refresh_sha = ''`, query.QuoteFolded(s.table)))

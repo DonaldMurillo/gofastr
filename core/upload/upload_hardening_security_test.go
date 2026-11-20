@@ -170,24 +170,33 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	}
 }
 
+// saveAndStatPerm saves a secret through a fresh LocalStorage rooted at a
+// temp dir and returns the permission bits of rel (slash-separated,
+// relative to the root), so each permission pin below asserts only its
+// own mask and attack text.
+func saveAndStatPerm(t *testing.T, key, rel string) os.FileMode {
+	t.Helper()
+	dir := t.TempDir()
+	s := newTestLocalStorage(t, dir)
+
+	if err := s.Save(context.Background(), key, strings.NewReader("secret")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	return info.Mode().Perm()
+}
+
 // TestLocalStorage_SaveRestrictsFilePermissions verifies uploaded files
 // are not created world-readable. Multi-tenant hosts often share the
 // same node; 0644 exposes user uploads to unrelated local users.
 func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
 	requirePOSIXFileModes(t)
 	t.Parallel()
-	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
-
-	if err := s.Save(context.Background(), "tenant-a/private.txt", strings.NewReader("secret")); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	info, err := os.Stat(filepath.Join(dir, "tenant-a", "private.txt"))
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		t.Errorf("SECURITY: [storage] uploaded file permissions = %#o. Attack: local disclosure via world/group-readable upload files.", info.Mode().Perm())
+	if perm := saveAndStatPerm(t, "tenant-a/private.txt", "tenant-a/private.txt"); perm&0o077 != 0 {
+		t.Errorf("SECURITY: [storage] uploaded file permissions = %#o. Attack: local disclosure via world/group-readable upload files.", perm)
 	}
 }
 
@@ -196,17 +205,7 @@ func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
 func TestLocalStorage_SaveRestrictsDirectoryPermissions(t *testing.T) {
 	requirePOSIXFileModes(t)
 	t.Parallel()
-	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
-
-	if err := s.Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	info, err := os.Stat(filepath.Join(dir, "tenant-a", "nested"))
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		t.Errorf("SECURITY: [storage] upload directory permissions = %#o. Attack: local enumeration of tenant upload trees.", info.Mode().Perm())
+	if perm := saveAndStatPerm(t, "tenant-a/nested/private.txt", "tenant-a/nested"); perm&0o077 != 0 {
+		t.Errorf("SECURITY: [storage] upload directory permissions = %#o. Attack: local enumeration of tenant upload trees.", perm)
 	}
 }

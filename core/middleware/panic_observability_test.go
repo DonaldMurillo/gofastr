@@ -12,6 +12,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // A panicking request has to leave a trace an operator can follow: the
@@ -26,7 +28,7 @@ func panicSiteForStackTest() { panic("deep handler bug") }
 // the code that panicked. Timeout now captures the stack where the panic
 // happened and Recovery logs that one.
 func TestTimeoutPanicKeepsHandlerStack(t *testing.T) {
-	logs := &captureHandler{}
+	logs := &scrubtest.Sink{}
 	h := RecoveryFn(func() *slog.Logger { return slog.New(logs) })(Timeout(time.Minute)(
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panicSiteForStackTest() })))
 	rec := httptest.NewRecorder()
@@ -34,10 +36,10 @@ func TestTimeoutPanicKeepsHandlerStack(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status %d, want 500", rec.Code)
 	}
-	if got := logs.get("error"); got != "deep handler bug" {
+	if got := logs.Get("error"); got != "deep handler bug" {
 		t.Fatalf("logged error %q, want the handler's panic value", got)
 	}
-	if stack := logs.get("stack"); !strings.Contains(stack, "panicSiteForStackTest") {
+	if stack := logs.Get("stack"); !strings.Contains(stack, "panicSiteForStackTest") {
 		t.Fatalf("logged stack does not name the panicking function:\n%s", stack)
 	}
 }
@@ -45,20 +47,18 @@ func TestTimeoutPanicKeepsHandlerStack(t *testing.T) {
 // TestTimeoutLatePanicLogsStack: a handler that panics after its 504 is
 // logged from a watcher goroutine; that line carries the stack too.
 func TestTimeoutLatePanicLogsStack(t *testing.T) {
-	logs := &captureHandler{}
-	prev := slog.Default()
-	slog.SetDefault(slog.New(logs))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	logs := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, logs)
 	h := Timeout(30 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		panicSiteForStackTest()
 	}))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && logs.get("stack") == "" {
+	for time.Now().Before(deadline) && logs.Get("stack") == "" {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if stack := logs.get("stack"); !strings.Contains(stack, "panicSiteForStackTest") {
+	if stack := logs.Get("stack"); !strings.Contains(stack, "panicSiteForStackTest") {
 		t.Fatalf("late-panic log stack does not name the panicking function:\n%s", stack)
 	}
 }

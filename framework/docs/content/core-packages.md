@@ -40,6 +40,10 @@ one error envelope every route shares, crud's included:
 absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
+Its JSON body goes through `UnmarshalStrict` (below), so a duplicate or
+case-folded key is refused in any object at any depth and into a map
+destination too, exactly as `ToolAdapter` refuses it for the same
+handler's MCP twin.
 Its destination must be a non-nil pointer; an invalid destination returns
 an error rather than panicking.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -152,13 +156,15 @@ A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
 and `Group` middleware in the tree, next to the handler), route groups
-(a top-level `Group` prefix starts with `/` or names a host with a dot
-or `localhost`, without a port; `Group("v1")` panics, since the mux
+(a top-level `Group` prefix is empty, starts with `/`, or names a host
+with a dot or `localhost` (any letter case), without a port; `Group("v1")` panics, since the mux
 would read `v1` as a host; a group's `NotFound` and `MethodNotAllowed`
 answer the misses under its prefix, the longest matching prefix
-winning, even when the root serves the request; a 405 runs the
-middleware of the group that holds the path's routes, so CORS set on
-`Group("/api")` answers the preflight of `POST /api/items`), and sanitized path
+winning, even when the root serves the request, with `%2F` kept
+inside one segment as the mux reads it; a 405 runs the middleware of
+the group that holds the path's routes, so CORS set on `Group("/api")`
+answers the preflight of `POST /api/items`, even when the 405 handler
+belongs to another group), and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, smuggled `..`, and in a
 `{name...}` catch-all a leading or doubled `/`, which only `%2F` produces;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
@@ -182,6 +188,12 @@ the router at the top of its Group chain, for a registrar that must
 serve an absolute URL outside its own prefix (routes added there skip
 the group's middleware). Direct. Start at `core/router/router.go`:
 `Router`.
+
+`router.ValidatePattern(method, pattern)` returns an error for malformed
+ServeMux patterns without panicking or registering a route on your router.
+`Router.Handle` uses the same validation and panics on failure. The validator
+does not check conflicts with existing routes or apply a group's prefix;
+include the prefix in the pattern when validating a grouped route.
 
 `SetRouteGate` runs before the middleware chain. A false result or a
 panic answers 404 on a matched route and excludes that method from a
@@ -264,9 +276,11 @@ a longer form than it needs). No data frame goes out after the
 connection's own Close frame, and `Close` first writes the messages
 `Write` already queued, oldest first, for up to `WriteTimeout` (10s
 when it is zero or negative), the same bound cutting a frame the pump is
-still writing to a stalled peer; `Write` returns `ErrClosed` once `Close`
-has started (a `Write` racing `Close` may still be accepted and
-dropped). A close the peer started, or one after a failed write, sends
+still writing to a stalled peer and every other frame (a keepalive Ping
+included) written before the Close frame, which gets a fresh bound of
+its own. `Write` returns `ErrClosed` once `Close` has started, and a
+`Write` that returned nil is drained with the rest, never left behind in
+the queue. A close the peer started, or one after a failed write, sends
 the Close frame at once with no drain. One read pump owns the socket and hands each message to `Read`
 through a small buffer. An app that reads must take a message at least
 once per `ReadIdleTimeout` + `PongTimeout`, or the connection closes
@@ -332,11 +346,49 @@ envelope that stops broadcasts from re-broadcasting. `PublishQueue`
 publishes from hot paths without blocking; `PublishQueueReporting` is
 the same queue with a per-payload callback that runs when the payload
 is not published (backend error, timeout, or `ErrPublishDropped` on
-overflow), for a caller that must act on a loss. Indirect by
+overflow), for a caller that must act on a loss. A payload that `stop`
+itself drops gets no callback; a send racing `stop` may still evict an
+older payload and report it as dropped. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:
 `Fanout`.
+
+A receiver unwraps each message with `UnwrapForeign(self, raw)`, which
+returns `ok` false for a malformed envelope and for one its own node
+sent, so a replica never re-applies its own broadcast. A payload sent to
+a `SubscriberQueue` or `PublishQueue` after its `stop` has returned is
+dropped.
+
+`NewRedis` imports no Redis library; adapt your client to `RedisPubSub`.
+For go-redis:
+
+```go
+type goRedisPubSub struct{ c *redis.Client }
+
+func (a goRedisPubSub) Publish(ctx context.Context, ch string, p []byte) error {
+	return a.c.Publish(ctx, ch, p).Err()
+}
+
+func (a goRedisPubSub) Subscribe(ctx context.Context, ch string, fn func([]byte)) (func(), error) {
+	sub := a.c.Subscribe(ctx, ch)
+	if _, err := sub.Receive(ctx); err != nil { // Subscribe drops a refused SUBSCRIBE
+		_ = sub.Close()
+		return nil, err
+	}
+	msgs := sub.Channel(redis.WithChannelSize(64))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for m := range msgs {
+			fn([]byte(m.Payload))
+		}
+	}()
+	return func() { _ = sub.Close(); <-done }, nil
+}
+
+f := fanout.NewRedis(goRedisPubSub{c: client})
+```
 
 ## API surface
 
@@ -415,8 +467,12 @@ UTF-8, and Infinity-overflowing literals are errors) and `Canonicalize`
 handles in-memory Go values. Keys sort by UTF-16 code unit and numbers
 serialize exactly as ECMAScript `Number::toString`. Indirect: the
 framework signs A2A agent cards with it. Direct when you need to hash or
-sign JSON in your own code — read the package doc for the I-JSON number
-caveats first. Start at `core/jcs/jcs.go`: `CanonicalizeJSON`.
+sign JSON in your own code. Numbers follow I-JSON: every number becomes
+an IEEE 754 double, so carry an integer beyond 2^53 as a string; a
+literal that underflows becomes `0`. `Canonicalize` inherits
+`encoding/json`'s replacement of invalid UTF-8 with U+FFFD, so put
+untrusted strings through `CanonicalizeJSON`. Start at
+`core/jcs/jcs.go`: `CanonicalizeJSON`.
 
 ## Content and rendering
 
@@ -613,7 +669,7 @@ The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
 IPv4-mapped IPv6 first and checking IPv4 addresses carried by NAT64,
 6to4, IPv4-compatible IPv6, and Teredo. Teredo is refused if either
-its server or its decoded client IPv4 is internal, with a `Reason` helper. Tiny: two exported funcs. Indirect:
+its server or its decoded client IPv4 is internal, with a `Reason` helper. Indirect:
 outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
 the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
@@ -629,6 +685,21 @@ own and gives the clone the guarded dialer, so a custom TLS or pool
 setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
+`CheckOutboundURL(raw, prefix, allowPrivate)` is the registration-time
+check battery/webhook and core/a2a share for a caller-supplied URL:
+http(s) only, a host, no userinfo and, unless `allowPrivate`, no
+`localhost`, `*.localhost` or `*.internal` name (`IsInternalName`, which
+the Web Bot Auth directory fetch checks too) and no internal literal or
+resolved address, with the DNS lookup bounded to 3 seconds.
+`GuardRoundTripper(rt, prefix)` guards a supplied client's transport:
+`nil` gets `GuardedTransport`, a plain transport its `GuardPlainTransport`
+clone, and anything else a `*ResolveGuard` that checks the target per
+request.
+`OriginAllowed(r, allowed)` is the cross-origin check core/mcp, core/a2a
+and the UI host's session and action endpoints share: it passes a request with no Origin, one whose Origin names the
+request's own Host, and one whose Origin matches an allow-list entry
+case-insensitively. `IsLoopbackAuthority` is the Host pin for loopback-only
+servers.
 
 ### textsafe
 

@@ -1,0 +1,43 @@
+primitive: mcp.prompts
+summary: The prompt registry and prompts/list and prompts/get, with per-prompt gates and required-argument checks.
+code:
+  - core/mcp/prompts.go
+docs:
+  - framework/docs/content/mcp.md
+invariants:
+  - id: gate-before-arguments
+    rule: prompts/get runs the prompt's gate before it looks at the arguments, so a refused caller never learns an argument name from a missing-argument or null-argument error.
+    enforced_by:
+      - test: core/mcp.TestGatedPromptHidesArgNames
+      - test: core/mcp.TestPromptGateRefusesGet
+  - id: arguments-checked-before-handler
+    rule: prompts/get refuses a null argument value and a missing required argument with -32602 before the handler runs.
+    enforced_by:
+      - test: core/mcp.TestPromptArgNullRefused
+      - test: core/mcp.TestPromptsGetMissingRequiredArgErrors
+  - id: unknown-prompt-is-invalid-params
+    rule: prompts/get of an unknown name answers -32602, the code the spec assigns, not -32601.
+    enforced_by:
+      - test: core/mcp.TestPromptsGetUnknownNameErrors
+  - id: messages-never-null
+    rule: A prompts/get result's messages is an array, never null, and a panicking handler answers -32603 "internal prompt error".
+    enforced_by:
+      - test: core/mcp.TestPromptMessagesNeverNull
+      - test: core/mcp.TestPromptsGetPanicBecomesError
+  - id: list-pages-are-arrays
+    rule: A prompts/list, resources/list, resources/templates/list or tools/list page is an array, never null, even when every item is gated away.
+    enforced_by:
+      - test: core/mcp.TestSweepEmptyListingsAnswerArrays
+    applies:
+      - core/mcp/cursor.go
+      - core/mcp/resources.go
+      - core/mcp/resource_templates.go
+decisions:
+  - id: one-gated-list-handler
+    date: 2026-11-19
+    status: accepted
+    decision: prompts/list, resources/list and resources/templates/list all serve through gatedListResponse, which parses the cursor, snapshots, gates, sorts, pages and wraps.
+    rejected:
+      - option: A handler body per list method.
+        why: The three bodies were verbatim copies, so a fix to the gate order or the page cut had to land three times.
+    upholds: [mcp.tools/gates-outside-registry-lock, mcp/paging-walks-post-gate-sorted-listing]

@@ -345,38 +345,41 @@ func mustRegisterOpen(t *testing.T, s *Server, name string) {
 
 func listToolNames(t *testing.T, s *Server, ctx context.Context) []string {
 	t.Helper()
-	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
-	if resp.Error != nil {
-		return nil
-	}
-	res, ok := resp.Result.(toolsListResult)
-	if !ok {
-		t.Fatalf("tools/list result type %T", resp.Result)
-	}
-	names := make([]string, 0, len(res.Tools))
-	for _, tool := range res.Tools {
-		names = append(names, tool.Name)
-	}
-	return names
+	return listField(t, s, ctx, "tools/list",
+		func(r toolsListResult) []Tool { return r.Tools },
+		func(tool Tool) string { return tool.Name })
 }
 
 // listResourceURIs issues resources/list for the caller ctx identifies
 // and returns the visible URIs (nil on an error response).
 func listResourceURIs(t *testing.T, s *Server, ctx context.Context) []string {
 	t.Helper()
-	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "resources/list"})
+	return listField(t, s, ctx, "resources/list",
+		func(r resourcesListResult) []Resource { return r.Resources },
+		func(res Resource) string { return res.URI })
+}
+
+// listField issues a list RPC for method and projects one field out of
+// each item of the result (nil on an error response, so a listing that
+// errors reads as "nothing visible" to the caller's contains check). The
+// per-method listing helpers (tools, resources, prompts, templates) share
+// this shape.
+func listField[T any, R any](t *testing.T, s *Server, ctx context.Context, method string, items func(R) []T, field func(T) string) []string {
+	t.Helper()
+	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: method})
 	if resp.Error != nil {
 		return nil
 	}
-	res, ok := resp.Result.(resourcesListResult)
+	res, ok := resp.Result.(R)
 	if !ok {
-		t.Fatalf("resources/list result type %T", resp.Result)
+		t.Fatalf("%s result type %T", method, resp.Result)
 	}
-	uris := make([]string, 0, len(res.Resources))
-	for _, r := range res.Resources {
-		uris = append(uris, r.URI)
+	all := items(res)
+	out := make([]string, 0, len(all))
+	for _, v := range all {
+		out = append(out, field(v))
 	}
-	return uris
+	return out
 }
 
 func contains(hay []string, needle string) bool {

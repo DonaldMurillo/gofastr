@@ -32,7 +32,7 @@ func registerCanonicalErasers() {
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
 		Canonicalize: canonicalEmailOrEmpty(nil),
 	})
-	for _, p := range []tokenPurpose{purposeMagicLink, purposeEmailCode, purposeReset, purposeVerify, purposePasskeyRegister} {
+	for _, p := range append([]tokenPurpose{purposeMagicLink, purposeEmailCode}, userPurposes...) {
 		registerTokenEraser("magic_link_tokens", p)
 	}
 }
@@ -124,7 +124,9 @@ func resolveEraseTables(mgr *AuthManager) {
 				})
 			}
 			if ms, ok := pp.challenges.(*SQLMagicLinkTokenStore); ok {
-				registerTokenEraser(ms.table, purposePasskeyRegister)
+				for _, p := range []tokenPurpose{purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth} {
+					registerTokenEraser(ms.table, p)
+				}
 			}
 		}
 	}

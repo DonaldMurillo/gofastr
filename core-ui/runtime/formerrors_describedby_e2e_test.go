@@ -66,32 +66,43 @@ func TestFormErrorKeepsHintDescribedBy(t *testing.T) {
 </form>
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`
-	srv := formErrorsServer(t, page, func(n int32) (int, string) {
-		if n == 1 {
-			return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is not an address"]}}`
-		}
-		return http.StatusOK, `{"ok":true}`
-	})
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-
 	var afterReport, afterClear string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
-		chromedp.WaitVisible(`#go`, chromedp.ByID),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`!!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	refuseThenRetry(t, page, `{"email":["is not an address"]}`,
+		`!!document.getElementById('email-error')`,
 		chromedp.Evaluate(`document.getElementById('email').getAttribute('aria-describedby') || ''`, &afterReport),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.getElementById('email').getAttribute('aria-describedby') || ''`, &afterClear),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+		`!document.getElementById('email-error')`,
+		chromedp.Evaluate(`document.getElementById('email').getAttribute('aria-describedby') || ''`, &afterClear))
 	if afterReport != "email-hint email-error" {
 		t.Errorf("aria-describedby after the refused submit = %q, want %q (hint kept, error added)", afterReport, "email-hint email-error")
 	}
 	if afterClear != "email-hint" {
 		t.Errorf("aria-describedby after the successful retry = %q, want %q", afterClear, "email-hint")
+	}
+}
+
+// refuseThenRetry loads page, submits #go against a server that refuses
+// the first save with fields and accepts the second, and runs
+// onRefused once refused holds and onCleared once cleared holds.
+func refuseThenRetry(t *testing.T, page, fields, refused string, onRefused chromedp.Action, cleared string, onCleared chromedp.Action) {
+	t.Helper()
+	srv := formErrorsServer(t, page, func(n int32) (int, string) {
+		if n == 1 {
+			return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":` + fields + `}`
+		}
+		return http.StatusOK, `{"ok":true}`
+	})
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(refused, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		onRefused,
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(cleared, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Sleep(200*time.Millisecond),
+		onCleared,
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
 	}
 }

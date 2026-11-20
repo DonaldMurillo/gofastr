@@ -148,6 +148,24 @@ func TestTTLExpiryFiresPresenceChange(t *testing.T) {
 	})
 }
 
+// seedFullRemoteRosters fills the remote-roster table to its cap; t:0
+// is expired and long-unrefreshed, so an incoming topic must evict it.
+func seedFullRemoteRosters(m *Manager, now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range maxRemoteRosterTopics {
+		topic := "t:" + strconv.Itoa(i)
+		entry := remoteRosterEntry{members: []PresenceMember{{UserID: "u"}}, expiresAt: now.Add(time.Hour)}
+		touched := now
+		if i == 0 {
+			entry.expiresAt = now.Add(-time.Second)
+			touched = now.Add(-time.Minute)
+		}
+		m.remoteRosters[topic] = map[string]remoteRosterEntry{"r1": entry}
+		m.remoteRosterTouch[topic] = touched
+	}
+}
+
 // TestCapEvictOfExpiredFiresChange: the topic-cap eviction is the other
 // place an expired, unswept roster leaves the table. Viewers still hold
 // its members, so dropping it must fire OnPresenceChange too.
@@ -161,20 +179,7 @@ func TestCapEvictOfExpiredFiresChange(t *testing.T) {
 	m.reconfigurePresence(time.Hour, time.Hour) // keep the sweep out of it
 
 	now := time.Now()
-	m.mu.Lock()
-	for i := range maxRemoteRosterTopics {
-		topic := "t:" + strconv.Itoa(i)
-		entry := remoteRosterEntry{members: []PresenceMember{{UserID: "u"}}, expiresAt: now.Add(time.Hour)}
-		touched := now
-		if i == 0 {
-			// Oldest refresh, and past its TTL before any sweep ran.
-			entry.expiresAt = now.Add(-time.Second)
-			touched = now.Add(-time.Minute)
-		}
-		m.remoteRosters[topic] = map[string]remoteRosterEntry{"r1": entry}
-		m.remoteRosterTouch[topic] = touched
-	}
-	m.mu.Unlock()
+	seedFullRemoteRosters(m, now)
 
 	var fired []string
 	m.SetOnPresenceChange(func(topic string) { fired = append(fired, topic) })

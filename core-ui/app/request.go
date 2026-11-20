@@ -9,41 +9,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// requestContextKey is the unexported type used to store the active
-// *http.Request on a context.Context. The host (uihost / framework
-// router) wraps the per-request context with WithRequest before
-// calling Screen.Load, so screens can read URL query params, headers,
-// or any other request data via RequestFromContext.
 type requestContextKey struct{}
 
-// overlayContextKey marks a render as an intercepted overlay.
 type overlayContextKey struct{}
 
 func withOverlay(ctx context.Context, as ScreenType) context.Context {
 	return context.WithValue(ctx, overlayContextKey{}, as)
 }
 
-// OverlayFromContext reports whether the screen is rendering as an
-// intercepted overlay (see InterceptFrom) and which presentation it
-// wears: ScreenDrawer or ScreenSheet. A screen draws the chrome a
-// layer needs (a close control, the page's path) only then; the
-// canonical full page is the same render without it.
+// OverlayFromContext reports whether the screen is rendering as an intercepted overlay (see
+// InterceptFrom) and which presentation it wears: ScreenDrawer or ScreenSheet.
 func OverlayFromContext(ctx context.Context) (ScreenType, bool) {
 	as, ok := ctx.Value(overlayContextKey{}).(ScreenType)
 	return as, ok
 }
 
-// overlayOriginContextKey carries the path an overlay opened over.
 type overlayOriginContextKey struct{}
 
-// overlayOriginQueryContextKey carries the query of the page an overlay
-// opened over.
 type overlayOriginQueryContextKey struct{}
 
-// withOverlayOrigin records the origin's path, and its query apart from
-// it; the fragment is cut off. Anything but a rooted local path (a
-// protocol-relative "//host", a backslash a browser reads as one)
-// records nothing, and a query that does not parse records no query.
 func withOverlayOrigin(ctx context.Context, origin string) context.Context {
 	if i := strings.IndexByte(origin, '#'); i >= 0 {
 		origin = origin[:i]
@@ -62,22 +46,15 @@ func withOverlayOrigin(ctx context.Context, origin string) context.Context {
 	return ctx
 }
 
-// OverlayOriginFromContext returns the path of the page an intercepted
-// overlay opened over (the list, or the record whose Related tab added
-// to it), or "" on any other render. A form in the overlay navigates
-// there on success, and the runtime answers that by closing the overlay
-// and refreshing the page under it instead of leaving it.
+// OverlayOriginFromContext returns the path of the page an intercepted overlay opened over (the
+// list, or the record whose Related tab added to it), or "" on any other render.
 func OverlayOriginFromContext(ctx context.Context) string {
 	s, _ := ctx.Value(overlayOriginContextKey{}).(string)
 	return s
 }
 
-// OverlayOriginQueryFromContext returns the query of the page an
-// intercepted overlay opened over, or nil on any other render or when
-// the origin had none. A record drawer over a list reads the list's
-// sort, filter and search from it. The client names the origin, so the
-// values are the reader's own input: parse them the way the page under
-// the overlay would, never trust them. Each call returns a copy.
+// OverlayOriginQueryFromContext returns the query of the page an intercepted overlay opened over,
+// or nil on any other render or when the origin had none.
 func OverlayOriginQueryFromContext(ctx context.Context) url.Values {
 	q, _ := ctx.Value(overlayOriginQueryContextKey{}).(url.Values)
 	if q == nil {
@@ -90,11 +67,7 @@ func OverlayOriginQueryFromContext(ctx context.Context) url.Values {
 	return out
 }
 
-// WithRequest returns a new context that carries r. The host should
-// call this exactly once per page render, typically inside the HTTP
-// handler that drives the screen. It also starts the render's id scope
-// (render.WithIDScope), so two same-titled sections on the page get
-// distinct ids.
+// WithRequest returns a new context that carries r.
 func WithRequest(ctx context.Context, r *http.Request) context.Context {
 	if r == nil {
 		return ctx
@@ -102,17 +75,13 @@ func WithRequest(ctx context.Context, r *http.Request) context.Context {
 	return context.WithValue(render.WithIDScope(ctx), requestContextKey{}, r)
 }
 
-// RequestFromContext returns the *http.Request associated with ctx, or
-// nil if none was set. Always nil-check the result, Load may run in
-// build-time SSG too, where there is no live request.
+// RequestFromContext returns the *http.Request associated with ctx, or nil if none was set.
 func RequestFromContext(ctx context.Context) *http.Request {
 	r, _ := ctx.Value(requestContextKey{}).(*http.Request)
 	return r
 }
 
-// QueryFromContext is a convenience that returns the URL query Values
-// of the request in ctx, or an empty Values when no request is
-// attached (e.g. SSG builds).
+// QueryFromContext returns the query of the request in ctx, or empty Values when none is attached.
 func QueryFromContext(ctx context.Context) url.Values {
 	r := RequestFromContext(ctx)
 	if r == nil || r.URL == nil {

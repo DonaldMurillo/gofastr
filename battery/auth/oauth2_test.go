@@ -211,6 +211,9 @@ func TestOAuth2Plugin_StateExpiry(t *testing.T) {
 	// The stateless token now carries the expiry, so simulate expiry
 	// by minting a token with an explicit past expiry and the same
 	// HMAC the production code would produce.
+	if _, ok := p.validateAndConsumeState(mintBackdatedState(t, p, "mock", time.Now().Add(time.Minute)), "mock"); !ok {
+		t.Fatal("control: a live backdated-format state was refused")
+	}
 	state := mintBackdatedState(t, p, "mock", time.Now().Add(-15*time.Minute))
 
 	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
@@ -230,7 +233,7 @@ func mintBackdatedState(t *testing.T, p *OAuth2Plugin, providerName string, expi
 	}
 	nonceB64 := stateTestB64.EncodeToString(nonce)
 	expiryStr := strconv.FormatInt(expiry.Unix(), 10)
-	payload := nonceB64 + "." + providerName + "." + expiryStr
+	payload := nonceB64 + "." + providerName + "." + expiryStr + "."
 	mac := hmac.New(sha256.New, p.stateKey)
 	mac.Write([]byte(payload))
 	sig := stateTestB64.EncodeToString(mac.Sum(nil))
@@ -653,48 +656,42 @@ func newHangServer(t *testing.T, sleep time.Duration) *httptest.Server {
 	}))
 }
 
-func TestGoogleProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
+func TestProviders_TimeoutOnSlowTokenEndpoint(t *testing.T) {
 	hang := newHangServer(t, 1*time.Second)
 	defer hang.Close()
 
-	prov := NewGoogleProvider("client-id", "client-secret", "http://localhost/cb")
-	prov.tokenEndpoint = hang.URL
-	prov.userInfoEndpoint = hang.URL
 	// 500ms timeout for fast feedback; production default is 10s.
 	tr := &http.Transport{}
 	t.Cleanup(tr.CloseIdleConnections)
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
+	client := &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
 
-	start := time.Now()
-	_, err := prov.ExchangeCode(context.Background(), "fake-code")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("expected error from hanging endpoint, got nil")
-	}
-	if elapsed > 1*time.Second {
-		t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
-	}
-}
+	g := NewGoogleProvider("client-id", "client-secret", "http://localhost/cb")
+	g.tokenEndpoint = hang.URL
+	g.userInfoEndpoint = hang.URL
+	g.httpClient = client
+	gh := NewGitHubProvider("client-id", "client-secret", "http://localhost/cb")
+	gh.tokenEndpoint = hang.URL
+	gh.userInfoEndpoint = hang.URL
+	gh.httpClient = client
 
-func TestGitHubProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
-	hang := newHangServer(t, 1*time.Second)
-	defer hang.Close()
-
-	prov := NewGitHubProvider("client-id", "client-secret", "http://localhost/cb")
-	prov.tokenEndpoint = hang.URL
-	prov.userInfoEndpoint = hang.URL
-	tr := &http.Transport{}
-	t.Cleanup(tr.CloseIdleConnections)
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
-
-	start := time.Now()
-	_, err := prov.ExchangeCode(context.Background(), "fake-code")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("expected error from hanging endpoint, got nil")
-	}
-	if elapsed > 1*time.Second {
-		t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
+	providers := []struct {
+		name string
+		p    interface {
+			ExchangeCode(context.Context, string) (*OAuth2Token, error)
+		}
+	}{{"GoogleProvider", g}, {"GitHubProvider", gh}}
+	for _, tc := range providers {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			_, err := tc.p.ExchangeCode(context.Background(), "fake-code")
+			elapsed := time.Since(start)
+			if err == nil {
+				t.Fatalf("expected error from hanging endpoint, got nil")
+			}
+			if elapsed > 1*time.Second {
+				t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
+			}
+		})
 	}
 }
 

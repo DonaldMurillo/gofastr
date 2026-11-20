@@ -25,10 +25,11 @@ const (
 )
 
 type oidcKey struct {
-	kid string
-	alg string // "RS256" or "ES256"
-	rsa *rsa.PublicKey
-	ec  *ecdsa.PublicKey
+	kid    string
+	issuer string
+	alg    string // "RS256" or "ES256"
+	rsa    *rsa.PublicKey
+	ec     *ecdsa.PublicKey
 }
 
 type jwksSet struct {
@@ -231,15 +232,16 @@ func (c *jwksCache) fetch(ctx context.Context, jwksURI string) (*jwksSet, error)
 }
 
 type rawJWK struct {
-	Kty string `json:"kty"`
-	Use string `json:"use"`
-	Kid string `json:"kid"`
-	Alg string `json:"alg"`
-	N   string `json:"n"`
-	E   string `json:"e"`
-	Crv string `json:"crv"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
+	Kty    string `json:"kty"`
+	Use    string `json:"use"`
+	Kid    string `json:"kid"`
+	Alg    string `json:"alg"`
+	N      string `json:"n"`
+	E      string `json:"e"`
+	Crv    string `json:"crv"`
+	X      string `json:"x"`
+	Y      string `json:"y"`
+	Issuer string `json:"issuer"`
 }
 
 func parseJWKS(body []byte) (*jwksSet, error) {
@@ -255,6 +257,7 @@ func parseJWKS(body []byte) (*jwksSet, error) {
 		if !ok {
 			continue
 		}
+		pk.issuer = k.Issuer
 		set.list = append(set.list, pk)
 		if k.Kid != "" {
 			set.byKid[k.Kid] = pk
@@ -410,5 +413,22 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI strin
 	if err := p.verifyClaims(claims); err != nil {
 		return nil, err
 	}
+	if err := p.checkKeyIssuer(key, claims); err != nil {
+		return nil, err
+	}
 	return claims, nil
+}
+
+func (p *OIDCProvider) checkKeyIssuer(key oidcKey, claims map[string]any) error {
+	if key.issuer == "" || p.tenantTemplate() == "" {
+		return nil
+	}
+	want := normalizeIssuer(key.issuer)
+	if strings.Contains(want, tenantPlaceholder) {
+		want = strings.Replace(want, tenantPlaceholder, claimString(claims, "tid"), 1)
+	}
+	if want != normalizeIssuer(claimString(claims, "iss")) {
+		return errors.New("oidc: id_token signing key is scoped to another issuer")
+	}
+	return nil
 }

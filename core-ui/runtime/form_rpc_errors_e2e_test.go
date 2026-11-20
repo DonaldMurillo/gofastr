@@ -52,7 +52,7 @@ func TestDispatchRPC_FormFailureShowsFieldErrors(t *testing.T) {
   <div class="fui-field" data-hui-field="" data-cui-comp="ui-form-field">
     <label class="fui-field__label" for="f-estimate">Estimate</label>
     <input class="fui-input" id="f-estimate" name="estimate" value="" aria-describedby="f-estimate-error">
-    <p class="fui-field__error" data-hui-field-error="" id="f-estimate-error" role="alert"></p>
+    <p class="fui-field__error" data-hui-field-error="" id="f-estimate-error"></p>
   </div>
   <div class="fui-field" data-hui-field="" data-cui-comp="ui-form-field">
     <label class="fui-field__label" for="f-title">Title</label>
@@ -88,7 +88,7 @@ func TestDispatchRPC_FormFailureShowsFieldErrors(t *testing.T) {
 		chromedp.Evaluate(`document.getElementById('f-title').closest('[data-hui-field]').lastElementChild.id`, &liveID),
 		chromedp.AttributeValue(`#f-title`, "aria-describedby", &liveDescribedBy, nil, chromedp.ByID),
 		chromedp.Evaluate(`document.querySelector('[data-hui-choice]').nextElementSibling.textContent`, &boxMsg),
-		chromedp.Evaluate(`document.querySelector('[data-hui-choice]').nextElementSibling.matches('p[role="alert"][data-hui-field-error="live"]')`, &boxAfterLabel),
+		chromedp.Evaluate(`document.querySelector('[data-hui-choice]').nextElementSibling.matches('p[data-hui-field-error="live"]:not([role])')`, &boxAfterLabel),
 		chromedp.Evaluate(`document.querySelectorAll('[data-hui-field-error="live"][class]').length`, &classedLive),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -100,7 +100,7 @@ func TestDispatchRPC_FormFailureShowsFieldErrors(t *testing.T) {
 		t.Fatalf("live node: message=%q id=%q describedby=%q", liveMsg, liveID, liveDescribedBy)
 	}
 	if boxMsg != "must be true" || !boxAfterLabel {
-		t.Fatalf("checkbox error: message=%q live alert after its label=%v", boxMsg, boxAfterLabel)
+		t.Fatalf("checkbox error: message=%q live node after its label=%v", boxMsg, boxAfterLabel)
 	}
 	if classedLive != 0 {
 		t.Fatalf("%d live error nodes carry a class: the module names no kit class", classedLive)

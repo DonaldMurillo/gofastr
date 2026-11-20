@@ -1,0 +1,117 @@
+primitive: uihost.uinoderender.validate
+summary: The closed ui.node.v1 wire type of core-ui/uinodev1 and Validate, which decodes a process module's JSON screen tree into a typed Tree or refuses the whole tree, before the host renderer maps it.
+code:
+  - core-ui/uinodev1/
+docs:
+  - framework/docs/content/process-modules.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - A new component needs a Comp constant and a prop struct in types.go, a componentDecoders entry in registry.go and a case in framework/uihost/uinoderender's renderNode; TestEscapeInventoryMatchesSchema cross-checks only the first three.
+  - A change that makes Validate refuse a tree it used to accept (a removed component or prop, a narrower enum, a lower default limit) is breaking and gets an upgrade note.
+  - framework/processmodule_proxy.go must keep running Validate before Renderer.Render; the renderer panics on shapes only the validator refuses.
+twins:
+  - job: Enumerate the closed set of ui.node.v1 component kinds, each with its own handling.
+    why: The validator lives in core-ui, which cannot import the renderer in framework/uihost; TestEscapeInventoryMatchesSchema pins the constants, the decoders and the props union together but not the renderer's switch.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: The Comp* constants and one prop struct per kind.
+      - path: core-ui/uinodev1/registry.go
+        note: componentDecoders, the closed enum check.
+      - path: framework/uihost/uinoderender/renderer.go
+        note: renderNode, one case per kind.
+invariants:
+  - id: unknown-keys-are-unrepresentable
+    rule: A node key outside component, props, children and action_ref, and a prop key outside its component's struct, refuse the whole tree, so data-cui-*, on* handlers, bindings and actions cannot be written.
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsForgedDataFuiProps
+      - test: core-ui/uinodev1.TestValidateRejectsOnHandlerProps
+      - test: core-ui/uinodev1.TestValidateRejectsSmuggledActions
+      - test: core-ui/uinodev1.TestValidateRejectsSmuggledBindings
+      - test: core-ui/uinodev1.TestValidateRejectsComponentSpoofing
+  - id: framing-is-one-object
+    rule: Validate refuses input over MaxInputBytes before any decode, empty input, a root that is not an object, a null node, trailing bytes after the root, and a key repeated in an object or two keys equal under ASCII case folding.
+    enforced_by:
+      - test: core-ui/uinodev1.TestEachCapRefusesByName
+      - test: core-ui/uinodev1.TestValidateRejectsInputBytesCap
+      - test: core-ui/uinodev1.TestValidateRejectsEmptyTree
+      - test: core-ui/uinodev1.TestValidateRejectsNullNodes
+      - test: core-ui/uinodev1.TestValidateRejectsTrailingJSON
+      - test: core-ui/uinodev1.TestValidateRejectsDuplicateKeys
+      - test: core-ui/uinodev1.TestValidateRejectsCaseFoldedKeysRed
+      - test: core-ui/uinodev1.TestDupWalkDepthBound
+  - id: caps-fail-closed
+    rule: Depth, node count, children per node, items per props array, bytes per prop string and total text are each capped, a zero Limits field takes its default, and any overflow refuses the whole tree without truncating it.
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsDepthBomb
+      - test: core-ui/uinodev1.TestValidateRejectsNodeCountBomb
+      - test: core-ui/uinodev1.TestValidateRejectsChildrenBomb
+      - test: core-ui/uinodev1.TestValidateRejectsFatProp
+      - test: core-ui/uinodev1.TestValidateRejectsTotalTextBomb
+      - test: core-ui/uinodev1.TestPropArraysAreBounded
+      - test: core-ui/uinodev1.TestPropArrayLimitUsesOverride
+      - test: core-ui/uinodev1.TestValidateUsesDefaultsOnZeroLimits
+      - test: core-ui/uinodev1.TestEachCapRefusesByName
+  - id: props-follow-their-component
+    rule: Each component's props pass its own checks - required fields, heading level 1 to 6, every enum value from its closed list, unique data-table column keys, an image with alt text - and only layout components take children.
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateAcceptsAllComponents
+      - test: core-ui/uinodev1.TestValidateRejectsHeadingLevelOutOfRange
+      - test: core-ui/uinodev1.TestValidateRejectsDupColumnKeys
+      - test: core-ui/uinodev1.TestValidateRejectsImageMissingFields
+      - test: core-ui/uinodev1.TestValidateRejectsChildrenOnTextComponent
+      - test: core-ui/uinodev1.TestEachCapRefusesByName
+  - id: action-ref-only-where-it-belongs
+    rule: A button needs an action_ref, a link exactly one of props.to and action_ref, no other component takes one, and an action_ref is a short string with no whitespace.
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsButtonWithoutActionRef
+      - test: core-ui/uinodev1.TestValidateRejectsLinkWithoutToOrActionRef
+      - test: core-ui/uinodev1.TestValidateRejectsActionRefOnWrongComponent
+      - test: core-ui/uinodev1.TestEachCapRefusesByName
+  - id: urls-are-host-relative
+    rule: IsValidHostRelative, which guards link.to and image.src, accepts only a path starting with a single / that holds no backslash, whitespace, control byte or DEL and no javascript, data, vbscript, blob or file scheme anywhere, in any case.
+    enforced_by:
+      - test: core-ui/uinodev1.TestIsValidHostRelative
+      - test: core-ui/uinodev1.TestValidateRejectsJavascriptURL
+      - test: core-ui/uinodev1.TestValidateRejectsDataSchemeURL
+      - test: core-ui/uinodev1.TestValidateRejectsSchemeRelativeURL
+      - test: core-ui/uinodev1.TestValidateRejectsBackslashURL
+      - test: core-ui/uinodev1.TestValidateRejectsOffOriginURL
+      - test: core-ui/uinodev1.TestValidateRejectsImageBadScheme
+      - test: core-ui/uinodev1.TestValidateAcceptsImageHostRelative
+  - id: errors-echo-little
+    rule: A validation error echoes at most 100 bytes of any input string, marked truncated.
+    enforced_by:
+      - test: core-ui/uinodev1.TestErrorsEchoABoundedInput
+decisions:
+  - id: closed-wire-type
+    date: 2026-11-20
+    status: accepted
+    decision: Third-party module trees use a closed type of per-component prop structs decoded with unknown fields refused, separate from core-ui/node.Node.
+    rejected:
+      - option: Render module trees through core-ui/noderender.
+        why: Its extraAttrs passthrough drops only style, srcdoc and on* and forwards every other prop, so a module could forge data-cui-rpc and the other attributes the runtime trusts, which CSP does not catch.
+    upholds: [unknown-keys-are-unrepresentable]
+  - id: host-assigns-identity
+    date: 2026-11-20
+    status: accepted
+    decision: The validator checks only an action_ref's shape; the host renderer resolves it against the module's installed routes and assigns every id, class, ARIA attribute and variant.
+    rejected:
+      - option: Let a module name its own routes or attributes.
+        why: Anything a module can name it can point at a route or attribute it was not given.
+    upholds: [action-ref-only-where-it-belongs]
+  - id: duplicate-keys-refused
+    date: 2026-11-20
+    status: accepted
+    decision: A repeated key, or two keys equal under ASCII case folding, refuses the tree before any decode.
+    rejected:
+      - option: Let encoding/json pick the last value.
+        why: '{"component":"heading","component":"script"} would validate as one component and be read as another.'
+    upholds: [framing-is-one-object]
+  - id: trailing-checked-twice
+    date: 2026-11-20
+    status: accepted
+    decision: Trailing input is refused both by the duplicate-key walk's token stream and by the decoder's offset after the root.
+    rejected:
+      - option: Keep only one of the two checks.
+        why: They read different decoders, and the second costs one comparison, so a framing bug in either still refuses the tree.
+    upholds: [framing-is-one-object]

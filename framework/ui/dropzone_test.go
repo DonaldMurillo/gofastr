@@ -93,8 +93,8 @@ func TestFileDropzoneErrorState(t *testing.T) {
 	if !strings.Contains(h, "is-error") {
 		t.Errorf("Error state should add .is-error class:\n%s", h)
 	}
-	if !strings.Contains(h, `role="alert"`) {
-		t.Errorf("Error message should have role=alert:\n%s", h)
+	if !strings.Contains(h, `id="`) || strings.Contains(h, `role="alert"`) {
+		t.Errorf("Error message should be a plain described paragraph, no alert of its own:\n%s", h)
 	}
 }
 

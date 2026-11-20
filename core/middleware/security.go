@@ -13,57 +13,27 @@ type SecurityHeadersConfig struct {
 	FrameOptions          string
 	PermissionsPolicy     string
 
-	// CrossOriginResourcePolicy controls the Cross-Origin-Resource-Policy
-	// header. Defaults to "same-origin"; Spectre-style cross-origin
-	// reads of this resource are blocked. Set to "cross-origin" to opt
-	// out for CDN-style assets.
+	// CrossOriginResourcePolicy defaults to "same-origin"; "cross-origin" opts out.
 	CrossOriginResourcePolicy string
 
-	// CrossOriginOpenerPolicy controls the Cross-Origin-Opener-Policy
-	// header. Defaults to "same-origin"; the document gets a fresh
-	// browsing context group, blocking cross-origin window references
-	// and the broader XS-Leaks class. Set to "unsafe-none" to opt out
-	// when you intentionally interact with cross-origin windows.
+	// CrossOriginOpenerPolicy defaults to "same-origin"; "unsafe-none" opts out.
 	CrossOriginOpenerPolicy string
 
-	// HSTSMaxAge sets the Strict-Transport-Security max-age. Zero
-	// (default) emits ONE YEAR (31536000); HSTS-by-default matches the
-	// rest of the header set; forgetting it used to be the #1 production
-	// gap. Set -1 to disable the header entirely. The header is only
-	// emitted when the request is actually HTTPS: direct TLS, an
-	// X-Forwarded-Proto: https from a TLS-terminating proxy, or
-	// Secure: true; plain-HTTP local dev never sees it.
+	// HSTSMaxAge is the Strict-Transport-Security max-age: zero means one year, -1 disables the header.
 	HSTSMaxAge     int
 	HSTSIncludeSub bool
 	HSTSPreload    bool
 
-	// Secure forces HSTS on even for plain HTTP. False (the default)
-	// keeps HTTPS auto-detection via TLS or X-Forwarded-Proto: https;
-	// it does not disable HSTS. Set HSTSMaxAge: -1 to disable it.
+	// Secure sends HSTS on plain HTTP too; false keeps auto-detection (TLS or X-Forwarded-Proto: https), and HSTSMaxAge: -1 is the off switch.
 	Secure bool
 }
 
-// SecurityHeaders adds conservative browser security headers.
-//
-// The default Content-Security-Policy is strict (default-src 'self', no
-// 'unsafe-inline'). The framework's UI host renders pages with all CSS
-// and scripts as external resources under /__gofastr/* so they comply
-// out of the box. img-src additionally allows data: so embedded
-// data-URI images (icons, base64 placeholders) work.
-//
-// form-action and object-src are named explicitly because default-src
-// does NOT cover them: CSP never let form-action fall back, and
-// object-src's fallback was dropped in CSP3. Both are load-bearing here,
-// since this policy is the single mitigation standing behind the browser
-// runtime's gadget surface. Without form-action an injected <form>
-// posts the page's data to any origin, and without object-src
-// <object>/<embed> is a script-execution path a framework-rendered page
-// never needs.
+// SecurityHeaders sets CSP, nosniff, referrer, frame, permissions, CORP, COOP and HTTPS-only HSTS headers, each with a strict default.
 func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 	csp := cfg.ContentSecurityPolicy
 	if csp == "" {
-		csp = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-			"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+		csp = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+			"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 	}
 	referrer := cfg.ReferrerPolicy
 	if referrer == "" {
@@ -87,7 +57,7 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 	}
 	hstsMaxAge := cfg.HSTSMaxAge
 	if hstsMaxAge == 0 {
-		hstsMaxAge = 31536000 // 1 year; -1 opts out
+		hstsMaxAge = 31536000
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -100,18 +70,14 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h.Set("Permissions-Policy", permissions)
 			h.Set("Cross-Origin-Resource-Policy", corp)
 			h.Set("Cross-Origin-Opener-Policy", coop)
-			h.Set("X-XSS-Protection", "0") // disabled per modern guidance (CSP supersedes it)
+			h.Set("X-XSS-Protection", "0")
 
-			// HSTS. Only emit over HTTPS: direct TLS, a TLS-terminating
-			// proxy's X-Forwarded-Proto, or an explicit Secure: true.
-			// (A client spoofing X-Forwarded-Proto only affects its own
-			// response; HSTS binds per received response.)
 			secure := cfg.Secure
 			if !secure && r.TLS != nil {
-				secure = true // auto-detect TLS
+				secure = true
 			}
 			if !secure && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-				secure = true // TLS terminated upstream
+				secure = true
 			}
 			if secure && hstsMaxAge > 0 {
 				val := "max-age=" + strconv.Itoa(hstsMaxAge)

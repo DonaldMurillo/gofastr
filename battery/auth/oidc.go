@@ -57,7 +57,11 @@ type OIDCConfig struct {
 	TokenAuthMethod string
 	// DisablePKCE stops sending PKCE, for an IdP that refuses it.
 	DisablePKCE bool
+	// Tenants lists the tenant ids a multi-tenant issuer admits; "*" admits every tenant.
+	Tenants []string
 }
+
+const tenantPlaceholder = "{tenantid}"
 
 // OIDCProvider implements OAuth2Provider for a generic OIDC IdP.
 type OIDCProvider struct {
@@ -131,6 +135,7 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 	if claims.AvatarClaim == "" {
 		claims.AvatarClaim = "picture"
 	}
+	cfg.Tenants = slices.Clone(cfg.Tenants)
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = defaultOAuthHTTPClient
@@ -163,6 +168,26 @@ type oidcDiscovery struct {
 	JWKSURI               string   `json:"jwks_uri"`
 	UserinfoEndpoint      string   `json:"userinfo_endpoint"`
 	TokenAuthMethods      []string `json:"token_endpoint_auth_methods_supported"`
+
+	tenantIssuer string
+}
+
+func tenantTemplateFits(template, issuer string) bool {
+	before, after, ok := strings.Cut(normalizeIssuer(template), tenantPlaceholder)
+	if !ok || strings.Contains(after, tenantPlaceholder) {
+		return false
+	}
+	_, path, ok := strings.Cut(before, "://")
+	if !ok || !strings.Contains(path, "/") || !strings.HasSuffix(before, "/") ||
+		(after != "" && !strings.HasPrefix(after, "/")) {
+		return false
+	}
+	issuer = normalizeIssuer(issuer)
+	if !strings.HasPrefix(issuer, before) || !strings.HasSuffix(issuer, after) || len(issuer) < len(before)+len(after) {
+		return false
+	}
+	seg := issuer[len(before) : len(issuer)-len(after)]
+	return seg != "" && !strings.ContainsAny(seg, "/?#")
 }
 
 func discoveryURL(issuer string) string {
@@ -267,7 +292,12 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	if err := json.Unmarshal(body, &d); err != nil {
 		return nil, err
 	}
-	if normalizeIssuer(d.Issuer) != normalizeIssuer(p.cfg.Issuer) {
+	if len(p.cfg.Tenants) > 0 {
+		if !tenantTemplateFits(d.Issuer, p.cfg.Issuer) {
+			return nil, errors.New("oidc: OIDCConfig.Tenants needs an issuer whose discovery names a {tenantid} template")
+		}
+		d.tenantIssuer = normalizeIssuer(d.Issuer)
+	} else if normalizeIssuer(d.Issuer) != normalizeIssuer(p.cfg.Issuer) {
 		return nil, errors.New("oidc: discovery issuer does not match configured issuer")
 	}
 	if d.AuthorizationEndpoint == "" || d.TokenEndpoint == "" || d.JWKSURI == "" {
@@ -427,6 +457,9 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 	if id == "" {
 		return nil, errors.New("oidc: userinfo missing subject")
 	}
+	if p.tenantTemplate() != "" {
+		return nil, errors.New("oidc: a multi-tenant issuer needs the id_token's tid; sign in again")
+	}
 	email := claimString(ui, p.cfg.Claims.EmailClaim)
 	return &OAuth2UserInfo{
 		ID:            id,
@@ -476,6 +509,12 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	if id == "" {
 		return nil, errors.New("oidc: id_token missing subject claim")
 	}
+	if p.tenantTemplate() != "" {
+		id = claimString(claims, "tid") + "/" + id
+		if v, _ := claims["xms_edov"].(bool); !v || !verifiedPresent || email != claimString(claims, "email") {
+			emailVerified = false
+		}
+	}
 	return &OAuth2UserInfo{
 		ID:            id,
 		Email:         email,
@@ -483,6 +522,7 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 		AvatarURL:     avatar,
 		Provider:      p.name,
 		EmailVerified: emailVerified && verifiedFlagCovers(verifiedSrc, email),
+		noEmailLink:   p.tenantTemplate() != "",
 	}, nil
 }
 
@@ -593,12 +633,40 @@ func claimString(claims map[string]any, key string) string {
 	return ""
 }
 
+func (p *OIDCProvider) tenantTemplate() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.discovery == nil {
+		return ""
+	}
+	return p.discovery.tenantIssuer
+}
+
+func (p *OIDCProvider) checkIssuer(claims map[string]any) error {
+	iss := normalizeIssuer(claimString(claims, "iss"))
+	template := p.tenantTemplate()
+	if template == "" {
+		if iss != normalizeIssuer(p.cfg.Issuer) {
+			return errors.New("oidc: id_token iss does not match issuer")
+		}
+		return nil
+	}
+	tid := claimString(claims, "tid")
+	if tid == "" || strings.ContainsAny(tid, "/?#{}") || iss != strings.Replace(template, tenantPlaceholder, tid, 1) {
+		return errors.New("oidc: id_token iss does not match the issuer for its tenant")
+	}
+	if !slices.Contains(p.cfg.Tenants, "*") && !slices.Contains(p.cfg.Tenants, tid) {
+		return errors.New("oidc: id_token tenant is not admitted by OIDCConfig.Tenants")
+	}
+	return nil
+}
+
 func (p *OIDCProvider) verifyClaims(claims map[string]any) error {
 	const leeway int64 = 60 // seconds, covers clock skew and IdP drift
 	now := time.Now().Unix()
 
-	if normalizeIssuer(claimString(claims, "iss")) != normalizeIssuer(p.cfg.Issuer) {
-		return errors.New("oidc: id_token iss does not match issuer")
+	if err := p.checkIssuer(claims); err != nil {
+		return err
 	}
 
 	aud, ok := claims["aud"]

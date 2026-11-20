@@ -1,0 +1,99 @@
+primitive: harness
+summary: The experimental agent harness behind `gofastr harness` - New wires the engine, session store, tools, skills, providers and control transports into one Harness, and CreateSession starts an agent loop whose events are persisted.
+code:
+  - framework/experimental/harness/harness.go
+  - framework/experimental/harness/agents.go
+  - framework/experimental/harness/doc.go
+docs:
+  - framework/docs/content/harness-architecture.md
+  - framework/docs/content/harness-e2e-testing.md
+invariants:
+  - id: framework-root-never-imports-harness
+    rule: No package in the dependency graph of github.com/DonaldMurillo/gofastr/framework is under framework/experimental/harness, so a host app linking the framework never links the agent runtime.
+    enforced_by:
+      - test: framework/experimental/harness.TestFrameworkRootDoesNotImportHarness
+  - id: no-session-after-shutdown
+    rule: CreateSession holds the session lock through registration and returns ErrShutdown once Shutdown has begun, so every session is either in the list Shutdown tears down or refused.
+    enforced_by:
+      - test: framework/experimental/harness.TestCreateSessionAfterShutdownRefused
+      - test: framework/experimental/harness.TestCreateRacingShutdownLeavesNone
+  - id: session-log-covers-sub-agents
+    rule: CreateSession subscribes the session store to the bus with SubscribeAll before it returns and sets the store as the bus log, so sub-agent events are persisted and a reconnecting client can replay past the in-memory window.
+    enforced_by:
+      - test: framework/experimental/harness.TestSubAgentEventsPersisted
+      - test: framework/experimental/harness.TestSessionBusReplaysFromLog
+  - id: engine-gets-tool-catalog
+    rule: Every engine CreateSession starts carries the schemas of all registered tools on Engine.Tools.
+    enforced_by:
+      - test: framework/experimental/harness.TestCreateSessionGivesEngineTheToolCatalog
+      - test: framework/experimental/harness.TestToolSchemasPopulated
+  - id: shutdown-drains-before-cancel
+    rule: Shutdown closes every bus and waits for the persist loops before it cancels their contexts, so queued events are written, and the wait ends at shutdownDrainTimeout with each unfinished loop reported as an error.
+    enforced_by:
+      - test: framework/experimental/harness.TestShutdownPersistsQueuedEvents
+      - test: framework/experimental/harness.TestShutdownDrainIsBounded
+  - id: shutdown-reports-store-errors
+    rule: Every append the session store refused and its Close error come back joined in Shutdown's error.
+    enforced_by:
+      - test: framework/experimental/harness.TestShutdownReturnsStoreErrors
+  - id: shutdown-releases-sessions
+    rule: Shutdown cancels every session's persist context and unregisters its engine from the multiplexer and the resource catalog.
+    enforced_by:
+      - test: framework/experimental/harness.TestShutdownReleasesSessions
+      - test: framework/experimental/harness.TestShutdownUnregistersEngines
+  - id: store-panic-is-an-error
+    rule: A panic in the session store's AppendEvent is recovered in the persist loop, logged through textsafe.Recovered, and returned as that append's error.
+    enforced_by:
+      - test: framework/experimental/harness.TestAppendEventPanicBecomesError
+  - id: credstore-key-needs-a-secret
+    rule: New fails unless Config carries a 32-byte MachineKey or a CredstorePass, and a salt file New creates or replaces for a passphrase key is written owner-only (0600), tightening the mode of a short file it overwrites.
+    enforced_by:
+      - test: framework/experimental/harness.TestCredstoreKeyRequiresPassOrMachineKey
+      - test: framework/experimental/harness.TestSaltFileIsOwnerOnly
+decisions:
+  - id: drain-then-cancel
+    date: 2026-11-18
+    status: accepted
+    decision: Shutdown closes the buses, waits a bounded time for the persist loops to drain, and only then cancels their contexts and closes the store.
+    rejected:
+      - option: Close the bus, cancel the persist context and close the store at once.
+        why: Queued appends then failed on the cancelled context and the events were dropped without a word.
+    upholds: [shutdown-drains-before-cancel, shutdown-reports-store-errors]
+  - id: recover-store-panics
+    date: 2026-11-18
+    status: accepted
+    decision: The persist loop recovers a panic from session.Store.AppendEvent and drops that one event.
+    rejected:
+      - option: Let the panic propagate.
+        why: The store is host-supplied code on a goroutine with no other recover, so one bad store would kill the whole harness process.
+    upholds: [store-panic-is-an-error]
+  - id: allow-always-scoped-to-process-cwd
+    date: 2026-11-18
+    status: accepted
+    decision: Persisted "Allow always" permission rules are scoped to the process working directory.
+    rejected:
+      - option: Scope them to Config.WorkingDir.
+        why: Bash and the file tools resolve relative paths against the process working directory, so a rule scoped elsewhere would cover different files than the tools touch.
+  - id: provider-keys-credstore-then-env
+    date: 2026-11-18
+    status: accepted
+    decision: A provider API key comes from the encrypted credstore first and from OPENROUTER_API_KEY or ZAI_API_KEY only when the store has none.
+    rejected:
+      - option: Read only the environment.
+        why: Keys would sit in plain text in every shell that runs the harness, where the credstore keeps them encrypted.
+  - id: zai-coding-plan-by-env
+    date: 2026-11-18
+    status: accepted
+    decision: ZAI_CODING_PLAN=1 or true switches the ZAI provider to the Coding Plan endpoint.
+    rejected:
+      - option: Always use the general /api/paas/v4 endpoint.
+        why: A GLM Coding Plan key gets HTTP 429 "Insufficient balance" (ZAI code 1113) there.
+    revisit_if: ZAI serves Coding Plan keys on the general endpoint.
+  - id: new-leaves-gates-to-the-cli
+    date: 2026-11-18
+    status: accepted
+    decision: New hashes context and skill files but runs no TOFU approval gate, loads no permission preset, spawns no MCP servers and starts no transports; the `gofastr harness` subcommand owns those.
+    rejected:
+      - option: Run the TOFU gate and spawn MCP servers inside New.
+        why: There is no approval store yet and the CLI decides which transports and clients run, so New would need flags it cannot honour.
+    revisit_if: An approval store or a permission preset file format lands.

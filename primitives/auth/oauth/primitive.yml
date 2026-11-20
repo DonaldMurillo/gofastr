@@ -21,7 +21,7 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOAuth2Plugin_StateTampered
       - test: battery/auth.TestOAuth2Plugin_StateWrongProvider
-      - test: battery/auth.TestExpiredStateRefused
+      - test: battery/auth.TestOAuth2Plugin_StateExpiry
       - test: battery/auth.TestOAuth2Plugin_StateReplayRejected
       - test: battery/auth.TestOAuthCallbackWithoutCodeRecordsNoNonce
   - id: nonce-map-bounded
@@ -117,7 +117,7 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOIDCSec_EncUseKeyRejected
       - test: battery/auth.TestOIDCSec_JWKAlgMismatchRejected
-      - test: battery/auth.TestOIDCWeakRSAJWKSkipped
+      - test: battery/auth.TestOIDCSec_WeakRSAKey
       - test: battery/auth.TestOIDCSec_OversizedRSAModulus
       - test: battery/auth.TestOIDCSec_DegenerateRSAExponent
       - test: battery/auth.TestOIDCEcPointOffCurveRejected

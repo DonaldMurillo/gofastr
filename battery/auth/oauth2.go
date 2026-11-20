@@ -41,6 +41,8 @@ type OAuth2UserInfo struct {
 	Provider  string
 	// EmailVerified reports whether the provider has VERIFIED the email.
 	EmailVerified bool
+
+	noEmailLink bool
 }
 
 // OAuth2Provider is one OAuth2 identity provider.
@@ -717,6 +719,9 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	existing, _, err := store.FindByEmail(ctx, info.Email)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, false, fmt.Errorf("%w: FindByEmail: %v", errOAuthLookupFailed, err)
+	}
+	if err == nil && info.noEmailLink {
+		return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 	}
 	if err == nil {
 		if info.EmailVerified {

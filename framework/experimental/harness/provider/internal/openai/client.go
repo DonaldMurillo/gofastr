@@ -19,17 +19,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
 
-// Client speaks the OpenAI Chat Completions wire format
-// (`/chat/completions` with the OpenAI-style `messages` array and SSE
-// streaming). OpenRouter and ZAI both speak this; the only
-// differences are the base URL, the auth header, and any required
-// metadata headers (HTTP-Referer / X-Title for OpenRouter).
+// Client speaks the OpenAI Chat Completions wire format with SSE streaming.
+// A nil HTTP uses a client that refuses redirects; Name prefixes its errors.
 type Client struct {
-	BaseURL string            // e.g. "https://openrouter.ai/api/v1"
-	APIKey  string            // bearer token
-	HTTP    *http.Client      // nil → redirect-refusing client with a 5-min timeout
-	Headers map[string]string // additional static headers (e.g. HTTP-Referer)
-	Name    string            // provider name for events ("openrouter", "zai")
+	BaseURL string
+	APIKey  string
+	HTTP    *http.Client
+	Headers map[string]string
+	Name    string
 }
 
 // Chat issues a Chat Completions request and streams events.
@@ -51,11 +48,6 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 
 	client := c.HTTP
 	if client == nil {
-		// Redirects are refused (the oidcNoRedirect spelling from
-		// battery/auth/oidc.go): this request carries the API key as a
-		// bearer header, and net/http re-sends Authorization on
-		// same-host and subdomain redirects — a 3xx from the provider
-		// would deliver the key to whatever origin it names.
 		client = &http.Client{
 			Timeout: 5 * time.Minute,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -69,11 +61,6 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		// The error preview is peer-response bytes: scrub the
-		// terminal-forgery set (C0/DEL/C1/bidi) at the
-		// error-construction site so a hostile or MITM'd endpoint
-		// cannot forge lines in the operator's log tail, keeping the
-		// status and a bounded preview for diagnosis.
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		return nil, fmt.Errorf("%s: HTTP %d: %s", c.Name, resp.StatusCode, textsafe.StripUnsafe(string(raw)))
 	}
@@ -83,7 +70,6 @@ func (c *Client) Chat(ctx context.Context, req *provider.Request) (<-chan provid
 	return ch, nil
 }
 
-// requestBody is the OpenAI-shape JSON. Only fields the harness emits are listed.
 type requestBody struct {
 	Model       string          `json:"model"`
 	Messages    []openaiMessage `json:"messages"`
@@ -102,7 +88,7 @@ type openaiMessage struct {
 
 type openaiToolCall struct {
 	ID       string           `json:"id"`
-	Type     string           `json:"type"` // "function"
+	Type     string           `json:"type"`
 	Function openaiToolCallFn `json:"function"`
 }
 
@@ -112,7 +98,7 @@ type openaiToolCallFn struct {
 }
 
 type openaiTool struct {
-	Type     string             `json:"type"` // "function"
+	Type     string             `json:"type"`
 	Function openaiToolFunction `json:"function"`
 }
 
@@ -134,7 +120,6 @@ func buildBody(req *provider.Request) ([]byte, error) {
 	if req.MaxTokens > 0 {
 		out.MaxTokens = &req.MaxTokens
 	}
-	// System message first.
 	if req.System != "" {
 		out.Messages = append(out.Messages, openaiMessage{Role: "system", Content: req.System})
 	}
@@ -154,15 +139,9 @@ func buildBody(req *provider.Request) ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// translateOutbound converts one canonical Message into one or more
-// OpenAI-shape messages. The expansion is necessary because OpenAI
-// represents a turn with tool calls as separate messages: assistant
-// emits a message with tool_calls; the next user message provides
-// tool_result-shaped entries with role=tool.
 func translateOutbound(m provider.Message) []openaiMessage {
 	switch m.Role {
 	case provider.RoleAssistant:
-		// Split text + tool_use blocks.
 		var text strings.Builder
 		var toolCalls []openaiToolCall
 		for _, b := range m.Content {
@@ -182,17 +161,10 @@ func translateOutbound(m provider.Message) []openaiMessage {
 				}
 			}
 		}
-		// OpenAI-compatible spec: when an assistant message carries
-		// tool_calls, content should be null (omitted), emitting
-		// `"content": ""` confuses some providers (notably ZAI GLM,
-		// which silently returns an empty next-turn response). Pass
-		// `any(nil)` so omitempty actually skips the field.
 		var contentField any
 		if t := text.String(); t != "" {
 			contentField = t
 		} else if len(toolCalls) == 0 {
-			// No text AND no tool_calls, still need to emit an empty
-			// assistant message rather than nothing, so keep "".
 			contentField = ""
 		}
 		return []openaiMessage{{
@@ -201,10 +173,6 @@ func translateOutbound(m provider.Message) []openaiMessage {
 			ToolCalls: toolCalls,
 		}}
 	case provider.RoleUser:
-		// User messages that contain tool_result blocks expand into
-		// one openaiMessage{role=tool} per tool_result, plus the text
-		// blocks as a user message at the end. OpenAI's wire requires
-		// tool messages immediately follow the assistant tool_calls.
 		var out []openaiMessage
 		var text strings.Builder
 		for _, b := range m.Content {
@@ -227,7 +195,6 @@ func translateOutbound(m provider.Message) []openaiMessage {
 		}
 		return out
 	case provider.RoleSystem:
-		// Already prepended in buildBody from req.System; ignore extras.
 		return nil
 	}
 	return nil
@@ -243,16 +210,11 @@ func flattenToolResultContent(blocks []control.ContentBlock) string {
 	return b.String()
 }
 
-// --- Streaming response parser ---
-
 type streamChunk struct {
 	Choices []streamChoice `json:"choices"`
 	Usage   *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		// Provider-specific cache fields. OpenRouter passes
-		// through cache details from upstream models when
-		// available; OpenAI returns prompt_tokens_details.
+		PromptTokens             int `json:"prompt_tokens"`
+		CompletionTokens         int `json:"completion_tokens"`
 		PromptCacheHit           int `json:"prompt_cache_hit_tokens,omitempty"`
 		CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 		CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
@@ -264,13 +226,10 @@ type streamChunk struct {
 
 type streamChoice struct {
 	Delta struct {
-		Content   string          `json:"content,omitempty"`
-		ToolCalls []deltaToolCall `json:"tool_calls,omitempty"`
-		// ReasoningContent is where ZAI GLM and DeepSeek surface
-		// thinking-block text on the OpenAI-compatible wire. Some
-		// providers use `reasoning` instead, accept both.
-		ReasoningContent string `json:"reasoning_content,omitempty"`
-		Reasoning        string `json:"reasoning,omitempty"`
+		Content          string          `json:"content,omitempty"`
+		ToolCalls        []deltaToolCall `json:"tool_calls,omitempty"`
+		ReasoningContent string          `json:"reasoning_content,omitempty"`
+		Reasoning        string          `json:"reasoning,omitempty"`
 	} `json:"delta"`
 	FinishReason *string `json:"finish_reason,omitempty"`
 }
@@ -286,20 +245,10 @@ type deltaToolCallFunc struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
-// Every send selects on ctx.Done: the engine's CollectStream returns on
-// cancel and never reads the channel again, so a pump that only knows
-// how to send parks on the 33rd pending event for the life of the
-// process, holding the goroutine, the channel, and the un-Closed body
-// (probe TestAbortMidStreamReleasesPump). The transport closes the body
-// on the same cancel, which ends the Scan loop; the select ends the
-// send.
 func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent) {
 	defer body.Close()
 	defer close(ch)
 	send := func(ev provider.StreamEvent) bool {
-		// Delivery first: a consumer that is still draining after the
-		// abort (TestAbortVisibleToDrainingConsumer) must see the
-		// terminal event, and a done ctx would otherwise race it away.
 		select {
 		case ch <- ev:
 			return true
@@ -315,16 +264,8 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 
-	// Per-stream state: track active tool_call slots by index so
-	// argument deltas accumulate to the right call.
 	activeToolCalls := map[int]*control.ToolUse{}
 	emittedStarts := map[int]bool{}
-	// sawTerminal records that the stream actually ended: a [DONE]
-	// sentinel, a chunk carrying finish_reason, or a parse error. Without
-	// it a body that simply stopped -- a dropped connection, a proxy
-	// timeout, a truncated response -- closed the channel with nothing
-	// after the last text delta, and a truncated answer was
-	// indistinguishable from a finished one to every consumer.
 	sawTerminal := false
 
 	for scanner.Scan() {
@@ -340,13 +281,6 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 			return
 		}
 		var chunk streamChunk
-		// Strict-key walk before decode: a chunk carrying duplicate or
-		// case-folded keys ({"choices":[],"Choices":[…]}) resolves
-		// last-wins under stdlib json, so the engine would record text
-		// or a tool call any first-read intermediary parsed
-		// differently. Refusing the ambiguity terminates the stream
-		// through the same KindError path a parse error takes; unknown
-		// fields stay tolerated (providers add their own).
 		if err := handler.CheckObjectKeys([]byte(payload), handler.FoldJSONKey); err != nil {
 			if !send(provider.StreamEvent{Kind: provider.KindError, Err: fmt.Errorf("parse chunk: %w", err)}) {
 				return
@@ -360,10 +294,6 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 			return
 		}
 		for _, c := range chunk.Choices {
-			// Reasoning content (GLM, DeepSeek) flows on its own
-			// field before the regular content starts. Quote it as
-			// a JSON string so the envelope's RawMessage stays
-			// well-formed when the engine re-emits it on the bus.
 			if reasoning := c.Delta.ReasoningContent + c.Delta.Reasoning; reasoning != "" {
 				if quoted, err := json.Marshal(reasoning); err == nil {
 					if !send(provider.StreamEvent{Kind: provider.KindThinkingDelta, Thinking: quoted}) {
@@ -391,7 +321,6 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 				if tc.Function != nil && tc.Function.Name != "" && active.Name == "" {
 					active.Name = tc.Function.Name
 				}
-				// Emit Start once we have a name.
 				if !emittedStarts[tc.Index] && active.Name != "" {
 					if !send(provider.StreamEvent{Kind: provider.KindToolUseStart, ToolUse: &control.ToolUse{ID: active.ID, Name: active.Name}}) {
 						return
@@ -409,7 +338,6 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 				}
 			}
 			if c.FinishReason != nil {
-				// Stop any open tool calls.
 				for idx := range emittedStarts {
 					if emittedStarts[idx] {
 						if !send(provider.StreamEvent{Kind: provider.KindToolUseStop, ToolUseID: activeToolCalls[idx].ID}) {
@@ -424,9 +352,6 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 			}
 		}
 		if chunk.Usage != nil {
-			// Pick whichever cache field the upstream surfaced (max
-			// because we never want to undercount). Quality is
-			// "explicit" if any cache field was non-zero, else "none".
 			cacheRead := max(chunk.Usage.CacheReadInputTokens, chunk.Usage.PromptCacheHit)
 			if chunk.Usage.PromptTokensDetails != nil &&
 				chunk.Usage.PromptTokensDetails.CachedTokens > cacheRead {
@@ -456,9 +381,7 @@ func parseSSEStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.
 	}
 }
 
-// ErrStreamTruncated is emitted when the SSE body ends without a [DONE]
-// sentinel or a finish_reason. The response is incomplete and must not be
-// recorded as a finished turn.
+// ErrStreamTruncated is the error event sent when the SSE body ends without [DONE] or a finish_reason.
 var ErrStreamTruncated = errors.New("openai: stream ended without a terminal event")
 
 // ErrNoBody is returned when an HTTP response had no body to parse.

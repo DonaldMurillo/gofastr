@@ -71,12 +71,7 @@ func TestProbe_VarInsideTemplateInterpolationIsMissed(t *testing.T) {
 // the keyword scan. A runtime module legitimately matching the string
 // "var" (e.g. a minifier detector) cannot pass the lint.
 func TestProbe_VarInsideRegexLiteralFalsePositives(t *testing.T) {
-	dir := t.TempDir()
-	body := "const isVarDecl = /var\\s+\\w+/.test(line);\n"
-	if err := os.WriteFile(filepath.Join(dir, "re.js"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	res, err := LintNoVarJS(dir)
+	res, err := LintNoVarJS(writeRuntimeFixture(t, "re.js", "const isVarDecl = /var\\s+\\w+/.test(line);\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,12 +158,7 @@ func TestProbe_DivisionDoesNotHideVar(t *testing.T) {
 // A regex after a keyword, in a character class, or with flags is still
 // a pattern; none of these spell a declaration.
 func TestProbe_RegexAfterKeywordAndInClassIsQuiet(t *testing.T) {
-	dir := t.TempDir()
-	body := "function f(s) { return /var x/.test(s) || /[/]var/gi.test(s); }\nconst k = typeof /var/;\n"
-	if err := os.WriteFile(filepath.Join(dir, "re2.js"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	res, err := LintNoVarJS(dir)
+	res, err := LintNoVarJS(writeRuntimeFixture(t, "re2.js", "function f(s) { return /var x/.test(s) || /[/]var/gi.test(s); }\nconst k = typeof /var/;\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,17 +1,5 @@
-// Package apiversions provides first-class API versioning built on top of
-// route groups.
-//
-// Multiple versions of the same entity coexist; deprecations are explicit
-// and machine-readable. The default versioning scheme is URL prefix
-// ("/v1", "/v2"), implemented via route groups.
-//
-// Usage:
-//
-//	v1 := apiversions.Version(app.Router(), "v1")
-//	v2 := apiversions.Version(app.Router(), "v2")
-//
-//	app.GroupEntity(v1.Group(), "orders", ordersConfigV1)
-//	app.GroupEntity(v2.Group(), "orders", ordersConfigV2)
+// Package apiversions mounts each API version as a route group at a URL
+// prefix (/v1, /v2) and marks old versions deprecated.
 package apiversions
 
 import (
@@ -26,13 +14,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
-// validVersionRe accepts canonicalised version prefixes: "v" followed by
-// a numeric major (and optional .minor). Anything outside this shape,
-// such as path separators, query glue, or an empty string, is rejected at
-// Version() time so misuse can't smuggle a /v1/admin prefix into the router.
 var validVersionRe = regexp.MustCompile(`^v[0-9]+(\.[0-9]+)?$`)
 
-// VersionPrefix is the default URL prefix format. "/v1", "/v2", etc.
+// VersionPrefix is a version's URL prefix, such as "v1".
 type VersionPrefix string
 
 // APIVersion represents an API version mounted at a URL prefix.
@@ -46,8 +30,9 @@ type APIVersion struct {
 // VersionOption configures a Version.
 type VersionOption func(*APIVersion)
 
-// Version creates a new API version bound to the given prefix (e.g. "v1").
-// It creates a route group at "/v1" with MCP namespacing set to "v1".
+// Version mounts a route group at "/"+prefix, with that prefix as its MCP
+// namespace and OpenAPI tag. "1", "/v1" and "v1" all name v1; any other
+// shape than v<major> or v<major>.<minor> panics.
 func Version(appRouter *router.Router, prefix string, opts ...VersionOption) *APIVersion {
 	prefix = normalizeVersion(prefix)
 	group := routegroup.New(appRouter, "/"+prefix,
@@ -64,8 +49,7 @@ func Version(appRouter *router.Router, prefix string, opts ...VersionOption) *AP
 	return v
 }
 
-// WithDeprecation marks this version as deprecated with a sunset date
-// and a link to the replacement version.
+// WithDeprecation marks the version deprecated, with its sunset date and successor URL.
 func WithDeprecation(sunsetDate time.Time, replacementURL string) VersionOption {
 	return func(v *APIVersion) {
 		v.sunset = &sunsetDate
@@ -98,16 +82,9 @@ func (v *APIVersion) IsDeprecated() bool {
 	return v.sunset != nil
 }
 
-// DeprecationMiddleware returns middleware that adds deprecation headers
-// to every response from this version. Headers:
-//
-//	Deprecation: true
-//	Sunset: <HTTP-date, in GMT>
-//	Link: <replacementURL>; rel="successor-version"
-//
-// Unsafe replacement URLs (non-http(s) schemes, embedded CR/LF) are
-// dropped silently, the Link header is a clickable hint to API clients
-// and a `javascript:` / `mailto:` / data: there is a phishing primitive.
+// DeprecationMiddleware returns middleware that sets Deprecation: true,
+// Sunset (an HTTP-date) and a successor-version Link on every response
+// from this version. An unsafe replacement URL writes no Link header.
 func (v *APIVersion) DeprecationMiddleware() router.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,10 +107,6 @@ func (v *APIVersion) Use(mw ...router.Middleware) {
 	v.group.Use(mw...)
 }
 
-// normalizeVersion strips any leading "/" or "v" from the prefix
-// and returns the clean form (e.g. "/v1" → "v1", "1" → "v1").
-// Panics with a clear message if the result is not a valid version
-// identifier, apps must catch this at startup, not in the request path.
 func normalizeVersion(prefix string) string {
 	prefix = strings.TrimPrefix(prefix, "/")
 	if !strings.HasPrefix(prefix, "v") {
@@ -145,10 +118,8 @@ func normalizeVersion(prefix string) string {
 	return prefix
 }
 
-// DeprecationHeaders is a helper that writes deprecation headers onto a
-// response. Useful when you need to mark individual endpoints as deprecated
-// rather than a whole version. Unsafe replacement URLs are dropped. See
-// [APIVersion.DeprecationMiddleware] for the policy.
+// DeprecationHeaders writes the headers of [APIVersion.DeprecationMiddleware]
+// onto one response, for a single deprecated endpoint.
 func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement string) {
 	w.Header().Set("Deprecation", "true")
 	if !sunset.IsZero() {
@@ -161,14 +132,6 @@ func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement str
 	}
 }
 
-// safeReplacementURL returns the cleaned replacement URL and true when
-// it is safe to expose in a Link header. Allowed shapes: relative paths
-// ("/v2", "./v2") and absolute http(s) URLs. CR/LF/NUL anywhere in the
-// string disqualifies it (header smuggling). Other schemes like
-// `javascript:`, `data:`, `file:`, `mailto:`, `view-source:` are dropped,
-// they would render as clickable in API clients and turn the
-// deprecation hint into a phishing vector. Protocol-relative URLs
-// ("//other.example") are dropped as ambiguous about origin trust.
 func safeReplacementURL(u string) (string, bool) {
 	if !urlsafe.OK(u, urlsafe.Resource) {
 		return "", false
@@ -176,9 +139,6 @@ func safeReplacementURL(u string) (string, bool) {
 	return u, true
 }
 
-// httpDate formats t as the HTTP-date RFC 8594 gives the Sunset header:
-// in GMT, spelled "GMT". time.RFC1123 writes the time's own zone
-// abbreviation ("UTC", "EST"), which http.ParseTime refuses.
 func httpDate(t time.Time) string {
 	return t.UTC().Format(http.TimeFormat)
 }

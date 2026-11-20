@@ -17,7 +17,7 @@ invariants:
     rule: A write endpoint accepts only application/json or multipart/form-data, and a multipart write also passes the cross-site guard.
     enforced_by:
       - test: framework/crud.TestEnforceJSONContentType
-      - test: framework/crud.TestCreate_RejectsMissingContentType
+      - test: framework/crud.TestJSONSurfacesRejectNonJSONContentType
       - test: framework/crud.TestCrossSiteMultipartCreateRefused
       - test: framework/crud.TestBatchRefusesMultipartLabel
       - test: framework/crud.TestTransitionRefusesMultipart

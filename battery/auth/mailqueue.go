@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 type mailQueue struct {
@@ -69,6 +71,19 @@ func (q *mailQueue) enqueue(requestCtx context.Context, to string, send func(ctx
 		slog.Warn("email delivery queue full", "plugin", q.name, "email_hash", job.emailHash)
 	}
 	return queued
+}
+
+func scrubbedNoticeSend(plugin, panicMsg, failMsg, to string, sender EmailSender, body string) func(context.Context) {
+	return func(ctx context.Context) {
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Warn(panicMsg, "plugin", plugin, "email_hash", hashedIdentifier(to), "panic", textsafe.Recovered(p))
+			}
+		}()
+		if err := sender.Send(ctx, to, body); err != nil {
+			slog.Warn(failMsg, "plugin", plugin, "email_hash", hashedIdentifier(to), "err", err)
+		}
+	}
 }
 
 func (q *mailQueue) stop(ctx context.Context) error {

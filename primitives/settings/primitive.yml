@@ -1,0 +1,47 @@
+primitive: settings
+summary: gofastr.settings.yml, a project's one committed gofastr configuration file - finding it under the project root and checking its top-level sections, each of which one reader decodes.
+code:
+  - core/settings/settings.go
+docs:
+  - framework/docs/content/settings.md
+on_change:
+  - A new top-level section is added to sections in core/settings/settings.go and documented in framework/docs/content/settings.md.
+invariants:
+  - id: find-stops-at-project-root
+    rule: Find searches start and each parent up to and including the first directory holding go.work, go.mod or .git, and only start when no such directory is above it.
+    enforced_by:
+      - test: core/settings.TestFindWalksUpToProjectRoot
+      - test: core/settings.TestFindStopsAtProjectRoot
+      - test: core/settings.TestFindUnmarkedTreeSearchesStartOnly
+      - test: core/settings.TestSweepSettingsProjectRootMarkers
+  - id: retired-file-is-an-error
+    rule: Find errors, naming the section to move it under, when a directory it searches holds a retired per-section file of the section asked for.
+    enforced_by:
+      - test: core/settings.TestFindRefusesRetiredFile
+  - id: known-sections-version-one
+    rule: Parse refuses a document that is not a map, a top-level key that is not a known section, and a version other than the integer 1, and reads an empty document as a file with no sections.
+    enforced_by:
+      - test: core/settings.TestParseRefusesUnknownSection
+      - test: core/settings.TestParseVersion
+      - test: core/settings.TestParseEmptyAndNonMap
+  - id: is-section-excludes-version
+    rule: IsSection is true for every known section except version.
+    enforced_by:
+      - test: core/settings.TestSweepSettingsIsSectionLeavesOutVersion
+decisions:
+  - id: search-bounded-by-project-root
+    date: 2026-11-19
+    status: accepted
+    decision: Find never walks above the project root, and in an unmarked tree reads only the start directory.
+    rejected:
+      - option: Walk to the filesystem root like most config finders.
+        why: A settings file can name a command that generate runs, so one planted in a shared ancestor such as a workspace parent, /tmp or $HOME must never apply.
+    upholds: [find-stops-at-project-root]
+  - id: retired-files-refused
+    date: 2026-11-19
+    status: accepted
+    decision: Each reader refuses the per-section file its content moved out of, such as gofastr.codegen.yml.
+    rejected:
+      - option: Ignore the old files.
+        why: A file that is no longer read would drop its settings without a word.
+    upholds: [retired-file-is-an-error]

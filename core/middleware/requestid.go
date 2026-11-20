@@ -6,7 +6,6 @@ import (
 	"uuid"
 )
 
-// requestIDKey is the context key for the request ID.
 type requestIDKey struct{}
 
 const (
@@ -14,8 +13,7 @@ const (
 	HeaderRequestID = "X-Request-ID"
 )
 
-// GetRequestID retrieves the request ID from the given context.
-// Returns an empty string if no request ID is present.
+// GetRequestID returns the request ID in ctx, or "" when there is none.
 func GetRequestID(ctx context.Context) string {
 	if v, ok := ctx.Value(requestIDKey{}).(string); ok {
 		return v
@@ -23,17 +21,9 @@ func GetRequestID(ctx context.Context) string {
 	return ""
 }
 
-// MaxRequestIDLen caps client-supplied X-Request-ID values. Above this
-// length the inbound header is rejected and a fresh ID generated.
-//
-// Without a cap, an attacker can stuff arbitrary multi-KB strings into
-// every request; they'd be logged in every access entry, reflected on
-// the response, and amplified across webhook sinks.
+// MaxRequestIDLen caps a client-supplied X-Request-ID; a longer one is replaced.
 const MaxRequestIDLen = 128
 
-// validRequestIDChar accepts the conventional UUID alphabet plus a few
-// adjacent characters operators commonly use for tagging (period, slash
-// is intentionally NOT included to avoid path-injection ambiguity).
 func validRequestIDChar(c byte) bool {
 	switch {
 	case c >= 'a' && c <= 'z',
@@ -57,14 +47,7 @@ func validRequestID(s string) bool {
 	return true
 }
 
-// RequestID returns middleware that assigns a unique ID to each request.
-// If an X-Request-ID header is present, well-formed (≤MaxRequestIDLen,
-// alphanumeric / dot / dash / underscore), it is reused. Otherwise a
-// new UUID v4 is generated.
-//
-// Validation defends against: (1) huge headers amplified across every
-// log entry, (2) header-reflection into response, (3) control chars
-// (already blocked by net/http), but our charset is stricter.
+// RequestID returns middleware that reuses a well-formed X-Request-ID (at most MaxRequestIDLen of [A-Za-z0-9._-]) or generates a UUID v4, and echoes it on the response.
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

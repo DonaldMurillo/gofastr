@@ -7,3 +7,7 @@ import "time"
 var stopGrace = 5 * time.Second
 
 func stopCellProcesses(string) {}
+
+func lockAbandoned(string, string) bool { return false }
+
+var gitRunning = func() bool { return true }

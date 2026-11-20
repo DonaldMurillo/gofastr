@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,10 +60,17 @@ func TestMemoryEraserCanonicalizesOnce(t *testing.T) {
 	ctx := context.Background()
 	once := func(s string) (string, error) { return "c-" + strings.ToLower(s), nil }
 	tokens := NewMemoryMagicLinkTokenStore()
-	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AllowInMemoryStores: true, CanonicalizeEmail: once})
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AllowInMemoryStores: true})
 	mgr.Use(NewEmailCodePlugin(EmailCodeConfig{TokenStore: tokens, DevMode: true}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatal(err)
+	}
+	// Init refuses a canonicalizer that is not idempotent; installed past
+	// that check, the eraser must still fold only once.
+	var calls atomic.Int32
+	mgr.config.CanonicalizeEmail = func(s string) (string, error) {
+		calls.Add(1)
+		return once(s)
 	}
 	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
 	canonical, _ := once("Ann@Example.com")
@@ -70,9 +78,13 @@ func TestMemoryEraserCanonicalizesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	eraser := memoryEraser(t, mgr)
+	calls.Store(0)
 	n, err := eraser.EraseResolved(ctx, datexport.ErasedUser{ID: "u1", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: canonical}}, false)
 	if err != nil || n != 1 {
 		t.Fatalf("erased %d, %v; want the one code for %q", n, err, canonical)
+	}
+	if c := calls.Load(); c != 0 {
+		t.Fatalf("the eraser ran the canonicalizer %d times over an already resolved email", c)
 	}
 }
 

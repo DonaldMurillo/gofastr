@@ -139,7 +139,7 @@ func textAreaCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-.fui-textarea[aria-invalid="true"] {
+.fui-textarea:is(:user-invalid, [aria-invalid="true"]) {
   border-color: var(--color-danger, #B91C1C);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }

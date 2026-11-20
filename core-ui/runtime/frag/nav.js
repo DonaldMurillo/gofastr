@@ -410,8 +410,8 @@
   try { history.scrollRestoration = 'manual'; } catch (_) {}
   const SCROLL_KEY = 'gofastr:scroll';
   // In-memory map id → [x,y], seeded from sessionStorage so a reload
-  // keeps its position despite manual restoration; persisted with a
-  // trailing throttle (in-memory writes are per scroll event, cheap).
+  // keeps its position despite manual restoration (in-memory writes
+  // are per scroll event, cheap).
   const _scrollStore = (() => {
     try { return JSON.parse(sessionStorage.getItem(SCROLL_KEY)) || {}; } catch (_) { return {}; }
   })();
@@ -440,7 +440,6 @@
     }
   };
   _adopt();
-  let _scrollTimer = 0;
   const _persistScroll = () => {
     const ids = Object.keys(_scrollStore);
     // Cap the persisted map; the oldest ids are the least likely to be
@@ -451,11 +450,14 @@
     }
     try { sessionStorage.setItem(SCROLL_KEY, JSON.stringify(_scrollStore)); } catch (_) {}
   };
+  // Persisted once per gesture on scrollend, and whenever the page is
+  // hidden: a reload or leave, and a background tab the browser may
+  // discard without pagehide, in a browser without scrollend too.
   window.addEventListener('scroll', () => {
     _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
-    if (_scrollTimer) return;
-    _scrollTimer = setTimeout(() => { _scrollTimer = 0; _persistScroll(); }, 150);
   }, { passive: true });
+  addEventListener('scrollend', _persistScroll);
+  addEventListener('visibilitychange', () => document.hidden && _persistScroll());
   // Reload restore: manual scrollRestoration leaves a reloaded page at
   // the top; the stored position for this entry id puts it back. A URL
   // fragment wins, the browser's native hash scroll is already right.

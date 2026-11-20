@@ -13,26 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/permission"
 )
 
-// PermissionMiddleware returns a tool.Middleware that consults the
-// permission engine before invoking the wrapped tool. The middleware:
-//
-//   - Computes the argv summary for the call (FormatArgvSummary).
-//   - Asks the permission engine for a Decision.
-//   - On DecisionAllow, calls next.
-//   - On DecisionDeny, returns an error result.
-//   - On DecisionAsk, publishes a PermissionRequested event and
-//     blocks waiting for an AnswerPermission via the answer
-//     channel (typically wired by the multiplexer). Times out per
-//     PermissionTimeout; on timeout, denies the call.
-//
-// Per hard rule 11, the multiplexer enforces "agents cannot
-// self-approve their own turn" before delivering an answer to this
-// middleware. This middleware does not re-check identity.
-//
-// PermissionTimeout is the maximum time to wait for a human ack
-// before denying. The doc commits to 60s as default; timeout 0 keeps
-// it, and a negative timeout panics at construction — a sign/unit
-// error must not silently become the longest wait for an ack.
+// PermissionAnswer is a client's answer to one PermissionRequested.
 type PermissionAnswer struct {
 	CallID ids.CallID
 	Allow  bool
@@ -40,23 +21,13 @@ type PermissionAnswer struct {
 	Source ids.ClientID
 }
 
-// AnswerRouter is wired by the multiplexer. It returns a channel that
-// receives AnswerPermission events for the given session, and a
-// function that subscribes the caller for the lifetime of a single
-// PermissionRequested. The middleware uses Subscribe to wait for a
-// matching answer; the multiplexer narrows by CallID and identity
-// rules before forwarding.
+// AnswerRouter delivers the answers for one pending permission call.
 type AnswerRouter interface {
 	Subscribe(session ids.SessionID, callID ids.CallID) <-chan PermissionAnswer
 	Unsubscribe(session ids.SessionID, callID ids.CallID)
 }
 
-// PermissionMiddleware constructs the middleware.
-//
-// session is bound at middleware-construction time (one engine = one
-// session); originator is also fixed per-turn and supplied via
-// context (so the multiplexer can address the prompt to the right
-// client).
+// PermissionMiddleware gates every tool call on eng, asking the session's clients when it says ask; timeout 0 means 60s and a negative timeout panics.
 func PermissionMiddleware(
 	bus *Bus,
 	eng *permission.Engine,
@@ -74,9 +45,6 @@ func PermissionMiddleware(
 		argv := FormatArgvSummary(call.Name, call.Input)
 		origin, _ := ctx.Value(originatorContextKey{}).(ids.ClientID)
 
-		// Look up the tool's is_mutating declaration via the
-		// registry-shared map; we cache it on context. If unset,
-		// assume mutating (fail-safe).
 		mutating, _ := ctx.Value(mutatingContextKey{}).(bool)
 
 		switch eng.Evaluate(session, call.Name, argv, mutating) {
@@ -86,7 +54,6 @@ func PermissionMiddleware(
 			return denied(call, "denied by permission policy")
 		}
 
-		// DecisionAsk: publish PermissionRequested and wait.
 		_, _ = bus.Publish(control.PermissionRequested{
 			CallID:     call.ID,
 			Tool:       call.Name,
@@ -120,22 +87,12 @@ func PermissionMiddleware(
 			if !ans.Allow {
 				return denied(call, "denied by user")
 			}
-			// Apply scope: session-rule for one-session scopes,
-			// persistent-rule for "Allow always".
 			rule, persist, ok := permission.AnswerToRuleWithPersist(call.Name, argv, control.AnswerPermission{
 				Scope:    ans.Scope,
 				Decision: control.DecisionAllow,
 			})
 			if ok {
 				if persist {
-					// Failure to persist is logged (Error event) but
-					// doesn't block the call, user already approved.
-					// The event carries a generic message only:
-					// savePersistent wraps the operator's absolute
-					// persistence path, and this bus feeds every
-					// ws/SSE/MCP client on the session — rest.go:196
-					// answers the same failure class server-side.
-					// The detail goes to the server log instead.
 					if err := eng.AddPersistentRule(rule); err != nil {
 						log.Printf("engine: persist permission rule: %v", err)
 						_, _ = bus.Publish(control.Error{
@@ -152,18 +109,15 @@ func PermissionMiddleware(
 	}
 }
 
-// context-key types, unexported so middleware contracts are explicit.
 type originatorContextKey struct{}
 type mutatingContextKey struct{}
 
-// WithOriginator stamps a context with the originator ClientID. The
-// engine loop applies this when invoking the dispatcher for a turn.
+// WithOriginator stamps ctx with the client that started the turn.
 func WithOriginator(ctx context.Context, id ids.ClientID) context.Context {
 	return context.WithValue(ctx, originatorContextKey{}, id)
 }
 
-// WithMutatingFlag stamps a context with the tool's is_mutating declaration.
-// Used by the dispatcher before calling the middleware chain.
+// WithMutatingFlag stamps ctx with whether the tool mutates.
 func WithMutatingFlag(ctx context.Context, mutating bool) context.Context {
 	return context.WithValue(ctx, mutatingContextKey{}, mutating)
 }
@@ -175,6 +129,5 @@ func denied(call tool.ToolCall, msg string) (*tool.ToolResult, error) {
 	}, nil
 }
 
-// ErrAnswerChannelClosed is returned when the multiplexer's answer
-// channel closes without delivering an answer.
+// ErrAnswerChannelClosed names an answer channel that closed without an answer.
 var ErrAnswerChannelClosed = errors.New("engine: permission answer channel closed")

@@ -24,6 +24,8 @@ type SecurityEvent struct {
 	// Email is the submitted address, the only user-supplied value an event may carry.
 	Email string
 
+	emailCanonical string
+
 	// Remote is the host part of r.RemoteAddr; X-Forwarded-For is never read.
 	Remote string
 
@@ -57,6 +59,11 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	}
 	if ev.At.IsZero() {
 		ev.At = time.Now().UTC()
+	}
+	if ev.Email != "" {
+		if c, err := m.canonicalizeEmail(ev.Email); err == nil {
+			ev.Email, ev.emailCanonical = c, sha256hex(c)
+		}
 	}
 	deliverAudit(ctx, sink, ev)
 }
@@ -106,8 +113,10 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 		diff["email"] = ev.Email
 	default:
 		addr := ev.Email
-		if c, err := CanonicalEmail(addr); err == nil {
-			addr = c
+		if ev.emailCanonical == "" || ev.emailCanonical != sha256hex(addr) {
+			if c, err := CanonicalEmail(addr); err == nil {
+				addr = c
+			}
 		}
 		diff["email_hash"] = hashedIdentifier(addr)
 	}

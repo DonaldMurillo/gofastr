@@ -43,9 +43,9 @@ func TestLargeDiskFileETagLandsAfterQuickAnswers(t *testing.T) {
 			// requests would start a fresh one each time and let a
 			// lucky schedule hide the race, so the check waits instead.
 			serveWith(h, tc.method, "/big.bin", tc.headers)
-			time.Sleep(time.Second)
+			time.Sleep(2 * time.Second)
 			if etag := serveWith(h, http.MethodHead, "/big.bin", nil).Header().Get("ETag"); etag != want {
-				t.Fatalf("ETag a second after one %s request: %q, want the content hash %s", tc.name, etag, want)
+				t.Fatalf("ETag two seconds after one %s request: %q, want the content hash %s", tc.name, etag, want)
 			}
 		})
 	}

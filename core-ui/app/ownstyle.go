@@ -6,22 +6,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 )
 
-// OwnedStyle is an owned style handle: the value `gofastr gen styles`
-// generates from a <name>.style.css file. The handle embeds
-// *ownstyle.Sheet, which supplies OwnedSheet.
-//
-// Three owners take one here. LayoutSpec.Style and Screen.WithStyle
-// take a scoped sheet; the framework stamps data-cui-scope="<name>" on
-// the owner's root, which bounds the compiled @scope and tells the
-// SSR head and the runtime to load /__gofastr/comp/<name>.css.
-// App.WithStyle takes the app sheet, which covers every page and
-// always loads.
+// OwnedStyle is an owned style handle: the value `gofastr gen styles` generates from a <name>.style.css file.
 type OwnedStyle interface {
 	OwnedSheet() *ownstyle.Sheet
 }
 
-// scopedSheet unwraps st for a layout or screen owner, panicking with
-// the fix when it is nil or the app sheet.
 func scopedSheet(owner string, st OwnedStyle) *ownstyle.Sheet {
 	sh := ownedSheet(owner, st)
 	if sh.Kind() == ownstyle.KindApp {
@@ -41,23 +30,13 @@ func ownedSheet(owner string, st OwnedStyle) *ownstyle.Sheet {
 	return sh
 }
 
-// WithStyle gives the screen an owned style. The screen's content is
-// wrapped once — in its <article> when the screen is an article,
-// otherwise in a plain <div> — and the wrapper carries
-// data-cui-scope="<name>". The primary cell is never the scope root:
-// it persists across navigations while screens swap inside it. Fills
-// render in the layout's outlets, outside the wrapper, so the screen's
-// style never reaches them.
-//
-// Panics on a nil handle or the app style.
+// WithStyle gives the screen an owned style.
 func (s *Screen) WithStyle(st OwnedStyle) *Screen {
 	s.ownStyle = scopedSheet(fmt.Sprintf("screen %q WithStyle", s.Path), st)
 	return s
 }
 
-// WithStyle declares the app's own style (app.style.css): rules that
-// cover every page. The sheet always loads, so this records the
-// declaration and checks its kind; a scoped style panics with the fix.
+// WithStyle declares the app's own style (app.style.css): rules that cover every page.
 func (a *App) WithStyle(st OwnedStyle) *App {
 	sh := ownedSheet("App.WithStyle", st)
 	if sh.Kind() != ownstyle.KindApp {

@@ -7,7 +7,7 @@
 // prompt handler's nil messages (9e207f909). Both fields are required
 // arrays in the MCP schema, and validating clients (the TypeScript SDK)
 // reject null, so an in-band failure became a client-side protocol
-// error. The fixes route the value through contentArray, or guard it
+// error. The fixes route the value through requiredArray, or guard it
 // with `if messages == nil { messages = []PromptMessage{} }`.
 //
 // Marker-scoped: a slice-typed struct field whose json tag has no
@@ -42,8 +42,8 @@
 //     `if len(x) > 0` / `if x != nil`;
 //   - X.F = append(X.F, …) when that field has a dominating non-nil
 //     initialization, with no later possibly-nil write;
-//   - a call to a function whose every return is proven (contentArray:
-//     its `return c` sits behind `if c == nil { return []Content{} }`),
+//   - a call to a function whose every return is proven (requiredArray:
+//     its `return xs` sits behind `if xs == nil { return []T{} }`),
 //     exported as a fact so a helper in another package counts; or one
 //     whose every return is proven or a slice of one parameter, called
 //     with a proven argument there (core/mcp pageList returns items[:0]

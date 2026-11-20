@@ -1,5 +1,2 @@
-// Package profile is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package profile loads and validates harness profile TOML files.
 package profile

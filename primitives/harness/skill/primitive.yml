@@ -1,0 +1,44 @@
+primitive: harness.skill
+summary: The skill registry - Load scans the search paths for SKILL.md files and keeps each skill's name and description, Activate reads a skill's body on first use, SupportingFile reads files inside its directory, and MatchesTrigger finds skills by glob or keyword.
+code:
+  - framework/experimental/harness/skill/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Parse a SKILL.md file and derive its Dir and SHA256.
+    why: The registry reads through an os.Root to refuse a symlinked SKILL.md while skillmd.Parse reads with os.ReadFile; skillmd has no rooted entry point yet.
+    sites:
+      - path: framework/experimental/harness/skill/registry.go
+        note: parseSkillRooted.
+      - path: framework/experimental/harness/skill/skillmd/skillmd.go
+        note: Parse.
+invariants:
+  - id: shadow-is-disclosed
+    rule: When a later search path has a skill with the same name as an earlier one, the later one wins and Load writes a warning to stderr naming both files.
+    enforced_by:
+      - test: framework/experimental/harness/skill.TestProjectSkillShadowWarns
+  - id: skill-reads-stay-in-tree
+    rule: Load, Activate and SupportingFile never read bytes from outside a skill's directory, whether through "..", an absolute path, a symlinked SKILL.md, or a symlinked file or directory inside the skill.
+    enforced_by:
+      - test: framework/experimental/harness/skill.TestSkillTreeSymlinkEscapeRefused
+      - test: framework/experimental/harness/skill.TestActivateRefusesSKILLmdSwappedForSymlinkAfterLoad
+      - test: framework/experimental/harness/skill.TestRegistrySupportingFileEscape
+decisions:
+  - id: keep-precedence-warn-on-shadow
+    date: 2026-11-18
+    status: accepted
+    decision: A project skill keeps overriding a global skill of the same name, and Load warns about every such shadow.
+    rejected:
+      - option: Silent override.
+        why: A cloned repository can name-squat a skill the operator trusts and put its own name and description into the system prompt unseen.
+      - option: Refuse the shadowing skill.
+        why: Overriding a global skill per project is the documented precedence.
+    upholds: [shadow-is-disclosed]
+  - id: read-through-os-root
+    date: 2026-11-18
+    status: accepted
+    decision: Every skill file read goes through an os.Root over the skill's directory, which refuses symlink escapes in the kernel.
+    rejected:
+      - option: A lexical check on the cleaned path alone.
+        why: It does not see a symlinked file or directory inside the skill tree.
+    upholds: [skill-reads-stay-in-tree]

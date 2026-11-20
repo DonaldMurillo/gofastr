@@ -96,7 +96,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-network-retry-banner"] {

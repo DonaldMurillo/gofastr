@@ -1,5 +1,2 @@
-// Package clock is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package clock provides a swappable clock so tests advance time instead of sleeping.
 package clock

@@ -2,10 +2,7 @@ package app
 
 import "fmt"
 
-// ValidateIntercepts checks that every intercept origin names a registered
-// screen pattern. Hosts call it after registering screens, before serving
-// requests; uihost.Mount calls it automatically. Missing origins panic with
-// the target and origin patterns so an overlay cannot silently stay disabled.
+// ValidateIntercepts checks that every intercept origin names a registered screen pattern.
 func (r *Router) ValidateIntercepts() {
 	for _, pattern := range r.Paths() {
 		screen, _ := r.ScreenByPattern(pattern)

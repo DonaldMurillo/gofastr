@@ -6,35 +6,18 @@ import (
 	"time"
 )
 
-// ComponentContext holds the execution context for a component action.
-// It provides access to event data and component state.
-//
-// It also IS a [context.Context]: an action handler receives this value
-// and nothing else, so anything the handler needs from the request has to
-// be reachable through it. That includes the caller. The server-action
-// endpoint's own contract says "a handler that mutates anything must
-// check authorization itself", and with no request context threaded
-// through, handler.GetUser had nothing to read and that check was
-// unimplementable. Passing it to any context-taking API — a DB call, an
-// authorization lookup, handler.GetUser — now works.
+// ComponentContext is an action handler's event, state access and request context.
 type ComponentContext struct {
-	// Ctx is the request context the action arrived on. Nil is treated as
-	// context.Background(), so a ComponentContext built by hand (tests,
-	// in-process invocation) is still safe to use as a context.
 	Ctx context.Context
 
-	// Event data
 	EventName string
 	TargetID  string
 	Params    map[string]string
 
-	// State access
 	StateGetter func(key string) any
 	StateSetter func(key string, value any)
 }
 
-// base returns the context to delegate to, substituting Background for a
-// zero-valued or hand-built ComponentContext.
 func (ctx *ComponentContext) base() context.Context {
 	if ctx == nil || ctx.Ctx == nil {
 		return context.Background()
@@ -85,9 +68,7 @@ func (ctx *ComponentContext) SetState(key string, value any) {
 	}
 }
 
-// NewComponentContext creates a new context with the given event data and
-// no request context. Prefer [NewComponentContextFor] on any path that has
-// a request: without it the handler cannot see the caller.
+// NewComponentContext builds a context with no request; prefer [NewComponentContextFor].
 func NewComponentContext(eventName, targetID string, params map[string]string) *ComponentContext {
 	return &ComponentContext{
 		EventName: eventName,
@@ -96,9 +77,7 @@ func NewComponentContext(eventName, targetID string, params map[string]string) *
 	}
 }
 
-// NewComponentContextFor creates a context carrying the request context the
-// action arrived on, so the handler can read the caller and honour
-// cancellation.
+// NewComponentContextFor builds a context carrying the request context ctx.
 func NewComponentContextFor(ctx context.Context, eventName, targetID string, params map[string]string) *ComponentContext {
 	return &ComponentContext{
 		Ctx:       ctx,

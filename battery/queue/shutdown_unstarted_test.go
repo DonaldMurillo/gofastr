@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"sync/atomic"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // A shutdown that lands after a worker claimed a job but before it started
@@ -16,18 +14,7 @@ import (
 // was dead-lettered). The worker now hands such a job back unstarted with
 // its attempt refunded, as the outbox relay does with the rest of a batch.
 func TestShutdownBeforeStartRefundsClaim(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		db, q := openDBQueueOpts(t, WithWorkers(0))
-		assertShutdownBeforeStartRefunds(t, db, q)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		db := pgtest.DB(t)
-		q, err := NewDBQueue(db, WithWorkers(0))
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertShutdownBeforeStartRefunds(t, db, q)
-	})
+	forBackendQueues(t, []DBQueueOption{WithWorkers(0)}, assertShutdownBeforeStartRefunds)
 }
 
 func assertShutdownBeforeStartRefunds(t *testing.T, db *sql.DB, q *DBQueue) {

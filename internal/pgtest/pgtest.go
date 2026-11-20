@@ -150,6 +150,24 @@ func DB(t *testing.T) *sql.DB {
 	return db
 }
 
+// SideSchema creates a sibling schema beside db's current one — for
+// objects a test must create OUTSIDE its search_path — and drops it
+// (CASCADE) on cleanup. suffix distinguishes concurrent siblings.
+func SideSchema(t *testing.T, db *sql.DB, suffix string) string {
+	t.Helper()
+	var cur string
+	if err := db.QueryRow(`SELECT current_schema()`).Scan(&cur); err != nil {
+		t.Fatal(err)
+	}
+	s := cur + suffix
+	if _, err := db.Exec("CREATE SCHEMA " + s); err != nil {
+		t.Fatalf("create schema %s: %v", s, err)
+	}
+	// best-effort: test cleanup must not replace the original assertion.
+	t.Cleanup(func() { _, _ = db.Exec("DROP SCHEMA " + s + " CASCADE") })
+	return s
+}
+
 // Replica opens a second pool on the schema db (from DB) is scoped to,
 // the way another replica reaches the same tables. It is closed on
 // t.Cleanup, before db's schema is dropped.

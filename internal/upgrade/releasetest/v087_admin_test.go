@@ -26,21 +26,10 @@ func New(cfg Config) *Battery   { return &Battery{} }
 func (b *Battery) RegisterRoutes(any) {}
 `}
 
+// adminNote is the v0.87.0 note whose change starts with change.
 func adminNote(t *testing.T, change string) *upgrade.Note {
 	t.Helper()
-	reg := scantest.Registry(t)
-	for _, rel := range reg.Releases {
-		if rel.Version != "v0.87.0" {
-			continue
-		}
-		for i := range rel.Notes {
-			if strings.HasPrefix(rel.Notes[i].Change, change) {
-				return rel.Notes[i]
-			}
-		}
-	}
-	t.Fatalf("no v0.87.0 note starting %q", change)
-	return nil
+	return shippedNote(t, "v0.87.0", change)
 }
 
 func TestV087AdminFieldsNoteHitsRemovedFields(t *testing.T) {

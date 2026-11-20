@@ -1,15 +1,5 @@
 package permission
 
-// Persistent permission rules, saved to disk so the user only has
-// to grant "Allow always" once. Loaded on Engine boot, written
-// atomically (write to tmp + rename) on every AddPersistentRule.
-//
-// File format: JSON wrapper { "version": 1, "rules": [...] }.
-// Version field lets us evolve the schema without breaking old files.
-// The on-disk path is set per-Engine via PersistencePath, the
-// harness composition layer points it at
-// $XDG_CONFIG_HOME/gofastr/harness/permissions.json.
-
 import (
 	"encoding/json"
 	"errors"
@@ -22,8 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// persistentFile is the on-disk shape. Keep it forward-compatible:
-// add fields with json tags + omitempty, never rename.
 type persistentFile struct {
 	Version int    `json:"version"`
 	Rules   []Rule `json:"rules"`
@@ -31,8 +19,7 @@ type persistentFile struct {
 
 const persistentSchemaVersion = 1
 
-// LoadPersistentRules reads the on-disk file into the engine's
-// persistent rule list. Missing file is NOT an error, first run.
+// LoadPersistentRules replaces the persistent rules with those in PersistencePath; a missing file is no error.
 func (e *Engine) LoadPersistentRules() error {
 	if e.PersistencePath == "" {
 		return nil
@@ -54,24 +41,22 @@ func (e *Engine) LoadPersistentRules() error {
 	return nil
 }
 
-// AddPersistentRule appends a rule to the persistent list AND writes
-// the file atomically. Returns error if the disk write fails, the
-// in-memory list is still updated either way (best-effort durability).
+// AddPersistentRule adds r, stamped with WorkingDir when it names no Dir, and saves the list; a failed save still keeps r in memory.
 func (e *Engine) AddPersistentRule(r Rule) error {
 	e.mu.Lock()
 	if r.Dir == "" {
 		r.Dir = e.WorkingDir
 	}
 	e.persistentRules = append(e.persistentRules, r)
-	rules := append([]Rule{}, e.persistentRules...) // snapshot for write
+	rules := append([]Rule{}, e.persistentRules...)
 	e.mu.Unlock()
 	if e.PersistencePath == "" {
-		return nil // in-memory only
+		return nil
 	}
 	return savePersistent(e.PersistencePath, rules)
 }
 
-// ListPersistentRules returns a copy of the current persistent rules.
+// ListPersistentRules returns a copy of the persistent rules.
 func (e *Engine) ListPersistentRules() []Rule {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -80,8 +65,6 @@ func (e *Engine) ListPersistentRules() []Rule {
 	return out
 }
 
-// savePersistent writes the rules to path atomically (write tmp +
-// rename). Creates the parent directory if needed.
 func savePersistent(path string, rules []Rule) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
@@ -103,12 +86,7 @@ func savePersistent(path string, rules []Rule) error {
 	return nil
 }
 
-// AnswerToRuleWithPersist extends AnswerToRule with a "should persist"
-// flag. True iff Scope == ScopeAlways, meaning callers should call
-// AddPersistentRule to write it to disk.
-//
-// Returns (rule, shouldPersist, ok). ok=false for unrecognized scopes
-// (mirrors AnswerToRule for compatibility).
+// AnswerToRuleWithPersist is AnswerToRule plus ScopeAlways, which returns a literal rule and true for persist.
 func AnswerToRuleWithPersist(toolName, argvSummary string, ans control.AnswerPermission) (Rule, bool, bool) {
 	if ans.Scope == control.ScopeAlways {
 		act := DecisionAsk
@@ -118,7 +96,6 @@ func AnswerToRuleWithPersist(toolName, argvSummary string, ans control.AnswerPer
 		case control.DecisionDeny:
 			act = DecisionDeny
 		}
-		// Persist as a tool-scoped rule with argv glob if available.
 		return Rule{Tool: toolName, ArgvGlob: argvSummary, Action: act}, true, true
 	}
 	r, ok := AnswerToRule(toolName, argvSummary, ans)

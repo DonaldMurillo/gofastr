@@ -9,53 +9,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-func TestBatchCreate_DatabaseErrorDoesNotLeakDriverText(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
-	_ = db.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/posts/_batch", strings.NewReader(`{"items":[{"title":"hello"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.BatchCreate()(rec, req)
-
-	body := strings.ToLower(rec.Body.String())
-	if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
-		t.Fatalf("SECURITY: [batch-error] batch create leaked raw driver text: %s", rec.Body.String())
+// TestBatch_DatabaseErrorDoesNotLeakDriverText drives every batch surface
+// against a closed database and requires that raw driver error text
+// ("database is closed", "sql: ...") never reaches the response body.
+func TestBatch_DatabaseErrorDoesNotLeakDriverText(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		body   string
+		serve  func(ch *CrudHandler) http.HandlerFunc
+	}{
+		{"batch create", http.MethodPost, `{"items":[{"title":"hello"}]}`,
+			func(ch *CrudHandler) http.HandlerFunc { return ch.BatchCreate() }},
+		{"batch update", http.MethodPatch, `{"items":[{"id":"p1","title":"changed"}]}`,
+			func(ch *CrudHandler) http.HandlerFunc { return ch.BatchUpdate() }},
+		{"batch delete", http.MethodDelete, `{"ids":["p1"]}`,
+			func(ch *CrudHandler) http.HandlerFunc { return ch.BatchDelete() }},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
+				{Name: "title", Type: schema.String},
+			}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
+			_ = db.Close()
 
-func TestBatchUpdate_DatabaseErrorDoesNotLeakDriverText(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
-	_ = db.Close()
+			req := httptest.NewRequest(tc.method, "/posts/_batch", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			tc.serve(ch)(rec, req)
 
-	req := httptest.NewRequest(http.MethodPatch, "/posts/_batch", strings.NewReader(`{"items":[{"id":"p1","title":"changed"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.BatchUpdate()(rec, req)
-
-	body := strings.ToLower(rec.Body.String())
-	if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
-		t.Fatalf("SECURITY: [batch-error] batch update leaked raw driver text: %s", rec.Body.String())
-	}
-}
-
-func TestBatchDelete_DatabaseErrorDoesNotLeakDriverText(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("posts", "posts", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}), `CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)`)
-	_ = db.Close()
-
-	req := httptest.NewRequest(http.MethodDelete, "/posts/_batch", strings.NewReader(`{"ids":["p1"]}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.BatchDelete()(rec, req)
-
-	body := strings.ToLower(rec.Body.String())
-	if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
-		t.Fatalf("SECURITY: [batch-error] batch delete leaked raw driver text: %s", rec.Body.String())
+			body := strings.ToLower(rec.Body.String())
+			if strings.Contains(body, "database is closed") || strings.Contains(body, "sql:") {
+				t.Fatalf("SECURITY: [batch-error] %s leaked raw driver text: %s", tc.name, rec.Body.String())
+			}
+		})
 	}
 }

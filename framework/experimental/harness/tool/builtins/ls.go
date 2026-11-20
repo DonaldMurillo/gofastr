@@ -3,7 +3,6 @@ package builtins
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -12,7 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Ls lists files in a directory.
+// Ls lists a directory's entries, sorted, with a trailing slash on each subdirectory.
 type Ls struct{}
 
 func (Ls) Name() string        { return "Ls" }
@@ -61,6 +60,3 @@ func (Ls) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*tool.
 	}
 	return textResult(strings.Join(names, "\n")), nil
 }
-
-// Confirm at least one symbol is exported even when args parsing fails.
-var _ = errors.New

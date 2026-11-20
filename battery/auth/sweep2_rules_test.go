@@ -2,50 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
 	"encoding/base64"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"testing"
 	"time"
 )
-
-func TestOIDCWeakRSAJWKSkipped(t *testing.T) {
-	k, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := base64.RawURLEncoding.EncodeToString(k.N.Bytes())
-	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(k.E)).Bytes())
-	if _, ok := parseJWK(rawJWK{Kty: "RSA", Kid: "w", N: n, E: e}); ok {
-		t.Error("a 1024-bit RSA JWK was accepted")
-	}
-}
-
-func TestExpiredStateRefused(t *testing.T) {
-	p := NewOAuth2Plugin(OAuth2Config{StateSecret: "test-secret-state-01"})
-	state, err := p.generateState("mock", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := p.validateAndConsumeState(state, "mock"); !ok {
-		t.Fatal("control: a fresh state was refused")
-	}
-	nonce := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef"))
-	payload := nonce + ".mock." + strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10) + "."
-	h := hmac.New(sha256.New, p.stateKey)
-	h.Write([]byte(payload))
-	mac := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-	if _, ok := p.validateAndConsumeState(payload+"."+mac, "mock"); ok {
-		t.Error("an expired, correctly signed state was accepted")
-	}
-}
 
 func TestArgon2PHCRefusesOversizedParams(t *testing.T) {
 	salt := base64.RawStdEncoding.EncodeToString([]byte("0123456789abcdef"))

@@ -106,24 +106,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 
 	var errorsHTML render.HTML
 	if len(cfg.Errors) > 0 || cfg.Summary != "" {
-		if cfg.ID == "" {
-			panic("ui: Form rendering Errors requires ID — the summary's id is derived from it (FormConfig.ID + \"-errors\"), and two summaries on one page would share one title id")
-		}
-		general := cfg.Summary
-		if general == "" {
-			general = i18nui.FormErrorsSummary.Text(ctx)
-		}
-		errorsHTML = ValidationSummary(ValidationSummaryConfig{
-			ID:          cfg.ID + "-errors",
-			Errors:      cfg.Errors,
-			General:     general,
-			FieldLabels: cfg.FieldLabels,
-			FieldIDs:    cfg.FieldIDs,
-			FieldOrder:  cfg.FieldOrder,
-			Title:       i18nui.FormHasErrors.Text(ctx),
-			Ctx:         ctx,
-		})
-		errorsHTML = headless.Own(errorsHTML)
+		errorsHTML = formErrorsSummary(ctx, "Form", cfg.ID, cfg.Summary, cfg.Errors, cfg.FieldLabels, cfg.FieldIDs, cfg.FieldOrder)
 	}
 
 	rootClass := cfg.Class
@@ -313,4 +296,28 @@ func validationSummaryCSS(_ style.Theme) string {
 .fui-validation-summary__list a:hover {
   color: var(--color-text, #09090B);
 }`
+}
+
+// formErrorsSummary renders the ValidationSummary Form and StepWizard share
+// when they carry errors or a summary. It panics when id is empty: the
+// summary's id derives from it, and two summaries on one page would share
+// one title id. component names the caller in that panic.
+func formErrorsSummary(ctx context.Context, component, id, summary string, errs FieldErrors, fieldLabels, fieldIDs map[string]string, fieldOrder []string) render.HTML {
+	if id == "" {
+		panic("ui: " + component + " rendering Errors requires ID — the summary's id is derived from it (" + component + "Config.ID + \"-errors\"), and two summaries on one page would share one title id")
+	}
+	general := summary
+	if general == "" {
+		general = i18nui.FormErrorsSummary.Text(ctx)
+	}
+	return headless.Own(ValidationSummary(ValidationSummaryConfig{
+		ID:          id + "-errors",
+		Errors:      errs,
+		General:     general,
+		FieldLabels: fieldLabels,
+		FieldIDs:    fieldIDs,
+		FieldOrder:  fieldOrder,
+		Title:       i18nui.FormHasErrors.Text(ctx),
+		Ctx:         ctx,
+	}))
 }

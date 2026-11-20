@@ -82,6 +82,7 @@ type fakeAuthenticator struct {
 	signer crypto.Signer
 	count  uint32
 	flags  byte // flags for the next ceremony; default UP|UV|BE|BS
+	aaguid []byte
 }
 
 func newFakeAuthenticator(t testing.TB, alg int64) *fakeAuthenticator {
@@ -139,6 +140,7 @@ func (a *fakeAuthenticator) authData(flags byte, attested []byte) []byte {
 // register returns clientDataJSON and attestationObject for challenge.
 func (a *fakeAuthenticator) register(challenge string) (cdj, att []byte) {
 	attested := make([]byte, 16) // AAGUID
+	copy(attested, a.aaguid)
 	attested = binary.BigEndian.AppendUint16(attested, uint16(len(a.credID)))
 	attested = append(attested, a.credID...)
 	attested = append(attested, a.coseKey()...)
@@ -247,7 +249,7 @@ func TestRegistrationAcceptsEachAlgorithm(t *testing.T) {
 		if err != nil || ch != "chal" {
 			t.Fatalf("alg %d client data: %q %v", alg, ch, err)
 		}
-		res, err := testRP.verifyAttestation(att)
+		res, err := testRP.verifyAttestation(att, false)
 		if err != nil {
 			t.Fatalf("alg %d: %v", alg, err)
 		}
@@ -297,18 +299,18 @@ func TestAttestationRefusals(t *testing.T) {
 		a := newFakeAuthenticator(t, coseAlgES256)
 		mut(a)
 		_, att := a.register("chal")
-		if _, err := testRP.verifyAttestation(att); err == nil {
+		if _, err := testRP.verifyAttestation(att, false); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 
 	a := newFakeAuthenticator(t, coseAlgES256)
 	_, att := a.register("chal")
-	if _, err := testRP.verifyAttestation(append(slices.Clone(att), 0)); err == nil {
+	if _, err := testRP.verifyAttestation(append(slices.Clone(att), 0), false); err == nil {
 		t.Error("trailing byte after the attestation object accepted")
 	}
 	noAT := cborEnc(cborMap{{"fmt", "none"}, {"attStmt", cborMap{}}, {"authData", a.authData(a.flags, nil)}})
-	if _, err := testRP.verifyAttestation(noAT); err == nil {
+	if _, err := testRP.verifyAttestation(noAT, false); err == nil {
 		t.Error("authData without attested credential data accepted")
 	}
 }
@@ -364,7 +366,7 @@ func TestCOSEKeyAcceptsRSAAtTheCap(t *testing.T) {
 func registered(t *testing.T, a *fakeAuthenticator) registrationResult {
 	t.Helper()
 	_, att := a.register("chal")
-	res, err := testRP.verifyAttestation(att)
+	res, err := testRP.verifyAttestation(att, false)
 	if err != nil {
 		t.Fatal(err)
 	}

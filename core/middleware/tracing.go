@@ -1,12 +1,9 @@
 package middleware
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/internal/panicstack"
-	"io"
-	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -21,53 +18,19 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Tracing returns Middleware that opens an OpenTelemetry span around every
-// request. Span name is "HTTP {method} {route}" where route is the matched
-// pattern (r.Pattern from Go 1.22+ ServeMux). Attributes recorded:
-//
-//	http.method:      request method
-//	http.route:       the route pattern (fallback "unmatched")
-//	http.status_code: final response status
-//	http.target:      request URL path
-//
-// Distributed-trace context is extracted with the global otel propagator
-// (otel.SetTextMapPropagator) when one is configured, so a B3 or Jaeger
-// header from an upstream service chains correctly. When that propagator
-// finds no remote span context, or none is configured, the W3C
-// traceparent / tracestate and baggage headers are read instead. Outgoing
-// responses get the global propagator's headers injected.
-//
-// Without a configured TracerProvider (the otel default), this middleware
-// is essentially a no-op; spans are created against a no-op tracer that
-// drops everything. Callers wire up Jaeger / OTLP / etc. via the standard
-// otel.SetTracerProvider.
+// Tracing returns middleware that opens an OpenTelemetry server span per request, named "HTTP {method} {route}", extracting context with the global propagator and then W3C, and injecting the global propagator's headers into the response.
 func Tracing() Middleware {
 	tracer := otel.Tracer("github.com/DonaldMurillo/gofastr/core/middleware")
-	// The global propagator injects, and extracts when one is configured.
-	// Before otel.SetTextMapPropagator runs, the global is a delegate that
-	// forwards to whatever is set later, so the check for "configured"
-	// (any header fields) happens per request, not here.
 	prop := otel.GetTextMapPropagator()
 	if prop == nil {
 		prop = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	}
-	// W3C TraceContext + Baggage, the canonical HTTP default (what otelhttp
-	// uses): the extractor when no global is configured, and the fallback
-	// when the global finds no remote span context, so a traceparent still
-	// joins the upstream trace behind a B3-only global.
 	w3c := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := extractTraceContext(r.Context(), prop, w3c, propagation.HeaderCarrier(r.Header))
 
-			// r.Pattern isn't populated until after the mux matches, so we
-			// start the span with a placeholder name + "unmatched" route and
-			// update both after the handler returns.
-			// r.Method and r.URL.Path are request-borne (a forged method,
-			// a %0d%0a path). Scrub both at the sink — the same
-			// control-byte rule the slog sinks carry — so a forged value
-			// cannot render as a forged line in collector UIs/exporters.
 			note := &routeNote{}
 			ctx = context.WithValue(ctx, routeNoteKey{}, note)
 			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", textsafe.ScrubControlBytes(r.Method)),
@@ -79,19 +42,11 @@ func Tracing() Middleware {
 			)
 			defer span.End()
 
-			// Put our span context on the response headers before the
-			// handler runs: once it writes, the headers are sent and a
-			// later change never reaches the client.
 			prop.Inject(ctx, propagation.HeaderCarrier(w.Header()))
-			ww := &tracingResponseWriter{ResponseWriter: w, status: 200}
+			ww := newStatusWriter(w)
 			finish := func(status int) {
-				// After the handler runs, r.Pattern is populated by the mux.
 				route := r.Pattern
 				if route == "" || strings.HasSuffix(route, "/") || strings.HasSuffix(route, "...}") {
-					// The mux matched nothing of its own, or a pattern
-					// that takes a whole subtree ("/", "/files/{path...}").
-					// A router behind it (the UI host's screens) may
-					// have said which of its routes this was.
 					if noted := note.load(); noted != "" {
 						route = noted
 					}
@@ -108,22 +63,10 @@ func Tracing() Middleware {
 					span.SetStatus(codes.Error, http.StatusText(status))
 				}
 			}
-			// A panicking handler: the span gets the status the client
-			// gets (Recovery's 500, or the one already sent) and an Error
-			// status naming the panic, even when a 2xx had already gone
-			// out. Runs before the deferred span.End above; the panic goes
-			// on, and the SDK's End records it as the span's exception
-			// event, so no RecordError here (it would add a second one).
 			defer func() {
 				if v := recover(); v != nil {
 					finish(panickedStatus(w, ww.wroteHeader, ww.status))
 					span.SetStatus(codes.Error, textsafe.Recovered(v))
-					// Where it panicked, under OpenTelemetry's own name
-					// for it, so whatever reads the span has the stack
-					// beside the request. A panic Timeout carried over
-					// from the handler's goroutine brings that
-					// goroutine's stack; this one's would show only the
-					// middleware.
 					_, stack, _ := unwrapPanic(v)
 					if stack == nil {
 						stack = debug.Stack()
@@ -138,12 +81,6 @@ func Tracing() Middleware {
 	}
 }
 
-// extractTraceContext reads the incoming trace context. A global
-// propagator with no fields is the otel no-op default: W3C alone, as
-// before. Otherwise the global goes first; if it yields no valid remote
-// span context, W3C TraceContext is tried on top, and W3C Baggage only
-// when the global left no baggage, so a global's own baggage format is
-// not overwritten.
 func extractTraceContext(parent context.Context, global, w3c propagation.TextMapPropagator, carrier propagation.TextMapCarrier) context.Context {
 	if len(global.Fields()) == 0 {
 		return w3c.Extract(parent, carrier)
@@ -161,8 +98,6 @@ func extractTraceContext(parent context.Context, global, w3c propagation.TextMap
 
 type routeNoteKey struct{}
 
-// routeNote carries a route from a handler back to the middleware that
-// wraps it: a context only flows inward.
 type routeNote struct {
 	mu    sync.Mutex
 	route string
@@ -174,14 +109,7 @@ func (n *routeNote) load() string {
 	return n.route
 }
 
-// NoteRoute names the route a request matched, for a router that sits
-// behind a catch-all and so leaves r.Pattern empty or at a pattern
-// that takes a whole subtree ("/"): the UI host's screens. The
-// request's span is then named for route (a pattern such as
-// "/orders/{id}", never the request's own path) instead of "unmatched"
-// or the catch-all. A mux pattern that names one route wins over a
-// note, and the first note wins over a later one. It does nothing
-// outside Tracing.
+// NoteRoute names the matched route for a router behind a catch-all, so Tracing names the span for it; a specific mux pattern and an earlier note win, and outside Tracing it does nothing.
 func NoteRoute(ctx context.Context, route string) {
 	n, _ := ctx.Value(routeNoteKey{}).(*routeNote)
 	if n == nil || route == "" {
@@ -194,90 +122,13 @@ func NoteRoute(ctx context.Context, route string) {
 	n.mu.Unlock()
 }
 
-// SpanFromRequest is a thin convenience that returns the active span on the
-// request's context. Returns a no-op span if Tracing() isn't installed.
+// SpanFromRequest returns the span on r's context, a no-op span without Tracing.
 func SpanFromRequest(r *http.Request) trace.Span {
 	return trace.SpanFromContext(r.Context())
 }
 
-// tracingResponseWriter mirrors the metrics wrapper: captures the status
-// code and forwards Flush() so SSE / chunked handlers keep working.
-type tracingResponseWriter struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (w *tracingResponseWriter) WriteHeader(code int) {
-	if w.wroteHeader {
-		return
-	}
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		w.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
-		return
-	}
-	// Latch only once the call returned: net/http panics on a code
-	// outside 100-999 before sending anything, and a panicked request
-	// is recorded under the 500 Recovery sends unless this latch says
-	// the response had already started.
-	w.ResponseWriter.WriteHeader(code)
-	w.status = code
-	w.wroteHeader = true
-}
-
-func (w *tracingResponseWriter) Write(b []byte) (int, error) {
-	if !w.wroteHeader {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-// ReadFrom keeps the connection's sendfile path: io.Copy and
-// http.ServeContent use the writer's ReaderFrom when it has one, and
-// embedding http.ResponseWriter does not promote it. It latches the
-// implicit 200 the way Write does.
-func (w *tracingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
-	return copyResponse(w, w.ResponseWriter, src)
-}
-
-func (w *tracingResponseWriter) Flush() {
-	// A flush sends the headers: the status is the one set, or 200.
-	// Latch it, so a WriteHeader after the flush (which net/http drops)
-	// does not record a status the client never got.
-	w.wroteHeader = true
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one,
-// so a WebSocket-upgrade handler behind Tracing() keeps its upgrade path.
-func (w *tracingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
-		return hj.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
-}
-
-// Push forwards to the underlying ResponseWriter's Pusher if it has one.
-func (w *tracingResponseWriter) Push(target string, opts *http.PushOptions) error {
-	if pu, ok := w.ResponseWriter.(http.Pusher); ok {
-		return pu.Push(target, opts)
-	}
-	return http.ErrNotSupported
-}
-
-// Unwrap exposes the wrapped writer to net/http's ResponseController.
-func (w *tracingResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
-}
-
-// maxSpanStackLen bounds the stack a span carries: enough for the
-// frames between a handler and the line that panicked.
 const maxSpanStackLen = 8 << 10
 
-// panicOrigin is the stack a span carries for a panic: from the
-// function that panicked on, and bounded.
 func panicOrigin(stack []byte) string {
 	return textsafe.Truncate(panicstack.Origin(string(stack)), maxSpanStackLen)
 }

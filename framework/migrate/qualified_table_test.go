@@ -11,20 +11,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/internal/testdb"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // otherSchema creates a Postgres schema outside the test's search_path and
 // drops it when the test ends.
 func otherSchema(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	var cur string
-	if err := db.QueryRow(`SELECT current_schema()`).Scan(&cur); err != nil {
-		t.Fatal(err)
-	}
-	s := cur + "_x"
-	fkExec(t, db, "CREATE SCHEMA "+s)
-	t.Cleanup(func() { _, _ = db.Exec("DROP SCHEMA " + s + " CASCADE") })
-	return s
+	return pgtest.SideSchema(t, db, "_x")
 }
 
 func bootPlan(t *testing.T, db *sql.DB, step string, ents ...*entity.Entity) {

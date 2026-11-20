@@ -17,7 +17,7 @@
 //     navigation back to the normal loadPage path.
 //   - The page underneath stays mounted. Closing is a history move, so
 //     Back, ESC, the backdrop and any data-cui-intercept-close button
-//     are one code path and returning to the list costs no refetch.
+//     uncover it without a refetch unless a save left it stale.
 //   - Intercepted HTML never enters the screen cache. The cache is
 //     keyed by path and holds canonical page renders; storing an
 //     overlay variant there would poison a later direct visit.
@@ -67,26 +67,20 @@
   // The entry a declined move's history.go is heading back to: its
   // popstate is the repair arriving, not a move of its own.
   let repair = null;
-
-  // Match a resolved path against the manifest's route patterns. Static
-  // segments must match exactly; ':param' and '{param}' match one
-  // segment; a trailing catch-all matches the remainder.
-  function matchRoute(pattern, path) {
-    const segs = pattern.split('/').filter(Boolean);
-    const s = path.split('/').filter(Boolean);
-    for (let i = 0; i < segs.length; i++) {
-      const seg = segs[i];
-      const dyn = /^[:{]/.test(seg);
-      if (dyn && /(?:\.\.\.\}?|\*)$/.test(seg)) return true;
-      if (!s[i] || (!dyn && seg !== s[i])) return false;
-    }
-    return segs.length === s.length;
-  }
+  // A save that keeps a layer changes what the layers under it and the
+  // page under the stack show; each re-renders when it is uncovered.
+  let pageStale = false;
 
   // Routes register unprefixed: /es/pricing matches /pricing.
   const routeFor = (path) => {
     const p = NS._unlocalize?.(path) ?? path;
-    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find((r) => r.path && matchRoute(r.path, p));
+    const parts = p.split('/').filter(Boolean).map(NS._routeSeg);
+    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find(({path}) => {
+      if (!path) return false;
+      const segs = path.split('/').filter(Boolean);
+      return (segs.length === parts.length || segs.length < parts.length && /^:.*\*$/s.test(segs.at(-1))) &&
+        segs.every((seg, i) => NS._routeMatch(seg, parts[i]));
+    });
   };
   const pathOf = (u) => u.split(/[?#]/)[0];
   const top = () => layers.at(-1);
@@ -132,6 +126,7 @@
     NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
     NS.scanAndLoadCSS?.(t.el);
+    t.stale = false;
   }
 
   function refresh(t, res, focus) {
@@ -289,7 +284,33 @@
     layers.splice(layers.indexOf(t), 1);
     drop(t);
     settleAfterDrop(t.restoreFocus);
+    // A stale layer or page re-renders once the move has landed.
+    const below = top();
+    if (below ? below.stale : pageStale) repair = { k: below?.key, i: below?.cur, then: () => uncover(t.restoreFocus) };
     history.go(-(t.cur + 1)); // the entries this layer owns
+  }
+
+  // The top layer, or the page when none is left, has just been
+  // uncovered: re-render it if a save above it went stale on it.
+  // The guards ask first: the re-render discards its edits.
+  function uncover(focus) {
+    const lay = top();
+    if (!(lay ? lay.stale : pageStale)) return;
+    const e = epoch;
+    if (!guardOK(lay?.el ?? document, () => { if (e === epoch) uncover(focus); }, { to: location.href })) return;
+    if (lay) refetchLayer(lay, focus, e);
+    else NS.refresh?.();
+  }
+
+  function refetchLayer(lay, focus, e) {
+    const u = lay.url;
+    fetchOverlay(u, lay.fromURL)
+      .then((res) => {
+        if (e !== epoch) return;
+        if (!res) { fallbackNav(u, ''); return; }
+        refresh(lay, res, focus);
+      })
+      .catch(() => { if (e === epoch) fallbackNav(u, ''); });
   }
 
   // Drop every layer without a history move: a real navigation has
@@ -488,17 +509,10 @@
       history.go(-back);
     }
     settleAfterDrop(focus);
-    if (!lay) {
-      NS.refresh?.();
-      return true;
-    }
-    fetchOverlay(lay.url, lay.fromURL)
-      .then((res) => {
-        if (e !== epoch) return;
-        if (!res) { fallbackNav(lay.url, ''); return; }
-        refresh(lay, res, focus);
-      })
-      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
+    pageStale = true;
+    for (const l of layers) l.stale = true;
+    if (lay) refetchLayer(lay, focus, e);
+    else NS.refresh?.();
     return true;
   };
 
@@ -543,19 +557,12 @@
         drop(shut);
       }
       if (refetch) {
-        const u = location.pathname + location.search + location.hash;
-        const e = epoch;
         lay.cur = j;
-        lay.url = u;
-        fetchOverlay(u, lay.fromURL)
-          .then((res) => {
-            if (e !== epoch) return;
-            if (!res) { fallbackNav(u, ''); return; }
-            refresh(lay, res, focus);
-          })
-          .catch(() => { if (e === epoch) fallbackNav(u, ''); });
+        lay.url = location.pathname + location.search + location.hash;
+        refetchLayer(lay, focus, epoch);
       }
       settleAfterDrop(focus);
+      if (!refetch) uncover(focus);
       return true;
     }
     // The entry belongs to none of the layers (the page under the
@@ -580,6 +587,7 @@
     const focus = base && layers[0].restoreFocus;
     closeAllNow();
     refocus(focus);
+    if (base && pageStale) { uncover(); return true; }
     return false;
   };
 
@@ -589,6 +597,7 @@
   // The navigation a data-cui-intercept-panel link handed over has
   // landed on its page: open the record over it.
   window.addEventListener('gofastr:navigate', () => {
+    pageStale = false;
     closeAllNow();
     const p = panel;
     panel = null;

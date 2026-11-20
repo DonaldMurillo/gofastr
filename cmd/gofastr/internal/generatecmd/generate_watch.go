@@ -163,8 +163,8 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 		// json_file/json_dir source via the general codegen framework; hash
 		// those inputs so --watch reacts to them.
 		for _, gen := range discovery.Config.Codegen.Generators {
-			// A cli entry reads its OpenAPI document from config, not source.
-			if gen.Name == "cli" && gen.Extension == "" {
+			// A cli or sdk entry reads its OpenAPI document from config, not source.
+			if (gen.Name == "cli" || gen.Name == "sdk") && gen.Extension == "" {
 				if doc, ok := gen.Config["from_openapi"].(string); ok && strings.TrimSpace(doc) != "" {
 					hashFileInto(h, projectRelativePath(projectDir, strings.TrimSpace(doc)))
 				}

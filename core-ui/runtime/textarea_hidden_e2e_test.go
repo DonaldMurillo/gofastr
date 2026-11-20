@@ -14,6 +14,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
+// The scrollHeight fallback: the engine is told it cannot size a field
+// to its content, so the module measures.
 func TestHiddenTextareaGrowsOnReveal(t *testing.T) {
 	for _, container := range []string{"section", "details"} {
 		t.Run(container, func(t *testing.T) {
@@ -27,6 +29,8 @@ func TestHiddenTextareaGrowsOnReveal(t *testing.T) {
 			if err := chromedp.Run(ctx,
 				chromedp.ActionFunc(func(ctx context.Context) error {
 					_, err := page.AddScriptToEvaluateOnNewDocument(`
+const nativeSupports = CSS.supports.bind(CSS);
+CSS.supports = function (a, b) { return String(a).includes('field-sizing') ? false : nativeSupports(...arguments); };
 window.__observedTextareas = new Set();
 const NativeResizeObserver = window.ResizeObserver;
 window.ResizeObserver = class extends NativeResizeObserver {
@@ -74,5 +78,71 @@ window.ResizeObserver = class extends NativeResizeObserver {
 				t.Fatalf("textarea resize or observer lifecycle failed: %v", err)
 			}
 		})
+	}
+}
+
+// Where the engine sizes a field to its content, the module hands the
+// textarea to field-sizing: content and measures nothing (no inline
+// height, no observer), and a textarea revealed from a hidden panel
+// still fits its prefilled value (#704).
+func TestAutogrowUsesFieldSizing(t *testing.T) {
+	markup := `<section id="container" hidden><textarea id="draft" data-cui-autogrow>` + strings.Repeat("prefilled text\n", 12) + `</textarea></section>` +
+		`<textarea id="empty" rows="5" data-cui-autogrow style="padding:8px;border:1px solid;box-sizing:border-box"></textarea>` +
+		`<textarea id="plain" rows="5" style="padding:8px;border:1px solid;box-sizing:border-box"></textarea>`
+	server := widgetHelpersServer(t, markup)
+	ctx := chromedptest.Context(t)
+	var supported bool
+	if err := chromedp.Run(ctx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(`
+window.__observedTextareas = 0;
+const NativeResizeObserver = window.ResizeObserver;
+window.ResizeObserver = class extends NativeResizeObserver {
+  observe(target) { if (target.matches('textarea')) window.__observedTextareas++; super.observe(target); }
+};`).Do(ctx)
+			return err
+		}),
+		chromedp.Navigate(server),
+		chromedp.Evaluate(`CSS.supports('field-sizing', 'content')`, &supported),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !supported {
+		t.Skip("this browser has no field-sizing: the fallback test covers it")
+	}
+	var got struct {
+		Sizing   string `json:"sizing"`
+		Height   string `json:"height"`
+		Observed int    `json:"observed"`
+		Fits     bool   `json:"fits"`
+		Grew     bool   `json:"grew"`
+		Empty    [2]int `json:"empty"`
+		Plain    [2]int `json:"plain"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.textarea`, nil),
+		chromedp.Evaluate(`document.getElementById('container').hidden = false`, nil),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+			const ta = document.getElementById('draft');
+			const before = ta.clientHeight;
+			const fits = ta.clientHeight >= ta.scrollHeight && ta.clientHeight > 100;
+			ta.value += 'one more line\nand another\n';
+			const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+			return { sizing: ta.style.fieldSizing, height: ta.style.height, observed: window.__observedTextareas, fits, grew: ta.clientHeight > before, empty: box('empty'), plain: box('plain') };
+		})()`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got.Sizing != "content" || got.Height != "" || got.Observed != 0 {
+		t.Errorf("the module measured instead of handing the textarea to field-sizing: %+v", got)
+	}
+	// Height exact; width within the scrollbar gutter Chrome adds to a
+	// cols-sized box, which a ch floor does not carry.
+	if got.Empty[1] != got.Plain[1] || got.Empty[0] < got.Plain[0]*4/5 {
+		t.Errorf("an empty autogrow textarea is %v, want about the %v its rows and cols render: field-sizing ignores both, so they must stay the floor", got.Empty, got.Plain)
+	}
+	if !got.Fits || !got.Grew {
+		t.Errorf("the revealed textarea does not fit or follow its value: %+v", got)
 	}
 }

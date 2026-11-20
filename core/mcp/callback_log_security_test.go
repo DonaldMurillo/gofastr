@@ -3,9 +3,10 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 func TestCallbackPanicsAreLogged(t *testing.T) {
@@ -46,32 +47,28 @@ func TestCallbackPanicsAreLogged(t *testing.T) {
 	}
 	for name, check := range checks {
 		t.Run(name, func(t *testing.T) {
-			sink := &redGateScrubSink{}
-			previous := slog.Default()
-			slog.SetDefault(slog.New(sink))
-			t.Cleanup(func() { slog.SetDefault(previous) })
+			sink := &scrubtest.Sink{}
+			scrubtest.InstallDefault(t, sink)
 			if err := check(); err == nil || strings.Contains(err.Error(), "forged") {
 				t.Fatalf("panic was not privately refused: %v", err)
 			}
-			if panicText := sink.redGet("panic"); !strings.Contains(panicText, "boom") ||
+			if panicText := sink.Get("panic"); !strings.Contains(panicText, "boom") ||
 				strings.ContainsAny(panicText, "\n\x1b\u202e") {
 				t.Errorf("missing or unsafe panic diagnostic: %q", panicText)
 			}
-			if sink.redGet("operation") == "" || !strings.Contains(sink.redGet("stack"), "runtime/debug.Stack") {
-				t.Errorf("missing operation or stack: %#v", sink.attrs)
+			if sink.Get("operation") == "" || !strings.Contains(sink.Get("stack"), "runtime/debug.Stack") {
+				t.Errorf("missing operation or stack: %#v", sink.Attrs())
 			}
 		})
 	}
 	t.Run("listing gate", func(t *testing.T) {
-		sink := &redGateScrubSink{}
-		previous := slog.Default()
-		slog.SetDefault(slog.New(sink))
-		defer slog.SetDefault(previous)
+		sink := &scrubtest.Sink{}
+		scrubtest.InstallDefault(t, sink)
 		if !gateRefused(gate, ctx) {
 			t.Fatal("panicking listing gate admitted a caller")
 		}
-		if !strings.Contains(sink.redGet("panic"), "boom") || sink.redGet("stack") == "" {
-			t.Fatalf("listing panic was swallowed: %#v", sink.attrs)
+		if !strings.Contains(sink.Get("panic"), "boom") || sink.Get("stack") == "" {
+			t.Fatalf("listing panic was swallowed: %#v", sink.Attrs())
 		}
 	})
 }

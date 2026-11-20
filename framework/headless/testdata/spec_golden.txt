@@ -255,16 +255,16 @@ a search that matched nothing names the absence after itself; with no explicit I
 <div aria-label="No apps match" role="region"><h2 data-cui-internal="">No apps match</h2><p data-cui-internal="">Clear a filter or try another name.</p></div>
 
 === Field / hinted ===
-the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives
-<div data-hui-field=""><label data-cui-internal="" for="field-port">Port</label><input aria-describedby="field-port-hint" id="field-port" name="field-port" type="text"><p data-cui-internal="" id="field-port-hint">1–65535</p></div>
+the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives; it sits between the label and the control, so the rule is read before the reader starts typing and an autofill popup or an on-screen keyboard never covers it
+<div data-hui-field=""><label data-cui-internal="" for="field-port">Port</label><p data-cui-internal="" id="field-port-hint">1–65535</p><input aria-describedby="field-port-hint" id="field-port" name="field-port" type="text"></div>
 
 === Field / errored ===
 the error JOINS the hint in the description, ahead of it: the hint is the rule the value must obey and the error is the violation, so dropping the rule exactly when it was broken is dropping it when it is needed most — and the correction is read first because it comes first
-<div data-hui-field=""><label data-cui-internal="" for="field-port-bad">Port</label><input aria-describedby="field-port-bad-error field-port-bad-hint" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-port-bad-error" role="alert">Already in use.</p><p data-cui-internal="" id="field-port-bad-hint">1–65535</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="field-port-bad">Port</label><p data-cui-internal="" id="field-port-bad-hint">1–65535</p><input aria-describedby="field-port-bad-error field-port-bad-hint" aria-invalid="true" id="field-port-bad" name="field-port-bad" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-port-bad-error">Already in use.</p></div>
 
 === Field / reserved error node ===
-a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout
-<div data-hui-field=""><label data-cui-internal="" for="field-token-live">Token</label><input aria-describedby="field-token-live-error" id="field-token-live" name="field-token-live" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-token-live-error" role="alert"></p></div>
+a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout; the node is no live region, so a form with ten errors is not ten interruptions: the filling script announces once, from one polite region
+<div data-hui-field=""><label data-cui-internal="" for="field-token-live">Token</label><input aria-describedby="field-token-live-error" id="field-token-live" name="field-token-live" type="text"><p data-cui-internal="" data-hui-field-error="" id="field-token-live-error"></p></div>
 
 === Field / required ===
 required is a state the parser is told about, not a red asterisk — which is a picture of a rule
@@ -296,7 +296,7 @@ the fields land in the body and the submits in the actions row, and the method d
 
 === Form / after a failed submit ===
 errors set the hook that moves focus to the summary, so a screen reader hears what went wrong instead of sitting on an unchanged-looking page
-<form action="/apps" data-hui-form-errors="" method="post" novalidate=""><div aria-labelledby="form-dup-errors-title" id="form-dup-errors" role="alert" tabindex="-1"><h2 data-cui-internal="" id="form-dup-errors-title">There is a problem</h2><ul data-cui-internal=""><li><a href="#dup-app-name">That name is taken.</a></li></ul></div><div><div data-hui-field=""><label data-cui-internal="" for="dup-app-name">App name</label><input aria-describedby="dup-app-name-error" aria-invalid="true" id="dup-app-name" name="app-name" type="text"><p data-cui-internal="" data-hui-field-error="" id="dup-app-name-error" role="alert">That name is taken.</p></div></div><div><button type="submit">Create app</button></div></form>
+<form action="/apps" data-hui-form-errors="" method="post" novalidate=""><div aria-labelledby="form-dup-errors-title" id="form-dup-errors" role="alert" tabindex="-1"><h2 data-cui-internal="" id="form-dup-errors-title">There is a problem</h2><ul data-cui-internal=""><li><a href="#dup-app-name">That name is taken.</a></li></ul></div><div><div data-hui-field=""><label data-cui-internal="" for="dup-app-name">App name</label><input aria-describedby="dup-app-name-error" aria-invalid="true" id="dup-app-name" name="app-name" type="text"><p data-cui-internal="" data-hui-field-error="" id="dup-app-name-error">That name is taken.</p></div></div><div><button type="submit">Create app</button></div></form>
 
 === Form / with a file upload ===
 multipart sets the encoding a file input needs, because without it the browser submits the file's name and no contents, which looks like a server bug and is not one
@@ -328,15 +328,15 @@ the cue and the rule are two different things: data-required on the legend is wh
 
 === Input / described ===
 the description it is handed is written out: six of the eight text controls once accepted DescribedBy and dropped it, so the field wired a relationship to an attribute nobody rendered — here the control sits in a Field the way a page would use it, and the hint arrives through that relationship
-<div data-hui-field=""><label data-cui-internal="" for="input-port">Port</label><input aria-describedby="input-port-hint" id="input-port" name="port" type="text" value="8080"><p data-cui-internal="" id="input-port-hint">1–65535</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="input-port">Port</label><p data-cui-internal="" id="input-port-hint">1–65535</p><input aria-describedby="input-port-hint" id="input-port" name="port" type="text" value="8080"></div>
 
 === Input / invalid ===
 aria-invalid is the state; the red border is the picture of it
-<div data-hui-field=""><label data-cui-internal="" for="input-port-bad">Port</label><input aria-describedby="input-port-bad-error" aria-invalid="true" id="input-port-bad" name="port" type="text"><p data-cui-internal="" data-hui-field-error="" id="input-port-bad-error" role="alert">Already in use.</p></div>
+<div data-hui-field=""><label data-cui-internal="" for="input-port-bad">Port</label><input aria-describedby="input-port-bad-error" aria-invalid="true" id="input-port-bad" name="port" type="text"><p data-cui-internal="" data-hui-field-error="" id="input-port-bad-error">Already in use.</p></div>
 
 === InputGroup / an input with a button ===
 with no label the group is a plain div, because wrapping labelled controls in a group with a third name makes a screen reader read the group name before each one
-<div><div data-hui-field=""><label data-cui-internal="" for="jump-app">Jump to app</label><input id="jump-app" name="app" type="text" value="registry app"><p data-cui-internal="" id="jump-app-hint">Jump to an app in this cluster.</p></div><button type="submit">Go</button></div>
+<div><div data-hui-field=""><label data-cui-internal="" for="jump-app">Jump to app</label><p data-cui-internal="" id="jump-app-hint">Jump to an app in this cluster.</p><input id="jump-app" name="app" type="text" value="registry app"></div><button type="submit">Go</button></div>
 
 === InputGroup / two focusable things ===
 a group holding more than one focusable control takes a role and a name, so it appears in the landmark list as one identifiable control
@@ -408,7 +408,7 @@ zero renders no badge (no news is no news) and the signal-bound count raises it 
 
 === NumberInput / unbounded, with help ===
 a real, named number input works with no script at all, and the rule it obeys rides its description — the buttons are enhancement only
-<div aria-label="Port" role="group"><label data-cui-internal="" for="port">Port</label><div data-cui-internal=""><button aria-label="Decrement Port" data-hui-number-input-decrement="" data-hui-number-input-for="port" type="button">−</button><input aria-describedby="port-hint" id="port" name="port" step="1" type="number" value="8080"><button aria-label="Increment Port" data-hui-number-input-for="port" data-hui-number-input-increment="" type="button">+</button></div><p data-cui-internal="" id="port-hint">1024 to 65535</p></div>
+<div aria-label="Port" role="group"><label data-cui-internal="" for="port">Port</label><p data-cui-internal="" id="port-hint">1024 to 65535</p><div data-cui-internal=""><button aria-label="Decrement Port" data-hui-number-input-decrement="" data-hui-number-input-for="port" type="button">−</button><input aria-describedby="port-hint" id="port" name="port" step="1" type="number" value="8080"><button aria-label="Increment Port" data-hui-number-input-for="port" data-hui-number-input-increment="" type="button">+</button></div></div>
 
 === NumberInput / bounded at both edges ===
 the bounds are on the input (the browser enforces them for typing) and the buttons' names say which field they step — the hook the module resolves the input by rides each button
@@ -416,7 +416,7 @@ the bounds are on the input (the browser enforces them for typing) and the butto
 
 === NumberInput / disabled with an error ===
 disabled takes the buttons out with the input, and the violation is read before the rule because the correction arrives before the reminder
-<div aria-label="Quota" role="group"><label data-cui-internal="" for="quota">Quota</label><div data-cui-internal=""><button aria-label="Decrement Quota" data-hui-number-input-decrement="" data-hui-number-input-for="quota" disabled="" type="button">−</button><input aria-describedby="quota-error" aria-invalid="true" disabled="" id="quota" max="10" min="1" name="quota" step="1" type="number" value="2"><button aria-label="Increment Quota" data-hui-number-input-for="quota" data-hui-number-input-increment="" disabled="" type="button">+</button></div><p data-cui-internal="" id="quota-error" role="alert">Below the minimum</p></div>
+<div aria-label="Quota" role="group"><label data-cui-internal="" for="quota">Quota</label><div data-cui-internal=""><button aria-label="Decrement Quota" data-hui-number-input-decrement="" data-hui-number-input-for="quota" disabled="" type="button">−</button><input aria-describedby="quota-error" aria-invalid="true" disabled="" id="quota" max="10" min="1" name="quota" step="1" type="number" value="2"><button aria-label="Increment Quota" data-hui-number-input-for="quota" data-hui-number-input-increment="" disabled="" type="button">+</button></div><p data-cui-internal="" id="quota-error">Below the minimum</p></div>
 
 === OptimisticAction / default ===
 both labels ship in the SSR so the optimistic flip needs no round-trip, the method is absent because POST is the runtime's default, and the status span exists because the framework's shake announces nothing
@@ -616,15 +616,15 @@ every bar is hidden from the tree: a screen reader reading out eight empty boxes
 
 === Slider / with a live output ===
 the output is a real form output associated with the input, its SSR text is the true value, and the hook it carries is how the module keeps it in step while the thumb moves
-<div data-hui-slider=""><label data-cui-internal="" for="cpu">CPU share</label><output data-cui-internal="" data-hui-slider-output="" for="cpu">40</output><input aria-label="CPU share" data-cui-internal="" id="cpu" max="100" min="0" name="cpu" step="1" type="range" value="40"><div data-cui-internal=""><span>0</span><span>100</span></div></div>
+<div data-hui-slider=""><label data-cui-internal="" for="cpu">CPU share</label><output data-cui-internal="" data-hui-slider-output="" for="cpu">40</output><input aria-valuetext="40" data-cui-internal="" id="cpu" max="100" min="0" name="cpu" step="1" type="range" value="40"><div data-cui-internal=""><span>0</span><span>100</span></div></div>
 
 === Slider / bare, no output ===
 a slider with no output renders no hook at all — markup carried for no one is the defect the hooks gate exists to catch
-<div data-hui-slider=""><label data-cui-internal="" for="mem">Memory</label><input aria-label="Memory" data-cui-internal="" id="mem" max="100" min="0" name="mem" step="1" type="range" value="0"></div>
+<div data-hui-slider=""><label data-cui-internal="" for="mem">Memory</label><input data-cui-internal="" id="mem" max="100" min="0" name="mem" step="1" type="range" value="0"></div>
 
 === Slider / bounded custom step ===
 a step the value lands on: the browser, the server and the module all read the same three attributes, and a value between steps renders as given — data, not a broken prop
-<div data-hui-slider=""><label data-cui-internal="" for="batch">Batch size</label><output data-cui-internal="" data-hui-slider-output="" for="batch">50</output><input aria-label="Batch size" data-cui-internal="" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
+<div data-hui-slider=""><label data-cui-internal="" for="batch">Batch size</label><output data-cui-internal="" data-hui-slider-output="" for="batch">50</output><input aria-valuetext="50" data-cui-internal="" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
 
 === SortableItems / the reconciliation fragment ===
 a versioned 409 replaces the list's rows with the server's own — this is that fragment, the rows without the wrapper (empty items render it empty, a column honestly emptied)
@@ -800,7 +800,7 @@ an empty tag field still renders its list and its status wiring, so the module t
 
 === TagInput / a capped, helped field ===
 the cap rides both the draft input and the rendered values — a server value longer than the cap cannot submit unchanged while a typed one is refused — and the rule rides the field's own description
-<div aria-label="Labels" data-hui-tag-input="labels" data-hui-tag-input-maxlength="8" data-hui-tag-input-remove-label="Remove {{label}}" role="group"><label data-cui-internal="" for="labels">Labels</label><div data-cui-internal=""><ul data-hui-tag-input-list="" role="list"><li aria-label="Remove prod" data-hui-tag-input-remove="">prod<button aria-label="Remove prod" type="button">×</button><input name="labels" type="hidden" value="prod"></li></ul><input aria-describedby="labels-hint" aria-label="Labels" autocomplete="off" data-hui-tag-input-field="" id="labels" maxlength="8" type="text"><button aria-label="Add Labels" data-hui-tag-input-add="" type="button">+</button></div><span data-cui-internal="" data-hui-tag-input-added="{{name}} added" data-hui-tag-input-removed="{{name}} removed" data-hui-tag-input-status="" role="status"></span><p data-cui-internal="" id="labels-hint">One word each, eight characters at most.</p></div>
+<div aria-label="Labels" data-hui-tag-input="labels" data-hui-tag-input-maxlength="8" data-hui-tag-input-remove-label="Remove {{label}}" role="group"><label data-cui-internal="" for="labels">Labels</label><p data-cui-internal="" id="labels-hint">One word each, eight characters at most.</p><div data-cui-internal=""><ul data-hui-tag-input-list="" role="list"><li aria-label="Remove prod" data-hui-tag-input-remove="">prod<button aria-label="Remove prod" type="button">×</button><input name="labels" type="hidden" value="prod"></li></ul><input aria-describedby="labels-hint" aria-label="Labels" autocomplete="off" data-hui-tag-input-field="" id="labels" maxlength="8" type="text"><button aria-label="Add Labels" data-hui-tag-input-add="" type="button">+</button></div><span data-cui-internal="" data-hui-tag-input-added="{{name}} added" data-hui-tag-input-removed="{{name}} removed" data-hui-tag-input-status="" role="status"></span></div>
 
 === Textarea / with content ===
 the value is the element's text, not an attribute — which is why it is the one control whose content must be escaped rather than quoted

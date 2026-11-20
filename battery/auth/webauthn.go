@@ -123,9 +123,10 @@ type registrationResult struct {
 	signCount      uint32
 	backupEligible bool
 	backedUp       bool
+	aaguid         []byte // 16 bytes; all zero when the authenticator withholds it
 }
 
-func (rp webauthnRP) verifyAttestation(attObj []byte) (registrationResult, error) {
+func (rp webauthnRP) verifyAttestation(attObj []byte, conditional bool) (registrationResult, error) {
 	v, n, err := cborDecode(attObj)
 	if err != nil {
 		return registrationResult{}, fmt.Errorf("attestation object: %w", err)
@@ -151,10 +152,11 @@ func (rp webauthnRP) verifyAttestation(attObj []byte) (registrationResult, error
 	if err != nil {
 		return registrationResult{}, err
 	}
-	if err := rp.checkAuthData(ad); err != nil {
+	if err := rp.checkAuthData(ad, conditional); err != nil {
 		return registrationResult{}, err
 	}
 	return registrationResult{
+		aaguid:         ad.aaguid,
 		credID:         ad.credID,
 		publicKey:      ad.coseKey,
 		alg:            ad.key.alg,
@@ -179,7 +181,7 @@ func (rp webauthnRP) verifyAssertion(coseKey, clientDataJSON, authData, sig []by
 	if err != nil {
 		return assertionResult{}, err
 	}
-	if err := rp.checkAuthData(ad); err != nil {
+	if err := rp.checkAuthData(ad, false); err != nil {
 		return assertionResult{}, err
 	}
 	ch := sha256.Sum256(clientDataJSON)
@@ -190,15 +192,15 @@ func (rp webauthnRP) verifyAssertion(coseKey, clientDataJSON, authData, sig []by
 	return assertionResult{signCount: ad.signCount, backupEligible: ad.flags&flagBE != 0, backedUp: ad.flags&flagBS != 0}, nil
 }
 
-func (rp webauthnRP) checkAuthData(ad authData) error {
+func (rp webauthnRP) checkAuthData(ad authData, conditional bool) error {
 	want := sha256.Sum256([]byte(rp.ID))
 	if subtle.ConstantTimeCompare(ad.rpIDHash, want[:]) != 1 {
 		return errors.New("authenticator data is for another RP ID")
 	}
-	if ad.flags&flagUP == 0 {
+	if !conditional && ad.flags&flagUP == 0 {
 		return errors.New("authenticator data: user not present")
 	}
-	if ad.flags&flagUV == 0 {
+	if !conditional && ad.flags&flagUV == 0 {
 		return errors.New("authenticator data: user not verified")
 	}
 	if ad.flags&flagBS != 0 && ad.flags&flagBE == 0 {
@@ -211,6 +213,7 @@ type authData struct {
 	rpIDHash  []byte
 	flags     byte
 	signCount uint32
+	aaguid    []byte
 	credID    []byte
 	coseKey   []byte
 	key       coseKey
@@ -233,6 +236,7 @@ func parseAuthData(b []byte, attested bool) (authData, error) {
 		if len(rest) < 18 {
 			return authData{}, errors.New("attested credential data truncated")
 		}
+		ad.aaguid = slices.Clone(rest[:16])
 		idLen := int(binary.BigEndian.Uint16(rest[16:18]))
 		rest = rest[18:]
 		if idLen == 0 || idLen > maxCredentialIDLen || idLen > len(rest) {

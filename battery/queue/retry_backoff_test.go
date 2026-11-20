@@ -15,12 +15,7 @@ import (
 // (e.g. WithBackoff) alongside the default worker count.
 func openDBQueueOpts(t *testing.T, opts ...DBQueueOption) (*sql.DB, *DBQueue) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+	db := openMemQueueDB(t)
 	q, err := NewDBQueue(db, opts...)
 	if err != nil {
 		t.Fatalf("new db queue: %v", err)

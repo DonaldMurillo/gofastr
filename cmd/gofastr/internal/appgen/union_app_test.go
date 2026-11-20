@@ -87,7 +87,7 @@ func TestUnionApp(t *testing.T) {
 			t.Errorf("generated app lacks %s", want)
 		}
 	}
-	for _, f := range []string{"cmd/union/main.gen.go", "gen/js/client.js", "gen/go/repositories.go", "gen/go/local/repositories.go"} {
+	for _, f := range []string{"cmd/union/main.gen.go", "gen/js/client.js", "gen/go/repositories.go", "gen/go/local/repositories.go", "gen/apisdk/go/operations.go", "gen/apisdk/js/client.js", "gen/apisdk/dist/manifest.json"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("gofastr.settings.yml's codegen did not write %s: %v", f, err)
 		}
@@ -101,6 +101,11 @@ func TestUnionApp(t *testing.T) {
 		} else if !strings.Contains(string(b), want) || strings.Contains(string(b), `"BlogPost"`) {
 			t.Errorf("%s does not route BlogPost on %s", f, want)
 		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "entities", "endpoints.gen.go")); err != nil {
+		t.Errorf("read endpoints.gen.go: %v", err)
+	} else if !strings.Contains(strings.Join(strings.Fields(string(b)), " "), `Title: "Clear a post's cache", ReadOnlyHint: mcp.Bool(false), DestructiveHint: mcp.Bool(false), IdempotentHint: mcp.Bool(true), OpenWorldHint: mcp.Bool(false),`) {
+		t.Errorf("clear_cache's hints: block did not reach its MCPAnnotations:\n%s", b)
 	}
 	if t.Failed() {
 		return
@@ -124,12 +129,14 @@ func TestUnionApp(t *testing.T) {
 			t.Fatalf("go %s over the union app: %v\nevery finding is in the emitted templates (cmd/gofastr/internal/appgen), not the app spec:\n%s", strings.Join(args, " "), err, out)
 		}
 	}
-	for _, args := range [][]string{{"test", "./..."}, {"vet", "-vettool=" + vettool, "./..."}} {
-		command := exec.Command("go", args...)
-		command.Dir = filepath.Join(dir, "gen", "go")
-		command.Env = append(os.Environ(), "GOPROXY=off", "GOFLAGS=-mod=mod")
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("generated SDK go %s: %v\n%s", strings.Join(args, " "), err, output)
+	for _, sdkDir := range []string{filepath.Join("gen", "go"), filepath.Join("gen", "apisdk", "go")} {
+		for _, args := range [][]string{{"test", "./..."}, {"vet", "-vettool=" + vettool, "./..."}} {
+			command := exec.Command("go", args...)
+			command.Dir = filepath.Join(dir, sdkDir)
+			command.Env = append(os.Environ(), "GOPROXY=off", "GOFLAGS=-mod=mod")
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("generated SDK %s: go %s: %v\n%s", sdkDir, strings.Join(args, " "), err, output)
+			}
 		}
 	}
 

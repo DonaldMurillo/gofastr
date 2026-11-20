@@ -1,0 +1,61 @@
+primitive: localdb
+summary: Browser-side IndexedDB databases declared in Go at init - New and Store with their key paths and indexes, the JSON manifest every page head carries, and the on-request localdb module that opens, reads, writes and watches them in the visitor's browser.
+code:
+  - core-ui/localdb/
+docs:
+  - framework/docs/content/localdb.md
+on_change:
+  - The storeSpec and indexSpec JSON tags are what localdb.js reads; change them with the script.
+imports:
+  - deny: core-ui/localdb
+    from: [core-ui/app]
+    why: The schema reaches the page as a registered data block, so the page pipeline links localdb only in an app that declares a database.
+    instead: Read the manifest through registry.RegisterDataBlock, or import localdb from the app or a battery that uses it.
+invariants:
+  - id: declarations-refuse-at-init
+    rule: New, Store and the index options panic on a name ValidName refuses, a database, store or index declared twice, a key path that is not 1 to 128 bytes of dotted ASCII identifiers or holds __proto__, constructor or prototype, AutoKey on a dotted key path, an index with no key path and a multi-entry index over more than one.
+    enforced_by:
+      - test: core-ui/localdb.TestDeclarationRefusals
+  - id: manifest-is-the-declarations
+    rule: ManifestJSON is the sorted JSON of every declared database, store and index in the shape localdb.js reads, and nil when nothing is declared.
+    enforced_by:
+      - test: core-ui/localdb.TestManifestShape
+      - test: core-ui/localdb.TestManifestEmptyIsNil
+  - id: manifest-cache-follows-declarations
+    rule: New and Store clear the cached manifest, so a declaration made after a read reaches the next ManifestJSON.
+    enforced_by:
+      - test: core-ui/localdb.TestManifestCacheFollowsDeclarations
+  - id: schema-is-additive
+    rule: When a page opens a database whose stored schema lacks a declared store or index, localdb.js bumps the IndexedDB version and creates what is missing, keeping every existing store and its records.
+    enforced_by:
+      - test: core-ui/runtime.TestLocalDBAdditiveUpgradeAcrossDeploys
+  - id: browser-name-is-prefixed
+    rule: A declared database is opened in the browser as "gofastr." plus its name, so it never collides with a database the page's own scripts open.
+    enforced_by:
+      - test: core-ui/runtime.TestLocalDBCrossTabWatchAndUpgrade
+decisions:
+  - id: never-delete-on-upgrade
+    date: 2026-11-20
+    status: accepted
+    decision: An upgrade only adds stores and indexes and never deletes one, and there is no schema version number for an app to keep.
+    rejected:
+      - option: Delete stores and indexes the current declaration no longer names.
+        why: A tab still running the previous deployment may need them.
+      - option: An app-maintained version number per database.
+        why: The version is derived from drift between the stored and declared schema, so there is nothing for an app to bump or forget.
+    upholds: [schema-is-additive]
+  - id: module-ships-with-the-package
+    date: 2026-11-20
+    status: accepted
+    decision: localdb.js is embedded in this package and registered as an on-request behaviour, and the manifest reaches the page through registry.RegisterDataBlock.
+    rejected:
+      - option: Ship the module inside core-ui/runtime and have the host emit the manifest.
+        why: Every binary would carry the module and every host would import localdb, used or not.
+  - id: refusals-panic-at-init
+    date: 2026-11-20
+    status: accepted
+    decision: A misdeclared database panics where it is declared, at init.
+    rejected:
+      - option: Return an error or skip the bad declaration.
+        why: A page would open a half-applied schema instead of the program failing where the mistake was made.
+    upholds: [declarations-refuse-at-init]

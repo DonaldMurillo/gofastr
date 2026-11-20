@@ -1,8 +1,3 @@
-// Package auth implements the capability-token model: claim set,
-// internal JWT-like encoding (no third-party dep), revocation list,
-// and the issuance flow with TTY/notification confirmation.
-//
-// See docs/harness-architecture.md § Authentication.
 package auth
 
 import (
@@ -23,9 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// Claims is the token claim set. Verifiers MUST reject a token whose
-// Ver they do not recognize. See § Protocol versioning → Token
-// versioning.
+// Claims is the token claim set.
 type Claims struct {
 	Ver            int                   `json:"ver"`
 	JTI            ids.JTI               `json:"jti"`
@@ -38,12 +31,10 @@ type Claims struct {
 	CriticalClaims []string              `json:"critical_claims,omitempty"`
 }
 
-// VerCurrent is the claim set version this binary issues. Verifiers
-// rejecting an unrecognized Ver fail-closed.
+// VerCurrent is the claim set version this binary issues and the only one it verifies.
 const VerCurrent = 1
 
-// AllowsCommand reports whether the token can issue the given command
-// kind. An empty Commands list means "any command."
+// AllowsCommand reports whether the token may send the command kind; an empty Commands allows any.
 func (c Claims) AllowsCommand(kind string) bool {
 	if len(c.Commands) == 0 {
 		return true
@@ -51,9 +42,7 @@ func (c Claims) AllowsCommand(kind string) bool {
 	return slices.Contains(c.Commands, kind)
 }
 
-// AllowsSession reports whether the token may attach to the given
-// session. An empty Sessions list means "any session", only
-// allowed for the bootstrap token.
+// AllowsSession reports whether the token may drive the session; an empty Sessions allows any.
 func (c Claims) AllowsSession(s ids.SessionID) bool {
 	if len(c.Sessions) == 0 {
 		return true
@@ -66,20 +55,14 @@ func (c Claims) Expired(now time.Time) bool {
 	return now.Unix() >= c.ExpiresAt
 }
 
-// Encoder signs and encodes claim sets. Use a per-machine secret;
-// never persist tokens to disk plaintext (the bootstrap token is
-// returned to the requester and held in their keychain).
+// Encoder signs and verifies claim sets under one HMAC secret.
 type Encoder struct {
 	secret []byte
 }
 
-// NewEncoder returns an Encoder with the given HMAC secret.
-//
-// In production, the secret is loaded from the credstore at boot. A
-// fresh secret invalidates every outstanding token.
+// NewEncoder returns an Encoder over a copy of secret; it panics on a secret under 32 bytes.
 func NewEncoder(secret []byte) *Encoder {
 	if len(secret) < 32 {
-		// Refuse weak secrets; the user-facing error is "weak secret".
 		panic("auth: secret must be at least 32 bytes")
 	}
 	cp := make([]byte, len(secret))
@@ -94,9 +77,7 @@ func GenerateSecret() ([]byte, error) {
 	return b, err
 }
 
-// Encode signs the claim set with HMAC-SHA256 and returns the
-// `<payload>.<signature>` token string. Both halves are
-// URL-safe-base64 without padding.
+// Encode fills a zero Ver, JTI and exp (24h) and returns the `<payload>.<signature>` token.
 func (e *Encoder) Encode(c Claims) (string, error) {
 	if c.Ver == 0 {
 		c.Ver = VerCurrent
@@ -116,13 +97,7 @@ func (e *Encoder) Encode(c Claims) (string, error) {
 	return payload + "." + sig, nil
 }
 
-// Decode parses and verifies a token. Returns the claim set or an
-// error if the signature is invalid or the version is unrecognized.
-//
-// Per § Unknown-field policy → token claims, a token with critical
-// claims the verifier doesn't recognize is rejected; non-critical
-// unknown claims are ignored. The current verifier recognizes all
-// fields above.
+// Decode checks the signature, the version and the critical claims and returns the claim set.
 func (e *Encoder) Decode(token string) (Claims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
@@ -144,9 +119,6 @@ func (e *Encoder) Decode(token string) (Claims, error) {
 	if c.Ver != VerCurrent {
 		return Claims{}, fmt.Errorf("auth: token ver %d not supported (current %d)", c.Ver, VerCurrent)
 	}
-	// Fail-closed on unrecognized critical claims. We currently
-	// recognize every defined claim, so any string in CriticalClaims
-	// outside the known set is a v(N+1) token a v(N) verifier sees.
 	for _, cc := range c.CriticalClaims {
 		if !knownCriticalClaim(cc) {
 			return Claims{}, fmt.Errorf("auth: unknown critical claim %q", cc)
@@ -169,12 +141,10 @@ func knownCriticalClaim(s string) bool {
 	return false
 }
 
-// RevocationList tracks revoked JTIs. Concurrency-safe in-memory
-// store; persistent backing is the caller's responsibility (the
-// docs commit to ~/.local/state/gofastr/harness/revocations.db).
+// RevocationList is a concurrency-safe in-memory set of revoked JTIs.
 type RevocationList struct {
 	mu      sync.RWMutex
-	revoked map[ids.JTI]int64 // jti → revoke unix-ts
+	revoked map[ids.JTI]int64
 }
 
 // NewRevocationList returns an empty RevocationList.
@@ -197,8 +167,7 @@ func (r *RevocationList) IsRevoked(jti ids.JTI) bool {
 	return ok
 }
 
-// Snapshot returns a copy of the current revocation set. Used for
-// persistence at shutdown.
+// Snapshot returns a copy of the revocation set, JTI to revoke time in Unix seconds.
 func (r *RevocationList) Snapshot() map[ids.JTI]int64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -207,8 +176,7 @@ func (r *RevocationList) Snapshot() map[ids.JTI]int64 {
 	return out
 }
 
-// Verify validates a token end-to-end: signature, version, not-before,
-// expiry, revocation. Returns the parsed claims on success.
+// Verify decodes the token and refuses it before nbf, at or after exp, or once its JTI is revoked.
 func Verify(enc *Encoder, rl *RevocationList, token string, now time.Time) (Claims, error) {
 	c, err := enc.Decode(token)
 	if err != nil {

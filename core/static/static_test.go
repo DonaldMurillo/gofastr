@@ -199,18 +199,15 @@ func TestSPAFallbackDisabled(t *testing.T) {
 	}
 }
 
-func TestDirectoryListingDisabledByDefault(t *testing.T) {
-	handler := Handler(Config{
-		FS:     testSubFS(),
-		Prefix: "/static",
-	})
+// assertServesIndexHTML pins the shared expectation of the root-path
+// tests: "/" answers 200 with the index.html document (html content type).
+func assertServesIndexHTML(t *testing.T, handler http.Handler) {
+	t.Helper()
 
-	// Request the root. Should serve index.html, not a listing.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	// With DirListing=false and an index.html present, it should serve the index.
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200 for index.html, got %d", rec.Code)
 	}
@@ -219,6 +216,16 @@ func TestDirectoryListingDisabledByDefault(t *testing.T) {
 	if !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, expected text/html", ct)
 	}
+}
+
+func TestDirectoryListingDisabledByDefault(t *testing.T) {
+	handler := Handler(Config{
+		FS:     testSubFS(),
+		Prefix: "/static",
+	})
+
+	// Request the root. Should serve index.html, not a listing.
+	assertServesIndexHTML(t, handler)
 }
 
 func TestDirectoryTraversalBlocked(t *testing.T) {
@@ -402,21 +409,8 @@ func TestRefusedMethodsAdvertiseAllow(t *testing.T) {
 }
 
 func TestRootPathServesIndex(t *testing.T) {
-	handler := Handler(Config{
+	assertServesIndexHTML(t, Handler(Config{
 		FS:     testSubFS(),
 		Prefix: "/static",
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-
-	ct := rec.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("Content-Type = %q, expected text/html", ct)
-	}
+	}))
 }

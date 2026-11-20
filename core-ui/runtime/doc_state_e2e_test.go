@@ -44,18 +44,27 @@ func startDocStateServer(t *testing.T) string {
 	return srv.URL
 }
 
+// evalOnDocState opens the doc-state page, waits for its #ready marker
+// and evaluates expr in the browser, returning the string result.
+func evalOnDocState(t *testing.T, expr string) string {
+	t.Helper()
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(startDocStateServer(t)),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Evaluate(expr, &got),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	return got
+}
+
 // TestDocScrollLockRefcount proves the scroll lock is owner-refcounted:
 // two lockers → unlock one keeps the viewport locked; unlock the last
 // releases it; unlocking a never-registered owner is a harmless no-op.
 func TestDocScrollLockRefcount(t *testing.T) {
-	url := startDocStateServer(t)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-
-	var got string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Evaluate(`(() => {
+	got := evalOnDocState(t, `(() => {
 			const D = window.__gofastr.doc;
 			const ov = () => document.documentElement.style.overflow;
 			const out = [];
@@ -71,10 +80,7 @@ func TestDocScrollLockRefcount(t *testing.T) {
 			out.push(ov());
 			out.push(String(D.scrollLocked()));
 			return out.join('|');
-		})()`, &got),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+	})()`)
 	if want := "hidden|hidden|||false"; got != want {
 		t.Errorf("scroll-lock refcount sequence = %q, want %q", got, want)
 	}
@@ -88,14 +94,7 @@ func TestDocScrollLockRefcount(t *testing.T) {
 //   - reattach() re-appends a created-but-detached singleton (the hook
 //     the SPA full-shell swap calls).
 func TestDocSingletonSemantics(t *testing.T) {
-	url := startDocStateServer(t)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-
-	var got string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Evaluate(`(() => {
+	got := evalOnDocState(t, `(() => {
 			const D = window.__gofastr.doc;
 			const out = [];
 			let made = 0;
@@ -125,10 +124,7 @@ func TestDocSingletonSemantics(t *testing.T) {
 			const c = D.singleton('cui-nav-toast', factory);
 			out.push(String(c === a && made === 1 && a.isConnected));
 			return out.join('|');
-		})()`, &got),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+	})()`)
 	if want := "true|1|true|1|1|0|false|true|true"; got != want {
 		t.Errorf("singleton sequence = %q, want %q", got, want)
 	}
@@ -138,14 +134,7 @@ func TestDocSingletonSemantics(t *testing.T) {
 // frozen MANIFEST still land (warn, don't break the page) but emit a
 // console.warn naming the offender; manifest names stay silent.
 func TestDocManifestGuardWarns(t *testing.T) {
-	url := startDocStateServer(t)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-
-	var got string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		chromedp.Evaluate(`(() => {
+	got := evalOnDocState(t, `(() => {
 			const D = window.__gofastr.doc;
 			const warns = [];
 			const orig = console.warn;
@@ -167,10 +156,7 @@ func TestDocManifestGuardWarns(t *testing.T) {
 			} finally {
 				console.warn = orig;
 			}
-		})()`, &got),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+	})()`)
 	if want := "0|3|true|true|true"; got != want {
 		t.Errorf("manifest guard sequence = %q, want %q", got, want)
 	}

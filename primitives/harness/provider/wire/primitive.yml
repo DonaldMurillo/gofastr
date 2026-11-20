@@ -1,0 +1,73 @@
+primitive: harness.provider.wire
+summary: The internal OpenAI Chat Completions client that openrouter and zai share - it translates the canonical request to the OpenAI wire shape and turns the SSE response into provider.StreamEvents.
+code:
+  - framework/experimental/harness/provider/internal/openai/
+invariants:
+  - id: default-client-refuses-redirects
+    rule: With no HTTP client given, Chat uses one whose CheckRedirect returns http.ErrUseLastResponse, so the bearer key is never re-sent to the origin a 3xx names.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestChatDefaultClientRefusesRedirect
+  - id: error-preview-bounded-and-scrubbed
+    rule: A non-200 answer becomes an error holding the status and at most 8 KiB of the body with control and bidi characters stripped, so a hostile endpoint cannot forge lines in the operator's log.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestHTTPErrorBodyBounded
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepHTTPErrorPreviewIsScrubbed
+  - id: tool-call-turn-omits-content
+    rule: An assistant message with tool calls and no text is sent with no content field at all, never "content":"", while one with neither text nor tool calls keeps an empty string.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestTranslateOutboundAssistantOnlyToolCalls
+  - id: tool-results-precede-user-text
+    rule: A user message expands into one role=tool message per tool result, followed by one user message holding its text, so tool messages directly follow the assistant's tool calls.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepUserToolResultsPrecedeText
+      - test: framework/experimental/harness/provider/internal/openai.TestTranslateOutboundUserToolResult
+  - id: zero-knobs-are-omitted
+    rule: A zero Temperature or MaxTokens is left out of the request body, so the provider's default applies, and the system prompt is always the first message.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepTemperatureZeroIsOmitted
+  - id: ambiguous-chunk-ends-stream
+    rule: An SSE chunk with duplicate or case-folded JSON keys ends the stream with a KindError event before any of its deltas are sent; unknown keys are still accepted.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestStreamChunkRedRefusesFoldedKeys
+  - id: truncated-stream-ends-in-error
+    rule: A body that ends without [DONE] or a finish_reason ends with a KindError carrying ErrStreamTruncated, so a cut-off answer is never taken for a finished one.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestStreamBoundaryEOFSignalsTruncation
+      - test: framework/experimental/harness/provider/internal/openai.TestOversizeLineSignalsTerminal
+  - id: abort-releases-pump
+    rule: Every send of the stream pump also selects on ctx.Done, so a consumer that stops reading after cancel never parks the goroutine or leaves the body open.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestAbortMidStreamReleasesPump
+  - id: delivery-before-cancel
+    rule: The pump tries a plain send before it looks at ctx.Done, so a consumer still draining after an abort receives the pending event and a terminal event.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestAbortVisibleToDrainingConsumer
+  - id: reasoning-is-quoted-thinking
+    rule: reasoning_content and reasoning deltas are sent as KindThinkingDelta holding a JSON string, so the event the engine re-emits stays valid JSON.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepReasoningIsQuotedThinking
+  - id: cache-read-takes-largest-field
+    rule: Usage.CacheReadTokens is the largest of cache_read_input_tokens, prompt_cache_hit_tokens and prompt_tokens_details.cached_tokens, so cache reads are never undercounted whichever field the upstream fills.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepUsageTakesLargestCacheField
+  - id: finish-closes-tool-calls
+    rule: A finish_reason sends KindToolUseStop for every tool call that was started before it sends KindStop, and KindToolUseStart waits until the call has a name.
+    enforced_by:
+      - test: framework/experimental/harness/provider/internal/openai.TestSweepFinishClosesOpenToolCallsBeforeStop
+      - test: framework/experimental/harness/provider/internal/openai.TestChatToolUseStreaming
+decisions:
+  - id: one-client-for-openai-compatible-providers
+    date: 2026-11-18
+    status: accepted
+    decision: OpenRouter and ZAI share one internal Chat Completions client, and differ only in base URL, headers and name.
+    rejected:
+      - option: A bespoke client per provider, or a vendor SDK.
+        why: Both speak the same wire shape, and the harness bundles no model SDK.
+  - id: strict-keys-on-provider-responses
+    date: 2026-11-18
+    status: accepted
+    decision: Provider response JSON goes through handler.CheckObjectKeys before it is decoded, though the configured provider is trusted.
+    rejected:
+      - option: Decode leniently because the provider is the trust anchor.
+        why: stdlib json resolves duplicate and case-folded keys last-wins, so the engine could record text or a tool call that a proxy or trace parsed differently.
+    upholds: [ambiguous-chunk-ends-stream]

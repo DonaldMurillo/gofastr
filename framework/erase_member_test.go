@@ -57,19 +57,7 @@ func TestEraseRemoveMemberDropsTheUser(t *testing.T) {
 		want := map[string][]string{
 			"a": {"u2"}, "b": {"u2"}, "c": {}, "d": {}, "e": {"u1"}, "f": {"u10", "u1x"},
 		}
-		for key, members := range want {
-			var raw string
-			if err := db.QueryRowContext(ctx, `SELECT users FROM cohorts WHERE key = $1`, key).Scan(&raw); err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			if err := json.Unmarshal([]byte(raw), &got); err != nil {
-				t.Fatalf("%s holds %q, not a JSON array: %v", key, raw, err)
-			}
-			if !slices.Equal(got, members) {
-				t.Errorf("%s = %v, want %v", key, got, members)
-			}
-		}
+		wantMembersRows(t, ctx, db, "cohorts", want)
 		if n := affected(); n != 0 {
 			t.Errorf("second run changed %d row(s), want 0", n)
 		}
@@ -109,19 +97,7 @@ func TestEraseRemoveMemberQualified(t *testing.T) {
 			"b": {"acme:u10"},
 			"c": {"acme:u1"},
 		}
-		for key, members := range want {
-			var raw string
-			if err := db.QueryRowContext(ctx, `SELECT users FROM qcohorts WHERE key = $1`, key).Scan(&raw); err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			if err := json.Unmarshal([]byte(raw), &got); err != nil {
-				t.Fatalf("%s holds %q, not a JSON array: %v", key, raw, err)
-			}
-			if !slices.Equal(got, members) {
-				t.Errorf("%s = %v, want %v", key, got, members)
-			}
-		}
+		wantMembersRows(t, ctx, db, "qcohorts", want)
 	})
 }
 
@@ -235,4 +211,22 @@ func readMembers(t *testing.T, db *sql.DB, table string) []string {
 		t.Fatalf("users holds %q: %v", raw, err)
 	}
 	return got
+}
+
+// wantMembersRows checks every key's users array in table against want.
+func wantMembersRows(t *testing.T, ctx context.Context, db *sql.DB, table string, want map[string][]string) {
+	t.Helper()
+	for key, members := range want {
+		var raw string
+		if err := db.QueryRowContext(ctx, `SELECT users FROM `+table+` WHERE key = $1`, key).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("%s holds %q, not a JSON array: %v", key, raw, err)
+		}
+		if !slices.Equal(got, members) {
+			t.Errorf("%s = %v, want %v", key, got, members)
+		}
+	}
 }

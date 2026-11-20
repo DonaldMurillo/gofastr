@@ -2,17 +2,7 @@ package tui
 
 import "strings"
 
-// renderMarkdownInline applies a small subset of markdown styling to
-// one visual line: headings, bold, inline code. Italic is skipped
-// because `*` is overloaded with bullet markers and we'd false-positive.
-//
-// The line may already carry a marker (← / → / 🤔 / ⚙ / ✓ / ✗) that
-// colorizeMarker handled, we leave those alone and only style the
-// content after the marker.
 func renderMarkdownInline(line string) string {
-	// If colorizeMarker already wrapped the leading marker in a
-	// color, the leading bytes are ANSI codes. Find the content
-	// portion to style without touching the marker.
 	marker, rest := splitColoredMarker(line)
 
 	rest = applyHeadings(rest)
@@ -21,12 +11,7 @@ func renderMarkdownInline(line string) string {
 	return marker + rest
 }
 
-// splitColoredMarker returns (marker-and-prefix, content). The marker
-// is everything up to and including the first space after the marker
-// glyph. If no marker is present, marker is empty.
 func splitColoredMarker(line string) (string, string) {
-	// Markers we recognize. Check ANSI-wrapped (colorizeMarker output)
-	// first.
 	prefixes := []string{
 		ansiCyan + "←" + ansiReset + " ",
 		ansiBlue + "→" + ansiReset + " ",
@@ -43,13 +28,10 @@ func splitColoredMarker(line string) (string, string) {
 	return "", line
 }
 
-// applyHeadings: turn a leading `# `, `## `, `### `, etc. into bold
-// (with a slight dim for deeper levels) and strip the marker hashes.
 func applyHeadings(s string) string {
 	if !strings.HasPrefix(s, "#") {
 		return s
 	}
-	// Count leading #'s.
 	level := 0
 	for level < len(s) && s[level] == '#' && level < 6 {
 		level++
@@ -58,8 +40,6 @@ func applyHeadings(s string) string {
 		return s
 	}
 	content := s[level+1:]
-	// Strip emoji-leading content so the heading still aligns; leave
-	// the body as the model wrote it.
 	prefix := ansiBold
 	if level >= 3 {
 		prefix = ansiBold + ansiDim
@@ -67,15 +47,11 @@ func applyHeadings(s string) string {
 	return prefix + content + ansiReset
 }
 
-// applyInline replaces **bold** and `code` runs with ANSI styling.
-// Walks character by character to avoid regex complexity (and to keep
-// the implementation legible).
 func applyInline(s string) string {
 	var b strings.Builder
 	runes := []rune(s)
 	i := 0
 	for i < len(runes) {
-		// Bold: **text**
 		if i+1 < len(runes) && runes[i] == '*' && runes[i+1] == '*' {
 			end := findClose(runes, i+2, "**")
 			if end > 0 {
@@ -86,7 +62,6 @@ func applyInline(s string) string {
 				continue
 			}
 		}
-		// Inline code: `text`
 		if runes[i] == '`' {
 			end := findCloseRune(runes, i+1, '`')
 			if end > 0 {
@@ -105,8 +80,6 @@ func applyInline(s string) string {
 	return b.String()
 }
 
-// findClose returns the rune index of the next occurrence of `needle`
-// starting from start, or -1 if absent. Handles two-rune needles.
 func findClose(runes []rune, start int, needle string) int {
 	n := []rune(needle)
 	for i := start; i+len(n) <= len(runes); i++ {
@@ -133,23 +106,30 @@ func findCloseRune(runes []rune, start int, r rune) int {
 	return -1
 }
 
-// fenceTracker follows fenced code blocks down the scrollback. Code is
-// shown as written: styled as markdown, a shell comment in a block lost
-// its "#" and drew as a bold heading, and Python's **kwargs lost its
-// stars.
 type fenceTracker struct {
 	open bool
 }
 
-// next reports whether line is part of a fenced code block, a fence line
-// included. A line that opens a new entry (a prompt, a tool call, a
-// separator, the first line of a reply) ends a block its message left
-// open, so one unclosed fence does not turn the rest of the session
-// into code.
+var entryMarkers = []string{"← ", "→ ", "● ", "⚙ ", "✓ ", "✗ ", "… ", "── "}
+
+const bodyLineMarker = "\x00\x02"
+
+func bodyLine(s string) string {
+	if strings.HasPrefix(s, bodyLineMarker) {
+		return s
+	}
+	for _, p := range entryMarkers {
+		if strings.HasPrefix(s, p) {
+			return bodyLineMarker + s
+		}
+	}
+	return s
+}
+
 func (f *fenceTracker) next(line string) bool {
-	content := line
-	for _, p := range []string{"← ", "→ ", "⚙ ", "✓ ", "✗ ", "… ", "── "} {
-		if rest, ok := strings.CutPrefix(line, p); ok {
+	content, body := strings.CutPrefix(line, bodyLineMarker)
+	for _, p := range entryMarkers {
+		if rest, ok := strings.CutPrefix(content, p); ok && !body {
 			f.open = false
 			content = rest
 			break

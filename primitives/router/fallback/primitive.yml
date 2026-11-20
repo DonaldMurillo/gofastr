@@ -1,0 +1,102 @@
+primitive: router.fallback
+summary: What the router answers when no route takes a request as-is, the mux's synthesised redirects, 405 with a gate-filtered Allow header, and 404, each through a middleware chain, with Group-level handlers.
+code:
+  - core/router/fallback.go
+on_change:
+  - A change to the 404 path is mirrored on the 405 path (NotFound and MethodNotAllowed, WrapNotFound and WrapMethodNotAllowed) unless the difference is the point.
+twins:
+  - job: Replace a router's fall-through handler with mw(next), next being the previous handler unwrapped from its cachedRoute or, on a Group with none, the next less specific handler resolved per request.
+    why: The two differ only in the field they read and write and the plain default; nothing keeps them apart but work not yet done.
+    sites:
+      - path: core/router/fallback.go
+        note: WrapNotFound, for the 404 handler.
+      - path: core/router/fallback.go
+        note: WrapMethodNotAllowed, for the 405 handler.
+invariants:
+  - id: synthesised-redirect-is-gated-and-chained
+    rule: A trailing-slash or path-cleaning redirect the mux synthesises runs through the middleware chain when the gate allows its target route, and answers the same 404 as a miss when not; for CONNECT the gate sees only the methodless and CONNECT route keys.
+    enforced_by:
+      - test: core/router.TestRedirectRunsMiddlewareChain
+      - test: core/router.TestRedirectToGatedRouteIs404
+      - test: core/router.TestRedirectStillRedirectsWhenLive
+      - test: core/router.TestConnectRedirectToGatedRouteIs404
+      - test: core/router.TestConnectRedirectGateSeesOnlyRouteKeys
+  - id: gated-methods-never-advertised
+    rule: A miss answers 405 only when some registered method, HEAD included for a GET route, dispatches the path to a route the gate allows; Allow lists exactly those methods, and a path whose methods are all gated answers 404.
+    enforced_by:
+      - test: core/router.TestGate405ExcludesGatedMethods
+      - test: core/router.TestGateAllMethodsGatedIs404
+      - test: core/router.TestGatedMethodsStillReturn404
+      - test: core/router.TestAllowSkipsMethodShadowedByGatedRoute
+      - test: core/router.TestAllowNamesImplicitHead
+      - test: core/router.TestMethodNotAllowedKeepsAllowHeader
+  - id: 405-runs-the-shared-group-chain
+    rule: A 405, default or custom, runs the chain of the deepest router holding every live route at the path, a root-level handler included, plus the own middleware of a handler's Group on another branch, each once.
+    enforced_by:
+      - test: core/router.TestGroupCORSAnswersPreflight
+      - test: core/router.TestDefault405RunsSharedGroupChain
+      - test: core/router.TestDefault405SiblingGroupsShareOnlyTheirParent
+      - test: core/router.TestCustomRoot405RunsGroupChain
+      - test: core/router.TestGroup405HandlerRunsChainOnce
+      - test: core/router.TestSibling405HandlerRunsSharedOwnerChain
+  - id: default-fallbacks-run-the-chain
+    rule: The default 404 and 405 run the router's middleware chain like a custom handler does.
+    enforced_by:
+      - test: core/router.TestDefaultFallbacksRunMiddleware
+      - test: core/router.TestNotFoundSeesLateMiddleware
+      - test: core/router.TestMethodNotAllowedSeesLateMiddleware
+  - id: group-fallback-by-specificity
+    rule: A miss runs the NotFound or MethodNotAllowed of the most specific covering Group under the served router that set one (host first, then longer prefix, then literal over wildcard, then registration order), else the nearest up the parent chain; a prefix covers the escaped path segment by segment, as the mux matches.
+    enforced_by:
+      - test: core/router.TestGroupNotFoundAnswersMissesUnderItsPrefix
+      - test: core/router.TestGroupMethodNotAllowedAnswersUnderItsPrefix
+      - test: core/router.TestGroupFallbackRanksBySpecificity
+      - test: core/router.TestGroupFallbackStaysInsideTheServedRouter
+      - test: core/router.TestHostGroupNotFound
+      - test: core/router.TestGroupFallbackMatchesEscapedSegments
+  - id: wrap-delegates-without-rerunning-chain
+    rule: WrapNotFound and WrapMethodNotAllowed hand the wrapper the previous handler without its chain, so a delegated miss runs the chain once, and on a Group with none they resolve the next less specific handler per request, under the router that served it.
+    enforced_by:
+      - test: core/router.TestWrapNotFound_MiddlewareRunsOnce
+      - test: core/router.TestWrapNotFound_DelegatesToPreviousHandler
+      - test: core/router.TestGroupWrapNotFoundDelegatesToInherited
+      - test: core/router.TestGroupWrapNotFoundResolvesNextPerRequest
+      - test: core/router.TestWrapMethodNotAllowedDelegates
+      - test: core/router.TestGroupWrapDelegationStaysInsideTheServedRouter
+      - test: core/router.TestRootRedispatchResetsFallbackScope
+  - id: notfound-replacement-warns
+    rule: NotFound logs a warning when it replaces a handler already set on the same router, and WrapNotFound does not.
+    enforced_by:
+      - test: core/router.TestNotFoundReplaceWarns
+      - test: core/router.TestWrapNotFoundDoesNotWarn
+  - id: miss-work-is-bounded
+    rule: The probe mux that resolves a miss's allowed methods is rebuilt only when the route count changed since the last build.
+    enforced_by:
+      - test: core/router.TestUnmatchedPathWorkIsBounded
+decisions:
+  - id: memoise-probe-mux
+    date: 2026-11-18
+    status: accepted
+    decision: The probe mux is memoised on the root and keyed by the length of the append-only route list.
+    rejected:
+      - option: Rebuild the probe mux on every unmatched request.
+        why: Against 300 routes a miss cost about 1200 times a match, driven by an attacker-chosen URL and ahead of the rate limiter.
+    upholds: [miss-work-is-bounded]
+  - id: own-405-path
+    date: 2026-11-18
+    status: accepted
+    decision: The router computes 404 versus 405 itself from a probe of every registered method instead of letting ServeMux answer the miss.
+    rejected:
+      - option: Fall through to ServeMux's native 404 and 405.
+        why: It lists gated methods in Allow and answers 405 for a path whose every method is gated, leaking a disabled module.
+    upholds: [gated-methods-never-advertised]
+  - id: notfound-last-write-wins-loudly
+    date: 2026-11-18
+    status: accepted
+    decision: A second NotFound replaces the first and logs a warning pointing at WrapNotFound.
+    rejected:
+      - option: Replace silently.
+        why: A UI host dispatches every screen through NotFound, so an app's later custom 404 silently disabled all pages.
+      - option: Chain both handlers automatically.
+        why: The router cannot know which handler the author meant to answer first.
+    upholds: [notfound-replacement-warns]

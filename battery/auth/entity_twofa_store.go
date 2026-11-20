@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -124,28 +123,35 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 }
 
 func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) error {
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		_, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteFolded(s.table), query.QuoteFolded(col)))
-		return err
-	}
-	has, err := s.sqliteHasColumn(ctx, col)
-	if err != nil {
-		return err
-	}
-	if !has {
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteFolded(s.table), query.QuoteFolded(col))); err != nil {
-			return err
-		}
-	}
-	return nil
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "BIGINT NOT NULL DEFAULT 0")
 }
 
 func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
 	return sqliteTableHasColumn(ctx, s.db, s.table, col)
+}
+
+func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, col, typ string) error {
+	if d == migrate.DialectPostgres {
+		_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
+			query.QuoteFolded(table), query.QuoteFolded(col), typ))
+		return err
+	}
+	has, err := sqliteTableHasColumn(ctx, db, table, col)
+	if err != nil || has {
+		return err
+	}
+	return addColumnAfterCheck(ctx, db, table, col, typ)
+}
+
+func addColumnAfterCheck(ctx context.Context, db *sql.DB, table, col, typ string) error {
+	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
+		query.QuoteFolded(table), query.QuoteFolded(col), typ))
+	if err != nil {
+		if has, herr := sqliteTableHasColumn(ctx, db, table, col); herr == nil && has {
+			return nil
+		}
+	}
+	return err
 }
 
 func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (bool, error) {
@@ -161,11 +167,30 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			return false, err
 		}
-		if strings.EqualFold(name, col) {
+		if asciiEqualFold(name, col) {
 			return true, nil
 		}
 	}
 	return false, rows.Err()
+}
+
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if 'A' <= x && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if 'A' <= y && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *EntityTwoFAStore) qTable(stmt string) string {

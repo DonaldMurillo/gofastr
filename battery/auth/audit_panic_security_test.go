@@ -2,11 +2,11 @@ package auth
 
 import (
 	"context"
-	"log/slog"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value reaching the default slog sink is
@@ -30,38 +30,6 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redAuditScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redAuditScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redAuditScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redAuditScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redAuditScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redAuditScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redAuditScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
-
 // redAuditPanicSink is an AuditSink whose SecurityEvent panics with the
 // probe payload (the same double a host sink built on hostile input
 // would be).
@@ -72,10 +40,8 @@ const redAuditPayload = "boom \x1b]0;pwned \u202e and \u009bCSI"
 func (redAuditPanicSink) SecurityEvent(context.Context, SecurityEvent) { panic(redAuditPayload) }
 
 func TestAuthAuditRedPanicScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redAuditScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	mgr := New(AuthConfig{
 		JWTSecret:     "test-secret",
@@ -91,9 +57,9 @@ func TestAuthAuditRedPanicScrubbed(t *testing.T) {
 	}
 	mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "login.succeeded", UserID: "u-red"})
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: audit sink panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: audit sink panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {
@@ -132,17 +98,15 @@ func (redPanicTokenStore) Cleanup(context.Context) (int, error) {
 // textsafe.Recovered, like the audit funnel and the register-notice
 // goroutine.
 func TestMagicLinkReaperPanicScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redAuditScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	plugin := &MagicLinkPlugin{tokenStore: redPanicTokenStore{}}
 	plugin.reapExpiredTokens()
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: cleanup panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: cleanup panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

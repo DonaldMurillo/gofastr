@@ -6,19 +6,13 @@ import (
 	"strings"
 )
 
-// Built-in profiles embedded into the binary so the harness works when
-// run outside the source tree (an installed `gofastr` binary has no
-// repo-relative profile files on disk).
-
 //go:embed default.toml
 var defaultTOML string
 
 //go:embed framework.toml
 var frameworkTOML string
 
-// Embedded returns a built-in profile by name ("default" or
-// "framework"). It is the fallback used when no on-disk profile is
-// found. Unknown names return an error.
+// Embedded parses the built-in profile "default" or "framework"; any other name is an error.
 func Embedded(name string) (*Profile, error) {
 	var src string
 	switch name {

@@ -1,0 +1,47 @@
+primitive: a2a.run
+summary: The TaskContext a skill handler drives - every mutation persisted with a version check before it is published - and the in-process bus streams subscribe to.
+code:
+  - core/a2a/exec.go
+  - core/a2a/bus.go
+docs:
+  - framework/docs/content/a2a.md
+invariants:
+  - id: persist-then-publish
+    rule: mutate builds the next task on a copy, writes it with the version check, and only after the store accepts it advances the run's record and publishes; a halted run, a run past its TaskTimeout or a lost version race changes nothing.
+    enforced_by:
+      - test: core/a2a.TestCancelStopsBusyHandler
+      - test: core/a2a.TestCompleteAfterTimeoutFails
+      - test: core/a2a.TestDoubleCompleteSecondFails
+  - id: no-op-writes-skipped
+    rule: Working on a WORKING task writes and publishes nothing, a mutation that changes nothing and emits no event is not written, and one that changes the task without an event is written.
+    enforced_by:
+      - test: core/a2a.TestWorkingSkipsRepeatedWrites
+      - test: core/a2a.TestSilentTaskChangesPersist
+  - id: append-event-is-a-delta
+    rule: An appending artifact event carries only the new parts and is marked append only when the artifact already existed; the stored artifact holds the merge.
+    enforced_by:
+      - test: core/a2a.TestArtifactAppendEventCarriesDelta
+      - test: core/a2a.TestSweepFirstAppendIsNotADelta
+  - id: history-drops-oldest
+    rule: Every history append, a resume's included, goes through appendHistory, which drops the oldest messages past MaxHistory.
+    enforced_by:
+      - test: core/a2a.TestMaxHistoryTrimsOldest
+  - id: handler-errors-are-generic
+    rule: finalize answers a handler error with its *Error's message, wrapped or not, and any other error with "skill handler failed", and a panicking handler fails the task through invoke's recover.
+    enforced_by:
+      - test: core/a2a.TestHandlerErrorIsGeneric
+      - test: core/a2a.TestWrappedHandlerErrorKeepsMessage
+      - test: core/a2a.TestHandlerPanicFails
+  - id: final-state-against-store
+    rule: finalize decides against the stored record, adopting a terminal or paused state another writer stored and announcing to local subscribers one another replica settled, never overwriting it.
+    enforced_by:
+      - test: core/a2a.TestCancelCrossReplicaAtFinalize
+decisions:
+  - id: one-history-append
+    date: 2026-11-19
+    status: accepted
+    decision: resumeWorking appends the resume message through appendHistory, and cloneTask and cloneMessage share one generic jsonClone.
+    rejected:
+      - option: resumeWorking's inline append and cap.
+        why: It was a second copy of appendHistory's cap, free to drift from it.
+    upholds: [history-drops-oldest]

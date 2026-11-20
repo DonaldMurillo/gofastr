@@ -1,0 +1,95 @@
+primitive: app.privacy.registry
+summary: The core/datexport registry of raw tables, erasers, identity resolvers and outside stores that export, import and erasure reach beyond the entity registry.
+code:
+  - core/datexport/
+docs:
+  - framework/docs/content/data-export.md
+invariants:
+  - id: exporter-name-is-one-segment
+    rule: Register panics on an exporter Name that is empty or holds anything but ASCII letters, digits, _ and -, so the name cannot leave the archive directory once joined into <name>.ndjson.
+    enforced_by:
+      - test: core/datexport.TestRegisterRejectsTraversalName
+      - test: core/datexport.TestSweepDatexportNameRefusesDots
+  - id: exporter-columns-include-the-key
+    rule: Register appends every PrimaryKey column that Columns lacks, without writing into the caller's slice.
+    enforced_by:
+      - test: core/datexport.TestRegisterIncludesKeyColumns
+      - test: core/datexport.TestSweepDatexportRegisterLeavesCallerColumns
+  - id: same-name-replaces
+    rule: Register and RegisterEraser replace an entry of the same Name, and RegisterIdentityResolver one of the same kind.
+    enforced_by:
+      - test: core/datexport.TestRegisterDupNameReplaces
+      - test: core/datexport.TestEraserDupNameReplaces
+      - test: core/datexport.TestResolverReplaceAndLookup
+  - id: registry-holds-copies
+    rule: The registry stores and returns copies, every field included, so a caller changing a slice it registered or was given changes no entry.
+    enforced_by:
+      - test: core/datexport.TestRegisterCopiesColumns
+      - test: core/datexport.TestAllReturnsCopies
+      - test: core/datexport.TestEraserCopiesScrubColumns
+      - test: core/datexport.TestAllIdentityResolversIsCopy
+      - test: core/datexport.TestSweepDatexportAllErasersKeepsEveryField
+  - id: listings-are-sorted
+    rule: All and AllErasers return entries sorted by Name, and AllStoreErasers lists producers first, each part sorted by Name.
+    enforced_by:
+      - test: core/datexport.TestAllSortedByName
+      - test: core/datexport.TestAllErasersSortedByName
+      - test: core/datexport.TestProducersListedFirst
+  - id: same-name-stores-both-stay
+    rule: RegisterStoreEraser lists a store whose Name is live under the first free Name#n, and its unregister func removes that registration only, even after another took its old name.
+    enforced_by:
+      - test: core/datexport.TestSameNameStoresBothStay
+      - test: core/datexport.TestSweepDatexportUnregisterRemovesOnlyItsOwn
+  - id: store-eraser-has-one-erase-func
+    rule: RegisterStoreEraser panics on an empty Name and unless exactly one of Erase and EraseResolved is set.
+    enforced_by:
+      - test: core/datexport.TestStoreEraserNeedsExactlyOneEraseFunc
+      - test: core/datexport.TestStoreEraserNeedsNameAndErase
+  - id: blank-identity-is-unresolved
+    rule: ErasedUser.Identity reports false for a kind that is absent or resolved to the empty string.
+    enforced_by:
+      - test: core/datexport.TestErasedUserIdentity
+  - id: scoped-name-per-folded-table
+    rule: ScopedName gives the default table the bare base and any other table base, -, then the ASCII-lowercased table with each byte outside [a-z0-9_] written as - and two hex digits, so tables that differ only in case share a name and no two other tables do, and cuts a name past 200 bytes to end in - and 16 hex digits of the table's SHA-256.
+    enforced_by:
+      - test: core/datexport.TestScopedNameSeparatesTables
+      - test: core/datexport.TestScopedNameFoldsCase
+      - test: core/datexport.TestScopedNameBoundsLength
+      - test: core/datexport.TestScopedNamesBothRegister
+  - id: reset-clears-every-plane
+    rule: Reset empties the exporters, erasers, identity resolvers and store erasers.
+    enforced_by:
+      - test: core/datexport.TestResetClearsAllPlanes
+      - test: core/datexport.TestSweepDatexportResetClearsStoreErasers
+decisions:
+  - id: entries-are-declarative
+    date: 2026-11-19
+    status: accepted
+    decision: Exporters, erasers and resolvers are data (table, columns, mode) and the framework builds every statement from them behind SafeIdent.
+    rejected:
+      - option: Let a battery register a func that reads or erases its table with its own SQL.
+        why: Every battery would build raw SQL with its own identifier checks, and export and erasure could not order or audit its rows.
+  - id: bad-name-panics
+    date: 2026-11-19
+    status: accepted
+    decision: Register panics on an unsafe exporter Name.
+    rejected:
+      - option: Skip the exporter.
+        why: Registration is developer code run from init, and a silent skip would leave the table out of every export.
+    upholds: [exporter-name-is-one-segment]
+  - id: stores-never-replace
+    date: 2026-11-19
+    status: accepted
+    decision: A store eraser registered under a live Name is kept under Name#n instead of replacing the first.
+    rejected:
+      - option: Replace by Name, as exporters and erasers do.
+        why: Two RedisQueues with one queue name on different servers would leave the first server's jobs out of every erasure.
+    upholds: [same-name-stores-both-stay]
+  - id: one-copy-path
+    date: 2026-11-19
+    status: accepted
+    decision: An exporter is copied by DataExporter.clone and an eraser by cloneEraser, each copying the struct whole and cloning its slices; they replaced the field-by-field literals in Register, All and AllErasers.
+    rejected:
+      - option: A struct literal at each copy site.
+        why: A literal that lists fields drops every field added later, which once lost an eraser's fields between RegisterEraser and AllErasers.
+    upholds: [registry-holds-copies]

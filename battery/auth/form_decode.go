@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -139,6 +142,10 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		if !textsafe.Storable(canonical) {
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
+		if again, err := canonicalize(canonical); err != nil || again != canonical {
+			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address")
+			return "", i18n.NewError(reasonInvalidEmail)
+		}
 		return canonical, nil
 	}
 	canonical := norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email))))
@@ -146,6 +153,28 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		return "", i18n.NewError(reasonInvalidEmail)
 	}
 	return canonical, nil
+}
+
+var canonicalizerProbes = []string{
+	"Alice@Example.COM", "  bob@example.org ", "first.last+news@gmail.com", "F.I.R.S.T@GoogleMail.com",
+	"zoe\u0308@example.com", "ow\u200bner@example.com", "user@xn--bcher-kva.example", "MiXeD.Case+Tag@Sub.Example.co.uk",
+}
+
+func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) error {
+	if canonicalize == nil {
+		return nil
+	}
+	for _, in := range canonicalizerProbes {
+		once, err := canonicalize(in)
+		if err != nil {
+			continue
+		}
+		twice, err := canonicalize(once)
+		if err != nil || twice != once {
+			return fmt.Errorf("auth: AuthConfig.CanonicalizeEmail is not idempotent: %q canonicalizes to %q, and that to %q (err %v); a canonical address must map to itself, since erasure and password reset canonicalize the stored address again", in, once, twice, err)
+		}
+	}
+	return nil
 }
 
 func addressShaped(email string) bool {
@@ -185,10 +214,7 @@ func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) st
 			next = r.PostFormValue("next")
 		}
 	}
-	if handler.IsSafeRelativePath(next) {
-		return next
-	}
-	return fallback
+	return handler.SafeRelativePathOr(next, fallback)
 }
 
 var defaultLoginErrorPath atomic.Pointer[string]
@@ -243,6 +269,15 @@ func errorFallbackPath(r *http.Request) string {
 }
 
 func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	redirectFormAuthError(w, r, status, reason, "")
+}
+
+func writeLoginFormError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	next := cmp.Or(r.URL.Query().Get("next"), r.PostForm.Get("next"))
+	redirectFormAuthError(w, r, status, reason, handler.SafeRelativePathOr(next, ""))
+}
+
+func redirectFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, next string) {
 	target := safeReferer(r)
 	if target == "" {
 		fallback := errorFallbackPath(r)
@@ -258,7 +293,11 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reas
 	if strings.Contains(target, "?") {
 		sep = "&"
 	}
-	http.Redirect(w, r, target+sep+"error="+sanitiseErr(reason.Code()), http.StatusSeeOther)
+	target += sep + "error=" + sanitiseErr(reason.Code())
+	if next != "" {
+		target += "&next=" + url.QueryEscape(next)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func safeReferer(r *http.Request) string {

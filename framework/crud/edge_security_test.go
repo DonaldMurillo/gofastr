@@ -334,40 +334,48 @@ func TestUpdate_ReadOnlyFieldChangeRejected(t *testing.T) {
 	}
 }
 
-func TestUpdate_EmptyBody(t *testing.T) {
+// probeNot500 builds an owner-scoped handler over a table of (id,
+// user_id, plus the given TEXT fields), serves opts (with an optional
+// path value) and fails when the surface answers 500: each of these
+// probes must land on a client-safe status, never an unhandled error.
+func probeNot500(t *testing.T, table string, fields []schema.Field, opts RequestOpts, pathValue, failMsg string, serve func(ch *CrudHandler) http.HandlerFunc) {
+	t.Helper()
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
-		{Name: "user_id", Type: schema.String, Required: true},
-		{Name: "title", Type: schema.String},
-	})
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	req := makeRequest(t, RequestOpts{Method: http.MethodPut, Path: "/notes/any", Body: `{}`, UserID: "alice"})
-	req.SetPathValue("id", "any")
+	ddl := `CREATE TABLE ` + table + ` (id TEXT PRIMARY KEY, user_id TEXT NOT NULL`
+	for _, f := range fields {
+		if f.Name != "user_id" { // covered by the fixed NOT NULL column above
+			ddl += `, ` + f.Name + ` TEXT`
+		}
+	}
+	ch, _ := setupSecurityTestHandler(t, makeEntityConfig(table, table, "user_id", fields), ddl+`)`)
+	req := makeRequest(t, opts)
+	if pathValue != "" {
+		req.SetPathValue("id", pathValue)
+	}
 	rr := httptest.NewRecorder()
-	ch.Update()(rr, req)
+	serve(ch)(rr, req)
 	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [update] empty body caused 500 instead of 400. Attack: empty update body probe. Body: %s", rr.Body.String())
+		t.Errorf("SECURITY: %s. Body: %s", failMsg, rr.Body.String())
 	}
 }
 
-func TestUpdate_NonexistentID(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
+func TestUpdate_EmptyBody(t *testing.T) {
+	probeNot500(t, "notes", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	})
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	req := makeRequest(t, RequestOpts{Method: http.MethodPut, Path: "/notes/nonexistent-id-99999", Body: `{"title":"hacked"}`, UserID: "alice"})
-	req.SetPathValue("id", "nonexistent-id-99999")
-	rr := httptest.NewRecorder()
-	ch.Update()(rr, req)
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [update] nonexistent ID returned 500. Attack: update nonexistent record. Body: %s", rr.Body.String())
-	}
+	}, RequestOpts{Method: http.MethodPut, Path: "/notes/any", Body: `{}`, UserID: "alice"}, "any",
+		"[update] empty body caused 500 instead of 400. Attack: empty update body probe",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.Update() })
+}
+
+func TestUpdate_NonexistentID(t *testing.T) {
+	probeNot500(t, "notes", []schema.Field{
+		{Name: "user_id", Type: schema.String, Required: true},
+		{Name: "title", Type: schema.String},
+	}, RequestOpts{Method: http.MethodPut, Path: "/notes/nonexistent-id-99999", Body: `{"title":"hacked"}`, UserID: "alice"}, "nonexistent-id-99999",
+		"[update] nonexistent ID returned 500. Attack: update nonexistent record",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.Update() })
 }
 
 func TestUpdate_MalformedJSON(t *testing.T) {
@@ -565,20 +573,12 @@ func TestDelete_AlreadyDeleted(t *testing.T) {
 }
 
 func TestDelete_EmptyID(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ddl := `CREATE TABLE notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`
-	cfg := makeEntityConfig("notes", "notes", "user_id", []schema.Field{
+	probeNot500(t, "notes", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "title", Type: schema.String},
-	})
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	req := makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/notes/", UserID: "alice"})
-	rr := httptest.NewRecorder()
-	ch.Delete()(rr, req)
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [delete] empty ID returned 500. Attack: empty ID probe. Body: %s", rr.Body.String())
-	}
+	}, RequestOpts{Method: http.MethodDelete, Path: "/notes/", UserID: "alice"}, "",
+		"[delete] empty ID returned 500. Attack: empty ID probe",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.Delete() })
 }
 
 func TestDelete_SpecialCharsInID(t *testing.T) {
@@ -1001,37 +1001,21 @@ func TestJSONCase_SnakeToCamel(t *testing.T) {
 }
 
 func TestJSONCase_CaseMismatchFilter(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ddl := `CREATE TABLE cfitems (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT)`
-	cfg := makeEntityConfig("cfitems", "cfitems", "user_id", []schema.Field{
+	probeNot500(t, "cfitems", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "status", Type: schema.String},
-	})
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/cfitems?Status=active", UserID: "alice"})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [jsoncase] case-mismatch filter caused 500. Attack: case-sensitive filter probe. Body: %s", rr.Body.String())
-	}
+	}, RequestOpts{Method: http.MethodGet, Path: "/cfitems?Status=active", UserID: "alice"}, "",
+		"[jsoncase] case-mismatch filter caused 500. Attack: case-sensitive filter probe",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.List() })
 }
 
 func TestJSONCase_CaseMismatchSort(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ddl := `CREATE TABLE csitems (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, priority TEXT)`
-	cfg := makeEntityConfig("csitems", "csitems", "user_id", []schema.Field{
+	probeNot500(t, "csitems", []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "priority", Type: schema.String},
-	})
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	req := makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/csitems?sort=Priority", UserID: "alice"})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [jsoncase] case-mismatch sort caused 500. Attack: case-sensitive sort probe. Body: %s", rr.Body.String())
-	}
+	}, RequestOpts{Method: http.MethodGet, Path: "/csitems?sort=Priority", UserID: "alice"}, "",
+		"[jsoncase] case-mismatch sort caused 500. Attack: case-sensitive sort probe",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.List() })
 }
 
 func TestJSONCase_FieldInjectionViaCase(t *testing.T) {

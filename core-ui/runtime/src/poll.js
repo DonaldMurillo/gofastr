@@ -15,6 +15,9 @@
 //   - ±10% jitter per tick (desynchronise multiple polls on one page)
 //   - pause while document.hidden; on visibilitychange → fetch
 //     immediately and resume the cadence
+//   - page regions only: pause while the region is far off-screen
+//     (an IntersectionObserver with a margin); a tick that came due
+//     meanwhile fetches as soon as the region nears the viewport
 //   - on fetch failure: double the interval, cap at 5× base, reset
 //     to base on the next success
 //   - tear down on element removal (self-check each tick) and on
@@ -49,6 +52,27 @@
   const stateByEl = new WeakMap();
   const active = new Set();
 
+  // NEAR is how close to the viewport a region counts as on screen, so
+  // a region scrolled to is fresh by the time it arrives.
+  const NEAR = '200px';
+  let seen = null;
+  // watch observes el's distance from the viewport. A browser without
+  // IntersectionObserver keeps polling as if every region were on screen.
+  function watch(el, s) {
+    if (typeof IntersectionObserver !== 'function') return;
+    if (!seen) {
+      seen = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const st = stateByEl.get(e.target);
+          if (!st || st.stopped) continue;
+          st.offscreen = !e.isIntersecting;
+          if (!st.offscreen && st.parked) { st.parked = false; st.tick(true); }
+        }
+      }, { rootMargin: NEAR });
+    }
+    seen.observe(el);
+  }
+
   // parseGoDuration parses a Go-style duration string into milliseconds.
   // Supports ns, us, µs, ms, s, m, h, fractions ("1.5m"), and compounds
   // ("1m30s"). The whole string must parse, anchored segments consumed
@@ -56,8 +80,9 @@
   // instead of a silently wrong cadence.
   function parseGoDuration(s) {
     if (!s) return NaN;
-    const re = /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/y;
-    const MUL = { ns: 1e-6, us: 1e-3, 'µs': 1e-3, ms: 1, s: 1000, m: 60000, h: 3600000 };
+    if (s[0] === '+') s = s.slice(1);
+    const re = /(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)/y;
+    const MUL = { ns: 1e-6, us: 1e-3, 'µs': 1e-3, 'μs': 1e-3, ms: 1, s: 1000, m: 60000, h: 3600000 };
     let total = 0;
     let consumed = 0; // exec resets lastIndex to 0 on its final miss
     let m;
@@ -107,6 +132,7 @@
     s.stopped = true;
     if (s.timer) { clearTimeout(s.timer); s.timer = null; }
     if (s.onVisible) document.removeEventListener('visibilitychange', s.onVisible);
+    if (seen) seen.unobserve(el);
     stateByEl.delete(el);
     active.delete(el);
     // A region reclaimed because it left the page is unmarked, so the
@@ -181,16 +207,22 @@
     const s = {
       base, cap: base * 5, current: base,
       timer: null, stopped: false, onVisible: null, tick: null, held: 0,
+      offscreen: false, parked: false,
     };
     stateByEl.set(el, s);
     active.add(el);
-    s.tick = () => {
+    // urgent: a refresh the user is looking at (tab regained) fetches at
+    // the default priority; a cadence tick is background and yields.
+    s.tick = (urgent) => {
       if (s.stopped) return;
       // Self-teardown: element was removed (island swap, SPA nav,
       // or manual removal) without the scanner catching it. The
       // timer holds a closure reference to el until we clear it.
       if (!el.isConnected) { teardown(el); return; }
       if (document.hidden) return; // visibility handler resumes
+      // Far off-screen: no fetch and no re-arm. The observer ticks
+      // once the region nears the viewport again.
+      if (s.offscreen) { s.parked = true; return; }
       // Single-chain guard: a hidden→visible flip while a fetch is
       // pending must not start a second chain, both would reach
       // .finally and each would arm its own timer, multiplying the
@@ -201,6 +233,7 @@
       NS.fetch(NS._lp?.(src) ?? src, {
         headers: { 'Accept': 'text/html' },
         credentials: 'same-origin',
+        ...(urgent === true ? {} : { priority: 'low' }),
       })
         .then((r) => {
           // An HTTP error must reach .catch so back-off applies,
@@ -281,9 +314,10 @@
     s.onVisible = () => {
       if (document.hidden) return;
       if (s.timer) { clearTimeout(s.timer); s.timer = null; }
-      s.tick(); // immediate refresh on regain, cadence resumes after
+      s.tick(true); // immediate refresh on regain, cadence resumes after
     };
     document.addEventListener('visibilitychange', s.onVisible);
+    watch(el, s);
     const firstJitter = base * (0.9 + Math.random() * 0.2);
     s.timer = arm(s.tick, firstJitter);
   }
@@ -329,7 +363,9 @@
     let stopped = false;
     let inFlight = false;
     let queued = false; // pollNow landed mid-fetch → re-tick immediately
-    const tick = () => {
+    // urgent: pollNow after the user's own write, or a regained tab,
+    // fetches at the default priority; a cadence tick yields.
+    const tick = (urgent) => {
       if (stopped) return;
       if (document.hidden) return; // visibility handler resumes
       // Single-chain guard: a visibility flip (or pollNow) while a
@@ -337,7 +373,7 @@
       if (inFlight) return;
       inFlight = true;
       if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
-      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name }, ...(urgent === true ? {} : { priority: 'low' }) })
         .then((r) => {
           // HTTP errors, and a followed 3xx (another URL's state),
           // must reach .catch so back-off applies.
@@ -379,7 +415,7 @@
             // immediately so the promised authoritative refresh isn't
             // silently absorbed into the stale cadence response.
             queued = false;
-            timer = arm(tick, 0);
+            timer = arm(() => tick(true), 0);
             return;
           }
           // ±10% jitter so a page full of polling widgets doesn't
@@ -391,7 +427,7 @@
     const onVisible = () => {
       if (document.hidden) return;
       if (timer) { clearTimeout(timer); timer = null; }
-      tick(); // immediate refresh on regain, then cadence resumes
+      tick(true); // immediate refresh on regain, then cadence resumes
     };
     document.addEventListener('visibilitychange', onVisible);
     entry.pollStop = () => {
@@ -406,7 +442,7 @@
       if (stopped) return;
       if (inFlight) { queued = true; return; } // coalesce; finally re-ticks
       if (timer) { clearTimeout(timer); timer = null; }
-      tick(); // cadence resumes via the tick's own finally
+      tick(true); // cadence resumes via the tick's own finally
     };
     // Seed the cycle. The initial mount-hydration fetch already ran in
     // widgets.js; this is the first scheduled re-fetch.

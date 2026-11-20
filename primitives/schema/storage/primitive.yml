@@ -1,0 +1,69 @@
+primitive: schema.storage
+summary: How a field's value and bounds land in a column on each dialect, the default decimal column, decimal precision on Postgres and SQLite, VARCHAR widths and the one Timestamp spelling.
+code:
+  - core/schema/decimal.go
+  - core/schema/lengthbound.go
+  - core/schema/timestamp.go
+docs:
+  - framework/docs/content/migrations.md
+  - framework/docs/content/entity-declarations.md
+on_change:
+  - A change to DecimalColumnType or MaxVarcharWidth changes the DDL the migrators emit, so migrations.md and existing apps' columns are checked with it.
+invariants:
+  - id: decimal-column-reads-raw-type
+    rule: DecimalColumn reports DecimalColumnType's 19,4 for an empty RawType, the precision and scale of a DECIMAL(p[,s]) or NUMERIC(p[,s]) RawType with a missing scale read as 0, and bounded false for any other RawType or for p outside 1..1000 or s greater than p.
+    enforced_by:
+      - test: core/schema.TestDecimalColumn
+      - test: core/schema.TestDecimalColumnViolationParams
+  - id: decimal-exponent-bound
+    rule: DecimalExponentFits accepts an exponent of at most ±1000 and refuses one past it, reading the exponent text alone.
+    enforced_by:
+      - test: core/schema.TestDecimalExponentPastPostgresRangeRefused
+  - id: sqlite-decimal-refusal-follows-affinity
+    rule: SQLiteDecimalRefusal refuses nothing for a TEXT or BLOB affinity column or a plain int64 literal on an INTEGER or NUMERIC affinity column, and otherwise refuses a literal with more than 15 significant digits or a nonzero magnitude under 1e-307.
+    enforced_by:
+      - test: core/schema.TestDecimalExactOnSQLite
+      - test: core/schema.TestSQLiteDecimalRefusalReason
+  - id: length-bound-clamps
+    rule: LengthBound rounds then clamps to [0, MaxInt32] and reports NaN as not ok, so a huge Max never publishes a negative or wrapped length.
+    enforced_by:
+      - test: core/schema.TestLengthBoundClampsToInt32
+      - test: core/schema.TestSweepSchemaLengthBoundClampsPastInt32
+      - test: core/schema.TestJSONSchemaHugeMaxLength
+  - id: varchar-falls-back-to-text
+    rule: VarcharWidth answers TEXT (false) for no Max, a Max under 1, NaN, or a Max past MaxVarcharWidth.
+    enforced_by:
+      - test: core/schema.TestVarcharWidthFallsBackToText
+  - id: one-timestamp-spelling
+    rule: FormatTimestamp writes UTC with six fraction digits, trailing zeros kept, and crud writes, binds and pages every Timestamp in it.
+    enforced_by:
+      - test: framework/crud.TestAutoTimestampLexicographicOrder
+      - test: framework/crud.TestUpsertBindsStoredTimestamp
+      - test: framework/crud.TestLegacyTimestampLayouts
+      - test: framework/crud.TestTypedQueryRefusesLegacyTimestamps
+decisions:
+  - id: fixed-microsecond-timestamp-layout
+    date: 2026-11-18
+    status: accepted
+    decision: Every Timestamp is stored and bound in the one layout TimestampLayout.
+    rejected:
+      - option: Bind the RFC 3339 text the caller sent.
+        why: SQLite compares the column as text, so ...00Z matched no row stored as ...00.000000Z for the same instant and gt or lt compared spellings.
+    upholds: [one-timestamp-spelling]
+  - id: sqlite-decimal-limits
+    date: 2026-11-18
+    status: accepted
+    decision: On SQLite a decimal that would go through a 64-bit float is refused past 15 significant digits or under 1e-307 in magnitude, rather than stored rounded.
+    rejected:
+      - option: Store it and let SQLite round.
+        why: 123456789012345678.0 was stored as 123456789012345680, 1e-320 read back as 9.99988671826831e-321 and 1e-400 as 0.
+    revisit_if: SQLite gains an exact decimal type.
+    upholds: [sqlite-decimal-refusal-follows-affinity]
+  - id: clamp-length-bounds
+    date: 2026-11-18
+    status: accepted
+    decision: LengthBound clamps before converting to int.
+    rejected:
+      - option: A bare int(*f.Max).
+        why: The conversion is implementation-defined past the int range, MinInt64 on amd64 and MaxInt64 on arm64, so a huge Max published a negative maxLength.
+    upholds: [length-bound-clamps]

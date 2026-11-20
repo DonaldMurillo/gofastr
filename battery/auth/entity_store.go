@@ -489,36 +489,28 @@ func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, new
 	return n > 0, nil
 }
 
-// HasPassword reports whether the user has a real password. Implements PasswordChecker.
-func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
+func (s *EntityUserStore) userBoolFlag(ctx context.Context, userID, column string) (bool, error) {
 	q := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(column),
 		query.QuoteFolded(s.table),
 		query.QuoteFolded(s.fieldMap.ID),
 	)
-	var has bool
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&has)
+	var v bool
+	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
 	if err == sql.ErrNoRows {
 		return false, ErrUserNotFound
 	}
-	return has, err
+	return v, err
+}
+
+// HasPassword reports whether the user has a real password. Implements PasswordChecker.
+func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
+	return s.userBoolFlag(ctx, userID, s.fieldMap.PasswordSet)
 }
 
 func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolType, boolFalse string) error {
-	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
-		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s NOT NULL DEFAULT %s",
-			query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
-	} else {
-		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.EmailVerified)
-		if err != nil || has {
-			return err
-		}
-	}
-	_, err := s.db.ExecContext(ctx, ddl)
-	return err
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.EmailVerified, boolType+" NOT NULL DEFAULT "+boolFalse)
 }
 
 // MarkEmailVerified records the address as proven. Implements EmailVerifier.
@@ -540,17 +532,7 @@ func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) 
 
 // IsEmailVerified reports whether the address is proven. Implements EmailVerifiedChecker.
 func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteFolded(s.fieldMap.EmailVerified),
-		query.QuoteFolded(s.table),
-		query.QuoteFolded(s.fieldMap.ID),
-	)
-	var v bool
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
-	if err == sql.ErrNoRows {
-		return false, ErrUserNotFound
-	}
-	return v, err
+	return s.userBoolFlag(ctx, userID, s.fieldMap.EmailVerified)
 }
 
 // ClearPassword writes a fresh unusable hash and password_set false. Implements PasswordClearer.

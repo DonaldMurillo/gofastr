@@ -103,6 +103,11 @@ invariants:
     rule: AgentRateLimitKey keys a verified agent by its identity and everyone else by client IP, reading X-Forwarded-For only when trustXFF is set.
     enforced_by:
       - test: framework.TestAgentRateLimitKeySplitsAgentFromIP
+  - id: openai-challenge-is-plain-and-checked
+    rule: WithOpenAIAppsChallenge serves the trimmed token as text/plain with nosniff at /.well-known/openai-apps-challenge, mounts nothing for an empty token, and panics without quoting the token when it is over 1024 bytes or holds a byte outside printable ASCII.
+    enforced_by:
+      - test: framework.TestOpenAIAppsChallengeServed
+      - test: framework.TestOpenAIAppsChallengeRefusesBadToken
 decisions:
   - id: a2a-through-app-router
     date: 2026-11-16
@@ -180,3 +185,13 @@ decisions:
     rejected:
       - option: Emit the header on every 401.
         why: Only the host knows which routes are protected by OAuth tokens.
+  - id: challenge-refused-at-option-time
+    date: 2026-11-19
+    status: accepted
+    decision: WithOpenAIAppsChallenge panics on a bad token when the option is built.
+    rejected:
+      - option: Drop the route and log a warning.
+        why: The domain check would then fail at OpenAI with nothing pointing at the cause, while a panic names it at boot.
+      - option: Serve the token as given.
+        why: A newline or control byte in a value from the environment would corrupt the plain-text answer the portal compares.
+    upholds: [openai-challenge-is-plain-and-checked]

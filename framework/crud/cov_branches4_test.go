@@ -13,22 +13,9 @@ import (
 )
 
 func TestScopedInclude_ManyToManyFilter(t *testing.T) {
-	ch, _, _ := covRelWorld(t)
 	// Scoped filter on a ManyToMany include exercises filterClauseQualified.
-	req := withTestUser(httptest.NewRequest("GET", "/posts?include=tags(label=go)", nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("scoped m2m include = %d, body=%s", rec.Code, rec.Body.String())
-	}
-	resp := decodeListResponse(t, rec.Body.String())
-	for _, row := range resp.Data {
-		if row["id"] == "p1" {
-			tags, _ := row["tags"].([]any)
-			if len(tags) != 1 {
-				t.Errorf("scoped m2m tags = %d, want 1", len(tags))
-			}
-		}
+	if n := scopedIncludeCount(t, "tags(label=go)", "tags"); n != 1 {
+		t.Errorf("scoped m2m tags = %d, want 1", n)
 	}
 }
 

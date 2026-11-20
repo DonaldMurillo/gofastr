@@ -11,6 +11,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 )
 
+// handleEchoBody registers on child the proxy test's HTTP echo handler:
+// it reports the base64 body it received on got and answers 200 "ok".
+func handleEchoBody(t *testing.T, child *moduleproto.Peer, got chan int) {
+	t.Helper()
+	if err := child.Handle(moduleproto.MethodHTTP, func(_ context.Context, raw json.RawMessage) (any, error) {
+		var p moduleproto.HTTPRequestParams
+		_ = json.Unmarshal(raw, &p)
+		got <- len(p.BodyB64)
+		return moduleproto.HTTPResponseResult{
+			Status: http.StatusOK,
+			Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindText, Value: jsonRaw(`"ok"`)},
+		}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A body under the proxy's 1 MiB read cap can still overflow the module's
 // frame once base64 grows it by a third. The proxy must answer that body
 // 413, as it does for one over the read cap: it used to send the call,
@@ -20,17 +37,7 @@ func TestProxyBodyOverFrameIs413(t *testing.T) {
 	sup, sl, _, child, cleanup := toolTestSlot(t, nil)
 	defer cleanup()
 	reached := make(chan int, 4)
-	if err := child.Handle(moduleproto.MethodHTTP, func(_ context.Context, raw json.RawMessage) (any, error) {
-		var p moduleproto.HTTPRequestParams
-		_ = json.Unmarshal(raw, &p)
-		reached <- len(p.BodyB64)
-		return moduleproto.HTTPResponseResult{
-			Status: http.StatusOK,
-			Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindText, Value: jsonRaw(`"ok"`)},
-		}, nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	handleEchoBody(t, child, reached)
 	frame := sl.frameBytes()
 
 	// Fits: three quarters of the frame after base64 growth.

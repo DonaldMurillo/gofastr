@@ -58,9 +58,10 @@ func TestCompilerEmitsFieldVariables(t *testing.T) {
 		layout  theme.FieldLayout
 		columns string
 		message string
+		label   string
 	}{
-		{theme.Stacked, "minmax(0, 1fr)", "1 / -1"},
-		{theme.Inline, "minmax(8rem, 1fr) minmax(0, 3fr)", "2"},
+		{theme.Stacked, "minmax(0, 1fr)", "1 / -1", "auto"},
+		{theme.Inline, "minmax(8rem, 1fr) minmax(0, 3fr)", "2", "2"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Field: theme.FieldOptions{Layout: tc.layout}})
 		if !strings.Contains(css, "--fui-field-columns: "+tc.columns+";") {
@@ -68,6 +69,9 @@ func TestCompilerEmitsFieldVariables(t *testing.T) {
 		}
 		if !strings.Contains(css, "--fui-field-message-column: "+tc.message+";") {
 			t.Errorf("layout %v: message column missing (want %s)", tc.layout, tc.message)
+		}
+		if !strings.Contains(css, "--fui-field-label-row: "+tc.label+";") {
+			t.Errorf("layout %v: hinted label row missing (want %s)", tc.layout, tc.label)
 		}
 	}
 	// The inline control track's minimum is zero: an auto-min track
@@ -153,7 +157,7 @@ func TestCompilerEmitsTheCompleteSetAtRoot(t *testing.T) {
 		"--fui-button-radius",
 		"--fui-button-primary-bg", "--fui-button-primary-fg", "--fui-button-primary-border",
 		"--fui-button-danger-bg", "--fui-button-danger-fg", "--fui-button-danger-border",
-		"--fui-field-columns", "--fui-field-message-column", "--fui-field-radius",
+		"--fui-field-columns", "--fui-field-message-column", "--fui-field-label-row", "--fui-field-radius",
 	} {
 		if !strings.Contains(css, name+":") {
 			t.Errorf("complete option set missing %s", name)

@@ -84,7 +84,6 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		children = append(children, render.Tag("p", html.Attrs{
 			"id":                id + "-error",
 			"class":             "fui-upload__error",
-			"role":              "alert",
 			"data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
@@ -159,7 +158,7 @@ func fileUploadCSS(_ style.Theme) string {
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
   background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
-.fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
+.fui-upload-field:has(.fui-upload__input:is(:user-invalid, [aria-invalid="true"])) .fui-upload__zone {
   border-color: var(--color-danger, #B91C1C);
 }
 .fui-upload__label {
@@ -181,7 +180,7 @@ func fileUploadCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0,0,0,0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

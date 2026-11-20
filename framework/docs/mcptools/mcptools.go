@@ -55,7 +55,12 @@ func Register(srv *mcp.Server) error {
 		},
 	}
 	for _, t := range tools {
-		if err := srv.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		if err := srv.RegisterTool(t.name, t.description, t.schema, t.handler, mcp.WithAnnotations(mcp.Annotations{
+			ReadOnlyHint:    mcp.Bool(true),
+			DestructiveHint: mcp.Bool(false),
+			IdempotentHint:  mcp.Bool(true),
+			OpenWorldHint:   mcp.Bool(false),
+		})); err != nil {
 			return fmt.Errorf("mcptools: register MCP tool %q: %w", t.name, err)
 		}
 	}

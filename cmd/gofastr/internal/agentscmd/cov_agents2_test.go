@@ -10,30 +10,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/agentsinv"
 )
 
-func TestRunAgentsInitWriteFailureExits(t *testing.T) {
-	// Target dir is a regular file → writing dir/AGENTS.md fails.
-	blocker := filepath.Join(t.TempDir(), "blk")
-	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runAgentsInit([]string{blocker}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
-func TestRunAgentsSkillFailureExits(t *testing.T) {
-	blocker := filepath.Join(t.TempDir(), "blk")
-	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runAgentsSkill([]string{blocker}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+func TestRunAgentsSubcommandWriteFailureExits(t *testing.T) {
+	// Target dir is a regular file → writing dir/AGENTS.md (init) or the
+	// skill files under it (skill) fails.
+	for name, run := range map[string]func([]string){
+		"init":  runAgentsInit,
+		"skill": runAgentsSkill,
+	} {
+		t.Run(name, func(t *testing.T) {
+			blocker := filepath.Join(t.TempDir(), "blk")
+			if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			code := clitest.CovT_capExit(t, func() {
+				clitest.CovT_capStdout(t, func() { run([]string{blocker}) })
+			})
+			if code != 1 {
+				t.Fatalf("want 1 got %d", code)
+			}
+		})
 	}
 }
 

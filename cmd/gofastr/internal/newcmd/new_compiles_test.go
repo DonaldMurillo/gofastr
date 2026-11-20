@@ -2,8 +2,11 @@ package newcmd
 
 import (
 	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -31,6 +34,76 @@ func TestScaffoldHandlerRefusesDeclaredName(t *testing.T) {
 	writeGo(t, dir, "screens.go", "package main\n\nfunc HomeScreen() {}\n")
 	if err := scaffoldHandler(dir, "HomeScreen", "GET", "/", false); err == nil || !strings.Contains(err.Error(), "already declares") {
 		t.Fatalf("scaffoldHandler(HomeScreen) = %v, want an already-declares refusal", err)
+	}
+}
+
+func TestScaffoldHandlerRefusesImportedName(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		dir := t.TempDir()
+		if existing {
+			writeGo(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+		}
+		err := scaffoldHandler(dir, "http", "GET", "/http", false)
+		if err == nil || !strings.Contains(err.Error(), "import") {
+			t.Errorf("scaffoldHandler(http), existing package %t = %v, want an import-name refusal", existing, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "http_handler.go")); !os.IsNotExist(err) {
+			t.Errorf("scaffoldHandler(http) wrote a file before refusing: %v", err)
+		}
+	}
+}
+
+func TestScaffoldHandlerPackageImports(t *testing.T) {
+	for _, tc := range []struct {
+		name, imports, want string
+	}{
+		{"log", `"log"`, `conflicts with the import of "log" in main.go`},
+		{"logger", `logger "log"`, `conflicts with the import of "log" in main.go`},
+		{"log", `logger "log"`, ""},
+		{"log", `_ "log"`, ""},
+		{"log", `. "log"`, ""},
+		{"Log", `"log"`, ""},
+		{"dep", `"example.com/dep/v2"`, `conflicts with the import of "example.com/dep/v2" in main.go`},
+		{"yaml", `"gopkg.in/yaml.v3"`, `conflicts with the import of "gopkg.in/yaml.v3" in main.go`},
+		{"pgx", `"github.com/jackc/pgx/v5"`, `conflicts with the import of "github.com/jackc/pgx/v5" in main.go`},
+		{"v2", `"example.com/dep/v2"`, ""},
+	} {
+		t.Run(tc.name+tc.imports, func(t *testing.T) {
+			dir := t.TempDir()
+			writeGo(t, dir, "main.go", "package main\nimport "+tc.imports+"\n")
+			err := scaffoldHandler(dir, tc.name, "GET", "/x", false)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("scaffoldHandler(%q) = %v, want %q", tc.name, err, tc.want)
+				}
+				if _, err := os.Stat(filepath.Join(dir, strings.ToLower(tc.name)+"_handler.go")); !os.IsNotExist(err) {
+					t.Errorf("handler written before refusal: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestImportNamesAssumedNames(t *testing.T) {
+	for _, tc := range []struct{ importPath, want, not string }{
+		{"example.com/dep/v2", "dep", "v2"},
+		{"gopkg.in/yaml.v3", "yaml", "yaml.v3"},
+		{"github.com/jackc/pgx/v5", "pgx", "v5"},
+		{"example.com/go-foo-bar", "foo", "go-foo-bar"},
+		{"example.com/vx", "vx", "v"},
+	} {
+		f, err := parser.ParseFile(token.NewFileSet(), "", "package main\nimport "+strconv.Quote(tc.importPath), parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := importNames(f, "main.go")
+		if names[tc.want] == "" || names[tc.not] != "" {
+			t.Errorf("importNames(%q) = %v, want %q, not %q", tc.importPath, names, tc.want, tc.not)
+		}
 	}
 }
 

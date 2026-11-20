@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -40,6 +39,10 @@ func TestPasskeyBrowserRoundTrip(t *testing.T) {
 		w.Header().Set("Content-Type", "text/javascript")
 		fmt.Fprint(w, passkeyJS)
 	})
+	mux.HandleFunc("/passkey-manage.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, passkeyManageJS)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("as") == "alice" {
 			mintSessionCookie(w, f.mgr.Config(), f.session(t, "u-alice"), time.Now().Add(time.Hour))
@@ -61,7 +64,7 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 <button id="add" data-passkey-register="/auth" hidden>Add a passkey</button></form>
 <button id="in" data-passkey-login="/auth" hidden>Sign in with a passkey</button>
 <button id="evil" data-passkey-login="//evil.example" hidden>Elsewhere</button>
-%s<script src="/passkey.js"></script>`, CSRFToken(r), del.String())
+%s<script src="/passkey.js"></script><script src="/passkey-manage.js"></script>`, CSRFToken(r), del.String())
 	})
 	// CSRF is mounted the way WithBFFPosture mounts it, so every
 	// POST the module makes has to carry the page's token.
@@ -85,16 +88,7 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 	t.Cleanup(func() { _ = srv.Close() })
 
 	ctx := chromedptest.Context(t)
-	if err := chromedp.Run(ctx, webauthn.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
-		_, err := webauthn.AddVirtualAuthenticator(&webauthn.VirtualAuthenticatorOptions{
-			Protocol: webauthn.AuthenticatorProtocolCtap2, Ctap2version: webauthn.Ctap2versionCtap21,
-			Transport: webauthn.AuthenticatorTransportInternal, HasResidentKey: true,
-			HasUserVerification: true, IsUserVerified: true, AutomaticPresenceSimulation: true,
-		}).Do(ctx)
-		return err
-	})); err != nil {
-		t.Fatalf("virtual authenticator: %v", err)
-	}
+	enableVirtualAuthenticator(t, ctx)
 
 	wait := func(expr string) chromedp.Action {
 		return chromedp.Poll(expr, nil, chromedp.WithPollingTimeout(10*time.Second))

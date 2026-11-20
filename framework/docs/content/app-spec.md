@@ -361,7 +361,8 @@ Each entry is exactly an entry of the `endpoints:` section of
 [`gofastr.settings.yml`](settings.md), the same keys with the same rules:
 `name`, `entity` (required), `method`, `path` (relative to the entity's
 route, so `{id}/publish` serves `POST /api/posts/{id}/publish`), `handler`
-(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, and `public`.
+(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, `public`, and
+`hints` (the MCP tool's behaviour hints).
 [Endpoints](endpoints.md) has the full contract.
 
 `generate app` writes, for each endpoint:
@@ -1757,10 +1758,15 @@ screens:
         text: Sign in            # form heading
         props:
           action: /auth/login    # default <base_path>/login; any other path is refused
-          next: /admin           # where to land after login (default /)
+          next: /admin           # fallback when the login URL has no safe next value (default /)
           register_href: /signup  # optional link
           forgot_href: /forgot-password  # optional: a "Forgot your password?" link under the field
 ```
+
+The form submits the login URL's `?next=` only if it is a safe same-site
+path. Otherwise it submits the configured fallback. The auth battery
+validates the submitted destination again and keeps a valid destination
+when returning the user to the login page after a wrong password.
 
 The email field asks for `autocomplete="username"`, so a password manager
 pairs it with the password, plus `enterkeyhint="next"` and

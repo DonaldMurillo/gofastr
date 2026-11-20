@@ -124,8 +124,11 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 
 	kids := []render.HTML{
 		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": fieldID})), render.Text(p.Label)),
-		b.El("div", PartTagInputZone, Internal(nil), zone...),
 	}
+	if p.Help != "" {
+		kids = append(kids, b.El("p", PartHint, Internal(html.Attrs{"id": hintID}), render.Text(p.Help)))
+	}
+	kids = append(kids, b.El("div", PartTagInputZone, Internal(nil), zone...))
 	kids = append(kids,
 		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                       "status",
@@ -134,9 +137,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 			"data-hui-tag-input-removed": w.TagInputRemoved,
 		})),
 	)
-	if p.Help != "" {
-		kids = append(kids, b.El("p", PartHint, Internal(html.Attrs{"id": hintID}), render.Text(p.Help)))
-	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label"), Attrs(map[string]string{
 		"role":                            "group",

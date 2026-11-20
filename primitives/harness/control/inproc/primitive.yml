@@ -1,0 +1,20 @@
+primitive: harness.control.inproc
+summary: The in-process control transport - a control.Client the bundled TUI and web clients hold, reading events straight off a session's engine Bus and handing commands to the multiplexer, with no framing.
+code:
+  - framework/experimental/harness/control/inproc/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: closed-client-is-inert
+    rule: After Close, Send returns control.ErrClientClosed without reaching the dispatcher, and every channel Subscribe returned is closed.
+    enforced_by:
+      - test: framework/experimental/harness/control/inproc.TestClosedClientRefusesSendAndEndsSubscribe
+      - test: framework/experimental/harness/control/inproc.TestInprocCloseStopsSend
+decisions:
+  - id: dispatcher-interface
+    date: 2026-11-18
+    status: accepted
+    decision: The Client sends through a one-method Dispatcher interface that *multiplex.Mux satisfies, not a *multiplex.Mux field.
+    rejected:
+      - option: Hold a *multiplex.Mux.
+        why: inproc would import multiplex for one method, and a test could not hand it a stub dispatcher.

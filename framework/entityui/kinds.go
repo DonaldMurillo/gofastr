@@ -4,6 +4,7 @@ import "github.com/DonaldMurillo/gofastr/core/schema"
 
 var builtinKinds = map[string][]schema.FieldType{
 	"email":    {schema.String},
+	"tel":      {schema.String},
 	"url":      {schema.String},
 	"color":    {schema.String},
 	"markdown": {schema.String, schema.Text},

@@ -1,0 +1,43 @@
+primitive: netguard
+summary: The one predicate for whether an IP address is internal, with Reason, its diagnostic.
+code:
+  - core/netguard/netguard.go
+docs:
+  - framework/docs/content/core-packages.md
+on_change:
+  - battery/webhook, core/a2a, core/webbotauth, battery/print and the harness WebFetch tool all refuse through this predicate; run their SSRF tests too.
+invariants:
+  - id: internal-ranges
+    rule: IsInternal is true for nil, unspecified, loopback, private, link-local, multicast, 0.0.0.0/8, 100.64.0.0/10, 240.0.0.0/4, fec0::/10 and 169.254.169.254, at their exact boundaries, and false for the public address next to each.
+    enforced_by:
+      - test: core/netguard.TestIsInternal
+      - test: core/netguard.TestRangeBoundariesExact
+      - test: core/netguard.TestIsInternalReservedIPv4Ranges
+      - test: core/netguard.TestIsInternalSiteLocalV6
+  - id: mapped-and-translated-forms
+    rule: An IPv4-mapped IPv6 address is judged as its IPv4, and a NAT64 (64:ff9b::/96 and 64:ff9b:1::/48 with a zero u octet and suffix), 6to4, IPv4-compatible or Teredo address by the IPv4 it carries, Teredo by its server and its inverted client alike, after the direct ranges so the unspecified and loopback IPv6 addresses keep their own verdict.
+    enforced_by:
+      - test: core/netguard.TestMappedMatchesPlainClassification
+      - test: core/netguard.TestIsInternalTranslationPrefixes
+      - test: core/netguard.TestTeredoChecksBothIPv4Addresses
+  - id: reason-agrees-with-predicate
+    rule: Reason is non-empty exactly when IsInternal is true, through the same direct and translated checks.
+    enforced_by:
+      - test: core/netguard.TestIsInternal
+decisions:
+  - id: one-internal-predicate
+    date: 2026-11-19
+    status: accepted
+    decision: Every outbound-fetch surface asks IsInternal or Reason, which replaced battery/webhook's rejectInternalIP range list and the harness's isInternalIP.
+    rejected:
+      - option: A predicate per surface.
+        why: The two copies had different coverage, and the narrower one guarded signed webhook deliveries.
+    upholds: [internal-ranges, mapped-and-translated-forms]
+  - id: defense-in-depth-ranges
+    date: 2026-11-19
+    status: accepted
+    decision: 6to4, IPv4-compatible and fec0::/10 addresses are refused although Linux routes none of them onto IPv4 or the internet today.
+    rejected:
+      - option: Trust the host OS to refuse the dial.
+        why: A network or OS that routes them would reach internal services, and the predicate must not depend on routing defaults.
+    upholds: [mapped-and-translated-forms]

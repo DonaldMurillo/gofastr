@@ -25,17 +25,7 @@ import (
 // section in view, and the open sheet holds the list unpinned and
 // without its own label.
 func TestTOCPhoneSheetInAside(t *testing.T) {
-	items := make([]ui.TOCItem, 6)
-	sections := make([]render.HTML, 6)
-	for i := range items {
-		id := fmt.Sprintf("s%d", i)
-		items[i] = ui.TOCItem{ID: id, Label: fmt.Sprintf("Section %d", i)}
-		body := []render.HTML{html.Heading(html.HeadingConfig{Level: 2}, render.Text(items[i].Label))}
-		for range 30 {
-			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
-		}
-		sections[i] = html.Div(html.DivConfig{ID: id}, body...)
-	}
+	items, sections := tocSections(6)
 	toc := ui.TableOfContents(ui.TOCConfig{Items: items, Target: "main", Sticky: true, PhoneSheet: true})
 	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 		ui.ContentRow(ui.ContentRowConfig{
@@ -71,6 +61,24 @@ if(getComputedStyle(nav,'::before').display!=='none')return 'the list repeats it
 if(!q('[data-cui-comp="ui-toc"] a[aria-current]'))return 'nothing marked in the sheet';
 `)
 	})
+}
+
+// tocSections builds n numbered sections, each long enough (30 body
+// paragraphs) to make the page scroll on a phone, plus the matching
+// TOCItem list — the fixture both aside-layout TOC tests render.
+func tocSections(n int) ([]ui.TOCItem, []render.HTML) {
+	items := make([]ui.TOCItem, n)
+	sections := make([]render.HTML, n)
+	for i := range items {
+		id := fmt.Sprintf("s%d", i)
+		items[i] = ui.TOCItem{ID: id, Label: fmt.Sprintf("Section %d", i)}
+		body := []render.HTML{html.Heading(html.HeadingConfig{Level: 2}, render.Text(items[i].Label))}
+		for range 30 {
+			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
+		}
+		sections[i] = html.Div(html.DivConfig{ID: id}, body...)
+	}
+	return items, sections
 }
 
 // A labelled sticky list that is not a PhoneSheet keeps its label and
@@ -182,17 +190,7 @@ if(Math.abs(dim-b.bottom)>1)return 'the dim starts at '+dim+', the bar ends at '
 // pins at the top through the whole page instead of trailing the
 // article, and the sheet hangs from it.
 func TestTOCBarInAsidePinsOnPhone(t *testing.T) {
-	items := make([]ui.TOCItem, 4)
-	sections := make([]render.HTML, 4)
-	for i := range items {
-		id := fmt.Sprintf("s%d", i)
-		items[i] = ui.TOCItem{ID: id, Label: fmt.Sprintf("Section %d", i)}
-		body := []render.HTML{html.Heading(html.HeadingConfig{Level: 2}, render.Text(items[i].Label))}
-		for range 30 {
-			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
-		}
-		sections[i] = html.Div(html.DivConfig{ID: id}, body...)
-	}
+	items, sections := tocSections(4)
 	toc := ui.TableOfContents(ui.TOCConfig{Items: items, Target: "main", Sticky: true, PhoneSheet: true, PhoneSheetTop: true})
 	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 		ui.ContentRow(ui.ContentRowConfig{

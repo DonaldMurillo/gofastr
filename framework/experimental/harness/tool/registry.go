@@ -8,27 +8,17 @@ import (
 	"sync"
 )
 
-// ToolSource produces tools to register with the engine. Built-ins,
-// MCP-bridged tools, and plugin-contributed tools all implement this.
+// ToolSource is a named set of tools, such as "builtin" or "mcp:kiln"; a source whose set changes calls Registry.Replace.
 type ToolSource interface {
-	// Name identifies the source for logging + the catalog ("builtin",
-	// "mcp:kiln", "plugin:foo").
 	Name() string
-
-	// Tools returns the current snapshot of tools this source
-	// exposes. Sources that hot-reload (MCP server reconnects, skill
-	// changes) should re-call Registry.Replace on change.
 	Tools(ctx context.Context) ([]Tool, error)
 }
 
-// Registry is the in-memory catalog of tools available to the
-// engine. Multiple ToolSources can register; their tools are merged
-// by name, with later registrations rejected on collision (to make
-// shadowing explicit rather than silent).
+// Registry is the catalog of tools by name, merged from its sources; a name two sources expose is refused.
 type Registry struct {
 	mu      sync.RWMutex
 	sources map[string]ToolSource
-	tools   map[string]toolEntry // by name
+	tools   map[string]toolEntry
 }
 
 type toolEntry struct {
@@ -44,9 +34,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a ToolSource and ingests its current tool set.
-// Returns an error on duplicate source name or duplicate tool name
-// across sources.
+// Register adds src and its tools, or errors and changes nothing when the source or a tool name is taken.
 func (r *Registry) Register(ctx context.Context, src ToolSource) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -70,49 +58,42 @@ func (r *Registry) Register(ctx context.Context, src ToolSource) error {
 	return nil
 }
 
-// Replace updates the tool set for a single source (e.g., MCP server
-// reconnect with a different tool list). Tools no longer exposed by
-// the source are removed; new ones are added; collisions with other
-// sources return an error and leave the registry unchanged.
+// Replace swaps a registered source's tools for tools, or errors and changes nothing when another source owns a name.
 func (r *Registry) Replace(ctx context.Context, sourceName string, tools []Tool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.sources[sourceName]; !exists {
 		return fmt.Errorf("tool: source %q not registered", sourceName)
 	}
-	// Detect collisions with other sources.
 	for _, t := range tools {
 		if existing, dup := r.tools[t.Name()]; dup && existing.source != sourceName {
 			return fmt.Errorf("tool: name %q collides with source %q",
 				t.Name(), existing.source)
 		}
 	}
-	// Remove old tools from this source.
 	for name, e := range r.tools {
 		if e.source == sourceName {
 			delete(r.tools, name)
 		}
 	}
-	// Add new ones.
 	for _, t := range tools {
 		r.tools[t.Name()] = toolEntry{tool: t, source: sourceName}
 	}
 	return nil
 }
 
-// Lookup returns the tool with the given name, or an error if absent.
+// Lookup returns the named tool, or an error wrapping ErrToolUnknown.
 func (r *Registry) Lookup(name string) (Tool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	e, ok := r.tools[name]
 	if !ok {
-		return nil, fmt.Errorf("tool: %q not registered", name)
+		return nil, fmt.Errorf("%w: %q not registered", ErrToolUnknown, name)
 	}
 	return e.tool, nil
 }
 
-// List returns all tools, sorted by name. Callers should treat the
-// result as a snapshot; the registry may change after this returns.
+// List returns a snapshot of every tool, sorted by name.
 func (r *Registry) List() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -124,8 +105,7 @@ func (r *Registry) List() []Tool {
 	return out
 }
 
-// SourceOf returns the name of the source that registered the given
-// tool, or "" if the tool is not registered.
+// SourceOf returns the name of the source that registered toolName, or "".
 func (r *Registry) SourceOf(toolName string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -136,5 +116,5 @@ func (r *Registry) SourceOf(toolName string) string {
 	return e.source
 }
 
-// ErrToolUnknown is returned by Lookup when the tool is not registered.
+// ErrToolUnknown is wrapped by the error Lookup returns for an unregistered tool.
 var ErrToolUnknown = errors.New("tool: unknown")

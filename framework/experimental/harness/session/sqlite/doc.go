@@ -1,5 +1,2 @@
-// Package sqlite is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package sqlite is the SQLite-backed session.Store.
 package sqlite
