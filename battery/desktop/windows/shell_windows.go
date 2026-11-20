@@ -547,7 +547,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	}
 	if msg == wmDPIChanged && lparam != 0 {
-		rect := (*win32Rect)(unsafe.Pointer(lparam))
+		rect := (*win32Rect)(win32.NativePtr(lparam))
 		_ = win32.SetWindowPos(hwnd, rect.Left, rect.Top, rect.Right-rect.Left, rect.Bottom-rect.Top, win32.SWP_NOZORDER|win32.SWP_NOACTIVATE)
 		if value, ok := activeWindows.Load(hwnd); ok {
 			w := value.(*winWindow)
@@ -568,7 +568,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		w := value.(*winWindow)
 		if w.customFrame() {
 			if msg == wmNCCalcSize && wparam != 0 {
-				params := (*nccalcSizeParams)(unsafe.Pointer(lparam))
+				params := (*nccalcSizeParams)(win32.NativePtr(lparam))
 				if win32.IsZoomed(hwnd) {
 					// Let Windows retain the maximized monitor insets and native
 					// menu band. Only menu-less windows extend into the caption.

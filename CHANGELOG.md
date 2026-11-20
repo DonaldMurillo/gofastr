@@ -235,6 +235,10 @@ few lines, and link the PR or the docs page for the rest.
   so a callback that queries or updates the app no longer deadlocks.
 - **The Windows tray title is read and set under one lock** during
   startup, tray install and secondary windows.
+- **Windows desktop apps built with `-race` no longer crash on checkptr**
+  when they read a deep link, a DPI or frame change, a COM callback or
+  clipboard text. `go vet` is clean on these packages, and the Windows
+  COM string reader stops at its length limit.
 - **The runtime manifest no longer reads the action map outside its
   lock** while a screen's actions compile.
 - **`gofastr pack` keeps plugins registered as `&T{...}`, as a generic
