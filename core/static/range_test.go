@@ -541,7 +541,7 @@ func TestDigestRevisionSettled(t *testing.T) {
 		{"no disk revision", 0, true},
 		{"old revision", time.Now().Add(-2 * time.Second).UnixNano(), true},
 		{"current revision", time.Now().UnixNano(), false},
-		{"future revision", time.Now().Add(time.Hour).UnixNano(), false},
+		{"future revision", time.Now().Add(time.Hour).UnixNano(), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := (digestKey{ctime: tc.ctime}).settled(); got != tc.want {

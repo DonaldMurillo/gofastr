@@ -27,7 +27,8 @@ func keyOf(name string, stat fs.FileInfo) digestKey {
 }
 
 func (k digestKey) settled() bool {
-	return k.ctime == 0 || time.Since(time.Unix(0, k.ctime)) >= time.Second
+	d := time.Since(time.Unix(0, k.ctime))
+	return k.ctime == 0 || d >= time.Second || d < 0
 }
 
 type digestCache struct {
