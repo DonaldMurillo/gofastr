@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // A save inside an intercept layer that names where to go next returns
@@ -21,7 +22,7 @@ import (
 // and its form navigates to the path the server saw as the origin, the
 // way entityui's create form does.
 const interceptReturnRoutes = `[{"path":"/list"},` +
-	`{"path":"/rec/:id","intercept":{"from":"/list","as":"drawer"}},` +
+	`{"path":"/rec/:id","intercept":{"from":"/list","also":["/rec/:id"],"as":"drawer"}},` +
 	`{"path":"/new","intercept":{"from":"/list","also":["/rec/:id"],"as":"drawer"}},` +
 	`{"path":"/away"}]`
 
@@ -55,8 +56,13 @@ func startInterceptReturnServer(t *testing.T) *httptest.Server {
 			switch r.URL.Path {
 			case "/rec/a":
 				fmt.Fprintf(w, `<div id="rec-a"><p id="rec-count">REC %d</p><a id="rec-new" href="/new">add</a>`+
+					`<a id="rec-to-b" href="/rec/b">rec b</a><a id="rec-query" href="/rec/a?view=other">other view</a>`+
 					`<form id="rec-form" data-cui-rpc="/save" data-cui-rpc-method="POST" data-cui-rpc-navigate="/rec/a">`+
 					`<button id="rec-save" type="submit">Save</button></form></div>`, saves.Load())
+			case "/rec/b":
+				fmt.Fprintf(w, `<div id="rec-b"><p id="rec-b-count">REC %d</p>`+
+					`<form data-cui-rpc="/save" data-cui-rpc-method="POST" data-cui-rpc-navigate="/rec/b">`+
+					`<button id="rec-b-save" type="submit">Save</button></form></div>`, saves.Load())
 			case "/new":
 				dest, _, _ := strings.Cut(r.Header.Get("X-Gofastr-From"), "?")
 				if r.URL.Query().Get("to") == "away" {
@@ -170,11 +176,218 @@ func TestSaveInPaneKeepsIt(t *testing.T) {
 	}
 }
 
+// A save that keeps its pane changed what the page under the stack
+// shows: closing the pane, by Escape or by Back, re-renders the list.
+func TestSaveInPaneRefreshesTheListOnClose(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close chromedp.Action
+	}{
+		{"escape", chromedp.KeyEvent(kb.Escape)},
+		{"back", chromedp.Evaluate(`history.back()`, nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+			if err := chromedp.Run(ctx, tc.close); err != nil {
+				t.Fatal(err)
+			}
+			if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+				var list string
+				_ = chromedp.Run(ctx, chromedp.Text(`#list-count`, &list, chromedp.ByID))
+				t.Fatalf("after the save and close the list reads %q, want LIST 1 (%+v)", list, readStack(ctx))
+			}
+		})
+	}
+}
+
+// The same holds one layer up: a save in a record stacked over another
+// re-renders the lower record when the upper one closes, and the list
+// when the lower one closes.
+func TestSaveInUpperPaneRefreshesTheLayersUnder(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Escape)); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-b') && `+fmt.Sprintf(textIs, "rec-count", "REC 1")) {
+		t.Fatalf("closing the upper record left the lower one stale: %+v", readStack(ctx))
+	}
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Escape)); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+		t.Fatalf("closing the lower record left the list stale: %+v", readStack(ctx))
+	}
+}
+
+func TestUncoveredStalePageSurvivesStartingANewStack(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+	ngEval(t, ctx, `window.__pageGuardCalls = 0;
+		__gofastr._leaveGuard = { ok: (scope) => scope !== document || ++window.__pageGuardCalls > 1 };`, nil)
+	ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+	if !interceptWait(ctx, `location.pathname === '/list' && window.__pageGuardCalls === 1 && `+fmt.Sprintf(textIs, "list-count", "LIST 0")) {
+		t.Fatalf("the page guard did not keep the list unchanged: %+v", readStack(ctx))
+	}
+
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+	if !interceptWait(ctx, `location.pathname === '/list' && window.__pageGuardCalls === 2 && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+		t.Fatalf("closing the new stack did not refresh the still-stale list: %+v", readStack(ctx))
+	}
+}
+
+func TestUncoveredStaleLayerRetriesSupersededRefresh(t *testing.T) {
+	for _, history := range []bool{false, true} {
+		name := "escape"
+		if history {
+			name = "history-refetch"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			if history {
+				returnClick(t, ctx, "rec-query", `location.search === '?view=other'`)
+			}
+			returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+			returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+			ngEval(t, ctx, `{
+				const fetch = __gofastr.fetch;
+				window.__lowerFetches = 0;
+				__gofastr.fetch = (url, opts) => {
+					if (String(url).endsWith('/rec/a') && opts?.headers?.['X-Gofastr-Intercept'] && ++window.__lowerFetches === 1) {
+						return new Promise(resolve => { window.__releaseLower = () => resolve(fetch(url, opts)); });
+					}
+					return fetch(url, opts);
+				};
+			}`, nil)
+			if history {
+				ngEval(t, ctx, `history.go(-2)`, nil)
+			} else {
+				ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			}
+			if !interceptWait(ctx, `!document.getElementById('rec-b') && window.__lowerFetches === 1 && location.pathname === '/rec/a' && !location.search`) {
+				t.Fatalf("expected one pending refresh after uncovering the lower record: %+v", readStack(ctx))
+			}
+
+			returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+			ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			if !interceptWait(ctx, `window.__lowerFetches === 2 && `+fmt.Sprintf(textIs, "rec-count", "REC 1")) {
+				t.Fatalf("uncover did not retry the interrupted refresh: %+v", readStack(ctx))
+			}
+			ngEval(t, ctx, `window.__releaseLower()`, nil)
+		})
+	}
+}
+
 func TestSaveElsewhereLeavesTheStack(t *testing.T) {
 	ctx := returnRig(t)
 	returnClick(t, ctx, "list-new-away", `!!document.getElementById('new-pane')`)
 	returnClick(t, ctx, "new-save", `location.pathname === '/away' && !!document.getElementById('away')`)
 	if snap := readStack(ctx); len(snap.Layers) != 0 {
 		t.Fatalf("a save navigating out of the stack left %d layers", len(snap.Layers))
+	}
+}
+
+// Re-rendering an uncovered record discards its edits, so the leave
+// guard asks first; declined, the record keeps what it shows.
+func TestUncoveredStaleLayerAsksTheLeaveGuard(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__asked = 0; __gofastr._leaveGuard = { ok: (s) => !(s.querySelector && s.querySelector('#rec-a') && ++window.__asked) }`, nil),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-b') && window.__asked === 1`) {
+		t.Fatalf("closing the upper record never asked the guard about the lower one: %+v", readStack(ctx))
+	}
+	time.Sleep(300 * time.Millisecond)
+	var count string
+	if err := chromedp.Run(ctx, chromedp.Text(`#rec-count`, &count, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if count != "REC 0" {
+		t.Fatalf("a declined guard still re-rendered the lower record: %q", count)
+	}
+}
+
+func TestUncoveredStaleContentAsksNavigationGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name, root, closed, count, before, after string
+		allow                                    bool
+	}{
+		{"drawer/escape", "rec-a", "rec-b", "rec-count", "REC 0", "REC 1", false},
+		{"page/back", "list-main", "rec-a", "list-count", "LIST 0", "LIST 1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			if tc.root == "rec-a" {
+				returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+				returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+			} else {
+				returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+			}
+			ngEval(t, ctx, fmt.Sprintf(`(async () => {
+				await __gofastr.loadModule('navguard');
+				const draft = document.createElement('input');
+				draft.id = 'unsaved-draft';
+				draft.value = 'unsaved';
+				document.getElementById(%q).appendChild(draft);
+				window.__blocked = false;
+				addEventListener('gofastr:navigateblocked', () => { window.__blocked = true; });
+				__gofastr.guardNavigation((nav) => {
+					if (nav.affects(draft)) return new Promise((resolve) => { window.__answer = resolve; });
+				});
+			})()`, tc.root), nil)
+			if tc.root == "rec-a" {
+				ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			} else {
+				ngEval(t, ctx, `history.back()`, nil)
+			}
+			countIs := func(text string) string {
+				return fmt.Sprintf(`document.getElementById(%q)?.textContent === %q`, tc.count, text)
+			}
+			preserved := countIs(tc.before) + ` && document.getElementById('unsaved-draft')?.value === 'unsaved'`
+			if !interceptWait(ctx, fmt.Sprintf(`!document.getElementById(%q) && typeof window.__answer === 'function' && `, tc.closed)+preserved) {
+				t.Fatalf("closing did not wait for a navigation guard on the uncovered draft: %+v", readStack(ctx))
+			}
+			ngEval(t, ctx, fmt.Sprintf(`window.__answer(%t)`, tc.allow), nil)
+			want := `window.__blocked && ` + preserved
+			if tc.allow {
+				want = countIs(tc.after) + ` && !document.getElementById('unsaved-draft')`
+			}
+			if !interceptWait(ctx, want) {
+				t.Fatalf("refresh did not honor the navigation guard (allow=%t): %+v", tc.allow, readStack(ctx))
+			}
+		})
+	}
+}
+
+// An uncovered record whose refetch fails falls back to a plain
+// navigation to it rather than going on showing what it showed.
+func TestUncoveredStaleLayerFallsBackWhenItsRefetchFails(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`{ const f = __gofastr.fetch; let once = true;
+			__gofastr.fetch = (u, o) => once && String(u).endsWith('/rec/a') && o?.headers?.['X-Gofastr-Intercept'] ? (once = false, Promise.reject(new Error('down'))) : f(u, o); }`, nil),
+		chromedp.KeyEvent(kb.Escape),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "away", "AWAY /rec/a")) {
+		t.Fatalf("a failed refetch left the lower record stale: %+v", readStack(ctx))
 	}
 }
