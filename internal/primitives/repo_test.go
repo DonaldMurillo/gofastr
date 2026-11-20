@@ -150,6 +150,7 @@ var ownedPackages = []string{
 	"battery/relay",
 	"battery/setup",
 	"battery/search",
+	"battery/email",
 }
 
 //gofastr:test-reads primitives/ *.go
