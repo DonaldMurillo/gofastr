@@ -10,6 +10,11 @@ invariants:
     enforced_by:
       - test: battery/print/chromepdf.TestPDFRendererRefusesNetworkByDefault
       - test: battery/print/chromepdf.TestPDFRendererAllowListIsExact
+      - test: battery/print/chromepdf.TestRenderPDFInstallsNetworkGate
+  - id: extra-flags-follow-the-gate
+    rule: RenderPDF appends the host-resolver-rules gate before ExtraFlags, so a host-resolver-rules entry in ExtraFlags replaces the gate.
+    enforced_by:
+      - test: battery/print/chromepdf.TestRenderPDFInstallsNetworkGate
   - id: document-goes-in-as-content
     rule: The HTML is set as about:blank's content over DevTools, never passed as a URL, so a document past Chrome's 2 MiB URL cap still renders.
     enforced_by:
