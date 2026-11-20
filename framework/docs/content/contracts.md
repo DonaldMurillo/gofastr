@@ -936,6 +936,14 @@ be replaceable without touching the documentation contract it satisfies.
 `Why` and `Fix` are mandatory and validated at init. If you cannot write
 the fix, the finding is an opinion and does not belong in the catalog.
 
+A built-in rule goes in its capability's function (`routingRules()`,
+`securityRules()`, ...), which sets `Capability` for every rule it
+returns, so the literal leaves it out. Write a single bad/good pair as
+`example(bad, good)` or `captioned(caption, bad, good)`. A new rule, or an
+edit to a rule's text, changes what `gofastr verify --list` and
+`--explain` print, so regenerate the pinned output with `GOFASTR_UPDATE_GOLDEN=1 go test ./cmd/gofastr/internal/verifycmd/`
+and read the diff.
+
 ## Your own rules
 
 The pipeline is a library, and the catalog is open to registration: a

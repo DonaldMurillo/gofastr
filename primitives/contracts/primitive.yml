@@ -126,6 +126,10 @@ invariants:
     enforced_by:
       - test: framework/contracts.TestPassMemoComputesOnce
       - test: framework/contracts.TestSweepEngineMemoKeepsTheFirstStoredValue
+  - id: catalog-output-is-pinned
+    rule: The text and JSON output of `gofastr verify --list` and of `--explain` for every rule match a committed golden file byte for byte, so a change to how the catalog is written cannot change what it says.
+    enforced_by:
+      - test: cmd/gofastr/internal/verifycmd.TestVerifyCatalogOutputMatchesGolden
 decisions:
   - id: cli-and-mcp-runner-is-internal
     date: 2026-11-19
@@ -146,6 +150,17 @@ decisions:
       - option: Write the bad examples so they do not trip the checks.
         why: An example that does not show the real mistake teaches nothing.
     upholds: [rule-carries-its-lesson]
+  - id: catalog-literals-carry-only-what-varies
+    date: 2026-11-20
+    status: accepted
+    decision: A built-in rule literal leaves out its Capability, which the capability's rule function sets when init registers it, and writes a single bad/good pair as example(bad, good) or captioned(caption, bad, good); only a rule with several pairs spells out []Example.
+    rejected:
+      - option: Move Summary, Why, Fix and the examples to an embedded data file parsed at init.
+        why: The prose would lose the compiler's checks and its link to the rule ID constants, and a typo would surface as an init panic instead of a build error.
+      - option: A positional constructor per capability, rule(id, slug, title, severity, ...).
+        why: Nine string arguments in a row read as a list of strings; a swapped Why and Fix would compile.
+    revisit_if: Rule literals grow a new field that every rule repeats with the same value.
+    upholds: [catalog-output-is-pinned]
   - id: ids-are-numbered-by-capability-block
     date: 2026-11-17
     status: accepted
