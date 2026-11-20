@@ -78,17 +78,20 @@ func TestSpanNameIsFirstKeyword(t *testing.T) {
 
 func TestErrorTypeSeesThroughWrapping(t *testing.T) {
 	err := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &customErr{}))
-	if got := errorType(err); got != "*tracing.customErr" {
+	if got := ErrorType(err); got != "*tracing.customErr" {
 		t.Errorf("errorType = %q", got)
 	}
-	if got := errorType(errors.New("plain")); got != "*errors.errorString" {
+	if got := ErrorType(errors.New("plain")); got != "*errors.errorString" {
 		t.Errorf("errorType = %q", got)
 	}
 	// A two-%w wrapper is *fmt.wrapErrors; the first wrapped error is
 	// the cause (2026-10-27 C12).
 	multi := fmt.Errorf("begin: %w (attempt %w)", &customErr{}, context.Canceled)
-	if got := errorType(fmt.Errorf("outer: %w", multi)); got != "*tracing.customErr" {
+	if got := ErrorType(fmt.Errorf("outer: %w", multi)); got != "*tracing.customErr" {
 		t.Errorf("errorType through a multi-%%w wrapper = %q", got)
+	}
+	if got := ErrorType(nil); got != "<nil>" {
+		t.Errorf("ErrorType(nil) = %q", got)
 	}
 }
 
