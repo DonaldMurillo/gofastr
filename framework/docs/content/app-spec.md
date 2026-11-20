@@ -218,6 +218,9 @@ as a string, quote it before loading. For example, write
 `values: ["0x01", "0x02"]` to keep those enum values instead of `"1"` and
 `"2"`, and `default: "0x10"` for a string field to avoid an invalid default.
 
+Pack and Kiln freeze reject string values with invalid UTF-8. YAML cannot
+write those bytes as text without changing them.
+
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
 (`- - a`), and mixed advanced YAML forms are not part of the app spec format.
@@ -902,10 +905,9 @@ also cover every field *inside* each element — the omission class this
 catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
 down, where a set construct key already differs from the zero output and
 the top-level checks pass anyway. A value that would re-parse as anything
-but itself is quoted: `"` and backslash are escaped, invalid UTF-8 bytes
-and non-printable runes as `\xNN`/`\uNNNN`, so a quoted value comes back
-byte-for-byte (an apostrophe passes through verbatim inside the double
-quotes; bare, `60'` would merge two flow-list members into one). Every
+but itself is quoted: `"`, backslash and non-printable runes are escaped,
+so a quoted value comes back unchanged. An apostrophe passes through inside
+double quotes; bare, `60'` would merge two flow-list members into one. Every
 committed example app spec gates this, not just Meridian, and
 reflection-driven guards fail the day an `AppSpec` or construct field
 exists that the serializer's key lists don't cover — the drift that let

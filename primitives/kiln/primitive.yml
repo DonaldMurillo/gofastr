@@ -9,3 +9,7 @@ invariants:
     rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
     enforced_by:
       - test: kiln/freeze.TestFreezeJSONCaseContract
+  - id: graduation-refuses-invalid-utf8-values
+    rule: Freeze refuses a string value with invalid UTF-8 and names its app-spec path rather than writing YAML that changes the string.
+    enforced_by:
+      - test: kiln/freeze.TestAppSpecRejectsInvalidUTF8SeedValue

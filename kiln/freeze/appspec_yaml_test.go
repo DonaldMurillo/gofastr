@@ -140,6 +140,19 @@ func TestAppSpecRejectsUnsafeSeedKey(t *testing.T) {
 	}
 }
 
+func TestAppSpecRejectsInvalidUTF8SeedValue(t *testing.T) {
+	w := seedWorld(map[string]any{"tags": []any{"a\xffb"}})
+	buf, err := freeze.AppSpecYAML(w)
+	if err == nil {
+		row := parseSeedRow(t, buf)
+		t.Fatalf("invalid UTF-8 was emitted as %q", row.Map["tags"].List[0].Value)
+	}
+	if len(buf) != 0 || !strings.Contains(err.Error(), "seed[0].rows[0].tags[0]") ||
+		!strings.Contains(err.Error(), "invalid UTF-8") {
+		t.Fatalf("want a path-specific UTF-8 refusal and no YAML, got %q, %v", buf, err)
+	}
+}
+
 func TestAppSpecQuotesBareColonScalar(t *testing.T) {
 	// A mixed list forces block style; an unquoted "09:30" line would
 	// re-parse as the map {09: 30}.

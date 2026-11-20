@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/settings"
@@ -960,6 +961,10 @@ func validateYAMLRepresentable(value any, path string) error {
 			if err := validateYAMLRepresentable(item, itemPath); err != nil {
 				return err
 			}
+		}
+	default:
+		if scalar := reflect.ValueOf(value); scalar.Kind() == reflect.String && !utf8.ValidString(scalar.String()) {
+			return fmt.Errorf("freeze: %s: invalid UTF-8 cannot be represented in gofastr.yml", path)
 		}
 	}
 	return nil
