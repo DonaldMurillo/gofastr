@@ -182,20 +182,41 @@ func diag(p *contracts.Pass, ruleID, file string, pos token.Pos, msg string) con
 	}
 }
 
-func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
+func legacyCommentLines(fset *token.FileSet, file *ast.File) map[int][]string {
+	var comments map[int][]string
+	if file == nil {
+		return nil
+	}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if comments == nil {
+				comments = make(map[int][]string)
+			}
+			line := fset.PositionFor(c.Pos(), false).Line
+			for i, text := range strings.Split(c.Text, "\n") {
+				comments[line+i] = append(comments[line+i], text)
+			}
+		}
+	}
+	return comments
+}
+
+func hasLegacyAnnotation(lines []string, comments map[int][]string, lineNo int, markers ...string) bool {
 	if lineNo < 1 || lineNo > len(lines) {
 		return false
 	}
-	check := func(s string) bool {
-		lower := strings.ToLower(s)
-		for _, m := range markers {
-			if strings.Contains(lower, m) {
-				return true
+	check := func(line int) bool {
+		for _, comment := range comments[line] {
+			lower := strings.ToLower(comment)
+			for _, marker := range markers {
+				if strings.Contains(lower, marker) {
+					return true
+				}
 			}
 		}
 		return false
 	}
-	if check(lines[lineNo-1]) {
+	if check(lineNo) {
 		return true
 	}
 	for i, seen := lineNo-2, 0; i >= 0 && seen < 4; i-- {
@@ -203,7 +224,7 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 			continue
 		}
 		seen++
-		if check(lines[i]) {
+		if check(i + 1) {
 			return true
 		}
 		trimmed := strings.TrimSpace(lines[i])
@@ -285,6 +306,8 @@ func sqlWaiverTargets(file *ast.File) []sqlWaiverTarget {
 			header(n, n.Body, n.Init, n.Assign)
 		case *ast.ForStmt:
 			header(n, n.Body, n.Init, n.Cond, n.Post)
+		case *ast.RangeStmt:
+			header(n, n.Body, n.Key, n.Value, n.X)
 		case *ast.FuncDecl:
 			if n.Body != nil && len(n.Body.List) == 1 {
 				switch stmt := n.Body.List[0].(type) {

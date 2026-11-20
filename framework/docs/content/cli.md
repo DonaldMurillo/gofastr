@@ -668,9 +668,10 @@ report, and static lint findings in the original audit format.
   Lane detection reads skip arguments and recognizes nearby
   `testing.Short()` guards. A `// safe-sql: <reason>` comment directly above
   the SQL statement or at the end of one of its lines waives that statement.
-  The same rule covers SQL in an `if`, `switch`, or `for` header. Other
-  legacy annotations include `// allow-skip: <why>` and `// ignore the error`
-  for Exec.
+  The same rule covers SQL in an `if`, `switch`, or `for` header, including
+  the expression after `range`. Other legacy annotations also use Go
+  comments, including `// safe-html: <why>`, `// allow-skip: <why>`, and
+  `// best-effort: <why>` or `// ignore the error` for Exec.
 - `gofastr audit deps`: list candidate global registration calls found
   anywhere in the Go source, then the [unmounted](unmount.md) packages.
 

@@ -68,7 +68,7 @@ func (q *Queue) workerLoopFixed(ctx context.Context, job Job) { // want workerLo
 }
 
 // The fix through a same-package helper (detaches fact, bounded).
-func (q *Queue) settleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want settleContext:`detaches\(bounded=true\)`
+func (q *Queue) settleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want settleContext:`detaches\[\{0 true\}\]`
 	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
 
@@ -370,7 +370,7 @@ func indexRespected(ctx, jobCtx context.Context, q *Queue, job Job, fn func(cont
 	return q.Ack(ctx, job)
 }
 
-func detachWithUnrelatedTimeout(ctx context.Context) context.Context { // want detachWithUnrelatedTimeout:`detaches\(bounded=false\)`
+func detachWithUnrelatedTimeout(ctx context.Context) context.Context { // want detachWithUnrelatedTimeout:`detaches\[\{0 false\}\]`
 	_, cancel := context.WithTimeout(ctx, time.Second)
 	cancel()
 	return context.WithoutCancel(ctx)
@@ -381,7 +381,7 @@ func (q *Queue) workerLoopUnrelatedTimeout(ctx context.Context, job Job) { // wa
 	_ = q.Ack(detachWithUnrelatedTimeout(ctx), job) // want `Ack records an outcome under context.WithoutCancel with no timeout`
 }
 
-func detachWithOptionalTimeout(ctx context.Context, bounded bool) (result context.Context, cancel context.CancelFunc) { // want detachWithOptionalTimeout:`detaches\(bounded=false\)`
+func detachWithOptionalTimeout(ctx context.Context, bounded bool) (result context.Context, cancel context.CancelFunc) { // want detachWithOptionalTimeout:`detaches\[\{0 false\}\]`
 	result = context.WithoutCancel(ctx)
 	if bounded {
 		result, cancel = context.WithTimeout(result, time.Second)
@@ -389,7 +389,7 @@ func detachWithOptionalTimeout(ctx context.Context, bounded bool) (result contex
 	return
 }
 
-func detachInImmediateClosure(ctx context.Context) context.Context { // want detachInImmediateClosure:`detaches\(bounded=false\)`
+func detachInImmediateClosure(ctx context.Context) context.Context { // want detachInImmediateClosure:`detaches\[\{0 false\}\]`
 	return func() context.Context {
 		return context.WithoutCancel(ctx)
 	}()
@@ -405,7 +405,7 @@ func uncalledDetachClosure(ctx context.Context) context.Context {
 	return ctx
 }
 
-func boundInImmediateClosure(ctx context.Context) (context.Context, context.CancelFunc) { // want boundInImmediateClosure:`detaches\(bounded=true\)`
+func boundInImmediateClosure(ctx context.Context) (context.Context, context.CancelFunc) { // want boundInImmediateClosure:`detaches\[\{0 true\}\]`
 	detached := context.WithoutCancel(ctx)
 	return (func() (context.Context, context.CancelFunc) {
 		return context.WithTimeout(detached, time.Second)
@@ -426,7 +426,35 @@ func (q *Queue) workerLoopImmediateTuple(ctx context.Context, job Job) { // want
 	_ = q.Ack(uncapped, job) // want "Ack records an outcome under context.WithoutCancel with no timeout"
 }
 
-func boundFromForwardedTuple(ctx context.Context) context.Context { // want boundFromForwardedTuple:"detaches\\(bounded=true\\)"
+func boundedThenDetached(ctx context.Context) (context.Context, context.Context, context.CancelFunc) { // want boundedThenDetached:`detaches\[\{0 true\} \{1 false\}\]`
+	detached := context.WithoutCancel(ctx)
+	bounded, cancel := context.WithTimeout(detached, time.Second)
+	return bounded, detached, cancel
+}
+
+func liveThenBounded(ctx context.Context) (context.Context, context.Context, context.CancelFunc) { // want liveThenBounded:`detaches\[\{1 true\}\]`
+	bounded, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	return ctx, bounded, cancel
+}
+
+func (q *Queue) workerLoopNamedTuples(ctx context.Context, job Job) { // want workerLoopNamedTuples:`runsCallback\[0\]`
+	_ = q.runHandler(ctx, q.handlers[job.Type], job)
+	bounded, detached, cancel := boundedThenDetached(ctx)
+	defer cancel()
+	_ = q.Ack(bounded, job)
+	_ = q.Ack(detached, job) // want "Ack records an outcome under context.WithoutCancel with no timeout"
+
+	live, secondBounded, cancelSecond := liveThenBounded(ctx)
+	defer cancelSecond()
+	_ = q.Ack(live, job) // want "Ack records an outcome on the context the callback"
+	_ = q.Ack(secondBounded, job)
+
+	cancelImported, imported := lib.BoundedSecond(ctx)
+	defer cancelImported()
+	_ = q.Ack(imported, job)
+}
+
+func boundFromForwardedTuple(ctx context.Context) context.Context { // want boundFromForwardedTuple:`detaches\[\{0 true\}\]`
 	detached := context.WithoutCancel(ctx)
 	bounded, cancel := context.WithTimeout(detached, time.Second)
 	defer cancel()

@@ -20,12 +20,16 @@ func AuditLint(rel string, body []byte, fset *token.FileSet, file *ast.File) []c
 type lintSource struct {
 	rel, body string
 	lines     []string
+	comments  map[int][]string
 	fset      *token.FileSet
 	file      *ast.File
 }
 
 func newLintSource(rel, body string, fset *token.FileSet, file *ast.File) lintSource {
-	return lintSource{rel: rel, body: body, lines: strings.Split(body, "\n"), fset: fset, file: file}
+	return lintSource{
+		rel: rel, body: body, lines: strings.Split(body, "\n"),
+		comments: legacyCommentLines(fset, file), fset: fset, file: file,
+	}
 }
 
 func (s lintSource) diagnostic(rule string, pos token.Pos, message string) contracts.Diagnostic {

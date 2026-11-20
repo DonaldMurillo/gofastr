@@ -14,8 +14,8 @@ twins:
       - path: battery/webhook/webhook.go
         note: settleTimeout, also used by inbound.go's ProcessInbound.
 invariants:
-  - id: settle-literal-result-is-selected-by-index
-    rule: Settlectx follows the selected result of an immediately called function literal through assignments and forwarded returns.
+  - id: settle-context-result-is-selected-by-index
+    rule: Settlectx follows the selected context result of named helpers and immediately called function literals through assignments and forwarded returns, with imported detachment facts keyed by result index.
     enforced_by:
       - test: internal/analyzers/settlectx.TestSettleCtx
   - id: settle-context-is-detached-and-bounded

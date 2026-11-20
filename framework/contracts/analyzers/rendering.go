@@ -267,7 +267,7 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		clean := blankCSSCommentsAndStrings(string(body))
 		if ownsStyling {
 			if !hasPrefixAny(f.Rel, devOnlyPrefixes) {
-				out = append(out, scanPhysicalSides(f.Rel, strings.Split(clean, "\n"), strings.Split(string(body), "\n"), nil)...)
+				out = append(out, scanPhysicalSides(f.Rel, clean, strings.Split(string(body), "\n"), nil, nil)...)
 			}
 			continue
 		}

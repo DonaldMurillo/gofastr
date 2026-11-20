@@ -359,7 +359,7 @@ func tightensHandle(pass *analysis.Pass, body *ast.BlockStmt, open *ast.CallExpr
 	inspect = func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
-			return false
+			return !found && n.Pos() <= open.Pos() && open.End() <= n.End()
 		case *ast.AssignStmt:
 			sources := make([]*ast.CallExpr, len(n.Rhs))
 			for i, rhs := range n.Rhs {

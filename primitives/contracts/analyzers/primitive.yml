@@ -34,13 +34,18 @@ invariants:
       - test: framework/contracts/analyzers.TestInPageStateAsRouteFiresOnlyForUIApps
       - test: framework/contracts/analyzers.TestSweepCoreUIHostImportRendersUI
   - id: legacy-annotation-window
-    rule: The raw-query guidance check accepts safe-sql or reporting-query on the finding's line or within the four non-blank lines above it, in any letter case, and the search stops at a closing brace or a func line.
+    rule: The raw-query guidance check accepts safe-sql or reporting-query in Go comments on the finding's line or within the four non-blank lines above it, in any letter case, and the search stops at a closing brace or a func line.
     enforced_by:
       - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationReachesFourLinesUp
       - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationStopsAtAFunction
       - test: framework/contracts/analyzers.TestSweepCoreReportingQueryMarkerIsHonoured
+  - id: legacy-annotations-are-comments
+    rule: Legacy annotation markers are read case-insensitively from Go comments, so marker text inside a literal leaves the finding active.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestLintIgnoredExecLiteralIsNotAnAnnotation
+      - test: cmd/gofastr/internal/auditcmd.TestLintRenderHTMLConcatLiteralIsNotAnAnnotation
   - id: sql-concatenation-waiver-is-statement-local
-    rule: Verify and audit lint accept a safe-sql comment with a reason directly above a statement or trailing a line of that statement, including within a multi-line call. A control header's waiver covers its own expressions and statements through the opening brace. The body is checked separately.
+    rule: Verify and audit lint accept a safe-sql comment with a reason directly above a statement or trailing a line of that statement, including within a multi-line call. A control header's waiver covers its own expressions and statements through the opening brace, including range headers. The body is checked separately. A trailing waiver on a line with two statements applies to the last one.
     enforced_by:
       - test: cmd/gofastr/internal/auditcmd.TestSQLWaiverAppliesOnlyToItsStatement
   - id: handrolled-crud-bar
@@ -86,4 +91,4 @@ decisions:
     rejected:
       - option: Respell every one as a gofastr:allow directive.
         why: Thousands of sites across the repository and shipped apps already state their reason in the same breath, which is what the directive asks for.
-    upholds: [legacy-annotation-window, sql-concatenation-waiver-is-statement-local]
+    upholds: [legacy-annotation-window, legacy-annotations-are-comments, sql-concatenation-waiver-is-statement-local]

@@ -149,3 +149,45 @@ func reboundHandle(path string, other *os.File) (*os.File, error) {
 	alias = f
 	return alias, fileperm.Restrict(path, false)
 }
+
+func withLock(fn func() error) error { return fn() }
+
+func closureRestricted(path string) error {
+	return withLock(func() error {
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := fileperm.RestrictOpenFile(f); err != nil {
+			return err
+		}
+		return fileperm.Restrict(path, false)
+	})
+}
+
+func closureChmod(path string) error {
+	return withLock(func() error {
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := f.Chmod(0o600); err != nil {
+			return err
+		}
+		return fileperm.Restrict(path, false)
+	})
+}
+
+func closureWithUncalledTighten(path string) error {
+	return withLock(func() error {
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // want `os\.OpenFile mode 0o600 applies only at create`
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_ = func() error { return fileperm.RestrictOpenFile(f) }
+		return fileperm.Restrict(path, false)
+	})
+}

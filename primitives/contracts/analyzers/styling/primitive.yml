@@ -44,9 +44,10 @@ invariants:
       - test: framework/contracts/analyzers.TestPhysicalSideInSetPairIsReported
       - test: framework/contracts/analyzers.TestPhysicalSideInSeparateBuilderCall
   - id: physical-side-dir-override-both-forms
-    rule: A :dir() override is exempt from GOFASTR1824 written as CSS text and as a style-builder Rule selector or Pseudo/Child argument.
+    rule: GOFASTR1824 grants direction credit only when every effective selector in a CSS-text or style-builder selector list has a top-level :dir() pseudo-class. A CSS-text RTL background mirror requires :dir(rtl) on every selector.
     enforced_by:
       - test: framework/contracts/analyzers.TestPhysicalSideBuilderDirOverride
+      - test: framework/contracts/analyzers.TestPhysicalSideCSSDirOverride
   - id: builder-dir-credit-is-local
     rule: Every effective builder selector needs a top-level :dir() for direction credit. A Pseudo or Child suffix inherits its parent selector only up to its first top-level comma. A separate property call inherits credit from the preceding Rule on the same receiver only in the same statement list and with no intervening Rule.
     enforced_by:

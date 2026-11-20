@@ -161,14 +161,17 @@ func (*runsCallback) AFact() {}
 
 func (f *runsCallback) String() string { return fmt.Sprintf("runsCallback%v", f.Index) }
 
-// detaches marks a function that returns a context and calls
-// context.WithoutCancel; Bounded when it also calls context.WithTimeout
-// or WithDeadline (the outbox settleContext helper).
-type detaches struct{ Bounded bool }
+// detaches records which context results are detached and whether each is bounded.
+type detaches struct{ Results []detachedResult }
+
+type detachedResult struct {
+	Index   int
+	Bounded bool
+}
 
 func (*detaches) AFact() {}
 
-func (f *detaches) String() string { return fmt.Sprintf("detaches(bounded=%t)", f.Bounded) }
+func (f *detaches) String() string { return fmt.Sprintf("detaches%v", f.Results) }
 
 func run(pass *analysis.Pass) (any, error) {
 	var fns []*ast.FuncDecl
@@ -182,7 +185,7 @@ func run(pass *analysis.Pass) (any, error) {
 	a := &analyzer{
 		pass:       pass,
 		runs:       map[*types.Func]map[int]bool{},
-		detaching:  map[*types.Func]bool{},
+		detaching:  map[*types.Func][]detachedResult{},
 		audit:      map[*types.Func]map[int]bool{},
 		auditSinks: map[*types.Func][]*ast.CallExpr{},
 		auditUses:  map[*types.Func]token.Pos{},
@@ -192,7 +195,7 @@ func run(pass *analysis.Pass) (any, error) {
 	a.collectRuns(fns)
 	a.collectAudits(fns)
 	for _, obj := range slices.SortedFunc(maps.Keys(a.detaching), byPos) {
-		pass.ExportObjectFact(obj, &detaches{Bounded: a.detaching[obj]})
+		pass.ExportObjectFact(obj, &detaches{Results: a.detaching[obj]})
 	}
 	for _, obj := range slices.SortedFunc(maps.Keys(a.runs), byPos) {
 		pass.ExportObjectFact(obj, &runsCallback{Index: slices.Sorted(maps.Keys(a.runs[obj]))})
@@ -262,7 +265,7 @@ func byPos(a, b *types.Func) int { return int(a.Pos() - b.Pos()) }
 type analyzer struct {
 	pass      *analysis.Pass
 	runs      map[*types.Func]map[int]bool
-	detaching map[*types.Func]bool // value: bounded
+	detaching map[*types.Func][]detachedResult
 	audit     map[*types.Func]map[int]bool
 	// auditSinks: per local audits function, its direct sink calls.
 	auditSinks map[*types.Func][]*ast.CallExpr
@@ -405,7 +408,7 @@ func (r *resolver) classifyResult(e ast.Expr, result, depth int) state {
 			}
 		}
 		if fn != nil {
-			if ok, bounded := r.a.detachState(fn); ok {
+			if ok, bounded := r.a.detachState(fn, result); ok {
 				return state{kind: detached, bounded: bounded}
 			}
 		}
@@ -597,21 +600,23 @@ func returnsContext(t types.Type) bool {
 
 // ---- facts ----
 
-// detachState reports whether fn returns a detached context and whether
-// that context is bounded.
-func (a *analyzer) detachState(fn *types.Func) (isDetach, bounded bool) {
+// detachState reports whether the selected result is detached and bounded.
+func (a *analyzer) detachState(fn *types.Func, index int) (isDetach, bounded bool) {
 	fn = fn.Origin()
-	if b, ok := a.detaching[fn]; ok {
-		return true, b
+	results := a.detaching[fn]
+	if fn.Pkg() != a.pass.Pkg {
+		var fact detaches
+		if !a.pass.ImportObjectFact(fn, &fact) {
+			return false, false
+		}
+		results = fact.Results
 	}
-	if fn.Pkg() == a.pass.Pkg {
-		return false, false
+	for _, result := range results {
+		if result.Index == index {
+			return true, result.Bounded
+		}
 	}
-	var f detaches
-	if !a.pass.ImportObjectFact(fn, &f) {
-		return false, false
-	}
-	return true, f.Bounded
+	return false, false
 }
 
 // collectDetaching finds the local functions that return a context built
@@ -635,23 +640,27 @@ func (a *analyzer) collectDetaching(fns []*ast.FuncDecl) {
 	for changed := true; changed; {
 		changed = false
 		for _, helper := range helpers {
-			detach, bounded := false, true
+			var detachedResults []detachedResult
 			results := helper.fn.Signature().Results()
-			for _, ret := range helper.returns {
-				for i := 0; i < results.Len(); i++ {
-					obj := results.At(i)
-					if !isContext(obj.Type()) {
-						continue
-					}
+			for i := 0; i < results.Len(); i++ {
+				obj := results.At(i)
+				if !isContext(obj.Type()) {
+					continue
+				}
+				detach, bounded := false, true
+				for _, ret := range helper.returns {
 					returned := helper.resolver.classifyReturn(ret, obj, i, 0)
 					if returned.kind == detached {
 						detach = true
 						bounded = bounded && returned.bounded
 					}
 				}
+				if detach {
+					detachedResults = append(detachedResults, detachedResult{Index: i, Bounded: bounded})
+				}
 			}
-			if prior, ok := a.detaching[helper.fn]; detach && (!ok || prior != bounded) {
-				a.detaching[helper.fn] = bounded
+			if len(detachedResults) != 0 && !slices.Equal(a.detaching[helper.fn], detachedResults) {
+				a.detaching[helper.fn] = detachedResults
 				changed = true
 			}
 		}

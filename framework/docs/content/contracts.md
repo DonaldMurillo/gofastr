@@ -91,8 +91,10 @@ literal has no effect.
 
 Put `// safe-sql: <reason>` directly above the statement or at the end
 of one of its lines to waive the SQL concatenation check. A waiver on an
-`if`, `switch`, or `for` header can cover SQL in the header. Statements
-in the body need their own waivers.
+`if`, `switch`, or `for` header can cover SQL in the header, including
+the expression after `range`. Statements in the body need their own
+waivers. Legacy markers such as `safe-html:` and `best-effort` are
+recognized in Go comments.
 
 `GOFASTR1809` checks `.css` files discovered under the verification
 root outside the styling-owner paths, including embedded stylesheets and
@@ -239,7 +241,9 @@ the logical property: `inset-inline-start`, `margin-inline-end`,
 with no logical spelling (a background position, a `translateX` travel)
 gets a `:dir(rtl)` override beside it. `left: 50%` and `right: 50%`
 (centring with a translate), `auto`, and the declarations of a
-`:dir()` override block, from its selector to its closing brace, pass.
+`:dir()` override block pass. Every selector in a comma-separated list
+needs a top-level `:dir()` in both CSS text and the style builder.
+A CSS background mirror needs `:dir(rtl)` on every selector.
 A comment that mentions `:dir(rtl)` counts as no mirror. Dev tooling
 is exempt.
 

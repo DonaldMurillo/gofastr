@@ -229,7 +229,7 @@ func ruleDisabledTests(src lintSource, reportAllNonLane bool) []contracts.Diagno
 			return true
 		}
 		pos := src.fset.Position(n.Pos())
-		if hasLegacyAnnotation(src.lines, pos.Line, "allow-skip:") {
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "allow-skip:") {
 			return true
 		}
 		var messages []string

@@ -2,6 +2,7 @@ package analyzers_test
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -109,6 +110,40 @@ func TestPhysicalSideBuilderDirOverride(t *testing.T) {
 			t.Errorf("%q: want %d GOFASTR1824, got %d: %v", tc.body, tc.want, len(found), found)
 		}
 	}
+}
+
+func TestPhysicalSideCSSDirOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name, css string
+		want      int
+	}{
+		{"mixed list", ".a:dir(rtl), .b { margin-left: 4px; }", 1},
+		{"multiline mixed list", ".a,\n.b:dir(rtl)\n{ margin-left: 4px; }", 1},
+		{"all directional", ".a:dir(rtl):is(.x, .y),\n.b:dir(ltr) { margin-left: 4px; }", 0},
+		{"nested dir is insufficient", ".a:is(:dir(rtl), .b) { margin-left: 4px; }", 1},
+		{"mixed list is no RTL mirror", ".a { background-position: right 12px center; }\n.a:dir(rtl), .b { background-position: left 12px center; }", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, input := range []struct{ rel, body string }{
+				{"framework/ui/x.style.css", tc.css},
+				{"framework/ui/raw.go", "package ui\nvar other = `unclosed(`\nvar css = `" + tc.css + "`"},
+				{"framework/ui/quoted.go", "package ui\nvar css = " + strings.Join(quoteCSSLines(tc.css), " +\n")},
+			} {
+				found := countRule(t, designFixture(t, input.rel, input.body), contracts.RulePhysicalSide)
+				if len(found) != tc.want {
+					t.Errorf("%s: want %d GOFASTR1824, got %v", input.rel, tc.want, found)
+				}
+			}
+		})
+	}
+}
+
+func quoteCSSLines(css string) []string {
+	lines := strings.SplitAfter(css, "\n")
+	for i, line := range lines {
+		lines[i] = strconv.Quote(line)
+	}
+	return lines
 }
 
 func TestPhysicalSideIgnoresGoCompositeFields(t *testing.T) {

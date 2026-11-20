@@ -57,9 +57,8 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		src := newLintSource(f.Rel, string(body), p.FileSet(), file)
 		out = append(out, sharedSecurityRules(src)...)
 		if file != nil {
-			lines := src.lines
-			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
-			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
+			out = append(out, ruleInsecureCookie(p, src)...)
+			out = append(out, ruleHardcodedSecret(p, src)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
 			out = append(out, ruleRawJSONBody(p, f.Rel, file)...)
 			out = append(out, ruleAbsoluteAttempts(p, f.Rel, file)...)
@@ -265,7 +264,7 @@ func ruleHTMLConcat(src lintSource) []contracts.Diagnostic {
 		if !reRenderHTMLConcat.MatchString(line) {
 			continue
 		}
-		if hasLegacyAnnotation(src.lines, i+1, "safe-html:") {
+		if hasLegacyAnnotation(src.lines, src.comments, i+1, "safe-html:") {
 			continue
 		}
 		out = append(out, contracts.Diagnostic{
@@ -308,7 +307,7 @@ func ruleHTMLBuiltAST(src lintSource, already []contracts.Diagnostic) []contract
 				return true
 			}
 			line := src.fset.Position(call.Pos()).Line
-			if seen[line] || hasLegacyAnnotation(src.lines, line, "safe-html:") {
+			if seen[line] || hasLegacyAnnotation(src.lines, src.comments, line, "safe-html:") {
 				return true
 			}
 			seen[line] = true
@@ -456,10 +455,10 @@ func ruleFormCSRF(src lintSource) []contracts.Diagnostic {
 
 // GOFASTR1404: http.Cookie without security attributes.
 
-func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
+func ruleInsecureCookie(p *contracts.Pass, src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	aliases := importAliases(file)
-	ast.Inspect(file, func(n ast.Node) bool {
+	aliases := importAliases(src.file)
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
 		if !ok {
 			return true
@@ -511,13 +510,13 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 			return true
 		}
 		pos := p.Position(lit.Pos())
-		if hasLegacyAnnotation(lines, pos.Line, "insecure-cookie:") {
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "insecure-cookie:") {
 			return true
 		}
-		d := diag(p, contracts.RuleInsecureCookie, rel, lit.Pos(),
+		d := diag(p, contracts.RuleInsecureCookie, src.rel, lit.Pos(),
 			fmt.Sprintf("cookie is missing %s", strings.Join(missing, ", ")))
 		d.Evidence = map[string]string{"missing": strings.Join(missing, ",")}
-		d.Fix = cookieFix(p, rel, lit, missing, httpAlias(sel))
+		d.Fix = cookieFix(p, src.rel, lit, missing, httpAlias(sel))
 		out = append(out, d)
 		return true
 	})
@@ -623,7 +622,7 @@ func looksLikeCredential(v string) bool {
 	return classes >= 3 && digit > 0
 }
 
-func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
+func ruleHardcodedSecret(p *contracts.Pass, src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 
 	report := func(name string, value ast.Expr) {
@@ -644,17 +643,17 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 			}
 		}
 		pos := p.Position(value.Pos())
-		if hasLegacyAnnotation(lines, pos.Line, "not-a-secret:") {
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "not-a-secret:") {
 			return
 		}
-		d := diag(p, contracts.RuleHardcodedSecret, rel, value.Pos(),
+		d := diag(p, contracts.RuleHardcodedSecret, src.rel, value.Pos(),
 			fmt.Sprintf("%s is assigned a literal value", name))
 		d.Evidence = map[string]string{"name": name, "length": fmt.Sprint(len(lit))}
 		d.Snippet, d.RedactSnippet = "", true
 		out = append(out, d)
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.AssignStmt:
 			for i, lhs := range v.Lhs {
@@ -1782,7 +1781,7 @@ func ruleIgnoredExec(src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	flagged := map[int]bool{}
 	report := func(lineNo int) {
-		if flagged[lineNo] || hasLegacyAnnotation(src.lines, lineNo, "best-effort", "ignore the error", "errors here") {
+		if flagged[lineNo] || hasLegacyAnnotation(src.lines, src.comments, lineNo, "best-effort", "ignore the error", "errors here") {
 			return
 		}
 		flagged[lineNo] = true

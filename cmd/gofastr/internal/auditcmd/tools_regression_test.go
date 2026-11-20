@@ -24,10 +24,13 @@ func TestSQLWaiverAppliesOnlyToItsStatement(t *testing.T) {
 		{"if init preceding", "// safe-sql: checked column\nif _, err := db.Exec(\"SELECT \" + userInput); err != nil {\ndb.Query(\"SELECT \" + userInput)\n}", []int{5}},
 		{"switch init", "switch _, err := db.Exec(\"SELECT \" + userInput); { // safe-sql: checked column\ncase err != nil: db.Query(\"SELECT \" + userInput)\n}", []int{4}},
 		{"switch tag", "switch db.QueryRow(\"SELECT \" + userInput).Err() { // safe-sql: checked column\ndefault: db.Query(\"SELECT \" + userInput)\n}", []int{4}},
+		{"range trailing", "for _, id := range ids(db.Query(\"SELECT \" + userInput)) { // safe-sql: checked column\ndb.Query(\"SELECT \" + userInput)\n}", []int{4}},
+		{"range preceding", "// safe-sql: checked column\nfor _, id := range ids(db.Query(\"SELECT \" + userInput)) {\ndb.Query(\"SELECT \" + userInput)\n}", []int{5}},
 		{"if body trailing", "if ok { db.Query(\"SELECT \" + userInput) // safe-sql: checked column\ndb.Query(\"SELECT \" + userInput)\n}", []int{4}},
 		{"empty reason", "db.Query(\"SELECT \" + userInput) // safe-sql: \ndb.Query(\"SELECT \" + userInput)", []int{3, 4}},
 		{"string", "db.Query(\"SELECT safe-sql: checked column \" + userInput)\ndb.Query(\"SELECT \" + userInput)", []int{3, 4}},
-		{"same line", "db.Query(\"SELECT \" + userInput); db.Query(\"SELECT \" + userInput) // safe-sql: checked column", []int{3}},
+		{"same line request first", "db.Query(\"SELECT \" + userInput); db.Query(\"SELECT \" + checkedColumn) // safe-sql: checked column", []int{3}},
+		{"same line request last", "db.Query(\"SELECT \" + checkedColumn); db.Query(\"SELECT \" + userInput) // safe-sql: checked column", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

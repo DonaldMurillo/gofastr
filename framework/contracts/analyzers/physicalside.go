@@ -111,13 +111,23 @@ func checkGoPhysicalSides(p *contracts.Pass, rel string, body []byte, lines []st
 			css[i] = c
 		}
 	}
+	var literalStarts []int
+	var previousEnd int
 	for node := range ast.Preorder(file) {
 		if lit, ok := node.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 			start, end := positions.Offset(lit.Pos()), positions.Offset(lit.End())
-			copy(css[start:end], body[start:end])
+			text := stripComments(string(body[start:end]))
+			for i := start; i < end; i++ {
+				css[i] = ' '
+			}
+			if previousEnd == 0 || strings.TrimSpace(stripComments(string(body[previousEnd:start]))) != "+" {
+				literalStarts = append(literalStarts, start)
+			}
+			copy(css[start+1:], text[1:len(text)-1])
+			previousEnd = end
 		}
 	}
-	return scanPhysicalSides(rel, strings.Split(stripComments(string(css)), "\n"), lines, physicalBuilderPairs(file, positions))
+	return scanPhysicalSides(rel, string(css), lines, physicalBuilderPairs(file, positions), literalStarts)
 }
 
 func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDeclaration {
@@ -235,14 +245,17 @@ func dirSelectorArg(call *ast.CallExpr, inherited bool) bool {
 	if !ok || (!inherited && !reDirOverride.MatchString(selector)) {
 		return false
 	}
-	tokens := ownstyle.Tokenize(selector)
+	return selectorsHaveDir(ownstyle.Tokenize(selector), inherited, false)
+}
+
+func selectorsHaveDir(tokens []ownstyle.Token, inherited, rtlOnly bool) bool {
 	depth, directional := 0, inherited
 	for i, t := range tokens {
 		switch t.Type {
 		case ownstyle.TokenFunction, ownstyle.TokenOpenParen, ownstyle.TokenOpenSquare:
 			if depth == 0 && t.Text == "dir(" && i > 0 && i+2 < len(tokens) &&
 				tokens[i-1].Type == ownstyle.TokenColon && tokens[i-1].End == t.Start &&
-				(tokens[i+1].Text == "rtl" || tokens[i+1].Text == "ltr") &&
+				(tokens[i+1].Text == "rtl" || !rtlOnly && tokens[i+1].Text == "ltr") &&
 				tokens[i+2].Type == ownstyle.TokenCloseParen {
 				directional = true
 			}
@@ -290,23 +303,36 @@ func cssBuilderScope(file *ast.File, stack []ast.Node) ast.Node {
 	return file
 }
 
-func scanPhysicalSides(rel string, scan, lines []string, pairs map[int][]cssDeclaration) []contracts.Diagnostic {
+func scanPhysicalSides(rel, css string, lines []string, pairs map[int][]cssDeclaration, literalStarts []int) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	bgMirrored := mirrorsBackground(scan)
-	var dir dirBlock
-	for i, line := range scan {
-		inDir := dir.line(line)
+	directions := cssDirections(css, literalStarts)
+	bgMirrored := false
+	if directions != nil {
+		for _, match := range reBackgroundPos.FindAllStringIndex(css, -1) {
+			if directions[match[0]]&rtlScope != 0 {
+				bgMirrored = true
+				break
+			}
+		}
+	}
+	offset := 0
+	for i, line := range strings.Split(css, "\n") {
+		var inDir []cssDirection
+		if directions != nil {
+			inDir = directions[offset : offset+len(line)]
+		}
 		decls := appendCSSDeclarations(nil, line, ":", reDeclCSS)
 		out = append(out, checkPhysicalSides(rel, i+1, decls, lines[i], bgMirrored, inDir)...)
 		out = append(out, checkPhysicalSides(rel, i+1, pairs[i+1], lines[i], bgMirrored, nil)...)
+		offset += len(line) + 1
 	}
 	return out
 }
 
-func checkPhysicalSides(rel string, lineNo int, decls []cssDeclaration, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {
+func checkPhysicalSides(rel string, lineNo int, decls []cssDeclaration, orig string, bgMirrored bool, inDir []cssDirection) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, decl := range decls {
-		if decl.offset < len(inDir) && inDir[decl.offset] {
+		if decl.offset < len(inDir) && inDir[decl.offset]&dirScope != 0 {
 			continue
 		}
 		lit, want, ok := physicalSide(decl.property, decl.value, bgMirrored)
@@ -325,63 +351,73 @@ func checkPhysicalSides(rel string, lineNo int, decls []cssDeclaration, orig str
 	return out
 }
 
-func mirrorsBackground(scan []string) bool {
-	dir := dirBlock{rtlOnly: true}
-	for _, line := range scan {
-		flags := dir.line(line)
-		if flags == nil {
-			continue
-		}
-		for _, match := range reBackgroundPos.FindAllStringIndex(line, -1) {
-			if flags[match[0]] {
-				return true
-			}
-		}
+type cssDirection uint8
+
+const (
+	dirScope cssDirection = 1 << iota
+	rtlScope
+)
+
+func cssDirections(css string, literalStarts []int) []cssDirection {
+	if !reDirOverride.MatchString(css) {
+		return nil
 	}
-	return false
+	directions := make([]cssDirection, len(css))
+	start := 0
+	for _, end := range literalStarts {
+		markCSSDirections(css[start:end], directions[start:end])
+		start = end
+	}
+	markCSSDirections(css[start:], directions[start:])
+	return directions
 }
 
-type dirBlock struct {
-	depth   int
-	pending bool // a :dir() selector seen, its '{' not yet
-	rtlOnly bool
-}
-
-func (d *dirBlock) line(s string) []bool {
-	if d.depth == 0 && !d.pending && !strings.Contains(s, ":dir(") {
-		return nil // the common line: no block to open or close
+func markCSSDirections(css string, directions []cssDirection) {
+	if !reDirOverride.MatchString(css) {
+		return
 	}
-	in := make([]bool, len(s))
-	sel := reDirOverride.FindAllStringIndex(s, -1)
-	if d.rtlOnly {
-		filtered := sel[:0]
-		for _, match := range sel {
-			if s[match[0]:match[1]] == ":dir(rtl)" {
-				filtered = append(filtered, match)
+	withoutBOM := strings.TrimPrefix(css, "\ufeff")
+	directions = directions[len(css)-len(withoutBOM):]
+	tokens := ownstyle.Tokenize(withoutBOM)
+	scopes := []cssDirection{0}
+	start, selectorStart, depth := 0, 0, 0
+	fill := func(end int) {
+		if scope := scopes[len(scopes)-1]; scope != 0 {
+			for i := start; i < end; i++ {
+				directions[i] = scope
 			}
 		}
-		sel = filtered
 	}
-	open := d.depth > 0 || d.pending
-	for i := range len(s) {
-		if len(sel) > 0 && i == sel[0][0] {
-			open = true
-			if d.depth == 0 {
-				d.pending = true
+	for i, token := range tokens {
+		switch token.Type {
+		case ownstyle.TokenFunction, ownstyle.TokenOpenParen, ownstyle.TokenOpenSquare:
+			depth++
+		case ownstyle.TokenCloseParen, ownstyle.TokenCloseSquare:
+			depth = max(depth-1, 0)
+		case ownstyle.TokenSemicolon:
+			if depth == 0 {
+				selectorStart = i + 1
 			}
-			sel = sel[1:]
-		}
-		in[i] = open
-		switch s[i] {
-		case '{':
-			if d.depth > 0 || d.pending {
-				d.depth++
-				d.pending = false
+		case ownstyle.TokenOpenCurly, ownstyle.TokenCloseCurly:
+			if depth != 0 {
+				continue
 			}
-		case '}':
-			d.depth = max(d.depth-1, 0)
+			fill(token.Start)
+			if token.Type == ownstyle.TokenOpenCurly {
+				scope := scopes[len(scopes)-1]
+				selector := tokens[selectorStart:i]
+				if scope&dirScope == 0 && selectorsHaveDir(selector, false, false) {
+					scope |= dirScope
+				}
+				if scope&rtlScope == 0 && selectorsHaveDir(selector, false, true) {
+					scope |= rtlScope
+				}
+				scopes = append(scopes, scope)
+			} else if len(scopes) > 1 {
+				scopes = scopes[:len(scopes)-1]
+			}
+			start, selectorStart = token.End, i+1
 		}
-		open = d.depth > 0 || d.pending
 	}
-	return in
+	fill(len(directions))
 }

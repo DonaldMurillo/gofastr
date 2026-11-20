@@ -191,6 +191,7 @@ func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 			continue
 		}
 		lines := p.Lines(f.Rel)
+		comments := legacyCommentLines(p.FileSet(), file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			recv, method, call, isCall := selectorCall(n)
 			if !isCall || !queryMethods[method] || len(call.Args) == 0 {
@@ -206,7 +207,7 @@ func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 					continue
 				}
 				pos := p.Position(call.Pos())
-				if hasLegacyAnnotation(lines, pos.Line, "safe-sql:", "reporting-query:") {
+				if hasLegacyAnnotation(lines, comments, pos.Line, "safe-sql:", "reporting-query:") {
 					return true
 				}
 				d := diag(p, contracts.RuleRawSQLOverRepo, f.Rel, call.Pos(), fmt.Sprintf(

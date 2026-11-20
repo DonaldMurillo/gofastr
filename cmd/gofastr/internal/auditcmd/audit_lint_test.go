@@ -54,6 +54,12 @@ func f() { _, _ = db.ExecContext(ctx, "INSERT INTO t VALUES (1)") // best-effort
 	mustNotHaveRule(t, got, "ignored-exec")
 }
 
+func TestLintIgnoredExecLiteralIsNotAnAnnotation(t *testing.T) {
+	got := lintRules(t, `package x
+func f() { db.Exec("UPDATE jobs SET mode = 'best-effort'") }`)
+	mustHaveRule(t, got, "ignored-exec")
+}
+
 func TestLintIgnoredExecAllowedWithPriorLineAnnotation(t *testing.T) {
 	got := lintRules(t, `package x
 func f() {
@@ -129,6 +135,32 @@ func render(u string) any { return render.HTML("<p>"+u+"</p>") }`)
 func TestLintRenderHTMLConcatAnnotationAllowed(t *testing.T) {
 	got := lintRules(t, `package x
 func render(u string) any { return render.HTML("<p>"+u+"</p>") // safe-html: u is a known constant
+}`)
+	mustNotHaveRule(t, got, "render-html-concat")
+}
+
+func TestLintRenderHTMLConcatLiteralIsNotAnAnnotation(t *testing.T) {
+	for _, tc := range []struct{ name, input string }{
+		{"concatenated", `package x
+func view(userInput string) any { return render.HTML("<p>safe-html: " + userInput + "</p>") }`},
+		{"formatted", `package x
+import "fmt"
+import "github.com/DonaldMurillo/gofastr/core/render"
+func view(userInput string) any {
+	return render.HTML(fmt.Sprintf("<p>// safe-html: %s</p>", userInput))
+}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustHaveRule(t, lintRules(t, tc.input), "render-html-concat")
+		})
+	}
+}
+
+func TestLintRenderHTMLConcatAllowedWithPriorLineAnnotation(t *testing.T) {
+	got := lintRules(t, `package x
+func view(u string) any {
+	/* safe-html: u is a known constant */
+	return render.HTML("<p>" + u + "</p>")
 }`)
 	mustNotHaveRule(t, got, "render-html-concat")
 }
