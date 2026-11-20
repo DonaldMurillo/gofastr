@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
@@ -211,6 +212,10 @@ func checkRouteHandler(handler string) error {
 		if reason := unusableFuncName(handler); reason != "" {
 			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
 		}
+		_, _, imports := dirPackage(".", "")
+		if conflict := imports[handler]; conflict != "" {
+			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, conflict)
+		}
 	}
 	return nil
 }
@@ -393,7 +398,7 @@ func importNames(f *ast.File, source string) map[string]string {
 		if err != nil {
 			continue
 		}
-		name := path.Base(importPath)
+		name := assumedImportName(importPath)
 		if spec.Name != nil {
 			name = spec.Name.Name
 		}
@@ -402,4 +407,18 @@ func importNames(f *ast.File, source string) map[string]string {
 		}
 	}
 	return names
+}
+
+func assumedImportName(importPath string) string {
+	name := path.Base(importPath)
+	if len(name) > 1 && name[0] == 'v' && strings.Trim(name[1:], "0123456789") == "" && path.Dir(importPath) != "." {
+		name = path.Base(path.Dir(importPath))
+	}
+	name = strings.TrimPrefix(name, "go-")
+	for i, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return name[:i]
+		}
+	}
+	return name
 }

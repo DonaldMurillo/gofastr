@@ -2,8 +2,11 @@ package newcmd
 
 import (
 	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -60,6 +63,10 @@ func TestScaffoldHandlerPackageImports(t *testing.T) {
 		{"log", `_ "log"`, ""},
 		{"log", `. "log"`, ""},
 		{"Log", `"log"`, ""},
+		{"dep", `"example.com/dep/v2"`, `conflicts with the import of "example.com/dep/v2" in main.go`},
+		{"yaml", `"gopkg.in/yaml.v3"`, `conflicts with the import of "gopkg.in/yaml.v3" in main.go`},
+		{"pgx", `"github.com/jackc/pgx/v5"`, `conflicts with the import of "github.com/jackc/pgx/v5" in main.go`},
+		{"v2", `"example.com/dep/v2"`, ""},
 	} {
 		t.Run(tc.name+tc.imports, func(t *testing.T) {
 			dir := t.TempDir()
@@ -78,6 +85,25 @@ func TestScaffoldHandlerPackageImports(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestImportNamesAssumedNames(t *testing.T) {
+	for _, tc := range []struct{ importPath, want, not string }{
+		{"example.com/dep/v2", "dep", "v2"},
+		{"gopkg.in/yaml.v3", "yaml", "yaml.v3"},
+		{"github.com/jackc/pgx/v5", "pgx", "v5"},
+		{"example.com/go-foo-bar", "foo", "go-foo-bar"},
+		{"example.com/vx", "vx", "v"},
+	} {
+		f, err := parser.ParseFile(token.NewFileSet(), "", "package main\nimport "+strconv.Quote(tc.importPath), parser.ImportsOnly)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := importNames(f, "main.go")
+		if names[tc.want] == "" || names[tc.not] != "" {
+			t.Errorf("importNames(%q) = %v, want %q, not %q", tc.importPath, names, tc.want, tc.not)
+		}
 	}
 }
 

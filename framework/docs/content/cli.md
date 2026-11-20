@@ -122,10 +122,14 @@ stats use the single-document contract without needing an output flag.
   handler or any existing non-test Go file in that package, or a name
   that package already declares. Import aliases are respected; blank
   and dot imports do not reserve their package names. For unaliased
-  imports, the name is taken from the last import-path element.
+  imports, the assumed name uses the last import-path element, skipping
+  a trailing major version such as `/v2`, stripping a `go-` prefix and
+  stopping at the first non-identifier character (so `yaml.v3` is `yaml`).
   `new route` prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
-  them (`h.List`), and a bare name `new handler` would refuse. The
+  them (`h.List`). A bare handler name also cannot be a keyword, entry
+  point, predeclared name, or an import name in the current package's
+  non-test Go files. Selectors are not checked against package imports. The
   printed line passes the handler as written, since `Router.Handle`
   takes an `http.Handler`, and a hint names the `http.HandlerFunc(…)`
   conversion a plain func, such as the one `new handler` writes, needs. Both take any HTTP method token for
