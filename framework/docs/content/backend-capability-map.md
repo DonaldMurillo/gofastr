@@ -117,10 +117,10 @@ an app ends up with a bug the framework would have prevented:
   `gofastr verify permissions`, `GOFASTR1901` inspects non-public Go entities
   exposed by auto-CRUD or MCP. It looks for whole name tokens such as
   `email`, `phone`, and `ssn` in statically readable fields and skips relation
-  fields. The check accepts an owner field, tenant scope, or a permission
-  that gates at least one operation. Access entries containing only blanks
-  or `anyone` leave the check active. An access value the rule cannot read
-  statically is treated as a gate.
+  fields. The check accepts an owner field, tenant scope, or a read
+  permission: an `Access.Read` that is not blank or `anyone`. Permissions
+  on create, update or delete alone leave the check active. An access
+  value the rule cannot read statically is treated as a read gate.
 - **Trusting `paths` in a stale mental model of the spec.** Under
   `framework.WithAPIPrefix` the OpenAPI path keys carry the prefix, so a
   documented path is the path you request. See

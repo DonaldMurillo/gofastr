@@ -507,7 +507,13 @@ handler)` + `ob.StartRelay(ctx)`.
   bytes; on Postgres, a parent name of 55 to 62 bytes, whose old delivery
   table is `left('<parent>_delivery', 63)`. Otherwise the app creates an
   empty delivery table, delivers every pending row again, and leaves the
-  old dead letters out of counts and replay. If your policy forbids
+  old dead letters out of counts and replay. Older releases also accepted
+  a SQLite parent name over 63 bytes, which `NewApp` now refuses. To move
+  one, pick a new parent name of 63 bytes or fewer, then rename both
+  tables before you start the upgraded app: the parent to the new name,
+  and `<old parent>_delivery` to the delivery name the new parent gets
+  under the rule above. Pass the new parent name to `outbox.WithTable`.
+  If your policy forbids
   unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
   and create them yourself before the app stages any event. The schema:
 

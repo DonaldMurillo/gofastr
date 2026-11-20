@@ -1030,8 +1030,8 @@ the User in context.
 
 For declared entities this rule is lint-enforced: an
 auto-exposed entity (`crud` defaults on, or `mcp: true`) with PII-shaped
-field names and no `owner_field`, `access` with a non-blank permission, or
-`multi_tenant` is an **error** from `gofastr validate`, a warning from
+field names and no `owner_field`, `access.read` (a non-blank permission
+other than `anyone`), or `multi_tenant` is an **error** from `gofastr validate`, a warning from
 `gofastr generate`, and an `unscoped-pii` finding from `gofastr audit lint`.
 The rule applies with either app auth setting. See [Unscoped PII in app
 specs](app-spec.md#unscoped-pii-gofastr-validate-error-gofastr-generate-warning).

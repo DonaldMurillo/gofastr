@@ -25,6 +25,32 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr deploy` and `deploy rollback` keep a release that
+  `.release-order` does not list,** such as one an older CLI deployed or
+  one an interrupted deploy left running, so rollback still finds it.
+- **`gofastr audit a11y` skips blank sitemap locations;** a sitemap with
+  only blank `<loc>` entries fails discovery.
+- **`gofastr pack ""` exits 2,** like every other usage error.
+- **`gofastr test` no longer hangs** when a process the tests started
+  keeps stdout or stderr open after the Go test process exits.
+- **`gofastr generate` warns about an entity whose only permission gates
+  writes:** its list and get routes stay open to anonymous callers.
+- **Process-module listings (`Modules().List()`, `app_modules`) make one
+  bounded desired-state read** and stop when the MCP request is
+  cancelled.
+- **Static files served from a non-seekable `StaticFS` answer 412** for a
+  failed `If-Match` or `If-Unmodified-Since`, as `http.ServeContent`
+  does.
+- **The embed exchange answers 400 `failed to read request body`** when
+  the body cannot be read, instead of `invalid JSON body`.
+- **Analyzer fixes.** A `// safe-sql:` waiver on an `if` or `switch`
+  header, or on a line of a multi-line call, covers that statement in
+  `gofastr verify` and `gofastr audit lint`. A stand-alone CSS waiver
+  skips comment-only lines. GOFASTR1824 credits a `:dir()` rule only when
+  it is in effect on every path and covers every selector in the list.
+  The body-cap check credits a middleware only when it caps the body
+  before every dispatch. The settle-context check reads the right result
+  of a returned tuple.
 - **`semantic` refuses a document whose `metadata["kind"]` is not a
   string,** which every store would have saved as an empty kind that no
   filter matches.
@@ -46,8 +72,6 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr deploy` and `deploy rollback` take a per-app lock on the
   server,** and rollback and retention follow the order the server
   installed releases in.
-- **Local storage reads and deletes existing keys that hold control
-  bytes;** new saves still refuse them.
 - **Headless setup returns the context error when it is cancelled**
   while another setup run holds the claim.
 - **Static files from a file system that cannot seek send
@@ -104,7 +128,11 @@ few lines, and link the PR or the docs page for the rest.
   Postgres,** fitted to 63 bytes. A table name part over 63 bytes is
   refused. Before upgrading, rename a SQLite delivery table over 63
   bytes, or the Postgres delivery table of a parent named 55 to 62 bytes
-  (old name `left('<parent>_delivery', 63)`), to the fitted name.
+  (old name `left('<parent>_delivery', 63)`), to the fitted name. A
+  SQLite parent over 63 bytes needs a new parent name of 63 bytes or
+  fewer: rename the parent to it, rename `<old parent>_delivery` to the
+  delivery name the new parent gets, and pass the new name to
+  `outbox.WithTable` ([events](framework/docs/content/events.md)).
 - **CRUD `SumAll` on SQLite returns exact Int totals past the signed
   64-bit range,** as Postgres does.
 - **SQLite UNIQUE and NOT NULL refusals keep the declared field key**
@@ -129,9 +157,10 @@ few lines, and link the PR or the docs page for the rest.
   quietly fell back to the shared payload or the templater.
 - **`go vet` with the GoFastr suite catches more.** It recognizes
   credentials sent through `http.Client.Do` on any client value and
-  forms built with aliased readers, credits a middleware body cap for
-  form parsing, and finds error leaks and ungated identifiers through
-  more `fmt` call spellings.
+  forms built with aliased readers, and finds error leaks and ungated
+  identifiers through more `fmt` call spellings. A form parse passes only
+  when the handler caps the body itself, or every caller that hands it
+  the request does; a body cap in mount middleware does not count.
 - **A slow `QueryRowContext` warning names its error without leaking
   query values.** The log line shows `err=database_error` plus the
   SQLSTATE or driver code when the driver gives one, never the driver's
@@ -405,7 +434,12 @@ few lines, and link the PR or the docs page for the rest.
   reached the route pattern. Absolute paths now bypass the group prefix
   and keep the group's middleware, and dot segments are dropped, as for
   ungrouped entities. `Router.HandleAbsolute` registers a full path with
-  a router's middleware.
+  a router's middleware. The default MCP tool name of an absolute
+  grouped endpoint loses the group prefix too: `GET /health/posts` in
+  group `/v1` with namespace `v1` was `v1.posts_get_v1_health_posts` and
+  is now `v1.posts_get_health_posts`. To keep the old name, set
+  `Endpoint.Name: "posts_get_v1_health_posts"`; the namespace still
+  prefixes it ([API versioning](framework/docs/content/api-versioning.md)).
 - **The `outbox.WithoutEnsureTable` schema in the events guide works.**
   The documented parent table lacked the `owner`, `attempts` and
   `last_error` columns, so the first append and every list failed on it.
@@ -480,8 +514,11 @@ few lines, and link the PR or the docs page for the rest.
 - **YAML errors report the column of the value, not of the key.**
   Mapping values, compact sequence items and quoted keys with a colon
   now point at the scalar itself.
-- **`LocalStorage` refuses a key with a control byte, as S3 and the
-  default key validator do.** All three now share one check.
+- **`LocalStorage.Save` refuses a key with a control byte, as S3 and
+  the default key validator do.** All three share one check. Local reads
+  and deletes still accept an existing key that holds a control byte
+  other than NUL, such as a tab in a Unix filename, so objects saved by
+  earlier releases stay reachable and removable.
 - **A storage key the backend refuses answers 400, not 500 or 404.** An
   empty key and `LocalStorage`'s Windows-portability refusals now wrap
   `upload.ErrInvalidKey`, so `ServeHandler` reports them as a bad
@@ -829,6 +866,10 @@ few lines, and link the PR or the docs page for the rest.
   them.
 
 ### Changed
+- **Static export refuses a route whose output file name is not
+  portable,** such as one holding `:` or `?`, before writing anything,
+  and names the route. Such a route used to export on Linux and macOS
+  and abort the build on Windows.
 - **A custom `auth.UserStore` must implement `auth.RoleSwapper`** for
   the admin role editor to save role changes. `EntityUserStore`
   implements it.
@@ -1676,11 +1717,18 @@ few lines, and link the PR or the docs page for the rest.
   under `locale_prefixes`.
 
 ### Security
-- **The admin role editor refuses to assign or remove a role that grants
-  `*`** unless the request's `access.Decider` allows `*`.
+- **Slow-query logs no longer carry the driver's error text,** which can
+  quote a bound value; they log the error kind and SQLSTATE.
+- **With an `access.Decider` configured, the admin Roles page refuses to
+  grant or revoke `*`** unless the Decider allows `*`.
+- **When a request carries an `access.Decider`, the admin role editor
+  refuses to assign or remove a role that grants `*`** unless the
+  Decider allows `*`. Without a Decider, the caller's tier checks
+  decide, as before.
 - **The admin role editor saves only when the account still has the
-  roles it read.** A stale edit answers 409 (`roles-conflict`), so it
-  cannot put back a role another admin revoked.
+  roles it read.** A stale edit is refused, so it cannot put back a role
+  another admin revoked: an RPC call gets 409, and a plain form post
+  redirects (303) with `result=roles-conflict`.
 - **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
   Six places stripped control characters from text bound for an
   operator's terminal, each with its own set: codegen extension stderr

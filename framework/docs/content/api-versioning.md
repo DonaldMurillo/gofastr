@@ -91,7 +91,11 @@ independently described. Register each entity into a version with
 A relative custom `Endpoint.Path` resolves under the group's table path.
 An absolute path bypasses the group prefix and keeps the group's
 middleware and access policy. Both forms use the same path in the router
-and in OpenAPI. For a custom router registration, `Router.HandleAbsolute`
+and in OpenAPI. An MCP endpoint without a `Name` takes its tool name from
+that path under the group's namespace, so `GET /health/posts` in a group
+`/v1` with namespace `v1` is `v1.posts_get_health_posts`. Set
+`Endpoint.Name` to choose the name; the namespace still prefixes it.
+For a custom router registration, `Router.HandleAbsolute`
 likewise takes the full path and keeps the router's middleware and resource.
 
 ### What you must set for versioned entities
