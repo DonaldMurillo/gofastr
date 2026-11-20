@@ -232,7 +232,9 @@ use the resolved base URL (see below).
 `WithMarkdownNegotiation()` makes any HTML page serve its markdown rendering
 when the request's `Accept` header prefers `text/markdown` (the Cloudflare
 convention). Requires `WithPublicLLMMD` so the per-screen renderers are
-available. Requests without the `Accept` header are unaffected.
+available. The header must explicitly accept `text/markdown` with a positive
+quality value at least as high as HTML's. Equal weights favor the explicit
+markdown request; a wildcard or absent header alone keeps HTML.
 
 While negotiation is enabled, **both variants of a page URL — the markdown
 response *and* the HTML one — carry `Vary: Accept`**, so a shared cache keys
