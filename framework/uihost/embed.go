@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	stdhtml "html"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -396,7 +397,13 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req embedExchangeRequest
-	if err := handler.DecodeStrict(http.MaxBytesReader(w, r.Body, 8<<10), &req); err != nil {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8<<10))
+	if err != nil {
+		status, phrase := bodylimit.ReadRefusal(err)
+		embedError(w, r, status, phrase, "unreadable body", err)
+		return
+	}
+	if err := handler.UnmarshalStrict(body, &req); err != nil {
 		status, phrase := bodylimit.DecodeRefusal(err)
 		embedError(w, r, status, phrase, "malformed body", err)
 		return

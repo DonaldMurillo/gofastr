@@ -12,9 +12,10 @@ docs:
   - framework/docs/content/theming.md
 invariants:
   - id: static-fs-files-can-be-non-seekable
-    rule: A regular file from StaticFS without a seekable handle streams a full response without advertising ranges. Seekable files keep range and conditional handling.
+    rule: A regular file from StaticFS without a seekable handle streams a full response without advertising ranges. Seekable files keep range handling. Both answer If-Match, If-Unmodified-Since, If-None-Match and If-Modified-Since in net/http's order with the same status, 412 for a failed If-Match or If-Unmodified-Since.
     enforced_by:
       - test: framework/uihost.TestStaticFSNonSeekingFile
+      - test: framework/uihost.TestStaticFSPreconditionParity
   - id: app-css-root-floor
     rule: app.css always begins with the theme's :root custom properties, the default theme's when App.Theme is unset, because component CSS references bare var(--*) tokens.
     enforced_by:

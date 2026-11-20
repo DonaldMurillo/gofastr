@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/textproto"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -127,21 +128,25 @@ func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body
 		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
 	}
 	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
-	if inm := r.Header.Get("If-None-Match"); !safe && strings.TrimSpace(inm) == "*" {
+	failed := false
+	if im := r.Header.Get("If-Match"); im != "" {
+		failed = !etagListHasStar(im)
+	} else if t, err := http.ParseTime(r.Header.Get("If-Unmodified-Since")); known && err == nil {
+		failed = mod.Truncate(time.Second).After(t)
+	}
+	notModified := false
+	if inm := r.Header.Get("If-None-Match"); inm != "" {
+		notModified = etagListHasStar(inm)
+	} else if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); safe && known && err == nil {
+		notModified = !mod.Truncate(time.Second).After(t)
+	}
+	switch {
+	case failed, notModified && !safe:
 		w.WriteHeader(http.StatusPreconditionFailed)
 		return
-	}
-	if safe {
-		notModified := false
-		if inm := r.Header.Get("If-None-Match"); inm != "" {
-			notModified = strings.TrimSpace(inm) == "*"
-		} else if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); known && err == nil {
-			notModified = !mod.Truncate(time.Second).After(t)
-		}
-		if notModified {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
+	case notModified:
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 	h.Set("Content-Type", corestatic.DetectFromName(name))
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -150,6 +155,46 @@ func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body
 	if r.Method != http.MethodHead {
 		_, _ = io.CopyN(w, body, size)
 	}
+}
+
+// etagListHasStar reports whether an If-Match or If-None-Match list
+// reaches "*" before a malformed tag, as net/http scans it; the stream
+// path sends no ETag, so "*" is the only entry that can match.
+func etagListHasStar(list string) bool {
+	for {
+		list = textproto.TrimString(list)
+		switch {
+		case list == "":
+			return false
+		case list[0] == ',':
+			list = list[1:]
+		case list[0] == '*':
+			return true
+		default:
+			rest, ok := skipETag(list)
+			if !ok {
+				return false
+			}
+			list = rest
+		}
+	}
+}
+
+func skipETag(s string) (string, bool) {
+	s = strings.TrimPrefix(s, "W/")
+	if len(s) < 2 || s[0] != '"' {
+		return "", false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c <= 0x7E || c >= 0x80:
+		default:
+			return "", false
+		}
+	}
+	return "", false
 }
 
 func fsEntryIsDir(f fs.File) bool {

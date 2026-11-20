@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -425,6 +427,20 @@ func TestSweepEmbedExchangeMalformedBodyIsInvalidJSON(t *testing.T) {
 	}
 	if got := strings.TrimSpace(rec.Body.String()); got != "invalid JSON body" {
 		t.Fatalf("body %q, want the invalid_json_body phrase", got)
+	}
+}
+
+func TestSweepEmbedExchangeReadFailureIsUnreadable(t *testing.T) {
+	f := newEmbedFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/embed-exchange", iotest.ErrReader(errors.New("connection reset")))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	f.host.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a failed exchange read answered %d, want 400", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "failed to read request body" {
+		t.Fatalf("body %q, want the body_unreadable phrase", got)
 	}
 }
 

@@ -183,6 +183,59 @@ func TestStaticFSNonSeekingFile(t *testing.T) {
 	}
 }
 
+func TestStaticFSPreconditionParity(t *testing.T) {
+	modified := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	fsys := fstest.MapFS{"app.css": {Data: []byte("body{margin:0}"), ModTime: modified}}
+	host := func(fsys fs.FS) *UIHost {
+		ds := New(app.NewApp("static-precondition-test"))
+		ds.SetStaticFS(fsys)
+		return ds
+	}
+	seekable, stream := host(fsys), host(nonSeekingStaticFS{fsys})
+	before := modified.Add(-24 * time.Hour).Format(http.TimeFormat)
+	after := modified.Add(24 * time.Hour).Format(http.TimeFormat)
+	for _, tc := range []struct {
+		name, method string
+		headers      map[string]string
+		want         int
+	}{
+		{"if-match stale", http.MethodGet, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed},
+		{"if-match star", http.MethodGet, map[string]string{"If-Match": "*"}, http.StatusOK},
+		{"if-match list with star", http.MethodGet, map[string]string{"If-Match": `"a", *`}, http.StatusOK},
+		{"if-match malformed before star", http.MethodGet, map[string]string{"If-Match": "junk, *"}, http.StatusPreconditionFailed},
+		{"unmodified-since before", http.MethodGet, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed},
+		{"unmodified-since before head", http.MethodHead, map[string]string{"If-Unmodified-Since": before}, http.StatusPreconditionFailed},
+		{"unmodified-since after", http.MethodGet, map[string]string{"If-Unmodified-Since": after}, http.StatusOK},
+		{"unmodified-since bad date", http.MethodGet, map[string]string{"If-Unmodified-Since": "yesterday"}, http.StatusOK},
+		{"if-match star beats unmodified-since", http.MethodGet, map[string]string{"If-Match": "*", "If-Unmodified-Since": before}, http.StatusOK},
+		{"if-match stale beats none-match star", http.MethodGet, map[string]string{"If-Match": `"stale"`, "If-None-Match": "*"}, http.StatusPreconditionFailed},
+		{"unmodified-since beats none-match star", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-None-Match": "*"}, http.StatusPreconditionFailed},
+		{"unmodified-since beats modified-since", http.MethodGet, map[string]string{"If-Unmodified-Since": before, "If-Modified-Since": after}, http.StatusPreconditionFailed},
+		{"none-match list with star", http.MethodGet, map[string]string{"If-None-Match": `"a", *`}, http.StatusNotModified},
+		{"post if-match stale", http.MethodPost, map[string]string{"If-Match": `"stale"`}, http.StatusPreconditionFailed},
+		{"post if-match star", http.MethodPost, map[string]string{"If-Match": "*"}, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serve := func(ds *UIHost) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(tc.method, "/app.css", nil)
+				for k, v := range tc.headers {
+					req.Header.Set(k, v)
+				}
+				rec := httptest.NewRecorder()
+				ds.ServeHTTP(rec, req)
+				return rec
+			}
+			seek, str := serve(seekable), serve(stream)
+			if seek.Code != tc.want {
+				t.Fatalf("seekable status = %d, want %d", seek.Code, tc.want)
+			}
+			if str.Code != seek.Code || str.Body.String() != seek.Body.String() {
+				t.Fatalf("stream = %d %q, seekable = %d %q", str.Code, str.Body.String(), seek.Code, seek.Body.String())
+			}
+		})
+	}
+}
+
 func TestProdStaticSetsNoCacheControl(t *testing.T) {
 	server := newStaticDirHost(t)
 

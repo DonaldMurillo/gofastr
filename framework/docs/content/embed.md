@@ -322,7 +322,9 @@ customer's page prefetches the iframe, a dev double-mounts the loader, a user
 refreshes, and without idempotency the feature surfaces as "the embed randomly
 doesn't load". The POST body is decoded under strict top-level key rules: a
 body with duplicate or case-folded keys is refused with the same
-indistinguishable 400 as any other malformed body.
+indistinguishable 400 as any other malformed body. A body past 8 KiB
+answers 413, and one whose read fails answers 400 `failed to read
+request body`.
 
 | Window | Default | Config |
 |---|---|---|

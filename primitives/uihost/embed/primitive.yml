@@ -77,13 +77,16 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestEmbedRuntimeCarriesActions
   - id: refusals-are-indistinguishable
-    rule: Every embed refusal writes only the status phrase of its code, and the reason goes to the debug log.
+    rule: Every embed refusal writes only one phrase and sends its reason to the debug log. Grant, origin and surface refusals write the status phrase of their code; an exchange body refusal writes the shared body phrase (413 too large, 400 failed to read, 400 invalid JSON), which names no grant detail.
     enforced_by:
       - test: framework/uihost.TestEmbedContentRejectsCrossSurfaceGrant
+      - test: framework/uihost.TestSweepEmbedExchangeReadFailureIsUnreadable
   - id: exchange-body-is-bounded-and-strict
-    rule: The exchange reads at most 8 KiB of body and refuses duplicate or case-folded keys.
+    rule: The exchange reads at most 8 KiB of body before a strict decode that refuses duplicate or case-folded keys; a read error answers bodylimit.ReadRefusal and a decode error bodylimit.DecodeRefusal.
     enforced_by:
       - test: framework/uihost.TestSweepEmbedExchangeBodyIsCapped
+      - test: framework/uihost.TestSweepEmbedExchangeReadFailureIsUnreadable
+      - test: framework/uihost.TestSweepEmbedExchangeMalformedBodyIsInvalidJSON
       - test: framework/uihost.TestEmbedExchangeRejectsDuplicateKeys
       - test: framework/uihost.TestEmbedExchangeRejectsCaseFoldedKeys
   - id: replayed-exchange-warns
