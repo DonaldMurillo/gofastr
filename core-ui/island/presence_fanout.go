@@ -238,7 +238,7 @@ func (m *Manager) reconfigurePresence(heartbeat, ttl time.Duration) {
 	}
 	m.mu.Unlock()
 	if oldDone == nil {
-		return // no fanout attached yet; values apply on next SetFanout
+		return // no fanout attached yet; SetFanout resets both to the defaults
 	}
 	close(oldDone)
 	m.presenceWG.Wait()
