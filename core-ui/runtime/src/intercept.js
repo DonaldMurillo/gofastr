@@ -71,25 +71,16 @@
   // page under the stack show; each re-renders when it is uncovered.
   let pageStale = false;
 
-  // Match a resolved path against the manifest's route patterns. Static
-  // segments must match exactly; ':param' and '{param}' match one
-  // segment; a trailing catch-all matches the remainder.
-  function matchRoute(pattern, path) {
-    const segs = pattern.split('/').filter(Boolean);
-    const s = path.split('/').filter(Boolean);
-    for (let i = 0; i < segs.length; i++) {
-      const seg = segs[i];
-      const dyn = /^[:{]/.test(seg);
-      if (dyn && /(?:\.\.\.\}?|\*)$/.test(seg)) return true;
-      if (!s[i] || (!dyn && seg !== s[i])) return false;
-    }
-    return segs.length === s.length;
-  }
-
   // Routes register unprefixed: /es/pricing matches /pricing.
   const routeFor = (path) => {
     const p = NS._unlocalize?.(path) ?? path;
-    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find((r) => r.path && matchRoute(r.path, p));
+    const parts = p.split('/').filter(Boolean).map(NS._routeSeg);
+    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find(({path}) => {
+      if (!path) return false;
+      const segs = path.split('/').filter(Boolean);
+      return (segs.length === parts.length || segs.length < parts.length && /^:.*\*$/s.test(segs.at(-1))) &&
+        segs.every((seg, i) => NS._routeMatch(seg, parts[i]));
+    });
   };
   const pathOf = (u) => u.split(/[?#]/)[0];
   const top = () => layers.at(-1);

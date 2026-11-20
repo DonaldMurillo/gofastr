@@ -716,6 +716,12 @@ browser's own jump: nothing is fetched and the page keeps its state.
 `core-ui/runtime/navigate_path_e2e_test.go` holds each way in, for
 core's navigator and the envelope module's.
 
+Route preloading and interception use the same parameter constraint checks
+as the navigator. Percent-encoded parameter values are decoded one segment
+at a time before checking `int`, `uuid`, `alpha`, or `alnum`. A value
+that fails a constraint falls through to the next route in manifest order;
+an earlier typed entry cannot hide a later route's preload or intercept policy.
+
 Visible-route preloading disconnects its link observer before each navigation
 rescan, then observes only links in the current document. Detached links and
 their old page subtrees never remain in the observer's target list.
