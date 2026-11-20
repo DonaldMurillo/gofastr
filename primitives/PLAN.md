@@ -161,8 +161,35 @@ allowed, and a `Close` panic escaping the static-file hash goroutine. The replay
 after them held every number but the upgrade note, which one task missed
 as it had before (`2026-11-19-replay-core-sweeps.md`).
 
-Next: `core-ui/`, then `battery/`, `cmd/`, `internal/`. The repository as a
-whole is at 16.1%.
+`core-ui/` is swept, 32.0% to 5.2%, its tests 15.0% to 14.9%. All 26 package
+directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
+(before, after; a directory counts its subdirectories):
+
+| Package | Before | After | | Package | Before | After |
+|---|---|---|---|---|---|---|
+| app | 38.3% | 7.9% | | registry | 34.1% | 6.0% |
+| app/decide | 57.1% | 20.6% * | | runtime | 30.6% | 2.0% |
+| check | 30.0% | 1.5% | | runtime/internal/treegate | 19.5% | 5.1% |
+| component | 36.7% | 15.0% * | | runtime/minify | 22.7% | 0.5% |
+| compute | 14.0% | 8.2% * | | seo | 30.8% | 10.6% * |
+| di | 23.6% | 3.5% | | store | 31.4% | 5.4% |
+| html | 25.2% | 12.3% * | | style | 33.0% | 5.3% |
+| interactive | 33.1% | 7.9% | | uinodev1 | 31.0% | 5.8% |
+| island | 40.9% | 5.5% | | urlprefix | 21.7% | 3.4% |
+| localdb | 29.0% | 8.6% * | | urlsafe | 43.8% | 8.2% * |
+| node | 34.3% | 8.9% * | | widget | 43.1% | 6.8% |
+| noderender | 25.7% | 0.7% | | widget/preset | 57.8% | 11.5% * |
+| ownstyle | 19.1% | 3.4% | | widget/theme | 15.0% | 1.3% |
+
+In the starred packages, what remains is a doc on each exported
+identifier, except for two lines in `urlsafe`. The two groups added 47
+primitives, 259 invariants and 102 decisions, plus about 57 tests for rules
+that had none. They also recorded 6 twins and merged one (island's two
+roster loops, now `localMembersLocked`). One bug was fixed on the way:
+`registry.IsolateForTest` did not isolate the behavior-marker attributes.
+
+Next: `battery/`, `cmd/`, `internal/`. The repository as a whole is at
+14.1%.
 
 ### 3. Bring the known twins in, and merge them
 
