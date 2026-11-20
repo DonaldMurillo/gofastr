@@ -22,54 +22,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// PasskeyConfig configures the PasskeyPlugin: sign-in with WebAuthn
-// passkeys (platform authenticators, phones, security keys).
+// PasskeyConfig configures the PasskeyPlugin.
 type PasskeyConfig struct {
-	// RPID is the relying party ID passkeys are scoped to: the site's
-	// registrable domain or a parent of the serving host
-	// ("example.com"). Required. Changing it later orphans every passkey
-	// registered under the old one.
+	// RPID is the relying-party ID passkeys are scoped to; required, and changing it orphans every passkey.
 	RPID string
 
 	// RPName is the name the browser shows in its passkey prompt.
-	// Default: RPID.
 	RPName string
 
-	// Origins are the exact origins ceremonies may come from
-	// ("https://app.example.com"). Required. Each must be https (http is
-	// accepted for localhost only) and its host the RPID or a subdomain.
+	// Origins are the exact origins ceremonies may come from; required, https (http for localhost), host the RPID or a subdomain.
 	Origins []string
 
-	// Store keeps registered passkeys. Required outside DevMode unless
-	// AuthConfig.AllowInMemoryStores: NewSQLPasskeyStore(db).
+	// Store keeps passkeys; the in-memory default is refused in production.
 	Store PasskeyStore
 
 	// ChallengeStore keeps issued challenges until they are spent once.
-	// It is the token store the password-reset and magic-link flows use
-	// (challenges are tagged with their own purpose), so one
-	// NewSQLMagicLinkTokenStore(db) can serve all of them. Required
-	// outside DevMode unless AuthConfig.AllowInMemoryStores.
 	ChallengeStore MagicLinkTokenStore
 
 	// ChallengeTTL bounds how long a ceremony may take. Default: 5 min.
 	ChallengeTTL time.Duration
 
 	// OnSuccessURL is where the browser goes after a passkey sign-in.
-	// Same-origin paths only. Default: "/".
 	OnSuccessURL string
 
-	// TwoFactorURL is where a sign-in goes when the account still owes
-	// its second factor: the app's page that posts the code to
-	// /2fa/challenge. Same-origin paths only. Required when a 2FA plugin
-	// is registered.
+	// TwoFactorURL is the same-origin page a sign-in of a 2FA account goes to; required next to a 2FA plugin.
 	TwoFactorURL string
 
 	// MaxPerUser caps how many passkeys one account may register.
-	// Default: 20.
 	MaxPerUser int
 
 	// RateLimit applies a per-IP limit to every passkey endpoint.
-	// Default: 30 attempts/min with a 5-minute block.
 	RateLimit *RateLimiterConfig
 }
 
@@ -92,34 +74,25 @@ var (
 	ErrPasskeyNotFound = errors.New("auth: passkey not found")
 	// ErrPasskeyExists is returned when a passkey id is already registered.
 	ErrPasskeyExists = errors.New("auth: passkey already registered")
-	// ErrPasskeyLimit is returned when the user already holds the most
-	// passkeys AddPasskey was told to allow.
+	// ErrPasskeyLimit means the user already holds the most passkeys allowed.
 	ErrPasskeyLimit = errors.New("auth: passkey limit reached")
 )
 
-// PasskeyStore persists passkeys. Implementations must make AddPasskey
-// refuse a duplicate id and RecordPasskeyUse a compare-and-swap.
+// PasskeyStore stores passkeys; AddPasskey refuses duplicates and RecordPasskeyUse is a compare-and-swap.
 type PasskeyStore interface {
-	// AddPasskey stores c, refusing a duplicate id with ErrPasskeyExists
-	// and, when the user already holds maxPerUser passkeys or more,
-	// ErrPasskeyLimit. The count and the insert are one atomic step: two
-	// registrations racing for the last slot store one passkey, not two.
+	// AddPasskey stores c, or returns ErrPasskeyExists or ErrPasskeyLimit, counting and inserting atomically.
 	AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) error
 	GetPasskey(ctx context.Context, id []byte) (PasskeyCredential, error)
 	ListPasskeys(ctx context.Context, userID string) ([]PasskeyCredential, error)
-	// RecordPasskeyUse moves the sign count from old to next and stamps
-	// the use, only while the stored count is still old. It reports
-	// whether it wrote: false means another sign-in got there first.
+	// RecordPasskeyUse moves the sign count from old to next only while it is still old, reporting whether it wrote.
 	RecordPasskeyUse(ctx context.Context, id []byte, old, next uint32, backedUp bool, at time.Time) (bool, error)
-	// DeletePasskey removes the user's passkey; false when the user has
-	// no passkey with that id.
+	// DeletePasskey removes the user's passkey, false when there is none.
 	DeletePasskey(ctx context.Context, userID string, id []byte) (bool, error)
 	// DeletePasskeysForUser removes every passkey the user has.
 	DeletePasskeysForUser(ctx context.Context, userID string) (int, error)
 }
 
-// MemoryPasskeyStore is a goroutine-safe in-memory PasskeyStore for
-// development and tests. A restart forgets every passkey.
+// MemoryPasskeyStore is an in-memory PasskeyStore for development and tests.
 type MemoryPasskeyStore struct {
 	mu    sync.Mutex
 	creds map[string]PasskeyCredential
@@ -221,18 +194,6 @@ func (m *MemoryPasskeyStore) DeletePasskeysForUser(_ context.Context, userID str
 }
 
 // PasskeyPlugin adds passkey sign-in and per-account passkey management:
-//
-//	POST {base}/passkey/login/options     anonymous; returns request options
-//	POST {base}/passkey/login             anonymous; verifies, mints a session
-//	POST {base}/passkey/register/options  signed in; returns creation options
-//	POST {base}/passkey/register          signed in; stores the passkey
-//	GET  {base}/passkey/list              signed in; the account's passkeys
-//	POST {base}/passkey/delete            signed in; removes one
-//
-// Every endpoint speaks JSON (a cross-site page cannot send that without a
-// CORS preflight the battery never answers). The browser half is the
-// "passkey" runtime behaviour (passkey.js), bound to data-passkey-*
-// buttons that stay hidden on a browser without WebAuthn.
 type PasskeyPlugin struct {
 	config     PasskeyConfig
 	rp         webauthnRP
@@ -269,10 +230,7 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 // Name returns the plugin identifier.
 func (p *PasskeyPlugin) Name() string { return "passkey" }
 
-// Init checks the RP configuration and picks the stores. Like the 2FA
-// plugin it refuses in-memory stores in production: a restart would
-// forget every passkey, and a second replica would not know the
-// challenges the first one issued.
+// Init checks the relying party and the stores, refusing in-memory ones in production.
 func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 	if err := p.rp.validate(); err != nil {
 		return fmt.Errorf("auth: passkey plugin: %w", err)
@@ -295,8 +253,6 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
 	}
-	// Every plugin is registered before any Init runs, so a 2FA plugin
-	// later in the list is already visible here.
 	if p.config.TwoFactorURL == "" {
 		for _, name := range mgr.order {
 			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
@@ -323,15 +279,10 @@ func (p *PasskeyPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/passkey/delete", http.HandlerFunc(p.deleteHandler))
 }
 
-// maxUserHandleLen is WebAuthn's ceiling for user.id.
 const maxUserHandleLen = 64
 
 var b64url = base64.RawURLEncoding
 
-// requireFullSession resolves a session that may manage the account's
-// passkeys: signed in, not waiting on a second factor, and past the
-// second factor when the account has one. Adding a passkey adds a way
-// in, so a password-only session of a 2FA account must not do it.
 func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
 	if rejectInProcessAccountOperation(w, r) {
 		return nil, false
@@ -359,8 +310,6 @@ func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Reques
 	return sess, true
 }
 
-// decodeB64Fields decodes base64url members of a request body, refusing
-// padding and empty values.
 func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(fields))
 	for _, k := range slices.Sorted(maps.Keys(fields)) {
@@ -373,9 +322,6 @@ func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// requireJSON refuses a POST that is not application/json. The options
-// endpoints read no body, but a JSON content type is what makes a
-// cross-site page send a CORS preflight before reaching them.
 func requireJSON(w http.ResponseWriter, r *http.Request) bool {
 	if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
 		writeAuthError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
@@ -384,7 +330,6 @@ func requireJSON(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// ─── registration ─────────────────────────────────────────────────────
 
 func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) || !requireJSON(w, r) {
@@ -448,8 +393,6 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	}})
 }
 
-// passkeyName cleans the label a user gives a passkey: trimmed, control
-// and format characters refused, at most 64 characters.
 func passkeyName(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -474,9 +417,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	// Taken before the body is read, as token creation does: a
-	// registration held open across a reset stored its key after the
-	// reset's purge and kept a second lasting credential.
 	snap, err := p.mgr.snapshotCredential(r.Context(), sess.UserID)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
@@ -506,8 +446,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		p.refuse(w, r, sess.UserID, "register", "client_data", err)
 		return
 	}
-	// Spent before the attestation is read: a challenge is good for one
-	// attempt, and it must be one this account asked for.
 	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyRegister, challenge)
 	if err != nil || owner != sess.UserID {
 		p.refuse(w, r, sess.UserID, "register", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
@@ -528,10 +466,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		SignCount: res.signCount, Name: name, BackupEligible: res.backupEligible, BackedUp: res.backedUp,
 		CreatedAt: now,
 	}
-	// The options call checked the cap, but challenges collected while
-	// under it would each register past it, so the store counts again as
-	// it inserts: a count here and then a store let two registrations
-	// racing for the last slot both through.
 	if err := p.store.AddPasskey(r.Context(), cred, p.config.MaxPerUser); err != nil {
 		if errors.Is(err, ErrPasskeyExists) {
 			writeAuthError(w, r, http.StatusConflict, reasonPasskeyAlreadyRegistered)
@@ -544,8 +478,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
 		return
 	}
-	// The hash catches a reset or change; the session catches an account
-	// claim, which may leave a passwordless hash where it was.
 	if _, err := p.mgr.SessionStore().Get(r.Context(), sess.Token); err != nil || snap.moved(r.Context(), p.mgr) {
 		undo, cancel := undoContext(r.Context())
 		_, err := p.store.DeletePasskey(undo, sess.UserID, cred.ID)
@@ -566,7 +498,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
 }
 
-// ─── sign-in ──────────────────────────────────────────────────────────
 
 func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) || !requireJSON(w, r) {
@@ -577,9 +508,6 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
 	}
-	// No allowCredentials: the browser offers the passkeys it holds for
-	// the RP ID, and the response names the account (userHandle), so the
-	// sign-in needs no username and reveals no account list.
 	writeAuthJSON(w, r, http.StatusOK, map[string]any{"publicKey": map[string]any{
 		"challenge":        b64url.EncodeToString([]byte(challenge)),
 		"rpId":             p.rp.ID,
@@ -629,8 +557,6 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, "", "login", "unknown_credential", errors.New("unknown credential id"))
 		return
 	}
-	// The authenticator names the account it holds the passkey for; it
-	// must be the account the passkey was registered to.
 	if string(f["userHandle"]) != cred.UserID {
 		p.refuse(w, r, cred.UserID, "login", "user_handle", errors.New("user handle does not match the passkey's account"))
 		return
@@ -640,14 +566,10 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, cred.UserID, "login", "signature", err)
 		return
 	}
-	// Backup eligibility is fixed when the credential is made; a flip
-	// means this is not the authenticator that registered it.
 	if res.backupEligible != cred.BackupEligible {
 		p.refuse(w, r, cred.UserID, "login", "backup_eligibility", errors.New("backup eligibility differs from registration"))
 		return
 	}
-	// A counter that fails to move forward means two copies of the key
-	// exist. Synced passkeys always report zero, which is no signal.
 	if (res.signCount != 0 || cred.SignCount != 0) && res.signCount <= cred.SignCount {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind: "passkey.clone_suspected", UserID: cred.UserID, Remote: remoteHost(r),
@@ -681,8 +603,6 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), p.mgr.Config().SessionTTL)
 	if errors.Is(err, ErrTwoFactorEnforcement) {
-		// Fail closed like a password login: no session, and the audit
-		// trail says why.
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind: "login.failed", UserID: user.GetID(), Email: user.GetEmail(), Remote: remoteHost(r),
 			Meta: map[string]string{"reason": "twofa_failclosed", "via": "passkey"},
@@ -694,11 +614,6 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
 	}
-	// A reset that finished after the use above was recorded revoked
-	// sessions before this one existed and purged the passkey. Re-read
-	// the key now the session is stored: the reset purges passkeys before
-	// it revokes sessions, so a key still here means any revoke is still
-	// to come and reaches this session, and a key gone drops it.
 	if _, err := p.store.GetPasskey(r.Context(), cred.ID); err != nil {
 		undo, cancel := undoContext(r.Context())
 		delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
@@ -731,12 +646,6 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	writeAuthJSON(w, r, http.StatusOK, out)
 }
 
-// refuse answers a failed ceremony with one fixed message and records
-// why in the audit trail and the log.
-// refuse answers a failed ceremony check. reason is a fixed code for
-// the audit trail; why can quote the request (the anonymous login route
-// takes anyone's bytes), so its text goes only to the log, scrubbed and
-// bounded.
 func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, ceremony, reason string, why error) {
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
 		Kind: "passkey.refused", UserID: userID, Remote: remoteHost(r),
@@ -752,7 +661,6 @@ func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, c
 	writeAuthError(w, r, http.StatusBadRequest, reasonPasskeyRegistrationFailed)
 }
 
-// ─── management ───────────────────────────────────────────────────────
 
 func passkeyView(c PasskeyCredential) map[string]any {
 	v := map[string]any{
@@ -817,9 +725,6 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// purgeUserPasskeys removes every passkey a user has, for an account
-// claim or a password reset: a passkey added by whoever held the
-// account is a way back in.
 func (m *AuthManager) purgeUserPasskeys(ctx context.Context, userID string) (int, error) {
 	plugin, ok := m.Plugin("passkey")
 	if !ok {

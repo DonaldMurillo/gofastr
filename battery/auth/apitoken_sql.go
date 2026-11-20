@@ -12,26 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// ─── SQLAPITokenStore ───────────────────────────────────────────────────────
 
-// SQLAPITokenStore is the database-backed APITokenStore. Tokens are stored
-// as a sha256 hash (never the plaintext), with a display Prefix and JSON
-// scopes. It works on both SQLite and PostgreSQL via the battery's dialect
-// conventions ($N placeholders, portable column types).
-//
-// Schema (table auth_api_tokens, created at construction):
-//
-//	id            TEXT PRIMARY KEY NOT NULL
-//	name          TEXT NOT NULL
-//	owner_kind    TEXT NOT NULL          -- "user" | "service"
-//	owner_id      TEXT NOT NULL
-//	prefix        TEXT NOT NULL          -- first 12 chars of plaintext
-//	hash          TEXT NOT NULL UNIQUE   -- sha256hex(plaintext)
-//	scopes        TEXT NOT NULL DEFAULT '[]'
-//	expires_at    <ts> NULL
-//	last_used_at  <ts> NULL
-//	revoked_at    <ts> NULL
-//	created_at    <ts> NOT NULL
+// SQLAPITokenStore is an APITokenStore in a SQLite or PostgreSQL table.
 type SQLAPITokenStore struct {
 	db      *sql.DB
 	table   string
@@ -45,15 +27,12 @@ type sqlAPITokenStoreConfig struct {
 	table string
 }
 
-// WithAPITokenTable overrides the token table name (default
-// "auth_api_tokens"). Validated like the battery's other stores.
+// WithAPITokenTable sets the token table name (default auth_api_tokens).
 func WithAPITokenTable(name string) SQLAPITokenStoreOption {
 	return func(c *sqlAPITokenStoreConfig) { c.table = name }
 }
 
-// NewSQLAPITokenStore creates the token table (IF NOT EXISTS) and returns
-// the store. Table-name options are validated like the battery's other
-// stores; schema is ensured at construction.
+// NewSQLAPITokenStore creates the token table and returns the store.
 func NewSQLAPITokenStore(db *sql.DB, opts ...SQLAPITokenStoreOption) (*SQLAPITokenStore, error) {
 	c := sqlAPITokenStoreConfig{table: "auth_api_tokens"}
 	for _, o := range opts {
@@ -83,7 +62,6 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
-	// Listing a single owner's tokens is the hot path; index it.
 	idxName, _ := query.SafeIdent(s.table + "_owner_idx")
 	idx := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (owner_kind, owner_id)`,
 		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, query.QuoteIndexName(idxName), query.QuoteFolded(s.table)))
@@ -94,12 +72,6 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 	return nil
 }
 
-// registerAPITokens declares the token table to App.ExportData and
-// App.EraseUserData under its configured name. An erased user's tokens
-// are deleted: the middleware resolves a token's owner by id alone, so a
-// new account given the same id would inherit every unexpired one. The
-// owner_kind = "user" condition leaves a service account that shares the
-// id alone. Only the hash is stored, so the export carries no plaintext.
 func registerAPITokens(table string) {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("auth_api_tokens", table), Source: "auth", Table: table, PrimaryKey: "id",
@@ -113,13 +85,11 @@ func registerAPITokens(table string) {
 	})
 }
 
-// q wraps a statement template with the validated table name.
 func (s *SQLAPITokenStore) q(stmt string) string {
 	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
-// Create inserts a token row. sha256Hash is the hash of the plaintext;
-// the plaintext itself never reaches this layer.
+// Create inserts a token row under its sha256 hash.
 func (s *SQLAPITokenStore) Create(ctx context.Context, t APIToken, sha256Hash string) error {
 	q := s.q(`INSERT INTO %s (id, name, owner_kind, owner_id, prefix, hash, scopes, expires_at, last_used_at, revoked_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`)
 	_, err := s.db.ExecContext(ctx, q,
@@ -131,8 +101,7 @@ func (s *SQLAPITokenStore) Create(ctx context.Context, t APIToken, sha256Hash st
 	return err
 }
 
-// FindByHash looks up a token by its sha256 hash. Returns (nil, nil) for
-// unknown hashes.
+// FindByHash returns the token with that hash, or nil for none.
 func (s *SQLAPITokenStore) FindByHash(ctx context.Context, sha256Hash string) (*APIToken, error) {
 	q := s.q(`SELECT id, name, owner_kind, owner_id, prefix, scopes, expires_at, last_used_at, revoked_at, created_at FROM %s WHERE hash = $1`)
 	t, err := scanAPIToken(s.db.QueryRowContext(ctx, q, sha256Hash))
@@ -164,9 +133,7 @@ func (s *SQLAPITokenStore) List(ctx context.Context, ownerKind, ownerID string) 
 	return out, rows.Err()
 }
 
-// Revoke stamps RevokedAt on the token owned by (ownerKind, ownerID). It is
-// idempotent (an already-revoked token is a no-op success) and owner-scoped
-// (a foreign id returns ErrTokenNotFound so the handler can answer 404).
+// Revoke stamps RevokedAt on the owner's token, idempotently, or returns ErrTokenNotFound.
 func (s *SQLAPITokenStore) Revoke(ctx context.Context, id, ownerKind, ownerID string) error {
 	var revokedRaw any
 	err := s.db.QueryRowContext(ctx,
@@ -188,17 +155,13 @@ func (s *SQLAPITokenStore) Revoke(ctx context.Context, id, ownerKind, ownerID st
 	return err
 }
 
-// TouchLastUsed stamps last_used_at. The middleware calls this throttled
-// (≥60s since the previous stamp) and best-effort.
+// TouchLastUsed stamps last_used_at.
 func (s *SQLAPITokenStore) TouchLastUsed(ctx context.Context, id string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, s.q(`UPDATE %s SET last_used_at = $1 WHERE id = $2`), at, id)
 	return err
 }
 
-// ListAll returns every token across all owners, newest first, the admin
-// view. Deliberately NOT part of APITokenStore: the plugin's self-service
-// routes must never reach it; hosts wire it into their own admin-gated
-// surface from the concrete store.
+// ListAll returns every owner's tokens, newest first; it is for host admin screens, not the plugin's routes.
 func (s *SQLAPITokenStore) ListAll(ctx context.Context) ([]APIToken, error) {
 	q := s.q(`SELECT id, name, owner_kind, owner_id, prefix, scopes, expires_at, last_used_at, revoked_at, created_at FROM %s ORDER BY created_at DESC`)
 	rows, err := s.db.QueryContext(ctx, q)
@@ -217,9 +180,7 @@ func (s *SQLAPITokenStore) ListAll(ctx context.Context) ([]APIToken, error) {
 	return out, rows.Err()
 }
 
-// RevokeAny stamps RevokedAt regardless of owner, the admin action. Same
-// idempotency contract as Revoke; ErrTokenNotFound for unknown ids. Like
-// ListAll, it is host-wired only, never exposed via the plugin routes.
+// RevokeAny stamps RevokedAt whatever the owner, or returns ErrTokenNotFound; host admin use only.
 func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
 	var revokedRaw any
 	err := s.db.QueryRowContext(ctx,
@@ -239,17 +200,8 @@ func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
 	return err
 }
 
-// ─── SQLServiceAccountStore ─────────────────────────────────────────────────
 
 // SQLServiceAccountStore is the database-backed ServiceAccountStore.
-//
-// Schema (table auth_service_accounts, created at construction):
-//
-//	id          TEXT PRIMARY KEY NOT NULL
-//	name        TEXT NOT NULL UNIQUE
-//	roles       TEXT NOT NULL DEFAULT '[]'   -- JSON array
-//	disabled    <bool> NOT NULL DEFAULT false
-//	created_at  <ts> NOT NULL
 type SQLServiceAccountStore struct {
 	db      *sql.DB
 	table   string
@@ -263,14 +215,12 @@ type sqlServiceAccountStoreConfig struct {
 	table string
 }
 
-// WithServiceAccountTable overrides the service-account table name
-// (default "auth_service_accounts").
+// WithServiceAccountTable sets the table name (default auth_service_accounts).
 func WithServiceAccountTable(name string) SQLServiceAccountStoreOption {
 	return func(c *sqlServiceAccountStoreConfig) { c.table = name }
 }
 
-// NewSQLServiceAccountStore creates the service-account table (IF NOT
-// EXISTS) and returns the store.
+// NewSQLServiceAccountStore creates the table and returns the store.
 func NewSQLServiceAccountStore(db *sql.DB, opts ...SQLServiceAccountStoreOption) (*SQLServiceAccountStore, error) {
 	c := sqlServiceAccountStoreConfig{table: "auth_service_accounts"}
 	for _, o := range opts {
@@ -284,13 +234,6 @@ func NewSQLServiceAccountStore(db *sql.DB, opts ...SQLServiceAccountStoreOption)
 	)
 }
 
-// initSQLStore is the shared spine of the battery's option-style SQL
-// store constructors: nil-db guard, table-name validation,
-// construction, and schema-ensure, with the caller's constructor name
-// and store noun for the error messages. It replaces the duplicated
-// bodies of NewSQLAPITokenStore and NewSQLServiceAccountStore, which
-// differed only in identifiers and those message nouns. (Named
-// initSQLStore because the package's tests already own newSQLStore.)
 func initSQLStore[S any](db *sql.DB, ctorName, kind, table string, build func(db *sql.DB, table string) S, ensure func(S) error) (S, error) {
 	var zero S
 	if db == nil {
@@ -325,11 +268,6 @@ func (s *SQLServiceAccountStore) ensureSchema(ctx context.Context) error {
 	return nil
 }
 
-// registerServiceAccounts declares the service-account table to
-// App.ExportData under its configured name. The token table is exported,
-// and a service token names its account by id: an archive without the
-// accounts restores tokens that answer owner_missing. No eraser goes
-// with it, because the table names no user.
 func registerServiceAccounts(table string) {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("auth_service_accounts", table), Source: "auth", Table: table, PrimaryKey: "id",
@@ -390,21 +328,16 @@ func (s *SQLServiceAccountStore) SetDisabled(ctx context.Context, id string, dis
 	return err
 }
 
-// ─── shared helpers ─────────────────────────────────────────────────────────
 
 var (
 	_ APITokenStore       = (*SQLAPITokenStore)(nil)
 	_ ServiceAccountStore = (*SQLServiceAccountStore)(nil)
 )
 
-// rowScanner is the common Scan surface of *sql.Row and *sql.Rows.
 type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-// scanAPIToken reads the 10-column token projection. Nullable timestamps
-// are scanned as any and coerced, matching the battery's other stores,
-// which see time.Time on Postgres and string/[]byte on SQLite.
 func scanAPIToken(row rowScanner) (*APIToken, error) {
 	var t APIToken
 	var scopes string
@@ -421,12 +354,6 @@ func scanAPIToken(row rowScanner) (*APIToken, error) {
 	return &t, nil
 }
 
-// timePtrFailClosed reads a nullable timestamp whose presence is the fact
-// that matters: a revocation, an expiry. A non-NULL value the parser cannot
-// read (SQLite's unixepoch(), julianday('now'), an unlisted layout) is set,
-// so it reads as the epoch, already passed. Through timePtrFromRaw it read
-// as NULL: an operator's out-of-band revoke left the token live and an
-// unreadable expiry never expired.
 func timePtrFailClosed(src any) *time.Time {
 	if src == nil {
 		return nil
@@ -438,8 +365,6 @@ func timePtrFailClosed(src any) *time.Time {
 	return &epoch
 }
 
-// nullableTime renders a *time.Time as a driver value: nil for unset, the
-// time otherwise. Used when binding INSERT args for NULL-able columns.
 func nullableTime(t *time.Time) any {
 	if t == nil {
 		return nil
@@ -447,8 +372,6 @@ func nullableTime(t *time.Time) any {
 	return *t
 }
 
-// timePtrFromRaw converts a scanned nullable timestamp into a *time.Time.
-// A zero/missing value (nil driver value or zero time) yields nil.
 func timePtrFromRaw(src any) *time.Time {
 	t := coerceTime(src)
 	if t.IsZero() {
@@ -457,10 +380,6 @@ func timePtrFromRaw(src any) *time.Time {
 	return &t
 }
 
-// marshalStringList serializes a string slice as a JSON array ("[]" for
-// nil/empty). Distinct from parseRoles/formatRoles, which are user-roles
-// specific (they default to ["user"]); scopes and service-account roles
-// must stay empty when empty.
 func marshalStringList(s []string) string {
 	if s == nil {
 		s = []string{}
@@ -469,7 +388,6 @@ func marshalStringList(s []string) string {
 	return string(b)
 }
 
-// unmarshalStringList is the inverse; a blank/garbage value yields nil.
 func unmarshalStringList(s string) []string {
 	if s == "" {
 		return nil

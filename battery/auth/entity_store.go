@@ -20,40 +20,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Both SQLite (via mattn/go-sqlite3) and PostgreSQL (via lib/pq) accept
-// $N placeholders, so the entity-backed stores use them uniformly. lib/pq
-// does NOT accept ? placeholders, so do not introduce new SQL with them.
 
-// EntityUserStore adapts GoFastr's entity/CRUD system to the UserStore
-// interface. It uses raw SQL against the entity's table so auth doesn't
-// need to import the full CRUD handler.
-//
-// The backing entity must have at minimum: id (string/uuid), email (string,
-// unique), password_hash (string), roles (string/json).
-//
-// Usage:
-//
-//	app.Entity("users", entity.EntityConfig{
-//	    Fields: auth.UserEntityFields(),
-//	})
-//	mgr.SetUserStore(auth.NewEntityUserStore(db, "users"))
+// EntityUserStore is a UserStore over a SQLite or PostgreSQL users table, with raw SQL.
 type EntityUserStore struct {
 	db       *sql.DB
 	table    string
 	fieldMap UserFieldMap
 	dialect  storeDialect
-	// hidesDeleted is set by EnsureSchema when the table carries the
-	// soft-delete column: the users entity has Scope.SoftDelete, and CRUD
-	// delete only stamps it. Lookups then skip a trashed row.
 	hidesDeleted atomic.Bool
 }
 
-// softDeleteColumn is the column CRUD's soft delete stamps. Its name is
-// fixed by framework/crud, not configurable per entity.
 const softDeleteColumn = "deleted_at"
 
-// liveRows is the predicate that keeps a soft-deleted account out of a
-// lookup, or "" when the table has no soft-delete column.
 func (s *EntityUserStore) liveRows() string {
 	if !s.hidesDeleted.Load() {
 		return ""
@@ -62,28 +40,16 @@ func (s *EntityUserStore) liveRows() string {
 }
 
 // UserFieldMap maps logical auth fields to actual DB column names.
-// Defaults to snake_case standard names.
 type UserFieldMap struct {
 	ID           string // default: "id"
 	Email        string // default: "email"
 	PasswordHash string // default: "password_hash"
 	Roles        string // default: "roles"
-	// PasswordSet flags whether the user has a real password vs the
-	// placeholder hash used by OAuth / magic-link auto-create. Defaults
-	// to "password_set". The column is optional, if missing from the
-	// physical table, HasPassword returns ErrPasswordSetNotTracked and
-	// AccountsPlugin falls back to the conservative links-only rule.
+	// PasswordSet is the column flagging a real password over the placeholder; without it HasPassword returns ErrPasswordSetNotTracked.
 	PasswordSet string // default: "password_set"
-	// EmailVerified records whether the account's owner proved control of
-	// the address: a verification link, a magic link, a completed reset,
-	// or an IdP login asserting email_verified for this exact address.
-	// Defaults to "email_verified". EnsureSchema adds it to an existing
-	// table as FALSE for every row, because nothing about a pre-existing
-	// row says its address was proven.
+	// EmailVerified is the column recording that the owner proved the address; EnsureSchema adds it as FALSE.
 	EmailVerified string // default: "email_verified"
-	// Name is the optional display name (NameStore). Defaults to
-	// "name". EnsureSchema adds it to an existing table as '' for every
-	// row.
+	// Name is the display-name column; EnsureSchema adds it as ''.
 	Name string // default: "name"
 }
 
@@ -101,21 +67,17 @@ func DefaultUserFieldMap() UserFieldMap {
 }
 
 // NewEntityUserStore creates a UserStore backed by a database table.
-// The table must have the columns described by fieldMap.
-// Panics if the table name or any field mapping contains unsafe characters.
 func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *EntityUserStore {
 	fm := DefaultUserFieldMap()
 	if len(fieldMap) > 0 {
 		fm = fieldMap[0]
 	}
 	if fm.EmailVerified == "" {
-		// A map written before the field existed keeps working.
 		fm.EmailVerified = "email_verified"
 	}
 	if fm.Name == "" {
 		fm.Name = "name"
 	}
-	// Validate all identifiers at construction time, fail fast.
 	query.MustIdent(table)
 	query.MustIdent(fm.ID)
 	query.MustIdent(fm.Email)
@@ -131,10 +93,7 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 	}
 }
 
-// EnsureSchema creates the user table if it does not already exist. The auth
-// battery owns its schema, so hosts never hand-roll the DDL, AuthManager.Init
-// calls this. Idempotent. Boolean columns use the native PostgreSQL BOOLEAN
-// type so CreateUser's Go bool bindings work on a fresh Postgres database.
+// EnsureSchema creates the users table, adds missing columns and the OAuth link table, and refuses a case-kept legacy table.
 func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	fm := s.fieldMap
 	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table,
@@ -169,39 +128,20 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {
 		return err
 	}
-	// AutoMigrate ran before the plugins, so a soft-deleting users entity
-	// has added its column by now. A trashed account resolved anyway: it
-	// signed in, and its sessions, tokens and JWTs kept working.
 	hides, err := tableHasColumn(ctx, s.db, s.dialect.of(s.db), s.table, softDeleteColumn)
 	if err != nil {
 		return err
 	}
 	s.hidesDeleted.Store(hides)
-	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
-	// for this store. Creating it here (rather than in OAuth2Plugin.Init) means
-	// the schema is right even for hosts that never turn OAuth on, and that a
-	// host that adds OAuth later doesn't need a separate migration step.
 	return s.EnsureOAuthLinksSchema(ctx)
 }
 
-// refuseCaseKeptTable stops EnsureSchema when Postgres holds what an older
-// auth battery made for table. Those stores quoted the configured name
-// whole, so "Members" got its own case-kept table beside the folded
-// members that AutoMigrate creates, "q.TwoFA" became one table literally
-// named q.TwoFA in the current schema, and a mapped column such as
-// "PasswordHash" kept its case even on a lowercase table. The stores now
-// name the folded objects (table twofa in schema q, column passwordhash);
-// booting on would hide every account, session, OAuth link, enrolment or
-// password hash the old objects hold, so the operator moves them first.
-// cols are the store's configured column names.
 func refuseCaseKeptTable(ctx context.Context, db *sql.DB, d migrate.Dialect, table string, cols ...string) error {
 	if d != migrate.DialectPostgres {
 		return nil
 	}
 	schema, name := foldedTableRef(table)
 	folded := query.QuoteFolded(table)
-	// The old table: the configured string whole in the current schema,
-	// or a case-kept last part inside the named schema.
 	var legacy, legacySchema, legacyName string
 	//gofastr:allow(quoteident) the case-kept spelling an older battery created, compared to detect it
 	if query.QuoteIdent(table) != folded {
@@ -221,8 +161,6 @@ func refuseCaseKeptTable(ctx context.Context, db *sql.DB, d migrate.Dialect, tab
 			}
 		}
 	}
-	// Columns the old store created with their case kept: on the old table
-	// when there is one, else on the table the store now uses.
 	colSchema, colTable := schema, name
 	if legacy != "" {
 		colSchema, colTable = legacySchema, legacyName
@@ -246,8 +184,6 @@ func refuseCaseKeptTable(ctx context.Context, db *sql.DB, d migrate.Dialect, tab
 	if legacy == "" && len(keptCols) == 0 {
 		return nil
 	}
-	// Every name in the advice is quoted: a folded target such as order is
-	// a reserved word.
 	var steps []string
 	if legacy != "" {
 		steps = append(steps, fmt.Sprintf("ALTER TABLE %s RENAME TO %s", quoteQualified(legacySchema, legacyName), query.QuoteFolded(name)))
@@ -276,9 +212,6 @@ func refuseCaseKeptTable(ctx context.Context, db *sql.DB, d migrate.Dialect, tab
 		legacy, how, folded, folded, legacy, folded, advice)
 }
 
-// foldedTableRef splits a configured table the way QuoteFolded names it:
-// "q.Members" is table members in schema q, and an undotted name lives in
-// the current schema (schema "").
 func foldedTableRef(table string) (schema, name string) {
 	if i := strings.LastIndexByte(table, '.'); i >= 0 {
 		return strings.ToLower(table[:i]), strings.ToLower(table[i+1:])
@@ -286,8 +219,6 @@ func foldedTableRef(table string) (schema, name string) {
 	return "", strings.ToLower(table)
 }
 
-// quoteQualified quotes name, behind its quoted schema unless schema is ""
-// (the current schema).
 func quoteQualified(schema, name string) string {
 	if schema == "" {
 		//gofastr:allow(quoteident) name was found in the catalog with its case kept
@@ -297,19 +228,11 @@ func quoteQualified(schema, name string) string {
 	return query.QuoteIdent(schema) + "." + query.QuoteIdent(name)
 }
 
-// indexName quotes prefix+table+suffix as an index name, fitted to 63
-// bytes (query.FitIdent) so two long table names do not cut to one
-// index. Postgres refuses a schema-qualified index name (an index lands
-// in its table's schema), so a dotted "q.Members" contributes only its
-// folded last part.
 func indexName(prefix, table, suffix string) string {
 	_, name := foldedTableRef(table)
 	return query.QuoteFolded(query.FitIdent(prefix + name + suffix))
 }
 
-// pgFindTable reports the schema holding a table named exactly name: the
-// current schema when schema is "" (reported back as ""), else schema as
-// written or folded.
 func pgFindTable(ctx context.Context, db *sql.DB, schema, name string) (string, bool, error) {
 	var found string
 	err := db.QueryRowContext(ctx, `SELECT CASE WHEN $1 = '' THEN '' ELSE table_schema END
@@ -322,8 +245,6 @@ func pgFindTable(ctx context.Context, db *sql.DB, schema, name string) (string, 
 	return found, err == nil, err
 }
 
-// tableHasColumn reports whether table has column, read from the catalog
-// once at boot.
 func tableHasColumn(ctx context.Context, db *sql.DB, d migrate.Dialect, table, column string) (bool, error) {
 	if d != migrate.DialectPostgres {
 		return sqliteTableHasColumn(ctx, db, table, column)
@@ -336,16 +257,11 @@ func tableHasColumn(ctx context.Context, db *sql.DB, d migrate.Dialect, table, c
 	return n > 0, err
 }
 
-// ensurePostgresBoolColumns upgrades legacy INTEGER boolean columns owned by
-// the auth battery. The conversion is lossless for the old 0/1 representation
-// and keeps existing deployments compatible with native Go bool bindings.
 func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, d migrate.Dialect, table string, columns ...string) error {
 	if d != migrate.DialectPostgres {
 		return nil
 	}
 	query.MustIdent(table)
-	// A dotted "q.Members" is table members in schema q, the table the
-	// store writes; matching the whole string never found it.
 	schema, name := foldedTableRef(table)
 	for _, column := range columns {
 		query.MustIdent(column)
@@ -383,8 +299,6 @@ func ensurePostgresBoolColumns(ctx context.Context, db *sql.DB, d migrate.Dialec
 	return nil
 }
 
-// q builds a query using validated identifiers. All table/field names were
-// validated at construction time in NewEntityUserStore.
 func (s *EntityUserStore) q(stmt string) string {
 	return fmt.Sprintf(stmt,
 		query.QuoteFolded(s.fieldMap.ID),
@@ -396,7 +310,6 @@ func (s *EntityUserStore) q(stmt string) string {
 	)
 }
 
-// qByID builds a query selecting by ID.
 func (s *EntityUserStore) qByID(stmt string) string {
 	return fmt.Sprintf(stmt,
 		query.QuoteFolded(s.fieldMap.ID),
@@ -407,8 +320,7 @@ func (s *EntityUserStore) qByID(stmt string) string {
 	)
 }
 
-// FindByEmail looks up a user by email. Returns ErrUserNotFound when no
-// row matches; any other error is returned verbatim.
+// FindByEmail returns the user and hash, ErrUserNotFound, or the store's error.
 func (s *EntityUserStore) FindByEmail(ctx context.Context, email string) (User, string, error) {
 	q := s.q("SELECT %s, %s, %s, %s FROM %s WHERE %s = $1")
 	if live := s.liveRows(); live != "" {
@@ -429,8 +341,7 @@ func (s *EntityUserStore) FindByEmail(ctx context.Context, email string) (User, 
 	}, hash, nil
 }
 
-// FindByID looks up a user by their unique ID. Returns ErrUserNotFound
-// when no row matches; any other error is returned verbatim.
+// FindByID returns the user, ErrUserNotFound, or the store's error.
 func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error) {
 	if !textsafe.Storable(id) {
 		return nil, ErrUserNotFound
@@ -454,14 +365,7 @@ func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error)
 	}, nil
 }
 
-// ListUsers enumerates accounts ordered by the email column, returning
-// one page plus the total row count. Implements UserLister.
-//
-// Only id/email/roles are selected, never password_hash, so a paged
-// listing never surfaces password material. Roles are parsed with the
-// store's existing parseRoles helper, matching FindByEmail/FindByID.
-// The caller (AuthManager.ListUsers) clamps opts, so Limit>=1 and
-// Offset>=0 hold here.
+// ListUsers returns one page of accounts ordered by email, and the total, without password material. Implements UserLister.
 func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) ([]User, int, error) {
 	where := ""
 	if live := s.liveRows(); live != "" {
@@ -506,22 +410,12 @@ func (s *EntityUserStore) ListUsers(ctx context.Context, opts ListUsersOptions) 
 	return users, total, nil
 }
 
-// CreateUser inserts a new user and returns it. Returns ErrEmailTaken
-// when the email already exists; other errors are returned verbatim.
-//
-// CreateUser marks password_set=true. Callers that auto-create an
-// account without a user-chosen password (OAuth, magic-link) should
-// prefer CreateUserNoPassword so HasPassword reports the right answer
-// later.
+// CreateUser inserts a user with a real password, or returns ErrEmailTaken.
 func (s *EntityUserStore) CreateUser(ctx context.Context, email, hashedPassword string, roles []string) (User, error) {
 	return s.create(ctx, email, hashedPassword, roles, true)
 }
 
-// CreateUserNoPassword auto-creates a user using the package-level
-// placeholder hash (made by DefaultHasher, so a login against it costs
-// what one against an unknown address does) and records
-// password_set=false. Used by the OAuth /
-// magic-link auto-create flows. Implements OAuthUserCreator.
+// CreateUserNoPassword inserts a user holding the shared placeholder hash and password_set false. Implements OAuthUserCreator.
 func (s *EntityUserStore) CreateUserNoPassword(ctx context.Context, email string, roles []string) (User, error) {
 	return s.create(ctx, email, placeholderPasswordHash(), roles, false)
 }
@@ -556,7 +450,6 @@ func (s *EntityUserStore) create(ctx context.Context, email, hashedPassword stri
 }
 
 // SetPassword updates a user's password hash and marks password_set=true.
-// Implements PasswordSetter (used by PasswordResetPlugin).
 func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPassword string) error {
 	q := fmt.Sprintf(
 		"UPDATE %s SET %s = $1, %s = TRUE WHERE %s = $2",
@@ -577,8 +470,6 @@ func (s *EntityUserStore) SetPassword(ctx context.Context, userID, hashedPasswor
 }
 
 // SwapPassword sets the hash only while the stored one is still oldHash.
-// Implements PasswordSwapper. False means no row matched: the hash moved,
-// or the user is gone.
 func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, newHash string) (bool, error) {
 	q := fmt.Sprintf(
 		"UPDATE %s SET %s = $1, %s = TRUE WHERE %s = $2 AND %s = $3",
@@ -599,8 +490,7 @@ func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, new
 	return n > 0, nil
 }
 
-// HasPassword reports whether the user has a real password set vs the
-// placeholder hash. Implements PasswordChecker.
+// HasPassword reports whether the user has a real password. Implements PasswordChecker.
 func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
 	q := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s = $1",
@@ -616,11 +506,6 @@ func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool,
 	return has, err
 }
 
-// ensureEmailVerifiedColumn adds the email_verified column to a table that
-// predates it. Every existing row reads FALSE: the battery never recorded
-// whether an address was proven, so an existing account is treated as
-// unproven until its owner proves the mailbox (see claimAccount). Postgres
-// uses ADD COLUMN IF NOT EXISTS; SQLite checks PRAGMA table_info first.
 func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolType, boolFalse string) error {
 	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
 		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
@@ -637,8 +522,7 @@ func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolTyp
 	return err
 }
 
-// MarkEmailVerified records that the user proved control of their email
-// address. Implements EmailVerifier.
+// MarkEmailVerified records the address as proven. Implements EmailVerifier.
 func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) error {
 	q := fmt.Sprintf("UPDATE %s SET %s = TRUE WHERE %s = $1",
 		query.QuoteFolded(s.table),
@@ -655,8 +539,7 @@ func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) 
 	return nil
 }
 
-// IsEmailVerified reports whether the user's address is proven. Implements
-// EmailVerifiedChecker.
+// IsEmailVerified reports whether the address is proven. Implements EmailVerifiedChecker.
 func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
 	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
 		query.QuoteFolded(s.fieldMap.EmailVerified),
@@ -671,10 +554,7 @@ func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (b
 	return v, err
 }
 
-// ClearPassword replaces the user's hash with a new unusable one and
-// records password_set=false, so no password signs in until the owner
-// sets one, and no JWT issued before the clear validates. Implements
-// PasswordClearer.
+// ClearPassword writes a fresh unusable hash and password_set false. Implements PasswordClearer.
 func (s *EntityUserStore) ClearPassword(ctx context.Context, userID string) error {
 	placeholder, err := newPlaceholderHash()
 	if err != nil {
@@ -696,58 +576,30 @@ func (s *EntityUserStore) ClearPassword(ctx context.Context, userID string) erro
 	return nil
 }
 
-// isUniqueViolation detects unique-constraint violations across the
-// dialects we support (SQLite + Postgres). The driver-specific error
-// strings are stable enough to match on textually.
 func isUniqueViolation(err error) bool {
 	msg := err.Error()
-	// SQLite (mattn/go-sqlite3): "UNIQUE constraint failed: users.email"
 	if strings.Contains(msg, "UNIQUE constraint failed") {
 		return true
 	}
-	// Postgres (lib/pq): "pq: duplicate key value violates unique constraint"
-	// Postgres SQLSTATE 23505. The error message includes the SQLSTATE
-	// in lib/pq's standard format.
 	if strings.Contains(msg, "23505") || strings.Contains(msg, "duplicate key value") {
 		return true
 	}
 	return false
 }
 
-// UserEntityConfig returns an EntityConfig pre-configured for the auth
-// users table: standard fields + CRUD=false + MCP=false. Auto-private by
-// default so host apps don't accidentally expose user rows through
-// auto-generated REST or MCP tools.
-//
-// Hosts that DO want to expose a /users endpoint can override after the
-// fact (e.g. `cfg := auth.UserEntityConfig(); enabled := true;
-// cfg.Exposure.CRUD = &enabled`).
-//
-//	app.Entity("users", auth.UserEntityConfig())
+// UserEntityConfig returns the users entity with CRUD and MCP off.
 func UserEntityConfig() entity.EntityConfig {
 	crudOff := false
 	return entity.EntityConfig{Fields: UserEntityFields(), Exposure: &entity.ExposureConfig{CRUD: &crudOff, MCP: false}}
 }
 
-// SessionEntityConfig returns an EntityConfig pre-configured for the auth
-// sessions table: standard fields + CRUD=false + MCP=false. Auto-private
-// by default. See UserEntityConfig for the rationale.
-//
-//	app.Entity("sessions", auth.SessionEntityConfig())
+// SessionEntityConfig returns the sessions entity with CRUD and MCP off.
 func SessionEntityConfig() entity.EntityConfig {
 	crudOff := false
 	return entity.EntityConfig{Fields: SessionEntityFields(), Exposure: &entity.ExposureConfig{CRUD: &crudOff, MCP: false}}
 }
 
 // UserEntityFields returns the standard field definitions for a user entity.
-// Apps call this when defining their user entity:
-//
-//	app.Entity("users", entity.EntityConfig{
-//	    Fields: auth.UserEntityFields(),
-//	})
-//
-// For most apps, prefer UserEntityConfig() which also disables the
-// dangerous-by-default auto-CRUD on user rows.
 func UserEntityFields() UserFields {
 	return UserFields{
 		{Name: "email", Type: schema.String, Required: true, Unique: true},
@@ -758,27 +610,10 @@ func UserEntityFields() UserFields {
 	}
 }
 
-// UserFields is the canonical user-entity field list returned by
-// UserEntityFields. Its underlying type is []schema.Field so it
-// remains assignable to entity.EntityConfig.Fields without any cast.
-// The named type exists solely to attach the fluent With method.
+// UserFields is the users entity's field list.
 type UserFields []schema.Field
 
-// With returns a new UserFields containing the canonical fields plus
-// any additional fields the host wants to attach (typically domain
-// columns like username, disabled_at, or display_name).
-//
-// The returned slice is independent, repeated calls don't mutate the
-// receiver or the canonical list.
-//
-// Example:
-//
-//	app.Entity("users", entity.EntityConfig{
-//	    Fields: auth.UserEntityFields().With(
-//	        schema.Field{Name: "username", Type: schema.String, Unique: true},
-//	        schema.Field{Name: "disabled_at", Type: schema.Timestamp},
-//	    ),
-//	})
+// With returns a copy of the fields plus extra.
 func (uf UserFields) With(extra ...schema.Field) UserFields {
 	out := make(UserFields, 0, len(uf)+len(extra))
 	out = append(out, uf...)
@@ -787,15 +622,6 @@ func (uf UserFields) With(extra ...schema.Field) UserFields {
 }
 
 // EntitySessionStore adapts a database table to the SessionStore interface.
-// The backing table must have: token (string, PK), user_id (string),
-// created_at (timestamp), expires_at (timestamp).
-//
-// Usage:
-//
-//	app.Entity("sessions", entity.EntityConfig{
-//	    Fields: auth.SessionEntityFields(),
-//	})
-//	mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 type EntitySessionStore struct {
 	db      *sql.DB
 	table   string
@@ -806,7 +632,6 @@ type EntitySessionStore struct {
 }
 
 // NewEntitySessionStore creates a SessionStore backed by a database table.
-// Panics if the table name contains unsafe characters.
 func NewEntitySessionStore(db *sql.DB, table string) *EntitySessionStore {
 	query.MustIdent(table)
 	return &EntitySessionStore{
@@ -815,10 +640,7 @@ func NewEntitySessionStore(db *sql.DB, table string) *EntitySessionStore {
 	}
 }
 
-// EnsureSchema creates the session table if it does not already exist. Called
-// by AuthManager.Init so hosts never hand-roll the DDL. Idempotent. The
-// datetime and boolean column types are chosen per dialect (SQLite vs
-// PostgreSQL) so the same battery boots on either.
+// EnsureSchema creates the sessions table and its indexes.
 func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
 		return err
@@ -838,13 +660,6 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "two_factor_verified", "pending_two_factor"); err != nil {
 		return err
 	}
-	// The indexes are created whoever made the table, and they are the
-	// only ones: the CREATE TABLE above and SessionEntityFields declare no
-	// UNIQUE of their own, which left two unique indexes on token. The documented
-	// wiring declares app.Entity("sessions", SessionEntityConfig()), so
-	// AutoMigrate creates the table first and the CREATE TABLE above does
-	// nothing: token then had no index, and every cookie lookup (a random
-	// cookie included) scanned the whole table, as did DeleteByUser.
 	sqlite := s.dialect.of(s.db) == migrate.DialectSQLite
 	on := func(suffix string) string {
 		return query.IndexOn(sqlite, indexName("idx_", s.table, suffix), query.QuoteFolded(s.table))
@@ -861,13 +676,11 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// qTable wraps a statement template with the validated table name.
 func (s *EntitySessionStore) qTable(stmt string) string {
 	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
 // Create generates a random token, inserts a session row, and returns it.
-// Rejects ttl <= 0, the caller must supply a positive lifetime.
 func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time.Duration) (*Session, error) {
 	if ttl <= 0 {
 		return nil, fmt.Errorf("auth: EntitySessionStore.Create: ttl must be > 0 (got %v)", ttl)
@@ -879,19 +692,10 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 
-	// AutoUUID `id` column is created NOT NULL with no DEFAULT, so
-	// PostgreSQL requires us to supply a value here even though the
-	// session is keyed by token, not id. SQLite happens to accept NULL
-	// for INTEGER-PK-like columns, masking this in dev.
 	sessionID, err := generateUserID()
 	if err != nil {
 		return nil, err
 	}
-	// The token column stores sha256hex(tok), never the cookie value
-	// (the APIToken grammar): the session cookie is a bearer
-	// credential, so a read-only dump of the sessions table must not be
-	// a pile of live cookies. Every lookup (Get / Delete / the 2FA
-	// markers) keys on the digest of the presented token.
 	q := s.qTable("INSERT INTO %s (id, token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)")
 	_, err = s.db.ExecContext(ctx, q, sessionID, sha256hex(tok), userID, now, expiresAt)
 	if err != nil {
@@ -906,13 +710,6 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	}, nil
 }
 
-// sweepExpiredOnCreate reaps abandoned rows at most once per interval while
-// allowing session creation to succeed if cleanup itself is unavailable.
-// The slot is claimed under sweepMu and the DELETE runs outside it, so a
-// slow sweep never queues every Create (every login) behind the mutex; a
-// failed sweep retries after sessionSweepRetry rather than on the very
-// next Create, where a lock-timeout DELETE would run on every one (the
-// magic-link store's 5ade7a35 fix).
 func (s *EntitySessionStore) sweepExpiredOnCreate(ctx context.Context, now time.Time) {
 	s.sweepMu.Lock()
 	if now.Sub(s.lastSweep) < sessionSweepInterval {
@@ -931,12 +728,9 @@ func (s *EntitySessionStore) sweepExpiredOnCreate(ctx context.Context, now time.
 	}
 }
 
-// sessionSweepRetry is how soon a failed session sweep is tried again.
 const sessionSweepRetry = time.Minute
 
-// Get returns the session for the given token. The presented token is
-// hashed for the lookup; Session.Token carries the PRESENTED value back
-// so callers can treat it as the cookie value.
+// Get returns the session for the presented token, looked up by its digest.
 func (s *EntitySessionStore) Get(ctx context.Context, token string) (*Session, error) {
 	q := s.qTable("SELECT user_id, created_at, expires_at, two_factor_verified, pending_two_factor FROM %s WHERE token = $1")
 	var uid string
@@ -964,8 +758,7 @@ func (s *EntitySessionStore) Get(ctx context.Context, token string) (*Session, e
 	return sess, nil
 }
 
-// MarkTwoFactorVerified sets two_factor_verified=TRUE and clears
-// pending_two_factor. Implements SessionTwoFAMarker.
+// MarkTwoFactorVerified sets two_factor_verified and clears pending_two_factor. Implements SessionTwoFAMarker.
 func (s *EntitySessionStore) MarkTwoFactorVerified(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx,
 		s.qTable("UPDATE %s SET two_factor_verified = TRUE, pending_two_factor = FALSE WHERE token = $1"),
@@ -973,8 +766,7 @@ func (s *EntitySessionStore) MarkTwoFactorVerified(ctx context.Context, token st
 	return err
 }
 
-// MarkPendingTwoFactor sets pending_two_factor. Implements
-// SessionPendingMarker.
+// MarkPendingTwoFactor sets pending_two_factor. Implements SessionPendingMarker.
 func (s *EntitySessionStore) MarkPendingTwoFactor(ctx context.Context, token string) error {
 	_, err := s.db.ExecContext(ctx,
 		s.qTable("UPDATE %s SET pending_two_factor = TRUE WHERE token = $1"),
@@ -988,8 +780,7 @@ func (s *EntitySessionStore) Delete(ctx context.Context, token string) error {
 	return err
 }
 
-// DeleteByUser removes every session belonging to userID and returns the
-// count purged. Implements SessionUserPurger.
+// DeleteByUser deletes every session of userID. Implements SessionUserPurger.
 func (s *EntitySessionStore) DeleteByUser(ctx context.Context, userID string) (int, error) {
 	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1"), userID)
 	if err != nil {
@@ -999,8 +790,7 @@ func (s *EntitySessionStore) DeleteByUser(ctx context.Context, userID string) (i
 	return int(n), nil
 }
 
-// DeletePendingByUser removes userID's sessions that are still waiting on
-// a 2FA challenge. Implements SessionPendingPurger.
+// DeletePendingByUser deletes userID's pending sessions. Implements SessionPendingPurger.
 func (s *EntitySessionStore) DeletePendingByUser(ctx context.Context, userID string) (int, error) {
 	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1 AND pending_two_factor = TRUE"), userID)
 	if err != nil {
@@ -1032,12 +822,7 @@ func SessionEntityFields() []schema.Field {
 	}
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
 
-// generateUserID creates a random 32-hex-char user ID from crypto/rand.
-// Entropy failure is an error, never a clock fallback: a timestamp id is
-// enumerable across accounts, and a rand failure means the host's
-// entropy source is broken — callers refuse the write.
 func generateUserID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -1046,17 +831,14 @@ func generateUserID() (string, error) {
 	return fmt.Sprintf("%x", b), nil
 }
 
-// parseRoles parses a roles value from DB (JSON array or comma-separated).
 func parseRoles(s string) []string {
 	if s == "" {
 		return []string{"user"}
 	}
-	// Try JSON first
 	var roles []string
 	if err := json.Unmarshal([]byte(s), &roles); err == nil {
 		return roles
 	}
-	// Fallback: treat as single role or comma-separated
 	parts := strings.Split(s, ",")
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -1071,7 +853,6 @@ func parseRoles(s string) []string {
 	return result
 }
 
-// formatRoles serializes roles to JSON array.
 func formatRoles(roles []string) string {
 	if len(roles) == 0 {
 		roles = []string{"user"}
@@ -1080,7 +861,6 @@ func formatRoles(roles []string) string {
 	return string(b)
 }
 
-// parseTimeFlex tries multiple time layouts for maximum DB compatibility.
 func parseTimeFlex(s string) time.Time {
 	layouts := []string{
 		"2006-01-02 15:04:05.999999999-07:00",
@@ -1097,15 +877,10 @@ func parseTimeFlex(s string) time.Time {
 			return t
 		}
 	}
-	// Fallback: try time.Parse which handles some Go time formats
 	t, _ := time.Parse(time.RFC3339, s)
 	return t
 }
 
-// coerceTime converts whatever the driver hands back (time.Time on PG,
-// string on SQLite when DATETIME is declared as TEXT, []byte in some
-// driver configurations) into a time.Time. Mirrors framework/auth's
-// scanTime helper, but inlined to keep battery/auth self-contained.
 func coerceTime(src any) time.Time {
 	switch v := src.(type) {
 	case time.Time:

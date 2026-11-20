@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
 type failingCreateStore struct{ *memoryUserStore }
@@ -133,6 +136,42 @@ func TestLoginRefusedWhenEmailNowNamesAnotherUser(t *testing.T) {
 	}
 	if rec := loginJSON(t, mgr, "a@example.com", "supersecret1"); rec.Code != http.StatusUnauthorized {
 		t.Errorf("login whose address moved to another user mid-request = %d, want 401", rec.Code)
+	}
+}
+
+func TestSanitiseErrMakesURLAndHTMLSafe(t *testing.T) {
+	if got := sanitiseErr("a b\n<x>&y=\"z'?#%+\x7f\xc3\xa9ok"); got != "a+b++x++y++z++++++++ok" {
+		t.Errorf("sanitiseErr = %q", got)
+	}
+}
+
+func TestPolicyOptionPrecedenceAltFirst(t *testing.T) {
+	o := policyOpts{altFactory: func() component.Component { return nil }, redirect: "/login", block: 403}
+	if d := failureDecision(context.Background(), o); d.Kind != app.DecisionRenderAlt {
+		t.Errorf("alt+redirect+block = %v, want RenderAlt", d.Kind)
+	}
+	o.altFactory = nil
+	if d := failureDecision(context.Background(), o); d.Kind != app.DecisionRedirect {
+		t.Errorf("redirect+block = %v, want Redirect", d.Kind)
+	}
+}
+
+func TestUpdateRolesEmptyStaysEmpty(t *testing.T) {
+	store := NewEntityUserStore(setupTestDB(t), "users")
+	ctx := context.Background()
+	u, err := store.CreateUser(ctx, "a@example.com", "hash", []string{"admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateRoles(ctx, u.GetID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.FindByID(ctx, u.GetID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.GetRoles()) != 0 {
+		t.Errorf("roles after clearing = %v, want none", got.GetRoles())
 	}
 }
 

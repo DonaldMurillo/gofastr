@@ -13,74 +13,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// SecurityEvent is one security-relevant auth occurrence: a login, a 2FA
-// lifecycle change, a password reset, an OAuth link, a magic-link issuance.
-// It is the unit the audit trail records for non-CRUD auth activity, the
-// CRUD hooks already cover user/session row writes, so this struct carries
-// only the events those hooks can't see.
+// SecurityEvent is one auth security event for the audit trail.
 type SecurityEvent struct {
-	// Kind is the fixed taxonomy identifier. The vocabulary: login.succeeded,
-	// login.failed, login.pending_2fa, register.succeeded,
-	// password.reset_requested, password.reset_completed,
-	// reset_tokens.purged, magiclink.requested, magiclink.consumed,
-	// magiclink_tokens.purged, emailcode.requested, emailcode.failed,
-	// emailcode.locked, emailcode.consumed, emailcode_tokens.purged,
-	// oauth.linked, oauth.login, oauth.refused, oauth.unlinked,
-	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
-	// 2fa.challenge_failed, 2fa.challenge_locked, 2fa.disabled,
-	// 2fa.backup_codes_regenerated, passkey.registered, passkey.deleted,
-	// passkey.refused, passkey.clone_suspected,
-	// account.claimed, session.revoked, roles.updated, token.created, token.revoked,
-	// token.auth_failed. Callers MUST use one of the documented kinds so
-	// downstream consumers can match on a closed vocabulary.
+	// Kind is one of the closed vocabulary listed in audit-log.md.
 	Kind string
 
-	// UserID is the resolved principal. Empty when unknown, e.g. a failed
-	// login for a nonexistent account, or a password-reset request for an
-	// unregistered email. The SQL sink substitutes "-" so the NOT NULL
-	// record_id column still accepts the row.
+	// UserID is the principal, or "" when unknown.
 	UserID string
 
-	// Email is the submitted address where relevant. It is the ONLY
-	// user-controlled string permitted in any event field; every other
-	// Meta value is a fixed-vocabulary token or a count. Useful for
-	// forensics; never a credential.
+	// Email is the submitted address, the only user-supplied value an event may carry.
 	Email string
 
-	// Remote is the client IP (host part of r.RemoteAddr). XFF is NOT
-	// trusted. See the auth threat-model doc. Empty when the request
-	// carries no remote address.
+	// Remote is the host part of r.RemoteAddr; X-Forwarded-For is never read.
 	Remote string
 
-	// Meta carries small, fixed-vocabulary details (a "reason" code, a
-	// session "count", a provider name). NEVER put secrets, tokens, codes,
-	// or any value derived from user input other than Email here.
+	// Meta holds fixed-vocabulary details and counts, never secrets.
 	Meta map[string]string
 
 	// At is stamped by the emitter when zero, so callers can omit it.
 	At time.Time
 }
 
-// AuditSink receives security events. Implementations must be fast or buffer
-// internally; they are called on the request path. A nil sink disables
-// auditing entirely. AuthManager.emitSecurity no-ops.
-//
-// The ctx carries the request's values but not its cancellation (every
-// event is emitted after the change it records, and a client hanging up
-// must not drop the row), and a 5-second deadline. A sink that keeps
-// working past it holds the auth handler that emitted the event.
-//
-// The built-in NewSQLAuditSink writes one audit_log row per event via
-// framework.AppendAuditEvent, sharing the CRUD audit table and its
-// sanitisation so the two trails never drift apart.
+// AuditSink receives security events on a context with the request's values, no cancellation and a five-second deadline.
 type AuditSink interface {
 	SecurityEvent(ctx context.Context, ev SecurityEvent)
 }
 
-// remoteHost returns the host part of r.RemoteAddr without trusting any
-// client-supplied X-Forwarded-For. Audit forensics needs the source IP
-// literal; the port is per-connection and useless after the fact. Returns
-// the raw address verbatim when SplitHostPort can't parse it (no port).
 func remoteHost(r *http.Request) string {
 	if r == nil {
 		return ""
@@ -92,14 +50,6 @@ func remoteHost(r *http.Request) string {
 	return host
 }
 
-// emitSecurity forwards a SecurityEvent to the configured AuditSink. It is
-// the single funnel every handler calls, so the nil-sink no-op and the
-// panic-isolation live here and callers stay one-liners.
-//
-// A misbehaving sink must never break auth: the call recovers any panic and
-// logs a WARN (the event is lost, but the login/reset/2FA flow it was
-// auditing proceeds). At is stamped to now when zero so a handler that
-// forgets to set it still produces an ordered trail.
 func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	sink := m.config.AuditSink
 	if sink == nil {
@@ -111,63 +61,26 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	deliverAudit(ctx, sink, ev)
 }
 
-// deliverAudit hands ev to sink: panic-isolated, on the request's context
-// minus its cancellation, under auditWriteTimeout. Every audit emission in
-// the package goes through it, emitSecurity and the token middleware's
-// emitTokenEvent alike, so no sink sees a context a hang-up can cancel or
-// one with no deadline.
 func deliverAudit(ctx context.Context, sink AuditSink, ev SecurityEvent) {
 	defer func() {
 		if r := recover(); r != nil {
-			// The recovered value is whatever the host sink held;
-			// scrub it before the log (textsafe.Recovered) so
-			// control/bidi bytes cannot forge lines in the operator's
-			// tail — this funnel is read during incidents.
 			slog.Warn("auth: audit sink panic recovered; event lost",
 				"kind", ev.Kind, "panic", textsafe.Recovered(r))
 		}
 	}()
-	// Every event is emitted after the change it records committed.
-	// On the request's own context, a client that hung up (or a
-	// request timeout) between the two cancelled the audit write: a
-	// stolen session could disable 2FA, drop the connection and leave
-	// no row. The write keeps the request's values, not its
-	// cancellation (the settlectx shape).
-	// The deadline applies to every sink, not only the built-in one:
-	// emitSecurity is synchronous, and a host sink that POSTs to a log
-	// service would otherwise hold the auth handler until the remote
-	// gave up, now that the client's hang-up no longer ends it.
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
 	defer cancel()
 	sink.SecurityEvent(sctx, ev)
 }
 
-// auditWriteTimeout bounds every sink's handling of one event now that it
-// no longer inherits the request's cancellation.
 const auditWriteTimeout = 5 * time.Second
 
-// sqlAuditSink is the built-in AuditSink: it writes each SecurityEvent as a
-// row in the framework's audit_log table via framework.AppendAuditEvent.
-// entity is always "auth"; op is ev.Kind; record_id is ev.UserID (or "-"
-// when empty, since the column is NOT NULL); actor_id is ev.UserID; and the
-// diff JSON carries {email, remote, …meta} with empty members omitted. A
-// row with no UserID carries email_hash (a short sha256 prefix) instead of
-// the address, since erasure cannot reach a row with no actor.
 type sqlAuditSink struct {
 	db    *sql.DB
 	table string
 }
 
-// NewSQLAuditSink builds an AuditSink that writes security events into the
-// given audit table (empty → "audit_log", the framework default). It calls
-// framework.EnsureAuditTable once at construction so the table exists before
-// the first event; a failure here is returned rather than deferred to the
-// first request, where a missing table would silently drop events.
-//
-// One-line wiring:
-//
-//	sink, err := auth.NewSQLAuditSink(db, "")
-//	mgr := auth.New(auth.AuthConfig{ AuditSink: sink, … })
+// NewSQLAuditSink returns an AuditSink writing to table (default audit_log), creating it first.
 func NewSQLAuditSink(db *sql.DB, table string) (AuditSink, error) {
 	if db == nil {
 		return nil, fmt.Errorf("auth: NewSQLAuditSink: db is nil")
@@ -181,10 +94,6 @@ func NewSQLAuditSink(db *sql.DB, table string) (AuditSink, error) {
 	return &sqlAuditSink{db: db, table: table}, nil
 }
 
-// SecurityEvent writes one audit_log row. A write failure is logged as a
-// WARN and swallowed, losing the audit row is preferable to failing the
-// auth operation it was recording (a reset that 500s because the audit
-// insert failed leaves the password unchanged AND the user locked out).
 func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 	recordID := ev.UserID
 	if recordID == "" {
@@ -196,13 +105,6 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 	case ev.UserID != "":
 		diff["email"] = ev.Email
 	default:
-		// A row with no actor is out of reach of EraseUserData, which
-		// scrubs the rows a user acted from: an address kept here
-		// (magic-link requests, refused OAuth sign-ins, unknown-account
-		// login failures) survived the erasure of its owner. A short
-		// digest still correlates repeated attempts on one address,
-		// across spellings once canonical. It is a pseudonym, not
-		// anonymous: anyone holding a candidate address can confirm it.
 		addr := ev.Email
 		if c, err := CanonicalEmail(addr); err == nil {
 			addr = c

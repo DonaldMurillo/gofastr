@@ -70,6 +70,27 @@ func TestJWTSignsOnlyWithCurrentSecret(t *testing.T) {
 	}
 }
 
+func TestJWTCredentialTagSurvivesRotation(t *testing.T) {
+	store := newMemoryUserStore()
+	u := seedUser(t, store, "a@example.com", "supersecret1")
+	old := NewJWTAuth("old-secret", time.Hour)
+	old.SetUserStore(store)
+	tok, err := old.GenerateToken(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated := NewJWTAuth("new-secret", time.Hour)
+	rotated.PreviousSecrets = []string{"old-secret"}
+	rotated.SetUserStore(store)
+	c, err := rotated.ValidateToken(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rotated.resolveOwner(context.Background(), c); !ok {
+		t.Error("a token issued before the rotation lost its owner during the drain window")
+	}
+}
+
 func TestExtractBearerTokenNeedsBearerScheme(t *testing.T) {
 	for hdr, want := range map[string]string{"Bearer abc": "abc", "bearer  abc ": "abc", "Basic abc": "", "abc": "", "": ""} {
 		r := httptest.NewRequest("GET", "/", nil)

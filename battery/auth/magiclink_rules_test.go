@@ -88,6 +88,40 @@ func TestMagicLinkStoresPurgeByPayload(t *testing.T) {
 	}
 }
 
+func TestMagicLinkInitRefusesBadBaseURL(t *testing.T) {
+	mgr := New(AuthConfig{JWTSecret: "s", DevMode: true, UserStore: newMemoryUserStore()})
+	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{BaseURL: "javascript:alert(1)", DevMode: true}))
+	if err := mgr.Init(nil); err == nil {
+		t.Error("a javascript: BaseURL passed Init")
+	}
+}
+
+func TestMagicLinkSendIsNotCached(t *testing.T) {
+	mgr, _, _ := newMagicLinkManager(t, &mockEmailSender{})
+	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", strings.NewReader(`{"email":"a@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mountMagicLinkRoutes(mgr).ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
+		t.Errorf("send = %d Cache-Control %q, want 200 no-store", w.Code, w.Header().Get("Cache-Control"))
+	}
+}
+
+func TestConfirmPageIsNotCachedOrReferred(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeConfirmPage(w, httptest.NewRequest(http.MethodGet, "/", nil), nil, ConfirmPageData{Token: "t", Action: "/auth/magic-link/verify"})
+	if w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Errorf("confirm page headers = %v, want no-store and no-referrer", w.Header())
+	}
+}
+
+func TestDefaultConfirmPageRefusesUnsafeAction(t *testing.T) {
+	page := string(defaultConfirmPage(context.Background(), ConfirmPageData{Token: "t", Action: "javascript:alert(1)"}))
+	if strings.Contains(page, "javascript:") {
+		t.Errorf("an unsafe Action reached the form: %s", page)
+	}
+}
+
 func TestMemoryMagicLinkPeekRefusesExpired(t *testing.T) {
 	st := NewMemoryMagicLinkTokenStore()
 	tok, _ := st.CreateToken(context.Background(), "a@example.com", time.Millisecond)

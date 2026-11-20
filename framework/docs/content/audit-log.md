@@ -267,6 +267,17 @@ deployments.
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`. |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`), an emailed sign-in code (`via=email_code`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
+| `register.duplicate` | A register attempt named an address that already has an account; nothing is created and the holder is mailed a notice when `RegisterEmailSender` is set. |
+| `reset_tokens.purged` | A completed reset or a password change spent the user's other outstanding reset links (`count`). |
+| `oauth.unlinked` | A provider link was removed by its owner, by a reset, or by an account claim (`provider`). |
+| `email.verified` | `GET /auth/verify-email` proved the address. |
+| `roles.updated` | `AuthManager.SetUserRoles` replaced a user's roles (`roles`). |
+| `token.created` | An API token was minted through `TokensPlugin`. |
+| `token.revoked` | An API token was revoked, by its owner or by a reset (`count`). |
+| `token.auth_failed` | A request bearing the token brand failed (`reason`: `unknown`, `revoked`, `expired`, `owner_missing`, `owner_disabled`); only the token's display prefix is recorded. |
+
+The vocabulary is closed: a new emission uses one of these kinds, or adds
+its row here in the same change.
 
 OAuth sign-in success events are recorded only after session creation and
 the final provider-link recheck succeed. A fail-closed second-factor check

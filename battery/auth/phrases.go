@@ -2,7 +2,6 @@ package auth
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The words on the magic-link confirmation page.
 var (
 	confirmTitle       = i18n.Define("auth.confirm_title", "Confirm sign-in")
 	confirmAs          = i18n.Define("auth.confirm_as", "Continue to sign in as {{who}}?")
@@ -11,7 +10,6 @@ var (
 	confirmSubmit      = i18n.Define("auth.confirm_submit", "Sign in")
 )
 
-// The words on the page that finishes linking a sign-in provider.
 var (
 	oauthHopTitle    = i18n.Define("auth.oauth_hop_title", "Finishing the link")
 	oauthSignInTitle = i18n.Define("auth.oauth_signin_hop_title", "Signing you in")
@@ -20,14 +18,12 @@ var (
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 
-// The words of the email a completed password reset sends.
 var (
 	resetNoticeDone     = i18n.Define("auth.reset_notice_done", "Your password was reset, and every device signed in to your account was signed out.")
 	resetNoticeUnlinked = i18n.Define("auth.reset_notice_unlinked", "These sign-in providers were unlinked from your account. Link them again in your account settings if you use them: {{providers}}.")
 	resetNoticeWarning  = i18n.Define("auth.reset_notice_warning", "If you did not reset your password, contact support now.")
 )
 
-// The refusals this package writes, under their catalog keys.
 var (
 	reasonSessionRequired                = i18n.Define("auth.session_required", "interactive session required, not an API token")
 	reasonLoginRequired                  = i18n.Define("auth.login_required", "login required")
@@ -159,11 +155,7 @@ var (
 	reasonCodeAttemptsSpent              = i18n.Define("auth.code_attempts_spent", "too many attempts: request a new code")
 	reasonInvalidCredentials             = i18n.Define("auth.invalid_credentials", "invalid credentials")
 	reasonCrossSiteRequest               = i18n.Define("auth.cross_site_request", "cross-site request refused")
-	// reasonComposedEmail answers ErrEmailNotComposed; it names the fix
-	// without echoing the input.
 	reasonComposedEmail = i18n.Define("auth.composed_email", "email must be in composed Unicode form (NFC)")
-	// reasonPasskeySignIn is the one answer every failed passkey sign-in
-	// gets: which check failed is in the audit trail, not the response.
 	reasonPasskeySignIn              = i18n.Define("auth.passkey_sign_in", "passkey sign-in failed")
 	reasonResetIncomplete            = i18n.Define("auth.reset_incomplete", "password updated, but securing the account failed: request another reset link")
 	reasonChangeIncomplete           = i18n.Define("auth.change_incomplete", "password updated, but signing out your other sessions failed: change it again")
@@ -179,6 +171,4 @@ var (
 	reasonVerifySignIn               = i18n.Define("auth.verify_sign_in", "sign in, then open the verification link again")
 )
 
-// The OAuth callback's refusal of an identity whose provider shared no
-// email address and that no link names yet.
 var reasonOauthNoEmail = i18n.Define("auth.oauth_no_email", "this provider account shares no email address: let the app see your email at the provider, or sign up another way")
