@@ -245,8 +245,9 @@ discriminates on it:
   screen serves keeps its 404 whatever the method.
 
 The 500 is the same error page a failed route resolver gets
-(`serveError`): RFC 9457 `application/problem+json` for machine
-Accepts, otherwise the error body (`WithErrorScreen`, or the built-in
+(`serveError`): RFC 9457 `application/problem+json` when explicitly
+accepted at a positive weight at least as high as HTML's, otherwise
+the error body (`WithErrorScreen`, or the built-in
 one) through the root layout, or a minimal document when there is no
 root layout. `Vary: Accept` on every arm, and no arm echoes the path or
 the panic. The embed content route answers the minimal document
