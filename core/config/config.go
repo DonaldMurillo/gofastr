@@ -92,8 +92,9 @@ func LoadWith(cfg any, sources ...Source) error {
 	warnLegacyKeys(v.Elem().Type(), src)
 
 	var secrets []string
+	collectSecrets(v.Elem(), v.Elem().Type(), "", src, false, &secrets)
 	if err := bindStruct(v.Elem(), "", src, &secrets); err != nil {
-		return err
+		return fmt.Errorf("%s", redactSecrets(err.Error(), secrets))
 	}
 
 	if val, ok := cfg.(ConfigValidator); ok {
@@ -102,6 +103,46 @@ func LoadWith(cfg any, sources ...Source) error {
 		}
 	}
 	return nil
+}
+
+func collectSecrets(v reflect.Value, t reflect.Type, prefix string, src Source, shadowed bool, secrets *[]string) {
+	fields, err := configFields(t)
+	if err != nil {
+		return
+	}
+	for _, f := range fields {
+		var fv reflect.Value
+		if v.IsValid() {
+			fv, _ = reachField(v, f)
+		}
+		hidden := shadowed || f.shadowed
+		if f.nested {
+			ft := f.sf.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+				if fv.IsValid() {
+					fv = fv.Elem()
+				}
+			}
+			collectSecrets(fv, ft, prefix+f.key, src, hidden, secrets)
+			continue
+		}
+		if f.sf.Tag.Get("sensitive") != "true" {
+			continue
+		}
+		*secrets = append(*secrets, f.sf.Tag.Get("default"))
+		if !hidden {
+			if value, ok := src.Get(prefix + f.key); ok {
+				*secrets = append(*secrets, value)
+			}
+		}
+		if fv.IsValid() && fv.CanInterface() {
+			for fv.Kind() == reflect.Pointer && !fv.IsNil() {
+				fv = fv.Elem()
+			}
+			*secrets = append(*secrets, fmt.Sprint(fv.Interface()))
+		}
+	}
 }
 
 func redactSecrets(msg string, secrets []string) string {

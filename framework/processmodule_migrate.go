@@ -333,10 +333,10 @@ func sanitizeIdent(s string) string {
 func moduleRoleDSN(adminDSN, role, password string) (string, error) {
 	u, err := url.Parse(adminDSN)
 	if err != nil {
-		return "", err
+		return "", errors.New("admin DSN must be a valid URL (redacted)")
 	}
 	if u.Scheme == "" || !strings.HasPrefix(u.Scheme, "postgres") {
-		return "", fmt.Errorf("admin DSN must be URL-form (postgres://...), got %q", adminDSN)
+		return "", errors.New("admin DSN must be URL-form (postgres://...), got (redacted)")
 	}
 	u.User = url.UserPassword(role, password)
 	q := u.Query()

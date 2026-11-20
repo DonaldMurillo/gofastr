@@ -27,6 +27,8 @@ invariants:
     rule: A sensitive field's value or default never appears in a Load error, a ConfigValidator error scrubbed longest value first in its raw, Go-quoted, JSON and URL-escaped spellings up to two escapes deep.
     enforced_by:
       - test: core/config.TestSensitiveValueRedacted
+      - test: core/config.TestPresetSensitiveRedactedInValidator
+      - test: core/config.TestSensitiveRedactedInOtherFieldParseError
       - test: core/config.TestSensitiveRedactedInValidator
       - test: core/config.TestRedactLongestSecretFirst
       - test: core/config.TestRedactEscapedSecretSpellings
