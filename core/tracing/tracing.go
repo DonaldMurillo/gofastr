@@ -24,8 +24,10 @@ func markError(span trace.Span, err error) {
 	span.SetStatus(codes.Error, "")
 }
 
-// ErrorType returns err's Go type, looking through fmt.Errorf %w wrappers.
+// ErrorType returns err's Go type, unwrapping only fmt.Errorf %w wrappers.
 // For multiple %w operands it follows the first error. For nil it returns "<nil>".
+// errors.Join reports *errors.joinError; a wrapped errors.New sentinel reports
+// *errors.errorString.
 func ErrorType(err error) string {
 	for {
 		var inner error
