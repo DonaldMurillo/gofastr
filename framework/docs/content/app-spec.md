@@ -2180,7 +2180,7 @@ the screen route checks above, the auth `GET <base_path>/me` route, the
 `login_form` and `signup_form` actions, the locale-prefix warning and
 the [signed-out screen warning](#screens-nobody-can-sign-in-to-gofastr-validate-and-gofastr-generate-warning)
 read the project's settings (`api_prefix`, auth and its base path,
-admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
+admin and its path, `pwa`, `llm_md`, `entity_llm_md`, `locale_prefixes`, `base_url`) off
 its generated `app.go` and `main.go`. A screen the whole spec would
 refuse is refused in the fragment too.
 

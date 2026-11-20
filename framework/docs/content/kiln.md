@@ -357,10 +357,12 @@ including the default off state. `app.llm_md` still controls public page
 documentation separately in the app spec. Hand-written specs that omit
 `entity_llm_md` keep entity docs on.
 
-Freeze refuses `app.debug_endpoints: true` because the app spec has no
-debug-endpoint setting. Set it to `false` before freezing, then set
-`framework.AppConfig.DebugEndpoints = true` in owned Go if you need the
-debug routes. `false` and an omitted setting freeze as before.
+Debug routes are dev-only and the app spec has no debug-endpoint
+setting, so freeze drops `app.debug_endpoints` and prints a warning
+("debug routes are not carried into the app"). Set
+`framework.AppConfig.DebugEndpoints = true` in owned Go if the graduated
+app needs them. A refused freeze writes nothing, not even its output
+directory.
 
 The current app spec and generated clients support camelCase JSON only.
 Freeze refuses `app.json_case: snake` (also `snake_case`) instead of silently

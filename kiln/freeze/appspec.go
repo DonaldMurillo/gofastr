@@ -37,10 +37,17 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
-func validateGraduation(w *world.World) error {
-	if w.App.DebugEndpoints {
-		return fmt.Errorf("freeze: app.debug_endpoints cannot be expressed by the current app spec; set debug_endpoints to false before freezing, then set framework.AppConfig.DebugEndpoints = true in owned Go if debug routes are needed")
+// GraduationWarnings names preview settings the app spec cannot carry
+// and that freeze drops on purpose.
+func GraduationWarnings(w *world.World) []string {
+	var out []string
+	if w != nil && w.App.DebugEndpoints {
+		out = append(out, "debug routes are not carried into the app: debug_endpoints is dev-only; set framework.AppConfig.DebugEndpoints = true in owned Go if you need them")
 	}
+	return out
+}
+
+func validateGraduation(w *world.World) error {
 	switch w.App.JSONCase {
 	case "", "camel", "camelCase":
 	case "snake", "snake_case":

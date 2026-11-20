@@ -16,7 +16,10 @@ invariants:
       - test: cmd/gofastr/internal/appspec.TestDecodeEntityLLMMD
       - test: cmd/gofastr/internal/appgen.TestGeneratedEntityLLMMDConfig
       - test: cmd/gofastr/internal/packcmd.TestEntityLLMMDRoundTrip
-  - id: graduation-refuses-debug-endpoint-loss
-    rule: Freeze refuses debug_endpoints true with owned-Go instructions rather than silently dropping the routes.
+      - test: cmd/gofastr/internal/packcmd.TestKilnFreezeEntityLLMMDReachesGeneratedGo
+      - test: cmd/gofastr/internal/appspec.TestEntityLLMMDFreesIndexScreenRoute
+  - id: graduation-warns-on-dropped-debug-endpoints
+    rule: Freeze drops dev-only debug_endpoints with a printed warning, producing the same app spec as debug off; a refused freeze creates no output directory.
     enforced_by:
       - test: kiln/freeze.TestFreezeDebugEndpoints
+      - test: kiln/freeze.TestRefusedFreezeCreatesNoDirectory

@@ -40,24 +40,37 @@ func TestFreezeEntityLLMMD(t *testing.T) {
 }
 
 func TestFreezeDebugEndpoints(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
+	var specs [2][]byte
+	for i, enabled := range []bool{false, true} {
 		w := world.New()
 		w.App.DebugEndpoints = enabled
 		dir := t.TempDir()
-		err := freeze.Freeze(w, dir)
-		if !enabled {
-			if err != nil {
-				t.Fatal(err)
-			}
-			continue
+		if err := freeze.Freeze(w, dir); err != nil {
+			t.Fatalf("debug_endpoints=%v: %v", enabled, err)
 		}
-		if err == nil || !strings.Contains(err.Error(), "debug_endpoints") || !strings.Contains(err.Error(), "framework.AppConfig.DebugEndpoints") {
-			t.Fatalf("want actionable debug_endpoints refusal, got %v", err)
+		spec, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, name := range []string{"gofastr.yml", "world.json"} {
-			if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
-				t.Errorf("refused freeze wrote %s: %v", name, err)
-			}
+		specs[i] = spec
+		warnings := freeze.GraduationWarnings(w)
+		if enabled != (len(warnings) == 1 && strings.Contains(warnings[0], "debug routes are not carried")) {
+			t.Fatalf("debug_endpoints=%v: warnings %q", enabled, warnings)
 		}
+	}
+	if string(specs[0]) != string(specs[1]) {
+		t.Fatalf("debug_endpoints changed the app spec:\n%s\n---\n%s", specs[0], specs[1])
+	}
+}
+
+func TestRefusedFreezeCreatesNoDirectory(t *testing.T) {
+	w := world.New()
+	w.App.JSONCase = "snake"
+	root := t.TempDir()
+	if err := freeze.Freeze(w, filepath.Join(root, "a", "b", "out")); err == nil {
+		t.Fatal("want refusal")
+	}
+	if _, err := os.Stat(filepath.Join(root, "a")); !os.IsNotExist(err) {
+		t.Fatalf("refused freeze created its output tree: %v", err)
 	}
 }
