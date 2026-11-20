@@ -10,9 +10,7 @@ import (
 	"strings"
 )
 
-// ErrChecksumMismatch is the sentinel returned (wrapped) by
-// [VerifyChecksum] when an object's actual SHA-256 digest does not
-// match the expected digest.
+// ErrChecksumMismatch is wrapped by [VerifyChecksum] when the digests differ.
 var ErrChecksumMismatch = errors.New("storage: checksum mismatch")
 
 // SaveResult reports what [SaveWithChecksum] wrote.
@@ -23,12 +21,7 @@ type SaveResult struct {
 	SHA256 string
 }
 
-// SaveWithChecksum stores r under key via s.Save while teeing the stream
-// through a SHA-256 hasher, so the content is read exactly once and no
-// backend changes are required. It returns a [SaveResult] carrying the
-// byte count and the lowercase hex digest. On a Save error it returns
-// the zero SaveResult and the error from s.Save; the stream is not
-// buffered in memory, so it works for arbitrarily large objects.
+// SaveWithChecksum stores r under key and returns its size and SHA-256 digest.
 func SaveWithChecksum(ctx context.Context, s Storage, key string, r io.Reader) (SaveResult, error) {
 	h := sha256.New()
 	cr := &countReader{r: io.TeeReader(r, h)}
@@ -38,12 +31,7 @@ func SaveWithChecksum(ctx context.Context, s Storage, key string, r io.Reader) (
 	return SaveResult{Size: cr.n, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
-// VerifyChecksum re-reads key from s and compares the content's SHA-256
-// digest with wantSHA256. wantSHA256 must be exactly 64 hexadecimal
-// characters; both lower- and uppercase hex are accepted. It returns nil
-// on a match, an error wrapping [ErrChecksumMismatch] (carrying the key
-// and the got/want digests) on a mismatch, and the underlying error if
-// the object cannot be read or wantSHA256 is malformed.
+// VerifyChecksum re-reads key and compares its SHA-256 digest with wantSHA256.
 func VerifyChecksum(ctx context.Context, s Storage, key, wantSHA256 string) error {
 	want, err := normalizeSha256Hex(wantSHA256)
 	if err != nil {
@@ -69,8 +57,6 @@ func VerifyChecksum(ctx context.Context, s Storage, key, wantSHA256 string) erro
 	return nil
 }
 
-// countReader counts the bytes read through r. It is used to obtain the
-// byte count alongside the io.TeeReader hash in a single pass.
 type countReader struct {
 	r io.Reader
 	n int64
@@ -82,11 +68,8 @@ func (c *countReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// normalizeSha256Hex validates that s is a 64-character hexadecimal
-// SHA-256 digest and returns its lowercase form, so callers can compare
-// digests with a plain equality check.
 func normalizeSha256Hex(s string) (string, error) {
-	const hexLen = sha256.Size * 2 // 64
+	const hexLen = sha256.Size * 2
 	if len(s) != hexLen {
 		return "", fmt.Errorf("expected %d hex characters, got %d", hexLen, len(s))
 	}
