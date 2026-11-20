@@ -33,6 +33,7 @@ invariants:
       - test: core/config.TestSecretInOtherFieldParseError
       - test: core/config.TestOverriddenSecretDefaultStaysReadable
       - test: core/config.TestMalformedRuleHidesSensitiveDefault
+      - test: core/config.TestShapeErrorHidesOtherFieldsSecret
       - test: core/config.TestShortSecretPlaceholderStaysIntact
       - test: core/config.TestSensitiveRedactedInValidator
       - test: core/config.TestRedactLongestSecretFirst

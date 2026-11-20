@@ -342,3 +342,22 @@ func TestMalformedRuleHidesSensitiveDefault(t *testing.T) {
 		t.Fatalf("Load = %v, Key = %q; want the valid oneof rule to load", err, good.Key)
 	}
 }
+
+func TestShapeErrorHidesOtherFieldsSecret(t *testing.T) {
+	var cross struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"alpha-key"` // not-a-secret: fixture asserting redaction
+		Mode  string `config:"MODE" validate:"oneof:alpha-key beta"`
+	}
+	err := config.Load(&cross, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "field Mode") {
+		t.Fatalf("Load = %v, want a field Mode rule error without the other field's default", err)
+	}
+	var odd struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"alpha-key"` // not-a-secret: fixture
+		Mode  string `config:"MODE" validate:"alpha-key=1"`
+	}
+	err = config.Load(&odd, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "unknown name") {
+		t.Fatalf("Load = %v, want an unknown-rule error that does not quote the rule name", err)
+	}
+}

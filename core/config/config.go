@@ -693,10 +693,10 @@ func parseRules(t reflect.Type, tag string) ([]valueRule, error) {
 	}
 	isInt := t.Kind() == reflect.Int || t.Kind() == reflect.Int64
 	var rules []valueRule
-	for _, rule := range strings.Split(tag, ",") {
+	for i, rule := range strings.Split(tag, ",") {
 		key, arg, ok := strings.Cut(rule, "=")
 		if !ok {
-			return nil, fmt.Errorf("invalid validation rule %q", rule)
+			return nil, fmt.Errorf("validation rule %d is not name=value", i+1)
 		}
 		r := valueRule{key: key, arg: arg}
 		switch key {
@@ -722,11 +722,26 @@ func parseRules(t reflect.Type, tag string) ([]valueRule, error) {
 			}
 			r.choices = strings.Fields(arg)
 		default:
-			return nil, fmt.Errorf("unknown validation rule %q", key)
+			if isRuleName(key) {
+				return nil, fmt.Errorf("unknown validation rule %q", key)
+			}
+			return nil, fmt.Errorf("validation rule %d has an unknown name", i+1)
 		}
 		rules = append(rules, r)
 	}
 	return rules, nil
+}
+
+func isRuleName(s string) bool {
+	if s == "" || len(s) > 16 {
+		return false
+	}
+	for _, r := range s {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateTags(v reflect.Value, tag string) error {
@@ -781,11 +796,7 @@ func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	for _, f := range fields {
 		if !f.nested {
 			if _, err := parseRules(f.sf.Type, f.sf.Tag.Get("validate")); err != nil {
-				msg := err.Error()
-				if f.sf.Tag.Get("sensitive") == "true" {
-					msg = redactSecrets(msg, []string{f.sf.Tag.Get("default")})
-				}
-				return fmt.Errorf("config: field %s: %s", f.path, msg)
+				return fmt.Errorf("config: field %s: %s", f.path, err)
 			}
 			continue
 		}
