@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -35,6 +37,16 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 	var out strings.Builder
 	writeYAMLMap(&out, doc, 0, topLevelOrder)
 	return []byte(out.String()), nil
+}
+
+// GraduationWarnings names preview settings the app spec cannot carry
+// and that freeze drops on purpose.
+func GraduationWarnings(w *world.World) []string {
+	var out []string
+	if w != nil && w.App.DebugEndpoints {
+		out = append(out, "debug routes are not carried into the app: debug_endpoints is dev-only; set framework.AppConfig.DebugEndpoints = true in owned Go if you need them")
+	}
+	return out
 }
 
 func validateGraduation(w *world.World) error {
@@ -198,6 +210,7 @@ func appMap(a world.AppConfig) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	m["entity_llm_md"] = a.LLMMD
 	return m
 }
 
@@ -817,7 +830,11 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 		return
 	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
-	writeScalarInline(sb, item)
+	if s, ok := item.(string); ok && strings.Contains(s, ":") {
+		sb.WriteString(strconv.Quote(s))
+	} else {
+		writeScalarInline(sb, item)
+	}
 	sb.WriteByte('\n')
 }
 
@@ -918,38 +935,10 @@ func isScalar(value any) bool {
 }
 
 func quoteYAMLString(value string) string {
-	if !needsQuote(value) {
+	if !coreyaml.NeedsQuote(value) {
 		return value
 	}
 	return strconv.Quote(value)
-}
-
-func needsQuote(value string) bool {
-	if value == "" {
-		return true
-	}
-	switch strings.ToLower(value) {
-	case "true", "false", "null", "~":
-		return true
-	}
-	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
-		return true
-	}
-	if _, err := strconv.ParseFloat(value, 64); err == nil && strings.ContainsAny(value, ".eE") {
-		return true
-	}
-	if strings.ContainsAny(value[:1], "[]{}&*!|>'\"%@`#,?: -") ||
-		strings.Contains(value, ": ") || strings.Contains(value, " #") ||
-		// Commas split core/yaml flow lists; quotes and brackets anywhere
-		// confuse its quote/flow scanning; a colon in a block list item
-		// re-parses as `- key: value`. Quote them wherever they appear,
-		// over-quoting is harmless, under-quoting corrupts silently.
-		strings.ContainsAny(value, `,'"[]{}:`) ||
-		strings.ContainsAny(value, "\n\t") || value != strings.TrimSpace(value) ||
-		strings.HasSuffix(value, ":") {
-		return true
-	}
-	return false
 }
 
 // validateYAMLRepresentable rejects values the core/yaml emitter cannot
@@ -983,6 +972,10 @@ func validateYAMLRepresentable(value any, path string) error {
 			if err := validateYAMLRepresentable(item, itemPath); err != nil {
 				return err
 			}
+		}
+	default:
+		if scalar := reflect.ValueOf(value); scalar.Kind() == reflect.String && !utf8.ValidString(scalar.String()) {
+			return fmt.Errorf("freeze: %s: invalid UTF-8 cannot be represented in gofastr.yml", path)
 		}
 	}
 	return nil
@@ -1037,7 +1030,7 @@ func OrderedKeys(m map[string]any, order []string) []string {
 
 var (
 	topLevelOrder = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
-	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md"}
+	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md"}
 	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "cross_owner_read", "search_fields", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}

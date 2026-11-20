@@ -87,3 +87,30 @@ func TestKilnFreezeAppSpecParsesAndValidates(t *testing.T) {
 		t.Fatalf("app surface drifted during freeze: %+v", bp.App)
 	}
 }
+
+func TestKilnFreezeEntityLLMMDReachesGeneratedGo(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		w := world.New()
+		w.App = world.AppConfig{Name: "forge", Module: "example.com/forge", DBDriver: "sqlite", DBURL: "forge.db", LLMMD: enabled}
+		buf, err := freeze.AppSpecYAML(w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bp, err := decodeAppSpecString(string(buf))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files, err := appgen.RenderAppSpecFiles(bp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var all strings.Builder
+		for _, f := range files {
+			all.WriteString(f.Content)
+		}
+		want := "NoLLMMD: " + map[bool]string{false: "true", true: "false"}[enabled]
+		if !strings.Contains(all.String(), want) {
+			t.Fatalf("llm_md=%v: generated Go lacks %q\n%s", enabled, want, buf)
+		}
+	}
+}

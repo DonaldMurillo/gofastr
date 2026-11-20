@@ -92,7 +92,14 @@ func LoadWith(cfg any, sources ...Source) error {
 	warnLegacyKeys(v.Elem().Type(), src)
 
 	var secrets []string
-	if err := bindStruct(v.Elem(), "", src, &secrets); err != nil {
+	collectSecrets(v.Elem(), v.Elem().Type(), "", src, false, &secrets)
+	slices.Sort(secrets)
+	secrets = slices.Compact(secrets)
+	if err := bindStruct(v.Elem(), "", src); err != nil {
+		msg := err.Error()
+		if redacted := redactSecrets(msg, secrets); redacted != msg {
+			return fmt.Errorf("%s", redacted)
+		}
 		return err
 	}
 
@@ -102,6 +109,53 @@ func LoadWith(cfg any, sources ...Source) error {
 		}
 	}
 	return nil
+}
+
+func collectSecrets(v reflect.Value, t reflect.Type, prefix string, src Source, shadowed bool, secrets *[]string) {
+	fields, err := configFields(t)
+	if err != nil {
+		return
+	}
+	for _, f := range fields {
+		var fv reflect.Value
+		if v.IsValid() {
+			fv, _ = reachField(v, f)
+		}
+		hidden := shadowed || f.shadowed
+		if f.nested {
+			ft := f.sf.Type
+			if ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+				if fv.IsValid() {
+					fv = fv.Elem()
+				}
+			}
+			collectSecrets(fv, ft, prefix+f.key, src, hidden, secrets)
+			continue
+		}
+		if f.sf.Tag.Get("sensitive") != "true" {
+			continue
+		}
+		value := f.sf.Tag.Get("default")
+		if !hidden {
+			if supplied, ok := src.Get(prefix + f.key); ok {
+				value = supplied
+			}
+		}
+		if value != "" {
+			*secrets = append(*secrets, value)
+			continue
+		}
+		if fv.IsValid() && fv.CanInterface() && !fv.IsZero() {
+			for fv.Kind() == reflect.Pointer && !fv.IsNil() {
+				fv = fv.Elem()
+			}
+			if fv.Kind() == reflect.String {
+				*secrets = append(*secrets, fv.String())
+			}
+			*secrets = append(*secrets, fmt.Sprint(fv.Interface()))
+		}
+	}
 }
 
 func redactSecrets(msg string, secrets []string) string {
@@ -114,11 +168,14 @@ func redactSecrets(msg string, secrets []string) string {
 			ordered = append(ordered, secretSpellings(s)...)
 		}
 	}
+	slices.Sort(ordered)
+	ordered = slices.Compact(ordered)
 	sort.SliceStable(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
+	replacements := []string{"(redacted)", "(redacted)"}
 	for _, s := range ordered {
-		msg = strings.ReplaceAll(msg, s, "(redacted)")
+		replacements = append(replacements, s, "(redacted)")
 	}
-	return msg
+	return strings.NewReplacer(replacements...).Replace(msg)
 }
 
 var secretEscapers = []func(string) string{
@@ -340,7 +397,7 @@ func reachField(elem reflect.Value, f configField) (reflect.Value, bool) {
 	return v, true
 }
 
-func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string) error {
+func bindStruct(elem reflect.Value, prefix string, src Source) error {
 	fields, err := configFields(elem.Type())
 	if err != nil {
 		return err
@@ -361,7 +418,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 		}
 
 		if cf.shadowed {
-			if err := applyDefaults(fieldVal, field, secrets); err != nil {
+			if err := applyDefaults(fieldVal, field); err != nil {
 				return err
 			}
 			continue
@@ -378,7 +435,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 				}
 				fieldVal = fieldVal.Elem()
 			}
-			if err := bindStruct(fieldVal, nestedPrefix, src, secrets); err != nil {
+			if err := bindStruct(fieldVal, nestedPrefix, src); err != nil {
 				return err
 			}
 			continue
@@ -400,13 +457,9 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 				return fmt.Errorf("config: required field %s (%s) not set", field.Name, key)
 			}
 			if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
-				return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
+				return fmt.Errorf("config: field %s: %s", field.Name, err.Error())
 			}
 			continue
-		}
-
-		if sensitive {
-			*secrets = append(*secrets, val)
 		}
 
 		if err := setField(fieldVal, val, field.Name); err != nil {
@@ -416,14 +469,14 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			return err
 		}
 		if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
-			return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
+			return fmt.Errorf("config: field %s: %s", field.Name, err.Error())
 		}
 	}
 
 	return nil
 }
 
-func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) error {
+func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 	if isNestedStruct(sf.Type) {
 		if v.Kind() == reflect.Pointer {
 			return nil
@@ -437,7 +490,7 @@ func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) e
 			if !ok || !fv.CanSet() {
 				continue
 			}
-			if err := applyDefaults(fv, f.sf, secrets); err != nil {
+			if err := applyDefaults(fv, f.sf); err != nil {
 				return err
 			}
 		}
@@ -448,9 +501,6 @@ func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) e
 		return nil
 	}
 	sensitive := sf.Tag.Get("sensitive") == "true"
-	if sensitive {
-		*secrets = append(*secrets, def)
-	}
 	if err := setField(v, def, sf.Name); err != nil {
 		if sensitive {
 			return fmt.Errorf("config: field %s: invalid sensitive default (redacted)", sf.Name)
@@ -458,7 +508,7 @@ func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) e
 		return err
 	}
 	if err := validateTags(v, sf.Tag.Get("validate")); err != nil {
-		return fmt.Errorf("config: field %s: %s", sf.Name, redactSecrets(err.Error(), *secrets))
+		return fmt.Errorf("config: field %s: %s", sf.Name, err)
 	}
 	return nil
 }

@@ -82,6 +82,22 @@ func TestAppSpecQuotesApostropheInList(t *testing.T) {
 	}
 }
 
+func TestAppSpecStringScalarsRoundTrip(t *testing.T) {
+	w := seedWorld(map[string]any{"title": "0x10", "tags": []any{"0o10", "1e999"}})
+	buf, err := freeze.AppSpecYAML(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := parseSeedRow(t, buf)
+	if got := row.Map["title"].Value; got != "0x10" {
+		t.Errorf("title = %#v, want string %q", got, "0x10")
+	}
+	if tags := row.Map["tags"]; tags == nil || len(tags.List) != 2 ||
+		tags.List[0].Value != "0o10" || tags.List[1].Value != "1e999" {
+		t.Errorf("tags did not round-trip as the strings %q and %q:\n%s", "0o10", "1e999", buf)
+	}
+}
+
 func TestAppSpecSeedRowScalarListOnly(t *testing.T) {
 	// A row whose only values are scalar lists must still round-trip:
 	// the emitter leads the list item with an inline [a, b] key.
@@ -121,6 +137,19 @@ func TestAppSpecRejectsUnsafeSeedKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "aria: label") {
 		t.Fatalf("error should name the offending key: %v", err)
+	}
+}
+
+func TestAppSpecRejectsInvalidUTF8SeedValue(t *testing.T) {
+	w := seedWorld(map[string]any{"tags": []any{"a\xffb"}})
+	buf, err := freeze.AppSpecYAML(w)
+	if err == nil {
+		row := parseSeedRow(t, buf)
+		t.Fatalf("invalid UTF-8 was emitted as %q", row.Map["tags"].List[0].Value)
+	}
+	if len(buf) != 0 || !strings.Contains(err.Error(), "seed[0].rows[0].tags[0]") ||
+		!strings.Contains(err.Error(), "invalid UTF-8") {
+		t.Fatalf("want a path-specific UTF-8 refusal and no YAML, got %q, %v", buf, err)
 	}
 }
 
