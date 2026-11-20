@@ -4163,6 +4163,12 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		fieldID := "field-" + field.Name
 		inputName := appspec.WireKey(field.Name)
 		req := fmt.Sprintf("%t", field.Required)
+		// value and selected are the config fragments that start a
+		// control at its field's Default; empty for a field with none.
+		var value, selected string
+		if def := appSpecFormDefault(field); def != "" {
+			value, selected = fmt.Sprintf(", Value: %q", def), fmt.Sprintf(", Selected: %q", def)
+		}
 		var expr string
 		switch field.Type {
 		case "enum":
@@ -4172,16 +4178,16 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
-				inputName, label, fieldID, opts.String(), req)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s%s})",
+				inputName, label, fieldID, opts.String(), req, selected)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
-				inputName, label, fieldID, req, field.To)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s%s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+				inputName, label, fieldID, req, selected, field.To)
 		case "text":
-			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
-				inputName, label, fieldID, req)
+			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s%s})",
+				inputName, label, fieldID, req, value)
 		case "bool", "boolean":
 			// entityui's pair: a checked box submits "true" (with no
 			// Value it posted "on", which the bool validator refuses),
@@ -4202,21 +4208,63 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			if step == "" {
 				step = "1"
 			}
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q, Step: %q}) }})",
-				label, fieldID, req, inputName, step)
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q%s, Step: %q}) }})",
+				label, fieldID, req, inputName, value, step)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
-				inputName, label, fieldID, req)
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s%s})",
+				inputName, label, fieldID, req, value)
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
-			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
-				label, fieldID, req, appSpecFormInputType(field.Type), inputName)
+			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q%s}) }})",
+				label, fieldID, req, appSpecFormInputType(field.Type), inputName, value)
 		}
 		fields = append(fields, expr)
 	}
 	form := fmt.Sprintf("ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, ExtraAttrs: %s}, %s)", rpcPath, appSpecTx(bp, "Create"), extraAttrs, strings.Join(fields, ", "))
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
+}
+
+// appSpecFormDefault is the text a create control starts with: the
+// field's Default as the control submits it, entityui's create prefill.
+// A timestamp reads as datetime-local's UTC wall time; a file input
+// takes no value.
+func appSpecFormDefault(field framework.FieldDeclaration) string {
+	switch v := field.Default.(type) {
+	case nil:
+		return ""
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case time.Time:
+		return appSpecDateTimeLocal(field.Type, v)
+	}
+	text := fmt.Sprint(field.Default)
+	switch appSpecFormInputType(field.Type) {
+	case "file":
+		return ""
+	case "datetime-local":
+		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04"} {
+			if t, err := time.Parse(layout, text); err == nil {
+				return appSpecDateTimeLocal(field.Type, t)
+			}
+		}
+		return ""
+	}
+	return text
+}
+
+// appSpecDateTimeLocal formats t for a create control of the given field
+// type: a date as YYYY-MM-DD, a timestamp as datetime-local's UTC wall
+// time, with seconds only when it has them.
+func appSpecDateTimeLocal(fieldType string, t time.Time) string {
+	if fieldType == "date" {
+		return t.Format(time.DateOnly)
+	}
+	t = t.UTC()
+	if t.Second() != 0 {
+		return t.Format("2006-01-02T15:04:05")
+	}
+	return t.Format("2006-01-02T15:04")
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a
@@ -4291,10 +4339,13 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
         if (row[t.key] == null) continue;
-        const opt = document.createElement('option');
-        opt.value = row[t.key];
+        const value = String(row[t.key]);
+        // The field's Default is drawn as an option of its own: name it.
+        const drawn = Array.from(sel.options).find((o) => o.value === value);
+        const opt = drawn || document.createElement('option');
+        opt.value = value;
         opt.textContent = labelFor(row);
-        sel.appendChild(opt);
+        if (!drawn) sel.appendChild(opt);
       }
       sel.dataset.relLoaded = '1';
     } catch (_) {}

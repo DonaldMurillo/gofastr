@@ -1004,7 +1004,9 @@ partial and keeps the shell).
   target with `primary_key: [currency_code]` offers its codes; a target
   keyed on more than one column has no single value to offer and its
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
-  `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
+  `decimal` and `any` for `float`; each control starts at its field's
+  `default:`, so an untouched field submits the default rather than an
+  empty value) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
   Submitted control names use the default camelCase API wire keys
   (`address_line_1` becomes `addressLine1`) so field refusals land on the
