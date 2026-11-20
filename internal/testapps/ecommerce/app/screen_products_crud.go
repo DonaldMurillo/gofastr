@@ -1,9 +1,11 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=cf7bbf917de3fa00
+//gofastr:generated generator=app kind=scaffold version=dev sum=f3d1461dd1524fbc
 
 package main
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -90,14 +92,47 @@ func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
+					ui.InvalidateScreens(w, "/")
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	site.Register("/", &HomeScreen{}, appLayout)
 }
 
 func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
+					ui.InvalidateScreens(w, "/products")
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	site.Register("/products", &ProductsScreen{}, appLayout)
 }
 
 func mountProductDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
+					ui.InvalidateScreens(w, "*")
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	record := app.NewScreen("/products/:id", &ProductDetailScreen{}).WithTitle("Product Details").WithDescription("View product details")
 	record.Intercept = &app.Intercept{From: "/products", As: app.ScreenDrawer}
 	site.RegisterScreen(record, appLayout)

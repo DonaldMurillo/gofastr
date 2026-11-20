@@ -1,9 +1,11 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0dea6e6df6d6cbfd
+//gofastr:generated generator=app kind=scaffold version=dev sum=b406c84a80ddb059
 
 package main
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -42,6 +44,17 @@ func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == "/api/categories" || strings.HasPrefix(r.URL.Path, "/api/categories/") {
+					ui.InvalidateScreens(w, "/categories")
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	site.Register("/categories", &CategoriesScreen{}, appLayout)
 }
 

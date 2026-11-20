@@ -2395,6 +2395,12 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMo
 		if needs.url {
 			sb.WriteString("\t\"net/url\"\n")
 		}
+		if needs.http {
+			sb.WriteString("\t\"net/http\"\n")
+		}
+		if needs.strings {
+			sb.WriteString("\t\"strings\"\n")
+		}
 		sb.WriteString("\n")
 	}
 	if withMount {
@@ -2781,13 +2787,14 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	sb.WriteString("package main\n\n")
 	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), screen.Name, appSpecScreenScope(bp, screen.Name)))
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
+	mount := appSpecScreenInvalidation(screen, bp) + appSpecSourceChecks(screen) + AppSpecScreenMountStmt(screen, bp)
 	needs := appSpecScreensImportNeeds(bp, []appspec.AppSpecScreen{screen}, entityMap, apiBase)
-	needs.readCode(body, bp.PhraseCollector())
+	needs.readCode(body+mount, bp.PhraseCollector())
 	writeScreenImportBlock(&sb, needs, true, true)
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(body)
 	mountName := "mount" + appspec.ToCamelCase(screen.Name) + "Screen"
-	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s%s\n}\n\n", mountName, screen.Name, mountName, appSpecSourceChecks(screen), AppSpecScreenMountStmt(screen, bp)))
+	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, mount))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
 	return GeneratedFile{Name: appspec.ScreenFileName(screen.Name), Content: sb.String()}
 }
@@ -2904,8 +2911,12 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
 	}
+	var invalidations strings.Builder
+	for _, s := range screens {
+		invalidations.WriteString(appSpecScreenInvalidation(s, bp))
+	}
 	needs := appSpecScreensImportNeeds(bp, screens, entityMap, apiBase)
-	needs.readCode(bodies.String(), bp.PhraseCollector())
+	needs.readCode(bodies.String()+invalidations.String(), bp.PhraseCollector())
 	writeScreenImportBlock(&sb, needs, true, len(screens) > 0)
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(bodies.String())
@@ -2916,6 +2927,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range ordered {
 		mountName := "mount" + appspec.ToCamelCase(s.Name) + "Screen"
 		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
+		sb.WriteString(appSpecScreenInvalidation(s, bp))
 		sb.WriteString(appSpecSourceChecks(s))
 		sb.WriteString(AppSpecScreenMountStmt(s, bp))
 		sb.WriteString("\n}\n\n")
@@ -3213,7 +3225,9 @@ type screenImportNeeds struct {
 	// framework: a composite-key record screen joins its key params.
 	framework bool
 	// url: a record screen escapes the route params of its base.
-	url bool
+	url     bool
+	http    bool
+	strings bool
 }
 
 // readCode sets the needs the emitted code itself decides: which block
@@ -3224,8 +3238,51 @@ func (n *screenImportNeeds) readCode(code string, p *appspec.AppSpecPhrases) {
 	n.i18nui = emitsPkgRef(code, "i18nui")
 	n.framework = emitsPkgRef(code, "framework")
 	n.url = emitsPkgRef(code, "url")
+	n.http = emitsPkgRef(code, "http")
+	n.strings = emitsPkgRef(code, "strings")
 	n.handler = emitsPkgRef(code, "handler")
 	n.i18n = p.Used()
+}
+
+func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec) string {
+	var apis []string
+	for _, block := range appspec.AppSpecBlocksDeep(screen.Body) {
+		name := ""
+		switch {
+		case appspec.IsEntityListBlock(block), appspec.IsEntityDetailBlock(block), appspec.IsEditFormBlock(block):
+			name = strings.Trim(block.Entity, "/")
+		case appspec.AppSpecBlockKindIs(block, "stat_card"):
+			if source, ok := appSpecStatSource(block); ok {
+				name = source.entity
+			}
+		case appspec.AppSpecBlockKindIs(block, "bar_chart"), appspec.AppSpecBlockKindIs(block, "pie_chart"), appspec.AppSpecBlockKindIs(block, "line_chart"):
+			name, _, _ = appSpecChartSource(block)
+		}
+		for _, decl := range bp.Entities {
+			if name != "" && decl.Name == name {
+				api := appSpecEntityAPIPath(appSpecAPIBase(bp.App.APIPrefix), decl)
+				if !slices.Contains(apis, api) {
+					apis = append(apis, api)
+				}
+			}
+		}
+	}
+	if len(apis) == 0 {
+		return ""
+	}
+	selector := appSpecScreenRoutePath(screen.Route)
+	if screenNeedsParams(screen) {
+		selector = "*"
+	}
+	var sb strings.Builder
+	sb.WriteString("\tfwApp.Use(func(next http.Handler) http.Handler {\n\t\treturn http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n\t\t\tswitch r.Method {\n\t\t\tcase http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:\n")
+	var matches []string
+	for _, api := range apis {
+		matches = append(matches, fmt.Sprintf("r.URL.Path == %q || strings.HasPrefix(r.URL.Path, %q)", api, api+"/"))
+	}
+	fmt.Fprintf(&sb, "\t\t\t\tif %s {\n\t\t\t\t\tui.InvalidateScreens(w, %q)\n\t\t\t\t}\n", strings.Join(matches, " || "), selector)
+	sb.WriteString("\t\t\t}\n\t\t\tnext.ServeHTTP(w, r)\n\t\t})\n\t})\n")
+	return sb.String()
 }
 
 func appSpecScreenImports(bp appspec.AppSpec) screenImportNeeds {

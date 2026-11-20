@@ -1,9 +1,11 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f6805696c356e940
+//gofastr:generated generator=app kind=scaffold version=dev sum=3c38feec0748a946
 
 package main
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -43,6 +45,17 @@ func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == "/api/reviews" || strings.HasPrefix(r.URL.Path, "/api/reviews/") {
+					ui.InvalidateScreens(w, "/reviews")
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	site.Register("/reviews", &ReviewsScreen{}, appLayout)
 }
 
