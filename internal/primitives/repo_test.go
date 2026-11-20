@@ -263,6 +263,22 @@ var ownedPackages = []string{
 	"battery/admin",
 	"battery/semantic",
 	"battery/webhook",
+	"battery/desktop",
+	"battery/desktop/appstate",
+	"battery/desktop/desktoptest",
+	"battery/desktop/internal/fakecgo",
+	"battery/desktop/internal/ffi",
+	"battery/desktop/internal/gtk",
+	"battery/desktop/internal/objc",
+	"battery/desktop/internal/placement",
+	"battery/desktop/internal/update",
+	"battery/desktop/internal/win32",
+	"battery/desktop/internal/windowtest",
+	"battery/desktop/linux",
+	"battery/desktop/macos",
+	"battery/desktop/native",
+	"battery/desktop/ui",
+	"battery/desktop/windows",
 }
 
 //gofastr:test-reads primitives/ *.go

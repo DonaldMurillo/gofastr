@@ -7,11 +7,7 @@ import (
 	"math"
 )
 
-// GlobalDouble reads a double-precision global C symbol from the
-// process's default image (RTLD_DEFAULT): NSAppKitVersionNumber is the
-// caller this exists for, the AppKit availability gate the glass chrome
-// reads. The framework that exports the symbol must already be loaded
-// (OpenFrameworks); ok is false when the symbol is missing or short.
+// GlobalDouble reads a double global C symbol from the process's default image.
 func GlobalDouble(name string) (float64, bool) {
 	p, err := Dlsym(rtldDefault, name)
 	if err != nil || p == 0 {

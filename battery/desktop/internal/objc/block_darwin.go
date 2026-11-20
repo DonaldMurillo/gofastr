@@ -9,10 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 )
 
-// The arm64 block literal: 32 bytes of isa/flags/reserved/invoke/
-// descriptor, followed by captured state for non-global blocks. Global
-// blocks capture nothing, so the literal is fully described by these
-// five words.
 type blockLiteral struct {
 	isa        uintptr
 	flags      int32
@@ -31,21 +27,12 @@ const (
 	blockSize     = 32
 )
 
-// blockDescriptorGlobal backs every block NewBlock creates: no copy
-// or dispose helpers, so reserved/size are all it carries.
 var blockDescriptorGlobal = blockDescriptor{size: blockSize}
 
-// blocks keeps every literal alive (and, because they are separately
-// allocated and never moved, at a stable address) for the process
-// lifetime. C code holds these pointers indefinitely. The mutex preserves
-// every anchor when the main thread and notification callers add blocks.
 var blocks []*blockLiteral
 var blocksMu sync.Mutex
 
-// CallBlock invokes a block that takes one word-sized argument, such as
-// WebKit's decisionHandler. Every block literal, global or on the heap,
-// starts with the five words above, so invoke is at the same offset in
-// a block the system built.
+// CallBlock invokes a block that takes one word-sized argument, such as WebKit's decisionHandler.
 func CallBlock(block, arg uintptr) {
 	if block == 0 {
 		return
@@ -54,11 +41,7 @@ func CallBlock(block, arg uintptr) {
 	ffi.Call(lit.invoke, []uintptr{block, arg}, nil)
 }
 
-// NewBlock builds a global block literal whose invoke is a ffi
-// trampoline. fn is the trampoline address from ffi.NewCallback; the
-// trampoline receives the block pointer as its first argument with the
-// block's real arguments behind it. The returned pointer is a valid
-// block for the lifetime of the process.
+// NewBlock builds a global block literal whose invoke is a ffi trampoline.
 func NewBlock(fn uintptr) uintptr {
 	ensureRuntime()
 	b := &blockLiteral{

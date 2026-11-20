@@ -322,6 +322,25 @@ type windowWithCloseState struct {
 
 func (w windowWithCloseState) IsClosed() bool { return w.closed }
 
+func TestOpenWindowReplacesAClosedRegistration(t *testing.T) {
+	b, fake := newTestBattery(t)
+	b.addr = "127.0.0.1:1"
+	b.windows["w2"] = windowWithCloseState{Window: &fakeWindow{id: "w2"}, closed: true}
+	b.winOrder = []string{"w2"}
+	b.winPaths["/two"] = "w2"
+	b.nextWinNum = 2
+	w, err := b.OpenWindow(WindowSpec{Path: "/two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.ID() != "w3" || len(fake.openWindowCalls) != 1 {
+		t.Fatalf("reopening a path whose window closed returned %q after %d shell opens, want a fresh w3", w.ID(), len(fake.openWindowCalls))
+	}
+	if _, ok := b.windows["w2"]; ok {
+		t.Fatal("the closed registration was kept")
+	}
+}
+
 func TestHandleWindowClosedKeepsRegistrationForOpenWindow(t *testing.T) {
 	b, _ := newTestBattery(t)
 	w := windowWithCloseState{Window: &fakeWindow{id: "w2", title: "Settings"}}

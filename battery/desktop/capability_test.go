@@ -3,6 +3,8 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -76,6 +78,7 @@ func TestValidPermissionGrammarAccepted(t *testing.T) {
 
 func TestDuplicateNamesFirstRegistrantSite(t *testing.T) {
 	b, _ := newTestBattery(t)
+	_, _, firstLine, _ := runtime.Caller(0)
 	if err := b.Register(Capability{
 		Name:    "myplug",
 		Version: 1,
@@ -91,7 +94,7 @@ func TestDuplicateNamesFirstRegistrantSite(t *testing.T) {
 	if err == nil {
 		t.Fatal("duplicate accepted")
 	}
-	if !strings.Contains(err.Error(), "capability_test.go") {
+	if !strings.Contains(err.Error(), "capability_test.go:"+strconv.Itoa(firstLine+1)+")") {
 		t.Fatalf("duplicate error must name the FIRST registration site, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "already registered") {

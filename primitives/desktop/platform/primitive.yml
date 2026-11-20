@@ -1,0 +1,21 @@
+primitive: desktop.platform
+summary: The native layer, one Shell implementation per platform package plus the picker that chooses one by GOOS, each package compiling on every GOOS.
+code:
+  - battery/desktop/native/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Every platform package keeps compiling on every GOOS, so check GOOS=darwin, GOOS=windows and GOOS=linux go vet ./battery/desktop/... after a change.
+invariants:
+  - id: picker-fills-only-a-nil-shell
+    rule: native.New sets cfg.Shell to Shell() only when the caller left it nil.
+    enforced_by:
+      - test: battery/desktop/native.TestNewFillsShellAndKeepsExplicit
+  - id: picker-matches-goos
+    rule: Shell() answers the macos shell on darwin, the windows shell on windows/amd64, the linux shell on linux, and the unsupported shell elsewhere.
+    enforced_by:
+      - test: battery/desktop/native.TestShellMatchesPlatform
+  - id: nodesktop-build-is-static
+    rule: Under the gofastr_nodesktop tag no platform package is linked, so a CGO_ENABLED=0 Linux build has no ELF interpreter.
+    enforced_by:
+      - test: battery/desktop/native.TestNoDesktopTagKeepsLinuxBuildStatic

@@ -256,3 +256,21 @@ func TestCleanEntryNameRefusesEscapes(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractZipNeedsTheNamedRootDirectory(t *testing.T) {
+	type entry = struct {
+		content []byte
+		mode    fs.FileMode
+	}
+	for name, entries := range map[string]map[string]entry{
+		"no root directory entry": {"Notes.app/Contents/x": {[]byte("x"), 0o644}},
+		"a file under another root": {
+			"Notes.app/":           {nil, 0o755 | fs.ModeDir},
+			"Other.app/Contents/x": {[]byte("x"), 0o644},
+		},
+	} {
+		if _, err := ExtractZip(buildZip(t, entries), t.TempDir(), "Notes.app"); !errors.Is(err, ErrBadArchive) {
+			t.Errorf("%s: err = %v, want ErrBadArchive", name, err)
+		}
+	}
+}

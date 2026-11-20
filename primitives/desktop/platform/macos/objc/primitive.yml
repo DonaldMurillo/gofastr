@@ -1,0 +1,51 @@
+primitive: desktop.platform.macos.objc
+summary: The pure-Go Objective-C runtime bridge for darwin, lazy framework loading, objc_msgSend through internal/ffi, class registration with Go IMPs, block literals and the main-queue hop.
+code:
+  - battery/desktop/internal/objc/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Its tests run on darwin only; run them on a Mac before merging a change here.
+invariants:
+  - id: main-thread-locked-at-init
+    rule: The package's init locks the main goroutine to the main OS thread for the life of the process and records its pthread, and loads no framework, so a blank import never loads AppKit.
+    judge: Does this change release the main-thread lock, or make init or ensureRuntime dlopen a framework?
+  - id: nsstring-never-panics
+    rule: NSString answers the nil NSString for a string carrying a NUL and NSStringErr an error, never a panic, because the crossing runs inside a trampoline where a Go panic is fatal.
+    enforced_by:
+      - test: battery/desktop/internal/objc.TestNSStringNeverPanicsOnNUL
+  - id: c-buffers-on-the-heap
+    rule: cBytes forces its buffer onto the heap through escapeSink, because a stack buffer moves when a callback grows the stack while C still holds the pointer, and the caller keeps the slice alive across the call.
+    enforced_by:
+      - test: battery/desktop/internal/objc.TestCBytesBufferIsHeapResident
+  - id: main-timeout-removes-the-job
+    rule: Main gives up after DefaultMainTimeout, MainWithTimeout after the caller's deadline, and a job still queued at the deadline is removed so it never runs late.
+    enforced_by:
+      - test: battery/desktop/internal/objc.TestMainTimeoutDropsTheQueuedJob
+      - test: battery/desktop/internal/objc.TestMainDefaultTimeoutIsShort
+  - id: blocks-live-forever
+    rule: Every block literal NewBlock builds is kept in the blocks list under its mutex for the process lifetime, so C may hold it indefinitely.
+    enforced_by:
+      - test: battery/desktop/internal/objc.TestBlocksRetainConcurrentLiterals
+  - id: msgsend-abi-per-arch
+    rule: Send passes integer and pointer arguments, SendF and SendDouble floats, an NSRect returns in d0 to d3 on arm64 and through objc_msgSend_stret into a stable buffer on amd64.
+    enforced_by:
+      - test: battery/desktop/internal/objc.TestFoundationMessageABI
+      - test: battery/desktop/internal/objc.TestRectReturnBufferIsStable
+decisions:
+  - id: lazy-frameworks
+    date: 2026-11-20
+    status: accepted
+    decision: libobjc and libdispatch symbols resolve from libSystem on first use and frameworks dlopen only in OpenFrameworks.
+    rejected:
+      - option: Load AppKit in init.
+        why: cmd/gofastr blank-imports the desktop battery, and every CLI start would load AppKit.
+    upholds: [main-thread-locked-at-init]
+  - id: no-fpret
+    date: 2026-11-20
+    status: accepted
+    decision: A double or CGFloat return is read from the first float register of plain objc_msgSend.
+    rejected:
+      - option: objc_msgSend_fpret on x86_64.
+        why: It is for x87 long double returns only.
+    upholds: [msgsend-abi-per-arch]

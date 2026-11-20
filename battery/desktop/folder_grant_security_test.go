@@ -132,3 +132,42 @@ func mustWrite(t *testing.T, path, text string) {
 		t.Fatal(err)
 	}
 }
+
+func TestFolderPickRefusesARelativeLinkOut(t *testing.T) {
+	b, shell := newTestBattery(t)
+	parent := t.TempDir()
+	folder := filepath.Join(parent, "picked")
+	mustWrite(t, filepath.Join(folder, "child.txt"), "private")
+	mustWrite(t, filepath.Join(parent, "escape.txt"), "secret")
+	if err := os.Symlink(filepath.Join("..", "escape.txt"), filepath.Join(folder, "up")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	shell.folderResult = folder
+	if _, err := callMethod(t, b, "dialogs", "openFolder", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := callMethod(t, b, "fs", "readText", `{"path":`+quoteJSON(filepath.Join(folder, "up"))+`}`)
+	if refusal, ok := err.(*Error); !ok || refusal.Code != CodeDenied {
+		t.Fatalf("readText through a relative link out of the folder = %v, want denied", err)
+	}
+}
+
+func TestSaveTargetUnderALinkedDirIsWritable(t *testing.T) {
+	b, _ := newTestBattery(t)
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	target := filepath.Join(link, "new.txt")
+	if err := b.AllowPath(target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callMethod(t, b, "fs", "writeText", `{"path":`+quoteJSON(target)+`,"text":"saved"}`); err != nil {
+		t.Fatalf("a save target under a symlinked directory was refused: %v", err)
+	}
+}

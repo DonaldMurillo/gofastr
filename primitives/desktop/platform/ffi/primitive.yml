@@ -1,0 +1,114 @@
+primitive: desktop.platform.ffi
+summary: Calling C and receiving C callbacks from a CGO_ENABLED=0 binary on darwin and linux, amd64 and arm64, through runtime linknames, an argument block the assembly trampolines read and a fixed callback trampoline table.
+code:
+  - battery/desktop/internal/ffi/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - The argument and callback frame layouts are hard-coded in the per-arch .s files; a field change lands in the Go struct, its offset pins and the assembly together.
+  - Run the ffi and fakecgo tests with CGO_ENABLED=0 as well as the default, since with cgo on runtime/cgo replaces fakecgo.
+invariants:
+  - id: call-bounds-panic
+    rule: Call panics rather than truncating when it gets more integer arguments than the registers plus eight stack slots (a hidden struct-return pointer counts as one) or more than eight floats.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestLinuxCallBoundsBeforeFFI
+  - id: arg-block-layout-pinned
+    rule: The callArgs and callbackArgs field offsets the assembly hard-codes are pinned by compile-time array-length checks, so a moved field fails the build.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestCallbackRoundTrip
+  - id: stack-args-reach-c
+    rule: Integer arguments past the register set travel as full 8-byte C stack slots that the callee reads.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestStackArgsReachC
+      - test: battery/desktop/internal/ffi.TestStackArgsSpill
+  - id: callback-table-bounded
+    rule: NewCallback hands out one of MaxCallbacks fixed trampoline slots, never frees one, and panics when all are used.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestNewCallbackSlotExhaustion
+  - id: callback-entry-size-matches-assembly
+    rule: entrySize is the byte length of one callbackasm entry for the arch, 11 on linux/amd64, and callbackWrapABI is the ABIInternal entry recovered from callbackWrap's func value, so slot i dispatches to callbacks[i].
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestCallbackRoundTrip
+  - id: any-thread-skips-thread-check
+    rule: A slot registered with NewCallbackAnyThread skips ThreadCheck, so a callback on a thread Go did not create runs through needm instead of the main-thread assertion.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestCallbackFromForeignThread
+  - id: nocgo-links-fakecgo
+    rule: Without cgo the package imports internal/fakecgo, and with cgo it imports runtime/cgo, so exactly one provider defines the runtime's _cgo hooks.
+    enforced_by:
+      - test: battery/desktop/internal/ffi.TestCallbackRoundTrip
+  - id: callers-keep-go-memory-alive
+    rule: A caller that passes the address of Go memory to Call keeps that value alive with runtime.KeepAlive across the call, as cgo requires.
+    judge: Does this change pass a pointer to Go memory into ffi.Call or a callback without a runtime.KeepAlive after the call?
+    applies:
+      - battery/desktop/internal/gtk/*.go
+      - battery/desktop/internal/objc/*.go
+      - battery/desktop/linux/*.go
+      - battery/desktop/macos/*.go
+decisions:
+  - id: in-process-purego-slice
+    date: 2026-11-20
+    status: accepted
+    decision: The package is the slice of ebitengine/purego the desktop host needs, written in-process.
+    rejected:
+      - option: Import purego.
+        why: The repository takes no third-party dependency.
+      - option: cgo.
+        why: The desktop host must build with CGO_ENABLED=0 and no host toolchain.
+    upholds: [call-bounds-panic]
+  - id: cgocall-not-libcall
+    date: 2026-11-20
+    status: accepted
+    decision: Calls go through runtime.cgocall (entersyscall, asmcgocall, exitsyscall).
+    rejected:
+      - option: syscall.syscall9's libcCall path.
+        why: It records m.libcallsp for the whole C call, and a GC stack shrink of a goroutine parked in a never-returning call such as [NSApp run] throws shrinking stack in libcall.
+    upholds: [nocgo-links-fakecgo]
+  - id: only-pushed-runtime-hooks
+    date: 2026-11-20
+    status: accepted
+    decision: The package linknames only runtime.cgocall and runtime.cgocallback, hooks the Go runtime pushes for purego (go.dev/issue/67401), and the untagged self-tests call each one, so a Go release that drops one fails go test, not a user's app.
+    rejected:
+      - option: Reach other runtime internals.
+        why: Nothing promises them to outside callers.
+    upholds: [callback-entry-size-matches-assembly]
+  - id: arg-block-pooled-on-the-heap
+    date: 2026-11-20
+    status: accepted
+    decision: The argument block comes from a sync.Pool on the heap and the trampoline re-reads its address after the callee returns.
+    rejected:
+      - option: A block on the calling goroutine's stack.
+        why: A callback can grow and copy that stack mid-call, moving the block under the trampoline.
+    upholds: [arg-block-layout-pinned]
+  - id: variadic-al-is-eight
+    date: 2026-11-20
+    status: accepted
+    decision: The amd64 trampoline sets AL to 8 on every call.
+    rejected:
+      - option: Count the float arguments per call.
+        why: A variadic System V callee needs AL to bound the vector registers it spills, and eight is always a safe upper bound.
+    upholds: [call-bounds-panic]
+  - id: amd64-hidden-return-pointer
+    date: 2026-11-20
+    status: accepted
+    decision: On amd64 CallRet8 passes the struct-return destination as a hidden first integer argument, shifting the declared ones, built in Go so the trampoline has one layout.
+    rejected:
+      - option: An x8-style register as on arm64.
+        why: System V has no indirect-result register.
+    upholds: [call-bounds-panic]
+  - id: arm64-hfa-in-d0-d3
+    date: 2026-11-20
+    status: accepted
+    decision: arm64 has CallRetHFA4 for a homogeneous floating-point aggregate of up to four members, returned in d0 to d3.
+    rejected:
+      - option: CallRet8 for every large struct.
+        why: AAPCS64 returns an HFA such as a 32-byte NSRect in d0 to d3, never through x8, so CallRet8 left the buffer untouched.
+    upholds: [stack-args-reach-c]
+  - id: callbacks-never-freed
+    date: 2026-11-20
+    status: accepted
+    decision: Callback slots are never freed.
+    rejected:
+      - option: Free a slot when its Go function is done.
+        why: GObject closures and pthread start routines handed to C must stay valid for the process lifetime.
+    upholds: [callback-table-bounded]

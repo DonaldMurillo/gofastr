@@ -10,7 +10,6 @@ var (
 	hintPrefLegacyLines   = i18n.Define("desktop.pref_legacy_lines_help", "This stored value contains line breaks that this field cannot display. It is preserved when other settings are saved; use the preferences API to replace it.")
 )
 
-// The refusals the preferences screen writes, under their catalog keys.
 var (
 	reasonPrefNull         = i18n.Define("desktop.pref_null", "must not be null")
 	reasonPrefNotBool      = i18n.Define("desktop.pref_not_bool", "must be true or false")
@@ -29,22 +28,18 @@ var (
 	reasonPrefsSaveFailed  = i18n.Define("desktop.prefs_save_failed", "saving preferences failed")
 )
 
-// The preferences screen's heading, description and save button.
 var (
 	pageSettingsTitle       = i18n.Define("desktop.settings_title", "Settings")
 	pageSettingsDescription = i18n.Define("desktop.settings_description", "Preferences for this installation")
 	pageSettingsSave        = i18n.Define("desktop.settings_save", "Save")
 )
 
-// A number preference's range hint on the preferences screen.
 var (
 	hintPrefBetween = i18n.Define("desktop.pref_between", "Between {{min}} and {{max}}.")
 	hintPrefAtLeast = i18n.Define("desktop.pref_at_least", "At least {{min}}.")
 	hintPrefAtMost  = i18n.Define("desktop.pref_at_most", "At most {{max}}.")
 )
 
-// The shell's own words: the menus it adds, the role items' default
-// titles, the permission prompt and the Windows About box.
 var (
 	menuAbout     = i18n.Define("desktop.menu_about", "About {{app}}")
 	menuSettings  = i18n.Define("desktop.menu_settings", "Settings…")

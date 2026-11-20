@@ -1,0 +1,28 @@
+primitive: desktop.caps
+summary: The small core capabilities, clipboard, notifications, tray and the page's key and value state.
+code:
+  - battery/desktop/cap_clipboard.go
+  - battery/desktop/cap_notifications.go
+  - battery/desktop/cap_tray.go
+  - battery/desktop/cap_state.go
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: clipboard-gated-and-bounded
+    rule: clipboard.readText is gated clipboard:read and clipboard.writeText clipboard:write, and both refuse text past clipboardTextLimit bytes.
+    enforced_by:
+      - test: battery/desktop.TestClipboardCapability
+      - test: battery/desktop.TestClipboardReadByteLimit
+  - id: notifications-gated-and-bounded
+    rule: notifications.show is gated notifications:show and refuses a title or subtitle past 200 bytes and a body past 2000.
+    enforced_by:
+      - test: battery/desktop.TestNotificationsCapabilityValidation
+      - test: battery/desktop.TestNotificationGateAsThePageSeesIt
+  - id: page-state-confined
+    rule: The state capability reaches only keys under page., so the battery's own windows and settings entries are out of the page's reach.
+    enforced_by:
+      - test: battery/desktop.TestStateKeysConfinedToPagePrefix
+  - id: state-change-broadcast
+    rule: Every successful state set and delete emits state_changed with the key to every open window.
+    enforced_by:
+      - test: battery/desktop.TestStateChangedReachesSecondWindow

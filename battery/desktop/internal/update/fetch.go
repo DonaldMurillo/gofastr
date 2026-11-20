@@ -10,23 +10,19 @@ import (
 	"runtime"
 )
 
-// MaxArchiveSize is the absolute cap on any archive download (256 MiB)
-// regardless of what the feed declares.
+// MaxArchiveSize is the absolute cap on any archive download (256 MiB) regardless of what the feed declares.
 const MaxArchiveSize = 256 << 20
 
-// ErrBadURL is the sentinel for a feed or archive URL outside the
-// allowed scheme rule: https, or http only to 127.0.0.1 (tests).
+// ErrBadURL is the sentinel for a feed or archive URL outside the allowed scheme rule: https, or http only to 127.0.0.1 (tests).
 var ErrBadURL = errors.New("update URL must be https (plain http only to 127.0.0.1)")
 
-// ErrFetch is the sentinel for a failed download; the detail stays in
-// the wrapped error for the server log, never for the page.
+// ErrFetch is the sentinel for a failed download; the detail stays in the wrapped error for the server log, never for the page.
 var ErrFetch = errors.New("update download failed")
 
 // ErrTooLarge is the sentinel for a body over its cap.
 var ErrTooLarge = errors.New("update download exceeded its size cap")
 
-// AllowedURL reports whether raw may be fetched: scheme https, or
-// scheme http with host exactly 127.0.0.1.
+// AllowedURL reports whether raw may be fetched: scheme https, or scheme http with host exactly 127.0.0.1.
 func AllowedURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -41,8 +37,7 @@ func AllowedURL(raw string) bool {
 	return false
 }
 
-// Fetch downloads raw, capped at max bytes: the body is read through a
-// limit of max+1 so one byte over the cap is detectable.
+// Fetch downloads raw, capped at max bytes: the body is read through a limit of max+1 so one byte over the cap is detectable.
 func Fetch(ctx context.Context, client *http.Client, raw string, max int64) ([]byte, error) {
 	if !AllowedURL(raw) {
 		return nil, ErrBadURL
@@ -75,10 +70,6 @@ func Fetch(ctx context.Context, client *http.Client, raw string, max int64) ([]b
 	return body, nil
 }
 
-// redirectChecked returns a copy of client that holds every redirect
-// target to AllowedURL, so an https feed cannot send the download to
-// plain http. A CheckRedirect the caller set still runs after it;
-// otherwise Go's default limit of ten redirects applies.
 func redirectChecked(client *http.Client) *http.Client {
 	c := *client
 	prev := client.CheckRedirect
@@ -97,9 +88,6 @@ func redirectChecked(client *http.Client) *http.Client {
 	return &c
 }
 
-// ctxErrDetail reduces a transport error to a fixed, url-free detail.
-// The URL itself is never part of an error that could reach a log
-// line; the status class is enough to debug a broken feed host.
 func ctxErrDetail(err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "cancelled"
@@ -110,6 +98,5 @@ func ctxErrDetail(err error) string {
 	return "transport error"
 }
 
-// PlatformKey is the feed's platform key for the running process
-// ("darwin-arm64").
+// PlatformKey is the feed's platform key for the running process ("darwin-arm64").
 func PlatformKey() string { return runtime.GOOS + "-" + runtime.GOARCH }

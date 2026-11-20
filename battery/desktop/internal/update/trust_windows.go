@@ -19,9 +19,6 @@ var (
 	procWTHelperGetProvCertChain   = modWintrust.NewProc("WTHelperGetProvCertFromChain")
 )
 
-// cryptProviderCert is the head of CRYPT_PROVIDER_CERT: cbStruct, then
-// the certificate context. Go lays the two out as C does on every
-// Windows architecture.
 type cryptProviderCert struct {
 	size uint32
 	cert *windows.CertContext
@@ -29,9 +26,7 @@ type cryptProviderCert struct {
 
 // VerifyAuthenticode runs WinVerifyTrust (WINTRUST_ACTION_GENERIC_VERIFY_V2)
 // on the file at path with no UI and no revocation fetch, and reads the
-// signer certificate's subject from the verified state. Revocation is
-// off because an install must not hang on a CRL download; the feed's
-// ed25519 signature is the primary check.
+// signer certificate's subject from the verified state.
 func VerifyAuthenticode(path string) Trust {
 	wpath, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -68,8 +63,6 @@ func VerifyAuthenticode(path string) Trust {
 	return Trust{State: Untrusted, Subject: subject, Detail: trustDetail(verr)}
 }
 
-// signerSubject copies the first signer's certificate subject (DER)
-// out of WinVerifyTrust's state, nil when there is none.
 func signerSubject(state windows.Handle) []byte {
 	if state == 0 {
 		return nil
@@ -89,8 +82,6 @@ func signerSubject(state windows.Handle) []byte {
 	if pc == 0 {
 		return nil
 	}
-	// pc points into wintrust's own allocation, not Go memory; reading
-	// it through a pointer-to-uintptr keeps vet's uintptr rule intact.
 	provCert := *(**cryptProviderCert)(unsafe.Pointer(&pc))
 	if provCert.cert == nil || provCert.cert.CertInfo == nil {
 		return nil
@@ -102,8 +93,6 @@ func signerSubject(state windows.Handle) []byte {
 	return append([]byte(nil), unsafe.Slice(name.Data, name.Size)...)
 }
 
-// trustDetail names a WinVerifyTrust failure by its HRESULT, the form
-// signtool and Get-AuthenticodeSignature documentation use.
 func trustDetail(err error) string {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {

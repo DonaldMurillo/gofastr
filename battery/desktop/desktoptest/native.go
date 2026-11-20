@@ -21,25 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// REAL app shell (the WKWebView the app ships in), never against a
-// browser stand-in. NativeMain boots one app per test binary through
-// Battery.Run on the main goroutine (the shell owns the main thread),
-// starts m.Run on another goroutine once the page is ready, and quits
-// the app when the tests finish. On a host with no native shell the
-// tests still run and Native skips.
-//
-//	NativeMain(m, func() (*framework.App, *desktop.Battery, error) {
-//		return buildApp(nil) // the app's own builder, no fake shell
-//	})
-//
-// battery/desktop's own suite cannot use NativeMain (its unit tests
-// pin the pre-Run world, so m.Run must finish before AppKit loads);
-// NativePhase is the same machine for a hand-driven phase after
-// m.Run.
-
-// TB is the slice of testing.TB the native harness needs. testing.TB
-// itself has carried an unexported method since Go 1.24, so nothing
-// outside package testing can implement it; a *testing.T satisfies
+// TB is the slice of testing.TB the native harness needs.
 type TB interface {
 	Helper()
 	Logf(format string, args ...any)
@@ -47,26 +29,11 @@ type TB interface {
 	Fatalf(format string, args ...any)
 }
 
-// nativeTimeoutEnv names the watchdog's budget (a Go duration).
 const nativeTimeoutEnv = "GOFASTR_NATIVE_TIMEOUT"
 
-// nativeHarness is the one running app's harness, installed by
-// NativeMain or NativePhase before the tests run and read by Native.
 var nativeHarness *NativeHarness
 
-// NativeMain runs the app inside the real shell for the whole test
-// binary. Call it from TestMain:
-//
-//	os.Exit(desktoptest.NativeMain(m, build))
-//
-// It sets GOFASTR_DESKTOP_DATA_DIR to a fresh temp dir (unless set)
-// and GOFASTR_ISOLATION=off, calls build (the app's own buildApp with
-// a nil shell, so the host's native.New fills the real one), registers a
-// watchdog that quits after GOFASTR_NATIVE_TIMEOUT (default 10 min),
-// and waits for readiness: the main window exists and the page reports
-// its desktop manifest. It returns the exit code (non-zero when Run
-// failed or exited before readiness). On a host with no native shell
-// it runs m.Run with no app, and Native skips.
+// NativeMain runs the app inside the real shell for the whole test binary.
 func NativeMain(m *testing.M, build func() (*framework.App, *desktop.Battery, error)) int {
 	bootEnv()
 	app, d, err := build()
@@ -117,14 +84,7 @@ func NativeMain(m *testing.M, build func() (*framework.App, *desktop.Battery, er
 	return code
 }
 
-// NativePhase is NativeMain for a package whose unit tests must see
-// the pre-Run world (battery/desktop's own suite pins DlopenCount 0
-// before any Run loads AppKit, so m.Run has already happened when the
-// phase starts). fn runs on a goroutine with the harness once the page
-// is ready; when fn returns the app quits and the phase's exit code is
-// 0 exactly when fn and Battery.Run both succeeded. Like NativeMain,
-// fn runs while Run owns the main thread, so fn must never be the
-// caller's goroutine: NativePhase blocks in Run itself.
+// NativePhase is NativeMain for a suite whose unit tests must finish before AppKit loads.
 func NativePhase(build func() (*framework.App, *desktop.Battery, error), fn func(h *NativeHarness) bool) int {
 	bootEnv()
 	app, d, err := build()
@@ -157,9 +117,7 @@ func NativePhase(build func() (*framework.App, *desktop.Battery, error), fn func
 	return 0
 }
 
-// Native returns the running app's harness, or skips the test when
-// NativeMain did not start one (a host with no native shell, or a boot
-// that failed before the page was ready).
+// Native returns the running app's harness, or skips the test when NativeMain started none.
 func Native(t testing.TB) *NativeHarness {
 	t.Helper()
 	h := nativeHarness
@@ -170,18 +128,13 @@ func Native(t testing.TB) *NativeHarness {
 	return h
 }
 
-// NativeHarness drives the real app: the page side runs inside the
-// window's own JavaScript, the native side goes straight through the
-// shell's NativeDriver.
+// NativeHarness drives the real app: the page side runs inside the window's own JavaScript, the native side goes straight through the shell's NativeDriver.
 type NativeHarness struct {
-	// App is the app under test; Battery its desktop battery; Shell
-	// the native shell the battery runs on.
+	// App is the app under test; Battery its desktop battery; Shell the native shell the battery runs on.
 	App     *framework.App
 	Battery *desktop.Battery
 	Shell   desktop.Shell
 
-	// tb is the fail/log target the t-less helpers report through;
-	// Native installs it, a NativePhase driver calls SetTB.
 	tb TB
 
 	ready    chan struct{}
@@ -191,13 +144,9 @@ type NativeHarness struct {
 	watchdog *time.Timer
 	timedOut atomic.Bool
 
-	// eventsSeen is WaitEvent's cursor into Events.
 	eventsSeen int
 }
 
-// newNativeHarness wires the harness and starts its readiness watcher
-// and watchdog. The caller (NativeMain/NativePhase) runs block on the
-// main goroutine right after.
 func newNativeHarness(app *framework.App, d *desktop.Battery) *NativeHarness {
 	h := &NativeHarness{
 		App:     app,
@@ -216,8 +165,6 @@ func newNativeHarness(app *framework.App, d *desktop.Battery) *NativeHarness {
 	return h
 }
 
-// block runs Battery.Run and records its result. Only NativeMain and
-// NativePhase call it, on the caller's (the process's main) goroutine.
 func (h *NativeHarness) block() error {
 	runErr := h.Battery.Run(h.App)
 	h.runMu.Lock()
@@ -227,18 +174,10 @@ func (h *NativeHarness) block() error {
 	return runErr
 }
 
-// nativeReadyWait bounds the wait for the page to boot.
 const nativeReadyWait = 60 * time.Second
 
-// manifestBody is the readiness probe: the runtime booted, the desktop
-// demand module loaded, and the generated bridge.js installed the
-// frozen manifest.
 const manifestBody = "return !!(window.__gofastr && window.__gofastr.desktop && window.__gofastr.desktop.manifest)"
 
-// watchReady closes h.ready once the main window's page answers the
-// manifest probe. A window that cannot evaluate at all (a shell
-// without PageEvaluator) counts as ready rather than hanging the
-// phase; the watchdog ends a boot that never gets that far.
 func (h *NativeHarness) watchReady() {
 	deadline := time.Now().Add(nativeReadyWait)
 	for time.Now().Before(deadline) {
@@ -258,7 +197,6 @@ func (h *NativeHarness) watchReady() {
 	h.quitSafely()
 }
 
-// pageReady is one readiness probe.
 func (h *NativeHarness) pageReady() bool {
 	w, ok := h.Battery.Window()
 	if !ok {
@@ -274,12 +212,9 @@ func (h *NativeHarness) pageReady() bool {
 	return err == nil && string(r) == "true"
 }
 
-// SetTB installs the fail/log target the t-less helpers (Wait, Events,
-// ClickMenu, ...) report through; Native(t) does it for every test.
+// SetTB installs the fail/log target the t-less helpers (Wait, Events, ClickMenu, ...) report through; Native(t) does it for every test.
 func (h *NativeHarness) SetTB(t TB) { h.tb = t }
 
-// fatalf reports through tb, or panics when none was installed (a
-// driver forgot SetTB; the message stays diagnosable).
 func (h *NativeHarness) fatalf(format string, args ...any) {
 	if h.tb == nil {
 		panic("desktoptest: " + fmt.Sprintf(format, args...))
@@ -287,13 +222,9 @@ func (h *NativeHarness) fatalf(format string, args ...any) {
 	h.tb.Fatalf(format, args...)
 }
 
-// ----- the page side (everything runs inside the page) --------------
-
-// harnessEvalWait bounds one page evaluation from the harness side.
 const harnessEvalWait = 30 * time.Second
 
-// EvalQuiet runs body in the main window's page and returns the raw
-// JSON result, error included, for poll conditions.
+// EvalQuiet runs body in the main window's page and returns the raw JSON result, error included, for poll conditions.
 func (h *NativeHarness) EvalQuiet(body string) (json.RawMessage, error) {
 	w, ok := h.Battery.Window()
 	if !ok {
@@ -308,7 +239,6 @@ func (h *NativeHarness) EvalQuiet(body string) (json.RawMessage, error) {
 	return pe.EvalAsync(ctx, body)
 }
 
-// mainEval is EvalQuiet that fails the test on error.
 func (h *NativeHarness) mainEval(t TB, body string) json.RawMessage {
 	t.Helper()
 	r, err := h.EvalQuiet(body)
@@ -318,8 +248,7 @@ func (h *NativeHarness) mainEval(t TB, body string) json.RawMessage {
 	return r
 }
 
-// Eval runs body (an async function body) in the main window's page
-// and returns the JSON-encoded result.
+// Eval runs body (an async function body) in the main window's page and returns the JSON-encoded result.
 func (h *NativeHarness) Eval(t TB, body string) json.RawMessage {
 	t.Helper()
 	return h.mainEval(t, body)
@@ -334,9 +263,7 @@ func (h *NativeHarness) EvalInto(t TB, body string, v any) {
 	}
 }
 
-// Call invokes a capability method through the page's own bridge
-// transport (window.__gofastr.desktop.call, what the typed namespaces
-// wrap); a rejection's code and message land in the CallResult.
+// Call invokes a capability method through the page's own bridge transport.
 func (h *NativeHarness) Call(capability, method string, input any) *CallResult {
 	in := "undefined"
 	if input != nil {
@@ -368,8 +295,7 @@ func (h *NativeHarness) Call(capability, method string, input any) *CallResult {
 	return &CallResult{OK: env.OK, Result: env.Result, Code: env.Code, Message: env.Message}
 }
 
-// Get fetches path from inside the page (the window's own session,
-// same-origin credentials) and records the reply.
+// Get fetches path from inside the page (the window's own session, same-origin credentials) and records the reply.
 func (h *NativeHarness) Get(path string) *Response {
 	pathJSON, _ := json.Marshal(path)
 	body := fmt.Sprintf(`const r = await fetch(%s, {credentials: "same-origin"});`+
@@ -388,8 +314,7 @@ func (h *NativeHarness) Get(path string) *Response {
 	return &Response{Status: out.Status, Body: out.Body}
 }
 
-// Post issues a JSON POST from the page (what its islands and forms
-// send to the app's own routes).
+// Post issues a JSON POST from the page (what its islands and forms send to the app's own routes).
 func (h *NativeHarness) Post(path string, body any) *Response {
 	pathJSON, _ := json.Marshal(path)
 	payload := "undefined"
@@ -417,16 +342,13 @@ func (h *NativeHarness) Post(path string, body any) *Response {
 	return &Response{Status: post.Status, Body: post.Body}
 }
 
-// Navigate moves the page client-side (window.__gofastr.navigate, no
-// reload) and waits for the path to arrive.
+// Navigate moves the page client-side (window.__gofastr.navigate, no reload) and waits for the path to arrive.
 func (h *NativeHarness) Navigate(path string) {
 	pathJSON, _ := json.Marshal(path)
 	h.mainEval(h.tbOrPanic(), fmt.Sprintf(`window.__gofastr.navigate(%s); return true;`, pathJSON))
 	h.WaitLocation(path)
 }
 
-// tbOrPanic returns the installed TB or a fatal one, for the helpers
-// the brief spells without a t parameter.
 func (h *NativeHarness) tbOrPanic() TB {
 	if h.tb == nil {
 		panic("desktoptest: no TB installed; call Native(t) or SetTB first")
@@ -441,7 +363,6 @@ func (h *NativeHarness) Location() string {
 	return p
 }
 
-// textOr reads one element's text, reporting whether it existed.
 func (h *NativeHarness) textOr(selector string) (string, bool) {
 	sel, _ := json.Marshal(selector)
 	raw, err := h.EvalQuiet(fmt.Sprintf(`const el = document.querySelector(%s); return el ? el.textContent : null;`, sel))
@@ -464,8 +385,7 @@ func (h *NativeHarness) Text(selector string) string {
 	return s
 }
 
-// ExistsQuiet reports whether the selector matches an element, false
-// when the page cannot answer, for poll conditions.
+// ExistsQuiet reports whether the selector matches an element, false when the page cannot answer, for poll conditions.
 func (h *NativeHarness) ExistsQuiet(selector string) bool {
 	sel, _ := json.Marshal(selector)
 	raw, err := h.EvalQuiet(fmt.Sprintf(`return document.querySelector(%s) !== null;`, sel))
@@ -476,8 +396,7 @@ func (h *NativeHarness) ExistsQuiet(selector string) bool {
 	return json.Unmarshal(raw, &b) == nil && b
 }
 
-// TextQuiet is Text without the fatal: "" when the element is missing
-// or the page cannot answer, for poll conditions.
+// TextQuiet is Text without the fatal: "" when the element is missing or the page cannot answer, for poll conditions.
 func (h *NativeHarness) TextQuiet(selector string) string {
 	s, _ := h.textOr(selector)
 	return s
@@ -501,8 +420,7 @@ func (h *NativeHarness) Click(selector string) {
 	}
 }
 
-// Fill sets an input's value the way typing does (value plus an input
-// event).
+// Fill sets an input's value the way typing does (value plus an input event).
 func (h *NativeHarness) Fill(selector, value string) {
 	sel, _ := json.Marshal(selector)
 	val, _ := json.Marshal(value)
@@ -515,8 +433,7 @@ func (h *NativeHarness) Fill(selector, value string) {
 	}
 }
 
-// Submit submits the form the selector matches through the runtime's
-// form intercept (requestSubmit).
+// Submit submits the form the selector matches through the runtime's form intercept (requestSubmit).
 func (h *NativeHarness) Submit(selector string) {
 	sel, _ := json.Marshal(selector)
 	raw, err := h.EvalQuiet(fmt.Sprintf(`const f = document.querySelector(%s);`+
@@ -527,16 +444,12 @@ func (h *NativeHarness) Submit(selector string) {
 	}
 }
 
-// ----- waiting -------------------------------------------------------
-
-// nativePoll and nativeWait bound Wait and its derivatives.
 const (
 	nativePoll = 50 * time.Millisecond
 	nativeWait = 10 * time.Second
 )
 
-// Wait polls cond every 50 ms for up to 10 s and fails the test naming
-// what it waited for.
+// Wait polls cond every 50 ms for up to 10 s and fails the test naming what it waited for.
 func (h *NativeHarness) Wait(what string, cond func() bool) {
 	deadline := time.Now().Add(nativeWait)
 	for time.Now().Before(deadline) {
@@ -569,8 +482,6 @@ func (h *NativeHarness) WaitLocation(path string) {
 		return json.Unmarshal(raw, &p) == nil && p == path
 	})
 }
-
-// ----- snapshots and events ------------------------------------------
 
 // Snapshot captures the main window's real pixels and decodes them.
 func (h *NativeHarness) Snapshot(t TB) image.Image {
@@ -608,8 +519,7 @@ func (h *NativeHarness) snapshotBytes() ([]byte, error) {
 	return w.Snapshot(ctx)
 }
 
-// RecordEvents installs a page-side recorder for the named events
-// (window.__gofastrTestEvents); listeners stay installed across calls.
+// RecordEvents installs a page-side recorder for the named events (window.__gofastrTestEvents); listeners stay installed across calls.
 func (h *NativeHarness) RecordEvents(t TB, names ...string) {
 	t.Helper()
 	if len(names) == 0 {
@@ -622,18 +532,12 @@ func (h *NativeHarness) RecordEvents(t TB, names ...string) {
 		` for (const n of %s) { if (rec["on_" + n]) continue; rec["on_" + n] = true;`+
 		` window.__gofastr.desktop.on(n, p => rec.all.push({name: n, payload: p})); }`+
 		` return fresh;`, namesJSON)
-	// The recorder lives on the page: a document reload between phases
-	// (a deep link arriving mid-load, a hard navigation) wipes it, and
-	// the next install starts a new list at index 0. WaitEvent's cursor
-	// must restart with it, or every later event lands below the cursor
-	// and the wait times out.
 	if string(h.mainEval(t, body)) == "true" {
 		h.eventsSeen = 0
 	}
 }
 
-// Events reads the recorder back, in delivery order; nil when no
-// recorder is installed yet.
+// Events reads the recorder back, in delivery order; nil when no recorder is installed yet.
 func (h *NativeHarness) Events() []Event {
 	raw, err := h.EvalQuiet(`return window.__gofastrTestEvents ? window.__gofastrTestEvents.all : []`)
 	if err != nil {
@@ -646,8 +550,7 @@ func (h *NativeHarness) Events() []Event {
 	return out
 }
 
-// WaitEvent waits for the next event named name that Events has not
-// handed out through an earlier WaitEvent, and returns it.
+// WaitEvent waits for the next event named name that Events has not handed out through an earlier WaitEvent, and returns it.
 func (h *NativeHarness) WaitEvent(name string) Event {
 	seen := h.eventsSeen
 	var got Event
@@ -664,8 +567,6 @@ func (h *NativeHarness) WaitEvent(name string) Event {
 	})
 	return got
 }
-
-// ----- the native side (straight through NativeDriver) ---------------
 
 func (h *NativeHarness) driver() (desktop.NativeDriver, error) {
 	d, ok := h.Shell.(desktop.NativeDriver)
@@ -697,8 +598,7 @@ func (h *NativeHarness) ClickTray(title string) {
 	}
 }
 
-// Native returns the window's raw native web view handle, the escape
-// hatch for a platform-specific oracle.
+// Native returns the window's raw native web view handle, the escape hatch for a platform-specific oracle.
 func (nw *NativeWindow) Native() uintptr { return nw.w.Native() }
 
 // OpenSettings activates the app menu's own Settings item.
@@ -712,8 +612,7 @@ func (h *NativeHarness) OpenSettings() {
 	}
 }
 
-// Answer queues decisions for the next permission prompts (no alert
-// shows for them).
+// Answer queues decisions for the next permission prompts (no alert shows for them).
 func (h *NativeHarness) Answer(decisions ...desktop.Decision) {
 	d, err := h.driver()
 	if err != nil {
@@ -722,10 +621,7 @@ func (h *NativeHarness) Answer(decisions ...desktop.Decision) {
 	d.ScriptPrompts(decisions...)
 }
 
-// ClickPrompt clicks a button on the modal permission alert that is
-// up (the real alert path). The error is the caller's to report: an
-// answerer usually runs this on a goroutine while a blocked call
-// waits for its prompt.
+// ClickPrompt clicks a button on the modal permission alert that is up (the real alert path).
 func (h *NativeHarness) ClickPrompt(button string) error {
 	d, err := h.driver()
 	if err != nil {
@@ -756,8 +652,7 @@ func (h *NativeHarness) CloseWindow(id string) {
 	}
 }
 
-// MoveWindow drives a real SetFrame on the window; the native delegate
-// reports the move through WindowConfig.OnWindowFrame by itself.
+// MoveWindow drives a real SetFrame on the window; the native delegate reports the move through WindowConfig.OnWindowFrame by itself.
 func (h *NativeHarness) MoveWindow(id string, f desktop.Frame) {
 	w := h.Window(id)
 	if w == nil {
@@ -768,9 +663,7 @@ func (h *NativeHarness) MoveWindow(id string, f desktop.Frame) {
 	}
 }
 
-// MakeKey makes the window with this id the key window, the user's
-// window-click shape; the key-window change must fire the focus
-// events into the battery.
+// MakeKey makes the window with this id the key window, the user's window-click shape; the key-window change must fire the focus events into the battery.
 func (h *NativeHarness) MakeKey(id string) {
 	h.tbOrPanic()
 	d, err := h.driver()
@@ -819,8 +712,7 @@ func (h *NativeHarness) WindowIDs() []string {
 	return ids
 }
 
-// Window returns the live window with the given id, or nil when there
-// is none yet (poll with Wait for one that is still opening).
+// Window returns the live window with the given id, or nil when there is none yet (poll with Wait for one that is still opening).
 func (h *NativeHarness) Window(id string) *NativeWindow {
 	for _, w := range h.Battery.Windows() {
 		if w.ID() == id {
@@ -830,9 +722,7 @@ func (h *NativeHarness) Window(id string) *NativeWindow {
 	return nil
 }
 
-// WaitRun waits for Battery.Run to return (the quit role, the
-// watchdog, or a failure) and reports its error. ok is false when the
-// timeout passed first.
+// WaitRun waits for Battery.Run to return (the quit role, the watchdog, or a failure) and reports its error.
 func (h *NativeHarness) WaitRun(timeout time.Duration) (error, bool) {
 	select {
 	case <-h.runDone:
@@ -844,8 +734,7 @@ func (h *NativeHarness) WaitRun(timeout time.Duration) (error, bool) {
 	}
 }
 
-// Click clicks the first element the selector matches in this
-// window's page.
+// Click clicks the first element the selector matches in this window's page.
 func (nw *NativeWindow) Click(t TB, selector string) {
 	t.Helper()
 	sel, _ := json.Marshal(selector)
@@ -856,8 +745,7 @@ func (nw *NativeWindow) Click(t TB, selector string) {
 	}
 }
 
-// Fill sets an input's value in this window's page the way typing
-// does.
+// Fill sets an input's value in this window's page the way typing does.
 func (nw *NativeWindow) Fill(t TB, selector, value string) {
 	t.Helper()
 	sel, _ := json.Marshal(selector)
@@ -871,8 +759,7 @@ func (nw *NativeWindow) Fill(t TB, selector, value string) {
 	}
 }
 
-// Submit submits the form the selector matches in this window's page
-// through the runtime's form intercept.
+// Submit submits the form the selector matches in this window's page through the runtime's form intercept.
 func (nw *NativeWindow) Submit(t TB, selector string) {
 	t.Helper()
 	sel, _ := json.Marshal(selector)
@@ -903,8 +790,7 @@ func (nw *NativeWindow) eval(body string) (json.RawMessage, error) {
 	return pe.EvalAsync(ctx, body)
 }
 
-// Eval runs body in this window's page and returns the JSON-encoded
-// result.
+// Eval runs body in this window's page and returns the JSON-encoded result.
 func (nw *NativeWindow) Eval(t TB, body string) json.RawMessage {
 	t.Helper()
 	r, err := nw.eval(body)
@@ -954,9 +840,6 @@ func (nw *NativeWindow) State() (desktop.WindowState, error) {
 	return d.WindowState(nw.ID())
 }
 
-// ----- shared plumbing ------------------------------------------------
-
-// bootEnv prepares the process for a native run.
 func bootEnv() {
 	os.Setenv("GOFASTR_ISOLATION", "off")
 	if os.Getenv(dataDirEnv) == "" {
@@ -966,7 +849,6 @@ func bootEnv() {
 	}
 }
 
-// nativeTimeout resolves the watchdog's budget.
 func nativeTimeout() time.Duration {
 	if s := os.Getenv(nativeTimeoutEnv); s != "" {
 		if d, err := time.ParseDuration(s); err == nil && d > 0 {
@@ -976,10 +858,6 @@ func nativeTimeout() time.Duration {
 	return 10 * time.Minute
 }
 
-// quitSafely ends the app from a lifecycle goroutine (after the tests,
-// or the watchdog). A panic inside Quit means the teardown itself is
-// broken; recovering it lets the run report its real result instead of
-// dying mid-report.
 func (h *NativeHarness) quitSafely() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -989,8 +867,6 @@ func (h *NativeHarness) quitSafely() {
 	h.Shell.Quit()
 }
 
-// runFailed reports whether Run's error is a real failure; the named
-// unsupported error is the expected no-native-shell path.
 func runFailed(err error) bool {
 	if err == nil {
 		return false
