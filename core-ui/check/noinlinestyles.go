@@ -34,8 +34,7 @@ func LintNoInlineStyles(dir string) (*Result, error) {
 	})
 }
 
-// ScanInlineStylesIn is the single-file entry point a contracts pass calls with its own cached AST:
-// one detector behind both the build gate and GOFASTR1804, so the two cannot drift apart again.
+// ScanInlineStylesIn runs the inline-style detector over one parsed file, for a contracts pass.
 func ScanInlineStylesIn(fset *token.FileSet, file *ast.File, filename string, raw []byte) *Result {
 	if fset == nil || file == nil || hasCSPIgnoreDirective(raw) {
 		return nil

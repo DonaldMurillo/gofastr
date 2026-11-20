@@ -5,9 +5,7 @@ import (
 	"strings"
 )
 
-// LintKeyGuard fires on three keyboard shapes the 2026-11 headless bug bash fixed by hand, module
-// by module, in keydown listeners (addEventListener('keydown', fn) with an inline function or a
-// same-file named one, and .onkeydown = fn):
+// LintKeyGuard fires on a keydown listener that misses the Escape, IME composition or RTL arrow guard.
 func LintKeyGuard(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
