@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=4727e65414778ce9
+//gofastr:generated generator=app kind=scaffold version=dev sum=2ed3a575855a2526
 
 package main
 
@@ -63,10 +63,12 @@ func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/orders", "/orders")
 	site.Register("/orders", &OrdersScreen{}, appLayout)
 }
 
 func mountOrderDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/orders", "*")
 	record := app.NewScreen("/orders/:id", &OrderDetailScreen{}).WithTitle("Order Details").WithDescription("View order details")
 	record.Intercept = &app.Intercept{From: "/orders", As: app.ScreenDrawer}
 	site.RegisterScreen(record, appLayout)

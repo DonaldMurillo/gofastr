@@ -1032,6 +1032,16 @@ partial and keeps the shell).
   `read_only` or `auto_generate` field or a column the server fills
   (`id`, `created_at`, `updated_at`, `deleted_at`) on a create form, or an entry
   listed twice, since the form would draw nothing for it.
+  A successful create resets the form and stays on the same screen.
+  Generated screens that read that entity (lists, record/edit views,
+  stats and charts, including nested blocks) attach
+  [`ui.InvalidateScreens`](reactivity.md#2-rpc) headers to its
+  mutation responses. Returning to those screens fetches fresh rows
+  without a reload; failed submissions do not evict their cached screens.
+  This also covers entityui creates, edits and deletes. Parameterized
+  screen routes use the documented `"*"` selector, evicting all cached
+  screens because the concrete record URLs are not known at generation
+  time. Invalidation does not repaint a screen that is already visible.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs

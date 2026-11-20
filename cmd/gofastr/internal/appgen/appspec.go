@@ -2551,11 +2551,28 @@ const appSpecScreensRegisterGo = `package main
 
 import (
 	"database/sql"
+	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+func invalidateScreensOnWrite(fwApp *framework.App, api string, paths ...string) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == api || strings.HasPrefix(r.URL.Path, api+"/") {
+					ui.InvalidateScreens(w, paths...)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+}
 
 // screenRegistrar pairs a screen's mount func with its declaration order.
 // Each screen file appends one or more screenRegistrars in init();
@@ -2785,13 +2802,14 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	sb.WriteString("package main\n\n")
 	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), screen.Name, appSpecScreenScope(bp, screen.Name)))
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
+	mount := appSpecScreenInvalidation(screen, bp) + appSpecSourceChecks(screen) + AppSpecScreenMountStmt(screen, bp)
 	needs := appSpecScreensImportNeeds(bp, []appspec.AppSpecScreen{screen}, entityMap, apiBase)
-	needs.readCode(body, bp.PhraseCollector())
+	needs.readCode(body+mount, bp.PhraseCollector())
 	writeScreenImportBlock(&sb, needs, true, true)
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(body)
 	mountName := "mount" + appspec.ToCamelCase(screen.Name) + "Screen"
-	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s%s\n}\n\n", mountName, screen.Name, mountName, appSpecSourceChecks(screen), AppSpecScreenMountStmt(screen, bp)))
+	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, mount))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
 	return GeneratedFile{Name: appspec.ScreenFileName(screen.Name), Content: sb.String()}
 }
@@ -2920,6 +2938,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range ordered {
 		mountName := "mount" + appspec.ToCamelCase(s.Name) + "Screen"
 		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
+		sb.WriteString(appSpecScreenInvalidation(s, bp))
 		sb.WriteString(appSpecSourceChecks(s))
 		sb.WriteString(AppSpecScreenMountStmt(s, bp))
 		sb.WriteString("\n}\n\n")
@@ -3230,6 +3249,43 @@ func (n *screenImportNeeds) readCode(code string, p *appspec.AppSpecPhrases) {
 	n.url = emitsPkgRef(code, "url")
 	n.handler = emitsPkgRef(code, "handler")
 	n.i18n = p.Used()
+}
+
+func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec) string {
+	var apis []string
+	for _, block := range appspec.AppSpecBlocksDeep(screen.Body) {
+		name := ""
+		switch {
+		case appspec.IsEntityListBlock(block), appspec.IsEntityDetailBlock(block), appspec.IsEditFormBlock(block):
+			name = strings.Trim(block.Entity, "/")
+		case appspec.AppSpecBlockKindIs(block, "stat_card"):
+			if source, ok := appSpecStatSource(block); ok {
+				name = source.entity
+			}
+		case appspec.AppSpecBlockKindIs(block, "bar_chart"), appspec.AppSpecBlockKindIs(block, "pie_chart"), appspec.AppSpecBlockKindIs(block, "line_chart"):
+			name, _, _ = appSpecChartSource(block)
+		}
+		for _, decl := range bp.Entities {
+			if name != "" && decl.Name == name {
+				api := appSpecEntityAPIPath(appSpecAPIBase(bp.App.APIPrefix), decl)
+				if !slices.Contains(apis, api) {
+					apis = append(apis, api)
+				}
+			}
+		}
+	}
+	if len(apis) == 0 {
+		return ""
+	}
+	selector := appSpecScreenRoutePath(screen.Route)
+	if screenNeedsParams(screen) {
+		selector = "*"
+	}
+	var sb strings.Builder
+	for _, api := range apis {
+		fmt.Fprintf(&sb, "\tinvalidateScreensOnWrite(fwApp, %q, %q)\n", api, selector)
+	}
+	return sb.String()
 }
 
 func appSpecScreenImports(bp appspec.AppSpec) screenImportNeeds {

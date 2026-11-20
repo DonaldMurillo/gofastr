@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f6805696c356e940
+//gofastr:generated generator=app kind=scaffold version=dev sum=447f96da5bcce1f6
 
 package main
 
@@ -43,6 +43,7 @@ func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/reviews", "/reviews")
 	site.Register("/reviews", &ReviewsScreen{}, appLayout)
 }
 
