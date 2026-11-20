@@ -351,6 +351,15 @@ Freeze writes exactly:
   one-shot generator;
 - `build/world.json`: lossless authoring snapshot.
 
+The current app spec and generated clients support camelCase JSON only.
+Freeze refuses `app.json_case: snake` (also `snake_case`) instead of silently
+changing the preview's wire contract. Keep using the Kiln preview for
+snake_case, or explicitly change `app.json_case` to `camel` before freezing,
+then set `framework.AppConfig.JSONCase` to `framework.CaseSnake` in owned Go
+before serving clients. Generated clients still target camelCase; adapt them
+to the owned app's wire contract as well. Empty, `camel`, and `camelCase`
+retain the default behavior. Unknown casing values are rejected.
+
 A database URL with an embedded password never lands in either file:
 freeze writes a `${DATABASE_URL}` reference instead, and the generated
 app refuses to boot until the variable is supplied (credential-free DSNs,
