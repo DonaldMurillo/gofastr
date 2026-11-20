@@ -505,10 +505,7 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 		if op.BodyNullable && op.Body.goPointer() {
 			bodyType = "*" + bodyType
 		}
-		if !op.BodyRequired && op.Body.goPointer() {
-			bodyType = "*" + bodyType
-		}
-		if !op.BodyRequired && op.BodyNullable && !op.Body.goPointer() {
+		if !op.BodyRequired && (op.BodyNullable || op.Body.goPointer()) {
 			bodyType = "*" + bodyType
 		}
 	case op.BodyKind == "binary":
