@@ -184,7 +184,9 @@ type AppSpecApp struct {
 	// serves its /llm.md document (plus the /llm-pages.md index).
 	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
-	LLMMD       bool
+	LLMMD bool
+	// EntityLLMMD (app.entity_llm_md) emits AppConfig.NoLLMMD as its
+	// inverse when set; nil leaves entity llm.md routes on.
 	EntityLLMMD *bool
 	// LocalePrefixes emits framework.WithLocalePrefixes()
 	// (app.locale_prefixes): every locales/<tag>.json is served under
@@ -817,9 +819,9 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	if v, ok := m["llm_md"]; ok {
 		app.LLMMD = boolValue(v)
 	}
-	if m["entity_llm_md"] != nil {
-		v := boolValue(m["entity_llm_md"])
-		app.EntityLLMMD = &v
+	if v, ok := m["entity_llm_md"]; ok {
+		b := boolValue(v)
+		app.EntityLLMMD = &b
 	}
 	if v, ok := m["locale_prefixes"]; ok {
 		app.LocalePrefixes = boolValue(v)
