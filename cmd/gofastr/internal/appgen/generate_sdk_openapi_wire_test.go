@@ -404,7 +404,8 @@ const requests = [];
 const client = new Client({ baseURL: "https://fixture.invalid", fetch: async (url, { headers }) => {
   const { pathname, searchParams } = new URL(url);
   requests.push([pathname, [...searchParams], headers]);
-  return new Response(null, { status: 204 });
+  // Node 22's Response constructor uses the disabled Object.hasOwn.
+  return { status: 204, body: null };
 }});
 const inherited = Object.create({ toString: "prototype query", valueOf: "prototype header" });
 await client.getOptional();
