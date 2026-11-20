@@ -105,3 +105,17 @@ func TestRegisterKeepsUTCCron(t *testing.T) {
 		t.Fatalf("tzName(time.Local) = %q, want \"\" (replica-dependent zone)", got)
 	}
 }
+
+func TestTZNamePersistsOnlyLoadableZones(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	for loc, want := range map[*time.Location]string{
+		time.UTC: "", time.Local: "", time.FixedZone("UTC-05", -5*3600): "", ny: "America/New_York",
+	} {
+		if got := tzName(loc); got != want {
+			t.Errorf("tzName(%s) = %q, want %q", loc, got, want)
+		}
+	}
+}

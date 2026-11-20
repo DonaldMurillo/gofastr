@@ -243,6 +243,10 @@ var ownedPackages = []string{
 	"core-ui/widget",
 	"core-ui/ownstyle",
 	"core-ui/style",
+	"battery/queue",
+	"battery/admin",
+	"battery/semantic",
+	"battery/webhook",
 }
 
 //gofastr:test-reads primitives/ *.go
