@@ -3059,7 +3059,11 @@ func reverseAuthCard(call *ast.CallExpr) appspec.AppSpecBlock {
 			if in, ok := arg.(*ast.CallExpr); ok && callSel(in) == "html.Input" {
 				ic := cfgOf(in, 0)
 				if appspec.AstString(ic["Name"]) == "next" {
-					next = appspec.AstString(ic["Value"])
+					value := ic["Value"]
+					if or, ok := value.(*ast.CallExpr); ok && callSel(or) == "cmp.Or" && len(or.Args) == 2 {
+						value = or.Args[1]
+					}
+					next = appspec.AstString(value)
 				}
 			}
 		}

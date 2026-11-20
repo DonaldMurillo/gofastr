@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 
 	"database/sql"
@@ -32,7 +33,7 @@ func (s *LoginScreen) ScreenType() app.ScreenType                   { return app
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		ui.AuthCard(ui.AuthCardConfig{Title: loginScreenTextSignInToMeridian.Text(ctx), Alert: authError(ctx), Notice: resetNotice(ctx), Body: ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/login", Method: "POST", SubmitLabel: loginScreenTextSignIn.Text(ctx), SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		ui.AuthCard(ui.AuthCardConfig{Title: loginScreenTextSignInToMeridian.Text(ctx), Alert: authError(ctx), Notice: resetNotice(ctx), Body: ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/login", Method: "POST", SubmitLabel: loginScreenTextSignIn.Text(ctx), SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: cmp.Or(app.QueryFromContext(ctx).Get("next"), "/app")}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password", Autocomplete: "current-password", EnterKeyHint: "go"})

@@ -1112,7 +1112,7 @@ func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated login screen: %v", err)
 	}
-	if !strings.Contains(string(screensSrc), `html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"})`) {
+	if !strings.Contains(string(screensSrc), `html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: cmp.Or(app.QueryFromContext(ctx).Get("next"), "/app")})`) {
 		t.Fatalf("the hidden next input is not emitted through html.Input:\n%s", screensSrc)
 	}
 	if strings.Contains(string(screensSrc), "render.Raw(") {
@@ -1139,7 +1139,7 @@ func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 		t.Fatalf("auth screens lost in round-trip: %#v", packed.Screens)
 	}
 	if got, _ := login.Props["next"].(string); got != "/app" {
-		t.Errorf("login next = %q, want /app — the parser lost the html.Input value", got)
+		t.Errorf("login next = %q, want /app — the parser lost the configured fallback", got)
 	}
 	if got, _ := login.Props["register_href"].(string); got != "/signup" {
 		t.Errorf("login register_href = %q, want /signup", got)

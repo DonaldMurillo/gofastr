@@ -18,6 +18,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"golang.org/x/net/html"
 )
 
 func TestE2E(t *testing.T) {
@@ -98,16 +99,7 @@ func TestE2E(t *testing.T) {
 	// Sign in, then every gated screen renders. A redirect to a login
 	// page is returned, not followed: with no session the login page's
 	// 200 passed for each screen (2026-10-27 G14).
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, CheckRedirect: func(req *http.Request, _ []*http.Request) error {
-		if req.URL.Path == "/login" {
-			return http.ErrUseLastResponse
-		}
-		return nil
-	}}
-	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {adminPass}}); err != nil {
-		t.Fatalf("login: %v", err)
-	}
+	client := e2eLoginRedirect(t, base, adminPass)
 	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/create", "/app/invoices/create", "/app/subscriptions/create"} {
 		if code, body := e2eDo(t, client, "GET", base+p, ""); code != http.StatusOK {
 			t.Errorf("authed screen %s = %d, want 200", p, code)
@@ -154,6 +146,77 @@ func TestE2E(t *testing.T) {
 	if code, _ := e2eDo(t, http.DefaultClient, "POST", base+"/api/customers", `{"name": "e2e-name", "email": "e2e-email@example.com"}`); code != http.StatusUnauthorized && code != http.StatusForbidden {
 		t.Errorf("anonymous write to customers = %d, want 401/403", code)
 	}
+}
+
+func e2eLoginRedirect(t *testing.T, base, adminPass string) *http.Client {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	readNext := func(path string) string {
+		t.Helper()
+		code, body := e2eDo(t, client, http.MethodGet, base+path, "")
+		if code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, code)
+		}
+		z := html.NewTokenizer(strings.NewReader(body))
+		for tt := z.Next(); tt != html.ErrorToken; tt = z.Next() {
+			if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
+				continue
+			}
+			tok := z.Token()
+			if tok.Data != "input" {
+				continue
+			}
+			var name, kind, value string
+			for _, attr := range tok.Attr {
+				switch attr.Key {
+				case "name":
+					name = attr.Val
+				case "type":
+					kind = attr.Val
+				case "value":
+					value = attr.Val
+				}
+			}
+			if name == "next" && kind == "hidden" {
+				return value
+			}
+		}
+		t.Fatalf("GET %s has no hidden next input", path)
+		return ""
+	}
+	if got := readNext("/login"); got != "/app" {
+		t.Errorf("direct login form next = %q, want /app", got)
+	}
+
+	const target = "/app/customers"
+	resp, err := client.Get(base + target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	loginPath := resp.Header.Get("Location")
+	if want := "/login?next=" + url.QueryEscape(target); resp.StatusCode != http.StatusSeeOther || loginPath != want {
+		t.Fatalf("GET %s = %d Location %q, want 303 to %s", target, resp.StatusCode, loginPath, want)
+	}
+	next := readNext(loginPath)
+	resp, err = client.PostForm(base+"/auth/login", url.Values{
+		"email": {"admin@meridian.dev"}, "password": {adminPass}, "next": {next},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Location"); resp.StatusCode != http.StatusSeeOther || got != target {
+		t.Fatalf("sign-in with rendered next=%q = %d Location %q, want 303 to %s", next, resp.StatusCode, got, target)
+	}
+	if code, _ := e2eDo(t, client, http.MethodGet, base+target, ""); code != http.StatusOK {
+		t.Fatalf("signed-in GET %s = %d, want 200", target, code)
+	}
+	t.Logf("GET %s → %s; POST /auth/login → %s; signed-in GET %s → 200", target, loginPath, resp.Header.Get("Location"), target)
+	return client
 }
 
 func e2eFreeAddr(t *testing.T) string {
