@@ -326,3 +326,19 @@ func TestOtherFieldOneofErrorRedacted(t *testing.T) {
 		t.Fatalf("Load = %v, want %q", err, want)
 	}
 }
+
+func TestMalformedRuleHidesSensitiveDefault(t *testing.T) {
+	var bad struct {
+		Key string `config:"KEY" sensitive:"true" default:"alpha-key" validate:"oneof:alpha-key beta"` // not-a-secret: fixture asserting redaction
+	}
+	err := config.Load(&bad, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "field Key") {
+		t.Fatalf("Load = %v, want a field Key rule error without the default", err)
+	}
+	var good struct {
+		Key string `config:"KEY" sensitive:"true" default:"alpha-key" validate:"oneof=alpha-key beta"` // not-a-secret: fixture
+	}
+	if err := config.Load(&good, config.MapSource{}); err != nil || good.Key != "alpha-key" {
+		t.Fatalf("Load = %v, Key = %q; want the valid oneof rule to load", err, good.Key)
+	}
+}

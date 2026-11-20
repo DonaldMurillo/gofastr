@@ -781,7 +781,11 @@ func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	for _, f := range fields {
 		if !f.nested {
 			if _, err := parseRules(f.sf.Type, f.sf.Tag.Get("validate")); err != nil {
-				return fmt.Errorf("config: field %s: %s", f.path, err)
+				msg := err.Error()
+				if f.sf.Tag.Get("sensitive") == "true" {
+					msg = redactSecrets(msg, []string{f.sf.Tag.Get("default")})
+				}
+				return fmt.Errorf("config: field %s: %s", f.path, msg)
 			}
 			continue
 		}
