@@ -217,6 +217,7 @@ var ownedPackages = []string{
 	"framework/experimental/harness/tool/builtins",
 	"framework/experimental/harness/tool/permission",
 	"framework/experimental/harness/tracing",
+	"core-ui/urlsafe",
 }
 
 //gofastr:test-reads primitives/ *.go

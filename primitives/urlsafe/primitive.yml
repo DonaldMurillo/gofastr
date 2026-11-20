@@ -1,0 +1,42 @@
+primitive: urlsafe
+summary: The one URL-scheme allow-list (Anchor, Resource, ImageSource) every surface that renders a caller-supplied URL runs through.
+code:
+  - core-ui/urlsafe/
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: refused-under-every-policy
+    rule: OK refuses, under every policy, the empty string, a C0 control byte or DEL, a percent-encoded CR or LF, a protocol-relative reference and any backslash, so \\host, \/host and /\host never pass as relative.
+    enforced_by:
+      - test: core-ui/urlsafe.TestRejectedUnderEveryPolicy
+  - id: scheme-split-by-policy
+    rule: "Anchor accepts http, https, mailto and tel; Resource and ImageSource accept http and https only; every policy accepts relative, absolute-path, query and fragment references, and a colon after the first /, ? or # is not a scheme."
+    enforced_by:
+      - test: core-ui/urlsafe.TestPolicySplit
+      - test: core-ui/urlsafe.TestAcceptedUnderEveryPolicy
+      - test: core-ui/urlsafe.TestColonAfterDelimiterIsNotAScheme
+  - id: data-uri-only-raster-images
+    rule: A data URI passes only ImageSource, and only with a jpeg, png, gif, webp or avif media type matched without case and a comma before its payload; data:image/svg+xml is refused.
+    enforced_by:
+      - test: core-ui/urlsafe.TestImageSourceAcceptsRasterDataURLs
+      - test: core-ui/urlsafe.TestImageSourceRejectsDangerousDataURLs
+      - test: core-ui/urlsafe.TestDataURLsStillRejectedByOtherPolicies
+decisions:
+  - id: one-allow-list
+    date: 2026-11-20
+    status: accepted
+    decision: Every URL sink (framework/ui, uihost head tags, crud media paths, apiversions, the headless primitives) calls urlsafe instead of keeping a guard of its own.
+    rejected:
+      - option: A guard per surface.
+        why: The same guard had been re-derived five times and the copies drifted, while core-ui/html, which they all render through, had none.
+    upholds: [refused-under-every-policy]
+  - id: image-data-is-its-own-policy
+    date: 2026-11-20
+    status: accepted
+    decision: Raster data URIs are admitted by a separate ImageSource policy rather than by Resource.
+    rejected:
+      - option: Let Resource accept data URIs.
+        why: The loosening would reach <script src> and <link href>, where a data URI is a code-execution path.
+      - option: Admit data:image/svg+xml for <img>.
+        why: SVG is a markup surface, and trusting browsers to keep img-loaded SVG script-disabled is weaker than never emitting it.
+    upholds: [data-uri-only-raster-images]
