@@ -37,13 +37,6 @@ notes:
     find:
       uses:
         - gofastr/core-ui/app.MustViewTransitionPresetCSS
-  - change: "BREAKING - framework/contracts/analyzers.AuditLint is removed with gofastr audit lint"
-    breaking: true
-    hits: edit
-    guidance: "Blank-import github.com/DonaldMurillo/gofastr/framework/contracts/analyzers so its rules register. Then load the settings with cfg, err := contracts.LoadConfig(root, \"\") (it reads gofastr.settings.yml), build pass, err := contracts.NewPass(root, cfg), and call contracts.Run(pass, contracts.RunOptions{}), checking each error. The Report covers the whole tree with the same rules and honors //gofastr:allow."
-    find:
-      uses:
-        - gofastr/framework/contracts/analyzers.AuditLint
   - change: "BREAKING - framework/contracts/analyzers EntityInfo.Scoped and EntityInfo.HasAccess are removed"
     breaking: true
     hits: edit
@@ -56,3 +49,37 @@ notes:
     breaking: true
     guidance: "Quote values meant to stay strings before loading an existing app spec or older Pack or Kiln snapshot, for example default: \"0x10\" or values: [\"0x01\", \"0x02\"]."
     nodetect: "whether a YAML value is meant as a number or as text depends on the field and the app, not the value's spelling"
+  - change: "BREAKING - framework/access.EditDistance is removed"
+    breaking: true
+    hits: edit
+    guidance: "Call fuzzy.Levenshtein from github.com/DonaldMurillo/gofastr/core/fuzzy; it takes the same two strings and returns the same distance."
+    find:
+      uses:
+        - gofastr/framework/access.EditDistance
+  - change: "BREAKING - framework/tenant TenantConfig.AutoScope is removed; it was never read"
+    breaking: true
+    hits: edit
+    guidance: "Delete the field. Multi-tenant scoping is always on; tenant.AllowCrossTenant on a context with no tenant ID stays the cross-tenant opt-in."
+    find:
+      uses:
+        - gofastr/framework/tenant.TenantConfig.AutoScope
+  - change: "BREAKING - core-ui/store.RouteSlices is removed"
+    breaking: true
+    hits: edit
+    guidance: "Read the route through store.Route instead: Path, Pattern, Title, Param(name) and Query(key)."
+    find:
+      uses:
+        - gofastr/core-ui/store.RouteSlices
+  - change: "BREAKING - the unused core-ui/component lifecycle and server-call APIs are removed (Lifecycle, LifecycleHook, NewLifecycle, Server, ServerCall, ActionDef.Server, ActionDef.Debounce)"
+    breaking: true
+    hits: edit
+    guidance: "Delete the reference. Nothing in the framework fired a lifecycle hook or read ActionDef.Server or ActionDef.Debounce, so the code had no effect."
+    find:
+      uses:
+        - gofastr/core-ui/component.Lifecycle
+        - gofastr/core-ui/component.LifecycleHook
+        - gofastr/core-ui/component.NewLifecycle
+        - gofastr/core-ui/component.Server
+        - gofastr/core-ui/component.ServerCall
+        - gofastr/core-ui/component.ActionDef.Server
+        - gofastr/core-ui/component.ActionDef.Debounce

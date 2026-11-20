@@ -125,10 +125,7 @@ few lines, and link the PR or the docs page for the rest.
   public-entity warning (`GOFASTR1702`), not as unscoped PII.
   `gofastr validate` reports unscoped PII on app-spec entities.
   `gofastr audit lint` now exits 2 as an unknown subcommand, with or
-  without `--help`. The exported `analyzers.AuditLint` function it used
-  is removed too: blank-import the analyzers package, load
-  `contracts.LoadConfig`, and run `contracts.Run` over a
-  `contracts.NewPass`, as `gofastr verify` does.
+  without `--help`.
 - **BREAKING: `app.MustViewTransitionPresetCSS` is gone.** Call
   `app.ViewTransitionPresetCSS`, which returns the CSS and an error for an
   unknown preset; nothing in the framework called the panicking form.

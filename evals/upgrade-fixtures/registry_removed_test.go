@@ -41,7 +41,10 @@ const removalGateFloor = "v0.86.0"
 // removalExempt lists removed exported identifiers no note needs: ones no
 // app could have reached. Each entry says why. Keep it short; a symbol an
 // app could name belongs in a note.
-var removalExempt = map[string]string{}
+var removalExempt = map[string]string{
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive.ToastAction.Label": "ToastAction is now a defined type over internal/uiaction.ToastAction, which keeps the Label field",
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive.ToastAction.Attrs": "ToastAction is now a defined type over internal/uiaction.ToastAction, which keeps the Attrs field",
+}
 
 // TestRemovedExportsHaveNotes runs gate 2 over every release from
 // removalGateFloor on, plus the working tree against the newest tag
