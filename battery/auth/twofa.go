@@ -28,43 +28,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ─── Configuration ─────────────────────────────────────────────────────
-
 // TwoFAConfig holds optional settings for the TwoFAPlugin.
 type TwoFAConfig struct {
 	// Issuer is the name shown in authenticator apps. Defaults to "GoFastr".
 	Issuer string
 
-	// Period is the TOTP time-step period in seconds. Defaults to 30. The
-	// enrolment URL carries it to the authenticator app. Codes are always
-	// six digits.
+	// Period is the TOTP step in seconds (default 30); codes are six digits.
 	Period uint
 
 	// Skew is the number of time-steps allowed before/after the current step.
-	// Defaults to 1 (allows ±1 period window).
 	Skew uint
 
 	// BackupCodeCount is how many backup codes to generate. Defaults to 10.
 	BackupCodeCount int
 
-	// Store is the persistence backend for 2FA state. If nil, an in-memory
-	// store is used (dev/test only).
+	// Store keeps 2FA state; nil is an in-memory store, refused in production.
 	Store TwoFAStore
 
-	// RateLimit applies a per-IP rate limit to /2fa/challenge and
-	// /2fa/verify. It defaults to 10 attempts/min with a 15-minute block
-	// (the register floor): without any, an attacker who has stolen a
-	// session can brute-force the 6-digit TOTP (~333k expected attempts
-	// at skew=1). Loosen by passing a config with a large MaxAttempts.
+	// RateLimit is the per-IP limit on challenge and verify; nil means 10 a minute with a 15-minute block.
 	RateLimit *RateLimiterConfig
 
-	// ChallengeAttemptsPerSession caps how many codes one pending login
-	// may submit to /2fa/challenge, whatever address they come from. The
-	// next attempt deletes the session and the user signs in again. The
-	// per-address RateLimit alone let a password holder spread guesses
-	// over many addresses (one IPv6 /64 is plenty) without limit.
-	// Defaults to 10. The counter shares RateLimit.Store, so it holds
-	// across replicas when that store is shared.
+	// ChallengeAttemptsPerSession caps the codes one pending login may try before it is deleted (default 10).
 	ChallengeAttemptsPerSession int
 }
 
@@ -81,11 +65,6 @@ func (c *TwoFAConfig) defaults() {
 	if c.BackupCodeCount == 0 {
 		c.BackupCodeCount = 10
 	}
-	// Default per-IP throttle on the code-guessing surfaces, like the
-	// login/register floors: a stolen session brute-forcing the 6-digit
-	// code needs ~333k expected attempts at skew=1, and 10/min makes that
-	// a multi-week project instead of an afternoon. Opt out by passing a
-	// config with a huge MaxAttempts, not by leaving it nil.
 	if c.RateLimit == nil {
 		c.RateLimit = &RateLimiterConfig{
 			MaxAttempts:   10,
@@ -98,8 +77,6 @@ func (c *TwoFAConfig) defaults() {
 	}
 }
 
-// ─── State & Store ─────────────────────────────────────────────────────
-
 // TwoFAState holds the per-user 2FA enrollment and verification status.
 type TwoFAState struct {
 	Enabled     bool     // true after successful verify step
@@ -107,35 +84,11 @@ type TwoFAState struct {
 	BackupCodes []string // bcrypt-hashed backup codes
 	Verified    bool     // true once the user has proven they can generate a valid code
 
-	// LastUsedStep is the TOTP time-step of the most recently accepted
-	// code. A code stays valid for the whole ±skew window, so without
-	// this one code works several times over ~90s — long enough for
-	// anyone who saw it (shoulder-surfed, phished, logged by a proxy) to
-	// spend it on a second session. Zero means nothing accepted yet.
+	// LastUsedStep is the TOTP step of the last accepted code; a step is accepted once.
 	LastUsedStep uint64
 }
 
-// TwoFAStateSwapper is the optional TwoFAStore extension that writes next
-// only while the stored row still EQUALS the state the caller read (a nil
-// expect means the row must be absent). It is the atomic read-modify-write
-// primitive for every handler transition:
-//
-//   - challenge's step consume: two sessions presenting the same TOTP code
-//     both read LastUsedStep=0; the first swap wins, the second's expect no
-//     longer matches, so one code authenticates exactly one session
-//     (RFC 6238 §5.2) — and a disable that committed between read and
-//     write deletes the row, failing the swap instead of resurrecting it.
-//   - verify's enable: the write lands only over the pending row it read;
-//     a racing disable (row gone) or re-enroll (row changed) refuses with
-//     409 instead of silently re-enabling a factor the user removed.
-//   - enroll's fresh pending row: inserted only while the row is still in
-//     the state the guard checked.
-//   - backup-code regeneration: the new codes land only over the row read
-//     after they were generated, so a step consumed or a disable committed
-//     meanwhile is kept rather than written over.
-//
-// A store that cannot offer this keeps the blind Set and the lost-update
-// window it comes with.
+// TwoFAStateSwapper writes next only while the stored state equals expect (nil expect: no row), reporting whether it wrote.
 type TwoFAStateSwapper interface {
 	CompareAndSwapTwoFA(ctx context.Context, userID string, expect, next *TwoFAState) (bool, error)
 }
@@ -151,9 +104,7 @@ type TwoFAStore interface {
 	// DeleteTwoFA removes the 2FA state for a user.
 	DeleteTwoFA(ctx context.Context, userID string) error
 
-	// ConsumeBackupCode checks if the given code matches any stored (hashed)
-	// backup code for the user. If it matches, that code is removed and true
-	// is returned. Otherwise returns false.
+	// ConsumeBackupCode removes and reports a matching backup code.
 	ConsumeBackupCode(ctx context.Context, userID string, code string) (bool, error)
 }
 
@@ -181,14 +132,6 @@ func (m *MemoryTwoFAStore) SetTwoFA(_ context.Context, userID string, state *Two
 	return nil
 }
 
-// cloneTwoFAState deep-copies the state so the store never shares a
-// pointer with its callers, matching MemorySessionStore.
-//
-// A struct copy alone is not enough here: BackupCodes is a slice, so a
-// shallow copy still shares the backing array and two concurrent
-// regenerations would write the same memory. Handing out the stored
-// pointer let callers mutate the map's value with no lock at all, which
-// the race detector flags on two simultaneous backup-code requests.
 func cloneTwoFAState(st *TwoFAState) *TwoFAState {
 	if st == nil {
 		return nil
@@ -208,10 +151,6 @@ func (m *MemoryTwoFAStore) DeleteTwoFA(_ context.Context, userID string) error {
 }
 
 func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, code string) (bool, error) {
-	// Snapshot the hashes under the read lock so other readers (GetTwoFA)
-	// aren't blocked by the bcrypt loop. With 10 codes at default cost
-	// the loop holds the lock for ~600ms in the previous implementation,
-	// freezing every other 2FA call in the process.
 	m.mu.RLock()
 	state, ok := m.states[userID]
 	if !ok || len(state.BackupCodes) == 0 {
@@ -220,8 +159,6 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 	}
 	hashes := append([]string(nil), state.BackupCodes...) // copy
 	m.mu.RUnlock()
-
-	// Bcrypt comparisons happen WITHOUT holding any lock.
 
 	matchedHash := ""
 	for _, hashed := range hashes {
@@ -234,9 +171,6 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 		return false, nil
 	}
 
-	// Re-acquire the write lock and remove the matched hash. Re-check
-	// the state in case another goroutine mutated it while we were
-	// hashing (e.g. concurrent successful consume).
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, ok := m.states[userID]
@@ -250,21 +184,15 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 			return true, nil
 		}
 	}
-	// Already consumed by another goroutine.
 	return false, nil
 }
 
-// ─── Plugin ────────────────────────────────────────────────────────────
-
-// TwoFAPlugin implements AuthPlugin and AuthPluginRoutes for TOTP-based
-// two-factor authentication.
+// TwoFAPlugin serves TOTP enrolment, the sign-in challenge and backup codes.
 type TwoFAPlugin struct {
 	config         TwoFAConfig
 	mgr            *AuthManager
 	store          TwoFAStore
 	challengeLimit *RateLimiter
-	// sessionGuesses counts /2fa/challenge attempts per session token
-	// (hashed), across addresses. Built in Init, where SessionTTL is known.
 	sessionGuesses *RateLimiter
 }
 
@@ -278,8 +206,6 @@ func NewTwoFAPlugin(config TwoFAConfig) *TwoFAPlugin {
 	return p
 }
 
-// twoFAStateEqual reports deep equality of two states (nil-aware): the
-// field set a swap predicate needs, including the backup-code slice.
 func twoFAStateEqual(a, b *TwoFAState) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -291,9 +217,7 @@ func twoFAStateEqual(a, b *TwoFAState) bool {
 		slices.Equal(a.BackupCodes, b.BackupCodes)
 }
 
-// CompareAndSwapTwoFA writes next only while the stored row still equals
-// expect (nil expect = row absent), under the same mutex every other
-// mutation takes. Implements [TwoFAStateSwapper].
+// CompareAndSwapTwoFA implements TwoFAStateSwapper.
 func (m *MemoryTwoFAStore) CompareAndSwapTwoFA(_ context.Context, userID string, expect, next *TwoFAState) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -313,22 +237,9 @@ func (m *MemoryTwoFAStore) CompareAndSwapTwoFA(_ context.Context, userID string,
 // Name returns the plugin identifier.
 func (p *TwoFAPlugin) Name() string { return "twofa" }
 
-// Init stores a reference to the AuthManager, selects the store, and
-// self-migrates its schema when the store supports it.
-//
-// Init fails closed when DevMode=false and no durable store is
-// configured: in-memory 2FA state in production is worse than a scaling
-// gap, a restart wipes enrollment, silently reverting every 2FA account
-// to password-only auth. A security control that quietly stops applying
-// is not a warning-grade condition, so the app refuses to boot unless
-// the host acknowledges a deliberate single-node deployment via
-// AuthConfig.AllowInMemoryStores.
+// Init selects the store, refusing the in-memory one in production, and ensures its schema.
 func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
-	// The window spans the session's whole life, so waiting gains no
-	// fresh guesses: a pending session gets ChallengeAttemptsPerSession
-	// codes in total. DevMode is deliberately not inherited from
-	// RateLimit; ten wrong codes on one login is not tooling traffic.
 	ttl := mgr.Config().SessionTTL
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
@@ -352,13 +263,9 @@ func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 		}
 		p.store = NewMemoryTwoFAStore()
 		if !cfg.DevMode {
-			// Acknowledged single-node: still leave a trace in the log.
 			slog.Default().Warn("auth: production mode is running on the in-memory 2FA store (acknowledged via AllowInMemoryStores): a restart wipes enrollment, reverting 2FA accounts to password-only auth")
 		}
 	}
-	// The battery owns its table: create it if absent so hosts never
-	// hand-roll the 2FA DDL. Custom stores without a managed schema
-	// simply don't implement the optional interface.
 	if se, ok := p.store.(interface {
 		EnsureSchema(context.Context) error
 	}); ok {
@@ -376,23 +283,9 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/2fa/verify", http.HandlerFunc(p.verifyHandler))
 	r.Post(basePath+"/2fa/challenge", http.HandlerFunc(p.challengeHandler))
 	r.Post(basePath+"/2fa/disable", http.HandlerFunc(p.disableHandler))
-	// POST, not GET: this route REGENERATES the code set, invalidating the
-	// previous one. csrf.go exempts safe methods by design, so as a GET no
-	// token was ever checked — and a SameSite=Lax session, which is what
-	// OAuth and magic-link logins leave behind, rides a plain top-level
-	// cross-site link. A hidden <img> was enough to burn a user's codes.
 	r.Post(basePath+"/2fa/backup-codes", http.HandlerFunc(p.backupCodesHandler))
 }
 
-// ─── Route helpers ─────────────────────────────────────────────────────
-
-// swapTwoFAState performs a handler's read-modify-write through the
-// TwoFAStateSwapper seam when the store offers it: the write lands only
-// over the state the handler read, so a racing disable (or a competing
-// presentation of the same TOTP step) loses cleanly to the caller with a
-// 409 instead of a blind write resurrecting or double-spending state.
-// Stores without the seam keep the blind Set and its documented window.
-// Writes the error response and returns false when the caller must abort.
 func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, userID string, expect, next *TwoFAState) bool {
 	swapper, ok := p.store.(TwoFAStateSwapper)
 	if !ok {
@@ -414,12 +307,6 @@ func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, use
 	return true
 }
 
-// requireStepUpSession resolves the session and refuses any session that
-// is still PendingTwoFactor. Used by every 2FA self-service handler except
-// challengeHandler, a pending session (password only) must not be able to
-// disable, re-enroll, verify, or refresh backup codes, which would defeat
-// 2FA with the password alone. Writes the 401/403 response and returns ok=false
-// when the caller must abort.
 func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
 	if rejectInProcessAccountOperation(w, r) {
 		return nil, false
@@ -433,16 +320,8 @@ func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Reques
 		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return nil, false
 	}
-	// Positive check, not only the absence of the pending flag. A session
-	// minted BEFORE the user enrolled carries PendingTwoFactor=false
-	// forever, so the negative test alone left it "stepped up" for its
-	// whole lifetime, able to disable a factor it never proved. Only a
-	// session that actually passed the challenge (or the enrolling
-	// session, which verifyHandler marks) may mutate the factor.
 	state, err := p.store.GetTwoFA(r.Context(), sess.UserID)
 	if err != nil {
-		// Unreadable 2FA state is refused, never assumed absent,
-		// assuming it would hand exactly the bypass back.
 		writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
 		return nil, false
 	}
@@ -453,8 +332,6 @@ func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Reques
 	return sess, true
 }
 
-// requireStepUpUser is requireStepUpSession for handlers that need only the
-// user id.
 func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) (userID string, ok bool) {
 	sess, ok := p.requireStepUpSession(w, r)
 	if !ok {
@@ -463,11 +340,6 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 	return sess.UserID, true
 }
 
-// ─── Route handlers ────────────────────────────────────────────────────
-
-// POST {basePath}/2fa/enroll
-// Generates a new TOTP secret for the authenticated user and returns the
-// otpauth:// URL (for QR code apps) along with the plaintext secret.
 func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
 		return
@@ -477,15 +349,6 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refuse to overwrite an already-enabled factor without a fresh step-up.
-	// Re-enrolling silently clobbers the live secret (Enabled=false below),
-	// which would let an attacker with a non-pending but un-stepped-up
-	// session disable the victim's working second factor. Callers must
-	// disable (which itself requires step-up) before re-enrolling.
-	//
-	// Fail CLOSED on a store error: a durable store can now error (the
-	// memory store never did), and treating an unreadable state as
-	// "not enabled" would skip this guard and overwrite a live factor.
 	existing, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotRead2faState)
@@ -498,10 +361,6 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 
 	secret := GenerateSecret()
 
-	// Persist a pending state (Enabled=false until verified), only over
-	// the state the guard above read: a /2fa/disable committing between
-	// the Get and this write deletes the row, and a blind Set would
-	// re-create it — the user's disable would not stick.
 	state := &TwoFAState{
 		Enabled:     false,
 		Secret:      secret,
@@ -512,7 +371,6 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build otpauth URL. Fall back to userID if UserStore is not configured.
 	email := userID
 	if us := p.mgr.UserStore(); us != nil {
 		if user, err := us.FindByID(r.Context(), userID); err == nil && user != nil {
@@ -529,9 +387,6 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST {basePath}/2fa/verify
-// Verifies a TOTP code from the enrollment flow. If valid, enables 2FA
-// and generates backup codes.
 func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if p.challengeLimit != nil && !p.challengeLimit.guard(w, r) {
 		return
@@ -563,29 +418,17 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Enrollment deliberately does NOT consume the step. This is a
-	// one-time proof inside the user's own authenticated session, and the
-	// same code must still work for the step-up challenge moments later —
-	// consuming it here would make enrolment and first login mutually
-	// exclusive within one window. The replay that matters is a second
-	// SESSION on one code, and that is the challenge path's to refuse.
 	if !ValidateTOTP(state.Secret, body.Code, p.config.Period, p.config.Skew) {
 		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 
-	// Generate backup codes (plaintext to return, hashed to store).
 	plainCodes, hashedCodes, err := generateBackupCodes(p.config.BackupCodeCount)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToGenerateBackupCodes)
 		return
 	}
 
-	// The enable write lands only over the pending row this handler
-	// read: a /2fa/disable committing between the read and the write
-	// deletes the row, and a blind Set would write Enabled=true straight
-	// back over the delete — 2FA silently ON again after the user
-	// turned it off.
 	enabled := cloneTwoFAState(state)
 	enabled.Enabled = true
 	enabled.Verified = true
@@ -594,13 +437,6 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The caller just proved the factor with a live TOTP code, so mark
-	// this session verified. Without it, requireStepUpUser's positive
-	// check would lock the enrolling user out of their own 2FA settings
-	// until they logged in again, the session that did the enrolling
-	// would have Enabled=true and TwoFactorVerified=false.
-	// The mark lands on the session requireStepUpSession judged, never on
-	// another cookie the request happens to carry.
 	if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToRecordVerification)
 		return
@@ -620,9 +456,6 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST {basePath}/2fa/challenge
-// Verifies a TOTP code (or backup code) during login. Called after the
-// core login flow if the user has 2FA enabled.
 func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
 		return
@@ -630,9 +463,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	if !guardAuthLimit(p.challengeLimit, w, r) {
 		return
 	}
-	// An HTML form (ui.OneTimeCode posting "code") gets each failure as
-	// the 303 back to its page with ?error=, and success as the 303 to
-	// its next; a JSON client gets the JSON answers.
 	isForm := isFormRequest(r)
 	fail := func(status int, reason i18n.Phrase) {
 		if isForm {
@@ -653,10 +483,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"verified": true})
 	}
-	// challengeHandler is the ONLY endpoint a PendingTwoFactor session may
-	// reach, it is how the session completes step-up. Hence it uses the raw
-	// requestSession (pending is allowed, and preferred) rather than
-	// requireStepUpSession.
 	sess, err := p.mgr.requestSession(r, true)
 	if err != nil {
 		fail(http.StatusUnauthorized, reasonNotAuthenticated)
@@ -687,12 +513,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-session budget, counted before the code is checked. The
-	// per-address limiter above is no bound for a password holder with
-	// many addresses; this one is keyed by the session itself. Once it is
-	// spent, the session is deleted: the next guesses need a fresh login,
-	// which the login limiters meter. A store error refuses this attempt
-	// and keeps the session: an outage is not a spent budget.
 	if p.sessionGuesses != nil {
 		allowed, retry, err := p.sessionGuesses.Admit(r.Context(), sha256hex(sess.Token))
 		if err != nil {
@@ -716,15 +536,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Try TOTP code first. A code is valid across the whole ±skew window,
-	// so accepting the same step twice lets anyone who observed one code
-	// open a second session inside that window (RFC 6238 §5.2 forbids it).
-	// The consume rides the compare-and-swap: the write lands only over
-	// the state this handler read, so the second concurrent presentation
-	// of the same step fails the swap (one code, one session) and a
-	// racing disable finds the row already gone instead of resurrected.
-	// Recording the step BEFORE marking the session means a store failure
-	// leaves the code spent rather than replayable.
 	if step, ok := ValidateTOTPStep(state.Secret, body.Code, p.config.Period, p.config.Skew); ok && step > state.LastUsedStep {
 		consumed := cloneTwoFAState(state)
 		consumed.LastUsedStep = step
@@ -744,7 +555,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback to backup code.
 	consumed, err := p.store.ConsumeBackupCode(r.Context(), userID, body.Code)
 	if err != nil {
 		fail(http.StatusInternalServerError, reasonBackupCodeCheckFailed)
@@ -772,9 +582,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	fail(http.StatusUnauthorized, reasonInvalidCode)
 }
 
-// HasTwoFactorEnabled implements TwoFactorChecker. Returns true when the
-// user has 2FA enrolled and enabled. CorePlugin's loginHandler queries
-// this to decide whether to mint a PendingTwoFactor session.
+// HasTwoFactorEnabled reports whether userID has an enabled factor. Implements TwoFactorChecker.
 func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (bool, error) {
 	state, err := p.store.GetTwoFA(ctx, userID)
 	if err != nil {
@@ -786,17 +594,6 @@ func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (b
 	return state.Enabled, nil
 }
 
-// completeStepUp replaces the pending session the challenge judged with a
-// fresh one that has passed the second factor, and sets its cookie. Marking
-// the judged token in place kept a token that existed before the factor was
-// proven: a pending session an attacker who knows the password minted and
-// planted in the victim's browser (a sibling-subdomain cookie, a plain-HTTP
-// hop) became fully verified when the victim typed their code, the fixation
-// that password login already rotates against.
-//
-// The judged session must still exist once the fresh one is stored: a
-// reset or a 2FA disable that deleted it mid-request deletes the fresh one
-// too, or this refuses. It answers the error itself and reports false.
 func (p *TwoFAPlugin) completeStepUp(w http.ResponseWriter, r *http.Request, sess *Session) bool {
 	ctx := r.Context()
 	store := p.mgr.SessionStore()
@@ -814,9 +611,6 @@ func (p *TwoFAPlugin) completeStepUp(w http.ResponseWriter, r *http.Request, ses
 	if err != nil {
 		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, nil)
 	}
-	// The fresh session is pending (the account has a factor); mark it.
-	// An error leaves it pending, and answering 200 would report a
-	// step-up that did not happen.
 	if err := p.markSessionTwoFA(ctx, fresh.Token); err != nil {
 		return fail(http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp, fresh)
 	}
@@ -831,18 +625,6 @@ func (p *TwoFAPlugin) completeStepUp(w http.ResponseWriter, r *http.Request, ses
 	return true
 }
 
-// markSessionTwoFA records that the session behind token cleared its second
-// factor, if the session store supports SessionTwoFAMarker. The caller
-// passes the token of the session it judged, never whichever cookie comes
-// first on the request.
-//
-// The error is returned, not swallowed. RequireTwoFA gates on the marker,
-// so a failed write means the session is still pending — answering the
-// challenge with 200 verified:true would tell the caller they are through
-// a door that is still shut, and every later request would bounce with no
-// explanation. A store without SessionTwoFAMarker keeps its old behaviour:
-// there is no marker to fail to write (RequireTwoFA fails closed for
-// enrolled users in that case).
 func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error {
 	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
 		return marker.MarkTwoFactorVerified(ctx, token)
@@ -850,29 +632,7 @@ func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error 
 	return nil
 }
 
-// RequireTwoFA returns middleware that gates a route on the second factor
-// of the request's principal, the user GetCurrentUser(ctx) returns:
-//
-//   - 401 when there is no principal, or the request carries no live,
-//     non-pending session cookie of that same user.
-//   - Lets the request through when the principal has not enrolled in 2FA.
-//   - Lets the request through when one of the principal's session
-//     cookies has TwoFactorVerified=true.
-//   - 403 otherwise.
-//
-// Install it behind SessionMiddleware or RequireAuth, which put the
-// principal in the context. The gate judges that principal and not the
-// first cookie: the handler runs as the principal, so a session of any
-// other user proves nothing about it. A JWT or API-token principal carries
-// no step-up state of its own, so it passes only next to a stepped-up
-// session cookie of the same user.
-//
-// It relies on the SessionStore implementing SessionTwoFAMarker, otherwise
-// RequireTwoFA fails closed (always 403 for enrolled users).
-// Calls admitted by App.InProcessHandler instead use the outer request's
-// SessionMiddleware assurance, bound to this manager, any partitioned lookup tenant
-// and the same non-nil context user.
-// This fact does not re-check the underlying session's expiry or revocation.
+// RequireTwoFA refuses a principal with an enabled factor unless one of their own sessions on the request passed the challenge.
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -908,13 +668,10 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 				writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
 				return
 			}
-			// Not enrolled, bypass.
 			if state == nil || !state.Enabled {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Enrolled: one of the principal's own sessions must have
-			// cleared the challenge.
 			if verified {
 				next.ServeHTTP(w, r)
 				return
@@ -924,8 +681,6 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	}
 }
 
-// POST {basePath}/2fa/disable
-// Disables 2FA for the authenticated user.
 func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
 		return
@@ -939,10 +694,6 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToDisable2fa)
 		return
 	}
-	// A pending session (password proven, challenge not yet passed) is
-	// inert while the factor is off, but it would complete with whatever
-	// factor the user enrolls next: a login finishing on a factor it never
-	// saw. Drop them with the factor.
 	if purger, ok := p.mgr.SessionStore().(SessionPendingPurger); ok {
 		if _, err := purger.DeletePendingByUser(r.Context(), userID); err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reason2faRevokeFailed)
@@ -960,8 +711,6 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"disabled": true})
 }
 
-// POST {basePath}/2fa/backup-codes
-// Generates a fresh set of backup codes, invalidating any previous ones.
 func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
 		return
@@ -1000,21 +749,8 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// regenSwapAttempts bounds replaceBackupCodes' retries. Each lost swap
-// means another write landed (a challenge consuming a step, a backup code
-// spent); a user cannot outpace a handful of re-reads.
 const regenSwapAttempts = 4
 
-// replaceBackupCodes swaps codes into the user's enrollment and changes
-// nothing else. Generating the codes took bcrypt time after the handler
-// read the row, and writing that stale row back undid whatever landed
-// meanwhile: a challenge's consumed TOTP step (so one code stepped up a
-// second session), a spent backup code, or a disable (the row came back
-// Enabled). So the write is built on a fresh read and lands only over that
-// read through the state swap, retried a few times when another write
-// wins; it refuses when the enrollment is gone, disabled, or re-keyed to
-// another secret since the codes were asked for. A store with no
-// swap re-reads and writes blind, keeping the window it always had.
 func (p *TwoFAPlugin) replaceBackupCodes(w http.ResponseWriter, r *http.Request, userID, secret string, codes []string) bool {
 	swapper, canSwap := p.store.(TwoFAStateSwapper)
 	for attempt := 0; attempt < regenSwapAttempts; attempt++ {
@@ -1049,11 +785,7 @@ func (p *TwoFAPlugin) replaceBackupCodes(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
-// ─── TOTP implementation (RFC 6238, HMAC-SHA1) ─────────────────────────
-
-// GenerateSecret creates a cryptographically random 20-byte secret and
-// returns it as a base32-encoded string (no padding). Panics if crypto/rand
-// fails, entropy starvation makes the rest of the auth system unsound.
+// GenerateSecret returns a random 20-byte base32 TOTP secret.
 func GenerateSecret() string {
 	secret := make([]byte, 20)
 	if _, err := rand.Read(secret); err != nil {
@@ -1062,47 +794,34 @@ func GenerateSecret() string {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secret)
 }
 
-// GenerateTOTP produces a TOTP code for the given base32 secret and
-// time-step counter using HMAC-SHA1 as specified in RFC 6238.
+// GenerateTOTP returns the six-digit RFC 6238 code for secret at timeStep.
 func GenerateTOTP(secret string, timeStep uint64) string {
-	// Decode the base32 secret.
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
 	if err != nil {
 		return ""
 	}
 
-	// Encode timeStep as an 8-byte big-endian value.
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, timeStep)
 
-	// HMAC-SHA1.
 	mac := hmac.New(sha1.New, key)
 	mac.Write(buf)
 	hmacResult := mac.Sum(nil)
 
-	// Dynamic truncation (RFC 4226 §5.3).
 	offset := hmacResult[len(hmacResult)-1] & 0x0F
 	code := binary.BigEndian.Uint32(hmacResult[offset:]) & 0x7FFFFFFF
 
-	// 6 digits.
 	code = code % 1000000
 	return fmt.Sprintf("%06d", code)
 }
 
-// ValidateTOTP checks whether the provided code is valid for the given
-// secret within ±skew time periods of the current time.
-//
-// A caller enforcing single use wants [ValidateTOTPStep], which names the
-// step that matched.
+// ValidateTOTP reports whether code is valid within skew steps of now.
 func ValidateTOTP(secret, code string, period, skew uint) bool {
 	_, ok := ValidateTOTPStep(secret, code, period, skew)
 	return ok
 }
 
-// ValidateTOTPStep reports the time-step a valid code belongs to, so a
-// caller can refuse a step it has already accepted. RFC 6238 §5.2 requires
-// exactly this: "the verifier MUST NOT accept the second attempt of the
-// OTP generated for the same time window".
+// ValidateTOTPStep is ValidateTOTP returning the matched step, so a caller can refuse a reused one.
 func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 	if period == 0 {
 		period = 30
@@ -1116,8 +835,6 @@ func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 		if step < 0 {
 			continue
 		}
-		// Constant-time compare so the verification doesn't leak which
-		// digits matched. Mirrors framework/auth/mfa.go.
 		expected := []byte(GenerateTOTP(secret, uint64(step)))
 		if subtle.ConstantTimeCompare(expected, codeBytes) == 1 {
 			return uint64(step), true
@@ -1126,11 +843,6 @@ func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 	return 0, false
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────
-
-// buildOTPAuthURL constructs an otpauth://totp/ URL for authenticator apps.
-// period must be the one verification uses, or the app shows codes for
-// the wrong step.
 func buildOTPAuthURL(issuer, accountName, secret string, period uint) string {
 	u := url.URL{
 		Scheme: "otpauth",
@@ -1147,8 +859,6 @@ func buildOTPAuthURL(issuer, accountName, secret string, period uint) string {
 	return u.String()
 }
 
-// generateBackupCodes creates n cryptographically random 8-character
-// alphanumeric codes. Returns both plaintext and bcrypt-hashed slices.
 func generateBackupCodes(n int) (plain []string, hashed []string, err error) {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	plain = make([]string, n)
@@ -1168,8 +878,6 @@ func generateBackupCodes(n int) (plain []string, hashed []string, err error) {
 	return plain, hashed, nil
 }
 
-// randomString generates a cryptographically random string of the given
-// length using characters from charset.
 func randomString(length int, charset string) (string, error) {
 	result := make([]byte, length)
 	max := big.NewInt(int64(len(charset)))

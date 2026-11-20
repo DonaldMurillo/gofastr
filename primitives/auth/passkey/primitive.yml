@@ -138,6 +138,52 @@ invariants:
     rule: The step-up module submits its form, with the proof in its passkey_reauth field, with the marked submit button as submitter, so the button's formaction, name and value go with the proof.
     enforced_by:
       - test: battery/auth.TestPasskeyModuleRules
+  - id: plugin-config
+    rule: Init refuses an RP ID or origin set that cannot work (an origin with a path, a default port, a host outside the RP ID), in-memory stores in production, and a missing TwoFactorURL next to a 2FA plugin.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBadOriginFailsInit
+      - test: battery/auth.TestPasskeyDefaultPortFailsInit
+      - test: battery/auth.TestPasskeyProdRefusesMemoryStores
+      - test: battery/auth.TestPasskeyTwoFactorNeedsURL
+  - id: management-needs-the-second-factor
+    rule: Registering or deleting a passkey needs a session that is not pending and, on an account with a second factor, passed it; a user id longer than 64 bytes cannot register.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRegisterNeedsSecondFactor
+      - test: battery/auth.TestPasskeyLongUserIDRefused
+  - id: routes-guarded
+    rule: Every passkey route is rate limited per IP and the options routes need a JSON content type.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRoutesAreRateLimited
+      - test: battery/auth.TestPasskeyOptionsNeedJSON
+  - id: registration-checks
+    rule: Registration needs the credential id the attestation names, refuses a name with control or format characters or over 64 characters, holds the per-user cap at options and atomically at insert, and is undone when a reset overtook it.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRegisterIDMustMatch
+      - test: battery/auth.TestPasskeyNameRefusesBadInput
+      - test: battery/auth.TestPasskeyPerUserCap
+      - test: battery/auth.TestPasskeyCapHoldsAtRegister
+      - test: battery/auth.TestPasskeyRegisterOvertakenByReset
+  - id: sign-in-checks
+    rule: Sign-in needs the userHandle the passkey was registered to, an unchanged backup-eligible bit and a sign count that advances unless both are zero, records the use with a compare-and-swap (409 on a lost race), fails closed when 2FA state is unavailable, and drops its session when a reset removed the passkey meanwhile.
+    enforced_by:
+      - test: battery/auth.TestPasskeyUserHandleMustMatch
+      - test: battery/auth.TestPasskeyBackupEligibleIsFixed
+      - test: battery/auth.TestPasskeySignCountMustAdvance
+      - test: battery/auth.TestPasskeyZeroCounterSignsIn
+      - test: battery/auth.TestPasskeyLostRaceIs409
+      - test: battery/auth.TestPasskeyTwoFADownFailsClosed
+      - test: battery/auth.TestPasskeyLoginOvertakenByReset
+  - id: ceremonies-verified
+    rule: clientDataJSON must carry the ceremony's type, a configured origin and no crossOrigin; authenticator data must match the RP ID hash with user presence and verification (only a conditional create skips them), a consistent backup pair and nothing trailing; the signature must verify against the stored COSE key.
+    enforced_by:
+      - test: battery/auth.TestClientDataRefusals
+      - test: battery/auth.TestAssertionRefusals
+      - test: battery/auth.TestAttestationRefusals
+  - id: keys-and-cbor-bounded
+    rule: A COSE key is a P-256 point on the curve, a 32-byte Ed25519 key or an RSA modulus of 2048-8192 bits, and the CBOR decoder refuses nesting past eight levels.
+    enforced_by:
+      - test: battery/auth.TestCOSEKeyRefusals
+      - test: battery/auth.TestCBORRefusesMalformedInput
 decisions:
   - id: keep-hand-rolled-verifier
     date: 2026-11-17
@@ -177,3 +223,19 @@ decisions:
     rejected:
       - option: Store the device type.
         why: It is the BE flag under another name, and a second column could disagree with it.
+  - id: no-attestation-check
+    date: 2026-11-20
+    status: accepted
+    decision: The verifier checks authenticator data and keys but not the attestation statement.
+    rejected:
+      - option: Verify attestation certificates.
+        why: Synced platform passkeys send none, and the RP has no authenticator allow-list to enforce.
+    upholds: [ceremonies-verified]
+twins:
+  - job: Store passkeys with an atomic per-user cap and a compare-and-swap use record.
+    why: MemoryPasskeyStore locks a map and SQLPasskeyStore counts and inserts in a transaction; TestMemoryPasskeyStoreContract and TestSQLitePasskeyStoreContract run one contract over both.
+    sites:
+      - path: battery/auth/passkey.go
+        note: MemoryPasskeyStore.
+      - path: battery/auth/passkey_sql.go
+        note: SQLPasskeyStore.

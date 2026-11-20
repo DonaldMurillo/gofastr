@@ -18,8 +18,6 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// bareContentType returns the Content-Type with any parameters stripped,
-// lowercased. Empty when the header is absent.
 func bareContentType(r *http.Request) string {
 	ct := r.Header.Get("Content-Type")
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
@@ -28,47 +26,17 @@ func bareContentType(r *http.Request) string {
 	return strings.TrimSpace(strings.ToLower(ct))
 }
 
-// isFormRequest reports whether the request body is form-encoded (HTML
-// form POST). True when Content-Type starts with
-// "application/x-www-form-urlencoded" or "multipart/form-data".
-//
-// This answers "how should I decode the body and shape the response",
-// NOT "may a cross-site page have sent this". Use
-// core/handler.IsForgeableRequest for the latter, the two sets differ,
-// and conflating them is what let a text/plain login CSRF through.
 func isFormRequest(r *http.Request) bool {
 	ct := bareContentType(r)
 	return ct == "application/x-www-form-urlencoded" || ct == "multipart/form-data"
 }
 
-// decodeAuthCredentials reads either a JSON {email, password} body or an
-// HTML form body with the same fields. Returns the populated values and
-// a bool indicating whether the request was form-encoded (so the handler
-// can pick a form-friendly response shape).
-//
-// On a body that exceeds the size cap, writes 413 and returns ok=false.
-// On any other decode error, writes 400 and returns ok=false.
-//
-// SECURITY: this intentionally does NOT decode a "roles" field.
-// /auth/register is an anonymous endpoint, honoring client-supplied
-// roles would let any visitor self-promote to admin via a single POST
-// (or a CSRF-style cross-origin form submission). Roles are assigned
-// server-side in the handler from a configured default.
 func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error)) (email, password string, form bool, ok bool) {
 	if isFormRequest(r) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if !parseAuthFormOrRefuse(w, r) {
 			return "", "", true, false
 		}
-		// SECURITY: net/url and the multipart reader keep the FIRST
-		// value of a duplicated form field while the JSON surface keeps
-		// the LAST — one body naming email (or password) twice would
-		// authenticate a different account depending on Content-Type.
-		// Reject the ambiguity at decode instead of letting the parser
-		// pick, mirroring the strict top-level key rule
-		// decodeJSONLimited enforces for the JSON surface and
-		// core/handler.Bind enforces for every bound handler. PostForm
-		// holds the multipart values too once parseAuthForm ran.
 		for _, field := range []string{"email", "password"} {
 			if len(r.PostForm[field]) > 1 {
 				writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
@@ -97,20 +65,8 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 	return email, body.Password, false, true
 }
 
-// errAuthFormFile refuses a multipart auth body that carries a file part:
-// no auth form takes one.
 var errAuthFormFile = errors.New("auth: form carries a file part")
 
-// parseAuthForm parses the body into r.PostForm, urlencoded or multipart.
-// The caller caps r.Body with http.MaxBytesReader(w, r.Body,
-// maxAuthBodyBytes) first, on its own path, where the unboundedbody
-// analyzer looks for it. ParseForm alone never reads a multipart body,
-// so a multipart login used to arrive with no fields at all. Multipart
-// values land in r.PostForm too (ParseMultipartForm copies them there),
-// so the duplicate-field check and PostFormValue read both encodings the
-// same way. A file part is refused and its temporary files removed: no
-// auth form takes a file, and with the body capped at maxAuthBodyBytes,
-// which is also the in-memory budget, nothing reaches disk anyway.
 func parseAuthForm(r *http.Request) error {
 	if bareContentType(r) != "multipart/form-data" {
 		return r.ParseForm()
@@ -125,8 +81,6 @@ func parseAuthForm(r *http.Request) error {
 	return nil
 }
 
-// parseAuthFormOrRefuse runs parseAuthForm and, on failure, writes 413
-// for an over-cap body and 400 otherwise. The caller caps r.Body first.
 func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
 	err := parseAuthForm(r)
 	if err == nil {
@@ -140,10 +94,6 @@ func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// decodeFormFields reads the named fields of an HTML form post, capped at
-// the auth body limit. A field sent twice is refused, for the reason
-// decodeAuthCredentials gives: the form and JSON parsers would keep
-// different copies.
 func decodeFormFields(w http.ResponseWriter, r *http.Request, fields ...string) (map[string]string, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if !parseAuthFormOrRefuse(w, r) {
@@ -160,9 +110,6 @@ func decodeFormFields(w http.ResponseWriter, r *http.Request, fields ...string) 
 	return out, true
 }
 
-// canonicalizeDecodedEmail is the shared tail of both decode branches:
-// canonicalize (refusing decomposed Unicode), then bound the length so
-// the limiter key / user-table value stays finite.
 func canonicalizeDecodedEmail(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error), raw string) (string, bool) {
 	email, err := canonicalizeEmailWith(canonicalize, raw)
 	if err != nil {
@@ -175,52 +122,14 @@ func canonicalizeDecodedEmail(w http.ResponseWriter, r *http.Request, canonicali
 	return email, true
 }
 
-// ErrEmailNotComposed is the error an AuthConfig.CanonicalizeEmail
-// override returns to refuse an address it will not fold (the default
-// canonicalizer normalizes to NFC and never returns it); every email-
-// ingesting handler surfaces it as 400.
+// ErrEmailNotComposed is the error a CanonicalizeEmail override returns to refuse an address; handlers answer it with 400.
 var ErrEmailNotComposed = errors.New("auth: email address is not in composed Unicode form (NFC)")
 
 // CanonicalEmail is the battery's single definition of email identity.
-// Every flow that looks an email up or stores one (login, registration,
-// magic links, OAuth matching, password reset, the login rate-limiter
-// key) canonicalizes at its ingestion point, so custom UserStore
-// implementations always receive canonical input and the limiter key
-// and the lookup key agree by construction (#270). Hosts wrapping
-// UserStore should use it too when they accept emails from their own
-// surfaces.
-//
-// Identity is: invisible/bidi codepoints and C1 controls stripped, then
-// NFC-normalized, then trimmed, then lowercased (maintainer decision,
-// 2026-09-04 red-probe round 3): the composed and decomposed spellings
-// of one mailbox (macOS and iOS clipboards decompose copied text)
-// canonicalize to the same string, and a zero-width or bidi twin
-// (ow\u200Bner@example.com, owner@example.com\uFEFF) folds to the base
-// address instead of becoming a second, visually identical account —
-// NFC cannot fold those codepoints, only stripping can.
-// golang.org/x/text/unicode/norm is a Go-team module already in the
-// dependency graph.
-//
-// The default then refuses a non-empty result that is not one
-// local@domain pair (exactly one "@", text on both sides, no white
-// space, no control character) with invalid_email, so "notanemail" never becomes an account.
-// An empty input stays empty: the handlers answer that with their own
-// "credentials required" reason.
-//
-// Deployments with other rules (a provider that treats dots or plus
-// tags as insignificant, a legacy store keyed on the raw bytes) install
-// AuthConfig.CanonicalizeEmail; it replaces this default at every
-// ingestion point, and the strip lives in THIS default — an override
-// owns its own invisible-character policy. An override that wants to
-// refuse an address returns [ErrEmailNotComposed] (or any error); the
-// handlers surface it as 400.
 func CanonicalEmail(email string) (string, error) {
 	return canonicalizeEmailWith(nil, email)
 }
 
-// canonicalizeEmailWith applies canonicalize when non-nil (the
-// AuthConfig.CanonicalizeEmail override) and the package default
-// otherwise, so the override is total.
 func canonicalizeEmailWith(canonicalize func(string) (string, error), email string) (string, error) {
 	if !textsafe.Storable(email) {
 		return "", i18n.NewError(reasonInvalidEmail)
@@ -233,12 +142,7 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		if !textsafe.Storable(canonical) {
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
-		// The boot probe covers only its sample addresses; an address the
-		// override moves again would miss its own tokens at reset and
-		// erasure, so it is refused here.
 		if again, err := canonicalize(canonical); err != nil || again != canonical {
-			// No digest of the address: an unkeyed one would let anyone
-			// reading the log confirm a guess.
 			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address")
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
@@ -251,21 +155,11 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 	return canonical, nil
 }
 
-// canonicalizerProbes are the addresses Init runs an
-// AuthConfig.CanonicalizeEmail override over: mixed case, padding,
-// dots and plus tags, a decomposed accent, a zero-width space and an
-// IDN domain, the shapes a hand-written rule tends to fold one step at
-// a time.
 var canonicalizerProbes = []string{
 	"Alice@Example.COM", "  bob@example.org ", "first.last+news@gmail.com", "F.I.R.S.T@GoogleMail.com",
 	"zoe\u0308@example.com", "ow\u200bner@example.com", "user@xn--bcher-kva.example", "MiXeD.Case+Tag@Sub.Example.co.uk",
 }
 
-// checkCanonicalizerIdempotent refuses an override that changes an
-// address it already canonicalized: erasure and password reset fold
-// the stored address again before matching it, so a second fold that
-// moves it misses the user's tokens. An address the override refuses
-// is skipped; one it accepts must come back unchanged and accepted.
 func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) error {
 	if canonicalize == nil {
 		return nil
@@ -283,13 +177,6 @@ func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) err
 	return nil
 }
 
-// addressShaped reports whether email is one local@domain pair: exactly
-// one "@", text on both sides, no white space and no control character
-// (C0 or DEL; the C1 block is stripped before this runs). The default
-// canonicalizer refuses anything else, so "notanemail" never becomes an
-// account key nobody can mail. It is a shape check, not RFC 5322 parsing; a host with
-// other rules (bare operator names, quoted local parts) installs
-// AuthConfig.CanonicalizeEmail, which replaces it.
 func addressShaped(email string) bool {
 	local, domain, ok := strings.Cut(email, "@")
 	return ok && local != "" && domain != "" &&
@@ -297,13 +184,6 @@ func addressShaped(email string) bool {
 		!strings.ContainsFunc(email, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
 }
 
-// stripInvisibleEmailRunes removes the zero-width/bidi set and the C1
-// control block from an address before identity folding. core/textsafe
-// owns the predicate; this is the one strip every email ingestion point
-// shares. Stripping (not refusing) means an address pasted with a
-// trailing BOM or a buried zero-width space still logs in as the base
-// account, and the register flow folds the twin onto the existing row
-// instead of minting a visually identical second identity.
 func stripInvisibleEmailRunes(email string) string {
 	if !strings.ContainsFunc(email, func(r rune) bool { return textsafe.IsInvisible(r) || textsafe.IsC1(r) }) {
 		return email
@@ -316,17 +196,8 @@ func stripInvisibleEmailRunes(email string) string {
 	}, email)
 }
 
-// maxEmailLen is RFC 5321's 254-octet ceiling on a forward-path address.
 const maxEmailLen = 254
 
-// emailWithinLimit rejects an address longer than any real one can be.
-//
-// This is not cosmetic validation. The submitted address becomes the
-// per-account rate-limiter key in the login handler and a user-table
-// value in register, so without a bound here maxAuthBodyBytes (1 MiB)
-// is the only limit on how much state one unauthenticated request can
-// park in either. Length does not depend on whether the account exists,
-// so rejecting here opens no account-existence oracle.
 func emailWithinLimit(w http.ResponseWriter, r *http.Request, email string) bool {
 	if len(email) > maxEmailLen {
 		writeAuthError(w, r, http.StatusBadRequest, reasonInvalidEmail)
@@ -335,22 +206,6 @@ func emailWithinLimit(w http.ResponseWriter, r *http.Request, email string) bool
 	return true
 }
 
-// successRedirect returns the redirect target for a form-based auth
-// flow. A trusted ?next= override is honored only when it parses as a
-// safe same-origin relative path, defending against open-redirect via
-//   - protocol-relative ("//evil.example")
-//   - absolute URLs ("https://evil.example", "javascript:...")
-//   - backslash bypass ("/\evil.example", browsers normalise \ to /)
-//   - control chars / CRLF (header injection)
-//
-// Anything not matching the safe-relative shape falls back to `fallback`.
-//
-// The POST-body next lookup parses the form, so the body is capped first:
-// an uncapped ParseForm reads up to the stdlib's 10 MiB floor into
-// memory. A body that fails the cap (or any parse error) just yields the
-// fallback — next is an optional convenience field the handler never
-// depends on, and the routes that DO consume the form cap and reject it
-// themselves at decode time.
 func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) string {
 	next := r.URL.Query().Get("next")
 	if next == "" {
@@ -362,26 +217,9 @@ func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) st
 	return handler.SafeRelativePathOr(next, fallback)
 }
 
-// defaultLoginErrorPath is the operator-configured fallback used by
-// writeFormAuthError when no usable same-origin Referer is on the
-// request. Empty (the default) preserves the legacy behaviour of
-// emitting JSON. Set via SetDefaultLoginErrorPath at startup.
-//
-// atomic.Pointer wrapping makes concurrent writers (multi-app processes,
-// test-parallelism toggles) race-free per the Go memory model. A bare
-// string assignment is NOT atomic in Go, torn-string reads can panic
-// on bounds-check when the length is updated before the data pointer.
 var defaultLoginErrorPath atomic.Pointer[string]
 
-// SetDefaultLoginErrorPath configures the path that form-encoded auth
-// errors redirect to when the request has no usable Referer (e.g.
-// browser with Referrer-Policy: no-referrer, or a CSRF-stripping
-// proxy). Without this, those flows fall through to a JSON 4xx body
-// the user sees as a raw blob in their browser. Set to your login
-// page (e.g. "/login") so users get bounced back to retry.
-//
-// Pass "" to disable and restore the JSON-fallback behaviour. Safe
-// to call concurrently and from package init.
+// SetDefaultLoginErrorPath sets where a form auth error with no usable same-origin Referer redirects; empty answers JSON.
 func SetDefaultLoginErrorPath(path string) {
 	if path == "" {
 		defaultLoginErrorPath.Store(nil)
@@ -390,7 +228,6 @@ func SetDefaultLoginErrorPath(path string) {
 	defaultLoginErrorPath.Store(&path)
 }
 
-// getDefaultLoginErrorPath is the atomic-pointer read mirror.
 func getDefaultLoginErrorPath() string {
 	if p := defaultLoginErrorPath.Load(); p != nil {
 		return *p
@@ -398,17 +235,9 @@ func getDefaultLoginErrorPath() string {
 	return ""
 }
 
-// defaultRegisterErrorPath is the register form's own fallback, read in
-// place of defaultLoginErrorPath for a request registerHandler marked.
 var defaultRegisterErrorPath atomic.Pointer[string]
 
-// SetDefaultRegisterErrorPath configures the path that form-encoded
-// register errors (a weak password, a missing field, a cross-site or
-// throttled post) redirect to when the request has no usable Referer.
-// Pages served with Referrer-Policy: no-referrer never send one, so
-// without it a failed signup lands on the login error path. Set it to
-// your signup page (e.g. "/register"). Pass "" to fall back to the
-// login error path again. Safe to call concurrently.
+// SetDefaultRegisterErrorPath is SetDefaultLoginErrorPath for the register form.
 func SetDefaultRegisterErrorPath(path string) {
 	if path == "" {
 		defaultRegisterErrorPath.Store(nil)
@@ -417,7 +246,6 @@ func SetDefaultRegisterErrorPath(path string) {
 	defaultRegisterErrorPath.Store(&path)
 }
 
-// getDefaultRegisterErrorPath is the atomic-pointer read mirror.
 func getDefaultRegisterErrorPath() string {
 	if p := defaultRegisterErrorPath.Load(); p != nil {
 		return *p
@@ -425,17 +253,12 @@ func getDefaultRegisterErrorPath() string {
 	return ""
 }
 
-// registerFormKey marks a request registerHandler is serving, so
-// writeFormAuthError picks the register error path.
 type registerFormKey struct{}
 
-// asRegisterForm returns r marked as a register form post.
 func asRegisterForm(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), registerFormKey{}, true))
 }
 
-// errorFallbackPath is the configured fallback for r: the register path
-// for a register form when one is set, the login path otherwise.
 func errorFallbackPath(r *http.Request) string {
 	if on, _ := r.Context().Value(registerFormKey{}).(bool); on {
 		if p := getDefaultRegisterErrorPath(); p != "" {
@@ -445,19 +268,10 @@ func errorFallbackPath(r *http.Request) string {
 	return getDefaultLoginErrorPath()
 }
 
-// writeFormAuthError responds to a form-encoded auth request with a 303
-// redirect back to the referring page with an ?error= query string.
-// Only same-origin Referers are honored, a cross-origin Referer would
-// otherwise turn the auth endpoint into a phishing relay.
-//
-// When no usable Referer is available, falls back to the configured
-// error path (SetDefaultRegisterErrorPath for a register form when set,
-// SetDefaultLoginErrorPath otherwise) or JSON when neither is set.
 func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
 	redirectFormAuthError(w, r, status, reason, "")
 }
 
-// writeLoginFormError carries the submitted destination after login form decoding.
 func writeLoginFormError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
 	next := cmp.Or(r.URL.Query().Get("next"), r.PostForm.Get("next"))
 	redirectFormAuthError(w, r, status, reason, handler.SafeRelativePathOr(next, ""))
@@ -486,13 +300,6 @@ func redirectFormAuthError(w http.ResponseWriter, r *http.Request, status int, r
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// safeReferer returns the request's Referer when its host matches the
-// request's own Host (same-origin), otherwise "". The Referer's query
-// string is dropped, propagating attacker-controlled query params
-// from the Referer into the redirect Location is a state-confusion
-// vector (the attacker plants `?return=evil` on the referring page,
-// the auth-error redirect echoes it, the login page reads `?return=`
-// and uses it as the next form action).
 func safeReferer(r *http.Request) string {
 	ref := r.Referer()
 	if ref == "" {
@@ -502,17 +309,12 @@ func safeReferer(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
-	// The path stays escaped: the decoded u.Path turns
-	// /login%3Fnext=/admin into /login?next=/admin, a query the
-	// redirect then extends. IsSafeRelativePath checks it decoded too.
-	// Relative Referer (rare but possible): keep its path only.
 	if u.Host == "" {
 		if !handler.IsSafeRelativePath(u.EscapedPath()) {
 			return ""
 		}
 		return u.EscapedPath()
 	}
-	// Absolute Referer: must match the request's own Host.
 	if !strings.EqualFold(u.Host, r.Host) {
 		return ""
 	}
@@ -529,15 +331,6 @@ func safeReferer(r *http.Request) string {
 	return out
 }
 
-// sanitiseErr makes an error message safe to embed in a URL query value
-// AND to read back from server-rendered error pages. Whitespace,
-// control characters, URL-special characters, and HTML-special
-// characters (<, >, ", ') are all replaced with '+'. Full URL escaping
-// would be overkill for the short tags we use ("invalid_credentials"
-// etc.); the substitution keeps the message a single round-trippable
-// token while neutralising every byte that could break out of the
-// surrounding context (CRLF in redirect headers, `<script>` in a flash
-// message, `&` in a query string).
 func sanitiseErr(s string) string {
 	b := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {
@@ -557,14 +350,6 @@ func sanitiseErr(s string) string {
 	return string(b)
 }
 
-// writeCredentialHeaders marks a response whose body carries a live
-// credential: a JWT, a TOTP secret, plaintext backup codes, an API token
-// shown exactly once.
-//
-// Without no-store an intermediary may keep the body, and the browser's
-// back/forward cache retains responses to POSTs too — so "shown once"
-// becomes "shown once, and again to whoever presses Back". Pragma and
-// Expires are for HTTP/1.0 intermediaries that ignore Cache-Control.
 func writeCredentialHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	w.Header().Set("Pragma", "no-cache")

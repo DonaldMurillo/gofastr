@@ -25,8 +25,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// ─── Data types ─────────────────────────────────────────────────────────────
-
 // OAuth2Token holds the token information returned by an OAuth2 provider.
 type OAuth2Token struct {
 	AccessToken  string
@@ -42,30 +40,17 @@ type OAuth2UserInfo struct {
 	AvatarURL string
 	Provider  string
 	// EmailVerified reports whether the provider has VERIFIED the email.
-	// The OAuth callback uses this to decide whether an email match may
-	// bind to an existing local account: an unverified email must NEVER
-	// match. Defaults to false, a provider that cannot assert
-	// verification must not be treated as if it had.
 	EmailVerified bool
 
-	// noEmailLink refuses step 2 of resolveOAuthUser: an identity with
-	// no link yet never joins an existing account by its address. Set
-	// for a multi-tenant OIDC issuer, where one address can belong to
-	// identities in many tenants.
 	noEmailLink bool
 }
 
-// ─── Provider interface ─────────────────────────────────────────────────────
-
-// OAuth2Provider is the interface each OAuth2 provider (Google, GitHub, etc.)
-// must implement. Providers are registered on the OAuth2Plugin via
-// RegisterProvider or passed in through OAuth2Config.
+// OAuth2Provider is one OAuth2 identity provider.
 type OAuth2Provider interface {
 	// Name returns the provider identifier (e.g. "google", "github").
 	Name() string
 
 	// AuthURL returns the URL to redirect the user to for authorisation.
-	// The state parameter is included for CSRF protection.
 	AuthURL(state string) string
 
 	// ExchangeCode exchanges the authorisation code for an access token.
@@ -75,20 +60,7 @@ type OAuth2Provider interface {
 	FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error)
 }
 
-// OAuth2PKCEProvider is implemented by a provider that sends a PKCE
-// (RFC 7636, S256) challenge with the authorization request and the
-// matching verifier with the code exchange. The plugin uses these methods
-// in place of AuthURL and ExchangeCode whenever a provider has them; the
-// built-in Google, GitHub and OIDC providers do.
-//
-// PKCE is not only for public clients. A confidential client's secret
-// protects the exchange, but not against authorization-code injection: an
-// attacker holding a victim's code (a leaked redirect, a log, a referer)
-// starts a flow of their own, swaps the stolen code into its callback, and
-// the server redeems it with its own secret, signing the attacker in as
-// the victim. The state cookie is the attacker's own, so it checks out. A
-// verifier bound to the flow's state makes the stolen code unredeemable
-// in any other flow (RFC 9700 §2.1.1, §4.5).
+// OAuth2PKCEProvider is a provider that sends an S256 PKCE challenge and verifier; the plugin prefers these methods.
 type OAuth2PKCEProvider interface {
 	// AuthURLWithChallenge is AuthURL plus code_challenge (S256).
 	AuthURLWithChallenge(state, challenge string) string
@@ -96,99 +68,53 @@ type OAuth2PKCEProvider interface {
 	ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error)
 }
 
-// ─── Config ─────────────────────────────────────────────────────────────────
-
 // OAuth2Config holds the configuration for the OAuth2 plugin.
 type OAuth2Config struct {
 	// Providers is a map of provider name → provider implementation.
 	Providers map[string]OAuth2Provider
 
 	// RedirectURL is the base redirect URL for OAuth2 callbacks.
-	// The provider-specific path is appended automatically.
 	RedirectURL string
 
 	// StateSecret is the HMAC key used to sign OAuth2 state tokens.
-	// If empty, a random key is generated at startup (suitable for
-	// single-instance deployments only).
 	StateSecret string
 
-	// TokenStore, when set, persists each provider's access/refresh token
-	// at login so that calls made on the user's behalf can recover after
-	// the (short-lived) access token expires. See RefreshOAuthToken /
-	// ValidOAuthToken. Opt-in: when nil, OAuth login behaves exactly as
-	// before and the provider's refresh token is discarded.
+	// TokenStore keeps each provider's tokens at sign-in for RefreshOAuthToken; nil keeps none.
 	TokenStore OAuthTokenStore
 
-	// TwoFactorURL is where a sign-in goes when the account still owes
-	// its second factor: the app's page that posts the code to
-	// /2fa/challenge. Same-origin paths only. Init requires it when a 2FA
-	// plugin is registered: the session an OAuth sign-in mints for such
-	// an account is pending, and "/" would refuse it.
+	// TwoFactorURL is the same-origin page a sign-in of a 2FA account goes to; Init requires it next to a 2FA plugin.
 	TwoFactorURL string
 }
 
-// ─── Plugin ─────────────────────────────────────────────────────────────────
-
-// OAuth2Plugin implements AuthPlugin and AuthPluginRoutes to provide
-// OAuth2-based authentication via configurable providers.
-//
-// State is stateless: the token itself carries (nonce, provider,
-// expiryUnix, hmac). The plugin never persists per-redirect state,
-// so server restarts mid-flow don't invalidate in-flight logins and
-// the redirect endpoint can't be used as a memory-pressure DoS
-// surface. Replay protection comes from a bounded usedNonces map
-// written by every callback that carries a bound, validly signed
-// state and a code. Anyone can mint such a state (start a flow, keep
-// the cookie), so the map evicts its earliest-expiring entries when
-// full rather than refusing callbacks: see validateAndConsumeState.
+// OAuth2Plugin signs users in and links accounts through registered OAuth2 providers.
 type OAuth2Plugin struct {
-	mgr        *AuthManager
-	providers  map[string]OAuth2Provider
-	stateKey   []byte
-	tokenStore OAuthTokenStore
-	// twoFactorURL is OAuth2Config.TwoFactorURL.
+	mgr          *AuthManager
+	providers    map[string]OAuth2Provider
+	stateKey     []byte
+	tokenStore   OAuthTokenStore
 	twoFactorURL string
 
-	// usedNonces dedup callbacks against replay. Keyed by the random
-	// nonce embedded in the state token; values are the token's
-	// signed expiry so periodic GC can drop entries past TTL. Only
-	// validateAndConsumeState mutates this map.
 	noncesMu       sync.Mutex
 	usedNonces     map[string]time.Time
 	lastNonceSweep time.Time
 }
 
-// minStateSecretLen is the floor for OAuth2Config.StateSecret, the HMAC
-// key signing OAuth2 state tokens. Anything shorter is a misconfiguration
-// worth failing loudly on (sessiontoken's minKeyLen=16 is the precedent:
-// 16 bytes is the smallest value whose brute-force cost exceeds the
-// token's useful lifetime); state tokens are captured from redirect URLs
-// and attacked offline.
 const minStateSecretLen = 16
 
 // NewOAuth2Plugin creates an OAuth2 plugin with the given configuration.
 func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	p := &OAuth2Plugin{
-		providers:  make(map[string]OAuth2Provider),
-		usedNonces: make(map[string]time.Time),
-		tokenStore: cfg.TokenStore,
-		// twoFactorURL: see OAuth2Config.TwoFactorURL.
+		providers:    make(map[string]OAuth2Provider),
+		usedNonces:   make(map[string]time.Time),
+		tokenStore:   cfg.TokenStore,
 		twoFactorURL: cfg.TwoFactorURL,
 	}
 
-	// Copy providers from config. Each key names the provider in the
-	// route path and in the signed state token, so its shape is checked
-	// here, where a typo is a boot failure and not a dead login button.
 	for _, key := range slices.Sorted(maps.Keys(cfg.Providers)) {
 		mustValidProviderKey(key)
 	}
 	maps.Copy(p.providers, cfg.Providers)
 
-	// State signing key. A state token travels in the browser's address
-	// bar (provider redirect URL, logs, referers), so a short HMAC key is
-	// brute-forceable offline against any captured token — refuse it at
-	// construction the way framework/secret.go and sessiontoken's
-	// minKeyLen=16 do. Empty still means "mint a random 32-byte key".
 	if cfg.StateSecret != "" {
 		if len(cfg.StateSecret) < minStateSecretLen {
 			panic(fmt.Sprintf(
@@ -210,36 +136,15 @@ func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 // Name returns the plugin identifier.
 func (p *OAuth2Plugin) Name() string { return "oauth2" }
 
-// TokenStore returns the configured OAuthTokenStore, or nil when the
-// host did not set OAuth2Config.TokenStore. The accounts plugin's
-// unlink route uses it to drop the stored provider credentials when a
-// user removes a provider link — unlink is the user-facing "this app no
-// longer acts as me at {provider}" action, so the password-equivalent
-// refresh token must not outlive it.
+// TokenStore returns OAuth2Config.TokenStore, or nil.
 func (p *OAuth2Plugin) TokenStore() OAuthTokenStore { return p.tokenStore }
 
-// Init stores a reference to the AuthManager and fails closed when the
-// configured UserStore is not a durable OAuth link store.
-//
-// A non-linker store means the OAuth callback cannot bind identity to
-// (provider, provider_id), it would have to fall back to email-only
-// matching, which lets an IdP emitting an unverified email sign in as an
-// existing local account. That fallback is removed; production must refuse
-// to boot rather than silently expose the takeover.
-//
-// DevMode and AllowInMemoryStores keep the no-linker path reachable so
-// the rest of the OAuth plumbing (redirect, state token, callback errors)
-// stays unit-testable without a SQLite/Postgres backing store. The path
-// logs a WARN, `resolveOAuthUser` itself returns errOAuthNoLinker rather
-// than silently downgrading, so a DevMode test that actually drives the
-// callback gets a loud failure, not a silent email-trust login.
+// Init refuses, outside DevMode and AllowInMemoryStores, a UserStore that is not an OAuthLinker.
 func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
 	if err := checkTwoFactorURL("oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL); err != nil {
 		return err
 	}
-	// The passkey and magic-link rule: every plugin is registered before
-	// any Init runs, so a 2FA plugin later in the list is already visible.
 	if p.twoFactorURL == "" {
 		for _, name := range mgr.order {
 			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
@@ -248,8 +153,6 @@ func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 		}
 	}
 	if mgr.UserStore() == nil {
-		// No user store at all, the callback already 500s on this. No
-		// opinion here; let the existing nil-check fire at request time.
 		return nil
 	}
 	if _, ok := mgr.UserStore().(OAuthLinker); !ok {
@@ -271,23 +174,14 @@ func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	return nil
 }
 
-// RegisterProvider adds a provider to the plugin's registry under name, the
-// {provider} segment of its routes. It panics on a name that is not 1–64
-// ASCII letters, digits, '-' or '_' (see validProviderKey).
+// RegisterProvider adds provider under name, panicking on a name that is not 1-64 ASCII letters, digits, '-' or '_'.
 func (p *OAuth2Plugin) RegisterProvider(name string, provider OAuth2Provider) {
 	mustValidProviderKey(name)
 	p.providers[name] = provider
 }
 
-// maxProviderKeyLen bounds a provider registry key.
 const maxProviderKeyLen = 64
 
-// validProviderKey reports whether key can name a provider: 1–64 ASCII
-// letters, digits, '-' or '_'. The key is the {provider} path segment and
-// a field of the state token, which joins its fields with '.'; a key
-// holding a '.' split the token wrong at the callback, so that provider's
-// every login failed as "invalid or expired state". The same set keeps the
-// key a single clean path segment.
 func validProviderKey(key string) bool {
 	if key == "" || len(key) > maxProviderKeyLen {
 		return false
@@ -303,9 +197,6 @@ func validProviderKey(key string) bool {
 	return true
 }
 
-// mustValidProviderKey panics on a key validProviderKey refuses: a provider
-// registered under one is a configuration mistake no flow can complete,
-// handled like a short StateSecret.
 func mustValidProviderKey(key string) {
 	if !validProviderKey(key) {
 		panic(fmt.Sprintf("oauth2: provider key %q must be 1-%d ASCII letters, digits, '-' or '_': it is a route segment and a field of the dot-separated state token",
@@ -313,12 +204,9 @@ func mustValidProviderKey(key string) {
 	}
 }
 
-// providerKeys returns the registered provider keys, sorted.
 func (p *OAuth2Plugin) providerKeys() []string {
 	return slices.Sorted(maps.Keys(p.providers))
 }
-
-// ─── Routes ─────────────────────────────────────────────────────────────────
 
 // RegisterRoutes mounts the OAuth2 auth and callback routes.
 func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
@@ -355,38 +243,11 @@ func (p *OAuth2Plugin) formPostCallbackHandler() http.HandlerFunc {
 	}
 }
 
-// ─── Redirect handler ──────────────────────────────────────────────────────
-
-// oauthStateCookie is the browser-binding cookie planted when an OAuth
-// flow starts and required to match at the callback.
-//
-// The signed state token is unforgeable and single-use, but on its own it
-// binds the callback to nothing about the caller: an attacker can start a
-// flow in their own browser, capture the resulting callback URL, and get
-// a victim to load it, the victim's browser then silently holds a
-// session for the attacker's account (login CSRF / account confusion),
-// and the /link flow turns that into a durable identity binding. The
-// callback is a GET, so the form-level cross-site rejection never sees
-// it.
-//
-// SameSite=Lax is what makes this work rather than break: a Lax cookie
-// still rides the provider's top-level redirect back to the callback, so
-// the legitimate flow is unaffected, while a callback URL replayed into
-// any other browser carries no cookie at all.
-//
-// Over Secure the name carries the __Host- prefix. A sibling subdomain can
-// set a cookie for the parent domain, and a planted
-// gofastr_oauth_state=<attacker's state>; Domain=example.com on the
-// callback path sorted ahead of the real one and passed the binding. A
-// browser accepts a __Host- cookie only host-only, Secure and Path=/, so
-// no sibling can plant it. DevMode over plain HTTP keeps the bare name
-// (oauthStateCookieDev): a __Host- cookie without Secure is refused.
 const (
 	oauthStateCookie    = "__Host-gofastr_oauth_state"
 	oauthStateCookieDev = "gofastr_oauth_state"
 )
 
-// stateCookieName is the binding cookie's name at set, read and clear.
 func (p *OAuth2Plugin) stateCookieName() string {
 	if p.mgr.Config().SessionSecure {
 		return oauthStateCookie
@@ -394,8 +255,6 @@ func (p *OAuth2Plugin) stateCookieName() string {
 	return oauthStateCookieDev
 }
 
-// bindStateToBrowser plants the state token in a short-lived HttpOnly
-// cookie alongside issuing it in the redirect URL.
 func (p *OAuth2Plugin) bindStateToBrowser(w http.ResponseWriter, state string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     p.stateCookieName(),
@@ -408,9 +267,6 @@ func (p *OAuth2Plugin) bindStateToBrowser(w http.ResponseWriter, state string) {
 	})
 }
 
-// requireBoundBrowser checks the callback's state against the cookie and
-// clears the cookie either way, the flow is over, and a stale value must
-// not authorise a later replay.
 func (p *OAuth2Plugin) requireBoundBrowser(w http.ResponseWriter, r *http.Request, state string) bool {
 	http.SetCookie(w, &http.Cookie{
 		Name:     p.stateCookieName(),
@@ -448,13 +304,6 @@ func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 	}
 }
 
-// linkHandler starts the AUTHENTICATED link-account flow: the logged-in user
-// binds an additional OAuth provider. It requires a valid session, encodes
-// that user's id into the (HMAC-signed) state, and redirects to the provider.
-// The callback then links the returned provider identity to this proven user.
-// Bypassing the email-collision 409 that protects the unauthenticated path,
-// because the user has proven ownership of BOTH the account (session) and the
-// provider (the OAuth round-trip). Mounted at GET {basePath}/oauth/{provider}/link.
 func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		providerName := router.Param(r, "provider")
@@ -477,17 +326,11 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 	}
 }
 
-// linkSessionHolds reports whether the request still carries a stored,
-// fully-authenticated session of userID: re-read from the session store, so
-// a purge since the callback's first check reads as gone.
 func (p *OAuth2Plugin) linkSessionHolds(r *http.Request, userID string) bool {
 	sess, err := p.mgr.requestSession(r, false)
 	return err == nil && !sess.PendingTwoFactor && sess.UserID == userID
 }
 
-// undoLink removes the provider link a fenced link callback just wrote. It
-// runs detached from the request (undoContext), so a client that hangs up
-// cannot leave the link in place. False means the link may still be there.
 func (p *OAuth2Plugin) undoLink(ctx context.Context, store UserStore, userID, provider string) bool {
 	unlinker, ok := store.(AccountUnlinker)
 	if !ok {
@@ -505,17 +348,10 @@ func (p *OAuth2Plugin) undoLink(ctx context.Context, store UserStore, userID, pr
 	return true
 }
 
-// requireSessionUserID resolves the current authenticated user's id from the
-// session cookie, mirroring AccountsPlugin.requireUserID. Returns ("", false)
-// (after writing the error) when there is no valid, fully-authenticated
-// session, a pending-2FA session cannot initiate a provider link.
 func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if rejectInProcessAccountOperation(w, r) {
 		return "", false
 	}
-	// Bound to the context principal when there is one (see
-	// AuthManager.requestSession): a link started under one user must not
-	// land on the account behind another cookie.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
@@ -532,8 +368,6 @@ func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	return sess.UserID, true
 }
 
-// ─── Callback handler ──────────────────────────────────────────────────────
-
 func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		providerName := router.Param(r, "provider")
@@ -543,23 +377,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		// Validate state. linkUserID is non-empty only for the authenticated
-		// link-account flow (linkHandler bound it into the signed state).
 		stateParam := r.URL.Query().Get("state")
 		if p.sameSiteHop(w, r, stateParam, providerName) {
 			return
 		}
-		// Browser binding first: a callback URL replayed into another
-		// browser carries no cookie, and refusing before
-		// validateAndConsumeState means the replay cannot burn the
-		// legitimate flow's single-use nonce either.
 		if !p.requireBoundBrowser(w, r, stateParam) {
 			writeAuthError(w, r, http.StatusBadRequest, reasonOauthWrongBrowser)
 			return
 		}
-		// A callback with no code cannot complete, so it is refused before
-		// the state's nonce is recorded: the replay map only grows for a
-		// callback that goes on to an exchange.
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			writeAuthError(w, r, http.StatusBadRequest, reasonMissingAuthorisationCode)
@@ -571,29 +396,17 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		// Exchange the authorization code for a token. The HMAC state token
-		// (validated above) binds the callback to this browser; the PKCE
-		// verifier, derived from that same state, binds the code to this
-		// flow, so a code stolen from another flow does not redeem here.
 		tok, err := p.exchangeCode(r.Context(), provider, code, stateParam)
 		if err != nil {
 			writeAuthError(w, r, http.StatusUnauthorized, reasonCodeExchangeFailed)
 			return
 		}
 
-		// Fetch user info
 		info, err := provider.FetchUserInfo(r.Context(), tok.AccessToken)
 		if err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToFetchUserInfo)
 			return
 		}
-		// Canonicalize at the single consumer of every provider (#270):
-		// a provider reporting Bob@example.com must match an existing
-		// bob@example.com account instead of creating a duplicate. The
-		// default canonicalizer normalizes a decomposed address to NFC,
-		// so both spellings land on one account, and refuses a value
-		// that is not one local@domain address. A host's
-		// AuthConfig.CanonicalizeEmail owns its own policy instead.
 		canonical, err := p.mgr.canonicalizeEmail(info.Email)
 		if err != nil {
 			slog.Warn("oauth email refused",
@@ -602,38 +415,19 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 		info.Email = canonical
-		// The same bound the form paths apply: the address becomes a
-		// user-table value and a link-profile column.
 		if !emailWithinLimit(w, r, info.Email) {
 			return
 		}
 
-		// Bind the durable (provider, provider_id) link namespace to the
-		// STATE-VALIDATED registry key, NOT the provider-returned Name().
-		// Two providers can share a Name() (e.g. two OIDC issuers both
-		// defaulting to "oidc"); keying links on that returned name would let
-		// issuer B's subject "123" resolve to issuer A's link and take over
-		// that account. providerName came from the route and was HMAC-state
-		// validated above, so it is the authoritative per-registration identity.
 		info.Provider = providerName
 
-		// Find or create user
 		userStore := p.mgr.UserStore()
 		if userStore == nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 			return
 		}
 
-		// Authenticated link-account flow: the signed state carries a
-		// logged-in user id, so bind the returned provider identity to that
-		// PROVEN user instead of running the login decision table. This is the
-		// ONLY path that may link a provider whose email matches an existing
-		// password account, the user has proven ownership of both the account
-		// (session) and the provider (the OAuth round-trip).
 		if linkUserID != "" {
-			// The session must STILL belong to the user the flow was initiated
-			// for (defends against completing a link-state under a different
-			// login, or after logout).
 			currentID, ok := p.requireSessionUserID(w, r)
 			if !ok {
 				return // 401/403 already written
@@ -642,10 +436,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusForbidden, reasonLinkSessionMismatch)
 				return
 			}
-			// Taken before the link is written, as token creation and
-			// passkey registration do, so a reset, change or account claim
-			// that lands while this callback runs is caught after the
-			// upsert below.
 			snap, err := p.mgr.snapshotCredential(r.Context(), linkUserID)
 			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
@@ -656,7 +446,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoLinking)
 				return
 			}
-			// Never steal a provider identity already bound to a DIFFERENT user.
 			owner, ferr := linker.FindByOAuth(r.Context(), info.Provider, info.ID)
 			switch {
 			case ferr != nil && !errors.Is(ferr, ErrUserNotFound):
@@ -677,10 +466,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
 				return
 			}
-			// LinkOAuth keeps an existing binding's owner (ON CONFLICT),
-			// so a concurrent link of the same identity between the check
-			// above and the write leaves it on the other account. Read the
-			// binding back: only the owner it names was linked.
 			bound, berr := p.authoritativeOAuthOwner(r.Context(), linker, info)
 			if berr != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkLookupFailed)
@@ -697,20 +482,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				writeAuthError(w, r, http.StatusConflict, reasonProviderLinkedElsewhere)
 				return
 			}
-			// The provider tokens are stored before the re-check below, not
-			// after it: a claim whose token drop ran between a passing
-			// re-check and a later save left the squatter's tokens on the
-			// claimed account. Stored first, a claim either drops them
-			// after (its drop follows its session purge and unlink) or has
-			// already purged the session, which the re-check sees.
 			p.saveProviderTokens(r.Context(), linkUserID, providerName, tok)
-			// An account claim removes every session and then every link;
-			// a reset or change moves the hash first. A claim that overtook
-			// this callback between its session check and the upsert has
-			// already run its unlink, so the link just written would
-			// outlive it and sign the squatter back into the claimed
-			// account. Re-check the session and the credential now the link
-			// and tokens are stored, and take both back when either moved.
 			if !p.linkSessionHolds(r, linkUserID) || snap.moved(r.Context(), p.mgr) {
 				tokensGone := p.dropProviderTokenRow(r.Context(), linkUserID, providerName)
 				if !p.undoLink(r.Context(), userStore, linkUserID, info.Provider) || !tokensGone {
@@ -727,7 +499,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				Remote: remoteHost(r),
 				Meta:   map[string]string{"provider": providerName, "flow": "authenticated_link"},
 			})
-			// The user already has a session, just return them to the app.
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
@@ -737,9 +508,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			var collision *oauthEmailCollision
 			switch {
 			case errors.As(err, &collision):
-				// UserID names the local account the address belongs to:
-				// App.EraseUserData scrubs audit rows by it, and without
-				// it this row kept an erased user's email.
 				p.mgr.emitSecurity(r.Context(), SecurityEvent{
 					Kind:   "oauth.refused",
 					UserID: collision.userID,
@@ -757,8 +525,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			case errors.Is(err, errOAuthLookupFailed):
 				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 			case errors.Is(err, errOAuthNoLinker):
-				// Unreachable in production (Init fails closed). Surfaces in
-				// DevMode only; treat as a server misconfiguration.
 				writeAuthError(w, r, http.StatusInternalServerError, reasonOauthNotConfigured)
 			default:
 				writeAuthError(w, r, http.StatusConflict, reasonCouldNotCreateUser)
@@ -766,11 +532,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		// Mint through the manager, not SessionStore().Create: MintSession
-		// is what applies the second-factor pending mark. Creating the
-		// session directly here left PendingTwoFactor=false for a
-		// 2FA-enrolled user, so an OAuth login alone produced a
-		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
 		sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if errors.Is(err, ErrTwoFactorEnforcement) {
@@ -785,18 +546,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
-		// The provider tokens are stored before the link is resolved
-		// again, not after: a claim whose unlink and token drop ran
-		// between a passing re-check and a later save left the squatter's
-		// tokens on the claimed account. A claim unlinks before it drops
-		// tokens, so with the save first, a link still naming this user
-		// means the drop is still to come, and a link gone drops them here.
 		p.saveProviderTokens(r.Context(), user.GetID(), providerName, tok)
-		// An account claim that removed the link after it was resolved
-		// above revoked sessions before this one existed. Resolve the link
-		// again now the session is stored: a claim unlinks before it
-		// revokes, so a link still naming this user means any revoke is
-		// still to come and reaches this session, and a link gone drops it.
 		if !p.linkStillNames(r.Context(), userStore, info, user.GetID()) {
 			undo, cancel := undoContext(r.Context())
 			delErr := p.mgr.SessionStore().Delete(undo, sess.Token)
@@ -824,33 +574,12 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			Kind: kind, UserID: user.GetID(), Email: info.Email, Remote: remoteHost(r),
 			Meta: map[string]string{"provider": providerName},
 		})
-		// Set the session cookie through the one mint helper:
-		// SameSite=Strict, the password-login mint's posture. The state
-		// cookie keeps its own Lax (it must ride the provider's
-		// top-level redirect back here); the session cookie has no such
-		// return trip. It is first needed by the page this answer sends
-		// the browser to, which is why a cross-site arrival is answered
-		// with a hop below.
 		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
-		// A pending session is refused everywhere but /2fa/challenge, so
-		// the browser goes to the page that posts the code. Init made sure
-		// TwoFactorURL is set whenever a 2FA plugin can make one pending.
 		target := "/"
 		if pending {
 			target = safeRedirectURL(p.twoFactorURL)
 		}
-		// The IdP sent the browser here on a cross-site navigation, and a
-		// redirect continues that navigation: the browser stores the
-		// SameSite=Strict session cookie set above and then withholds it
-		// from the redirect's request, so the page a sign-in landed on
-		// rendered signed out (and one behind a login gate bounced the
-		// user back to the login form). A cross-site arrival is answered
-		// with a page from this origin that loads the target instead.
-		// That navigation starts here, so the cookie rides it. A request
-		// with no Fetch Metadata hops too (handler.NeedsSameSiteHop): a
-		// browser sends none to a plain-HTTP LAN address. The target is
-		// not this callback, so its load never hops again.
 		if handler.NeedsSameSiteHop(r) {
 			writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthSignInTitle)
 			return
@@ -859,29 +588,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 	}
 }
 
-// sameSiteHop answers the IdP's return from a link flow with a page that
-// loads the same callback URL again, and reports whether it did.
-//
-// The IdP redirects the browser back here on a cross-site navigation, and
-// a browser withholds SameSite=Strict cookies on one, so the link branch
-// never saw the session it must match and every link answered 401. The
-// session cookie stays Strict. Instead, the first, cross-site arrival gets
-// a page from this origin that navigates to the same URL; that navigation
-// starts on this site, so the session cookie rides it and the link
-// completes with the usual session-user match.
-//
-// The hop changes nothing on its own: it neither consumes the state nor
-// clears the state cookie, and it is offered only to the browser that
-// started the flow (its state cookie matches) on a validly signed,
-// unexpired, unspent link state, and only when no session resolved. A
-// link flow starts only from a same-site request carrying the session
-// (linkHandler), so the hop cannot turn a third party's navigation into
-// an authenticated one. A request with no Fetch Metadata hops as a
-// cross-site one does (handler.NeedsSameSiteHop): a browser sends none to
-// a plain-HTTP LAN address. The follow-up is same-origin, or carries the
-// hop marker when it will send no Fetch Metadata either
-// (handler.SameSiteHopTarget), so it never hops again, and without a
-// session it gets the 401 it always did.
 func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state, providerName string) bool {
 	if !handler.NeedsSameSiteHop(r) {
 		return false
@@ -905,13 +611,8 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	return true
 }
 
-// sameOriginTarget is r's own path and query, for a hop page to load
-// again from this origin. It reports false for a path that would leave
-// the origin.
 func sameOriginTarget(r *http.Request) (string, bool) {
 	path := r.URL.EscapedPath()
-	// A scheme-relative "//host" would leave this origin. A backslash
-	// needs no check: EscapedPath writes it as %5C.
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
 		return "", false
 	}
@@ -921,36 +622,15 @@ func sameOriginTarget(r *http.Request) (string, bool) {
 	return path, true
 }
 
-// errOAuthEmailCollision means: a local account with this email already
-// exists, the IdP asserts the email is verified, and that account either
-// has a real password or has an address nobody proved. Refuse rather than
-// silently link, the user must prove ownership of the local account first
-// (log in with their password, or claim it with a magic link or a reset)
-// and link the provider from /auth/accounts. This is what stops an IdP emitting
-// a verified-but-attacker-controlled email from taking over an existing
-// password account.
 var errOAuthEmailCollision = errors.New("oauth: email collision with pre-existing account")
 
-// oauthEmailCollision is errOAuthEmailCollision carrying the id of the
-// local account the address belongs to, for the refusal's audit row.
 type oauthEmailCollision struct{ userID string }
 
 func (e *oauthEmailCollision) Error() string { return errOAuthEmailCollision.Error() }
 func (e *oauthEmailCollision) Unwrap() error { return errOAuthEmailCollision }
 
-// errOAuthNoEmail means the provider asserted no email address and no link
-// names the identity yet. An empty address is no address: it must never
-// match an existing account by email (two email-less identities matched
-// each other's account through FindByEmail("")), and it cannot create one
-// either, because every later email-less sign-up would then collide with
-// it. The identity signs up another way, or once the provider shares an
-// address. A linked identity still signs in through its link.
 var errOAuthNoEmail = errors.New("oauth: provider asserted no email")
 
-// saveProviderTokens persists the provider tokens (incl. the refresh token)
-// under the provider's registry key when a token store is configured.
-// Best-effort: a store failure must not block the login or link itself;
-// the user only loses transparent refresh until the next successful one.
 func (p *OAuth2Plugin) saveProviderTokens(ctx context.Context, userID, providerKey string, tok *OAuth2Token) {
 	if p.tokenStore == nil || tok == nil {
 		return
@@ -967,9 +647,6 @@ func (p *OAuth2Plugin) saveProviderTokens(ctx context.Context, userID, providerK
 	}
 }
 
-// dropProviderTokenRow deletes the token row a refused callback stored,
-// detached from the request (undoContext) so a client that hangs up cannot
-// keep it. False means the row may still be there; the failure is logged.
 func (p *OAuth2Plugin) dropProviderTokenRow(ctx context.Context, userID, providerKey string) bool {
 	if p.tokenStore == nil {
 		return true
@@ -984,25 +661,17 @@ func (p *OAuth2Plugin) dropProviderTokenRow(ctx context.Context, userID, provide
 	return true
 }
 
-// pkceVerifier derives the flow's PKCE code_verifier from its signed
-// state: HMAC-SHA256 under the state key, base64url (43 chars, the RFC 7636
-// minimum, all unreserved). The state travels in the URL, but the key does
-// not, so the verifier is secret, and deriving it means the callback needs
-// no server-side storage to find it again.
 func (p *OAuth2Plugin) pkceVerifier(state string) string {
 	mac := hmac.New(sha256.New, p.stateKey)
 	mac.Write([]byte("pkce|" + state))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// pkceChallenge is the S256 code_challenge for verifier.
 func pkceChallenge(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// authURL is the provider's authorization URL, with a PKCE challenge when
-// the provider supports one.
 func (p *OAuth2Plugin) authURL(provider OAuth2Provider, state string) string {
 	if pp, ok := provider.(OAuth2PKCEProvider); ok {
 		return pp.AuthURLWithChallenge(state, pkceChallenge(p.pkceVerifier(state)))
@@ -1010,8 +679,6 @@ func (p *OAuth2Plugin) authURL(provider OAuth2Provider, state string) string {
 	return provider.AuthURL(state)
 }
 
-// exchangeCode redeems code, sending the flow's PKCE verifier when the
-// provider supports one.
 func (p *OAuth2Plugin) exchangeCode(ctx context.Context, provider OAuth2Provider, code, state string) (*OAuth2Token, error) {
 	if pp, ok := provider.(OAuth2PKCEProvider); ok {
 		return pp.ExchangeCodeWithVerifier(ctx, code, p.pkceVerifier(state))
@@ -1019,68 +686,17 @@ func (p *OAuth2Plugin) exchangeCode(ctx context.Context, provider OAuth2Provider
 	return provider.ExchangeCode(ctx, code)
 }
 
-// errOAuthLookupFailed means a transient/transport error happened during
-// the (provider, provider_id), email, or password lookup.
 var errOAuthLookupFailed = errors.New("oauth: lookup failed")
 
-// errOAuthNoLinker means the configured UserStore does not implement
-// OAuthLinker. Production Init fails closed before this is reachable; it
-// surfaces in DevMode / AllowInMemoryStores only, where the no-linker path
-// is kept reachable so the rest of the OAuth plumbing (redirect, state,
-// callback errors) stays testable. resolveOAuthUser itself refuses to fall
-// back to email-trust: an unverified IdP email must never sign in as an
-// existing account.
 var errOAuthNoLinker = errors.New("oauth: UserStore does not implement OAuthLinker")
 
-// resolveOAuthUser implements the safe OAuth-callback resolution policy.
-//
-// A linker is required: (provider, provider_id) is the only identity
-// assertion the IdP makes that survives an email change. Email matching is
-// allowed only as a migration step, and ONLY when the IdP asserts the
-// email is verified AND the existing account has no password, a password
-// account is never silently bound to an OAuth identity.
-//
-// Decision table (mirrors the documented contract):
-//
-//  1. FindByOAuth(provider, providerID) hit → LOGIN as the linked user
-//     (linked=false). Profile refresh is best-effort.
-//  2. FindByEmail(email) hit AND info.EmailVerified:
-//     a. existing account has a password → errOAuthEmailCollision
-//     (the user must log in with their password and link from
-//     /auth/accounts, protects a local credential from IdP-email
-//     takeover).
-//     b. existing account is passwordless but its address is not proven
-//     (EmailVerifiedChecker false or absent) → errOAuthEmailCollision.
-//     It may have been created through an IdP that does not verify
-//     email; the owner claims it with a magic link or a reset first.
-//     c. existing account is passwordless and proven → AUTO-LINK + LOGIN
-//     (linked=true). Safe migration: a verified email re-binds the same
-//     identity.
-//  3. Otherwise (no link, no email match, OR unverified email match):
-//     create a new passwordless user and link the (provider, providerID).
-//     The new user is marked verified only when the IdP asserted the
-//     email verified. A concurrent create that wins the link PK is
-//     authoritative; the just-created user is left as an orphan.
-//
-// Step 1 also marks the account verified when the IdP asserts
-// email_verified for exactly the account's address.
-//
-// CRITICAL: an unverified email NEVER binds to an existing account. It
-// falls through to step 3 as if the email didn't match at all, the core
-// takeover regression.
 func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, info *OAuth2UserInfo) (User, bool, error) {
 	linker, hasLinker := store.(OAuthLinker)
 	if !hasLinker {
-		// Unreachable in production: Init fails closed without a linker.
-		// We do NOT fall back to email-trust, the legacy branch is gone.
 		return nil, false, errOAuthNoLinker
 	}
 
-	// Step 1: existing (provider, provider_id) link → login.
 	if found, err := linker.FindByOAuth(ctx, info.Provider, info.ID); err == nil {
-		// Best-effort profile refresh; a failure here does not block login.
-		// UPDATE-only: an account claim may have removed the link since
-		// the lookup, and re-linking here would undo it.
 		if refresher, ok := store.(OAuthProfileRefresher); ok {
 			_ = refresher.RefreshOAuthProfile(ctx, found.GetID(), info.Provider, info.ID, OAuthAccountProfile{
 				Email:     info.Email,
@@ -1088,11 +704,6 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 				AvatarURL: info.AvatarURL,
 			})
 		}
-		// The linked IdP vouches for the account's own address: record
-		// it, so an account from before email_verified regains the
-		// step-2b auto-link. The address must match exactly (both sides
-		// are canonical); a verified assertion for any other address
-		// proves nothing about this one. Best-effort like the refresh.
 		if info.EmailVerified && info.Email != "" && found.GetEmail() == info.Email {
 			markVerifiedIfUnproven(ctx, store, found.GetID())
 		}
@@ -1101,48 +712,30 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 		return nil, false, fmt.Errorf("%w: FindByOAuth: %v", errOAuthLookupFailed, err)
 	}
 
-	// No link: everything below keys on the email, and an empty one is
-	// no email at all.
 	if info.Email == "" {
 		return nil, false, errOAuthNoEmail
 	}
 
-	// Step 2: email-collision / migration handling.
 	existing, _, err := store.FindByEmail(ctx, info.Email)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, false, fmt.Errorf("%w: FindByEmail: %v", errOAuthLookupFailed, err)
 	}
 	if err == nil && info.noEmailLink {
-		// A tenant identity joins an existing account only through an
-		// explicit link made while signed in.
 		return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 	}
 	if err == nil {
-		// Email matches an existing local account. The decision now rides
-		// entirely on EmailVerified + HasPassword.
 		if info.EmailVerified {
 			hasPw := true // conservative default when PasswordChecker is absent
 			if checker, ok := store.(PasswordChecker); ok {
 				hp, herr := checker.HasPassword(ctx, existing.GetID())
 				if herr != nil {
-					// Fail closed: a checker error means we can't tell
-					// password from passwordless, and the safe answer is
-					// "refuse to silently bind."
 					return nil, false, fmt.Errorf("%w: HasPassword: %v", errOAuthLookupFailed, herr)
 				}
 				hasPw = hp
 			}
 			if hasPw {
-				// Refuse. The user must log in with their password and
-				// link the provider from settings.
 				return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 			}
-			// A passwordless account whose address nobody proved may
-			// belong to whoever signed in through an IdP that does not
-			// verify email. Linking the owner's verified identity into
-			// it would hand the squatter the owner's account. Refuse;
-			// the owner claims it with a magic link or a reset, which
-			// evicts the squatter's link, and then signs in here.
 			proven := false // no checker: nothing says the address was proven
 			if checker, ok := store.(EmailVerifiedChecker); ok {
 				v, verr := checker.IsEmailVerified(ctx, existing.GetID())
@@ -1154,13 +747,6 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 			if !proven {
 				return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 			}
-			// AUTO-LINK. Safe migration: a passwordless account was
-			// created by a prior OAuth login; a verified email re-binds
-			// the same identity. Re-read the link afterward and return the
-			// user the (provider, provider_id) PK actually bound, two
-			// concurrent callbacks for the same external identity with
-			// different email matches must both resolve to the PK winner, not
-			// to whichever account each one matched by email.
 			if linkErr := linkOAuthPreferEnriched(ctx, store, linker, existing.GetID(), info); linkErr != nil {
 				return nil, false, fmt.Errorf("%w: LinkOAuth: %v", errOAuthLookupFailed, linkErr)
 			}
@@ -1170,14 +756,8 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 			}
 			return owner, true, nil
 		}
-		// !info.EmailVerified: an unverified email MUST NOT bind to the
-		// existing account. Fall through to step 3 (create a new,
-		// distinct user), this is the core takeover regression: an
-		// attacker who controls an unverified IdP email gets a fresh
-		// account, NOT the victim's existing one.
 	}
 
-	// Step 3: create a new passwordless user, then link.
 	var newUser User
 	var createErr error
 	if creator, ok := store.(OAuthUserCreator); ok {
@@ -1192,33 +772,16 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 		return nil, false, fmt.Errorf("%w: LinkOAuth: %v", errOAuthLookupFailed, linkErr)
 	}
 
-	// Re-resolve via the link table. If a concurrent create raced and won
-	// the (provider, provider_id) PK, possible when two callbacks for the
-	// same external identity land on different replicas, that winner is
-	// authoritative and we return it; the just-created user is left as an
-	// orphan (we do NOT delete it: cascading-delete/audit/retry hazards
-	// outweigh an unlinked row, and the email-unique constraint means a
-	// future callback follows the verified-email path). We FAIL CLOSED on a
-	// re-read error rather than trust newUser, a transient lookup failure
-	// after another callback won must never authenticate an unlinked account.
 	owner, oerr := p.authoritativeOAuthOwner(ctx, linker, info)
 	if oerr != nil {
 		return nil, false, oerr
 	}
-	// The IdP's verified assertion is the mailbox proof for the account
-	// this callback just created. An unverified assertion leaves it
-	// unproven: the address is stored, but the account cannot absorb a
-	// verified login (step 2b) and the mailbox owner claims it with a
-	// magic link or a reset.
 	if info.EmailVerified && owner.GetID() == newUser.GetID() {
 		markVerifiedIfUnproven(ctx, store, owner.GetID())
 	}
 	return owner, true, nil
 }
 
-// markVerifiedIfUnproven records an IdP's verified assertion on the user,
-// best-effort: a failure leaves the account unverified, which only costs
-// the auto-link until a later login records it.
 func markVerifiedIfUnproven(ctx context.Context, store UserStore, userID string) {
 	verifier, ok := store.(EmailVerifier)
 	if !ok {
@@ -1235,12 +798,6 @@ func markVerifiedIfUnproven(ctx context.Context, store UserStore, userID string)
 	}
 }
 
-// authoritativeOAuthOwner re-reads the (provider, provider_id) link after a
-// LinkOAuth and returns the user the durable PK actually bound, the source
-// of truth when concurrent callbacks race for the same external identity. It
-// FAILS CLOSED: a lookup error, or a link that is somehow absent immediately
-// after a successful write, yields errOAuthLookupFailed rather than
-// authenticating a user whose ownership we cannot prove.
 func (p *OAuth2Plugin) authoritativeOAuthOwner(ctx context.Context, linker OAuthLinker, info *OAuth2UserInfo) (User, error) {
 	owner, err := linker.FindByOAuth(ctx, info.Provider, info.ID)
 	if err != nil {
@@ -1252,9 +809,6 @@ func (p *OAuth2Plugin) authoritativeOAuthOwner(ctx context.Context, linker OAuth
 	return owner, nil
 }
 
-// linkStillNames reports whether the (provider, providerID) link resolves
-// to userID. A failed lookup reads as no: the session it guards is dropped
-// and the user signs in again.
 func (p *OAuth2Plugin) linkStillNames(ctx context.Context, store UserStore, info *OAuth2UserInfo, userID string) bool {
 	linker, ok := store.(OAuthLinker)
 	if !ok {
@@ -1264,10 +818,6 @@ func (p *OAuth2Plugin) linkStillNames(ctx context.Context, store UserStore, info
 	return err == nil && u != nil && u.GetID() == userID
 }
 
-// linkOAuthPreferEnriched persists the (provider, providerID) bind plus
-// the optional profile fields when the store opts in. Stores that only
-// implement the minimal OAuthLinker get the legacy call and the extras
-// are dropped, backwards-compatible.
 func linkOAuthPreferEnriched(ctx context.Context, store UserStore, linker OAuthLinker, userID string, info *OAuth2UserInfo) error {
 	if enriched, ok := store.(OAuthEnrichedLinker); ok {
 		return enriched.LinkOAuthEnriched(ctx, userID, info.Provider, info.ID, OAuthAccountProfile{
@@ -1279,44 +829,16 @@ func linkOAuthPreferEnriched(ctx context.Context, store UserStore, linker OAuthL
 	return linker.LinkOAuth(ctx, userID, info.Provider, info.ID)
 }
 
-// ─── State management ───────────────────────────────────────────────────────
-
 const stateTTL = 10 * time.Minute
 
-// nonceGCThreshold is the map size above which validateAndConsumeState
-// scan-and-purges expired entries. Only the callback path mutates the
-// nonces map, but a callback needs no IdP to get there: anyone can start
-// a flow, keep the state cookie, and come back with any code. Each entry
-// costs an attacker two unauthenticated requests.
 const nonceGCThreshold = 4096
 
-// nonceGCSweepInterval bounds cleanup work when a burst of valid states
-// keeps the nonce map full of live entries. nonceMaxEntries is a hard
-// ceiling: at capacity, the nonceEvictBatch earliest-expiring entries are
-// dropped to make room. Refusing callbacks at capacity instead let two
-// requests per entry lock every user out of OAuth sign-in for the state
-// TTL. Eviction keeps the replay guarantee that matters: a replay also
-// needs the state cookie, which the callback clears in the browser that
-// started the flow, and the IdP spends the code on first exchange.
 const (
 	nonceGCSweepInterval = time.Minute
 	nonceMaxEntries      = 1 << 16
 	nonceEvictBatch      = nonceMaxEntries / 16
 )
 
-// generateState builds a stateless, HMAC-signed state token of the form
-//
-//	base64(nonce) "." providerName "." expiryUnix "." base64(userID) "." base64(hmac)
-//
-// where hmac covers everything before the final separator. There is no
-// per-call server state, the redirect endpoint cannot be turned into a
-// memory-growth surface, and an in-flight OAuth flow survives a server
-// restart between redirect and callback.
-//
-// userID is empty for an ordinary login flow. For the authenticated
-// link-account flow it carries the id of the logged-in user the callback
-// must link to, inside the HMAC payload, so a client can neither forge nor
-// alter which account a provider gets bound to.
 func (p *OAuth2Plugin) generateState(providerName, userID string) (string, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
@@ -1334,22 +856,12 @@ func (p *OAuth2Plugin) generateState(providerName, userID string) (string, error
 	return payload + "." + sig, nil
 }
 
-// validateAndConsumeState verifies the HMAC, the expiry, the provider
-// binding, and the nonce-replay window. Replay protection is enforced
-// by recording the (verified) nonce in usedNonces until its embedded
-// expiry passes.
-// validateAndConsumeState verifies the HMAC, expiry, provider binding, and
-// nonce-replay window, and returns the userID bound into the state (empty for
-// an ordinary login flow; the logged-in user's id for the link-account flow).
-// ok is false on any failure.
 func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (userID string, ok bool) {
 	userID, nonceB64, expiry, ok := p.verifyState(state, expectedProvider)
 	if !ok {
 		return "", false
 	}
 
-	// Replay protection: refuse if the nonce has already been consumed
-	// within its TTL window. Add it on first sighting.
 	p.noncesMu.Lock()
 	defer p.noncesMu.Unlock()
 	if _, replayed := p.usedNonces[nonceB64]; replayed {
@@ -1366,9 +878,6 @@ func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (
 	return userID, true
 }
 
-// evictEarliestNoncesLocked drops the n entries closest to expiry (ties by
-// nonce, for a deterministic choice). Sorting the whole map is paid once
-// per nonceEvictBatch insertions at capacity.
 func (p *OAuth2Plugin) evictEarliestNoncesLocked(n int) {
 	type entry struct {
 		nonce  string
@@ -1389,7 +898,6 @@ func (p *OAuth2Plugin) evictEarliestNoncesLocked(n int) {
 	}
 }
 
-// stateUnspent reports whether state's nonce has not been consumed yet.
 func (p *OAuth2Plugin) stateUnspent(nonceB64 string) bool {
 	p.noncesMu.Lock()
 	defer p.noncesMu.Unlock()
@@ -1397,10 +905,6 @@ func (p *OAuth2Plugin) stateUnspent(nonceB64 string) bool {
 	return !spent
 }
 
-// verifyState checks state's signature, provider binding and expiry
-// without consuming it, and returns the bound user id, the nonce and the
-// expiry. validateAndConsumeState is the consuming spelling every flow
-// completes through.
 func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonceB64 string, expiry time.Time, ok bool) {
 	parts := strings.SplitN(state, ".", 5)
 	if len(parts) != 5 {
@@ -1412,11 +916,6 @@ func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonc
 		return "", "", time.Time{}, false
 	}
 
-	// Verify HMAC over (nonce.provider.expiry.userID) before trusting any of
-	// the other fields, including the expiry and the bound userID. HMAC-first
-	// ordering keeps an attacker from getting the validate path to do work on
-	// an unsigned token (also avoids leaking timing oracles via the expiry
-	// compare) and, critically, means the link-flow userID cannot be forged.
 	payload := nonceB64 + "." + provider + "." + expiryStr + "." + userB64
 	mac := hmac.New(sha256.New, p.stateKey)
 	mac.Write([]byte(payload))
@@ -1441,9 +940,6 @@ func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonc
 	return string(uidBytes), nonceB64, expiry, true
 }
 
-// purgeExpiredNonces is retained for explicit cleanup callers (e.g. a
-// future ticker goroutine). The hot validate path inlines its own
-// size-gated purge.
 func (p *OAuth2Plugin) purgeExpiredNonces() {
 	p.noncesMu.Lock()
 	defer p.noncesMu.Unlock()
@@ -1459,10 +955,6 @@ func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	p.lastNonceSweep = now
 }
 
-// randomPassword generates a random alphanumeric string of the given length.
-// Used as a placeholder hash input for OAuth-created users (they never log
-// in via password). Panics on entropy failure, the auth system can't
-// remain sound without crypto/rand.
 func randomPassword(n int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
@@ -1475,38 +967,12 @@ func randomPassword(n int) string {
 	return string(b)
 }
 
-// ─── Built-in providers ────────────────────────────────────────────────────
-
-// defaultOAuthHTTPClient is the http.Client used by built-in OAuth providers
-// (Google, GitHub, and the OIDC provider's default) when no override is
-// supplied. The 10s deadline matches framework/auth/oauth.go: without it, an
-// IdP that hangs the connection pins one goroutine + two TCP fds per inflight
-// callback for the full kernel socket timeout.
-//
-// Redirects are refused via oidcNoRedirect: these fetches carry credentials
-// (client_secret, authorization code, refresh token, bearer header), and a
-// 3xx answer would deliver that request to an origin the host never
-// configured — the POST body verbatim on 307/308. Pinned by
-// TestProviderFetchRefusesRedirect and TestOIDCSec_TokenRedirectKeepsSecret.
 var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Second})
 
-// oauthProviderMaxBody caps the bytes decoded from any built-in provider
-// response (token exchange, refresh, userinfo, /user/emails). 1 MiB matches
-// the OIDC fetch convention (jwksMaxBody, fetchDiscovery, ExchangeCode,
-// fetchUserinfo); a bigger body is a misbehaving endpoint, not a payload to
-// buffer to EOF.
 const oauthProviderMaxBody = 1 << 20
 
-// maxTokenLifetime caps expires_in so the Duration product cannot
-// overflow; ten years is past any real access token.
 const maxTokenLifetime = 10 * 365 * 24 * time.Hour
 
-// tokenExpiry turns a token response's expires_in (seconds) into
-// OAuth2Token.Expiry. An absent or zero expires_in is the zero time,
-// "no stated expiry": GitHub's classic OAuth-app tokens never expire and
-// carry none, and setting Expiry to now for them made every
-// ValidOAuthToken call force a refresh no refresh token could serve. A
-// negative value is already expired.
 func tokenExpiry(expiresIn int64) time.Time {
 	switch {
 	case expiresIn > int64(maxTokenLifetime/time.Second):
@@ -1520,10 +986,8 @@ func tokenExpiry(expiresIn int64) time.Time {
 }
 
 // GoogleProvider implements OAuth2Provider for Google's OAuth2 endpoints.
-// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GoogleProvider struct {
-	// DisablePKCE stops the PKCE challenge and verifier. Only for a
-	// deployment whose Google client refuses them.
+	// DisablePKCE stops sending PKCE.
 	DisablePKCE bool
 
 	clientID         string
@@ -1559,9 +1023,6 @@ func (g *GoogleProvider) AuthURLWithChallenge(state, challenge string) string {
 	q.Set("response_type", "code")
 	q.Set("scope", "openid email profile")
 	q.Set("state", state)
-	// access_type=offline is required for Google to issue a refresh token;
-	// prompt=consent forces re-issuing it even after the first grant so a
-	// configured OAuthTokenStore always has something to refresh with.
 	q.Set("access_type", "offline")
 	q.Set("prompt", "consent")
 	setPKCEChallenge(q, challenge, g.DisablePKCE)
@@ -1618,8 +1079,6 @@ func (g *GoogleProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 }
 
 // RefreshToken exchanges a Google refresh token for a fresh access token.
-// Google does not re-issue the refresh token on this grant, so the returned
-// OAuth2Token.RefreshToken is normally empty, callers keep the stored one.
 func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("refresh_token", refreshToken)
@@ -1692,10 +1151,6 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		return nil, err
 	}
 
-	// Google asserts email_verified on its userinfo response (bool). Older
-	// docs surface the same value as "verified_email", accept either, the
-	// newer name wins. When neither is present we default to false: a
-	// missing assertion is not a verified email.
 	emailVerified := parseGoogleEmailVerified(body.EmailVerified) ||
 		parseGoogleEmailVerified(body.VerifiedEmail)
 
@@ -1710,10 +1165,8 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 }
 
 // GitHubProvider implements OAuth2Provider for GitHub's OAuth2 endpoints.
-// It sends PKCE (OAuth2PKCEProvider); set DisablePKCE to stop.
 type GitHubProvider struct {
-	// DisablePKCE stops the PKCE challenge and verifier. Only for a
-	// deployment whose GitHub app refuses them.
+	// DisablePKCE stops sending PKCE.
 	DisablePKCE bool
 
 	clientID         string
@@ -1807,8 +1260,6 @@ func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 }
 
 // RefreshToken exchanges a GitHub refresh token for a fresh access token.
-// Only GitHub Apps (and OAuth apps with expiring tokens enabled) issue
-// refresh tokens; classic OAuth-app tokens never expire and won't have one.
 func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) (*OAuth2Token, error) {
 	data := url.Values{}
 	data.Set("refresh_token", refreshToken)
@@ -1832,9 +1283,6 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Don't fold the provider response body into the error: it flows to
-		// caller logs, and keeping upstream bytes out of error strings matches
-		// the Google path. Status code is enough to diagnose.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
 	}
@@ -1859,13 +1307,6 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	}, nil
 }
 
-// githubTokenRefusal reads a GitHub token response that arrived with
-// HTTP 200. GitHub answers a refused grant (a spent or wrong code, an
-// expired refresh token, bad client credentials) with 200 and an error
-// document, so the status alone says nothing: without this a refusal
-// came back as a token with an empty AccessToken and a nil error. The
-// error names GitHub's code when it is one of its plain identifiers, and
-// nothing else from the response body.
 func githubTokenRefusal(what, code, accessToken string) error {
 	if code == "" && accessToken != "" {
 		return nil
@@ -1914,20 +1355,12 @@ func (g *GitHubProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		return nil, err
 	}
 
-	// GitHub's /user endpoint surfaces the user's PUBLIC email but does not
-	// assert verification. The /user/emails endpoint (user:email scope,
-	// already requested at AuthURL) lists emails with a verified flag we
-	// can trust. Prefer it both for filling a hidden primary AND for
-	// confirming the public email is verified.
 	email := body.Email
 	emailVerified := false
 	if got, verified, err := g.fetchPrimaryEmail(ctx, token); err == nil && got != "" {
 		email = got
 		emailVerified = verified
 	} else if email != "" {
-		// Public email present but we couldn't reach /user/emails to confirm
-		// verification, be conservative. An unverifiable email must never
-		// bind to an existing local account.
 		emailVerified = false
 	}
 
@@ -1941,12 +1374,7 @@ func (g *GitHubProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 	}, nil
 }
 
-// fetchPrimaryEmail queries GitHub /user/emails (requires user:email
-// scope) and returns the address marked primary AND verified, plus a
-// boolean that is true only when the returned email was confirmed
-// verified by GitHub. The empty string + false when none exists.
 func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (string, bool, error) {
-	// Derive /user/emails from userInfoEndpoint so test overrides work.
 	emailsURL := g.userInfoEndpoint + "/emails"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, emailsURL, nil)
 	if err != nil {
@@ -1977,7 +1405,6 @@ func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (s
 			return e.Email, true, nil
 		}
 	}
-	// Fall back to any verified email if none are marked primary.
 	for _, e := range emails {
 		if e.Verified {
 			return e.Email, true, nil
@@ -1986,12 +1413,6 @@ func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (s
 	return "", false, nil
 }
 
-// parseGoogleEmailVerified coerces Google's `email_verified` /
-// `verified_email` JSON value into a strict bool. Accepts a JSON bool or
-// the strings "true"/"false" (case-insensitive). Anything else, including
-// the field's absence, resolves to false: a missing assertion is not a
-// verified email, and the OAuth callback must never bind an unverifiable
-// email to an existing account.
 func parseGoogleEmailVerified(v any) bool {
 	switch x := v.(type) {
 	case bool:
@@ -2002,8 +1423,6 @@ func parseGoogleEmailVerified(v any) bool {
 	return false
 }
 
-// setPKCEChallenge adds an S256 code_challenge to an authorization query,
-// unless there is none or the provider disabled PKCE.
 func setPKCEChallenge(q url.Values, challenge string, disabled bool) {
 	if challenge == "" || disabled {
 		return
@@ -2012,8 +1431,6 @@ func setPKCEChallenge(q url.Values, challenge string, disabled bool) {
 	q.Set("code_challenge_method", "S256")
 }
 
-// setPKCEVerifier adds code_verifier to a token request, unless there is
-// none or the provider disabled PKCE.
 func setPKCEVerifier(form url.Values, verifier string, disabled bool) {
 	if verifier == "" || disabled {
 		return

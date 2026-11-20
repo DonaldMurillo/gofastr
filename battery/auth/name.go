@@ -12,17 +12,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// NameStore is the optional UserStore extension that keeps a user's
-// display name: what an app shell shows for the signed-in user (an
-// account menu, an avatar's initials) in place of their email. A name
-// is optional; "" means none.
+// NameStore is the UserStore extension that keeps a user's display name.
 type NameStore interface {
-	// UserName returns the user's display name, "" when none is set,
-	// and ErrUserNotFound for an unknown user.
+	// UserName returns the display name, "" for none, or ErrUserNotFound.
 	UserName(ctx context.Context, userID string) (string, error)
-	// SetUserName stores name after CleanName, so "" clears it. It
-	// returns ErrInvalidName for a name CleanName refuses and
-	// ErrUserNotFound for an unknown user.
+	// SetUserName stores a CleanName-checked name; it returns ErrInvalidName or ErrUserNotFound.
 	SetUserName(ctx context.Context, userID, name string) error
 }
 
@@ -32,10 +26,7 @@ const MaxNameRunes = 100
 // ErrInvalidName is a display name CleanName refuses.
 var ErrInvalidName = errors.New("auth: invalid display name")
 
-// CleanName trims a display name and checks it: valid UTF-8, at most
-// MaxNameRunes runes, and none of the control, bidi or zero-width
-// characters that forge or reorder the text around it (a name is drawn
-// in other people's screens). It returns ErrInvalidName otherwise.
+// CleanName trims a display name and returns ErrInvalidName for bad UTF-8, over MaxNameRunes, or unsafe characters.
 func CleanName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if !utf8.ValidString(name) || utf8.RuneCountInString(name) > MaxNameRunes || textsafe.ContainsUnsafe(name) {
@@ -44,8 +35,6 @@ func CleanName(name string) (string, error) {
 	return name, nil
 }
 
-// ensureNameColumn adds the display-name column to a table made before
-// it existed, as ” for every row.
 func (s *EntityUserStore) ensureNameColumn(ctx context.Context) error {
 	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.Name, "TEXT NOT NULL DEFAULT ''")
 }
@@ -66,7 +55,6 @@ func (s *EntityUserStore) UserName(ctx context.Context, userID string) (string, 
 }
 
 // SetUserName stores the user's display name after CleanName.
-// Implements NameStore.
 func (s *EntityUserStore) SetUserName(ctx context.Context, userID, name string) error {
 	name, err := CleanName(name)
 	if err != nil {

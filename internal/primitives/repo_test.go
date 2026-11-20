@@ -279,6 +279,8 @@ var ownedPackages = []string{
 	"battery/desktop/native",
 	"battery/desktop/ui",
 	"battery/desktop/windows",
+	"battery/auth",
+	"battery/auth/authui",
 }
 
 //gofastr:test-reads primitives/ *.go

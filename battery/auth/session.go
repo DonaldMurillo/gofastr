@@ -10,18 +10,7 @@ import (
 	"time"
 )
 
-// Session represents an authenticated cookie-bound session. UserID is the
-// stable identifier the application's User repo uses to look up a row;
-// Token is the opaque cookie value the browser sends back.
-//
-// TwoFactorVerified is set by the 2FA challenge handler after a successful
-// TOTP / backup-code verification. The RequireTwoFA middleware uses it to
-// gate access for users who have enrolled in 2FA.
-//
-// PendingTwoFactor is set when the login flow detects an enrolled user
-// and means the session is ONLY valid for /auth/2fa/challenge. Every
-// other handler refuses it. The successful challenge clears Pending and
-// sets Verified.
+// Session is one cookie session; PendingTwoFactor means only the 2FA challenge accepts it.
 type Session struct {
 	Token             string
 	UserID            string
@@ -34,11 +23,7 @@ type Session struct {
 // Expired reports whether s has passed its ExpiresAt boundary.
 func (s *Session) Expired() bool { return time.Now().After(s.ExpiresAt) }
 
-// SessionStore is the storage backend for cookie sessions. Production
-// deployments swap in Redis / Postgres / etc. behind the same interface.
-//
-// All methods take a Context for cancellation; in-memory implementations
-// can ignore it.
+// SessionStore stores cookie sessions.
 type SessionStore interface {
 	Create(ctx context.Context, userID string, ttl time.Duration) (*Session, error)
 	Get(ctx context.Context, token string) (*Session, error)
@@ -46,72 +31,41 @@ type SessionStore interface {
 	Cleanup(ctx context.Context) (int, error) // returns count removed
 }
 
-// SessionTwoFAMarker is the optional SessionStore extension that lets the
-// 2FA challenge handler mark a session as having completed the second
-// factor. The implementation MUST set TwoFactorVerified=true AND clear
-// PendingTwoFactor, the two are inverses in the post-login state model.
-// RequireTwoFA refuses access if a 2FA-enabled user's session is not
-// marked. Stores that don't implement this method effectively cannot
-// participate in 2FA enforcement (RequireTwoFA will fail-closed).
+// SessionTwoFAMarker marks a session verified; it must set TwoFactorVerified and clear PendingTwoFactor.
 type SessionTwoFAMarker interface {
 	MarkTwoFactorVerified(ctx context.Context, token string) error
 }
 
-// SessionUserPurger is the optional SessionStore extension that revokes
-// every session belonging to a user in one call. Credential-changing flows
-// (password reset / change, email change) call it so a credential that was
-// compromised before the change cannot retain access through an already-issued
-// cookie. Both built-in stores implement it; a store that does not is treated
-// as fail-open for this purpose and the caller logs that revocation was a
-// no-op. Returns the number of sessions removed.
+// SessionUserPurger deletes every session of a user and returns how many.
 type SessionUserPurger interface {
 	DeleteByUser(ctx context.Context, userID string) (int, error)
 }
 
-// SessionPendingPurger is the optional SessionStore extension that removes
-// a user's sessions still waiting on a 2FA challenge. /auth/2fa/disable
-// calls it: a pending session left behind sits inert while the factor is
-// off, then completes with the next factor the user enrolls, a login that
-// never proved the factor it ends up holding. Both built-in stores
-// implement it. Returns the number of sessions removed.
+// SessionPendingPurger deletes a user's sessions still awaiting the 2FA challenge and returns how many.
 type SessionPendingPurger interface {
 	DeletePendingByUser(ctx context.Context, userID string) (int, error)
 }
 
-// SessionPendingMarker is the SessionStore extension that lets
-// CorePlugin's login handler mark a freshly-minted session as awaiting
-// a 2FA challenge. It is optional only for deployments without 2FA:
-// if any registered TwoFactorChecker reports a user enrolled and the
-// store does NOT implement this interface, login fails closed (the
-// session is destroyed and the login rejected) rather than silently
-// downgrading the account to password-only auth.
+// SessionPendingMarker marks a new session as awaiting the 2FA challenge; 2FA needs it.
 type SessionPendingMarker interface {
 	MarkPendingTwoFactor(ctx context.Context, token string) error
 }
 
-// TwoFactorChecker is the optional plugin extension that lets CorePlugin
-// know whether to mint a PendingTwoFactor session at login time. The
-// 2FA plugin implements this. Other plugins (WebAuthn, SMS) can
-// implement it too to participate in the same gating.
+// TwoFactorChecker is a plugin that reports whether a user has a second factor.
 type TwoFactorChecker interface {
 	HasTwoFactorEnabled(ctx context.Context, userID string) (bool, error)
 }
 
-// ErrSessionNotFound is returned by SessionStore.Get when the token is
-// unknown or already expired.
+// ErrSessionNotFound means the token is unknown or expired.
 var ErrSessionNotFound = errors.New("auth: session not found")
 
-// MemorySessionStore is a goroutine-safe in-memory SessionStore suitable
-// for single-instance deployments and tests. Tokens are 32 cryptographically
-// random bytes base64'd, mirroring what most cookie auth systems use.
+// MemorySessionStore is an in-memory SessionStore for one process.
 type MemorySessionStore struct {
 	mu        sync.RWMutex
 	sessions  map[string]*Session
 	lastSweep time.Time
 }
 
-// sessionSweepInterval bounds how long expired sessions remain after later
-// session creation continues.
 const sessionSweepInterval = 15 * time.Minute
 
 // NewMemorySessionStore returns a fresh, empty MemorySessionStore.
@@ -119,13 +73,7 @@ func NewMemorySessionStore() *MemorySessionStore {
 	return &MemorySessionStore{sessions: map[string]*Session{}}
 }
 
-// Create generates a random token, persists a new Session keyed on it, and
-// returns the result. ttl is the session lifetime; consumers passing 0 get
-// a sensible default (one week). A negative ttl is rejected outright,
-// mirroring EntitySessionStore.Create's fail-closed posture: a negative
-// lifetime can only be a sign or unit error, and substituting the default
-// would turn the caller's most restrictive input into the longest session
-// the store issues.
+// Create stores a new session; a zero ttl means seven days and a negative one is refused.
 func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.Duration) (*Session, error) {
 	if ttl < 0 {
 		return nil, fmt.Errorf("auth: MemorySessionStore.Create: ttl must be >= 0 (got %v)", ttl)
@@ -144,11 +92,6 @@ func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.D
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
 	}
-	// Store the session AND return a copy of it, both under the lock.
-	// Returning the stored pointer would share it with callers that
-	// read/mutate it without the lock (and with the marker methods that
-	// do mutate it under the write lock); the race detector catches the
-	// resulting read/write overlap.
 	m.mu.Lock()
 	m.sessions[tok] = sess
 	if now.Sub(m.lastSweep) >= sessionSweepInterval {
@@ -160,8 +103,7 @@ func (m *MemorySessionStore) Create(_ context.Context, userID string, ttl time.D
 	return &cp, nil
 }
 
-// Get returns the session for the given token, or ErrSessionNotFound if
-// unknown / expired.
+// Get returns the session, or ErrSessionNotFound when unknown or expired.
 func (m *MemorySessionStore) Get(_ context.Context, token string) (*Session, error) {
 	m.mu.RLock()
 	sess, ok := m.sessions[token]
@@ -169,9 +111,6 @@ func (m *MemorySessionStore) Get(_ context.Context, token string) (*Session, err
 		m.mu.RUnlock()
 		return nil, ErrSessionNotFound
 	}
-	// Copy under the read lock: the marker methods mutate the stored
-	// *Session in place under the write lock, so handing the stored
-	// pointer back to a caller (who holds no lock) races with them.
 	cp := *sess
 	m.mu.RUnlock()
 	if cp.Expired() {
@@ -183,8 +122,7 @@ func (m *MemorySessionStore) Get(_ context.Context, token string) (*Session, err
 	return &cp, nil
 }
 
-// Delete drops the session for token. Returns nil even if the token is
-// unknown, idempotent logout.
+// Delete drops the session; an unknown token is not an error.
 func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	m.mu.Lock()
 	delete(m.sessions, token)
@@ -192,12 +130,6 @@ func (m *MemorySessionStore) Delete(_ context.Context, token string) error {
 	return nil
 }
 
-// purgeMatching deletes every entry of m for which match returns true and
-// returns the number deleted. The caller holds whatever lock guards m. It
-// replaces the duplicated delete-and-count loops formerly in
-// MemorySessionStore.DeleteByUser/Cleanup and
-// MemoryMagicLinkTokenStore.DeleteTokensForPayload/Cleanup, which differed
-// only in map type and predicate.
 func purgeMatching[K comparable, V any](m map[K]V, match func(V) bool) int {
 	n := 0
 	for k, v := range m {
@@ -209,25 +141,21 @@ func purgeMatching[K comparable, V any](m map[K]V, match func(V) bool) int {
 	return n
 }
 
-// DeleteByUser removes every session belonging to userID and returns the
-// count purged. Implements SessionUserPurger.
+// DeleteByUser deletes every session of userID. Implements SessionUserPurger.
 func (m *MemorySessionStore) DeleteByUser(_ context.Context, userID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return purgeMatching(m.sessions, func(s *Session) bool { return s.UserID == userID }), nil
 }
 
-// DeletePendingByUser removes userID's sessions that are still waiting on
-// a 2FA challenge. Implements SessionPendingPurger.
+// DeletePendingByUser deletes userID's pending sessions. Implements SessionPendingPurger.
 func (m *MemorySessionStore) DeletePendingByUser(_ context.Context, userID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return purgeMatching(m.sessions, func(s *Session) bool { return s.UserID == userID && s.PendingTwoFactor }), nil
 }
 
-// MarkTwoFactorVerified flips TwoFactorVerified=true and clears
-// PendingTwoFactor on the session. No-op (and no error) if the session
-// is unknown.
+// MarkTwoFactorVerified sets TwoFactorVerified and clears PendingTwoFactor; an unknown token is a no-op.
 func (m *MemorySessionStore) MarkTwoFactorVerified(_ context.Context, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -239,7 +167,6 @@ func (m *MemorySessionStore) MarkTwoFactorVerified(_ context.Context, token stri
 }
 
 // MarkPendingTwoFactor flips PendingTwoFactor=true on the session.
-// No-op if the session is unknown.
 func (m *MemorySessionStore) MarkPendingTwoFactor(_ context.Context, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -249,8 +176,7 @@ func (m *MemorySessionStore) MarkPendingTwoFactor(_ context.Context, token strin
 	return nil
 }
 
-// Cleanup removes all expired sessions and returns the count purged. Safe
-// to call on a timer; concurrent with Get/Create/Delete.
+// Cleanup deletes expired sessions and returns how many.
 func (m *MemorySessionStore) Cleanup(_ context.Context) (int, error) {
 	now := time.Now()
 	m.mu.Lock()
@@ -258,7 +184,6 @@ func (m *MemorySessionStore) Cleanup(_ context.Context) (int, error) {
 	return purgeMatching(m.sessions, func(s *Session) bool { return now.After(s.ExpiresAt) }), nil
 }
 
-// newSessionToken generates a 256-bit random token, base64-URL encoded.
 func newSessionToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

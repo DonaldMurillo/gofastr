@@ -1,0 +1,100 @@
+primitive: auth.twofa
+summary: TOTP second factor with backup codes, its challenge and step-up gates, RequireTwoFA, and the memory and SQL 2FA stores.
+code:
+  - battery/auth/twofa.go
+  - battery/auth/entity_twofa_store.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: plugin-config
+    rule: Challenge and verify get a 10/min per-IP floor, a pending session gets ChallengeAttemptsPerSession codes in total (default 10) before it is deleted, a budget-store error refuses the attempt and keeps the session, the enrolment URL carries the period, and production refuses the in-memory store.
+    enforced_by:
+      - test: battery/auth.TestTwoFADefaultChallengeThrottle
+      - test: battery/auth.TestTwoFAVerifyDefaultThrottle
+      - test: battery/auth.TestChallengeGuessesCappedPerSession
+      - test: battery/auth.TestChallengeStoreErrorKeepsSession
+      - test: battery/auth.TestEnrollURLCarriesPeriod
+      - test: battery/auth.TestProdRefusesMemoryTwoFAStore
+  - id: state-changes-are-post
+    rule: Every 2FA route is a POST that refuses a cross-site form, backup-code regeneration included.
+    enforced_by:
+      - test: battery/auth.TestBackupCodesRejectsGetRequests
+      - test: battery/auth.TestTwoFARoutesRejectCrossSite
+  - id: step-up-is-positive
+    rule: Enrol, verify, disable and backup-codes refuse a pending session and, on an account with an enabled factor, any session not marked TwoFactorVerified.
+    enforced_by:
+      - test: battery/auth.TestPendingTwoFA_MutationEndpointsRejected
+      - test: battery/auth.TestTwoFA_StepUpNeedsVerifiedFlag
+  - id: writes-swap-over-what-was-read
+    rule: Enrol never overwrites an enabled factor, and enrol, verify, and the challenge's step consume write only over the state they read, so a racing disable or a second presentation of one step loses.
+    enforced_by:
+      - test: battery/auth.TestTwoFAEnrollRefusesOverwritingEnabledFactor
+      - test: battery/auth.TestTwoFAEnrollNoResurrect
+      - test: battery/auth.TestTwoFAVerifyNoResurrect
+      - test: battery/auth.TestTwoFAChallengeCodeSingleUseConcurrent
+      - test: battery/auth.TestTwoFACASRefusesReenrolledRow
+  - id: verify-marks-the-enrolling-session
+    rule: A successful verify marks the session that enrolled as having passed the factor.
+    enforced_by:
+      - test: battery/auth.TestTwoFA_BackupCodesRefresh
+  - id: step-accepted-once
+    rule: The challenge accepts a TOTP step only above the last accepted one, and a backup code matches its bcrypt hash.
+    enforced_by:
+      - test: battery/auth.TestTOTPCodeNotReusableWithinWindow
+      - test: battery/auth.TestMemoryTwoFAStore_ConsumeBackupCode
+  - id: challenge-rotates-the-session
+    rule: A passed challenge mints a fresh verified session and deletes the judged one, refusing when the judged session vanished or the mark failed.
+    enforced_by:
+      - test: battery/auth.TestTwoFAChallengeRotatesTheSession
+      - test: battery/auth.TestTwoFAChallengeRefusesWhenJudgedSessionVanished
+      - test: battery/auth.TestChallengeFailsWhenMarkFails
+  - id: require-two-fa-is-the-principals
+    rule: RequireTwoFA lets an enrolled principal through only when one of that principal's own live, non-pending sessions on the request passed the challenge.
+    enforced_by:
+      - test: battery/auth.TestTwoFA_RequireMiddleware_BlocksUnverifiedSession
+      - test: battery/auth.TestRequireTwoFAJWTPlusOtherCookie
+  - id: disable-drops-pending
+    rule: Disabling the factor deletes the user's sessions still pending a challenge.
+    enforced_by:
+      - test: battery/auth.TestTwoFADisableDropsPendingSessions
+  - id: memory-store-copies
+    rule: MemoryTwoFAStore hands out deep copies, backup codes included.
+    enforced_by:
+      - test: battery/auth.TestMemoryTwoFAStoreReturnsCopies
+  - id: seeds-sealed
+    rule: EntityTwoFAStore seals seeds, reads a plaintext base32 seed from before sealing but no other unopenable value, re-seals a row opened by a previous key, and refuses a corrupt codes column.
+    enforced_by:
+      - test: battery/auth.TestTwoFAStoreSealsSecretAtRest
+      - test: battery/auth.TestTwoFAStoreReadsLegacyPlaintext
+      - test: battery/auth.TestTwoFARekeyNotServedAsSeed
+      - test: battery/auth.TestTwoFADrainResealsUnderCurrentKey
+      - test: battery/auth.TestEntityTwoFA_CorruptCodesRowErrors
+  - id: sql-swap-guarded
+    rule: A nil SetTwoFA deletes the row, every write bumps the version and a new row starts at a random one, a swap compares every column it read, and EnsureSchema adds a missing version column.
+    enforced_by:
+      - test: battery/auth.TestSetTwoFANilDeletesEnrollment
+      - test: battery/auth.TestTwoFACASRefusesReenrolledRow
+      - test: battery/auth.TestTwoFAEnrollNoResurrect
+      - test: battery/auth.TestEntityTwoFA_EnsureSchemaAddsVersionToOldTable
+  - id: placeholders-in-order
+    rule: Every statement in entity_twofa_store.go numbers its placeholders $1..$N in order of first appearance, because SQLite binds $N by first occurrence.
+    enforced_by:
+      - test: battery/auth.TestTwoFADrainResealsUnderCurrentKey
+    judge: Does this change add a statement to entity_twofa_store.go whose $N placeholders do not first appear in ascending order?
+decisions:
+  - id: enrol-verify-spends-no-step
+    date: 2026-11-20
+    status: accepted
+    decision: The enrolment verify does not consume the TOTP step; the challenge does.
+    rejected:
+      - option: Consume the step at verify too.
+        why: Enrolment and the first sign-in inside one window would exclude each other; the replay that matters is a second session on one code.
+    upholds: [step-accepted-once]
+twins:
+  - job: Store 2FA state with a compare-and-swap and single-use backup codes.
+    why: MemoryTwoFAStore compares structs under a mutex and EntityTwoFAStore compares a version and columns in SQL; they share the TwoFAStore and TwoFAStateSwapper contracts.
+    sites:
+      - path: battery/auth/twofa.go
+        note: MemoryTwoFAStore.
+      - path: battery/auth/entity_twofa_store.go
+        note: EntityTwoFAStore.

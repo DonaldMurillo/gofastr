@@ -1,0 +1,39 @@
+primitive: auth.erasure
+summary: The auth tables' registrations with App.ExportData and App.EraseUserData, for the canonical names and the stores an app configured, and the in-memory store eraser.
+code:
+  - battery/auth/erase.go
+  - battery/auth/memory_erase.go
+  - battery/auth/export.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: configured-tables-reached
+    rule: After Init the erasers and exporters name the tables the configured SQL stores use.
+    enforced_by:
+      - test: battery/auth.TestEraseCoversConfiguredStoreTables
+      - test: battery/auth.TestExportCoversConfiguredStoreTables
+  - id: token-erasers-by-purpose
+    rule: Each flow's token eraser matches its purpose prefix, and the magic-link and email-code ones bind the resolved, canonical email.
+    enforced_by:
+      - test: battery/auth.TestEraseReachesTaggedTokens
+      - test: battery/auth.TestEraseReachesEmailKeyedTokensFromLegacyRow
+  - id: login-limit-rows-erased
+    rule: Erasure deletes the per-account login limiter rows keyed on the erased address in a shared SQL store.
+    enforced_by:
+      - test: battery/auth.TestEraseRemovesLoginLimitRows
+  - id: host-resolver-kept
+    rule: Init keeps a host's email resolver and its canonicalizer, adding the manager's canonicalizer only to the battery default or a resolver with none.
+    enforced_by:
+      - test: battery/auth.TestHostResolverKeepsItsCanonicalizer
+  - id: memory-stores-erased
+    rule: Init registers an eraser for the manager's in-memory stores, which OnStop removes.
+    enforced_by:
+      - test: battery/auth.TestMemoryStoresReachedByErasure
+twins:
+  - job: Name each auth table to the data planes, once for export and once for erasure.
+    why: The two registries take different records (DataExporter with columns, DataEraser with a mode and identity), so each table is declared twice; TestExportCoversConfiguredStoreTables and TestEraseCoversConfiguredStoreTables pin the configured names on both.
+    sites:
+      - path: battery/auth/export.go
+        note: registerCanonicalExporters and resolveExportTables.
+      - path: battery/auth/erase.go
+        note: registerCanonicalErasers and resolveEraseTables.

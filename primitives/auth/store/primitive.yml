@@ -1,0 +1,62 @@
+primitive: auth.store
+summary: EntityUserStore and EntitySessionStore, the battery's SQL user and session tables, with listing, display names, roles and the dialect cache.
+code:
+  - battery/auth/entity_store.go
+  - battery/auth/users.go
+  - battery/auth/name.go
+  - battery/auth/dialect.go
+  - battery/auth/update_roles.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: soft-deleted-users-hidden
+    rule: When the users table has CRUD's deleted_at column, every lookup skips a soft-deleted row.
+    enforced_by:
+      - test: battery/auth.TestSoftDeletedUserCannotSignIn
+  - id: errors-are-typed
+    rule: CreateUser answers ErrEmailTaken on a unique violation, and the password setters and role update answer ErrUserNotFound for no row or an unstorable id.
+    enforced_by:
+      - test: battery/auth.TestEntityUserStore_DuplicateEmail_ReturnsErrEmailTaken
+      - test: battery/auth.TestPasswordSettersUnknownUserFailClosed
+      - test: battery/auth.TestRoleIDsRefuseUnstorableText
+  - id: password-writes
+    rule: SwapPassword writes only while the old hash is stored, ClearPassword writes a fresh unusable hash, and MarkEmailVerified sets the column true.
+    enforced_by:
+      - test: battery/auth.TestPasswordChangeLosesToReset
+      - test: battery/auth.TestJWTDiesWithCredentialChange
+      - test: battery/auth.TestNewMagicLinkUserIsVerified
+  - id: roles-cleared-stay-empty
+    rule: UpdateRoles stores an empty role list as empty, not ["user"].
+    enforced_by:
+      - test: battery/auth.TestUpdateRolesEmptyStaysEmpty
+  - id: auth-entities-private
+    rule: UserEntityConfig and SessionEntityConfig turn CRUD and MCP off, and VerifyAuthEntitiesPrivate warns for any version of them registered with either on.
+    enforced_by:
+      - test: battery/auth.TestVerifyAuthEntitiesPrivate_SilentOnSafeConfig
+      - test: battery/auth.TestVerifyAuthEntitiesPrivate_FlagsDangerousConfig
+  - id: sessions-by-digest
+    rule: EntitySessionStore keeps only the SHA-256 of a session token, refuses a non-positive ttl, answers ErrSessionNotFound for an expired session, deletes only pending sessions on DeletePendingByUser, and sweeps expired rows on create at most every interval, retrying a failed sweep later.
+    enforced_by:
+      - test: battery/auth.TestSessionRedStoredOpaque
+      - test: battery/auth.TestEntitySessionStore_RejectsNonPositiveTTL
+      - test: battery/auth.TestEntitySessionStoreExpiredIsNotFound
+      - test: battery/auth.TestEntityStoreDeletesOnlyPending
+      - test: battery/auth.TestEntitySessionStoreCreateSweepsExpiredSessions
+      - test: battery/auth.TestEntitySessionSweepFailureRetriesLater
+  - id: list-users-clamped
+    rule: ListUsers answers ErrListUsersUnsupported for a store that cannot list, and clamps Limit to 1..500 (default 50) and a negative Offset to 0.
+    enforced_by:
+      - test: battery/auth.TestListUsersUnsupportedStore
+      - test: battery/auth.TestListUsersClampsOptions
+  - id: display-names-clean
+    rule: CleanName refuses invalid UTF-8, more than 100 runes and control, bidi or zero-width characters.
+    enforced_by:
+      - test: battery/auth.TestCleanNameRefusesUnsafeNames
+  - id: dialect-probed-once
+    rule: A store keeps the first dialect probe that succeeded and does not keep a failed one.
+    enforced_by:
+      - test: battery/auth.TestStoreProbesDialectOnce
+      - test: battery/auth.TestFailedFirstProbeIsNotKept
+  - id: dollar-placeholders
+    rule: The SQL stores use $N placeholders only, which both lib/pq and the SQLite driver bind.
+    judge: Does this change add SQL with ? placeholders to battery/auth?

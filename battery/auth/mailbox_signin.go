@@ -21,8 +21,6 @@ func (r *mailboxSignInRefusal) status() int {
 	return http.StatusInternalServerError
 }
 
-// signInMailboxOwner mints a session for the account that owns email,
-// given proof the caller reads that mailbox; via names the flow.
 func (m *AuthManager) signInMailboxOwner(ctx context.Context, r *http.Request, email, via string) (User, *Session, bool, *mailboxSignInRefusal) {
 	refuse := func(stale bool, reason i18n.Phrase) (User, *Session, bool, *mailboxSignInRefusal) {
 		return nil, nil, false, &mailboxSignInRefusal{stale: stale, reason: reason}

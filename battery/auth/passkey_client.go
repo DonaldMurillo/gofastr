@@ -15,12 +15,6 @@ var passkeyJS string
 //go:embed passkey_manage.js
 var passkeyManageJS string
 
-// The browser half of the passkey plugin is two behaviours, so a page
-// loads only the half it marks: "passkey" signs in (a button, the
-// autofill field) and holds the shared helpers; "passkey-manage" adds,
-// renames and removes passkeys, runs step-ups and syncs the password
-// manager, on those helpers. Markers are string literals so the
-// runtime's marker gate can read them.
 var _ = registry.RegisterBehavior("passkey", passkeyJS,
 	registry.Markers("[data-passkey-login]", "[data-passkey-autofill]"))
 
@@ -29,17 +23,13 @@ var _ = registry.RegisterBehavior("passkey-manage", passkeyManageJS,
 	registry.Markers("[data-passkey-register]", "[data-passkey-upgrade]", "[data-passkey-rename]",
 		"[data-passkey-delete]", "[data-passkey-reauth]", "[data-passkey-list]"))
 
-// The toasts passkey.js says, in the reader's language.
 var (
-	sayPasskeyAdded   = i18n.Define("auth.passkey_added", "Passkey added")
-	sayPasskeyRemoved = i18n.Define("auth.passkey_removed", "Passkey removed")
-	sayPasskeyFailed  = i18n.Define("auth.passkey_failed", "Passkey request failed")
-	sayPasskeyRenamed = i18n.Define("auth.passkey_renamed", "Passkey renamed")
-	// InvalidStateError: the authenticator already holds one of the
-	// account's passkeys (excludeCredentials matched).
+	sayPasskeyAdded      = i18n.Define("auth.passkey_added", "Passkey added")
+	sayPasskeyRemoved    = i18n.Define("auth.passkey_removed", "Passkey removed")
+	sayPasskeyFailed     = i18n.Define("auth.passkey_failed", "Passkey request failed")
+	sayPasskeyRenamed    = i18n.Define("auth.passkey_renamed", "Passkey renamed")
 	sayPasskeyExistsHere = i18n.Define("auth.passkey_exists_here", "This device already holds a passkey for this account")
-	// SecurityError: the page's origin does not fit the RP ID.
-	sayPasskeyWrongSite = i18n.Define("auth.passkey_wrong_site", "Passkeys do not work on this site address")
+	sayPasskeyWrongSite  = i18n.Define("auth.passkey_wrong_site", "Passkeys do not work on this site address")
 )
 
 func init() {
@@ -47,86 +37,56 @@ func init() {
 		sayPasskeyRenamed, sayPasskeyExistsHere, sayPasskeyWrongSite)
 }
 
-// PasskeyAutocomplete is the autocomplete value for the sign-in form's
-// username field when PasskeyAutofillAttrs marks it: the browser then
-// lists the device's passkeys beside saved usernames.
+// PasskeyAutocomplete is the autocomplete value for a username field PasskeyAutofillAttrs marks.
 const PasskeyAutocomplete = "username webauthn"
 
-// PasskeyReauthField is the form field a PasskeyReauthAttrs button
-// fills with the step-up proof before it submits the form.
+// PasskeyReauthField is the form field a PasskeyReauthAttrs button fills with the step-up proof.
 const PasskeyReauthField = "passkey_reauth"
 
-// PasskeyAutofillAttrs marks the sign-in form's username field so the
-// browser offers the device's passkeys in its autofill list
-// (conditional UI); picking one signs in against basePath. Set the
-// field's autocomplete to PasskeyAutocomplete as well (ui.Control owns
-// that attribute); the module appends "webauthn" when it is missing.
-// Browsers without conditional UI leave the field as it is.
+// PasskeyAutofillAttrs marks the sign-in username field for passkey autofill against basePath.
 func PasskeyAutofillAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-autofill": basePath}
 }
 
-// PasskeyUpgradeAttrs marks an element on a page the user reaches
-// right after a password sign-in. Where the browser supports it, the
-// module asks the password manager to save a passkey for the account
-// without a prompt (conditional create); elsewhere it does nothing.
+// PasskeyUpgradeAttrs marks a post-password-sign-in page that asks for a passkey without a prompt.
 func PasskeyUpgradeAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-upgrade": basePath}
 }
 
-// PasskeyRenameAttrs marks a button that renames the signed-in
-// account's passkey id to the value of the PasskeyNameAttrs field in
-// the same form. The page re-renders after it is renamed.
+// PasskeyRenameAttrs marks a button that renames passkey id to its form's PasskeyNameAttrs field.
 func PasskeyRenameAttrs(basePath string, id []byte) html.Attrs {
 	return html.Attrs{"data-passkey-rename": basePath, "data-passkey-id": PasskeyID(id), "hidden": ""}
 }
 
-// PasskeyReauthAttrs marks a button inside the form of a sensitive
-// action: it runs a passkey step-up, puts the proof in the form's
-// PasskeyReauthField and submits the form. The form's handler spends
-// the proof with PasskeyPlugin.RedeemReauthProof.
+// PasskeyReauthAttrs marks a sensitive action's submit button that steps up with a passkey first.
 func PasskeyReauthAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-reauth": basePath, "hidden": ""}
 }
 
-// PasskeyListAttrs marks the element around a server-drawn passkey
-// list. When the page loads, the module tells the password manager
-// which passkeys the account still has, so one removed elsewhere stops
-// being offered, and what the account is called.
+// PasskeyListAttrs marks a server-drawn passkey list the module syncs to the password manager.
 func PasskeyListAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-list": basePath}
 }
 
-// PasskeyLoginAttrs marks a button as "sign in with a passkey" against
-// the auth routes mounted at basePath ("/auth"). Put them on a
-// ui.Button's ExtraAttrs. The button renders hidden and the passkey
-// module reveals it when the browser supports WebAuthn, so a page
-// without script never shows a button that cannot work.
+// PasskeyLoginAttrs marks a button as passkey sign-in against basePath; it stays hidden where WebAuthn is missing.
 func PasskeyLoginAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-login": basePath, "hidden": ""}
 }
 
-// PasskeyRegisterAttrs marks a button as "add a passkey" for the
-// signed-in account. When the button sits in a form, a field carrying
-// PasskeyNameAttrs supplies the passkey's name; without one the server
-// names it "Passkey". The page re-renders after a passkey is added.
+// PasskeyRegisterAttrs marks a button as "add a passkey"; a PasskeyNameAttrs field in its form names it.
 func PasskeyRegisterAttrs(basePath string) html.Attrs {
 	return html.Attrs{"data-passkey-register": basePath, "hidden": ""}
 }
 
-// PasskeyNameAttrs marks the text field PasskeyRegisterAttrs reads the
-// new passkey's name from.
+// PasskeyNameAttrs marks the field PasskeyRegisterAttrs reads the name from.
 func PasskeyNameAttrs() html.Attrs {
 	return html.Attrs{"data-passkey-name": ""}
 }
 
-// PasskeyDeleteAttrs marks a button that removes the signed-in
-// account's passkey id (PasskeyCredential.ID, as PasskeyID encodes it).
-// The page re-renders after it is removed.
+// PasskeyDeleteAttrs marks a button that removes the signed-in account's passkey id.
 func PasskeyDeleteAttrs(basePath string, id []byte) html.Attrs {
 	return html.Attrs{"data-passkey-delete": basePath, "data-passkey-id": PasskeyID(id), "hidden": ""}
 }
 
-// PasskeyID is the text form of a credential id the passkey routes and
-// markup use: unpadded base64url.
+// PasskeyID is a credential id as unpadded base64url.
 func PasskeyID(id []byte) string { return b64url.EncodeToString(id) }

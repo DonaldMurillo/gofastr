@@ -16,77 +16,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Placeholder invariant: every statement below lists $1..$N in ascending
-// order of first textual appearance. lib/pq binds $N positionally, but
-// mattn/go-sqlite3 treats $N as a NAMED param indexed by first occurrence,
-// so a statement that mentions $2 before $1 would bind args correctly on
-// Postgres yet misbind on SQLite. Keep new SQL in ascending placeholder
-// order (and lean on the Postgres tests to catch regressions).
-
-// EntityTwoFAStore adapts a database table to the TwoFAStore interface,
-// the durable sibling of MemoryTwoFAStore, mirroring EntitySessionStore.
-// Without it, a restart (or a second replica) silently reverts every
-// enrolled 2FA account to password-only auth, because enrollment lives
-// only in process memory.
-//
-// Usage:
-//
-//	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
-//	    Store: auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{
-//	        EncryptionKey: keyFromSecretManager, // seals the TOTP seed at rest
-//	    }),
-//	}))
-//
-// The plugin calls EnsureSchema at Init, so hosts never hand-roll the DDL.
+// EntityTwoFAStore is a TwoFAStore in a SQLite or PostgreSQL table, the TOTP secret sealed with AES-GCM.
 type EntityTwoFAStore struct {
-	db      *sql.DB
-	table   string
-	dialect storeDialect
-	sealer  *aeadSealer
-	// previousSealers open rows sealed under rotated-away keys (the
-	// drain window); they never seal.
+	db              *sql.DB
+	table           string
+	dialect         storeDialect
+	sealer          *aeadSealer
 	previousSealers []*aeadSealer
 
-	// casTestHook, when set, fires inside ConsumeBackupCode and
-	// CompareAndSwapTwoFA between the read and the compare-and-swap write. It is nil in production; tests use it
-	// to mutate the row under an in-flight consume (e.g. delete + re-enrol)
-	// to exercise the CAS's ABA handling without contorting the call sites.
 	casTestHook func()
 }
 
 // EntityTwoFAStoreConfig tunes the SQL-backed 2FA store.
 type EntityTwoFAStoreConfig struct {
-	// EncryptionKey seals the TOTP secret at rest with AES-GCM (the same
-	// sealer the SQL OAuth token store uses). Required: an empty key is a
-	// config error. Sealing is read-both: rows written as plaintext before
-	// the key existed still verify, and every new write is sealed.
+	// EncryptionKey seals the TOTP secret; required. Rows stored as plaintext before sealing still read.
 	EncryptionKey []byte
 
-	// PreviousEncryptionKeys are decrypt-only keys retained for a drain
-	// window after an EncryptionKey rotation, mirroring JWTAuth.
-	// PreviousSecrets and the CSRF AdditionalKeys idiom. A row sealed
-	// under a key here still opens; the read re-seals it under the
-	// CURRENT key in the same transaction-free predicate update, so the
-	// next read no longer needs the old key and the operator can drop
-	// it after one pass over the enrolled rows. New writes always seal
-	// with EncryptionKey.
-	//
-	// Without a matching current-or-previous key, a sealed row FAILS
-	// CLOSED with an explicit error naming the rotation — never the
-	// OAuth token store's "ciphertext failed to open (wrong
-	// EncryptionKey?)" silence, and never the pre-2026-09-04 behaviour
-	// of serving the base64 ciphertext as the TOTP seed (every code
-	// computed from garbage, a silent deployment-wide 2FA outage).
+	// PreviousEncryptionKeys open rows sealed under rotated-away keys; a read re-seals them under EncryptionKey.
 	PreviousEncryptionKeys [][]byte
 }
 
 // NewEntityTwoFAStore creates a TwoFAStore backed by a database table.
-// Panics if the table name contains unsafe characters. EncryptionKey is
-// required: the TOTP seed is a credential, and the SQL OAuth token store
-// already refuses to run unsealed, so this store does too. Rows written
-// as plaintext by an older build still verify (read-both) and are
-// re-sealed on their next write. PreviousEncryptionKeys configures the
-// rotation drain window (see its doc).
 func NewEntityTwoFAStore(db *sql.DB, table string, cfg EntityTwoFAStoreConfig) (*EntityTwoFAStore, error) {
 	query.MustIdent(table)
 	if len(cfg.EncryptionKey) == 0 {
@@ -110,8 +60,6 @@ func NewEntityTwoFAStore(db *sql.DB, table string, cfg EntityTwoFAStoreConfig) (
 	return &EntityTwoFAStore{db: db, table: table, sealer: sealer, previousSealers: prev}, nil
 }
 
-// sealSecret seals a TOTP secret for storage when a sealer is configured;
-// plaintext passes through unchanged otherwise.
 func (s *EntityTwoFAStore) sealSecret(secret string) (string, error) {
 	if s.sealer == nil || secret == "" {
 		return secret, nil
@@ -119,29 +67,6 @@ func (s *EntityTwoFAStore) sealSecret(secret string) (string, error) {
 	return s.sealer.seal(secret)
 }
 
-// openSecret opens the stored secret column value. Read order:
-//
-//  1. the current key;
-//  2. each previous (rotation-drain) key — reported via viaPrevious so
-//     the caller can re-seal the row under the current key;
-//  3. legacy plaintext — a row written before sealing existed.
-//
-// A value NONE of those explain is a sealed row this store cannot open:
-// a rotated-away or wrong EncryptionKey. It fails closed with an
-// explicit error (the oauth_token_store contract on the same sealer)
-// instead of the pre-2026-09-04 fallback, which returned the stored
-// bytes verbatim and silently served the base64 ciphertext as the TOTP
-// seed — every code rejected, no error anywhere (round 3 finding,
-// pinned by TestTwoFARekeyNotServedAsSeed).
-//
-// Legacy plaintext is recognized as the RFC 4648 base32 TOTP alphabet
-// (A-Z, 2-7) only. A sealed value is base64 over nonce+AEAD(tag), so it
-// contains lowercase / '+' / '/' characters with overwhelming
-// probability; an 80-char all-uppercase sealed value has odds below
-// 2^-80. The corollary, deliberate and documented: a legacy plaintext
-// seed in some OTHER encoding (lowercase base32, hex) reads as
-// unopenable and fails closed rather than verifying. Fail closed beats
-// serving ciphertext.
 func (s *EntityTwoFAStore) openSecret(stored string) (plain string, viaPrevious bool, err error) {
 	if stored == "" {
 		return stored, false, nil
@@ -160,9 +85,6 @@ func (s *EntityTwoFAStore) openSecret(stored string) (plain string, viaPrevious 
 	return "", false, fmt.Errorf("auth: entity 2FA store: secret ciphertext failed to open (wrong EncryptionKey?)")
 }
 
-// isLegacyPlaintextSeed reports whether s is shaped like a plaintext
-// TOTP seed: the RFC 4648 base32 alphabet only. See openSecret for why
-// that distinction is safe and what it refuses.
 func isLegacyPlaintextSeed(s string) bool {
 	if s == "" {
 		return false
@@ -175,10 +97,7 @@ func isLegacyPlaintextSeed(s string) bool {
 	return true
 }
 
-// EnsureSchema creates the 2FA table if it does not already exist. Called
-// by TwoFAPlugin.Init so hosts never hand-roll the DDL. Idempotent. The
-// boolean column type is chosen per dialect (SQLite vs PostgreSQL) so the
-// same battery boots on either.
+// EnsureSchema creates the table and adds columns an older table lacks.
 func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
 		return err
@@ -197,34 +116,20 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.dialect.of(s.db), s.table, "enabled", "verified"); err != nil {
 		return err
 	}
-	// Self-heal a table created before the version and last_used_step
-	// columns existed (or by a host that auto-migrated an older field
-	// set): CREATE TABLE IF NOT EXISTS is a no-op on an existing table,
-	// so the column would be missing and every query touching it would
-	// error. Add them if absent.
 	if err := s.ensureBigIntColumn(ctx, "version"); err != nil {
 		return err
 	}
 	return s.ensureBigIntColumn(ctx, "last_used_step")
 }
 
-// ensureBigIntColumn adds a BIGINT NOT NULL DEFAULT 0 column to a
-// pre-existing table that lacks it.
 func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) error {
 	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "BIGINT NOT NULL DEFAULT 0")
 }
 
-// sqliteHasColumn reports whether the store's table has the named column,
-// via PRAGMA table_info (SQLite-only).
 func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
 	return sqliteTableHasColumn(ctx, s.db, s.table, col)
 }
 
-// addColumnIfMissing adds column col (typ is its type and constraints,
-// "TEXT NOT NULL DEFAULT ”") to a table an older build created without
-// it. Postgres uses ADD COLUMN IF NOT EXISTS, resolved through the
-// search_path and safe for concurrent boots; SQLite, which has no such
-// clause, reads PRAGMA table_info first.
 func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, col, typ string) error {
 	if d == migrate.DialectPostgres {
 		_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
@@ -238,13 +143,10 @@ func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, tabl
 	return addColumnAfterCheck(ctx, db, table, col, typ)
 }
 
-// addColumnAfterCheck is SQLite's ALTER once the check found no column.
 func addColumnAfterCheck(ctx context.Context, db *sql.DB, table, col, typ string) error {
 	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
 		query.QuoteFolded(table), query.QuoteFolded(col), typ))
 	if err != nil {
-		// Another process on the same file may have added it between the
-		// check and the ALTER: the column being there is the goal.
 		if has, herr := sqliteTableHasColumn(ctx, db, table, col); herr == nil && has {
 			return nil
 		}
@@ -252,9 +154,6 @@ func addColumnAfterCheck(ctx context.Context, db *sql.DB, table, col, typ string
 	return err
 }
 
-// sqliteTableHasColumn reports whether table has the named column, via
-// PRAGMA table_info (SQLite-only). table must already be a validated
-// identifier.
 func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (bool, error) {
 	rows, err := db.QueryContext(ctx, query.SQLitePragma("table_info", query.QuoteFolded(table)))
 	if err != nil {
@@ -268,9 +167,6 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			return false, err
 		}
-		// SQLite folds only ASCII letters in column names, and the store
-		// creates a mapped "DisplayName" as displayname; a name that
-		// differs elsewhere (U+017F for s) is another column.
 		if asciiEqualFold(name, col) {
 			return true, nil
 		}
@@ -278,8 +174,6 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 	return false, rows.Err()
 }
 
-// asciiEqualFold is strings.EqualFold over ASCII letters only, as SQLite
-// compares identifiers.
 func asciiEqualFold(a, b string) bool {
 	if len(a) != len(b) {
 		return false
@@ -299,28 +193,15 @@ func asciiEqualFold(a, b string) bool {
 	return true
 }
 
-// qTable wraps a statement template with the validated table name.
 func (s *EntityTwoFAStore) qTable(stmt string) string {
 	return fmt.Sprintf(stmt, query.QuoteFolded(s.table))
 }
 
-// GetTwoFA retrieves the 2FA state for a user. Returns nil (not an error)
-// when the user is not enrolled, matching MemoryTwoFAStore. The secret is
-// unsealed when the store was built with an EncryptionKey; a row written
-// as plaintext before sealing was enabled still reads back usable. A row
-// sealed under a rotated-away key opens through PreviousEncryptionKeys
-// and is re-sealed under the current key on that read; a row no
-// configured key can open fails closed with an explicit error instead of
-// serving the ciphertext as the seed.
+// GetTwoFA returns the user's state, or nil when not enrolled.
 func (s *EntityTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error) {
 	return s.getWithVersion(ctx, userID, nil, nil)
 }
 
-// getWithVersion is GetTwoFA plus the optimistic-concurrency version and
-// the raw backup_codes bytes scanned this round, used by the
-// compare-and-swap paths (ConsumeBackupCode, CompareAndSwapTwoFA).
-// Returns nil state (and leaves *version and *codesRaw untouched) when
-// the user is not enrolled.
 func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, version *int64, codesRaw *string) (*TwoFAState, error) {
 	q := s.qTable("SELECT enabled, secret, backup_codes, verified, last_used_step, version FROM %s WHERE user_id = $1")
 	var enabled, verified bool
@@ -349,13 +230,6 @@ func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, ve
 		return nil, err
 	}
 	if viaPrevious {
-		// Drain window: the row opened under a rotated-away key. Re-seal
-		// under the current key NOW so the next read does not need the
-		// old key. Best-effort and predicate-guarded (the same column
-		// set every CAS path predicates on — the secret is deliberately
-		// excluded there): a concurrent writer wins, its own write
-		// already sealed under the current key, and the read still
-		// succeeds with the plaintext we hold.
 		s.resealUnderCurrentKey(ctx, userID, plain, ver, codesJSON, enabled, verified, lastUsedStep)
 	}
 	return &TwoFAState{
@@ -367,10 +241,6 @@ func (s *EntityTwoFAStore) getWithVersion(ctx context.Context, userID string, ve
 	}, nil
 }
 
-// resealUnderCurrentKey rewrites a drain-window row's secret under the
-// current key without bumping version: the CAS predicate excludes the
-// secret column on purpose, so this stay transparent to concurrent
-// CompareAndSwapTwoFA / ConsumeBackupCode loops.
 func (s *EntityTwoFAStore) resealUnderCurrentKey(ctx context.Context, userID, plain string, ver int64, codesJSON string, enabled, verified bool, lastUsedStep int64) {
 	sealed, err := s.sealSecret(plain)
 	if err != nil {
@@ -386,18 +256,12 @@ func (s *EntityTwoFAStore) resealUnderCurrentKey(ctx context.Context, userID, pl
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Lost the race to a concurrent write; that write sealed under
-		// the current key. Nothing to do.
 		return
 	}
 	slog.Info("2FA rotation drain: row re-sealed under current key",
 		"store", "entity_twofa", "user_hash", hashedIdentifier(userID))
 }
 
-// marshalBackupCodes canonicalises the codes column value: GetTwoFA and
-// getWithVersion unmarshal through this same shape, so a state read from
-// the store re-marshals byte-identical and the CAS predicate on the raw
-// column is formatting-proof for store-written rows.
 func marshalBackupCodes(codes []string) (string, error) {
 	if codes == nil {
 		codes = []string{}
@@ -409,8 +273,7 @@ func marshalBackupCodes(codes []string) (string, error) {
 	return string(b), nil
 }
 
-// SetTwoFA upserts the 2FA state for a user. A nil state deletes the row,
-// matching the semantics callers get from DeleteTwoFA.
+// SetTwoFA upserts the state; nil deletes it.
 func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *TwoFAState) error {
 	if state == nil {
 		return s.DeleteTwoFA(ctx, userID)
@@ -423,11 +286,6 @@ func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *T
 	if err != nil {
 		return err
 	}
-	// ON CONFLICT ... DO UPDATE is supported by both PostgreSQL and
-	// SQLite (3.24+), so one statement covers both dialects. Bump version
-	// on every write so a ConsumeBackupCode or CompareAndSwapTwoFA CAS in
-	// flight against the old state misses and re-reads (a full state
-	// replace must invalidate a concurrent per-code mutation).
 	start, err := freshTwoFAVersion()
 	if err != nil {
 		return err
@@ -438,13 +296,6 @@ func (s *EntityTwoFAStore) SetTwoFA(ctx context.Context, userID string, state *T
 	return err
 }
 
-// freshTwoFAVersion is the version a newly inserted row starts at. A row
-// deleted and re-created used to start again at 0, so a swap that read
-// the old row could match the new one when codes and flags agreed (a
-// disable plus re-enrol under an in-flight verify marked the new pending
-// enrolment verified with the old secret). A random start below 2^62
-// makes the re-created row's version differ from any read of the old
-// one and leaves room for version + 1.
 func freshTwoFAVersion() (int64, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -453,17 +304,7 @@ func freshTwoFAVersion() (int64, error) {
 	return int64(binary.BigEndian.Uint64(b[:])>>2) | 1, nil
 }
 
-// CompareAndSwapTwoFA writes next only while the stored row still equals
-// expect (nil expect = the row must be absent), the atomic
-// read-modify-write primitive the handlers use so a racing DeleteTwoFA (a
-// committed disable) wins over a stale write and one TOTP step is consumed
-// exactly once. Implements TwoFAStateSwapper.
-//
-// The SQL predicate is the row's version, backup_codes bytes, enabled,
-// verified, and last_used_step — everything except the secret, whose
-// sealed column cannot be recomputed for comparison (the AEAD nonce is
-// fresh per write). Every secret change rides a SetTwoFA, which bumps
-// version, so the predicate still pins the full observable state.
+// CompareAndSwapTwoFA implements TwoFAStateSwapper with a predicate on the version and every compared column.
 func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID string, expect, next *TwoFAState) (bool, error) {
 	if expect == nil {
 		if next == nil {
@@ -477,9 +318,6 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 		if err != nil {
 			return false, err
 		}
-		// INSERT-only-if-absent: rows-affected 0 means a row exists (a
-		// concurrent enroll or a disable racing a re-enroll), so the
-		// caller's absent-row assumption is stale.
 		start, err := freshTwoFAVersion()
 		if err != nil {
 			return false, err
@@ -507,7 +345,6 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 		s.casTestHook()
 	}
 	if next == nil {
-		// Swap-to-absent: delete, still guarded by the same predicate.
 		q := s.qTable("DELETE FROM %s WHERE user_id = $1 AND version = $2 AND backup_codes = $3 AND enabled = $4 AND verified = $5 AND last_used_step = $6")
 		res, err := s.db.ExecContext(ctx, q, userID, version, rawCodes, expect.Enabled, expect.Verified, int64(expect.LastUsedStep))
 		if err != nil {
@@ -533,39 +370,15 @@ func (s *EntityTwoFAStore) CompareAndSwapTwoFA(ctx context.Context, userID strin
 	return n == 1, nil
 }
 
-// DeleteTwoFA removes the 2FA state for a user. Deleting an absent row is
-// not an error.
+// DeleteTwoFA removes the state; an absent row is not an error.
 func (s *EntityTwoFAStore) DeleteTwoFA(ctx context.Context, userID string) error {
 	q := s.qTable("DELETE FROM %s WHERE user_id = $1")
 	_, err := s.db.ExecContext(ctx, q, userID)
 	return err
 }
 
-// ConsumeBackupCode checks the given code against the stored bcrypt hashes
-// and, on a match, removes that code atomically. Concurrency-safe across
-// replicas via an optimistic compare-and-swap on the version column AND the
-// raw backup_codes bytes this round's SELECT returned: if two replicas race
-// to consume the SAME code, exactly one CAS wins; the loser re-reads, no
-// longer finds the code, and returns false.
-//
-// The bytes predicate keeps the CAS ABA-proof on its own. version is NOT
-// monotonic across a row's lifetime: DeleteTwoFA drops the row and an
-// INSERT recreates it at a fresh random version, which a stale read
-// misses only with overwhelming probability. A consume that read the OLD
-// row must never pass against a row that was since deleted and
-// re-enrolled, overwriting the freshly issued code list with the stale one. Predicating
-// on the raw bytes this round read makes the re-enrolled row fail the CAS
-// (its bytes differ) so the loop re-reads the fresh codes. Comparing the
-// stored bytes against themselves, the exact string this round's SELECT
-// returned, is formatting-proof: a non-canonically-formatted row matches
-// itself, so such a row still consumes.
+// ConsumeBackupCode removes one matching backup code with a compare-and-swap, so concurrent replicas spend a code once.
 func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string, code string) (bool, error) {
-	// A lost CAS means the row changed under us (another code consumed, or a
-	// SetTwoFA), re-read and retry. Bound the loop by the initial code
-	// count + slack: each failed CAS corresponds to one competing write, so
-	// the code we're after either wins or is proven gone within that many
-	// rounds. (A fixed 2-retry bound wrongly rejected a still-valid code
-	// under 3-plus-way concurrent consumption.)
 	maxRounds := 8
 	for round := 0; ; round++ {
 		var version int64
@@ -581,19 +394,13 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 			maxRounds = len(state.BackupCodes) + 2
 		}
 		if round >= maxRounds {
-			// Extreme contention: fail closed (the code is NOT burned, no
-			// UPDATE we ran removed it, so a client retry still works).
 			return false, nil
 		}
 
-		// Test seam: lets a test mutate the row (e.g. delete + re-enrol) under
-		// an in-flight consume to exercise the CAS. Nil in production.
 		if s.casTestHook != nil {
 			s.casTestHook()
 		}
 
-		// Bcrypt comparisons happen against a snapshot, outside any
-		// transaction, so slow hashing never holds a DB lock.
 		matched := -1
 		for i, hashed := range state.BackupCodes {
 			if bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code)) == nil {
@@ -621,10 +428,7 @@ func (s *EntityTwoFAStore) ConsumeBackupCode(ctx context.Context, userID string,
 	}
 }
 
-// TwoFAEntityFields returns the standard field definitions for a 2FA
-// state entity, for hosts that want the table visible to the entity
-// system (admin screens, migrations). The secret and backup-code hashes
-// are Hidden so they can never leak through an API response.
+// TwoFAEntityFields returns the 2FA table's fields for the entity system, the secret and codes hidden.
 func TwoFAEntityFields() []schema.Field {
 	return []schema.Field{
 		{Name: "user_id", Type: schema.String, Required: true, Unique: true},
@@ -632,11 +436,6 @@ func TwoFAEntityFields() []schema.Field {
 		{Name: "secret", Type: schema.String, Hidden: true},
 		{Name: "backup_codes", Type: schema.Text, Hidden: true},
 		{Name: "verified", Type: schema.Bool, Default: "false"},
-		// version backs ConsumeBackupCode's optimistic CAS; a host that
-		// registers this entity for auto-migration MUST include it, or the
-		// generated table lacks the column and every 2FA op errors. RawType
-		// BIGINT matches the store's hand-written DDL; ReadOnly+Hidden keep
-		// this internal counter out of client request/response bodies.
 		{Name: "version", Type: schema.Int, RawType: "BIGINT", Default: 0, ReadOnly: true, Hidden: true},
 	}
 }
