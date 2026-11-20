@@ -31,6 +31,8 @@ func TestEntityFormStartsAtDefaults(t *testing.T) {
 				{Name: "notes", Type: "text", Default: "hello"},
 				{Name: "due", Type: "date", Default: "2026-01-02"},
 				{Name: "starts", Type: "timestamp", Default: "2026-01-02T09:30:00Z"},
+				{Name: "opens", Type: "timestamp", Default: "2026-01-02T09:30:15Z"},
+				{Name: "ends", Type: "timestamp", Default: "2026-01-02T09:30:15.25Z"},
 				{Name: "label", Type: "string"},
 			},
 		},
@@ -49,6 +51,8 @@ func TestEntityFormStartsAtDefaults(t *testing.T) {
 		"notes":    `ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: "notes", Label: i18nui.FieldLabel(ctx, nil, "items", "notes", "Notes"), ID: "field-notes", Required: false, Value: "hello"})`,
 		"due":      `ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: "due", Label: i18nui.FieldLabel(ctx, nil, "items", "due", "Due"), ID: "field-due", Required: false, Value: "2026-01-02"})`,
 		"starts":   `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "starts", Value: "2026-01-02T09:30"})`,
+		"opens":    `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "opens", Value: "2026-01-02T09:30:15", Step: "1"})`,
+		"ends":     `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "ends", Value: "2026-01-02T09:30:15.250", Step: "0.001"})`,
 		"label":    `ui.Control(ui.ControlConfig{Field: c, Type: "text", Name: "label"})`,
 	} {
 		if !strings.Contains(expr, want) {

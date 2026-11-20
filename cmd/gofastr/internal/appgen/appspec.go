@@ -4166,7 +4166,8 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		// value and selected are the config fragments that start a
 		// control at its field's Default; empty for a field with none.
 		var value, selected string
-		if def := appSpecFormDefault(field); def != "" {
+		def := appSpecFormDefault(field)
+		if def != "" {
 			value, selected = fmt.Sprintf(", Value: %q", def), fmt.Sprintf(", Selected: %q", def)
 		}
 		var expr string
@@ -4216,8 +4217,12 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
+			inputType := appSpecFormInputType(field.Type)
+			if step := appSpecDateTimeStep(inputType, def); step != "" {
+				value += fmt.Sprintf(", Step: %q", step)
+			}
 			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q%s}) }})",
-				label, fieldID, req, appSpecFormInputType(field.Type), inputName, value)
+				label, fieldID, req, inputType, inputName, value)
 		}
 		fields = append(fields, expr)
 	}
@@ -4255,16 +4260,36 @@ func appSpecFormDefault(field framework.FieldDeclaration) string {
 
 // appSpecDateTimeLocal formats t for a create control of the given field
 // type: a date as YYYY-MM-DD, a timestamp as datetime-local's UTC wall
-// time, with seconds only when it has them.
+// time to the millisecond, with seconds and milliseconds only when it
+// has them (entityui's timestampInput).
 func appSpecDateTimeLocal(fieldType string, t time.Time) string {
 	if fieldType == "date" {
 		return t.Format(time.DateOnly)
 	}
-	t = t.UTC()
-	if t.Second() != 0 {
+	t = t.UTC().Truncate(time.Millisecond)
+	switch {
+	case t.Nanosecond() != 0:
+		return t.Format("2006-01-02T15:04:05.000")
+	case t.Second() != 0:
 		return t.Format("2006-01-02T15:04:05")
 	}
 	return t.Format("2006-01-02T15:04")
+}
+
+// appSpecDateTimeStep is the step a datetime-local control needs to hold
+// value: its default 60-second step marks seconds or milliseconds as a
+// step mismatch and the browser refuses to submit.
+func appSpecDateTimeStep(inputType, value string) string {
+	if inputType != "datetime-local" {
+		return ""
+	}
+	switch {
+	case strings.Contains(value, "."):
+		return "0.001"
+	case len(value) > len("2006-01-02T15:04"):
+		return "1"
+	}
+	return ""
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a
