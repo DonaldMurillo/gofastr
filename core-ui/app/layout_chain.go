@@ -10,39 +10,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// LayoutLayer is one level of a screen's resolved layout chain, ordered
-// outermost → innermost. The chain is DERIVED at registration/render time
-// from what the app declared, the default layout, ScreenGroup nesting,
-// per-screen overrides, so ScreenGroup stays the builder API and the
-// chain is the single composition model every renderer (full page, SSG,
-// subtree partial) and the route manifest share.
+// LayoutLayer is one level of a screen's resolved layout chain, ordered outermost → innermost.
 type LayoutLayer struct {
-	// Layout is the shell rendered at this level. Nil for a marker-only
-	// group level: a group whose layout was deduplicated because the same
-	// *Layout already renders at an outer level (e.g. a SubGroup that
-	// inherited its parent's layout). Marker-only levels still emit their
-	// group wrapper so sibling navigation inside the group stays DOM-stable.
+	// Layout is the shell rendered at this level.
 	Layout *Layout
-	// GroupPrefix is the ScreenGroup prefix that produced this level
-	// ("/settings/"). Empty for the app-default root and for a direct
-	// screen's own layout.
+	// GroupPrefix is the ScreenGroup prefix that produced this level ("/settings/").
 	GroupPrefix string
 }
 
-// Key returns the stable identity the client runtime compares to decide
-// the deepest layer shared between the current DOM and a navigation
-// target: "g:<prefix>:<identity>" for group levels ("g:<prefix>" when
-// marker-only), "l:<identity>" for plain layouts, where identity is the
-// layout's declared Key when set, else its Name. Declaring Key lets one
-// layout shape re-render per context (the #408 case: a shell per
-// language, same Name, one CSS contract) while the name keeps driving
-// data-cui-layout. The identity is part of a group level's key so a
-// per-screen layout override inside a group compares as a DIFFERENT
-// layer than its siblings, navigating between them re-renders the shell
-// instead of silently keeping whichever one happened to be on screen.
-// Empty when the level has no usable identity (an unnamed non-group
-// layout), the client treats an empty key as never-matching, forcing a
-// full swap at that depth.
+// Key returns the layer identity the runtime compares to find the deepest shared layer.
 func (l LayoutLayer) Key() string {
 	if l.GroupPrefix != "" {
 		if l.Layout == nil {
@@ -56,24 +32,12 @@ func (l LayoutLayer) Key() string {
 	return ""
 }
 
-// resolveChainKeys substitutes the match's param values into every
-// {param} a group prefix declares a group
-// mounted at /projects/{project} serves every project, and its layer
-// key — the identity the DOM, the fill addresses and the shared-depth
-// rule all compare — embeds the RESOLVED value, so one project's layer
-// is kept across its own pages and re-rendered when the project
-// changes. The route manifest keeps the template form; the client
-// substitutes its matched path segments the same way (no constraint
-// evaluation — the server stays the matcher). A chain with no param
-// prefixes is returned unchanged.
 func resolveChainKeys(chain []LayoutLayer, params map[string]string) []LayoutLayer {
 	if len(chain) == 0 || len(params) == 0 {
 		return chain
 	}
 	out := make([]LayoutLayer, len(chain))
 	changed := false
-	// Sorted keys: the substitutions are independent, but the analyzer
-	// rule stands — map iteration never feeds output bytes.
 	for i, l := range chain {
 		if l.GroupPrefix != "" && strings.Contains(l.GroupPrefix, "{") {
 			p := l.GroupPrefix
@@ -93,24 +57,6 @@ func resolveChainKeys(chain []LayoutLayer, params map[string]string) []LayoutLay
 	return out
 }
 
-// layoutChainFor resolves a screen's full layout chain, outermost →
-// innermost. Nil for overlay screens (drawer/sheet/dialog, they skip
-// layouts) and for layout-less pages.
-//
-// Resolution rules (each mirrors the pre-chain composition behavior):
-//   - Direct screens get exactly one layer: their own layout, else the
-//     router default. An explicit per-screen layout REPLACES the default;
-//     only group screens nest under it.
-//   - Group screens walk the group chain outermost → innermost. The
-//     innermost level renders screen.Layout (group.Screen sets it to the
-//     group's layout when the screen declared none, so an explicit
-//     override naturally replaces the innermost group's shell while the
-//     group marker is preserved).
-//   - The default layout is prepended as the root iff it is set, no group
-//     in the chain already uses it, and no group is Standalone.
-//   - A level whose *Layout already renders at an outer level becomes a
-//     marker-only level (Layout nil) instead of a duplicate shell.
-//   - A group level with no layout at all contributes nothing.
 func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 	if screen == nil || screen.Type != ScreenPage {
 		return nil
@@ -127,7 +73,6 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 		return []LayoutLayer{{Layout: layout}}
 	}
 
-	// Group chain, innermost → outermost.
 	var groups []*ScreenGroup
 	for g := screen.group; g != nil; g = g.parent {
 		groups = append(groups, g)
@@ -148,15 +93,10 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 
 		eff := g.layout
 		if i == 0 && screen.Layout != nil {
-			// Innermost level: the screen's layout (set by group.Screen to
-			// the group layout when the screen declared none, so this is
-			// the override seam).
 			eff = screen.Layout
 		}
 		switch {
 		case eff == nil:
-			// No shell and nothing to dedupe, the level contributes
-			// nothing, exactly as the pre-chain composition rendered it.
 		case seen[eff]:
 			chain = append(chain, LayoutLayer{GroupPrefix: g.prefix})
 		default:
@@ -167,30 +107,10 @@ func (r *Router) layoutChainFor(screen *Screen) []LayoutLayer {
 	return chain
 }
 
-// renderLayoutChain wraps content in every layer of the chain. Layer 0 is
-// the outermost shell and owns the page's single <main id="main-content">.
-// fills carries the resolved outlet fills (resolveFills) for tree layers;
-// nil renders outlets empty and still runs their route areas. The error is
-// a build-inventory violation (checkBuildInventory) naming the layer.
 func renderLayoutChain(ctx context.Context, chain []LayoutLayer, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
 	return renderLayoutChainFrom(ctx, chain, 0, content, fills, guards)
 }
 
-// renderLayoutChainFrom wraps content in layers from..len(chain)-1. When
-// from > 0 the outermost shared layers are already in the caller's DOM
-// (subtree partials), so every rendered layer nests, none emits <main>.
-// The layer at index from is the root of the payload the client swaps
-// in, so it carries the doc markers (data-cui-lang /
-// data-cui-skip-label) from the render context; without a fresh carrier
-// the document language and skip link could never change on an in-chain
-// navigation.
-//
-// Tree layers (NewLayout) at or below `from` render through their
-// build in RENDER mode; KEPT tree layers (0..from-1) run their build in
-// COLLECT mode first: the markup is discarded, but every RouteArea fn
-// runs with the live context and records its fill into `fills`, so the
-// caller can ship the kept layers' fresh areas with the response (see
-// exportFillsFor)..
 func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, content render.HTML, fills *fillSet, guards regionGuards) (render.HTML, error) {
 	out := content
 	for i := len(chain) - 1; i >= from; i-- {
@@ -206,17 +126,11 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 		if layer.GroupPrefix != "" {
 			attrs := map[string]string{"data-cui-screen-group": layer.GroupPrefix}
 			if layer.Layout == nil && key != "" {
-				// Marker-only level: the group wrapper is both the layer
-				// element and its content cell, so sibling navigation can
-				// still target the level by key (and focus it after a swap).
 				attrs["data-cui-layout-key"] = key
 				attrs["data-cui-layout-slot"] = key
 				attrs["tabindex"] = "-1"
 			}
 			if i == from && layer.Layout == nil {
-				// Marker-only payload root: the wrapper div itself is the
-				// carrier (a level with a layout carries the markers on
-				// its layout wrapper, emitted just above).
 				for k, v := range docShellAttrs(ctx) {
 					attrs[k] = v
 				}
@@ -227,10 +141,6 @@ func renderLayoutChainFrom(ctx context.Context, chain []LayoutLayer, from int, c
 			}, out)
 		}
 	}
-	// Collect mode for the kept layers. Every build runs every render.
-	// They run after the rendered layers and innermost first, the order
-	// the full page builds every layer in, so an area's derived element
-	// ids (render.UniqueID) match the ones the full page gave it.
 	for i := min(from, len(chain)) - 1; i >= 0; i-- {
 		if chain[i].Layout.isTree() {
 			chain[i].Layout.collectTreeLayer(ctx, chain, i, fills, guards)

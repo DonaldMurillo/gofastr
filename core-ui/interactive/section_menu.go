@@ -1,37 +1,5 @@
 package interactive
 
-// SectionMenu: a grouped navigation menu for documentation and component
-// galleries: sections (groups) → items (links), with the current page
-// marked.
-//
-//   Desktop (≥ 900px, or the SwapAt width): a sticky rail with every
-//     group expanded. Each group's header pins to the top of the rail
-//     while its links scroll under it, so the reader always sees which
-//     group they are in; the current group's header takes the accent and
-//     the current page a dot.
-//   Mobile (below it): a pill floating at the bottom of the viewport,
-//     naming the current page and its group, that opens the framework's
-//     bottom sheet: a dim backdrop, outside-click / Escape / drag-down to
-//     close, background scroll lock and a focus trap. None of that is
-//     re-implemented here: SectionMenuDrawer returns a preset.BottomSheet,
-//     which the app mounts once.
-//
-// Filter adds a filter box to the rail and the sheet. The sectionmenu
-// behaviour (section_menu.js, registered below) runs it and keeps the
-// pill's label on the current page across client-side navigations.
-//
-// Active items are server-rendered (aria-current="page") on the rail and
-// stamped client-side by the runtime's active-link pass.
-//
-// Usage:
-//
-//	// in the screen / sidebar
-//	interactive.SectionMenu(cfg)                       // rail + trigger pill
-//	// once at startup (cfg.DrawerName must match)
-//	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
-//	// or, when the items change after startup, rebuilt per request
-//	widget.MountBuilder(router, interactive.SectionMenuDrawerFunc(menuFor))
-
 import (
 	"context"
 	_ "embed"
@@ -50,9 +18,6 @@ import (
 //go:embed section_menu.js
 var sectionMenuJS string
 
-// The filter and the pill's label are this package's behaviour: they
-// bind the menu's own classes, so the module lives beside the component
-// and the kernel demand-loads it when a menu is on the page.
 var _ = registry.RegisterBehavior("sectionmenu", sectionMenuJS,
 	registry.Markers(`[data-cui-comp="cui-section-menu"]`))
 
@@ -68,72 +33,40 @@ type SectionGroup struct {
 	Label   string
 	Eyebrow string // optional ordinal/kicker shown before the label (e.g. "01")
 	Items   []SectionItem
-	// Collapsed starts the group closed in the mobile sheet. A group
-	// holding the active item is forced open regardless. (The desktop
-	// rail always shows every group expanded.)
+	// Collapsed starts the group closed in the sheet unless it holds the active item.
 	Collapsed bool
 }
 
 // SectionMenuConfig configures a SectionMenu and its sheet.
 type SectionMenuConfig struct {
-	// Lead is an optional ungrouped item rendered above the groups
-	// (e.g. an "Overview" / index link).
+	// Lead is an optional ungrouped item above the groups.
 	Lead   *SectionItem
 	Groups []SectionGroup
 	// AriaLabel names the nav landmark (e.g. "Documentation sections").
 	AriaLabel string
-	// TriggerLabel names the mobile pill and titles the sheet. The pill
-	// shows the current page and its group instead when there is one,
-	// and keeps this as the start of its accessible name. Default: the
-	// interactive.menu phrase ("Menu") in the locale Ctx carries.
+	// TriggerLabel names the pill and titles the sheet; empty is the localized "Menu".
 	TriggerLabel string
-	// DrawerName is the widget name shared by the trigger pill
-	// (data-cui-open) and SectionMenuDrawer. Required for the mobile sheet;
-	// must be unique per distinct menu on a site.
+	// DrawerName is the widget the pill opens and SectionMenuDrawer mounts; unique per menu.
 	DrawerName string
-	// Filter adds a filter box above the groups, on the rail and in the
-	// sheet: typing hides every link whose label does not contain the
-	// text, opens every group holding a match and marks the match;
-	// Escape clears it. It filters the menu's own links in the browser:
-	// there is no request and no data behind it.
+	// Filter adds a box that filters the menu's links in the browser.
 	Filter bool
-	// FilterPlaceholder is the filter box's placeholder and accessible
-	// name. Default "Filter", in the reader's language.
+	// FilterPlaceholder is the filter box's placeholder and name; empty is the localized "Filter".
 	FilterPlaceholder string
-	// FilterEmpty is the line shown when nothing matches. Default
-	// "No matches", in the reader's language.
+	// FilterEmpty is shown when nothing matches; empty is the localized "No matches".
 	FilterEmpty string
-	// InlineTrigger keeps the mobile trigger in flow where the menu sits.
-	// By default the pill floats at the bottom of the viewport, which is
-	// right for the page's own section nav (in a ui.ContentRow, set
-	// PhoneNavFlush so the stacked nav column draws no empty band). A
-	// menu that is not the page's nav (a demo, a menu inside a card)
-	// sets this so its pill does not float over the page.
+	// InlineTrigger keeps the pill in flow instead of floating it.
 	InlineTrigger bool
-	// FillColumn is for a menu placed in a column its host already pins
-	// at a fixed height (a ui.ContentRow{Sticky: true} nav column): on
-	// desktop the rail drops its own sticky offset and viewport cap,
-	// fills the column top to bottom and scrolls its overflow there. In
-	// normal flow leave it off and the rail sticks on its own.
+	// FillColumn fills a column its host already pins, scrolling its overflow there.
 	FillColumn bool
-	// SwapAt picks the width below which the rail gives way to the
-	// trigger and sheet: 900px by default. In a ui.ContentRow nav
-	// column, match the row's Breakpoint (SwapMD for the
-	// default, SwapLG for ui.StackBelowLG), so the column
-	// never holds the rail beside content too narrow for it. An unknown
-	// value panics.
+	// SwapAt is the width below which the rail gives way to the pill and sheet.
 	SwapAt SwapWidth
 	Class  string
 	ID     string
-	// Ctx carries the per-request context the menu's default words and
-	// each group's link count (i18n.Number) are written in. When nil,
-	// English applies. A sheet mounted once with SectionMenuDrawer
-	// speaks the locale of each request that renders it.
+	// Ctx is the request context the default words are written in; nil is English.
 	Ctx context.Context
 }
 
-// SectionMenu renders the desktop rail plus the mobile trigger pill. Mount
-// the matching sheet once with SectionMenuDrawer.
+// SectionMenu renders the desktop rail plus the mobile trigger pill.
 func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	aria := cfg.AriaLabel
 	if aria == "" {
@@ -165,10 +98,6 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	))
 }
 
-// sectionMenuTrigger is the mobile pill: the current page and its group
-// when the config marks one, the trigger label otherwise. The
-// sectionmenu behaviour rewrites the label and detail on every
-// client-side navigation.
 func sectionMenuTrigger(cfg SectionMenuConfig) render.HTML {
 	pill := SheetPillConfig{Name: triggerLabel(cfg), Opens: cfg.DrawerName, Inline: cfg.InlineTrigger, SwapAt: cfg.SwapAt}
 	if it, g, ok := activeItem(cfg); ok {
@@ -177,8 +106,6 @@ func sectionMenuTrigger(cfg SectionMenuConfig) render.HTML {
 	return SheetPill(pill)
 }
 
-// triggerLabel names the pill and the sheet: the caller's label, or the
-// interactive.menu phrase in the reader's locale.
 func triggerLabel(cfg SectionMenuConfig) string {
 	if cfg.TriggerLabel == "" {
 		return menuLabel.Text(cfg.Ctx)
@@ -186,8 +113,6 @@ func triggerLabel(cfg SectionMenuConfig) string {
 	return cfg.TriggerLabel
 }
 
-// activeItem finds the item the config marks Active and the label of the
-// group holding it ("" for the lead).
 func activeItem(cfg SectionMenuConfig) (SectionItem, string, bool) {
 	if cfg.Lead != nil && cfg.Lead.Active {
 		return *cfg.Lead, "", true
@@ -202,8 +127,6 @@ func activeItem(cfg SectionMenuConfig) (SectionItem, string, bool) {
 	return SectionItem{}, "", false
 }
 
-// sectionMenuFilter is the filter box. type="search" gives the native
-// clear control; the sectionmenu behaviour does the filtering.
 func sectionMenuFilter(cfg SectionMenuConfig) render.HTML {
 	ph := cfg.FilterPlaceholder
 	if ph == "" {
@@ -223,24 +146,16 @@ func sectionMenuFilter(cfg SectionMenuConfig) render.HTML {
 	)
 }
 
-// SectionMenuDrawer returns the mobile sheet widget for a SectionMenu, a
-// preset.BottomSheet (backdrop + click-outside / Escape / drag-down close
-// + scroll lock + focus trap) carrying the same menu body. Mount it once
-// at startup:
-//
-//	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
+// SectionMenuDrawer returns the mobile sheet widget for a SectionMenu, a preset.BottomSheet
+// (backdrop + click-outside / Escape / drag-down close + scroll lock + focus trap) carrying the
+// same menu body.
 func SectionMenuDrawer(cfg SectionMenuConfig) *widget.Builder {
 	return sectionMenuDrawer(cfg, nil)
 }
 
-// SectionMenuDrawerFunc is SectionMenuDrawer for a menu whose items change
-// after startup: build runs on every render of the sheet, with the
-// request's context, so the sheet lists what the rail beside it lists on
-// the same request. build is also called once here, with
-// context.Background(), for the sheet's name; the DrawerName it returns
-// then is kept for every later render.
-//
-//	widget.MountBuilder(router, interactive.SectionMenuDrawerFunc(menuFor))
+// SectionMenuDrawerFunc is SectionMenuDrawer for a menu whose items change after startup: build
+// runs on every render of the sheet, with the request's context, so the sheet lists what the rail
+// beside it lists on the same request.
 func SectionMenuDrawerFunc(build func(ctx context.Context) SectionMenuConfig) *widget.Builder {
 	if build == nil {
 		panic("interactive: SectionMenuDrawerFunc: build is nil")
@@ -258,14 +173,8 @@ func sectionMenuDrawer(cfg SectionMenuConfig, build func(context.Context) Sectio
 		Slot("body", sectionMenuDrawerSlot{cfg: cfg, resolve: build})
 }
 
-// sheetTitleID names the sheet's title, which labels the sheet's dialog.
 func sheetTitleID(cfg SectionMenuConfig) string { return cfg.DrawerName + "-title" }
 
-// sectionMenuDrawerSlot renders the menu body for the sheet, the same groups
-// and links as the rail, wrapped in the component marker so the scoped CSS
-// applies inside the sheet chrome too. resolve, when set
-// (SectionMenuDrawerFunc), rebuilds the config on every render; cfg then
-// carries the mount-time DrawerName the sheet's routes and title use.
 type sectionMenuDrawerSlot struct {
 	cfg     SectionMenuConfig
 	resolve func(context.Context) SectionMenuConfig
@@ -273,9 +182,8 @@ type sectionMenuDrawerSlot struct {
 
 func (s sectionMenuDrawerSlot) Render() render.HTML { return s.RenderCtx(s.cfg.Ctx) }
 
-// RenderCtx renders the sheet in the locale of the request showing it:
-// the slot is mounted once, so the context it was built with is no
-// reader's.
+// RenderCtx renders the sheet in the locale of the request showing it: the slot is mounted once, so
+// the context it was built with is no reader's.
 func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 	if s.resolve != nil {
 		rctx := ctx
@@ -289,8 +197,6 @@ func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 	if ctx != nil {
 		s.cfg.Ctx = ctx
 	}
-	// The close control's data-cui-action="close" is the framework's
-	// declarative widget-dismiss hook: the sheet's own runtime closes it.
 	top := []render.HTML{sheetHead(s.cfg.Ctx, triggerLabel(s.cfg), sheetTitleID(s.cfg),
 		map[string]string{"data-cui-action": "close"})}
 	cls := "cui-section-menu cui-section-menu--drawer"
@@ -298,9 +204,6 @@ func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 		top = append(top, sectionMenuFilter(s.cfg))
 		cls += " cui-section-menu--filter"
 	}
-	// A <nav> like the rail, so the runtime's active-link pass marks the
-	// current page in the sheet and opens its group. The rail is hidden
-	// whenever the sheet is open, so the two never share a name on screen.
 	aria := s.cfg.AriaLabel
 	if aria == "" {
 		aria = sectionsLabel.Text(s.cfg.Ctx)
@@ -314,10 +217,6 @@ func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
 
 var _ component.Component = sectionMenuDrawerSlot{}
 
-// sectionMenuBody renders the lead item + groups, and the filter's empty
-// line when the menu has a filter. The desktop rail (rail true) renders
-// every group open: collapse is a sheet behaviour, so Collapsed applies
-// to the sheet only.
 func sectionMenuBody(cfg SectionMenuConfig, rail bool) render.HTML {
 	children := []render.HTML{}
 	if cfg.Lead != nil {
@@ -359,10 +258,6 @@ func sectionMenuGroup(ctx context.Context, g SectionGroup, rail bool) render.HTM
 		html.Span(html.TextConfig{Class: "cui-section-menu__count"}, render.Text(i18n.Number(ctx, len(g.Items)))))
 	list := html.UnorderedList(html.ListConfig{Class: "cui-section-menu__list"}, items...)
 
-	// The rail shows every group, so its groups are labelled regions with
-	// a plain header, not disclosures: a <summary> is a focusable target,
-	// and one pinned over the links it scrolls past would shrink theirs
-	// below the 24px a target needs.
 	if rail {
 		return render.Tag("div", map[string]string{
 			"class": "cui-section-menu__group", "role": "group", "aria-label": g.Label,
@@ -376,8 +271,6 @@ func sectionMenuGroup(ctx context.Context, g SectionGroup, rail bool) render.HTM
 		"class":               "cui-section-menu__group",
 		"data-hui-disclosure": "",
 	}
-	// Open when not explicitly collapsed, and whenever it holds the
-	// active item.
 	if !g.Collapsed || hasActive {
 		attrs["open"] = ""
 	}
@@ -397,7 +290,6 @@ func sectionMenuLink(it SectionItem, cls string) render.HTML {
 	return html.Link(html.LinkConfig{Href: it.Href, Text: it.Label, Class: c, ExtraAttrs: attrs})
 }
 
-// mapWith returns m with k=v added only when v is non-empty.
 func mapWith(m map[string]string, k, v string) map[string]string {
 	if v != "" {
 		m[k] = v
@@ -407,19 +299,6 @@ func mapWith(m map[string]string, k, v string) map[string]string {
 
 var sectionMenuStyle = registry.RegisterStyle("cui-section-menu", sectionMenuCSS)
 
-// Knobs:
-//   - --ui-section-menu-bg (var(--color-background); var(--color-surface)
-//     with FillColumn, the nav column's colour, and in the sheet): the
-//     colour the sticky group headers and the sheet's top bar paint
-//     behind their text. Set it to the background of whatever the menu
-//     sits on when that is neither.
-//   - --ui-section-menu-dot (6px): the current page's dot.
-//   - --ui-section-menu-inset (12px; 16px with FillColumn): the inline
-//     gap between the rail's edge and its headers; links sit 14px deeper.
-//   - --ui-section-menu-chevron-opacity (0.7).
-//
-// The pill and the sheet's title row are SheetPill's and sheetHead's,
-// with their own knobs (--ui-sheet-pill-bottom, --ui-sheet-close-size).
 func sectionMenuCSS(_ style.Theme) string {
 	return `[data-cui-comp="cui-section-menu"] {
   --cui-section-menu-inset: var(--ui-section-menu-inset, calc(var(--spacing-sm, 4px) * 3));
@@ -611,12 +490,8 @@ func sectionMenuSwapCSS() string {
 	return b.String()
 }
 
-// sectionMenuSwap is one breakpoint's half of the sheet: the root
-// selector it scopes to and the widths either side of the swap.
 type sectionMenuSwap struct{ root, maxw, minw string }
 
-// css is the rail/trigger swap at one breakpoint. The scope sits in
-// :where(), so every swap weighs what the single 900px rule set did.
 func (w sectionMenuSwap) css() string {
 	return strings.NewReplacer("ROOT", w.root, "MAXW", w.maxw, "MINW", w.minw).Replace(`
 ROOT .cui-section-menu__rail { display: flex; flex-direction: column; gap: var(--spacing-md, 8px); }

@@ -9,85 +9,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 )
 
-// ─── Cross-replica presence ─────────────────────────────────────────
-//
-// The single-replica roster (presence.go) is extended to a MERGED roster:
-// local connections ∪ live remote replicas, deduped by UserID exactly like
-// the local dedup. Remote state arrives as full-roster announcements over a
-// DEDICATED presence lane on the same [fanout.Fanout] transport, a parallel
-// topic, NOT the island-invalidation lane ("gofastr.islands"). Both lanes
-// remain lossy best-effort; presence is ephemeral self-healing state, so a
-// dropped announcement simply heals on the next periodic heartbeat.
-//
-// CONVERGENCE MODEL, full-roster heartbeats, not deltas. Each replica
-// broadcasts its full local roster per active topic on join/leave (prompt)
-// and every presenceHeartbeat (reconvergence backstop). A receiver keeps a
-// per-(replica,topic) entry with a TTL (~3× heartbeat); expired entries are
-// swept, so a crashed replica's members disappear within TTL with no
-// explicit "goodbye". Graceful stop() additionally publishes an empty roster
-// so a rolling restart converges promptly.
-//
-// IDENTITY SAFETY, announcements carry ONLY the same server-derived
-// {UserID, DisplayName} the local roster already exposes via PresenceRoster.
-// No session id, no IP, no new surface ever leaves this replica. Proven by
-// TestPresenceFanoutAnnouncementCarriesNoSessionID.
-//
-// ZERO-CONFIG DEGRADATION, no fanout attached ⇒ presenceSend is nil ⇒
-// every broadcast/heartbeat is a no-op, remoteRosters stays nil, and
-// PresenceRoster returns exactly the single-replica result (see
-// TestPresenceFanoutNoFanoutByteIdentical). No goroutine is started.
-
-// presenceFanoutTopic is the fanout channel dedicated to presence
-// announcements. It is a SEPARATE lane from islandFanoutTopic
-// ("gofastr.islands", which carries island-update invalidations) so the two
-// message classes never share a payload shape. Both are lossy best-effort
-// over the same [fanout.Fanout] transport.
 const presenceFanoutTopic = "gofastr.presence"
 
-// Presence convergence intervals. Tunable in tests via reconfigurePresence;
-// production uses the defaults.
+// Presence convergence intervals and the bounds on what a peer may announce.
 const (
-	// defaultPresenceHeartbeat is the period between full-roster
-	// rebroadcasts. Picked so a dropped announcement is healed within ~15s
-	// without meaningful steady-state load (one small JSON per active topic).
-	defaultPresenceHeartbeat = 15 * time.Second
-	// defaultPresenceTTL is how long a remote replica's contribution stays
-	// fresh without a heartbeat refresh. 3× heartbeat tolerates two missed
-	// beats before expiry, a crashed replica's members vanish within TTL.
-	defaultPresenceTTL = 45 * time.Second
-	// maxRemoteReplicasPerTopic bounds the remote-roster table per topic.
-	// A misbehaving peer could forge many replica ids to bloat the table;
-	// this cap drops new ones once exceeded (the lossy model tolerates it,
-	// the legitimate replica's next heartbeat reclaims its slot only when a
-	// stale forged id expires).
-	maxRemoteReplicasPerTopic = 512
-	// maxRemoteRosterTopics bounds the remote-roster table's DISTINCT topic
-	// count. A misbehaving peer can forge unlimited one-member topics, and
-	// sustained heartbeats refresh every entry past any TTL, so the
-	// allocation is durable. Once the cap is reached, announcements for NEW
-	// topics are dropped (lossy), the same forged-peer bound as
-	// maxRemoteReplicasPerTopic; a topic whose every entry is past its TTL
-	// gives up its slot first. A live topic is never evicted for a new one.
-	maxRemoteRosterTopics = 1024
-	// maxRemoteMembersPerReplica bounds one announcement's member count per
-	// (topic, replica) entry: a legitimate replica cannot announce more
-	// members on one topic than it holds streams (DefaultGlobalStreams).
-	// Past the cap the entry is truncated, first deduped members win.
+	defaultPresenceHeartbeat   = 15 * time.Second
+	defaultPresenceTTL         = 45 * time.Second
+	maxRemoteReplicasPerTopic  = 512
+	maxRemoteRosterTopics      = 1024
 	maxRemoteMembersPerReplica = 4096
-	// presenceGraceTimeout bounds the synchronous graceful-leave Publish
-	// issued on stop() so a rolling restart converges promptly. Lossy lane:
-	// a timeout here just falls back to TTL-based expiry.
-	presenceGraceTimeout = 2 * time.Second
+	presenceGraceTimeout       = 2 * time.Second
 )
 
-// presenceFanoutMsg is the wire shape of a presence announcement. It carries
-// a replica's FULL local roster for one topic, full beats (not deltas) are
-// the convergence mechanism, so a missed message heals on the next beat.
-// Members is the same server-derived identity the local roster exposes (see
-// PresenceMember); no session id or anything not already in PresenceRoster
-// output ever leaves this replica. SentAt is the origin's clock in unix
-// milliseconds (diagnostic only; freshness is driven by the receiver's TTL,
-// not by clock skew).
 type presenceFanoutMsg struct {
 	ReplicaID string           `json:"r"`
 	Topic     string           `json:"t"`
@@ -95,26 +28,11 @@ type presenceFanoutMsg struct {
 	SentAt    int64            `json:"s"`
 }
 
-// remoteRosterEntry is one remote replica's contributed roster for a topic,
-// plus the deadline by which it expires unless refreshed by a heartbeat.
 type remoteRosterEntry struct {
 	members   []PresenceMember
 	expiresAt time.Time
 }
 
-// broadcastLocalTopic publishes this replica's full local roster for one
-// topic over the presence lane. Called on local join/leave so peers learn
-// the new state promptly; the heartbeat re-broadcasts all topics as the
-// lossy reconvergence backstop. No-op when no presence fanout is attached.
-//
-// The roster is queued under the same lock it was read under, as
-// battery/rtc's announceRoom does. Queued after unlocking, a heartbeat's
-// snapshot could land behind a newer roster on the FIFO lane: a last
-// member's leave, then the stale roster that still held them, and a topic
-// with no local connections is never re-sent. Every roster change takes
-// the write lock, so readers holding mu queue identical state and a
-// change's roster always queues after every earlier snapshot. The send is
-// a non-blocking enqueue.
 func (m *Manager) broadcastLocalTopic(topic string) {
 	if topic == "" {
 		return
@@ -128,9 +46,6 @@ func (m *Manager) broadcastLocalTopic(topic string) {
 	m.publishPresence(send, nodeID, topic, localRosterLocked(m, topic))
 }
 
-// publishPresence marshals and stamps one announcement through the (async,
-// non-blocking) presence send. Marshal of a plain struct cannot fail in a
-// way the program can recover from; a failure is silently dropped (lossy).
 func (m *Manager) publishPresence(send func([]byte), nodeID, topic string, members []PresenceMember) {
 	msg := presenceFanoutMsg{ReplicaID: nodeID, Topic: topic, Members: members, SentAt: time.Now().UnixMilli()}
 	body, err := json.Marshal(msg)
@@ -140,10 +55,6 @@ func (m *Manager) publishPresence(send func([]byte), nodeID, topic string, membe
 	send(fanout.Wrap(nodeID, body))
 }
 
-// broadcastAllLocalTopics re-publishes every active local topic's roster,
-// the periodic heartbeat that reconverges after any dropped announcement.
-// Each roster is queued under the lock it was read under, for the ordering
-// broadcastLocalTopic documents.
 func (m *Manager) broadcastAllLocalTopics() {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -156,12 +67,6 @@ func (m *Manager) broadcastAllLocalTopics() {
 	}
 }
 
-// gracefulLeaveLocalTopics publishes an empty-roster announcement for every
-// topic this replica currently holds, so peers drop it PROMPTLY on a rolling
-// restart / graceful stop, without waiting for TTL. Synchronous (direct
-// Publish) rather than the async queue so the leave is not lost to the
-// queue's drop-on-stop; TTL remains the crash fallback. Skipped when the
-// heartbeat has been halted (crash sim: a crashed process sends nothing).
 func (m *Manager) gracefulLeaveLocalTopics(f fanout.Fanout) {
 	m.mu.RLock()
 	nodeID, done := m.nodeID, m.presenceDone
@@ -183,21 +88,12 @@ func (m *Manager) gracefulLeaveLocalTopics(f fanout.Fanout) {
 	}
 }
 
-// mergeRemotePresence integrates an inbound announcement into the remote
-// roster table and fires OnPresenceChange if the MERGED roster for the topic
-// changed. An empty Members slice is a graceful leave → the origin's entry is
-// deleted (and the change propagated if the merged roster shrank). Called on
-// the fanout subscriber goroutine; never re-publishes (no loop, own-node
-// envelopes are dropped before this is reached).
 func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	if msg.Topic == "" || origin == "" {
 		return
 	}
 	now := time.Now()
 	m.mu.Lock()
-	// The presence subscriber is cancelled asynchronously in stop(); an
-	// in-flight callback may run after clearPresenceFanoutLocked has nilled
-	// remoteRosters. A nil table means the lane is torn down, drop silently.
 	if m.remoteRosters == nil {
 		m.mu.Unlock()
 		return
@@ -205,13 +101,6 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	reps := m.remoteRosters[msg.Topic]
 	evicted := ""
 	if reps == nil && len(m.remoteRosters) >= maxRemoteRosterTopics {
-		// Table full and this topic is NEW. Only a topic every replica has
-		// stopped refreshing (all its entries past TTL) gives up its slot;
-		// otherwise the announcement is dropped (lossy). Evicting the
-		// least recently refreshed LIVE topic let a flood of one-member
-		// topics, each re-announced every heartbeat, cycle every live
-		// topic out of the table. A dropped topic is admitted on a later
-		// beat once a slot expires.
 		var ok bool
 		evicted, ok = m.reclaimExpiredRemoteTopicLocked(now)
 		if !ok {
@@ -224,16 +113,10 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 		reps = make(map[string]remoteRosterEntry)
 		m.remoteRosters[msg.Topic] = reps
 	}
-	// "before" is the roster viewers were last told about, expired
-	// entries included, as in sweepExpiredRemote: an announcement that
-	// removes an expired, unswept roster is the departure's only report.
 	before := shownRosterLocked(m, msg.Topic)
 	if len(msg.Members) == 0 {
 		delete(reps, origin)
-	} else if _, exists := reps[origin]; !exists && len(reps) >= maxRemoteReplicasPerTopic {
-		// Cap reached for a NEW replica: drop the announcement (lossy). The
-		// legitimate replica reconverges once a stale forged id is swept.
-	} else {
+	} else if _, exists := reps[origin]; exists || len(reps) < maxRemoteReplicasPerTopic {
 		members := dedupMembers(msg.Members)
 		if len(members) > maxRemoteMembersPerReplica {
 			members = members[:maxRemoteMembersPerReplica]
@@ -257,13 +140,6 @@ func (m *Manager) mergeRemotePresence(origin string, msg presenceFanoutMsg) {
 	firePresenceChange(cb, changed)
 }
 
-// reclaimExpiredRemoteTopicLocked frees one remote-roster slot under
-// maxRemoteRosterTopics by dropping a topic whose every entry is past its
-// TTL (the least recently refreshed such topic). ok is false when every
-// topic still has a live entry: nothing is dropped, and the caller refuses
-// the new topic. evicted names the dropped topic when viewers still held
-// its members ("" when it held nothing worth reporting), so the caller can
-// fire OnPresenceChange for it OUTSIDE the lock. Caller holds mu.
 func (m *Manager) reclaimExpiredRemoteTopicLocked(now time.Time) (evicted string, ok bool) {
 	stalest := ""
 	var stalestAt time.Time
@@ -281,16 +157,12 @@ func (m *Manager) reclaimExpiredRemoteTopicLocked(now time.Time) (evicted string
 	before := shownRosterLocked(m, stalest)
 	delete(m.remoteRosters, stalest)
 	delete(m.remoteRosterTouch, stalest)
-	// No entry remains, so the merged roster after is empty by definition;
-	// report the eviction only if local viewers actually lost someone.
 	if len(before) == 0 {
 		return "", true
 	}
 	return stalest, true
 }
 
-// remoteTopicExpiredLocked reports whether every remote entry of topic is
-// past its TTL. Caller holds mu.
 func remoteTopicExpiredLocked(m *Manager, topic string, now time.Time) bool {
 	for _, entry := range m.remoteRosters[topic] {
 		if !now.After(entry.expiresAt) {
@@ -300,19 +172,11 @@ func remoteTopicExpiredLocked(m *Manager, topic string, now time.Time) bool {
 	return true
 }
 
-// sweepExpiredRemote drops remote-roster entries past their TTL and returns
-// the topics whose merged roster shrank as a result. The caller fires
-// OnPresenceChange for those so local viewers see the departed members drop
-// (a crashed replica's members vanish here, within TTL of its last beat).
 func (m *Manager) sweepExpiredRemote() []string {
 	now := time.Now()
 	var changed []string
 	m.mu.Lock()
 	for topic, reps := range m.remoteRosters {
-		// The sweep is what reports a TTL departure, so "before" is the
-		// roster viewers were last told about, expired entries included:
-		// filtering them here made before == after and the departure was
-		// never reported.
 		before := shownRosterLocked(m, topic)
 		for origin, entry := range reps {
 			if now.After(entry.expiresAt) {
@@ -332,9 +196,6 @@ func (m *Manager) sweepExpiredRemote() []string {
 	return changed
 }
 
-// presenceBeat is one heartbeat tick: sweep expired remotes, re-broadcast
-// all local topics, and fire OnPresenceChange for any topic whose merged
-// roster changed due to expiry.
 func (m *Manager) presenceBeat() {
 	changed := m.sweepExpiredRemote()
 	m.broadcastAllLocalTopics()
@@ -344,20 +205,9 @@ func (m *Manager) presenceBeat() {
 	m.mu.RLock()
 	cb := m.presenceCallback()
 	m.mu.RUnlock()
-	// The heartbeat goroutine has no recover of its own: an app hook's
-	// panic here would end the process.
 	firePresenceChange(cb, changed)
 }
 
-// presenceHeartbeatLoop is the per-replica presence goroutine: every
-// presenceHeartbeat it runs presenceBeat. It exits when its CAPTURED done
-// channel is closed. done is passed in (not re-read from the field) so that
-// reconfigurePresence/haltPresenceHeartbeat can close the channel THIS
-// goroutine is bound to, re-reading m.presenceDone each tick would race
-// with reconfigure swapping in a fresh channel and leave the old goroutine
-// waiting on the wrong one (a real deadlock this guard prevents). The
-// interval is read fresh each tick so a live change applies on the next
-// beat without restarting.
 func (m *Manager) presenceHeartbeatLoop(done chan struct{}) {
 	defer m.presenceWG.Done()
 	for {
@@ -376,12 +226,6 @@ func (m *Manager) presenceHeartbeatLoop(done chan struct{}) {
 	}
 }
 
-// reconfigurePresence changes the heartbeat/TTL intervals live. It swaps in
-// a fresh done channel, closes the one the running goroutine captured (so
-// that goroutine exits promptly), waits for it, then starts a new goroutine
-// bound to the fresh channel, so the new interval takes effect immediately
-// rather than waiting out the current sleep. Test-only knob; production runs
-// on the defaults set by SetFanout.
 func (m *Manager) reconfigurePresence(heartbeat, ttl time.Duration) {
 	m.mu.Lock()
 	oldDone := m.presenceDone
@@ -402,13 +246,6 @@ func (m *Manager) reconfigurePresence(heartbeat, ttl time.Duration) {
 	go m.presenceHeartbeatLoop(newDone)
 }
 
-// haltPresenceHeartbeat stops the heartbeat goroutine WITHOUT sending a
-// graceful leave, a faithful simulation of a crashed (silent) replica so
-// tests can exercise TTL-based expiry. Test-only. The goroutine exits because
-// it captured the channel we close here. After halt, presenceDone is nil so
-// every broadcast/gracefulLeave is a no-op (a crashed process sends
-// nothing); the receiver subscription is left running (harmless). A
-// subsequent stop() finishes teardown.
 func (m *Manager) haltPresenceHeartbeat() {
 	m.mu.Lock()
 	done := m.presenceDone
@@ -420,28 +257,23 @@ func (m *Manager) haltPresenceHeartbeat() {
 	m.presenceWG.Wait()
 }
 
-// ─── roster helpers (lock-held) ─────────────────────────────────────
-
-// localRosterLocked returns this replica's LOCAL-only roster for a topic
-// (deduped by UserID, sorted). Caller holds mu. This is the data broadcast
-// to peers; it never includes remote contributions.
 func localRosterLocked(m *Manager, topic string) []PresenceMember {
-	seen := make(map[string]string)
-	for _, c := range m.presenceConns {
-		if c.identity.UserID == "" {
-			continue
-		}
-		if c.hasTopic(topic) {
-			if _, ok := seen[c.identity.UserID]; !ok {
-				seen[c.identity.UserID] = c.identity.DisplayName
-			}
-		}
-	}
-	return buildSortedMembers(seen)
+	return buildSortedMembers(localMembersLocked(m, topic))
 }
 
-// localTopicsLocked returns the distinct topic strings this replica currently
-// holds local connections on, sorted for deterministic broadcast order.
+func localMembersLocked(m *Manager, topic string) map[string]string {
+	seen := make(map[string]string)
+	for _, c := range m.presenceConns {
+		if c.identity.UserID == "" || !c.hasTopic(topic) {
+			continue
+		}
+		if _, ok := seen[c.identity.UserID]; !ok {
+			seen[c.identity.UserID] = c.identity.DisplayName
+		}
+	}
+	return seen
+}
+
 func localTopicsLocked(m *Manager) []string {
 	seen := make(map[string]bool)
 	for _, c := range m.presenceConns {
@@ -457,30 +289,12 @@ func localTopicsLocked(m *Manager) []string {
 	return out
 }
 
-// shownRosterLocked is the merged roster as viewers last heard it: remote
-// entries past their TTL but not yet swept still count, because no
-// OnPresenceChange has reported their departure yet. Caller holds mu.
 func shownRosterLocked(m *Manager, topic string) []PresenceMember {
 	return mergedRosterLocked(m, topic, time.Time{})
 }
 
-// mergedRosterLocked returns the deduped, sorted union of LOCAL and remote
-// (unexpired) members for a topic. This is the heart of PresenceRoster.
-// Caller holds mu. Expired remote entries are filtered at read time so a
-// roster read between sweeps never surfaces stale members. A zero now
-// keeps them (shownRosterLocked).
 func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMember {
-	seen := make(map[string]string)
-	for _, c := range m.presenceConns {
-		if c.identity.UserID == "" {
-			continue
-		}
-		if c.hasTopic(topic) {
-			if _, ok := seen[c.identity.UserID]; !ok {
-				seen[c.identity.UserID] = c.identity.DisplayName
-			}
-		}
-	}
+	seen := localMembersLocked(m, topic)
 	if reps, ok := m.remoteRosters[topic]; ok {
 		for _, entry := range reps {
 			if !now.IsZero() && now.After(entry.expiresAt) {
@@ -496,9 +310,6 @@ func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMembe
 	return buildSortedMembers(seen)
 }
 
-// buildSortedMembers turns a userID→displayName map into the deterministic
-// []PresenceMember shape PresenceRoster has always returned (sorted by
-// UserID). Shared by local and merged rosters.
 func buildSortedMembers(seen map[string]string) []PresenceMember {
 	out := make([]PresenceMember, 0, len(seen))
 	for uid, name := range seen {
@@ -508,9 +319,6 @@ func buildSortedMembers(seen map[string]string) []PresenceMember {
 	return out
 }
 
-// dedupMembers removes duplicate UserIDs from an inbound announcement's
-// member list (defensive, the local roster is already deduped, but the wire
-// format is not trusted to be deduped). First occurrence wins.
 func dedupMembers(in []PresenceMember) []PresenceMember {
 	if len(in) == 0 {
 		return nil
@@ -527,9 +335,6 @@ func dedupMembers(in []PresenceMember) []PresenceMember {
 	return out
 }
 
-// membersEqual reports whether two sorted rosters are identical by value.
-// Used to suppress redundant OnPresenceChange fires when a heartbeat or
-// duplicate announcement doesn't actually change membership.
 func membersEqual(a, b []PresenceMember) bool {
 	if len(a) != len(b) {
 		return false

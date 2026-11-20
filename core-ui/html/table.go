@@ -89,11 +89,7 @@ func TableRow(cfg TableRowConfig, children ...render.HTML) render.HTML {
 	return render.Tag("tr", attrs, children...)
 }
 
-// TH produces a <th> element. The scope attribute defaults to "col"
-// (columnheader) unless cfg.Scope is set; the keyword is folded to lower
-// case, as HTML reads it ASCII case-insensitively. The role is
-// "rowheader" for scope="row" and "rowgroup", which head rows, and
-// "columnheader" for every other scope, "col" and "colgroup" included.
+// TH produces a <th> element.
 func TH(cfg THConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	scope := asciicase.Lower(cfg.Scope)

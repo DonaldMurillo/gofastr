@@ -951,13 +951,15 @@ what the rail lists on that request. The `DrawerName` from the first
 call, made at mount with `context.Background()`, is kept. `InlineTrigger: true` keeps the pill in flow instead, for
 a menu shown inside a card or a demo. The knobs are
 `--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
-`--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`
-(the current page's dot). The pill is `interactive.SheetPill` and the
+`--ui-section-menu-inset` (the link inset), `--ui-section-menu-dot`
+(the current page's dot) and `--ui-section-menu-chevron-opacity` (0.7,
+the sheet's group chevrons). The pill is `interactive.SheetPill` and the
 sheet's title row is shared with `interactive.PhoneSheet` (below), so
 their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
 pill's gap above the screen edge; set it on `:root`, where the page's
-end padding reads it too) and `--ui-sheet-close-size` (the close
-button).
+end padding reads it too), `--ui-sheet-close-size` (the close
+button) and `--ui-sheet-head-inset` (0, the gap before the sheet's
+title).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint. Set it when the sidebar's phone navigation lives outside
 the column: a SectionMenu, whose pill floats over the page, or a
@@ -990,7 +992,8 @@ bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
 the rail's in-view band start below it; a theme that sets
 `--ui-section-scroll-margin` adds it itself
 (`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
-Knobs: `--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
+Knobs: `--ui-sheet-max-height` (75vh, how far the sheet rises),
+`--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
 offset reads it) and `--ui-sheet-bar-bleed`
 (0; set it to a padded column's gutter so the bar runs edge to edge
 and the list hanging from it lines up with the bar's text).
