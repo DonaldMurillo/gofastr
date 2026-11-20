@@ -8,19 +8,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // A float cell is plain decimal, never Go's exponent form, so a
 // million reaches the locale formatter as digits it accepts.
 func TestFloatCellIsPlainDecimal(t *testing.T) {
-	if got := cell(1e6); got != "1000000" {
-		t.Errorf("cell(1e6) = %q, want 1000000", got)
+	if got := fieldtext.Cell(1e6); got != "1000000" {
+		t.Errorf("fieldtext.Cell(1e6) = %q, want 1000000", got)
 	}
-	if got := cell(float32(0.5)); got != "0.5" {
-		t.Errorf("cell(float32 0.5) = %q, want 0.5", got)
+	if got := fieldtext.Cell(float32(0.5)); got != "0.5" {
+		t.Errorf("fieldtext.Cell(float32 0.5) = %q, want 0.5", got)
 	}
 	en := i18n.WithContext(context.Background(), i18n.Locale{Tag: "en"})
-	if got := decimal(en, schema.Field{Type: schema.Float}, cell(1e6)); got != "1,000,000.00" {
+	if got := decimal(en, schema.Field{Type: schema.Float}, fieldtext.Cell(1e6)); got != "1,000,000.00" {
 		t.Errorf("decimal of a million = %q, want 1,000,000.00", got)
 	}
 }

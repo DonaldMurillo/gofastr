@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
@@ -35,7 +36,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		}
 		if card.badge != "" {
 			if f, ok := s.m.field(card.badge); ok && f.Type == schema.Enum {
-				if v := cell(s.m.rowValue(row, card.badge)); v != "" {
+				if v := fieldtext.Cell(s.m.rowValue(row, card.badge)); v != "" {
 					header = append(header, ui.StatusBadge(ui.StatusBadgeConfig{
 						Label:   s.m.valueLabel(ctx, card.badge, v),
 						Variant: enumVariant(v),

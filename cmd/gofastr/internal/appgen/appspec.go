@@ -27,9 +27,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/markdown"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // appSpecHasEntityAccess reports whether any entity declares an `access:`
@@ -4166,7 +4168,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		// value and selected are the config fragments that start a
 		// control at its field's Default; empty for a field with none.
 		var value, selected string
-		def := appSpecFormDefault(field)
+		def, defStep := appSpecFormDefault(field)
 		if def != "" {
 			value, selected = fmt.Sprintf(", Value: %q", def), fmt.Sprintf(", Selected: %q", def)
 		}
@@ -4197,7 +4199,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			// default. The box starts as that default. Required stays off
 			// the checkbox: it would make unticked unsubmittable.
 			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
-				inputName, inputName, label, fieldID, fmt.Sprint(field.Default) == "true")
+				inputName, inputName, label, fieldID, fieldtext.Truthy(def))
 		case "int", "integer", "float", "decimal":
 			// The step admits what the column holds, as entityui's form
 			// does: at the browser's default of 1, native validation
@@ -4217,12 +4219,11 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
-			inputType := appSpecFormInputType(field.Type)
-			if step := appSpecDateTimeStep(inputType, def); step != "" {
-				value += fmt.Sprintf(", Step: %q", step)
+			if defStep != "" {
+				value += fmt.Sprintf(", Step: %q", defStep)
 			}
 			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q%s}) }})",
-				label, fieldID, req, inputType, inputName, value)
+				label, fieldID, req, appSpecFormInputType(field.Type), inputName, value)
 		}
 		fields = append(fields, expr)
 	}
@@ -4230,66 +4231,31 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	return fmt.Sprintf("render.Join(ui.PageHeader(ui.PageHeaderConfig{Title: %s}), %s)", appSpecTx(bp, title), form)
 }
 
-// appSpecFormDefault is the text a create control starts with: the
-// field's Default as the control submits it, entityui's create prefill.
-// A timestamp reads as datetime-local's UTC wall time; a file input
-// takes no value.
-func appSpecFormDefault(field framework.FieldDeclaration) string {
-	switch v := field.Default.(type) {
-	case nil:
-		return ""
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case time.Time:
-		return appSpecDateTimeLocal(field.Type, v)
+// appSpecFormDefault is the value a create control starts with and the
+// step it needs to hold it, read from the field's Default by the same
+// fieldtext calls entityui's create form makes. A file input takes no
+// value.
+func appSpecFormDefault(field framework.FieldDeclaration) (value, step string) {
+	if field.Default == nil || appSpecFormInputType(field.Type) == "file" {
+		return "", ""
 	}
-	text := fmt.Sprint(field.Default)
-	switch appSpecFormInputType(field.Type) {
-	case "file":
-		return ""
-	case "datetime-local":
-		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04"} {
-			if t, err := time.Parse(layout, text); err == nil {
-				return appSpecDateTimeLocal(field.Type, t)
-			}
+	f, err := field.Field()
+	if err != nil {
+		f = schema.Field{Name: field.Name, Type: schema.String, Default: field.Default}
+	}
+	text := fieldtext.Form(f, field.Default)
+	switch f.Type {
+	case schema.Date:
+		return fieldtext.DateInput(text), ""
+	case schema.Timestamp:
+		value = fieldtext.TimestampInput(text)
+		if s := fieldtext.TimestampStep(value); s != 0 {
+			step = strconv.FormatFloat(s, 'f', -1, 64)
 		}
-		return ""
+		return value, step
+	default:
+		return text, ""
 	}
-	return text
-}
-
-// appSpecDateTimeLocal formats t for a create control of the given field
-// type: a date as YYYY-MM-DD, a timestamp as datetime-local's UTC wall
-// time to the millisecond, with seconds and milliseconds only when it
-// has them (entityui's timestampInput).
-func appSpecDateTimeLocal(fieldType string, t time.Time) string {
-	if fieldType == "date" {
-		return t.Format(time.DateOnly)
-	}
-	t = t.UTC().Truncate(time.Millisecond)
-	switch {
-	case t.Nanosecond() != 0:
-		return t.Format("2006-01-02T15:04:05.000")
-	case t.Second() != 0:
-		return t.Format("2006-01-02T15:04:05")
-	}
-	return t.Format("2006-01-02T15:04")
-}
-
-// appSpecDateTimeStep is the step a datetime-local control needs to hold
-// value: its default 60-second step marks seconds or milliseconds as a
-// step mismatch and the browser refuses to submit.
-func appSpecDateTimeStep(inputType, value string) string {
-	if inputType != "datetime-local" {
-		return ""
-	}
-	switch {
-	case strings.Contains(value, "."):
-		return "0.001"
-	case len(value) > len("2006-01-02T15:04"):
-		return "1"
-	}
-	return ""
 }
 
 // appSpecFormFieldSkipped reports whether a field is omitted from a

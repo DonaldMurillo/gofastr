@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -105,5 +106,49 @@ console.log(JSON.stringify(sel.options.map((o) => [o.value, o.textContent])));
 	want := `[["","Select"],["3","Cat 3"],["4","Cat 4"]]`
 	if got := strings.TrimSpace(string(output)); got != want {
 		t.Errorf("relation options after mount = %s; want %s", got, want)
+	}
+}
+
+// The generator wrote a default with fmt.Sprint where entityui's create
+// form writes it as a control holds it: a JSON default came out as Go's
+// map[a:1] instead of {"a":1}, a date string kept its time, and a bool
+// spelled "yes" left the box unticked. Each generated control starts at
+// the text entityui's create form starts the same field at.
+func TestEntityFormDefaultsReadLikeEntityUI(t *testing.T) {
+	plus2 := time.FixedZone("plus2", 2*3600)
+	day := time.Date(2026, 1, 2, 9, 30, 0, 0, plus2)
+	for _, tc := range []struct {
+		field framework.FieldDeclaration
+		want  string
+	}{
+		{framework.FieldDeclaration{Type: "string", Default: "0x1F"}, `Value: "0x1F"`},
+		{framework.FieldDeclaration{Type: "int", Default: 7}, `Value: "7", Step: "1"`},
+		{framework.FieldDeclaration{Type: "decimal", Default: 12.5}, `Value: "12.5", Step: "0.0001"`},
+		{framework.FieldDeclaration{Type: "bool", Default: true}, `Checked: true`},
+		{framework.FieldDeclaration{Type: "bool", Default: "yes"}, `Checked: true`},
+		{framework.FieldDeclaration{Type: "bool", Default: false}, `Checked: false`},
+		{framework.FieldDeclaration{Type: "date", Default: day}, `Value: "2026-01-02"`},
+		{framework.FieldDeclaration{Type: "date", Default: "2026-01-02T00:00:00Z"}, `Value: "2026-01-02"`},
+		{framework.FieldDeclaration{Type: "timestamp", Default: day}, `Value: "2026-01-02T07:30"})`},
+		{framework.FieldDeclaration{Type: "timestamp", Default: day.Add(15 * time.Second)}, `Value: "2026-01-02T07:30:15", Step: "1"`},
+		{framework.FieldDeclaration{Type: "timestamp", Default: day.Add(15250 * time.Millisecond)}, `Value: "2026-01-02T07:30:15.250", Step: "0.001"`},
+		{framework.FieldDeclaration{Type: "json", Default: map[string]any{"a": 1.0, "b": []any{"x"}}}, `Value: "{\"a\":1,\"b\":[\"x\"]}"`},
+		{framework.FieldDeclaration{Type: "json", Default: []any{1.0, "x"}}, `Value: "[1,\"x\"]"`},
+		{framework.FieldDeclaration{Type: "string"}, ``},
+		{framework.FieldDeclaration{Type: "image", Default: "uploads/a.png"}, ``},
+	} {
+		tc.field.Name = "f"
+		expr := appSpecEntityFormExpr(appspec.AppSpec{}, appspec.AppSpecScreen{Name: "home"},
+			appspec.AppSpecBlock{Kind: "entity_form", Entity: "items"}, nil,
+			map[string]framework.EntityDeclaration{"items": {Name: "items", Fields: []framework.FieldDeclaration{tc.field}}}, "/api")
+		if tc.want == "" {
+			if strings.Contains(expr, "Value: ") {
+				t.Errorf("%s %v: want no starting value in:\n%s", tc.field.Type, tc.field.Default, expr)
+			}
+			continue
+		}
+		if !strings.Contains(expr, tc.want) {
+			t.Errorf("%s %v: want %s in:\n%s", tc.field.Type, tc.field.Default, tc.want, expr)
+		}
 	}
 }
