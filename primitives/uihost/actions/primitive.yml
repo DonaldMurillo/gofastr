@@ -30,9 +30,10 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestUIHostMountAutoCompilesScreenActions
   - id: declared-component-id-wins
-    rule: A screen declaring ComponentID compiles its actions under that id whatever other screen methods it has, so a page rendering it as data-component gets its widget script.
+    rule: AutoCompileActions takes a screen's action id from its ComponentID() string method alone, not from app.ScreenComponentID, whose embedded ScreenSpec also demands ScreenDescription, so a screen with no ScreenDescription still compiles its actions under its declared id and a page rendering it as data-component gets its widget script.
     enforced_by:
       - test: framework/uihost.TestDeclaredComponentIDNeedsNoDescription
+      - test: cmd/gofastr/internal/appgen.TestUndescribedScreenGetsItsWidgetScript
   - id: action-output-sorted-by-id
     rule: GetActionJS and the page's widget script tags list components in id order.
     enforced_by:
