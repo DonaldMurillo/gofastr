@@ -310,6 +310,7 @@ func reset() {
 	defer mu.Unlock()
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	behaviorMarkerAttrs = map[string]bool{}
 	templates = newTemplates()
 	frozen = false
 }
@@ -355,6 +356,7 @@ func IsolateForTest(t testCleanup) {
 	mu.Lock()
 	saved := entries
 	savedBehaviors := behaviors
+	savedMarkerAttrs := behaviorMarkerAttrs
 	savedReserved := reservedBehaviorNames
 	savedFrozen := frozen
 	savedTemplates := templates
@@ -362,6 +364,7 @@ func IsolateForTest(t testCleanup) {
 	dataBlocks = map[string]dataBlock{}
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	behaviorMarkerAttrs = map[string]bool{}
 	templates = newTemplates()
 	// The isolated registry has no catalog yet, so it starts unfrozen.
 	frozen = false
@@ -375,6 +378,7 @@ func IsolateForTest(t testCleanup) {
 		mu.Lock()
 		entries = saved
 		behaviors = savedBehaviors
+		behaviorMarkerAttrs = savedMarkerAttrs
 		reservedBehaviorNames = savedReserved
 		templates = savedTemplates
 		dataBlocks = savedDataBlocks
