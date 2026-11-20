@@ -453,8 +453,9 @@ type grantChange struct {
 	grant bool
 }
 
-// applyGrants checks every change against the caller's own permissions,
-// and every grant against GrantStore.CheckGrant, before writing any, then
+// applyGrants checks every change against the caller's own permissions
+// (a Wildcard change needs the Decider's allow, as on assignment), and
+// every grant against GrantStore.CheckGrant, before writing any, then
 // grants and revokes through the GrantStore,
 // auditing each. A refusal is audited with the permission that stopped
 // it and answered; it reports whether the caller should answer success.
@@ -462,7 +463,7 @@ func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page strin
 	ctx := r.Context()
 	actor := adminActorID(ctx)
 	for _, c := range changes {
-		if !b.callerHoldsPermission(ctx, c.perm) {
+		if assignmentDeciderRefuses(ctx, c.perm) || !b.callerHoldsPermission(ctx, c.perm) {
 			b.appendAudit(ctx, "access", c.op()+"-refused", c.role, actor, map[string]any{"permission": string(c.perm)})
 			b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
 			return false

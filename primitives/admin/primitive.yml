@@ -37,6 +37,11 @@ invariants:
     rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
     enforced_by:
       - test: battery/admin.TestAuditOpsCoverWhatTheAdminWrites
+  - id: wildcard-change-needs-decider-allow
+    rule: Under a configured Decider, every RBAC change that moves the global wildcard (assigning or removing a role that grants "*", and granting or revoking "*" on a role through _grant or a grid save) goes through assignmentDeciderRefuses and needs DecisionAllow for "*"; an abstention or deny refuses it before anything is written.
+    enforced_by:
+      - test: battery/admin.TestWildcardRoleChangesRequireDeciderAllow
+      - test: battery/admin.TestWildcardGrantRequiresDeciderAllow
 decisions:
   - id: new-link-asks-can-create-entity
     date: 2026-11-16

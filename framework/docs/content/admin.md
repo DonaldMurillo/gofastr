@@ -685,9 +685,11 @@ roles (after the save) with it or the wildcard, is refused with
 never grant it back, since a caller grants only what their roles hold.
 Grant it to a second role the caller holds first. An
 `access.Decider` on the request can veto a grant, a revoke or a change to
-a role that grants the denied permission. Assigning or removing a role
-that grants the global wildcard (`*`) requires a configured Decider to
-return `DecisionAllow` for `*`. An abstention or denial refuses the change.
+a role that grants the denied permission. When a Decider is configured,
+assigning or removing a role that grants the global wildcard (`*`), and
+granting or revoking `*` on a role (through `_grant` or a grid save),
+requires it to return `DecisionAllow` for `*`. An abstention or denial
+refuses the change.
 The caller's tier checks still apply. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied. A grant inside a wildcard revocation (the role's

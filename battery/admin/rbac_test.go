@@ -502,6 +502,51 @@ func TestWildcardRoleChangesRequireDeciderAllow(t *testing.T) {
 	}
 }
 
+func TestWildcardGrantRequiresDeciderAllow(t *testing.T) {
+	for _, route := range []struct {
+		path   string
+		fields map[string]any
+	}{
+		{"/admin/rbac/_grant", map[string]any{"role": "editor", "permission": "*"}},
+		{"/admin/rbac/_permissions", map[string]any{"role": "editor", "permission": []any{"posts:read", "*"}, "grant": []any{"0:0", "0:1"}}},
+	} {
+		for _, decision := range []struct {
+			name string
+			vote access.Decision
+			want int
+		}{
+			{"abstain", access.DecisionAbstain, http.StatusForbidden},
+			{"deny", access.DecisionDeny, http.StatusForbidden},
+			{"allow", access.DecisionAllow, http.StatusNoContent},
+		} {
+			t.Run(route.path+"/"+decision.name, func(t *testing.T) {
+				r := newRBACEnv(t, Config{})
+				h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					ctx := access.WithDecider(req.Context(), func(_ context.Context, _ []string, p access.Permission, _ access.Ref) access.Decision {
+						switch p {
+						case access.Wildcard:
+							return decision.vote
+						case "posts:read":
+							return access.DecisionDeny
+						default:
+							return access.DecisionAbstain
+						}
+					})
+					r.as(theAdmin).ServeHTTP(w, req.WithContext(ctx))
+				})
+				rr := rpc(h, route.path, route.fields)
+				if rr.Code != decision.want {
+					t.Errorf("status = %d, want %d, body = %s", rr.Code, decision.want, rr.Body)
+				}
+				granted := slices.Contains(r.policy.PermissionsOf("editor"), access.Wildcard)
+				if granted != (decision.vote == access.DecisionAllow) {
+					t.Errorf("editor holds * = %v after a %s vote", granted, decision.name)
+				}
+			})
+		}
+	}
+}
+
 func TestRoleAssignmentConflictsWithInterveningRevocation(t *testing.T) {
 	r := newRBACEnv(t, Config{AdminRole: "support"})
 	targetID := r.editor.GetID()
