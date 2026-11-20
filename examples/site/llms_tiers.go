@@ -17,11 +17,15 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -34,7 +38,7 @@ func llmsSections() []uihost.LLMsTxtSection {
 		Title: "Full corpus",
 		Links: []uihost.LLMsTxtLink{{
 			Name:  "llms-full.txt",
-			URL:   "/llms-full.txt",
+			URL:   "llms-full.txt",
 			Notes: "every doc below concatenated into one markdown file",
 		}},
 	}}
@@ -43,7 +47,7 @@ func llmsSections() []uihost.LLMsTxtSection {
 		for _, d := range it.Docs {
 			links = append(links, uihost.LLMsTxtLink{
 				Name:  d.Title,
-				URL:   "/docs/" + d.Slug + ".md",
+				URL:   "docs/" + d.Slug + ".md",
 				Notes: d.Desc,
 			})
 		}
@@ -53,7 +57,7 @@ func llmsSections() []uihost.LLMsTxtSection {
 		Title: "Optional",
 		Links: []uihost.LLMsTxtLink{{
 			Name:  "Site pages",
-			URL:   "/llm-pages.md",
+			URL:   "llm-pages.md",
 			Notes: "markdown index of this site's screens (not the framework docs)",
 		}},
 	})
@@ -111,4 +115,36 @@ func registerDocMarkdownRoutes(r *router.Router) {
 			w.Write(body)
 		}))
 	}
+}
+
+type agentDocsExport struct {
+	handler http.Handler
+}
+
+func (agentDocsExport) Name() string                      { return "agent-docs" }
+func (agentDocsExport) Init(*framework.App) error         { return nil }
+func (agentDocsExport) ExportStart(context.Context) error { return nil }
+func (agentDocsExport) ExportPage(string, string) error   { return nil }
+
+func (e agentDocsExport) ExportFiles(ctx context.Context) (map[string][]byte, error) {
+	topics, err := docs.List()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{"/llms.txt", "/llms-full.txt"}
+	for _, topic := range topics {
+		if topic.Name != "README" {
+			paths = append(paths, "/docs/"+topic.Name+".md")
+		}
+	}
+	files := make(map[string][]byte, len(paths))
+	for _, path := range paths {
+		rec := httptest.NewRecorder()
+		e.handler.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			return nil, fmt.Errorf("agent docs: GET %s returned %d", path, rec.Code)
+		}
+		files[path] = rec.Body.Bytes()
+	}
+	return files, nil
 }

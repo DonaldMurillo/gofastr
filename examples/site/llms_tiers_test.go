@@ -6,8 +6,11 @@ package main
 // serve() helper would boot the site once per doc.
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -37,11 +40,11 @@ func corpusTopics(t *testing.T) []docs.Topic {
 func TestLLMsTxtIndexesEveryDoc(t *testing.T) {
 	index := body(t, "/llms.txt")
 	for _, tp := range corpusTopics(t) {
-		if !strings.Contains(index, "(/docs/"+tp.Name+".md)") {
+		if !strings.Contains(index, "(docs/"+tp.Name+".md)") {
 			t.Errorf("/llms.txt does not index /docs/%s.md", tp.Name)
 		}
 	}
-	if !strings.Contains(index, "(/llms-full.txt)") {
+	if !strings.Contains(index, "(llms-full.txt)") {
 		t.Error("/llms.txt does not link the full-corpus tier")
 	}
 }
@@ -83,5 +86,45 @@ func TestDocMarkdownUnknownTopic404(t *testing.T) {
 	rec := serve(t, http.MethodGet, "/docs/no-such-doc.md")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("GET /docs/no-such-doc.md = %d, want 404", rec.Code)
+	}
+}
+
+func TestStaticExportWritesAgentDocs(t *testing.T) {
+	app := newTestApp(t)
+	dir := t.TempDir()
+	if err := app.ExportStatic(t.Context(), dir, "/gofastr"); err != nil {
+		t.Fatalf("ExportStatic: %v", err)
+	}
+
+	read := func(name string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Errorf("exported %s: %v", name, err)
+		}
+		return data
+	}
+	index := read("llms.txt")
+	for _, name := range []string{"llms-full.txt", "llm-pages.md"} {
+		if index != nil && !bytes.Contains(index, []byte("("+name+")")) {
+			t.Errorf("llms.txt does not link %s relative to the Pages mount", name)
+		}
+	}
+	full := read("llms-full.txt")
+	if full != nil && !bytes.Equal(full, []byte(llmsFullText())) {
+		t.Error("llms-full.txt differs from the live corpus")
+	}
+	for _, tp := range corpusTopics(t) {
+		name := "docs/" + tp.Name + ".md"
+		if index != nil && !bytes.Contains(index, []byte("("+name+")")) {
+			t.Errorf("llms.txt does not link %s relative to the Pages mount", name)
+		}
+		want, err := docs.Get(tp.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := read(name); got != nil && !bytes.Equal(got, want) {
+			t.Errorf("exported %s differs from the embedded markdown", name)
+		}
 	}
 }

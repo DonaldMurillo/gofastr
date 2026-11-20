@@ -291,6 +291,9 @@ func setupServer() *framework.App {
 	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
 	// /llms.txt indexes. The HTML page stays at /docs/<name>.
 	registerDocMarkdownRoutes(fwApp.Router())
+	if err := fwApp.Batteries.Register(agentDocsExport{handler: fwApp.Router()}); err != nil {
+		panic(err)
+	}
 
 	// SectionMenu mobile drawers, the docs + components navs each mount a
 	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock

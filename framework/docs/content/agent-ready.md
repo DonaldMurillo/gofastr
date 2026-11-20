@@ -129,7 +129,10 @@ automatically. Add a `Sections` entry pointing at `/llms-full.txt` so
 agents reading the index can find it. The docs site in `examples/site`
 does exactly this: its `/llms.txt` indexes every embedded framework
 doc as a raw markdown URL, and its `/llms-full.txt` is the whole
-corpus concatenated.
+corpus concatenated. The site's GitHub Pages export includes both tiers
+and the raw `docs/*.md` files. The index links to those files relative to
+itself, so they resolve under the Pages project subpath. MCP still requires
+the live server.
 
 ### A2A agent card  (Agent2Agent v1.0)
 
