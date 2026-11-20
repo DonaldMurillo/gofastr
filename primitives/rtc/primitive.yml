@@ -5,6 +5,26 @@ code:
 docs:
   - framework/docs/content/rtc.md
 invariants:
+  - id: authorize-is-required
+    rule: Mount, ServeHTTP and Init refuse a Signaler with no Config.Authorize.
+    enforced_by:
+      - test: battery/rtc.TestMountPanicsWithoutAuthorize
+      - test: battery/rtc.TestServeHTTPPanicsWithoutAuthorize
+      - test: battery/rtc.TestInitRefusesNilAuthorize
+  - id: signal-cap-fits-the-read-limit
+    rule: New panics when MaxSignalBytes plus the envelope does not fit the socket read limit, and on a negative cap.
+    enforced_by:
+      - test: battery/rtc.TestNewPanicsOnBadConfig
+  - id: join-fields-are-bounded
+    rule: A Join is refused unless its room is 1-128 printable ASCII bytes, role 0-32 and peer id 0-64 of the same, and user (0-128) and display name (0-64) hold no control bytes.
+    enforced_by:
+      - test: battery/rtc.TestValidJoinRefusesEachBadField
+      - test: battery/rtc.TestJoinValidationRefused
+  - id: refusal-reads-every-upgrade-line
+    rule: A refused join is a WebSocket close with code 4000 plus the status when any Upgrade field line names websocket, and a plain HTTP status otherwise.
+    enforced_by:
+      - test: battery/rtc.TestRefusalReadsEveryUpgradeLine
+      - test: battery/rtc.TestAuthorizeRefusalReachesSocket
   - id: displaced-socket-closes-off-the-caller
     rule: A socket a rejoin, a seat cap or Kick pushes out is closed by closeDetached on another goroutine, and one a join displaces is first unregistered from its room by detachLocked, so no join and no Kick waits out the old socket's close handshake, and the old socket still gets its Close frame.
     enforced_by:

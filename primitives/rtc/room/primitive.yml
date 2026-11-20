@@ -1,0 +1,49 @@
+primitive: rtc.room
+summary: One signaling room's state channel, its join, leave, status and signal events, and the per-socket read loop that validates every inbound frame.
+code:
+  - battery/rtc/room.go
+docs:
+  - framework/docs/content/rtc.md
+invariants:
+  - id: room-cap-counts-local-and-remote
+    rule: A join past MaxPeers, counted over the merged local and remote roster, is refused before the upgrade and again under the lock that registers it.
+    enforced_by:
+      - test: battery/rtc.TestRoomFullRefused
+      - test: battery/rtc.TestConcurrentJoinsNeverExceedCap
+      - test: battery/rtc.TestRoomCapCountsRemote
+  - id: anonymous-refused-by-default
+    rule: A join with no Join.User is refused with 403 unless AnonymousSeats is AnonymousPerSocket.
+    enforced_by:
+      - test: battery/rtc.TestAnonymousJoinRefusedByDefault
+  - id: frames-are-rate-limited
+    rule: A socket over MaxFramesPerSecond is closed.
+    enforced_by:
+      - test: battery/rtc.TestFrameFloodClosesSocket
+  - id: revoked-peer-is-closed
+    rule: Each inbound frame re-checks the socket's principal and Authorize, and a peer that no longer passes is closed with 4401.
+    enforced_by:
+      - test: battery/rtc.TestRevokedPeerIsClosed
+  - id: frames-decode-strictly
+    rule: An inbound frame with a duplicate or case-folded key is dropped, through handler.UnmarshalStrict.
+    enforced_by:
+      - test: battery/rtc.TestFrameDecodeRedRefusesDuplicateKind
+      - test: battery/rtc.TestFrameDecodeRedRefusesFoldedKeys
+  - id: signal-and-status-bounds
+    rule: A signal payload over MaxSignalBytes closes the socket, and a status that is not a JSON object within MaxStatusBytes is dropped.
+    enforced_by:
+      - test: battery/rtc.TestOversizeSignalClosesSocket
+      - test: battery/rtc.TestStatusMustBeObject
+  - id: signal-reaches-its-target-only
+    rule: A signal event is delivered only to the peer it names.
+    enforced_by:
+      - test: battery/rtc.TestSignalDeliveredToTargetOnly
+  - id: turn-credential-per-peer
+    rule: Each peer's snapshot carries a TURN credential minted for it, and no peer sees another's.
+    enforced_by:
+      - test: battery/rtc.TestCredentialNeverInOthersSnapshot
+      - test: battery/rtc.TestSnapshotRemintsTURNPerConnection
+  - id: peer-id-is-random
+    rule: A minted peer id is 16 bytes from crypto/rand, hex-encoded, and a rand failure refuses the join.
+    enforced_by:
+      - test: battery/rtc.TestMintedPeerIDIsHex
+    judge: Does this change mint a peer id from anything weaker than 16 bytes of crypto/rand?
