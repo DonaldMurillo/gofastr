@@ -145,6 +145,8 @@ var ownedPackages = []string{
 	"framework/internal/jpegtest", "framework/internal/testdb",
 	"battery/notify",
 	"battery/storage",
+	"battery/print",
+	"battery/print/chromepdf",
 }
 
 //gofastr:test-reads primitives/ *.go

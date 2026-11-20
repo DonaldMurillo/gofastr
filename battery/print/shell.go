@@ -12,15 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// autoPrintScript is served verbatim from autoPrintPath. It is an
-// EXTERNAL script (not inline) so it complies with the strict default
-// CSP, which has no script-src 'unsafe-inline'. It opens the print
-// dialog once the document has loaded.
 const autoPrintScript = `addEventListener('load',function(){window.print();});` + "\n"
 
-// effectivePage resolves a document's PageConfig against the battery
-// default, filling any zero-valued fields so pageCSS always sees a
-// complete, valid config.
 func effectivePage(doc *PageConfig, def PageConfig) PageConfig {
 	p := def
 	if doc != nil {
@@ -52,9 +45,6 @@ func effectivePage(doc *PageConfig, def PageConfig) PageConfig {
 	return p
 }
 
-// pageCSS renders the @page rule for a PageConfig. Every value flows
-// through safeCSSLengthOr or a closed enum, so no caller-supplied string
-// can inject CSS.
 func pageCSS(p PageConfig) string {
 	var size string
 	switch p.Size {
@@ -80,29 +70,19 @@ func pageCSS(p PageConfig) string {
 	return fmt.Sprintf("@page { size: %s; margin: %s; }", size, margin)
 }
 
-// shellInput carries everything renderShell needs to assemble a standalone
-// print document.
 type shellInput struct {
-	Lang         string      // <html lang>, the request's locale; "" = "en"
-	Title        string      // <title>, escaped here
-	Body         render.HTML // already-escaped component output
-	PageCSS      string      // from pageCSS
-	BaseCSS      string      // print base stylesheet
-	ComponentCSS string      // scoped CSS for styled components used in Body
-	DocCSS       string      // optional Document.Stylesheet
-	AppCSSHref   string      // optional design-token stylesheet href; "" = none
-	AutoPrintSrc string      // optional external autoprint script src; "" = none
-	CSP          string      // in-document policy; "" = printCSP (the route header's)
+	Lang         string
+	Title        string
+	Body         render.HTML
+	PageCSS      string
+	BaseCSS      string
+	ComponentCSS string
+	DocCSS       string
+	AppCSSHref   string
+	AutoPrintSrc string
+	CSP          string
 }
 
-// componentCSS collects the scoped stylesheets for every registered styled
-// component referenced in the body. A print document has no runtime to
-// lazy-load component CSS and doesn't run the uihost SSR collector, so
-// without this a Build component built from framework/ui (which
-// ships its CSS as [data-cui-comp] scoped sheets)
-// would render unstyled. Component CSS is var(--*)-based, so DefaultTheme
-// is fine here, the concrete token values come from the linked app.css
-// :root, not from these rules.
 func componentCSS(body render.HTML) string {
 	names := registry.Scan(string(body))
 	if len(names) == 0 {
@@ -127,19 +107,7 @@ func componentCSS(body render.HTML) string {
 	return b.String()
 }
 
-// renderShell assembles the full <!doctype html> print document. It never
-// links runtime.js, a print document is inert. The <style> blocks are
-// server-generated/trusted; the attacker-influenced values (Title, the two
-// head asset URLs) are escaped, the URLs also pass the urlsafe Resource
-// allow-list, and Body is already escaped by the component layer.
 func renderShell(in shellInput) string {
-	// URL-typed head fields pass the head-URL allow-list before
-	// interpolation: render.Escape is HTML-escaping and scheme-blind, so
-	// a hostile config value (javascript:, data:, a protocol-relative
-	// host) would otherwise render verbatim into the served document's
-	// head. Clean drops unsafe values the way ogTags drops unsafe
-	// images; both assets are same-origin app paths in every shipped
-	// config.
 	appCSSHref := urlsafe.Clean(in.AppCSSHref, urlsafe.Resource)
 	autoPrintSrc := urlsafe.Clean(in.AutoPrintSrc, urlsafe.Resource)
 	lang := in.Lang
@@ -150,11 +118,6 @@ func renderShell(in shellInput) string {
 	fmt.Fprintf(&b, "<!doctype html>\n<html dir=\"%s\" lang=\"%s\">\n<head>\n", i18n.Dir(lang), render.Escape(lang))
 	b.WriteString(`  <meta charset="utf-8">` + "\n")
 	b.WriteString(`  <meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
-	// The CSP is emitted IN the document, not only as a response header.
-	// The PDF path sets this HTML as the content of about:blank in
-	// headless Chrome, a headerless document, so the route's
-	// Content-Security-Policy response header has no effect there at
-	// all. An in-document meta is the only policy a PDF render gets.
 	csp := in.CSP
 	if csp == "" {
 		csp = printCSP
@@ -181,12 +144,6 @@ func renderShell(in shellInput) string {
 	return b.String()
 }
 
-// printBaseCSS is the built-in readable print stylesheet. It references
-// design tokens via var(--*) with fallbacks so the document looks right
-// whether or not the host's app.css is linked, strips shadows/backgrounds
-// for ink economy under @media print, and ships page-break utilities.
-//
-// Knobs: --ui-print-doc-max-width (820px) — the screen-preview column.
 const printBaseCSS = `
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
