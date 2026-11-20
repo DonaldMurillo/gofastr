@@ -1,0 +1,62 @@
+primitive: runtime.modules
+summary: Demand modules from the host down - registered behaviours served, minified and hashed like the embedded src/*.js modules, the behaviours block the kernel scans, and NeededModules, the server-side mirror of the demand-load scanner that picks a page's preload links.
+code:
+  - core-ui/runtime/behaviors.go
+  - core-ui/runtime/preload.go
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/ui-new-components.md
+twins:
+  - job: Map a page's data-cui-* markers to the demand modules they load.
+    why: The kernel scans the live DOM in JavaScript and the host scans rendered HTML in Go for preload links; TestDemandLoadMarkersMatchRuntimeJS pins the two tables together.
+    sites:
+      - path: core-ui/runtime/preload.go
+        note: demandLoadMarkers, read by NeededModules.
+      - path: core-ui/runtime/frag/boot.js
+        note: The DEMAND-LOAD SCANNERS table.
+invariants:
+  - id: behaviour-is-a-module
+    rule: A registered behaviour is served at its module URL, minified when minify.Enabled, with a hash over the served bytes that changes when its source does.
+    enforced_by:
+      - test: core-ui/runtime.TestRegisteredBehaviorIsAModule
+      - test: core-ui/runtime.TestRegisteredBehaviorHashFollowsSource
+  - id: embedded-names-reserved
+    rule: The embedded modules' names are reserved at init, so a behaviour registered under one panics where it is written.
+    enforced_by:
+      - test: core-ui/runtime.TestEmbeddedNamesAreReservedAtInit
+  - id: behaviours-block-is-valid
+    rule: BehaviorsJSON lists every marker-loaded behaviour with its markers, idle flag, requirements and interactions, leaves on-request modules out, and panics on a requirement that is neither an embedded module nor a behaviour and on a requirement cycle.
+    enforced_by:
+      - test: core-ui/runtime.TestBehaviorsJSON
+      - test: core-ui/runtime.TestBehaviorsJSONRequirements
+      - test: core-ui/runtime.TestBehaviorsJSONInteractions
+      - test: core-ui/runtime.TestBehaviorsJSONLeavesOnRequestModulesOut
+  - id: preload-follows-markers
+    rule: NeededModules returns, sorted and deduplicated, every module whose marker or registered behaviour marker appears in the page as a whole attribute name, with each one's requirements; SSE loads for a push target, not for the availability meta.
+    enforced_by:
+      - test: core-ui/runtime.TestNeededModules_EmptyPage
+      - test: core-ui/runtime.TestNeededModules_SingleMarker
+      - test: core-ui/runtime.TestNeededModules_MultipleMarkersDedupSorted
+      - test: core-ui/runtime.TestNeededModules_SSEOpensOnPushTargets
+      - test: core-ui/runtime.TestNeededModulesMatchesRegisteredMarkers
+      - test: core-ui/runtime.TestNeededModulesIncludesRequirements
+      - test: core-ui/runtime.TestComputedDoesNotPreloadCompute
+      - test: core-ui/runtime.TestDemandLoadMarkersMatchRuntimeJS
+      - test: core-ui/runtime.TestDemandLoadModuleNamesMatchEmbeddedModules
+decisions:
+  - id: requirements-checked-at-manifest-time
+    date: 2026-11-20
+    status: accepted
+    decision: The requirement graph is checked when the behaviours block is first built, which a framework.App does before its listener binds.
+    rejected:
+      - option: Check at registration.
+        why: The registry is complete only once every package's init has run, so a requirement registered later would read as missing.
+    upholds: [behaviours-block-is-valid]
+  - id: preload-by-substring
+    date: 2026-11-20
+    status: accepted
+    decision: NeededModules matches markers as substrings at an attribute-name boundary, not by parsing the page.
+    rejected:
+      - option: Parse the HTML.
+        why: A false positive costs one wasted fetch, and the kernel's loadModule orders the loads when the marker appears.
+    upholds: [preload-follows-markers]

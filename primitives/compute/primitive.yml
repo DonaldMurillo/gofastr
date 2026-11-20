@@ -1,0 +1,33 @@
+primitive: compute
+summary: The content-addressed registry of Web Worker scripts and WebAssembly modules an app serves for background compute, with the one asset-name grammar the runtime's module URLs and localdb names share.
+code:
+  - core-ui/compute/
+docs:
+  - framework/docs/content/compute.md
+invariants:
+  - id: registration-copies-bytes
+    rule: RegisterWorker and RegisterWASM keep their own copy of the bytes, so a caller that changes its slice afterwards changes neither the served content nor its hash.
+    enforced_by:
+      - test: core-ui/compute.TestRegistrationCopiesBytes
+  - id: name-grammar
+    rule: ValidName admits only 1 to 64 bytes of lowercase letters, digits, '-' and '_', and registering under any other name panics.
+    enforced_by:
+      - test: core-ui/compute.TestRegistrationRejectsInvalidNames
+      - test: core-ui/compute.TestRegisterWorker
+  - id: same-bytes-is-a-no-op
+    rule: Registering a name again with identical bytes does nothing, and with different bytes panics.
+    enforced_by:
+      - test: core-ui/compute.TestRegistrationConflictPanics
+  - id: worker-and-wasm-share-a-name
+    rule: A worker and a WASM module registered under one name are two assets that Manifest lists side by side under that name.
+    enforced_by:
+      - test: core-ui/compute.TestWorkerAndWASMShareName
+decisions:
+  - id: one-name-grammar
+    date: 2026-11-20
+    status: accepted
+    decision: ValidName is the one grammar for compute asset names, the runtime's split-module names (runtime.Module) and localdb database and store names, because each is served under the same URL shape.
+    rejected:
+      - option: A validator per package.
+        why: The compute registry and the runtime each had one, identical by design, and two copies of a URL-safety rule drift.
+    upholds: [name-grammar]

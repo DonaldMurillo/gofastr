@@ -1,28 +1,5 @@
 package check
 
-// Layer-prefix lint: the kernel (core-ui) and the headless layer
-// (framework/headless) never name the kit's vocabulary. Each layer owns
-// the prefix of what it defines — data-cui-* and cui-* for the kernel,
-// data-hui-* for headless, fui-* and data-fui-* for framework — and a
-// lower layer reading or writing an upper layer's class or attribute is
-// the drift this rule exists for: v0.86's kernel toast builder named
-// fui-notification__title, its form-errors module placed messages by
-// fui-field__error, and the copy module set fui-copied, so a kit that
-// renamed a class broke behaviour three packages away. The fix shapes
-// are a hook the lower layer declares (data-hui-field-error), a
-// template the kit registers (preset.ToastTemplate), or a module the kit
-// ships itself (framework/ui/searchinput.js).
-//
-// The rule fires on a string literal — JS or Go — that holds a class
-// token `fui-<x>` or an attribute name `data-fui-*`. A `--fui-*` custom
-// property is a theme token every layer may consume and stays quiet,
-// as does a mention in a comment. A site that names the prefix on
-// purpose — a refusal filter that bars data-fui-* from extra attrs, the
-// lightbox Wiring that renders the framework module's family by
-// explicit prop — carries `//gofastr:allow(layerprefix) <reason>`
-// trailing its line or alone on the line above; a bare marker with no reason silences
-// nothing, the same discipline as every analyzer in internal/analyzers.
-
 import (
 	"fmt"
 	"go/ast"
@@ -37,14 +14,9 @@ import (
 	"strings"
 )
 
-// reLayerPrefix matches the kit's class and attribute vocabulary inside
-// a literal: a class-shaped token not preceded by `-` (so a `--fui-*`
-// token stays quiet) and the framework attribute prefix.
-//
 //gofastr:allow(layerprefix) the rule's own pattern names what it hunts
 var reLayerPrefix = regexp.MustCompile(`(?:^|[^-A-Za-z0-9_])fui-[a-z]|data-fui-`)
 
-// layerPrefixMarker is the marker name; allowmarker.go reads the grammar.
 const layerPrefixMarker = "layerprefix"
 
 func layerPrefixMessage(lit string) string {
@@ -54,24 +26,13 @@ func layerPrefixMessage(lit string) string {
 	return fmt.Sprintf("[layer-prefix] %q names the kit's fui vocabulary from a layer below it — the kernel speaks data-cui-*, headless speaks data-hui-*, and a kit class belongs to the kit's own module, sheet or registered template; declare a hook, register a template, or move the behaviour up, and mark a deliberate refusal filter //gofastr:allow(layerprefix) <reason>", lit)
 }
 
-// jsLiteral is one string literal of a JS source: its content and the
-// byte offset of its opening quote.
 type jsLiteral struct {
 	pos  int
 	text string
 }
 
-// jsStringLiterals scans the comment-blanked code view for single-,
-// double- and backtick-quoted literals. Regex literals are skipped
-// first (regexLiteralStartsAt): a quote inside a character class
-// (/['"]/) must not open a literal and shift every later one (review
-// 8). A template's ${…} body is kept as content: a kit class spelled
-// inside an interpolation is still a kit class the module names.
 func jsStringLiterals(code string) []jsLiteral {
 	var lits []jsLiteral
-	// seen mirrors the bytes consumed so far, the view
-	// regexLiteralStartsAt judges a '/' against (the same byte stream
-	// stripJSCommentsKeepStrings emits).
 	var seen []byte
 	for i := 0; i < len(code); i++ {
 		q := code[i]
@@ -107,9 +68,6 @@ func jsStringLiterals(code string) []jsLiteral {
 	return lits
 }
 
-// regexLiteralEnd returns the index of the closing '/' of the regex
-// literal opening at s[i], or the index of its last byte when the
-// literal is unterminated (a newline or the end of the input).
 func regexLiteralEnd(s string, i int) int {
 	j := i + 1
 	inClass := false
@@ -130,10 +88,8 @@ func regexLiteralEnd(s string, i int) int {
 	return min(j, len(s)-1)
 }
 
-// LintLayerPrefixJS lints the JavaScript under roots (a runtime package
-// dir, a fixture dir, or .js files) for kit vocabulary in string
-// literals. Roots are loaded the way every runtime-shape lint loads
-// them, so the generated runtime.js bundle is never read.
+// LintLayerPrefixJS lints the JavaScript under roots (a runtime package dir, a fixture dir, or .js
+// files) for kit vocabulary in string literals.
 func LintLayerPrefixJS(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -156,10 +112,7 @@ func LintLayerPrefixJS(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// LintLayerPrefixGo lints the non-test Go files under roots for kit
-// vocabulary in string literals. Vendor, testdata and hidden
-// directories are skipped; a `_test.go` file is a rig and may spell
-// whatever it probes.
+// LintLayerPrefixGo lints the non-test Go files under roots for kit vocabulary in string literals.
 func LintLayerPrefixGo(roots ...string) (*Result, error) {
 	res := &Result{}
 	var files []string
@@ -216,11 +169,9 @@ func LintLayerPrefixGo(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// LayerPrefixJSRoots returns the JavaScript the rule governs in a
-// checkout: the runtime package (frag/ + src/) and every registered
-// behaviour source that lives under core-ui or framework/headless. A
-// framework/ui module (filedropzone, searchinput, lightbox) is the
-// kit's own and names its own classes.
+// LayerPrefixJSRoots returns the JavaScript the rule governs in a checkout: the runtime package
+// (frag/ + src/) and every registered behaviour source that lives under core-ui or
+// framework/headless.
 func LayerPrefixJSRoots(repoRoot string) ([]string, error) {
 	files, err := RegisteredBehaviorSources(repoRoot)
 	if err != nil {

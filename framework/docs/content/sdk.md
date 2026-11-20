@@ -523,11 +523,20 @@ existing raw JSON map type.
 Encoding a recursive Go value with a cycle returns a JSON encoding error.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
-`type` list containing `"null"` in 3.1) retain null separately from
+`type` list containing `"null"` in 3.1 and later) retain null separately from
 absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
-`| null`. For non-nullable bodies, `null` still means absent.
+`| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1 and later,
+a type-less JSON request body is implicitly nullable only when its keywords
+are annotations, schema metadata or definitions, type-specific assertions that
+ignore null, or `x-` extensions.
+This includes `{}` and properties-only schemas, but excludes conditional,
+composition and unknown keywords. Both the resolved schema and `$ref` siblings
+must qualify; this does not change response or field typing. OpenAPI 3.0 `{}`
+bodies retain their existing behavior: JS treats null as absent (and
+throws when required), while Go keeps its existing nil behavior described
+below. For other non-nullable bodies, `null` still means absent.
 
 The Go SDK does not model request-body nullability separately from
 presence, so nullable scalar bodies cannot send an explicit JSON `null`.

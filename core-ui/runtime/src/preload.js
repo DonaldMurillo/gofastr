@@ -23,17 +23,17 @@
   const NS = window.__gofastr;
 
   const routes = () => (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []);
-  // Same tolerant matcher as the intercept module: exact, trailing-slash
-  // variants, then :param / catch-all patterns.
   const matchRoute = (pattern, path) => {
-    if (pattern === path) return true;
-    if (path !== '/' && !path.endsWith('/') && pattern === path + '/') return true;
-    if (path !== '/' && path.endsWith('/') && pattern === path.slice(0, -1)) return true;
-    if (!pattern.includes(':')) return false;
+    if (!pattern.includes('/:')) {
+      return pattern === path || path !== '/' &&
+        pattern === (path.endsWith('/') ? path.slice(0, -1) : path + '/');
+    }
     const pp = pattern.split('/').filter(Boolean);
     const parts = path.split('/').filter(Boolean);
     if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) return false;
-    return pp.every((seg, i) => seg.startsWith(':') || seg === parts[i]);
+    return pp.every((seg, i) => seg.startsWith(':')
+      ? !seg.includes(':', 1) || NS._routeMatch(seg, NS._routeSeg(parts[i]))
+      : seg === parts[i]);
   };
   // Routes register unprefixed: /es/pricing matches /pricing. A key
   // keeps its query (the click takes the entry by path + search); the

@@ -245,8 +245,9 @@ discriminates on it:
   screen serves keeps its 404 whatever the method.
 
 The 500 is the same error page a failed route resolver gets
-(`serveError`): RFC 9457 `application/problem+json` for machine
-Accepts, otherwise the error body (`WithErrorScreen`, or the built-in
+(`serveError`): RFC 9457 `application/problem+json` when explicitly
+accepted at a positive weight at least as high as HTML's, otherwise
+the error body (`WithErrorScreen`, or the built-in
 one) through the root layout, or a minimal document when there is no
 root layout. `Vary: Accept` on every arm, and no arm echoes the path or
 the panic. The embed content route answers the minimal document
@@ -715,6 +716,12 @@ An in-page `#anchor` link on a page reached any of those ways is the
 browser's own jump: nothing is fetched and the page keeps its state.
 `core-ui/runtime/navigate_path_e2e_test.go` holds each way in, for
 core's navigator and the envelope module's.
+
+Route preloading and interception use the same parameter constraint checks
+as the navigator. Percent-encoded parameter values are decoded one segment
+at a time before checking `int`, `uuid`, `alpha`, or `alnum`. A value
+that fails a constraint falls through to the next route in manifest order;
+an earlier typed entry cannot hide a later route's preload or intercept policy.
 
 Visible-route preloading disconnects its link observer before each navigation
 rescan, then observes only links in the current document. Detached links and

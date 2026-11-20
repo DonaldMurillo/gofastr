@@ -108,6 +108,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKJSWireBrowser
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableBody
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypelessBody
   - id: manifest-records-the-document
     rule: The manifest of an OpenAPI SDK has source openapi, no entities, and sdk.OpenAPIHash of the document as its schemaHash.
     enforced_by:
@@ -144,6 +145,16 @@ decisions:
         why: A generated marshaler re-enters json.Marshal, restarting its cycle tracking; a cyclic value can exhaust the process stack instead of returning an error.
     revisit_if: The mixed-object encoding can use one cycle-aware traversal without repeatedly scanning recursive subtrees.
     upholds: [go-sdk-additional-property-cycles]
+  - id: preserve-openapi-30-typeless-body-behavior
+    date: 2026-11-20
+    status: accepted
+    decision: A type-less JSON request body is implicitly nullable only in OpenAPI 3.1 and later and only when every keyword in the resolved schema and its reference siblings is an annotation, schema metadata or definitions, a type-specific assertion that ignores null, or an x- extension. Conditional, composition and unknown keywords prevent implicit nullability. OpenAPI 3.0 keeps the JS TypeError for a required null body and the existing Go behavior.
+    rejected:
+      - option: Treat an OpenAPI 3.0 {} body as nullable in JS.
+        why: OpenAPI 3.0 admits null only via nullable true, which 3.0.3 ties to an explicit type, so the JS TypeError matches the specification.
+      - option: Reject nil raw JSON request bodies in the Go SDK for OpenAPI 3.0.
+        why: Making Go reject nil would change its existing runtime behavior.
+    upholds: [js-sdk-wire]
   - id: preserve-go-body-signatures
     date: 2026-11-20
     status: accepted
