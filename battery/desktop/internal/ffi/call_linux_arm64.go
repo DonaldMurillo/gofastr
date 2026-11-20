@@ -18,6 +18,12 @@ type callArgs struct {
 	stks [8]uintptr
 }
 
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.fn)]
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.r1)-8]
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.r2)-16]
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.f0)-24]
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.ret8)-32]
+var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.ints)-40]
 var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.flts)-104]
 var _ = [1]struct{}{}[unsafe.Offsetof(callArgs{}.stks)-168]
 

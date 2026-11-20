@@ -75,10 +75,16 @@ invariants:
       - test: battery/desktop/internal/update.TestExtractZipNeedsTheNamedRootDirectory
       - test: battery/desktop/internal/update.TestExtractZipRefusesSymlinkEntry
   - id: extract-drops-group-other-write
-    rule: An extracted directory is owner-writable and no extracted file or directory keeps group or other write.
+    rule: An extracted directory is owner-writable and no extracted file or directory keeps group or other write, setuid, setgid or sticky.
     enforced_by:
       - test: battery/desktop/internal/update.TestExtractDirectoriesRefusePublicWrites
       - test: battery/desktop/internal/update.TestExtractDropsGroupOtherWrite
+      - test: battery/desktop/internal/update.TestExtractStripsSetuidSetgidSticky
+  - id: extract-bounded
+    rule: ExtractZip refuses an archive of more than maxZipEntries entries before writing anything, and an entry whose header declares more than maxEntrySize bytes before creating its file.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestExtractZipRefusesTooManyEntries
+      - test: battery/desktop/internal/update.TestExtractZipRefusesEntryDeclaredTooLarge
   - id: semver-precedence
     rule: Compare orders by major, minor and patch, puts a release above every pre-release of the same triple, and lets a longer pre-release list win when the prefixes match.
     enforced_by:

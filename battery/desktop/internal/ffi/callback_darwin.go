@@ -19,6 +19,11 @@ type callbackArgs struct {
 	result uintptr
 }
 
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.index)]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.args)-8]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.args.Float)-64]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.result)-136]
+
 var (
 	callbackWrapFn  = callbackWrap
 	callbackWrapABI uintptr
