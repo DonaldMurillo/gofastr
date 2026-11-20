@@ -51,7 +51,6 @@ type MagicLinkConfig struct {
 	// VerifyRateLimit is the per-IP limit on verify; nil means 30 a minute with a 5-minute block.
 	VerifyRateLimit *RateLimiterConfig
 
-
 	// DevMode lets send run without an EmailSender, logging hashes only; otherwise send answers 503.
 	DevMode bool
 }
@@ -177,7 +176,7 @@ type MagicLinkPlugin struct {
 	tokenStore  MagicLinkTokenStore
 	sendLimit   *RateLimiter
 	verifyLimit *RateLimiter
-	basePath string
+	basePath    string
 
 	lifecycleMu  sync.Mutex
 	started      bool

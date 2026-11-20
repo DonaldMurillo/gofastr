@@ -330,7 +330,6 @@ func requireJSON(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-
 func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) || !requireJSON(w, r) {
 		return
@@ -498,7 +497,6 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
 }
 
-
 func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) || !requireJSON(w, r) {
 		return
@@ -660,7 +658,6 @@ func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, c
 	}
 	writeAuthError(w, r, http.StatusBadRequest, reasonPasskeyRegistrationFailed)
 }
-
 
 func passkeyView(c PasskeyCredential) map[string]any {
 	v := map[string]any{

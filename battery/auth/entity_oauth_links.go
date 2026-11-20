@@ -10,7 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-
 func (s *EntityUserStore) oauthLinksTable() string {
 	return s.table + "_oauth_links"
 }

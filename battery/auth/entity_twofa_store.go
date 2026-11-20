@@ -17,13 +17,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-
 // EntityTwoFAStore is a TwoFAStore in a SQLite or PostgreSQL table, the TOTP secret sealed with AES-GCM.
 type EntityTwoFAStore struct {
-	db      *sql.DB
-	table   string
-	dialect storeDialect
-	sealer  *aeadSealer
+	db              *sql.DB
+	table           string
+	dialect         storeDialect
+	sealer          *aeadSealer
 	previousSealers []*aeadSealer
 
 	casTestHook func()

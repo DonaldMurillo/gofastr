@@ -172,7 +172,6 @@ func shouldTouchLastUsed(last *time.Time) bool {
 	return time.Since(*last) > lastUsedTouchInterval
 }
 
-
 func emitTokenEvent(sink AuditSink, ctx context.Context, r *http.Request, kind, reason, cred string) {
 	if sink == nil {
 		return

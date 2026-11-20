@@ -15,7 +15,6 @@ import (
 	"time"
 )
 
-
 // OIDCClaimsMapping names the claims read into OAuth2UserInfo; empty fields mean the standard claims.
 type OIDCClaimsMapping struct {
 	IDClaim     string
@@ -157,14 +156,13 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 // Name returns the provider identifier.
 func (p *OIDCProvider) Name() string { return p.name }
 
-
 type oidcDiscovery struct {
-	Issuer                string `json:"issuer"`
-	AuthorizationEndpoint string `json:"authorization_endpoint"`
-	TokenEndpoint         string `json:"token_endpoint"`
-	JWKSURI               string `json:"jwks_uri"`
-	UserinfoEndpoint      string `json:"userinfo_endpoint"`
-	TokenAuthMethods []string `json:"token_endpoint_auth_methods_supported"`
+	Issuer                string   `json:"issuer"`
+	AuthorizationEndpoint string   `json:"authorization_endpoint"`
+	TokenEndpoint         string   `json:"token_endpoint"`
+	JWKSURI               string   `json:"jwks_uri"`
+	UserinfoEndpoint      string   `json:"userinfo_endpoint"`
+	TokenAuthMethods      []string `json:"token_endpoint_auth_methods_supported"`
 }
 
 func discoveryURL(issuer string) string {
@@ -294,7 +292,6 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	}
 	return &d, nil
 }
-
 
 // AuthURL returns the authorization-endpoint URL for state.
 func (p *OIDCProvider) AuthURL(state string) string { return p.AuthURLWithChallenge(state, "") }
@@ -541,7 +538,6 @@ func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string
 	return m, nil
 }
 
-
 type orderedCache struct {
 	mu  sync.Mutex
 	cap int
@@ -586,7 +582,6 @@ func (c *orderedCache) get(key string) (map[string]any, bool) {
 	}
 	return e.Value.(*claimsEntry).claims, true
 }
-
 
 func claimString(claims map[string]any, key string) string {
 	if claims == nil {

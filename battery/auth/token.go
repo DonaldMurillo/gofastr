@@ -22,7 +22,7 @@ type tokenPayload struct {
 	Issuer    string   `json:"iss"`
 	ExpiresAt int64    `json:"exp"`
 	IssuedAt  int64    `json:"iat"`
-	Cred string `json:"cred,omitempty"`
+	Cred      string   `json:"cred,omitempty"`
 }
 
 func encodeToken(secret, issuer string, claims Claims) (string, error) {

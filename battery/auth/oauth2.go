@@ -25,7 +25,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-
 // OAuth2Token holds the token information returned by an OAuth2 provider.
 type OAuth2Token struct {
 	AccessToken  string
@@ -43,7 +42,6 @@ type OAuth2UserInfo struct {
 	// EmailVerified reports whether the provider has VERIFIED the email.
 	EmailVerified bool
 }
-
 
 // OAuth2Provider is one OAuth2 identity provider.
 type OAuth2Provider interface {
@@ -68,7 +66,6 @@ type OAuth2PKCEProvider interface {
 	ExchangeCodeWithVerifier(ctx context.Context, code, verifier string) (*OAuth2Token, error)
 }
 
-
 // OAuth2Config holds the configuration for the OAuth2 plugin.
 type OAuth2Config struct {
 	// Providers is a map of provider name → provider implementation.
@@ -87,13 +84,12 @@ type OAuth2Config struct {
 	TwoFactorURL string
 }
 
-
 // OAuth2Plugin signs users in and links accounts through registered OAuth2 providers.
 type OAuth2Plugin struct {
-	mgr        *AuthManager
-	providers  map[string]OAuth2Provider
-	stateKey   []byte
-	tokenStore OAuthTokenStore
+	mgr          *AuthManager
+	providers    map[string]OAuth2Provider
+	stateKey     []byte
+	tokenStore   OAuthTokenStore
 	twoFactorURL string
 
 	noncesMu       sync.Mutex
@@ -106,9 +102,9 @@ const minStateSecretLen = 16
 // NewOAuth2Plugin creates an OAuth2 plugin with the given configuration.
 func NewOAuth2Plugin(cfg OAuth2Config) *OAuth2Plugin {
 	p := &OAuth2Plugin{
-		providers:  make(map[string]OAuth2Provider),
-		usedNonces: make(map[string]time.Time),
-		tokenStore: cfg.TokenStore,
+		providers:    make(map[string]OAuth2Provider),
+		usedNonces:   make(map[string]time.Time),
+		tokenStore:   cfg.TokenStore,
 		twoFactorURL: cfg.TwoFactorURL,
 	}
 
@@ -210,7 +206,6 @@ func (p *OAuth2Plugin) providerKeys() []string {
 	return slices.Sorted(maps.Keys(p.providers))
 }
 
-
 // RegisterRoutes mounts the OAuth2 auth and callback routes.
 func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 	r = r.Group("", browserAccountOnly)
@@ -245,7 +240,6 @@ func (p *OAuth2Plugin) formPostCallbackHandler() http.HandlerFunc {
 		writeSameSiteHop(w, r, p.mgr.config.Pages, handler.SameSiteHopTarget(r, target), oauthSignInTitle)
 	}
 }
-
 
 const (
 	oauthStateCookie    = "__Host-gofastr_oauth_state"
@@ -371,7 +365,6 @@ func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	}
 	return sess.UserID, true
 }
-
 
 func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -831,7 +824,6 @@ func linkOAuthPreferEnriched(ctx context.Context, store UserStore, linker OAuthL
 	return linker.LinkOAuth(ctx, userID, info.Provider, info.ID)
 }
 
-
 const stateTTL = 10 * time.Minute
 
 const nonceGCThreshold = 4096
@@ -969,7 +961,6 @@ func randomPassword(n int) string {
 	}
 	return string(b)
 }
-
 
 var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Second})
 

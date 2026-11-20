@@ -212,7 +212,6 @@ func (u *serviceAccountUser) GetID() string      { return u.sa.ID }
 func (u *serviceAccountUser) GetEmail() string   { return "" }
 func (u *serviceAccountUser) GetRoles() []string { return u.sa.Roles }
 
-
 func generateAPITokenPlaintext(prefix string) (string, error) {
 	b := make([]byte, tokenRandBytes)
 	if _, err := rand.Read(b); err != nil {
@@ -244,7 +243,6 @@ func tokenDisplayPrefix(plaintext string) string {
 	}
 	return plaintext
 }
-
 
 type tokenScopesKey struct{}
 type tokenIDKey struct{}

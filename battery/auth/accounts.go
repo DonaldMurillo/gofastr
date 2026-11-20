@@ -75,7 +75,6 @@ type OAuthUserCreator interface {
 	CreateUserNoPassword(ctx context.Context, email string, roles []string) (User, error)
 }
 
-
 // AccountsPlugin provides:
 type AccountsPlugin struct {
 	mgr *AuthManager

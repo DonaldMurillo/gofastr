@@ -22,7 +22,6 @@ type EmailVerifier interface {
 	MarkEmailVerified(ctx context.Context, userID string) error
 }
 
-
 // EmailVerificationConfig configures the plugin.
 type EmailVerificationConfig struct {
 	// BaseURL is the application URL used to construct the verification link.

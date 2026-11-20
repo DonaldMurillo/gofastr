@@ -25,7 +25,7 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 		CookieName: CSRFCookieName,
 		HeaderName: CSRFHeaderName,
 		FormField:  CSRFFormField,
-		Skip: middleware.SkipAny(middleware.SkipBearerAuth(), embed.CSRFExempt, framework.IsInProcessRequest),
+		Skip:       middleware.SkipAny(middleware.SkipBearerAuth(), embed.CSRFExempt, framework.IsInProcessRequest),
 	}
 	for _, fn := range opts {
 		fn(&cfg)

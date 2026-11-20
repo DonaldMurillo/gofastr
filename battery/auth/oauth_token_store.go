@@ -73,7 +73,6 @@ func (s *aeadSealer) open(sealed string) (string, bool) {
 	return string(pt), true
 }
 
-
 // OAuthTokenRecord is one provider grant held for a local user.
 type OAuthTokenRecord struct {
 	// UserID is the local user/account id the token belongs to.
@@ -117,7 +116,6 @@ var ErrOAuthRefreshInProgress = errors.New("auth: oauth token refresh in progres
 const oauthRefreshLease = 30 * time.Second
 
 const oauthRefreshWait = 10 * time.Second
-
 
 // SQLOAuthTokenStoreConfig tunes SQLOAuthTokenStore; EncryptionKey is required.
 type SQLOAuthTokenStoreConfig struct {
@@ -366,7 +364,6 @@ func (s *SQLOAuthTokenStore) Delete(ctx context.Context, userID, provider string
 	_, err := s.db.ExecContext(ctx, q, userID, provider)
 	return err
 }
-
 
 // OAuthTokenRefresher is a provider that exchanges a refresh token for a new access token.
 type OAuthTokenRefresher interface {

@@ -206,9 +206,9 @@ type AuthManager struct {
 	plugins map[string]AuthPlugin
 	order   []string
 
-	userStore    UserStore
-	sessionStore SessionStore
-	jwtAuth      *JWTAuth
+	userStore        UserStore
+	sessionStore     SessionStore
+	jwtAuth          *JWTAuth
 	mailAddressLimit *RateLimiter
 
 	mu      sync.RWMutex
@@ -390,7 +390,6 @@ func (m *AuthManager) initPlugins() error {
 	}
 	return nil
 }
-
 
 // Name returns the battery name for the framework's BatteryManager.
 func (m *AuthManager) Name() string { return "auth" }

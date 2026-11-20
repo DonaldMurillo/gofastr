@@ -6,7 +6,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
-
 func init() { registerCanonicalExporters() }
 
 func registerCanonicalExporters() {

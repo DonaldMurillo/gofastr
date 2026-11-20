@@ -28,7 +28,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-
 // TwoFAConfig holds optional settings for the TwoFAPlugin.
 type TwoFAConfig struct {
 	// Issuer is the name shown in authenticator apps. Defaults to "GoFastr".
@@ -77,7 +76,6 @@ func (c *TwoFAConfig) defaults() {
 		c.ChallengeAttemptsPerSession = 10
 	}
 }
-
 
 // TwoFAState holds the per-user 2FA enrollment and verification status.
 type TwoFAState struct {
@@ -162,7 +160,6 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 	hashes := append([]string(nil), state.BackupCodes...) // copy
 	m.mu.RUnlock()
 
-
 	matchedHash := ""
 	for _, hashed := range hashes {
 		if bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code)) == nil {
@@ -189,7 +186,6 @@ func (m *MemoryTwoFAStore) ConsumeBackupCode(_ context.Context, userID string, c
 	}
 	return false, nil
 }
-
 
 // TwoFAPlugin serves TOTP enrolment, the sign-in challenge and backup codes.
 type TwoFAPlugin struct {
@@ -290,7 +286,6 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/2fa/backup-codes", http.HandlerFunc(p.backupCodesHandler))
 }
 
-
 func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, userID string, expect, next *TwoFAState) bool {
 	swapper, ok := p.store.(TwoFAStateSwapper)
 	if !ok {
@@ -344,7 +339,6 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 	}
 	return sess.UserID, true
 }
-
 
 func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
@@ -791,7 +785,6 @@ func (p *TwoFAPlugin) replaceBackupCodes(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
-
 // GenerateSecret returns a random 20-byte base32 TOTP secret.
 func GenerateSecret() string {
 	secret := make([]byte, 20)
@@ -849,7 +842,6 @@ func ValidateTOTPStep(secret, code string, period, skew uint) (uint64, bool) {
 	}
 	return 0, false
 }
-
 
 func buildOTPAuthURL(issuer, accountName, secret string, period uint) string {
 	u := url.URL{

@@ -21,7 +21,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-
 const (
 	coseAlgES256 int64 = -7
 	coseAlgEdDSA int64 = -8
@@ -343,7 +342,6 @@ func (k coseKey) verify(msg, sig []byte) bool {
 	}
 	return false
 }
-
 
 const cborMaxDepth = 8
 

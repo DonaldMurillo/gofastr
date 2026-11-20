@@ -10,7 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
-
 var memoryEraseMu sync.Mutex
 
 func unregisterMemoryStoreEraser(mgr *AuthManager) {

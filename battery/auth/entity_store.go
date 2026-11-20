@@ -20,13 +20,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-
 // EntityUserStore is a UserStore over a SQLite or PostgreSQL users table, with raw SQL.
 type EntityUserStore struct {
-	db       *sql.DB
-	table    string
-	fieldMap UserFieldMap
-	dialect  storeDialect
+	db           *sql.DB
+	table        string
+	fieldMap     UserFieldMap
+	dialect      storeDialect
 	hidesDeleted atomic.Bool
 }
 
@@ -821,7 +820,6 @@ func SessionEntityFields() []schema.Field {
 		{Name: "pending_two_factor", Type: schema.Bool, Default: "false"},
 	}
 }
-
 
 func generateUserID() (string, error) {
 	b := make([]byte, 16)

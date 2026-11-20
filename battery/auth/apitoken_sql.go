@@ -12,7 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-
 // SQLAPITokenStore is an APITokenStore in a SQLite or PostgreSQL table.
 type SQLAPITokenStore struct {
 	db      *sql.DB
@@ -200,7 +199,6 @@ func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
 	return err
 }
 
-
 // SQLServiceAccountStore is the database-backed ServiceAccountStore.
 type SQLServiceAccountStore struct {
 	db      *sql.DB
@@ -327,7 +325,6 @@ func (s *SQLServiceAccountStore) SetDisabled(ctx context.Context, id string, dis
 		s.q(`UPDATE %s SET disabled = $1 WHERE id = $2`), disabled, id)
 	return err
 }
-
 
 var (
 	_ APITokenStore       = (*SQLAPITokenStore)(nil)

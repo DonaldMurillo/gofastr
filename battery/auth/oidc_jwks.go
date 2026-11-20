@@ -19,7 +19,6 @@ import (
 	"time"
 )
 
-
 const (
 	jwksMaxBody      = 1 << 20 // 1 MiB cap on a JWKS response
 	forcedRefetchGap = 5 * time.Minute
@@ -52,13 +51,13 @@ type jwksCache struct {
 	httpClient *http.Client
 	ttl        time.Duration
 
-	mu        sync.Mutex
-	set       *jwksSet
-	fetchedAt time.Time
-	retryAt time.Time
-	gen     uint64
-	lastErr error
-	fetchSlot chan struct{}
+	mu          sync.Mutex
+	set         *jwksSet
+	fetchedAt   time.Time
+	retryAt     time.Time
+	gen         uint64
+	lastErr     error
+	fetchSlot   chan struct{}
 	forcedByKid map[string]time.Time
 
 	now     func() time.Time
@@ -340,7 +339,6 @@ func buildECKey(crv, xB64, yB64 string) (*ecdsa.PublicKey, error) {
 	}
 	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
 }
-
 
 func (p *OIDCProvider) verifyIDToken(ctx context.Context, idToken, jwksURI string) (map[string]any, error) {
 	parts := strings.Split(idToken, ".")

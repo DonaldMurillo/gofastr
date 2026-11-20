@@ -26,7 +26,6 @@ type PasswordSwapper interface {
 	SwapPassword(ctx context.Context, userID, oldHash, newHash string) (bool, error)
 }
 
-
 // PasswordResetConfig configures the plugin.
 type PasswordResetConfig struct {
 	// BaseURL is the origin of the emailed reset link.

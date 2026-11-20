@@ -27,9 +27,9 @@ type CorePlugin struct {
 	loginLimit        *RateLimiter
 	loginLimitAccount *RateLimiter
 	registerLimit     *RateLimiter
-	notices *mailQueue
-	twoFactorURL string
-	clearSiteData string
+	notices           *mailQueue
+	twoFactorURL      string
+	clearSiteData     string
 }
 
 var _ AuthPluginOnStop = (*CorePlugin)(nil)

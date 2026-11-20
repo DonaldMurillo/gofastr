@@ -12,6 +12,7 @@ import (
 var ErrTwoFactorEnforcement = errors.New("auth: two-factor enforcement unavailable")
 
 // MintSession creates a session for userID and marks it pending when the user has a second factor; every sign-in path mints through it.
+//
 //gofastr:mustuse pending
 func (m *AuthManager) MintSession(ctx context.Context, userID string, ttl time.Duration) (sess *Session, pending bool, err error) {
 	sess, err = m.SessionStore().Create(ctx, userID, ttl)

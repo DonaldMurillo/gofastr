@@ -5,7 +5,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
-
 func init() { registerCanonicalErasers() }
 
 func registerCanonicalErasers() {
