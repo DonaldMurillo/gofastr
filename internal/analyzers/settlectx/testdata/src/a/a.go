@@ -411,3 +411,29 @@ func boundInImmediateClosure(ctx context.Context) (context.Context, context.Canc
 		return context.WithTimeout(detached, time.Second)
 	})()
 }
+
+func (q *Queue) workerLoopImmediateTuple(ctx context.Context, job Job) { // want workerLoopImmediateTuple:"runsCallback\\[0\\]"
+	_ = q.runHandler(ctx, q.handlers[job.Type], job)
+	detached := context.WithoutCancel(ctx)
+	bounded, cancel := context.WithTimeout(detached, time.Second)
+	defer cancel()
+
+	first, _ := func() (context.Context, context.Context) { return bounded, detached }()
+	_ = q.Ack(first, job)
+	var _, second = func() (context.Context, context.Context) { return detached, bounded }()
+	_ = q.Ack(second, job)
+	_, uncapped := func() (context.Context, context.Context) { return bounded, detached }()
+	_ = q.Ack(uncapped, job) // want "Ack records an outcome under context.WithoutCancel with no timeout"
+}
+
+func boundFromForwardedTuple(ctx context.Context) context.Context { // want boundFromForwardedTuple:"detaches\\(bounded=true\\)"
+	detached := context.WithoutCancel(ctx)
+	bounded, cancel := context.WithTimeout(detached, time.Second)
+	defer cancel()
+	return func() context.Context {
+		_, result := func() (context.Context, context.Context) {
+			return func() (context.Context, context.Context) { return detached, bounded }()
+		}()
+		return result
+	}()
+}

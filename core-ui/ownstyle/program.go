@@ -51,15 +51,15 @@ func CSSWaiverScopeEnd(src string, start, end, line int) int {
 	if lineStart == 0 {
 		before = stripBOM(before)
 	}
-	after, rest, hasNextLine := strings.Cut(src[end:], "\n")
-	if !hasNextLine || strings.TrimSpace(before) != "" || strings.TrimSpace(after) != "" {
+	if strings.TrimSpace(before) != "" {
 		return line
 	}
-	covered := line + strings.Count(src[start:end], "\n")
-	for next := range strings.SplitSeq(rest, "\n") {
-		covered++
-		if strings.TrimSpace(next) != "" {
-			return covered
+	for _, t := range tokenize(src[end:]) {
+		if significant(t) {
+			if t.Line == 1 {
+				return line
+			}
+			return line + strings.Count(src[start:end], "\n") + t.Line - 1
 		}
 	}
 	return line

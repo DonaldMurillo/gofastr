@@ -2,6 +2,7 @@ primitive: settle
 summary: The bounded, detached context an outcome write runs on after its unit of work returned, and the timeout that bounds it, in internal/settle.
 code:
   - internal/settle/
+  - internal/analyzers/settlectx/
 twins:
   - job: Bound an outcome write after its unit of work returned at 10s on a context detached from the caller.
     why: battery/queue and battery/webhook stay unmountable, and unmount refuses a package that imports a gofastr internal/ package; each keeps a settleTimeout pinned to settle.Timeout.
@@ -13,6 +14,10 @@ twins:
       - path: battery/webhook/webhook.go
         note: settleTimeout, also used by inbound.go's ProcessInbound.
 invariants:
+  - id: settle-literal-result-is-selected-by-index
+    rule: Settlectx follows the selected result of an immediately called function literal through assignments and forwarded returns.
+    enforced_by:
+      - test: internal/analyzers/settlectx.TestSettleCtx
   - id: settle-context-is-detached-and-bounded
     rule: An outcome write after its handler, delivery or run returned runs on settle.Context - WithoutCancel plus a Timeout bound - and framework/entityui takes the timeout and helper from here; queue and webhook keep copies whose timeout equals settle.Timeout.
     enforced_by:

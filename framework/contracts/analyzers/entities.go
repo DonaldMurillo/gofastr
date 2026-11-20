@@ -48,7 +48,6 @@ type EntityInfo struct {
 	CRUDDisabled bool
 	MCP          bool
 	Public       bool
-	HasAccess    bool
 	readGated    bool
 	OwnerField   string
 	MultiTenant  bool
@@ -58,11 +57,6 @@ type EntityInfo struct {
 	File string
 	Line int
 	Pos  token.Pos
-}
-
-// Scoped reports whether the entity limits which rows a caller can reach.
-func (e EntityInfo) Scoped() bool {
-	return piicheck.Scoped(e.OwnerField, e.MultiTenant, e.HasAccess)
 }
 
 // Exposed reports whether the entity has a generated surface at all.
@@ -372,15 +366,15 @@ func readExposure(e ast.Expr, info *EntityInfo, aliases map[string]string) {
 		case "CRUD":
 			info.CRUDDisabled = pointsToFalse(kv.Value)
 		case "Access":
-			info.AccessPermissions, info.HasAccess, info.readGated = readAccess(kv.Value, aliases)
+			info.AccessPermissions, info.readGated = readAccess(kv.Value, aliases)
 		}
 	}
 }
 
-func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, gated, readGated bool) {
+func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, readGated bool) {
 	lit := compositeOf(e)
 	if lit == nil {
-		return nil, true, true
+		return nil, true
 	}
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -395,14 +389,11 @@ func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, ga
 			}
 			gatesOperation = piicheck.GatesAccess(s)
 		}
-		if gatesOperation {
-			gated = true
-			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Read" {
-				readGated = true
-			}
+		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Read" && gatesOperation {
+			readGated = true
 		}
 	}
-	return permissions, gated, readGated
+	return permissions, readGated
 }
 
 func isAnyoneConstant(e ast.Expr, aliases map[string]string) bool {

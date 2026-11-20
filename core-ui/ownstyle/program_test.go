@@ -106,7 +106,7 @@ func TestSuppressedUsesSharedMarkerGrammarAndScope(t *testing.T) {
 	}{
 		{"space-separated rules", "/* gofastr:allow(GOFASTR1811 GOFASTR1806) legacy */\n.a{}", 2, true},
 		{"separator without reason", "/* gofastr:allow(GOFASTR1806) --: */\n.a{}", 2, false},
-		{"standalone spans blank lines", "\ufeff/* gofastr:allow(GOFASTR1806) legacy */\n\n.a{}", 2, true},
+		{"standalone spans blank lines", "\ufeff/* gofastr:allow(GOFASTR1806) legacy */\n\n.a{}", 3, true},
 		{"multiline with code on last line", "/* gofastr:allow(GOFASTR1806) legacy\n*/ .a{}", 2, false},
 		{"file scope", "/* gofastr:allow-file(GOFASTR1806) legacy */\n.a{}\n.b{}", 3, true},
 	} {
@@ -115,6 +115,17 @@ func TestSuppressedUsesSharedMarkerGrammarAndScope(t *testing.T) {
 				t.Errorf("Suppressed at line %d = %t, want %t", tc.line, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestStandaloneWaiverSkipsCSSComments(t *testing.T) {
+	const src = "\ufeff/* gofastr:allow(GOFASTR1806) legacy */\n\n/* explanation\ncontinued */ .a { color: var(--color-unknown); }\n.b { color: var(--color-other); }"
+	diagnostics := Check("panel.style.css", src, KindScoped, nil)
+	if len(diagnostics) != 2 {
+		t.Fatalf("want two unknown tokens, got %v", diagnostics)
+	}
+	if !Suppressed(src, diagnostics[0]) || Suppressed(src, diagnostics[1]) {
+		t.Fatalf("want only first CSS code line waived, got %v", diagnostics)
 	}
 }
 

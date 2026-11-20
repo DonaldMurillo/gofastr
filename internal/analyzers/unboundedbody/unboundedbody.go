@@ -27,7 +27,7 @@
 //   - the mount credit: the FuncDecl around the read (the handler, or the
 //     factory returning the handler literal) is referenced in the
 //     package only from inside the arguments of a call to a middleware
-//     that rebinds a request's Body from a capping constructor —
+//     that caps the request's Body before dispatch —
 //     battery/semantic/routes.go mounts
 //     limitBody(requireJSON(auth(indexHandler(idx)))), and a method value
 //     limitBody(http.HandlerFunc(s.serve)) counts the same;
@@ -54,8 +54,7 @@
 // which is exactly how the probed sites sat in files whose other routes
 // were capped.
 //
-// Form parsing requires a local or caller-side cap. Mount detection
-// does not prove that middleware caps the request before dispatch.
+// Form parsing requires a local or caller-side cap.
 //
 // Silent postures, deliberately:
 //   - a bare r.Form / r.PostForm / r.MultipartForm read is not a trigger:
@@ -174,6 +173,7 @@ func run(pass *analysis.Pass) (any, error) {
 type pkgIndex struct {
 	pass  *analysis.Pass
 	caps  map[types.Object]bool
+	mount map[types.Object]bool
 	calls map[types.Object][]siteIn
 	refs  map[types.Object][]bool // reference → wrapped by a rebinder's argument
 }
@@ -187,9 +187,11 @@ type siteIn struct {
 }
 
 func buildIndex(pass *analysis.Pass) *pkgIndex {
+	caps, mount := bodyRebinders(pass)
 	ix := &pkgIndex{
 		pass:  pass,
-		caps:  bodyRebinders(pass),
+		caps:  caps,
+		mount: mount,
 		calls: map[types.Object][]siteIn{},
 		refs:  map[types.Object][]bool{},
 	}
@@ -301,7 +303,7 @@ func (ix *pkgIndex) wrappedByRebinder(stack []ast.Node) bool {
 		if stack[i+1] == call.Fun {
 			continue
 		}
-		if callee := calleeObject(ix.pass, call.Fun); callee != nil && ix.caps[callee] {
+		if callee := calleeObject(ix.pass, call.Fun); ix.mount[callee] {
 			return true
 		}
 	}
@@ -409,10 +411,8 @@ func rebindsRequestBody(pass *analysis.Pass, body ast.Node) bool {
 	return found
 }
 
-// bodyRebinders maps each package function whose body rebinds a
-// request's Body from a capping constructor.
-func bodyRebinders(pass *analysis.Pass) map[types.Object]bool {
-	out := map[types.Object]bool{}
+func bodyRebinders(pass *analysis.Pass) (helpers, middleware map[types.Object]bool) {
+	helpers, middleware = map[types.Object]bool{}, map[types.Object]bool{}
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue
@@ -422,14 +422,80 @@ func bodyRebinders(pass *analysis.Pass) map[types.Object]bool {
 			if !ok || decl.Body == nil {
 				continue
 			}
-			if rebindsRequestBody(pass, decl.Body) {
-				if obj := pass.TypesInfo.Defs[decl.Name]; obj != nil {
-					out[obj] = true
+			if obj, ok := pass.TypesInfo.Defs[decl.Name].(*types.Func); ok {
+				if rebindsRequestBody(pass, decl.Body) {
+					helpers[obj] = true
+				}
+				if capsBeforeDispatch(pass, decl, obj.Signature()) {
+					middleware[obj] = true
 				}
 			}
 		}
 	}
-	return out
+	return helpers, middleware
+}
+
+func capsBeforeDispatch(pass *analysis.Pass, decl *ast.FuncDecl, sig *types.Signature) bool {
+	if sig.Params().Len() != 1 || !astx.IsNamed(types.Unalias(sig.Params().At(0).Type()), "net/http", "Handler") ||
+		len(decl.Body.List) != 1 {
+		return false
+	}
+	ret, ok := decl.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return false
+	}
+	wrapper, ok := ast.Unparen(ret.Results[0]).(*ast.CallExpr)
+	if !ok || len(wrapper.Args) != 1 || !astx.IsNamed(types.Unalias(pass.TypesInfo.TypeOf(wrapper.Fun)), "net/http", "HandlerFunc") {
+		return false
+	}
+	handler, ok := ast.Unparen(wrapper.Args[0]).(*ast.FuncLit)
+	if !ok || len(handler.Body.List) < 2 {
+		return false
+	}
+	stmts := handler.Body.List
+	dispatch, ok := stmts[len(stmts)-1].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := ast.Unparen(dispatch.X).(*ast.CallExpr)
+	if !ok || len(call.Args) != 2 {
+		return false
+	}
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	next := sig.Params().At(0)
+	if !ok || sel.Sel.Name != "ServeHTTP" || calleeObject(pass, sel.X) != next {
+		return false
+	}
+	request := requestObject(pass, call.Args[1])
+	handlerSignature := pass.TypesInfo.TypeOf(handler).(*types.Signature)
+	writer := calleeObject(pass, call.Args[0])
+	if request == nil || request != handlerSignature.Params().At(1) || writer != handlerSignature.Params().At(0) {
+		return false
+	}
+	for n := range ast.Preorder(handler.Body) {
+		if id, ok := n.(*ast.Ident); ok && pass.TypesInfo.Uses[id] == next && id != ast.Unparen(sel.X) {
+			return false
+		}
+	}
+	assign, ok := stmts[len(stmts)-2].(*ast.AssignStmt)
+	if !ok || assign.Tok != token.ASSIGN || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+		return false
+	}
+	target, ok := ast.Unparen(assign.Lhs[0]).(*ast.SelectorExpr)
+	if !ok || target.Sel.Name != "Body" || !sameRequest(pass, target.X, request) {
+		return false
+	}
+	limit, ok := ast.Unparen(assign.Rhs[0]).(*ast.CallExpr)
+	if !ok || len(limit.Args) != 3 || calleeObject(pass, limit.Args[0]) != writer ||
+		pass.TypesInfo.Types[limit.Args[2]].Value == nil {
+		return false
+	}
+	fn, ok := calleeObject(pass, limit.Fun).(*types.Func)
+	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != "net/http" || fn.Name() != "MaxBytesReader" {
+		return false
+	}
+	body, ok := ast.Unparen(limit.Args[1]).(*ast.SelectorExpr)
+	return ok && body.Sel.Name == "Body" && sameRequest(pass, body.X, request)
 }
 
 // parseMethods are the *http.Request methods that read the whole body.

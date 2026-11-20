@@ -84,13 +84,15 @@ rejected outright: it would absorb every rule added afterwards.
 Put the directive at the end of the offending line, or on its own line
 directly above it. `//gofastr:allow-file(RULE) reason` covers a whole
 file. A directive on its own line above a multi-line string literal
-covers the whole literal. A directive must start its comment: one quoted
-in prose, or written inside a string (raw strings included), silences
-nothing.
+covers the whole literal. A standalone CSS waiver covers the next line
+of CSS code across blank lines and other comments. A directive counts
+only at the start of its comment. Quoting it in prose or in a string
+literal has no effect.
 
-The SQL concatenation check also accepts `// safe-sql: <reason>` at the
-end of the statement or on the line directly above it. The comment
-applies to that statement and requires a reason.
+Put `// safe-sql: <reason>` directly above the statement or at the end
+of one of its lines to waive the SQL concatenation check. A waiver on an
+`if`, `switch`, or `for` header can cover SQL in the header. Statements
+in the body need their own waivers.
 
 `GOFASTR1809` checks `.css` files discovered under the verification
 root outside the styling-owner paths, including embedded stylesheets and

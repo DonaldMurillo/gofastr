@@ -47,6 +47,10 @@ invariants:
     rule: A :dir() override is exempt from GOFASTR1824 written as CSS text and as a style-builder Rule selector or Pseudo/Child argument.
     enforced_by:
       - test: framework/contracts/analyzers.TestPhysicalSideBuilderDirOverride
+  - id: builder-dir-credit-is-local
+    rule: Every effective builder selector needs a top-level :dir() for direction credit. A Pseudo or Child suffix inherits its parent selector only up to its first top-level comma. A separate property call inherits credit from the preceding Rule on the same receiver only in the same statement list and with no intervening Rule.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPhysicalSideBuilderDirOverride
   - id: hard-navigation-shapes
     rule: GOFASTR1802 fires on assigning location, or its href, search or pathname through any chain of window, document, self, top, parent or frames, with = or +=, and on location.reload, assign or replace; a comparison, a hash change and a property named location do not fire, and a bare location = needs a quoted value in Go but not in a script.
     enforced_by:

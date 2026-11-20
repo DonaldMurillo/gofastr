@@ -874,21 +874,20 @@ func wire(app *framework.App) {
 	assertNot(t, ds, contracts.RuleUnscopedPII, "OwnerField scopes rows to their owner")
 }
 
-func TestEntityWithBlankAccessBlockIsStillUnscoped(t *testing.T) {
-	// An access block of empty strings gates nothing. Counting it as
-	// scoping is the difference between "reviewed and declared open" and
-	// "reviewed and forgot".
-	ds := fixture(t, map[string]string{
-		"e.go": entityImports + `
+func TestEntityWithoutReadAccessIsStillUnscoped(t *testing.T) {
+	for _, access := range []string{`Read: ""`, `Read: "", Create: "profiles:create"`} {
+		ds := fixture(t, map[string]string{
+			"e.go": entityImports + `
 func wire(app *framework.App) {
 	app.Entity("profiles", entity.EntityConfig{
 		Fields:   []schema.Field{{Name: "email", Type: schema.String}},
-		Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: ""}},
+		Exposure: &entity.ExposureConfig{Access: entity.AccessControl{` + access + `}},
 	})
 }
 `,
-	})
-	assertHas(t, ds, contracts.RuleUnscopedPII)
+		})
+		assertHas(t, ds, contracts.RuleUnscopedPII)
+	}
 }
 
 func TestPublicEntityIsReported(t *testing.T) {

@@ -291,8 +291,9 @@ type state struct {
 }
 
 type assign struct {
-	at  ast.Node
-	rhs ast.Expr
+	at     ast.Node
+	rhs    ast.Expr
+	result int
 }
 
 // resolver answers "what context does this expression hold here" for one
@@ -300,7 +301,7 @@ type assign struct {
 type resolver struct {
 	a        *analyzer
 	assigns  map[types.Object][]assign
-	reaching func(types.Object, ast.Node) []ast.Expr
+	reaching func(types.Object, ast.Node) []assign
 	litInput func(types.Object, int) state
 	// closures are locals bound to a func literal in this body: the
 	// function's own code, not a caller-supplied callback.
@@ -310,7 +311,7 @@ type resolver struct {
 func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 	r := &resolver{a: a, assigns: map[types.Object][]assign{}, closures: map[types.Object]bool{}}
 	info := a.pass.TypesInfo
-	add := func(id *ast.Ident, rhs ast.Expr, at ast.Node) {
+	add := func(id *ast.Ident, values []ast.Expr, index int, at ast.Node) {
 		obj := info.Defs[id]
 		if obj == nil {
 			obj = info.Uses[id]
@@ -318,13 +319,21 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 		if obj == nil {
 			return
 		}
+		var rhs ast.Expr
+		var result int
+		switch {
+		case len(values) == 1:
+			rhs, result = values[0], index
+		case index < len(values):
+			rhs = values[index]
+		}
 		if _, ok := ast.Unparen(rhs).(*ast.FuncLit); ok && rhs != nil {
 			r.closures[obj] = true
 		}
 		if !isContext(obj.Type()) {
 			return
 		}
-		r.assigns[obj] = append(r.assigns[obj], assign{at: at, rhs: rhs})
+		r.assigns[obj] = append(r.assigns[obj], assign{at: at, rhs: rhs, result: result})
 	}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -334,23 +343,11 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 				if !ok {
 					continue
 				}
-				var rhs ast.Expr
-				if len(n.Rhs) == len(n.Lhs) {
-					rhs = n.Rhs[i]
-				} else if len(n.Rhs) == 1 {
-					rhs = n.Rhs[0]
-				}
-				add(id, rhs, n)
+				add(id, n.Rhs, i, n)
 			}
 		case *ast.ValueSpec:
 			for i, id := range n.Names {
-				var rhs ast.Expr
-				if len(n.Values) == len(n.Names) {
-					rhs = n.Values[i]
-				} else if len(n.Values) == 1 {
-					rhs = n.Values[0]
-				}
-				add(id, rhs, n)
+				add(id, n.Values, i, n)
 			}
 		}
 		return true
@@ -361,6 +358,10 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 // classify resolves the context e holds, following the latest assignment
 // to a local before e (straight-line: branches are not split).
 func (r *resolver) classify(e ast.Expr, depth int) state {
+	return r.classifyResult(e, 0, depth)
+}
+
+func (r *resolver) classifyResult(e ast.Expr, result, depth int) state {
 	if depth > 10 || e == nil {
 		return state{}
 	}
@@ -379,6 +380,13 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 		}
 		return state{}
 	case *ast.CallExpr:
+		t := info.TypeOf(e)
+		if tuple, ok := t.(*types.Tuple); ok && result < tuple.Len() {
+			t = tuple.At(result).Type()
+		}
+		if !isContext(t) {
+			return state{}
+		}
 		fn := typeutil.StaticCallee(info, e)
 		if fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == "context" {
 			switch fn.Name() {
@@ -401,11 +409,8 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 				return state{kind: detached, bounded: bounded}
 			}
 		}
-		if !returnsContext(info.TypeOf(e)) {
-			return state{}
-		}
 		if lit, ok := ast.Unparen(e.Fun).(*ast.FuncLit); ok {
-			return r.classifyImmediate(lit, e, depth+1)
+			return r.classifyImmediate(lit, e, result, depth+1)
 		}
 		// A derivation (WithValue, WithCancel, a tracer's Start, a
 		// principal attach): the result carries its parent's cancellation.
@@ -427,7 +432,7 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 	return state{}
 }
 
-func (r *resolver) classifyImmediate(lit *ast.FuncLit, call *ast.CallExpr, depth int) state {
+func (r *resolver) classifyImmediate(lit *ast.FuncLit, call *ast.CallExpr, index, depth int) state {
 	nested := r.a.newResolver(lit.Body)
 	nested.useReturnPaths(lit.Body)
 	sig := r.a.pass.TypesInfo.TypeOf(lit).(*types.Signature)
@@ -444,20 +449,14 @@ func (r *resolver) classifyImmediate(lit *ast.FuncLit, call *ast.CallExpr, depth
 		return state{}
 	}
 	var result state
-	results := sig.Results()
+	obj := sig.Results().At(index)
 	for _, ret := range returnStatements(lit.Body) {
-		for i := 0; i < results.Len(); i++ {
-			obj := results.At(i)
-			if !isContext(obj.Type()) {
-				continue
-			}
-			candidate := nested.classifyReturn(ret, obj, i, depth)
-			if candidate.kind == detached && !candidate.bounded {
-				return candidate
-			}
-			if result.kind == unknown || candidate.kind == detached {
-				result = candidate
-			}
+		candidate := nested.classifyReturn(ret, obj, index, depth)
+		if candidate.kind == detached && !candidate.bounded {
+			return candidate
+		}
+		if result.kind == unknown || candidate.kind == detached {
+			result = candidate
 		}
 	}
 	return result
@@ -474,7 +473,7 @@ func (r *resolver) classifyLocal(obj types.Object, use ast.Node, depth int) stat
 			return r.litInput(obj, depth+1)
 		}
 		for _, value := range values {
-			candidate := r.classify(value, depth+1)
+			candidate := r.classifyResult(value.rhs, value.result, depth+1)
 			if candidate.kind == detached && !candidate.bounded {
 				return candidate
 			}
@@ -494,7 +493,7 @@ func (r *resolver) classifyLocal(obj types.Object, use ast.Node, depth int) stat
 	if last == nil {
 		return state{kind: live, root: obj}
 	}
-	return r.classify(last.rhs, depth+1)
+	return r.classifyResult(last.rhs, last.result, depth+1)
 }
 
 func returnStatements(body *ast.BlockStmt) []*ast.ReturnStmt {
@@ -516,7 +515,7 @@ func (r *resolver) classifyReturn(ret *ast.ReturnStmt, result *types.Var, index,
 	case 0:
 		return r.classifyLocal(result, ret, depth)
 	case 1:
-		return r.classify(ret.Results[0], depth)
+		return r.classifyResult(ret.Results[0], index, depth)
 	default:
 		return r.classify(ret.Results[index], depth)
 	}
@@ -550,8 +549,8 @@ func (r *resolver) useReturnPaths(body *ast.BlockStmt) {
 		}
 	}
 
-	r.reaching = func(obj types.Object, use ast.Node) []ast.Expr {
-		var values []ast.Expr
+	r.reaching = func(obj types.Object, use ast.Node) []assign {
+		var values []assign
 		seen := map[*cfg.Block]bool{}
 		var trace func(*cfg.Block, token.Pos)
 		trace = func(block *cfg.Block, before token.Pos) {
@@ -561,7 +560,7 @@ func (r *resolver) useReturnPaths(body *ast.BlockStmt) {
 			for i := len(r.assigns[obj]) - 1; i >= 0; i-- {
 				a := r.assigns[obj][i]
 				if blocks[a.at] == block && (!before.IsValid() || a.at.End() <= before) {
-					values = append(values, a.rhs)
+					values = append(values, a)
 					return
 				}
 			}

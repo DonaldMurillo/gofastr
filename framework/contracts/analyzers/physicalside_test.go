@@ -92,9 +92,19 @@ func TestPhysicalSideBuilderDirOverride(t *testing.T) {
 		{"\tss.Rule(\".a\").Pseudo(\":dir(rtl)\", \"left\", \"8px\").End()\n", 0},
 		{"\tss.Rule(\".a:dir(rtl)\")\n\tss.Set(\"margin-left\", \"4px\")\n", 0},
 		{"\tss.Rule(\".a:dir(rtl)\").End()\n\tss.Rule(\".b\")\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a\")\n\tif rtlOnly { ss.Rule(\".a:dir(rtl)\") }\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tif rtlOnly { ss.Rule(\".b\") }\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tif rtlOnly { ss.Set(\"margin-left\", \"4px\") }\n", 1},
+		{"\tif rtlOnly { ss.Rule(\".a:dir(rtl)\"); ss.Set(\"margin-left\", \"4px\") }\n", 0},
+		{"\tss.Rule(\".a:dir(rtl), .b\").Set(\"margin-left\", \"4px\").End()\n", 1},
+		{"\tss.Rule(\".a, .b:dir(rtl)\")\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl):is(.x, .y), .b:dir(ltr)\").Set(\"margin-left\", \"4px\").End()\n", 0},
+		{"\tss.Rule(\".a:is(:dir(rtl), .b)\").Set(\"margin-left\", \"4px\").End()\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\").Child(\".b, .c\", \"left\", \"8px\").End()\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\").Child(\".b, .c:dir(ltr)\", \"left\", \"8px\").End()\n", 0},
 		{"\tss.Rule(\".a\").Pseudo(\":hover\", \"left\", \"8px\").End()\n", 1},
 	} {
-		ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet) {\n"+tc.body+"}\n")
+		ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet, rtlOnly bool) {\n"+tc.body+"}\n")
 		if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != tc.want {
 			t.Errorf("%q: want %d GOFASTR1824, got %d: %v", tc.body, tc.want, len(found), found)
 		}

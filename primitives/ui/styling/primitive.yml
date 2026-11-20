@@ -10,6 +10,11 @@ docs:
 on_change:
   - Screenshot the rendered examples/meridian (marketing, app, auth, admin, phone width, light and dark) and look at it; a DOM dump or computed style cannot show layout.
 invariants:
+  - id: owned-css-waiver-skips-comment-only-lines
+    rule: A standalone CSS waiver reaches the next line that contains a significant CSS token, across blank and comment-only lines. A trailing waiver stays on its own line.
+    enforced_by:
+      - test: core-ui/ownstyle.TestStandaloneWaiverSkipsCSSComments
+      - test: core-ui/ownstyle.TestSuppressedUsesSharedMarkerGrammarAndScope
   - id: one-styling-surface
     rule: All CSS lives in the design system (component sheets, layouts, theme tokens) or in an app's owned style sheet, scoped to its own markup and written in tokens; generators and apps ship no other CSS.
     enforced_by:

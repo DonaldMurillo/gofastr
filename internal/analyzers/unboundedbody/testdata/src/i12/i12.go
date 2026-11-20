@@ -16,6 +16,10 @@ const maxBody = 1 << 20
 // limitBody is the battery/semantic routes.go middleware.
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxBody {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		next.ServeHTTP(w, r)
 	})
@@ -40,7 +44,7 @@ func Handler() http.Handler {
 	mux.Handle("POST /raw", limitBody(rawHandler()))
 	mux.Handle("POST /raw2", rawHandler())
 	mux.Handle("POST /method", limitBody(http.HandlerFunc(new(svc).serve)))
-	mux.Handle("POST /form", limitBodyConditionally(http.HandlerFunc(parseForm)))
+	mux.Handle("POST /form", limitBodyConditionally(http.HandlerFunc(readAndParseForm)))
 	return mux
 }
 
@@ -54,8 +58,9 @@ func indexHandler() http.Handler {
 	})
 }
 
-func parseForm(w http.ResponseWriter, r *http.Request) {
-	_ = r.ParseForm() // want `parses the request form with no cap`
+func readAndParseForm(w http.ResponseWriter, r *http.Request) {
+	_, _ = io.ReadAll(r.Body) // want "reads an inbound request body with no size cap"
+	_ = r.ParseForm()         // want `parses the request form with no cap`
 }
 
 // queryHandler is wrapped through an intermediate middleware: quiet.

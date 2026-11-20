@@ -666,8 +666,9 @@ report, and static lint findings in the original audit format.
   strings built for `render.HTML`, discarded Exec results, and test skips.
   Audit reports all unannotated skips outside recognized test lanes.
   Lane detection reads skip arguments and recognizes nearby
-  `testing.Short()` guards. A `// safe-sql: <reason>` comment at the end of
-  the SQL statement or directly above it waives that statement. Other
+  `testing.Short()` guards. A `// safe-sql: <reason>` comment directly above
+  the SQL statement or at the end of one of its lines waives that statement.
+  The same rule covers SQL in an `if`, `switch`, or `for` header. Other
   legacy annotations include `// allow-skip: <why>` and `// ignore the error`
   for Exec.
 - `gofastr audit deps`: list candidate global registration calls found

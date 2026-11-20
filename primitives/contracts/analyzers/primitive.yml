@@ -34,11 +34,15 @@ invariants:
       - test: framework/contracts/analyzers.TestInPageStateAsRouteFiresOnlyForUIApps
       - test: framework/contracts/analyzers.TestSweepCoreUIHostImportRendersUI
   - id: legacy-annotation-window
-    rule: A legacy escape hatch such as safe-sql or reporting-query counts on the finding's line or within the four non-blank lines above it, in any letter case, and the search stops at a closing brace or a func line.
+    rule: The raw-query guidance check accepts safe-sql or reporting-query on the finding's line or within the four non-blank lines above it, in any letter case, and the search stops at a closing brace or a func line.
     enforced_by:
       - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationReachesFourLinesUp
       - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationStopsAtAFunction
       - test: framework/contracts/analyzers.TestSweepCoreReportingQueryMarkerIsHonoured
+  - id: sql-concatenation-waiver-is-statement-local
+    rule: Verify and audit lint accept a safe-sql comment with a reason directly above a statement or trailing a line of that statement, including within a multi-line call. A control header's waiver covers its own expressions and statements through the opening brace. The body is checked separately.
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestSQLWaiverAppliesOnlyToItsStatement
   - id: handrolled-crud-bar
     rule: GOFASTR handrolled-CRUD needs three of GET, POST, PUT, PATCH and DELETE on one collection path, trailing {param} or :param segments folded into it, with no declared entity of that name and outside /__gofastr, /mcp, /health, /metrics and /.well-known.
     enforced_by:
@@ -82,4 +86,4 @@ decisions:
     rejected:
       - option: Respell every one as a gofastr:allow directive.
         why: Thousands of sites across the repository and shipped apps already state their reason in the same breath, which is what the directive asks for.
-    upholds: [legacy-annotation-window]
+    upholds: [legacy-annotation-window, sql-concatenation-waiver-is-statement-local]

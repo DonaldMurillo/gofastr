@@ -2,6 +2,7 @@ primitive: bodylimit
 summary: The repo's inbound JSON request body cap and standard body-refusal status and phrase, in internal/bodylimit.
 code:
   - internal/bodylimit/
+  - internal/analyzers/unboundedbody/
 twins:
   - job: Map a refused auth request body (over the cap, unreadable, undecodable, bad form) to its status and phrase, and cap it at 1 MiB.
     why: battery/auth stays unmountable, and unmount refuses a package that imports a gofastr internal/ package; auth keeps a copy pinned to bodylimit by a parity test.
@@ -15,6 +16,10 @@ twins:
       - path: battery/webhook/inbound.go
         note: IngestHandler's read refusal; webhook stays unmountable too.
 invariants:
+  - id: raw-body-mount-cap-precedes-dispatch
+    rule: Unboundedbody credits a raw-body mount only for a returned http.HandlerFunc that wraps the dispatched request body with a constant http.MaxBytesReader limit immediately before its sole dispatch. Form parsing requires a local or caller-side cap.
+    enforced_by:
+      - test: internal/analyzers/unboundedbody.TestUnboundedBody
   - id: body-refusal-mapping-is-one
     rule: Bodylimit supplies the standard status and phrase for a refused request body (413 with the status phrase for overflow, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, and 400 invalid_form for a failed form parse), with exceptions for the pinned copies under twins and the admin ops envelope, which answers overflow with a 303 redirect and result=body-too-large for a plain form post or a 413 with the localized admin body-too-large message for a form RPC.
     enforced_by:

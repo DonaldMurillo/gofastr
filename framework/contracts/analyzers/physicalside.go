@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -122,6 +123,7 @@ func checkGoPhysicalSides(p *contracts.Pass, rel string, body []byte, lines []st
 func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDeclaration {
 	type builderCall struct {
 		scope ast.Node
+		list  ast.Node
 		call  *ast.CallExpr
 		recv  ast.Expr
 		first int
@@ -131,8 +133,9 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 		name  string
 	}
 	type ruleCall struct {
-		pos token.Pos
-		dir bool
+		end  token.Pos
+		list ast.Node
+		dir  bool
 	}
 	ruleReceivers := make(map[receiver][]ruleCall)
 	var calls []builderCall
@@ -147,7 +150,8 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 		case "Rule":
 			if id, ok := recv.(*ast.Ident); ok {
 				key := receiver{scope, id.Name}
-				ruleReceivers[key] = append(ruleReceivers[key], ruleCall{call.Pos(), dirSelectorArg(call)})
+				list := builderStatementList(call, stack)
+				ruleReceivers[key] = append(ruleReceivers[key], ruleCall{call.End(), list, dirSelectorArg(call, false)})
 			}
 			return true
 		case "Set":
@@ -156,7 +160,7 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 		default:
 			return true
 		}
-		calls = append(calls, builderCall{scope, call, recv, first})
+		calls = append(calls, builderCall{scope, builderStatementList(call, stack), call, recv, first})
 		return true
 	})
 	pairs := make(map[int][]cssDeclaration)
@@ -167,15 +171,20 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 			if !known {
 				continue
 			}
+			var latest token.Pos
 			for _, rule := range rules {
-				if rule.pos < candidate.call.Pos() {
-					inDir = rule.dir
+				if rule.end <= candidate.call.Pos() && rule.end > latest {
+					latest = rule.end
+					inDir = rule.dir && rule.list != nil && rule.list == candidate.list
 				}
 			}
 		} else if !chained {
 			continue
 		}
-		if inDir || (candidate.first == 1 && dirSelectorArg(candidate.call)) {
+		if candidate.first == 1 {
+			inDir = dirSelectorArg(candidate.call, inDir)
+		}
+		if inDir {
 			continue
 		}
 		args := candidate.call.Args
@@ -191,12 +200,65 @@ func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDe
 	return pairs
 }
 
-func dirSelectorArg(call *ast.CallExpr) bool {
+func builderStatementList(call *ast.CallExpr, stack []ast.Node) ast.Node {
+	var child ast.Node = call
+	for i := len(stack) - 1; i > 0; i-- {
+		switch parent := stack[i].(type) {
+		case *ast.SelectorExpr:
+			if parent.X != child {
+				return nil
+			}
+		case *ast.CallExpr:
+			if parent.Fun != child {
+				return nil
+			}
+		case *ast.ParenExpr:
+		case *ast.ExprStmt:
+			switch stack[i-1].(type) {
+			case *ast.BlockStmt, *ast.CaseClause, *ast.CommClause:
+				return stack[i-1]
+			}
+			return nil
+		default:
+			return nil
+		}
+		child = stack[i]
+	}
+	return nil
+}
+
+func dirSelectorArg(call *ast.CallExpr, inherited bool) bool {
 	if len(call.Args) == 0 {
 		return false
 	}
 	selector, ok := stringLit(call.Args[0])
-	return ok && reDirOverride.MatchString(selector)
+	if !ok || (!inherited && !reDirOverride.MatchString(selector)) {
+		return false
+	}
+	tokens := ownstyle.Tokenize(selector)
+	depth, directional := 0, inherited
+	for i, t := range tokens {
+		switch t.Type {
+		case ownstyle.TokenFunction, ownstyle.TokenOpenParen, ownstyle.TokenOpenSquare:
+			if depth == 0 && t.Text == "dir(" && i > 0 && i+2 < len(tokens) &&
+				tokens[i-1].Type == ownstyle.TokenColon && tokens[i-1].End == t.Start &&
+				(tokens[i+1].Text == "rtl" || tokens[i+1].Text == "ltr") &&
+				tokens[i+2].Type == ownstyle.TokenCloseParen {
+				directional = true
+			}
+			depth++
+		case ownstyle.TokenCloseParen, ownstyle.TokenCloseSquare:
+			depth--
+		case ownstyle.TokenComma:
+			if depth == 0 {
+				if !directional {
+					return false
+				}
+				directional = false
+			}
+		}
+	}
+	return directional && depth == 0
 }
 
 // styleRuleChain reports whether recv chains back to a Rule call and
@@ -209,7 +271,7 @@ func styleRuleChain(recv ast.Expr) (inDir, ok bool) {
 		}
 		switch method {
 		case "Rule":
-			return dirSelectorArg(call), true
+			return dirSelectorArg(call, false), true
 		case "Set", "Pseudo", "Child", "End":
 			recv = next
 		default:

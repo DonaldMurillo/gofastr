@@ -222,25 +222,22 @@ func sqlWaiverSpans(src lintSource) []sourceSpan {
 	if src.file == nil || !strings.Contains(strings.ToLower(src.body), "safe-sql:") {
 		return nil
 	}
-	comments := ast.NewCommentMap(src.fset, src.file, src.file.Comments)
+	targets := sqlWaiverTargets(src.file)
 	var spans []sourceSpan
-	ast.Inspect(src.file, func(node ast.Node) bool {
-		for _, group := range comments[node] {
-			for _, comment := range group.List {
-				if !sqlWaiverHasReason(comment.Text) {
-					continue
-				}
-				stmt := sqlWaiverStatement(node, comment, src)
-				if stmt != nil && !containsFuncLiteral(stmt) {
-					start := src.fset.PositionFor(stmt.Pos(), false).Offset
-					end := src.fset.PositionFor(stmt.End(), false).Offset
-					spans = append(spans, sourceSpan{start, end})
-					return true
+	for _, group := range src.file.Comments {
+		for _, comment := range group.List {
+			if !sqlWaiverHasReason(comment.Text) {
+				continue
+			}
+			target := sqlWaiverStatement(targets, comment, src)
+			for _, stmt := range target.parts {
+				if !containsFuncLiteral(stmt) {
+					start, end := src.fset.PositionFor(stmt.Pos(), false), src.fset.PositionFor(stmt.End(), false)
+					spans = append(spans, sourceSpan{start.Offset, end.Offset})
 				}
 			}
 		}
-		return true
-	})
+	}
 	return spans
 }
 
@@ -255,37 +252,88 @@ func sqlWaiverHasReason(comment string) bool {
 		strings.TrimSpace(text[len(marker):]) != ""
 }
 
-func sqlWaiverStatement(node ast.Node, comment *ast.Comment, src lintSource) ast.Node {
-	if file, ok := node.(*ast.File); ok && len(file.Decls) > 0 {
-		node = file.Decls[len(file.Decls)-1]
+type sqlWaiverTarget struct {
+	start, end   token.Pos
+	parts        []ast.Node
+	trailingOnly bool
+}
+
+func sqlWaiverTargets(file *ast.File) []sqlWaiverTarget {
+	var targets []sqlWaiverTarget
+	add := func(n ast.Node) {
+		targets = append(targets, sqlWaiverTarget{start: n.Pos(), end: n.End(), parts: []ast.Node{n}})
 	}
-	start := src.fset.PositionFor(node.Pos(), false)
-	end := src.fset.PositionFor(node.End(), false)
+	header := func(n ast.Node, body *ast.BlockStmt, parts ...ast.Node) {
+		target := sqlWaiverTarget{start: n.Pos(), end: body.Lbrace + 1}
+		for _, part := range parts {
+			if part != nil {
+				target.parts = append(target.parts, part)
+				add(part)
+			}
+		}
+		if len(target.parts) != 0 {
+			targets = append(targets, target)
+		}
+	}
+	for n := range ast.Preorder(file) {
+		switch n := n.(type) {
+		case *ast.IfStmt:
+			header(n, n.Body, n.Init, n.Cond)
+		case *ast.SwitchStmt:
+			header(n, n.Body, n.Init, n.Tag)
+		case *ast.TypeSwitchStmt:
+			header(n, n.Body, n.Init, n.Assign)
+		case *ast.ForStmt:
+			header(n, n.Body, n.Init, n.Cond, n.Post)
+		case *ast.FuncDecl:
+			if n.Body != nil && len(n.Body.List) == 1 {
+				switch stmt := n.Body.List[0].(type) {
+				case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.DeclStmt:
+					targets = append(targets, sqlWaiverTarget{n.Pos(), n.End(), []ast.Node{stmt}, true})
+				}
+			}
+		case *ast.GenDecl:
+			if len(n.Specs) == 1 {
+				if spec, ok := n.Specs[0].(*ast.ValueSpec); ok {
+					targets = append(targets, sqlWaiverTarget{start: n.Pos(), end: n.End(), parts: []ast.Node{spec}})
+				}
+			}
+		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.ValueSpec, *ast.DeclStmt:
+			add(n)
+		}
+	}
+	return targets
+}
+
+func sqlWaiverStatement(targets []sqlWaiverTarget, comment *ast.Comment, src lintSource) sqlWaiverTarget {
 	commentStart := src.fset.PositionFor(comment.Pos(), false)
 	commentEnd := src.fset.PositionFor(comment.End(), false)
-	trailing := commentStart.Line == end.Line && commentStart.Offset >= end.Offset &&
-		strings.TrimSpace(src.body[end.Offset:commentStart.Offset]) == ""
-	preceding := commentEnd.Line+1 == start.Line && commentEnd.Offset <= start.Offset &&
-		strings.TrimSpace(src.body[commentEnd.Offset:start.Offset]) == "" &&
-		strings.TrimSpace(src.body[commentStart.Offset-commentStart.Column+1:commentStart.Offset]) == ""
-	if !trailing && !preceding {
-		return nil
-	}
-	switch n := node.(type) {
-	case *ast.FuncDecl:
-		if trailing && n.Body != nil && len(n.Body.List) == 1 && start.Line == end.Line {
-			node = n.Body.List[0]
+	lineStart := commentStart.Offset - commentStart.Column + 1
+	standalone := strings.TrimSpace(src.body[lineStart:commentStart.Offset]) == ""
+	var best sqlWaiverTarget
+	for _, target := range targets {
+		start := src.fset.PositionFor(target.start, false)
+		end := src.fset.PositionFor(target.end, false)
+		trailing := end.Line == commentStart.Line && end.Offset <= commentStart.Offset &&
+			strings.TrimSpace(src.body[end.Offset:commentStart.Offset]) == ""
+		if target.trailingOnly {
+			if !trailing || start.Line != end.Line {
+				continue
+			}
+		} else {
+			preceding := standalone && commentEnd.Line+1 == start.Line && commentEnd.Offset <= start.Offset &&
+				strings.TrimSpace(src.body[commentEnd.Offset:start.Offset]) == ""
+			inside := start.Offset < commentStart.Offset && commentEnd.Offset <= end.Offset && !standalone &&
+				strings.TrimSpace(src.body[max(lineStart, start.Offset):commentStart.Offset]) != ""
+			if !trailing && !preceding && !inside {
+				continue
+			}
 		}
-	case *ast.GenDecl:
-		if len(n.Specs) == 1 {
-			node = n.Specs[0]
+		if target.start > best.start || target.start == best.start && target.end < best.end {
+			best = target
 		}
 	}
-	switch node.(type) {
-	case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.ValueSpec, *ast.DeclStmt:
-		return node
-	}
-	return nil
+	return best
 }
 
 func containsFuncLiteral(node ast.Node) bool {

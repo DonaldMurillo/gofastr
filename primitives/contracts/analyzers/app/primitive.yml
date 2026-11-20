@@ -81,10 +81,10 @@ invariants:
       - test: framework/contracts/analyzers.TestSweepAppGrantNeedsAPermissionArgument
       - test: framework/contracts/analyzers.TestSweepAppVariableEntityConfigRecordsNothing
   - id: entity-scope-reading
-    rule: An Access block holding only blanks or anyone scopes nothing, an Access value the Go pass cannot read counts as scoping, only a literal false disables CRUD, and a relation column is never PII.
+    rule: A literal Access block scopes reads only through a Read gate. Blank, anyone and write-only grants leave reads unscoped, and an Access value the Go pass cannot read counts as scoping. Only a literal false disables CRUD, and a relation column is never PII.
     enforced_by:
       - test: cmd/gofastr/internal/appspec.TestPIIAgreesWithPermissionsContract
-      - test: framework/contracts/analyzers.TestEntityWithBlankAccessBlockIsStillUnscoped
+      - test: framework/contracts/analyzers.TestEntityWithoutReadAccessIsStillUnscoped
       - test: framework/contracts/analyzers.TestSweepAppVariableAccessCountsAsScoped
       - test: framework/contracts/analyzers.TestSweepAppOnlyALiteralFalseDisablesCRUD
       - test: framework/contracts/analyzers.TestSweepAppRelationColumnIsNotPII
