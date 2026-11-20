@@ -51,11 +51,12 @@ invariants:
       - test: core/config.TestPointerEmbedEnforcesEarlierRequired
       - test: core/config.TestRequiredPromotedFieldNamesKey
   - id: shadowed-takes-default
-    rule: A shadowed field is never bound from a source and takes only its own default tag, checked by its validate rule, a shadowed struct each field's default, and a shadowed pointer stays as it was.
+    rule: A shadowed field is never bound from a source and takes only its own default tag, checked by its validate rule with an error naming the embedded field's path, a shadowed struct each field's default, and a shadowed pointer stays as it was.
     enforced_by:
       - test: core/config.TestShadowedFieldTakesItsDefault
       - test: core/config.TestShadowedFieldBadDefaultFails
       - test: core/config.TestShadowedFieldDefaultIsValidated
+      - test: core/config.TestShadowedDefaultErrorNamesEmbeddedField
       - test: core/config.TestShadowedPointerEmbedStaysNil
       - test: core/config.TestSweepConfigShadowedNestedPointerStaysNil
   - id: shape-refused-before-reading
@@ -85,13 +86,14 @@ invariants:
       - test: core/config.TestDurationParsesNanosAndMicros
       - test: core/config.TestLoadDurationOverflowRejected
   - id: validate-rules
-    rule: validate takes min, max and oneof only, integer and duration bounds compare exactly as int64 with duration bounds read as durations, and an unknown rule or one the field's type cannot take fails Load.
+    rule: validate takes min, max and oneof only, integer and duration bounds compare exactly as int64 with duration bounds read as durations, and an unknown rule or one the field's type cannot take fails Load before a source is read, on every field, bound or not.
     enforced_by:
       - test: core/config.TestDocumentedValidationTags
       - test: core/config.TestDurationBoundsReadAsDurations
       - test: core/config.TestIntegerBoundsCompareExactly
       - test: core/config.TestUnappliableValidationRulesRefused
       - test: core/config.TestSweepConfigUnknownRuleRefused
+      - test: core/config.TestUnboundFieldRuleRefused
   - id: validator-hook-runs
     rule: A config that implements ConfigValidator has Validate called after binding, and its error fails Load and MustLoad.
     enforced_by:
