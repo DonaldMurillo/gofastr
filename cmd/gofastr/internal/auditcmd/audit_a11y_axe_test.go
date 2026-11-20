@@ -15,7 +15,7 @@ func sitemapFixture(documents map[string]string) func(string) (a11ySitemap, erro
 	return func(path string) (a11ySitemap, error) {
 		source, ok := documents[path]
 		if !ok {
-			return a11ySitemap{}, fmt.Errorf("%s: missing sitemap fixture", path)
+			return a11ySitemap{}, fmt.Errorf("%s: %w", path, errA11ySitemapMissing)
 		}
 		return readA11ySitemap(source)
 	}
@@ -39,6 +39,27 @@ func TestA11ySitemapFallsBackToRoot(t *testing.T) {
 	pages, err := discoverA11yPages(sitemapFixture(nil))
 	if err != nil || !slices.Equal(pages, []string{"/"}) {
 		t.Fatalf(`expected ["/"], got %v, error %v`, pages, err)
+	}
+}
+
+func TestA11ySitemapRootFailuresFailDiscovery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		read func(string) (a11ySitemap, error)
+	}{
+		{"unavailable", func(string) (a11ySitemap, error) {
+			return a11ySitemap{}, fmt.Errorf("HTTP 503")
+		}},
+		{"malformed", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset>"})},
+		{"wrong document", sitemapFixture(map[string]string{"/sitemap.xml": "<html/>"})},
+		{"empty", sitemapFixture(map[string]string{"/sitemap.xml": "<urlset/>"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pages, err := discoverA11yPages(tc.read)
+			if len(pages) != 0 || err == nil || !strings.Contains(err.Error(), "/sitemap.xml") {
+				t.Fatalf("discovered %v, error %v, want a failure naming the root sitemap", pages, err)
+			}
+		})
 	}
 }
 

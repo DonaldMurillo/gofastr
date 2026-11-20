@@ -98,8 +98,10 @@ and audits **both color schemes**: contrast, focus order, landmark
 structure, ARIA validity. These are the classes of failure only a
 rendered page exposes. Pages are discovered from the app's `/sitemap.xml`
 (`uihost.WithSitemap`), so a sitemap-configured app gets full-site
-coverage with zero flags; use `--pages /a,/b` to scope. Exit code 1 on
-violations.
+coverage with zero flags. A 404 or 410 from the root sitemap falls back
+to `/`. Other discovery failures, including malformed sitemap XML,
+exit 1. Use `--pages /a,/b` to set the pages explicitly. Accessibility
+violations also exit 1.
 
 For an authenticated app, pass the same credentials a user enters on the
 auth battery's `/login` page:

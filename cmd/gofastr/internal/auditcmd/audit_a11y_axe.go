@@ -3,7 +3,9 @@ package auditcmd
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -55,10 +57,15 @@ type a11ySitemap struct {
 	Parts   []string `xml:"sitemap>loc"`
 }
 
+var errA11ySitemapMissing = errors.New("sitemap not found")
+
 func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]string, error) {
 	root, err := readSitemap("/sitemap.xml")
-	if err != nil {
+	if errors.Is(err, errA11ySitemapMissing) {
 		return []string{"/"}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("sitemap /sitemap.xml: %w", err)
 	}
 	var locations []string
 	switch root.XMLName.Local {
@@ -85,6 +92,8 @@ func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]st
 			}
 			locations = append(locations, doc.Pages...)
 		}
+	default:
+		return nil, fmt.Errorf("sitemap /sitemap.xml: expected a URL set or sitemap index, got %q", root.XMLName.Local)
 	}
 	var pages []string
 	seen := map[string]bool{}
@@ -103,7 +112,7 @@ func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]st
 		}
 	}
 	if len(pages) == 0 {
-		return []string{"/"}, nil
+		return nil, fmt.Errorf("sitemap /sitemap.xml: no page URLs found")
 	}
 	return pages, nil
 }
@@ -201,8 +210,15 @@ func discoverA11yPagesFromBrowser(browser context.Context, base string) ([]strin
 		if resp == nil {
 			return a11ySitemap{}, fmt.Errorf("sitemap request returned no response")
 		}
-		if !samePage(base+path, resp.URL) || resp.Status != 200 {
+		if !samePage(base+path, resp.URL) {
 			return a11ySitemap{}, fmt.Errorf("sitemap request did not return a document at the requested path (HTTP %d)", resp.Status)
+		}
+		switch resp.Status {
+		case http.StatusNotFound, http.StatusGone:
+			return a11ySitemap{}, fmt.Errorf("HTTP %d: %w", resp.Status, errA11ySitemapMissing)
+		case http.StatusOK:
+		default:
+			return a11ySitemap{}, fmt.Errorf("sitemap request returned HTTP %d", resp.Status)
 		}
 		return readA11ySitemap(source)
 	})
