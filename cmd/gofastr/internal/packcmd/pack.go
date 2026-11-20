@@ -237,6 +237,9 @@ func appToMap(a appspec.AppSpecApp) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	if a.EntityLLMMD != nil {
+		m["entity_llm_md"] = *a.EntityLLMMD
+	}
 	if a.LocalePrefixes {
 		m["locale_prefixes"] = true
 	}
@@ -1073,7 +1076,7 @@ var (
 	// emits but this list omits ships unsorted, which
 	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
-	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "locale_prefixes"}
+	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md", "locale_prefixes"}
 	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}

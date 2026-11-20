@@ -1899,6 +1899,20 @@ screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
 
+### Entity LLM markdown (`app.entity_llm_md`)
+
+```yaml
+app:
+  entity_llm_md: false
+```
+
+Controls entity API markdown routes, including each entity's `llm.md` and
+the aggregate `/api/llm.md`. Omitted or `true` keeps these routes on, with
+their existing authentication rules. `false` emits
+`framework.AppConfig.NoLLMMD: true` and does not register these routes.
+This setting is separate from `app.llm_md`, which controls public page
+documentation only. Changing either setting leaves the other unchanged.
+
 ### Locale in the URL (`app.locale_prefixes`)
 
 ```yaml
@@ -2166,7 +2180,7 @@ the screen route checks above, the auth `GET <base_path>/me` route, the
 `login_form` and `signup_form` actions, the locale-prefix warning and
 the [signed-out screen warning](#screens-nobody-can-sign-in-to-gofastr-validate-and-gofastr-generate-warning)
 read the project's settings (`api_prefix`, auth and its base path,
-admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
+admin and its path, `pwa`, `llm_md`, `entity_llm_md`, `locale_prefixes`, `base_url`) off
 its generated `app.go` and `main.go`. A screen the whole spec would
 refuse is refused in the fragment too.
 
