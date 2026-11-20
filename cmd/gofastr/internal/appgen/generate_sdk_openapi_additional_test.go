@@ -1,11 +1,37 @@
 package appgen
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestOpenAPISDKAdditionalPropertyNameCollision(t *testing.T) {
+	for _, tc := range []struct{ wire, member string }{
+		{"additionalProperties", "AdditionalProperties"},
+		{"marshalJSON", "MarshalJSON"},
+		{"unmarshalJSON", "UnmarshalJSON"},
+	} {
+		t.Run(tc.wire, func(t *testing.T) {
+			doc := oaSDKDoc(
+				`{"/record":{"get":{"operationId":"getRecord","responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/RecordData"}}}}}}}}`,
+				fmt.Sprintf(`{"schemas":{"RecordData":{"type":"object","properties":{%q:{"type":"string"}},"additionalProperties":true}}}`, tc.wire),
+			)
+			spec, err := oaSDKSpecFor(t, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = renderOASDKGoFiles(spec)
+			want := fmt.Sprintf("property %q of RecordData derives Go member %s, reserved for additionalProperties", tc.wire, tc.member)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("got %v, want %q", err, want)
+			}
+		})
+	}
+}
 
 func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
 	out := oaSDKGenerate(t, `{
@@ -23,9 +49,7 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
         "type":"object",
         "properties":{
           "label":{"type":"string"},
-          "additionalProperties":{"type":"string"},
-          "marshalJSON":{"type":"string"},
-          "unmarshalJSON":{"type":"string"}
+          "optional":{"type":"string"}
         },
         "additionalProperties":true
       },
@@ -108,13 +132,13 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestAdditionalPropertyNames(t *testing.T) {
-	const want = "{\"label\":\"y\",\"Label\":42,\"additionalProperties\":\"a\",\"marshalJSON\":\"m\"}"
+	const want = "{\"label\":\"y\",\"Label\":42}"
 	var flex client.RecordDataFlex
 	if err := json.Unmarshal([]byte(want), &flex); err != nil {
 		t.Fatal(err)
 	}
-	flex.AdditionalProperties_["label"] = json.RawMessage("0")
-	flex.AdditionalProperties_["unmarshalJSON"] = json.RawMessage("0")
+	flex.AdditionalProperties["label"] = json.RawMessage("0")
+	flex.AdditionalProperties["optional"] = json.RawMessage("0")
 	got, err := json.Marshal(flex)
 	if err != nil {
 		t.Fatal(err)

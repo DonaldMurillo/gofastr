@@ -510,10 +510,9 @@ the generated Go struct exposes the extra keys in an `AdditionalProperties`
 map. Its values use the declared schema's Go type, or `json.RawMessage` for
 `additionalProperties: true` or `{}`. The map's entries read and write
 as top-level keys of that object, not as a nested field; exact declared
-JSON names take precedence over map keys. If a named property already
-uses the Go name `AdditionalProperties`, the map is `AdditionalProperties_`.
-Go fields colliding with the generated `MarshalJSON` or `UnmarshalJSON`
-methods also get a trailing underscore, without changing the JSON names.
+JSON names take precedence over map keys. The Go generator reports a
+collision rather than renaming a property that derives one of these Go
+members: `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
 Omitting `additionalProperties` or setting it to `false` does not add a map.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
