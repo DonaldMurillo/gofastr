@@ -226,6 +226,7 @@ var ownedPackages = []string{
 	"core-ui/runtime/minify",
 	"core-ui/registry",
 	"core-ui/store",
+	"core-ui/uinodev1",
 }
 
 //gofastr:test-reads primitives/ *.go
