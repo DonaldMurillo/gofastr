@@ -200,14 +200,26 @@ not silently disabled constraints. Omitted flags still default to false.
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
   a string.
-- a run of digits is an integer; a decimal with a fraction or exponent
-  (`1.5`, `.5`, `-2.5e3`) is a float. A float too large for 64 bits
+- decimal integers may have a sign. Unsigned `0o10` and `0x10` are
+  octal and hexadecimal integers (8 and 16); `010` is decimal 10.
+  Integers must fit in an `int64` to resolve as numbers. Quote them to
+  keep them as strings.
+- a decimal with a fraction or exponent (`1.5`, `.5`, `-2.5e3`) is
+  a float. A float too large for 64 bits
   (`1e999`) is an error, not infinity. Go-only spellings stay strings:
   a hex float (`0x1.8p1`), digit underscores (`1_000.5`), `Infinity`.
   `.inf` and `.nan` are strings too: nothing in a spec reads one.
 - a value starting with `!` is a tag, and tags are refused: the core
   `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
   the string.
+
+If an older spec or Pack/Kiln snapshot uses an unquoted hex or octal number
+as a string, quote it before loading. For example, write
+`values: ["0x01", "0x02"]` to keep those enum values instead of `"1"` and
+`"2"`, and `default: "0x10"` for a string field to avoid an invalid default.
+
+Pack and Kiln freeze reject string values with invalid UTF-8. YAML cannot
+write those bytes as text without changing them.
 
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
@@ -893,10 +905,9 @@ also cover every field *inside* each element — the omission class this
 catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
 down, where a set construct key already differs from the zero output and
 the top-level checks pass anyway. A value that would re-parse as anything
-but itself is quoted: `"` and backslash are escaped, invalid UTF-8 bytes
-and non-printable runes as `\xNN`/`\uNNNN`, so a quoted value comes back
-byte-for-byte (an apostrophe passes through verbatim inside the double
-quotes; bare, `60'` would merge two flow-list members into one). Every
+but itself is quoted: `"`, backslash and non-printable runes are escaped,
+so a quoted value comes back unchanged. An apostrophe passes through inside
+double quotes; bare, `60'` would merge two flow-list members into one. Every
 committed example app spec gates this, not just Meridian, and
 reflection-driven guards fail the day an `AppSpec` or construct field
 exists that the serializer's key lists don't cover — the drift that let
@@ -1004,7 +1015,10 @@ partial and keeps the shell).
   target with `primary_key: [currency_code]` offers its codes; a target
   keyed on more than one column has no single value to offer and its
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
-  `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
+  `decimal` and `any` for `float`; each control starts at its field's
+  `default:`, written as the entityui create form writes it (a date as
+  `YYYY-MM-DD`, a timestamp as UTC wall time, a JSON value as JSON), so
+  an untouched field submits the default rather than an empty value) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
   Submitted control names use the default camelCase API wire keys
   (`address_line_1` becomes `addressLine1`) so field refusals land on the
@@ -1021,6 +1035,16 @@ partial and keeps the shell).
   `read_only` or `auto_generate` field or a column the server fills
   (`id`, `created_at`, `updated_at`, `deleted_at`) on a create form, or an entry
   listed twice, since the form would draw nothing for it.
+  A successful create resets the form and stays on the same screen.
+  Generated screens that read that entity (lists, record/edit views,
+  stats and charts, including nested blocks) attach
+  [`ui.InvalidateScreens`](reactivity.md#2-rpc) headers to its
+  mutation responses. Returning to those screens fetches fresh rows
+  without a reload; failed submissions do not evict their cached screens.
+  This also covers entityui creates, edits and deletes. Parameterized
+  screen routes use the documented `"*"` selector, evicting all cached
+  screens because the concrete record URLs are not known at generation
+  time. Invalidation does not repaint a screen that is already visible.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs
@@ -1899,6 +1923,20 @@ screen and its data shape: useful for AI agents in trusted environments,
 schema disclosure elsewhere. `app.pwa` and `app.llm_md` are independent:
 enabling one never emits the other.
 
+### Entity LLM markdown (`app.entity_llm_md`)
+
+```yaml
+app:
+  entity_llm_md: false
+```
+
+Controls entity API markdown routes, including each entity's `llm.md` and
+the aggregate `/api/llm.md`. Omitted or `true` keeps these routes on, with
+their existing authentication rules. `false` emits
+`framework.AppConfig.NoLLMMD: true` and does not register these routes.
+This setting is separate from `app.llm_md`, which controls public page
+documentation only. Changing either setting leaves the other unchanged.
+
 ### Locale in the URL (`app.locale_prefixes`)
 
 ```yaml
@@ -2166,7 +2204,7 @@ the screen route checks above, the auth `GET <base_path>/me` route, the
 `login_form` and `signup_form` actions, the locale-prefix warning and
 the [signed-out screen warning](#screens-nobody-can-sign-in-to-gofastr-validate-and-gofastr-generate-warning)
 read the project's settings (`api_prefix`, auth and its base path,
-admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
+admin and its path, `pwa`, `llm_md`, `entity_llm_md`, `locale_prefixes`, `base_url`) off
 its generated `app.go` and `main.go`. A screen the whole spec would
 refuse is refused in the fragment too.
 

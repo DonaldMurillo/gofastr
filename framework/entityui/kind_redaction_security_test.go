@@ -7,13 +7,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // echoKind prints the value it is handed and the row's token column,
 // the way a careless custom renderer would.
 func echoKind() Extensions {
 	echo := func(c CellContext) render.HTML {
-		return render.Text("[" + cell(c.Value) + "|" + cell((&meta{}).rowValue(c.Row, "token")) + "]")
+		return render.Text("[" + fieldtext.Cell(c.Value) + "|" + fieldtext.Cell((&meta{}).rowValue(c.Row, "token")) + "]")
 	}
 	return Extensions{Kinds: map[string]Kind{"echo": {Cell: echo, Detail: echo}}}
 }

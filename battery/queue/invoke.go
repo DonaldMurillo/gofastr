@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
 func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
@@ -29,10 +30,10 @@ func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
-			span.SetAttributes(attribute.String("error.type", "panic"))
+			span.SetAttributes(attribute.String("error.type", tracing.ErrorTypePanic))
 			span.SetStatus(codes.Error, "")
 		} else if err != nil {
-			span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err)))
+			span.SetAttributes(attribute.String("error.type", tracing.ErrorType(err)))
 			span.SetStatus(codes.Error, "")
 		}
 		span.End()

@@ -3,13 +3,15 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
+	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -61,6 +63,7 @@ func Tracing() Middleware {
 				)
 				if status >= 500 {
 					span.SetStatus(codes.Error, http.StatusText(status))
+					span.SetAttributes(attribute.String("error.type", strconv.Itoa(status)))
 				}
 			}
 			defer func() {
@@ -71,7 +74,10 @@ func Tracing() Middleware {
 					if stack == nil {
 						stack = debug.Stack()
 					}
-					span.SetAttributes(attribute.String("exception.stacktrace", panicOrigin(stack)))
+					span.SetAttributes(
+						attribute.String("error.type", tracing.ErrorTypePanic),
+						attribute.String("exception.stacktrace", panicOrigin(stack)),
+					)
 					panic(v)
 				}
 			}()

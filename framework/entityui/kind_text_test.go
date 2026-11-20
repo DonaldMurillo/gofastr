@@ -6,20 +6,23 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // A text slot (a row link's label, a card's title) takes a kind's Text,
 // else the field-type text, and never its Cell HTML: the Cell's markup
 // cast to a string and escaped again printed as tags to the reader.
 func TestKindTextInTextSlots(t *testing.T) {
-	shout := func(cc CellContext) render.HTML { return render.HTML("<strong>" + cell(cc.Value) + "</strong>") }
+	shout := func(cc CellContext) render.HTML {
+		return render.HTML("<strong>" + fieldtext.Cell(cc.Value) + "</strong>")
+	}
 	cases := []struct {
 		name  string
 		kind  Kind
 		title string // the title field the kind draws
 		want  string
 	}{
-		{"kind with Text", Kind{Cell: shout, Text: func(cc CellContext) string { return "Deal " + cell(cc.Value) }}, "name", ">Deal alpha<"},
+		{"kind with Text", Kind{Cell: shout, Text: func(cc CellContext) string { return "Deal " + fieldtext.Cell(cc.Value) }}, "name", ">Deal alpha<"},
 		{"kind without Text", Kind{Cell: shout}, "name", ">alpha<"},
 		{"built-in money", Kind{}, "amount", ">$1,234.50<"},
 	}

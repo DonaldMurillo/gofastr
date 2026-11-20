@@ -1,6 +1,10 @@
 version: v0.98.0
-title: Pending release
+title: YAML hex and octal integers
 notes:
+  - change: "BREAKING - unquoted hex and octal integers in app specs and snapshots now read as numbers"
+    breaking: true
+    guidance: "Quote values meant to stay strings before loading an existing app spec or older Pack or Kiln snapshot, for example default: \"0x10\" or values: [\"0x01\", \"0x02\"]."
+    nodetect: "whether a YAML value is meant as a number or as text depends on the field and the app, not the value's spelling"
   - change: "BREAKING - battery/desktop.New panics on a relative Config.DataDir, which used to resolve against the working directory at launch; Init now creates a missing Config.DataDir owner-only (0700), where it used to fail writing the identity file"
     breaking: true
     nodetect: "the value is usually built at runtime or read from configuration; a literal relative path is the only spelling that shows it, and an absolute one is unaffected"

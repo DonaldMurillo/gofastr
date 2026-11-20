@@ -78,17 +78,39 @@ func TestSpanNameIsFirstKeyword(t *testing.T) {
 
 func TestErrorTypeSeesThroughWrapping(t *testing.T) {
 	err := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &customErr{}))
-	if got := errorType(err); got != "*tracing.customErr" {
+	if got := ErrorType(err); got != "*tracing.customErr" {
 		t.Errorf("errorType = %q", got)
 	}
-	if got := errorType(errors.New("plain")); got != "*errors.errorString" {
+	if got := ErrorType(errors.New("plain")); got != "*errors.errorString" {
 		t.Errorf("errorType = %q", got)
 	}
 	// A two-%w wrapper is *fmt.wrapErrors; the first wrapped error is
 	// the cause (2026-10-27 C12).
 	multi := fmt.Errorf("begin: %w (attempt %w)", &customErr{}, context.Canceled)
-	if got := errorType(fmt.Errorf("outer: %w", multi)); got != "*tracing.customErr" {
+	if got := ErrorType(fmt.Errorf("outer: %w", multi)); got != "*tracing.customErr" {
 		t.Errorf("errorType through a multi-%%w wrapper = %q", got)
+	}
+	if got := ErrorType(nil); got != "<nil>" {
+		t.Errorf("ErrorType(nil) = %q", got)
+	}
+}
+
+func TestErrorTypeUnwrapsOnlyFmt(t *testing.T) {
+	sentinel := errors.New("sentinel")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"join", errors.Join(&customErr{}, sentinel), "*errors.joinError"},
+		{"wrapped-join", fmt.Errorf("outer: %w", errors.Join(&customErr{}, sentinel)), "*errors.joinError"},
+		{"wrapped-sentinel", fmt.Errorf("outer: %w", sentinel), "*errors.errorString"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ErrorType(tc.err); got != tc.want {
+				t.Errorf("ErrorType = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

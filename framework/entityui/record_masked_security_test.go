@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 var formTagRe = regexp.MustCompile(`(?s)<(/?)(form|input|select|textarea|option)\b([^>]*)>`)
@@ -183,7 +184,7 @@ func storedToken(t *testing.T, x *testUI) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cell((&meta{}).rowValue(row, "token"))
+	return fieldtext.Cell((&meta{}).rowValue(row, "token"))
 }
 
 // Saving the record form with a hook-masked text field leaves the

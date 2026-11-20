@@ -28,24 +28,20 @@ func Freeze(w *world.World, dir string) error {
 	if dir == "" {
 		return errors.New("freeze: empty dir")
 	}
+	spec, err := AppSpecYAML(w)
+	if err != nil {
+		return fmt.Errorf("freeze: app spec: %w", err)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("freeze: mkdir: %w", err)
 	}
-	if err := writeAppSpec(w, dir); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), spec, 0o644); err != nil {
 		return fmt.Errorf("freeze: app spec: %w", err)
 	}
 	if err := writeWorldSnapshot(w, dir); err != nil {
 		return fmt.Errorf("freeze: world snapshot: %w", err)
 	}
 	return nil
-}
-
-func writeAppSpec(w *world.World, dir string) error {
-	buf, err := AppSpecYAML(w)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "gofastr.yml"), buf, 0o644)
 }
 
 func writeWorldSnapshot(w *world.World, dir string) error {

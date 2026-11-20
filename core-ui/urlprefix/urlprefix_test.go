@@ -173,6 +173,49 @@ func TestMiddlewareRewritesHTML(t *testing.T) {
 	}
 }
 
+func TestMiddlewareRewritesMixedCaseHTML(t *testing.T) {
+	for _, tt := range []struct {
+		name, contentType string
+	}{
+		{"mixed_case", "tExT/HtMl"},
+		{"parameters", "Text/HTML; charset=utf-8"},
+		{"missing_semicolon", "text/html charset=utf-8"},
+		{"whitespace", " text/html ; charset=utf-8"},
+		{"trailing_whitespace", "text/html \t"},
+		{"malformed_parameter", "text/html; charset"},
+		{"mixed_case_malformed_parameter", "Text/HTML; charset"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				io.WriteString(w, `<a href="/pricing">p</a>`)
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, esRequest("GET", "/x"))
+			if got := rec.Body.String(); got != `<a href="/es/pricing">p</a>` {
+				t.Fatalf("got %q", got)
+			}
+		})
+	}
+}
+
+func TestMiddlewareRejectsInvalidHTMLMediaType(t *testing.T) {
+	for _, ct := range []string{"", "text/htmlish", "application/json", "application/xhtml+xml"} {
+		t.Run(ct, func(t *testing.T) {
+			const body = `<a href="/pricing">p</a>`
+			h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", ct)
+				io.WriteString(w, body)
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, esRequest("GET", "/x"))
+			if got := rec.Body.String(); got != body {
+				t.Fatalf("got %q", got)
+			}
+		})
+	}
+}
+
 func TestMiddlewareSniffsUntypedHTML(t *testing.T) {
 	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `<!doctype html><a href="/pricing">p</a>`)
