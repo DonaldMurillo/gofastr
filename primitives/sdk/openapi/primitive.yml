@@ -45,6 +45,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
       - test: cmd/gofastr/internal/appgen.TestUnionApp
+  - id: go-sdk-additional-properties-round-trip
+    rule: Generated Go structs preserve explicitly allowed additional properties as sibling JSON keys while reserving exact declared names for their named fields.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: stream-timeout-bounds-the-headers
     rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams a 2xx body for as long as the caller's context allows, while a non-2xx error body and every buffered call keep the Timeout.
     enforced_by:

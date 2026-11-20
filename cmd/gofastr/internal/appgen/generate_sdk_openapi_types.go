@@ -27,8 +27,10 @@ type oaField struct {
 }
 
 type oaStruct struct {
-	Name   string
-	Fields []oaField
+	Name               string
+	Fields             []oaField
+	Additional         *oaType
+	AdditionalNullable bool
 }
 
 // oaTypeSet names and collects the struct types a document needs: a
@@ -315,6 +317,18 @@ func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
 		desc, _ := ps["description"].(string)
 		st.Fields = append(st.Fields, oaField{Wire: wire, Go: g, Type: ft, Required: required[wire], Nullable: nullable, Description: desc})
 	}
+	switch additional := s["additionalProperties"].(type) {
+	case bool:
+		if additional {
+			st.Additional = oaRaw
+		}
+	case map[string]any:
+		var err error
+		st.Additional, st.AdditionalNullable, err = ts.typeOf(additional, name+"AdditionalProperty")
+		if err != nil {
+			return fmt.Errorf("additionalProperties of %s: %w", name, err)
+		}
+	}
 	return nil
 }
 
@@ -391,6 +405,7 @@ func (ts *oaTypeSet) renderGo(sb *strings.Builder) {
 			continue
 		}
 		fmt.Fprintf(sb, "\n// %s is the schema %s.\ntype %s struct {\n", name, name, name)
+		additionalField := "AdditionalProperties"
 		for _, f := range st.Fields {
 			if d := oaCommentText(f.Description); d != "" {
 				fmt.Fprintf(sb, "\t// %s\n", d)
@@ -403,10 +418,91 @@ func (ts *oaTypeSet) renderGo(sb *strings.Builder) {
 			if !f.Required {
 				tag += ",omitempty"
 			}
-			fmt.Fprintf(sb, "\t%s %s `json:%q`\n", f.Go, typ, tag)
+			if f.Go == additionalField {
+				additionalField += "_"
+			}
+			fmt.Fprintf(sb, "\t%s %s `json:%q`\n", st.goField(f), typ, tag)
 		}
-		sb.WriteString("}\n")
+		if st.Additional != nil {
+			typ := st.Additional.goExpr()
+			if st.AdditionalNullable && st.Additional.goPointer() {
+				typ = "*" + typ
+			}
+			fmt.Fprintf(sb, "\t// %s holds JSON properties not declared by the schema.\n", additionalField)
+			fmt.Fprintf(sb, "\t%s map[string]%s `json:\"-\"`\n}\n", additionalField, typ)
+			st.renderGoObjectCodec(sb, additionalField, typ)
+		} else {
+			sb.WriteString("}\n")
+		}
 	}
+}
+
+func (st *oaStruct) goField(f oaField) string {
+	if st.Additional != nil && (f.Go == "MarshalJSON" || f.Go == "UnmarshalJSON") {
+		return f.Go + "_"
+	}
+	return f.Go
+}
+
+func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, additionalField, valueType string) {
+	wires := make([]string, 0, len(st.Fields))
+	for _, f := range st.Fields {
+		wires = append(wires, fmt.Sprintf("%q", f.Wire))
+	}
+	fmt.Fprintf(sb, `
+func (v %[1]s) MarshalJSON() ([]byte, error) {
+	type plain %[1]s
+	data, err := json.Marshal(plain(v))
+	if err != nil || len(v.%[2]s) == 0 {
+		return data, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	for key, value := range v.%[2]s {
+		switch key {
+		case %[3]s:
+			continue
+		}
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		fields[key] = raw
+	}
+	return json.Marshal(fields)
+}
+
+func (v *%[1]s) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key, raw := range fields {
+		switch key {
+`, st.Name, additionalField, strings.Join(wires, ", "))
+	for _, f := range st.Fields {
+		fmt.Fprintf(sb, `		case %q:
+			if err := json.Unmarshal(raw, &v.%s); err != nil {
+				return err
+			}
+`, f.Wire, st.goField(f))
+	}
+	fmt.Fprintf(sb, `		default:
+			var value %[2]s
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return err
+			}
+			if v.%[1]s == nil {
+				v.%[1]s = make(map[string]%[2]s)
+			}
+			v.%[1]s[key] = value
+		}
+	}
+	return nil
+}
+`, additionalField, valueType)
 }
 
 // renderTS emits every struct type as an interface.

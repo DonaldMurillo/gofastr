@@ -408,7 +408,9 @@ func oaGoParamString(v, goType string) string {
 func renderOASDKOperations(spec oaSDKSpec) string {
 	need := map[string]bool{"context": len(spec.Ops) > 0, "net/http": len(spec.Ops) > 0, "net/url": len(spec.Ops) > 0}
 	for _, name := range spec.Types.order {
-		for _, f := range spec.Types.structs[name].Fields {
+		st := spec.Types.structs[name]
+		need["encoding/json"] = need["encoding/json"] || st.Additional != nil
+		for _, f := range st.Fields {
 			need["encoding/json"] = need["encoding/json"] || f.Type.usesRaw()
 		}
 	}
