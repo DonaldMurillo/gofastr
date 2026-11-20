@@ -31,6 +31,7 @@ type oaJSDescriptor struct {
 	Body         string      `json:"body"`
 	BodyType     string      `json:"bodyType"`
 	BodyRequired bool        `json:"bodyRequired"`
+	BodyNullable bool        `json:"bodyNullable"`
 	Result       string      `json:"result"`
 	Accept       string      `json:"accept"`
 	Auth         []string    `json:"auth"`
@@ -40,7 +41,7 @@ func oaJSDescribe(op oaSDKOp) oaJSDescriptor {
 	d := oaJSDescriptor{
 		Name: op.JSName, Method: op.Method, Path: op.PathTemplate,
 		Required: []string{}, PathParams: []string{}, Query: [][2]string{}, Header: [][2]string{},
-		BodyRequired: op.BodyRequired,
+		BodyRequired: op.BodyRequired, BodyNullable: op.BodyNullable,
 	}
 	for _, p := range op.PathParams {
 		d.PathParams = append(d.PathParams, p.Name)
@@ -155,7 +156,11 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 			if op.BodyRequired {
 				opt = ""
 			}
-			args = append(args, "body"+opt+": "+op.Body.tsExpr())
+			bodyType := op.Body.tsExpr()
+			if op.BodyNullable {
+				bodyType += " | null"
+			}
+			args = append(args, "body"+opt+": "+bodyType)
 		case op.BodyKind == "binary":
 			opt := "?"
 			if op.BodyRequired {
@@ -270,19 +275,21 @@ const jsOAClientTail = `  async do(method, path, body) {
 
   async _call(op, params, body) {
     params = params || {};
+    const readParam = (name) => Object.prototype.hasOwnProperty.call(params, name) ? params[name] : undefined;
     for (const name of op.required) {
-      if (params[name] === undefined || params[name] === null) {
+      const value = readParam(name);
+      if (value === undefined || value === null) {
         throw new TypeError(op.name + ": parameter " + name + " is required");
       }
     }
     let path = op.path;
     for (const name of op.pathParams) {
-      path = path.split("{" + name + "}").join(pathEscape(params[name]));
+      path = path.split("{" + name + "}").join(pathEscape(readParam(name)));
     }
     const q = new URLSearchParams();
     const joined = [];
     for (const [name, mode] of op.query) {
-      const value = params[name];
+      const value = readParam(name);
       if (value === undefined || value === null) continue;
       if (mode === "join") {
         if (value.length) joined.push(formEncode(name) + "=" + Array.from(value, formEncode).join(","));
@@ -296,7 +303,7 @@ const jsOAClientTail = `  async do(method, path, body) {
     const query = [q.toString(), ...joined].filter(Boolean).join("&");
     const headers = {};
     for (const [name, mode] of op.header) {
-      const value = params[name];
+      const value = readParam(name);
       if (value === undefined || value === null) continue;
       if (mode === "repeat") {
         if (value.length) headers[name] = Array.from(value, String).join(",");
@@ -307,7 +314,7 @@ const jsOAClientTail = `  async do(method, path, body) {
     if (op.accept && !Object.keys(headers).some((k) => k.toLowerCase() === "accept")) headers.Accept = op.accept;
     let payload;
     let contentType = "";
-    if (body !== undefined && body !== null) {
+    if (body !== undefined && (body !== null || op.bodyNullable)) {
       payload = op.body === "json" ? JSON.stringify(body) : body;
       contentType = op.body === "json" ? "application/json" : op.bodyType;
     } else if (op.bodyRequired) {

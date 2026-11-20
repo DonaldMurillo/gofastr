@@ -456,15 +456,44 @@ func TestMarkdownNegotiation_EndToEnd(t *testing.T) {
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
-	req.Header.Set("Accept", "text/markdown")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
-		t.Fatalf("Accept: text/markdown → Content-Type %q, want text/markdown", ct)
+	for _, tc := range []struct {
+		name   string
+		accept []string
+		want   string
+	}{
+		{"markdown only", []string{"text/markdown"}, "text/markdown"},
+		{"markdown variant", []string{"text/markdown; variant=GFM"}, "text/markdown"},
+		{"markdown charset and variant", []string{"text/markdown; charset=UTF-8; variant=CommonMark;q=0.8, text/html;q=0.5"}, "text/markdown"},
+		{"lower weight markdown variant", []string{"text/markdown; variant=GFM;q=0.1, text/html"}, "text/html"},
+		{"HTML preferred", []string{"text/html;q=1, text/markdown;q=0.1"}, "text/html"},
+		{"markdown preferred", []string{"text/markdown;q=0.9, text/html;q=0.1"}, "text/markdown"},
+		{"implicit HTML weight", []string{"text/markdown;q=0.1, text/html"}, "text/html"},
+		{"equal weights", []string{"text/html, text/markdown"}, "text/markdown"},
+		{"separate header lines", []string{"text/markdown;q=0.1", "text/html"}, "text/html"},
+		{"wildcard prefers HTML", []string{"text/markdown;q=0.1, text/*;q=0.9"}, "text/html"},
+		{"exact HTML overrides wildcard", []string{"text/html;q=0, text/*;charset=utf-8, text/markdown;q=0.1"}, "text/markdown"},
+		{"more specific charset", []string{`text/html, text/html;charset="utf-8";q=0.2, text/markdown;q=0.5`}, "text/markdown"},
+		{"quoted comma is not a separator", []string{`application/json;p="a, text/html;q=1, b", text/markdown;q=0.5`}, "text/markdown"},
+		{"invalid markdown weight", []string{"text/markdown;q=NaN, text/html"}, "text/html"},
+		{"wildcard alone", []string{"*/*"}, "text/html"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, value := range tc.accept {
+				req.Header.Add("Accept", value)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, tc.want+";") {
+				t.Fatalf("Accept %q → Content-Type %q, want %s", tc.accept, ct, tc.want)
+			}
+		})
 	}
 }
 

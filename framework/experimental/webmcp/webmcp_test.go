@@ -396,6 +396,8 @@ func TestManifestCarriesAnnotationHints(t *testing.T) {
 	tl := validTool()
 	tl.ReadOnlyHint = true
 	tl.UntrustedContentHint = true
+	tl.ConsequentialHint = true
+	tl.Debugging = true
 	if err := h.Register(tl); err != nil {
 		t.Fatal(err)
 	}
@@ -415,13 +417,16 @@ func TestManifestCarriesAnnotationHints(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	if !m.Tools[0].ReadOnlyHint || !m.Tools[0].UntrustedContentHint {
+	if !m.Tools[0].ReadOnlyHint || !m.Tools[0].UntrustedContentHint ||
+		!m.Tools[0].ConsequentialHint || !m.Tools[0].Debugging {
 		t.Fatalf("annotation hints lost in the manifest: %+v", m.Tools[0])
 	}
 	// omitempty: an unhinted tool must not serialize the fields at all.
 	raw, _ := json.Marshal(m.Tools[1])
-	if strings.Contains(string(raw), "readOnlyHint") || strings.Contains(string(raw), "untrustedContentHint") {
-		t.Fatalf("unhinted tool serialized hint fields: %s", raw)
+	for _, name := range []string{"readOnlyHint", "untrustedContentHint", "consequentialHint", "debugging"} {
+		if strings.Contains(string(raw), name) {
+			t.Fatalf("unhinted tool serialized %s: %s", name, raw)
+		}
 	}
 }
 

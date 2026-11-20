@@ -632,6 +632,24 @@ func TestUncleanPatternPanicIsNotAConflict(t *testing.T) {
 	New().Group("/api/").GetFunc("/x", func(http.ResponseWriter, *http.Request) {})
 }
 
+func TestValidatePattern(t *testing.T) {
+	for _, pattern := range []string{"/users/{id}", "/", "/files/{rest...}"} {
+		if err := ValidatePattern("GET", pattern); err != nil {
+			t.Errorf("ValidatePattern(GET, %q) = %v", pattern, err)
+		}
+	}
+	for _, tc := range []struct{ method, pattern, want string }{
+		{"GET", "/{wx", `router: invalid route "GET /{wx": parsing "GET /{wx": at offset 5: bad wildcard segment (must end with '}')`},
+		{"GET", "", `router: invalid route "GET ":`},
+		{"GE(T", "/users", `router: invalid route "GE(T /users":`},
+	} {
+		err := ValidatePattern(tc.method, tc.pattern)
+		if err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+			t.Errorf("ValidatePattern(%q, %q) = %v, want %q", tc.method, tc.pattern, err, tc.want)
+		}
+	}
+}
+
 // TestCatchAllRefusesEncodedEmptySegment pins Param's empty-segment rule
 // end to end: %2F in a catch-all can't hand a handler an absolute path.
 func TestCatchAllRefusesEncodedEmptySegment(t *testing.T) {

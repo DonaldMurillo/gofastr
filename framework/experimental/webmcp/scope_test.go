@@ -96,7 +96,7 @@ func TestDefaultMountKeepsPublicPolicies(t *testing.T) {
 }
 
 func TestAssetAuthorizationGuardsAssets(t *testing.T) {
-	rt, scriptURL := mountedHost(t, WithAssetAuthorization(requireRole("support")))
+	rt, scriptURL := mountedHost(t, WithPolyfill(), WithAssetAuthorization(requireRole("support")))
 	support := []*http.Cookie{{Name: "session", Value: "support"}}
 	operator := []*http.Cookie{{Name: "session", Value: "operator"}}
 
@@ -113,6 +113,21 @@ func TestAssetAuthorizationGuardsAssets(t *testing.T) {
 		if rec := get(t, rt, path, support...); rec.Code != http.StatusOK {
 			t.Fatalf("support %s: %d", path, rec.Code)
 		}
+	}
+}
+
+func TestPolyfillChangesOnlyBridgeAsset(t *testing.T) {
+	plain, plainURL := mountedHost(t)
+	fallback, fallbackURL := mountedHost(t, WithPolyfill())
+	if plainURL == fallbackURL {
+		t.Fatal("polyfill must change the bridge's versioned URL")
+	}
+	if strings.Contains(get(t, plain, plainURL).Body.String(), polyfillJS) ||
+		!strings.Contains(get(t, fallback, fallbackURL).Body.String(), polyfillJS) {
+		t.Fatal("standalone bundle must ship only with WithPolyfill")
+	}
+	if get(t, plain, ManifestRoute).Body.String() != get(t, fallback, ManifestRoute).Body.String() {
+		t.Fatal("polyfill changed the tool manifest")
 	}
 }
 

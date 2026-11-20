@@ -125,7 +125,13 @@ stats use the single-document contract without needing an output flag.
   imports, the assumed name uses the last import-path element, skipping
   a trailing major version such as `/v2`, stripping a `go-` prefix and
   stopping at the first non-identifier character (so `yaml.v3` is `yaml`).
-  `new route` prints the line without writing anything; it
+  `new route` validates the method and path with the router before
+  printing anything, rejecting malformed ServeMux patterns such as `/{wx`.
+  The path must start with `/` and contain no whitespace; host-qualified
+  patterns and method-prefixed paths such as `POST /x` are refused.
+  Go callers can use `router.ValidatePattern(method, pattern)` for the same
+  error-returning validation, without checking conflicts with existing routes.
+  It prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
   them (`h.List`). A bare handler name also cannot be a keyword, entry
   point, predeclared name, or an import name in the current package's

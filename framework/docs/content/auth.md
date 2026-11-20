@@ -420,6 +420,8 @@ and the register path to their `signup_form` screen when they have one.
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
 and full URLs are rejected, falling back to `/`.
+After decoding a login form, the battery carries a valid submitted
+`next` to the retry page. It does not copy the Referer's query.
 
 Wire a plain HTML login form like this:
 

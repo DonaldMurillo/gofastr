@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"iter"
 	"log"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -259,8 +261,8 @@ func WithAgentCard(cfg AgentCardConfig) Option {
 	}
 }
 
-// WithMarkdownNegotiation serves a page's markdown when the request
-// accepts text/markdown; it needs WithPublicLLMMD.
+// WithMarkdownNegotiation serves a page's markdown if explicitly accepted
+// with at least as much weight as HTML; it needs WithPublicLLMMD.
 func WithMarkdownNegotiation() Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -598,7 +600,77 @@ func acceptRangeMatches(accept string, wanted ...string) bool {
 }
 
 func acceptsMarkdown(r *http.Request) bool {
-	return acceptRangeMatches(r.Header.Get("Accept"), "text/markdown")
+	type preference struct {
+		quality     float64
+		specificity int
+	}
+	var html, markdown preference
+	for _, field := range r.Header.Values("Accept") {
+		for mediaRange := range splitAcceptRanges(field) {
+			mediaType, params, err := mime.ParseMediaType(mediaRange)
+			if err != nil {
+				continue
+			}
+			var best *preference
+			var specificity int
+			switch mediaType {
+			case "text/markdown":
+				best, specificity = &markdown, 6
+				delete(params, "variant")
+			case "text/html":
+				best, specificity = &html, 6
+			case "text/*":
+				best, specificity = &html, 4
+			case "*/*":
+				best, specificity = &html, 2
+			default:
+				continue
+			}
+			quality := 1.0
+			if q, ok := params["q"]; ok {
+				quality, err = strconv.ParseFloat(q, 64)
+				if err != nil || !(quality >= 0 && quality <= 1) {
+					continue
+				}
+				delete(params, "q")
+			}
+			if len(params) > 0 {
+				if len(params) != 1 || !strings.EqualFold(params["charset"], "utf-8") {
+					continue
+				}
+				specificity++
+			}
+			if specificity > best.specificity || (specificity == best.specificity && quality > best.quality) {
+				*best = preference{quality, specificity}
+			}
+		}
+	}
+	return markdown.quality > 0 && markdown.quality >= html.quality
+}
+
+func splitAcceptRanges(field string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		start, quoted := 0, false
+		for i := 0; i < len(field); i++ {
+			switch field[i] {
+			case '\\':
+				if quoted {
+					i++
+				}
+			case '"':
+				quoted = !quoted
+			case ',':
+				if quoted {
+					continue
+				}
+				if !yield(field[start:i]) {
+					return
+				}
+				start = i + 1
+			}
+		}
+		yield(field[start:])
+	}
 }
 
 func acceptsProblemJSON(r *http.Request) bool {
