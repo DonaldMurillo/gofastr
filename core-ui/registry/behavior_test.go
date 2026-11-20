@@ -327,3 +327,13 @@ func TestRegisterBehaviorOnRequest(t *testing.T) {
 		t.Fatal("an identical OnRequest registration must be a no-op")
 	}
 }
+
+func TestDuplicateWithOtherInteractionKeysPanics(t *testing.T) {
+	IsolateForTest(t)
+	spec := func(key string) BehaviorOption {
+		return Interactions(Interaction{Event: "keydown", Keys: []string{key}, Scope: "[data-k-open]"})
+	}
+	RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Enter"))
+	RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Enter"))
+	mustPanic(t, "different definition", func() { RegisterBehavior("keys-dup", "x", Markers("[data-k]"), spec("Escape")) })
+}

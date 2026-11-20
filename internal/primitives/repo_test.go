@@ -224,6 +224,7 @@ var ownedPackages = []string{
 	"core-ui/urlprefix",
 	"core-ui/runtime/internal/treegate",
 	"core-ui/runtime/minify",
+	"core-ui/registry",
 }
 
 //gofastr:test-reads primitives/ *.go
