@@ -31,6 +31,12 @@ invariants:
       - test: core-ui/app.TestPagePolicyMatchesRender
       - test: core-ui/app.TestPagePolicyGuardReadNotFound
       - test: core-ui/app.TestPatternPolicyWithholdsFailedPage
+  - id: decide-not-found-is-a-real-404
+    rule: decide.NotFound blocks with 404 and the NotFound flag, so the host answers exactly what an unmatched URL gets and the route stays out of the llm.md index and the static export.
+    enforced_by:
+      - test: framework/uihost.TestDecideNotFoundMatchesUnmatchedURL
+      - test: framework/uihost.TestDecideNotFoundHiddenFromLLMIndex
+      - test: framework/uihost.TestStaticRenderSkipsDecideNotFound
 decisions:
   - id: decide-subpackage
     date: 2026-11-20
