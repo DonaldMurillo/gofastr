@@ -30,9 +30,10 @@ invariants:
     enforced_by:
       - test: battery/semantic.TestPgVectorCaseKeptTableRefused
   - id: pg-filters-are-bound
-    rule: PgVectorStore binds every Filter value as a parameter, never interpolating it into SQL.
+    rule: PgVectorStore binds every Filter value (Source, Kind, and each MetaMatch key and value) as a parameter, never interpolating it into SQL.
     enforced_by:
       - test: battery/semantic.TestPgVectorFilterNoInjection
+      - test: battery/semantic.TestPgVectorMetaMatchNoInjection
   - id: pg-replace-locks-each-document
     rule: PgVectorStore's replace takes a transaction advisory lock per distinct document, so two replicas replacing one document serialize.
     enforced_by:

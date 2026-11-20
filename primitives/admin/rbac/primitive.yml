@@ -10,6 +10,7 @@ invariants:
     enforced_by:
       - test: battery/admin.TestGrantRevokeRequireCallerTier
       - test: battery/admin.TestPermissionCheckAsksDecider
+      - test: battery/admin.TestTierIgnoresContextRoles
   - id: own-last-permission-is-kept
     rule: A save that would leave the caller's own roles without a permission it revokes is refused, unless the caller still holds Wildcard after the save.
     enforced_by:
@@ -27,8 +28,9 @@ invariants:
       - test: battery/admin.TestGrantStrictTypoIsRefused
       - test: battery/admin.TestGrantUnderWildcardRevokeIsRefused
   - id: assign-checks-what-changes
-    rule: An assign tier-checks every role it adds and every role it takes away, assigns a role the policy grants nothing only to a caller who holds it or Wildcard, and audits a refusal with the role that stopped it.
+    rule: An assign tier-checks every role it adds and every role it takes away against the roles on the caller's user, never the context's, assigns a role the policy grants nothing only to a caller who holds it or Wildcard, and audits a refusal with the role that stopped it.
     enforced_by:
+      - test: battery/admin.TestTierIgnoresContextRoles
       - test: battery/admin.TestAssignRefusesStrippingHigherRoles
       - test: battery/admin.TestAssignRefusesPermissionlessRole
       - test: battery/admin.TestAssignRequiresCallerTier

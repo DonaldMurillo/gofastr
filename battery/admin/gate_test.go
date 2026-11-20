@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -128,6 +129,19 @@ func TestGateRefusesAnEmbedGrant(t *testing.T) {
 	}
 	if !(&Battery{}).authorized(handler.SetUser(context.Background(), theAdmin)) {
 		t.Error("an admin session was refused")
+	}
+}
+
+func TestAuthorizeCannotLiftAScopelessToken(t *testing.T) {
+	open := &Battery{cfg: Config{Authorize: func(context.Context) bool { return true }}}
+	for _, scopes := range [][]string{{"customers:read"}, {}} {
+		ctx := auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), scopes)
+		if open.authorized(ctx) {
+			t.Errorf("Authorize lifted the refusal of a %v token", scopes)
+		}
+	}
+	if !open.authorized(auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), []string{AdminScope})) {
+		t.Error("Authorize refused a token holding AdminScope")
 	}
 }
 

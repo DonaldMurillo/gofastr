@@ -14,6 +14,7 @@ invariants:
     enforced_by:
       - test: battery/admin.TestGateRefusesAnEmbedGrant
       - test: battery/admin.TestScopedTokenRefusedAdmin
+      - test: battery/admin.TestAuthorizeCannotLiftAScopelessToken
       - test: battery/admin.TestGateHonorsADeciderDeny
   - id: nil-user-is-refused
     rule: A request whose context carries a nil user, which battery/auth seeds on every request, is refused by the default role check.
