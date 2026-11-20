@@ -1,10 +1,12 @@
 package newcmd
 
 import (
+	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -177,6 +179,75 @@ func TestScaffoldHandlerImportResolutionFallback(t *testing.T) {
 			}
 			if err := scaffoldHandler(dir, "Available", "GET", "/", false); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestScaffoldHandlerPreservesModuleFiles(t *testing.T) {
+	t.Setenv("GOFLAGS", "-mod=mod")
+	t.Setenv("GOPROXY", "off")
+	for _, hasSum := range []bool{false, true} {
+		t.Run(strconv.FormatBool(hasSum), func(t *testing.T) {
+			dir := t.TempDir()
+			mod := "module example.com/app\n\ngo 1.18\n\nreplace example.com/dep => ./dep\n"
+			writeGo(t, dir, "go.mod", mod)
+			if err := os.Mkdir(filepath.Join(dir, "dep"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeGo(t, filepath.Join(dir, "dep"), "go.mod", "module example.com/dep\n\ngo 1.23\n")
+			writeGo(t, filepath.Join(dir, "dep"), "dep.go", "package dep\n")
+			writeGo(t, dir, "main.go", "package main\nimport \"example.com/dep\"\n")
+			sum := "example.com/unused v1.0.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+			if hasSum {
+				writeGo(t, dir, "go.sum", sum)
+			}
+			if err := scaffoldHandler(dir, "Available", "GET", "/", false); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(filepath.Join(dir, "go.mod")); err != nil || string(got) != mod {
+				t.Errorf("go.mod changed: %v\n%s", err, got)
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "go.sum"))
+			if hasSum {
+				if err != nil || string(got) != sum {
+					t.Errorf("go.sum changed: %v\n%s", err, got)
+				}
+			} else if !os.IsNotExist(err) {
+				t.Errorf("go.sum created: %v\n%s", err, got)
+			}
+		})
+	}
+}
+
+func TestResolveImportNamesSkipsStandardLibrary(t *testing.T) {
+	for _, tc := range []struct{ imports, want string }{
+		{"\"net/http\"; \"log\"", ""},
+		{"\"net/http\"; alias \"example.com/aliased\"", ""},
+		{"\"net/http\"; \"example.com/dep\"; \"log\"", "example.com/dep"},
+	} {
+		t.Run(tc.imports, func(t *testing.T) {
+			original := importNameCommand
+			t.Cleanup(func() { importNameCommand = original })
+			calls := 0
+			importNameCommand = func(name string, args ...string) *exec.Cmd {
+				calls++
+				if name != "go" || len(args) < 7 || strings.Join(args[6:], " ") != tc.want {
+					t.Errorf("unexpected command: %s %q", name, args)
+				}
+				return exec.Command(filepath.Join(t.TempDir(), "missing-go"))
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), "", "package main\nimport ("+tc.imports+")", parser.ImportsOnly)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolveImportNames(t.TempDir(), []*ast.File{f})
+			wantCalls := 0
+			if tc.want != "" {
+				wantCalls = 1
+			}
+			if calls != wantCalls {
+				t.Errorf("command calls = %d, want %d", calls, wantCalls)
 			}
 		})
 	}

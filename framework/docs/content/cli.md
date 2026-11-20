@@ -123,8 +123,11 @@ stats use the single-document contract without needing an output flag.
   test files, but not external test packages), or a name that package
   already declares, including in its in-package tests. Test files do not
   determine the target package name. Import aliases are respected; blank
-  and dot imports do not reserve their package names. Unaliased import
-  names are resolved together with `go list` in the target directory.
+  and dot imports do not reserve their package names. Unaliased non-stdlib
+  import names (first path element contains a dot) are resolved together
+  with `go list` in the target directory, using `GOFLAGS=-mod=readonly`
+  and `GOTOOLCHAIN=local` so name checks do not update module files or
+  switch toolchains. Stdlib-only imports do not invoke `go list`.
   If Go is unavailable, resolution fails, or a package name is unavailable,
   the assumed name uses the last import-path element, skipping
   a trailing major version such as `/v2`, stripping a `go-` prefix and

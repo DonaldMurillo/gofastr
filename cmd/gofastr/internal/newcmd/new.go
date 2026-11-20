@@ -344,11 +344,9 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage returns the package the non-test Go files in dir declare
-// ("main" when there are none) and the names that package declares at
-// top level. skip, the file being scaffolded, is left out: -overwrite
-// rewrites it. A file that does not parse is skipped, as go build would
-// report it on its own.
+// dirPackage selects the package from non-test files (defaulting to main)
+// and collects declarations and imports, including in-package tests.
+// External tests, unparseable files and skip (the overwrite target) are omitted.
 func dirPackage(dir, skip string, generated ...*ast.File) (string, map[string]bool, map[string]string) {
 	pkg := ""
 	declared := map[string]bool{}
@@ -441,6 +439,8 @@ func importNames(f *ast.File, source string, resolved map[string]string) map[str
 	return names
 }
 
+var importNameCommand = exec.Command
+
 func resolveImportNames(dir string, files []*ast.File) map[string]string {
 	var paths []string
 	seen := map[string]bool{}
@@ -450,7 +450,8 @@ func resolveImportNames(dir string, files []*ast.File) map[string]string {
 				continue
 			}
 			importPath, err := strconv.Unquote(spec.Path.Value)
-			if err == nil && !seen[importPath] {
+			first, _, _ := strings.Cut(importPath, "/")
+			if err == nil && strings.Contains(first, ".") && !seen[importPath] {
 				seen[importPath] = true
 				paths = append(paths, importPath)
 			}
@@ -460,8 +461,9 @@ func resolveImportNames(dir string, files []*ast.File) map[string]string {
 		return nil
 	}
 	args := append([]string{"list", "-e", "-find", "-f", "{{.ImportPath}}\t{{.Name}}", "--"}, paths...)
-	cmd := exec.Command("go", args...)
+	cmd := importNameCommand("go", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil
