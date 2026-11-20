@@ -1,31 +1,4 @@
 // Package localdb declares browser-side IndexedDB databases in Go.
-//
-// A database is declared once, at package init, with the object stores
-// and indexes it holds:
-//
-//	var Pokedex = localdb.New("pokedex")
-//	var Members = Pokedex.Store("members", localdb.AutoKey(),
-//	    localdb.Index("by_created", "createdAt"))
-//
-// The declarations become an inert JSON manifest the host puts in every
-// page head (<script type="application/json" id="gofastr-localdb">),
-// through registry.RegisterDataBlock: the host never imports this
-// package, so an app that does not use it links none of it.
-// The `localdb` module (localdb.js, registered below as an on-request
-// behaviour) reads it and exposes window.__gofastr.localdb: open a declared database, read and write
-// its declared stores, watch them for changes from this tab and every
-// other tab of the origin. Nothing here touches the server: the data
-// lives in the visitor's browser.
-//
-// The schema is applied additively. When a page opens a database whose
-// stored schema lacks a declared store or index, the runtime bumps the
-// IndexedDB version itself and creates what is missing; it never
-// deletes a store or an undeclared index, because a tab still running
-// the previous deployment may need it. There is no version number to
-// maintain.
-//
-// This package is the storage layer only. framework/localentity builds
-// entity declarations, forms and lists on top of it.
 package localdb
 
 import (
@@ -43,14 +16,8 @@ import (
 //go:embed localdb.js
 var moduleJS string
 
-// The browser half ships with this package, not with core-ui/runtime:
-// a binary that never imports localdb never carries the module, and a
-// page that never calls __gofastr.loadModule('localdb') (directly or
-// through a behaviour's Requires) never downloads it.
 var _ = registry.RegisterBehavior("localdb", moduleJS, registry.OnRequest())
 
-// The schema reaches the page as a registered data block, so the host
-// emits it without importing this package.
 func init() { registry.RegisterDataBlock("gofastr-localdb", ManifestJSON) }
 
 // DefaultKeyPath is the key path a store uses when KeyPath is not given.
@@ -67,8 +34,6 @@ type Store struct {
 	name string
 }
 
-// spec types are the manifest wire shape; the JSON tags are what the
-// runtime module reads.
 type dbSpec struct {
 	Stores map[string]*storeSpec `json:"stores"`
 }
@@ -86,18 +51,12 @@ type indexSpec struct {
 }
 
 var (
-	mu  sync.RWMutex
-	dbs = map[string]*dbSpec{}
-	// manifest caches ManifestJSON: every page render asks for it and
-	// the declarations only change at init. New and Store clear it.
+	mu       sync.RWMutex
+	dbs      = map[string]*dbSpec{}
 	manifest []byte
 )
 
-// New declares a database. name is 1-64 bytes of lowercase letters,
-// digits, '-' or '_'; the browser-side IndexedDB name is "gofastr." +
-// name, so a declared database never collides with one the page's own
-// scripts open. Declaring the same name twice panics: two packages
-// that each think they own a database would each apply half a schema.
+// New declares a database; the browser opens it as "gofastr." + name.
 func New(name string) *DB {
 	if !validName(name) {
 		panic(fmt.Sprintf("localdb: invalid database name %q (use 1-64 lowercase letters, digits, '-' or '_')", name))
@@ -112,45 +71,33 @@ func New(name string) *DB {
 	return &DB{name: name}
 }
 
-// Name returns the declared database name (without the "gofastr."
-// prefix the browser stores it under).
+// Name returns the declared database name, without the "gofastr." prefix.
 func (d *DB) Name() string { return d.name }
 
 // StoreOption configures a store at declaration time.
 type StoreOption func(*storeSpec)
 
-// KeyPath sets the property each record is keyed by. Dotted paths
-// reach into nested objects ("meta.slug"). Defaults to "id".
+// KeyPath sets the dotted property path each record is keyed by.
 func KeyPath(path string) StoreOption {
 	return func(s *storeSpec) { s.KeyPath = path }
 }
 
-// AutoKey makes the runtime mint a key when a record is written
-// without one: a UUIDv7 string (48-bit millisecond time, a 12-bit
-// counter that keeps one tab's keys in mint order, and 62 random bits
-// from crypto.getRandomValues), so records created in two tabs do not
-// collide and sort by creation. Requires a single-segment key path.
+// AutoKey makes the runtime mint a UUIDv7 key for a record written without one.
 func AutoKey() StoreOption {
 	return func(s *storeSpec) { s.AutoKey = true }
 }
 
-// Index declares a secondary index over one property, or a compound
-// index over several (paths in order). Lists can then be read in index
-// order, which is how a local list sorts: by IndexedDB, never by page
-// script.
+// Index declares an index over one property, or a compound index over several.
 func Index(name string, paths ...string) StoreOption {
 	return addIndex(name, &indexSpec{KeyPath: paths})
 }
 
-// UniqueIndex is Index with a uniqueness constraint: a write that
-// would duplicate an indexed value fails with the runtime error code
-// "constraint".
+// UniqueIndex is Index with a uniqueness constraint.
 func UniqueIndex(name string, paths ...string) StoreOption {
 	return addIndex(name, &indexSpec{KeyPath: paths, Unique: true})
 }
 
-// MultiEntryIndex indexes each element of an array property separately
-// (a record tagged ["fire","flying"] is found under both).
+// MultiEntryIndex indexes each element of an array property separately.
 func MultiEntryIndex(name, path string) StoreOption {
 	return addIndex(name, &indexSpec{KeyPath: []string{path}, MultiEntry: true})
 }
@@ -181,8 +128,7 @@ func addIndex(name string, ix *indexSpec) StoreOption {
 	}
 }
 
-// Store declares an object store in the database. Store names follow
-// the database-name grammar. Declaring the same store twice panics.
+// Store declares an object store in the database.
 func (d *DB) Store(name string, opts ...StoreOption) *Store {
 	if !validName(name) {
 		panic(fmt.Sprintf("localdb: invalid store name %q (use 1-64 lowercase letters, digits, '-' or '_')", name))
@@ -241,9 +187,7 @@ func Names() []string {
 	return out
 }
 
-// ManifestJSON returns the manifest the runtime module reads, or nil
-// when no database is declared. encoding/json sorts map keys, so the
-// bytes are deterministic for a given set of declarations.
+// ManifestJSON returns the manifest the runtime module reads, or nil when none is declared.
 func ManifestJSON() []byte {
 	mu.RLock()
 	cached := manifest
@@ -266,14 +210,8 @@ func ManifestJSON() []byte {
 	return manifest
 }
 
-// validName is the name grammar shared with runtime modules and
-// compute assets: 1-64 bytes of lowercase letters, digits, '-' or '_'.
 func validName(name string) bool { return compute.ValidName(name) }
 
-// checkKeyPath accepts dotted JavaScript identifiers ([A-Za-z_$][\w$]*
-// per segment, ASCII only), at most 128 bytes, and refuses the
-// segments that name an object's prototype machinery: a key path is
-// read and written by the runtime as a property chain.
 func checkKeyPath(p string) error {
 	if p == "" || len(p) > 128 {
 		return fmt.Errorf("key path %q must be 1-128 bytes", p)
@@ -306,7 +244,6 @@ func validSegment(s string) bool {
 	return true
 }
 
-// reset clears every declaration. Tests only.
 func reset() {
 	mu.Lock()
 	defer mu.Unlock()

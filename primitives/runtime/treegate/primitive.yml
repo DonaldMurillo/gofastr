@@ -1,0 +1,45 @@
+primitive: runtime.treegate
+summary: The runtime gates that read the repo tree - data-cui-* attribute parity with the core-ui/ARCHITECTURE.md table, and every registered behaviour's markers, interactions, loaded flag and gzip budget - with the source scanners they share with the runtime's own tests.
+code:
+  - core-ui/runtime/internal/treegate/
+docs:
+  - framework/docs/content/ui-new-components.md
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: scanner-binds-the-registry-import
+    rule: MarkerSelectors, Requires and Interactions read only calls bound through the file's own import of core-ui/registry, under its name, an alias or a dot import, ignore a same-named function of another package and a file with no such import, and report an unparseable file.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestMarkersInTheTreeUseDocumentedDataFuiAttrs
+  - id: unreadable-arguments-are-refused
+    rule: A Markers or Requires argument that is not a string literal, and an Interactions argument that is not a composite literal or carries a field the walk does not know, is returned as non-literal, and the tree gates fail on any.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestMarkersInTheTreeUseDocumentedDataFuiAttrs
+      - test: core-ui/runtime/internal/treegate.TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs
+  - id: runtime-attrs-read-every-source
+    rule: RuntimeJSAttrs reads every src/*.js module and frag/*.js fragment, comments included, and AttrNames drops a name a line wrap cut to a trailing dash.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestGoInteractiveAttrsMatchRuntime
+      - test: core-ui/runtime/internal/treegate.TestDocumentedAttrsHaveAnOwner
+      - test: core-ui/runtime/internal/treegate.TestAttrNamesDropsAWrappedName
+  - id: behaviours-sized-and-flagged
+    rule: Every registered behaviour's source in the tree, minified, gzips within ModuleGoalGZ and writes its loaded flag before its first addEventListener.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestRegisteredBehaviorSizeBudgets
+      - test: core-ui/runtime/internal/treegate.TestRegisteredBehaviorsSetLoadedFlagBeforeInstalling
+      - test: core-ui/runtime/internal/treegate.TestFlagBeforeInstallReadsTheWriteNotTheInit
+decisions:
+  - id: tree-gates-apart-from-the-runtime
+    date: 2026-11-20
+    status: accepted
+    decision: The gates that read the repo tree live in their own package under core-ui/runtime/internal.
+    rejected:
+      - option: Keep them in core-ui/runtime's test files.
+        why: A change in a tree they read would select the runtime's whole browser suite instead of this small package.
+  - id: markers-are-literals
+    date: 2026-11-20
+    status: accepted
+    decision: Behaviour markers, requirements and interactions are declared as literals, and a non-literal argument fails the gate.
+    rejected:
+      - option: Resolve constants and variables through type checking.
+        why: The registrations live in packages above core-ui/runtime, so the gate reads source text it cannot type-check against its own binary.
+    upholds: [unreadable-arguments-are-refused]

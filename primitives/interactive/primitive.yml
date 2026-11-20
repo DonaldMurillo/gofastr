@@ -1,0 +1,118 @@
+primitive: interactive
+summary: core-ui/interactive, declarative interactivity with no hand-written JavaScript - an Action's RPC, confirm, body and toasts, its success effects, the local signal mutators and bindings, and the wrappers that splice their data-cui-* attributes into an element's opening tag.
+code:
+  - core-ui/interactive/
+docs:
+  - framework/docs/content/ui-wiring.md
+  - framework/docs/content/runtime-contract.md
+on_change:
+  - disabled, checked, hidden, open and selected are the boolean members of signalAttrAllowList; a boolean attribute added there joins core-ui/store's booleanSignalAttrs and the attr mode of core-ui/runtime/frag/signals.js too.
+  - Every data-cui-* attribute an Action or effect emits is read by the runtime and documented with it (hard rule 5); a new one ships with its runtime handler and its doc.
+invariants:
+  - id: action-paths-are-local
+    rule: Post, Get, Put, Delete and Patch panic on a path that does not start with "/".
+    enforced_by:
+      - test: core-ui/interactive.TestPathValidation
+  - id: action-options-refuse-nonsense
+    rule: WithConfirmDialog panics on an empty Message, WithBody on a body json.Valid refuses, NewToastAction on an empty label, an Action with no RPC and an Action carrying any attribute but data-cui-rpc*, and an Action with OnSuccessToastAction but no OnSuccessToast panics when it renders.
+    enforced_by:
+      - test: core-ui/interactive.TestWithConfirmDialogNeedsMessage
+      - test: core-ui/interactive.TestWithBodyRejectsInvalidJSON
+      - test: core-ui/interactive.TestToastActionNeedsAnRPC
+      - test: core-ui/interactive.TestSuccessToastActionEmitsAttr
+  - id: signal-names-the-runtime-can-write
+    rule: SetSignal panics on a name holding a double quote, and every emitter of a signal name (SetSignal, SetLocal, IncLocal, ToggleLocal, AnimateOnSignal and the Bind wrappers) panics on __proto__, constructor and prototype.
+    enforced_by:
+      - test: core-ui/interactive.TestSetSignalValidation
+      - test: core-ui/interactive.TestLocalMutatorsRefuseReservedSignals
+      - test: core-ui/interactive.TestBindingsRefuseReservedNames
+  - id: bind-attr-is-an-allow-list
+    rule: BindAttr returns the element unchanged for an attribute SignalAttrAllowed refuses, which admits aria-* and the names on signalAttrAllowList in any letter case and nothing else.
+    enforced_by:
+      - test: core-ui/interactive.TestBindAttrRefusesExecutingAttributes
+  - id: inject-at-the-real-tag-end
+    rule: The wrappers insert their attributes before the first '>' that is outside a single- or double-quoted attribute value, and leave markup with no tag unchanged.
+    enforced_by:
+      - test: core-ui/interactive.TestWrapGTInAttributeValue
+      - test: core-ui/interactive.TestWrapRawHTMLGTInAttrValue
+      - test: core-ui/interactive.TestWrapSkipsSingleQuotedGT
+      - test: core-ui/interactive.TestWrapNoTag
+  - id: injected-attrs-are-sorted
+    rule: Every wrapper writes its attributes in sorted key order, so a wrapped element is the same bytes on every render and matches a sorted render.Tag map.
+    enforced_by:
+      - test: core-ui/interactive.TestDropdownAttrsAreSorted
+      - test: core-ui/interactive.TestBindHTMLByteIdenticalToSortedMap
+      - test: core-ui/interactive.TestBindTextByteIdenticalToSortedMap
+      - test: core-ui/interactive.TestBindAttrByteIdenticalToSortedMap
+  - id: toast-json-is-literal
+    rule: ToastOnClick writes the toast as compact JSON with HTML escaping off and zero fields omitted, byte-identical to the hand-written attribute.
+    enforced_by:
+      - test: core-ui/interactive.TestToastOnClickMatchesHandWrittenLiteral
+      - test: core-ui/interactive.TestToastJSONKeepsMarkupCharacters
+      - test: core-ui/interactive.TestToastOnClickOmitsZeroFields
+  - id: optimistic-carries-only-the-endpoint
+    rule: OptimisticUpdate panics on an Action carrying anything but its endpoint and method, and renders a type="button" so it never submits an enclosing form.
+    enforced_by:
+      - test: core-ui/interactive.TestOptimisticRejectsLostOptions
+      - test: core-ui/interactive.TestOptimisticButtonDoesNotSubmit
+  - id: panes-are-named
+    rule: OpenPaneOnClick panics unless the pane is secondary or tertiary, and ClosePaneOnClick also accepts the empty pane, meaning the topmost.
+    enforced_by:
+      - test: core-ui/interactive.TestOpenPaneOnClickRejectsBadPane
+      - test: core-ui/interactive.TestClosePaneOnClickRejectsBadPane
+      - test: core-ui/interactive.TestClosePaneOnClickEmptyClosesTopmost
+  - id: styled-wrappers-stamp-their-marker
+    rule: Reveal and Dropdown wrap their output in their registered style's component marker, so the host loads their CSS on a page that uses them, and a Dropdown panel starts hidden.
+    enforced_by:
+      - test: core-ui/interactive.TestRevealStampsCompMarkerAndCSS
+      - test: core-ui/interactive.TestDropdownStampsCompMarkerAndCSS
+      - test: core-ui/interactive.TestDropdownPanelInitiallyHidden
+  - id: live-search-debounce
+    rule: LiveSearch triggers on input and debounces 300ms when debounceMs is 0.
+    enforced_by:
+      - test: core-ui/interactive.TestLiveSearchDefaultDebounce
+      - test: core-ui/interactive.TestLiveSearchAttrMatchesRuntime
+  - id: attrs-is-a-copy
+    rule: Action.Attrs returns a fresh map each call, so changing it leaves the Action unchanged.
+    enforced_by:
+      - test: core-ui/interactive.TestAttrsIsCopy
+decisions:
+  - id: confirm-is-on-the-action
+    date: 2026-11-20
+    status: accepted
+    decision: A confirmation is a property of the Action, checked before the request is sent, not an OnSuccess effect.
+    rejected:
+      - option: A confirm effect.
+        why: Effects run after the RPC succeeds, and a confirmation must be able to stop it.
+    upholds: [action-options-refuse-nonsense]
+  - id: refuse-reserved-names-at-render
+    date: 2026-11-20
+    status: accepted
+    decision: The emitters refuse __proto__, constructor and prototype as the runtime kernel's isReservedSignalKey does.
+    rejected:
+      - option: Let the kernel refuse them.
+        why: The kernel only logs a console warning, so the control is dead with no error anywhere a developer looks.
+    upholds: [signal-names-the-runtime-can-write]
+  - id: signal-attrs-allow-list
+    date: 2026-11-20
+    status: accepted
+    decision: The attributes a signal may drive are an allow-list, exported as SignalAttrAllowed so core-ui/store's Slice.BindAttr enforces the same list.
+    rejected:
+      - option: A deny-list of executing attributes.
+        why: It has to name srcdoc, style, data-behavior, sandbox, every on* and every privileged data-cui-*, and loses the moment a new one is added.
+    upholds: [bind-attr-is-an-allow-list]
+  - id: toast-json-unescaped
+    date: 2026-11-20
+    status: accepted
+    decision: Toast JSON is encoded with HTML escaping off and render.Attr escapes it for the attribute.
+    rejected:
+      - option: json.Marshal's default escaping.
+        why: A body with '<' would arrive as < and differ from the hand-written literal call sites use.
+    upholds: [toast-json-is-literal]
+  - id: reveal-keys-on-the-attribute
+    date: 2026-11-20
+    status: accepted
+    decision: The reveal CSS keys the hidden state's direction transform off the data-cui-reveal attribute, and the element renders visible without JavaScript.
+    rejected:
+      - option: Key it off the cui-reveal-<type> class.
+        why: reveal.js adds that class only at reveal time, too late to style the from-state.

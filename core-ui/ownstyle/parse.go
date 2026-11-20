@@ -16,21 +16,14 @@ type Stylesheet struct {
 	Rules []*Rule
 }
 
-// Rule is one rule: a style rule (".card { … }"), a block at-rule
-// ("@media … { … }", "@keyframes … { … }") or a statement at-rule
-// ("@import …;"). Blocks may nest: a style rule holds declarations AND
-// nested rules (CSS nesting), an at-rule block holds rules (and, for
-// @keyframes, keyframe steps, which parse as rules whose preludes read
-// "from" / "50%" / "to").
+// Rule is one rule.
 type Rule struct {
-	// At reports an at-rule; Name is its keyword without '@',
-	// lowercased ("media", "keyframes"). "" for style rules.
+	// At reports an at-rule; Name is its keyword without '@', lowercased
+	// ("media", "keyframes").
 	At   bool
 	Name string
 
-	// Prel is the prelude: selector tokens for a style rule, the query
-	// for an at-rule. Leading and trailing trivia are trimmed; interior
-	// whitespace and comment tokens are kept (the minifier reads them).
+	// Prel is the prelude.
 	Prel []Token
 
 	// Block is true when the rule ended with '{…}' rather than ';'.
@@ -42,44 +35,37 @@ type Rule struct {
 	// Nested are the block's nested rules, in source order.
 	Nested []*Rule
 
-	// Doc is the comment block immediately preceding the rule: one or
-	// more comments with only whitespace between them and the rule, and
-	// a line break between the previous significant token and the first
-	// comment (a same-line trailing comment is not a doc comment, the
-	// same rule go/doc applies). Comment markers are stripped, each
-	// comment's text is trimmed, comments are joined with "\n".
+	// Doc is the comment block immediately preceding the rule.
 	Doc string
 
 	// Pos is the first significant token of the prelude.
 	Pos Pos
 
-	// Text is the prelude's source text with outer whitespace trimmed —
-	// the selector string diagnostics quote and GOFASTR1813 matches.
+	// Text is the prelude's source text with outer whitespace trimmed — the
+	// selector string diagnostics quote and GOFASTR1813 matches.
 	Text string
 }
 
-// Decl is one declaration ("padding: 16px !important") or one custom
-// property declaration ("--accent: red").
+// Decl is one declaration ("padding.
 type Decl struct {
 	// Name is the property name.
 	Name string
-	// Value holds the significant value tokens (no whitespace, no
-	// comments), in order.
+	// Value holds the significant value tokens (no whitespace, no comments), in
+	// order.
 	Value []Token
 	// Important reports a trailing !important; ImpPos points at the '!'.
 	Important bool
 	ImpPos    Pos
-	// Pos points at the name token; ValuePos at the first value token
-	// (zero Pos when the value is empty).
+	// Pos points at the name token; ValuePos at the first value token (zero Pos
+	// when the value is empty).
 	Pos      Pos
 	ValuePos Pos
-	// ValueSrc is the raw source slice from the first to the last
-	// significant value token, interior trivia included — the value a
-	// browser reads, the string GOFASTR1807 judges whole.
+	// ValueSrc is the raw source slice from the first to the last significant
+	// value token, interior trivia included — the value a browser reads, the
+	// string GOFASTR1807 judges whole.
 	ValueSrc string
 }
 
-// parser walks a token stream of one source string.
 type parser struct {
 	src    string
 	toks   []Token
@@ -87,16 +73,12 @@ type parser struct {
 	issues []parseIssue
 }
 
-// parseIssue is a raw parse error before it becomes a Diagnostic.
 type parseIssue struct {
 	pos Pos
 	msg string
 }
 
-// Parse parses an owned-style stylesheet. It never returns a nil sheet:
-// on malformed input it recovers the way CSS does (consume to the next
-// semicolon / closing brace) and reports what it skipped, so one pass
-// can show every error instead of only the first.
+// Parse parses an owned-style stylesheet.
 func Parse(src string) (*Stylesheet, []Diagnostic) {
 	p := &parser{src: src, toks: Tokenize(src)}
 	rules := p.parseRuleList(false)
@@ -132,18 +114,14 @@ func (p *parser) errorf(pos Pos, format string, args ...any) {
 	p.issues = append(p.issues, parseIssue{pos, fmt.Sprintf(format, args...)})
 }
 
-// tokPos converts a token to a Pos.
 func tokPos(t Token) Pos { return Pos{Line: t.Line, Col: t.Col} }
 
-// docAccum collects pending doc comments between rules.
 type docAccum struct {
 	lines   []string
-	onLine  bool // a line break since the last significant token
+	onLine  bool
 	pending bool
 }
 
-// observe folds one trivia token in: a comment extends the pending doc
-// when it starts on its own line, whitespace only tracks newlines.
 func (d *docAccum) observe(t Token) {
 	switch t.Type {
 	case TokenComment:
@@ -151,8 +129,6 @@ func (d *docAccum) observe(t Token) {
 			d.lines = append(d.lines, stripCommentMarkers(t.Text))
 			d.pending = true
 		}
-		// A comment on the same line as the previous significant token
-		// is a trailing remark, not a doc comment.
 		if strings.ContainsAny(t.Text, "\n\r\f") {
 			d.onLine = true
 		}
@@ -163,9 +139,6 @@ func (d *docAccum) observe(t Token) {
 	}
 }
 
-// take returns the accumulated doc and clears the accumulator. Clearing
-// also leaves onLine false: the caller is about to consume the
-// significant token the doc belonged to.
 func (d *docAccum) take() string {
 	out := ""
 	if d.pending {
@@ -175,9 +148,6 @@ func (d *docAccum) take() string {
 	return out
 }
 
-// stripCommentMarkers removes /* */ from a comment token's text and
-// trims each line, so an indented continuation reads the way the author
-// wrote it without the source's leading spaces.
 func stripCommentMarkers(text string) string {
 	s := strings.TrimPrefix(text, "/*")
 	s = strings.TrimSuffix(s, "*/")
@@ -188,15 +158,13 @@ func stripCommentMarkers(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// parseRuleList parses rules until EOF or, when inBlock is true, the
-// matching close curly (which it consumes).
 func (p *parser) parseRuleList(inBlock bool) []*Rule {
 	var rules []*Rule
 	doc := &docAccum{onLine: true}
 	for {
 		t := p.peek()
 		switch {
-		case t.Type == 0: // EOF
+		case t.Type == 0:
 			return rules
 		case t.Type == TokenWhitespace || t.Type == TokenComment:
 			doc.observe(t)
@@ -205,7 +173,6 @@ func (p *parser) parseRuleList(inBlock bool) []*Rule {
 			p.next()
 			return rules
 		case t.Type == TokenCloseCurly:
-			// Stray close brace at top level: CSS recovery skips it.
 			p.errorf(tokPos(t), "unexpected '}'")
 			p.next()
 			doc.take()
@@ -237,8 +204,6 @@ func (p *parser) parseRule(doc string) *Rule {
 		}
 		switch t.Type {
 		case TokenFunction, TokenOpenParen, TokenOpenSquare:
-			// A function token ("var(") opens a group exactly like "(";
-			// only its ")" arrives as a close-paren token.
 			depth++
 		case TokenCloseParen, TokenCloseSquare:
 			depth--
@@ -257,8 +222,6 @@ func (p *parser) parseRule(doc string) *Rule {
 			}
 		case TokenCloseCurly:
 			if depth == 0 {
-				// '}' where ';' or '{' belonged. CSS recovery drops the
-				// malformed rule; the brace stays for the enclosing list.
 				p.errorf(tokPos(t), "expected '{' or ';' after prelude %q, found '}'", tokenRunText(prel))
 				return nil
 			}
@@ -300,8 +263,6 @@ func (p *parser) parseRule(doc string) *Rule {
 	return r
 }
 
-// parseBlock parses the inside of a '{…}' block: declarations and
-// nested rules, mixed (CSS nesting), until the matching '}'.
 func (p *parser) parseBlock() (decls []*Decl, nested []*Rule) {
 	doc := &docAccum{onLine: true}
 	sawNested := false
@@ -320,7 +281,6 @@ func (p *parser) parseBlock() (decls []*Decl, nested []*Rule) {
 		default:
 			run, opened := p.collectRun()
 			if opened {
-				// The run is a nested rule's prelude; the '{' is eaten.
 				r := &Rule{Block: true}
 				r.Prel = trimTokens(run)
 				if len(r.Prel) > 0 {
@@ -339,10 +299,6 @@ func (p *parser) parseBlock() (decls []*Decl, nested []*Rule) {
 			}
 			for _, d := range p.declFromRun(run) {
 				if sawNested {
-					// Valid CSS, but this parser stores Decls and Nested
-					// apart, which would hoist the declaration above the
-					// nested rule and flip the cascade (same specificity,
-					// later-in-source wins). Refuse instead of reorder.
 					p.errorf(d.Pos, "declaration after a nested rule; move it above the first nested rule")
 				}
 				decls = append(decls, d)
@@ -352,10 +308,6 @@ func (p *parser) parseBlock() (decls []*Decl, nested []*Rule) {
 	}
 }
 
-// collectRun consumes tokens up to ';' (a declaration end, consumed),
-// '{' at depth 0 (a nested rule opener, consumed; opened=true), or '}'
-// / EOF at depth 0 (reconsumed; opened=false). Bracket groups stay in
-// the run so a ';' inside parentheses cannot end a declaration early.
 func (p *parser) collectRun() (run []Token, opened bool) {
 	depth := 0
 	for {
@@ -373,7 +325,7 @@ func (p *parser) collectRun() (run []Token, opened bool) {
 				p.next()
 				return run, true
 			case TokenCloseCurly:
-				return run, false // the outer loop consumes it
+				return run, false
 			case TokenBadString:
 				p.errorf(tokPos(t), "unterminated string: %s", t.Text)
 			case TokenBadURL:
@@ -395,7 +347,6 @@ func (p *parser) collectRun() (run []Token, opened bool) {
 	}
 }
 
-// lastRunPos is one past the last token of a run (for errors at EOF).
 func lastRunPos(run []Token) Pos {
 	if len(run) == 0 {
 		return Pos{1, 1}
@@ -404,10 +355,6 @@ func lastRunPos(run []Token) Pos {
 	return Pos{Line: last.Line, Col: last.Col + 1}
 }
 
-// declFromRun interprets a token run ending at ';' / '}' / EOF as one
-// declaration, or reports it as unparseable. A run shaped like a
-// declaration but missing its colon is an error, not a nested rule:
-// collectRun already decided it does not open a block.
 func (p *parser) declFromRun(run []Token) []*Decl {
 	sig := trimTokens(run)
 	if len(sig) == 0 {
@@ -424,9 +371,6 @@ func (p *parser) declFromRun(run []Token) []*Decl {
 	}
 	d := &Decl{Name: name.Text, Pos: tokPos(name)}
 	value := trimTokens(sig[2:])
-	// A trailing !important: delim '!' + ident "important" (the scan
-	// works on the end-trimmed run, so trivia around the pair cannot
-	// hide it).
 	if len(value) >= 2 {
 		last, prev := value[len(value)-1], value[len(value)-2]
 		if last.Type == TokenIdent && strings.EqualFold(last.Text, "important") &&
@@ -444,9 +388,6 @@ func (p *parser) declFromRun(run []Token) []*Decl {
 	return []*Decl{d}
 }
 
-// unterminatedString reports whether a string token ran into EOF
-// without its closing quote (the tokenizer yields it as a string token;
-// the spec calls that a parse error).
 func unterminatedString(t Token) bool {
 	if t.Type != TokenString || len(t.Text) < 1 {
 		return false

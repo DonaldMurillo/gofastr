@@ -1,0 +1,56 @@
+primitive: interactive.sectionmenu
+summary: SectionMenu, a grouped navigation menu that is a sticky rail on desktop and a pill opening a mounted bottom sheet below its swap width, with the sectionmenu behaviour that filters it and keeps the pill on the current page.
+code:
+  - core-ui/interactive/section_menu.go
+  - core-ui/interactive/section_menu.js
+docs:
+  - framework/docs/content/layouts.md
+invariants:
+  - id: rail-groups-are-regions
+    rule: On the rail every group renders open as a role="group" region with a plain header, never a details and summary, while the sheet renders each group as a disclosure.
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuRailGroupsAreNotDisclosures
+      - test: core-ui/interactive.TestSectionMenuRailShowsCollapsedGroups
+  - id: active-group-opens
+    rule: In the sheet a Collapsed group starts closed unless it holds the active item, and the active item carries aria-current="page".
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuActiveGroupForcedOpen
+      - test: core-ui/interactive.TestSectionMenuCollapsedGroupClosed
+      - test: core-ui/interactive.TestSectionMenuActiveItemMarked
+  - id: drawer-needs-a-name
+    rule: SectionMenuDrawer panics without a DrawerName, SectionMenu renders no trigger pill without one, and SectionMenuDrawerFunc keeps the mount-time DrawerName on every rebuild.
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuDrawerRequiresName
+      - test: core-ui/interactive.TestSectionMenuNoTriggerWithoutDrawerName
+      - test: core-ui/interactive.TestDrawerFuncRebuildsKeepsName
+  - id: menu-speaks-the-request
+    rule: The menu's default words and group counts are written in the locale of Ctx, and a sheet mounted once speaks the locale of each request that renders it.
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuSpeaksCtx
+      - test: core-ui/interactive.TestSectionMenuDefaultLabelSpeaksCtx
+      - test: core-ui/interactive.TestSectionMenuSheetSpeaksTheRequestLocale
+  - id: pill-names-the-current-page
+    rule: The trigger pill shows the active item and its group, and the trigger label when nothing is active.
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuTriggerNamesCurrentPage
+  - id: group-headers-pin
+    rule: A group header sticks to the top of the menu's scroller while its links pass under it and lets go when the group ends.
+    enforced_by:
+      - test: core-ui/interactive.TestSectionMenuGroupHeaderPins
+decisions:
+  - id: rail-headers-not-summaries
+    date: 2026-11-20
+    status: accepted
+    decision: The rail's groups are labelled regions with a plain header, and collapse is a sheet-only behaviour.
+    rejected:
+      - option: Render the rail's groups as details and summary too.
+        why: A summary is a focusable target, and one pinned over the links it scrolls past shrinks their target area below the 24px a target needs.
+    upholds: [rail-groups-are-regions]
+  - id: sheet-is-the-framework-bottom-sheet
+    date: 2026-11-20
+    status: accepted
+    decision: The mobile sheet is the widget preset.BottomSheet that SectionMenuDrawer returns for the app to mount once.
+    rejected:
+      - option: A sheet of the menu's own.
+        why: It would re-implement the backdrop, dismissal, scroll lock and focus trap the bottom sheet already has.
+    upholds: [drawer-needs-a-name]

@@ -1,0 +1,19 @@
+primitive: screen.intercept
+summary: Intercepting routes - InterceptFrom presents a screen as a drawer or sheet over a declared origin on soft navigation, while a direct load renders its canonical page.
+code:
+  - core-ui/app/intercept.go
+  - core-ui/app/intercept_validate.go
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: intercept-input-is-checked
+    rule: InterceptFrom panics on an origin that is not an absolute pattern and on a presentation other than ScreenDrawer or ScreenSheet.
+    enforced_by:
+      - test: core-ui/app.TestInterceptFromRejectsBadInput
+  - id: intercept-only-from-its-origin
+    rule: InterceptFor matches only a declared origin or AlsoFrom pattern, and the overlay render holds the canonical content, knowing its presentation and origin.
+    enforced_by:
+      - test: core-ui/app.TestInterceptForOnlyMatchesDeclaredOrigin
+      - test: core-ui/app.TestInterceptForAlsoFrom
+      - test: core-ui/app.TestOverlayRenderMatchesCanonicalContent
+      - test: core-ui/app.TestScreenInterceptOrigins

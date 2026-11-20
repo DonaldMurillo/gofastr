@@ -49,8 +49,7 @@ func DescriptionTerm(cfg TextConfig, children ...render.HTML) render.HTML {
 	return render.Tag("dt", attrs, children...)
 }
 
-// DescriptionDetail produces a <dd> element for a description in a
-// description list.
+// DescriptionDetail produces a <dd> element for a description in a description list.
 func DescriptionDetail(cfg TextConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
 	return render.Tag("dd", attrs, children...)

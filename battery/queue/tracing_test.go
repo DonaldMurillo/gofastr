@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -38,6 +39,43 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) string {
 		}
 	}
 	return ""
+}
+
+type jobSpanError struct{}
+
+func (*jobSpanError) Error() string { return "private job payload" }
+
+func TestJobSpanErrorTypeSeesThroughWrapping(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"single", fmt.Errorf("job: %w", &jobSpanError{})},
+		{"nested", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &jobSpanError{}))},
+		{"multiple", fmt.Errorf("job: %w; %w", &jobSpanError{}, errors.New("other"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := recordJobSpans(t)
+			q := NewMemoryQueue(1)
+			q.RegisterHandler("wrapped", func(context.Context, Job) error { return tc.err })
+			q.Start()
+			if err := q.Enqueue(context.Background(), Job{Type: "wrapped", MaxAttempts: 1}); err != nil {
+				q.Close()
+				t.Fatal(err)
+			}
+			q.Close()
+			s := endedSpan(rec, "process wrapped")
+			if s == nil {
+				t.Fatal("no span for the wrapped-error job")
+			}
+			if got := spanAttr(s, "error.type"); got != "*queue.jobSpanError" {
+				t.Errorf("error.type = %q, want %q", got, "*queue.jobSpanError")
+			}
+			if s.Status().Code != codes.Error || s.Status().Description != "" || len(s.Events()) != 0 {
+				t.Errorf("failed job span status = %+v, events = %v", s.Status(), s.Events())
+			}
+		})
+	}
 }
 
 func TestMemoryJobSpans(t *testing.T) {

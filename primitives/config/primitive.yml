@@ -61,10 +61,11 @@ invariants:
       - test: core/config.TestPointerEmbedEnforcesEarlierRequired
       - test: core/config.TestRequiredPromotedFieldNamesKey
   - id: shadowed-takes-default
-    rule: A shadowed field is never bound from a source and takes only its own default tag, a shadowed struct each field's default, and a shadowed pointer stays as it was.
+    rule: A shadowed field is never bound from a source and takes only its own default tag, checked by its validate rule, a shadowed struct each field's default, and a shadowed pointer stays as it was.
     enforced_by:
       - test: core/config.TestShadowedFieldTakesItsDefault
       - test: core/config.TestShadowedFieldBadDefaultFails
+      - test: core/config.TestShadowedFieldDefaultIsValidated
       - test: core/config.TestShadowedPointerEmbedStaysNil
       - test: core/config.TestSweepConfigShadowedNestedPointerStaysNil
   - id: shape-refused-before-reading

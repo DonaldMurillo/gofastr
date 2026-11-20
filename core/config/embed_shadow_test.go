@@ -194,3 +194,44 @@ func TestShadowedPointerEmbedStaysNil(t *testing.T) {
 		t.Fatalf("Inner = %+v, Port = %d; want a nil embed and Port 1", c.Inner, c.Port)
 	}
 }
+
+// A shadowed field's default is checked by its validate rule, as the same
+// default on a bound field is, and so is each field of a shadowed struct.
+// With no default there is nothing to check: no source can set the field.
+func TestShadowedFieldDefaultIsValidated(t *testing.T) {
+	type Inner struct {
+		Mode string `config:"MODE" default:"loud" validate:"oneof=quiet normal"`
+	}
+	type leaf struct {
+		Inner
+		Mode string `config:"MODE"`
+	}
+	if err := Load(&leaf{}, MapSource{"MODE": "quiet"}); err == nil || !strings.Contains(err.Error(), "must be one of quiet normal") {
+		t.Errorf("leaf: Load = %v, want the shadowed Mode default refused by oneof", err)
+	}
+
+	type DB struct {
+		Pool int `config:"POOL" default:"500" validate:"max=100"`
+	}
+	type Base struct{ DB DB }
+	type nested struct {
+		Base
+		DB struct {
+			Pool int `config:"POOL"`
+		}
+	}
+	if err := Load(&nested{}, MapSource{"DB_POOL": "5"}); err == nil || !strings.Contains(err.Error(), "must be at most 100") {
+		t.Errorf("nested: Load = %v, want the shadowed DB.Pool default refused by max", err)
+	}
+
+	type NoDefault struct {
+		Port int `config:"PORT" validate:"min=1"`
+	}
+	type bare struct {
+		NoDefault
+		Port int `config:"PORT"`
+	}
+	if err := Load(&bare{}, MapSource{"PORT": "1"}); err != nil {
+		t.Errorf("no default: Load = %v; a shadowed field with no default is left as it was", err)
+	}
+}

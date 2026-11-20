@@ -1,35 +1,5 @@
-// Package registry is the process-global catalog of components whose
-// CSS is shipped as real stylesheets and loaded on demand by the
-// runtime.
-//
-// Registration is handle-based: RegisterStyle returns a *Style. The
-// caller stashes the handle in a package var and reuses it at every
-// render site. The component name lives in exactly one place.
-//
-//	// modal/modal.go
-//	var Style = registry.RegisterStyle("modal", modalCSS)
-//
-//	func modalCSS(t style.Theme) string {
-//	    return style.NewComponentSheet("modal", t).
-//	        Rule(".header").Set("font-weight", "700").End().
-//	        MustBuild()
-//	}
-//
-//	// at a render site:
-//	func (s *Screen) Render() render.HTML {
-//	    return modal.Style.Render(&modal.Modal{Title: "Hi"})
-//	}
-//
-// Style.Render wraps the component, injects data-cui-comp="<name>"
-// onto its outermost tag (no extra DOM node), and records the name
-// into a request-scoped collector so the SSR host can emit a <link>
-// in <head> before first paint. After hydration, the runtime takes
-// over: any data-cui-comp marker in newly inserted DOM triggers
-// loadComponentCSS, which dedups on the link's data-cui-style attr.
-//
-// Component CSS is always scoped to [data-cui-comp="<name>"]. Global
-// rules belong in theme.css or WithCustomCSS. See the design doc at
-// core-ui/ARCHITECTURE.md.
+// Package registry is the process-global catalog of component styles,
+// behaviours, templates and data blocks the runtime loads on demand.
 package registry
 
 import (
@@ -51,21 +21,13 @@ import (
 type LoadMode int
 
 const (
-	// LoadAuto loads the component's CSS the first time its marker
-	// appears in the DOM. The SSR host also emits a <link> in <head>
-	// for any LoadAuto component rendered on the initial page, so
-	// there is no FOUC on hard load.
+	// LoadAuto loads the sheet when its marker first renders.
 	LoadAuto LoadMode = iota
 
-	// LoadPrewarm behaves like LoadAuto + a throttled idle-time
-	// prefetch. Use for components that are likely to appear soon
-	// (a command palette, a modal opened from a hotkey).
+	// LoadPrewarm is LoadAuto plus an idle-time prefetch.
 	LoadPrewarm
 
-	// LoadAlways emits the <link> in <head> on every page,
-	// regardless of whether the page renders the component. Use for
-	// page chrome, headers, layout primitives, that almost every
-	// screen touches.
+	// LoadAlways links the sheet on every page.
 	LoadAlways
 )
 
@@ -75,24 +37,18 @@ type Entry struct {
 	StyleFn func(style.Theme) string
 	Load    LoadMode
 
-	// internal caches; keyed by themeHash.
 	mu           sync.Mutex
 	versionCache map[string]string
 	cssCache     map[string]string
 	servedCache  map[string]string
 }
 
-// CSSFor returns the scoped CSS bytes for this entry under the given
-// theme, building and caching on first call.
+// CSSFor returns the entry's CSS under theme, cached per theme.
 func (e *Entry) CSSFor(theme style.Theme) string {
 	return e.CSSForHash(theme, themeHash(theme))
 }
 
-// CSSForHash is CSSFor for a caller that already holds
-// style.ThemeHash(theme). Hashing a theme renders its whole token
-// sheet, so a page that versions twenty components hashes once and
-// passes the result here instead of paying for it twenty times. h
-// must be ThemeHash(theme): the cache is keyed by it.
+// CSSForHash is CSSFor for a caller holding h, which must be style.ThemeHash(theme).
 func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -108,17 +64,12 @@ func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	return css
 }
 
-// ServedCSSFor is CSSFor as it goes on the wire: minified unless the
-// process keeps sources readable (minify.Enabled). Every path that
-// sends component CSS to a browser (the per-component and bundle
-// endpoints, a static export, an inlined sheet) reads this one, and
-// the version hash is taken over it; CSSFor stays the readable source.
+// ServedCSSFor is CSSFor as sent to a browser: minified when minify.Enabled.
 func (e *Entry) ServedCSSFor(theme style.Theme) string {
 	return e.ServedCSSForHash(theme, themeHash(theme))
 }
 
-// ServedCSSForHash is ServedCSSFor with the theme hash supplied; see
-// CSSForHash.
+// ServedCSSForHash is ServedCSSFor with the theme hash supplied.
 func (e *Entry) ServedCSSForHash(theme style.Theme, h string) string {
 	css := e.CSSForHash(theme, h)
 	if !minify.Enabled() {
@@ -137,17 +88,12 @@ func (e *Entry) ServedCSSForHash(theme style.Theme, h string) string {
 	return out
 }
 
-// VersionFor returns the content-addressed version string for this
-// entry's CSS under the given theme. It hashes the served bytes
-// (ServedCSSFor), the ones a browser caches as immutable under
-// ?v=<version>: hashed over the source, a minifier change would ship
-// new bytes under an old URL.
+// VersionFor returns the content hash of the served CSS under theme.
 func (e *Entry) VersionFor(theme style.Theme) string {
 	return e.VersionForHash(theme, themeHash(theme))
 }
 
-// VersionForHash is VersionFor with the theme hash supplied; see
-// CSSForHash.
+// VersionForHash is VersionFor with the theme hash supplied.
 func (e *Entry) VersionForHash(theme style.Theme, h string) string {
 	served := e.ServedCSSForHash(theme, h)
 	e.mu.Lock()
@@ -161,10 +107,7 @@ func (e *Entry) VersionForHash(theme style.Theme, h string) string {
 	return v
 }
 
-// EvictTheme drops the cached CSS + version for hash from this entry. A no-op
-// for a hash that was never cached. Cache misses rebuild on the next CSSFor, so
-// eviction is always correctness-safe; it bounds memory when a theme variant
-// goes away (see framework/uihost.UIHost.ReleaseThemeVariant).
+// EvictTheme drops this entry's caches for hash.
 func (e *Entry) EvictTheme(hash string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -173,8 +116,7 @@ func (e *Entry) EvictTheme(hash string) {
 	delete(e.servedCache, hash)
 }
 
-// HasCachedTheme reports whether this entry currently holds a cached stylesheet
-// for hash. Exposed for tests and for a host observing cache pressure.
+// HasCachedTheme reports whether this entry holds CSS cached for hash.
 func (e *Entry) HasCachedTheme(hash string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -188,8 +130,7 @@ type Option func(*Entry)
 // WithLoad sets the load mode. Default is LoadAuto.
 func WithLoad(m LoadMode) Option { return func(e *Entry) { e.Load = m } }
 
-// Style is the handle returned by RegisterStyle. Authors keep it in a
-// package var and call .Render at every use site.
+// Style is the handle RegisterStyle returns.
 type Style struct{ e *Entry }
 
 // Name returns the registered name.
@@ -201,35 +142,21 @@ func (s *Style) Entry() *Entry { return s.e }
 var (
 	mu      sync.Mutex
 	entries = map[string]*Entry{}
-	// frozen is set once a host has built its component catalog. A
-	// style registered after that is missing from the catalog the
-	// runtime loads sheets from, so a soft navigation to its first
-	// page shows it unstyled.
-	frozen bool
+	frozen  bool
 )
 
-// Freeze marks the component catalog as built. The host calls it when
-// it first marshals the catalog; from then on RegisterStyle refuses new
-// names (re-registering an identical entry stays a no-op).
+// Freeze marks the catalog built; RegisterStyle and RegisterBehavior then refuse new names.
 func Freeze() {
 	mu.Lock()
 	frozen = true
 	mu.Unlock()
 }
 
-// RegisterStyle registers a component's stylesheet builder under a
-// process-wide unique name and returns a handle. The name follows the
-// behavior-name grammar, ^[a-z][a-z0-9-]{0,63}$, and anything else
-// panics: it is spliced into every instance's data-cui-comp marker and
-// names the /__gofastr/comp/<name>.css path. Identical
-// re-registration (same StyleFn pointer + same options) is a no-op;
-// any other duplicate panics so misnames surface at startup.
+// RegisterStyle registers a component's stylesheet builder under a unique name and returns its handle.
 func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
 	return registerStyle(name, fn, false, opts)
 }
 
-// registerStyle is RegisterStyle's body. With late set, a new name is
-// registered even after the catalog froze.
 func registerStyle(name string, fn func(style.Theme) string, late bool, opts []Option) *Style {
 	if !behaviorName.MatchString(name) {
 		panic(fmt.Sprintf("registry.RegisterStyle: name %q must match ^[a-z][a-z0-9-]{0,63}$ — it is a URL segment and the data-cui-comp marker value", name))
@@ -261,11 +188,7 @@ func registerStyle(name string, fn func(style.Theme) string, late bool, opts []O
 	return &Style{e: e}
 }
 
-// RegisterRuntimeStyle is RegisterStyle for a sheet built at run time
-// (a layout's transitions) instead of at package init: it registers a
-// new name even after a host froze the catalog, where RegisterStyle
-// panics. A host builds its catalog once, so one that already did does
-// not list the sheet; that host is the caller's to warn about.
+// RegisterRuntimeStyle is RegisterStyle for a sheet built at run time, allowed after Freeze.
 func RegisterRuntimeStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
 	return registerStyle(name, fn, true, opts)
 }
@@ -287,12 +210,7 @@ func All() []*Entry {
 	})
 }
 
-// EvictTheme drops the cached CSS + version for hash from EVERY registered
-// entry. A theme variant is process-wide, it can warm any component's cache via
-// the per-request catalog, so its release must sweep all entries, not one. Lock
-// order is the package mutex THEN the entry mutex (the only nested acquisition
-// site), so this cannot deadlock against CSSFor/VersionFor (entry-only) or
-// RegisterStyle/Lookup/All (package-only).
+// EvictTheme drops every entry's caches for hash.
 func EvictTheme(hash string) {
 	if hash == "" {
 		return
@@ -304,57 +222,25 @@ func EvictTheme(hash string) {
 	mu.Unlock()
 }
 
-// reset is for tests only.
 func reset() {
 	mu.Lock()
 	defer mu.Unlock()
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	behaviorMarkerAttrs = map[string]bool{}
 	templates = newTemplates()
 	frozen = false
 }
 
-// testCleanup is the subset of *testing.T that IsolateForTest needs.
-// Declared structurally (like dev.SetHeartbeatIntervalForTest) so this
-// production package never imports testing.
 type testCleanup interface{ Cleanup(func()) }
 
-// IsolateForTest swaps the process-global registry, styles and
-// behaviours both, for a fresh, empty one and restores the original
-// when the test finishes (t.Cleanup).
-//
-// Why it exists: the registry is process-global and a Go test binary
-// is one process per package, so any package linked into the binary
-// that registers styles at init time (framework/ui registers
-// ui-button as LoadAlways, ui-page-header and ui-sidebar as
-// LoadPrewarm) changes what All, Lookup and EagerNames report for
-// EVERY test in that binary.
-// Tests that assert on registry-shaped behaviour — the SSR host's
-// single-direct-link vs bundle decision, exact bundle name sets — must
-// state that premise by isolating rather than assume a clean process.
-//
-// While isolated, existing entries (including init-time ones) are
-// invisible, and styles the test registers are dropped again on
-// restore: they cannot leak into later tests or trip the duplicate-
-// name panic afterwards. A name registered before isolation may be
-// registered again inside it without panicking (the duplicate check
-// only sees the isolated registry); after restore the original entry
-// wins. Nested isolations compose, each restore returning to the
-// enclosing state.
-//
-// Sequential tests only — read this as a hazard, not a style note.
-// Nothing here detects concurrent misuse, and the corruption is silent:
-// a test that registers while another test holds isolation writes into
-// the throwaway map (a forced-interleaving probe watched exactly that),
-// the isolated test's restore then swaps the original map back and
-// silently destroys the sibling's registrations, and NEITHER test
-// fails — later tests simply see a registry that is missing entries.
-// Nothing structural can prevent this without importing testing, so
-// the sequencing discipline is the only guard.
+// IsolateForTest gives the test an empty registry and restores the original
+// when it ends; tests that use it must not run in parallel.
 func IsolateForTest(t testCleanup) {
 	mu.Lock()
 	saved := entries
 	savedBehaviors := behaviors
+	savedMarkerAttrs := behaviorMarkerAttrs
 	savedReserved := reservedBehaviorNames
 	savedFrozen := frozen
 	savedTemplates := templates
@@ -362,19 +248,16 @@ func IsolateForTest(t testCleanup) {
 	dataBlocks = map[string]dataBlock{}
 	entries = map[string]*Entry{}
 	behaviors = map[string]*BehaviorEntry{}
+	behaviorMarkerAttrs = map[string]bool{}
 	templates = newTemplates()
-	// The isolated registry has no catalog yet, so it starts unfrozen.
 	frozen = false
-	// The reserved names go too, so a test can reach the merge-time
-	// refusal in core-ui/runtime that the reservation normally
-	// forestalls; a test that wants the registration-time refusal
-	// reserves the name itself.
 	reservedBehaviorNames = map[string]bool{}
 	mu.Unlock()
 	t.Cleanup(func() {
 		mu.Lock()
 		entries = saved
 		behaviors = savedBehaviors
+		behaviorMarkerAttrs = savedMarkerAttrs
 		reservedBehaviorNames = savedReserved
 		templates = savedTemplates
 		dataBlocks = savedDataBlocks
@@ -393,9 +276,6 @@ func fnPtr(fn func(style.Theme) string) uintptr {
 	return reflect.ValueOf(fn).Pointer()
 }
 
-// fnLocation returns "name (file:line)" for the given function value,
-// so duplicate-registration panics tell the user which call site to
-// rename instead of printing raw uintptrs.
 func fnLocation(fn func(style.Theme) string) string {
 	pc := reflect.ValueOf(fn).Pointer()
 	rf := runtime.FuncForPC(pc)
@@ -406,9 +286,4 @@ func fnLocation(fn func(style.Theme) string) string {
 	return fmt.Sprintf("%s (%s:%d)", rf.Name(), file, line)
 }
 
-// themeHash delegates to style.ThemeHash. It stays as a local alias because
-// this package's call sites read better unqualified, but the implementation
-// must live in exactly one place: component CSS URLs and app.css URLs are
-// keyed on it, and two hashes that disagreed would serve one theme's
-// stylesheet under another theme's cache entry.
 func themeHash(t style.Theme) string { return style.ThemeHash(t) }

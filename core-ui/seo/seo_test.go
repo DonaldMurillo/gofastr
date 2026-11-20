@@ -54,6 +54,15 @@ func TestEscapesClosingTag(t *testing.T) {
 	}
 }
 
+func TestBodyHoldsNoCloseTagOpener(t *testing.T) {
+	a := NewArticle()
+	a.Headline = "</script >, </SCRIPT/ and </style>"
+	got := string(Render(a))
+	if c := strings.Count(got, "</"); c != 1 {
+		t.Errorf("want only the closing tag's </, got %d: %s", c, got)
+	}
+}
+
 func TestArticleMarshalsFields(t *testing.T) {
 	a := NewArticle()
 	a.Headline = "Hello"

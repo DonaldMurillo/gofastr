@@ -8,28 +8,14 @@ import (
 	"strings"
 )
 
-// A data block is an inert JSON document a package hands every page
-// head: <script type="application/json" id="<id>">…</script>. It is
-// how an optional package gives its browser module server-declared
-// data without the host importing the package. core-ui/localdb's
-// schema rides one: a host that never links localdb emits nothing, and
-// its binary never carries localdb's code.
-//
-// The host (core-ui/widget's manifest scripts, framework/uihost's
-// head) emits every registered block, sorted by id, on live pages and
-// in export mode. A block whose function returns nil is skipped.
-
 type dataBlock struct {
 	id string
 	fn func() []byte
 }
 
 var (
-	dataBlocks  = map[string]dataBlock{}
-	dataBlockID = regexp.MustCompile(`^gofastr-[a-z0-9-]{1,56}$`)
-	// The ids the kernel and the host emit themselves; a registered
-	// block under one would be a second element the runtime never
-	// reads, or the one it reads in place of the real one.
+	dataBlocks           = map[string]dataBlock{}
+	dataBlockID          = regexp.MustCompile(`^gofastr-[a-z0-9-]{1,56}$`)
 	reservedDataBlockIDs = map[string]bool{
 		"gofastr-signals": true, "gofastr-signals-partial": true,
 		"gofastr-signals-page":    true,
@@ -41,11 +27,7 @@ var (
 	}
 )
 
-// RegisterDataBlock registers fn as the source of the data block id.
-// id is "gofastr-" plus lowercase letters, digits and '-'. fn returns
-// JSON (or nil for nothing to emit) and runs at render time, so it
-// sees declarations made after registration. Registering an id twice
-// panics.
+// RegisterDataBlock registers fn, run at render time, as the JSON source of block id.
 func RegisterDataBlock(id string, fn func() []byte) {
 	if !dataBlockID.MatchString(id) {
 		panic(fmt.Sprintf("registry.RegisterDataBlock: id %q must match %s — it is an element id the runtime looks up", id, dataBlockID))
@@ -64,12 +46,7 @@ func RegisterDataBlock(id string, fn func() []byte) {
 	dataBlocks[id] = dataBlock{id: id, fn: fn}
 }
 
-// DataBlocksHTML renders every registered data block as an inert
-// <script type="application/json"> element, sorted by id. Every "<" is
-// written as \u003c: that covers "</script>" and also "<!--", which
-// puts the HTML tokenizer into a state that swallows the rest of the
-// page. A "<" in valid JSON can only sit inside a string, where
-// \u003c reads back as the same character.
+// DataBlocksHTML renders every registered data block as inert JSON script elements.
 func DataBlocksHTML() string {
 	mu.Lock()
 	blocks := make([]dataBlock, 0, len(dataBlocks))

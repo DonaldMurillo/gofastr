@@ -652,8 +652,10 @@ it gets its own `default:` tag. When `Cfg` embeds `Base` (whose
 `Port` reads `PORT` with `default:"8080"`) and declares its own `Port`
 reading `PORT`, `cfg.Port` reads `PORT` and `cfg.Base.Port` holds
 `8080`, so a method on `Base` reading `b.Port` sees its default, not
-`0`. The shadowed field's `required:` and `validate:` tags do not
-apply. When a source still holds a key spelled the old way
+`0`. The shadowed field's `validate:` tag checks that default, so a
+default its own rule refuses fails `Load` as it would on a bound field;
+its `required:` tag does not apply, and a shadowed field with no
+default is left as it was. When a source still holds a key spelled the old way
 (`BASE_PORT`) and no field reads it, `Load` logs one warning per key
 through `slog`'s default logger, naming the key it reads now; `Load`
 still succeeds.
