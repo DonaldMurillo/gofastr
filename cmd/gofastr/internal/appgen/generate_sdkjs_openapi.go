@@ -270,7 +270,7 @@ const jsOAClientTail = `  async do(method, path, body) {
 
   async _call(op, params, body) {
     params = params || {};
-    const readParam = (name) => Object.hasOwn(params, name) ? params[name] : undefined;
+    const readParam = (name) => Object.prototype.hasOwnProperty.call(params, name) ? params[name] : undefined;
     for (const name of op.required) {
       const value = readParam(name);
       if (value === undefined || value === null) {

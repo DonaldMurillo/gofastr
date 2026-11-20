@@ -399,6 +399,7 @@ func TestOpenAPISDKJSOwnParams(t *testing.T) {
 import assert from "node:assert/strict";
 import { Client } from "./client.js";
 
+Object.hasOwn = undefined; // Older browsers lack this API.
 const requests = [];
 const client = new Client({ baseURL: "https://fixture.invalid", fetch: async (url, { headers }) => {
   const { pathname, searchParams } = new URL(url);
