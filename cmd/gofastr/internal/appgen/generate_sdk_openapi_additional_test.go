@@ -62,6 +62,8 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
       },
       "mergedTyped":{"$ref":"#/components/schemas/TypedExtras"},
       "mergedDictionary":{"$ref":"#/components/schemas/TypedDictionary"},
+      "arrayExtras":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":{"type":"array","items":{"type":["integer","null"]}}},
+      "mapExtras":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":{"type":"object","additionalProperties":{"type":["integer","null"]}}},
       "closed":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":false},
       "implicit":{"type":"object","properties":{"label":{"type":"string"}}}
     },
@@ -123,7 +125,8 @@ func TestRoundTrip(t *testing.T) {
 	const common = "{\"known\":\"x\",\"count\":9007199254740993,\"missing\":null," +
 		"\"flex\":{\"label\":\"y\",\"extra\":{\"n\":9007199254740993}},\"emptySchema\":{\"other\":[true,null]}," +
 		"\"merged\":{\"id\":\"1\",\"label\":\"x\",\"extra\":1},\"mergedTyped\":{\"id\":\"2\",\"count\":3,\"missing\":null}," +
-		"\"mergedDictionary\":{\"count\":4,\"missing\":null},"
+		"\"mergedDictionary\":{\"count\":4,\"missing\":null}," +
+		"\"arrayExtras\":{\"label\":\"a\",\"extra\":[1,null]},\"mapExtras\":{\"label\":\"b\",\"extra\":{\"n\":null}},"
 	const want = common + "\"closed\":{\"label\":\"z\"},\"implicit\":{\"label\":\"w\"}}"
 	const response = common + "\"closed\":{\"label\":\"z\",\"ignored\":1},\"implicit\":{\"label\":\"w\",\"ignored\":2}}"
 	post := make(chan string, 1)
@@ -150,6 +153,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var _ map[string]json.RawMessage = record.MergedDictionary
+	var _ map[string]json.RawMessage = record.AdditionalProperties
 	if err := c.PostRecord(ctx, *record); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +175,7 @@ func TestAdditionalPropertyNames(t *testing.T) {
 	if err := json.Unmarshal([]byte(want), &flex); err != nil {
 		t.Fatal(err)
 	}
-	flex.AdditionalProperties["label"] = json.RawMessage("0")
+	flex.AdditionalProperties["label"] = json.RawMessage("invalid JSON")
 	flex.AdditionalProperties["optional"] = json.RawMessage("0")
 	got, err := json.Marshal(flex)
 	if err != nil {
@@ -182,12 +186,14 @@ func TestAdditionalPropertyNames(t *testing.T) {
 	}
 
 	var record client.RecordData
-	if err := json.Unmarshal([]byte("{\"count\":\"not an integer\"}"), &record); err == nil {
-		t.Fatal("a string was accepted as a typed integer additional property")
+	if err := json.Unmarshal([]byte("{\"count\":\"unmodeled\"}"), &record); err != nil {
+		t.Fatal(err)
 	}
-	var composed client.TypedExtras
-	if err := json.Unmarshal([]byte("{\"count\":\"not an integer\"}"), &composed); err == nil {
-		t.Fatal("a string was accepted as a typed integer additional property in allOf")
+	if got := string(record.AdditionalProperties["count"]); got != "\"unmodeled\"" {
+		t.Fatalf("additional property = %s, want raw JSON string", got)
+	}
+	if err := json.Unmarshal([]byte("{\"known\":42}"), &record); err == nil {
+		t.Fatal("a number was accepted for a declared string")
 	}
 }
 
@@ -201,7 +207,6 @@ func TestRecursiveMixedObject(t *testing.T) {
 		{"slice", func(n *client.Node) { n.Children = []client.Node{{}}; n.Children[0] = *n }},
 		{"map", func(n *client.Node) { n.Links = map[string]client.Node{}; n.Links["loop"] = *n }},
 		{"plain struct", func(n *client.Node) { n.Plain = &client.NodePlain{Back: n} }},
-		{"additional map", func(n *client.Node) { n.AdditionalProperties = map[string]client.Node{}; n.AdditionalProperties["loop"] = *n }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var node client.Node
@@ -215,14 +220,12 @@ func TestRecursiveMixedObject(t *testing.T) {
 	leaf := &client.Node{}
 	node := client.Node{
 		Next: leaf,
-		AdditionalProperties: map[string]client.Node{
-			"left": {Next: leaf}, "right": {Next: leaf},
-		},
+		Plain: &client.NodePlain{Back: leaf},
+		AdditionalProperties: map[string]json.RawMessage{"next": json.RawMessage("invalid JSON"), "extra": json.RawMessage("null")},
 	}
-	node.AdditionalProperties["next"] = node
-	const want = "{\"left\":{\"next\":{}},\"next\":{},\"right\":{\"next\":{}}}"
+	const want = "{\"next\":{},\"plain\":{\"back\":{}},\"extra\":null}"
 	got, err := json.Marshal(node)
-	if err != nil || string(got) != want {
+	if err != nil || !reflect.DeepEqual(jsonValues(t, string(got)), jsonValues(t, want)) {
 		t.Fatalf("json.Marshal = %s, %v; want %s", got, err, want)
 	}
 }

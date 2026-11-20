@@ -27,10 +27,9 @@ type oaField struct {
 }
 
 type oaStruct struct {
-	Name               string
-	Fields             []oaField
-	Additional         *oaType
-	AdditionalNullable bool
+	Name       string
+	Fields     []oaField
+	Additional bool
 }
 
 // oaTypeSet names and collects the struct types a document needs: a
@@ -299,7 +298,7 @@ func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
 			}
 		}
 	}
-	st := &oaStruct{Name: name}
+	st := &oaStruct{Name: name, Additional: oaAllowsAdditionalProperties(s)}
 	ts.structs[name] = st
 	ts.order = append(ts.order, name)
 	wires := make([]string, 0, len(props))
@@ -316,18 +315,6 @@ func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
 		}
 		desc, _ := ps["description"].(string)
 		st.Fields = append(st.Fields, oaField{Wire: wire, Go: g, Type: ft, Required: required[wire], Nullable: nullable, Description: desc})
-	}
-	switch additional := oaMixedAdditionalProperties(s).(type) {
-	case bool:
-		if additional {
-			st.Additional = oaRaw
-		}
-	case map[string]any:
-		var err error
-		st.Additional, st.AdditionalNullable, err = ts.typeOf(additional, name+"AdditionalProperty")
-		if err != nil {
-			return fmt.Errorf("additionalProperties of %s: %w", name, err)
-		}
 	}
 	return nil
 }
@@ -401,15 +388,12 @@ func (ts *oaTypeSet) goRecursiveCodecs() map[string]bool {
 	recursive := make(map[string]bool)
 	for _, name := range ts.order {
 		st := ts.structs[name]
-		if st.Additional == nil {
+		if !st.Additional {
 			continue
 		}
 		seen := make(map[string]bool)
 		var reaches func(*oaType) bool
 		reaches = func(t *oaType) bool {
-			if t == nil {
-				return false
-			}
 			switch t.Kind {
 			case "map", "array":
 				return reaches(t.Elem)
@@ -422,12 +406,12 @@ func (ts *oaTypeSet) goRecursiveCodecs() map[string]bool {
 				}
 				seen[t.Name] = true
 				nested := ts.structs[t.Name]
-				return reaches(nested.Additional) || slices.ContainsFunc(nested.Fields, func(f oaField) bool { return reaches(f.Type) })
+				return slices.ContainsFunc(nested.Fields, func(f oaField) bool { return reaches(f.Type) })
 			default:
 				return false
 			}
 		}
-		if reaches(st.Additional) || slices.ContainsFunc(st.Fields, func(f oaField) bool { return reaches(f.Type) }) {
+		if slices.ContainsFunc(st.Fields, func(f oaField) bool { return reaches(f.Type) }) {
 			recursive[name] = true
 		}
 	}
@@ -436,6 +420,7 @@ func (ts *oaTypeSet) goRecursiveCodecs() map[string]bool {
 
 // renderGo emits every struct type, in the order they were named.
 func (ts *oaTypeSet) renderGo(sb *strings.Builder, recursive map[string]bool) {
+	hasExtras := false
 	for _, name := range ts.order {
 		st := ts.structs[name]
 		if !token.IsIdentifier(name) {
@@ -456,23 +441,23 @@ func (ts *oaTypeSet) renderGo(sb *strings.Builder, recursive map[string]bool) {
 			}
 			fmt.Fprintf(sb, "\t%s %s `json:%q`\n", f.Go, typ, tag)
 		}
-		if st.Additional != nil {
-			typ := st.Additional.goExpr()
-			if st.AdditionalNullable && st.Additional.goPointer() {
-				typ = "*" + typ
-			}
-			fmt.Fprintf(sb, "\t// AdditionalProperties holds JSON properties not declared by the schema.\n\tAdditionalProperties map[string]%s `json:\"-\"`\n}\n", typ)
-			st.renderGoObjectCodec(sb, typ, recursive[name])
+		if st.Additional {
+			hasExtras = true
+			sb.WriteString("\t// AdditionalProperties holds JSON properties not declared by the schema.\n\tAdditionalProperties map[string]json.RawMessage `json:\"-\"`\n}\n")
+			st.renderGoObjectCodec(sb, recursive[name])
 		} else {
 			sb.WriteString("}\n")
 		}
+	}
+	if hasExtras {
+		sb.WriteString(oaGoAdditionalPropertyCodecs)
 	}
 	if len(recursive) > 0 {
 		sb.WriteString(oaGoJSONCycleGuard)
 	}
 }
 
-func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, valueType string, recursive bool) {
+func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, recursive bool) {
 	wires := make([]string, 0, len(st.Fields))
 	for _, f := range st.Fields {
 		wires = append(wires, fmt.Sprintf("%q", f.Wire))
@@ -480,7 +465,7 @@ func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, valueType string, r
 	fmt.Fprintf(sb, "\nfunc (v %s) MarshalJSON() ([]byte, error) {\n", st.Name)
 	if recursive {
 		sb.WriteString(`	value := reflect.ValueOf(v)
-	if openAPIJSONHasCycle(value, nil, make(map[openAPIJSONVisit]bool)) {
+	if openAPIJSONHasCycle(value, make(map[openAPIJSONVisit]bool)) {
 		return nil, &json.UnsupportedValueError{Value: value, Str: "encountered a cycle via " + value.Type().String()}
 	}
 `)
@@ -491,70 +476,78 @@ func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, valueType string, r
 	if err != nil || len(v.AdditionalProperties) == 0 {
 		return data, err
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, err
-	}
-	for key, value := range v.AdditionalProperties {
-		switch key {
-		case %[2]s:
-			continue
-		}
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return nil, err
-		}
-		fields[key] = raw
-	}
-	return json.Marshal(fields)
+	return openAPIAppendExtras(data, v.AdditionalProperties, %[2]s)
 }
 
 func (v *%[1]s) UnmarshalJSON(data []byte) error {
+	return openAPIDecodeObject(data, &v.AdditionalProperties, map[string]any{
+`, st.Name, strings.Join(wires, ", "))
+	for _, f := range st.Fields {
+		fmt.Fprintf(sb, "\t\t%q: &v.%s,\n", f.Wire, f.Go)
+	}
+	sb.WriteString("\t})\n}\n")
+}
+
+const oaGoAdditionalPropertyCodecs = `
+func openAPIAppendExtras(data []byte, extras map[string]json.RawMessage, declared ...string) ([]byte, error) {
+	for _, key := range declared {
+		if _, exists := extras[key]; exists {
+			extras = maps.Clone(extras)
+			for _, key := range declared {
+				delete(extras, key)
+			}
+			break
+		}
+	}
+	if len(extras) == 0 {
+		return data, nil
+	}
+	additional, err := json.Marshal(extras)
+	if err != nil || len(data) == 2 {
+		return additional, err
+	}
+	return append(append(data[:len(data)-1], ','), additional[1:]...), nil
+}
+
+func openAPIDecodeObject(data []byte, extras *map[string]json.RawMessage, declared map[string]any) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
 	for key, raw := range fields {
-		switch key {
-`, st.Name, strings.Join(wires, ", "))
-	for _, f := range st.Fields {
-		fmt.Fprintf(sb, `		case %q:
-			if err := json.Unmarshal(raw, &v.%s); err != nil {
+		if field, ok := declared[key]; ok {
+			if err := json.Unmarshal(raw, field); err != nil {
 				return err
 			}
-`, f.Wire, f.Go)
+			delete(fields, key)
+		}
 	}
-	fmt.Fprintf(sb, `		default:
-			var value %[1]s
-			if err := json.Unmarshal(raw, &value); err != nil {
-				return err
-			}
-			if v.AdditionalProperties == nil {
-				v.AdditionalProperties = make(map[string]%[1]s)
-			}
-			v.AdditionalProperties[key] = value
+	if len(fields) != 0 {
+		if *extras == nil {
+			*extras = fields
+		} else {
+			maps.Copy(*extras, fields)
 		}
 	}
 	return nil
 }
-`, valueType)
-}
+`
 
 const oaGoJSONCycleGuard = `
 type openAPIJSONVisit struct {
-	typ, owner reflect.Type
+	typ reflect.Type
 	ptr uintptr
 	length int
 }
 
-func openAPIJSONHasCycle(v reflect.Value, owner reflect.Type, path map[openAPIJSONVisit]bool) bool {
+func openAPIJSONHasCycle(v reflect.Value, path map[openAPIJSONVisit]bool) bool {
 	kind := v.Kind()
 	switch kind {
 	case reflect.Ptr, reflect.Map, reflect.Slice:
 		if v.IsNil() || kind == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
 			return false
 		}
-		visit := openAPIJSONVisit{typ: v.Type(), owner: owner, ptr: v.Pointer()}
+		visit := openAPIJSONVisit{typ: v.Type(), ptr: v.Pointer()}
 		if kind == reflect.Slice {
 			visit.length = v.Len()
 		}
@@ -566,30 +559,23 @@ func openAPIJSONHasCycle(v reflect.Value, owner reflect.Type, path map[openAPIJS
 	}
 	switch kind {
 	case reflect.Ptr:
-		return openAPIJSONHasCycle(v.Elem(), nil, path)
+		return openAPIJSONHasCycle(v.Elem(), path)
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
-			var owner reflect.Type
-			if v.Type().Field(i).Tag.Get("json") == "-" {
-				owner = v.Type()
-			}
-			if openAPIJSONHasCycle(v.Field(i), owner, path) {
+			if v.Type().Field(i).Tag.Get("json") != "-" && openAPIJSONHasCycle(v.Field(i), path) {
 				return true
 			}
 		}
 	case reflect.Map:
 		iter := v.MapRange()
 		for iter.Next() {
-			if owner != nil && openAPIJSONDeclares(owner, iter.Key().String()) {
-				continue
-			}
-			if openAPIJSONHasCycle(iter.Value(), nil, path) {
+			if openAPIJSONHasCycle(iter.Value(), path) {
 				return true
 			}
 		}
 	case reflect.Slice:
 		for i := 0; i < v.Len(); i++ {
-			if openAPIJSONHasCycle(v.Index(i), nil, path) {
+			if openAPIJSONHasCycle(v.Index(i), path) {
 				return true
 			}
 		}
@@ -597,15 +583,6 @@ func openAPIJSONHasCycle(v reflect.Value, owner reflect.Type, path map[openAPIJS
 	return false
 }
 
-func openAPIJSONDeclares(typ reflect.Type, key string) bool {
-	for i := 0; i < typ.NumField(); i++ {
-		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
-		if name != "-" && name == key {
-			return true
-		}
-	}
-	return false
-}
 `
 
 // renderTS emits every struct type as an interface.

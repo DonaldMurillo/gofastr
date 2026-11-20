@@ -506,19 +506,20 @@ of several members, or one beside properties, is the merged object. A
 document deriving more than 5000 struct types is refused.
 
 When an object declares both named properties and `additionalProperties`,
-the generated Go struct exposes the extra keys in an `AdditionalProperties`
-map. Its values use the declared schema's Go type, or `json.RawMessage` for
-`additionalProperties: true` or `{}`. The map's entries read and write
-as top-level keys of that object, not as a nested field; exact declared
-JSON names take precedence over map keys. The Go generator reports a
-collision rather than renaming a property that derives one of these Go
-members: `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
+the generated Go struct exposes the extra keys in
+`AdditionalProperties map[string]json.RawMessage`. Extra values stay raw
+even if the schema gives them a type: callers can decode them as needed,
+and a round trip preserves values such as large numbers and nested nulls.
+The map's entries are sibling JSON keys, not a nested field. Matching is
+case-sensitive in these structs: a declared `label` takes precedence
+over a map key named `label`, but `Label` goes in the map.
+
+The Go generator reports a collision rather than renaming a property
+that derives `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
 Omitting `additionalProperties` or setting it to `false` does not add a map.
-When flattening `allOf`, the generator keeps an explicit allowance from
-the wrapper or any member. An unrestricted allowance or differing typed
-allowances use raw JSON, so the generated type does not drop values.
-Flattened objects with no named properties keep their existing raw JSON
-map type.
+When flattening `allOf`, an explicit allowance from the wrapper or any
+member is enough. Flattened objects with no named properties keep their
+existing raw JSON map type.
 Encoding a recursive Go value with a cycle returns a JSON encoding error.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a

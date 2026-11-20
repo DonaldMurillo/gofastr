@@ -47,7 +47,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
       - test: cmd/gofastr/internal/appgen.TestUnionApp
   - id: go-sdk-additional-properties-round-trip
-    rule: Generated Go structs, including flattened allOf objects, preserve explicitly allowed additional properties as sibling JSON keys while reserving exact declared names for their named fields.
+    rule: Generated Go structs, including flattened allOf objects, preserve explicitly allowed additional properties as raw JSON sibling keys, including nulls inside arrays and dictionaries, while reserving exact case-sensitive declared names for their named fields.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: allof-dictionary-stays-raw
@@ -59,7 +59,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertyNameCollision
   - id: go-sdk-additional-property-cycles
-    rule: Marshaling a recursive Go object with additional properties returns an encoding error for a cycle on the wire, without rejecting shared children or traversing shadowed additional keys.
+    rule: Marshaling a recursive Go object with additional properties returns an encoding error for a cycle through named fields without rejecting shared children.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: stream-timeout-bounds-the-headers
@@ -119,6 +119,31 @@ invariants:
       - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryDocumentStaysInProject
 decisions:
+  - id: lossless-mixed-object-extras
+    date: 2026-11-20
+    status: accepted
+    decision: Mixed Go objects keep extra keys as json.RawMessage regardless of the additionalProperties value schema.
+    rejected:
+      - option: Derive a Go type for each additionalProperties value schema.
+        why: Typed decoding can silently coerce nested nulls to zero and adds generated code without improving round-trip fidelity.
+    upholds: [go-sdk-additional-properties-round-trip, allof-dictionary-stays-raw]
+  - id: refuse-generated-member-collisions
+    date: 2026-11-20
+    status: accepted
+    decision: Refuse an OpenAPI named property that derives a reserved mixed-object Go member.
+    rejected:
+      - option: Suffix colliding field or method names.
+        why: Silent renaming changes the generated API and conflicts with the generator's no-auto-renaming rule.
+    upholds: [go-sdk-additional-property-name-collision]
+  - id: guard-recursive-mixed-object-encoding
+    date: 2026-11-20
+    status: accepted
+    decision: Check for cycles through named fields only in mixed Go types that can reach themselves.
+    rejected:
+      - option: Leave cycle detection to encoding/json without a guard.
+        why: A generated marshaler re-enters json.Marshal, restarting its cycle tracking; a cyclic value can exhaust the process stack instead of returning an error.
+    revisit_if: The mixed-object encoding can use one cycle-aware traversal without repeatedly scanning recursive subtrees.
+    upholds: [go-sdk-additional-property-cycles]
   - id: preserve-go-body-signatures
     date: 2026-11-20
     status: accepted

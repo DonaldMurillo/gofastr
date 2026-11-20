@@ -353,7 +353,7 @@ func oaSummary(op cliOp) string {
 func renderOASDKGoFiles(spec oaSDKSpec) ([]GeneratedFile, error) {
 	for _, name := range spec.Types.order {
 		st := spec.Types.structs[name]
-		if st.Additional == nil {
+		if !st.Additional {
 			continue
 		}
 		for _, f := range st.Fields {
@@ -421,11 +421,13 @@ func renderOASDKOperations(spec oaSDKSpec) string {
 	need := map[string]bool{"context": len(spec.Ops) > 0, "net/http": len(spec.Ops) > 0, "net/url": len(spec.Ops) > 0}
 	recursive := spec.Types.goRecursiveCodecs()
 	if len(recursive) > 0 {
-		need["reflect"], need["strings"] = true, true
+		need["reflect"] = true
 	}
 	for _, name := range spec.Types.order {
 		st := spec.Types.structs[name]
-		need["encoding/json"] = need["encoding/json"] || st.Additional != nil
+		if st.Additional {
+			need["encoding/json"], need["maps"] = true, true
+		}
 		for _, f := range st.Fields {
 			need["encoding/json"] = need["encoding/json"] || f.Type.usesRaw()
 		}
