@@ -3,7 +3,6 @@ summary: The one styling surface, theme tokens, component sheets and the owned s
 code:
   - framework/ui/theme/
   - core-ui/style/
-  - core-ui/ownstyle/
 docs:
   - core-ui/ARCHITECTURE.md
   - framework/docs/content/codegen.md
