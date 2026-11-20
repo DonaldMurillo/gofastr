@@ -1435,10 +1435,10 @@ and Back walks the stack as it was before the open. A save in a record
 pane that names the record keeps the pane and refreshes it; the layers
 under it and the page under the stack are then stale, and each
 re-renders (a layer its overlay variant, the page through
-`__gofastr.refresh()`) when a close or Back uncovers it. The leave
-guard asks about what the move discards: the layer re-rendered and
-every layer above it, or the whole document when the page under the
-stack refreshes. Any other destination is a real navigation, as before.
+`__gofastr.refresh()`) when a close or Back uncovers it. The navigation
+guards and the leave guard check the content each move discards,
+including the uncovered layer or page before it re-renders. Any other
+destination is a real navigation, as before.
 
 Choosing between the three overlay tools: an intercept is for a detail
 with its own canonical page; a widget deep link

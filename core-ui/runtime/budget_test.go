@@ -1848,13 +1848,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// to replaceURL as core's is (TestNavGuardHistoryStack,
 		// TestNavGuardHistoryReplaceURLInLayer and its mutation case). The
 		// writes are the stack's own. Pinned at the measured size plus 2.
-		// 4235 measured (+138): a save that keeps a layer marks the
+		// 4248 measured (+151): a save that keeps a layer marks the
 		// layers under it and the page under the stack stale, and each
-		// re-renders when uncovered, asking the leave guard first
+		// re-renders when uncovered, asking the guards first
 		// (TestSaveInPaneRefreshesTheListOnClose,
 		// TestSaveInUpperPaneRefreshesTheLayersUnder,
-		// TestUncoveredStaleLayer*). Measured plus 2.
-		"intercept": 4237,
+		// TestUncoveredStale*). Measured plus 2.
+		"intercept": 4250,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

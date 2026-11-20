@@ -259,6 +259,59 @@ func TestUncoveredStaleLayerAsksTheLeaveGuard(t *testing.T) {
 	}
 }
 
+func TestUncoveredStaleContentAsksNavigationGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name, root, closed, count, before, after string
+		allow                                    bool
+	}{
+		{"drawer/escape", "rec-a", "rec-b", "rec-count", "REC 0", "REC 1", false},
+		{"page/back", "list-main", "rec-a", "list-count", "LIST 0", "LIST 1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			if tc.root == "rec-a" {
+				returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+				returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+			} else {
+				returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+			}
+			ngEval(t, ctx, fmt.Sprintf(`(async () => {
+				await __gofastr.loadModule('navguard');
+				const draft = document.createElement('input');
+				draft.id = 'unsaved-draft';
+				draft.value = 'unsaved';
+				document.getElementById(%q).appendChild(draft);
+				window.__blocked = false;
+				addEventListener('gofastr:navigateblocked', () => { window.__blocked = true; });
+				__gofastr.guardNavigation((nav) => {
+					if (nav.affects(draft)) return new Promise((resolve) => { window.__answer = resolve; });
+				});
+			})()`, tc.root), nil)
+			if tc.root == "rec-a" {
+				ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			} else {
+				ngEval(t, ctx, `history.back()`, nil)
+			}
+			countIs := func(text string) string {
+				return fmt.Sprintf(`document.getElementById(%q)?.textContent === %q`, tc.count, text)
+			}
+			preserved := countIs(tc.before) + ` && document.getElementById('unsaved-draft')?.value === 'unsaved'`
+			if !interceptWait(ctx, fmt.Sprintf(`!document.getElementById(%q) && typeof window.__answer === 'function' && `, tc.closed)+preserved) {
+				t.Fatalf("closing did not wait for a navigation guard on the uncovered draft: %+v", readStack(ctx))
+			}
+			ngEval(t, ctx, fmt.Sprintf(`window.__answer(%t)`, tc.allow), nil)
+			want := `window.__blocked && ` + preserved
+			if tc.allow {
+				want = countIs(tc.after) + ` && !document.getElementById('unsaved-draft')`
+			}
+			if !interceptWait(ctx, want) {
+				t.Fatalf("refresh did not honor the navigation guard (allow=%t): %+v", tc.allow, readStack(ctx))
+			}
+		})
+	}
+}
+
 // An uncovered record whose refetch fails falls back to a plain
 // navigation to it rather than going on showing what it showed.
 func TestUncoveredStaleLayerFallsBackWhenItsRefetchFails(t *testing.T) {
