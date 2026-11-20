@@ -15,28 +15,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
-// Registered behaviours are runtime modules too. A package that calls
-// registry.RegisterBehavior embeds its JavaScript beside the Go that
-// renders the markup it binds (core-ui/ARCHITECTURE.md), so the
-// module lives outside core-ui/runtime and outside every lint that
-// walks that directory. The contract is the same for both: ES2020
-// (no var), no selector built from an unescaped value, no storage key
-// built raw. This file finds those modules so the lints can hold them
-// to it.
-
-// RegisteredBehaviorSources returns the JavaScript file behind every
-// registry.RegisterBehavior call in the tree: for each call in a Go
-// file under root (tests, dependencies, build outputs, testdata and hidden
-// directories skipped), the source argument is followed to the
-// package-level variable it names, and that variable's `//go:embed`
-// directive names the file, resolved beside the Go file. Only what a
-// registration passes counts: a JavaScript asset the same file embeds
-// for another purpose is not a module.
-//
-// A registration whose source is not such a variable, a directive
-// naming a file that is not there, and a Go file that does not parse
-// are errors rather than silences, because a module the lints cannot
-// read is a module they cannot hold.
+// RegisteredBehaviorSources returns the JavaScript file behind every registry.RegisterBehavior call
+// in the tree: for each call in a Go file under root (tests, dependencies, build outputs, testdata
+// and hidden directories skipped), the source argument is followed to the package-level variable it
+// names, and that variable's `//go:embed` directive names the file, resolved beside the Go file.
 func RegisteredBehaviorSources(root string) ([]string, error) {
 	root = filepath.Clean(root)
 	var out []string
@@ -61,9 +43,6 @@ func RegisteredBehaviorSources(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		// The cheap test first: most files in the tree never register.
-		// The name alone, not the name and its paren, so a comment
-		// between them cannot slip a registration past the parse.
 		if !strings.Contains(string(raw), "RegisterBehavior") {
 			return nil
 		}
@@ -86,8 +65,6 @@ func RegisteredBehaviorSources(root string) ([]string, error) {
 	return out, nil
 }
 
-// behaviorSourcesInFile parses one Go file and follows each
-// RegisterBehavior call's source argument to its embed directive.
 func behaviorSourcesInFile(fset *token.FileSet, path string, raw []byte) ([]string, error) {
 	f, err := parser.ParseFile(fset, path, raw, parser.ParseComments)
 	if err != nil {
@@ -96,8 +73,6 @@ func behaviorSourcesInFile(fset *token.FileSet, path string, raw []byte) ([]stri
 	embeds := embedDirectives(f)
 	pkgName, dot := registryImport(f)
 	if pkgName == "" && !dot {
-		// The file does not import the registry: a RegisterBehavior it
-		// mentions belongs to some other package and is not a module.
 		return nil, nil
 	}
 	var out []string
@@ -125,8 +100,6 @@ func behaviorSourcesInFile(fset *token.FileSet, path string, raw []byte) ([]stri
 			return false
 		}
 		for _, pat := range patterns {
-			// Go strips the all: prefix (which admits dotfiles and
-			// underscore files) before matching; so does this.
 			pat = strings.TrimPrefix(pat, "all:")
 			matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), pat))
 			if err != nil {
@@ -147,14 +120,8 @@ func behaviorSourcesInFile(fset *token.FileSet, path string, raw []byte) ([]stri
 	return out, nil
 }
 
-// registryImportPath is the package whose RegisterBehavior makes a
-// module. A same-named function anywhere else is not one.
 const registryImportPath = "github.com/DonaldMurillo/gofastr/core-ui/registry"
 
-// registryImport reports how the file names the registry package: the
-// identifier it is imported as (an alias, or the last path segment),
-// or dot for a dot import. Empty and false means the file does not
-// import it.
 func registryImport(f *ast.File) (name string, dot bool) {
 	for _, imp := range f.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)
@@ -175,10 +142,6 @@ func registryImport(f *ast.File) (name string, dot bool) {
 	return "", false
 }
 
-// isRegisterBehaviorCall matches the registry's RegisterBehavior as
-// the file imports it: pkg.RegisterBehavior under the import's name,
-// or a bare RegisterBehavior after a dot import. A local function or
-// another package's function of the same name is not a registration.
 func isRegisterBehaviorCall(call *ast.CallExpr, pkgName string, dot bool) bool {
 	switch fn := call.Fun.(type) {
 	case *ast.SelectorExpr:
@@ -190,10 +153,6 @@ func isRegisterBehaviorCall(call *ast.CallExpr, pkgName string, dot bool) bool {
 	return false
 }
 
-// sourceIdent returns the identifier a registration's source argument
-// names: the bare variable, or the variable inside a string(...)
-// conversion for a []byte embed. Anything else, a literal or a call,
-// is not a file the lints can open.
 func sourceIdent(arg ast.Expr) string {
 	switch e := arg.(type) {
 	case *ast.Ident:
@@ -208,10 +167,6 @@ func sourceIdent(arg ast.Expr) string {
 	return ""
 }
 
-// embedDirectives maps each package-level variable to the patterns its
-// //go:embed directive names. The directive is a doc comment: on the
-// spec when the var block has several, on the declaration when it has
-// one, and both are read.
 func embedDirectives(f *ast.File) map[string][]string {
 	out := map[string][]string{}
 	for _, decl := range f.Decls {
@@ -246,10 +201,6 @@ func embedDirectives(f *ast.File) map[string][]string {
 	return out
 }
 
-// embedPatterns splits a directive's argument the way the go command
-// does: space-separated, with a double-quoted or back-quoted pattern
-// kept whole and unquoted, so a name with a space in it stays one
-// name.
 func embedPatterns(s string) []string {
 	var out []string
 	for i := 0; i < len(s); {
@@ -266,8 +217,6 @@ func embedPatterns(s string) []string {
 				j++
 			}
 			if j >= len(s) {
-				// An unterminated quote is the go command's error to
-				// report; the lint takes what it can read.
 				out = append(out, s[i+1:])
 				return out
 			}
@@ -295,9 +244,8 @@ func embedPatterns(s string) []string {
 	return out
 }
 
-// LintNoVarJSFiles runs the no-var lint over the given JavaScript
-// files, for modules that do not live under a directory the walker
-// covers: the registered behaviours.
+// LintNoVarJSFiles runs the no-var lint over the given JavaScript files, for modules that do not
+// live under a directory the walker covers: the registered behaviours.
 func LintNoVarJSFiles(paths ...string) (*Result, error) {
 	result := &Result{}
 	for _, p := range paths {

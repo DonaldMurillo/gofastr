@@ -2,36 +2,8 @@ package check
 
 import "regexp"
 
-// LintClipboardAwait fires when a clipboard write's promise is dropped
-// and the same function goes on to tell the reader the copy happened.
-//
-// Bug class: the copy behaviour called
-// navigator.clipboard.writeText(text).catch(() => {}) and then, in the
-// same click handler, set the Copied label, the copy state, the status
-// sentence and the toast (e2988bd2). writeText is asynchronous and can
-// refuse (a declined permission prompt, an insecure origin, a document
-// without focus), so the page announced a copy that never happened and
-// a refusal was swallowed. The fix spelling keeps the promise and says
-// the outcome from it:
-//
-//	const write = navigator.clipboard.writeText(text);
-//	write.then(() => copied(wrap), () => failed(wrap));
-//
-// A write is dropped when its result is neither awaited, returned,
-// assigned, passed on, nor chained with .then: an expression statement,
-// with or without a .catch that swallows the refusal. It counts when a
-// later statement of the same function writes what a reader sees or
-// hears: textContent, innerText or innerHTML, a setAttribute, a toast,
-// an announce or say call.
-//
-// Silent on:
-//   - `await clip.writeText(t)` and a write chained with .then: the
-//     outcome is in hand before anything is said;
-//   - a write whose promise is kept (`const p = …writeText(t)`,
-//     `return …`, an argument): the caller owns the outcome;
-//   - a dropped write with nothing said after it: a silent
-//     fire-and-forget copy announces nothing false;
-//   - lines a //gofastr:allow(clipboardawait) <reason> marker covers.
+// LintClipboardAwait fires when a clipboard write's promise is dropped and the same function goes
+// on to tell the reader the copy happened.
 func LintClipboardAwait(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -61,22 +33,11 @@ func LintClipboardAwait(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// reClipboardWrite matches writeText( and a clipboard's write( on the
-// blank view.
 var reClipboardWrite = regexp.MustCompile(`\.\s*writeText\s*\(|\bclipboard\s*\.\s*write\s*\(`)
 
-// reReaderWrite matches what puts words in front of a reader.
 var reReaderWrite = regexp.MustCompile(`\.\s*(?:textContent|innerText|innerHTML)\s*=[^=]|\.\s*setAttribute\s*\(|\b(?:toast|announce|say)\s*\(`)
 
-// writeDropped reports whether the call spanning blank[start:close+1]
-// is an expression statement whose promise nobody keeps: the receiver
-// chain starts a statement, and after the call comes only an optional
-// .catch(...) before the statement ends.
 func writeDropped(blank string, start, close int) bool {
-	// Walk back over the receiver chain (navigator.clipboard, clip).
-	// A keyword ahead of the chain is walked like a name: `if (c)`,
-	// `else` and `void` still start a statement that drops the value,
-	// while await and return keep it.
 	i := start
 	for {
 		j := skipSpaceBack(blank, i-1)
@@ -104,14 +65,11 @@ func writeDropped(blank string, start, close int) bool {
 				continue
 			}
 		}
-		// Only a statement boundary drops the value. An assignment, an
-		// argument, a ternary arm or an arrow's expression body keeps it.
 		if blank[j] != ';' && blank[j] != '{' && blank[j] != '}' {
 			return false
 		}
 		break
 	}
-	// Forward: optional .catch(...) chains, then the statement's end.
 	k := close + 1
 	for {
 		k = skipSpace(blank, k)

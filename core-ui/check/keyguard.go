@@ -5,57 +5,9 @@ import (
 	"strings"
 )
 
-// LintKeyGuard fires on three keyboard shapes the 2026-11 headless bug
-// bash fixed by hand, module by module, in keydown listeners
-// (addEventListener('keydown', fn) with an inline function or a
+// LintKeyGuard fires on three keyboard shapes the 2026-11 headless bug bash fixed by hand, module
+// by module, in keydown listeners (addEventListener('keydown', fn) with an inline function or a
 // same-file named one, and .onkeydown = fn):
-//
-//   - [keyguard-ime] the listener branches on Enter ('Enter', keyCode
-//     13) and reads isComposing, but never keyCode 229. Safari ends a
-//     composition with a keydown whose isComposing is already false and
-//     whose keyCode is the input method's 229, so the Enter that
-//     confirms a CJK conversion picks a combobox option, commits a tag
-//     or submits a form (e2988bd2: combobox). The fix spelling is
-//     `if (e.isComposing || e.keyCode === 229) return;`.
-//   - [keyguard-escape] an Escape keydown listener lacks either
-//     composition indicator. Escape belongs to the IME even after it
-//     bubbles out of a guarded combobox into an enclosing surface.
-//   - [keyguard-rtl] the listener maps ArrowLeft and ArrowRight to
-//     different outcomes (a case label, or a comparison in a ternary or
-//     an if) and never reads the page's direction, so on <html
-//     dir="rtl"> the arrows move against the screen (e2988bd2: the
-//     theme radios, sortablelist's cross-column move; c564224e: the
-//     same move lost again in a merge). The Rating stars of 85c52e6d
-//     moved backwards under native radio arrows, not a listener; that
-//     shape is the contracts rule GOFASTR1826 (flexreverse). The fix spelling
-//     reads `getComputedStyle(el).direction === 'rtl'` in the listener
-//     (or a same-file helper it calls) and swaps the two. The Enter or
-//     arrow test itself may sit in a same-file helper the listener
-//     calls (one hop) — widgethelpers' isEnter, a delta(e) that maps
-//     the sides — and counts at the call.
-//
-// Silent on:
-//   - an Enter listener that never reads isComposing (arm ime): nothing in it
-//     says its target composes text — a tree item, a day button, a
-//     radio. A text field's listener already guards isComposing; the
-//     Safari gap is the half this arm holds;
-//   - a guard spelled in a same-file helper the listener calls (one
-//     hop), for both arms: `if (composing(e)) return;` and
-//     `const rtl = isRTL(row)` are the guard;
-//   - ArrowLeft and ArrowRight tested together (`key === 'ArrowLeft' ||
-//     key === 'ArrowRight'`, adjacent case labels): one outcome for
-//     both is not a direction;
-//   - keypress and keyup listeners: IME keys raise no keypress, and
-//     the bugs were keydown;
-//   - any line a //gofastr:allow(keyguard) <reason> marker covers: a
-//     surface whose arrows are physical by design (a canvas nudge).
-//
-// A third arm, an Escape branch with no defaultPrevented check (the
-// disclosure half of e2988bd2), was measured and dropped: the check
-// works only for a listener that runs after the claimer, which the
-// disclosure fix got by moving to window. On document, six kernel and
-// headless layer handlers would demand a check that changes nothing
-// for the claimers that run after them.
 func LintKeyGuard(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -88,21 +40,14 @@ func LintKeyGuard(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// keyHandler is the function a keydown listener runs: its source span
-// (an inline function's text, or the body of the same-file function a
-// name resolves to) and the listener's own position.
 type keyHandler struct {
 	start, end int
 }
 
 var (
-	reAddListener = regexp.MustCompile(`\baddEventListener\s*\(`)
-	reOnKeydown   = regexp.MustCompile(`\.\s*onkeydown\s*=`)
-	re229         = regexp.MustCompile(`\b(?:keyCode|which)\s*(?:===?|!==?)\s*229\b|\b229\s*(?:===?|!==?)`)
-	// A read of the page's direction: the computed style, the dir
-	// attribute or property, :dir(), or an rtl-named value. A local
-	// named `dir` is not one: a step called dir is how the arrows were
-	// mapped wrongly in the first place.
+	reAddListener   = regexp.MustCompile(`\baddEventListener\s*\(`)
+	reOnKeydown     = regexp.MustCompile(`\.\s*onkeydown\s*=`)
+	re229           = regexp.MustCompile(`\b(?:keyCode|which)\s*(?:===?|!==?)\s*229\b|\b229\s*(?:===?|!==?)`)
 	reDirectionRead = regexp.MustCompile(`\.\s*direction\b|getAttribute\s*\(\s*['"]dir['"]|\.\s*dir\b|\[dir\b|:dir\(|\brtl\b|\bRTL\b|\bisRtl\b|\bisRTL\b`)
 	reEnterLit      = regexp.MustCompile(`['"]Enter['"]|\b(?:keyCode|which)\s*===?\s*13\b`)
 	reEscapeLit     = regexp.MustCompile(`['"](?:Escape|Esc)['"]|\b(?:keyCode|which)\s*(?:===?|!==?)\s*27\b`)
@@ -113,7 +58,6 @@ var (
 	reCallName      = regexp.MustCompile(`\b([A-Za-z_$][\w$]*)\s*\(`)
 )
 
-// keydownHandlers returns the keydown listeners of one file.
 func keydownHandlers(f jsSource, heads []funcHead) []keyHandler {
 	var out []keyHandler
 	resolve := func(from, to int) (keyHandler, bool) {
@@ -173,9 +117,6 @@ func keydownHandlers(f jsSource, heads []funcHead) []keyHandler {
 	return out
 }
 
-// functionLiteralEnd returns the end of the function literal starting
-// at i (`function (…) {…}` or `(…) => {…}`): the close of its body
-// brace, or the statement end for an expression-bodied arrow.
 func functionLiteralEnd(blank string, i int) int {
 	j := strings.IndexByte(blank[i:], '{')
 	if j < 0 {
@@ -187,8 +128,6 @@ func functionLiteralEnd(blank string, i int) int {
 	return statementEnd(blank, i)
 }
 
-// helperSpans returns the bodies of the same-file named functions the
-// span [from, to) calls: one hop, so a guard spelled in a helper counts.
 func helperSpans(f jsSource, heads []funcHead, from, to int) [][2]int {
 	var out [][2]int
 	seen := map[string]bool{}
@@ -219,9 +158,6 @@ func spanText(s string, spans [][2]int) string {
 	return b.String()
 }
 
-// keyBranch returns the offset of the listener's first matching key test,
-// or -1. A test in a helper the listener calls (widgethelpers' isEnter)
-// counts at the call.
 func keyBranch(f jsSource, heads []funcHead, h keyHandler, pattern *regexp.Regexp) int {
 	if m := pattern.FindStringIndex(f.Code[h.start:h.end]); m != nil {
 		return h.start + m[0]
@@ -240,11 +176,6 @@ func keyBranch(f jsSource, heads []funcHead, h keyHandler, pattern *regexp.Regex
 	return -1
 }
 
-// directionalArrow returns the offset of the listener's first
-// ArrowLeft/ArrowRight test that picks a side, or -1. A test in a
-// helper the listener calls counts at the call, exactly like the IME
-// arm's Enter test (widgethelpers' isEnter): `delta(e)` can map the
-// sides while no listener text mentions an arrow.
 func directionalArrow(f jsSource, heads []funcHead, h keyHandler) int {
 	if pos := directionalArrowBody(f, h.start, h.end); pos >= 0 {
 		return pos
@@ -263,9 +194,6 @@ func directionalArrow(f jsSource, heads []funcHead, h keyHandler) int {
 	return -1
 }
 
-// directionalArrowBody is directionalArrow over one span: the offset of
-// the first ArrowLeft/ArrowRight test in [start, end) that picks a side,
-// or -1.
 func directionalArrowBody(f jsSource, start, end int) int {
 	body := f.Code[start:end]
 	for _, m := range reArrowCase.FindAllStringSubmatchIndex(body, -1) {
@@ -297,8 +225,6 @@ func opposite(side string) string {
 	return "Left"
 }
 
-// caseRunHasBoth reports whether the run of adjacent case labels around
-// body[start:end] holds both horizontal arrows: one outcome for both.
 func caseRunHasBoth(body string, start, end int) bool {
 	labels := []string{body[start:end]}
 	for rest := body[end:]; ; {
@@ -321,11 +247,6 @@ func caseRunHasBoth(body string, start, end int) bool {
 	return strings.Contains(joined, "ArrowLeft") && strings.Contains(joined, "ArrowRight")
 }
 
-// conditionWindow returns the boolean expression around a comparison
-// at blank[from:to]: back and forward to the nearest depth-zero
-// boundary (an opener or closer, a comma, a statement end, a ternary's
-// ? or :, an assignment). The opposite arrow inside the window joins
-// the two in one test.
 func conditionWindow(blank string, from, to int) (int, int) {
 	lo, depth := 0, 0
 back:
@@ -374,8 +295,6 @@ fwd:
 	return lo, hi
 }
 
-// cmpEquals reports whether the '=' at i belongs to a comparison or an
-// arrow (==, ===, !=, <=, >=, =>) rather than an assignment.
 func cmpEquals(s string, i int) bool {
 	if i+1 < len(s) && (s[i+1] == '=' || s[i+1] == '>') {
 		return true
