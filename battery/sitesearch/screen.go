@@ -1,13 +1,5 @@
 package sitesearch
 
-// The search page: Screen renders the battery's results as a page of
-// its own, with framework/ui components only. A reader without script
-// searches through its GET form and pages through its links; with
-// script, the sitesearch-page module updates the list in place as the
-// reader types. The host mounts it the way it mounts any other screen:
-//
-//	site.Register("/search", sitesearch.Screen(bat), layout)
-
 import (
 	"context"
 	"strconv"
@@ -21,19 +13,15 @@ import (
 )
 
 const (
-	// perPage is how many results a search page shows.
 	perPage = 20
-	// maxPage bounds the page parameter, so the offset it makes cannot
-	// overflow.
 	maxPage = 10000
 )
 
 // ScreenOption configures the screen Screen builds.
 type ScreenOption func(*searchScreen)
 
-// ScreenPath names the path the host mounts the screen on ("/search",
-// the default). The form submits to it and pagination links to it. It
-// panics on a path that is not absolute.
+// ScreenPath names the path the host mounts the screen on ("/search", the
+// default).
 func ScreenPath(path string) ScreenOption {
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
 		panic("sitesearch: ScreenPath must be an absolute path, got " + strconv.Quote(path))
@@ -41,9 +29,8 @@ func ScreenPath(path string) ScreenOption {
 	return func(s *searchScreen) { s.path = path }
 }
 
-// Screen builds the search results page for b, reading the query from
-// ?q= and the page from ?page=, 20 results a page. It tells crawlers
-// noindex, which also keeps it out of the index.
+// Screen builds the search results page for b, reading the query from ?q=
+// and the page from ?page=, 20 results a page.
 func Screen(b *Battery, opts ...ScreenOption) *searchScreen {
 	s := &searchScreen{b: b, path: "/search"}
 	for _, opt := range opts {
@@ -52,8 +39,6 @@ func Screen(b *Battery, opts ...ScreenOption) *searchScreen {
 	return s
 }
 
-// searchScreen is the mounted page. The per-request copy the router
-// makes shares b and path, both fixed after construction.
 type searchScreen struct {
 	component.ContextOnly
 	b    *Battery
@@ -67,8 +52,6 @@ func (s *searchScreen) ScreenTitle(ctx context.Context) string { return i18nui.S
 func (s *searchScreen) ScreenRobots() string { return "noindex" }
 
 // RenderCtx renders the form and, for a query, its page of results.
-// With no query it never asks for the index: the index build renders
-// this page too, and must not wait on itself.
 func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	params := coreapp.QueryFromContext(ctx)
 	q := params.Get("q")
@@ -84,29 +67,22 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	cfg := ui.SearchResultsConfig{Action: s.path, Query: q, Page: page, PerPage: perPage, Ctx: ctx}
 	body := []render.HTML{ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)})}
 	if tooLong {
-		// The query endpoint answers this 414; the page says so rather
-		// than drawing the dropped query as no query at all.
 		body = append(body, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(reasonQueryTooLong.Text(ctx))))
 	}
 	if strings.TrimSpace(q) != "" {
 		idx, err := s.b.Index(ctx)
 		if err != nil {
-			// The query endpoint answers this 503; the page says so
-			// rather than drawing a failed build as zero matches.
 			body = append(body, ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(reasonIndexUnavailable.Text(ctx))))
 		} else {
 			results, total := idx.SearchPage(q, (page-1)*perPage, perPage)
 			cfg.Results, cfg.Total = uiResults(results), total
 		}
 	}
-	// A padded page column: the gutter against the viewport, which an
-	// app frame's content area supplies itself.
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
 		ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(body, ui.SearchResults(cfg))...),
 	)
 }
 
-// uiResults maps the battery's results onto the kit's.
 func uiResults(rs []Result) []ui.SearchResult {
 	out := make([]ui.SearchResult, len(rs))
 	for i, r := range rs {
