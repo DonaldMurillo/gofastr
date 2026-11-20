@@ -13,23 +13,15 @@ import (
 )
 
 // Router maps paths to screens and layouts.
-// Supports both exact paths ("/about") and dynamic patterns
-// ("/products/:slug"). The "{slug}" brace syntax, used by the
-// app spec, the REST/entity routers, and the entity docs, is also
-// accepted and normalized to ":slug" at registration (see
-// normalizeRoutePath). Both forms match identically.
 type Router struct {
 	screens       map[string]*Screen // path → screen (exact matches)
 	dynamic       []dynamicRoute     // pattern-based routes
 	exactRedir    map[string]string  // exact from → to (permanent redirect)
 	patternRedir  []patternRedirect  // dynamic from → to (param passthrough)
 	defaultLayout *Layout
-	// layoutsGen counts screen and default-layout registrations, so a
-	// host can notice layouts added after it composed app.css.
-	layoutsGen atomic.Uint64
+	layoutsGen    atomic.Uint64
 }
 
-// dynamicRoute holds a parsed route pattern with parameter extraction.
 type dynamicRoute struct {
 	segments   []string // e.g. ["products", ":slug"]
 	ParamNames []string // e.g. ["slug"]
@@ -44,15 +36,6 @@ func NewRouter() *Router {
 }
 
 // Screen registers a screen with an optional layout.
-// If layout is nil, the screen will use the default layout (if set).
-//
-// Both ":param" (the core-ui historical form) and "{param}" (the
-// app spec / REST / entity-doc form) are accepted; the path is
-// normalized to ":param" once here so Resolve, Paths, and llm.md
-// generation all see one shape (issue #71). A trailing catch-all
-// segment ("{path...}" or ":path*") captures one or more remaining
-// path segments into a single joined param; it must be the final
-// segment. Screen registration rejects the HTTP router's "{$}" end marker.
 func (r *Router) Screen(screen *Screen, layout *Layout) {
 	for segment := range strings.SplitSeq(screen.Path, "/") {
 		if segment == "{$}" {
@@ -74,12 +57,6 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 		if _, ok := r.exactRedir[screen.Path]; ok {
 			panic("app: screen " + screen.Path + " collides with a registered redirect")
 		}
-		// A pattern redirect that covers this literal path shadows it just
-		// as completely as it shadows a dynamic screen (checked below):
-		// ResolveRedirect runs before screen resolution, so /old/special
-		// would 308 away forever with its screen never rendering. Same
-		// overlap test, same voice, the exact-screen side was simply
-		// never wired up.
 		exactSegs := strings.Split(strings.Trim(screen.Path, "/"), "/")
 		for _, pr := range r.patternRedir {
 			if patternsOverlap(pr.segments, exactSegs) {
@@ -91,13 +68,8 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 		return
 	}
 
-	// Dynamic route, parse + validate segments.
 	parts := strings.Split(strings.Trim(screen.Path, "/"), "/")
 	paramNames := validateDynamicSegments(screen.Path, parts)
-	// Fail loud at registration: a dynamic route whose component does
-	// not implement ParamSetter would have its params silently dropped
-	// at request time (SetParams is never called). Boot-time only,
-	// mirrors the render-time panic voice in framework/ui/variants.go.
 	if len(paramNames) > 0 {
 		if _, ok := screen.Component.(ParamSetter); !ok {
 			panic("app: route " + screen.Path + " is dynamic but " +
@@ -118,12 +90,6 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 	})
 }
 
-// normalizeRoutePath converts the "{param}" brace syntax into the
-// router's canonical ":param" form, and "{path...}" into the catch-all
-// ":path*" form. Only a path segment that is a complete "{...}" is
-// rewritten, so paths that legitimately contain a literal brace are
-// left untouched. No-op when the path already uses ":param" or has no
-// params.
 func normalizeRoutePath(path string) string {
 	if !strings.Contains(path, "{") {
 		return path
@@ -144,7 +110,6 @@ func normalizeRoutePath(path string) string {
 }
 
 // CanonicalRoutePattern returns the pattern used to register and compare screen routes.
-// It normalizes brace params and catch-alls to colon syntax and trims slashes on dynamic routes.
 func CanonicalRoutePattern(path string) string {
 	path = normalizeRoutePath(path)
 	if strings.Contains(path, ":") {
@@ -159,35 +124,19 @@ func (r *Router) DefaultLayout(layout *Layout) {
 	r.defaultLayout = layout
 }
 
-// GetDefaultLayout returns the layout currently set as the default for
-// screens that don't declare one. May return nil. Read-only accessor,
-// uihost's not-found path wraps a synthesized 404 component in this
-// layout so the error page shares chrome with the rest of the site.
+// GetDefaultLayout returns the layout currently set as the default for screens that don't declare one.
 func (r *Router) GetDefaultLayout() *Layout {
 	return r.defaultLayout
 }
 
 // Resolve finds the screen for a given path.
-// Returns the screen, the extracted route params (for dynamic routes), and whether it was found.
-// Params are returned separately to avoid mutating the shared screen instance.
-//
-// path is in routing form ([RoutePath]): decoded, except that a "/"
-// or "%" inside one segment is still %2F or %25. A decoded path with
-// neither is already in routing form. Param values come back decoded.
-//
-// Exact-map matches win; among dynamic routes, registration order
-// decides precedence (first-match-wins). There is no specificity
-// ranking, register more specific patterns first.
 func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
-	// Exact match first. A segment holding an escaped "/" is never a
-	// registered path's, so "/a%2Fb" does not reach the screen at "/a/b".
 	if !strings.Contains(path, "%2F") {
 		if s, ok := r.screens[decodeRouteSeg(path)]; ok {
 			return s, nil, true
 		}
 	}
 
-	// Try dynamic routes in registration order.
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	for _, dr := range r.dynamic {
 		if params, ok := matchDynamic(dr.segments, pathParts); ok {
@@ -198,16 +147,6 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 	return nil, nil, false
 }
 
-// matchDynamic matches pathParts against a route's normalized segments.
-// Fixed-length routes require equal segment counts; a trailing catch-all
-// (":name*") consumes one or more remainder segments joined with "/".
-// Catch-all routes require at least one remainder segment (so "/docs"
-// does not match "/docs/{p...}"), and a param position never binds an
-// empty path segment ("/" must not match "/:slug", "/files//edit" must
-// not match "/files/:name/edit"): a route author declares the path
-// shapes they serve, and an empty key is never one of them. pathParts are
-// routing-form segments; each is decoded before it is compared or bound,
-// so a param value may hold "/" ("/files/a%2Fb" binds name "a/b").
 func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	params, ok := matchDynamicRouting(segments, pathParts)
 	for name, value := range params {
@@ -245,9 +184,6 @@ func matchDynamicRouting(segments, pathParts []string) (map[string]string, bool)
 		return params, true
 	}
 
-	// Catch-all: prefix segments must align; the remainder (>=1 segment)
-	// is joined with "/" into the catch-all param. len(pathParts) ==
-	// len(segments) means exactly one remainder segment; fewer means none.
 	if len(pathParts) < len(segments) {
 		return nil, false
 	}
@@ -274,12 +210,6 @@ func matchDynamicRouting(segments, pathParts []string) (map[string]string, bool)
 	return params, true
 }
 
-// validateDynamicSegments applies the dynamic-route registration rules,
-// catch-all must be final, no constraint on a catch-all, constraint names
-// must be in the allowlist, panicking with pathLabel in the message on
-// any violation, and returns the declared param names. Shared by screen
-// registration and RedirectPattern so a redirect's from-pattern obeys the
-// exact same grammar as a route.
 func validateDynamicSegments(pathLabel string, parts []string) []string {
 	var paramNames []string
 	for i, p := range parts {
@@ -301,10 +231,6 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 			}
 		}
 		name := segParamName(p)
-		// A dot in the extracted name means malformed syntax slipped
-		// through normalization, e.g. "{p...:int}", where the ellipsis
-		// must come LAST ("{p:int...}", itself rejected above). Fail with
-		// the real problem instead of registering a garbage param name.
 		if strings.Contains(name, ".") {
 			panic("app: route " + pathLabel +
 				": malformed dynamic segment \"" + p + "\" (catch-all ellipsis goes last: \"{name...}\")")
@@ -314,13 +240,8 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 	return paramNames
 }
 
-// ScreenByPattern returns the screen registered under the given route
-// pattern (either brace or colon syntax; normalized before lookup).
-// Enumeration consumers (static export, sitemap, llm.md index) MUST use
-// this instead of Resolve(pattern): Resolve treats its argument as a
-// REQUEST path, and a constrained pattern's own text does not satisfy
-// its constraint ("/admin/:id:int" is not a numeric id), so the
-// resolve-the-pattern idiom silently drops constrained routes.
+// ScreenByPattern returns the screen registered under the given route pattern (either brace or
+// colon syntax; normalized before lookup).
 func (r *Router) ScreenByPattern(pattern string) (*Screen, bool) {
 	pattern = CanonicalRoutePattern(pattern)
 	if s, ok := r.screens[pattern]; ok {
@@ -334,19 +255,12 @@ func (r *Router) ScreenByPattern(pattern string) (*Screen, bool) {
 	return nil, false
 }
 
-// isParamSeg reports whether a normalized route segment is dynamic
-// (":name", ":name*", or a constrained ":name:int").
 func isParamSeg(seg string) bool { return strings.HasPrefix(seg, ":") }
 
-// isCatchAllSeg reports whether a segment is the trailing catch-all
-// form ":name*".
 func isCatchAllSeg(seg string) bool {
 	return strings.HasPrefix(seg, ":") && strings.HasSuffix(seg, "*")
 }
 
-// segParamName extracts the bare parameter name from a dynamic segment,
-// stripping the leading ":", any trailing catch-all "*", and a
-// ":constraint" suffix. ":id" → "id", ":path*" → "path", ":id:int" → "id".
 func segParamName(seg string) string {
 	name := seg[1:] // strip leading ":"
 	if i := strings.IndexByte(name, ':'); i >= 0 {
@@ -355,32 +269,17 @@ func segParamName(seg string) string {
 	return strings.TrimSuffix(name, "*")
 }
 
-// ParamName extracts the bare parameter name from a normalized dynamic
-// route segment (":id", ":path*", ":id:int"). It is the single source
-// of truth for what counts as a param name, shared by the router, the
-// static builder, and the sitemap expander so catch-all ("*") and
-// constraint (":type") suffixes are stripped consistently everywhere a
-// StaticPaths param map is substituted into a pattern.
+// ParamName extracts the bare parameter name from a normalized dynamic route segment (":id",
+// ":path*", ":id:int").
 func ParamName(seg string) string { return segParamName(seg) }
 
-// RenderRaw renders a screen by path with no policy resolution and no
-// request context. INTENDED FOR INTERNAL/SSG USE ONLY, callers in
-// HTTP-serving code should use App.RenderPageResult, which evaluates
-// the Policy chain before invoking Load and Render.
-//
-// Composition is the same resolved layout chain RenderPageResult uses,
-// including the router's default layout, so statically rendered output
-// is structurally identical to the SSR output for the same route. (It
-// previously skipped the default layout and double-wrapped <main>,
-// making SSG output diverge from what the server served.)
+// RenderRaw renders a screen by path with no policy resolution and no request context.
 func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	screen, params, ok := r.Resolve(path)
 	if !ok {
 		return "", fmt.Errorf("app: no screen registered for path %q", path)
 	}
 
-	// Per-request fresh instance, SetParams/Render mutations stay
-	// isolated to this call. See Screen.newInstance for the rationale.
 	comp := screen.newInstance()
 	if len(params) > 0 {
 		if ps, ok := comp.(ParamSetter); ok {
@@ -389,8 +288,6 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	}
 
 	ctx := context.Background()
-	// Route areas read the match off the context; RenderRaw builds its
-	// own, so no host middleware is required.
 	ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
 
 	if screen.Type == ScreenPage {
@@ -416,13 +313,7 @@ func (r *Router) RenderRaw(path string) (render.HTML, error) {
 	return out, nil
 }
 
-// ValidateFills checks every registered screen's fill declarations
-// against that screen's resolved layout chain: a fill naming an
-// outlet whose layout is not in the chain (or a handle no layout
-// declared) panics, naming the layout and the outlet. Hosts call it
-// once at mount (uihost.Mount, beside the action-id collision
-// check); the render paths re-check per screen, so a screen
-// registered later is still caught at its first render.
+// ValidateFills panics for a fill whose outlet is not in its screen's layout chain.
 func (r *Router) ValidateFills() {
 	for _, screen := range r.screens {
 		validateFills(screen, resolveChainKeys(r.layoutChainFor(screen), nil))
@@ -432,14 +323,7 @@ func (r *Router) ValidateFills() {
 	}
 }
 
-// ValidateRequires checks every registered screen's group-chain
-// Requires names against the resolver declarations visible to that
-// screen: a group requiring a resolver no declaration matches panics,
-// naming the group and the screen — a misspelled Requires is a
-// silently dropped policy check otherwise. Hosts call it once at
-// mount beside ValidateFills (uihost.Mount); the render paths
-// re-check per screen, so a screen registered later is still caught
-// at its first render.
+// ValidateRequires panics for a group Requires name no resolver declaration matches.
 func (r *Router) ValidateRequires() {
 	for _, screen := range r.screens {
 		validateRequires(screen)
@@ -449,10 +333,8 @@ func (r *Router) ValidateRequires() {
 	}
 }
 
-// Paths returns all registered paths: the exact paths sorted, then the
-// dynamic patterns in registration order. The order is stable because
-// the route manifest every page embeds and a static export's page
-// order follow it.
+// Paths returns all registered paths: the exact paths sorted, then the dynamic patterns in
+// registration order.
 func (r *Router) Paths() []string {
 	paths := slices.Sorted(maps.Keys(r.screens))
 	for _, dr := range r.dynamic {
@@ -467,11 +349,6 @@ func (r *Router) Screens() map[string]*Screen {
 }
 
 // ScreenGroup registers all screens from a ScreenGroup into the router.
-// Each screen in the group (and its sub-groups) is registered with the
-// router, and the group's layout is applied.
-//
-// When the runtime navigates between siblings in the same group, only
-// the inner content is swapped, the layout shell is DOM-stable.
 func (r *Router) ScreenGroup(sg *ScreenGroup) {
 	for _, screen := range sg.AllScreens() {
 		r.Screen(screen, screen.Layout)

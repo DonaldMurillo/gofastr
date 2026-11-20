@@ -7,17 +7,13 @@ import (
 	"strings"
 )
 
-// Kind is which owner a sheet belongs to. It decides the compiled
-// scope: a scoped owner is bound to its marker element, the app owner
-// to :root.
+// Kind is which owner a sheet belongs to.
 type Kind int
 
 const (
-	// KindScoped is a layout, screen or component style. It compiles to
-	// @scope ([data-cui-scope="<name>"]) to (…) and loads by marker.
+	// KindScoped is a layout, screen or component style.
 	KindScoped Kind = iota
-	// KindApp is the program's one app style ("app.style.css"). It
-	// compiles to @scope (:root) to (…) and loads on every page.
+	// KindApp is the program's one app style ("app.style.css").
 	KindApp
 )
 
@@ -28,14 +24,9 @@ func (k Kind) String() string {
 	return "scoped"
 }
 
-// styleNameOK is the owner-name grammar: lowercase, digits and dashes,
-// starting with a letter, 64 bytes at most (the file stem of
-// <name>.style.css).
 const styleNamePrefix = "ui-"
 
 var styleNameOK = func(name string) bool {
-	// 64 bytes at most: the registry's style-name grammar, which every
-	// owned sheet registers under.
 	if name == "" || len(name) > 64 {
 		return false
 	}
@@ -52,31 +43,8 @@ var styleNameOK = func(name string) bool {
 	return !strings.HasPrefix(name, styleNamePrefix)
 }
 
-// Compile wraps, expands and minifies a parsed sheet into the CSS the
-// host serves for it:
-//
-//  1. the scope wrap — scoped: @scope ([data-cui-scope="<name>"]) to
-//     (:scope [data-cui-scope] > *, [data-cui-internal]); app:
-//     @scope (:root) to ([data-cui-internal]);
-//  2. custom media expanded against the theme's breakpoints:
-//     (--above-X) → (min-width: X), (--below-X) → (max-width: X−0.02px),
-//     (--reduced-motion) → (prefers-reduced-motion: reduce);
-//     (--dark) splits its block out of the wrap into the two selectors
-//     the kit's dark blocks use (an attribute variant and a
-//     prefers-color-scheme variant), and custom media combine with
-//     `and` and with raw non-width features;
-//  3. @keyframes renamed to <name>-<old> (keyframes ignore @scope) and
-//     hoisted outside the wrap, with animation / animation-name
-//     references rewritten;
-//  4. minified: comments and insignificant whitespace dropped. A space
-//     survives only where dropping it would change the tokens (a
-//     descendant combinator, two juxtaposed idents, calc's signed
-//     operands).
-//
-// Emission order: the main scope block (rules in source order, dark
-// blocks removed), then each dark block in source order, then the
-// keyframes in source order. tokens is the running theme's token map
-// (style.ThemeToTokens). Compile never mutates sheet.
+// Compile wraps, expands and minifies a parsed sheet into the CSS the host
+// serves for it.
 func Compile(sheet *Stylesheet, name string, kind Kind, tokens map[string]string) (string, error) {
 	if !styleNameOK(name) {
 		return "", fmt.Errorf("ownstyle: %q is not a valid style name: ^[a-z][a-z0-9-]{0,63}$ and not the ui- prefix", name)
@@ -94,10 +62,6 @@ func Compile(sheet *Stylesheet, name string, kind Kind, tokens map[string]string
 		return 1
 	})
 
-	// Partition the top level. The walk recurses through @media blocks
-	// and nested style rules; nested style rules stay with their parent
-	// except where a hoistable block ((--dark), @keyframes) needs the
-	// composed selector context.
 	var normal []*enode
 	var dark []*darkSeg
 	var keyframes []*kfSeg
@@ -122,14 +86,11 @@ func Compile(sheet *Stylesheet, name string, kind Kind, tokens map[string]string
 		if body == "" {
 			continue
 		}
-		// Attribute variant: the same rules under the dark root, kept
-		// inside the surviving query conditions when there are any.
 		inner := c.darkAttrHeader() + body + "}"
 		if len(d.conds) > 0 {
 			inner = "@media " + strings.Join(d.conds, " and ") + "{" + inner + "}"
 		}
 		sb.WriteString(inner)
-		// prefers-color-scheme variant.
 		conds := append([]string{"(prefers-color-scheme: dark)"}, d.conds...)
 		inner = c.darkMediaHeader() + body + "}"
 		sb.WriteString("@media " + strings.Join(conds, " and ") + "{" + inner + "}")
@@ -147,45 +108,29 @@ func Compile(sheet *Stylesheet, name string, kind Kind, tokens map[string]string
 	return sb.String(), nil
 }
 
-// compiler is one Compile invocation's state.
 type compiler struct {
 	name        string
 	kind        Kind
 	breakpoints []breakpoint
-	kfRename    map[string]string // old keyframes name → renamed
+	kfRename    map[string]string
 }
 
-// enode is a rule positioned for emission. media carries the EXPANDED
-// query (custom media already replaced); the original rule is kept for
-// its block.
 type enode struct {
 	rule     *Rule
-	media    string // non-empty: emit "@media <media>" around children
+	media    string
 	children []*enode
 }
 
-// darkSeg is one (--dark) block: the rules it holds, emitted under both
-// dark roots, plus the query's surviving conditions.
 type darkSeg struct {
 	conds []string
 	rules []*enode
 }
 
-// kfSeg is one @keyframes rule with the @media conditions it sat under
-// (a dark condition is dropped: put keyframes at top level or under a
-// plain @media).
 type kfSeg struct {
 	conds []string
 	rule  *Rule
 }
 
-// build converts one rule into emission nodes, dark segments and
-// keyframe segments. conds are the expanded @media conditions the rule
-// sits under ABOVE any style rule; chain is the style-rule chain it
-// nests in (style rules and non-dark at-rule wrappers, outermost
-// first) — a hoisted (--dark) block re-emits that chain as written
-// inside its splits and lets the browser's nesting resolve selector
-// lists and &.
 func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode, darks []*darkSeg, kfs []*kfSeg, err error) {
 	if err := containerMediaError(r); err != nil {
 		return nil, nil, nil, err
@@ -202,9 +147,6 @@ func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode
 		if isDark {
 			segConds := append(slices.Clone(conds), parts...)
 			if len(chain) == 0 {
-				// Top level: the block's rules go under both dark
-				// roots as themselves. Bare declarations have no
-				// selector here — an error, never a silent drop.
 				if len(r.Decls) > 0 {
 					return nil, nil, nil, fmt.Errorf(
 						"%d:%d: a (--dark) block at the top level must hold rules, not declarations; there is no selector for them",
@@ -221,16 +163,12 @@ func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode
 				}
 				return nil, []*darkSeg{{conds: segConds, rules: rules}}, innerKfs, nil
 			}
-			// Hoisted out of a style-rule chain: the splits wrap the
-			// chain around the block's interior, preludes as written.
 			rules, innerKfs, err := c.darkChain(chain, r, conds)
 			if err != nil {
 				return nil, nil, nil, err
 			}
 			return nil, []*darkSeg{{conds: segConds, rules: rules}}, innerKfs, nil
 		}
-		// A non-dark media above any style rule gates the dark splits'
-		// conditions; inside the chain it stays there, at its position.
 		nextConds, nextChain := append(slices.Clone(conds), parts...), chain
 		if len(chain) > 0 {
 			nextConds, nextChain = conds, append(slices.Clone(chain), r)
@@ -250,7 +188,6 @@ func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode
 	}
 }
 
-// buildList maps build over a rule list.
 func (c *compiler) buildList(rules []*Rule, conds []string, chain []*Rule) ([]*enode, []*darkSeg, []*kfSeg, error) {
 	var nodes []*enode
 	var darks []*darkSeg
@@ -265,12 +202,6 @@ func (c *compiler) buildList(rules []*Rule, conds []string, chain []*Rule) ([]*e
 	return nodes, darks, kfs, nil
 }
 
-// darkChain wraps a hoisted (--dark) block's interior in the style-rule
-// chain it nested through, outermost first, preludes exactly as
-// written: the browser's nesting resolves selector lists, & and
-// implicit descendants itself. Shell links carry no declarations — the
-// main scope emits those unconditionally; the innermost link carries
-// the dark block's own declarations.
 func (c *compiler) darkChain(chain []*Rule, dark *Rule, conds []string) ([]*enode, []*kfSeg, error) {
 	folded, interior, kfs, err := c.darkInterior(dark.Nested, conds)
 	if err != nil {
@@ -289,9 +220,6 @@ func (c *compiler) darkChain(chain []*Rule, dark *Rule, conds []string) ([]*enod
 	return []*enode{node}, kfs, nil
 }
 
-// chainNode builds one chain link: a rule shell (declarations only on
-// the innermost link) around the given children. A media link keeps
-// its expanded query; everything else renders its prelude verbatim.
 func (c *compiler) chainNode(link *Rule, decls []*Decl, children []*enode) (*enode, error) {
 	if link.At && link.Name == "media" {
 		parts, _, err := c.expandMediaQuery(link.Prel)
@@ -307,9 +235,6 @@ func (c *compiler) chainNode(link *Rule, decls []*Decl, children []*enode) (*eno
 	return &enode{rule: &Rule{Block: true, Prel: link.Prel, Decls: decls}, children: children}, nil
 }
 
-// darkInterior builds the content inside an already-dark split. Nested
-// rules retain their nesting. A media wrapper folds when removing its
-// dark term leaves no conditions. Keyframes hoist.
 func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, nodes []*enode, kfs []*kfSeg, err error) {
 	for _, r := range rules {
 		if err := containerMediaError(r); err != nil {
@@ -356,7 +281,6 @@ func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, n
 	return decls, nodes, kfs, nil
 }
 
-// registerKeyframes records a @keyframes rename and returns the rule.
 func (c *compiler) registerKeyframes(r *Rule) *Rule {
 	if old, ok := keyframesName(r); ok {
 		c.kfRename[old] = c.name + "-" + old
@@ -364,7 +288,6 @@ func (c *compiler) registerKeyframes(r *Rule) *Rule {
 	return r
 }
 
-// keyframesName returns the name a @keyframes rule declares.
 func keyframesName(r *Rule) (string, bool) {
 	for _, t := range r.Prel {
 		if t.Type == TokenIdent {
@@ -374,9 +297,6 @@ func keyframesName(r *Rule) (string, bool) {
 	return "", false
 }
 
-// expandMediaQuery expands one @media prelude. It returns the surviving
-// conditions (raw features and expanded custom media) and whether the
-// (--dark) custom medium is present.
 func (c *compiler) expandMediaQuery(prel []Token) (parts []string, isDark bool, err error) {
 	prel = mediaQueryTokens(prel)
 	for _, cond := range splitOnAnd(prel) {
@@ -396,7 +316,6 @@ func (c *compiler) expandMediaQuery(prel []Token) (parts []string, isDark bool, 
 			parts = append(parts, expanded)
 			continue
 		}
-		// A raw condition must not smuggle a custom media name through.
 		for _, t := range cond {
 			if t.Type == TokenIdent && strings.HasPrefix(t.Text, "--") {
 				return nil, false, fmt.Errorf("custom medium %s must stand alone or combine with `and`", t.Text)
@@ -407,7 +326,6 @@ func (c *compiler) expandMediaQuery(prel []Token) (parts []string, isDark bool, 
 	return parts, isDark, nil
 }
 
-// isCustomMedium reports whether the significant tokens form "(--name)".
 func isCustomMedium(cond []Token) bool {
 	return len(cond) == 3 &&
 		cond[0].Type == TokenOpenParen &&
@@ -443,8 +361,6 @@ func containerMediaError(rule *Rule) error {
 	return nil
 }
 
-// mediaQueryTokens strips a leading at-keyword ("@media") from a rule
-// prelude, leaving the query itself.
 func mediaQueryTokens(prel []Token) []Token {
 	if len(prel) > 0 && prel[0].Type == TokenAtKeyword {
 		return trimTokens(prel[1:])
@@ -452,7 +368,6 @@ func mediaQueryTokens(prel []Token) []Token {
 	return prel
 }
 
-// splitOnAnd splits a media prelude at top-level `and` idents.
 func splitOnAnd(prel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -478,7 +393,6 @@ func splitOnAnd(prel []Token) [][]Token {
 	return out
 }
 
-// expandCustomMedium expands one custom media name.
 func (c *compiler) expandCustomMedium(name string) (string, bool, error) {
 	switch name {
 	case "--dark":
@@ -509,8 +423,6 @@ func (c *compiler) expandCustomMedium(name string) (string, bool, error) {
 
 const belowBreakpointOffset = 0.02
 
-// breakpointValue is the raw token value ("768px") of a named
-// breakpoint.
 func (c *compiler) breakpointValue(name string) (string, bool) {
 	for _, bp := range c.breakpoints {
 		if bp.name == name {
@@ -529,7 +441,6 @@ func (c *compiler) unknownBreakpoint(name string) error {
 	return fmt.Errorf("unknown custom media %s: the theme declares breakpoints %s", name, strings.Join(names, ", "))
 }
 
-// wrapHeader is the main scope block's opening.
 func (c *compiler) wrapHeader() string {
 	if c.kind == KindApp {
 		return `@scope (:root) to ([data-cui-internal]){`
@@ -537,7 +448,6 @@ func (c *compiler) wrapHeader() string {
 	return `@scope ([data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
-// darkAttrHeader opens the attribute-variant dark scope.
 func (c *compiler) darkAttrHeader() string {
 	if c.kind == KindApp {
 		return `@scope (:root[data-color-scheme="dark"]) to ([data-cui-internal]){`
@@ -545,8 +455,6 @@ func (c *compiler) darkAttrHeader() string {
 	return `@scope ([data-color-scheme="dark"] [data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
-// darkMediaHeader opens the prefers-color-scheme-variant dark scope
-// (it lives inside `@media (prefers-color-scheme: dark)`).
 func (c *compiler) darkMediaHeader() string {
 	if c.kind == KindApp {
 		return `@scope (:root:not([data-color-scheme="light"])) to ([data-cui-internal]){`
@@ -554,9 +462,6 @@ func (c *compiler) darkMediaHeader() string {
 	return `@scope (:root:not([data-color-scheme="light"]) [data-cui-scope="` + c.name + `"]) to (:scope [data-cui-scope]>*,[data-cui-internal]){`
 }
 
-// emitNodes renders node bodies (no outer braces). Returns "" when
-// everything inside was empty and got dropped. rename enables the
-// animation-name rewrite inside the nodes' declarations.
 func (c *compiler) emitNodes(nodes []*enode, rename bool) string {
 	var sb strings.Builder
 	for _, n := range nodes {
@@ -568,9 +473,6 @@ func (c *compiler) emitNodes(nodes []*enode, rename bool) string {
 	return sb.String()
 }
 
-// emitNode renders one node with its braces, or "" when its body is
-// empty (minifiers drop empty rules). Statement at-rules (@import)
-// carry no block and end in ';'.
 func (c *compiler) emitNode(n *enode, rename bool) string {
 	if !n.rule.Block {
 		return emitRun(n.rule.Prel, emitSelector) + ";"
@@ -585,11 +487,6 @@ func (c *compiler) emitNode(n *enode, rename bool) string {
 	return emitRun(n.rule.Prel, emitSelector) + "{" + body + "}"
 }
 
-// emitDecls renders a rule's declarations. Every declaration that is
-// followed by anything — another declaration or emitted nested rules —
-// keeps its ';': without it a browser reads a nested rule as part of
-// the value and drops both. followed reports whether nested content
-// follows in the EMITTED block (hoisted-away rules do not count).
 func (c *compiler) emitDecls(r *Rule, rename, followed bool) string {
 	var sb strings.Builder
 	for i, d := range r.Decls {
@@ -602,9 +499,6 @@ func (c *compiler) emitDecls(r *Rule, rename, followed bool) string {
 	return sb.String()
 }
 
-// emitDecl renders one declaration, minified. Custom property values
-// are emitted verbatim (their raw text is the token stream a browser
-// interpolates); every other value is re-emitted from tokens.
 func (c *compiler) emitDecl(d *Decl, rename bool) string {
 	name := d.Name
 	if strings.HasPrefix(name, "--") {
@@ -630,9 +524,6 @@ func (c *compiler) emitDecl(d *Decl, rename bool) string {
 	return out
 }
 
-// animationKeywords maps each keyword of a non-name animation longhand
-// to that longhand. In the shorthand, the first keyword of a longhand
-// not yet set goes to it; only an identifier left over is the name.
 var animationKeywords = map[string]string{
 	"linear": "timing", "ease": "timing", "ease-in": "timing",
 	"ease-out": "timing", "ease-in-out": "timing",
@@ -644,20 +535,10 @@ var animationKeywords = map[string]string{
 	"running": "play", "paused": "play",
 }
 
-// animationTimingFunctions are the function spellings of a timing
-// function; one sets the timing longhand like a keyword does.
 var animationTimingFunctions = map[string]bool{
 	"cubic-bezier(": true, "steps(": true, "linear(": true,
 }
 
-// animationNameTokens returns the indexes of the identifiers in an
-// animation or animation-name value that name keyframes. For
-// animation-name every top-level identifier is a name. For the
-// shorthand, each comma-separated animation is read the way CSS
-// Animations reads it: a keyword valid for another longhand not yet
-// set in that animation goes to the longhand, and the first identifier
-// left over is the name. So `animation: linear 1s linear` names
-// keyframes "linear" with its second word only.
 func animationNameTokens(val []Token, shorthand bool) []int {
 	var out []int
 	taken := map[string]bool{}
@@ -705,9 +586,6 @@ func animationNameTokens(val []Token, shorthand bool) []int {
 	return out
 }
 
-// emitKeyframes renders one hoisted, renamed @keyframes rule. The
-// steps (from / 50% / to) hold declarations only and render as bare
-// blocks.
 func (c *compiler) emitKeyframes(r *Rule) string {
 	old, ok := keyframesName(r)
 	if !ok {
@@ -727,9 +605,6 @@ func (c *compiler) emitKeyframes(r *Rule) string {
 	return "@keyframes " + c.name + "-" + old + "{" + sb.String() + "}"
 }
 
-// emitMode selects separator rules: selectors keep whitespace that
-// stands for a descendant combinator; values keep it only where
-// dropping it would merge two tokens into one.
 type emitMode int
 
 const (
@@ -737,8 +612,6 @@ const (
 	emitValue
 )
 
-// emitRun renders a token run minified: trivia dropped, one space kept
-// only where it is load-bearing.
 func emitRun(toks []Token, mode emitMode) string {
 	var sb strings.Builder
 	prev := Token{}
@@ -774,31 +647,22 @@ func selectorTokensMerge(prev, next Token) bool {
 		tokens[1].Type != next.Type || tokens[1].Text != next.Text
 }
 
-// sep decides whether a space between two significant tokens must
-// survive minification. hadWS reports whether whitespace stood between
-// them in the source; a space never appears where none stood.
 func sep(prev, next Token, hadWS bool, mode emitMode) bool {
 	if !hadWS {
 		return false
 	}
 	if mode == emitSelector {
-		// Comma lists and the > + ~ / combinators do not need spaces.
 		if isSelectorDrop(prev) || isSelectorDrop(next) {
 			return false
 		}
 		return true
 	}
-	// Value mode: whitespace is a token boundary, and around a math
-	// function's + and - it is grammar: calc(var(--x)+ 1px) is invalid
-	// and the browser drops the whole declaration.
 	if isAddDelim(prev) || isAddDelim(next) {
 		return true
 	}
 	return wouldMergeValue(prev, next)
 }
 
-// isSelectorDrop reports whether whitespace around this token is
-// insignificant in a selector.
 func isSelectorDrop(t Token) bool {
 	if t.Type == TokenComma {
 		return true
@@ -813,9 +677,6 @@ func isSelectorDrop(t Token) bool {
 	return false
 }
 
-// wouldMergeValue reports whether concatenating prev and next would
-// retokenize into different component values (two idents merging, a
-// sign or dot fusing with a number, a word gluing onto a close paren).
 func wouldMergeValue(prev, next Token) bool {
 	if isWordlike(prev) && isWordlike(next) {
 		return true
@@ -832,8 +693,6 @@ func wouldMergeValue(prev, next Token) bool {
 	return false
 }
 
-// isWordlike lists the token types that fuse with a neighbouring
-// word-like token when whitespace between them is dropped.
 func isWordlike(t Token) bool {
 	switch t.Type {
 	case TokenIdent, TokenFunction, TokenAtKeyword, TokenNumber,
@@ -843,14 +702,10 @@ func isWordlike(t Token) bool {
 	return false
 }
 
-// isAddDelim reports whether t is a + or - delimiter, which CSS math
-// functions require whitespace on both sides of.
 func isAddDelim(t Token) bool {
 	return t.Type == TokenDelim && (t.Text == "+" || t.Text == "-")
 }
 
-// isSignDelim reports whether t is one of the delimiters that would
-// start a number token when glued to one.
 func isSignDelim(t Token) bool {
 	if t.Type != TokenDelim {
 		return false

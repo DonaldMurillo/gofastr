@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -22,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) render.HTML {
@@ -34,7 +34,7 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	values := map[string]string{}
 	for _, f := range m.fields {
 		if f.Default != nil && mayCreateSet(m, f) {
-			values[f.Name] = formValueText(f, f.Default)
+			values[f.Name] = fieldtext.Form(f, f.Default)
 		}
 	}
 	if b.prefill != nil {
@@ -69,10 +69,10 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 			if !mayCreateSet(m, f) || blank[f.Name] {
 				continue
 			}
-			if cell(m.rowValue(row, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
+			if fieldtext.Cell(m.rowValue(row, f.Name)) != fieldtext.Cell(m.rowValue(hooked, f.Name)) {
 				continue
 			}
-			if v := formValueText(f, m.rowValue(row, f.Name)); v != "" {
+			if v := fieldtext.Form(f, m.rowValue(row, f.Name)); v != "" {
 				values[f.Name] = v
 			}
 		}
@@ -321,7 +321,7 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 		return ""
 	}
 	var items []ui.DetailItem
-	if id := cell(m.rowValue(row, m.pk)); m.pk != "" && id != "" {
+	if id := fieldtext.Cell(m.rowValue(row, m.pk)); m.pk != "" && id != "" {
 		target := "eui-" + m.name + "-id"
 		items = append(items, ui.DetailItem{
 			Label: i18nui.EntityID.Text(ctx),
@@ -427,7 +427,7 @@ func (fb *formBuilder) value(f schema.Field) string {
 	if fb.row == nil {
 		return ""
 	}
-	return formValueText(f, fb.m.rowValue(fb.row, f.Name))
+	return fieldtext.Form(f, fb.m.rowValue(fb.row, f.Name))
 }
 
 func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
@@ -442,7 +442,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 		if err == nil && fb.m.states != nil && cond.field == fb.m.states.Field {
 			current := ""
 			if fb.row != nil {
-				current = cell(fb.m.rowValue(fb.row, fb.m.states.Field))
+				current = fieldtext.Cell(fb.m.rowValue(fb.row, fb.m.states.Field))
 			} else if fb.create && fb.values != nil {
 				current = fb.values[cond.field]
 			}
@@ -488,7 +488,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 	if k, ok := fb.b.ui.kindOf(fb.m, f); ok && (k.Detail != nil || k.Cell != nil) {
 		row, val := fb.row, fb.value(f)
 		if !fb.create && fb.displayRow != nil {
-			row, val = fb.displayRow, formValueText(f, fb.m.rowValue(fb.displayRow, f.Name))
+			row, val = fb.displayRow, fieldtext.Form(f, fb.m.rowValue(fb.displayRow, f.Name))
 		}
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
 			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
@@ -641,7 +641,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		}
 		return render.Join(
 			html.Input(html.InputConfig{Type: "hidden", Name: fb.m.inputName(f.Name), Value: "false"}),
-			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
+			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: "true", Checked: fieldtext.Truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
 		stale := val != "" && !slices.Contains(f.Values, val)
@@ -668,13 +668,13 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Date:
 		return ui.DateField(ui.DateFieldConfig{Ctx: ctx,
-			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: dateInputValue(val),
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: fieldtext.DateInput(val),
 			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
-		v := timestampInputValue(val)
+		v := fieldtext.TimestampInput(val)
 		return ui.DateTimeField(ui.DateTimeFieldConfig{Ctx: ctx,
-			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: v, Step: timestampStep(v),
+			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: v, Step: fieldtext.TimestampStep(v),
 			Help: help, Required: required,
 		})
 	case schema.Relation:
@@ -759,7 +759,7 @@ func changedFields(m *meta, raw, hooked map[string]any, skip func(schema.Field) 
 		if skip != nil && skip(f) {
 			continue
 		}
-		if cell(m.rowValue(raw, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
+		if fieldtext.Cell(m.rowValue(raw, f.Name)) != fieldtext.Cell(m.rowValue(hooked, f.Name)) {
 			out[f.Name] = true
 		}
 	}
@@ -806,53 +806,6 @@ func enumSegments(ctx context.Context, m *meta, f schema.Field) []ui.SegmentedOp
 		opts = append(opts, ui.SegmentedOption{Value: v, Label: m.valueLabel(ctx, f.Name, v)})
 	}
 	return opts
-}
-
-func formValueText(f schema.Field, v any) string {
-	switch f.Type {
-	case schema.Date:
-		switch t := v.(type) {
-		case time.Time:
-			return t.Format(time.DateOnly)
-		case *time.Time:
-			if t == nil {
-				return ""
-			}
-			return t.Format(time.DateOnly)
-		}
-	case schema.Timestamp:
-		switch t := v.(type) {
-		case time.Time:
-			return timestampInput(t)
-		case *time.Time:
-			if t == nil {
-				return ""
-			}
-			return timestampInput(*t)
-		}
-	case schema.Bool:
-		return boolText(v)
-	default:
-	}
-	return cell(v)
-}
-
-func boolText(v any) string {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	case string:
-		if truthy(t) {
-			return "true"
-		}
-		return "false"
-	case nil:
-		return ""
-	}
-	return cell(v)
 }
 
 func inputType(f schema.Field) string {
@@ -908,41 +861,4 @@ func intBound(b *float64) int {
 		return math.MinInt
 	}
 	return int(v)
-}
-
-func dateInputValue(s string) string {
-	if len(s) >= 10 && s[4] == '-' && s[7] == '-' {
-		return s[:10]
-	}
-	return ""
-}
-
-func timestampInputValue(s string) string {
-	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return timestampInput(t)
-		}
-	}
-	return ""
-}
-
-func timestampInput(t time.Time) string {
-	t = t.UTC().Truncate(time.Millisecond)
-	switch {
-	case t.Nanosecond() != 0:
-		return t.Format("2006-01-02T15:04:05.000")
-	case t.Second() != 0:
-		return t.Format("2006-01-02T15:04:05")
-	}
-	return t.Format("2006-01-02T15:04")
-}
-
-func timestampStep(v string) float64 {
-	switch {
-	case strings.Contains(v, "."):
-		return 0.001
-	case len(v) > len("2006-01-02T15:04"):
-		return 1
-	}
-	return 0
 }

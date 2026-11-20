@@ -9,19 +9,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func builtinKind(name string) Kind {
 	switch name {
 	case "money":
 		show := func(cc CellContext) render.HTML {
-			if s := cell(cc.Value); s != "" {
+			if s := fieldtext.Cell(cc.Value); s != "" {
 				return render.Text(money(cc.Ctx, s))
 			}
 			return muted()
 		}
 		text := func(cc CellContext) string {
-			if s := cell(cc.Value); s != "" {
+			if s := fieldtext.Cell(cc.Value); s != "" {
 				return money(cc.Ctx, s)
 			}
 			return ""
@@ -111,12 +112,12 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)
 	case schema.Image, schema.File:
-		if t := fb.b.ui.fileValue(f, fb.m.label(ctx, f.Name), cell(v), ui.ThumbnailMD); t != "" {
+		if t := fb.b.ui.fileValue(f, fb.m.label(ctx, f.Name), fieldtext.Cell(v), ui.ThumbnailMD); t != "" {
 			return t
 		}
 		return muted()
 	case schema.JSON:
-		if s := cell(v); s != "" {
+		if s := fieldtext.Cell(v); s != "" {
 			return ui.JSONViewer(ui.JSONViewerConfig{Ctx: ctx, Value: s, OpenDepth: 1})
 		}
 		return muted()
@@ -138,7 +139,7 @@ func (fb *formBuilder) relationReadable(ctx context.Context, f schema.Field, id 
 }
 
 func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v any) render.HTML {
-	id := cell(v)
+	id := fieldtext.Cell(v)
 	if id == "" || !fb.relationReadable(ctx, f, id) {
 		return muted()
 	}

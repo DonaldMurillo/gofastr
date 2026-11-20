@@ -1,0 +1,105 @@
+primitive: store
+summary: The typed, server-declared signal store of core-ui/store - a Store namespaces Slices, each one named value whose declaration is process-global and whose value is request-scoped, with Bind, BindAttr and BindHTML that stamp the value the seed carries, Computed slices derived client-side and Publish, which fans an RPC's answer out to every consumer.
+code:
+  - core-ui/store/store.go
+  - core-ui/store/slice.go
+docs:
+  - framework/docs/content/signal-store.md
+  - framework/docs/content/reactivity.md
+twins:
+  - job: Blank a value bound to a URL attribute (href, src, action, xlink:href, formaction) that carries javascript, vbscript or a non-image data scheme after stripping whitespace and control bytes.
+    why: The SSR stamp is Go and the client update is the runtime's JavaScript, which cannot share code; TestSignalURLGuardMirrorsRuntimeAttrs pins the attribute lists together.
+    sites:
+      - path: core-ui/store/slice.go
+        note: sanitizeSignalURL and urlBearingAttrs, for BindAttr's SSR stamp.
+      - path: core-ui/runtime/frag/kernel.js
+        note: _isUnsafeSignalUrl, for every client write in attr mode.
+  - job: Turn a signal value into the text or attribute the page shows, and decide whether a boolean attribute is on.
+    why: The SSR stamp is Go and the client paint is JavaScript; TestValueStringMatchesJSNumber, TestValueStringMatchesJSStringify, TestValueStringJSStringAndKeyOrder and TestBooleanAttrOnFollowsJSON pin the Go side to what the runtime paints.
+    sites:
+      - path: core-ui/store/slice.go
+        note: valueString, jsKeyOrder, booleanAttrOn and booleanSignalAttrs.
+      - path: core-ui/runtime/frag/signals.js
+        note: The text, attr and boolean-attribute paint of a signal update.
+invariants:
+  - id: names-are-safe-signal-keys
+    rule: A slice name is letters, digits, '.', '_' and '-', not empty, not __proto__, constructor or prototype, and outside the route.* prefix, which only the route family declares; a computed's dependency may name a route.* signal, and its reducer follows the slice rules.
+    enforced_by:
+      - test: core-ui/store.TestInvalidNamePanics
+      - test: core-ui/store.TestValidateNameRejectsReservedKeys
+      - test: core-ui/store.TestStoreRefusesRoutePrefix
+      - test: core-ui/store.TestComputedValidatesDeps
+  - id: one-declaration-per-name
+    rule: Re-declaring a slice with the same default returns quietly, with another default panics, as a computed over a value slice panics, and a computed whose dependencies lead back to it through computed slices panics and is not registered.
+    enforced_by:
+      - test: core-ui/store.TestDuplicateSameDefaultIsIdempotent
+      - test: core-ui/store.TestDuplicateConflictingDefaultPanics
+      - test: core-ui/store.TestComputedNameConflictPanics
+      - test: core-ui/store.TestComputedRefusesCycles
+      - test: core-ui/store.TestRace_ConcurrentIdenticalRegistration
+  - id: stamp-equals-seed
+    rule: Bind, BindAttr, BindHTML and Value stamp the request's seeded value, else the default, written as the runtime would paint it (ECMAScript number spelling, JSON.stringify with unescaped <>& and its key order, null as empty), so the server markup and the seeded client store agree.
+    enforced_by:
+      - test: core-ui/store.TestInvariant_SeedEqualsStampedValue
+      - test: core-ui/store.TestInvariant_SeededRequestValueMatches
+      - test: core-ui/store.TestBindStampsResolvedValue
+      - test: core-ui/store.TestSliceValueResolvesTheRequestSeed
+      - test: core-ui/store.TestValueStringMatchesJSNumber
+      - test: core-ui/store.TestValueStringMatchesJSStringify
+      - test: core-ui/store.TestValueStringJSStringAndKeyOrder
+      - test: core-ui/store.TestRace_PerRequestValueIsolation
+  - id: bind-attr-is-guarded
+    rule: BindAttr renders no binding for an attribute the signal allow-list refuses, writes a boolean attribute only when the JSON value is on (not null, false, "", "false" or zero), and blanks a URL attribute's javascript, vbscript or non-image data value after stripping whitespace and control bytes.
+    enforced_by:
+      - test: core-ui/store.TestSignalAttrModeDeniesSrcdoc
+      - test: core-ui/store.TestBindAttrBooleanOmitsFalse
+      - test: core-ui/store.TestBooleanAttrOnFollowsJSON
+      - test: core-ui/store.TestBindAttrBlocksDangerousSchemeAtSSR
+      - test: core-ui/store.TestBindAttrAllowsSafeURLAtSSR
+      - test: core-ui/store.TestBindAttrLeavesNonURLAttrsAlone
+      - test: core-ui/store.TestBindAttrAttrNameStaysInert
+      - test: core-ui/store.TestSignalURLGuardMirrorsRuntimeAttrs
+  - id: route-slices-are-text-only
+    rule: BindHTML panics on a route.* slice.
+    enforced_by:
+      - test: core-ui/store.TestRouteFamilyRefusesBindHTML
+  - id: computed-binds-wire-the-module
+    rule: Every bind of a Computed slice stamps data-cui-computed with its reducer and data-cui-computed-deps with its dependencies comma-joined, and a computed slice is never seeded while its dependencies are.
+    enforced_by:
+      - test: core-ui/store.TestComputedEmitsWiringAttrs
+      - test: core-ui/store.TestComputedMultipleDeps
+      - test: core-ui/store.TestComputedAttrAndHTMLBindsWire
+      - test: core-ui/store.TestComputedExcludedFromSeedButDepsSeeded
+  - id: publish-sets-the-signal
+    rule: Publish makes an action's 2xx answer set the slice's signal.
+    enforced_by:
+      - test: core-ui/store.TestPublishWiresRPCSignal
+  - id: values-carry-an-id-scope
+    rule: WithValues starts an element id scope when ctx has none, so an island rendered without a page settles the ids its seeds hold.
+    enforced_by:
+      - test: core-ui/store.TestIslandSeedSettlesWithoutPage
+decisions:
+  - id: declaration-global-value-per-request
+    date: 2026-11-20
+    status: accepted
+    decision: A slice's name, type, default and scope are declared once per process, and its value is seeded per request into a bag on the context.
+    rejected:
+      - option: Keep values in a process-wide store.
+        why: Server state lives in the DB or the client signal store, never in server RAM, and two requests would see each other's values.
+    upholds: [stamp-equals-seed]
+  - id: refuse-not-sanitise-unsafe-attrs
+    date: 2026-11-20
+    status: accepted
+    decision: BindAttr on an attribute outside the signal allow-list renders the element without the binding.
+    rejected:
+      - option: Stamp a sanitised value.
+        why: The refused attributes (srcdoc, event handlers) execute whatever their value looks like, so no value is safe to stamp.
+    upholds: [bind-attr-is-guarded]
+  - id: reserved-keys-refused-at-declaration
+    date: 2026-11-20
+    status: accepted
+    decision: The store refuses __proto__, constructor and prototype as slice names.
+    rejected:
+      - option: Let the runtime's prototype guard handle them.
+        why: The runtime refuses every client write to those keys, so the slice would be a binding SSR keeps stamping that never updates, with no error anywhere.
+    upholds: [names-are-safe-signal-keys]

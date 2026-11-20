@@ -233,6 +233,9 @@ func appToMap(a appspec.AppSpecApp) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	if a.EntityLLMMD != nil {
+		m["entity_llm_md"] = *a.EntityLLMMD
+	}
 	if a.LocalePrefixes {
 		m["locale_prefixes"] = true
 	}
@@ -808,7 +811,7 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 	// map entry (`- postgres://u@h/db` re-parses as {postgres: "//u@h/db"}),
 	// because ':' is the item grammar's key/value delimiter. Block VALUES
 	// follow the laxer rule — parseScalar only rejects ": " — and
-	// needsQuote encodes exactly that, so it cannot carry this rule without
+	// NeedsQuote encodes exactly that, so it cannot carry this rule without
 	// quoting every URL-shaped block value in every real pack. Quote here,
 	// in the one context the list rule governs.
 	if s, ok := item.(string); ok && strings.Contains(s, ":") {
@@ -904,7 +907,7 @@ func allScalars(list []any) bool {
 
 // quoteYAMLString quotes text whose bare form would change its meaning.
 func quoteYAMLString(s string) string {
-	if !needsQuote(s) {
+	if !coreyaml.NeedsQuote(s) {
 		return s
 	}
 	return quoteYAMLStringEscaped(s)
@@ -951,67 +954,6 @@ func hasUnprintable(s string) bool {
 	return !utf8.ValidString(s) || strings.ContainsFunc(s, func(r rune) bool { return !unicode.IsPrint(r) })
 }
 
-// needsQuote reports whether emitting s bare would re-parse as a non-string (or
-// break the line/map grammar). Conservative but minimal: keeps the output close
-// to hand-written YAML while guaranteeing string values survive the round-trip.
-func needsQuote(s string) bool {
-	if s == "" {
-		return true
-	}
-	switch strings.ToLower(s) {
-	case "true", "false", "null", "~":
-		return true
-	}
-	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return true
-	}
-	if _, err := strconv.ParseFloat(s, 64); (err == nil || errors.Is(err, strconv.ErrRange)) && strings.ContainsAny(s, ".eE") {
-		return true
-	}
-	// Indicators that are only special as the FIRST character of a scalar:
-	// block/flow openers, anchors (&), aliases (*), tags (!), block scalars
-	// (| >), quotes, directives (%), reserved (@ `), a leading comment (#),
-	// complex keys (?), and a leading ":" or "-".
-	if strings.ContainsAny(s[:1], "&*!|>'\"%@`#?: -") {
-		return true
-	}
-	// Flow indicators are special ANYWHERE rather than only at the front, because
-	// writeFlowList emits scalars inside `[a, b]`. An interior comma there is
-	// an ITEM SEPARATOR: "open,closed" emitted bare re-parses as two items,
-	// which breaks the exact-inverse contract this file's banner claims for
-	// encodeAppSpecYAML/decodeAppSpec and lets a `values:` enum set gain a
-	// member the app never declared (unlike search_fields/fields/filters/
-	// columns, `values:` is not re-checked against the declaration on decode).
-	// Testing only s[:1] was the bug. Quoting these in block context too costs
-	// a pair of quotes and keeps ONE predicate for both contexts.
-	if strings.ContainsAny(s, ",[]{}") {
-		return true
-	}
-	// Quote characters inside bare flow-list values can affect item boundaries.
-	if strings.ContainsAny(s, "'\"") {
-		return true
-	}
-	if strings.Contains(s, ": ") || strings.Contains(s, " #") {
-		return true
-	}
-	if strings.ContainsAny(s, "\n\t") {
-		return true
-	}
-	// A non-printable rune or an invalid byte. Pack prints its YAML to the
-	// terminal, and the strings come from the app's source: bare, an ESC
-	// or 8-bit CSI/OSC (U+009B, U+009D) drives the terminal (an OSC 52
-	// writes the clipboard), a CR rewinds the line, and a bidi override
-	// reorders what the reader sees. Quoted, quoteYAMLStringEscaped writes
-	// each as an escape that reads back to the exact bytes.
-	if hasUnprintable(s) {
-		return true
-	}
-	if s != strings.TrimSpace(s) || strings.HasSuffix(s, ":") {
-		return true
-	}
-	return false
-}
-
 // ----- key orders (readability; semantics are order-independent) -------------
 var (
 	// Ordered to match appSpecToMap's emission order, which is also the
@@ -1019,7 +961,7 @@ var (
 	// emits but this list omits ships unsorted, which
 	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
-	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "locale_prefixes"}
+	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md", "locale_prefixes"}
 	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}

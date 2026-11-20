@@ -246,10 +246,18 @@ func TestOpenAPICLI_AllOfDiamondResolves(t *testing.T) {
 	    "D":{"allOf":[{"$ref":"#/components/schemas/L"},{"$ref":"#/components/schemas/R"}]}}},
 	  "paths":{"/a":{"post":{"operationId":"mk",
 	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/D"}}}}}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err != nil {
+	opts := CliOptions{Binary: "x"}
+	original, err := BuildOpenAPICLISpec(mustDecodeDoc(t, doc), opts, "c")
+	if err != nil {
 		t.Fatalf("a shared allOf base is not a cycle: %v", err)
+	}
+	doc = strings.Replace(doc, `"D":{"allOf"`, `"D":{"additionalProperties":true,"allOf"`, 1)
+	open, err := BuildOpenAPICLISpec(mustDecodeDoc(t, doc), opts, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renderCLIOpsFile(open) != renderCLIOpsFile(original) || renderCLISelfClient(open) != renderCLISelfClient(original) {
+		t.Fatal("additional properties changed the generated CLI")
 	}
 }
 

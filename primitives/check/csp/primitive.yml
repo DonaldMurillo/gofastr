@@ -1,0 +1,69 @@
+primitive: check.csp
+summary: The strict-CSP source lints - LintNoInlineScripts and LintNoInlineStyles, which flag Go string literals and render.Tag calls that would emit an inline script or style attribute under default-src 'self', with the check-csp:ignore-file directive and the walks they share.
+code:
+  - core-ui/check/noinlinescripts.go
+  - core-ui/check/noinlinestyles.go
+docs:
+  - framework/docs/content/contracts.md
+invariants:
+  - id: every-script-tag-is-classified
+    rule: LintNoInlineScripts flags every <script> open tag, in any letter case, in a literal's compiled bytes that has no src attribute and no inert data-block type, an importmap included, and a render.Tag script with a body.
+    enforced_by:
+      - test: core-ui/check.TestLintNoInlineScripts_FlagsInlineBlock
+      - test: core-ui/check.TestSecurityScriptsAllTagsClassified
+      - test: core-ui/check.TestSecurityMarkupCaseInsensitive
+      - test: core-ui/check.TestSecurityScriptsEscapedLiteralBypass
+      - test: core-ui/check.TestInlineImportMapFlagged
+      - test: core-ui/check.TestLintNoInlineScripts_FlagsTagCallWithChildren
+      - test: core-ui/check.TestConcatScriptOpenTagFlagged
+  - id: src-and-type-are-real-attributes
+    rule: A script passes only for a src attribute name preceded by whitespace, so data-src does not count, or for an inert JSON or text type.
+    enforced_by:
+      - test: core-ui/check.TestSecurityScriptsAttrNameAnchoring
+      - test: core-ui/check.TestLintNoInlineScripts_AllowsExternalSrc
+      - test: core-ui/check.TestLintNoInlineScripts_AllowsInertJSONLiteral
+      - test: core-ui/check.TestLintNoInlineScripts_AllowsInertJSONType
+  - id: inline-styles-are-flagged
+    rule: LintNoInlineStyles flags a style attribute in a string literal, a "style" attrs-map key or index assignment of a string, in any separator spelling, unless a //gofastr:allow(inlinestyle) marker covers the line.
+    enforced_by:
+      - test: core-ui/check.TestLintNoInlineStyles_FlagsRawAttributeInString
+      - test: core-ui/check.TestLintNoInlineStyles_FlagsAttrsMapKey
+      - test: core-ui/check.TestLintNoInlineStyles_FlagsIndexAssignment
+      - test: core-ui/check.TestSecurityStyleAttrSeparatorBypass
+      - test: core-ui/check.TestLintNoInlineStyles_HonorsAllowMarker
+      - test: core-ui/check.TestLintNoInlineStyles_AllowMarkerOtherRule
+  - id: ignore-directive-is-comment-initial
+    rule: A file opts out of both CSP lints only with check-csp:ignore-file as a whole comment line, gofmt-spaced or not, never by quoting it in prose; test files are never linted.
+    enforced_by:
+      - test: core-ui/check.TestCSPDirectiveRequiresRealComment
+      - test: core-ui/check.TestLintNoInlineScripts_HonorsIgnoreDirective
+      - test: core-ui/check.TestLintNoInlineScripts_HonorsGofmtSpacedDirective
+      - test: core-ui/check.TestCSPIgnoreDirectiveCRLF
+      - test: core-ui/check.TestLintNoInlineScripts_SkipsTestFiles
+  - id: walks-skip-build-output
+    rule: The recursive lints, and LintNoInlineRecursive's one walk for both lanes, skip vendor, node_modules, testdata, hidden directories and build output such as dist.
+    enforced_by:
+      - test: core-ui/check.TestRecursiveScriptsSkipDist
+      - test: core-ui/check.TestCombinedInlineWalkSkipsBuildOutputForBothLanes
+      - test: core-ui/check.TestRecursiveStylesSkipBuildOutput
+  - id: repo-is-csp-clean
+    rule: The framework tree emits no inline script or style outside the allowed markers.
+    enforced_by:
+      - test: core-ui/check.TestLintNoInlineScripts_RepoIsClean
+      - test: core-ui/check.TestLintNoInlineStyles_RepoIsClean
+decisions:
+  - id: scan-the-compiled-bytes
+    date: 2026-11-20
+    status: accepted
+    decision: An interpreted literal is unquoted before it is scanned, so the patterns see what the browser sees.
+    rejected:
+      - option: Trim the quotes and scan the source text.
+        why: A literal spelled with \x3c escapes holds no '<' in its source and passed while compiling to a live inline script.
+    upholds: [every-script-tag-is-classified]
+  - id: bootstrap-carries-the-marker
+    date: 2026-11-20
+    status: accepted
+    decision: The one deliberate inline script, the first-paint bootstrap the CSP allows by hash, carries the GOFASTR1805 marker that gofastr verify applies and reports stale.
+    rejected:
+      - option: Opt its whole file out with check-csp:ignore-file.
+        why: Every other literal in the file would go unchecked.

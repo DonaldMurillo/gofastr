@@ -5,11 +5,6 @@ import (
 	"sync"
 )
 
-// optionalSetDefaults maps each optional token set's type to the default
-// theme's value for it. A theme that leaves a slot of such a set fully
-// unset (a theme.go written before the set existed) emits, lists and
-// edits the default value for that slot, so every reader of the token
-// resolves: kit CSS, generated utility CSS, owned sheets, host CSS.
 var optionalSetDefaults = sync.OnceValue(func() map[reflect.Type]reflect.Value {
 	d := DefaultTheme()
 	return map[reflect.Type]reflect.Value{
@@ -20,9 +15,6 @@ var optionalSetDefaults = sync.OnceValue(func() map[reflect.Type]reflect.Value {
 	}
 })
 
-// withOptionalDefaults returns v with every fully unset slot of an
-// optional set taken from the default theme. Any other value comes back
-// unchanged.
 func withOptionalDefaults(v reflect.Value) reflect.Value {
 	def, ok := optionalSetDefaults()[v.Type()]
 	if !ok {
@@ -43,8 +35,6 @@ func withOptionalDefaults(v reflect.Value) reflect.Value {
 	return out
 }
 
-// fillOptionalDefaults writes the default theme's value into every fully
-// unset slot of t's optional sets.
 func fillOptionalDefaults(t *Theme) {
 	v := reflect.ValueOf(t).Elem()
 	for i := range v.NumField() {

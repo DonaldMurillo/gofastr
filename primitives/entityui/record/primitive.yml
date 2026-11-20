@@ -41,6 +41,15 @@ invariants:
     rule: A create form starts each field a create may set at its declared Default, and a Prefill, a ?prefill_<field> or a duplicate overrides it.
     enforced_by:
       - test: framework/entityui.TestCreateStartsAtDefaults
+  - id: generated-create-starts-at-defaults
+    rule: A generated entity_form create control starts at its field's Default, written by the same internal/fieldtext calls entityui's create form makes, and a field with no Default or a file input starts empty.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormStartsAtDefaults
+      - test: cmd/gofastr/internal/appgen.TestEntityFormDefaultsReadLikeEntityUI
+      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationMountKeepsDefaultOption
+      - test: internal/fieldtext.TestForm
+    applies:
+      - cmd/gofastr/internal/appgen/appspec.go
   - id: create-returns-to-its-origin
     rule: A create opened as an intercepted drawer navigates back to the page under it, and otherwise to the list base.
     enforced_by:

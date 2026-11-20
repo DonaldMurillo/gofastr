@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 type meta struct {
@@ -72,7 +73,7 @@ func (m *meta) isKey(field string) bool { return slices.Contains(m.keys, field) 
 func (m *meta) rowID(row map[string]any) string {
 	parts := make([]string, len(m.keys))
 	for i, c := range m.keys {
-		if parts[i] = cell(m.rowValue(row, c)); parts[i] == "" {
+		if parts[i] = fieldtext.Cell(m.rowValue(row, c)); parts[i] == "" {
 			return ""
 		}
 	}

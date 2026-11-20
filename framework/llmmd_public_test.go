@@ -52,3 +52,39 @@ func TestLLMMD_GatedByDefault(t *testing.T) {
 		t.Fatalf("default /api/llm.md = %d, want 401", rec.Code)
 	}
 }
+
+func TestMountLLMMDAndDebugRoutesRunsOnce(t *testing.T) {
+	app := llmmdApp(t, WithoutDefaultMiddleware(), WithPublicOpenAPI())
+	app.Config.DebugEndpoints = true
+
+	if !app.MountLLMMDAndDebugRoutes() {
+		t.Fatal("first call: hasLLMMD = false, want true")
+	}
+	if !app.MountLLMMDAndDebugRoutes() {
+		t.Fatal("second call: hasLLMMD = false, want the first call's true")
+	}
+	_, hasLLMMD, err := app.finalizeRoutes()
+	if err != nil {
+		t.Fatalf("finalizeRoutes: %v", err)
+	}
+	if !hasLLMMD {
+		t.Fatal("finalizeRoutes: hasLLMMD = false, want the first call's true")
+	}
+
+	counts := map[string]int{}
+	for _, r := range app.router.Routes() {
+		if r.Method == http.MethodGet {
+			counts[r.Pattern]++
+		}
+	}
+	for _, p := range []string{"/api/llm.md", "/.debug/stats"} {
+		if counts[p] != 1 {
+			t.Errorf("GET %s registered %d times, want 1", p, counts[p])
+		}
+	}
+	rec := httptest.NewRecorder()
+	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/llm.md", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "posts") {
+		t.Fatalf("GET /api/llm.md = %d, body=%s", rec.Code, rec.Body.String())
+	}
+}

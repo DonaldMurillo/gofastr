@@ -1,27 +1,4 @@
-// Package seo provides typed Schema.org structs that marshal to the
-// JSON-LD shape Google and other crawlers consume for rich results
-// (FAQ snippets, product cards, breadcrumb trails, article cards).
-//
-// Each type carries the @context + @type envelope automatically; the
-// caller fills in the descriptive fields and hands the value to
-// [Render], which produces a `<script type="application/ld+json">`
-// block. The script element is data, not code, strict CSP
-// (`default-src 'self'`) permits it alongside
-// `<script type="application/json">`.
-//
-// Common usage from a screen: implement the ScreenSchema hook
-// (framework/uihost.ScreenSchema) and let the host render the block
-// into <head>. Do not route [Render] through SEOScreen.HeadHTML: the
-// host scrubs every <script> out of HeadHTML, so the JSON-LD never
-// ships.
-//
-//	func (s *ProductScreen) ScreenSchema(ctx context.Context) []seo.Thing {
-//	    p := seo.NewProduct()
-//	    p.Name = s.product.Name
-//	    p.Description = s.product.Description
-//	    p.Image = s.product.HeroURL
-//	    return []seo.Thing{p}
-//	}
+// Package seo holds typed Schema.org values and renders them as JSON-LD script blocks.
 package seo
 
 import (
@@ -33,15 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Thing is the marker interface that every Schema.org type implements
-// via the embedded base struct.
+// Thing is a Schema.org value defined in this package.
 type Thing interface {
-	thing() // unexported, only the types defined here qualify
+	thing()
 }
 
-// base carries the JSON-LD envelope (@context + @type). All typed
-// structs in this package embed it so encoding/json picks the right
-// schema name automatically.
 type base struct {
 	Context string `json:"@context"`
 	Type    string `json:"@type"`
@@ -51,10 +24,7 @@ func (base) thing() {}
 
 func newBase(t string) base { return base{Context: "https://schema.org", Type: t} }
 
-// ─── Article ───────────────────────────────────────────────────────
-
-// Article describes a blog post, news article, or other journalistic
-// item. Drives Google's article rich result.
+// Article is a blog post or news article.
 type Article struct {
 	base
 	Headline      string        `json:"headline,omitempty"`
@@ -70,17 +40,13 @@ type Article struct {
 // NewArticle returns an Article with the JSON-LD envelope pre-filled.
 func NewArticle() Article { return Article{base: newBase("Article")} }
 
-// ─── BreadcrumbList ────────────────────────────────────────────────
-
-// BreadcrumbList describes the trail of pages leading to the current
-// one. Each item is a ListItem with Position (1-based) + URL + Name.
+// BreadcrumbList is the trail of pages leading to the current one.
 type BreadcrumbList struct {
 	base
 	ItemListElement []ListItem `json:"itemListElement"`
 }
 
-// NewBreadcrumbList builds a BreadcrumbList from (name, url) pairs.
-// Positions are assigned 1..N in order.
+// NewBreadcrumbList builds a BreadcrumbList with positions 1..N in order.
 func NewBreadcrumbList(items ...BreadcrumbItem) BreadcrumbList {
 	out := BreadcrumbList{base: newBase("BreadcrumbList")}
 	for i, it := range items {
@@ -108,10 +74,7 @@ type ListItem struct {
 	Item     string `json:"item,omitempty"`
 }
 
-// ─── FAQ ───────────────────────────────────────────────────────────
-
-// FAQPage is a list of Question/Answer pairs. Drives the FAQ rich
-// result (collapsible Q&A under the search hit).
+// FAQPage is a list of Question/Answer pairs.
 type FAQPage struct {
 	base
 	MainEntity []Question `json:"mainEntity"`
@@ -152,10 +115,7 @@ type Answer struct {
 	Text string `json:"text"`
 }
 
-// ─── Organization / Person ────────────────────────────────────────
-
-// Organization describes the publishing entity. Used as the
-// `publisher` of an Article or the `provider` of a Product.
+// Organization is a publisher or provider.
 type Organization struct {
 	base
 	Name string `json:"name,omitempty"`
@@ -176,10 +136,7 @@ type Person struct {
 // NewPerson returns a Person with the envelope pre-filled.
 func NewPerson() Person { return Person{base: newBase("Person")} }
 
-// ─── WebSite / WebPage ────────────────────────────────────────────
-
-// WebSite describes the whole site. Useful at the homepage. Set
-// PotentialAction to wire Google's sitelinks search box.
+// WebSite is the whole site; PotentialAction declares its search box.
 type WebSite struct {
 	base
 	Name            string        `json:"name,omitempty"`
@@ -190,16 +147,14 @@ type WebSite struct {
 // NewWebSite returns a WebSite with the envelope pre-filled.
 func NewWebSite() WebSite { return WebSite{base: newBase("WebSite")} }
 
-// SearchAction declares a sitewide search endpoint. Target accepts a
-// URL template with {search_term_string}.
+// SearchAction is a sitewide search endpoint whose Target holds {search_term_string}.
 type SearchAction struct {
 	base
 	Target     string `json:"target,omitempty"`
 	QueryInput string `json:"query-input,omitempty"`
 }
 
-// NewSearchAction returns a SearchAction targeting target with the
-// canonical query-input placeholder.
+// NewSearchAction returns a SearchAction for target with the canonical query-input.
 func NewSearchAction(target string) SearchAction {
 	return SearchAction{
 		base:       newBase("SearchAction"),
@@ -208,8 +163,7 @@ func NewSearchAction(target string) SearchAction {
 	}
 }
 
-// WebPage describes a generic page. Use Article / FAQPage / Product
-// when they fit; WebPage is the fallback.
+// WebPage is a generic page.
 type WebPage struct {
 	base
 	Name        string `json:"name,omitempty"`
@@ -220,37 +174,25 @@ type WebPage struct {
 // NewWebPage returns a WebPage with the envelope pre-filled.
 func NewWebPage() WebPage { return WebPage{base: newBase("WebPage")} }
 
-// ─── WebApplication ────────────────────────────────────────────────
-
-// WebApplication describes an in-browser application or tool (schema.org
-// SoftwareApplication subtype). The right type for SaaS products, online
-// generators, editors, anything a user runs at a URL. Pair with a free
-// Offer (Price "0") for "free online tool" queries.
+// WebApplication is an application a user runs at a URL.
 type WebApplication struct {
 	base
-	Name        string `json:"name,omitempty"`
-	URL         string `json:"url,omitempty"`
-	Description string `json:"description,omitempty"`
-	Image       string `json:"image,omitempty"`
-	// ApplicationCategory per schema.org's enumeration, e.g.
-	// "UtilitiesApplication", "DesignApplication", "BusinessApplication".
+	Name                string `json:"name,omitempty"`
+	URL                 string `json:"url,omitempty"`
+	Description         string `json:"description,omitempty"`
+	Image               string `json:"image,omitempty"`
 	ApplicationCategory string `json:"applicationCategory,omitempty"`
-	// OperatingSystem for web apps is conventionally "Web" or "Any".
-	OperatingSystem string `json:"operatingSystem,omitempty"`
-	// BrowserRequirements, e.g. "Requires JavaScript".
+	OperatingSystem     string `json:"operatingSystem,omitempty"`
 	BrowserRequirements string `json:"browserRequirements,omitempty"`
 	Offers              *Offer `json:"offers,omitempty"`
 }
 
-// NewWebApplication returns a WebApplication with the envelope pre-filled
-// and OperatingSystem defaulted to "Web".
+// NewWebApplication returns a WebApplication with OperatingSystem "Web".
 func NewWebApplication() WebApplication {
 	return WebApplication{base: newBase("WebApplication"), OperatingSystem: "Web"}
 }
 
-// ─── Product ───────────────────────────────────────────────────────
-
-// Product drives Google's product rich result (price, ratings, etc.).
+// Product is a product with its offer.
 type Product struct {
 	base
 	Name        string `json:"name,omitempty"`
@@ -276,24 +218,7 @@ type Offer struct {
 // NewOffer returns an Offer with the envelope pre-filled.
 func NewOffer() Offer { return Offer{base: newBase("Offer")} }
 
-// ─── Render ────────────────────────────────────────────────────────
-
-// Render emits one <script type="application/ld+json"> tag per item.
-// json.Marshal escapes angle brackets in JSON strings. Render also
-// replaces any literal `</` in the marshaled bytes with `<\/` to
-// prevent an HTML closing tag inside the script body.
-//
-// URL-typed Schema.org fields (see urlFields) pass the same head-URL
-// allow-list the page's canonical/og/twitter arms use; a value that
-// fails is dropped, not rendered.
-//
-// The opening and closing <script> tags are split across two distinct
-// Go string literals on purpose: the build-time `no inline script`
-// linter scans each literal independently and only flags a literal
-// that contains BOTH an open and a close tag. By splitting them we
-// keep the literal validation honest while still emitting a valid
-// element at runtime. (This mirrors what framework/uihost does for
-// the routes/catalog JSON blocks.)
+// Render writes one <script type="application/ld+json"> block per item, dropping URL fields urlsafe.Resource refuses.
 func Render(items ...Thing) render.HTML {
 	if len(items) == 0 {
 		return render.HTML("")
@@ -315,27 +240,10 @@ func Render(items ...Thing) render.HTML {
 	return render.HTML(strings.TrimRight(b.String(), "\n"))
 }
 
-// ─── URL gate ──────────────────────────────────────────────────────
-
-// urlFields are the JSON names of the URL-typed Schema.org fields this
-// package emits. Every string field carrying one of these names passes
-// the same urlsafe.Resource allow-list the page-head gate
-// (framework/uihost.isSafeHeadURL) applies to the canonical/og/twitter
-// arms of the same SEO bundle; a value that fails (javascript:, data:,
-// file:, blob:, protocol-relative, control bytes) is dropped, exactly
-// the way ogTags/twitterTags drop it — the ld+json script is served
-// into the live page head, so an ungated arm is the same phishing
-// primitive the og/twitter pins reject. Keyed on JSON tag names, not
-// field declarations, so a Schema type added later is covered without
-// remembering to re-wire a per-type scrubber.
 var urlFields = map[string]bool{
 	"url": true, "image": true, "logo": true, "item": true, "target": true,
 }
 
-// scrubUnsafeURLs returns v with every URL-typed string field that
-// fails the head-URL allow-list cleared. v is never mutated: structs,
-// slices and pointers are copied on first change, so a caller's value
-// (and any nested pointer it shares) keeps its fields.
 func scrubUnsafeURLs(v reflect.Value) (reflect.Value, bool) {
 	switch v.Kind() {
 	case reflect.Pointer:
@@ -378,9 +286,6 @@ func scrubUnsafeURLs(v reflect.Value) (reflect.Value, bool) {
 	return scrubStruct(v)
 }
 
-// scrubStruct scrubs one struct value, reporting whether anything
-// changed. URL-typed string fields are cleared in place on a copy;
-// nested pointers, slices and structs descend through scrubUnsafeURLs.
 func scrubStruct(v reflect.Value) (reflect.Value, bool) {
 	out := reflect.New(v.Type()).Elem()
 	out.Set(v)

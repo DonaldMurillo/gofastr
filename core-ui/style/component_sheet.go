@@ -7,32 +7,13 @@ import (
 	"strings"
 )
 
-// ComponentSheet builds component-scoped CSS. Every top-level selector
-// is automatically prefixed with [data-cui-comp="<name>"] at Build()
-// time, including ,-separated compound selectors. @keyframes pass
-// through unprefixed; rules inside @media/@container are still scoped
-// (the wrapping at-rule remains intact).
-//
-// Authors write selectors as if the component owned the world:
-//
-//	ss := style.NewComponentSheet("modal", theme)
-//	ss.Rule(".header").Set("font-weight", "bold").End()
-//	ss.Rule(".body").Set("padding", "{spacing.lg}").End()
-//	css, err := ss.Build()
-//
-// Build() returns an error when a selector cannot be safely scoped,
-// e.g. `body`, `html`, `:root`, `*`, `::backdrop`, or
-// `::view-transition-*`. Move those to theme.css / WithCustomCSS
-// instead. Registration helpers convert this error to a panic with a
-// pointer-to-fix message so failures surface at process start.
+// ComponentSheet builds component-scoped CSS.
 type ComponentSheet struct {
 	name  string
 	inner *StyleSheet
 }
 
 // NewComponentSheet creates a new scoped stylesheet bound to a theme.
-// The name becomes the value of the data-cui-comp attribute the
-// framework injects on the component's outermost tag.
 func NewComponentSheet(name string, theme Theme) *ComponentSheet {
 	return &ComponentSheet{
 		name:  name,
@@ -43,8 +24,7 @@ func NewComponentSheet(name string, theme Theme) *ComponentSheet {
 // Name returns the component name passed to NewComponentSheet.
 func (cs *ComponentSheet) Name() string { return cs.name }
 
-// Rule starts a new CSS rule. Identical to StyleSheet.Rule but the
-// selector will be scoped at Build() time.
+// Rule starts a new CSS rule.
 func (cs *ComponentSheet) Rule(selector string) *ComponentSheet {
 	cs.inner.Rule(selector)
 	return cs
@@ -75,7 +55,6 @@ func (cs *ComponentSheet) Child(descendant string, props ...string) *ComponentSh
 }
 
 // Media adds a @media query wrapping rules built in the callback.
-// Inner rules are still scoped to the component.
 func (cs *ComponentSheet) Media(query string, fn func(*ComponentSheet)) *ComponentSheet {
 	cs.inner.Media(query, func(inner *StyleSheet) {
 		fn(&ComponentSheet{name: cs.name, inner: inner})
@@ -91,9 +70,7 @@ func (cs *ComponentSheet) Container(name, query string, fn func(*ComponentSheet)
 	return cs
 }
 
-// Keyframes adds an @keyframes animation. Keyframe step selectors
-// (`0%`, `from`, etc.) are preserved verbatim, only outer rule
-// selectors get scoped.
+// Keyframes adds an @keyframes animation.
 func (cs *ComponentSheet) Keyframes(name string, steps ...KeyframeStep) *ComponentSheet {
 	cs.inner.Keyframes(name, steps...)
 	return cs
@@ -105,11 +82,8 @@ func (cs *ComponentSheet) End() *ComponentSheet {
 	return cs
 }
 
-// Build serializes the stylesheet with every top-level selector
-// scoped to [data-cui-comp="<name>"]. Build leaves the builder available for
-// further edits or repeated builds. Returns an error if any
-// selector cannot be safely scoped (body, html, :root, *,
-// ::backdrop, ::view-transition-*).
+// Build serializes the stylesheet with every top-level selector scoped to
+// [data-cui-comp="<name>"].
 func (cs *ComponentSheet) Build() (string, error) {
 	prefix := `[data-cui-comp="` + cs.name + `"]`
 	rules, err := scopedRules(cs.inner.rules, prefix)
@@ -120,8 +94,6 @@ func (cs *ComponentSheet) Build() (string, error) {
 }
 
 // MustBuild is Build but panics with a useful message on error.
-// Convenient for init-time registration where there is no caller to
-// receive an error and any failure should fail the process startup.
 func (cs *ComponentSheet) MustBuild() string {
 	css, err := cs.Build()
 	if err != nil {
@@ -133,7 +105,6 @@ func (cs *ComponentSheet) MustBuild() string {
 	return css
 }
 
-// scopedRules copies the rule tree and prefixes selectors outside @keyframes.
 func scopedRules(rules []cssRule, prefix string) ([]cssRule, error) {
 	out := slices.Clone(rules)
 	for i := range out {
@@ -159,19 +130,6 @@ func scopedRules(rules []cssRule, prefix string) ([]cssRule, error) {
 	return out, nil
 }
 
-// scopeSelector prepends prefix to every comma-separated selector
-// part. Returns an error if any part is on the unscopable list.
-//
-// Ampersand handling: `&` refers to the marker element itself
-// (CSS-nesting style). `&` alone → prefix. `&.active` →
-// prefix.active. `& .foo` → prefix .foo (same as bare `.foo`).
-// Use & whenever you want a rule on the component root.
-//
-// A part opening `:where(&` puts the prefix inside the :where(), so
-// the scope adds no weight: `:where(& .actions) > .item` →
-// :where(prefix .actions) > .item, weighing only its subject. Kit
-// rules that place an element an owner may also place are spelled
-// this way (DESIGN-owned-styles, "Cascade").
 func scopeSelector(selector, prefix string) (string, error) {
 	parts := splitTopLevelCommas(selector)
 	out := make([]string, len(parts))
@@ -186,11 +144,6 @@ func scopeSelector(selector, prefix string) (string, error) {
 		}
 		if strings.HasPrefix(trimmed, "&") {
 			rest := strings.TrimSpace(trimmed[1:])
-			// Apply the same unscopable check to the tail,
-			// `&::backdrop` and `&::view-transition-old(*)` would
-			// otherwise silently produce a rule that targets a
-			// pseudo-element outside the component's subtree, with
-			// no error to tell the author.
 			if rest != "" {
 				if reason, bad := unscopableSelector(rest); bad {
 					return "", fmt.Errorf("selector %q cannot be scoped: %s: %w", trimmed, reason, ErrUnscopable)
@@ -207,8 +160,6 @@ func scopeSelector(selector, prefix string) (string, error) {
 	return strings.Join(out, ", "), nil
 }
 
-// unscopableSelector returns (reason, true) when a selector cannot
-// be safely wrapped by a component scope.
 func unscopableSelector(sel string) (string, bool) {
 	switch sel {
 	case "body", "html", ":root", "*":
@@ -226,8 +177,6 @@ func unscopableSelector(sel string) (string, bool) {
 	return "", false
 }
 
-// splitTopLevelCommas ignores escaped commas and those inside
-// functions, brackets, strings, and comments.
 func splitTopLevelCommas(s string) []string {
 	out := []string{}
 	depth := 0
@@ -266,6 +215,6 @@ func splitTopLevelCommas(s string) []string {
 	return out
 }
 
-// ErrUnscopable is returned by ComponentSheet.Build when a selector
-// cannot be safely scoped.
+// ErrUnscopable is returned by ComponentSheet.Build when a selector cannot be
+// safely scoped.
 var ErrUnscopable = errors.New("selector is unscopable")

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=cf7bbf917de3fa00
+//gofastr:generated generator=app kind=scaffold version=dev sum=d7ab0d61bd866008
 
 package main
 
@@ -90,14 +90,17 @@ func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/products", "/")
 	site.Register("/", &HomeScreen{}, appLayout)
 }
 
 func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/products", "/products")
 	site.Register("/products", &ProductsScreen{}, appLayout)
 }
 
 func mountProductDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/products", "*")
 	record := app.NewScreen("/products/:id", &ProductDetailScreen{}).WithTitle("Product Details").WithDescription("View product details")
 	record.Intercept = &app.Intercept{From: "/products", As: app.ScreenDrawer}
 	site.RegisterScreen(record, appLayout)

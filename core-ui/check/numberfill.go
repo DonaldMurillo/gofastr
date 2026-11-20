@@ -6,31 +6,8 @@ import (
 	"strings"
 )
 
-// LintNumberFill fires when a {{n}} placeholder is filled with Go-style
-// ASCII digits instead of NS.formatNumber.
-//
-// Bug class: the server fills {{n}} with i18n.Number, so "1.234
-// resultados" on /es/ and Arabic-Indic digits on an Arabic catalog; the
-// client then re-fills the same phrase with String(n) after hydration
-// and the count reverts to "1234" (2026-10-27 bug bash C15: combobox,
-// the file drop zone, selection copy, the notification bell and the
-// site search page; C18: the site search palette). The fix spelling
-// routes the value through NS.formatNumber, which follows <html lang>.
-//
-// Shapes:
-//   - a textContent assignment concatenating counts with a slash;
-//   - .replace / .replaceAll whose pattern is the '{{n}}' string, or a
-//     regex naming {{n}}, and whose replacement is computed and never
-//     mentions formatNumber; for a regex that also fills other keys
-//     ({{q}}), only a replacement that spells String( fires;
-//   - .split('{{n}}').join(v) with v computed and no formatNumber;
-//   - say(key, english, { n: v }) (NS.say, G.say), the runtime's own
-//     filler: say() puts p.n into {{n}} as given, so v needs
-//     formatNumber as much as a .replace does. A params object that is
-//     not a literal is not read.
-//
-// Silent on a literal replacement (an author-written pattern), on any
-// replacement that mentions formatNumber, and on other placeholders.
+// LintNumberFill fires when a {{n}} placeholder is filled with Go-style ASCII digits instead of
+// NS.formatNumber.
 func LintNumberFill(roots ...string) (*Result, error) {
 	res := &Result{}
 	files, err := loadJSSources(roots...)
@@ -113,17 +90,12 @@ func LintNumberFill(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// reSayCall matches a say( call, bare or as a member (NS.say, G.say).
 var reSayCall = regexp.MustCompile(`\bsay\s*\(`)
 
 var reCountTextAssign = regexp.MustCompile(`\.\s*textContent\s*=\s*`)
 
-// reParamN matches the n key of an object literal property, quoted or
-// not, and captures its value.
 var reParamN = regexp.MustCompile(`^(?:n|'n'|"n")\s*:\s*([\s\S]+)$`)
 
-// sayParamN returns the value an object-literal params argument gives
-// n. The shorthand { n } is the variable n.
 func sayParamN(params string) (string, bool) {
 	if len(params) < 2 || params[0] != '{' || params[len(params)-1] != '}' {
 		return "", false
@@ -139,17 +111,10 @@ func sayParamN(params string) (string, bool) {
 	return "", false
 }
 
-// isNPlaceholder reports whether a pattern argument is the literal
-// '{{n}}', in any of JavaScript's three quotes: a template literal with
-// no substitution is the same string as a quoted one.
 func isNPlaceholder(pattern string) bool {
 	return isStaticJSStringLiteral(pattern) && pattern[1:len(pattern)-1] == "{{n}}"
 }
 
-// reNRegex matches a regex literal pattern that names {{n}}: /\{\{n\}\}/
-// or a class holding n, /\{\{([nq])\}\}/. The braces may go unescaped,
-// /{{n}}/g: a brace that does not open a {m,n} quantifier is a literal
-// brace, so both spellings match the same text.
 var reNRegex = regexp.MustCompile(`^/.*\\?\{\\?\{(?:n|\(?\[[a-z]*n[a-z]*\]\)?)\\?\}\\?\}`)
 
 var (
@@ -157,9 +122,6 @@ var (
 	reJoinAfter = regexp.MustCompile(`^\s*\.\s*join\s*\(`)
 )
 
-// numberFillBad: the replacement is computed and never reaches
-// formatNumber; with exact false (a regex filling several keys) it must
-// also spell String( to count.
 func numberFillBad(arg string, exact bool) bool {
 	if arg == "" || isStaticJSStringLiteral(arg) || isJSNumericLiteral(arg) || strings.Contains(arg, "formatNumber") {
 		return false

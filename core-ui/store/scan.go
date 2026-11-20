@@ -12,20 +12,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/attrscan"
 )
 
-// refAttrs are the signal-referencing data-cui-* attributes, named
-// after the "data-cui-" prefix. ScanReferenced captures the
-// bare slice name (the part before any ":value"). The scan only counts
-// an attribute position (preceded by whitespace or a self-closing
-// slash), so a literal mention inside <pre>/<code>/text content never
-// registers a false reference, the same rule as registry.Scan.
 var refAttrs = []string{"signal-set", "signal-inc", "signal-toggle", "signal", "computed"}
 
-// refNameByte accepts the bytes of a referenced slice name: anything up
-// to the closing quote or the ":value" separator.
 func refNameByte(c byte) bool { return c != '"' && c != ':' }
 
-// ScanReferenced returns the unique, sorted slice names referenced by
-// signal/computed attributes in the rendered HTML.
+// ScanReferenced returns the sorted slice names the rendered html's signal attributes reference.
 func ScanReferenced(html string) []string {
 	seen := map[string]bool{}
 	for n := range attrscan.Values(html, refAttrs, refNameByte, false) {
@@ -39,14 +30,7 @@ func ScanReferenced(html string) []string {
 	return out
 }
 
-// ResolveSeed builds the seed map for the given names: each registered
-// name resolves to its per-request value (if a producer seeded one) or
-// its declared default. Unregistered names (hand-written attrs with no
-// declaration) are skipped, there is nothing to seed. The returned
-// values are raw Go values ready for JSON marshaling by the host. A
-// value that holds an element id still waiting for its region to
-// settle (HTML seeded during the render) carries the settled id, the
-// one the page's own markup shows (settleSeed).
+// ResolveSeed returns each declared name's request value or default, ready for JSON.
 func ResolveSeed(ctx context.Context, names []string) map[string]any {
 	bag := valuesFrom(ctx)
 	out := make(map[string]any, len(names))
@@ -55,8 +39,6 @@ func ResolveSeed(ctx context.Context, names []string) map[string]any {
 	for _, n := range names {
 		d, ok := declRegistry[n]
 		if !ok || d.computed {
-			// Unregistered names have no default; computed slices are
-			// derived client-side and never seeded.
 			continue
 		}
 		val := d.def
@@ -72,12 +54,6 @@ func ResolveSeed(ctx context.Context, names []string) map[string]any {
 	return out
 }
 
-// settleSeed runs a seeded value through render.SettleIDs. The render
-// that seeded it ran inside an id region, so a derived id in it is
-// still a placeholder while the page's markup already shows the id;
-// seeded as is, the client would write the placeholder back into the
-// DOM. A string-kinded value keeps its type; any other value whose
-// JSON holds a placeholder is seeded as the settled JSON.
 func settleSeed(ctx context.Context, v any) any {
 	if !render.HasIDScope(ctx) {
 		return v
@@ -89,7 +65,7 @@ func settleSeed(ctx context.Context, v any) any {
 	switch rv.Kind() {
 	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
-		return v // no string in it to hold an id
+		return v
 	}
 	if rv.Kind() == reflect.String {
 		s := rv.String()
@@ -108,12 +84,6 @@ func settleSeed(ctx context.Context, v any) any {
 	return v
 }
 
-// referencedNames gathers every name a seed resolves: the names the
-// html references, all app-global names, and every DECLARED route.*
-// name once routeSeedDue opts the family in. The route family joins
-// unconditionally (not only when the scan sees it) because the scan
-// cannot decompose a data-cui-computed-deps list naming route.path,
-// and a partial's scanned html cannot see a binding in a KEPT layer.
 func referencedNames(ctx context.Context, html string) []string {
 	names := append(ScanReferenced(html), GlobalNames()...)
 	if routeSeedDue(ctx, html) {
@@ -122,19 +92,11 @@ func referencedNames(ctx context.Context, html string) []string {
 	return names
 }
 
-// SeedFor is the host convenience: scan the page for referenced names,
-// add all app-global names, and resolve the combined seed in one call.
+// SeedFor resolves the seed for a full page: referenced, global and, when due, route slices.
 func SeedFor(ctx context.Context, html string) map[string]any {
 	return ResolveSeed(ctx, referencedNames(ctx, html))
 }
 
-// routeSeedDue is the wire gate for the route.* family (the opt-in
-// decision, 2026-09-26): the names join a seed only when the render
-// READ a route slice (the bag tracker Bind/BindAttr set), the chain
-// carries a RouteArea (MarkRouteArea, whose markup may bind anything),
-// or the html names one inside a data-cui-computed-deps list the
-// reference scan cannot decompose. A render that did none of that — a
-// marketing page, a blog — seeds no route.* at all.
 func routeSeedDue(ctx context.Context, html string) bool {
 	if b := valuesFrom(ctx); b != nil {
 		b.mu.Lock()
@@ -147,15 +109,9 @@ func routeSeedDue(ctx context.Context, html string) bool {
 	return routeDepRe.MatchString(html)
 }
 
-// routeDepRe matches a computed's dependency list that names a route.*
-// slice. The attribute is comma-joined signal names (applyComputed),
-// so "a,route.path" matches and "aroute.path" does not: the prefix is
-// anchored on a comma or the opening quote.
 var routeDepRe = regexp.MustCompile(`data-cui-computed-deps="(?:[^"]*?,)?route\.`)
 
-// MarkRouteArea marks the request's chain as carrying a RouteArea: the
-// area re-renders on every navigation the layer survives and its
-// markup can bind any route.* slice, so the family seeds.
+// MarkRouteArea marks the request's chain as carrying a RouteArea, so the route family seeds.
 func MarkRouteArea(ctx context.Context) {
 	if b := valuesFrom(ctx); b != nil {
 		b.mu.Lock()
@@ -174,13 +130,7 @@ func ScopeOf(name string) Scope {
 	return ScopePage
 }
 
-// SeedSplit resolves the seed for a partial (SPA-nav) render, split by
-// scope. The client merges page-scoped values unconditionally (fresh
-// page) but only seeds a global the first time it is seen (preserving
-// any value the user mutated on a previous page). Every DECLARED
-// route.* name joins unconditionally, so a binding in a KEPT layer
-// never goes stale and the page-scoped merge erases the previous
-// route's values (SeedRoute writes absent params as ”).
+// SeedSplit is SeedFor for a partial render, split into page and global values.
 func SeedSplit(ctx context.Context, html string) (page, global map[string]any) {
 	all := ResolveSeed(ctx, referencedNames(ctx, html))
 	page = map[string]any{}

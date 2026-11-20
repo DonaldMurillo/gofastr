@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, rows []map[string]any, total int, known bool, page int) render.HTML {
@@ -153,7 +154,7 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 		return ""
 	}
 	raw, ok := s.rawRows[id]
-	if !ok || cell(s.m.rowValue(raw, f.Name)) != cell(s.m.rowValue(row, f.Name)) {
+	if !ok || fieldtext.Cell(s.m.rowValue(raw, f.Name)) != fieldtext.Cell(s.m.rowValue(row, f.Name)) {
 		return ""
 	}
 	fb := &formBuilder{b: &RecordBuilder{ui: b.ui, entity: s.m.name, id: id}, m: s.m, row: raw, compact: true}
@@ -245,7 +246,7 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 		}
 		ids := make([]string, 0, len(rows))
 		for _, row := range rows {
-			if v := cell(s.m.rowValue(row, name)); v != "" {
+			if v := fieldtext.Cell(s.m.rowValue(row, name)); v != "" {
 				ids = append(ids, v)
 			}
 		}
@@ -271,7 +272,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		})
 	}
 	raw := m.rowValue(row, name)
-	val := cell(raw)
+	val := fieldtext.Cell(raw)
 	if f.Type == schema.Relation {
 		if val == "" {
 			return muted()
@@ -291,7 +292,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	switch f.Type {
 	case schema.Bool:
 		variant := ui.StatusNeutral
-		if truthy(val) {
+		if fieldtext.Truthy(val) {
 			variant = ui.StatusSuccess
 		}
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: variant})
@@ -319,7 +320,7 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	}
 	raw := m.rowValue(row, name)
 	if f.Type == schema.Relation {
-		val := cell(raw)
+		val := fieldtext.Cell(raw)
 		if val == "" {
 			return ""
 		}
@@ -335,13 +336,13 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 // enum label, a formatted number or date, or the raw text; "" when empty.
 // List cells, exports and record views decorate this one mapping.
 func (m *meta) fieldText(ctx context.Context, f schema.Field, raw any) string {
-	val := cell(raw)
+	val := fieldtext.Cell(raw)
 	if val == "" {
 		return ""
 	}
 	switch f.Type {
 	case schema.Bool:
-		if truthy(val) {
+		if fieldtext.Truthy(val) {
 			return i18nui.EntityYes.Text(ctx)
 		}
 		return i18nui.EntityNo.Text(ctx)

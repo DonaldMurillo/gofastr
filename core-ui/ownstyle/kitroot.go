@@ -7,21 +7,11 @@ import (
 	"strings"
 )
 
-// RuleKitRootStyle is GOFASTR1817: a rule whose subject is a kit
-// component's root sets a property that is not a placement property.
-// The CSS half lives here (CheckKitRoots); which classes reach a kit
-// root is Go evidence the contracts pipeline supplies.
+// RuleKitRootStyle is GOFASTR1817.
 const RuleKitRootStyle = "GOFASTR1817"
 
-// IsPlacementProperty reports whether an owner may set the property on
-// a kit component's root: the GOFASTR1817 list. Placement decides
-// where the root sits and how much room it takes — grid-area,
-// grid-column*, grid-row*, margin*, align-self, justify-self,
-// place-self, order, flex, flex-grow, flex-shrink, flex-basis, width,
-// height, inline-size, block-size, the min-/max- forms of those four,
-// display, position, inset*, top, right, bottom, left, z-index and
-// visibility. Everything else (colour, padding, border, a custom
-// property) restyles the component, which is the kit's job.
+// IsPlacementProperty reports whether an owner may set the property on a kit
+// component's root.
 func IsPlacementProperty(p string) bool {
 	p = strings.ToLower(p)
 	for _, pre := range []string{"grid-column", "grid-row", "margin", "inset", "min-", "max-"} {
@@ -46,30 +36,17 @@ func IsPlacementProperty(p string) bool {
 	return false
 }
 
-// KitRoot names one subject that lands on a kit component's root: a
-// class passed to a kit component's Class field, or the sheet's own
-// :scope when the owner root is a kit root (Style.Scope(ui.Card(…))).
+// KitRoot names one subject that lands on a kit component's root.
 type KitRoot struct {
 	// Class is the local class name without the dot; empty for :scope.
 	Class string
 	// Scope marks the :scope subject.
 	Scope bool
-	// Via says how the subject reaches the kit root, for the message:
-	// "passed to ui.Card's Class at board/view.go:12".
+	// Via says how the subject reaches the kit root, for the message.
 	Via string
 }
 
-// CheckKitRoots runs GOFASTR1817's CSS half. For every style rule
-// whose subject compound targets one of roots — the compound's base is
-// the root's class, or :scope for a Scope root, or "&" nested inside a
-// rule that already targets it — each declaration of a non-placement
-// property is a finding at the declaration.
-//
-// The subject is the LAST compound of a selector: in ".column .count"
-// the rule styles .count, not the kit root. A compound's base is its
-// first class, so ".column.over-limit" and ".column:hover" target the
-// .column root. Rules inside @media / @container / @supports blocks
-// count; @keyframes steps do not (they are not selectors).
+// CheckKitRoots runs GOFASTR1817's CSS half.
 func CheckKitRoots(sheet *Stylesheet, roots []KitRoot) []Diagnostic {
 	if sheet == nil || len(roots) == 0 {
 		return nil
@@ -92,7 +69,6 @@ type kitRootChecker struct {
 	out   []Diagnostic
 }
 
-// walk visits one rule with the nearest enclosing style rule's matched root.
 func (c *kitRootChecker) walk(r *Rule, parent *KitRoot) {
 	if r.At && r.Name == "keyframes" {
 		return
@@ -125,8 +101,6 @@ func (c *kitRootChecker) walk(r *Rule, parent *KitRoot) {
 	}
 }
 
-// subjectRoot returns the root a style rule's selector list targets:
-// the first selector whose subject compound names one.
 func (c *kitRootChecker) subjectRoot(prel []Token, parent *KitRoot) *KitRoot {
 	for _, sel := range splitSelectors(prel) {
 		comps := splitCompounds(sel)
@@ -137,7 +111,6 @@ func (c *kitRootChecker) subjectRoot(prel []Token, parent *KitRoot) *KitRoot {
 		if len(subj) == 0 {
 			continue
 		}
-		// A nested "&…" subject is the parent's own element.
 		if subj[0].Type == TokenDelim && subj[0].Text == "&" {
 			if parent != nil {
 				return parent
@@ -163,10 +136,9 @@ func (c *kitRootChecker) subjectRoot(prel []Token, parent *KitRoot) *KitRoot {
 	return nil
 }
 
-// ClassNames returns every distinct local class name the sheet
-// declares — plain and base classes, flags (root flags included) and
-// group-value classes ("priority--urgent") — sorted. GOFASTR1815 counts
-// them when it lists an owned sheet as an upstream candidate.
+// ClassNames returns every distinct local class name the sheet declares —
+// plain and base classes, flags (root flags included) and group-value classes
+// ("priority--urgent") — sorted.
 func (m *SheetModel) ClassNames() []string {
 	if m == nil {
 		return nil

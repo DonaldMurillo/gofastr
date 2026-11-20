@@ -108,7 +108,9 @@ var frameworkRoutes = []struct {
 }{
 	{"/healthz", routeExact, "framework health check", nil, nil},
 	{"/readyz", routeExact, "framework readiness check", nil, nil},
-	{"/api/llm.md", routeExact, "the API entity index", appSpecHasEntities, nil},
+	{"/api/llm.md", routeExact, "the API entity index", func(bp AppSpec) bool {
+		return appSpecHasEntities(bp) && (bp.RouteApp().EntityLLMMD == nil || *bp.RouteApp().EntityLLMMD)
+	}, nil},
 	{"/robots.txt", routeExact, "uihost.WithRobots", nil, nil},
 	{"/sitemap.xml", routeExact, "uihost.WithSitemap", nil, nil},
 	{"/sitemap", routeUnder, "uihost.WithSitemap's sitemap parts", nil, []string{"/sitemap/{part}"}},

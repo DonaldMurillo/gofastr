@@ -6,42 +6,27 @@ import (
 	"strings"
 )
 
-// WebFont declares one self-hosted font family for the design system to
-// emit an `@font-face` rule for.
-//
-// Font loading belongs here rather than in each app for the reason every
-// other styling decision does: a generator or an app that writes its own
-// `@font-face` string owns a second styling surface, and the two drift.
-// It is also the shape `gofastr verify` flags (GOFASTR1801), this type
-// is the upstream primitive that finding asks for.
+// WebFont declares one self-hosted font family for the design system to emit
+// an `@font-face` rule for.
 type WebFont struct {
 	// Family is the CSS font-family name, e.g. "Bricolage Grotesque".
 	Family string
-	// File is the woff2 basename under Dir, without the extension. Empty
-	// derives it from Family: lowercased, non-alphanumerics collapsed to
-	// single hyphens ("Bricolage Grotesque" → "bricolage-grotesque").
+	// File is the woff2 basename under Dir, without the extension.
 	File string
-	// Weight is the CSS font-weight. Empty means "400 700", the variable
-	// range a self-hosted variable font almost always ships.
+	// Weight is the CSS font-weight.
 	Weight string
 	// Style is the CSS font-style. Empty means "normal".
 	Style string
-	// Display is the CSS font-display. Empty means "swap", text paints
-	// immediately in a fallback and swaps when the font arrives, which is
-	// the right default for body copy and headings alike.
+	// Display is the CSS font-display.
 	Display string
 	// Fallback, when its Local font is set, adds a second face named
-	// FallbackFamily(): a local font stretched to this font's metrics,
-	// so the swap to the web font does not move the page. Name it in the
-	// theme's font stack right after Family.
+	// FallbackFamily().
 	Fallback FontFallback
 }
 
-// FontFallback tunes a locally installed font to a web font's metrics
-// with the @font-face descriptors size-adjust, ascent-override,
-// descent-override and line-gap-override. Each override is a percentage
-// ("107.4%"); an empty or malformed one is left out. Tools such as
-// Capsize or fontaine compute the numbers from the two fonts' files.
+// FontFallback tunes a locally installed font to a web font's metrics with the
+// @font-face descriptors size-adjust, ascent-override, descent-override and
+// line-gap-override.
 type FontFallback struct {
 	// Local names the installed font to tune, e.g. "Arial".
 	Local           string
@@ -54,12 +39,11 @@ type FontFallback struct {
 // FallbackFamily is the family name of f's metric-tuned fallback face.
 func (f WebFont) FallbackFamily() string { return f.Family + " Fallback" }
 
-// Declared reports whether FontFaceCSS writes a rule for f: a family
-// that sanitizes to nothing gets none.
+// Declared reports whether FontFaceCSS writes a rule for f.
 func (f WebFont) Declared() bool { return f.FaceFamily() != "" }
 
 // FaceFamily is the family name FontFaceCSS writes for f, and the key it
-// deduplicates on: the first font per FaceFamily wins.
+// deduplicates on.
 func (f WebFont) FaceFamily() string { return quotedSlotSanitized(f.Family) }
 
 // FontURL is the URL f's woff2 file is served at under dir (empty uses
@@ -71,17 +55,12 @@ func FontURL(dir string, f WebFont) string {
 	return quotedSlotSanitized(strings.TrimSuffix(dir, "/")) + "/" + quotedSlotSanitized(f.fileName()) + ".woff2"
 }
 
-// DefaultFontDir is where the framework's static handler serves
-// self-hosted fonts from.
+// DefaultFontDir is where the framework's static handler serves self-hosted
+// fonts from.
 const DefaultFontDir = "/fonts"
 
-// FontFaceCSS renders one `@font-face` rule per font, deduplicated by
-// family and emitted in the order given, so the first declaration of a
-// family wins.
-//
-// dir is the URL prefix the woff2 files are served under; empty uses
-// [DefaultFontDir]. A font with no Family is skipped rather than
-// emitting a rule the browser will ignore.
+// FontFaceCSS renders one `@font-face` rule per font, deduplicated by family
+// and emitted in the order given, so the first declaration of a family wins.
 func FontFaceCSS(dir string, fonts ...WebFont) string {
 	var b strings.Builder
 	seen := make(map[string]bool, len(fonts))
@@ -113,8 +92,6 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 	return b.String()
 }
 
-// isPercent reports whether v is a non-negative CSS percentage such as
-// "107%" or "92.5%", the only grammar the metric descriptors take here.
 func isPercent(v string) bool {
 	num, ok := strings.CutSuffix(v, "%")
 	if !ok || num == "" || num[0] == '.' || num[len(num)-1] == '.' {
@@ -133,17 +110,6 @@ func isPercent(v string) bool {
 	return true
 }
 
-// quotedSlotSanitized returns v with every rune that could break out of
-// the single-quoted CSS string slots FontFaceCSS interpolates into
-// (family name, file basename, url prefix) removed. Inside a CSS string
-// only the closing quote, the escape character, and newlines can end
-// the string; ; { } < > are stripped too so the emitted rule stays
-// balanced even against a future refactor that drops the quotes. This
-// is FontFaceCSS's ingestion boundary: its inputs arrive file-borne
-// (gofastr.yml theme map → cmd/gofastr/internal/appgen/appspec.go), the same reason
-// ApplyTokens validates every token value (tokenmap.go cssDeclBreakers).
-// A family whose runes were stripped simply matches no font and the
-// browser falls back, which is where a typo'd family lands too.
 func quotedSlotSanitized(v string) string {
 	var b strings.Builder
 	b.Grow(len(v))
@@ -157,13 +123,6 @@ func quotedSlotSanitized(v string) string {
 	return b.String()
 }
 
-// bareSlotValue validates a value interpolated into an UNQUOTED
-// declaration slot (font-style / font-weight / font-display) and falls
-// back to the documented default when it carries anything outside the
-// bare-value grammar (letters, digits, space, hyphen): every legitimate
-// value — normal, italic, "oblique 40deg", "400 700", swap — fits it,
-// and a quote, brace, or semicolon is a breakout attempt that never
-// reaches the stylesheet. The font still renders, with the default.
 func bareSlotValue(v, fallback string) string {
 	if v == "" {
 		return fallback
@@ -178,8 +137,8 @@ func bareSlotValue(v, fallback string) string {
 	return v
 }
 
-// FontFamilies lists the distinct, non-empty families in declaration
-// order, for building the `--font-*` token values that reference them.
+// FontFamilies lists the distinct, non-empty families in declaration order,
+// for building the `--font-*` token values that reference them.
 func FontFamilies(fonts ...WebFont) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -193,9 +152,8 @@ func FontFamilies(fonts ...WebFont) []string {
 	return out
 }
 
-// SortedFontFamilies is [FontFamilies] in a stable alphabetical order,
-// for callers that need a deterministic set rather than the declaration
-// sequence.
+// SortedFontFamilies is [FontFamilies] in a stable alphabetical order, for
+// callers that need a deterministic set rather than the declaration sequence.
 func SortedFontFamilies(fonts ...WebFont) []string {
 	out := FontFamilies(fonts...)
 	sort.Strings(out)
@@ -209,12 +167,7 @@ func (f WebFont) fileName() string {
 	return FontSlug(f.Family)
 }
 
-// FontSlug converts a font family name to its conventional woff2
-// basename: lowercase, every run of non-alphanumeric characters becomes a
-// single hyphen, no leading or trailing hyphen.
-//
-//	"Bricolage Grotesque" → "bricolage-grotesque"
-//	"IBM Plex Mono"       → "ibm-plex-mono"
+// FontSlug converts a font family name to its conventional woff2 basename.
 func FontSlug(family string) string {
 	var b strings.Builder
 	b.Grow(len(family))

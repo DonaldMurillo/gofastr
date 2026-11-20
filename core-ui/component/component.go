@@ -10,72 +10,40 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
-// Component is the base interface for all UI components.
-// A component describes its appearance via Render.
+// Component is anything that renders HTML.
 type Component interface {
 	Render() render.HTML
 }
 
-// ContextComponent is the optional ctx-aware render interface.
-// Implementations receive the request context and can branch on
-// auth state, locale, or any other request-scoped value that isn't
-// loaded into struct fields by Load(ctx).
-//
-// The framework prefers RenderCtx over Render when both exist.
-// ContextComponent intentionally does NOT embed Component, a type
-// that only wants the ctx-aware shape can satisfy Component via the
-// ContextOnly{} embed below, avoiding the
-// `func (c) Render() HTML { return c.RenderCtx(context.Background()) }`
-// boilerplate.
+// ContextComponent renders with the request context; it is preferred over Render.
 type ContextComponent interface {
 	RenderCtx(ctx context.Context) render.HTML
 }
 
-// ContextOnly is a zero-byte embed helper for components that only
-// want to implement RenderCtx. Embedding it provides a Render()
-// satisfying the Component interface; that Render is never called
-// when the type also implements RenderCtx (the framework dispatch
-// prefers RenderCtx and skips Render in that case).
-//
-//	type Home struct {
-//	    component.ContextOnly
-//	    // ... your fields
-//	}
-//	func (h *Home) RenderCtx(ctx context.Context) render.HTML { ... }
-//
-// No need to write a Render() stub on Home, ContextOnly provides one.
+// ContextOnly gives a RenderCtx-only type the Render that Component needs.
 type ContextOnly struct{}
 
-// Render satisfies the Component interface. In practice it is never
-// called: SafeRenderCtx and Screen.RenderCtx detect RenderCtx via a
-// structural type check and route to it directly.
+// Render satisfies Component; it is never called.
 func (ContextOnly) Render() render.HTML { return "" }
 
-// InteractiveComponent extends Component with event handling.
-// Components that implement this interface can respond to user events.
+// InteractiveComponent is a Component whose Actions registers event handlers.
 type InteractiveComponent interface {
 	Component
 	Actions()
 }
 
-// ComponentBase provides common fields for all components.
-// Embed this in your component structs for convenience.
+// ComponentBase holds the ID and Class most components carry.
 type ComponentBase struct {
 	ID    string
 	Class string
 }
 
-// RenderComponent calls the Render method of any Component and returns its HTML.
-// This is a convenience function for composing components.
+// RenderComponent renders c with a background context.
 func RenderComponent(c Component) render.HTML {
 	return RenderComponentCtx(context.Background(), c)
 }
 
-// RenderComponentCtx renders a component with a request context, preferring
-// RenderCtx when the component implements ContextComponent (the same
-// preference the screen/layout dispatch uses). Falls back to Render otherwise.
-// Lets per-request chrome (e.g. role-aware nav in a drawer widget) see the
-// signed-in user instead of a background context.
+// RenderComponentCtx renders c, through RenderCtx when it is a ContextComponent.
 func RenderComponentCtx(ctx context.Context, c Component) render.HTML {
 	if cc, ok := c.(ContextComponent); ok {
 		return cc.RenderCtx(ctx)
@@ -89,17 +57,14 @@ func IsInteractive(c Component) bool {
 	return ok
 }
 
-// Widget is a self-contained interactive unit that serves as a hydration boundary.
-// Widgets are hydrated incrementally on first user interaction.
-// Components inside a Widget are compiled to JS for client-side execution.
+// Widget is a hydration boundary around a component and its actions.
 type Widget struct {
-	ID        string          // unique widget ID (used for data-widget attribute)
-	Component Component       // the component that renders this widget
-	Actions   *ActionRegistry // extracted actions from the component
+	ID        string
+	Component Component
+	Actions   *ActionRegistry
 }
 
-// NewWidget creates a new widget wrapping a component.
-// It automatically extracts actions if the component implements InteractiveComponent.
+// NewWidget wraps comp with a slugged id and its extracted actions.
 func NewWidget(id string, comp Component) *Widget {
 	return &Widget{
 		ID:        SlugifyWidgetID(id),
@@ -108,15 +73,7 @@ func NewWidget(id string, comp Component) *Widget {
 	}
 }
 
-// SlugifyWidgetID maps a widget ID onto the [A-Za-z0-9_-] alphabet the
-// runtime's data-behavior gate honours (runtime.js matches
-// `/__gofastr/widget/[A-Za-z0-9_-]+.js` exactly and refuses anything
-// else, because a loosened value is a script-loading sink). Any rune
-// outside that alphabet becomes "-", so an ID built from a display
-// name, path segment, or other request-derived text still hydrates:
-// emitting the raw value would make the browser gate silently drop the
-// behavior script and the widget would never hydrate. Valid IDs pass
-// through unchanged.
+// SlugifyWidgetID maps every rune outside [A-Za-z0-9_-] to '-'.
 func SlugifyWidgetID(id string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -128,9 +85,7 @@ func SlugifyWidgetID(id string) string {
 	}, id)
 }
 
-// Render renders the widget's component wrapped in a data-widget attribute.
-// Output: <div data-widget="{id}">{component.Render()}</div>, plus
-// data-behavior when the component has actions.
+// Render renders the component in a data-widget div, with data-behavior when it has actions.
 func (w *Widget) Render() render.HTML {
 	return w.RenderCtx(context.Background())
 }
@@ -149,22 +104,17 @@ func (w *Widget) IsInteractive() bool {
 	return w.Actions != nil && w.Actions.HasActions()
 }
 
-// ErrorBoundary is implemented by components that provide a custom error fallback.
+// ErrorBoundary is a component with its own render-panic fallback.
 type ErrorBoundary interface {
 	RenderError(err error) render.HTML
 }
 
-// SafeRender calls Render() with panic recovery. If the component panics,
-// it returns a fallback error UI. Components implementing ErrorBoundary
-// get a custom fallback; others get a generic red-bordered box.
+// SafeRender renders c, turning a panic into a fallback and an error.
 func SafeRender(c Component) (html render.HTML, err error) {
 	return SafeRenderCtx(context.Background(), c)
 }
 
-// SafeRenderCtx is the context-aware variant of SafeRender. If c
-// implements ContextComponent its RenderCtx(ctx) is called; otherwise
-// Render() is called. Panic recovery and ErrorBoundary handling are
-// identical to SafeRender.
+// SafeRenderCtx is SafeRender with the request context.
 func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -173,11 +123,6 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 			if eb, ok := c.(ErrorBoundary); ok {
 				html = eb.RenderError(err)
 			} else {
-				// Build the fallback through the auto-escaper so an
-				// attacker-influenced panic message can't inject markup, and
-				// scrub it the same way a log line is scrubbed: the panic
-				// value can carry request bytes, and this box is served to
-				// the client.
 				html = render.Tag(
 					"div",
 					map[string]string{"class": "cui-render-error", "role": "alert"},

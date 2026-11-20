@@ -1,27 +1,12 @@
-// Package theme provides the framework's default page theme, the
-// visual identity for any app built via core-ui (or its consumers
-// like kiln). Hosts get token-driven palette/spacing/typography out
-// of the box, plus utility classes (kiln-section, kiln-card,
-// kiln-button, kiln-grid-*, …) that reference canonical theme
-// tokens.
-//
-// Customize the value returned by PageTheme and pass it to PageCSS
-// to emit the host stylesheet with the overridden tokens.
+// Package theme is the kiln page theme and its token-driven kiln- utility classes.
 package theme
 
 import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
-// PageTheme returns the page theme. Overrides directly mutate the
-// returned theme value before it's emitted; callers compose by
-// assigning to the typed fields:
-//
-//	t := theme.PageTheme()
-//	t.Colors.Primary = style.Color{Name: "primary", Value: "#0F172A"}
-//	css := theme.PageCSS(t)
+// PageTheme returns the page theme; override a token by assigning its typed field.
 func PageTheme() style.Theme {
 	t := style.DefaultTheme()
 	t.Name = "page"
-	// Page-theme adjustments to the canonical palette.
 	t.Colors.Background = style.Color{Name: "background", Value: "#FAF9F6"}
 	t.Colors.SurfaceSoft = style.Color{Name: "surface-soft", Value: "#F5F4F1"}
 	t.Colors.Border = style.Color{Name: "border", Value: "#E5E1DA"}
@@ -35,22 +20,10 @@ func PageTheme() style.Theme {
 	return t
 }
 
-// PageCSS builds the kiln-page stylesheet by resolving canonical
-// theme tokens through core-ui/style. Output:
-//
-//  1. :root CSS custom properties (every canonical token)
-//  2. body.kiln-app reset + base typography
-//  3. Layout primitives:  kiln-container[-{sm,md,lg}], kiln-section[-{soft,inverse}]
-//  4. Stacks/rows/grids:  kiln-stack[-{sm,lg}], kiln-row[-{end,between,wrap}], kiln-grid-{2,3,4,auto}
-//  5. Components:         kiln-card[-soft], kiln-button[-{secondary,ghost}], kiln-nav,
-//     kiln-footer, kiln-pill, kiln-quote, kiln-hero, kiln-eyebrow
-//  6. Default styles for native form controls + tables on body.kiln-app
-//
-// The framework owns these kiln- class names.
+// PageCSS returns t's :root custom properties followed by the kiln- utility rules.
 func PageCSS(t style.Theme) string {
 	ss := style.NewStyleSheet(t)
 
-	// Reset + base.
 	ss.Rule("*, *::before, *::after").Set("box-sizing", "border-box").End()
 	ss.Rule("body.kiln-app").
 		Set(
@@ -69,7 +42,6 @@ func PageCSS(t style.Theme) string {
 		Set("margin", "0", "line-height", "var(--leading-tight, 1.2)", "letter-spacing", "var(--tracking-tight, -0.02em)").
 		End()
 
-	// Layout containers.
 	ss.Rule(".kiln-page").Set("min-height", "100vh").End()
 	for _, c := range []struct{ cls, width string }{
 		{"kiln-container", "1200px"},
@@ -89,7 +61,6 @@ func PageCSS(t style.Theme) string {
 		End()
 	ss.Rule(".kiln-section-inverse a").Set("color", "{colors.primary-fg}").End()
 
-	// Stacks / rows / grids.
 	for _, s := range []struct{ cls, gap string }{
 		{"kiln-stack", "{spacing.md}"},
 		{"kiln-stack-sm", "{spacing.sm}"},
@@ -117,7 +88,6 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-grid-4").Set("display", "grid", "grid-template-columns", "repeat(4, 1fr)", "gap", "{spacing.md}").End()
 	ss.Rule(".kiln-grid-auto").Set("display", "grid", "grid-template-columns", "repeat(auto-fit, minmax(220px, 1fr))", "gap", "{spacing.md}").End()
 
-	// Typography helpers.
 	ss.Rule(".kiln-center").Set("text-align", "center").End()
 	ss.Rule(".kiln-muted").Set("color", "{colors.text-muted}").End()
 	ss.Rule(".kiln-subtle").Set("color", "{colors.text-subtle}").End()
@@ -135,7 +105,6 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-title").Set("font-size", "calc(var(--text-3xl, 1.875rem) * 1.2)", "font-weight", "{font-weight.bold}").End()
 	ss.Rule(".kiln-h2").Set("font-size", "{text.2xl}", "font-weight", "{font-weight.bold}").End()
 
-	// Hero.
 	ss.Rule(".kiln-hero").
 		Set("text-align", "center", "padding", "calc({spacing.3xl} * 1.5) {spacing.lg} {spacing.3xl}").
 		End()
@@ -146,7 +115,6 @@ func PageCSS(t style.Theme) string {
 		Set("font-size", "{text.lg}", "color", "{colors.text-muted}", "max-width", "60ch", "margin", "0 auto {spacing.lg}").
 		End()
 
-	// Cards.
 	ss.Rule(".kiln-card").
 		Set(
 			"background", "{colors.surface}",
@@ -165,7 +133,6 @@ func PageCSS(t style.Theme) string {
 		).
 		End()
 
-	// Buttons.
 	ss.Rule(".kiln-button").
 		Set(
 			"display", "inline-flex",
@@ -189,7 +156,6 @@ func PageCSS(t style.Theme) string {
 		Set("background", "transparent", "color", "{colors.text}", "border-color", "transparent").
 		End()
 
-	// Nav / footer.
 	ss.Rule(".kiln-nav").
 		Set(
 			"display", "flex",
@@ -212,7 +178,6 @@ func PageCSS(t style.Theme) string {
 		).
 		End()
 
-	// Pills / badges.
 	ss.Rule(".kiln-pill").
 		Set(
 			"display", "inline-flex",
@@ -231,7 +196,6 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-badge-warning").Set("color", "{colors.warning}", "font-weight", "{font-weight.semibold}").End()
 	ss.Rule(".kiln-badge-danger").Set("color", "{colors.danger}", "font-weight", "{font-weight.semibold}").End()
 
-	// Quote.
 	ss.Rule(".kiln-quote").
 		Set(
 			"font-size", "{text.2xl}",
@@ -244,7 +208,6 @@ func PageCSS(t style.Theme) string {
 		).
 		End()
 
-	// Native form controls + tables.
 	formInputs := `body.kiln-app input[type="text"],` +
 		`body.kiln-app input[type="email"],` +
 		`body.kiln-app input[type="number"],` +

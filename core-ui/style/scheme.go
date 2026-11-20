@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-// schemeCSS emits the theme's color-scheme declarations and its dark
-// palette: the root blocks keyed on <html data-color-scheme> with the
-// prefers-color-scheme fallback, then the subtree blocks a
-// data-color-scheme on any other element selects. The rules are
-// ui.styling/scheme-is-declared-in-css and
-// ui.styling/subtree-scheme-override. opts are the compiled component
-// option lines a subtree re-declares; tokenCSS passes nil so a theme's
-// identity never depends on the linked compiler.
 func schemeCSS(t Theme, opts []string) string {
 	dark, code := t.DarkColors, t.DarkCode
 	if len(dark) == 0 {
@@ -30,9 +22,6 @@ func schemeCSS(t Theme, opts []string) string {
 		light[kv.Key] = kv.Value
 	}
 	darkLines, lightLines := paletteLines(dark, code, light)
-	// A custom property's var() computes on the element that declares
-	// it, so a subtree re-declares every root line that reads another
-	// variable: those would otherwise arrive resolved against the root.
 	var rebind []string
 	for _, kv := range tokens {
 		if name, ok := strings.CutPrefix(kv.Key, "color-"); ok && dark[name] != "" {
@@ -89,10 +78,6 @@ func paletteLines(colors, code, light map[string]string) (darkLines, lightLines 
 	}
 	return darkLines, lightLines
 }
-
-// darkCodeCSS is the dark syntax palette of a theme whose page stays
-// light: a code-only dark palette does not flip the page, so it carries
-// no paint lines and no color-scheme.
 func darkCodeCSS(code map[string]string) string {
 	lines, _ := paletteLines(nil, code, nil)
 	var b strings.Builder

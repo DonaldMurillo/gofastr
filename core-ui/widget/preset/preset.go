@@ -1,9 +1,4 @@
-// Package preset bundles the most common widget surfaces as opinionated
-// builders on top of widget.Definition. Each is a one-call shortcut so
-// hosts don't reach for the raw builder for normal cases.
-//
-// Every preset returns a *widget.Builder that the host can further
-// customize (slots, signals, RPCs) before .Build()ing.
+// Package preset holds one-call widget builders; each returns a *widget.Builder to customise further.
 package preset
 
 import (
@@ -16,83 +11,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// FloatingPanel is a corner-anchored, persistent panel, useful for
-// chat surfaces, devtools, build status. Defaults to BottomRight.
-// Backdrop=false (it floats above the page without dimming it). The
-// root paints the panel surface (Definition.Surface).
+// FloatingPanel is a persistent bottom-right panel with no backdrop.
 func FloatingPanel(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.BottomRight).
 		Surface()
 }
 
-// Modal is a center-mounted dialog with a backdrop. Closes on ESC and
-// click-outside by default. Use for confirmation dialogs, agent-config
-// pickers, "are you sure?" flows.
+// Modal is a centered dialog with a backdrop that closes on Escape and click-outside.
 func Modal(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.Center)
 }
 
-// ToastStack registers an empty toast stack widget. Toasts are
-// pushed entirely on the client, either via the JS API
-// `window.__gofastr.toast({...})`, or by setting an
-// `X-Gofastr-Toast: <json>` header on the response of any
-// `data-cui-rpc` handler. The runtime appends the rendered item into
-// this widget's stack container and handles the TTL / dismiss
-// lifecycle.
-//
-// No SSE, no server-side queue, no per-page connection cost. The
-// stack lives client-side; reload starts fresh.
-//
-// Wiring is a one-liner:
-//
-//	stack := preset.ToastStack("site-toasts").Build()
-//	widget.Mount(r, &stack)
-//
-// Server code that wants to surface a toast on an RPC response:
-//
-//	ui.AddToastSuccess(w, "Saved", "Your changes are persisted.", 5000)
-//
-// Or from the client:
-//
-//	window.__gofastr.toast({variant:"success", title:"Saved", ttl:5000});
-//
-// The stack sits bottom-right, clear of a page's header actions;
-// Position can be overridden after the preset returns. Backdrop is
-// intentionally OFF, toasts are non-blocking.
+// ToastStack is an empty bottom-right stack the runtime appends toasts into.
 func ToastStack(name string) *widget.Builder {
-	// No custom Skeleton, the framework's defaultSkeleton picks up
-	// whatever Position the caller chose via .Mount(). The slot
-	// renders the empty `data-cui-toast-stack="<name>"` container
-	// the runtime appends items into.
 	return widget.New(name).
 		Mount(widget.BottomRight).
 		Slot("items", clientToastSlot{name: name})
 }
 
-// ToastTemplate is the registry name of the row template a kit
-// registers (registry.RegisterTemplate) for the toasts the
-// headless-feedback module builds at runtime: the X-Gofastr-Toast
-// header path and window.__gofastr.toast. ToastSlotHTML renders the
-// registered template inside the stack container, and the module
-// clones a row from it, so every class and glyph a runtime toast wears
-// is the kit's and the module names hooks only. With no template
-// registered the module builds a bare, hook-only row.
+// ToastTemplate is the registry name of the toast row template a kit registers.
 const ToastTemplate = "toast-stack"
 
-// ConfirmTemplate is the registry name of the dialog a kit registers
-// (registry.RegisterTemplate) for data-cui-confirm. The runtime's
-// confirm module clones it for every gated control, fills the parts it
-// names by hook (data-cui-confirm-part="title|message|accept|
-// accept-danger|cancel") and opens it modal, so a destructive action
-// asks in the kit's own dialog instead of the browser's. With no
-// template registered the module falls back to window.confirm.
+// ConfirmTemplate is the registry name of the data-cui-confirm dialog a kit registers.
 const ConfirmTemplate = "confirm-dialog"
 
-// ConfirmTemplateHTML renders the registered confirm dialog inside the
-// inert <template data-cui-confirm-dialog> the runtime clones from, or
-// nothing when no kit registered one. The host emits it once per page.
+// ConfirmTemplateHTML wraps the registered confirm dialog in <template data-cui-confirm-dialog>, or is "".
 func ConfirmTemplateHTML(ctx context.Context) render.HTML {
 	tpl, ok := registry.Template(ctx, ConfirmTemplate)
 	if !ok || tpl == "" {
@@ -101,16 +46,9 @@ func ConfirmTemplateHTML(ctx context.Context) render.HTML {
 	return render.Tag("template", map[string]string{"data-cui-confirm-dialog": ""}, tpl)
 }
 
-// ToastSlotHTML renders the stack container the runtime appends toast
-// rows into: the kernel's data-cui-toast-stack name, the style id the
-// kit's stack sheet keys on, and the kit's row template when one is
-// registered. This package ships no class of its own on it.
+// ToastSlotHTML renders the stack container, with the kit's row template when one is registered.
 func ToastSlotHTML(ctx context.Context, name string) render.HTML {
 	var b strings.Builder
-	// Escape the widget name before interpolating into the HTML
-	// attribute: callers control the name but a `"` would break out
-	// of the attribute. core-ui/widget's escAttr is unexported, so
-	// render.Escape (same set of replacements) does it.
 	b.WriteString(`<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="`)
 	b.WriteString(render.Escape(name))
 	b.WriteString(`">`)
@@ -121,9 +59,7 @@ func ToastSlotHTML(ctx context.Context, name string) render.HTML {
 	return render.HTML(b.String())
 }
 
-// IsToastStack reports whether d is a stack this package built: a
-// host that mounts a default stack when the app mounted none asks
-// this, so it never mounts a second beside the app's own.
+// IsToastStack reports whether d is a stack ToastStack built.
 func IsToastStack(d *widget.Definition) bool {
 	if d == nil {
 		return false
@@ -136,8 +72,6 @@ func IsToastStack(d *widget.Definition) bool {
 	return false
 }
 
-// clientToastSlot renders the stack container through ToastSlotHTML.
-// The runtime appends items into this element when a toast fires.
 type clientToastSlot struct{ name string }
 
 func (s clientToastSlot) Render() render.HTML {
@@ -153,14 +87,7 @@ var (
 	_ component.ContextComponent = clientToastSlot{}
 )
 
-// Drawer is an edge-mounted sliding panel. Defaults to the left edge;
-// pass widget.EdgeRight to flip. Includes a backdrop, closes on
-// Escape, and closes on click-outside, matches Modal's dismiss
-// affordances. Set the corresponding fields back to false after
-// .Build() if a drawer needs to behave as a non-dismissible panel.
-//
-// Role defaults to "dialog" so screen readers announce the drawer
-// like a modal, overrideable via .Role("…") on the builder.
+// Drawer is a left-edge dialog panel with a backdrop that closes on Escape and click-outside.
 func Drawer(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.Edge).
@@ -169,25 +96,13 @@ func Drawer(name string) *widget.Builder {
 		Role("dialog")
 }
 
-// Banner is a top-anchored persistent strip. Useful for build progress,
-// "agent thinking" indicators, version-mismatch warnings.
+// Banner is a persistent strip along the top of the page.
 func Banner(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.Top)
 }
 
-// BottomSheet is a mobile-friendly bottom-edge variant of Drawer.
-// Same dismiss affordances (backdrop + ESC + click-outside) plus a
-// pointer-driven drag-to-dismiss gesture: the chrome renders a
-// visible drag handle bar at the top of the panel, and the runtime
-// closes the sheet when the user drags past ~80px or releases with
-// a downward velocity above ~0.5 px/ms. Snaps back otherwise.
-//
-// Slide-from-bottom animation; the sheet rises at most ~75vh.
-//
-// Use for mobile detail panels, share sheets, action menus, any
-// content surface that on small screens makes more sense rising
-// from the bottom than sliding in from the left.
+// BottomSheet is a bottom-edge Drawer that the user can drag down to dismiss.
 func BottomSheet(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.Bottom).
@@ -197,40 +112,7 @@ func BottomSheet(name string) *widget.Builder {
 		DragDismiss()
 }
 
-// Popover is a click-triggered floating surface with no backdrop dim.
-// Hidden by default, opened with data-cui-open="<name>", and
-// dismisses on Escape or click-outside.
-//
-// Two placement modes share the same widget definition; the choice
-// is per-trigger:
-//
-//  1. Corner-anchored (default). Without extra attributes the popover
-//     renders at the widget's declared Position (TopRight by default;
-//     override via .Mount(widget.BottomLeft) etc). Predictable global
-//     placement, good for a toolbar "Share" / "Help" surface.
-//
-//  2. Trigger-anchored. Add data-cui-popover-anchor to the trigger
-//     button (with an optional preferred side, "top", "bottom",
-//     "left", "right", or "auto"). The runtime measures both rects
-//     after open and positions the popover next to the trigger; when
-//     the preferred side would overflow the viewport it auto-flips
-//     to the opposite. Use for inline per-row "more details"
-//     expanders or any UI where the popover should feel attached to
-//     its trigger.
-//
-// Both modes paint the same panel surface on the widget root
-// (Definition.Surface); only the anchored mode draws the arrow.
-//
-// Distinct from Modal in two ways:
-//
-//   - No backdrop. The popover floats above page content without
-//     dimming the rest of the UI, so the user keeps spatial context.
-//   - No focus trap. Tab moves out of the popover naturally. Use
-//     preset.Modal for richer surfaces that demand the user finish a
-//     flow before continuing.
-//
-// Typical use: a help panel, a per-row "more details" expand, a
-// utility palette opened by a toolbar button.
+// Popover is a hidden top-right panel with no backdrop, opened by data-cui-open and anchored to its trigger by data-cui-popover-anchor.
 func Popover(name string) *widget.Builder {
 	return widget.New(name).
 		Mount(widget.TopRight).

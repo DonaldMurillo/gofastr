@@ -2,9 +2,19 @@ primitive: entityui
 summary: The entity list, record and create screens drawn from the schema, and the handlers their forms post to beside the CRUD routes.
 code:
   - framework/entityui/
+  - internal/fieldtext/
 docs:
   - framework/docs/content/entityui.md
 invariants:
+  - id: generated-mutations-evict-dependent-screens
+    rule: Generated screens that read an entity wire its mutation responses through ui.InvalidateScreens, including nested lists, records and authored edit forms. An authored create still resets and stays; successful writes evict other dependent screen caches, refused writes do not. Parameterized screen routes use the documented wildcard selector to cover all cached record instances.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormInvalidatesDependentScreens
+      - test: cmd/gofastr/internal/appgen.TestStandaloneScreenInvalidatesEntityViews
+      - test: cmd/gofastr/internal/appgen.TestScreenInvalidationDependencies
+      - test: cmd/gofastr/internal/appgen.TestGeneratedEntityFormInvalidatesScreens
+    applies:
+      - cmd/gofastr/internal/appgen/appspec.go
   - id: scriptless-edit-is-opt-in
     rule: Without WithScriptlessEdits the record edit form and the masked-field Replace forms natively post to the CRUD item route; with it they post to <write base>/<id>/_save with the record page as back, and the runtime still PUTs to the CRUD item route either way.
     enforced_by:

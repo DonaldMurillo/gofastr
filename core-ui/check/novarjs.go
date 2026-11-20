@@ -9,31 +9,8 @@ import (
 	"strings"
 )
 
-// No-var JS lint, bans the legacy `var` keyword from the runtime
-// modules. We're an ES2020+ codebase (see runtime.js banner); `var`
-// brings hoisting and function-scoped surprises that `let` / `const`
-// don't. The check is intentionally narrow:
-//
-//   - Scans `core-ui/runtime/*.js` and `core-ui/runtime/src/*.js`, and
-//     through LintNoVarJSFiles every registered behaviour's module
-//     (RegisteredBehaviorSources): a module beside its Go package is a
-//     runtime module too.
-//   - Flags any line containing the `var ` keyword that isn't inside
-//     a string literal, a // line comment, or a /* */ block comment.
-//
-// A file can opt out via the `//check-novar:ignore-file` directive, a
-// comment line of its own (kept for emergency only, the codebase has
-// zero exemptions today).
-//
-// Run from a test:
-//
-//	res, err := check.LintNoVarJS("core-ui/runtime")
-//	if err != nil { ... }
-//	if res.HasErrors() { t.Error(res.Error()) }
-
-// LintNoVarJS scans .js files at dir (non-recursive) and reports any
-// `var` declaration found in executable code (not in comments / string
-// literals).
+// LintNoVarJS scans .js files at dir (non-recursive) and reports any `var` declaration found in
+// executable code (not in comments / string literals).
 func LintNoVarJS(dir string) (*Result, error) {
 	result := &Result{}
 	entries, err := os.ReadDir(dir)
@@ -56,17 +33,11 @@ func LintNoVarJS(dir string) (*Result, error) {
 	return result, nil
 }
 
-// LintNoVarJSRecursive walks dir + every subdirectory, running
-// LintNoVarJS on each. Skips vendor/, node_modules/, hidden dirs, and
-// testdata/.
+// LintNoVarJSRecursive walks dir + every subdirectory, running LintNoVarJS on each.
 func LintNoVarJSRecursive(root string) (*Result, error) {
 	return lintRecursive(root, LintNoVarJS)
 }
 
-// reNoVarIgnoreDirective is the opt-out, anchored the way
-// reCSPIgnoreDirective is: a comment line holding the directive and
-// nothing else. It was a whole-file strings.Contains, so a file quoting
-// the directive in a string or in prose opted out of the lint.
 var reNoVarIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-novar:ignore-file[ \t]*\r?$`)
 
 func scanJSFileForVar(path string, result *Result) error {
@@ -78,8 +49,6 @@ func scanJSFileForVar(path string, result *Result) error {
 		return nil
 	}
 
-	// Strip comments + string literals to a sanitized stream, keeping
-	// line breaks so reported line numbers match the original file.
 	sanitized := stripJS(string(raw), blankJSLiterals)
 	scanner := bufio.NewScanner(strings.NewReader(sanitized))
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
@@ -95,9 +64,6 @@ func scanJSFileForVar(path string, result *Result) error {
 	return scanner.Err()
 }
 
-// containsVarKeyword reports whether the sanitized line contains a
-// standalone `var` keyword. Requires word boundaries on both sides so
-// identifiers like `varietyName` or `myvar` don't false-positive.
 func containsVarKeyword(line string) bool {
 	idx := 0
 	for {
@@ -107,12 +73,10 @@ func containsVarKeyword(line string) bool {
 		}
 		start := idx + hit
 		end := start + 3
-		// Boundary before: start of line, or a non-identifier char.
 		if start > 0 && isJSIdentChar(line[start-1]) {
 			idx = end
 			continue
 		}
-		// Boundary after: end of line, or a non-identifier char.
 		if end < len(line) && isJSIdentChar(line[end]) {
 			idx = end
 			continue
@@ -121,10 +85,6 @@ func containsVarKeyword(line string) bool {
 	}
 }
 
-// isJSIdentChar reports whether c can be part of a JS identifier
-// (alpha-numeric, underscore, or dollar, ASCII-only for the lint;
-// unicode identifiers are vanishingly rare in our runtime and would
-// false-positive only by matching `varX` where X is a non-ASCII letter).
 func isJSIdentChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') ||
 		(c >= 'A' && c <= 'Z') ||
@@ -132,12 +92,6 @@ func isJSIdentChar(c byte) bool {
 		c == '_' || c == '$'
 }
 
-// templateExprEnd returns the body of a template interpolation starting at
-// i (just past the "${") and the index of its closing brace.
-//
-// Brace counting alone is not enough: a brace inside a string or a comment
-// is not a brace. Scanning those the same way the main loop does is what
-// stops `${ "}" }` from ending one character early.
 func templateExprEnd(src string, i int) (body string, end int) {
 	start := i
 	depth := 1
@@ -191,7 +145,6 @@ const (
 	blankJSLiterals jsLiteralMode = true
 )
 
-// stripJS blanks comments and optionally literals without changing byte offsets.
 func stripJS(src string, mode jsLiteralMode) string {
 	out := []byte(src)
 	prev := -1
@@ -290,8 +243,6 @@ func stripJSQuoted(src string, out []byte, start int, mode jsLiteralMode) int {
 	return i
 }
 
-// regexLiteralStartsAt judges a slash by the previous significant code byte.
-// Callers exclude slashes immediately following a string or regex operand.
 func regexLiteralStartsAt(src string, prev int) bool {
 	if prev < 0 {
 		return true
@@ -307,8 +258,6 @@ func regexLiteralStartsAt(src string, prev int) bool {
 	return false
 }
 
-// regexLiteralEnd returns the offset past the closing slash, or the
-// terminating newline or EOF when a closing slash is absent.
 func regexLiteralEnd(s string, start int) int {
 	inClass := false
 	i := start + 1

@@ -285,6 +285,7 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		merged := map[string]any{"type": "object"}
 		props := map[string]any{}
 		var required []any
+		additional := false
 		// OpenAPI 3.1 allows sibling properties next to allOf; merge
 		// the node's own schema last so it wins.
 		own := map[string]any{}
@@ -323,6 +324,7 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if rq, ok := pm["required"].([]any); ok {
 				required = append(required, rq...)
 			}
+			additional = additional || oaAllowsAdditionalProperties(pm)
 		}
 		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
 			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
@@ -331,6 +333,9 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			merged["properties"] = props
 			if len(required) > 0 {
 				merged["required"] = required
+			}
+			if additional {
+				merged["additionalProperties"] = true
 			}
 			node = merged
 		}
@@ -353,6 +358,17 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 	}
 	return node, nil
+}
+
+func oaAllowsAdditionalProperties(schema map[string]any) bool {
+	switch extra := schema["additionalProperties"].(type) {
+	case bool:
+		return extra
+	case map[string]any:
+		return true
+	default:
+		return false
+	}
 }
 
 // oaParamJoined reads a parameter's style and explode and reports whether

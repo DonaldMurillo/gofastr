@@ -3,7 +3,12 @@ summary: The app-spec reader and application and client generators.
 code:
   - cmd/gofastr/internal/appgen/[a-f]*.go
   - cmd/gofastr/internal/appgen/generate.go
-  - cmd/gofastr/internal/appgen/generate_[a-n]*.go
+  - cmd/gofastr/internal/appgen/generate_[abd-n]*.go
+  - cmd/gofastr/internal/appgen/generate_c[m-z]*.go
+  - cmd/gofastr/internal/appgen/generate_cli.go
+  - cmd/gofastr/internal/appgen/generate_cli_[a-n]*.go
+  - cmd/gofastr/internal/appgen/generate_cli_openapi_*.go
+  - cmd/gofastr/internal/appgen/generate_cli_[p-z]*.go
   - cmd/gofastr/internal/appgen/generate_output*.go
   - cmd/gofastr/internal/appgen/generate_[p-r]*.go
   - cmd/gofastr/internal/appgen/generate_sdk.go

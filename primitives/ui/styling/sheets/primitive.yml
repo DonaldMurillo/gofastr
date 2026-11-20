@@ -1,0 +1,57 @@
+primitive: ui.styling.sheets
+summary: The Go stylesheet builders of core-ui/style - StyleSheet, ComponentSheet (scoped to a component's data-cui-comp marker), the Contribute registry that kit packages add rules through, and the utility class CSS the extractor generates.
+code:
+  - core-ui/style/stylesheet.go
+  - core-ui/style/component_sheet.go
+  - core-ui/style/registry.go
+  - core-ui/style/classes.go
+  - core-ui/style/extract.go
+docs:
+  - framework/docs/content/ui-new-components.md
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: builder-misuse-panics
+    rule: StyleSheet panics on Set, Pseudo or Child before a Rule, on an odd prop/value count and on a property name outside the CSS identifier grammar, and its output is deterministic.
+    enforced_by:
+      - test: core-ui/style.TestStyleSheetSetBeforeRulePanics
+      - test: core-ui/style.TestStyleSheetPseudoBeforeRulePanics
+      - test: core-ui/style.TestStyleSheetSetOddCountPanics
+      - test: core-ui/style.TestStyleSheetRejectsNonIdentPropNames
+      - test: core-ui/style.TestStyleSheetDeterministic
+  - id: media-wraps-what-it-holds
+    rule: Rules built inside Media or Container stay inside that block, nested blocks keep their inner condition, and nothing after the block inherits it.
+    enforced_by:
+      - test: core-ui/style.TestStyleSheetMedia
+      - test: core-ui/style.TestStyleSheetMediaDoesNotLeak
+      - test: core-ui/style.TestStyleSheetNestedMediaPreservesInner
+      - test: core-ui/style.TestComponentSheetMediaScopesInner
+  - id: component-sheet-stays-in-its-component
+    rule: ComponentSheet prefixes every selector with its component's marker, & meaning the marked element itself, leaves @keyframes unprefixed, and refuses a selector it cannot scope, a & tail included, with ErrUnscopable.
+    enforced_by:
+      - test: core-ui/style.TestComponentSheetScopesSimpleSelectors
+      - test: core-ui/style.TestComponentSheetAmpersandRefersToMarkerElement
+      - test: core-ui/style.TestComponentSheetKeyframesUnprefixed
+      - test: core-ui/style.TestComponentSheetRejectsUnscopableSelectors
+      - test: core-ui/style.TestComponentSheetAmpersandRejectsUnscopableTail
+      - test: core-ui/style.TestComponentSheetMustBuildPanicMessage
+  - id: contributions-apply-in-order
+    rule: Contribute appends a builder that Apply runs on a sheet in registration order, and a nil builder or sheet is a no-op.
+    enforced_by:
+      - test: core-ui/style.TestContributeAndApply
+      - test: core-ui/style.TestContributeOrderApplied
+      - test: core-ui/style.TestContributeNilNoOp
+      - test: core-ui/style.TestApplyNilSheetNoOp
+  - id: utility-classes-are-identifiers
+    rule: GenerateUtilityCSS skips every class name outside the CSS identifier grammar, so a class cannot break out of its selector.
+    enforced_by:
+      - test: core-ui/style.TestClassNameRedSelectorBreakout
+      - test: core-ui/style.TestUtilityCSSEmitsVarRefs
+  - id: component-build-is-repeatable
+    rule: ComponentSheet.Build scopes a copy of the rule tree, so the builder stays editable and a second Build returns the same CSS.
+    enforced_by:
+      - test: core-ui/style.TestComponentSheetBuildCanBeRepeated
+  - id: selector-lists-split-at-top-level
+    rule: Pseudo, Child and ComponentSheet scoping split a selector list only at commas outside functions, brackets, strings, comments and CSS escapes.
+    enforced_by:
+      - test: core-ui/style.TestStyleSheetNestedSelectorLists
+      - test: core-ui/style.TestSplitTopLevelCommas

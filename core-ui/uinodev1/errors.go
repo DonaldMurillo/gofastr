@@ -2,13 +2,6 @@ package uinodev1
 
 import "fmt"
 
-// truncateErrInput clips s to at most maxErrInputLen bytes for safe
-// inclusion in an error message. It never panics on multi-byte rune
-// boundaries: it may split a rune, but the bytes themselves are valid
-// UTF-8 only because the input was; the truncation marker makes the
-// partial-rune visible. We prefer byte-level truncation here because
-// attacker payloads are often not valid UTF-8 and the cap is a hard
-// byte budget, not a rune budget.
 func truncateErrInput(s string) string {
 	if len(s) <= maxErrInputLen {
 		return s
@@ -16,10 +9,6 @@ func truncateErrInput(s string) string {
 	return s[:maxErrInputLen] + "...(truncated)"
 }
 
-// validationErr is the concrete error type every validator path returns.
-// It always carries a stable Op (the high-level check that failed) plus
-// a short human-facing reason. The reason never echoes more than
-// maxErrInputLen bytes of attacker-controlled input.
 type validationErr struct {
 	op     string
 	reason string
@@ -36,13 +25,9 @@ func errf(op, format string, args ...any) error {
 	return &validationErr{op: op, reason: fmt.Sprintf(format, args...)}
 }
 
-// cap error helpers -------------------------------------------------------
-
 func errCapExceeded(field string, got, max int) error {
 	return errf("cap", "%s exceeded: got %d, max %d", field, got, max)
 }
-
-// per-component validation helpers ---------------------------------------
 
 func errRequired(field string) error {
 	return errf("required", "%s is required", field)
@@ -124,7 +109,6 @@ func errDecode(underlying error) error {
 	if underlying == nil {
 		return nil
 	}
-	// Truncate any attacker-controlled content embedded in the message.
 	msg := underlying.Error()
 	if len(msg) <= maxErrInputLen*2 {
 		return &validationErr{op: "decode", reason: msg}

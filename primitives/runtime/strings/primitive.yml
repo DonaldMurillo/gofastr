@@ -1,0 +1,20 @@
+primitive: runtime.strings
+summary: The words the browser runtime says on its own - the runtime.* phrases, RegisterStrings for any module's say() phrases, and StringsJSON, the per-request gofastr-strings block of translations.
+code:
+  - core-ui/runtime/strings.go
+  - core-ui/runtime/phrases.go
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: say-calls-are-registered
+    rule: Every say() call in the repo's JS names a registered phrase with the same English.
+    enforced_by:
+      - test: core-ui/runtime/hosttest.TestRuntimeSayCallsMatchPhrases
+  - id: block-carries-only-translations
+    rule: StringsJSON holds only phrases whose text in the request's locale differs from their English, placeholders unfilled, and is nil when none does.
+    enforced_by:
+      - test: core-ui/runtime/hosttest.TestStringsJSONCarriesOnlyTranslations
+  - id: no-zero-phrase
+    rule: RegisterStrings panics on a zero Phrase.
+    enforced_by:
+      - test: core-ui/runtime.TestRegisterStringsRefusesAZeroPhrase

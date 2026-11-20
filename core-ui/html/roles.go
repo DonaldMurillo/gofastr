@@ -1,8 +1,5 @@
 package html
 
-// ARIA role constants for landmark, widget, and document structure roles.
-// See https://www.w3.org/TR/wai-aria-1.2/#role_definitions
-
 // Landmark roles.
 const (
 	RoleBanner        = "banner"

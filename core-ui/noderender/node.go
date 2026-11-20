@@ -12,34 +12,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// RenderNode walks a node.Node tree and emits HTML by dispatching to
-// the core-ui/html package. The IR (node.Node) is the JSON shape an
-// author (app spec codegen or Kiln) declares; the actual element
-// vocabulary, ARIA rules, attribute escaping, and accessibility defaults
-// all live in core-ui/html, this renderer does not reimplement them.
-//
-// Unknown / forbidden elements (or elements missing required ARIA
-// fields) fall back to a comment in dev so the gap is visible.
-// RenderNode treats the IR as UNTRUSTED. See RenderTrustedNode for the
-// first-party counterpart, and actionAttrs for what that distinction
-// costs an untrusted tree.
+// RenderNode renders an untrusted tree, dropping the attributes the runtime acts on.
 func RenderNode(n node.Node) render.HTML {
 	return renderNode(n, false)
 }
 
-// RenderTrustedNode is RenderNode for a FIRST-PARTY IR, one whose props
-// were authored by the developer, not by an agent or by anything derived
-// from user input.
-//
-// The only difference is that a trusted tree may name the action
-// attributes actionAttrs strips: data-action, data-action-* and
-// data-param-*. cmd/gofastr's app generator is the caller this
-// exists for, it compiles a developer's own YAML into IR and wires
-// button actions through exactly those attributes.
-//
-// Do NOT reach for this to silence a dropped attribute. If the IR came
-// from Kiln, a process module, an LLM, or any user-supplied document, it
-// is untrusted no matter how convenient the attribute would be.
+// RenderTrustedNode renders a first-party tree, keeping its action attributes.
 func RenderTrustedNode(n node.Node) render.HTML {
 	return renderNode(n, true)
 }
@@ -47,8 +25,6 @@ func RenderTrustedNode(n node.Node) render.HTML {
 func renderNode(n node.Node, trusted bool) render.HTML {
 	children := make([]render.HTML, 0, len(n.Children))
 	for _, c := range n.Children {
-		// Trust flows down the whole tree: a trusted root's children
-		// came from the same first-party document.
 		children = append(children, renderNode(c, trusted))
 	}
 	props := n.Props
@@ -58,39 +34,16 @@ func renderNode(n node.Node, trusted bool) render.HTML {
 	return renderKind(n.Kind, props, children)
 }
 
-// RenderKind renders a single node's own element from pre-rendered children,
-// without walking the subtree. Callers with a wider vocabulary (kiln/render's
-// typed design-system kinds) dispatch each child themselves and use this for
-// the one-to-one semantic HTML shell, so a typed kind nested inside a leaf
-// container still renders through its component.
+// RenderKind renders one untrusted node's element around pre-rendered children.
 func RenderKind(kind string, props map[string]any, children []render.HTML) render.HTML {
 	return renderKind(kind, withoutActionAttrs(props), children)
 }
 
-// RenderTrustedKind is RenderKind for a first-party IR. See
-// RenderTrustedNode for when that is and is not appropriate.
+// RenderTrustedKind is RenderKind for a first-party node.
 func RenderTrustedKind(kind string, props map[string]any, children []render.HTML) render.HTML {
 	return renderKind(kind, props, children)
 }
 
-// actionAttrs are the runtime-privileged attributes that only a
-// first-party IR may name. They are stripped at the untrusted entry
-// point rather than inside attrAllowed because the app generator
-// legitimately emits all three through the SAME renderer that Kiln uses
-// for agent-authored IR, the attribute name alone cannot tell the two
-// apart, so the caller has to.
-//
-// Why they matter: core-ui/runtime/frag/boot.js resolves the nearest
-// [data-component] ancestor and calls window.__gofastr.trigger() with
-// the action name and the data-param-* map. data-action-mount fires at
-// hydration and again on every gofastr:navigate, with no user
-// interaction. So an untrusted IR naming these picks a compiled server
-// action AND its arguments, and runs it on the host island's behalf.
-//
-// A registered behaviour's marker attribute (registry.IsMarkerAttr) is
-// stripped for the same reason: the module binds every element that
-// carries it, so a button labelled "View invoice" carrying
-// data-passkey-delete deletes the viewer's passkey on click.
 func withoutActionAttrs(props map[string]any) map[string]any {
 	if len(props) == 0 {
 		return props
@@ -104,8 +57,6 @@ func withoutActionAttrs(props map[string]any) map[string]any {
 			!registry.IsMarkerAttr(lower) {
 			continue
 		}
-		// Copy lazily: the overwhelming majority of nodes name none of
-		// these, and rewriting every props map would be pure garbage.
 		if out == nil {
 			out = make(map[string]any, len(props))
 			maps.Copy(out, props)
@@ -118,26 +69,15 @@ func withoutActionAttrs(props map[string]any) map[string]any {
 	return out
 }
 
-// renderKind dispatches each known IR kind to the matching
-// core-ui/html builder. All ID/Class plumbing and the agent's
-// arbitrary attrs (data-kiln-tool, etc.) flow through Attrs.
 func renderKind(kind string, props map[string]any, children []render.HTML) render.HTML {
 	switch kind {
 
-	// --- text leaves -----------------------------------------------
 	case "text":
 		s := textContentProp(props)
 		if s == "" && len(children) > 0 {
 			return render.Join(children...)
 		}
 		return render.Text(s)
-	// NOTE: there is intentionally no "raw" kind. The IR (world.Node) is
-	// agent-authored and untrusted, Kind is free-form with no whitelist,
-	// so a raw-HTML passthrough would be an XSS sink. A "raw" node falls
-	// through to the default branch below, which emits an escaped debug
-	// comment instead of live markup. (finding k-raw-1)
-
-	// --- structural containers -------------------------------------
 	case "div":
 		return html.Div(html.DivConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -150,9 +90,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 	case "section":
-		// Sections require label or labelledby for ARIA. We auto-label
-		// from id when neither is supplied so agent IRs don't trip
-		// elements' panic.
 		label, labelledBy := landmarkLabel(props, "")
 		if label == "" && labelledBy == "" {
 			if id := propString(props, "id"); id != "" {
@@ -196,7 +133,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
 		}, children...)
 
-	// --- text elements --------------------------------------------
 	case "heading":
 		level := min(max(propInt(props, "level", 1), 1), 6)
 		text := propString(props, "text")
@@ -236,20 +172,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "blockquote":
 		return html.Blockquote(textConfig(props), withTextProp(props, children)...)
 
-	// --- interactive ----------------------------------------------
 	case "button":
 		label := propString(props, "label")
 		if label == "" {
 			label = propString(props, "text")
 		}
-		// Carry agent action attrs through; html.Button merges them.
 		attrs := extraAttrs(props, "id", "class", "label", "text", "type")
 		if label == "" && attrs["aria-label"] == "" {
-			// html.Button panics on a labelless button, the right
-			// contract for hand-written Go, but IR props reach this
-			// path at request time (Kiln renders on every page load,
-			// recover middleware is opt-in). Degrade with a placeholder
-			// aria-label instead of crashing the render.
 			if attrs == nil {
 				attrs = html.Attrs{}
 			}
@@ -302,7 +231,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 				ExtraAttrs: extraAttrs(props, "id", "class", "for", "text"),
 			})
 		}
-		// children present, emit a manual <label> so we can include the markup
 		attrs := map[string]string{}
 		if v := propString(props, "id"); v != "" {
 			attrs["id"] = v
@@ -323,11 +251,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if method == "" {
 			method = "POST"
 		}
-		// Kiln-rendered forms target the world's CRUD endpoints, which
-		// accept JSON. Default enctype to application/json so the
-		// runtime's safe-by-default form interceptor knows to JSON-wrap
-		// the body instead of letting the browser submit it as
-		// urlencoded (which the CRUD handlers don't decode).
 		attrs := extraAttrs(props, "id", "class", "method", "action")
 		if _, set := attrs["enctype"]; !set {
 			if attrs == nil {
@@ -341,18 +264,10 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: attrs,
 		}, children...)
 	case "select":
-		// Options expected as children (kind: "option" with value/text props).
-		// html.Select takes a structured Options list, easier to
-		// fall through to manual <select> when the agent uses children.
 		return render.Tag("select", attrsFromProps(props,
 			"id", "class", "name", "required", "multiple",
 		), children...)
 	case "option":
-		// An <option> with no value attribute submits its text, while
-		// value="" submits the empty string. html.Option always writes
-		// the attribute (value="" is the placeholder idiom), so a node
-		// that names no value submits its text the way the bare
-		// element would; an explicit "" stays empty.
 		text := propString(props, "text")
 		value := text
 		if v, ok := props["value"]; ok && v != nil {
@@ -364,10 +279,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if name == "" {
 			name = "field"
 		}
-		// The value is the element's text, not an attribute (a value=""
-		// attribute is ignored and the box renders empty). Children are
-		// not rendered: a textarea child would close this element early
-		// and turn the children after it into live markup.
 		content := textContentProp(props)
 		return html.TextArea(html.TextAreaConfig{
 			Name: name, Content: content,
@@ -384,24 +295,18 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class", "legend"),
 		}, children...)
 
-	// --- media ----------------------------------------------------
 	case "image", "img":
 		if propString(props, "src") == "" {
 			return ""
 		}
-		// Width/height pass through via Attrs since ImageConfig keeps
-		// only Src/Alt as first-class fields.
 		return html.Image(html.ImageConfig{
 			Src: propString(props, "src"), Alt: propString(props, "alt"),
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			ExtraAttrs: extraAttrs(props, "id", "class", "src", "alt"),
 		})
 
-	// --- lists ----------------------------------------------------
 	case "list":
 		ordered := propBool(props, "ordered")
-		// Agent's children are typically already wrapped or are bare,
-		// auto-wrap any non-li children in <li>.
 		items := wrapAsListItems(children)
 		cfg := html.ListConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -421,11 +326,6 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class"),
 		}, children...)
 
-	// --- table ----------------------------------------------------
-	// Each element goes through its html builder, which owns the role
-	// (kept so a cards collapse that displays the table as blocks stays
-	// a table to assistive technology) and th's scope default. A cell's
-	// text prop is its content, as on the other text-bearing kinds.
 	case "table":
 		return html.Table(html.TableConfig{
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -453,15 +353,10 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		}, withTextProp(props, children)...)
 
 	default:
-		// Unknown kind, leave a debugging trace.
 		return render.Raw(fmt.Sprintf("<!-- noderender: unknown kind %q -->", render.Escape(kind)))
 	}
 }
 
-// --- helpers ----------------------------------------------------------
-
-// textContentProp is the value → text → content fallback the text leaf
-// and the textarea body share.
 func textContentProp(props map[string]any) string {
 	s := propString(props, "value")
 	if s == "" {
@@ -472,7 +367,6 @@ func textContentProp(props map[string]any) string {
 	}
 	return s
 }
-
 func textConfig(props map[string]any) html.TextConfig {
 	return html.TextConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),
@@ -502,9 +396,6 @@ func withTextProp(props map[string]any, children []render.HTML) []render.HTML {
 	return children
 }
 
-// wrapAsListItems takes free-floating children and wraps any that aren't
-// already <li> into ListItems so the agent can write `list` with bare
-// content children and still get valid markup.
 func wrapAsListItems(children []render.HTML) []render.HTML {
 	out := make([]render.HTML, 0, len(children))
 	for _, c := range children {
@@ -518,91 +409,32 @@ func wrapAsListItems(children []render.HTML) []render.HTML {
 	return out
 }
 
-// extraAttrs collects any prop keys NOT in the well-known list. These
-// flow into html.X via Attrs so agent-supplied data-kiln-tool,
-// data-kiln-args, aria-*, role, target, rel, etc. all reach the DOM.
-// allowedAttrs is the set of NON-data attribute names an untrusted IR may
-// emit. See attrAllowed for the full rule.
 var allowedAttrs = map[string]bool{
-	// identity + presentation
 	"id": true, "class": true, "title": true, "dir": true, "lang": true,
 	"role": true, "slot": true, "hidden": true, "tabindex": true,
-	// media / link semantics (the URL values themselves are scheme-checked
-	// by core-ui/html; these are the non-URL knobs beside them)
 	"alt": true, "target": true, "rel": true, "type": true, "loading": true,
 	"decoding": true, "width": true, "height": true, "download": true,
-	// form semantics
 	"name": true, "value": true, "placeholder": true, "for": true,
 	"method": true, "enctype": true, "autocomplete": true, "inputmode": true,
 	"required": true, "disabled": true, "readonly": true, "checked": true,
 	"selected": true, "multiple": true, "min": true, "max": true, "step": true,
 	"minlength": true, "maxlength": true, "pattern": true, "rows": true, "cols": true,
-	// table semantics
 	"colspan": true, "rowspan": true, "scope": true, "headers": true,
-	// details/dialog
 	"open": true,
 }
 
-// privilegedDataAttrs are the data-* attributes the RUNTIME itself acts
-// on, and therefore the ones an untrusted IR must never name:
-//
-//   - data-behavior becomes a <script src>, arbitrary code
-//   - data-widget / data-component / data-island are hydration identity:
-//     naming one makes the element impersonate a registered island, and
-//     data-island is what core-ui/runtime/src/sse.js targets when it
-//     swaps server-pushed content into a region
-//   - data-bind writes into the client state store
-//   - the whole data-cui-* family drives signals, RPC, polling and
-//     navigation
-//
-// Everything else in the data- namespace is an inert marker read only by
-// the host's own code (the app spec's data-field / data-entity-list-*,
-// kiln's data-kiln-tool, test hooks), so it passes. That split is the
-// point: the IR may describe UI, it may not reach the runtime.
-//
-// Keep this in sync with what the runtime actually reads. The list is a
-// claim about core-ui/runtime, and it was wrong once: data-action* and
-// data-param-* were treated as inert host markers while
-// core-ui/runtime/frag/boot.js was dispatching them into
-// window.__gofastr.trigger(), at hydration and again on every
-// gofastr:navigate, with the IR choosing both the compiled action and,
-// via data-param-*, its arguments. To re-derive the set:
-//
-//	grep -ohE "(getAttribute|hasAttribute|closest|querySelector[All]*|matches)\(['\"][^'\"]*data-[a-z-]+" \
-//	  core-ui/runtime/frag/*.js core-ui/runtime/src/*.js | grep -oE 'data-[a-z-]+' | sort -u
 var privilegedDataAttrs = map[string]bool{
 	"data-behavior": true, "data-widget": true,
 	"data-component": true, "data-bind": true,
 	"data-island": true,
 }
 
-// privilegedDataPrefixes are runtime-privileged data-* FAMILIES. An
-// untrusted IR must not name any attribute starting with one of these.
-//
-// data-action-* and data-param-* are deliberately NOT here: they are
-// stripped a layer earlier, by withoutActionAttrs at the untrusted entry
-// point. They cannot be handled by name alone, because this renderer
-// serves two callers with different trust, cmd/gofastr's app spec
-// compiles developer-authored YAML and legitimately emits them, while
-// kiln renders agent-authored IR through the same code. The trust split
-// (RenderNode vs RenderTrustedNode) is what tells the two apart. See
-// actionAttrs for why they matter and TestIRCannotFireActions for the pin.
 var privilegedDataPrefixes = []string{
 	"data-cui-",
 	//gofastr:allow(layerprefix) the privileged-prefix refusal names the framework prefix to bar it from node attrs
 	"data-fui-",
 }
 
-// extraAttrs collects element props that should pass through as raw
-// HTML attributes. It:
-//   - skips the `known` list (props the caller already promoted to
-//     first-class element fields, like id/class/role)
-//   - keeps only allowedAttrs plus `aria-*`
-//   - passes the rest through with fmt.Sprint
-//
-// Silently dropping (rather than erroring) is deliberate: the IR is
-// generated a turn at a time, and one bad turn should degrade the page,
-// not fail the render.
 func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	if len(props) == 0 {
 		return nil
@@ -632,21 +464,6 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	return out
 }
 
-// attrAllowed reports whether an IR-supplied attribute name may be
-// emitted:
-//
-//	aria-*                       → yes
-//	data-*                       → yes, unless runtime-privileged
-//	a known presentational attr  → yes
-//	anything else                → no
-//
-// The last line is what closes the original hole: the previous rule was
-// a deny-list of three names, so `style`, every `on*` handler, `srcdoc`,
-// and every attribute nobody had thought of yet all passed.
-//
-// Matching is case-insensitive, HTML attribute names are
-// case-insensitive to the parser, so an `OnClick` prop is an event
-// handler no matter how the author cased it.
 func attrAllowed(name string) bool {
 	lower := strings.ToLower(name)
 	if strings.HasPrefix(lower, "aria-") {
@@ -670,8 +487,6 @@ func mergeInto(dst, src map[string]string) {
 	maps.Copy(dst, src)
 }
 
-// --- prop accessors (unchanged) --------------------------------------
-
 func propString(p map[string]any, key string) string {
 	if p == nil {
 		return ""
@@ -690,11 +505,6 @@ func propString(p map[string]any, key string) string {
 	}
 }
 
-// landmarkLabel resolves the accessible-name props shared by the
-// landmark elements (section, nav, aside): the explicit label, else
-// the aria-label spelling, else fallback when labelledby is absent
-// too. It replaces the three verbatim copies of this shape in the
-// section, nav, and aside cases.
 func landmarkLabel(props map[string]any, fallback string) (label, labelledBy string) {
 	label = propString(props, "label")
 	if label == "" {

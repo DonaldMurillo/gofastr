@@ -2,11 +2,6 @@ package runtime
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The runtime's own words: the fallback notice, failed navigations and
-// requests, a server action's default success toast, the panel stack,
-// a deferred region that could not load, the embed frame and the form
-// helpers' counters. frag/*.js and
-// src/*.js say each one through say('runtime.<code>', 'English', params).
 var (
 	sayNotifications     = i18n.Define("runtime.notifications", "Notifications")
 	sayDismissNotice     = i18n.Define("runtime.dismiss_notification", "Dismiss notification")

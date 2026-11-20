@@ -1,12 +1,96 @@
 package config_test
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/config"
 )
+
+func TestNonSecretParseErrorPreservesChain(t *testing.T) {
+	var c struct {
+		Port int `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"PORT": "invalid"})
+	if !errors.Is(err, strconv.ErrSyntax) {
+		t.Fatalf("Load = %v, want errors.Is(err, strconv.ErrSyntax)", err)
+	}
+}
+
+type maskedSecret string
+
+func (maskedSecret) String() string { return "[hidden]" }
+
+func TestSensitiveNamedStringPresetRedacted(t *testing.T) {
+	c := struct {
+		Token maskedSecret `sensitive:"true"`
+		Port  int          `config:"PORT"`
+	}{Token: "named-string-credential"} // not-a-secret: fixture asserting redaction of the underlying string
+	err := config.Load(&c, config.MapSource{"PORT": string(c.Token)})
+	if err == nil || strings.Contains(err.Error(), string(c.Token)) || !strings.Contains(err.Error(), "(redacted)") {
+		t.Fatalf("Load = %v, want redacted underlying named string", err)
+	}
+}
+
+func TestPresetSensitiveRedactedInValidator(t *testing.T) {
+	for _, src := range []config.MapSource{{}, {"DSN": ""}} {
+		c := nestedSecretCfg{DSN: "preset-credential", Plain: "diagnostic-context"}
+		err := config.Load(&c, src)
+		if err == nil || strings.Contains(err.Error(), c.DSN) || !strings.Contains(err.Error(), "diagnostic-context") {
+			t.Fatalf("Load = %v, want redacted preset and diagnostic context", err)
+		}
+	}
+}
+
+func TestSecretInOtherFieldParseError(t *testing.T) {
+	for _, secret := range []string{"parse-credential", "quoted\"credential"} {
+		var c struct {
+			Port  int    `config:"PORT"`
+			Token string `config:"TOKEN" sensitive:"true"`
+		}
+		err := config.Load(&c, config.MapSource{"PORT": secret, "TOKEN": secret})
+		if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "(redacted)") || !strings.Contains(err.Error(), "Port") {
+			t.Fatalf("Load = %v, want redacted parse error naming Port", err)
+		}
+	}
+}
+
+func TestUnsetSecretIntKeepsParseErrorDigits(t *testing.T) {
+	var c struct {
+		Secret int `config:"SECRET" sensitive:"true"`
+		Port   int `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"PORT": "0-invalid"})
+	if err == nil || !strings.Contains(err.Error(), "0-invalid") || strings.Contains(err.Error(), "(redacted)") {
+		t.Fatalf("Load = %v, want unchanged parse error containing 0-invalid", err)
+	}
+}
+
+func TestOverriddenSecretDefaultStaysReadable(t *testing.T) {
+	var c struct {
+		Pin  int `config:"PIN" sensitive:"true" default:"0"`
+		Port int `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"PIN": "7", "PORT": "10x0"})
+	if err == nil || !strings.Contains(err.Error(), "10x0") || strings.Contains(err.Error(), "(redacted)") {
+		t.Fatalf("Load = %v, want readable parse error containing 10x0", err)
+	}
+}
+
+func TestShortSecretPlaceholderStaysIntact(t *testing.T) {
+	var c struct {
+		Token string `config:"TOKEN" sensitive:"true"`
+		Other string `config:"OTHER" sensitive:"true"`
+		Port  int    `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"TOKEN": "a", "OTHER": "aa", "PORT": "aa"})
+	if err == nil || strings.Contains(err.Error(), "(red(redacted)cted)") || !strings.Contains(err.Error(), `"(redacted)"`) {
+		t.Fatalf("Load = %v, want intact redaction placeholders", err)
+	}
+}
 
 // Property: a field tagged `required:"true"` is satisfied ONLY by a
 // non-empty value. Surfaces: key absent, key present-but-empty, and an
@@ -213,5 +297,75 @@ func TestPointerNestedStructBindsOrErrors(t *testing.T) {
 	}
 	if nested.Outer == nil || nested.Outer.DB.Host != "deep" {
 		t.Fatalf("deep nested key did not allocate and bind the chain: %+v", nested.Outer)
+	}
+}
+
+type shadowedOneofBase struct {
+	Token string `config:"TOKEN" default:"sh4dow" sensitive:"true" validate:"oneof=sh4dow-v2 other"`
+}
+
+type shadowedOneofCfg struct {
+	shadowedOneofBase
+	Token string `config:"TOKEN"`
+}
+
+func TestShadowedSensitiveDefaultOneofRedacted(t *testing.T) {
+	err := config.Load(&shadowedOneofCfg{}, config.MapSource{"TOKEN": "x"})
+	if want := "config: default of shadowed field shadowedOneofBase.Token: must be one of (redacted)-v2 other"; err == nil || err.Error() != want {
+		t.Fatalf("Load = %v, want %q", err, want)
+	}
+}
+
+func TestOtherFieldOneofErrorRedacted(t *testing.T) {
+	var c struct {
+		Token string `config:"TOKEN" sensitive:"true"`
+		Mode  string `config:"MODE" validate:"oneof=alpha-key beta"`
+	}
+	err := config.Load(&c, config.MapSource{"TOKEN": "alpha-key", "MODE": "gamma"})
+	if want := "config: field Mode: must be one of (redacted) beta"; err == nil || err.Error() != want {
+		t.Fatalf("Load = %v, want %q", err, want)
+	}
+}
+
+func TestMalformedRuleHidesSensitiveDefault(t *testing.T) {
+	var bad struct {
+		Key string `config:"KEY" sensitive:"true" default:"alpha-key" validate:"oneof:alpha-key beta"` // not-a-secret: fixture asserting redaction
+	}
+	err := config.Load(&bad, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "field Key") {
+		t.Fatalf("Load = %v, want a field Key rule error without the default", err)
+	}
+	var good struct {
+		Key string `config:"KEY" sensitive:"true" default:"alpha-key" validate:"oneof=alpha-key beta"` // not-a-secret: fixture
+	}
+	if err := config.Load(&good, config.MapSource{}); err != nil || good.Key != "alpha-key" {
+		t.Fatalf("Load = %v, Key = %q; want the valid oneof rule to load", err, good.Key)
+	}
+}
+
+func TestShapeErrorHidesOtherFieldsSecret(t *testing.T) {
+	var cross struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"alpha-key"` // not-a-secret: fixture asserting redaction
+		Mode  string `config:"MODE" validate:"oneof:alpha-key beta"`
+	}
+	err := config.Load(&cross, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "field Mode") {
+		t.Fatalf("Load = %v, want a field Mode rule error without the other field's default", err)
+	}
+	var odd struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"alpha-key"` // not-a-secret: fixture
+		Mode  string `config:"MODE" validate:"alpha-key=1"`
+	}
+	err = config.Load(&odd, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "unknown name") {
+		t.Fatalf("Load = %v, want an unknown-rule error that does not quote the rule name", err)
+	}
+	var plain struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"secret"` // not-a-secret: fixture
+		Mode  string `config:"MODE" validate:"secret=1"`
+	}
+	err = config.Load(&plain, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "secret") || !strings.Contains(err.Error(), "unknown name") {
+		t.Fatalf("Load = %v, want an unknown-rule error that does not quote a plain-word rule name", err)
 	}
 }

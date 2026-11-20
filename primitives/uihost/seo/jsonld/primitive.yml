@@ -1,0 +1,50 @@
+primitive: uihost.seo.jsonld
+summary: The typed Schema.org values of core-ui/seo (Article, BreadcrumbList, FAQPage, Organization, Person, WebSite, WebPage, WebApplication, Product, Offer) and Render, which writes each as a <script type="application/ld+json"> block.
+code:
+  - core-ui/seo/
+docs:
+  - framework/docs/content/seo.md
+invariants:
+  - id: envelope-is-filled
+    rule: Every type built by its constructor marshals @context https://schema.org and its own @type, breadcrumb positions run 1..N in order, and a WebApplication's operating system defaults to Web.
+    enforced_by:
+      - test: core-ui/seo.TestIncludesEnvelope
+      - test: core-ui/seo.TestBreadcrumbPositions
+      - test: core-ui/seo.TestWebApplicationShape
+  - id: one-inert-script-per-item
+    rule: Render writes one ld+json script per item and none for no items, and a script body holds no </ but its own closing tag.
+    enforced_by:
+      - test: core-ui/seo.TestOneScriptPerItem
+      - test: core-ui/seo.TestEmptyReturnsNothing
+      - test: core-ui/seo.TestEscapesClosingTag
+      - test: core-ui/seo.TestBodyHoldsNoCloseTagOpener
+  - id: url-fields-pass-the-head-gate
+    rule: A string field whose JSON name is url, image, logo, item or target and that urlsafe.Resource refuses is rendered empty, at any depth of pointers, slices and structs, and the caller's value is never changed.
+    enforced_by:
+      - test: core-ui/seo.TestRenderDropsUnsafeURLsAtEveryDepth
+      - test: core-ui/seo.TestRenderDropsUnsafeSliceElementsOnly
+      - test: core-ui/seo.TestRenderDropsUnsafeSearchTarget
+      - test: core-ui/seo.TestRenderLeavesCleanValuesUntouched
+decisions:
+  - id: scrub-keyed-on-json-names
+    date: 2026-11-20
+    status: accepted
+    decision: The URL scrub walks the value by reflection and matches fields by JSON tag name, so a Schema type added later is covered without wiring.
+    rejected:
+      - option: A scrubber per type.
+        why: A new type would ship ungated until someone remembered to write its scrubber, and the ld+json block sits in the same head as the gated og and twitter tags.
+    upholds: [url-fields-pass-the-head-gate]
+  - id: script-tags-in-separate-literals
+    date: 2026-11-20
+    status: accepted
+    decision: Render writes the opening and closing script tags as separate string literals.
+    rejected:
+      - option: One literal holding the whole element.
+        why: The inline-script contract (GOFASTR1805) reads each literal and would flag JSON-LD, which is inert data the browser never runs.
+  - id: ship-through-screen-schema
+    date: 2026-11-20
+    status: accepted
+    decision: A screen ships JSON-LD through the uihost ScreenSchema hook, which the host renders into <head>.
+    rejected:
+      - option: Return Render's output from SEOScreen.HeadHTML.
+        why: The host scrubs every <script> out of HeadHTML, so the block never ships.

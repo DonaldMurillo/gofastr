@@ -52,3 +52,7 @@ notes:
       uses:
         - gofastr/framework/contracts/analyzers.EntityInfo.Scoped
         - gofastr/framework/contracts/analyzers.EntityInfo.HasAccess
+  - change: "BREAKING - unquoted hex and octal integers in app specs and snapshots now read as numbers"
+    breaking: true
+    guidance: "Quote values meant to stay strings before loading an existing app spec or older Pack or Kiln snapshot, for example default: \"0x10\" or values: [\"0x01\", \"0x02\"]."
+    nodetect: "whether a YAML value is meant as a number or as text depends on the field and the app, not the value's spelling"

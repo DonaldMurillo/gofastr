@@ -360,6 +360,7 @@ func TestAttribute(t *testing.T) {
 		{"absent", `<div class="x"></div>`, "data-cui-scope", "", false, ""},
 		{"mention in value only", `<div class="data-cui-scope" data-x="1"></div>`, "data-cui-scope", "", false, ""},
 		{"prefix collision", `<div data-cui-scopey="1"></div>`, "data-cui-scope", "", false, ""},
+		{"suffix collision", `<div x-data-cui-scope="1"></div>`, "data-cui-scope", "", false, ""},
 		{"valueless", `<div data-cui-scope></div>`, "data-cui-scope", "", true, ""},
 		{"after leading comment", `<!-- c --><div data-cui-scope="b"></div>`, "data-cui-scope", "b", true, ""},
 		{"fragment", `hello`, "data-cui-scope", "", false, "must begin with an element open tag"},

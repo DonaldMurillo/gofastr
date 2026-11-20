@@ -1,34 +1,5 @@
 package app
 
-// view transitions.
-//
-// The transition demand module (runtime src/transition.js, loaded when
-// the document declares a transition: a [data-cui-vt] cell or a
-// data-cui-vt-kinds vocabulary) wraps a client navigation's DOM swap
-// in document.startViewTransition({update, types}) with types
-// 'forward' | 'back' | 'reload'; a document that declares none swaps
-// directly, as before the layout work. What the transition LOOKS
-// like is CSS on the root — component sheets refuse
-// ::view-transition-* (core-ui/style/component_sheet.go), so the
-// framework's blocks are returned as plain root-level CSS. NewLayout
-// registers each layout's blocks as a component sheet of their own,
-// and the layer's root carries its marker, so only pages that render
-// the layer load them: before the swap that brings the layer in, like
-// any component sheet.
-//
-// The typed variant: the author configures a region's transition
-// with TYPED Go values (Transition / Anim) on the layout spec; the
-// framework generates the CSS (Layout.TransitionCSS) including the
-// generated view-transition-name and the back-direction variants, so
-// the author writes no CSS for the standard moves. The escape hatch is
-// Transition{Name: "detail"}: a raw name with no anims, author CSS
-// deciding the move, for the platform's full power. Root-wide presets by name stay available
-// (ViewTransitionPresetCSS).
-//
-// prefers-reduced-motion is enforced by the RUNTIME (it never starts a
-// transition under 'reduce'), so no generated rule can reintroduce
-// motion for those users either.
-
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -51,15 +22,7 @@ const (
 	Right
 )
 
-// Anim is one leg of a transition. The zero Anim animates nothing.
-//
-// seq (set by Slide on both legs) keys the leg's keyframes
-// SEQUENTIALLY: the old snapshot is fully faded by the 50% mark and
-// the new one holds opacity 0 until then, so two text snapshots are
-// never stacked at near-full opacity mid-transition (two paragraphs
-// crossed at half opacity each read as one garbled block; on a phone
-// the new detail drew over the list and its search box). Plain
-// Fade/SlideFrom legs keep the classic simultaneous shape.
+// Anim is one leg of a transition.
 type Anim struct {
 	kind byte // 0 none, 'f' fade, 's' slide
 	side Side
@@ -73,43 +36,22 @@ func Fade(d time.Duration) Anim { return Anim{kind: 'f', dur: d} }
 // SlideFrom slides the leg in from side.
 func SlideFrom(side Side, d time.Duration) Anim { return Anim{kind: 's', side: side, dur: d} }
 
-// Transition is a placed cell's view transition (). The zero
-// Transition transitions nothing. Name is the raw-name escape hatch:
-// when set (and both anims zero) the framework only assigns the name
-// and the author's own CSS decides what happens — the model.
+// Transition is a placed cell's view transition ().
 type Transition struct {
-	// Name overrides the generated view-transition-name. A CSS
-	// custom-ident (letters, digits, '-', '_', not starting with a
-	// digit, no CSS-wide keyword); NewLayout panics on a bad one.
+	// Name overrides the generated view-transition-name.
 	Name string
-	// Enter animates the incoming (::view-transition-new) snapshot;
-	// Exit the outgoing (::view-transition-old) one.
+	// Enter animates the incoming (::view-transition-new) snapshot; Exit the outgoing
+	// (::view-transition-old) one.
 	Enter Anim
 	Exit  Anim
-	// Narrow, when set, is a CSS width ("920px") that makes the name
-	// BREAKPOINT-CONDITIONAL: the placed cell carries it at
-	// (width >= Narrow) and, below, the REGION the layout build marks
-	// with LayoutTree.VTRegion() carries it instead. The master-detail
-	// collapse: below the breakpoint list and detail are one pane, and
-	// the move must read as that whole pane transitioning — a detail
-	// snapshot there would morph its group geometry across the list.
-	// NewLayout panics on a value that is not a plain length.
-	Narrow string
-	// instant (set by Instant) hides the old snapshot and stops every
-	// animation on the region: it changes in one frame.
+	// Narrow, when set, is a CSS width ("920px") that makes the name BREAKPOINT-CONDITIONAL: the placed
+	// cell carries it at (width >= Narrow) and, below, the REGION the layout build marks with
+	// LayoutTree.VTRegion() carries it instead.
+	Narrow  string
 	instant bool
 }
 
-// Slide is the canonical master-detail move: the new content enters
-// from side by a short nudge while it fades in, the old fades out
-// with a nudge the other way — SEQUENTIALLY: the old snapshot is
-// fully gone by the midpoint and the new one only starts to show
-// after it, so the two never stack at near-full opacity
-// mid-transition. Snapshots draw in the top layer unclipped, so the
-// offsets stay at the spacing-xl token — the move reads as direction
-// without ever crossing into a neighbouring region. The generated
-// CSS flips the side automatically for Back navigations (type
-// 'back').
+// Slide moves the new content in from side as the old fades out, one after the other.
 func Slide(side Side, d time.Duration) Transition {
 	return Transition{
 		Enter: Anim{kind: 's', side: side, dur: d, seq: true},
@@ -122,34 +64,19 @@ func Crossfade(d time.Duration) Transition {
 	return Transition{Enter: Fade(d), Exit: Fade(d)}
 }
 
-// FadeThrough is Crossfade run SEQUENTIALLY, Slide's legs with the
-// nudge taken out: the old snapshot is fully faded by the midpoint and
-// the new one holds opacity 0 until then, so two snapshots of the same
-// region are never legible at once. For regions whose two states carry
-// text that must not ghost over itself (breadcrumbs: "Billing / BIL-31"
-// and "Projects / Billing" crossed at half opacity each read as one
-// trail) where the root crossfade must stay simultaneous — unchanged
-// pixels behind it would blink if the ROOT went sequential.
+// FadeThrough is Crossfade run one leg after the other.
 func FadeThrough(d time.Duration) Transition {
 	return Transition{Enter: Anim{kind: 'f', dur: d, seq: true}, Exit: Anim{kind: 'f', dur: d, seq: true}}
 }
 
-// Instant swaps the region in one frame while the rest of the page
-// transitions around it: no fade, no group morph, the old snapshot
-// hidden from the start. For a region whose two states share most of
-// their pixels (a breadcrumb trail keeps its root on every
-// navigation): any fade blinks the unchanged part, and a crossfade
-// ghosts the changed tail over the old one.
+// Instant swaps the region in one frame while the rest of the page transitions around it: no fade,
+// no group morph, the old snapshot hidden from the start.
 func Instant() Transition { return Transition{instant: true} }
 
-// isZero reports whether the transition configures nothing.
 func (tr Transition) isZero() bool {
 	return tr.Name == "" && !tr.instant && tr.Enter.kind == 0 && tr.Exit.kind == 0
 }
 
-// vtName resolves the name the placed cell carries: the author's, or a
-// generated one derived from the layout and slot (both already
-// custom-ident-safe by construction).
 func (tr Transition) vtName(layout, slot string) string {
 	if tr.Name != "" {
 		return tr.Name
@@ -157,9 +84,6 @@ func (tr Transition) vtName(layout, slot string) string {
 	return "vt-" + layout + "-" + slot
 }
 
-// cssDur renders a duration as a CSS time. Zero (unset) takes the
-// default; a NEGATIVE duration is nonsense, not the strongest setting:
-// clamp it to zero before the default arm (the negdur contract).
 func cssDur(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -170,29 +94,17 @@ func cssDur(d time.Duration) string {
 	return strconv.FormatFloat(float64(d)/float64(time.Millisecond), 'f', -1, 64) + "ms"
 }
 
-// animCSS emits the rules and keyframes for one transition. slot keys
-// the generated names; enter/exit legs with kind 0 emit nothing.
 func (tr Transition) animCSS(name string) string {
 	var b strings.Builder
 	if tr.Narrow == "" {
 		fmt.Fprintf(&b, "[data-cui-vt=%q] { view-transition-name: %s; }\n", name, name)
 	} else {
-		// Narrow: the name is breakpoint-conditional — the placed cell
-		// above it, the build's VTRegion element below (one pane on a
-		// phone). Both rules key on the when-attribute so exactly one
-		// element matches at any width; a bare [data-cui-vt] selector
-		// would name both and the browser would skip the transition.
 		fmt.Fprintf(&b, "@media (width >= %s) { [data-cui-vt=%q][data-cui-vt-when=\"(width >= %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
 		fmt.Fprintf(&b, "@media (width < %s) { [data-cui-vt=%q][data-cui-vt-when=\"(width < %s)\"] { view-transition-name: %s; } }\n", tr.Narrow, name, tr.Narrow, name)
 	}
 	if tr.instant {
 		fmt.Fprintf(&b, "::view-transition-group(%s), ::view-transition-new(%s) { animation: none; }\n", name, name)
 		fmt.Fprintf(&b, "::view-transition-old(%s) { animation: none; opacity: 0; }\n", name)
-		// Nor does it dim while the navigation is in flight: the host
-		// dims every busy region, and a dimmed trail blinks the root it
-		// keeps. aria-busy still tells a screen reader. The doubled
-		// attribute outweighs the host's [data-cui-area][aria-busy]
-		// rule, whichever sheet loads last.
 		fmt.Fprintf(&b, "[data-cui-vt=%q][data-cui-vt][aria-busy=\"true\"] { opacity: 1; transition: none; }\n", name)
 		return b.String()
 	}
@@ -206,15 +118,12 @@ func (tr Transition) animCSS(name string) string {
 			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s var(--easing-ease-in-out, ease) both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
 			if newSnap {
 				if a.seq {
-					// Hold 0 through the midpoint: the old snapshot is
-					// fully gone before this one starts to show.
 					fmt.Fprintf(&b, "@keyframes %s%s { 0%%, 50%% { opacity: 0; } }\n", name, suffix)
 				} else {
 					fmt.Fprintf(&b, "@keyframes %s%s { from { opacity: 0; } }\n", name, suffix)
 				}
 			} else {
 				if a.seq {
-					// Reach 0 BY the midpoint, then stay there.
 					fmt.Fprintf(&b, "@keyframes %s%s { 50%%, to { opacity: 0; } }\n", name, suffix)
 				} else {
 					fmt.Fprintf(&b, "@keyframes %s%s { to { opacity: 0; } }\n", name, suffix)
@@ -222,13 +131,6 @@ func (tr Transition) animCSS(name string) string {
 			}
 			return
 		}
-		// Slide: a SHORT offset plus the fade, never a full-width
-		// crossing. View-transition snapshots draw in the top layer
-		// and are not clipped by the region's slot, so a ±100%
-		// translate drags the new content across its neighbours
-		// mid-transition (the master-detail pane sliding over the
-		// aside). The offset is the spacing-xl token: a nudge the
-		// eye reads as direction without leaving the region.
 		off := map[Side]string{Left: "calc(-1 * var(--spacing-xl, 24px))", Right: "var(--spacing-xl, 24px)"}[a.side]
 		if newSnap {
 			fmt.Fprintf(&b, "%s(%s) { animation: %s%s %s var(--easing-ease-in-out, ease) both; }\n", pseudo, name, name, suffix, cssDur(a.dur))
@@ -237,7 +139,6 @@ func (tr Transition) animCSS(name string) string {
 			} else {
 				fmt.Fprintf(&b, "@keyframes %s%s { from { transform: translateX(%s); opacity: 0; } }\n", name, suffix, off)
 			}
-			// Back navigation: mirrored side.
 			backOff := map[Side]string{Left: "var(--spacing-xl, 24px)", Right: "calc(-1 * var(--spacing-xl, 24px))"}[a.side]
 			fmt.Fprintf(&b, ":root:active-view-transition-type(back) %s(%s) { animation-name: %s%s-back; }\n", pseudo, name, name, suffix)
 			if a.seq {
@@ -260,10 +161,8 @@ func (tr Transition) animCSS(name string) string {
 	return b.String()
 }
 
-// TransitionCSS returns the root CSS for every transition this layout
-// declares (spec primary, outlets, and areas). NewLayout registers it
-// as the layout's transition sheet (TransitionSheet), so apps never
-// wire it by hand.
+// TransitionCSS returns the root CSS for every transition this layout declares (spec primary,
+// outlets, and areas).
 func (l *Layout) TransitionCSS() string {
 	if l == nil || l.spec == nil {
 		return ""
@@ -273,9 +172,6 @@ func (l *Layout) TransitionCSS() string {
 		name := l.spec.Primary.Transition.vtName(l.Name, "primary")
 		b.WriteString(l.spec.Primary.Transition.animCSS(name))
 	}
-	// The keyed set's entries in SORTED key order,
-	// static and CSP-safe — the sheet's size follows the declared
-	// options, never the records a render picks.
 	for _, k := range sortedVTKeys(l.spec.Primary.Transitions) {
 		tr := l.spec.Primary.Transitions[k]
 		b.WriteString(tr.animCSS(tr.vtName(l.Name, keyedSlotName("primary", k))))
@@ -300,18 +196,8 @@ func (l *Layout) TransitionCSS() string {
 	return b.String()
 }
 
-// ViewTransitionPresetCSS returns the root CSS of a named ROOT-WIDE
-// view transition preset (kept from; orthogonal to the typed
-// per-region API). Presets:
-//
-//   - "fade":  an explicit crossfade of the root snapshot (≈ the
-//     browser default, but with a duration the author chose);
-//   - "slide": the new page slides in from the right on a forward
-//     navigation and from the left on Back;
-//   - "none":  no animation at all (the swap still rides a transition,
-//     of zero duration, so nothing else changes).
-//
-// An unknown name is an error, not a silent no-op.
+// ViewTransitionPresetCSS returns the root CSS of a named ROOT-WIDE view transition preset (kept
+// from; orthogonal to the typed per-region API).
 func ViewTransitionPresetCSS(preset string) (string, error) {
 	switch preset {
 	case "fade":
@@ -343,9 +229,8 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 	}
 }
 
-// TransitionSheet names the component sheet holding the layout's
-// TransitionCSS, the data-cui-comp marker its layer root carries; empty
-// when the layout declares no transition.
+// TransitionSheet names the component sheet holding the layout's TransitionCSS, the data-cui-comp
+// marker its layer root carries; empty when the layout declares no transition.
 func (l *Layout) TransitionSheet() string {
 	if l == nil {
 		return ""
@@ -353,9 +238,6 @@ func (l *Layout) TransitionSheet() string {
 	return l.vtSheet
 }
 
-// registerTransitionSheet registers css as a component sheet named by
-// its content, so two layouts declaring the same transitions share one
-// sheet, and returns the name; "" for no CSS.
 func registerTransitionSheet(css string) string {
 	if css == "" {
 		return ""

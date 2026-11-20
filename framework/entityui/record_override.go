@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const overrideReasonMax = 500
@@ -58,7 +59,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 	if !b.mayOverride(ctx, m, b.id) {
 		return ""
 	}
-	current := cell(m.rowValue(row, m.states.Field))
+	current := fieldtext.Cell(m.rowValue(row, m.states.Field))
 	opts := make([]ui.SelectOption, 0, len(stateValues(m)))
 	for _, v := range stateValues(m) {
 		opts = append(opts, ui.SelectOption{

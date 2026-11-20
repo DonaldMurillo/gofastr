@@ -1,0 +1,92 @@
+primitive: node.render
+summary: core-ui/noderender, which renders a node tree to HTML through the core-ui/html builders - the untrusted RenderNode and RenderKind that strip what the runtime acts on, and the trusted forms the app generator calls for a developer's own IR.
+code:
+  - core-ui/noderender/
+docs:
+  - framework/docs/content/process-modules.md
+on_change:
+  - privilegedDataAttrs and privilegedDataPrefixes are a claim about what core-ui/runtime reads; re-derive them when the runtime starts reading a new data- attribute (grep getAttribute, hasAttribute, closest, querySelector and matches for data-* across core-ui/runtime/frag and core-ui/runtime/src).
+invariants:
+  - id: untrusted-strips-actions
+    rule: RenderNode and RenderKind drop data-action, data-action-*, data-param-* and every registered behaviour marker attribute, in any letter case, at every depth, without changing the caller's props map.
+    enforced_by:
+      - test: core-ui/noderender.TestIRCannotFireActions
+      - test: core-ui/noderender.TestRenderNodeStripsActionAttrsOnNestedChild
+      - test: core-ui/noderender.TestRenderNodeStripsActionAttrsCaseInsensitive
+      - test: core-ui/noderender.TestIRDropsBehaviorMarkers
+      - test: core-ui/noderender.TestUntrustedRenderLeavesPropsIntact
+  - id: trusted-keeps-actions
+    rule: RenderTrustedNode and RenderTrustedKind keep the action attributes, for the whole tree under a trusted root.
+    enforced_by:
+      - test: core-ui/noderender.TestTrustedIRKeepsActions
+    judge: Does this change call RenderTrustedNode or RenderTrustedKind on a tree that came from Kiln, a process module, a model or any user-supplied document?
+  - id: attrs-are-an-allow-list
+    rule: A prop becomes an attribute only when it is aria-*, a data-* outside data-behavior, data-widget, data-component, data-bind, data-island, data-cui-* and data-fui-*, or a name in allowedAttrs, so style, every on* handler and srcdoc are dropped.
+    enforced_by:
+      - test: core-ui/noderender.TestIRDropsScriptAndURLGadgets
+      - test: core-ui/noderender.TestIRCannotFireActions
+      - test: core-ui/noderender.TestRenderNodeStripsDataFuiFamily
+  - id: no-raw-kind
+    rule: No kind emits its props as live markup; text is escaped, and an unknown kind, raw included, renders as an HTML comment holding the escaped kind.
+    enforced_by:
+      - test: core-ui/noderender.TestUnknownKindTraceIsEscaped
+      - test: core-ui/noderender.TestTextKindEscapes
+      - test: core-ui/noderender.TestRenderNodeEscapesText
+      - test: core-ui/noderender.TestRenderNodeUnknownKindLeavesTrace
+  - id: missing-props-degrade
+    rule: A node missing a prop its html builder requires renders a degraded element instead of panicking - a labelless button gets aria-label "button", a section without a label is labelled by its id or "section", an img without src renders nothing and a link without href or accessible content renders as a span.
+    enforced_by:
+      - test: core-ui/noderender.TestButtonNodeWithoutLabelDegrades
+      - test: core-ui/noderender.TestSectionWithoutLabelIsLabelled
+      - test: core-ui/noderender.TestMissingPropsDegrade
+      - test: core-ui/noderender.TestLinksRequireAccessibleContent
+  - id: form-posts-json
+    rule: A form node with no enctype renders enctype="application/json" and method POST, and an explicit enctype is kept.
+    enforced_by:
+      - test: core-ui/noderender.TestFormDefaultsToJSONEnctype
+  - id: element-semantics-match-html
+    rule: An option without a value submits its text, a textarea renders its value as content and ignores children, the table family keeps its html builders' roles and th scope, a list wraps bare children in li, a false boolean prop writes no attribute, and an owned prop in any letter case is not written twice.
+    enforced_by:
+      - test: core-ui/noderender.TestOptionWithoutValueSubmitsText
+      - test: core-ui/noderender.TestTextAreaRendersItsValue
+      - test: core-ui/noderender.TestTextAreaIgnoresChildren
+      - test: core-ui/noderender.TestTableFamilyKeepsHTMLDefaults
+      - test: core-ui/noderender.TestListWrapsBareChildren
+      - test: core-ui/noderender.TestFalseAttrsStayFalse
+      - test: core-ui/noderender.TestOwnedAttrsIgnoreCaseVariants
+      - test: core-ui/noderender.TestLinkKeepsTextAndChildren
+decisions:
+  - id: trust-is-the-callers-call
+    date: 2026-11-20
+    status: accepted
+    decision: Action attributes are stripped at the untrusted entry point by caller choice (RenderNode versus RenderTrustedNode), not by attribute name inside attrAllowed.
+    rejected:
+      - option: Refuse data-action* and data-param-* in attrAllowed for every caller.
+        why: The app generator compiles a developer's own YAML into IR and wires button actions through exactly those attributes, through the same renderer Kiln uses for agent-authored IR.
+    upholds: [untrusted-strips-actions, trusted-keeps-actions]
+  - id: allow-list-not-deny-list
+    date: 2026-11-20
+    status: accepted
+    decision: Outside the data- namespace an attribute passes only when it is on allowedAttrs or aria-*; inside it, everything passes but the runtime-privileged names and families.
+    rejected:
+      - option: A deny-list of dangerous names.
+        why: The first rule was a deny-list of three names, and style, every on* handler, srcdoc and every attribute nobody had thought of passed.
+      - option: Refuse every data- attribute.
+        why: Host markers such as data-field, data-entity-list-* and data-kiln-tool are inert and the generated UI needs them.
+    upholds: [attrs-are-an-allow-list]
+  - id: degrade-not-panic
+    date: 2026-11-20
+    status: accepted
+    decision: An invalid prop is dropped and a missing required prop degrades the element, where the html builders panic for hand-written Go.
+    rejected:
+      - option: Panic or return an error as the html builders do.
+        why: IR is generated a turn at a time and Kiln renders it on every page load, where recover middleware is opt-in, so one bad turn would take the page down.
+    upholds: [missing-props-degrade]
+  - id: forms-default-to-json
+    date: 2026-11-20
+    status: accepted
+    decision: A form defaults to enctype application/json so the runtime's form interceptor JSON-wraps the body for the CRUD endpoints Kiln forms target.
+    rejected:
+      - option: Leave the browser's urlencoded default.
+        why: The CRUD handlers a Kiln form posts to do not decode urlencoded bodies.
+    upholds: [form-posts-json]

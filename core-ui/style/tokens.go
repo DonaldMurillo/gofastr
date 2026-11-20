@@ -10,30 +10,8 @@ import (
 	"strings"
 )
 
-// ThemeHash is the canonical content address of a theme: a short digest of
-// the :root custom properties it emits plus a canonical serialization of
-// its Components map, so two themes that produce identical CSS hash
-// identically — exactly the equivalence callers want: a theme differing
-// only in its Name changes no pixel and should not bust a cache — while
-// two themes that differ only in options hash apart EVEN where no
-// component-options compiler is registered (a binary built on
-// framework/uihost alone links none; without the canonical block its
-// option-different themes would collide and the second registration
-// would be dropped as a duplicate).
-//
-// This is the single implementation. Anything keying a cache, a URL, or an
-// asset version on "which theme is this" must call it rather than hashing
-// the theme itself: CSSCustomProperties() is byte-stable (its lines are
-// sorted), whereas struct field order and unexported state are not.
-//
-// Six bytes is 48 bits, ample for distinguishing the handful of themes a
-// process serves, and short enough to sit in a query string.
+// ThemeHash is the canonical content address of a theme.
 func ThemeHash(t Theme) string {
-	// The options join the fingerprint in their FLAT form, over the
-	// compiler-independent token CSS (tokenCSS, not CSSCustomProperties):
-	// the compiled block only exists once a compiler is registered, and a
-	// theme's identity must be the same in every binary, whichever layers
-	// it links. Only theme CSS emission freezes compiler registration.
 	var b strings.Builder
 	b.WriteString(t.tokenCSS())
 	b.WriteString("\n/* components */\n")
@@ -48,28 +26,15 @@ func ThemeHash(t Theme) string {
 
 // CSSFingerprint is the content address of an arbitrary block of CSS, in the
 // same width and encoding ThemeHash uses.
-//
-// Callers keying a cacheable URL must fingerprint the WHOLE response body, not
-// just the theme it derives from. A stylesheet that also carries custom CSS or
-// contributed fragments is not identified by its palette: reusing a
-// palette-only key for it would let a browser serve one release's bytes under
-// another release's URL.
 func CSSFingerprint(css string) string {
 	sum := sha256.Sum256([]byte(css))
 	return hex.EncodeToString(sum[:6])
 }
 
-// tokenRefRe matches token references like {colors.primary}.
 var tokenRefRe = regexp.MustCompile(`\{([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)\}`)
 
 // ResolveAll replaces {category.name} references with their CSS-var
-// equivalents. Always emits `var(--<category>-<name>)`, never the
-// literal value, to keep section-level theme overrides working via
-// the CSS cascade.
-//
-// Example: ResolveAll("padding: {spacing.md} {spacing.lg}") →
-//
-//	"padding: var(--spacing-md) var(--spacing-lg)"
+// equivalents.
 func (t Theme) ResolveAll(s string) string {
 	return tokenRefRe.ReplaceAllStringFunc(s, func(match string) string {
 		inner := match[1 : len(match)-1]
@@ -85,9 +50,6 @@ func (t Theme) ResolveAll(s string) string {
 	})
 }
 
-// categoryPrefix maps token reference category names to their CSS
-// variable prefix. Singular and plural forms are both accepted for
-// authoring ergonomics.
 func categoryPrefix(category string) string {
 	switch strings.ToLower(category) {
 	case "colors", "color":
@@ -128,20 +90,14 @@ func categoryPrefix(category string) string {
 	return ""
 }
 
-// tokenCategories is every custom-property prefix a typed token emits,
-// one per token type. TokenCategory matches against it longest first.
 var tokenCategories = []string{
 	"color", "spacing", "radii", "stroke", "leading", "tracking", "opacity",
 	"font", "breakpoint", "shadow", "z",
 	"duration", "easing", "text", "tk", "size", "font-weight",
 }
 
-// TokenCategory returns the category of a token key, the prefix its
-// type emits: "font-weight" for "font-weight-bold", "font" for
-// "font-body", "size" for "size-page-width". The longest known prefix
-// wins, so a weight is never read as a font family. A key with no
-// known prefix falls back to the text before its first dash, or the
-// whole key when it has none.
+// TokenCategory returns the category of a token key, the prefix its type
+// emits.
 func TokenCategory(key string) string {
 	best := ""
 	for _, c := range tokenCategories {
@@ -174,7 +130,6 @@ func BareKeyword(v string) bool {
 }
 
 // ResolveColor returns `var(--color-<name>)` for a named color.
-// Always a CSS variable reference, never the literal value.
 func (t Theme) ResolveColor(name string) string {
 	return "var(--color-" + name + ")"
 }
@@ -189,15 +144,7 @@ func (t Theme) ResolveRadius(name string) string {
 	return "var(--radii-" + name + ")"
 }
 
-// CSSCustomProperties generates the :root { --color-...; ... } block
-// from the theme. Walks every typed token field of every set on the
-// Theme via reflection, emits a CSS custom property per token.
-// Output is byte-stable: fields enumerated in struct order, values
-// formatted consistently.
-//
-// For an app's AppTheme that embeds Theme + extends with extra
-// fields, callers can use CSSCustomPropertiesOf(any) on the outer
-// struct to include the embedded extensions.
+// CSSCustomProperties generates the :root { --color-...; ...
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t)
 	if knobs := knobsCSS(t.Knobs); knobs != "" {
@@ -210,12 +157,6 @@ func (t Theme) CSSCustomProperties() string {
 	return css + "\n" + schemeCSS(t, opts)
 }
 
-// tokenCSS is CSSCustomProperties without the compiled component
-// options: the tokens and the dark blocks, which depend on the theme
-// alone. ThemeHash fingerprints this plus the options in their flat
-// form, so a theme has the same identity in every binary, whether
-// or not a compiler is linked; the compiled block is a function of
-// the options and the linked layer, not part of what the theme is.
 func (t Theme) tokenCSS() string {
 	css := CSSCustomPropertiesOf(t)
 	if knobs := knobsCSS(t.Knobs); knobs != "" {
@@ -225,35 +166,7 @@ func (t Theme) tokenCSS() string {
 	return css
 }
 
-// compiledOptionsCSS is the :root block of compiled component options:
-// the styled layer's registered default set with the theme's own
-// options merged over it key by key (withDefaultOptions) — the :root
-// floor. Without it, every host whose theme carries no Components (a
-// bare style.DefaultTheme, the `gofastr theme init` scaffold, a host
-// with no App.Theme) would emit no option variables at all and the
-// component rules consuming them (`.fui-button--primary { background:
-// var(--fui-button-primary-bg) }`) would resolve to nothing: an
-// uncoloured, unshaped button. The merge is per key, not
-// all-or-nothing: a partial map such as {"density": "compact"} (what
-// the scaffold's "declare Components only to deviate" invites) once
-// replaced the whole floor and left every button and field variable
-// undeclared. Scope blocks (ThemeOverrideCSS) compile the same merge,
-// so every boundary re-declares the palette-referencing variables
-// against its own tokens. With no compiler registered the block is ""
-// as before.
-//
-// The floor does not change a theme's identity: ThemeHash fingerprints
-// the flattened options directly, so an optionless theme still hashes
-// as optionless in every binary — the compiled block (floor included)
-// is a function of the linked layer, not part of what the theme is.
 func compiledOptionsCSS(opts []string) string {
-	// The compiled component options join the root block AFTER the
-	// tokens they reference: a declaration like
-	// --fui-button-bg: var(--color-primary) computes its var() at the
-	// element it is declared on, so it must be re-declared at every
-	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
-	// each scope's palette instead of carrying the root's colours into
-	// it. Sorted by name for the byte-stable output ThemeHash needs.
 	if len(opts) == 0 {
 		return ""
 	}
@@ -268,8 +181,6 @@ func compiledOptionsCSS(opts []string) string {
 	return b.String()
 }
 
-// knobsCSS is the :root block of the theme's --ui-* knobs, sorted by
-// name for byte-stable output; "" when the theme sets none.
 func knobsCSS(knobs map[string]string) string {
 	lines := knobDecls(knobs)
 	if len(lines) == 0 {
@@ -286,8 +197,6 @@ func knobsCSS(knobs map[string]string) string {
 	return b.String()
 }
 
-// knobDecls renders each knob as a `--ui-<name>: <value>;` line in
-// key order.
 func knobDecls(knobs map[string]string) []string {
 	lines := make([]string, 0, len(knobs))
 	for _, k := range sortedMapKeys(knobs) {
@@ -296,19 +205,14 @@ func knobDecls(knobs map[string]string) []string {
 	return lines
 }
 
-// componentCompilerDefaults snapshots the registered default option
-// set under the lock; nil when no compiler (or no defaults) is
-// registered.
 func componentCompilerDefaults() map[string]string {
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	return componentCompiler.defaults
 }
 
-// CSSCustomPropertiesOf walks any struct (including the app's
-// embedding Theme) and emits a :root { --…: ...; } block for every
-// typed token field. Used by SSG and the live :root emission for
-// app-extended themes.
+// CSSCustomPropertiesOf walks any struct (including the app's embedding Theme)
+// and emits a :root { --….
 func CSSCustomPropertiesOf(theme any) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(theme), &lines)
@@ -324,13 +228,10 @@ func CSSCustomPropertiesOf(theme any) string {
 	return b.String()
 }
 
-// tokenField is an emitted token's CSS key (without "--"), value, and optional Go field path.
 type tokenField struct {
 	Key, Value, Path string
 }
 
-// walkTokens visits emittable tokens, including defaults. A nonempty path
-// enables field paths for collision diagnostics.
 func walkTokens(v reflect.Value, path string, out *[]tokenField) {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -369,15 +270,6 @@ func walkTokens(v reflect.Value, path string, out *[]tokenField) {
 	}
 }
 
-// tokenPair returns the (cssVarName, cssValue) pair for a typed token
-// struct, matching exactly what the :root emitter writes as
-// "--<cssVarName>: <cssValue>;". ok is false for any non-token struct
-// (the caller recurses into its fields) and for a token the emitter
-// skips, one with an empty Name, or an optional CodeColor whose Value
-// is unset. Centralizing the var-naming convention and the skip rules
-// in one place keeps emission and the token map in lockstep: changing
-// the prefix for one category here changes it for both consumers at
-// once.
 func tokenPair(v reflect.Value) (key, value string, ok bool) {
 	switch t := v.Interface().(type) {
 	case Color:
@@ -461,8 +353,6 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 		}
 		return "font-weight-" + t.Name, fmt.Sprintf("%d", t.Value), true
 	case CodeColor:
-		// Optional token: emitted only when fully set (an unset slot
-		// leaves the component-CSS fallback palette in charge).
 		if t.Name == "" || t.Value == "" {
 			return "", "", false
 		}
@@ -471,11 +361,6 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 	return "", "", false
 }
 
-// collectTokenDecls walks any struct value (including embedded structs)
-// and records `--<category>-<name>: <value>;` declarations for every
-// typed token it finds. Thin formatter over walkTokens: the walk and
-// the var-naming live in one place (walkTokens / tokenPair); this just
-// stitches the "--" / ": " / ";" punctuation the :root block needs.
 func collectTokenDecls(v reflect.Value, out *[]string) {
 	var pairs []tokenField
 	walkTokens(v, "", &pairs)

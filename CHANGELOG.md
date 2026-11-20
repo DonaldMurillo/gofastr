@@ -109,6 +109,10 @@ few lines, and link the PR or the docs page for the rest.
 - **crud: an entity's `llm.md` filter table uses the MCP tools' operator
   labels.** `like` reads "contains the substring" (was "LIKE (contains)")
   and `in` reads "is one of" (was "IN (comma-separated)").
+- **BREAKING: unquoted YAML hex and octal integers now read as numbers.**
+  Quote values meant to stay strings (for example, `default: "0x10"`) in
+  existing app specs and older Pack or Kiln snapshots. See the
+  [YAML migration examples](framework/docs/content/app-spec.md#yaml-subset).
 
 ### Removed
 
@@ -778,6 +782,11 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr build`, `gofastr export` and the dev start-failure probe no
   longer run git** when they resolve the package name
   (`go list -buildvcs=false`).
+- **Failed HTTP server spans now say what failed.** A response of 500 or
+  more sets `error.type` to the status code (for example, `"503"`), and a
+  panic that reaches the tracing middleware sets it to `"panic"`, the new
+  `tracing.ErrorTypePanic` constant that queue job spans use too. See
+  [Observability](framework/docs/content/observability.md).
 
 ### Security
 

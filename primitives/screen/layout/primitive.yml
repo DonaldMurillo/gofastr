@@ -1,0 +1,78 @@
+primitive: screen.layout
+summary: Layouts and screen groups - the layout chain a screen resolves through its groups and the default layout, the layer keys the runtime compares to swap only the diverging layers, layout areas, owned styles, the embed layout and keyed view transitions.
+code:
+  - core-ui/app/layout.go
+  - core-ui/app/layout_chain.go
+  - core-ui/app/layout_css.go
+  - core-ui/app/layout_ctx.go
+  - core-ui/app/layout_tree.go
+  - core-ui/app/embed_layout.go
+  - core-ui/app/ownstyle.go
+  - core-ui/app/screen_group.go
+  - core-ui/app/view_transition.go
+  - core-ui/app/transition_pick.go
+docs:
+  - framework/docs/content/layouts.md
+invariants:
+  - id: chain-resolution
+    rule: A screen's chain is its own layout or the default, a grouped screen nests under the default unless a group is standalone or already holds it, an inherited layout repeats as a marker-only layer, and a screen's explicit layout replaces its group's innermost one.
+    enforced_by:
+      - test: core-ui/app.TestDirectScreenLayoutReplacesDefault
+      - test: core-ui/app.TestGroupNestsUnderDefaultWithOneMain
+      - test: core-ui/app.TestStandaloneGroupSkipsDefault
+      - test: core-ui/app.TestInheritedSubgroupLayerIsMarkerOnly
+      - test: core-ui/app.TestGroupScreenHonorsExplicitLayoutOverride
+      - test: core-ui/app.TestOverlayScreensHaveNoChain
+  - id: partials-render-diverging-layers
+    rule: A partial from a known origin renders only the layers below the deepest one both chains share, and from an unknown or disjoint origin is bare.
+    enforced_by:
+      - test: core-ui/app.TestPartialFromRendersOnlyDivergingLayers
+      - test: core-ui/app.TestPartialFromSiblingIsBareWithSwapLayer
+      - test: core-ui/app.TestPartialFromUnknownOriginIsBare
+      - test: core-ui/app.TestPartialFromDisjointChainsIsBare
+  - id: layer-keys
+    rule: A layer's key is its declared key, else l:<name> or g:<prefix> with the resolved param values, so two sibling screens with different overrides never share a key.
+    enforced_by:
+      - test: core-ui/app.TestLayoutKeyOverridesLayerIdentity
+      - test: core-ui/app.TestOverrideScreenKeyDiffersFromSibling
+      - test: core-ui/app.TestParamGroupLayerKeyedByResolvedValue
+      - test: core-ui/app.TestNestedGroupChainEmitsLayerKeys
+  - id: group-paths-stay-inside
+    rule: An absolute screen path registered in a group must fall under the group's prefix or panic, and a relative one is joined to it.
+    enforced_by:
+      - test: core-ui/app.TestGroupPathsStayInsidePrefix
+      - test: core-ui/app.TestSubGroupNormalizesRelativePrefix
+  - id: transition-names-are-idents
+    rule: A view-transition name is a CSS custom ident that is not a CSS-wide keyword, and a layout, area or narrow width that breaks the rule panics at NewLayout.
+    enforced_by:
+      - test: core-ui/app.TestNewLayoutRefusesBadTransitionName
+      - test: core-ui/app.TestTransitionNamesRefused
+      - test: core-ui/app.TestNewLayoutRefusesBadAreaTransitionName
+      - test: core-ui/app.TestNewLayoutRefusesBadNarrowWidth
+  - id: transition-pick
+    rule: The innermost layer's transition wins, it is picked per render and carried on the partial answer.
+    enforced_by:
+      - test: core-ui/app.TestTransitionInnermostLayerWins
+      - test: core-ui/app.TestTransitionPickedPerRender
+      - test: core-ui/app.TestTransitionPickCarriedOnPartialAnswer
+  - id: doc-shell-on-the-outermost-layer
+    rule: The document shell markers ride the outermost rendered layer, or main when there is no layout, and a layoutless partial forces a full load on a language change.
+    enforced_by:
+      - test: core-ui/app.TestDocShellMarksOutermostLayerOnly
+      - test: core-ui/app.TestPartialDocShellOnFirstRenderedLayer
+      - test: core-ui/app.TestLayoutlessPartialForcesFullOnLangChange
+  - id: owned-styles
+    rule: A layout's owned style stamps its root, a screen's wraps its content in one element, and fills sit outside the screen wrapper.
+    enforced_by:
+      - test: core-ui/app.TestLayoutStyleStampsLayoutRoot
+      - test: core-ui/app.TestScreenStyleWrapsContentInOneDiv
+      - test: core-ui/app.TestFillsSitOutsideTheScreenWrapper
+decisions:
+  - id: swap-below-the-shared-layer
+    date: 2026-11-20
+    status: accepted
+    decision: A navigation swaps only the layers below the deepest one the origin and target chains share, compared positionally by layer key, and an unnamed layer's empty key never matches.
+    rejected:
+      - option: Swap the whole main region on every navigation.
+        why: Shared chrome such as a sidebar would re-render and lose its in-page state.
+    upholds: [partials-render-diverging-layers, layer-keys]

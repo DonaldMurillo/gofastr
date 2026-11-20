@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=53349bd606b097cf
+//gofastr:generated generator=app kind=scaffold version=dev sum=1862f02e87b2d3f9
 
 package main
 
@@ -50,8 +50,8 @@ func (s *ProductNewScreen) RenderCtx(ctx context.Context) render.HTML {
 		}}), ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: "description", Label: i18nui.FieldLabel(ctx, nil, "products", "description", "Description"), ID: "field-entity_form_productNew_1-description", Required: false}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "price", "Price"), For: "field-entity_form_productNew_1-price", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "price", Step: "0.0001"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.FieldLabel(ctx, nil, "products", "stock", "Stock"), For: "field-entity_form_productNew_1-stock", Required: true, Input: func(c headless.FieldControl) render.HTML {
-			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "stock", Step: "1"})
-		}}), ui.Select(ui.SelectConfig{Ctx: ctx, Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-entity_form_productNew_1-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false}), render.Join(html.Input(html.InputConfig{Type: "hidden", Name: "featured", Value: "false"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-entity_form_productNew_1-featured", Value: "true", Checked: false})))),
+			return ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "stock", Value: "0", Step: "1"})
+		}}), ui.Select(ui.SelectConfig{Ctx: ctx, Name: "status", Label: i18nui.FieldLabel(ctx, nil, "products", "status", "Status"), ID: "field-entity_form_productNew_1-status", Placeholder: i18nui.EntitySelect.Text(ctx), Options: []ui.SelectOption{{Value: "draft", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "draft")}, {Value: "active", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "active")}, {Value: "archived", Text: i18nui.FieldValueLabel(ctx, nil, "products", "status", "archived")}}, Required: false, Selected: "draft"}), render.Join(html.Input(html.InputConfig{Type: "hidden", Name: "featured", Value: "false"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: "featured", Label: i18nui.FieldLabel(ctx, nil, "products", "featured", "Featured"), ID: "field-entity_form_productNew_1-featured", Value: "true", Checked: false})))),
 	)
 }
 

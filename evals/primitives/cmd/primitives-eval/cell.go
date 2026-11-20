@@ -416,17 +416,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 		ref = cfg.base
 	}
 	ctx := context.Background()
-	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", ref)
-	extract := command(ctx, dir, "tar", "-x")
-	pipe, err := archive.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	extract.Stdin = pipe
-	if err := extract.Start(); err != nil {
-		return "", err
-	}
-	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
+	if err := extractArchive(ctx, cfg.repo, dir, ref); err != nil {
 		return "", fmt.Errorf("extract %s: %w", ref, err)
 	}
 	root, err := os.OpenRoot(dir)
@@ -477,12 +467,14 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 	return gitOutput(dir, "rev-parse", "HEAD")
 }
 
-// overlayRegistry gives a replay cell, cut from a commit older than the
-// registry, the registry's tooling from -head, the task's own entries and
-// the pointer in the agent guide.
-func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *os.Root) error {
-	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", cfg.head, "cmd/primitives", "internal/primitives", "primitives/README.md")
+// extractArchive writes `git archive <ref> [paths]` from repo into dir.
+// A failure carries the last lines git and tar printed, each process
+// into its own buffer.
+func extractArchive(ctx context.Context, repo, dir, ref string, paths ...string) error {
+	archive := command(ctx, repo, "git", append([]string{"archive", "--format=tar", ref}, paths...)...)
 	extract := command(ctx, dir, "tar", "-x")
+	var archiveErr, extractErr bytes.Buffer
+	archive.Stderr, extract.Stderr = &archiveErr, &extractErr
 	pipe, err := archive.StdoutPipe()
 	if err != nil {
 		return err
@@ -492,10 +484,33 @@ func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *
 		return err
 	}
 	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
+		said := strings.TrimSpace(lastLines(archiveErr.String(), 3) + "\n" + lastLines(extractErr.String(), 3))
+		if said == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, said)
+	}
+	return nil
+}
+
+// lastLines is the last n lines of s, surrounding space trimmed.
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// overlayRegistry gives a replay cell, cut from a commit older than the
+// registry, the registry's tooling from -head, the task's own entries and
+// the pointer in the agent guide.
+func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *os.Root) error {
+	if err := extractArchive(ctx, cfg.repo, dir, cfg.head, "cmd/primitives", "internal/primitives", "primitives/README.md"); err != nil {
 		return fmt.Errorf("overlay the registry tooling: %w", err)
 	}
 	base := path.Join("overlays", t.overlay())
-	err = fs.WalkDir(overlays, base, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(overlays, base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

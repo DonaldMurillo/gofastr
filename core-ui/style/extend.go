@@ -10,29 +10,6 @@ import (
 )
 
 // Extend returns a copy of t that also carries the app's own tokens.
-// Each argument is a struct (or a pointer to one) whose fields are typed
-// tokens, nested token structs included:
-//
-//	type brandTokens struct {
-//		BrandGlow style.Color      // --color-brand-glow
-//		HeroGap   style.Size       // --size-hero-gap
-//		Display   style.FontWeight // --font-weight-display
-//	}
-//
-//	site.WithTheme(theme.Default().Extend(brandTokens{...}))
-//
-// The value's type picks the prefix, the field name the rest (an
-// explicit Name wins), so app tokens share one vocabulary with the
-// built-ins. They are emitted on :root and in every themed scope,
-// re-declared in the dark blocks when DarkColors names a colour,
-// reachable through ThemeToTokens/ApplyTokens (and so the theme
-// editor), and part of ThemeHash.
-//
-// Extend copies its inputs, so changing a struct afterwards does not
-// change the theme, and it never modifies t. It panics on input that
-// is not a struct of tokens, and when a token would emit a key the
-// theme already emits, naming both fields: two tokens on one variable
-// would leave the page painted by whichever the cascade reached last.
 func (t Theme) Extend(tokens ...any) Theme {
 	out := t
 	out.Extensions = cloneExtensions(t.Extensions)
@@ -66,12 +43,7 @@ func (t Theme) Extend(tokens ...any) Theme {
 	return out
 }
 
-// Clone returns a copy of t that shares no mutable memory with it: the
-// DarkColors, DarkCode, Components and Knobs maps and every Extensions
-// token set are copied, so a write to either theme never reaches the
-// other. Code that stores a theme it was handed (a registered override or
-// variant, keyed by a hash of its content) clones it first. An extension
-// entry with nothing to copy, such as nil, is kept as it is.
+// Clone returns a copy of t that shares no mutable memory with it.
 func (t Theme) Clone() Theme {
 	out := t
 	deepenCopy(reflect.ValueOf(&out).Elem(), map[uintptr]reflect.Value{})
@@ -80,19 +52,10 @@ func (t Theme) Clone() Theme {
 
 // DarkTokens is a token set that carries dark-scheme values for its own
 // colours, keyed by colour name ("brand-glow" for --color-brand-glow).
-// The typed Go `gofastr gen styles` writes from a <name>.tokens.css
-// implements it with the file's @media (--dark) block. Extend merges
-// the values into Theme.DarkColors when the theme has a dark palette;
-// a light-only theme (empty DarkColors) stays light-only, since one
-// dark colour among light ones is worse than none.
 type DarkTokens interface {
 	DarkTokens() map[string]string
 }
 
-// mergeDarkTokens returns dark with the set's dark values added, in a
-// new map. A key that is not one of the set's own colours, or a value
-// outside the colour grammar, panics: the set is compiled in, so the
-// mistake is the build's.
 func mergeDarkTokens(dark, values map[string]string, own []tokenField, owner string) map[string]string {
 	if len(dark) == 0 || len(values) == 0 {
 		return dark
@@ -117,18 +80,10 @@ func mergeDarkTokens(dark, values map[string]string, own []tokenField, owner str
 	return out
 }
 
-// tokenNamePattern is the name an app token may carry after its type
-// prefix: lower-case words joined by single dashes, starting with a
-// letter, so it maps to one Go field name and back.
 var tokenNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
-// ParseToken accepts a custom-property key without the leading "--" and its value.
-// ("size-page-width", "67.5rem") yields Size{Name: "page-width", Value: "67.5rem"}.
-// The key's prefix picks the type. ApplyTokens and ParseToken use the same value checks.
-//
-// Breakpoint and code-colour keys are refused: a breakpoint cannot be
-// read through var() in a media query, and the code palette is the
-// syntax highlighter's, not an app's.
+// ParseToken turns one custom-property key and CSS value into the typed token
+// it declares.
 func ParseToken(key, value string) (any, error) {
 	cat := TokenCategory(key)
 	name, _ := strings.CutPrefix(key, cat+"-")
@@ -178,17 +133,12 @@ func ParseToken(key, value string) (any, error) {
 	return reflect.ValueOf(slot).Elem().Interface(), nil
 }
 
-// AppTokenPrefixes lists the type prefixes an app token may carry, the
-// keys ParseToken accepts, each with its trailing dash.
+// AppTokenPrefixes lists the type prefixes an app token may carry, the keys
+// ParseToken accepts, each with its trailing dash.
 func AppTokenPrefixes() []string {
 	return []string{"color-", "size-", "spacing-", "radii-", "stroke-", "leading-", "tracking-", "opacity-", "font-", "font-weight-", "shadow-", "z-", "duration-", "easing-", "text-"}
 }
 
-// copyTokenStruct copies a token struct (or the struct a pointer holds)
-// into a new pointer the theme owns. The copy is deep: a nested token
-// struct held by pointer (or in a slice, map or interface) is copied
-// too, so ApplyTokens writing one theme's copy never reaches a pointer
-// another theme, or the caller, still holds.
 func copyTokenStruct(in any) reflect.Value {
 	v := reflect.ValueOf(in)
 	if v.Kind() == reflect.Pointer {
@@ -206,13 +156,6 @@ func copyTokenStruct(in any) reflect.Value {
 	return p
 }
 
-// deepenCopy replaces every pointer, slice, map and interface reachable
-// through v's settable fields with a copy, so v shares no mutable
-// memory with the value it was copied from. seen maps an original
-// pointer to its copy, keeping shared pointers shared within the copy
-// and a cycle from recursing forever. Unexported fields keep the
-// shallow copy: reflect cannot set them, and the token walkers skip
-// them too.
 func deepenCopy(v reflect.Value, seen map[uintptr]reflect.Value) {
 	switch v.Kind() {
 	case reflect.Struct:
@@ -267,8 +210,6 @@ func deepenCopy(v reflect.Value, seen map[uintptr]reflect.Value) {
 	}
 }
 
-// cloneExtensions copies every extension so a theme copy can be written
-// (ApplyTokens) without reaching the theme it came from.
 func cloneExtensions(exts []any) []any {
 	if len(exts) == 0 {
 		return nil
@@ -280,7 +221,6 @@ func cloneExtensions(exts []any) []any {
 	return out
 }
 
-// extensionPath names an extension in messages by its struct type.
 func extensionPath(v reflect.Value) string {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -291,7 +231,6 @@ func extensionPath(v reflect.Value) string {
 	return v.Type().String()
 }
 
-// duplicateTokenKey reports the first key two tokens of t both emit.
 func duplicateTokenKey(t Theme) error {
 	var all []tokenField
 	walkTokens(reflect.ValueOf(t), "Theme", &all)

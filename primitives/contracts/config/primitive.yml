@@ -8,8 +8,6 @@ code:
   - framework/contracts/glob.go
   - internal/analyzers/names/
   - internal/analyzers/allow/
-  - core-ui/check/allowmarker.go
-  - core-ui/check/allowmarker_test.go
 invariants:
   - id: default-is-strict
     rule: DefaultConfig enforces every rule at its declared severity, fails on error, and demands route, permission and entity coverage with no line-coverage floor.

@@ -265,6 +265,10 @@ invariants:
     enforced_by:
       - test: framework.TestSweepApp1InitPluginsRunsRegistrarsOnce
       - test: framework.TestInitPluginsIsIdempotent
+  - id: mount-docs-debug-runs-once
+    rule: MountLLMMDAndDebugRoutes mounts /api/llm.md and /.debug/* once per App; a later call, including the one finalizeRoutes makes in Start, mounts nothing and returns the first call's result, so a host that mounted them early does not hit a route conflict.
+    enforced_by:
+      - test: framework.TestMountLLMMDAndDebugRoutesRunsOnce
   - id: crud-handler-outbox-nil-without-with-outbox
     rule: A CRUD handler the App wires carries a nil Outbox when the App has none, never a typed-nil pointer, so its events publish on the bus.
     enforced_by:

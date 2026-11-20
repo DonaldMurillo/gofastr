@@ -20,35 +20,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// RouteMatcher decides whether a widget is available on a given
-// request path. A Definition with one or more matchers is filtered
-// out of catalogs + SSR-inlining for paths that no matcher accepts.
-// A Definition with NO matchers is available on every path (the
-// historical default).
+// RouteMatcher decides whether a widget is available on a given request path.
 type RouteMatcher func(path string) bool
 
 // Position is where the widget's root anchors itself when mounted.
-// Modal/Center implies a backdrop and focus trap; Corner positions
-// float without a backdrop.
 type Position string
 
 const (
 	BottomRight  Position = "bottom-right"
-	BottomCenter Position = "bottom-center" // toast / banner stack mid-edge
+	BottomCenter Position = "bottom-center"
 	BottomLeft   Position = "bottom-left"
 	TopRight     Position = "top-right"
-	TopCenter    Position = "top-center" // toast / banner stack mid-edge
+	TopCenter    Position = "top-center"
 	TopLeft      Position = "top-left"
-	Center       Position = "center"    // modal, backdrop + focus trap
-	Top          Position = "top"       // banner across the top
-	Bottom       Position = "bottom"    // banner across the bottom
-	Edge         Position = "edge-left" // drawer-style edge mount
+	Center       Position = "center"
+	Top          Position = "top"
+	Bottom       Position = "bottom"
+	Edge         Position = "edge-left"
 	EdgeRight    Position = "edge-right"
 )
 
-// SignalSource produces JSON-serializable values that flow to the
-// browser as named signals. The runtime polls (or receives via SSE)
-// and pushes new values into [data-cui-signal="<name>"] html.
+// SignalSource produces a JSON-serialisable value the browser reads as a signal.
 type SignalSource interface {
 	Read() (any, error)
 }
@@ -58,256 +50,104 @@ type SignalFunc func() (any, error)
 
 func (f SignalFunc) Read() (any, error) { return f() }
 
-// RPCEndpoint is a server-side HTTP handler the widget can invoke
-// from the client (typically via a button click or form submit). The
-// runtime POSTs to Path. (Routing the response body into a named signal is
-// done client-side via the data-cui-rpc-signal DOM attribute on the trigger,
-// not via this struct.)
+// RPCEndpoint is a handler the widget's controls call.
 type RPCEndpoint struct {
-	Method  string // GET, POST, PUT, PATCH or DELETE; "" means POST, anything else panics at Mount
+	Method  string
 	Path    string
 	Handler http.Handler
 }
 
-// Slot is a host-supplied content region in the widget chrome. The
-// runtime renders the widget skeleton and embeds the slot's component
-// at the matching named placeholder.
+// Slot is a host-supplied content region in the widget chrome.
 type Slot struct {
 	Name      string
 	Component component.Component
 }
 
-// Definition is the full description of a widget. It is built via
-// the New(name) builder and consumed by Mount(app, def).
+// Definition is the full description of a widget.
 type Definition struct {
 	Name     string
 	Position Position
 	Slots    []Slot
 
-	// Signals are served by the widget's /state endpoint.
-	//
-	// SECURITY: /state is UNAUTHENTICATED unless RequireSession or
-	// RequireAuthenticated is set, and SignalSource.Read takes no
-	// context, so a signal value is process-global, identical for every
-	// caller, and cannot be scoped per user. Treat every signal as
-	// world-readable: put counts, statuses and other non-sensitive
-	// display data here, never per-user or secret values. Set
-	// RequireSession or RequireAuthenticated to restrict /state and
-	// /chrome; see those fields for what each level actually gates.
+	// Signals are served at StatePath, the same value to every caller: never per-user data.
 	Signals map[string]SignalSource
 	RPCs    []RPCEndpoint
 
-	// RequireSession gates the /state, /chrome, and RPC endpoints behind
-	// a valid browser session, for widgets whose signals may be shown to
-	// any visitor the site has seen (per-session scoping, anti-recon).
-	// NOTE: this is NOT an authentication gate. Hosts like
-	// framework/uihost auto-mint an anonymous session on the first page
-	// render, so under such a host every visitor — logged in or not —
-	// holds a valid session and passes. When the caller must be a
-	// signed-in user, set RequireAuthenticated instead.
-	// The host supplies the check via SetSessionCheck; when no check is
-	// installed, a widget that asks for one fails closed (the endpoints
-	// 403 rather than serving).
+	// RequireSession gates /state, /chrome and RPCs behind a browser session, which is not a sign-in.
 	RequireSession bool
 
-	// RequireAuthenticated gates the /state, /chrome, and RPC endpoints
-	// behind an authenticated principal: the request must resolve to a
-	// signed-in user, not merely hold a browser session. This is the
-	// level to use for widgets whose signals are not safe to expose
-	// anonymously. The host supplies the check via
-	// SetAuthenticatedCheck — under framework/uihost it is satisfied
-	// only when the app's session middleware (battery/auth
-	// SessionMiddleware or RequireAuth) resolved a user onto the request
-	// context, which the anonymous session a page load auto-mints never
-	// does, and never for an embed grant or a scoped API token. When no
-	// check is installed, a widget that asks for one fails
-	// closed (the endpoints 403 rather than serving). Setting both
-	// RequireSession and RequireAuthenticated means the stricter level
-	// wins.
+	// RequireAuthenticated gates /state, /chrome and RPCs behind a signed-in principal.
 	RequireAuthenticated bool
 
-	// Skeleton is the host's chrome wrapper. If nil, the framework
-	// uses a sensible default for the chosen Position (FloatingPanel
-	// for corners, Modal for Center, etc.). Most hosts leave this
-	// nil and use a preset.
+	// Skeleton is the host's chrome wrapper.
 	Skeleton func(slots map[string]render.HTML) render.HTML
 
-	// ExtraCSS is host-supplied CSS appended after the framework's
-	// chrome rules in the per-widget stylesheet (/<StylePath>). Use
-	// for content styling (slot innards, host-specific class names)
-	// that doesn't fit in the page theme. Generate it through
-	// core-ui/style.NewStyleSheet for token consistency, or pass an
-	// already-resolved CSS string.
+	// ExtraCSS is CSS appended to the widget's stylesheet.
 	ExtraCSS func() string
 
 	// Modal flags
-	Backdrop            bool // dim the page behind the widget
-	CloseOnEscape       bool // ESC closes the widget
+	Backdrop            bool
+	CloseOnEscape       bool
 	CloseOnClickOutside bool
 
-	// Surface makes the default chrome paint the widget root as a panel
-	// (surface background, border, radius, shadow, size caps, the slot
-	// scrolling inside) at a corner or banner position, the surface an
-	// anchored popover gets. preset.Popover and preset.FloatingPanel set
-	// it; a toast stack leaves it off because its items are the cards.
-	// Center, Edge, EdgeRight and Bottom paint their own panel and
-	// ignore it, and so does a custom Skeleton.
+	// Surface paints the root as a panel at a corner or banner position.
 	Surface bool
 
 	// Role is the ARIA role applied to the widget root element.
-	// Defaults to "dialog" for backdrop'd widgets and is left empty
-	// for plain panels / floating surfaces. Use "alertdialog" for
-	// widgets that demand the user's immediate attention.
 	Role string
 
-	// LabelledBy is the id of an element (typically a heading) inside
-	// the slot HTML that names this widget for screen readers. Becomes
-	// aria-labelledby on the widget root. The host is responsible for
-	// putting a matching id on the element.
+	// LabelledBy becomes aria-labelledby on the widget root.
 	LabelledBy string
 
-	// DescribedBy is the id of an element inside the slot HTML that
-	// provides supplementary description for the widget. Becomes
-	// aria-describedby on the widget root.
+	// DescribedBy becomes aria-describedby on the widget root.
 	DescribedBy string
 
-	// Hidden=true means the widget is registered but NOT auto-mounted
-	// on page load. A button with data-cui-open="<name>" calls
-	// __gofastr.openWidget(name) to mount it on demand. Use for
-	// modals + drawers that should appear in response to user action.
+	// Hidden registers the widget without mounting it until data-cui-open opens it.
 	Hidden bool
 
-	// DeepLinkKey is the URL query parameter that controls open state
-	// for this widget, e.g. "modal". When the request URL contains
-	// `?<DeepLinkKey>=<DeepLinkValue>`, the SSR layer renders the
-	// widget open at first paint AND the runtime mirrors open/close to
-	// pushState so refresh/share/back-button all stay consistent.
-	//
-	// Empty (the default) disables deep-linking, the widget remains
-	// purely click-driven via data-cui-open.
-	//
-	// Only meaningful for Hidden widgets (modal / drawer). Toasts and
-	// dropdowns intentionally do NOT support deep links.
+	// DeepLinkKey is the query parameter whose DeepLinkValue opens the widget at first paint.
 	DeepLinkKey string
-	// DeepLinkValue is the literal value of DeepLinkKey that opens
-	// THIS widget. Multiple widgets can share the same DeepLinkKey
-	// ("modal") as long as their DeepLinkValue is distinct
-	// ("user-edit", "confirm-delete").
+	// DeepLinkValue is the literal value of DeepLinkKey that opens THIS widget.
 	DeepLinkValue string
-	// DeepLinkParams lists additional query parameters whose values
-	// should be mirrored into named signals when the widget opens via
-	// deep link. e.g. ["user_id"] with URL `?modal=user-edit&user_id=42`
-	// seeds signal "user_id"="42" before the slot renders.
+	// DeepLinkParams are mirrored into same-named signals on a deep-link open.
 	DeepLinkParams []string
 
-	// Routes scopes the widget to specific request paths. When non-
-	// empty, the SSR layer and the runtime catalog only expose this
-	// widget on pages whose path is accepted by at least one matcher.
-	// Empty (the default) means "available on every page", the
-	// behaviour before per-page scoping shipped.
-	//
-	// Constructed via the Builder methods .Pages, .PagesPrefix,
-	// .PagesMatch (or manually for advanced cases).
+	// Routes scopes the widget to specific request paths.
 	Routes []RouteMatcher
 
-	// ListedFor reports whether this caller is offered the widget: the
-	// runtime catalog lists it, and the SSR layer inlines its chrome,
-	// only when it returns true. Use it for a widget only some signed-in
-	// callers may use (the admin drawer lists to admins alone), so its
-	// name stays out of everyone else's catalog. nil offers the widget
-	// to every caller its session gate admits. A panic counts as false.
-	// It scopes what is listed; the gate on /state, /chrome and RPC
-	// (RequireSession, RequireAuthenticated, or the router the widget
-	// mounts on) is still what refuses a request.
+	// ListedFor reports whether this caller is offered the widget.
 	ListedFor func(r *http.Request) bool
 
-	// DragDismiss enables pointer-driven drag-to-dismiss for bottom-edge
-	// widgets. The chrome renders a visible drag-handle bar at the top
-	// of the panel; the runtime listens for pointerdown/move/up on the
-	// handle (and on the panel itself) and closes the widget when the
-	// user drags past a distance + velocity threshold. Snaps back to
-	// the resting position when released earlier.
-	//
-	// Only meaningful for Bottom (and bottom-edge) positions today;
-	// silently no-op elsewhere.
+	// DragDismiss enables pointer-driven drag-to-dismiss for bottom-edge widgets.
 	DragDismiss bool
 
 	// Asset path overrides. Default routes are derived from Name.
-	StylePath string // default: /core-ui/widget/<name>/style.css
-	StatePath string // default: /core-ui/widget/<name>/state
+	StylePath string
+	StatePath string
 
-	// PollMS is the freshness interval (milliseconds) the runtime
-	// should re-fetch StatePath on. Zero (the default) disables
-	// polling. Emitted as "pollMs" in the catalog ONLY when both
-	// PollMS > 0 AND the widget declares at least one Signal, a
-	// widget without signals has no StatePath to poll. The runtime
-	// applies ±10% jitter, pauses while document.hidden, fetches
-	// immediately on visibility regain, and backs off (doubling,
-	// capped at 5×) on fetch failure until the next success.
-	// Set via Builder.Poll.
+	// PollMS is the StatePath re-fetch interval in milliseconds; 0 never.
 	PollMS int
 
 	// PollTerminal, when non-nil, is evaluated on every /state fetch.
-	// When it returns true, serveState sets the X-Gofastr-Poll-Stop
-	// response header so the runtime applies the final signal values
-	// and then ends the cadence, the server-side half of the terminal
-	// contract (#192). Use it for widgets whose freshness job is done
-	// once a terminal state is reached (a job that completed, a batch
-	// that finished). Set via Builder.PollTerminal. The predicate sees
-	// the same process-global state the signal sources do; like signals
-	// it must not branch on per-user data (/state is unauthenticated
-	// unless RequireSession is set).
 	PollTerminal func() bool
 
-	// mountPrefix is the router group prefix Mount registered the routes
-	// under. StylePath and StatePath stay as declared; StyleURL, StateURL
-	// and ChromeURL put the prefix in front.
 	mountPrefix string
 }
 
-// StyleURL returns the URL Mount serves the widget's stylesheet at:
-// StylePath under the prefix of the router group it was mounted on.
+// StyleURL returns the URL Mount serves the widget's stylesheet at.
 func (d *Definition) StyleURL() string { return d.mountPrefix + d.StylePath }
 
-// StateURL returns the URL Mount serves the widget's signal snapshot at:
-// StatePath under the prefix of the router group it was mounted on.
+// StateURL returns the URL Mount serves the widget's signal snapshot at.
 func (d *Definition) StateURL() string { return d.mountPrefix + d.StatePath }
 
-// ChromeURL returns the URL Mount serves the widget's chrome HTML at,
-// /core-ui/widget/<name>/chrome under the prefix of the router group it
-// was mounted on.
+// ChromeURL returns the URL Mount serves the widget's chrome HTML at.
 func (d *Definition) ChromeURL() string { return d.mountPrefix + chromePathFor(d) }
 
-// registry is the process-global list of mounted widgets. The framework
-// runtime (window.__gofastr) fetches /__gofastr/widgets at startup and
-// mounts every entry. One scripted runtime URL on the page; arbitrarily
-// many widgets register through the registry.
-//
-// Coexistence with core-ui/registry: this registry is widget-specific
-// (Position, Slots, RPCs, Skeleton, polling, etc.). The newer
-// core-ui/registry handles per-component CSS for plain styled
-// components and is fetched by the runtime as
-// window.__gofastr_catalog. Both share the data-cui-style="<name>"
-// link dedup key on the client, so a widget and a registered component
-// can't collide on names.
-//
-// TODO(follow-up): consider folding Definition into
-// core-ui/registry.Entry as an opaque Widget *any field once the
-// import graph allows it without cycles. Today widget imports
-// signal, island, component, html, render, style; registry imports
-// only style + component. Inverting that requires a small Widget
-// interface in registry, with widget defining the concrete type.
 var (
 	registryMu sync.Mutex
 	registry   = map[string]*Definition{}
 )
 
-// allWidgets returns the registered widgets (snapshot copy), sorted by
-// name. Sorting matters: every consumer emits bytes derived from the
-// walk, the /__gofastr/widgets catalog JSON, SSR-inlined chrome order,
-// and the static export's widget dump (whose tree hash versions the PWA
-// cache), and Go's map iteration would make all of them flap once a
-// second widget registers.
 func allWidgets() []*Definition {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -317,11 +157,6 @@ func allWidgets() []*Definition {
 }
 
 // Lookup returns the registered widget with this name.
-//
-// Exported for hosts that must authorise a DIRECT request to a widget's own
-// endpoints (/state, /chrome) rather than a catalog listing: those URLs are
-// predictable, so filtering the catalog only decides what a caller is told
-// about, never what it can reach.
 func Lookup(name string) (*Definition, bool) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -329,16 +164,10 @@ func Lookup(name string) (*Definition, bool) {
 	return d, ok
 }
 
-// AllForSSR returns a snapshot of every registered widget. Exported
-// so SSR hosts (framework/uihost) can walk the registry and inline
-// chrome HTML on the page response. The returned slice is a copy of
-// the live registry; callers may iterate freely.
+// AllForSSR returns a snapshot of every registered widget.
 func AllForSSR() []*Definition { return allWidgets() }
 
-// IsAvailableOn returns true when the widget is registered for the
-// given request path. Widgets with no Routes (the default) are
-// available everywhere; widgets with one or more matchers are
-// available on paths accepted by at least one matcher.
+// IsAvailableOn reports whether the widget's Routes accept path; none accept every path.
 func (d *Definition) IsAvailableOn(path string) bool {
 	if len(d.Routes) == 0 {
 		return true
@@ -351,9 +180,7 @@ func (d *Definition) IsAvailableOn(path string) bool {
 	return false
 }
 
-// AvailableOn returns the subset of registered widgets visible on
-// the given request path. The SSR host + per-request catalog handler
-// use this to keep page-scoped widgets out of unrelated pages.
+// AvailableOn returns the registered widgets available on path.
 func AvailableOn(path string) []*Definition {
 	all := allWidgets()
 	out := make([]*Definition, 0, len(all))
@@ -365,33 +192,17 @@ func AvailableOn(path string) []*Definition {
 	return out
 }
 
-// RenderChrome returns the rendered chrome HTML for a single widget, using its
-// registered Skeleton or the framework's defaultSkeleton. Exported so SSR hosts
-// can inline chrome without instantiating `server` themselves.
-//
-// It renders with context.Background(), so a slot that reads the locale or the
-// user renders for nobody in particular; the static exporter passes each locale
-// tree's context to [RenderChromeCtx] instead. For SSR first paint, prefer
-// [RenderChromeCtx] so context-aware slots (role-aware nav, tenant-scoped
-// chrome) see the signed-in user instead of rendering anonymous.
+// RenderChrome returns a widget's chrome HTML, rendered with context.Background().
 func RenderChrome(d *Definition) string {
 	return RenderChromeCtx(context.Background(), d)
 }
 
-// RenderChromeCtx is RenderChrome with an explicit request context, threaded
-// into each slot. The lazy /chrome endpoint already did this
-// (server.renderSkeletonCtx(r.Context())); SSR-inlined chrome must match, or a
-// context-aware slot renders anonymous on first paint and personalized only
-// when reopened.
+// RenderChromeCtx is RenderChrome with ctx threaded into each slot.
 func RenderChromeCtx(ctx context.Context, d *Definition) string {
 	return string((&server{def: *d}).renderSkeletonCtx(ctx))
 }
 
-// RenderCSS returns the widget's stylesheet as served: the framework
-// positioning + chrome rules plus the widget's optional ExtraCSS, minified
-// outside dev (minify.ServedCSS). The live style endpoint writes it, and
-// the static exporter dumps it as a query-free file beside the chrome
-// HTML, so both send the same bytes.
+// RenderCSS returns the widget's stylesheet as served.
 func RenderCSS(d *Definition) string {
 	css := widgetCSS(*d)
 	if extra := safeExtraCSS(*d); extra != "" {
@@ -440,8 +251,7 @@ func (b *Builder) Slot(name string, c component.Component) *Builder {
 	return b
 }
 
-// Signal registers a named server-side signal source. The runtime
-// pushes new values to client DOM nodes bound to it.
+// Signal registers a named server-side signal source.
 func (b *Builder) Signal(name string, src SignalSource) *Builder {
 	if b.def.Signals == nil {
 		b.def.Signals = map[string]SignalSource{}
@@ -450,42 +260,19 @@ func (b *Builder) Signal(name string, src SignalSource) *Builder {
 	return b
 }
 
-// Poll sets a re-fetch interval for the widget's signal state. The
-// runtime GETs StatePath on this cadence and overwrites each declared
-// signal with the fresh value (skipping the DOM write when the value
-// is unchanged). ±10% jitter, pause-while-hidden, and exponential
-// back-off on fetch failure are applied automatically by the runtime.
-//
-// No-op in catalog emission when the widget declares no Signals
-// (statePath is omitted, so there is nothing to poll). interval is
-// recorded verbatim as milliseconds; the browser runtime enforces a
-// 100ms floor (Go callers are trusted config, the page-attribute
-// path clamps at 5s instead, because markup is cheap to typo).
+// Poll sets a re-fetch interval for the widget's signal state.
 func (b *Builder) Poll(interval time.Duration) *Builder {
 	b.def.PollMS = int(interval / time.Millisecond)
 	return b
 }
 
-// PollTerminal declares a predicate evaluated on every /state fetch.
-// When it returns true, serveState emits X-Gofastr-Poll-Stop and the
-// runtime applies the final signal snapshot and then ends the poll
-// cadence, the server-side half of the terminal contract (#192). Use
-// it for a polling widget whose freshness job finishes once a terminal
-// state is reached (a job-status pill that hits completed, a batch that
-// finishes); without it the widget polls forever after going terminal.
-// The predicate runs before the signals are read, so the snapshot that
-// stops the poll is never older than the answer, and a snapshot missing
-// a signal whose Read failed never carries the stop. That ordering
-// holds only for a predicate that stays true once it turns true.
-// No-op when the widget does not also call Poll.
+// PollTerminal sets the predicate that ends polling once it holds.
 func (b *Builder) PollTerminal(fn func() bool) *Builder {
 	b.def.PollTerminal = fn
 	return b
 }
 
-// RPC registers a server-side handler the widget can invoke from
-// the client. method is GET, POST, PUT, PATCH or DELETE; "" defaults to
-// "POST", and Mount panics on any other.
+// RPC registers a server-side handler the widget can invoke from the client.
 func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 	b.def.RPCs = append(b.def.RPCs, RPCEndpoint{Method: widgetRPCMethod(method), Path: path, Handler: h})
 	return b
@@ -494,35 +281,25 @@ func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
 // Backdrop forces a backdrop regardless of position.
 func (b *Builder) Backdrop() *Builder { b.def.Backdrop = true; return b }
 
-// Surface paints the widget root as a panel at a corner or banner
-// position. See Definition.Surface.
+// Surface paints the widget root as a panel at a corner or banner position.
 func (b *Builder) Surface() *Builder { b.def.Surface = true; return b }
 
-// DragDismiss enables drag-to-dismiss for bottom-edge widgets. See
-// Definition.DragDismiss for the full contract.
+// DragDismiss enables drag-to-dismiss for bottom-edge widgets.
 func (b *Builder) DragDismiss() *Builder { b.def.DragDismiss = true; return b }
 
-// Role sets the ARIA role on the widget root (e.g. "dialog",
-// "alertdialog", "menu"). Pair with LabelledBy / DescribedBy for a
-// complete a11y label.
+// Role sets the ARIA role on the widget root.
 func (b *Builder) Role(r string) *Builder { b.def.Role = r; return b }
 
-// LabelledBy sets aria-labelledby on the widget root. The id MUST
-// match an element in the rendered slot HTML.
+// LabelledBy sets aria-labelledby on the widget root.
 func (b *Builder) LabelledBy(id string) *Builder { b.def.LabelledBy = id; return b }
 
-// DescribedBy sets aria-describedby on the widget root. The id MUST
-// match an element in the rendered slot HTML.
+// DescribedBy sets aria-describedby on the widget root.
 func (b *Builder) DescribedBy(id string) *Builder { b.def.DescribedBy = id; return b }
 
-// Hidden marks the widget as registered-but-not-auto-mounted. Open
-// it from a button with data-cui-open="<name>".
+// Hidden marks the widget as registered-but-not-auto-mounted.
 func (b *Builder) Hidden() *Builder { b.def.Hidden = true; return b }
 
-// Pages scopes the widget to exact path matches. The widget is
-// hidden from the catalog + SSR-inlining on every page whose path
-// isn't in the list. Stack with PagesPrefix / PagesMatch to combine
-// rules.
+// Pages scopes the widget to exact path matches.
 func (b *Builder) Pages(paths ...string) *Builder {
 	for _, p := range paths {
 		target := p
@@ -531,9 +308,7 @@ func (b *Builder) Pages(paths ...string) *Builder {
 	return b
 }
 
-// PagesPrefix scopes the widget to paths that start with any of the
-// given prefixes. Useful for section-wide modals (e.g. every
-// /customers/* page).
+// PagesPrefix scopes the widget to paths starting with one of prefixes.
 func (b *Builder) PagesPrefix(prefixes ...string) *Builder {
 	for _, p := range prefixes {
 		target := p
@@ -544,46 +319,26 @@ func (b *Builder) PagesPrefix(prefixes ...string) *Builder {
 	return b
 }
 
-// PagesMatch scopes the widget to paths accepted by the supplied
-// matcher. Use for non-trivial rules (e.g. regex, glob, denylist).
+// PagesMatch scopes the widget to paths accepted by the supplied matcher.
 func (b *Builder) PagesMatch(fn func(path string) bool) *Builder {
 	b.def.Routes = append(b.def.Routes, fn)
 	return b
 }
 
-// ListedFor sets Definition.ListedFor: the widget is listed in the
-// catalog, and inlined on the page, only for callers fn accepts.
+// ListedFor sets Definition.ListedFor.
 func (b *Builder) ListedFor(fn func(r *http.Request) bool) *Builder {
 	b.def.ListedFor = fn
 	return b
 }
 
-// DeepLink wires this widget to a query-string pair. When the URL
-// includes `?key=value`, the SSR layer opens the widget at first paint
-// and the runtime mirrors open/close as pushState updates, so refresh,
-// share, and the browser back button all work.
-//
-// Pair with DeepLinkParam to pass extra data into the widget's signals.
-//
-// Intended for modal/drawer presets; not for toasts or dropdowns.
+// DeepLink wires this widget to a query-string pair.
 func (b *Builder) DeepLink(key, value string) *Builder {
 	b.def.DeepLinkKey = key
 	b.def.DeepLinkValue = value
 	return b
 }
 
-// DeepLinkParam registers a query-string key whose value is mirrored
-// into a same-named signal whenever this widget opens via deep link.
-// Call once per param. Example:
-//
-//	preset.Modal("user-edit").
-//	    Hidden().
-//	    DeepLink("modal", "user-edit").
-//	    DeepLinkParam("user_id").
-//	    Signal("user_id", widget.SignalFunc(func() (any, error) { ... })).
-//
-// Visiting `/users?modal=user-edit&user_id=42` opens the modal with
-// signal "user_id" pre-seeded to "42".
+// DeepLinkParam mirrors query key into a same-named signal on a deep-link open.
 func (b *Builder) DeepLinkParam(key string) *Builder {
 	b.def.DeepLinkParams = append(b.def.DeepLinkParams, key)
 	return b
@@ -595,36 +350,18 @@ func (b *Builder) Skeleton(fn func(slots map[string]render.HTML) render.HTML) *B
 	return b
 }
 
-// Definition returns a pointer to the in-progress Definition so
-// preset builders (drawer / modal / toast) can tweak fields the
-// fluent API doesn't expose setters for. Callers building widgets by
-// hand should still finish with .Build().
+// Definition returns the in-progress Definition.
 func (b *Builder) Definition() *Definition { return &b.def }
 
 // Build returns the assembled Definition.
 func (b *Builder) Build() Definition { return b.def }
 
-// --- Mount ------------------------------------------------------------
-
-// sessionCheck is the host-installed predicate used by widgets that set
-// Definition.RequireSession. authenticatedCheck is the stricter one behind
-// Definition.RequireAuthenticated. nil means no host installed one, in
-// which case a widget asking for that level fails closed.
-//
-// Backed by atomic.Pointer so a host installing them (SetSessionCheck /
-// SetAuthenticatedCheck) at wire time races nothing with the per-request
-// read in gateSession, a plain var here was a data race under -race, and
-// the predicates are read on every gated request. Set once before serving;
-// hot-swapping on a live host is not advised but is at least race-free.
 var (
 	sessionCheck       atomic.Pointer[func(*http.Request) bool]
 	authenticatedCheck atomic.Pointer[func(*http.Request) bool]
 )
 
-// SetSessionCheck installs the predicate that Definition.RequireSession
-// consults — "the caller holds a valid browser session", whatever the host
-// counts as one. Hosts (framework/uihost) call this once at wiring time. A
-// nil predicate clears the check (widgets then fail closed).
+// SetSessionCheck installs the predicate RequireSession consults; nil removes it.
 func SetSessionCheck(fn func(*http.Request) bool) {
 	if fn == nil {
 		sessionCheck.Store(nil)
@@ -633,8 +370,7 @@ func SetSessionCheck(fn func(*http.Request) bool) {
 	sessionCheck.Store(&fn)
 }
 
-// SessionCheck returns the installed predicate, or nil when no host
-// installed one. Lets a host assert its own wiring.
+// SessionCheck returns the installed session predicate, or nil.
 func SessionCheck() func(*http.Request) bool {
 	if p := sessionCheck.Load(); p != nil {
 		return *p
@@ -642,13 +378,7 @@ func SessionCheck() func(*http.Request) bool {
 	return nil
 }
 
-// SetAuthenticatedCheck installs the stricter predicate that
-// Definition.RequireAuthenticated consults — "the request resolves to an
-// authenticated principal", not merely a valid session cookie. Hosts
-// (framework/uihost) call this once at wiring time; under uihost it is
-// satisfied only when the app's session middleware resolved a signed-in
-// user onto the request context. A nil predicate clears the check (widgets
-// then fail closed).
+// SetAuthenticatedCheck installs the predicate RequireAuthenticated consults; nil removes it.
 func SetAuthenticatedCheck(fn func(*http.Request) bool) {
 	if fn == nil {
 		authenticatedCheck.Store(nil)
@@ -657,8 +387,7 @@ func SetAuthenticatedCheck(fn func(*http.Request) bool) {
 	authenticatedCheck.Store(&fn)
 }
 
-// AuthenticatedCheck returns the installed authenticated predicate, or nil
-// when no host installed one. Lets a host assert its own wiring.
+// AuthenticatedCheck returns the installed authenticated predicate, or nil.
 func AuthenticatedCheck() func(*http.Request) bool {
 	if p := authenticatedCheck.Load(); p != nil {
 		return *p
@@ -666,18 +395,14 @@ func AuthenticatedCheck() func(*http.Request) bool {
 	return nil
 }
 
-// gateLevel is the strength of the session gate a Definition asked for.
 type gateLevel int
 
 const (
-	gateOff           gateLevel = iota // no gate (the default)
-	gateAnySession                     // any valid browser session
-	gateAuthenticated                  // request resolves to an authenticated principal
+	gateOff gateLevel = iota
+	gateAnySession
+	gateAuthenticated
 )
 
-// gateLevelOf returns the strongest level the Definition asked for.
-// RequireAuthenticated subsumes RequireSession, so a Definition carrying
-// both is gated at the authenticated level.
 func (d *Definition) gateLevelOf() gateLevel {
 	switch {
 	case d.RequireAuthenticated:
@@ -688,23 +413,14 @@ func (d *Definition) gateLevelOf() gateLevel {
 	return gateOff
 }
 
-// gatedWidgetKey carries the widget whose gate is consulting the host
-// predicate, so the predicate never has to work it out from the URL.
 type gatedWidgetKey struct{}
 
-// GatedWidget returns the widget whose session gate is asking the
-// predicate installed with SetSessionCheck or SetAuthenticatedCheck about
-// r: the definition that owns the /state, /chrome or RPC route being
-// served, or the one GateSatisfied was called with. A request the widget
-// package did not hand to a predicate carries none.
+// GatedWidget returns the widget whose gate is asking an installed predicate about r.
 func GatedWidget(r *http.Request) (*Definition, bool) {
 	d, ok := r.Context().Value(gatedWidgetKey{}).(*Definition)
 	return d, ok
 }
 
-// gateSatisfied reports whether the request passes the gate the level
-// names, for the widget d. Fails closed: a level whose host predicate is
-// missing says no.
 func gateSatisfied(level gateLevel, d *Definition, r *http.Request) bool {
 	var p *atomic.Pointer[func(*http.Request) bool]
 	switch level {
@@ -722,28 +438,16 @@ func gateSatisfied(level gateLevel, d *Definition, r *http.Request) bool {
 	return (*fn)(r.WithContext(context.WithValue(r.Context(), gatedWidgetKey{}, d)))
 }
 
-// GateSatisfied reports whether this request passes def's session gate
-// (RequireSession → any session, RequireAuthenticated → authenticated
-// principal; no gate → always true; a level with no installed predicate →
-// false). Exported so SSR hosts can apply the same verdict where they
-// inline widget chrome at page-render time, one hop away from the gated
-// /chrome endpoint: a def whose endpoints 403 must not have its chrome
-// baked into the anonymous page.
+// GateSatisfied reports whether r passes def's gate; a gate with no installed predicate refuses.
 func GateSatisfied(def *Definition, r *http.Request) bool {
 	return gateSatisfied(def.gateLevelOf(), def, r)
 }
 
-// OfferedTo reports whether r's caller is offered the widget: its
-// session gate admits them (GateSatisfied) and ListedFor, when set,
-// accepts them. The catalog lists, and the SSR layer inlines, only the
-// widgets a request is offered.
+// OfferedTo reports whether r's caller is offered the widget.
 func (d *Definition) OfferedTo(r *http.Request) bool {
 	return GateSatisfied(d, r) && d.listedFor(r)
 }
 
-// listedFor runs the host's ListedFor. A panic fails closed: the widget
-// is not listed, the panic is logged so the host bug that hid it shows,
-// and the request goes on.
 func (d *Definition) listedFor(r *http.Request) (ok bool) {
 	if d.ListedFor == nil {
 		return true
@@ -758,9 +462,6 @@ func (d *Definition) listedFor(r *http.Request) (ok bool) {
 	return d.ListedFor(r)
 }
 
-// gateSession wraps h so it only runs for callers passing the level's
-// predicate. Fails closed: a widget that asked for a gate but runs in a
-// host that installed no check serves nothing.
 func gateSession(level gateLevel, d *Definition, h http.Handler) http.Handler {
 	if level == gateOff {
 		return h
@@ -774,29 +475,7 @@ func gateSession(level gateLevel, d *Definition, h http.Handler) http.Handler {
 	})
 }
 
-// Mount registers the widget's HTTP routes on r and adds it to the
-// process-global registry the framework runtime auto-discovers. Hosts
-// don't embed a per-widget script tag, they embed ONE shared runtime
-// tag (see RuntimeTag) and the runtime mounts every registered widget.
-//
-// Routes mounted on r:
-//
-//	GET  <StylePath>         widget styles (theme-resolved CSS)
-//	GET  <StatePath>         JSON snapshot of all signals (initial render)
-//	GET  /core-ui/widget/<name>/chrome   rendered chrome HTML (lazy)
-//	*    <RPC.Path>          for each RPC, the host's handler
-//
-// Each path is under r's group prefix, as every route registered on r is.
-// The catalog publishes the prefixed URLs (StyleURL, StateURL,
-// ChromeURL), so a widget mounted on root.Group("/v2") is fetched at
-// /v2/core-ui/widget/<name>/…. RPC paths are registered under the prefix
-// too; markup that triggers an RPC names the full URL.
-//
-// Default paths are filled in on def if unset so the caller can read
-// them after Mount returns. Mount a widget once per router: a second
-// Mount of the same name registers the same routes again, and the router
-// panics on the conflict. The catalog keeps the last definition mounted
-// under a name.
+// Mount registers the widget's routes on r and adds it to the widget registry.
 func Mount(r *router.Router, def *Definition) {
 	if def.StylePath == "" {
 		def.StylePath = "/core-ui/widget/" + def.Name + "/style.css"
@@ -817,14 +496,7 @@ func Mount(r *router.Router, def *Definition) {
 	registryMu.Unlock()
 }
 
-// MountShared serves, on r's root, every endpoint of def that another
-// router already published and r does not serve yet: the stylesheet,
-// the signal snapshot, the chrome and the RPCs, at the absolute URLs
-// the catalog and the page markup name, behind the gate Mount puts on
-// each. The registry is process-wide while routes belong to a router,
-// so a second host in the same process finds a definition mounted by
-// the first and needs its routes as well. def keeps its mount prefix
-// and stays in the registry as it is.
+// MountShared serves on r's root every endpoint of def another router published and r does not serve.
 func MountShared(r *router.Router, def *Definition) {
 	served := map[string]bool{}
 	for _, route := range r.Routes() {
@@ -875,65 +547,21 @@ func widgetRPCMethod(method string) string {
 	return method
 }
 
-// MountBuilder builds the widget from b and mounts it on r, sugar over the
-// two-step
-//
-//	def := b.Build()
-//	widget.Mount(r, &def)
-//
-// which every caller otherwise repeats. Use Builder.Hidden() in the chain for
-// widgets (modals, drawers) that start closed.
+// MountBuilder builds the widget from b and mounts it on r.
 func MountBuilder(r *router.Router, b *Builder) {
 	def := b.Build()
 	Mount(r, &def)
 }
 
-// RuntimeTag returns the markup a host page embeds to load the framework
-// runtime + auto-mount every registered widget. The URL includes a
-// content-hash query param so a new server build invalidates any cached
-// runtime in the browser without manual hard-reload.
-//
-// Also emits an inert <script type="application/json"
-// id="gofastr-runtime-modules"> manifest mapping each split runtime module
-// (popover, toasts, widgets, …) to its content-addressed hash. The
-// client-side module loader reads this manifest to build cache-busted
-// `?v=<hash>` URLs. Without it, kiln-style hosts that don't go through
-// framework/uihost would fall through to un-versioned URLs and end up
-// poisoning the browser cache (server returns `Cache-Control: ...immutable`
-// unconditionally).
-//
-// Implemented as a func, not a const, because the hashes are computed
-// lazily from the embedded JS bytes.
-//
-// The inert JSON blocks come first. The kernel reads the behaviours
-// block (#gofastr-behaviors) at boot, in the same pass that installs
-// the interaction bridge, so a block that follows the runtime script
-// is read as absent and every registered behaviour's marker goes
-// unscanned: kiln's copy-transcript button stayed dead that way once
-// the copy fragment retired into headless-feedback. framework/uihost
-// places its blocks in <head> for the same reason.
+// RuntimeTag returns the markup that loads the runtime and mounts every registered widget.
 func RuntimeTag() string {
 	return RuntimeModuleManifestScript() +
 		`<script src="/__gofastr/runtime.js?v=` + runtimeHash() + `"></script>`
 }
 
-// MountRuntime registers the framework runtime endpoints on r:
-//
-//	GET /__gofastr/runtime.js                 the default bundled runtime
-//	                                          (single-payload IIFE every
-//	                                          page ships)
-//	GET /__gofastr/runtime/<name>.js          one split runtime module
-//	                                          (loaded on demand via the
-//	                                          optional module-loader path)
-//	GET /__gofastr/widgets                    JSON list of registered widgets
-//
-// Call this once per host (kiln serve, examples/site, etc.).
-// The runtime IIFE is idempotent, so re-mounting on rebuilds is safe.
+// MountRuntime registers the framework runtime endpoints on r.
 func MountRuntime(r *router.Router) {
 	r.Get("/__gofastr/runtime.js", http.HandlerFunc(serveRuntime))
 	r.Get("/__gofastr/widgets", http.HandlerFunc(serveWidgetList))
-	// Per-module URL pattern. Router supports parameter capture via the
-	// trailing wildcard; the handler validates the name + extracts it
-	// from the path itself so we accept .js suffix uniformly.
 	r.Get("/__gofastr/runtime/{name}", http.HandlerFunc(serveRuntimeModule))
 }

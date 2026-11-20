@@ -1,0 +1,43 @@
+primitive: screen.markdown
+summary: The llm.md surface - the per-screen and index markdown handlers and the HTML-to-markdown converter they render pages through, with the article wrap and the document direction scripts.
+code:
+  - core-ui/app/llmmd.go
+  - core-ui/app/html2md.go
+  - core-ui/app/article.go
+  - core-ui/app/docdir.go
+invariants:
+  - id: markdown-cannot-forge-structure
+    rule: Page text, code, link text, alt text, table cells and head fields cannot start or break out of markdown structure - code fences and spans out-length their content's backtick runs, entities decode exactly once and control entities are dropped.
+    enforced_by:
+      - test: core-ui/app.TestLLMMDCodeFenceContentCannotBreakOut
+      - test: core-ui/app.TestLLMMDInlineCodeCannotBreakOut
+      - test: core-ui/app.TestLLMMDLinkTextCannotForgeLinks
+      - test: core-ui/app.TestLLMMDHeadFieldsCannotInjectStructure
+      - test: core-ui/app.TestLLMMDTextNodesCannotStartStructure
+      - test: core-ui/app.TestLLMMDDoubleEncodedStaysLiteral
+      - test: core-ui/app.TestInlineCodeDecodesExactlyOnce
+      - test: core-ui/app.TestHTML2MD_TextControlEntities
+  - id: scripts-and-styles-dropped
+    rule: The converter drops script and style blocks with their contents.
+    enforced_by:
+      - test: core-ui/app.TestHTML2MD_ScriptStyleStripped
+  - id: markdown-is-private
+    rule: The llm.md handlers answer Cache-Control private, no-store.
+    enforced_by:
+      - test: core-ui/app.TestMarkdownHandlersArePrivate
+  - id: markdown-honours-guards
+    rule: The llm.md index and a screen's document run its region guards and resolvers, and a failed guard read yields no page.
+    enforced_by:
+      - test: core-ui/app.TestPageIndexRunsRegionGuards
+      - test: core-ui/app.TestScreenDocRunsRegionGuards
+      - test: core-ui/app.TestLLMMDGuardReadIsNoPage
+      - test: core-ui/app.TestLLMMDForPathRunsResolvers
+decisions:
+  - id: markdown-from-the-rendered-page
+    date: 2026-11-20
+    status: accepted
+    decision: llm.md is converted from each screen's rendered HTML.
+    rejected:
+      - option: A second, markdown-specific render per screen.
+        why: Every screen would carry two renders that drift apart.
+    upholds: [markdown-cannot-forge-structure]

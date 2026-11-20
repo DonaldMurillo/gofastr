@@ -6,16 +6,10 @@ import (
 	"strings"
 )
 
-// classAttrRe matches class="..." attributes in HTML.
 var classAttrRe = regexp.MustCompile(`class="([^"]*)"`)
 
-// CSSExtractor scans rendered HTML and extracts used utility classes
-// to generate CSS for them.
-//
-// The legacy "Known map of named component styles" was retired
-// alongside the typed-theme migration, registered styled components
-// now own their own CSS via core-ui/registry. CSSExtractor is now
-// purely the utility-class generator (Tailwind-style helpers).
+// CSSExtractor scans rendered HTML and extracts used utility classes to
+// generate CSS for them.
 type CSSExtractor struct {
 	Theme Theme
 }
@@ -25,8 +19,8 @@ func NewCSSExtractor(theme Theme) *CSSExtractor {
 	return &CSSExtractor{Theme: theme}
 }
 
-// ExtractFromHTML scans HTML for class attributes and returns the
-// list of unique classes used.
+// ExtractFromHTML scans HTML for class attributes and returns the list of
+// unique classes used.
 func (e *CSSExtractor) ExtractFromHTML(html string) []string {
 	matches := classAttrRe.FindAllStringSubmatch(html, -1)
 	seen := make(map[string]bool)
@@ -48,11 +42,7 @@ func (e *CSSExtractor) ExtractFromHTML(html string) []string {
 	return result
 }
 
-// GenerateCSS generates utility CSS for the given class list. Class names
-// that are not CSS identifiers are skipped: the name is interpolated
-// unquoted into the ".%s { … }" selector slot, so anything carrying
-// braces, semicolons, or a url( payload would become live CSS (the same
-// identifier-slot contract StyleSheet property names carry).
+// GenerateCSS generates utility CSS for the given class list.
 func (e *CSSExtractor) GenerateCSS(classes []string) string {
 	return GenerateUtilityCSS(classes, e.Theme)
 }

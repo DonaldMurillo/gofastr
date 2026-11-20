@@ -9,14 +9,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
-// markerComment is one comment and where it sits.
 type markerComment struct {
 	text      string
 	line, end int // 1-based lines of its first and last byte
 	alone     bool
 }
 
-// allowedLines returns the lines a marker naming name covers.
 func allowedLines(comments []markerComment, name string) map[int]bool {
 	out := map[int]bool{}
 	for _, c := range comments {
@@ -32,9 +30,6 @@ func allowedLines(comments []markerComment, name string) map[int]bool {
 	return out
 }
 
-// jsComments returns the comments of a JS source. Code blanks every
-// comment byte to a space and keeps everything else, so a comment starts
-// wherever the two views first disagree.
 func jsComments(f jsSource) []markerComment {
 	var out []markerComment
 	for i := 0; i < len(f.Src) && i < len(f.Code); i++ {
@@ -60,7 +55,6 @@ func jsComments(f jsSource) []markerComment {
 	return out
 }
 
-// goComments returns the comments of a parsed Go file.
 func goComments(fset *token.FileSet, file *ast.File, src []byte) []markerComment {
 	var out []markerComment
 	for _, cg := range file.Comments {
@@ -77,8 +71,6 @@ func goComments(fset *token.FileSet, file *ast.File, src []byte) []markerComment
 	return out
 }
 
-// aloneOnLine reports whether src[start:end] has only whitespace before
-// it on its first line and after it on its last.
 func aloneOnLine(src string, start, end int) bool {
 	if start > len(src) || end > len(src) {
 		return false

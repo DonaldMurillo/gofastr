@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const titleSep = " · "
@@ -29,7 +30,7 @@ func (u *UI) rowTitles(ctx context.Context, m *meta, rows []map[string]any, hops
 			}
 		}
 		for i, row := range rows {
-			v := cell(m.rowValue(row, name))
+			v := fieldtext.Cell(m.rowValue(row, name))
 			if labels != nil {
 				v = labels[v]
 			}
@@ -72,7 +73,7 @@ func columnIDs(m *meta, rows []map[string]any, col string) []string {
 	ids := make([]string, 0, len(rows))
 	seen := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		if v := cell(m.rowValue(row, col)); v != "" && !seen[v] {
+		if v := fieldtext.Cell(m.rowValue(row, col)); v != "" && !seen[v] {
 			seen[v] = true
 			ids = append(ids, v)
 		}

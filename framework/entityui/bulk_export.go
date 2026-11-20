@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const exportKeyParam = "_list"
@@ -86,7 +87,7 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		rec := make([]string, len(fields))
 		for _, row := range rows {
 			for i, f := range fields {
-				rec[i] = csvCell(m, f, cell(m.rowValue(row, f)))
+				rec[i] = csvCell(m, f, fieldtext.Cell(m.rowValue(row, f)))
 			}
 			if err := cw.Write(rec); err != nil {
 				slog.Debug("entityui: export write", "error", err)

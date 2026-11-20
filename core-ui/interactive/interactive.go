@@ -1,17 +1,5 @@
-// Package interactive provides declarative interactivity primitives for
-// GoFastr components. It wraps arbitrary render.HTML with data-cui-*
-// attributes the runtime understands, RPC calls, signal bindings, widget
-// chaining, without writing any JavaScript.
-//
-// Usage:
-//
-//	interactive.OnClick(btn,
-//	    interactive.Post("/api/like").OnSuccess(interactive.SetSignal("count")),
-//	)
-//
-// The package only emits attributes the runtime already handles
-// (data-cui-rpc, data-cui-signal, data-cui-open, etc.) plus new ones
-// added for chaining (data-cui-rpc-open, data-cui-rpc-signal).
+// Package interactive wires RPC calls, signal bindings and widget triggers onto
+// server-rendered HTML as data-cui-* attributes the runtime reads.
 package interactive
 
 import (
@@ -28,33 +16,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
-// ─── Actions ────────────────────────────────────────────────────────
-//
-// An Action describes what happens on a user interaction (click or
-// submit). It maps 1:1 to data-cui-rpc attributes on the HTML element.
-
 // Action describes an RPC call triggered by click or submit.
 type Action struct {
-	method  string  // GET, POST, PUT, DELETE, PATCH
-	path    string  // URL path
-	confirm Confirm // pre-flight confirmation (empty Message = none)
-	body    string  // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
-	effects []Effect
-	// errorToast is the data-cui-rpc-error-toast title; nil = no error toast.
-	errorToast *string
-	// successToast is the data-cui-rpc-success-toast title; nil = none.
-	successToast *string
-	// successAction is the data-cui-rpc-success-action payload; nil = none.
+	method        string  // GET, POST, PUT, DELETE, PATCH
+	path          string  // URL path
+	confirm       Confirm // pre-flight confirmation (empty Message = none)
+	body          string  // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
+	effects       []Effect
+	errorToast    *string
+	successToast  *string
 	successAction *ToastAction
 }
 
-// ToastAction is a toast's one button as the runtime reads it: its
-// label and the RPC attributes it carries. Build it with
-// NewToastAction; a server toast carries it as ui.ToastTrigger.Action.
+// ToastAction is a toast's one button as the runtime reads it: its label and the RPC attributes it
+// carries.
 type ToastAction uiaction.ToastAction
 
-// NewToastAction builds a labelled RPC button, including optional response-signal wiring.
-// It panics for a missing label or endpoint, preflight confirmation, or standalone signal mutation hooks.
+// NewToastAction is a toast button labelled label that runs next.
 func NewToastAction(label string, next Action) *ToastAction {
 	action := uiaction.ToastAction{Label: label, Attrs: next.attrs()}
 	if err := action.Validate(); err != nil {
@@ -103,11 +81,9 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 	return a
 }
 
-// Confirm is what a pre-flight confirmation says: the dialog's title,
-// its message, the accept button's label, and whether accepting
-// destroys something (Danger draws the accept button in the danger
-// variant). Only Message is required; an empty Title or Accept keeps
-// the kit dialog's own ("Are you sure?", "Confirm").
+// Confirm is what a pre-flight confirmation says: the dialog's title, its message, the accept
+// button's label, and whether accepting destroys something (Danger draws the accept button in the
+// danger variant).
 type Confirm struct {
 	Title   string
 	Message string
@@ -115,43 +91,12 @@ type Confirm struct {
 	Danger  bool
 }
 
-// WithConfirm gates the action behind a PRE-FLIGHT confirmation. Before the
-// RPC is dispatched, the runtime opens the kit's confirm dialog with
-// message; cancelling aborts the request entirely, so the RPC never fires.
-// Because the gate runs *before* the request, not after it succeeds, it is
-// a property of the Action itself, not an OnSuccess effect.
-//
-//	interactive.OnClick(saveBtn,
-//	    interactive.Post("/api/items/42/publish").
-//	        WithConfirm("Publish this item to every customer?"),
-//	)
-//
-// It is WithConfirmDialog(Confirm{Message: message}): reach for that to
-// title the dialog, name the accept button or mark the action
-// destructive. A page with no confirm dialog registered (no kit
-// imported) falls back to window.confirm, so the gate never opens.
-//
-// Maps to data-cui-confirm="message".
+// WithConfirm gates the action behind a PRE-FLIGHT confirmation.
 func (a Action) WithConfirm(message string) Action {
 	return a.WithConfirmDialog(Confirm{Message: message})
 }
 
-// WithConfirmDialog gates the action behind the kit's confirm dialog,
-// spelled in full. Use it for destructive actions (delete, revoke,
-// drop), where the dialog names what goes and the accept button says
-// so in the danger variant:
-//
-//	interactive.Delete("/api/items/42").
-//	    WithConfirmDialog(interactive.Confirm{
-//	        Title:   "Delete item?",
-//	        Message: "This cannot be undone.",
-//	        Accept:  "Delete",
-//	        Danger:  true,
-//	    })
-//
-// Panics on an empty Message: a confirmation that says nothing asks
-// nothing. Maps to data-cui-confirm, data-cui-confirm-title,
-// data-cui-confirm-accept and data-cui-confirm-tone="danger".
+// WithConfirmDialog gates the action behind the kit's confirm dialog, spelled in full.
 func (a Action) WithConfirmDialog(c Confirm) Action {
 	if c.Message == "" {
 		panic("interactive: WithConfirmDialog needs a Message — a confirmation that says nothing asks nothing")
@@ -160,66 +105,29 @@ func (a Action) WithConfirmDialog(c Confirm) Action {
 	return a
 }
 
-// OnErrorToast makes a refused or failed RPC visible: on a non-2xx answer
-// (or a network error) the runtime shows an error toast titled title, with
-// the server's JSON "error" message as its body. Without it a non-form
-// RPC that fails ends in silence (a form already reports its refusals
-// beside the fields). An empty title falls back to "Request failed".
-//
-//	interactive.Delete("/api/orders/42").
-//	    OnSuccess(interactive.Navigate("/orders")).
-//	    OnErrorToast("Could not delete this order.")
-//
-// Maps to data-cui-rpc-error-toast="title".
+// OnErrorToast makes a refused or failed RPC visible: on a non-2xx answer (or a network error) the
+// runtime shows an error toast titled title, with the server's JSON "error" message as its body.
 func (a Action) OnErrorToast(title string) Action {
 	a.errorToast = &title
 	return a
 }
 
-// OnSuccessToast shows a success toast titled title on a 2xx answer, before
-// any OnSuccess(Navigate) runs. The toast rides the stack outside the
-// swapped region, so it survives the navigation that follows it — the save
-// that lands the reader back on the record page still says "Saved".
-//
-//	interactive.Post("/api/orders").
-//	    OnSuccessToast("Order created.").
-//	    OnSuccess(interactive.Navigate("/orders"))
-//
-// Maps to data-cui-rpc-success-toast="title".
+// OnSuccessToast shows a success toast titled title on a 2xx answer, before any OnSuccess(Navigate)
+// runs.
 func (a Action) OnSuccessToast(title string) Action {
 	a.successToast = &title
 	return a
 }
 
-// OnSuccessToastAction puts one action on the OnSuccessToast toast: a
-// button labelled label that runs next when pressed, with next's own
-// toasts and navigation. The toast stays up for ten seconds, paused
-// while hovered or focused, so there is time to press it. The button
-// carries next's RPC wiring and nothing else, so next may not carry a
-// confirm: it panics on one, and on an empty label. The action rides
-// the success toast, so an Action that renders without OnSuccessToast
-// panics too.
-//
-//	interactive.Delete("/api/invoices/42").
-//	    OnSuccessToast("Invoice deleted").
-//	    OnSuccessToastAction("Undo", interactive.Post("/api/invoices/42/_restore").
-//	        WithBody(`{}`).OnSuccessToast("Invoice restored"))
-//
-// Maps to data-cui-rpc-success-action='{"label":…,"attrs":{…}}'.
+// OnSuccessToastAction puts one action on the OnSuccessToast toast: a button labelled label that
+// runs next when pressed, with next's own toasts and navigation.
 func (a Action) OnSuccessToastAction(label string, next Action) Action {
 	a.successAction = NewToastAction(label, next)
 	return a
 }
 
-// WithBody attaches a static JSON body to the action, the payload sent
-// for a non-form RPC (a button click that isn't inside a <form>).
-// Maps to data-cui-rpc-body="<json>". The runtime sends it verbatim as
-// the request body with Content-Type: application/json.
-//
-// Panics if json is not valid JSON (json.Valid), so a malformed body
-// fails loudly at build/render time rather than producing a runtime
-// request the server rejects. For form-backed RPCs the runtime
-// serializes the form fields itself, do not call WithBody there.
+// WithBody attaches a static JSON body to the action, the payload sent for a non-form RPC (a button
+// click that isn't inside a <form>).
 func (a Action) WithBody(body string) Action {
 	if !json.Valid([]byte(body)) {
 		panic(fmt.Sprintf("interactive: WithBody requires valid JSON, got %q", body))
@@ -228,20 +136,12 @@ func (a Action) WithBody(body string) Action {
 	return a
 }
 
-// ─── Effects ────────────────────────────────────────────────────────
-//
-// Effects describe what happens after an RPC succeeds or fails.
-// They map to data-cui-rpc-* attributes.
-
 // Effect is something that happens after an RPC response.
 type Effect interface {
-	// rpcAttrs returns data-cui-rpc-* attributes to set on the element.
 	rpcAttrs() map[string]string
 }
 
 // SetSignal pushes the RPC response into a named client-side signal.
-// Maps to data-cui-rpc-signal="name". Panics if name contains a double
-// quote or is a reserved signal name.
 func SetSignal(name string) Effect {
 	if strings.ContainsRune(name, '"') {
 		panic(fmt.Sprintf("interactive: signal name must not contain '\"', got %q", name))
@@ -250,14 +150,6 @@ func SetSignal(name string) Effect {
 	return signalEffect{name: name}
 }
 
-// refuseReservedSignalName mirrors the runtime kernel's guard
-// (frag/signals.js isReservedSignalKey): __proto__, constructor, and
-// prototype are the JS object keys that, used as a dynamic property
-// name on the signal store, re-parent its prototype chain instead of
-// creating an own data property, so the kernel refuses every write to
-// them. The emitters refuse the same names up front — an emitted
-// reserved name is a permanently dead control: the click lands in the
-// kernel's console.warn and no error surfaces anywhere else.
 func refuseReservedSignalName(name string) {
 	if name == "__proto__" || name == "constructor" || name == "prototype" {
 		panic(fmt.Sprintf("interactive: signal name %q is reserved — the runtime kernel refuses every write to __proto__/constructor/prototype, so the control would never fire", name))
@@ -271,7 +163,6 @@ func (e signalEffect) rpcAttrs() map[string]string {
 }
 
 // OpenWidget opens a named widget when the RPC succeeds.
-// Maps to data-cui-rpc-open="name".
 func OpenWidget(name string) Effect {
 	return openWidgetEffect{name: name}
 }
@@ -283,7 +174,6 @@ func (e openWidgetEffect) rpcAttrs() map[string]string {
 }
 
 // CloseWidget closes the enclosing widget on RPC success.
-// Maps to data-cui-rpc-close="true".
 func CloseWidget() Effect {
 	return closeWidgetEffect{}
 }
@@ -295,7 +185,6 @@ func (e closeWidgetEffect) rpcAttrs() map[string]string {
 }
 
 // ResetForm resets the enclosing form on RPC success.
-// Maps to data-cui-rpc-reset="true".
 func ResetForm() Effect {
 	return resetFormEffect{}
 }
@@ -307,7 +196,6 @@ func (e resetFormEffect) rpcAttrs() map[string]string {
 }
 
 // Navigate does an SPA navigation on RPC success.
-// Maps to data-cui-rpc-navigate="path".
 func Navigate(path string) Effect {
 	return navigateEffect{path: path}
 }
@@ -318,10 +206,7 @@ func (e navigateEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-cui-rpc-navigate": e.path}
 }
 
-// AfterText replaces the trigger element's text content with text on 2xx RPC
-// success. One-shot, subsequent re-clicks are idempotent via
-// data-cui-rpc-after-done. Pair with AfterDisable for "Saved ✓" feedback.
-// Maps to data-cui-rpc-after-text="text".
+// AfterText replaces the trigger element's text content with text on 2xx RPC success.
 func AfterText(text string) Effect {
 	return afterTextEffect{text: text}
 }
@@ -332,10 +217,8 @@ func (e afterTextEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-cui-rpc-after-text": e.text}
 }
 
-// AfterDisable permanently disables the trigger element on 2xx RPC success
-// (sets aria-disabled="true" and, for buttons/inputs, disabled=true). Use
-// with AfterText for "Saved ✓" / "Revealed ✓" feedback. Maps to the boolean
-// attribute data-cui-rpc-after-disable.
+// AfterDisable permanently disables the trigger element on 2xx RPC success (sets aria-
+// disabled="true" and, for buttons/inputs, disabled=true).
 func AfterDisable() Effect {
 	return afterDisableEffect{}
 }
@@ -346,9 +229,7 @@ func (e afterDisableEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-cui-rpc-after-disable": ""}
 }
 
-// ScrollTo smooth-scrolls the element matching selector into view on 2xx RPC
-// success. Use to direct the user's eye at newly-inserted content.
-// Maps to data-cui-rpc-scroll-to="selector".
+// ScrollTo smooth-scrolls the element matching selector into view on 2xx RPC success.
 func ScrollTo(selector string) Effect {
 	return scrollToEffect{selector: selector}
 }
@@ -359,10 +240,8 @@ func (e scrollToEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-cui-rpc-scroll-to": e.selector}
 }
 
-// PushState applies a URL update via history.pushState after 2xx RPC success
-// without triggering a fetch. The server-supplied X-Gofastr-Push-State header
-// takes precedence over this attribute when both are present.
-// Maps to data-cui-push-state="path".
+// PushState applies a URL update via history.pushState after 2xx RPC success without triggering a
+// fetch.
 func PushState(path string) Effect {
 	return pushStateEffect{path: path}
 }
@@ -373,10 +252,7 @@ func (e pushStateEffect) rpcAttrs() map[string]string {
 	return map[string]string{"data-cui-push-state": e.path}
 }
 
-// ─── Wrapper functions ──────────────────────────────────────────────
-
 // OnClick wraps an HTML element so that clicking it fires the action.
-// The element must be a clickable element (button, a, etc.).
 func OnClick(html render.HTML, action Action) render.HTML {
 	return wrapWithAction(html, action)
 }
@@ -387,12 +263,6 @@ func OnSubmit(html render.HTML, action Action) render.HTML {
 }
 
 // LiveSearch wraps a form element so input changes fire debounced RPCs.
-// The search input should be the first <input> inside the form.
-// Results are written into the signal named by the action's OnSuccess effect
-// (typically via SetSignal).
-//
-// debounceMs controls the delay between keystrokes and the RPC call.
-// If debounceMs is 0, a default of 250ms is used.
 func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	wrapped := wrapWithAction(form, action)
 	wrapped = injectAttr(wrapped, "data-cui-rpc-trigger", "input")
@@ -404,15 +274,9 @@ func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	return wrapped
 }
 
-// ─── Scroll-triggered reveal ────────────────────────────────────────
-
 var revealStyle = registry.RegisterStyle("cui-reveal", revealCSS)
 
 // Reveal wraps an element so it animates in when it enters the viewport.
-// The animationType determines the direction ("fade-up", "fade-in",
-// "slide-left", "slide-right"). Empty → "fade-in". The element renders
-// visible without JS (progressive enhancement); reveal.js adds the
-// hidden state on boot and removes it on intersection.
 func Reveal(html render.HTML, animationType string) render.HTML {
 	if animationType == "" {
 		animationType = "fade-in"
@@ -442,22 +306,13 @@ func revealCSS(_ style.Theme) string {
 		`@media (prefers-reduced-motion:reduce){` + target + `.cui-hidden{opacity:1;transform:none}` + target + `.cui-revealed{transition:none}}`
 }
 
-// ─── Client-side signal mutations (no RPC) ──────────────────────────
-//
-// These mutate signals purely in the browser, no server round-trip.
-// Use for counters, toggles, tabs, and other local-only state.
-
-// SetLocal wraps an HTML element so clicking it sets a signal to a
-// fixed value. No RPC is fired, the update is instant. Panics if
-// signalName is a reserved signal name.
+// SetLocal wraps an HTML element so clicking it sets a signal to a fixed value.
 func SetLocal(html render.HTML, signalName, value string) render.HTML {
 	refuseReservedSignalName(signalName)
 	return injectAttr(html, "data-cui-signal-set", signalName+":"+value)
 }
 
-// IncLocal wraps an HTML element so clicking it increments a numeric
-// signal by delta (default 1). No RPC is fired. Panics if signalName
-// is a reserved signal name.
+// IncLocal wraps an HTML element so clicking it increments a numeric signal by delta (default 1).
 func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 	refuseReservedSignalName(signalName)
 	val := signalName
@@ -467,28 +322,13 @@ func IncLocal(html render.HTML, signalName string, delta int) render.HTML {
 	return injectAttr(html, "data-cui-signal-inc", val)
 }
 
-// ToggleLocal wraps an HTML element so clicking it toggles a boolean
-// signal. No RPC is fired. Panics if signalName is a reserved signal
-// name.
+// ToggleLocal wraps an HTML element so clicking it toggles a boolean signal.
 func ToggleLocal(html render.HTML, signalName string) render.HTML {
 	refuseReservedSignalName(signalName)
 	return injectAttr(html, "data-cui-signal-toggle", signalName)
 }
 
-// ─── Dropdown ──────────────────────────────────────────────────────
-//
-// Dropdown wraps a trigger element and a panel into a click-toggle
-// dropdown. The trigger gets data-cui-dropdown, aria-expanded="false",
-// and aria-haspopup="true". The panel gets data-cui-dropdown-panel and
-// is initially hidden. Both are wrapped in a container with
-// data-cui-dropdown-wrap.
-//
-// The runtime module (dropdown.js) handles click-toggle, click-outside
-// dismiss, and Escape-to-close.
-//
-//	trigger := render.Tag("button", nil, render.Text("Menu"))
-//	panel := render.Tag("div", nil, render.Text("Dropdown content"))
-//	html := interactive.Dropdown(trigger, panel)
+// Dropdown wraps a trigger and a panel into a click-toggle dropdown.
 var dropdownStyle = registry.RegisterStyle("cui-dropdown", dropdownCSS)
 
 func Dropdown(trigger, panel render.HTML) render.HTML {
@@ -510,12 +350,6 @@ func Dropdown(trigger, panel render.HTML) render.HTML {
 }
 
 func dropdownCSS(_ style.Theme) string {
-	// The wrap positions the panel; the panel is a floating surface; its
-	// links/buttons are styled as menu items. Without this the panel
-	// renders as a flat, full-width, unstyled strip (functional but not a
-	// dropdown).
-	//
-	// Knobs: --ui-dropdown-min-width (11rem).
 	return `[data-cui-comp="cui-dropdown"]{position:relative;display:inline-block}` +
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel]{position:absolute;top:calc(100% + var(--spacing-sm, 4px));inset-inline-start:0;min-width:var(--ui-dropdown-min-width, 11rem);background:var(--fui-surface, var(--color-surface, #fff));border:var(--stroke-thin, 1px) solid var(--fui-border, var(--color-border, #E4E4E7));border-radius:var(--radii-md, 8px);box-shadow:var(--shadow-md, 0 8px 24px rgba(0,0,0,.12));padding:var(--spacing-sm, .25rem);z-index:var(--z-dropdown, 100)}` +
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button{display:block;width:100%;box-sizing:border-box;text-align:start;padding:var(--spacing-md, .5rem) calc(var(--spacing-sm, 4px) * 3);border-radius:var(--radii-sm, 6px);color:var(--fui-foreground, var(--color-text, #09090B));text-decoration:none;background:none;border:none;cursor:pointer;font:inherit;font-size:var(--text-sm, .875rem)}` +
@@ -523,11 +357,8 @@ func dropdownCSS(_ style.Theme) string {
 		`[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] a:focus-visible,[data-cui-comp="cui-dropdown"] [data-cui-dropdown-panel] button:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:calc(-1 * var(--stroke-focus-offset, 2px))}`
 }
 
-// AnimateOnSignal wraps an element so it gets a CSS class when a signal
-// is truthy and loses it when falsy. Used for CSS transition-driven
-// animations like slide-down, fade, etc.
-//
-// Panics if signalName or cssClass is empty, or signalName is reserved.
+// AnimateOnSignal wraps an element so it gets a CSS class when a signal is truthy and loses it when
+// falsy.
 func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML {
 	if signalName == "" {
 		panic("interactive: AnimateOnSignal signalName must not be empty")
@@ -542,23 +373,15 @@ func AnimateOnSignal(html render.HTML, signalName, cssClass string) render.HTML 
 }
 
 // EditToggle wraps an element so clicking it toggles a boolean signal.
-// Semantic alias for ToggleLocal used in inline-edit patterns: clicking
-// the text span enters edit mode.
 func EditToggle(html render.HTML, signalName string) render.HTML {
 	return ToggleLocal(html, signalName)
 }
 
-// CancelEdit wraps an element so clicking it sets a signal to false,
-// closing the inline-edit mode. Typically used on a cancel button
-// inside the edit form.
+// CancelEdit wraps an element so clicking it sets a signal to false, closing the inline-edit mode.
 func CancelEdit(html render.HTML, signalName string) render.HTML {
 	return SetLocal(html, signalName, "false")
 }
 
-// ─── Optimistic update ─────────────────────────────────────────────
-//
-// OptimisticUpdate renders a one-shot action button with trusted idle and success HTML.
-// Its status announces failure when the browser adapter rolls the button back.
 func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 	for _, key := range slices.Sorted(maps.Keys(action.attrs())) {
 		if key != "data-cui-rpc" && key != "data-cui-rpc-method" {
@@ -581,8 +404,6 @@ func injectAttr(html render.HTML, key, value string) render.HTML {
 func wrapWithAction(html render.HTML, action Action) render.HTML {
 	return registry.AppendAttributes(html, action.attrs())
 }
-
-// ─── Internal helpers ───────────────────────────────────────────────
 
 func (a Action) attrs() map[string]string {
 	if a.method == "" && a.path == "" {
@@ -614,7 +435,6 @@ func (a Action) attrs() map[string]string {
 		m["data-cui-rpc-success-toast"] = *a.successToast
 	}
 	if a.successAction != nil {
-		// Strings in, so the encode cannot fail.
 		b, _ := json.Marshal(a.successAction)
 		m["data-cui-rpc-success-action"] = string(b)
 	}
@@ -627,41 +447,17 @@ func (a Action) attrs() map[string]string {
 	return m
 }
 
-// Attrs returns the data-cui-* attributes this Action would inject, as a
-// plain map[string]string. It is the same map [OnClick]/[OnSubmit] splice
-// into the opening tag, exported so a call site can merge it into an
-// existing attribute map (an [render.Tag] attrs map or a ui.*Config
-// ExtraAttrs) and let render.Tag's sorted writer place every attribute in
-// the same order a hand-written map would. Prefer this over the wrapper
-// functions whenever byte-identical attribute ordering matters (the
-// wrappers append at the tag's first '>', which can reorder attributes
-// relative to a sorted map render).
-//
-// The returned map is a fresh copy; mutating it does not affect the Action.
-// It is assignable directly to html.Attrs (a map[string]string alias) and
-// to render.Tag's attrs argument.
+// Attrs returns the data-cui-* attributes this Action would inject, as a plain map[string]string.
 func (a Action) Attrs() map[string]string {
 	return a.attrs()
 }
 
-// ─── Widget open triggers ───────────────────────────────────────────
-
-// OpenOnClick wraps an HTML element so clicking it opens a registered
-// widget surface. Maps to data-cui-open="<widget>". This is the
-// click-to-open trigger, distinct from [OpenWidget], which opens a
-// widget only after a successful RPC (data-cui-rpc-open).
+// OpenOnClick wraps an HTML element so clicking it opens a registered widget surface.
 func OpenOnClick(html render.HTML, widget string) render.HTML {
 	return injectAttr(html, "data-cui-open", widget)
 }
 
-// ─── Toasts ─────────────────────────────────────────────────────────
-
-// Toast is the config for a click-fired toast notification. Zero fields
-// are omitted from the emitted JSON, so a Toast{Variant, Title, Body,
-// TTLMs} marshals to exactly {"variant":…,"title":…,"body":…,"ttl":…},
-// the shape call sites hand-write. The feedback module's toast
-// runtime (`headless-feedback` `__gofastr.toast`) reads these keys:
-// variant, title, body, ttl, stack.
+// Toast is the config for a click-fired toast notification.
 type Toast struct {
 	Variant string `json:"variant,omitempty"` // "success" | "warning" | "danger" | "info" | "neutral"; defaults to "info"
 	Title   string `json:"title,omitempty"`   // required by the runtime, a toast with no title is dropped
@@ -670,40 +466,24 @@ type Toast struct {
 	TTLMs   int    `json:"ttl,omitempty"`     // auto-dismiss delay in ms; 0 → persistent (manual dismiss only)
 }
 
-// ToastOnClick wraps an HTML element so clicking it fires a toast with
-// the given config. Maps to data-cui-toast="<json>". The JSON is
-// compact (no whitespace) with HTML escaping disabled, matching what
-// call sites hand-write today; render.Attr then escapes the value for
-// the attribute context.
+// ToastOnClick wraps an HTML element so clicking it fires a toast with the given config.
 func ToastOnClick(html render.HTML, t Toast) render.HTML {
 	return injectAttr(html, "data-cui-toast", marshalToast(t))
 }
 
-// marshalToast encodes a Toast as compact JSON with HTML escaping off
-// (so a body containing '<' round-trips through render.Attr identically
-// to a hand-written literal, instead of arriving as \u003c).
 func marshalToast(t Toast) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(t); err != nil {
-		// Toast only holds strings and an int, Encode cannot fail in
-		// practice. Surface it loudly rather than emitting nothing.
 		panic(fmt.Sprintf("interactive: failed to marshal toast: %v", err))
 	}
 	return strings.TrimSpace(buf.String())
 }
 
-// ─── Pane open/close triggers ───────────────────────────────────────
-
-// validPanes are the side-pane slots a PaneHost renders. The empty
-// string is a valid ClosePaneOnClick target (close the topmost pane) but
-// never a valid OpenPaneOnClick target.
 var validPanes = map[string]bool{"secondary": true, "tertiary": true}
 
-// OpenPaneOnClick wraps an HTML element so clicking it opens the named
-// side pane. Maps to data-hui-pane-open-control="<pane>". Panics unless pane is
-// "secondary" or "tertiary".
+// OpenPaneOnClick wraps an HTML element so clicking it opens the named side pane.
 func OpenPaneOnClick(html render.HTML, pane string) render.HTML {
 	if !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: OpenPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
@@ -711,11 +491,7 @@ func OpenPaneOnClick(html render.HTML, pane string) render.HTML {
 	return injectAttr(html, "data-hui-pane-open-control", pane)
 }
 
-// ClosePaneOnClick wraps an HTML element so clicking it closes a side
-// pane. Maps to data-hui-pane-close="<pane>". A non-empty pane
-// ("secondary" or "tertiary") closes that specific pane; an empty pane
-// emits data-hui-pane-close="" and closes the topmost open pane. Any
-// other value panics.
+// ClosePaneOnClick wraps an HTML element so clicking it closes a side pane.
 func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	if pane != "" && !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: ClosePaneOnClick pane must be \"secondary\", \"tertiary\", or \"\" (topmost), got %q", pane))
@@ -723,10 +499,8 @@ func ClosePaneOnClick(html render.HTML, pane string) render.HTML {
 	return injectAttr(html, "data-hui-pane-close", pane)
 }
 
-// SwapPaneOnClick wraps an HTML element so clicking it opens the named
-// side pane and closes its sibling (one open pane at a time). Maps to
-// data-hui-pane-swap="<pane>". Panics unless pane is "secondary" or
-// "tertiary".
+// SwapPaneOnClick wraps an HTML element so clicking it opens the named side pane and closes its
+// sibling (one open pane at a time).
 func SwapPaneOnClick(html render.HTML, pane string) render.HTML {
 	if !validPanes[pane] {
 		panic(fmt.Sprintf("interactive: SwapPaneOnClick pane must be \"secondary\" or \"tertiary\", got %q", pane))
@@ -734,84 +508,31 @@ func SwapPaneOnClick(html render.HTML, pane string) render.HTML {
 	return injectAttr(html, "data-hui-pane-swap", pane)
 }
 
-// PaneKey labels a pane trigger with the identity of what it opens,
-// the ticket id, the record slug, whatever the pane will show. Maps to
-// data-hui-pane-key="<key>".
-//
-// It is only read on hosts that opted into URL round-tripping with
-// ui.PaneHostConfig.DeepLinkParam: opening through a keyed trigger
-// writes `?<param>=<pane>:<key>`, so refreshing or sharing that URL
-// reproduces the open pane, and Back closes it. Compose it with
-// OpenPaneOnClick (or a manual data-hui-pane-open-control) on the same element:
-//
-//	interactive.PaneKey(
-//	    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
-//
-// An unkeyed trigger still opens its pane; it just leaves the URL
-// unchanged, which is the right behavior for a pane whose contents have
-// no addressable identity. On a host without DeepLinkParam the
-// attribute is inert.
-//
-// The key lands in the URL verbatim, so keep it to record identifiers.
-// The server must look it up rather than trusting it. See
-// ui.PaneDeepLink.
+// PaneKey labels a pane trigger with the identity of what it opens, the ticket id, the record slug,
+// whatever the pane will show.
 func PaneKey(html render.HTML, key string) render.HTML {
 	return injectAttr(html, "data-hui-pane-key", key)
 }
 
-// ─── Signal display bindings ───────────────────────────────────────
-//
-// These wrap an island content region so its text/HTML/attribute is
-// driven by a named client signal. They inject data-cui-signal plus a
-// data-cui-signal-mode. The names mirror core-ui/store's Slice.Bind*
-// methods (the typed, seeded-signal counterpart): reach for a store
-// Slice when the signal is seeded server-side and read by other typed
-// code; reach for these wrappers when you are binding an island's HTML
-// region to a signal an RPC writes (typically via [SetSignal]).
-
-// BindHTML wraps an HTML region whose innerHTML is replaced with the
-// signal value (the trusted-HTML path). Injects data-cui-signal and
-// data-cui-signal-mode="html". Use for an island slot an RPC re-renders
-// server-side and returns as a fragment.
-// Panics if signal is a reserved signal name.
+// BindHTML wraps an HTML region whose innerHTML is replaced with the signal value (the trusted-HTML
+// path).
 func BindHTML(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "html", "")
 }
 
-// BindText wraps an HTML element whose textContent tracks a signal
-// (HTML-escaped). Injects data-cui-signal and data-cui-signal-mode="text".
-// This is the default mode, a bare data-cui-signal with no mode behaves
-// identically, but emitting the mode explicitly documents intent.
-// Panics if signal is a reserved signal name.
+// BindText wraps an HTML element whose textContent tracks a signal (HTML-escaped).
 func BindText(html render.HTML, signal string) render.HTML {
 	return bindSignal(html, signal, "text", "")
 }
 
 // BindAttr wraps an HTML element whose attribute tracks a signal.
-// Injects data-cui-signal, data-cui-signal-mode="attr", and
-// data-cui-signal-attr="<attr>". Use when a signal should drive a single
-// attribute (e.g. aria-expanded, data-active) rather than text content.
-// The boolean attributes disabled, hidden, checked, open and selected are
-// removed for a false value (false, null, "", 0, "false") rather than
-// written as "false", and the runtime writes the live checked, selected
-// and value properties, so a field the reader already edited still
-// follows.
-// Panics if an allowed attribute binds a reserved signal name.
 func BindAttr(html render.HTML, signal, attr string) render.HTML {
-	// An attribute outside the allow-list executes regardless of the
-	// value bound to it (srcdoc, style, data-behavior, on*, the
-	// privileged data-cui-* family), so the binding is refused rather
-	// than emitted. See SignalAttrAllowed.
 	if !SignalAttrAllowed(attr) {
 		return html
 	}
 	return bindSignal(html, signal, "attr", attr)
 }
 
-// bindSignal injects the signal attribute pair (plus the attr name for
-// mode="attr") in sorted order: data-cui-signal, then data-cui-signal-attr,
-// then data-cui-signal-mode. Appending in that order keeps the output
-// byte-identical to a sorted render.Tag attrs map.
 func bindSignal(html render.HTML, signal, mode, attr string) render.HTML {
 	refuseReservedSignalName(signal)
 	out := injectAttr(html, "data-cui-signal", signal)

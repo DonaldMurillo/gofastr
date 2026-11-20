@@ -1,9 +1,6 @@
 package uinodev1
 
-// Component is the closed allowlist of semantic components a ui.node.v1
-// tree may reference. Anything not in this enum is whole-tree rejected at
-// decode time (design §9). The string values are the canonical wire names
-// (lowercase, hyphenated); case-variants and typos do NOT match.
+// Component is the closed set of component names a tree may use.
 type Component string
 
 const (
@@ -31,80 +28,51 @@ const (
 	CompStatCard   Component = "stat-card"
 	CompDataTable  Component = "data-table"
 
-	// Interactive components: by reference only.
-	// A button carries an ActionRef at the Node level.
-	// A link carries either To (host-relative) in Props or an ActionRef.
+	// CompButton needs an ActionRef.
 	CompButton Component = "button"
 	CompLink   Component = "link"
 
-	// Media component: no children.
-	// Src is a host-relative same-origin path (URL-guarded); Alt is
-	// required non-empty so every module image is accessible.
+	// CompImage takes a host-relative src and a required alt.
 	CompImage Component = "image"
 )
 
-// Node is a single element in a validated ui.node.v1 tree.
-//
-// Props is a sealed union, only the concrete prop types in this file
-// implement it. There is no escape hatch: a Bindings/Actions/free-bag
-// node is unrepresentable, and any unknown JSON field rejects the whole
-// tree (see [Validate]).
+// Node is one element of a validated tree.
 type Node struct {
 	// Component is the closed enum value (one of the Comp* constants).
 	Component Component
-	// Props is the typed, per-component prop struct. Never nil for a
-	// decoded node, a component with no fields uses its zero-value
-	// struct (e.g. DividerProps{}).
+	// Props is the component's typed props, never nil once decoded.
 	Props Props
-	// Children is the optional list of child nodes. Only layout
-	// components accept children; the validator rejects children on
-	// text / data / interactive components.
+	// Children are accepted only on layout components.
 	Children []Node
-	// ActionRef is an opaque reference to an action/route the host
-	// renderer resolves against the module's installed routes. Required
-	// on button; optional-but-mutually-exclusive with Props.To on link.
-	// Empty on every other component. The validator checks only its
-	// shape here; resolution is the host renderer's job.
+	// ActionRef is an opaque route reference the host resolves; button and link only.
 	ActionRef string
 }
 
-// Tree is the validated root of a ui.node.v1 document. Returned by
-// [Validate] only when every node, prop, URL, and cap check has passed.
+// Tree is a validated ui.node.v1 document.
 type Tree struct {
 	Root Node
 }
 
-// Props is the sealed union of per-component prop structs. Every concrete
-// implementation lives in this file; external packages cannot add new
-// prop types. Each implementation's validate method enforces per-component
-// invariants (URL scheme, range bounds, enum values, child policy).
+// Props is the sealed union of the per-component prop structs.
 type Props interface {
 	propsMarker()
-	// validate enforces per-component invariants against the given limits.
-	// String fields are checked against Limits.MaxPropString; URLs against
-	// the host-relative guard; ranges against their documented bounds.
 	validate(lim Limits) error
-	// childPolicy reports whether this component accepts child nodes.
 	childPolicy() childPolicy
-	// estimatedTextSize returns a conservative upper bound on the text
-	// bytes this node contributes, for the total-text cap.
 	estimatedTextSize() int
 }
 
 type childPolicy int
 
 const (
-	childPolicyNone childPolicy = iota // no children allowed
-	childPolicyAny                     // any number up to MaxChildrenPerNode
+	childPolicyNone childPolicy = iota
+	childPolicyAny
 )
-
-// --- Layout props --------------------------------------------------------
 
 // StackProps configures a vertical-or-horizontal stack (flex column/row).
 type StackProps struct {
-	Direction string `json:"direction,omitempty"` // "horizontal" | "vertical" (default vertical)
-	Gap       string `json:"gap,omitempty"`       // free-form token-ish string, bounded
-	Align     string `json:"align,omitempty"`     // "start" | "center" | "end" | "stretch"
+	Direction string `json:"direction,omitempty"`
+	Gap       string `json:"gap,omitempty"`
+	Align     string `json:"align,omitempty"`
 }
 
 func (StackProps) propsMarker()               {}
@@ -138,7 +106,7 @@ func (p ClusterProps) estimatedTextSize() int { return len(p.Gap) + len(p.Align)
 
 // GridProps configures a column grid.
 type GridProps struct {
-	Columns int    `json:"columns,omitempty"` // 1..12; 0 = host default
+	Columns int    `json:"columns,omitempty"`
 	Gap     string `json:"gap,omitempty"`
 }
 
@@ -168,7 +136,7 @@ func (p SectionProps) estimatedTextSize() int { return len(p.Title) + len(p.Subt
 // CardProps configures a card surface.
 type CardProps struct {
 	Title     string `json:"title,omitempty"`
-	Elevation string `json:"elevation,omitempty"` // "flat" | "low" | "high"
+	Elevation string `json:"elevation,omitempty"`
 }
 
 func (CardProps) propsMarker()               {}
@@ -189,12 +157,10 @@ func (DividerProps) childPolicy() childPolicy { return childPolicyNone }
 func (DividerProps) validate(Limits) error    { return nil }
 func (DividerProps) estimatedTextSize() int   { return 0 }
 
-// --- Text props ----------------------------------------------------------
-
 // HeadingProps configures a heading. Level (1–6) and Text are required.
 type HeadingProps struct {
-	Level int    `json:"level"` // 1..6, required
-	Text  string `json:"text"`  // required
+	Level int    `json:"level"`
+	Text  string `json:"text"`
 }
 
 func (HeadingProps) propsMarker()             {}
@@ -303,7 +269,7 @@ func (p SmallProps) estimatedTextSize() int { return len(p.Text) }
 // BadgeProps is a small status label.
 type BadgeProps struct {
 	Text string `json:"text"`
-	Tone string `json:"tone,omitempty"` // neutral | positive | negative | warning | info
+	Tone string `json:"tone,omitempty"`
 }
 
 func (BadgeProps) propsMarker()             {}
@@ -318,8 +284,6 @@ func (p BadgeProps) validate(lim Limits) error {
 	return checkStrings(lim, "badge", p.Text, p.Tone)
 }
 func (p BadgeProps) estimatedTextSize() int { return len(p.Text) + len(p.Tone) }
-
-// --- Data props ----------------------------------------------------------
 
 // DetailItem is one row of a detail-list.
 type DetailItem struct {
@@ -369,9 +333,6 @@ func (p KeyValueProps) estimatedTextSize() int {
 	return n
 }
 
-// labelValue is the two-string shape every list-of-pairs props reads,
-// so validatePairs can walk any of them. DetailItem and KeyValueItem
-// satisfy it.
 type labelValue interface {
 	pair() (label, value string)
 }
@@ -379,11 +340,6 @@ type labelValue interface {
 func (it DetailItem) pair() (string, string)   { return it.Label, it.Value }
 func (it KeyValueItem) pair() (string, string) { return it.Key, it.Value }
 
-// validatePairs enforces the shared contract of the pair-list props
-// (detail-list, key-value): at least one item, both halves of every
-// item present, and every string within Limits.MaxPropString. It
-// replaces the two verbatim copies of this shape in
-// DetailListProps.validate and KeyValueProps.validate.
 func validatePairs[T labelValue](lim Limits, what string, items []T) error {
 	if err := checkPropItems(lim, what+".items", len(items)); err != nil {
 		return err
@@ -408,7 +364,7 @@ type StatCardProps struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
 	Unit  string `json:"unit,omitempty"`
-	Trend string `json:"trend,omitempty"` // up | down | flat
+	Trend string `json:"trend,omitempty"`
 }
 
 func (StatCardProps) propsMarker()             {}
@@ -437,9 +393,7 @@ type DataCell struct {
 	Text string `json:"text"`
 }
 
-// DataRow is one row of cells in a data-table. The validator does NOT
-// enforce cell-count == column-count here; the host renderer is expected
-// to handle short/long rows defensively. (v1 minimal: shape only.)
+// DataRow is one row of a data-table.
 type DataRow struct {
 	Cells []DataCell `json:"cells"`
 }
@@ -462,9 +416,6 @@ func (p DataTableProps) validate(lim Limits) error {
 	if len(p.Columns) == 0 {
 		return errRequired("data-table.columns")
 	}
-	// The host renderer matches each row's cells to columns by key,
-	// and two columns under one key claim one cell: refuse the repeat
-	// here so a tree that passed Validate never reaches that panic.
 	seen := make(map[string]bool, len(p.Columns))
 	for i, c := range p.Columns {
 		if c.Key == "" || c.Label == "" {
@@ -507,14 +458,10 @@ func (p DataTableProps) estimatedTextSize() int {
 	return n
 }
 
-// --- Interactive props ---------------------------------------------------
-
-// ButtonProps configures a button. The action is referenced via the
-// Node's ActionRef field (not in props), a button without an ActionRef
-// is rejected by the validator.
+// ButtonProps configures a button; its action is the Node's ActionRef.
 type ButtonProps struct {
 	Label   string `json:"label"`
-	Variant string `json:"variant,omitempty"` // primary | secondary | ghost | danger
+	Variant string `json:"variant,omitempty"`
 }
 
 func (ButtonProps) propsMarker()             {}
@@ -530,11 +477,10 @@ func (p ButtonProps) validate(lim Limits) error {
 }
 func (p ButtonProps) estimatedTextSize() int { return len(p.Label) + len(p.Variant) }
 
-// LinkProps configures a link. Either To (host-relative) is set in props,
-// OR the Node carries an ActionRef; exactly one is required.
+// LinkProps configures a link to To, or to the Node's ActionRef.
 type LinkProps struct {
 	Text string `json:"text"`
-	To   string `json:"to,omitempty"` // host-relative path; empty if ActionRef is used
+	To   string `json:"to,omitempty"`
 }
 
 func (LinkProps) propsMarker()             {}
@@ -550,16 +496,10 @@ func (p LinkProps) validate(lim Limits) error {
 }
 func (p LinkProps) estimatedTextSize() int { return len(p.Text) + len(p.To) }
 
-// --- Media props --------------------------------------------------------
-
-// ImageProps configures an image. Src is a host-relative same-origin path
-// (validated by IsValidHostRelative, design §9 rejects javascript:/data:/
-// vbscript:/blob:/file:/off-origin); Alt is required non-empty so every
-// module-supplied image carries accessible alternative text. A module cannot
-// forge dimensions, loading, or srcset, those are host-assigned.
+// ImageProps configures an image with a host-relative Src and a required Alt.
 type ImageProps struct {
-	Src string `json:"src"` // required, host-relative same-origin path
-	Alt string `json:"alt"` // required, non-empty accessible description
+	Src string `json:"src"`
+	Alt string `json:"alt"`
 }
 
 func (ImageProps) propsMarker()             {}
@@ -577,8 +517,6 @@ func (p ImageProps) validate(lim Limits) error {
 	return checkStrings(lim, "image", p.Src, p.Alt)
 }
 func (p ImageProps) estimatedTextSize() int { return len(p.Src) + len(p.Alt) }
-
-// --- enum helpers --------------------------------------------------------
 
 func isAlignValue(s string) bool {
 	switch s {
@@ -611,7 +549,6 @@ func requiredString(field, v string) error {
 	return nil
 }
 
-// checkStrings returns an error if any of vals exceeds Limits.MaxPropString.
 func checkStrings(lim Limits, field string, vals ...string) error {
 	for _, v := range vals {
 		if len(v) > lim.MaxPropString {
