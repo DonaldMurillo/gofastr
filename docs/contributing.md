@@ -181,13 +181,16 @@ These are the guide's Hard rules 10 to 13 in full.
     the answer is always yes. Resolve a merge conflict with main as soon
     as it shows up (merge main in, no force-push).
 
-13. **Always a reviewer.** A PR merges only after a reviewer, a person or
-    a review bot, has read the diff and its findings are triaged (rule
-    10). Green CI and the author's own review are not a review. A bot that
-    skips the PR for its size (CodeRabbit stops at 100 files, Bugbot at a
-    line count) has not reviewed it: split the PR into a stack whose
-    layers each fit, or ask the owner for a person to review it, before
-    asking to merge.
+13. **Always a reviewer.** A PR merges only after a reviewer has read the
+    diff and its findings are triaged (rule 10). The author's own review
+    and green CI are not a review. A reviewer is a person, a review bot,
+    or an adversarial review: agents that did not write the change, each
+    told to break it rather than confirm it, with every finding checked
+    against the code. A bot that skips a PR for its size (CodeRabbit stops
+    at 100 files, Bugbot at a line count) has not reviewed it, and Greptile
+    reviews one PR an hour, so splitting a large PR for the bots alone
+    trades one wait for several: review it adversarially instead, and
+    record the review and its triage in `docs/reviews/`.
 
 **Stacked PRs.** A series of PRs that build on each other lands as one
 GitHub stack, merged all or nothing. Base each PR on the one below it,
