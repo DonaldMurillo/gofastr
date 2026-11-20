@@ -1,0 +1,41 @@
+primitive: runtime.fragmentmap
+summary: The declared runtime fragment set (kernel, signals, nav, widgets-boot, sse, compute, boot-embed and the static variants) with their class and dependencies, and the tables that give every data-cui-* attribute in the runtime sources one owning fragment or demand module.
+code:
+  - core-ui/runtime/fragments.go
+docs:
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - A new data-cui-* attribute in frag/*.js or src/*.js gets an owner in fragmentAttrs or moduleAttrs, the fragment or module whose code runs its handler.
+invariants:
+  - id: one-owner-per-attribute
+    rule: Every data-cui-* attribute in the runtime sources has exactly one owner across fragmentAttrs and moduleAttrs, and every owned attribute still appears in the sources.
+    enforced_by:
+      - test: core-ui/runtime.TestFragmentMapComplete
+      - test: core-ui/runtime.TestFragmentMapNoDuplicate
+      - test: core-ui/runtime.TestFragmentMapNoStale
+  - id: fragment-graph-is-sound
+    rule: Every fragment named in the tables is declared, every module named is a real module, and the fragment dependencies are acyclic.
+    enforced_by:
+      - test: core-ui/runtime.TestFragmentNamesValid
+      - test: core-ui/runtime.TestFragmentModulesValid
+      - test: core-ui/runtime.TestFragmentDepsAcyclic
+  - id: boot-class-stays-boot
+    rule: A fragment that installs listeners or fetches at boot with no DOM marker to recover from is boot class and is never made marker-driven.
+    judge: Does this change move a boot-class fragment's behaviour (nav's link hijack, widgets-boot's catalog fetch and delegators, sse's bootstrap, the kernel) behind a DOM marker, or change a fragment's class?
+decisions:
+  - id: owner-implements-the-handler
+    date: 2026-11-20
+    status: accepted
+    decision: An attribute belongs to the fragment or module whose code runs when it is present; a cross-reference elsewhere does not move it.
+    rejected:
+      - option: Assign it to every file that reads it.
+        why: A composition that drops one reader could not tell whether it dropped the behaviour.
+    upholds: [one-owner-per-attribute]
+  - id: boot-versus-marker
+    date: 2026-11-20
+    status: accepted
+    decision: Fragments are boot class or marker class, and leaving a boot fragment out of a composition is a server decision.
+    rejected:
+      - option: Make every behaviour marker-driven.
+        why: A composition that omits a boot behaviour would ship a control that does nothing, with no marker for the runtime to recover from.
+    upholds: [boot-class-stays-boot]

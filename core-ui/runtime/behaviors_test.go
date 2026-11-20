@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -303,4 +304,13 @@ func TestBehaviorsJSONLeavesOnRequestModulesOut(t *testing.T) {
 	if src, ok := Module("api-mod"); !ok || src == "" {
 		t.Fatal("an on-request module must be served at /__gofastr/runtime/<name>.js")
 	}
+}
+
+func TestEmbeddedNamesAreReservedAtInit(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), "embedded runtime module") {
+			t.Fatalf("registering an embedded module's name: %v, want the reservation panic", r)
+		}
+	}()
+	registry.RegisterBehavior("rpc", probeJS, registry.Markers("[data-reserve-probe]"))
 }
