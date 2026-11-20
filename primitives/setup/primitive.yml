@@ -1,0 +1,34 @@
+primitive: setup
+summary: The first-run setup runner for self-hosted apps, its declared steps and fields, the derived Complete predicate and the headless run from environment variables.
+code:
+  - battery/setup/setup.go
+  - battery/setup/phrases.go
+  - battery/setup/agents.go
+docs:
+  - framework/docs/content/first-run.md
+invariants:
+  - id: complete-is-required
+    rule: New panics when Config.Complete is nil, since completion is a derived check, never a marker.
+    enforced_by:
+      - test: battery/setup.TestNew_PanicsWithoutComplete
+  - id: headless-refuses-a-completed-install
+    rule: RunSteps runs no step when Complete reports true unless GOFASTR_SETUP is force.
+    enforced_by:
+      - test: battery/setup.TestRunStepsRefusesWhenComplete
+      - test: battery/setup.TestSetupForceReRunsCompletedSteps
+  - id: headless-needs-every-field
+    rule: CanRunHeadless is true only when every field of every step has an EnvVar that is set, and a RunSteps error names the failing step or field.
+    enforced_by:
+      - test: battery/setup.TestCanRunHeadless_PartialMissing
+      - test: battery/setup.TestAllFieldsFromEnv_NoEnvVarField
+      - test: battery/setup.TestRunSteps_StepErrorNamesStep
+      - test: battery/setup.TestRunSteps_ValidationErrorNamesField
+decisions:
+  - id: derived-completion
+    date: 2026-11-20
+    status: accepted
+    decision: Completion is the Complete predicate the app supplies, such as "at least one user exists".
+    rejected:
+      - option: A marker file written when setup finishes.
+        why: A crash mid-setup would leave the marker unwritten or stale, while a derived check re-enters setup on the next boot.
+    upholds: [complete-is-required]
