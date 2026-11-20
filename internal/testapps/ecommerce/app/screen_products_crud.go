@@ -1,11 +1,9 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f3d1461dd1524fbc
+//gofastr:generated generator=app kind=scaffold version=dev sum=d7ab0d61bd866008
 
 package main
 
 import (
 	"context"
-	"net/http"
-	"strings"
 
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -92,47 +90,17 @@ func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountHomeScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	fwApp.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
-					ui.InvalidateScreens(w, "/")
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	invalidateScreensOnWrite(fwApp, "/api/products", "/")
 	site.Register("/", &HomeScreen{}, appLayout)
 }
 
 func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	fwApp.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
-					ui.InvalidateScreens(w, "/products")
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	invalidateScreensOnWrite(fwApp, "/api/products", "/products")
 	site.Register("/products", &ProductsScreen{}, appLayout)
 }
 
 func mountProductDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	fwApp.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.URL.Path == "/api/products" || strings.HasPrefix(r.URL.Path, "/api/products/") {
-					ui.InvalidateScreens(w, "*")
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	invalidateScreensOnWrite(fwApp, "/api/products", "*")
 	record := app.NewScreen("/products/:id", &ProductDetailScreen{}).WithTitle("Product Details").WithDescription("View product details")
 	record.Intercept = &app.Intercept{From: "/products", As: app.ScreenDrawer}
 	site.RegisterScreen(record, appLayout)

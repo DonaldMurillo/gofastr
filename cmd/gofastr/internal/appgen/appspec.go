@@ -2395,12 +2395,6 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, withMo
 		if needs.url {
 			sb.WriteString("\t\"net/url\"\n")
 		}
-		if needs.http {
-			sb.WriteString("\t\"net/http\"\n")
-		}
-		if needs.strings {
-			sb.WriteString("\t\"strings\"\n")
-		}
 		sb.WriteString("\n")
 	}
 	if withMount {
@@ -2553,11 +2547,28 @@ const appSpecScreensRegisterGo = `package main
 
 import (
 	"database/sql"
+	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+func invalidateScreensOnWrite(fwApp *framework.App, api string, paths ...string) {
+	fwApp.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if r.URL.Path == api || strings.HasPrefix(r.URL.Path, api+"/") {
+					ui.InvalidateScreens(w, paths...)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+}
 
 // screenRegistrar pairs a screen's mount func with its declaration order.
 // Each screen file appends one or more screenRegistrars in init();
@@ -2911,12 +2922,8 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
 	}
-	var invalidations strings.Builder
-	for _, s := range screens {
-		invalidations.WriteString(appSpecScreenInvalidation(s, bp))
-	}
 	needs := appSpecScreensImportNeeds(bp, screens, entityMap, apiBase)
-	needs.readCode(bodies.String()+invalidations.String(), bp.PhraseCollector())
+	needs.readCode(bodies.String(), bp.PhraseCollector())
 	writeScreenImportBlock(&sb, needs, true, len(screens) > 0)
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(bodies.String())
@@ -3225,9 +3232,7 @@ type screenImportNeeds struct {
 	// framework: a composite-key record screen joins its key params.
 	framework bool
 	// url: a record screen escapes the route params of its base.
-	url     bool
-	http    bool
-	strings bool
+	url bool
 }
 
 // readCode sets the needs the emitted code itself decides: which block
@@ -3238,8 +3243,6 @@ func (n *screenImportNeeds) readCode(code string, p *appspec.AppSpecPhrases) {
 	n.i18nui = emitsPkgRef(code, "i18nui")
 	n.framework = emitsPkgRef(code, "framework")
 	n.url = emitsPkgRef(code, "url")
-	n.http = emitsPkgRef(code, "http")
-	n.strings = emitsPkgRef(code, "strings")
 	n.handler = emitsPkgRef(code, "handler")
 	n.i18n = p.Used()
 }
@@ -3275,13 +3278,9 @@ func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec)
 		selector = "*"
 	}
 	var sb strings.Builder
-	sb.WriteString("\tfwApp.Use(func(next http.Handler) http.Handler {\n\t\treturn http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n\t\t\tswitch r.Method {\n\t\t\tcase http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:\n")
-	var matches []string
 	for _, api := range apis {
-		matches = append(matches, fmt.Sprintf("r.URL.Path == %q || strings.HasPrefix(r.URL.Path, %q)", api, api+"/"))
+		fmt.Fprintf(&sb, "\tinvalidateScreensOnWrite(fwApp, %q, %q)\n", api, selector)
 	}
-	fmt.Fprintf(&sb, "\t\t\t\tif %s {\n\t\t\t\t\tui.InvalidateScreens(w, %q)\n\t\t\t\t}\n", strings.Join(matches, " || "), selector)
-	sb.WriteString("\t\t\t}\n\t\t\tnext.ServeHTTP(w, r)\n\t\t})\n\t})\n")
 	return sb.String()
 }
 

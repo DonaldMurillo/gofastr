@@ -1,11 +1,9 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=5a3c0141c052a14e
+//gofastr:generated generator=app kind=scaffold version=dev sum=2ed3a575855a2526
 
 package main
 
 import (
 	"context"
-	"net/http"
-	"strings"
 
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -65,32 +63,12 @@ func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountOrdersScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	fwApp.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.URL.Path == "/api/orders" || strings.HasPrefix(r.URL.Path, "/api/orders/") {
-					ui.InvalidateScreens(w, "/orders")
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	invalidateScreensOnWrite(fwApp, "/api/orders", "/orders")
 	site.Register("/orders", &OrdersScreen{}, appLayout)
 }
 
 func mountOrderDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	fwApp.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-				if r.URL.Path == "/api/orders" || strings.HasPrefix(r.URL.Path, "/api/orders/") {
-					ui.InvalidateScreens(w, "*")
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	invalidateScreensOnWrite(fwApp, "/api/orders", "*")
 	record := app.NewScreen("/orders/:id", &OrderDetailScreen{}).WithTitle("Order Details").WithDescription("View order details")
 	record.Intercept = &app.Intercept{From: "/orders", As: app.ScreenDrawer}
 	site.RegisterScreen(record, appLayout)
