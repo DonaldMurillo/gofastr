@@ -49,6 +49,49 @@ func TestCoreSchemaScalarResolution(t *testing.T) {
 	}
 }
 
+func TestCoreSchemaIntegerResolution(t *testing.T) {
+	cases := map[string]any{
+		"0x10":                     int64(16),
+		"0xAf":                     int64(175),
+		"0o10":                     int64(8),
+		"0x7fffffffffffffff":       int64(1<<63 - 1),
+		"0o777777777777777777777":  int64(1<<63 - 1),
+		"010":                      int64(10),
+		"+010":                     int64(10),
+		"-010":                     int64(-10),
+		"0x8000000000000000":       "0x8000000000000000",
+		"0o1000000000000000000000": "0o1000000000000000000000",
+		"0x":                       "0x",
+		"0o":                       "0o",
+		"0xg":                      "0xg",
+		"0o8":                      "0o8",
+		"0x+10":                    "0x+10",
+		"0o-10":                    "0o-10",
+		"-0x10":                    "-0x10",
+		"+0x1F":                    "+0x1F",
+		"+0o10":                    "+0o10",
+		"0X10":                     "0X10",
+		"0O10":                     "0O10",
+		"0b10":                     "0b10",
+		"1_000":                    "1_000",
+		"0x1_0":                    "0x1_0",
+		"0o1_0":                    "0o1_0",
+		`"0x10"`:                   "0x10",
+		"'0o10'":                   "0o10",
+	}
+	for raw, want := range cases {
+		t.Run(raw, func(t *testing.T) {
+			node, err := Parse("v: " + raw + "\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := node.Map["v"].Value; got != want {
+				t.Errorf("got %T(%v), want %T(%v)", got, got, want, want)
+			}
+		})
+	}
+}
+
 // A float the core schema names but float64 cannot hold is refused, not
 // read as a string or as +Inf: a bound like max: 1e999 is a typo, and an
 // infinite one passes every range check downstream.
@@ -63,6 +106,25 @@ func TestCoreSchemaOutOfRangeFloatRefused(t *testing.T) {
 	node, err := Parse(`v: "1e999"` + "\n")
 	if err != nil || node.Map["v"].Value != "1e999" {
 		t.Errorf(`quoted "1e999" = %v, %v`, node, err)
+	}
+}
+
+func TestNeedsQuote(t *testing.T) {
+	for _, s := range []string{
+		"True", "FALSE", "Null", "~", "+010", "0x10", "0o10", ".5", "1e3", "1e999",
+		"", " leading", "trailing ", "interior\ttab", "first\nsecond", "a\x7fb", "a\xffb",
+		"#comment", "a #comment", "a: b", "trailing:", "- list", "a,b", "a[b]", "a{b}", "it's", `"quote"`,
+	} {
+		if !NeedsQuote(s) {
+			t.Errorf("NeedsQuote(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{
+		"tRuE", "yes", "open", "+0x1F", "1_000", "0x1.8p1", "1_000.5", "9:30", "café", "a#b",
+	} {
+		if NeedsQuote(s) {
+			t.Errorf("NeedsQuote(%q) = true, want false", s)
+		}
 	}
 }
 

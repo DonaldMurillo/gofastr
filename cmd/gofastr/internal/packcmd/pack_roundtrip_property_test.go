@@ -287,6 +287,34 @@ func TestPackEncodeDecodeRoundTripProperty(t *testing.T) {
 	}
 }
 
+func TestPackStringScalarsRoundTrip(t *testing.T) {
+	spec, err := decodeAppSpecString(`app:
+  name: probe
+entities:
+  - name: posts
+    properties:
+      codes: ["0x10", "0o10", "1e999"]
+    fields:
+      - name: title
+        type: string
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := encodeAppSpecYAML(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeAppSpecString(out)
+	if err != nil {
+		t.Fatalf("re-decode: %v\n%s", err, out)
+	}
+	want := []any{"0x10", "0o10", "1e999"}
+	if codes := got.Entities[0].Properties["codes"]; !reflect.DeepEqual(codes, want) {
+		t.Errorf("codes = %#v, want %#v\n%s", codes, want, out)
+	}
+}
+
 // TestPackEmptyMapEmissionRoundTrips pins Finding A: an app spec holding an
 // empty map (which a bare authored `scope:` produces — decodeEntityScope
 // returns a non-nil zero struct for a present-but-empty node) must serialize
@@ -376,7 +404,7 @@ entities:
 // the document stays readable.
 func TestPackValueContextFidelityMatrix(t *testing.T) {
 	for _, v := range hostileValueCorpus {
-		if needsQuote(v) {
+		if quoteYAMLString(v) != v {
 			continue // the quoted path is covered by the corpus round-trip above
 		}
 		// Context A: block map value.

@@ -200,14 +200,26 @@ not silently disabled constraints. Omitted flags still default to false.
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
   a string.
-- a run of digits is an integer; a decimal with a fraction or exponent
-  (`1.5`, `.5`, `-2.5e3`) is a float. A float too large for 64 bits
+- decimal integers may have a sign. Unsigned `0o10` and `0x10` are
+  octal and hexadecimal integers (8 and 16); `010` is decimal 10.
+  Integers must fit in an `int64` to resolve as numbers. Quote them to
+  keep them as strings.
+- a decimal with a fraction or exponent (`1.5`, `.5`, `-2.5e3`) is
+  a float. A float too large for 64 bits
   (`1e999`) is an error, not infinity. Go-only spellings stay strings:
   a hex float (`0x1.8p1`), digit underscores (`1_000.5`), `Infinity`.
   `.inf` and `.nan` are strings too: nothing in a spec reads one.
 - a value starting with `!` is a tag, and tags are refused: the core
   `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
   the string.
+
+If an older spec or Pack/Kiln snapshot uses an unquoted hex or octal number
+as a string, quote it before loading. For example, write
+`values: ["0x01", "0x02"]` to keep those enum values instead of `"1"` and
+`"2"`, and `default: "0x10"` for a string field to avoid an invalid default.
+
+Pack and Kiln freeze reject string values with invalid UTF-8. YAML cannot
+write those bytes as text without changing them.
 
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
@@ -893,10 +905,9 @@ also cover every field *inside* each element — the omission class this
 catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
 down, where a set construct key already differs from the zero output and
 the top-level checks pass anyway. A value that would re-parse as anything
-but itself is quoted: `"` and backslash are escaped, invalid UTF-8 bytes
-and non-printable runes as `\xNN`/`\uNNNN`, so a quoted value comes back
-byte-for-byte (an apostrophe passes through verbatim inside the double
-quotes; bare, `60'` would merge two flow-list members into one). Every
+but itself is quoted: `"`, backslash and non-printable runes are escaped,
+so a quoted value comes back unchanged. An apostrophe passes through inside
+double quotes; bare, `60'` would merge two flow-list members into one. Every
 committed example app spec gates this, not just Meridian, and
 reflection-driven guards fail the day an `AppSpec` or construct field
 exists that the serializer's key lists don't cover — the drift that let

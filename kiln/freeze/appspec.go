@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -828,7 +830,11 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 		return
 	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
-	writeScalarInline(sb, item)
+	if s, ok := item.(string); ok && strings.Contains(s, ":") {
+		sb.WriteString(strconv.Quote(s))
+	} else {
+		writeScalarInline(sb, item)
+	}
 	sb.WriteByte('\n')
 }
 
@@ -929,38 +935,10 @@ func isScalar(value any) bool {
 }
 
 func quoteYAMLString(value string) string {
-	if !needsQuote(value) {
+	if !coreyaml.NeedsQuote(value) {
 		return value
 	}
 	return strconv.Quote(value)
-}
-
-func needsQuote(value string) bool {
-	if value == "" {
-		return true
-	}
-	switch strings.ToLower(value) {
-	case "true", "false", "null", "~":
-		return true
-	}
-	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
-		return true
-	}
-	if _, err := strconv.ParseFloat(value, 64); err == nil && strings.ContainsAny(value, ".eE") {
-		return true
-	}
-	if strings.ContainsAny(value[:1], "[]{}&*!|>'\"%@`#,?: -") ||
-		strings.Contains(value, ": ") || strings.Contains(value, " #") ||
-		// Commas split core/yaml flow lists; quotes and brackets anywhere
-		// confuse its quote/flow scanning; a colon in a block list item
-		// re-parses as `- key: value`. Quote them wherever they appear,
-		// over-quoting is harmless, under-quoting corrupts silently.
-		strings.ContainsAny(value, `,'"[]{}:`) ||
-		strings.ContainsAny(value, "\n\t") || value != strings.TrimSpace(value) ||
-		strings.HasSuffix(value, ":") {
-		return true
-	}
-	return false
 }
 
 // validateYAMLRepresentable rejects values the core/yaml emitter cannot
@@ -994,6 +972,10 @@ func validateYAMLRepresentable(value any, path string) error {
 			if err := validateYAMLRepresentable(item, itemPath); err != nil {
 				return err
 			}
+		}
+	default:
+		if scalar := reflect.ValueOf(value); scalar.Kind() == reflect.String && !utf8.ValidString(scalar.String()) {
+			return fmt.Errorf("freeze: %s: invalid UTF-8 cannot be represented in gofastr.yml", path)
 		}
 	}
 	return nil
