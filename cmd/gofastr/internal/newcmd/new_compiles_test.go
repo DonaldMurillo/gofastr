@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // `gofastr new handler type` wrote `func type(...)`, which does not parse;
@@ -100,10 +102,83 @@ func TestImportNamesAssumedNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		names := importNames(f, "main.go")
+		names := importNames(f, "main.go", nil)
 		if names[tc.want] == "" || names[tc.not] != "" {
 			t.Errorf("importNames(%q) = %v, want %q, not %q", tc.importPath, names, tc.want, tc.not)
 		}
+	}
+}
+
+func TestScaffoldHandlerDeclaredImportName(t *testing.T) {
+	dir := t.TempDir()
+	writeGo(t, dir, "go.mod", "module example.com/app\n\ngo 1.27.4\n")
+	if err := os.Mkdir(filepath.Join(dir, "gopher-lua"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeGo(t, filepath.Join(dir, "gopher-lua"), "lua.go", "package lua\n")
+	writeGo(t, dir, "main.go", "package main\nimport \"example.com/app/gopher-lua\"\n")
+	clitest.CovT_chdir(t, dir)
+	if err := scaffoldHandler(dir, "lua", "GET", "/", false); err == nil || !strings.Contains(err.Error(), `import of "example.com/app/gopher-lua" in main.go`) {
+		t.Errorf("lua: %v, want declared-name import refusal", err)
+	}
+	if err := scaffoldHandler(dir, "gopher", "GET", "/", false); err != nil {
+		t.Errorf("gopher: %v, want success", err)
+	}
+	if err := checkRouteHandler("lua"); err == nil {
+		t.Error("route lua: want import refusal")
+	}
+	if err := checkRouteHandler("gopher"); err != nil {
+		t.Errorf("route gopher: %v", err)
+	}
+}
+
+func TestScaffoldHandlerTestPackageScope(t *testing.T) {
+	for _, tc := range []struct{ pkg, name, want string }{
+		{"main", "log", `import of "log" in a_test.go`},
+		{"main", "helper", "already declares helper"},
+		{"main_test", "log", ""},
+		{"main_test", "helper", ""},
+	} {
+		t.Run(tc.pkg+tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeGo(t, dir, "z.go", "package main\n")
+			writeGo(t, dir, "a_test.go", "package "+tc.pkg+"\nimport \"log\"\nfunc helper() {}\n")
+			clitest.CovT_chdir(t, dir)
+			if tc.name == "log" {
+				err := checkRouteHandler("log")
+				if (err != nil) != (tc.want != "") {
+					t.Errorf("route log: %v, want refusal %t", err, tc.want != "")
+				}
+			}
+			err := scaffoldHandler(dir, tc.name, "GET", "/", false)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("got %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestScaffoldHandlerImportResolutionFallback(t *testing.T) {
+	for _, missingGo := range []bool{false, true} {
+		t.Run(strconv.FormatBool(missingGo), func(t *testing.T) {
+			dir := t.TempDir()
+			writeGo(t, dir, "go.mod", "module example.com/app\n\ngo 1.27.4\n")
+			writeGo(t, dir, "main.go", "package main\nimport \"example.invalid/go-missing/v2\"\n")
+			t.Setenv("GOPROXY", "off")
+			if missingGo {
+				t.Setenv("PATH", dir)
+			}
+			if err := scaffoldHandler(dir, "missing", "GET", "/", false); err == nil || !strings.Contains(err.Error(), `import of "example.invalid/go-missing/v2"`) {
+				t.Errorf("got %v, want heuristic refusal", err)
+			}
+			if err := scaffoldHandler(dir, "Available", "GET", "/", false); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
