@@ -118,11 +118,14 @@ stats use the single-document contract without needing an output flag.
   `<name>_handler.go` into the current directory in the package its Go
   files already declare (`package main` when there are none). It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
-  predeclared name such as `string`, `http` (which conflicts with the
-  generated handler's `net/http` import), or a name that package already
-  declares. `new route` prints the line without writing anything; it
+  predeclared name such as `string`, a name imported by the generated
+  handler or any existing non-test Go file in that package, or a name
+  that package already declares. Import aliases are respected; blank
+  and dot imports do not reserve their package names. For unaliased
+  imports, the name is taken from the last import-path element.
+  `new route` prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
-  them (`h.List`), or a bare keyword, entry-point or predeclared name. The
+  them (`h.List`), and a bare name `new handler` would refuse. The
   printed line passes the handler as written, since `Router.Handle`
   takes an `http.Handler`, and a hint names the `http.HandlerFunc(…)`
   conversion a plain func, such as the one `new handler` writes, needs. Both take any HTTP method token for

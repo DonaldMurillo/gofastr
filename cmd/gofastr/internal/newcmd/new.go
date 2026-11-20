@@ -7,7 +7,9 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -246,9 +248,6 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if reason := unusableFuncName(rawName); reason != "" {
 		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
 	}
-	if rawName == "http" {
-		return fmt.Errorf("invalid handler name %q: it conflicts with the handler's net/http import; pick another name", rawName)
-	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected
@@ -278,9 +277,12 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	// beside main.go, package entities under entities/); writing package
 	// main everywhere broke the build with "found packages entities and
 	// main". A name that package already declares would be redeclared.
-	pkg, declared := dirPackage(realDir, filepath.Base(filename))
+	pkg, declared, imports := dirPackage(realDir, filepath.Base(filename))
 	if declared[name] {
 		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
+	}
+	if conflict := imports[name]; conflict != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", name, conflict)
 	}
 
 	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
@@ -297,6 +299,14 @@ func %s(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("{\"ok\": true}"))
 }
 `, name, pkg, name, method, path, name)
+
+	f, err := parser.ParseFile(token.NewFileSet(), filename, content, parser.ImportsOnly)
+	if err != nil {
+		return fmt.Errorf("parse generated handler: %w", err)
+	}
+	if conflict := importNames(f, "the generated handler")[name]; conflict != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", name, conflict)
+	}
 
 	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
@@ -325,9 +335,10 @@ func unusableFuncName(name string) string {
 // top level. skip, the file being scaffolded, is left out: -overwrite
 // rewrites it. A file that does not parse is skipped, as go build would
 // report it on its own.
-func dirPackage(dir, skip string) (string, map[string]bool) {
+func dirPackage(dir, skip string) (string, map[string]bool, map[string]string) {
 	pkg := ""
 	declared := map[string]bool{}
+	imports := map[string]string{}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		n := e.Name()
@@ -343,6 +354,11 @@ func dirPackage(dir, skip string) (string, map[string]bool) {
 		}
 		if f.Name.Name != pkg {
 			continue
+		}
+		for name, conflict := range importNames(f, n) {
+			if imports[name] == "" {
+				imports[name] = conflict
+			}
 		}
 		for _, d := range f.Decls {
 			switch d := d.(type) {
@@ -367,5 +383,23 @@ func dirPackage(dir, skip string) (string, map[string]bool) {
 	if pkg == "" {
 		pkg = "main"
 	}
-	return pkg, declared
+	return pkg, declared, imports
+}
+
+func importNames(f *ast.File, source string) map[string]string {
+	names := map[string]string{}
+	for _, spec := range f.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := path.Base(importPath)
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name != "_" && name != "." {
+			names[name] = fmt.Sprintf("conflicts with the import of %q in %s", importPath, source)
+		}
+	}
+	return names
 }

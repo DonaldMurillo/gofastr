@@ -50,6 +50,37 @@ func TestScaffoldHandlerRefusesImportedName(t *testing.T) {
 	}
 }
 
+func TestScaffoldHandlerPackageImports(t *testing.T) {
+	for _, tc := range []struct {
+		name, imports, want string
+	}{
+		{"log", `"log"`, `conflicts with the import of "log" in main.go`},
+		{"logger", `logger "log"`, `conflicts with the import of "log" in main.go`},
+		{"log", `logger "log"`, ""},
+		{"log", `_ "log"`, ""},
+		{"log", `. "log"`, ""},
+		{"Log", `"log"`, ""},
+	} {
+		t.Run(tc.name+tc.imports, func(t *testing.T) {
+			dir := t.TempDir()
+			writeGo(t, dir, "main.go", "package main\nimport "+tc.imports+"\n")
+			err := scaffoldHandler(dir, tc.name, "GET", "/x", false)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("scaffoldHandler(%q) = %v, want %q", tc.name, err, tc.want)
+				}
+				if _, err := os.Stat(filepath.Join(dir, strings.ToLower(tc.name)+"_handler.go")); !os.IsNotExist(err) {
+					t.Errorf("handler written before refusal: %v", err)
+				}
+			}
+		})
+	}
+}
+
 // Run from a non-main package directory (entities/), the handler was
 // written as package main beside package entities: "found packages
 // entities and main". It takes the directory's package, and the file is
