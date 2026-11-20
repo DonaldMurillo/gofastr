@@ -1,11 +1,23 @@
 package config_test
 
 import (
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/config"
 )
+
+func TestNonSecretParseErrorPreservesChain(t *testing.T) {
+	var c struct {
+		Port int `config:"PORT"`
+	}
+	err := config.Load(&c, config.MapSource{"PORT": "invalid"})
+	if !errors.Is(err, strconv.ErrSyntax) {
+		t.Fatalf("Load = %v, want errors.Is(err, strconv.ErrSyntax)", err)
+	}
+}
 
 func TestPresetSensitiveRedactedInValidator(t *testing.T) {
 	for _, src := range []config.MapSource{{}, {"DSN": ""}} {

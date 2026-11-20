@@ -94,7 +94,11 @@ func LoadWith(cfg any, sources ...Source) error {
 	var secrets []string
 	collectSecrets(v.Elem(), v.Elem().Type(), "", src, false, &secrets)
 	if err := bindStruct(v.Elem(), "", src, &secrets); err != nil {
-		return fmt.Errorf("%s", redactSecrets(err.Error(), secrets))
+		msg := err.Error()
+		if redacted := redactSecrets(msg, secrets); redacted != msg {
+			return fmt.Errorf("%s", redacted)
+		}
+		return err
 	}
 
 	if val, ok := cfg.(ConfigValidator); ok {
