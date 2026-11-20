@@ -1,183 +1,55 @@
 # Hooks & transactions
 
-Lifecycle hooks run inside the same transaction as the entity write
-they observe. A hook that errors rolls back the parent write. This
-is how the framework keeps audit logs, denormalisations, and side-
-effect SQL atomic with the change that triggered them.
+Entity lifecycle hooks run inside the same database transaction as the write they observe. Returning an error from a `Before*` hook cancels the operation; returning an error from an `After*` hook rolls back the transaction. That keeps audit logs, denormalizations, and side-effect SQL atomic with the write.
 
 ## Hook points
 
-| Constant       | Fires                                              | `data` argument             |
-|----------------|----------------------------------------------------|------------------------------|
-| `BeforeCreate` | Before validation and INSERT                       | `map[string]any` (body)     |
-| `AfterCreate`  | After INSERT, before tx commit                     | `map[string]any` (record)    |
-| `BeforeUpdate` | Before validation and UPDATE                       | `map[string]any` (patch)    |
-| `AfterUpdate`  | After UPDATE, before tx commit                     | `map[string]any` (record)    |
-| `BeforeDelete` | Before DELETE / soft-delete                        | `string` (record id)        |
-| `AfterDelete`  | After DELETE, before tx commit                     | `string` (record id)        |
-| `BeforeList`   | Before SELECT (both data + count queries)          | `*hook.ListPayload`          |
-| `AfterList`    | After SELECT, before response                      | `*hook.ListPayload`          |
-| `BeforeGet`    | Before single-row SELECT (`/api/<entity>/{id}`)    | `*hook.GetPayload`           |
-| `AfterGet`     | After single-row SELECT, before response           | `*hook.GetPayload`           |
+| Constant | Fires | `data` argument |
+|---|---|---|
+| `BeforeCreate` | Before schema validation and `INSERT` | `map[string]any` (mutable body) |
+| `AfterCreate` | After `INSERT`, before tx commit | `map[string]any` (response record) |
+| `BeforeUpdate` | Before schema validation and `UPDATE` | `map[string]any` (mutable patch) |
+| `AfterUpdate` | After `UPDATE`, before tx commit | `map[string]any` (response record) |
+| `BeforeDelete` | Before `DELETE` / soft-delete | `string` (record ID) |
+| `AfterDelete` | After `DELETE`, before tx commit | `string` (record ID) |
+| `BeforeList` | Before `SELECT` (data + count queries) | `*hook.ListPayload` |
+| `AfterList` | After `SELECT`, before response | `*hook.ListPayload` |
+| `BeforeGet` | Before single-row `SELECT` | `*hook.GetPayload` |
+| `AfterGet` | After single-row `SELECT`, before response | `*hook.GetPayload` |
 
-Hooks run in registration order. The first error stops execution and
-returns to the caller. For `Before*` hooks the error cancels the
-operation. For `After*` hooks the error rolls back the transaction.
+- Hooks run in registration order per entity (`app.HookRegistry("posts").RegisterHook(...)`).
+- A `Before*` error refuses the request (`400` on HTTP; `crud.IsHookRefusal(err)` is true in process). A panic is recovered, logged, rolled back, and returned as `*hook.PanicError` (`500` on HTTP).
+- `BeforeCreate`/`BeforeUpdate` run **before** schema validation so you can compute or normalize fields that must pass validation.
+- `BeforeUpdate`/`BeforeDelete` only run after the target row passes tenant, owner, soft-delete, and `BeforeGet` scope checks—missing or out-of-scope rows return `404` before any hook runs.
+- Any `crud.WithElevation` on the outer context is stripped before hooks execute so hooks never inherit elevated privileges.
 
-A Before hook that returns an error refuses the write: the HTTP handlers
-answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
-`DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
+## Scoping & redacting reads (`BeforeList`/`BeforeGet`, `AfterList`/`AfterGet`)
 
-A hook that panics has faulted rather than refused. The registry
-recovers it, logs the value and stack, and returns a `*hook.PanicError`;
-the write rolls back and the HTTP handlers answer 500 with the generic
-body, never the panic value, and `crud.IsHookRefusal` reports false.
-Reads hold the same line: a `BeforeList` or `BeforeGet` hook that
-returns an error answers 400 with it, and one that panics answers 500,
-on the entity's own List and Get, on a parent's `?include=` or
-`?rel.field=` that runs it, and on the MCP read tools that call those
-routes.
-
-**A Before hook only sees a row the caller can write.** `BeforeUpdate`
-and `BeforeDelete` run after the scope check, not before it: on
-`PUT`, `PATCH` and `DELETE /<entity>/{id}`, every item of the batch
-routes, and in process on `UpdateOne`, `DeleteOne`, `BatchUpdateMany`
-and `BatchDeleteMany`, crud first reads the target row under the
-write's own tenant, owner and soft-delete scope, plus any clause a
-`BeforeGet` hook appends (below). Another owner's row, another
-tenant's, a trashed row and a missing id answer 404 there, and the hook
-is never called. That matters because a hook's database work rolls back
-with the write but an email it sent or a file it deleted does not.
-Restore, purge and state moves already read their target before their
-hooks. The check is one keyed `SELECT` inside the write's transaction,
-and runs only when such a hook is registered.
-
-`BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
-hook that fills in or normalizes a field mutates the body the validator
-then checks; use them to supply server-derived values that must pass
-validation.
-
-## Registering hooks
-
-```go
-app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
-    func(ctx context.Context, data any) error {
-        record := data.(map[string]any)
-        return enqueueIndexing(ctx, record)
-    })
-```
-
-`HookRegistry(entityName)` lazily creates a registry for that entity.
-Each entity has its own registry: hooks do not cross entities.
-
-A hook runs as the caller. When a back office such as battery/admin
-elevates a write or read (`crud.WithElevation`), the hook's `ctx`, and the
-`Request` a List or Get payload carries, arrive with the elevation
-removed: a read or write the hook makes passes only the caller's own
-gates.
-
-## List & Get hooks: scoping reads
-
-`BeforeList` and `BeforeGet` let you inject `WHERE` clauses into the
-read query. The clauses apply to both the data and (for List) the
-count query, so totals match the filtered result. Use this when you
-need per-row scoping the standard `OwnerField` knob doesn't cover,
-e.g. visibility flags, soft-state filters, or role-based redaction.
+Use `BeforeList` and `BeforeGet` to add SQL `WHERE` predicates when `Scope.OwnerField` or `Exposure.ReadScope` isn't enough (e.g., team membership or custom visibility rules). `BeforeList` clauses apply to both the rows query and the `COUNT(*)` query:
 
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/hook"
 
-app.HookRegistry("posts").RegisterHook(framework.BeforeList,
-    func(ctx context.Context, data any) error {
-        p := data.(*hook.ListPayload)
-        // Hide drafts from non-editors.
-        if !isEditor(p.Request) {
-            p.AddWhere("status = $1", "published")
-        }
-        return nil
-    })
+framework.OnBeforeList(app, "posts", func(ctx context.Context, p *hook.ListPayload) error {
+    if !isEditor(p.Request) {
+        p.AddWhere("status = $1", "published")
+    }
+    return nil
+})
 
-app.HookRegistry("posts").RegisterHook(framework.BeforeGet,
-    func(ctx context.Context, data any) error {
-        p := data.(*hook.GetPayload)
-        // p.ID is the id from the URL; scope on team membership.
-        team := teamOf(p.Request)
-        p.AddWhere("team_id = $1", team)
-        return nil
-    })
+framework.OnBeforeGet(app, "posts", func(ctx context.Context, p *hook.GetPayload) error {
+    p.AddWhere("team_id = $1", teamOf(p.Request))
+    return nil
+})
 ```
 
-**A `BeforeGet` scope binds writes too.** A row `GET /posts/{id}`
-answers 404 for is one the record writes answer 404 for, with the same
-body a missing id gets, and leave untouched: `PUT`, `PATCH` and
-`DELETE /posts/{id}`, `POST /posts/{id}/transitions/{key}`, every item
-of `PATCH` and `DELETE /posts/_batch` (the item fails, and the batch
-rolls back, exactly as for a missing id), and the MCP tools that
-dispatch to them. Before the write touches the row, inside its
-transaction, the framework runs the `BeforeGet` chain with the record's
-id and, when the chain appends a clause, one keyed `SELECT` for the row
-under the write's own tenant, owner and soft-delete scope plus those
-clauses. A chain that appends nothing costs nothing. A hook error hides
-the row (a write fails closed; `GET` answers that error with a 400). In
-process the rule is `GetOne`'s: `UpdateOne`, `DeleteOne`,
-`BatchUpdateMany`, `BatchDeleteMany`, `RunTransition`, `RestoreOne`,
-`PurgeOne` and an update under `WithStateOverride` honour the hooks
-only under `crud.WithReadHooks(ctx)`, and answer the not-found error a
-missing id gets. `WithServerWrites` skips the check. `UpsertOne` under
-`WithReadHooks` refuses a key whose existing row the hooks hide with the
-error another owner's row gets: the key is taken, which a create of it
-reveals too, and nothing is written. The hooks run inside the write
-transaction, so a hook that reads the database reaches it through the
-`ctx` it is given (`framework.TxFromContext`, or the in-process API on
-that `ctx`), never a separate pool connection. Only `BeforeGet` decides
-this: a `BeforeList`-only scope narrows lists, not record writes. A
-caller who must still write a row cannot be one the `BeforeGet` chain
-hides it from: gate that caller with `Access` permissions instead, or
-stop hiding the row.
+- **`BeforeGet` scopes bind writes too:** Any row `GET /posts/{id}` hides with `404` via `BeforeGet` is also refused with `404` on `PUT`, `PATCH`, `DELETE`, state transitions, `_batch` updates/deletes, and MCP write tools (checked inside the write transaction). In-process writes honor `BeforeGet` when called with `crud.WithReadHooks(ctx)` (`WithServerWrites` skips it).
+- **`AfterList` / `AfterGet` redaction:** Mutate fields in place using **wire JSON keys** (`camelCase` by default, e.g., `"internalNotes"`, not `"internal_notes"`). Register masks on **both** `AfterGet` and `AfterList` so every surface (List, Get, cursor pages, `?include=`, `_events`, create/update responses) stays consistent, and pair with `NoQuery` so callers can't leak masked values via filters or sorts (or use `Hidden` to exclude columns in SQL).
+- **`AfterList` must preserve row count:** Never drop or add rows in `AfterList` (returns `500` on HTTP / error in process)—filter visibility in `BeforeList`. Because streaming lists (`?stream=true`) don't buffer rows, `?stream=true` returns `400` when any `AfterList` hook is registered (auto-streaming falls back to buffered).
 
-`AfterList` and `AfterGet` see the fetched rows on the payload and
-may mutate them in place; handy for redaction. `AfterList` must preserve the row
-count; filter visibility in `BeforeList`, not by adding or removing results.
-The rows are keyed by
-the response's wire names, the handler's `JSONCase` (camelCase by
-default) or a field's `WireName`, not by column names: the
-`password_hash` column is `"passwordHash"` here, and deleting
-`"password_hash"` finds no key and ships the value.
+## Transactions & `App.InTx`
 
-```go
-app.HookRegistry("users").RegisterHook(framework.AfterList,
-    func(ctx context.Context, data any) error {
-        p := data.(*hook.ListPayload)
-        for _, row := range p.Results {
-            delete(row, "passwordHash")
-        }
-        return nil
-    })
-```
-
-> **`AfterList` and streaming are mutually exclusive.** The streaming
-> list path (`?stream=true`) writes rows straight to the wire and never
-> materialises the full slice an `AfterList` redactor needs, so running
-> the hook there would be impossible, and silently *skipping* it would
-> leak the very fields the redactor exists to hide. When an entity has
-> any `AfterList` hook registered, an explicit `?stream=true` request is
-> refused with **400**. An auto-streamed request (a very large `limit`)
-> instead falls back to the buffered path so the hook still runs. Net:
-> `AfterList` is never bypassed.
->
-> A stream's status line goes out before the first row, so a failure
-> midway cannot change it. The stream stops instead, without closing
-> the JSON envelope: a client sees a body that does not parse, never a
-> shorter list with a `total` that looks complete.
-
-For the common case of per-user row scoping, use
-`EntityConfig.Scope.OwnerField` instead: it's a single line and covers
-all four read/write operations. See
-[`framework/docs/content/entity-declarations.md`](entity-declarations.md#per-user-scoping-ownerfield).
-
-## Transactions
-
-Hooks see the active transaction via `framework.TxFromContext`:
+Inside a hook, get the active `*sql.Tx` from `framework.TxFromContext(ctx)` so your SQL commits or rolls back atomically with the CRUD write:
 
 ```go
 app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
@@ -193,550 +65,71 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
     })
 ```
 
-The `*sql.Tx` returned by `TxFromContext` is the same transaction the
-CRUD handler will commit. Any work performed through it is committed
-or rolled back atomically with the parent operation.
-
-## Running your own code in a transaction
-
-`App.InTx` opens a transaction for arbitrary code paths, such as seeders,
-batch jobs, and multi-entity writes, and puts the `*sql.Tx` into the
-context so any nested hook participates:
+To wrap multi-entity writes in one transaction from your own handlers, jobs, or seeders, use `App.InTx`:
 
 ```go
-err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-    p, err := postsRepo.Create(ctx, entities.PostsInput{Title: title})
-    if err != nil { return err }
-    if _, err := tagsRepo.Attach(ctx, p.ID, tags); err != nil { return err }
-    return nil
-})
-```
-
-A non-nil error from `fn` rolls back. A panic from `fn` rolls back
-via the `Recovery` middleware higher up the stack.
-
-`App.InTx` does not open a second transaction when one is already in
-the context. Called from inside a CRUD hook, or inside another
-`App.InTx`, it runs `fn` under a **savepoint** on the ambient
-transaction:
-
-- If `fn` returns an error, its own writes roll back to the savepoint
-  and the error comes back to you. The outer transaction keeps its
-  earlier writes and stays usable, so the outer code can handle the
-  error and still commit. On Postgres this also clears the "current
-  transaction is aborted" state a failed statement leaves behind.
-- If `fn` succeeds, the savepoint is released into the outer
-  transaction. Its writes commit or roll back with the outer owner;
-  nothing commits on its own.
-
-Events from CRUD writes inside the savepoint follow the same rule:
-they publish when the outer transaction commits, and a rollback to the
-savepoint drops them.
-
-```go
-err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-    if _, err := ordersCH.CreateOne(ctx, order); err != nil { return err }
-    // A failed coupon leaves the order in place.
-    if err := app.InTx(ctx, applyCoupon); err != nil {
-        log.Printf("coupon skipped: %v", err)
-    }
-    return nil
-})
-```
-
-A CRUD operation that joins the transaction (`CreateOne`, `UpdateOne`,
-`DeleteOne` and the rest called with the `InTx` context) runs under its
-own savepoint the same way. One that fails, whether on a constraint, a
-validator or a refusing hook, undoes every write it made, its hooks'
-included, so the code around it can handle the error and still commit.
-
-### Isolation level and read-only transactions
-
-Pass options after `fn` to set how the transaction opens:
-
-```go
-err := app.InTx(ctx, transfer, framework.TxIsolation(sql.LevelSerializable))
-err = app.InTx(ctx, report, framework.TxReadOnly())
-```
-
-- `TxIsolation(level)` passes the level to `BeginTx`. Postgres takes
-  `LevelReadUncommitted`, `LevelReadCommitted`, `LevelRepeatableRead` and
-  `LevelSerializable`, and `InTx` returns an error for the others before
-  `fn` runs. SQLite runs every transaction serializable whatever level is
-  asked, which is at least as strong as any of them.
-- `TxReadOnly()` makes writes inside the transaction fail. The SQLite
-  driver ignores the read-only flag, so on SQLite the framework runs the
-  transaction on a connection of its own with `PRAGMA query_only` set,
-  and clears it before the connection goes back to the pool.
-
-A transaction's settings are fixed once it is open, so a nested
-`App.InTx` given options returns `framework.ErrTxOptionsNested` without
-running `fn`.
-
-### Composing CRUD operations in one transaction
-
-Auto-CRUD writes are individually transactional, and they also **join an
-ambient transaction** when one is in the context. So several CRUD
-operations called inside `App.InTx` commit or roll back as a single unit:
-
-```go
-ordersCH := app.MustCrudHandler("orders") // in-process handler for a registered entity
+ordersCH := app.MustCrudHandler("orders")
 linesCH  := app.MustCrudHandler("order_lines")
 
 err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-    // Both CreateOne calls run on the SAME transaction; if the second
-    // fails, the first is rolled back too.
     if _, err := ordersCH.CreateOne(ctx, order); err != nil { return err }
     if _, err := linesCH.CreateOne(ctx, line); err != nil { return err }
-    return nil // commit
+    return nil
 })
 ```
 
-`App.CrudHandler(name)` (and the panicking `MustCrudHandler`) return a
-fully-wired in-process handler: the same shape the HTTP routes use.
+- **Ambient join & savepoints:** CRUD reads (`GetOne`, `ListAll`, `CountAll`, `TypedQuery`) and writes (`CreateOne`, `UpdateOne`, `DeleteOne`, `softdelete` helpers) automatically join the `InTx` transaction. Calling `App.InTx` (or a CRUD write) inside an existing transaction uses a **savepoint**, so a failed inner operation rolls back cleanly without poisoning the outer Postgres transaction.
+- **Options:** Pass `framework.TxIsolation(sql.LevelSerializable)` or `framework.TxReadOnly()` on the outermost `App.InTx` (passing options on a nested `InTx` returns `framework.ErrTxOptionsNested`).
+- **Events on commit:** Lifecycle events emitted inside `App.InTx` are queued and published only after the outer transaction commits. If you manage a `*sql.Tx` manually instead of `App.InTx`, attach a commit queue with `ctx, q := db.WithTxQueue(ctx, tx)` and call `q.RunAfterCommit()` after `tx.Commit()`.
+- **Validation errors in process:** Check `var ve *crud.ValidationError; errors.As(err, &ve)` and read `ve.Fields()`.
 
-For a multi-tenant or owner-scoped entity, put the tenant/owner into the
-`ctx` first (the in-process methods require it, just like an HTTP request
-would carry it): `ctx = tenant.SetTenantID(ctx, "acme")` before the calls.
+## Hook-skip & behavior matrix
 
-Pass the `ctx` you receive from `InTx` into the CRUD call: that's what
-carries the transaction (via `TxFromContext`). The query builder is
-transaction-agnostic, so any hand-written `query.QueryBuilder` SQL you run
-on the provided `tx` is part of the same unit. Without an ambient
-transaction (the normal HTTP path), each CRUD write opens and commits its
-own transaction as before.
-
-Reads join it too: `GetOne`, `ListAll`, `CountAll`, the aggregates,
-`?include=` loads and typed queries called with the `InTx` context run on
-the transaction, so they see rows it wrote and not yet committed. The
-`softdelete` helpers (`SoftDelete`, `Restore`, `ForceDelete`) write on
-the transaction as well, and a rollback undoes them.
-
-Lifecycle events for writes joined to the ambient transaction are held
-until it resolves and published only on commit; a rollback publishes
-nothing. Inside `App.InTx` this costs nothing extra — the transaction
-owner drains the held emissions right after a successful commit (a
-`db.CommitQueue` carried on the same context as the tx).
-
-If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
-the framework cannot see your commit, so it learns the outcome by
-polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
-reports done) and then re-checking the row. A committed soft
-delete is confirmed by `deleted_at IS NOT NULL`; a hard delete or purge
-requires the row to be absent. A rollback publishes neither kind of delete.
-That poll shares the
-transaction's single connection with your own statements. The wait is
-capped at two minutes, counted from the write, a statement of yours that
-holds the connection included; past that the event is dropped and
-logged. Prefer
-`db.WithTxQueue`, and call `queue.RunAfterCommit()` after your `Commit`
-succeeds — that removes the poll entirely:
-
-```go
-tx, err := dbc.Begin()
-if err != nil {
-    return err
-}
-ctx, queue := db.WithTxQueue(ctx, tx)
-committed := false
-defer func() {
-    if !committed {
-        _ = tx.Rollback() // held events are dropped with the queue
-    }
-}()
-if _, err := ordersCH.CreateOne(ctx, order); err != nil {
-    return err
-}
-if err := tx.Commit(); err != nil {
-    return err
-}
-committed = true
-queue.RunAfterCommit() // events publish now, post-commit
-```
-
-The deferred rollback matters: a panic between `Begin` and `Commit`
-otherwise keeps the pooled connection and any row locks until the
-finalizer. It is the same shape `App.InTx` uses internally.
-
-A handler whose `DB` is your `*sql.Tx` itself (a copy with
-`ch.DB = tx`, the context carrying no transaction) also runs each
-operation under a savepoint, so one that fails, a batch included,
-leaves none of its writes on your transaction. Nothing tells such a
-handler how your transaction ends, so it publishes no live-bus events
-of its own: an event sent before your `Commit` would announce a write
-you might roll back. Pass it the context from `db.WithTxQueue` and call
-`queue.RunAfterCommit()` after `Commit`, as in the example above; the
-events then go out once, on commit, and never on rollback.
-
-The same holds for a write in a `db.WithTx` context whose record carries
-no primary key: the framework cannot check it landed, so it is not
-announced. One generic warning per process explains that this drop policy
-applies across all entity types and tables; it is not a per-event or
-per-table diagnostic. Carry and drain a `db.WithTxQueue` commit queue to
-preserve those events.
-
-### Handling validation errors
-
-When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
-fails schema validation, the returned error unwraps to
-`*crud.ValidationError`. Use `errors.As` to detect it and read the
-per-field messages:
-
-```go
-import "errors"
-import "github.com/DonaldMurillo/gofastr/framework/crud"
-
-row, err := ch.CreateOne(ctx, body)
-var ve *crud.ValidationError
-if errors.As(err, &ve) {
-    // ve.Fields() → map[string][]string, e.g. {"email": ["is required"}}
-    return ve.Fields()
-}
-```
-
-`ValidationError.Error()` is the generic string `"validation failed"`
-(matching the HTTP 400 wire shape); the actionable detail lives in
-`Fields()`. The returned map is read-only.
-
-## Batch behaviour
-
-In a `_batch` request, every item shares one transaction:
-
-- All `Before*` and `After*` hooks fire per item, in input order.
-- The first per-item hook error rolls back the entire batch.
-- Lifecycle events emit only on a successful commit, never on
-  rollback, one per item in input order. Delivery is asynchronous
-  ([events](events.md)): each subscriber runs on its own goroutine per
-  event, so a subscriber can receive the items in any order.
-
-## Hook-skip matrix
-
-Not every operation fires every hook. The table below captures the
-paths that skip hooks entirely; by design, not accident:
-
-| Operation | Hooks skipped | Why |
-|---|---|---|
-| `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, and no lifecycle event or outbox row. It runs on the transaction the context carries (`App.InTx`, a hook's), so a rollback undoes it |
-| `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason, no event either, and it joins the context's transaction the same way |
-| Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
-| Upsert (`UpsertOne`) that updates | BeforeCreate prepares the body; AfterUpdate fires with the pre-image; BeforeUpdate and AfterCreate do not fire | The event is `entity.updated`; audit records `update` with old and new images. The conflict arm sets only columns the caller sent (plus scope columns), so omitted values keep their stored values. A data write re-stamps auto `updated_at`; `created_at` and the key stay unchanged. A conflict with no data to write runs no after hooks, adds no audit row, and emits no event |
-| Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
-| Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
-| Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
-| `_events` payloads | none: BeforeList, BeforeGet and AfterGet fire at delivery | Each delivery runs the subscriber's own BeforeList chain and its BeforeGet chain (with the row's id) on the stream's refreshed context, and checks the stored row against their clauses with one keyed `SELECT`: a row either route would hide is not sent. A hard delete leaves no row to check, so it reaches only a subscriber the hooks append no clause for; a soft delete is checked against the row it left. A Before hook error withholds the event. AfterGet then redacts per subscriber, which keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass AfterGet untouched; an AfterGet error omits the record rather than publishing it raw. |
-| Record writes (`PUT`/`PATCH`/`DELETE /{id}`, transitions, `_batch` update and delete) | none; BeforeGet also fires before the write | Inside the write's transaction, before it touches the row, the route runs the BeforeGet chain GET would, with the record's id. When the chain appends a clause, one keyed `SELECT` under the write's own scope plus those clauses must find the row, or the write answers the 404 a missing id gets and writes nothing; a `_batch` item fails as a missing one does and the batch rolls back. A hook error hides the row. In process (`UpdateOne`, `DeleteOne`, the batch helpers, `RunTransition`, `RestoreOne`, `PurgeOne`, an update under `WithStateOverride`) the check runs only under `WithReadHooks`, and `UpsertOne` there refuses a hidden existing key as it refuses another owner's row. See "A `BeforeGet` scope binds writes too" above. |
-| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a create, or a write that moves its row out of the caller's sight, returns nothing a GET would 404 (a write to a row the chain already hides answers 404 before it runs, the row above). This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A nested child the child entity's own BeforeList scope (plus BeforeGet for a to-one relation, as `?include=` picks them) hides comes back as its id alone, and a cascade item or `belongs_to` reference that names an existing row that scope hides answers 404, the same as a row that is not there, without writing it. A 409 or 422 state refusal names the stored state only when the BeforeGet chain admits the row. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
-| In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
-| `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
-
-**Upsert refuses entities with `BeforeUpdate` hooks.** `UpsertOne` returns
-`upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne`
-before running any hook, changing the body, or opening a transaction.
-This applies even when the key appears new, when no key is supplied, or
-when server writes are enabled. The existing-row SELECT is a separate
-statement: another writer may insert the key before `ON CONFLICT` runs,
-so choosing a Go before hook from that read would leave a TOCTOU window.
-Use `CreateOne` or `UpdateOne` to run the corresponding before hooks with
-their normal validation, mutation, transaction, and abort-on-error semantics.
-
-For entities **without** `BeforeUpdate` hooks, the upsert arms are:
-
-| Arm | Before hooks | After hooks |
-|---|---|---|
-| Insert | `BeforeCreate` prepares the body | `AfterCreate` |
-| Conflict update | `BeforeCreate` prepares the body | `AfterUpdate`; `BeforeUpdate` and `AfterCreate` do not run |
-| Conflict with no data to write | `BeforeCreate` prepares the body | None; no audit row or lifecycle event |
-| Any upsert with registered `BeforeUpdate` hooks | None; returns an error | None; no SQL, audit row, or lifecycle event |
-
-The after-hook and event arm follows the pre-read's classification; that
-read does not make an insert-versus-update decision atomic against other
-writers. In particular, a concurrent insert after an absent pre-read may
-still take the SQL update or no-op conflict arm while running `AfterCreate`.
-A concurrent delete after an existing pre-read can instead insert while
-running `AfterUpdate` with the old row's stale pre-image. This window is
-observable with read-committed Postgres or a non-transactional executor;
-SQLite transactions normally refuse the intervening writer or stale write.
-Serialize conflicting-key writers externally or use explicit create/update
-operations when exact hook/event classification is required. The fail-closed
-`BeforeUpdate` refusal does not depend on that classification.
-
-**Upsert and key-deriving hooks.** A `BeforeCreate` hook may derive or
-normalize the primary key that `UpsertOne` conflicts on (a slug from the
-title, a lowercased natural key). The upsert checks ownership, tenant and
-soft-delete against the key as the hooks left it, and the
-`ON CONFLICT DO UPDATE` itself only updates a row whose owner and tenant
-match the caller's and that is not soft-deleted, so a row another session
-commits mid-upsert is refused too. A refusal returns the same errors as a
-direct collision (`upsert: target row belongs to a different owner or
-tenant`, or the soft-delete one) and leaves the row untouched. `UpsertOne`
-also applies the belongs_to write check `CreateOne` and `UpdateOne` apply:
-an FK naming a parent the caller cannot read fails as not found.
-
-When an upsert replaces an image, its write also checks that the stored
-image source still matches the pre-read (including a `NULL` source).
-If another writer changes that source first, the row and its derived
-columns stay untouched and the HTTP handler returns **409 Conflict**.
-Reload the row before retrying. Ownership, tenant and soft-delete
-refusals still take precedence over this stale-source conflict.
-
-**Redaction implication.** A hook that masks a column protects every HTTP
-path that returns the row: List, Get, keyset pages, `?include=` children,
-`_events` deliveries, and create/update response bodies. Register it on
-BOTH `AfterGet` and `AfterList`; each path runs the one that matches the
-shape it serves, exactly as the entity's own routes do, so a mask that
-exists on only one surface has a gap on the paths that use the other. The
-in-process Go API still returns stored values unless the caller passes
-`crud.WithReadHooks(ctx)`; that is what makes read-modify-write, seed
-lookups and aggregates correct, and generated screens opt in.
-The same opt-in applies a `BeforeList`/`BeforeGet` scope, so a row the
-HTTP route hides is hidden from a rendered screen too.
-`AfterList` must preserve the number of fetched rows. Dropping or adding rows
-fails the HTTP list (offset or cursor) with 500 and logs the `after-list` hook
-phase and row-count mismatch; it never returns a partial success. In-process
-`ListAll` and `TypedQuery.Find` with `crud.WithReadHooks` return an error and no
-rows, and entityui/admin hooked readers refuse the result too. Redacting fields,
-replacing rows with projections and reordering are still allowed when the count
-stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
-`CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
-run `AfterList`; an unhooked in-process read still returns stored values.
-
-A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
-on the same paths, in-process ones under the same opt-in, before these
-hooks and without registering one. An update that sends a masked field
-back as it was read leaves that column alone, and its `BeforeUpdate`
-hooks get the body without it.
-
-`ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
-or `BeforeGet` hooks append any clause for a read of `id` (a hook error
-answers true). A screen asks it about a record that is no longer stored,
-before it prints a stored copy of the record's values: the admin audit
-log does, the rule the `_events` feed applies to a hard delete.
-
-`TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
-(battery/admin) list every surface that serves a row; a new surface adds
-a case there. Generated screens read through entityui's hooked readers
-(`getRow`, `listRows`, …); a deliberate stored-value read lives in a
-function named `*Unhooked`, and the `hookedread` analyzer holds
-entityui and battery/admin to that. The rule covers their writes too:
-an in-process write (`UpdateOne`, `DeleteOne`, `RestoreOne`, `PurgeOne`,
-`RunTransition`, …) refuses a row the caller's `BeforeGet` hooks hide
-only under `crud.WithReadHooks`, so every screen write passes it.
-`TypedQuery.UpdateAll` and `DeleteAll` apply write scopes only and never
-consult `BeforeGet`, whatever the context, so the analyzer refuses them
-in the screens: a screen writes record by record.
-
-On `?include=`, a child hook may redact in place or by replacing a row
-with a projection; both are folded back into the attached row. Sorting
-`Results` is harmless: the order the client sees comes from the
-attachment the loader built, so a hook that sorts (correct on the
-child's own route) neither changes the include payload nor fails it.
-
-Rows are matched by primary key, so a projection may also reorder; the
-two together fold correctly. Keep the id when projecting: it is what
-identifies which attached row a replacement stands for.
-
-It may not change the row COUNT: the loader has already keyed each row
-to its parent, so a hook that drops rows fails the request rather than
-quietly serving the ones it tried to remove. Filter in the child's own
-`BeforeList` instead, which changes the query itself. Returning a row
-the query never produced, or returning one row more often than the query
-did, fails for the same reason.
-
-`?stream=true` still refuses when an `AfterList` hook is registered
-rather than bypassing it; a declared `Mask` runs on each streamed row. The durable outbox row stores the unredacted
-record, since it is server-side state used for replay; redaction happens
-on the way out. `webhook.Bridge` POSTs to third-party URLs and has no
-handler to redact through, so pass `webhook.WithBridgeRedactor` if masked
-fields must not leave that way.
-
-If a value must never leave the server in raw form at all, mark it
-`Hidden`: that is enforced in the SQL projection, so no path can return
-it. Reserve masking (a field's `Mask`, or `AfterGet`/`AfterList` hooks
-plus `NoQuery`) for values that may be shown in a reduced form on the
-paths listed above.
-
-Keep this matrix in mind when writing bulk operations or tests that
-assert side-effect counts.
+| Operation | Hooks behavior |
+|---|---|
+| `_batch` requests | One transaction; per-item `Before*`/`After*` fire in order; any error rolls back the entire batch; events publish after commit. |
+| `TypedQuery.UpdateAll` / `DeleteAll` | Skips `Before*`/`After*` hooks and lifecycle events (bulk SQL), but joins the ambient transaction. |
+| `UpsertOne` | **Refuses entities with any `BeforeUpdate` hook** (prevents TOCTOU—use `CreateOne` or `UpdateOne`). Without `BeforeUpdate`: `BeforeCreate` prepares the body; inserts run `AfterCreate`, conflict updates run `AfterUpdate`, no-op conflicts run no after-hooks. |
+| `?include=` children | Runs the child entity's `BeforeList`/`AfterList` (and `BeforeGet`/`AfterGet` for to-one relations). |
+| `_events` SSE deliveries | Evaluates each subscriber's `BeforeList`/`BeforeGet` and redacts with `AfterGet` at delivery time. |
+| Create/update HTTP responses | Runs `BeforeGet`/`AfterGet` on the returned body (if `BeforeGet` hides the written row, responds with its ID only). |
+| In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | Skips read hooks by default so background code and read-modify-write see stored values. Pass `crud.WithReadHooks(ctx)` whenever rows reach an end user (generated `entityui` screens opt in automatically). |
 
 ## Typed hooks
 
-For entities generated with `gofastr generate`, typed hook helpers
-hand you the concrete struct instead of `map[string]any`:
+For generated or custom Go structs, use the typed helpers instead of `map[string]any`:
 
 ```go
-framework.OnAfterCreate[Post](app, "posts",
-    func(ctx context.Context, p *Post) error {
-        log.Printf("created post %q", p.Title)
-        return nil
-    })
+framework.OnAfterCreate[Post](app, "posts", func(ctx context.Context, p *Post) error {
+    log.Printf("created post %q", p.Title)
+    return nil
+})
 ```
 
-Available helpers for write operations:
-
-- `OnBeforeCreate[T]`, `OnAfterCreate[T]`
-- `OnBeforeUpdate[T]`, `OnAfterUpdate[T]`
-- `OnBeforeDelete`, `OnAfterDelete` (ID is a string, no generic needed)
-
-`OnBeforeCreate[T]`/`OnBeforeUpdate[T]` mutations flow into the pending
-INSERT/UPDATE body. `OnAfterCreate[T]`/`OnAfterUpdate[T]` mutations cannot
-change the stored row (the INSERT/UPDATE has already run) but DO redact
-the response body: the hook payload is the live record the crud layer
-serialises, so `p.Secret = ""` masks it from the caller just like the untyped
-path. They run inside the write transaction, before commit; an error rolls
-the write back. See "Redaction implication" below for the surfaces this covers.
-
-`T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
-models use) or snake_case (`json:"is_admin"`): the payload is offered
-under both spellings, and a change lands back on the payload's own key.
-A change made in place inside a map, slice or pointer field lands too,
-including on a `T` that cannot be marshalled whole (a `chan` or `func`
-field, or a `MarshalJSON` that errors).
-
-The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
-its form values cleaned (entity-declarations.md, "Blank form values"),
-so a form post's `""`, `"2"` and `"true"` fit an `*int64` or `bool`
-field. A value that still does not fit `T` fails the write with a 400
-whose message says a value does not match its field's type. The
-`encoding/json` detail, which names your struct, stays in the Go error
-and never reaches the response.
-
-A JSON number in a `map[string]any` or `any` field of `T` arrives as an
-`int64` when it is an integer and a `float64` otherwise, and merges back
-into the body the same way, so an id above 2^53 survives the hook
-unrounded. Assert `.(int64)` on a nested integer, or switch over both.
-
-### Typed List and Get hooks
-
-`OnBeforeList` and `OnAfterList` work like their untyped counterparts
-but skip the `data.(type)` assertion because the payload is already
-`*hook.ListPayload`:
-
-```go
-import "github.com/DonaldMurillo/gofastr/framework/hook"
-
-// Scope reads to published posts for non-editors.
-framework.OnBeforeList(app, "posts",
-    func(ctx context.Context, p *hook.ListPayload) error {
-        if !isEditor(p.Request) {
-            p.AddWhere("status = $1", "published")
-        }
-        return nil
-    })
-
-// Redact a field after the rows are fetched.
-framework.OnAfterList(app, "posts",
-    func(ctx context.Context, p *hook.ListPayload) error {
-        for _, row := range p.Results {
-            delete(row, "internalNotes") // the internal_notes column
-        }
-        return nil
-    })
-```
-
-`OnBeforeGet` and `OnAfterGet` follow the same pattern with
-`*hook.GetPayload`:
-
-```go
-// Scope a single-row lookup to the caller's team.
-framework.OnBeforeGet(app, "posts",
-    func(ctx context.Context, p *hook.GetPayload) error {
-        team := teamOf(p.Request)
-        p.AddWhere("team_id = $1", team)
-        return nil
-    })
-
-// Redact a field on a single-row response.
-framework.OnAfterGet(app, "posts",
-    func(ctx context.Context, p *hook.GetPayload) error {
-        delete(p.Result, "internalNotes")
-        return nil
-    })
-```
-
-`p.ID` on a `GetPayload` is the id from the URL path. `p.Request` on
-both payload types is the live `*http.Request` so you can inspect
-headers, cookies, or auth context.
-
-Each typed helper wraps the underlying `HookRegistry`; typed and
-untyped hooks can coexist on the same entity in any registration order.
+- Write helpers: `OnBeforeCreate[T]`, `OnAfterCreate[T]`, `OnBeforeUpdate[T]`, `OnAfterUpdate[T]`, `OnBeforeDelete`, `OnAfterDelete`.
+- Read helpers: `OnBeforeList`, `OnAfterList`, `OnBeforeGet`, `OnAfterGet`.
+- `OnBefore*[T]` mutations write to the DB; `OnAfter*[T]` mutations run inside the transaction before commit (errors roll back) and redact the HTTP response body without altering the stored row. Both `camelCase` and `snake_case` `json` struct tags work.
 
 ## Pre-image access (old row before update/delete)
 
-`AfterUpdate` and `AfterDelete` hooks only receive the **new** state (or,
-for delete, just the id). To see what the row looked like *before* the
-change, for diffing, audit logs, or conditional side effects, read the
-pre-image the framework snapshots into `ctx` before the mutating
-statement runs:
+Inside `AfterUpdate` or `AfterDelete`, inspect the row's prior state using the pre-image helpers from `framework/crud`:
+
+- **`crud.AuditPreImageAs[T](ctx) (T, bool)`** (preferred): decodes into your struct with standard `json` tags.
+- **`crud.AuditPreImageSnakeFromContext(ctx) map[string]any`**: map keyed by `snake_case` DB column names.
+- **`crud.AuditPreImageFromContext(ctx) map[string]any`**: raw map keyed by the handler's `JSONCase` (`camelCase` by default—not `snake_case`).
 
 ```go
-import "github.com/DonaldMurillo/gofastr/framework/crud"
-
-app.HookRegistry("tickets").RegisterHook(framework.AfterUpdate,
-    func(ctx context.Context, data any) error {
-        pre := crud.AuditPreImageSnakeFromContext(ctx) // snake_case keys
-        if pre != nil && pre["status_id"] != data.(map[string]any)["statusId"] {
-            return notifyStatusChange(ctx, pre["status_id"])
-        }
-        return nil
-    })
+pre := crud.AuditPreImageSnakeFromContext(ctx)
+if pre != nil && pre["status_id"] != data.(map[string]any)["statusId"] {
+    return notifyStatusChange(ctx, pre["status_id"])
+}
 ```
-
-`AuditPreImageFromContext`, `AuditPreImageAs[T]`, and
-`AuditPreImageSnakeFromContext` all return `nil` / zero-value / `false`
-when no pre-image was captured for the current context (e.g. the SELECT
-failed, or the hook fired outside `doUpdate`/`doDelete`); always check
-before indexing.
-
-### Casing contract: read this before using the raw map
-
-`crud.AuditPreImageFromContext(ctx)` keys its `map[string]any` by the
-**handler's configured `JSONCase`**, camelCase by default (`"statusId"`),
-because it's built from the same `scanRow`/`convertKey` pipeline as
-every CRUD response. This is **not** the same casing as the
-`BeforeCreate`/`BeforeUpdate` hook body, which the framework already
-converts back to snake_case (`"status_id"`) before hooks run.
-
-A hook that reads `pre["status_id"]` against a default (camelCase)
-handler gets `nil` back: no panic, no error, just a missing key.
-Casing-identical keys (`"version"`, `"key"`, …) happen to work under
-either casing, which is what makes the mismatch easy to miss in review
-and easy to reintroduce later. Two ways to avoid it entirely:
-
-- **`crud.AuditPreImageAs[T](ctx) (T, bool)`**: decodes the pre-image
-  into a struct with ordinary camelCase `json:"..."` tags, using the
-  same casing translation typed hooks (`framework.OnAfterUpdate[T]`
-  etc.) already use to decode their payload. Prefer this when a
-  generated entity struct is available.
-- **`crud.AuditPreImageSnakeFromContext(ctx) map[string]any`**: returns
-  the pre-image re-keyed to snake_case DB column names, for callers
-  that want plain map access without defining a struct.
-
-Only reach for the raw `crud.AuditPreImageFromContext` when you
-specifically need the handler's configured JSONCase (e.g. re-emitting
-the row shape a client would see, as the built-in audit-log battery
-does).
 
 ## Common mistakes
 
-- **Reading `crud.AuditPreImageFromContext(ctx)` with a snake_case key
-  (`pre["status_id"]`).** The raw map is keyed by the handler's
-  `JSONCase` (camelCase by default), not DB column names; see
-  "Casing contract" above. Use `AuditPreImageAs[T]` or
-  `AuditPreImageSnakeFromContext` instead.
-- **Calling `app.DB.ExecContext` from inside a hook.** That bypasses
-  the transaction. Use `TxFromContext` to get the active tx.
-- **Returning an error from an `AfterDelete` hook expecting the
-  delete to "stand".** It won't: `After*` errors roll back. If you
-  want a side effect that survives hook failure, do it after commit
-  (e.g. subscribe to the event bus from `EventStream`).
-- **Long-running work inside a hook.** Hooks hold the transaction
-  open. Push slow side effects onto a queue and ack quickly.
-- **Mutating `data` in an `AfterCreate`/`AfterUpdate` hook changes the
-  response, not the row.** The post-write record IS the response body, so
-  clearing a field there redacts it from what the caller reads; this is the
-  supported way to mask a create/update response, and it behaves identically
-  for typed hooks (`OnAfterCreate[T]`/`OnAfterUpdate[T]`) and untyped ones.
-  The INSERT/UPDATE has already run, so mutating the payload cannot change
-  what is stored. The hook still runs inside the transaction, before commit;
-  an error rolls the write back. To alter the stored value, use a
-  `BeforeCreate`/`BeforeUpdate` hook before the INSERT/UPDATE runs.
+- **Indexing `crud.AuditPreImageFromContext(ctx)` with `snake_case` keys.** It uses the handler's `JSONCase` (`camelCase` by default). Use `AuditPreImageAs[T]` or `AuditPreImageSnakeFromContext`.
+- **Using `app.DB.ExecContext` inside a hook.** That bypasses the write transaction—use `framework.TxFromContext(ctx)`.
+- **Expecting an `AfterDelete` error to keep the delete.** `After*` errors roll back the transaction; run non-atomic side effects via `EventStream` subscribers after commit.
+- **Doing slow network I/O inside a hook.** Hooks hold the DB transaction open—enqueue slow work onto a background queue.
+- **Expecting `AfterCreate`/`AfterUpdate` mutations to change stored columns.** Those mutations redact the response body only; modify stored values in `BeforeCreate`/`BeforeUpdate`.
+- **Using `AfterList` to filter out rows.** `AfterList` must keep the row count unchanged; put visibility filters in `BeforeList`.

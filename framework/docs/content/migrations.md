@@ -1,81 +1,15 @@
 # Migrations
 
-GoFastr has two migration paths:
+GoFastr supports two complementary migration paths that share the same DDL type mapping:
 
-1. **Auto-migrate from declared entities.**
-   `framework.AutoMigrate(db, app.Registry)` converges the database
-   with the entity declarations: it creates missing tables (with
-   indexes and foreign keys) **and adds missing columns to existing
-   tables** (`ALTER TABLE ADD COLUMN`, additive only: boot never drops,
-   renames, or retypes). A field made `Unique` after its column exists
-   gets its `<table>_<column>_key` unique index on boot unless a
-   single-column unique index already covers the column; rows that
-   already repeat a value fail the boot with an error naming the column.
-   So does an index of that name another table or column already holds
-   (table `t_a` column `b` and table `t` column `a_b` both name
-   `t_a_b_key`, and index names share a schema): create a unique index
-   of another name on the column, which counts as covering it.
-   Clearing `Unique` is left to `migrate generate`. A column the table
-   still holds unique on its own while the entity declares it unique
-   only within a composite unique index (`Unique` moved into
-   `(user_id, email)`, say) stops the boot with an error naming the
-   column: the old constraint would refuse one owner's value for every
-   other owner. `DiffSchema` drops it (on SQLite it rebuilds the table,
-   a destructive change). Type changes and renames are surfaced by the
-   declarative diff (`DiffSchema` / `migrate generate`): type changes as
-   destructive changes refused by default, renames as non-destructive
-   `RENAME COLUMN` when declared via `EntityConfig.Renames`. But
-   auto-migrate on `App.Start` applies only the additive ones. Runs on
-   `App.Start`. Best for development, and for apps that keep their schema
-   in entity declarations rather than hand-written SQL.
-2. **SQL files with directives.** `core/migrate` runs versioned `.sql`
-   files. Best when you need to express data backfills, complex
-   constraints, or anything the entity declaration can't.
+1. **Boot auto-migrate (`framework.AutoMigrate`):** Runs on `App.Start` to create missing tables, indexes, foreign keys, and columns (`ALTER TABLE ADD COLUMN`). Strictly additive—boot never drops, renames, or retypes columns. Best for development and entity-driven apps.
+2. **Versioned SQL migrations (`core/migrate`):** Runs numbered `.sql` files with checksums, locks, dirty-state tracking, and `Down` rollbacks. Best for data backfills, renames, destructive changes, and controlled production rollouts.
 
-Neither copies rows in from another database; see [Data export &
-import](data-export.md#what-this-does-not-do) for how to write that
-one-time job.
-
-Both are production-hardened (see [Production safety](#production-safety)):
-auto-migrate runs under an advisory lock inside a single transaction; the
-versioned runner adds checksums, dirty-state tracking, and a
-no-transaction escape hatch. The two paths are kept coherent: the
-entity schema is the single source of DDL type mapping, so a table
-auto-migrate creates diffs clean against the same entity declaration.
-
-When an entity has multiple API versions registered (via route groups,
-see [API prefix & versioning](api-versioning.md)), auto-migrate builds
-each table's schema from the **union of every version's declared
-columns**. A field only v2 declares is created at boot exactly as a new
-column on a single-version entity is; a field both versions declare must
-be physically identical or registration panics. Single-version entities
-are unchanged.
-
-## PostgreSQL boolean columns
-
-`schema.Bool` is emitted as `BOOLEAN` on PostgreSQL. The auth durable
-stores additionally upgrade their own legacy `INTEGER` (`0`/`1`) boolean
-columns during `EnsureSchema`, including `auth_users.password_set` and
-the session/2FA flags. Existing auth rows are converted with `0 = FALSE`
-and non-zero = TRUE.
-
-Auto-migrate does **not** retype arbitrary existing entity columns:
-general type changes remain intentionally out of scope because they can
-require data-specific conversions. If an application-managed boolean
-column was created as `INTEGER` by an older deployment, apply and review
-a PostgreSQL migration before booting the new code:
-
-```sql
-ALTER TABLE "items" ALTER COLUMN "enabled" DROP DEFAULT;
-ALTER TABLE "items" ALTER COLUMN "enabled"
-    TYPE BOOLEAN USING ("enabled" <> 0);
-ALTER TABLE "items" ALTER COLUMN "enabled" SET DEFAULT FALSE;
-```
-
-Back up production data and verify any values outside `0`/`1` before
-running this conversion.
+Neither path migrates rows from another database; see [Data export & import](data-export.md#what-this-does-not-do) for one-off copy jobs.
 
 ## SQL file format
+
+Put numbered SQL files in `./migrations` (e.g., `0001_create_posts.sql`):
 
 ```sql
 -- +migrate Version 1
@@ -92,706 +26,51 @@ DROP INDEX posts_title_idx;
 DROP TABLE posts;
 ```
 
-Required directives: `Version` (positive integer) and `Up`. `Name`
-and `Down` are optional but `Down` is strongly recommended. Without
-it (or with only whitespace in it), `migrate down` fails for that
-version with `ErrNoDown`, before it rolls back anything, including the
-newer versions that do have a Down. To get past it, write the Down, or
-undo the Up by hand and run `migrate force <V> --not-applied`. The `Up` section is truly
-required, not defaulted: directives are case-sensitive, and a file whose
-`-- +migrate Up` line is missing or misspelled (lower-case `up`) is
-rejected at parse time instead of registering a migration whose SQL was
-silently discarded while the tracking table records it applied.
-Programmatic `Register` refuses an empty `Up` for the same reason. Any
-other `-- +migrate` line that is not one of `Version`, `Name`, `Group`,
-`Up`, `Down` or `NoTransaction`, and a comment that reads as a directive
-with its spacing or case off (`--+migrate Down`, `-- +Migrate Down`),
-is refused too: the parser used to pass over it with the section above
-still open, so a misspelled `Down` put the Down statements into `Up` and
-the rollback ran as part of the apply. A prose comment that starts the
-same way, such as `-- +migrated from v1`, is refused as an unknown
-directive, so write it without the `+` (`-- migrated from v1`).
-`migrate generate` refuses a SQL body (a multi-line `DEFAULT`, a view or
-a routine) holding any line the parser would read either way, using the
-parser's own test, `migrate.IsDirectiveLine` in `core/migrate`, so it
-never writes a file the runner then refuses to load.
+- **Directives (case-sensitive):** `Version` (positive integer) and non-empty `Up` are required. `Name`, `Down`, `Group`, and `NoTransaction` are optional. Unknown or misspelled `-- +migrate` lines are rejected at parse time so a typo never silently merges `Down` into `Up`.
+- **`Down` safety:** `migrate down` fails with `ErrNoDown` before rolling anything back if any target version lacks `Down` SQL.
+- **Non-transactional migrations:** Add `-- +migrate NoTransaction` for statements Postgres forbids inside a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, `CREATE DATABASE`). On Postgres, statements are split and executed individually. The version is marked `dirty` before running and cleared on success; if it fails mid-way, reconcile manually and clear it with `migrate force`.
+- **Groups:** Add `-- +migrate Group <name>` to scope migrations to an optional feature or battery (`default` is reserved for ungrouped migrations). Versions are unique per `(group, version)`. Select groups with `--group=<name>` or `m.Up(ctx, "knowledge")`; keep groups schema-independent.
 
-### Non-transactional migrations
-
-By default each migration runs inside a transaction. Some statements
-cannot run in a transaction: `CREATE INDEX CONCURRENTLY`, `VACUUM`,
-and `CREATE DATABASE` on Postgres. They need the `NoTransaction` directive:
-
-```sql
--- +migrate Version 7
--- +migrate Name concurrent_email_index
--- +migrate NoTransaction
--- +migrate Up
-CREATE INDEX CONCURRENTLY posts_email_idx ON posts (email);
--- +migrate Down
-DROP INDEX posts_email_idx;
-```
-
-A non-transactional migration is recorded **dirty** before its SQL
-runs and only marked clean on success. If it fails partway, the dirty
-flag stays set and every later `up`/`down` refuses with an error until
-you reconcile the schema by hand and run `migrate force` (below).
-Reserve `NoTransaction` for statements that genuinely require it.
-
-On Postgres the runner splits a non-transactional `Up` (and `Down`) at
-its statement boundaries and runs each statement on its own, so one
-migration can hold several `CREATE INDEX CONCURRENTLY` statements. Sent
-together, they reached Postgres as one simple-query message, which it
-runs as one implicit transaction, and the second failed with "cannot run
-inside a transaction block". A semicolon inside a quoted string or
-identifier, a dollar-quoted body (`$$ … $$`), a comment or a
-`BEGIN ATOMIC … END` function body is not a boundary. A statement that
-fails stops the run with the ones before it applied, which the dirty
-row records. SQLite runs the body as one statement list, since a
-`CREATE TRIGGER` body holds semicolons there and SQLite has no implicit
-transaction to escape.
-
-The runner reads `migrations/*.sql` in filename order. Convention:
-zero-pad the version into the filename, e.g.
-`0001_create_posts.sql`.
-
-### Groups
-
-A migration may declare a group, scoping it to a feature or module:
-
-```sql
--- +migrate Version 1
--- +migrate Group knowledge
--- +migrate Name create_articles
--- +migrate Up
-CREATE TABLE articles (...);
--- +migrate Down
-DROP TABLE articles;
-```
-
-No directive means the **default group**, exactly today's behavior.
-See "Migration groups" below for semantics.
-
-## CLI
+## CLI reference
 
 ```bash
-gofastr migrate up                       # uses DATABASE_URL or .env
-gofastr migrate status --db-url=file:app.db
-gofastr migrate down 1
-gofastr migrate generate add_email --from=gofastr.yml   # write a versioned migration file from entity changes
-gofastr migrate force 7                  # mark version 7 cleanly applied
-gofastr migrate force 7 --not-applied    # treat version 7 as pending again
-gofastr migrate repair --from=gofastr.yml --apply   # rebuild SQLite tables carrying the stale owner-column key
+gofastr migrate up                                        # apply all pending migrations
+gofastr migrate status --db-url=file:app.db               # show applied, pending, dirty, drift
+gofastr migrate down 1                                    # roll back the latest N migrations
+gofastr migrate generate add_email --from=gofastr.yml     # diff app spec against snapshot
+gofastr migrate force 7                                   # mark version 7 applied (baseline/recover)
+gofastr migrate force 7 --not-applied                     # mark version 7 pending again
+gofastr migrate repair --from=gofastr.yml --apply         # repair legacy SQLite owner FKs
 ```
 
-| Subcommand   | Effect                                                        |
-|--------------|---------------------------------------------------------------|
-| `up`         | Apply all pending migrations in version order. It takes no count: `up 1` is refused rather than read as "apply everything". |
-| `status`     | Print applied count, pending versions, any dirty version, and the drift `up`/`down` refuse on: an applied migration whose file changed since (MODIFIED) or whose file is gone. |
-| `down N`     | Roll back the most recent `N` applied migrations in reverse (default 1). `N` must be one positive integer; anything else, a second count included, is refused before a rollback. |
-| `generate N` | Write a versioned, reversible migration file from entity changes. `N` is one word (`add_users`); a second one is refused. |
-| `force V`    | Reconcile the tracking table for version `V` (recover/baseline).|
-| `repair`    | Report (and with `--apply`, rebuild) SQLite tables still carrying the pre-v0.67 owner-column foreign key; see [the SQLite driver page](sqlite-driver.md). |
+Key flags (valued flags use `--name=<value>`):
+- `--db-url=<dsn>`: Defaults to `DATABASE_URL` env var or `.env`.
+- `--db=<sqlite|postgres>` (or `--driver=`): Inferred from `postgres://` / `postgresql://` URLs; defaults to SQLite otherwise.
+- `--create-db` (`up` only): Creates the database first via `migrate.EnsureDatabase` if missing (Postgres role needs `CREATEDB`).
+- `--group=<name>`: Repeatable filter for `up`/`down`/`status`/`force`/`generate`.
+- `--from=<gofastr.yml>`, `--migrations=<dir>` (default `migrations`), `--snapshot=<path>` (default `migrations/schema.snapshot.json`).
 
-Flags & inputs (each valued flag is written `--name=<value>`; a flag the
-subcommand does not read, or a valued one without `=`, is refused before
-anything opens). `up`, `status` and `repair` take no positional argument,
-and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
-`migrate generate a b`) is a usage error, exit 2, before anything opens.
+## Declarative migration generation
 
-- `--db-url=<dsn>`: required unless `DATABASE_URL` env var is set or
-  a `.env` file in the working directory contains `DATABASE_URL=...`.
-- `--db=<name>` (or its alias `--driver=<name>`): `sqlite` or
-  `postgres`; `sqlite3` and `postgresql` are accepted as aliases, the
-  same table `gofastr init --db=` uses. Without the flag, a database URL
-  that starts with `postgres://` or `postgresql://` uses `postgres` and
-  anything else `sqlite`. Both drivers ship in the `gofastr` binary. The
-  runner and `generate` write SQLite and Postgres SQL only, so any other
-  name (`mysql`, a typo) is refused before anything opens or is written,
-  never replaced by SQLite.
-- `--create-db` (`up` only): create the target database before applying
-  migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
-  for fresh deploys where the database named in the DSN has not been created
-  yet; a no-op when it already exists. If another replica creates it after
-  the existence check, the losing creator continues with migrations too. The `migrations/` directory and
-  the database URL are checked first, so a refused run creates nothing.
-- `--not-applied` (`force` only): remove the version from the tracking
-  table (treat as pending) instead of marking it applied.
-- `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
-  declarations; `repair` needs it to know each table's owner column.
-  `generate` validates every entity before diffing or writing files. An
-  invalid field default or other registration error exits 1, names the
-  entity, and leaves migrations and the committed snapshot unchanged.
-- `--apply` (`repair` only): rebuild the reported tables instead of only
-  reporting them. The rebuild keeps every row, column, default, index,
-  trigger, and other constraint, including triggers that spell the table
-  name with different ASCII letter casing.
-- `--group=<name>`: scope `up`/`down`/`status` to one or more groups
-  (repeat the flag); a single `--group` on `force` targets that group's
-  version. `--group=default` addresses the default (ungrouped) set.
-  `generate --group=<name>` stamps the `Group` directive into the
-  generated file. No flag = all groups (today's behavior).
+`gofastr migrate generate <name> --from=gofastr.yml` diffs your app spec entities offline against `migrations/schema.snapshot.json`, writes the next numbered `.sql` file, and updates the snapshot. Commit both files, review the SQL, then run `gofastr migrate up`.
 
-`migrate force <V>` is the recovery path out of a dirty state and the
-way to **baseline** an existing database: it marks a version applied
-*without running its Up SQL*, recording the migration's checksum so
-later drift checks line up. Use `--not-applied` to drop a version's row
-so it re-runs. It takes exactly one version, a whole non-negative
-integer: `force 7x` or `force 7 8` exits with an error before the
-tracking table is touched.
-
-The migrations directory is hardcoded to `./migrations` relative to
-the working directory. The tracking table name is `_migrations`. Both
-are configurable via the programmatic API below if you embed the
-runner in your own command.
-
-## Migration groups
-
-An app composed of optional features can scope migrations to the
-feature that owns them: a `knowledge` module's tables apply only when
-that module is enabled, and a battery can own its schema in its own
-stream instead of injecting into the app's flat list.
-
-- **Versions are unique per group.** Two groups may both have a
-  version 1; `Register` rejects a duplicate `(group, version)` pair.
-- **Selection.** `m.Up(ctx)` applies every registered group;
-  `m.Up(ctx, "knowledge")` applies only that group's pending
-  migrations. `Down`, `Status`, and the CLI's repeatable `--group`
-  flag scope the same way. Enabling a feature later just runs its
-  pending group, under the same advisory lock as everything else, so
-  concurrent boots stay safe.
-- **Ordering.** Within a group, strictly by version. When one run
-  applies several groups, migrations interleave in `(version, group)`
-  order, a deterministic tiebreak, **not** a dependency mechanism.
-  Keep groups self-contained: a group must never depend on another
-  group's schema, because the other group may not be enabled at all.
-- **Compatibility.** Apps that never declare a group are untouched:
-  the runner emits the exact pre-group SQL and never alters the
-  tracking table. The first time a non-default group is in play, the
-  tracking table gains a `group_name` column and its primary key is
-  upgraded in place to `(group_name, version)`: atomic on Postgres,
-  a transactional table rebuild on SQLite; existing rows all belong
-  to the default group, so the upgrade cannot conflict.
-- **Integrity.** Checksums, drift detection, and `force` all key on
-  `(group, version)`. A dirty migration in the default group or any
-  registered group blocks all operations; the error names the group.
-  A *named* group with no registered migrations at all is a disabled
-  module: its applied rows are that module's property, shown by
-  `status`, but never compared, blocked on, rolled back, or dropped.
-  (`force --group=<name>` remains the reconciliation escape hatch for
-  a disabled module's rows.) The default group is never treated as a
-  module. An applied default-group row with no matching registration
-  is drift and errors, exactly as before groups existed.
-- **Addressing the default group.** In selections, `--group` on the
-  CLI or group args in Go, the name `default` addresses the default
-  group (`m.Up(ctx, "default")`). It is reserved: `Register` rejects
-  a group literally named "default".
-
-## Generating migrations from entity changes (declarative workflow)
-
-Boot auto-migrate is fine for development, but production change
-management wants **reviewable, version-controlled, reversible**
-increments, not implicit applies. `migrate generate` produces them
-*offline* (no database needed):
-
-```bash
-gofastr migrate generate add_published --from=gofastr.yml --driver=postgres
-```
-
-`--db=` (or `--driver=`) picks the DDL dialect, `sqlite` or `postgres`.
-Without it the app spec decides: its `app.db.driver`, or Postgres when
-`app.db.url` starts with `postgres://` or `postgresql://`, and SQLite
-when the spec names no database. A driver that is neither is refused.
-
-It diffs the **entity declarations** in the `gofastr.yml` app spec against a
-committed **schema snapshot** (`migrations/schema.snapshot.json`) and
-writes the next numbered file, e.g. `migrations/0002_add_published.sql`,
-with `Up` plus a `Down` section when a safe inverse exists:
-
-```sql
--- +migrate Version 2
--- +migrate Name add_published
--- +migrate Up
-ALTER TABLE posts ADD COLUMN published BOOLEAN;
--- +migrate Down
-ALTER TABLE posts DROP COLUMN published;
-```
-
-Within an entity the file drops changed indexes first, then changes
-columns, then creates indexes, so a unique index retargeted to a new
-column and an indexed column dropped with its index both apply. A
-`Unique` field added to an existing table gets a unique index,
-`<table>_<column>_key`, after its `ADD COLUMN`. `Unique` set on a column
-that already exists gets the same index, and `Unique` cleared removes
-it: on Postgres the file drops the index of that name and every
-`UNIQUE` constraint on that column alone, found in the catalog when the
-migration runs (so a constraint an older build's `CREATE TABLE` left
-under a name Postgres chose goes too). The column is matched by the
-exact name the unquoted DDL gave it, the declared name in lower case, so
-a quoted `"Email"` beside `email` keeps its constraint. On SQLite it rebuilds the
-table, since only a rebuild removes an inline `UNIQUE`. The snapshot records each table's unique columns for
-this; for a snapshot written before it, the diff reads them from the
-`CREATE TABLE` the snapshot recorded. Defaults render as the
-value they hold: a float in its shortest exact form (`1e-07`, not
-`0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
-
-Changed views and their dependents are dropped before removed views, so a
-view can stop reading a view removed in the same migration. Rollback
-recreates the removed source before restoring its old dependents.
-
-`required` or `default` changed on a column that already exists is
-compared against the `CREATE TABLE` the snapshot recorded. On Postgres
-the file sets or drops `NOT NULL` (setting it fails while a row holds
-`NULL`, so backfill first) and sets or drops the default, each with its
-inverse as the `Down`; a text-to-integer retype sets the declared
-default itself. On SQLite, which has no `ALTER COLUMN`, the change joins
-the table rebuild, which has no `Down`. A snapshot whose `CREATE TABLE`
-holds a default in an older rendering (`0.000000` for `1e-07`)
-converges on the declared one, since that is the default the table
-holds. Boot (auto-migrate) compares neither: a `NOT NULL` a hand-written
-migration put on a column the entity leaves optional is not removed.
-
-> **Scope.** The standalone `gofastr migrate generate` CLI reads schema
-> **only from the `--from=<gofastr.yml>` app spec's entities** (see
-> [app specs](app-spec.md)). That is the pre-graduation bootstrap path. It does
-> **not** see anything registered in Go: neither `app.Entity(...)` entities
-> nor `App.View` / `App.Routine` / `App.Table`. For Go-defined schema, use
-> auto-migrate (`App.Start` applies it on boot), or emit versioned migrations
-> **from your own app's binary** via the supported
-> `migrate.GenerateMigrationFile` entrypoint (the binary has its entities
-> compiled in and diffs them against the committed snapshot, as described in
-> [Generating from a host binary](#generating-from-a-host-binary-owned-go-path)
-> below). For finer control, the lower-level
-> `migrate.GeneratePlan(plan, snapshot, dialect)` returns the Up/Down SQL and
-> next snapshot directly (write them with `migrate.RenderMigrationFileChecked` /
-> `SaveSnapshot`).
-
-It then updates the snapshot. The typical loop:
-
-1. Edit an entity in the app spec (add a field, add an entity, …).
-2. `gofastr migrate generate <name> --from=gofastr.yml` → review the generated `.sql`.
-3. Commit the migration **and** the updated `schema.snapshot.json`.
-4. `gofastr migrate up` applies it through the tracked, locked,
-   checksummed runner.
-
-What it generates: `CREATE TABLE` (new entity), `ADD COLUMN` (new
-field), `DROP COLUMN` (removed field, whose `Down` re-adds the column but
-does not restore row data), and `DROP TABLE`
-(removed entity). Generation refuses a table drop when the recorded schema
-contains foreign keys from tables that remain. Remove those foreign keys in
-a separate migration before dropping the referenced table; otherwise SQLite
-can delete referencing rows and Postgres refuses the drop. Tables removed
-together retain dependency-ordered drops. The forward DDL is built by the same code path as
-auto-migrate, so a generated migration matches what auto-migrate would
-have applied. A new **required** field with **no default** is added
-*nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing
-rows fails on a populated table, so the constraint is deferred (the
-change summary notes this). The snapshot records the column as it was
-applied — nullable — so the *next* `migrate generate` emits the
-tightening (`ALTER COLUMN … SET NOT NULL` on Postgres, a named
-constraint change on the SQLite rebuild); backfill the rows first,
-because the tightening fails while any row holds NULL. A required field
-that has a default keeps `NOT NULL`, since every existing row gets the
-default.
-
-On SQLite a removed field does not always become a `DROP COLUMN`. SQLite
-refuses that statement on a column that is `UNIQUE`, that an index covers,
-or that a foreign key names, so removing a `unique` field or a relation's
-foreign-key field rebuilds the table without the column (the rebuild
-described below; a key column dropped in a key change leaves the same
-way). The rebuild holds no `DROP COLUMN` statement, so the file carries
-one comment line above it per column, `-- DROP COLUMN posts.slug by table
-rebuild: …`. A migration holding a rebuild has no `Down`, and generation
-refuses a rebuild of a table other tables reference, as below. A plain
-column still drops with `DROP COLUMN`, and Postgres drops every column
-that way. `DiffSchema` does the same from the live table's indexes and
-foreign keys, so its drop of such a column applies under
-`AllowDestructive`; the rebuild recreates the entity's indices only, so
-an index made by hand on the table goes with it.
-
-`gofastr migrate generate` warns on its own output when the Up section
-runs any `DROP TABLE` or `DROP COLUMN`, naming each one, a column a
-SQLite rebuild leaves out included. A rename is
-indistinguishable from a removal, so an undeclared rename generates as a
-drop plus a create and loses every row; if the drop is a rename in
-disguise, declare it (`renames:` on the entity) and regenerate instead.
-The warning ignores quoted routine bodies and SQL comments, other than
-the rebuild's own `-- DROP COLUMN … by table rebuild` line. A SQLite
-rebuild also drops the old table after copying its rows; review that
-copy rather than treating every `DROP TABLE` as a table removal.
-
-Type changes are DETECTED and surfaced
-as destructive changes (refused unless `AllowDestructive` is set). On
-Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
-type carries `USING col::INTEGER` (or the declared integer type), so
-numeric text converts and anything else fails the migration; a text
-default is dropped before the retype and the declared default set
-after it, since Postgres cannot cast the old one. When a generated rollback
-uses that conversion, it restores the original default recorded in the schema
-snapshot, including on a column renamed in the same migration. Other
-changes may still need a data-specific `USING` clause, so review and
-hand-tighten. Postgres refuses to retype a column a view reads, so the
-file drops each view that lists the table in `DependsOn` (and the views
-that read it) before the retype and creates it again after; the `Down`
-does the same around the reverse retype. A view that reads the table
-without listing it in `DependsOn` still fails the migration. A `String` whose `Max` changed is a type change on
-Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
-VARCHAR(200)` widens it, and a narrower width fails on a row that no
-longer fits rather than cutting it. SQLite ignores the width, so the
-same change there rebuilds nothing. To see the width, the live column read
-behind this, `migrate.ReadLiveColumns` (and `ReadLiveColumnsPostgres`,
-`ReadLiveColumnsBulk`), reports a Postgres character column as
-`character varying(255)`, information_schema's `data_type` plus the
-width; other types are the bare `data_type`. On SQLite,
-which has no in-place column retyping, the generator emits the real table
-rebuild: create the new table from the entity, `INSERT … SELECT` the shared
-columns across (values convert by SQLite column affinity), drop the old
-table, rename, and recreate the entity's indices (the declared ones and the
-automatic belongs_to foreign-key indices). The rename runs under
-`PRAGMA legacy_alter_table`, so a view or another table's trigger that
-names the table survives it, and the file re-runs every routine's `Up`
-afterwards, since dropping the table dropped its triggers. Dropping the old table runs every
-`ON DELETE` action onto it while foreign keys are on, so a `CASCADE` child
-(every many_to_many pivot) would lose its rows and a `SET NULL` child its
-links. `ApplySchemaDiffWithOptions` therefore runs a rebuild on one
-connection with foreign keys off and rolls it back if `PRAGMA
-foreign_key_check` finds a violation the change introduced. It has no
-routines to re-run, so it reads the table's own triggers from
-`sqlite_master` just before the rebuild and recreates them right after
-it, oldest first, since SQLite fires a table's triggers newest first.
-Boot's key-change rebuild does the same, so a trigger written by hand,
-which is no routine, survives it too, and it runs the rename under
-`PRAGMA legacy_alter_table` as well, so a view that reads the table does
-not fail the boot. It turns the pragma back off afterwards, whether or not
-the rebuild worked.
-`migrate generate` cannot turn foreign keys off that way, because the runner applies each file inside a
-transaction, where the pragma has no effect: it refuses a rebuild that a
-`CASCADE` or `SET NULL` key references and names those tables. It reads
-those keys from the declared relations and from the snapshot's recorded
-table DDL, so a key the database still holds counts even after its
-relation changed or went away. It refuses a rebuild that any other
-foreign key the snapshot records references too, one with no `ON
-DELETE` action included: SQLite empties the table before dropping it,
-and a child row still pointing at it fails the `DROP`, so such a file
-applied where the child was empty and failed where it held rows. Write that
-migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
-foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
-Rows are carried over, not regenerated. A column added in the same change
-is added first and copied like the rest, with the value its `ADD COLUMN`
-default gave each row, so a key moved onto new columns keeps the table's
-rows (and fails, keeping them, when those rows repeat the new key). A required
-column added without a default stays nullable through a rebuild in the same
-change, just as it does for a standalone `ADD COLUMN`. Backfill existing rows
-before tightening that constraint in a later migration. Existing required
-columns and new required columns with defaults keep their `NOT NULL` constraint.
-A migration holding a rebuild ships no `Down` (the pre-migration constraints
-are not recoverable, and the other changes' inverses alone would roll back to
-a table matching neither schema), so a SQLite retype is forward-only. Renames: declare
-`EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
-`RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
-indistinguishable from a drop plus an add, so it has to be declared.
-
-In an app spec, the same declaration is an entity's `renames:` key:
-
-```yaml
-entities:
-  - name: posts
-    table: posts
-    renames:
-      headline: title      # old column: new column
-    fields:
-      - name: title
-        type: string
-```
-
-The new name must be a declared field and the old one must not be, since the
-diff would otherwise see both columns. Both sides are checked as column
-identifiers at validate time. Renames run, and their errors are reported, in
-order of the old name, so the same declaration gives the same migration and
-the same error text on every run.
-
-Generated snapshots record composite primary keys for automatically created
-many-to-many pivot tables as well as entity tables. If a join entity later
-owns a pivot's table, migration generation compares its declared key with
-the pivot's existing key instead of silently keeping the old constraint.
-
-Type-change detection catches the type *class* (e.g. TEXT→INTEGER) and
-compares character widths on Postgres: `VARCHAR(50)→VARCHAR(100)` generates
-an `ALTER COLUMN … TYPE` change. Decimal precision and scale changes such as
-`DECIMAL(10,2)→DECIMAL(19,4)` are normalized away; express those as a
-hand-written migration. Columns
-declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
-the live DB reports the underlying type, which never matches the raw type, so
-they would otherwise false-positive every diff. And an existing Postgres table
-whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY`
-(no sequence) is not auto-upgraded to `BIGSERIAL`. Bring it up with a one-time
-`ALTER`/rebuild if you adopt `auto_generate: increment` on Postgres.
-
-An `int` field is `BIGINT` on Postgres (`BIGSERIAL` for an `increment`
-key). A Postgres column an older build created as `INTEGER` (or `SERIAL`)
-is taken as in sync with it: the diff proposes no retype, so an upgrade
-does not turn every `int` column into a destructive change. Such a
-column still holds only 32 bits, and a value past 2147483647 fails the
-write. Widen it with a hand-written migration; a `SERIAL` key's sequence
-is `integer` too and needs its own `ALTER SEQUENCE`:
-
-```sql
--- +migrate Version 12
--- +migrate Up
-ALTER TABLE counters ALTER COLUMN hits TYPE BIGINT;
-ALTER TABLE counters ALTER COLUMN id TYPE BIGINT;
-ALTER SEQUENCE counters_id_seq AS BIGINT;
--- +migrate Down
-ALTER SEQUENCE counters_id_seq AS INTEGER;
-ALTER TABLE counters ALTER COLUMN id TYPE INTEGER;
-ALTER TABLE counters ALTER COLUMN hits TYPE INTEGER;
-```
-
-An index declared without a `Name` is called `idx_<table>_<columns>`.
-Past 63 bytes, the longest identifier Postgres keeps, the name keeps its
-first 54 bytes and ends in `_` plus 8 hex digits of a hash of the whole
-name (`query.FitIdent`): Postgres would cut it at 63 bytes, and two
-names that shared those bytes named one index, so the second unique
-index was skipped. The index names the framework's own stores derive
-from a configured table (`query.QuoteIndexName`) fit the same way. A
-table that has such an index from an older build gets the new name on
-the next boot, beside the old one, which you can drop. `gofastr migrate
-generate` from a snapshot an older build wrote does the same: it creates
-the index under the new name and never drops the old one, since a
-foreign key you added by hand may depend on a unique index and the drop
-would fail. The snapshot keeps recording the old index while the new
-one is declared, so removing or changing the index later drops both.
-
-The migrator writes table, column, index and view names bare, so Postgres
-folds them to lowercase, the spelling CRUD's quoted SQL names. A name
-that is a keyword on either engine cannot go bare (`CREATE TABLE posts
-(order TEXT)` is a syntax error), so it is written quoted and folded:
-`"order"`, `"user"`, `"group"`. The set is Postgres's reserved keywords
-(including `user`, `end`, `desc`, `to`, `offset`, `do`, which SQLite
-takes bare) plus the SQLite keywords that break a statement the
-migrator writes (`index`, `set`, `values`, `drop`, …). The set lives in
-`core/query` (`query.IsKeyword`, `query.QuoteKeyword`), and the CRUD
-statements quote the same names the same way, so the column the DDL
-created is the one every query names. Every other name
-stays bare, so a schema without keyword names writes the same DDL and
-snapshot as before. A snapshot an older build wrote with such a name
-bare (it ran on SQLite) reads the same: a change of quoting alone is no
-change, and generation proposes nothing for it. Keywords both engines
-take bare, such as `key`, `status` or `action`, stay bare.
-
-A table or column named past 63 bytes works on Postgres, which cuts it
-to its first 63 bytes in DDL and in queries alike, so the catalog holds
-the cut name. The migrator reads the catalog by the cut name too, so
-such a table gains its new columns at boot and such a column is not
-added a second time, proposed for a drop, or read as a key change. The
-same holds for foreign keys: `DiffSchema` matches a live key onto a long
-table, or on a long column on either side, to the relation that declares
-it, rather than proposing to drop it and add it back on every run.
-
-An index name belongs to the schema, not the table, on both engines, and
-the migrator creates every index with `CREATE INDEX IF NOT EXISTS`. Two
-tables whose indexes share a name, whether set in `Index.Name` or
-derived (table `a_b` on `c` and table `a` on `b_c` are both
-`idx_a_b_c`), would get one index between them, so boot, `DiffSchema`
-and `migrate generate` refuse the pair and name both tables, as they do
-one table declaring two different indexes under one name. Names are
-compared folded and cut at 63 bytes, the way Postgres stores them, on
-both dialects. Field-level `Unique` names participate in the same check,
-including collisions with explicitly named indexes. Give a declared index
-its own `Name`, or rename a table or field when two field-level names collide.
-
-A `Unique` field's `<table>_<column>_key` is the name Postgres gives
-the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
-`entity.UniqueKeyName`'s (`query.FitObjectName`): the longer of the
-table and column parts is trimmed and 8 hex digits of a hash of the
-table, column and label, each with its length, go before `_key`, so no
-two columns share one, in one table or across two whose names join to
-the same string (`t_a` + `x…b` and `t` + `a_x…b`). Postgres
-would trim two long columns to one name and number the second by
-creation order, so `CREATE TABLE` names such a constraint itself. The
-index a later `Unique` gets matches the constraint a new table gets,
-and a unique violation on either maps to its field. A table an older
-build created holds a long column's constraint under the trimmed name
-Postgres chose; a violation on it maps to its field unless two `Unique`
-columns trim to that one name, and then it answers a bare 409.
-
-The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
+- **Adds & drops:** Emits `CREATE TABLE`, `ADD COLUMN`, `DROP COLUMN`, `DROP TABLE`, and index/unique changes. New `Required` columns without defaults are added nullable first (backfill rows, then tighten in the next migration). Table drops referenced by remaining foreign keys are refused.
+- **Renames:** Undeclared renames look like drop + add and print a warning. Declare renames explicitly (`EntityConfig.Renames: {"old": "new"}` or `renames:` in `gofastr.yml`) to emit a non-destructive `RENAME COLUMN`.
+- **Type changes:** Treated as destructive (refused by `ApplySchemaDiff` unless `AllowDestructive` is set). Type-change detection catches type classes (e.g., `TEXT → INTEGER`) and compares character widths on Postgres (`VARCHAR(50) → VARCHAR(100)` emits `ALTER COLUMN ... TYPE`; SQLite ignores widths). Decimal precision/scale changes (`DECIMAL(10,2) → DECIMAL(19,4)`) are normalized away and should be hand-written; `RawType` columns are skipped.
+- **SQLite table rebuilds:** Because SQLite cannot alter column types, constraints, or drop unique/indexed/FK columns in place, `migrate generate` emits a full table rebuild (`CREATE` + `INSERT ... SELECT` + `DROP` + `RENAME`) with no `Down`. Rebuilds on tables referenced by other foreign keys are refused by `generate` (write a `-- +migrate NoTransaction` migration with `PRAGMA foreign_keys=OFF` / `ON` instead).
+- **Identifiers:** Reserved SQL keywords (`order`, `user`, `group`, etc.) are quoted automatically (`core/query`). Index names past Postgres's 63-byte limit are deterministically truncated with an 8-hex hash (`query.FitIdent`); duplicate index names across tables are rejected.
 
 ### Primary-key changes
 
-An entity's `PrimaryKey` can change after its table exists, as when a join
-table keyed on a generated `id` moves to the pair it links. The diff
-compares the declared key with the live one (or the snapshot's
-`primary_keys`) and emits the change as destructive, so
-`ApplySchemaDiff` refuses it until `ApplySchemaDiffWithOptions` sets
-`AllowDestructive`:
+Changing an entity's `PrimaryKey` (for example moving a join table from `id` to `(student_id, course_id)`) is flagged as destructive:
 
-- Postgres drops the old key constraint, clears the `NOT NULL` the old key
-  gave a column that leaves the key (unless the field is `Required`), and
-  runs `ADD PRIMARY KEY (student_id, course_id)`. The `Down` drops the new
-  constraint, clears the `NOT NULL` the new key gave a column that was not
-  in the old one, and adds the old key back. When an old key column leaves
-  the entity (the injected `id`, say), the diff drops it with its values,
-  so the generated migration has no `Down`. Postgres refuses to drop a key
-  another table's foreign key depends on, so when entities or generated
-  `many_to_many` pivots declare foreign keys onto the table, the change
-  first drops the foreign keys those tables hold onto the old key and
-  re-adds each declared one after `ADD PRIMARY KEY`. `DiffSchema` validates
-  a generated pivot against the live key before that planned rewrite;
-  its primary key, cascading delete actions and unaffected references
-  must still match. A key whose columns
-  the child table gains only in its own changes (a column renamed or added
-  in the same change) is re-added after every table's changes. A foreign
-  key onto a separately unique column of the table does not depend on the
-  primary key and is left alone. Boot and `migrate generate` both do this,
-  and that migration has no `Down` either. A foreign key onto the old key
-  that no relation declares (one added by hand) is never dropped silently:
-  boot and a generated migration refuse the key change with an error
-  naming the constraint, and `DiffSchema` lists its drop as a destructive
-  change, so the key change applies only with `AllowDestructive`. A
-  foreign key from a table no entity declares (a hand-made table, say)
-  still blocks the drop, and the change fails with Postgres naming it.
-- SQLite cannot alter a key in place, so the table is rebuilt the way a
-  retype is, with the same foreign-key handling and no `Down`. SQLite
-  names the columns a foreign key references, so a table that references
-  the old key (an entity table, a generated `many_to_many` pivot, or a
-  hand-made table) would fail every later write with `foreign key
-  mismatch`. Boot and `migrate generate` refuse such a change and name
-  those tables: boot rebuilds no table but the one whose key changes, the
-  same way it never applies a retype rebuild. `DiffSchema` rebuilds an
-  entity table whose foreign key no longer matches, so applying its
-  changes with `AllowDestructive` works there. It does not rebuild a
-  generated pivot, so that migration is written by hand. A reference onto
-  a column that stays unique (a `Unique` field or unique index) is
-  unaffected.
+- **Postgres:** Drops dependent declared foreign keys, drops the old primary key, clears old implicit `NOT NULL` flags (unless `Required`), adds the new `PRIMARY KEY`, and re-adds declared foreign keys. Hand-added undeclared foreign keys block the change until removed or run with `AllowDestructive`.
+- **SQLite:** Rebuilds the table (forward-only, no `Down`). Refused by boot and `migrate generate` if other tables reference the old key.
+- **Boot safety:** Auto-migrate only applies a primary-key change to an empty table; a populated table fails boot and directs you to `gofastr migrate generate`.
 
-Either way the change fails, and the table keeps its old key and rows, when
-rows repeat the new key or leave a key column `NULL`. Clean those rows up
-first. A key column renamed through `Renames` keeps its place in the key, so
-a rename alone is no key change. A foreign key onto the table names one
-column per key column, so a key that grows from one column to several
-needs every relation onto it to list the new columns first: a one-column
-`belongs_to` or a `many_to_many` onto a composite key is refused with
-`entity.ErrCompositeKey` before anything runs.
+### Generating from a host binary (owned-Go path)
 
-Boot applies a key change only to an empty table. A table with rows and a
-different key fails the boot with an error naming `gofastr migrate
-generate`: rows keyed one way do not satisfy another, and a write on the
-wrong key could touch several rows. A table with rows and no key at all
-fails the same way, since nothing holds the declared key unique. Boot
-never drops the old key column; a
-generated migration does, when the entity no longer declares it.
-
-A snapshot written before `primary_keys` was recorded generates no key
-change. The next generated migration records the keys, and boot catches a
-mismatch in the meantime.
-
-### Foreign-key changes
-
-`DiffSchema` compares the foreign keys each live table holds with the ones
-its declared relations imply: the columns in order, the referenced table
-and columns, and the `ON DELETE` action. On Postgres a missing key is
-added, a changed key on the same columns (a reversed column order, a new
-target, a new `ON DELETE`) is dropped and re-added, and a key no relation
-declares any more is dropped as a destructive change, which
-`ApplySchemaDiff` refuses until `AllowDestructive` is set. SQLite cannot
-alter a constraint, so any difference rebuilds the table the way a retype
-does. A column renamed through `Renames` on either end of a key carries
-the key with it (both engines rewrite the reference), so the rename alone
-is no foreign-key change. `migrate generate` does not compare foreign keys,
-because the snapshot records no constraint names. A key change on the
-referenced table is the one place a hand-added foreign key surfaces there:
-the generated migration refuses to drop it (see Primary-key changes).
-
-### Snapshot file format (`schema.snapshot.json`)
-
-The schema snapshot file records the declarative state migrations have been generated up to. `SaveSnapshot` writes a temp file beside it and renames it over, so a crash never leaves a torn snapshot; an existing file keeps its mode and a symlink is written through:
-
-```json
-{
-  "tables": {
-    "posts": {
-      "id": "TEXT",
-      "title": "TEXT",
-      "published": "BOOLEAN"
-    }
-  },
-  "table_ddl": {
-    "posts": "CREATE TABLE posts (...)"
-  },
-  "indices": {
-    "posts": [
-      "CREATE INDEX idx_posts_title ON posts(title)"
-    ]
-  },
-  "primary_keys": {
-    "posts": ["id"]
-  },
-  "unique_columns": {
-    "posts": []
-  },
-  "views": {
-    "published_posts": {
-      "up": "CREATE VIEW published_posts AS SELECT ...",
-      "down": "DROP VIEW IF EXISTS published_posts",
-      "depends_on": ["posts"]
-    }
-  },
-  "routines": {
-    "refresh_post_stats": {
-      "up": "CREATE PROCEDURE refresh_post_stats() ...",
-      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats",
-      "order": 1
-    }
-  }
-}
-```
-
-- `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
-- `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
-- `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
-- `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
-- `unique_columns`: Map of table names to their field-level `Unique` columns, an empty list for a table with none. The diff compares these to see `Unique` set or cleared on a column that already exists.
-- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings, and `depends_on`, the view's declared `DependsOn`), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly. Views removed together drop in the order `depends_on` gives.
-- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings, and `order`, the routine's place in the plan counted from 1), tracking stored routines across migration lifecycles. Routines removed together drop in reverse `order`.
-
-Flags: `--from=<gofastr.yml>` (required), `--migrations=<dir>`
-(default `migrations`), `--snapshot=<path>` (default
-`<migrations>/schema.snapshot.json`), `--driver=<name>`.
-
-## Generating from a host binary (owned-Go path)
-
-Once an app graduates from the app spec, its schema lives in **owned Go**:
-`app.Entity(...)`, `App.Table`, `App.View`, `App.Routine` registrations the
-`gofastr migrate generate` CLI cannot see. `migrate.GenerateMigrationFile` is
-the supported entrypoint for that case: it diffs a full migration Plan (the
-registry + views + routines a host binary has compiled in) against the
-committed snapshot and writes the next numbered migration file, updating the
-snapshot. It is the same loop the app spec CLI runs, byte-for-byte (same
-`NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
-`schema.snapshot.json`), because both paths share `GeneratePlan` +
-`RenderMigrationFileChecked` + `SaveSnapshot`.
-
-Migration generation writes and syncs a temporary file in the migration
-directory before atomically publishing the numbered `.sql` entry. Publication
-uses a hard link, not an overwriting rename: an existing file or symlink at
-the selected name is refused. The filesystem must support same-directory hard
-links. A failed write leaves no numbered migration; abandoned `.tmp` files
-after a process crash do not consume migration versions. On non-Windows hosts
-the directory is synced before advancing the snapshot; Windows uses the
-platform's existing directory-sync policy.
-
-The call is safe to re-run after a crash (or a failed snapshot write) between
-the migration file landing and the snapshot updating: the re-run compares the
-generated delta against the last committed migration's Up/Down sections by
-content, recognizes it was already committed, repairs the snapshot, and
-returns an empty path — it never mints the same delta twice as N+1 (a
-duplicate whose Up could not apply and would mark the database dirty).
-
-A host app binary has no built-in subcommand dispatcher (it is a flat
-`main()` that wires the app and calls `Start()`), so the supported surface is
-this one call plus a thin `main()` guard. Wire a `migrate generate` verb
-yourself, typically by inspecting `os.Args` before `app.Start()`:
+`gofastr migrate generate` reads only `gofastr.yml`. Once your app owns its schema in Go (`app.Entity`, `App.Table`, `App.View`, `App.Routine`), emit versioned migrations directly from your own binary via `migrate.GenerateMigrationFile` (using the exact same snapshot format and diff engine):
 
 <!-- gofastr:compile
 import "fmt"
@@ -803,21 +82,19 @@ func buildApp() *framework.App { return framework.NewApp() }
 -->
 ```go
 func main() {
-    app := buildApp() // your *framework.App with entities/tables/views/routines registered
+    app := buildApp()
 
-    // `myapp migrate generate <name>` emits a versioned migration from the
-    // compiled registry, then exits. No server, no DB touched.
     if len(os.Args) >= 4 && os.Args[1] == "migrate" && os.Args[2] == "generate" {
         name := os.Args[3]
-        plan := app.MigrationPlan() // registry + views + routines, same as Start applies
+        plan := app.MigrationPlan() // call app.InitPlugins() first if batteries declare schema
         path, err := migrate.GenerateMigrationFile(plan, name, migrate.MigrationFileOptions{
             MigrationsDir: "migrations",
             SnapshotPath:  "migrations/schema.snapshot.json",
-            Dialect:       migrate.DialectPostgres, // match your production engine
+            Dialect:       migrate.DialectPostgres,
         })
         if err != nil { log.Fatal(err) }
         if path == "" { fmt.Println("schema is up to date"); return }
-        fmt.Printf("generated %s\nreview, commit it + schema.snapshot.json, then: gofastr migrate up\n", path)
+        fmt.Printf("generated %s\n", path)
         return
     }
 
@@ -825,30 +102,13 @@ func main() {
 }
 ```
 
-The `Plan` mirrors what `App.Start` builds for auto-migrate, so a generated
-migration and boot-time auto-migrate never disagree. An empty returned path
-means the schema already matches the snapshot (nothing written). Pass
-`MigrationFileOptions.Group` to stamp a `-- +migrate Group <name>` directive,
-matching the CLI's `--group`. Renames declared via `EntityConfig.Renames`
-flow through as a non-destructive `RENAME COLUMN` (not a drop+add), exactly as
-they do from the app spec path. Generation is deterministic: the same Plan
-always produces byte-identical files, so diffs and checksums stay stable.
+For lower-level control, call `migrate.GeneratePlan`, `migrate.RenderMigrationFileChecked`, and `migrate.SaveSnapshot`.
 
-An entity, view or routine that a plugin, battery or module declares from
-its `Init` joins the plan only once `Init` has run. `App.Start` calls
-`InitPlugins` after its first migrate-and-seed pass, then migrates and
-seeds again when `Init` declared anything new. A generate verb for such an
-app calls `app.InitPlugins()` before `app.MigrationPlan()`; InitPlugins
-also loads module enable state, from the database when the app has one.
+## Raw tables, routines & views
 
-## Non-entity tables (raw tables)
+### Raw tables (`app.Table`)
 
-Not every table wants the entity machinery: no auto-CRUD, no HTTP routes, no
-validation, no auto-injected `id`/timestamps/`tenant_id`. Join tables,
-analytics roll-ups, tables owned by a stored procedure, or just a preference
-not to declare entities. `migrate.Table` is a raw schema declaration that
-migrates, diffs, and generates **alongside** entities in the same registry,
-including foreign keys that cross between an entity and a raw table.
+When you need a SQL table without auto-CRUD, HTTP routes, or injected columns (`id`, timestamps, `tenant_id`), declare a `migrate.Table`—it migrates and diffs alongside entities and participates in foreign keys:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -858,56 +118,20 @@ import "github.com/DonaldMurillo/gofastr/core/schema"
 -->
 ```go
 app.Table(migrate.Table{
-    Name: "user_roles", // also the FK reference name
+    Name: "user_roles",
     Columns: []migrate.Column{
         {Name: "user_id", Type: schema.String, NotNull: true},
         {Name: "role",    Type: schema.String, NotNull: true},
-        {Name: "amount",  RawType: "NUMERIC(12,2)"}, // RawType escape hatch
+        {Name: "amount",  RawType: "NUMERIC(12,2)"},
     },
     Indices:     []migrate.Index{{Name: "ux_user_roles", Columns: []string{"user_id", "role"}, Unique: true}},
     ForeignKeys: []migrate.ForeignKey{{Columns: []string{"user_id"}, RefTable: "users"}},
 })
 ```
 
-Only the columns you declare are emitted. Nothing is injected. A foreign key
-references the target table's primary key (the target may be an entity or
-another raw table): `Columns` names one local column per key column, in
-key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
-`{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
-composite one. Mark several columns `PrimaryKey: true` for a composite key;
-the key takes them in column order. A key column refuses
-`NULL` on both engines. SQLite takes `NULL` in a primary-key column unless
-the column says `NOT NULL`, so on SQLite `CREATE TABLE` (boot, `migrate
-generate`, and the table rebuild) writes `NOT NULL` on every key column
-except a lone `INTEGER PRIMARY KEY`, which SQLite numbers itself. Entities
-and raw tables both get it. A raw SQL insert that leaves the key out of a
-table with a text key now fails on SQLite: send the key. A table an older
-build created keeps its column as it was: boot does not rebuild it, and
-neither `DiffSchema` nor `migrate generate` proposes a change for it. If
-such a table is later rebuilt for another change, a row with a `NULL` key
-fails the copy and the migration rolls back: give those rows a key first
-(`SELECT … WHERE <key> IS NULL`).
-The tables the framework and its batteries create for themselves (audit
-log, outbox, queue, webhooks, idempotency keys, feature flags, the auth
-stores and the rest) follow the same rule: a new one refuses a `NULL` key
-on SQLite, and one that already exists is left as it was. For a `CREATE
-TABLE` you write by hand, `gofastr verify` reports a primary-key column
-with no `NOT NULL` (`GOFASTR1418`): write `id TEXT PRIMARY KEY NOT NULL`,
-and `NOT NULL` on each column a `PRIMARY KEY (a, b)` names. The rule reads
-SQL written in Go strings; a `.sql` migration file is yours to check.
-A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
-the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
-on entity fields too. A raw table has no CRUD routes, and the admin's
-`AllEntities` leaves it out; naming one in the admin's `Config.Entities`
-fails boot unless its key could key an entity (see
-[Composite primary keys](entity-declarations.md)).
+### Stored routines (`app.Routine` / `app.RoutinesFS`)
 
-## Stored routines (functions, procedures, triggers, views)
-
-Routines are migration objects, same as tables and views. A `migrate.Routine` runs on every
-boot (idempotent `CREATE OR REPLACE`) after tables migrate, and `migrate
-generate` tracks it so a changed body produces a reversible versioned
-migration (its `Down` restores the previous definition).
+Routines (Postgres functions, procedures, triggers; SQLite triggers) apply idempotently on every boot after tables migrate and are recorded by SHA-256 checksum in `gofastr_routines` (for drift reporting via the `app_routines` MCP tool; orphaned rows log a warning rather than auto-dropping).
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -923,315 +147,49 @@ app.Routine(migrate.Routine{
 })
 ```
 
-The SQL is run verbatim and is dialect-specific (functions/procedures are a
-Postgres feature; SQLite has triggers and views). On SQLite, which has no
-`CREATE OR REPLACE` for triggers/views, make the `Up` re-runnable with
-`DROP … IF EXISTS;\nCREATE …` so every boot is idempotent.
+For multi-line SQL, embed a directory with `app.RoutinesFS(routinesFS, "db/routines")`. Filenames control dialect and direction (sorted alphabetically, so name functions before triggers that call them):
+- `<name>.sql` / `<name>.down.sql` — all dialects
+- `<name>.pg.sql` / `<name>.pg.down.sql` — Postgres only (`DialectPostgres`)
+- `<name>.sqlite.sql` / `<name>.sqlite.down.sql` — SQLite only (`DialectSQLite`)
 
-### Authoring routines as embedded SQL files
+### Views (`app.View`)
 
-Storing routine bodies as Go string literals gets unwieldy past a few lines.
-The primary authoring path is a directory of `.sql` files embedded with
-`//go:embed` and loaded via `App.RoutinesFS`:
+Declare SQL views with `DependsOn` ordering and optional `Materialized: true` (Postgres). Adding `Columns` automatically registers an `Unmanaged` read-only entity (`GET /<view>`, `GET /<view>/{id}`, `GET /<view>/_events`—no write routes, no table DDL):
 
 ```go
-import "embed"
-
-//go:embed db/routines
-var routinesFS embed.FS
-
-app.RoutinesFS(routinesFS, "db/routines")
-```
-
-The filename grammar:
-
-| File                         | Means                                                       |
-|------------------------------|-------------------------------------------------------------|
-| `<name>.sql`                 | Up body; runs on every dialect (the default).              |
-| `<name>.down.sql`            | Down body for `<name>`.                                     |
-| `<name>.pg.sql`              | Up body, Postgres-only (`Dialect: DialectPostgres`).        |
-| `<name>.sqlite.sql`          | Up body, SQLite-only (`Dialect: DialectSQLite`).            |
-| `<name>.pg.down.sql`         | Down body for the Postgres-only routine.                    |
-| `<name>.sqlite.down.sql`     | Down body for the SQLite-only routine.                      |
-
-Routine Name = file base name. A name must not have both a plain Up and a
-dialect-suffixed Up, and must not have two dialect suffixes. Both are
-ambiguous authoring errors that fail loudly at registration. Empty
-files, missing directories, and Down-without-Up files are likewise errors
-(the framework screams rather than silently no-op'ing, the same posture as a
-misconfigured entity). Dotfiles, sub-directories, and non-`.sql` files are
-ignored, so a `README.md` next to the routines is fine.
-
-A plain routine name cannot contain dots. In `audit.log_fn.sql` the loader
-reads `.log_fn` as a dialect suffix and refuses it as unknown, the same check
-that catches a typo like `refresh.mysql.sql`. A dotted name loads with a
-dialect tag: `audit.log_fn.pg.sql` is the Postgres routine `audit.log_fn`.
-
-Pass `"."` as the directory to load SQL files at the filesystem root,
-including an `os.DirFS` rooted at the routines directory or root-level embeds.
-
-A dialect-tagged Down must match its Up's dialect; a tagged Down cannot
-pair with an untagged Up. An untagged Down may pair with any Up. Mismatches
-fail at registration before any SQL runs.
-
-The `.down` marker must be immediately before `.sql`, after any dialect
-suffix. A reversed form such as `refresh.down.sqlite.sql` is refused, not
-loaded as another routine's Up.
-
-### Dialect scoping
-
-`Routine.Dialect` scopes a routine to a single SQL dialect. The zero value
-(the empty string) means "runs on every detected dialect", today's behavior.
-Set `DialectPostgres` for a Postgres stored proc that has no SQLite equivalent
-(typical when developing against SQLite locally but deploying to Postgres);
-`DialectSQLite` for a SQLite-only trigger. During auto-migrate, routines whose
-`Dialect` does not match `migrate.DetectDialect(db)` are skipped and listed in
-a single boot-time log line:
-
-```
-INFO migrate: skipping routines declared for a different dialect declared=postgres running=sqlite3 routines=compute_totals,refresh_mv count=2
-```
-
-Skipped routines are NOT removed from the plan. A future dialect switch (or
-running the same binary against Postgres) will pick them up. `GeneratePlan`
-skips them the same way: a migration generated for one dialect carries no
-routine scoped to another, and the snapshot it writes does not record one. `View` does not
-take a `Dialect` tag: its `render()` already emits the right DDL per engine
-(`CREATE OR REPLACE VIEW` on Postgres, `DROP IF EXISTS` + `CREATE` on SQLite,
-`MATERIALIZED` via the `Materialized` bool), so a redundant tag would be
-ambiguous.
-
-### The applied-routine ledger
-
-Every boot, auto-migrate creates (if missing) a `gofastr_routines` table and
-writes one row per applied routine inside the SAME transaction as the apply:
-
-| Column       | Purpose                                                          |
-|--------------|------------------------------------------------------------------|
-| `name`       | Routine Name (primary key).                                      |
-| `checksum`   | sha256 of the routine's Up body (`migrate.RoutineChecksum`).     |
-| `applied_at` | Timestamp of the last boot that applied this routine.            |
-
-The ledger is **reporting, not gating**: every matching routine's `Up` STILL
-runs every boot (idempotent, self-healing against DB-side drift). The
-checksum is how the `app_routines` MCP tool (see the Agent-ready doc) tells
-you "the registered body drifted since the last boot that recorded this row".
-It does not skip application. When the ledger exists but cannot be read (a
-revoked grant, a lock the call's context gave up on), the tool reports
-`ledger_state=unknown` rather than `missing`; `missing` means the ledger was
-read, or does not exist yet, and holds no row for the routine.
-
-When a routine is removed from code, its ledger row is NOT dropped (additive-
-only: boot never auto-drops). Instead, you see a loud `WARN` naming the
-orphaned routine and pointing at the cure:
-
-```
-WARN migrate: previously applied routine is no longer registered; not dropped (additive-only) routine=compute_totals hint="drop via Routine.Down in a versioned migration, or remove the ledger row manually"
-```
-
-Drop the DB object explicitly via `Routine.Down` in a versioned migration, or
-remove the ledger row manually if the object is already gone.
-
-At the end of every boot, a one-line summary captures the apply outcome:
-
-```
-INFO migrate: routine apply summary applied=7 changed=2 first_time=1 skipped=1 orphaned=0
-```
-
-- `applied`: routines whose `Up` ran this boot (every matching routine).
-- `changed`: applied routines whose checksum differs from the previous boot.
-- `first_time`: applied routines seeing their first-ever ledger row.
-- `skipped`: routines skipped for dialect mismatch this boot.
-- `orphaned`: ledger rows whose name is no longer registered (the WARNed set).
-
-### Generating versioned migrations
-
-`App.Start` runs every routine's `Up` on boot (after tables) via the plan it
-builds from `App.Table` / `App.Routine` / `App.View` / `App.RoutinesFS`. To
-capture routine/view changes as **versioned** migrations instead, use the
-programmatic generator, since the file-based `migrate generate` CLI does not see
-Go-registered routines/views (see the Scope note above):
-
-```go
-plan := migrate.Plan{Registry: reg, Routines: routines, Views: views}
-up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPostgres)
-// then migrate.RenderMigrationFileChecked(version, name, up, down) + migrate.SaveSnapshot(...)
-```
-
-`GeneratePlan` emits each new/changed routine's body forward and restores the
-previous body on rollback; a removed routine is dropped (and recreated on
-`Down`). The drop is the routine's own `Down`, as the snapshot recorded
-it, so removing a routine that never declared one is refused with an
-error naming it: declare it again with the same `Up` and a `Down`,
-generate (which records the `Down` by re-running the idempotent `Up`),
-then remove it. Everything lands in one migration, in this order: removed
-routines, then removed views, then changed views, then the table changes
-(both engines refuse to drop a table or column a view still reads), then
-new and changed views in `DependsOn` order, then new and changed routines
-in the plan's order, the order boot applies them. A changed view is
-dropped before the table changes and created again after them, together
-with every declared view that reads it, since its old body may read a
-column the same migration drops. On Postgres that means a changed view is
-not replaced in place: grants on it go with the drop, and a view that
-reads it but is not declared in the plan makes the drop fail, so declare
-it with `DependsOn`. The `Down` runs the changes backwards. Objects
-removed together drop dependents first. The snapshot records each view's
-`DependsOn`, so a removed view drops before the removed views it lists
-there, whatever their names. It records each routine's place in the plan,
-so removed routines drop last created first: `stamp_audit_trg` before the
-`stamp_audit` it calls. The `Down` recreates them the other way round. A
-snapshot written before these were recorded has neither, until the next
-generated migration rewrites it: its removed views drop in name order and
-its removed routines in reverse name order. If that order is wrong for a
-pair, remove them in separate migrations. A view that reads another without
-listing it in `DependsOn` is ordered by name too.
-
-### Worked Postgres example
-
-Drop these three files in `db/routines/` and call
-`app.RoutinesFS(routinesFS, "db/routines")`:
-
-```sql
--- db/routines/compute_totals.pg.sql
-CREATE OR REPLACE FUNCTION compute_totals(account_id text)
-RETURNS TABLE (debits int, credits int)
-LANGUAGE plpgsql AS $$
-BEGIN
-  SELECT COALESCE(SUM(amount), 0) INTO debits
-    FROM ledger WHERE account_id = compute_totals.account_id AND amount < 0;
-  SELECT COALESCE(SUM(amount), 0) INTO credits
-    FROM ledger WHERE account_id = compute_totals.account_id AND amount > 0;
-  RETURN NEXT;
-END;
-$$;
-```
-
-```sql
--- db/routines/stamp_audit.pg.sql      (function half of a trigger pair)
-CREATE OR REPLACE FUNCTION stamp_audit() RETURNS trigger AS $$
-BEGIN
-  NEW.updated_at := NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-```
-
-```sql
--- db/routines/stamp_audit_trg.pg.sql (trigger half, depends on stamp_audit())
-CREATE OR REPLACE TRIGGER stamp_audit_trg
-  BEFORE UPDATE ON ledger
-  FOR EACH ROW EXECUTE FUNCTION stamp_audit();
-```
-
-Files are applied in name-sorted order; name them so a function precedes any
-trigger or caller that depends on it (`stamp_audit` before
-`stamp_audit_trg`).
-
-A stored procedure is the same shape. Call it from hooks, repos, or handlers
-via `app.DB`:
-
-```sql
--- db/routines/recompute_balance.pg.sql
-CREATE OR REPLACE PROCEDURE recompute_balance(account_id text)
-LANGUAGE plpgsql AS $$
-BEGIN
-  UPDATE accounts SET balance = (
-    SELECT COALESCE(SUM(amount), 0) FROM ledger WHERE ledger.account_id = recompute_balance.account_id
-  ) WHERE accounts.id = recompute_balance.account_id;
-END;
-$$;
-```
-
-```go
-// In a hook or repository method:
-if _, err := app.DB.ExecContext(ctx, "CALL recompute_balance($1)", acctID); err != nil {
-    return fmt.Errorf("recompute balance: %w", err)
-}
-
-// A function call returns a row, so it goes through QueryRow:
-var debits, credits int
-if err := app.DB.QueryRowContext(ctx, "SELECT debits, credits FROM compute_totals($1)", acctID).
-    Scan(&debits, &credits); err != nil {
-    return err
-}
-```
-
-In tests, point a fresh Postgres DB at the same `db/routines` directory via
-`App.RoutinesFS`. The routines land in one transaction with the schema, and
-the `app_routines` tool will report each one as `ledger_state=present`
-once boot completes.
-
-## Views (virtual tables built from entities)
-
-A `migrate.View` is a read model defined by a SELECT over your entity
-tables, a "virtual table constructed from other entities". It belongs to
-both stories: it's created on boot after its source tables (and tracked
-reversibly by `migrate generate`), and when it declares `Columns` it's
-also exposed through the ORM as a **read-only** entity.
-
-```go
-app.Table( /* ...entities... */ )
 app.View(migrate.View{
     Name:      "active_users",
     Select:    "SELECT id, name FROM users WHERE active",
-    DependsOn: []string{"users"}, // created after this table
-    Columns: []migrate.Column{    // declare to expose via the ORM (read-only)
+    DependsOn: []string{"users"},
+    Columns: []migrate.Column{
         {Name: "id", Type: schema.String, PrimaryKey: true},
         {Name: "name", Type: schema.String},
     },
-    // Materialized: true, // Postgres materialized view (plain view otherwise)
 })
 ```
 
-- **Migration**: emitted after all tables (and ordered among views by
-  `DependsOn`). Idempotent: `CREATE OR REPLACE VIEW` on Postgres, `DROP …
-  IF EXISTS` + `CREATE` on SQLite/materialized, so every boot recreates a
-  materialized view and refreshes its rows. Postgres refuses to drop a
-  materialized view another view reads, so boot first drops the plan's
-  views that depend on it, deepest first, and recreates them after it. A
-  view outside the plan that reads it still fails the boot. A plain view
-  whose columns changed other than by new ones added at the end (one
-  dropped, renamed or retyped) is one `CREATE OR REPLACE VIEW` refuses,
-  so boot drops it (its dependents in the plan first) and creates it
-  again; its grants go with the drop. Changing a
-  view between plain and `Materialized` drops the live object of the
-  other kind (and its dependents) first. `migrate generate` tracks
-  the definition by checksum and writes a reversible migration when it
-  changes (the `Down` restores the previous definition / drops a new one).
-  The file drops a changed view and its declared dependents before the
-  table changes and recreates them after, and a kind change drops the old
-  kind first (see the ordering under "Generating versioned migrations"
-  above).
-- **ORM**: with `Columns` declared, three read routes are mounted —
-  `GET /active_users`, `GET /active_users/{id}` and
-  `GET /active_users/_events` — and no write routes. The view's
-  `/active_users/llm.md` lists exactly those (no write, batch, or
-  Create/Update columns), and the `/api/llm.md` index counts the same
-  three, labelled `read-only`. The query layer is not one of them: it is
-  a Go surface, not an HTTP route, so it never appears in either count.
-  The event stream uses the app event bus and the view's own resource
-  name. It does not infer view changes from writes to underlying tables;
-  without events published for the view it remains open and quiet.
-  Without `Columns`, the view is migration-only. Query it with raw SQL.
-  The key columns follow an entity's rule: `App.View` panics on a float,
-  decimal, bool, date, timestamp or JSON key, or one with a `RawType`
-  other than an integer type, since `GET /active_users/{id}` would match
-  one row under several ids.
-- The view's ORM entity is `Unmanaged`: the migration system emits no
-  table DDL for it (the view DDL handles its existence). `Unmanaged` is a
-  general `EntityConfig` flag. Use it for any externally-created table
-  (FTS virtual tables, legacy tables) you want to query through the ORM
-  without auto-migrate touching its schema.
+## Auto-migrate, programmatic runner & placeholders
 
-## Creating the database
+### Turning off boot DDL
 
-By default the database must already exist. To create it on first run:
+For deployments that forbid schema changes on startup, disable boot auto-migrate and run versioned migrations in your deploy pipeline:
 
-```bash
-gofastr migrate up --create-db --driver=postgres --db-url=$DATABASE_URL
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "database/sql"
+var db *sql.DB
+-->
+```go
+app := framework.NewApp(
+    framework.WithDB(db),
+    framework.WithoutAutoMigrate(), // Start performs no entity DDL
+)
 ```
 
-Or programmatically before `App.Start` / `migrate up`:
+Note: entity seeds still run once globally via `_gofastr_seeded` (plus `_gofastr_seed_lock` on SQLite and a Postgres advisory lock). `WithOutbox` ensures `event_outbox` at boot unless you pass `outbox.WithoutEnsureTable()`.
+
+### Creating the DB & running migrations in Go
 
 <!-- gofastr:compile
 import migrate "github.com/DonaldMurillo/gofastr/core/migrate"
@@ -1243,383 +201,34 @@ stmt: _ = err
 created, err := migrate.EnsureDatabase("postgres", dsn)
 ```
 
-On Postgres it connects to the maintenance `postgres` database and issues
-`CREATE DATABASE` when the target is absent (the role needs `CREATEDB`). On
-SQLite it's a no-op: the file is created when the runner opens it. It tolerates
-a still-starting database with a short connection retry.
-
-## Programmatic API
-
 ```go
-import "github.com/DonaldMurillo/gofastr/core/migrate"
-
 m := migrate.New(db,
-    migrate.WithDialect(migrate.DialectPostgres),
-    migrate.WithTableName("_migrations"), // or "aux._migrations": a schema, or on SQLite an ATTACHed database
+    migrate.WithDialect(migrate.DialectPostgres), // or DialectSQLite
+    migrate.WithTableName("_migrations"),
 )
-m.Register(migrate.Migration{
-    Version: 1,
-    Name:    "create_posts",
-    Group:   "",  // optional; "" = default group
-    Up:      "CREATE TABLE posts (...)",
-    Down:    "DROP TABLE posts",
-})
-if err := m.Up(ctx); err != nil { … }          // all groups
-if err := m.Up(ctx, "knowledge"); err != nil { … } // one group
-
-// Recovery / baseline: mark a version applied (true) or pending (false).
-if err := m.Force(ctx, 1, true); err != nil { … }
-
-// State.
-st, _ := m.Status(ctx)   // st.Applied[i].Checksum, .Dirty are populated
-// st.Modified: applied rows whose registered Up no longer matches the
-// recorded checksum (Up refuses). st.Unregistered: applied rows with no
-// registered migration in the default group or a group that has some
-// (Down refuses); a named group with nothing registered is a disabled
-// module and is not listed.
+m.Register(migrate.Migration{Version: 1, Name: "create_posts", Up: "...", Down: "..."})
+if err := m.Up(ctx); err != nil { ... }
+st, _ := m.Status(ctx)
 ```
 
-Use `RegisterFromReader` to load directive-formatted SQL from any
-`io.Reader`, including embedded files. Set `Migration.NoTransaction`
-(or the `-- +migrate NoTransaction` directive) to run a migration
-outside a transaction. Checksums and dirty-state tracking are automatic,
-with no API to opt in.
+Use `RegisterFromReader` to load directive `.sql` files from an `embed.FS`.
 
-## Dialects
+### Portable SQL placeholders & types
 
-- `DialectPostgres` (default): uses `NOW()` and `$1, $2, …`
-  placeholders.
-- `DialectSQLite`: uses `CURRENT_TIMESTAMP` and `?` placeholders.
+- Always use `$1`, `$2`, … in hand-written SQL—both SQLite and Postgres drivers accept `$N` (`?` breaks on Postgres).
+- `schema.Bool` maps to `BOOLEAN` on Postgres; `schema.Int` maps to `BIGINT` (`BIGSERIAL` for auto-increment); `AutoUUID` emits `DEFAULT gen_random_uuid()` on Postgres (app-managed on SQLite).
+- Tables may be schema-qualified (`Table: "archive.widgets"`). Multi-version entities merge the union of all versions' columns at auto-migrate time.
 
-Dialect affects only the tracking-table queries and timestamp default.
-Your migration `Up`/`Down` SQL is passed verbatim to the driver. Keep
-it dialect-portable, or split into two registrations.
+## Production safety & database concurrency
 
-An entity table may be schema-qualified (`Table: "x.widgets"`). Boot,
-`DiffSchema` and the live-column readers resolve the schema on both
-engines (on SQLite, an attached database name), and default index and
-primary-key names use the table's base name: `idx_widgets_title` and
-`widgets_pkey`, created in the table's schema. On SQLite a foreign key
-names its parent without a schema (SQLite takes the parent from the
-child's schema), key-change rebuilds and owner-key repairs keep indexes
-and triggers in the table's schema, and the foreign-key check runs over
-every attached database. On Postgres only folded
-(lower-case) columns count as the entity's: a quoted legacy `"Title"`
-is left alone and `title` is added beside it.
-
-`migrate generate` reads a table's default schema as the bare name:
-changing `Table` from `widgets` to `main.widgets` on SQLite, or to
-`public.widgets` on Postgres (or back), generates nothing, and the
-table's columns, key, indexes and unique columns are compared as
-before. Postgres is assumed to put unqualified tables in `public`, its
-default `search_path`. With a `search_path` that puts `widgets` in
-another schema, `public.widgets` is a different table, and generate
-neither creates it nor drops the old one, whose rows stay where they
-are. Any other schema is another table: `archive.widgets` is created
-and `widgets` dropped. Generate reads a recorded `REFERENCES` the way
-the engine does: on SQLite a bare parent is in the child's schema, so
-`aux.kids` referencing `parents` is a child of `aux.parents` and drops
-before it; on Postgres a bare parent is in `public`.
-
-## Tracking table
-
-```sql
-CREATE TABLE _migrations (
-    version    BIGINT  NOT NULL PRIMARY KEY,
-    name       TEXT    NOT NULL DEFAULT '',
-    applied_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    checksum   TEXT    NOT NULL DEFAULT '',   -- SHA-256 of the Up SQL
-    dirty      BOOLEAN NOT NULL DEFAULT FALSE -- failed no-transaction migration
-);
-```
-
-Created lazily on first `Up`/`Down`/`Status` call. The `checksum` and
-`dirty` columns are backfilled automatically onto tables created by an
-older GoFastr, so upgrading needs no manual fix. When migration groups are in
-use, the table additionally gains `group_name TEXT NOT NULL DEFAULT ''`
-and the primary key becomes `(group_name, version)`, upgraded in
-place the first time a non-default group is applied. Never edit the
-table by hand. Use `migrate force` to reconcile state instead.
-
-## Auto-migrate path
-
-Generated `many_to_many` pivot tables are checked on boot and during live
-or snapshot diffs. Changing a pivot's link-column names or endpoint key
-types is refused with the pivot and column named; generation does not
-advance the snapshot past that refusal. Write and apply an explicit
-migration that preserves the existing links before adopting the changed
-relation. An entity-owned join table follows its entity's normal diff.
-Live diffing and boot also verify the composite primary key and both
-cascading foreign keys; an existing pivot missing those constraints must
-be migrated explicitly. Snapshot generation has no live constraints to inspect.
-Every declaration sharing a generated Through table must agree on its link
-columns, endpoint SQL types, referenced tables and referenced keys, including reciprocal declarations. Snapshot
-generation, live diffing, and boot migration refuse inconsistent declarations
-before generating or applying schema changes, even on an empty database.
-Only table creation and DDL emission are deduplicated, never validation.
-
-```go
-app := framework.NewApp(framework.WithDB(db))
-app.Entity("posts", framework.EntityConfig{ … })
-if err := framework.AutoMigrate(db, app.Registry); err != nil { … }
-```
-
-`framework.AutoMigrate` is a package-level function, not a method on
-`App`. It probes the connection to pick the SQL dialect (Postgres first;
-SQLite when the engine answers but is not Postgres) and emits
-`CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` so it is
-safe to re-run.
-
-Dialect detection **fails closed**. If the `SELECT version()` probe cannot
-reach the database after its retries, whether from a bad or unreachable DSN,
-a connection reset, or a pooler in statement mode, then `AutoMigrate`, `MigrateEntity`,
-`DiffSchema`, and `RunSeeds` return an error naming the probe failure and
-pointing at the database connection instead of guessing SQLite. The detected
-dialect decides whether the cross-replica advisory lock is taken at all and
-which stored routines apply, so a transient probe failure that silently
-downgraded to SQLite would skip the lock and every Postgres-only routine on a
-routine-only Postgres app. The boot error looks like:
-
-```
-migrate: dialect probe failed after 3 attempts: <cause> (check the database connection / DATABASE_URL)
-```
-
-Remedy: check `DATABASE_URL` and re-boot. For SQLite the file path must exist
-and be writable; for Postgres the host, port, and credentials must be
-reachable. An engine that genuinely lacks `version()` (SQLite's
-`no such function: version`) is the deterministic, non-transient case: it
-resolves to SQLite without retrying and without erroring.
-
-It creates tables, indexes, and foreign keys, and **adds missing
-columns to existing tables** (`ALTER TABLE ADD COLUMN`, built by the
-same schema-diff path as `migrate generate`, so boot and a versioned
-migration can never disagree), all to make the database match the
-registered entities,
-**inside one transaction and under an advisory lock** (see
-[Production safety](#production-safety)). A new **required** field
-with **no default** is added *nullable* (a `NOT NULL ADD COLUMN`
-fails on a populated table); backfill the rows, then tighten the
-constraint in a versioned migration. Column adds happen before index
-DDL, so a new field and its index land in one boot. It will **not**:
-
-- Drop columns or tables.
-- Rename columns (it sees a rename as add+drop).
-- Change a column type when data would be lost.
-- Change the primary key of a table that has rows (see
-  [Primary-key changes](#primary-key-changes)).
-
-Framework-managed columns are created for you: `created_at` /
-`updated_at` (when `Timestamps` is on), `deleted_at` (when `SoftDelete`
-is on), and `tenant_id` (when `MultiTenant` is on). You do not declare
-these as fields. The framework injects them and auto-migrate creates
-them, so a multi-tenant entity's table always has the `tenant_id`
-column its writes scope by.
-
-For destructive changes (drops, renames, type changes), use `gofastr
-migrate generate <name>` to emit a reviewable versioned migration, where a
-removed field generates a `DROP COLUMN` whose `Down` re-adds the column
-but does not restore row data (on SQLite, a table rebuild with no `Down`
-when the column is unique, indexed or a foreign key), then `gofastr migrate up`, or write a
-numbered SQL file by hand and stop using auto-migrate for that table.
-
-`AutoMigrateContext(ctx, db, registry)` is the context-aware variant.
-Boot uses it so a shutdown signal cancels a migration that's waiting on
-the advisory lock instead of hanging.
-
-### Running both paths (and turning boot-time DDL off)
-
-A generated app runs both paths on boot, and that layering is
-intentional, not an accident: auto-migrate converges the schema with the
-entity declarations (additive DDL only), while the versioned runner
-applies everything the declarations can't express: backfills,
-constraint tightening, destructive changes. They can't disagree on DDL
-because both derive column types from the same entity schema.
-
-For deployments whose policy forbids **any** unattended schema change on
-boot, make migrations the single, explicit path:
-
-<!-- gofastr:compile
-stmt: _ = app
-import "github.com/DonaldMurillo/gofastr/framework"
-import "database/sql"
-var db *sql.DB
--->
-```go
-app := framework.NewApp(
-    framework.WithDB(db),
-    framework.WithoutAutoMigrate(), // Start performs no DDL
-)
-```
-
-then fold entity drift into the versioned files as part of your release
-step: `gofastr migrate generate <name>` emits the drift as a reviewable
-numbered migration, `gofastr migrate up` applies it, `gofastr migrate
-status` shows what's pending. Entity seeds still run at Start (idempotent data, not
-schema); a seeded entity whose table is missing fails Start fast instead
-of the app serving against an unmigrated database. Seeds acquire a DISTINCT
-Postgres advisory lock from migrations, so N replicas booting at once
-serialize their seed phase too. SQLite has no advisory locks, so its seed
-phase takes a twin instead: a leased lock row in `_gofastr_seed_lock`
-(acquired by one atomic upsert, renewed by a heartbeat, released on
-completion, expired by the next boot if the holder crashed) plus a
-process-level mutex, held across the ledger read → seed body → ledger
-record. The `_gofastr_seeded` ledger then makes
-each entity's Seed run once globally on both dialects. (Exception: a
-`MaxOpenConns(1)` Postgres pool can't hold the lock without deadlocking
-the seed body, so it skips the lock with a WARN and is not coordinated
-across replicas, so keep the pool above 1 connection.)
-
-`WithoutAutoMigrate` suppresses **entity** DDL. A few framework-owned
-bookkeeping tables are still created on demand regardless: the seed
-ledger (`_gofastr_seeded`) and, on SQLite, the seed lock row
-(`_gofastr_seed_lock`, one row, created only when an entity declares a
-Seed), and, when you enable `WithOutbox`, the outbox
-table (`event_outbox`), which is ensured when the outbox is constructed
-at `NewApp` time. These aren't entity schema and aren't emitted by
-`migrate generate`; if your policy needs every table to originate from a
-reviewed migration, add these to your migration set by hand. For the
-outbox specifically you can opt out of the boot-time create with
-`framework.WithOutbox(outbox.WithoutEnsureTable())` and manage
-`event_outbox` yourself (its schema is in the [events](events.md) doc);
-otherwise the framework issues its `CREATE TABLE IF NOT EXISTS` at boot.
-A DB role with no DDL rights makes `NewApp` fail closed rather than
-silently skip them.
-
-`AutoUUID` columns emit `DEFAULT gen_random_uuid()` on Postgres so raw
-SQL `INSERT`s that omit the id column don't crash with a NOT NULL
-violation. SQLite has no built-in UUID generator, so the column stays
-app-managed there (the framework's auto-CRUD layer and
-`EntitySessionStore` already supply the value at insert time). If you
-write raw `INSERT` statements against SQLite, you're responsible for
-generating the id yourself.
-
-## Portable SQL placeholders
-
-Use `$N` (numbered) placeholders for all host-app SQL so the same
-query string runs against SQLite (dev/tests) and Postgres (prod) with
-no rebind step. Both drivers accept `$1`, `$2`, …:
-
-```go
-// Works on both engines.
-db.QueryRowContext(ctx,
-    `SELECT id, name FROM users WHERE email = $1 AND tenant_id = $2`,
-    email, tenantID,
-).Scan(&id, &name)
-```
-
-`?` (positional) also works on SQLite but NOT on Postgres, so a query
-that compiles in tests will fail in prod. The framework's
-`core/query.QueryBuilder` already emits `$N` and is the safer path.
+- **Cross-replica locking:** Postgres uses `pg_advisory_lock`; SQLite uses a leased lock row in `_gofastr_migrate_lock` (60s lease renewed per migration). Dialect detection fails closed if the DB is unreachable rather than silently guessing SQLite.
+- **Atomicity & immutability:** Auto-migrate runs in one transaction; each versioned migration runs in its own transaction (unless `NoTransaction`). Applied migrations are SHA-256 checksummed in `_migrations`—editing an applied file fails with `ChecksumMismatchError`.
+- **SQLite vs. Postgres:** SQLite serializes writes—set `MaxOpenConns(1)` for SQLite and switch to Postgres for concurrent write workloads. For pure-Go builds without CGO (smaller binaries, scratch containers), import `_ "modernc.org/sqlite"`.
 
 ## Common mistakes
 
-- **Forgetting `-- +migrate Down`.** You can't roll back. Add it even
-  if it's just a comment explaining why rollback is unsafe (then plan
-  a forward fix instead).
-- **Mixing auto-migrate with SQL files for the same table.** The
-  diff calculator and the SQL file race. Pick one path per table.
-- **Editing an applied migration.** The runner records each
-  migration's checksum, so an edited `Up` is **caught** on the next
-  `up` with a `ChecksumMismatchError` rather than silently skipped.
-  Write a new migration instead.
-- **Non-idempotent `Up`.** Transactional migrations roll back cleanly
-  on failure (both SQLite and Postgres have transactional DDL). Only
-  `NoTransaction` migrations can leave a partial schema, and those are
-  recorded dirty so the next run refuses until you run `migrate force`.
-
-## Production safety
-
-The migration system is meant for production use, not just local
-development convenience. What it guarantees:
-
-- **Advisory locking.** Every migration run, auto-migrate on boot and
-  the versioned `Up`/`Down`/`Force`, is serialized by a Postgres
-  advisory lock (`pg_advisory_lock`, keyed on a fixed constant). Boot N
-  replicas at once and only one migrates at a time; the others wait.
-  A waiting boot reads again, under the lock, any table it saw missing
-  before it, so a table that a replica running an older version created
-  in the meantime still gets this version's columns and key.
-  The lock is acquired by polling `pg_try_advisory_lock` so a cancelled
-  context (shutdown) returns promptly instead of hanging on a stuck
-  holder. When the unlock fails, as it does on a session a
-  `NoTransaction` migration left inside its own failed `BEGIN`, the
-  connection is retired rather than returned to the pool, so ending its
-  session releases the lock. SQLite gets the same cross-process serialization from a twin:
-  a leased lock row in `_gofastr_migrate_lock` (one atomic upsert,
-  released on completion, expired by the next boot if the holder
-  crashed) — SQLite's file-level locking serializes statements, not the
-  read → apply → record sequence. The runner takes, renews and releases
-  the lease on its own pinned connection, renewing before each
-  migration, so a long run keeps it on any pool size, `MaxOpenConns(1)`
-  included. Renewal and release name the expiry the holder last wrote,
-  so a holder whose lease expired and was taken cannot extend or delete
-  the new holder's row: it logs "lock lease lost" at Error and the run
-  stops before its next migration with `lease lost to another process`.
-  One migration that runs longer than the lease (60s) loses it, since
-  SQLite's writer lock blocks renewal while its transaction is open. As a second line
-  of defense the versioned runner re-checks the tracking row immediately
-  before applying each migration, so a runner whose applied-versions
-  read still went stale converges (skips) instead of failing its boot
-  on DDL a peer already applied.
-- **Atomicity.** Auto-migrate runs all of its DDL in a single
-  transaction; if entity *K* fails, entities *1..K-1* roll back too, so
-  a botched boot never leaves a half-created schema. Versioned
-  migrations each run in their own transaction (unless `NoTransaction`).
-- **Checksum drift detection.** Each migration's `Up` SQL is hashed
-  (SHA-256) at apply time. On every later run the runner recomputes and
-  compares; a mismatch means the file was edited after it was applied,
-  and the run aborts with `ChecksumMismatchError`. Applied migrations
-  are immutable.
-- **Dirty-state tracking.** A failed `NoTransaction` migration leaves a
-  `dirty` marker; `up`/`down` refuse to proceed (`ErrDirty`) until an
-  operator reconciles the schema and runs `migrate force`. This is the
-  same posture as golang-migrate's dirty flag.
-- **No silent rollback.** `down` refuses (`ErrNoDown`) when any
-  version it would roll back has no Down SQL, so a version never reads
-  as pending while its Up's changes are still in the schema.
-- **Destructive-change gate.** `DiffSchema` flags `DROP COLUMN` (and a
-  dropped foreign key) as destructive and `ApplySchemaDiff` refuses to run destructive changes
-  unless the caller opts in (`ApplySchemaDiffWithOptions`). The default
-  never drops data; `migrate generate` instead emits the drop as a
-  reviewable, reversible versioned migration you apply deliberately.
-- **Baseline / recovery.** `migrate force <V>` (programmatically
-  `Migrator.Force(ctx, version, applied)`) marks a version applied
-  without running it (adopt an existing database) or removes it (treat
-  as pending), and clears any dirty flag either way.
-
-This is the same feature set as other established migrators
-(golang-migrate, goose, Atlas): versioned up/down, advisory locking,
-transactional runs with a no-transaction escape hatch, dirty state,
-checksums/drift detection, baseline, and a destructive-change safety
-gate.
-
-## Concurrency model
-
-GoFastr supports both SQLite and Postgres. Their concurrency characteristics differ significantly:
-
-### SQLite
-
-SQLite serialises writes: only one writer at a time. Under high concurrency (64+ goroutines), `CREATE` p99 can climb to 112 ms with only 10 writes completing out of 5000+ ops in mixed read/write workloads.
-
-**Production guidance:**
-- Set `MaxOpenConns(1)` on the `*sql.DB` for SQLite workloads (the framework does this automatically in test helpers).
-- For write-heavy concurrent workloads, use Postgres instead.
-- SQLite is fine for development, single-user tools, and read-heavy caches.
-
-### Postgres
-
-Postgres handles concurrent writes with MVCC. The same benchmarks show flat p99 latency at parallelism=64. Use Postgres for any deployment with concurrent write traffic.
-
-## Pure-Go SQLite alternative
-
-The default SQLite driver uses cgo, which adds ~4 MB to the binary and ~440 MB to build RAM. For environments where cgo is undesirable (CI, cross-compilation, minimal containers), use the pure-Go driver:
-
-```go
-import _ "modernc.org/sqlite"
-```
-
-Trade-offs:
-- Binary is ~4 MB smaller, build uses ~440 MB less RAM.
-- No cgo toolchain dependency: works in `GOOS=js` and scratch containers.
-- Query performance is a few percent slower than cgo SQLite.
-- Fully compatible with the GoFastr migration and query layers, with no code changes required.
+- **Editing an already-applied migration.** The runner verifies SHA-256 checksums and aborts with `ChecksumMismatchError`. Write a new migration instead.
+- **Omitting `-- +migrate Down`.** `migrate down` refuses with `ErrNoDown` before rolling anything back.
+- **Mixing auto-migrate and hand-written SQL on the same table.** Pick one strategy per table (or disable boot DDL with `WithoutAutoMigrate()` and use `migrate generate` + `migrate up`).
+- **Using `?` placeholders in raw SQL.** Works in SQLite tests, fails in Postgres production—use `$1`, `$2`, … everywhere.
+- **Renaming a column without declaring `Renames`.** Without `EntityConfig.Renames` (or `renames:` in YAML), the diff sees a drop + add and destroys row data.
