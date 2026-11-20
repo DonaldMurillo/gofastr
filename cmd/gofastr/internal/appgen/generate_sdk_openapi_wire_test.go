@@ -370,3 +370,59 @@ func TestOpenAPISDKJSWireBrowser(t *testing.T) {
 	}
 	checkOAWire(t, "client.js", seen())
 }
+
+func TestOpenAPISDKJSOwnParams(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	out := oaSDKGenerate(t, oaSDKDoc(`{
+		"/optional": {"get": {
+			"operationId": "getOptional",
+			"parameters": [
+				{"name": "toString", "in": "query", "schema": {"type": "string"}},
+				{"name": "valueOf", "in": "header", "schema": {"type": "string"}}
+			],
+			"responses": {"204": {"description": "done"}}
+		}},
+		"/required": {"get": {
+			"operationId": "getRequired",
+			"parameters": [{"name": "toString", "in": "query", "required": true, "schema": {"type": "string"}}],
+			"responses": {"204": {"description": "done"}}
+		}}
+	}`), "--target=js")
+	dir := filepath.Join(out, "js")
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"type":"module"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const probe = `
+import assert from "node:assert/strict";
+import { Client } from "./client.js";
+
+Object.hasOwn = undefined; // Older browsers lack this API.
+const requests = [];
+const client = new Client({ baseURL: "https://fixture.invalid", fetch: async (url, { headers }) => {
+  const { pathname, searchParams } = new URL(url);
+  requests.push([pathname, [...searchParams], headers]);
+  // Node 22's Response constructor uses the disabled Object.hasOwn.
+  return { status: 204, body: null };
+}});
+const inherited = Object.create({ toString: "prototype query", valueOf: "prototype header" });
+await client.getOptional();
+await client.getOptional(inherited);
+await client.getOptional(Object.assign(Object.create(null), { toString: "own + query", valueOf: "own header" }));
+assert.deepEqual(requests, [
+  ["/optional", [], {}],
+  ["/optional", [], {}],
+  ["/optional", [["toString", "own + query"]], { valueOf: "own header" }],
+]);
+
+await assert.rejects(client.getRequired(inherited), { name: "TypeError", message: "getRequired: parameter toString is required" });
+assert.equal(requests.length, 3);
+`
+	cmd := exec.CommandContext(t.Context(), node, "--input-type=module", "--eval", probe)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("node: %v\n%s", err, output)
+	}
+}

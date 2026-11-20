@@ -210,6 +210,37 @@ func TestPoll_ClampsIntervalToFiveSeconds(t *testing.T) {
 	if bad != "NaN" {
 		t.Errorf(`clamp("garbage") = %q, want "NaN"`, bad)
 	}
+	for _, tt := range []struct {
+		raw  string
+		want string
+	}{
+		{".5m", "30000"},
+		{"1.m", "60000"},
+		{"0.5m", "30000"},
+		{"1h30m", "5400000"},
+		{"1.h.5m", "3630000"},
+		{"1ns1us1µs1ms1s1m1h", "3661001.002001"},
+		{".5s", "5000"},
+		{"", "NaN"},
+		{"0s", "NaN"},
+		{"-1m", "NaN"},
+		{".m", "NaN"},
+		{"1..5m", "NaN"},
+		{"1m.5", "NaN"},
+		{"1m .5s", "NaN"},
+		{".5mx", "NaN"},
+	} {
+		t.Run(tt.raw, func(t *testing.T) {
+			raw, _ := json.Marshal(tt.raw)
+			var got string
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`String(window.__gofastr._pollClampedMs(`+string(raw)+`))`, &got)); err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("clamp(%q) = %s, want %s", tt.raw, got, tt.want)
+			}
+		})
+	}
 }
 
 // TestPoll_TeardownOnRemoval proves timers don't leak: after the polled

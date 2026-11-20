@@ -189,6 +189,12 @@ serve an absolute URL outside its own prefix (routes added there skip
 the group's middleware). Direct. Start at `core/router/router.go`:
 `Router`.
 
+`router.ValidatePattern(method, pattern)` returns an error for malformed
+ServeMux patterns without panicking or registering a route on your router.
+`Router.Handle` uses the same validation and panics on failure. The validator
+does not check conflicts with existing routes or apply a group's prefix;
+include the prefix in the pattern when validating a grouped route.
+
 `SetRouteGate` runs before the middleware chain. A false result or a
 panic answers 404 on a matched route and excludes that method from a
 405's `Allow` header; a panic is logged. `SetServeHook` also runs before

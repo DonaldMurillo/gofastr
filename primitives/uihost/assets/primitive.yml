@@ -4,6 +4,10 @@ code:
   - framework/uihost/css.go
   - framework/uihost/static.go
   - framework/uihost/asset_url.go
+  - framework/uihost/asset_revision_linux.go
+  - framework/uihost/asset_revision_darwin.go
+  - framework/uihost/asset_revision_other.go
+  - framework/uihost/asset_revision_linux_test.go
   - framework/uihost/assetserve.go
   - framework/uihost/appicon.go
   - framework/uihost/manifestjs.go
@@ -99,15 +103,18 @@ invariants:
       - test: framework/uihost.TestWidgetJSGatedAndVersioned
       - test: framework/uihost.TestScriptURLRoundTripImmutable
   - id: asset-url-hash
-    rule: AssetURL appends the content hash of a clean rooted path's file, retakes it when the file's mtime or size changes, and returns any other path unchanged.
+    rule: AssetURL appends the content hash of a clean rooted path's file, memoised under mtime, size, inode and ctime only when ctime is at least one second old before hashing or is missing or in the future, and returns any other path unchanged.
     enforced_by:
       - test: framework/uihost.TestAssetURLChangesWithContent
+      - test: framework/uihost.TestAssetURLRewriteKeepingModTime
+      - test: framework/uihost.TestAssetVersionMemoization
       - test: framework/uihost.TestSweepAssetsAssetURLLeavesUncleanPath
   - id: static-immutable-only-on-served-bytes
     rule: A static response is immutable only when its ?v= equals the hash of the handle it is served from, and never under gofastr dev, where it is no-store.
     enforced_by:
       - test: framework/uihost.TestStaleAssetVersionNotImmutable
       - test: framework/uihost.TestReplacedFileNotCertified
+      - test: framework/uihost.TestAssetURLRewriteKeepingModTime
       - test: framework/uihost.TestVersionedAssetNoStoreInDev
       - test: framework/uihost.TestDevServesStaticWithNoStore
   - id: static-fs-confined
