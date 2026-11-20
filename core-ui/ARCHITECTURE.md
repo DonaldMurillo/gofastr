@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+UIHost chooses between the HTML and Markdown representations before rendering
+the document; see [Markdown content negotiation](../framework/docs/content/agent-ready.md#markdown-content-negotiation).
+
 Strict sitemap origin validation lives in `uihost.InvalidSitemapBaseURL`.
 App-spec validation calls the same check before generation; an omitted
 origin remains valid there because generated apps default to localhost.
