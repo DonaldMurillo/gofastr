@@ -958,8 +958,8 @@ sheet's title row is shared with `interactive.PhoneSheet` (below), so
 their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
 pill's gap above the screen edge; set it on `:root`, where the page's
 end padding reads it too), `--ui-sheet-close-size` (the close
-button) and `--ui-sheet-head-inset` (0, the gap before the sheet's
-title).
+button) and `--ui-sheet-head-inset` (the gap before the sheet's title:
+0 in a `PhoneSheet`, the link inset in a SectionMenu's sheet).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint. Set it when the sidebar's phone navigation lives outside
 the column: a SectionMenu, whose pill floats over the page, or a

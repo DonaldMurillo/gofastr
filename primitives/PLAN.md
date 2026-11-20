@@ -182,9 +182,9 @@ directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 | ownstyle | 19.1% | 3.4% | | widget/theme | 15.0% | 1.3% |
 
 In the starred packages, what remains is a doc on each exported
-identifier, except for two lines in `urlsafe`. The two groups added 47
-primitives, 259 invariants and 102 decisions, plus about 57 tests for rules
-that had none. They also recorded 6 twins and merged one (island's two
+identifier, except for two lines in `urlsafe`. The two groups added 48
+primitives, 263 invariants and 103 decisions, plus 46 tests for rules that
+had none. They also recorded 6 twins and merged one (island's two
 roster loops, now `localMembersLocked`). One bug was fixed on the way:
 `registry.IsolateForTest` did not isolate the behavior-marker attributes.
 The replay eval after the sweep held every number, moving one cell at most,
