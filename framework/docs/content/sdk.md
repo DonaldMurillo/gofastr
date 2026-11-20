@@ -505,6 +505,19 @@ NSwag write a nullable reference, is a nullable `Person`); an `allOf`
 of several members, or one beside properties, is the merged object. A
 document deriving more than 5000 struct types is refused.
 
+Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
+`type` list containing `"null"` in 3.1) retain null separately from
+absence. In JS/TS, pass `null` to send the literal JSON `null` with
+`Content-Type: application/json`; `undefined` omits an optional body
+and rejects a required one. The body parameter's TypeScript type includes
+`| null`. For non-nullable bodies, `null` still means absent.
+In Go, a required nullable scalar or object takes a pointer: nil sends
+JSON `null`. An optional nullable body adds a presence pointer (for
+example, `**string`): nil omits the body, while a non-nil outer pointer
+to a nil inner value sends JSON `null`. Nullable maps, slices and raw
+JSON use their nil value for JSON `null`, with an outer pointer for
+optional presence.
+
 **JS/TS.** `client.js` has one async method per operation, named by the
 `operationId` (or the Go name with its first letter lowered when the
 `operationId` is not a JS identifier). It takes the parameters as one

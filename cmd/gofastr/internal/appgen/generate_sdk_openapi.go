@@ -38,7 +38,8 @@ type oaSDKOp struct {
 	// ParamsType is the Go and TS type holding the parameters, "" for none.
 	ParamsType string
 	// Body types a JSON request body; nil for none or a binary one.
-	Body *oaType
+	Body         *oaType
+	BodyNullable bool
 	// Result is "", "json" or "binary"; ResultType types a JSON one.
 	Result     string
 	ResultType *oaType
@@ -213,7 +214,7 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 		if err != nil {
 			return sop, err
 		}
-		if sop.Body, _, err = ts.typeOf(body, op.GoName+"Request"); err != nil {
+		if sop.Body, sop.BodyNullable, err = ts.typeOf(body, op.GoName+"Request"); err != nil {
 			return sop, fmt.Errorf("request body: %w", err)
 		}
 	}
@@ -501,7 +502,13 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 	switch {
 	case op.Body != nil:
 		bodyType = op.Body.goExpr()
+		if op.BodyNullable && op.Body.goPointer() {
+			bodyType = "*" + bodyType
+		}
 		if !op.BodyRequired && op.Body.goPointer() {
+			bodyType = "*" + bodyType
+		}
+		if !op.BodyRequired && op.BodyNullable && !op.Body.goPointer() {
 			bodyType = "*" + bodyType
 		}
 	case op.BodyKind == "binary":
