@@ -1,0 +1,20 @@
+primitive: cache.memory
+summary: MemoryCache, the in-process cache with TTL expiry, an optional LRU entry cap and a background cleanup goroutine.
+code:
+  - battery/cache/memory.go
+docs:
+  - framework/docs/content/cache.md
+invariants:
+  - id: negative-ttl-drops-the-entry
+    rule: Set with a negative effective TTL stores nothing and removes any entry under the key.
+    enforced_by:
+      - test: battery/cache.TestMemoryCache_NegativeTTLNotImmortal
+  - id: lru-cap
+    rule: With WithMaxEntries n, inserting past n entries evicts the least recently used, and a Get refreshes an entry's recency.
+    enforced_by:
+      - test: battery/cache.TestMemoryCacheBoundedEvicts
+      - test: battery/cache.TestMemoryCacheLRUKeepsRecent
+  - id: battery-stop-ends-cleanup
+    rule: The battery's OnStop calls MemoryCache's Close, ending its cleanup goroutine.
+    enforced_by:
+      - test: battery/cache.TestBatteryStopEndsMemoryCleanup

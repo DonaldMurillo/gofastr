@@ -11,17 +11,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// RedisClient defines the minimal interface needed for a Redis cache backend.
-// No specific Redis library is imported; implement this interface with your
-// preferred Redis client (e.g. go-redis, redigo, etc.).
+// RedisClient defines the minimal interface needed for a Redis cache
+// backend.
 type RedisClient interface {
-	// Get retrieves the string value for a key. Should return a redis nil
-	// error when the key does not exist.
+	// Get retrieves the string value for a key.
 	Get(ctx context.Context, key string) (string, error)
 
-	// Set stores a string value with an optional expiration. A TTL of 0
-	// means no expiration. RedisCache never passes a negative TTL: it
-	// deletes the key instead.
+	// Set stores a string value with an optional expiration.
 	Set(ctx context.Context, key string, value string, ttl time.Duration) error
 
 	// Del removes one or more keys.
@@ -36,27 +32,6 @@ type RedisClient interface {
 
 // KeyScanner is the optional capability a RedisClient implements when it
 // can enumerate keys (Redis SCAN, or KEYS on a small database).
-//
-// RedisCache.Clear needs it. Clear's contract is "removes all entries
-// from the cache" — the entries THIS instance owns — and every other
-// operation routes through prefixedKey, but Clear issued FlushDB and
-// wiped the whole database. With the per-tenant prefixes this battery
-// documents, one tenant's Clear was every other tenant's data-loss
-// event, plus any foreign keys sharing the database.
-//
-// With go-redis:
-//
-//	func (c adapter) Keys(ctx context.Context, pattern string) ([]string, error) {
-//	  var out []string
-//	  iter := c.rdb.Scan(ctx, 0, pattern, 500).Iterator()
-//	  for iter.Next(ctx) { out = append(out, iter.Val()) }
-//	  return out, iter.Err()
-//	}
-//
-// A client that does not implement it can still be used: Clear then
-// FlushDBs an UNPREFIXED cache (which owns the database by definition)
-// and refuses on a prefixed one rather than destroying a neighbour's
-// keys.
 type KeyScanner interface {
 	Keys(ctx context.Context, pattern string) ([]string, error)
 }
@@ -77,15 +52,6 @@ func NewRedisCache(client RedisClient, opts ...Option) *RedisCache {
 }
 
 // Get retrieves a value from Redis and deserializes it into dest.
-//
-// A backend failure is NOT reported as ErrCacheMiss. The Cache interface
-// documents that sentinel strictly as "the key does not exist or has
-// expired", and wrapping every client error in it made a connection
-// refusal, a timeout, and an auth rejection indistinguishable from an
-// absent key — so a caller that fails closed on a miss (negative
-// caching, a revocation list) failed OPEN for the duration of the
-// outage. Only the client's documented nil-signal maps to a miss;
-// anything else is returned as itself.
 func (rc *RedisCache) Get(ctx context.Context, key string, dest any) error {
 	k := rc.prefixedKey(key)
 	val, err := rc.client.Get(ctx, k)
@@ -98,17 +64,6 @@ func (rc *RedisCache) Get(ctx context.Context, key string, dest any) error {
 	return jsonexact.Unmarshal([]byte(val), dest)
 }
 
-// isRedisMiss reports whether err is the client's "no such key" signal
-// rather than a backend failure.
-//
-// The RedisClient contract asks adapters to "return a redis nil error
-// when the key does not exist", and every driver spells that its own
-// way (go-redis returns redis.Nil, whose message is "redis: nil"). An
-// adapter that wraps [ErrCacheMiss] is honoured directly; otherwise the
-// documented message is matched. Anything unrecognised counts as a
-// FAILURE, which is the safe direction: a caller told "backend error"
-// when the key was merely absent retries or refuses, while one told
-// "miss" during an outage proceeds as if the key were gone.
 func isRedisMiss(err error) bool {
 	if errors.Is(err, ErrCacheMiss) {
 		return true
@@ -117,16 +72,7 @@ func isRedisMiss(err error) bool {
 	return strings.Contains(msg, "redis: nil") || msg == "nil"
 }
 
-// Set stores a value in Redis with the given TTL. A ttl of 0 falls back
-// to the configured default (WithTTL; no expiry when unset). A NEGATIVE
-// effective ttl is "already expired", as on MemoryCache: the key is
-// deleted and nothing is stored.
-//
-// A negative duration never reaches RedisClient.Set. go-redis, the
-// client the KeyScanner example adapts, reads -1 as KEEPTTL and every
-// other non-positive expiration as "no expiry", so passing it through
-// turned a lifetime already in the past into an entry that never
-// expires.
+// Set stores a value in Redis with the given TTL.
 func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	k := rc.prefixedKey(key)
 	data, err := json.Marshal(value)
@@ -139,12 +85,6 @@ func (rc *RedisCache) Set(ctx context.Context, key string, value any, ttl time.D
 		effectiveTTL = rc.cfg.defaultTTL
 	}
 
-	// A negative TTL is "already expired" (the Cache contract): drop
-	// the key and store nothing. It must not reach the client: the
-	// RedisClient contract only defines 0, and go-redis, the adapter
-	// the docs show, sends any other non-positive duration as a SET
-	// with no expiry (and -1 as KEEPTTL), so the value the caller said
-	// was already gone was stored forever, over the old one.
 	if effectiveTTL < 0 {
 		return rc.client.Del(ctx, k)
 	}
@@ -165,13 +105,6 @@ func (rc *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 // Clear removes the entries this cache owns.
-//
-// For an UNPREFIXED cache that is the whole database, which it owns by
-// definition, so FlushDB is correct. For a prefixed one it is only the
-// keys prefixedKey can produce: FlushDB there destroyed every other
-// namespace sharing the database, plus foreign keys owned by neither.
-// Scoping needs [KeyScanner]; without it, a prefixed Clear refuses
-// rather than guessing, because the wrong guess is unrecoverable.
 func (rc *RedisCache) Clear(ctx context.Context) error {
 	if rc.cfg.prefix == "" {
 		return rc.client.FlushDB(ctx)
@@ -182,14 +115,10 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 			"flushing the database instead would delete every other namespace's keys", rc.cfg.prefix)
 	}
 	want := rc.keyPrefix()
-	// Escaped, because SCAN reads the pattern as a glob: "a[b]c:*" is a
-	// character class that matches none of the literal "a[b]c:" keys.
 	keys, err := scanner.Keys(ctx, escapeGlob(want)+"*")
 	if err != nil {
 		return fmt.Errorf("cache: Clear scan %q: %w", want, err)
 	}
-	// Filter client-side too, so a scanner that ignores the escapes and
-	// matches more than the prefix names still deletes only owned keys.
 	owned := make([]string, 0, len(keys))
 	for _, k := range keys {
 		if strings.HasPrefix(k, want) {
@@ -202,7 +131,6 @@ func (rc *RedisCache) Clear(ctx context.Context) error {
 	return rc.client.Del(ctx, owned...)
 }
 
-// escapeGlob backslash-escapes the bytes a Redis glob treats as special.
 func escapeGlob(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -215,8 +143,6 @@ func escapeGlob(s string) string {
 	return b.String()
 }
 
-// keyPrefix returns the literal string every key of this cache starts
-// with, "" for an unprefixed cache.
 func (rc *RedisCache) keyPrefix() string {
 	if rc.cfg.prefix == "" {
 		return ""
@@ -228,22 +154,6 @@ func (rc *RedisCache) prefixedKey(key string) string {
 	return rc.keyPrefix() + key
 }
 
-// escapeKeySegment percent-encodes '%' and ':' inside a prefix, so the
-// escaped prefix holds no ':' and the first ':' of a key is always the
-// join between prefix and key.
-//
-// Plain concatenation is not injective. WithPrefix("u:alice") and
-// WithPrefix("u:alice:admin") both produce "u:alice:admin:x", the
-// first from key "admin:x", the second from key "x", so one tenant
-// could read, overwrite, or Delete another's entries by choosing a key
-// that spans the boundary. Doubling ':' was not injective either:
-// WithPrefix("u") with key ":alice:x" and WithPrefix("u:alice") with
-// key "x" both gave "u::alice:x", and Clear on "u" deleted the other's
-// entry. '%' is encoded first so an escaped ':' cannot meet a literal
-// "%3A" in another prefix.
-//
-// Keys change shape for a prefix that contains ':' or '%'. Any other
-// prefix keeps its keys as they were.
 func escapeKeySegment(s string) string {
 	s = strings.ReplaceAll(s, "%", "%25")
 	return strings.ReplaceAll(s, ":", "%3A")

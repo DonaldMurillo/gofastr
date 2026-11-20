@@ -11,14 +11,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// memoryEntry holds a cached item with its expiration time.
 type memoryEntry struct {
-	data      []byte // JSON-encoded value
+	data      []byte
 	expiresAt time.Time
 	hasExpiry bool
-	// lru points at this entry's node in the LRU recency list. It is only
-	// populated (non-nil) when the cache is bounded (maxEntries > 0).
-	lru *list.Element
+	lru       *list.Element
 }
 
 func (e *memoryEntry) isExpired() bool {
@@ -26,28 +23,19 @@ func (e *memoryEntry) isExpired() bool {
 }
 
 // MemoryCache is an in-memory Cache implementation backed by a map with
-// read-write mutex for thread safety. It supports TTL-based expiration
-// with lazy eviction on access and an optional background cleanup goroutine.
+// read-write mutex for thread safety.
 type MemoryCache struct {
 	mu       sync.RWMutex
 	items    map[string]*memoryEntry
 	cfg      config
 	stopCh   chan struct{}
 	stopOnce sync.Once
-	// lruList orders keys from most- (front) to least-recently-used (back).
-	// It is only maintained when the cache is bounded (cfg.maxEntries > 0).
-	// Each element's Value is the string key.
-	lruList *list.List
+	lruList  *list.List
 }
 
 // NewMemoryCache creates a new in-memory cache.
-// The background cleanup goroutine starts automatically when a cleanup
-// interval is configured (default: 1 minute). Call Close to stop it.
 func NewMemoryCache(opts ...Option) *MemoryCache {
 	cfg := applyOptions(opts...)
-	// Unbounded AND never-expiring is the OOM shape: every distinct key
-	// (especially request-derived ones) is retained forever. Warn loudly,
-	// give it a default TTL (WithDefaultTTL) or a size cap (WithMaxEntries).
 	if cfg.maxEntries <= 0 && cfg.defaultTTL <= 0 {
 		slog.Default().Warn("cache: MemoryCache is both unbounded (no WithMaxEntries) and never-expiring (no WithDefaultTTL): entries are retained forever, so request-derived keys will grow memory without limit",
 			"fix", "set WithDefaultTTL for a finite lifetime, WithMaxEntries for an LRU bound, or both")
@@ -97,16 +85,13 @@ func (mc *MemoryCache) evictExpired() {
 	}
 }
 
-// Len reports the number of live entries currently held. Primarily useful for
-// tests and for observing eviction on a bounded cache.
+// Len reports the number of live entries currently held.
 func (mc *MemoryCache) Len() int {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return len(mc.items)
 }
 
-// removeLocked deletes a key from the map and, if the cache is bounded, from
-// the LRU list. Callers must hold mc.mu for writing.
 func (mc *MemoryCache) removeLocked(key string, entry *memoryEntry) {
 	delete(mc.items, key)
 	if mc.lruList != nil && entry != nil && entry.lru != nil {
@@ -115,8 +100,6 @@ func (mc *MemoryCache) removeLocked(key string, entry *memoryEntry) {
 	}
 }
 
-// touchLocked marks an entry as most-recently-used. Callers must hold mc.mu
-// for writing. No-op on an unbounded cache.
 func (mc *MemoryCache) touchLocked(entry *memoryEntry) {
 	if mc.lruList != nil && entry.lru != nil {
 		mc.lruList.MoveToFront(entry.lru)
@@ -127,8 +110,6 @@ func (mc *MemoryCache) touchLocked(entry *memoryEntry) {
 func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 	k := mc.prefixedKey(key)
 
-	// Bounded caches must record recency on read, which mutates the LRU
-	// list and therefore requires the write lock.
 	if mc.lruList != nil {
 		mc.mu.Lock()
 		entry, ok := mc.items[k]
@@ -151,9 +132,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 
 	if !ok || entry.isExpired() {
 		if ok && entry.isExpired() {
-			// Lazily remove the expired entry.
 			mc.mu.Lock()
-			// Re-check under write lock.
 			if e, still := mc.items[k]; still && e.isExpired() {
 				delete(mc.items, k)
 			}
@@ -164,11 +143,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest any) error {
 	return jsonexact.Unmarshal(entry.data, dest)
 }
 
-// Set stores a value in the cache with the given TTL. A ttl of 0 falls
-// back to the configured default (WithTTL; no expiry when unset). A
-// NEGATIVE ttl is honoured as "already expired": nothing is stored and
-// any existing entry under the key is dropped, so a caller that computed
-// a lifetime in the past can never mint a never-expiring entry.
+// Set stores a value in the cache with the given TTL.
 func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Duration) error {
 	k := mc.prefixedKey(key)
 	data, err := json.Marshal(value)
@@ -181,14 +156,6 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 		effectiveTTL = mc.cfg.defaultTTL
 	}
 
-	// A negative TTL is the caller asserting the entry is ALREADY GONE
-	// (deadline passed, clock skew across replicas, a unit mix-up).
-	// Fail closed on it: drop whatever is stored under the key and
-	// store nothing. The old hasExpiry = ttl > 0 mapping filed it as
-	// never-expiring — the maximal inversion of the caller's intent.
-	// RedisCache.Set does the same: it deletes the key rather than
-	// hand a negative expiry to a client. Only ttl == 0 is the
-	// documented "use the default" sentinel.
 	if effectiveTTL < 0 {
 		mc.mu.Lock()
 		if existing, ok := mc.items[k]; ok {
@@ -209,7 +176,6 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 	mc.mu.Lock()
 	if mc.lruList != nil {
 		if existing, ok := mc.items[k]; ok {
-			// Overwrite in place: reuse the recency node and promote it.
 			entry.lru = existing.lru
 			existing.lru = nil
 			if entry.lru != nil {
@@ -221,7 +187,6 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value any, ttl time.Du
 		} else {
 			entry.lru = mc.lruList.PushFront(k)
 			mc.items[k] = entry
-			// Enforce the cap by evicting least-recently-used entries.
 			for len(mc.items) > mc.cfg.maxEntries {
 				oldest := mc.lruList.Back()
 				if oldest == nil {
@@ -258,7 +223,6 @@ func (mc *MemoryCache) Exists(_ context.Context, key string) (bool, error) {
 		return false, nil
 	}
 	if entry.isExpired() {
-		// Lazily remove.
 		mc.mu.Lock()
 		if e, still := mc.items[k]; still && e.isExpired() {
 			mc.removeLocked(k, e)
