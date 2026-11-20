@@ -1,55 +1,16 @@
 # Widgets: `core-ui/widget`
 
-The UI host mounts a default toast stack at boot only when the global
-widget catalog contains no toast stack. On a host mounted at the root,
-the default stylesheet is served at
-`/core-ui/widget/gofastr-toasts/style.css`; a host mounted on a router
-group serves it under that group's prefix. When another host already
-registered a stack (including an app-defined one), this host adds only
-its missing stylesheet routes, on its root router at the catalog's
-published URLs, so a stack published under `/first` is served at
-`/first/...` even by a host mounted under `/second`. The stack keeps
-its names and mount prefixes. It does not register a second
-stack or replace the existing definitions, so booting another app cannot
-give the first app two toast regions. Repeated boot validation adds no
-duplicate routes. Stack behavior uses the host's shared runtime, not a
-separate per-stack script.
+Widgets are self-mounting overlay UIs (modals, drawers, popovers, floating panels, toast stacks, banners) that float above any page and survive SPA navigation. Components live inside a page's render tree; widgets mount globally onto the router and bootstrap automatically through the runtime.
 
-Widgets are self-mounting overlay UIs that run on top of any page. They
-are distinct from components:
+## Presets & quickstart
 
-A cross-origin state endpoint is not fetched. The widget still mounts its
-local actions and dismiss controls, so a refused state fetch cannot trap it open.
-
-| Component | Widget |
-|---|---|
-| Part of a server-rendered page tree | Floats above any page |
-| Rendered when its parent renders | Mounts itself via a script tag |
-| Tied to a request's render pass | Long-lived, signal-driven |
-
-Examples of widgets the framework already supports:
-
-- **FloatingPanel**: corner-anchored chat / devtools / agent panel
-- **Modal**: center `<dialog>` opened with `showModal()`, ESC + click-outside dismiss
-- **Toast**: ephemeral notifications. `preset.ToastStack(name)` mounts
-  the region; `framework/uihost` mounts one named
-  `uihost.DefaultToastStack` at boot when the app mounted none, so an
-  `X-Gofastr-Toast` header always lands somewhere. The rows a toast
-  builds are cloned from the row template the kit registers
-  (`preset.ToastTemplate`, via `registry.RegisterTemplate`), which
-  `preset.ToastSlotHTML` renders inside the stack; `preset.IsToastStack`
-  tells a host whether a widget definition is one. The host links the
-  stack's component sheets, the row's included, in the page head, so a
-  toast raised after the connection drops (a failed request's error)
-  draws styled without fetching a sheet.
-- **Drawer**: edge-mounted sliding panel
-- **Banner**: top strip for build progress, version warnings, etc.
-- **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
-
-`kiln/chat/panel.go` is the canonical real-world consumer: the agent
-chat panel is implemented as a `FloatingPanel` widget.
-
-## Quickstart
+Built-in presets in `core-ui/widget/preset`:
+- **`FloatingPanel`** — corner-anchored panel (chat, devtools, agent drawer).
+- **`Modal`** — centered native `<dialog>` opened with `showModal()`, backdrop scrim, Escape & outside-click dismiss.
+- **`Drawer`** / **`BottomSheet`** — edge-sliding panel (`Edge` / `EdgeRight`, RTL-aware) or 75vh bottom sheet.
+- **`Popover`** — click-triggered anchored panel with auto-flip, no backdrop dim.
+- **`ToastStack`** — ephemeral notification stack (`uihost` mounts a default `uihost.DefaultToastStack` if your app hasn't mounted one, so `X-Gofastr-Toast` always works).
+- **`Banner`** — top strip for status or build notices.
 
 ```go
 import (
@@ -64,336 +25,32 @@ panel := preset.FloatingPanel("my-panel").
     Build()
 
 widget.Mount(router, &panel)
-// or in one step: widget.MountBuilder(router, preset.FloatingPanel("my-panel").…)
+// Or in one step: widget.MountBuilder(router, preset.FloatingPanel("my-panel")...)
 ```
 
-To open a widget from the page, wire any element with
-`data-cui-open="<widget-name>"`; the runtime handles the click, shows
-the widget, and (for modals) moves focus in:
+Open any widget from HTML with `data-cui-open="<name>"` (and close from inside with `data-cui-action="close"`):
 
 ```html
 <button data-cui-open="my-panel">Open panel</button>
 ```
 
-Widgets built with `.Hidden()` (and click-to-open presets like
-`preset.Popover`) stay closed until such a trigger, or a matching
-deep-link URL, opens them.
+Pages served via `framework/uihost` load the widget runtime automatically; bare-router hosts call `widget.MountRuntime(r)` once and embed `widget.RuntimeTag()`. When multiple routers in one process share a widget, call `widget.MountShared(r, def)`. The runtime dispatches `gofastr:widgets-synced` on `window` (`detail.path`) after each boot or navigation catalog pass settles.
 
-`Mount` registers the widget's HTTP routes and adds it to the process-wide
-registry. Any page that carries the framework runtime auto-mounts every
-registered widget: the runtime fetches `/__gofastr/widgets` on boot and
-builds each one. The catalog answers `Cache-Control: no-store` with
-`Vary: Cookie`: a host gates it per caller, so no cache keeps one
-caller's catalog for the next. Pages served through `framework/uihost` get the runtime
-injected automatically; a bare-router host calls `widget.MountRuntime(r)`
-once and embeds `widget.RuntimeTag()` in its page HTML.
+## Slots, chrome & native `<dialog>`
 
-`gofastr:widgets-synced` fires on `window` each time one page's catalog
-pass settles: the boot fetch, and the re-fetch after each SPA
-navigation. `detail.path` is the page the pass was for, without its
-query string. It fires once
-the widgets the pass mounts, and any its deep link opens, have settled
-(mounted, or failed), and also when the fetch failed or there was
-nothing to mount, so a script or test
-waiting for "the widgets for /b are in" waits on it, never on a timer.
+- **Slots:** Canonical slots render in order: `header`, `body`, `footer` (additional custom slots follow).
+- **Native `<dialog>`:** Widgets with `Backdrop` (`Modal`, `Drawer`, `BottomSheet`, `Center`) render `<dialog>` and open with `showModal()`, giving top-layer stacking, `::backdrop` scrim, inert background, Escape/back-gesture dismissal, and focus return automatically.
+- **Surface contract:** Centered modals paint one `.cui-panel` card around all slots (don't add another card/padding inside `body`). Full-bleed bodies (like `ui.Lightbox` or `ui.CommandPalette`) opt out by placing `.cui-slot-bare` directly on the slot's root element. Corner/banner panels opt into a card surface with `.Surface()`.
 
-The registry is process-wide but routes belong to a router, so a second
-router in the same process that serves a widget another router mounted
-calls `widget.MountShared(r, def)`. It registers, on `r`'s root, each of
-the widget's endpoints (stylesheet, state, chrome, RPCs) that `r` does
-not serve yet, at the absolute URLs the catalog publishes and behind the
-same session gate `Mount` uses. `framework/uihost` does this for the
-registered toast stack.
+## Signals, polling & RPCs
 
-## Anatomy
+- **Signals:** `.Signal(name, widget.SignalFunc(fn))` serves values from `/core-ui/widget/<name>/state` into `[data-cui-signal="<name>"]` nodes (`textContent` by default, or `data-cui-signal-mode="html|attr"`). Cross-origin state endpoints are never fetched.
+- **Polling:** `.Poll(15 * time.Second)` re-fetches `/state` on a jittered cadence (100ms browser floor, pauses when hidden, backs off on error). Needs no SSE or fanout. For sub-second server pushes, use `island.Manager.PushUpdate` (see [presence.md](presence.md) and [live-dashboards.md](live-dashboards.md)).
+- **RPCs:** `.RPC(method, path, handler)` registers the route (upper-case `GET`/`POST`/`PUT`/`PATCH`/`DELETE`, default `POST`). Route the response to a signal using `data-cui-rpc-signal="<name>"` on the trigger (and optional `data-cui-rpc-body='{...}'` for static JSON payloads).
 
-A widget is described by a `widget.Definition`:
+### Forms inside a modal
 
-```go
-type Definition struct {
-    Name      string                       // unique id; routes derive from it
-    Position  Position                     // BottomRight, Center, Top, …
-    Slots     []Slot                       // host-supplied content regions
-    Signals   map[string]SignalSource      // server-side data → client signals
-    RPCs      []RPCEndpoint                // client buttons/forms → server handlers
-    Skeleton  func(slots) render.HTML      // optional custom chrome
-    Backdrop  bool                         // dim the page behind
-    CloseOnEscape, CloseOnClickOutside bool
-    Surface   bool                         // paint the root as a panel (corner/banner positions)
-}
-```
-
-Most fields have defaults; the fluent `widget.New(name).…` builder
-fills them in idiomatically.
-
-### Modals are native `<dialog>` elements
-
-A widget with `Backdrop` set (`preset.Modal`, `preset.Drawer`,
-`preset.BottomSheet`, anything mounted at `widget.Center`) renders its
-default chrome as `<dialog class="cui-widget …" open>`, not a `<div>`.
-The runtime opens it with `showModal()`, so the browser supplies:
-
-- the top layer, above every other surface, with no z-index;
-- the scrim, painted as `::backdrop` in `--ui-scrim`;
-- an inert page: Tab and the screen reader never reach the page behind
-  the dialog, from the moment it opens, before any module loads. Tab
-  wraps from the last control to the first once the runtime's focus
-  module has loaded;
-- close requests: Escape and the Android back gesture close it when
-  `CloseOnEscape` is set. With `CloseOnEscape` off the chrome carries
-  `closedby="none"`, and the runtime cancels the request.
-
-A click on the scrim closes it when `CloseOnClickOutside` is set. The
-press has to start on the scrim too, so a text selection dragged out of
-the panel does not close it. The page scroll lock and focus return to
-the trigger work as before. A non-modal widget (a popover or panel)
-opened while a `<dialog>` modal is open mounts inside that dialog, so it
-stays clickable, and moves back to `<body>` when the dialog closes.
-
-The chrome drops `role="dialog"` and `aria-modal`, which `<dialog>`
-implies; another `Role` (`alertdialog`) is kept. A host `Skeleton` that
-returns a `<div>` keeps the old path: a runtime-created
-`[data-cui-backdrop]` scrim and the `widgetfocus` Tab trap and Escape
-handler.
-
-### Slots
-
-Slots are named content regions. The framework renders the widget
-chrome (positioning, focus management, backdrop) and embeds each
-slot's component at the matching `<div class="cui-slot cui-slot-<name>">`
-placeholder.
-
-```go
-panel := widget.New("notifications").
-    Slot("header", headerComponent).
-    Slot("body",   listComponent).
-    Slot("footer", composeComponent).
-    Build()
-```
-
-Canonical slot names are `header`, `body`, `footer`; they render in
-that order. Other names render after the canonical three.
-
-#### Slot surface contract: what the chrome paints vs what the body owns
-
-The widget chrome owns the *panel* every surface sits on; the slot
-component owns only its internal content and layout. Per position:
-
-- **Drawers** (`Edge`, `EdgeRight`): the position container paints
-  the surface background, shadow, and scroll. Slot bodies add their
-  own internal padding. `Edge` mounts on the reading direction's start
-  side and `EdgeRight` on its end, so on a `dir="rtl"` page they swap
-  sides and slide in from there. The corner positions mirror the same
-  way.
-- **Bottom sheets** (`Bottom`): the position container paints the
-  surface background, shadow, and rounded top corners, caps height at
-  75vh with internal scroll, and gives the slot default padding (the
-  drag handle sits above it).
-- **Anchored popovers**: the widget root paints the surface, border,
-  radius, shadow, size caps, and the directional arrow.
-- **Corner and banner panels** (`BottomRight`, `TopRight`, `Top`, …):
-  a widget with `Definition.Surface` (the `Surface()` builder method)
-  gets the same root surface as an anchored popover, without the
-  arrow, and its slots scroll inside the size caps. `preset.Popover`
-  and `preset.FloatingPanel` set it, so a popover opened without an
-  anchor still reads as a panel. `preset.ToastStack` leaves it off:
-  its items are the cards. Positions that paint their own panel
-  (`Center`, `Edge`, `EdgeRight`, `Bottom`) and custom skeletons
-  ignore it.
-- **Centered modals** (`Center`): the chrome groups every slot inside
-  a single `.cui-panel` element and paints the default panel on it:
-  `var(--color-surface)` background, border, radius, padding, shadow,
-  `min/max-inline-size` caps, and `overflow: auto` so tall content
-  scrolls inside the dialog. A modal using `header`, `body`, and
-  `footer` slots therefore reads as ONE dialog card, and a plain
-  `preset.Modal` looks like a dialog with no extra styling; bodies
-  must **not** re-paint background / padding / radius on their root
-  (that double-pads the panel).
-
-Full-bleed modal bodies (media viewers, custom chrome) opt out of the
-centered panel so the body owns every pixel: the panel stays a
-transparent container with no background, border, padding, or shadow.
-`framework/ui.Lightbox` is the canonical bare body: it centers the
-image directly on the backdrop, no card.
-
-Two rules govern the opt-out (the selector is `.cui-pos-center >
-.cui-panel:not(:has(> .cui-slot > …))`):
-
-1. **The marker must be on the slot content's ROOT element**: the
-   direct child of `.cui-slot`. The marker is `.cui-slot-bare` —
-   `framework/ui.Lightbox` and `framework/ui.CommandPalette` put it
-   on their slot roots. A wrapper `<div>` between `.cui-slot` and
-   the marker defeats it: `.cui-slot > <div> > .cui-slot-bare` does
-   NOT match `:has(> .cui-slot > .cui-slot-bare)`, so the panel
-   re-paints.
-2. **One bare slot opts the WHOLE panel out.** The opt-out sits on the
-   `.cui-panel`, which wraps every slot, so a single bare slot drops
-   the panel chrome for the header and footer too. Bare means "this
-   body owns all the chrome"; if you need a card around some slots
-   but not others, paint that surface inside the bare slot rather
-   than relying on the framework panel.
-
-### Signals
-
-A **signal** is a named server-side value the runtime keeps in sync
-with `[data-cui-signal="<name>"]` DOM nodes. The widget framework
-fetches the current values from `/<basePath>/state` on mount and on
-each RPC response that names the signal. Polling (`Poll`, below)
-re-fetches `/state` on a cadence; an RPC handler can change the
-signal by returning the new value.
-
-```go
-panel := widget.New("p").
-    Signal("count", widget.SignalFunc(func() (any, error) {
-        return atomic.LoadInt64(&counter), nil
-    })).
-    Build()
-```
-
-In your slot HTML:
-
-```html
-<span data-cui-signal="count">0</span>
-```
-
-The runtime updates `textContent` whenever the signal changes.
-For HTML content, use `data-cui-signal-mode="html"`. For attribute
-values, use `data-cui-signal-mode="attr"` plus
-`data-cui-signal-attr="value"` (or whichever attr).
-
-### Polling
-
-A widget whose signals track a server-side value can refresh on a
-cadence without holding a connection. Call `Poll` on the builder:
-
-```go
-panel := preset.FloatingPanel("ops-panel").
-    Slot("body", bodyComponent).
-    Signal("queue_depth", widget.SignalFunc(readQueueDepth)).
-    Poll(15 * time.Second).
-    Build()
-```
-
-On each interval the runtime re-fetches the widget's `/state` endpoint
-and re-applies the signals that changed, the same code path an RPC
-signal update uses. The interval is a `time.Duration`. Unlike the
-page-level `data-cui-poll` attribute (which clamps to a 5-second
-floor because page markup is cheap to typo), the widget path
-trusts Go callers: `Builder.Poll` records the interval verbatim and the
-browser runtime clamps it to a 100ms floor, so a dev-tool panel can poll
-fast while production surfaces pick an honest cadence. The
-poller pauses while the tab is hidden, jitters so a fleet of tabs
-does not synchronize, and backs off on a failed fetch.
-
-Polling needs no fanout and no held connection. Any replica can answer
-the `/state` fetch from the DB. This is the recommended tier for
-widget surfaces that show a freshening value, such as counters, queue
-depths, and statuses, without paying for SSE. See
-[Reactivity model](reactivity.md) for where polling sits in the wider
-ladder.
-
-### Server-initiated updates
-
-Widget-level SSE bindings (`.SSE`, `.SSERefetch`, the `SSEBinding`
-struct field) are gone. For a widget that must reflect
-server-initiated changes faster than a poll cadence, render the
-updated HTML yourself and call `island.Manager.PushUpdate` against the
-sessions you want to reach (a presence topic, a tenant-scoped topic).
-That is the same push lane presence and live dashboards use, and it
-requires `WithFanout` in a multi-replica deploy. See
-[Presence](presence.md) and [Live dashboards](live-dashboards.md).
-
-### RPCs
-
-A button or form click can invoke a server handler:
-
-```go
-.RPC("POST", "/api/inc", incHandler)
-```
-
-The response is routed to a signal by the trigger's
-`data-cui-rpc-signal` attribute, not by the registration; name the
-target signal there.
-
-The method is `GET`, `POST`, `PUT`, `PATCH` or `DELETE`, spelled in
-upper case; `""` means `POST`. `Mount` panics on any other value,
-before it registers a route, rather than registering it as `POST`.
-
-Slot HTML wires it via `data-cui-rpc`:
-
-```html
-<button data-cui-rpc="/api/inc" data-cui-rpc-signal="count">+1</button>
-```
-
-The runtime POSTs to the path; on success the response (parsed as
-JSON if `content-type: application/json`, else as text) flows into the
-named signal.
-
-For forms, set `data-cui-rpc` on the `<form>` itself; the runtime
-serializes inputs into a JSON body.
-
-For RPCs that don't update a signal, drop the `…WithSignal` suffix:
-
-```go
-.RPC("POST", "/api/log-out", logoutHandler)
-```
-
-### Custom request body
-
-Override the JSON body the runtime sends with `data-cui-rpc-body`:
-
-```html
-<button
-  data-cui-rpc="/kiln/panel/approve_plan"
-  data-cui-rpc-body='{"plan_id":"p1"}'
-  data-cui-rpc-signal="chat_html"
->Approve</button>
-```
-
-### Close action
-
-Any element with `data-cui-action="close"` dismisses the widget:
-
-```html
-<button data-cui-action="close">×</button>
-```
-
-Through `ui.Button` the same attribute rides `ExtraAttrs`, which hands
-every `data-cui-*` key to the typed Action seam; `close` is the only
-value the runtime reads, so any other value is refused at render, and so
-is a close beside a `data-cui-rpc` (the runtime fires the request and
-never reaches the close; after a request, use `data-cui-rpc-close`):
-
-```go
-ui.Button(ui.ButtonConfig{Label: "Cancel", Variant: ui.ButtonGhost,
-    ExtraAttrs: html.Attrs{"data-cui-action": "close"}})
-```
-
-### Recipe: a form inside a modal
-
-Forms inside a widget are **owned by the widget runtime, not the page
-runtime**. The core dispatcher deliberately skips any click or submit
-inside `[data-cui-widget]`; each mounted widget installs its own
-scoped handler that intercepts `form[data-cui-rpc]`, prevents the
-native submit, and does the RPC round-trip (`fetch` with the form
-serialized to JSON by input `name`, or multipart when a file input is
-present). A widget form therefore never navigates the page; the modal
-stays open across validation errors, and two attributes handle the
-success path:
-
-| Attribute | On | Effect after a 2xx response |
-|---|---|---|
-| `data-cui-rpc-close` | the form (or any RPC trigger) | Dismisses the widget |
-| `data-cui-rpc-reset` | the `<form>` only | Calls `form.reset()`, clearing the fields for the next open |
-
-Both are boolean attributes (presence, no value) and both only fire on
-success; a non-2xx response leaves the modal open and untouched, and
-writes `{ok: false, status, text}` into the form's
-`data-cui-rpc-signal` so an error node can display it. A network
-failure writes `{ok: false, status: 0, text: "Network error — please
-try again"}` to the same signal.
-
-End to end:
+The page runtime skips events inside `[data-cui-widget]`; each widget owns its own `form[data-cui-rpc]` submit handler (sends JSON or multipart, forwards `X-CSRF-Token` and `X-FUI-Widget`, never reloads the page):
 
 ```go
 form := render.HTML(`
@@ -404,343 +61,35 @@ form := render.HTML(`
     <button type="submit">Save</button>
     <button type="button" data-cui-action="close">Cancel</button>
   </form>`)
-
-modal := preset.Modal("new-note").
-    Hidden().
-    Slot("body", app.NewStaticComponent(form)).
-    RPC("POST", "/api/notes", http.HandlerFunc(createNote)). // route registered on Mount
-    Build()
-widget.Mount(router, &modal)
 ```
 
-```html
-<!-- anywhere on the page -->
-<button data-cui-open="new-note">New note</button>
-```
+On 2xx: `data-cui-rpc-close` closes the widget, `data-cui-rpc-reset` resets the form, `data-cui-rpc-open="<other>"` opens another widget, `data-cui-rpc-navigate="/path"` triggers a cache-bypassing SPA navigation (refreshing even the current page), and `X-Gofastr-Toast` / `ui.InvalidateScreens` work automatically. On non-2xx, the modal stays open and writes `{ok:false, status, text}` to the target signal.
 
-Details worth knowing:
+## Lifecycle events & DOM lifetime
 
-- The centered modal chrome already paints the dialog panel (surface,
-  border, padding on the `.cui-panel` that wraps the slots; see the
-  slot surface contract above), so the form goes straight into the
-  `body` slot with no wrapper card. Full-bleed bodies opt out with
-  `cui-slot-bare`.
-- While the RPC is in flight the form gets the `cui-loading` class and
-  `aria-busy="true"`.
-- The dispatch sends `X-FUI-Widget: <name>` and forwards the page's
-  `<meta name="csrf-token">` as `X-CSRF-Token`, so `auth.CSRF`-guarded
-  handlers work without a hidden `_csrf` field.
-- On success the handler can additionally steer the UI:
-  `data-cui-rpc-open="<widget>"` opens another widget (save in a
-  drawer → open a results sheet), `data-cui-rpc-navigate="/path"` does
-  an SPA navigation (cache-bypassing, and it re-renders even when the
-  path is the page the widget floats over, so a quick-add modal can
-  refresh the list it inserts into), an `X-Gofastr-Toast` response
-  header shows a toast, and an `X-Gofastr-Invalidate` header (set via
-  `ui.InvalidateScreens`) evicts other screens from the SPA cache,
-  applied before `data-cui-rpc-navigate` runs, so the destination is
-  fetched fresh.
-- `data-cui-rpc-close` also works on a plain button RPC: "Confirm →
-  do the thing → dismiss" needs no form at all (that's how
-  `ui.ConfirmAction` is built).
+Listen on `document` for `fui:widget-open` (`{ name, root, hydrated, reinserted }`) and `fui:widget-close` (`{ name, root }`). Non-modal roots survive SPA navigation; open backdrop modals close on navigation (and modals opened inside an intercepted pane close with that pane).
 
-## Lifecycle events
+## Routing, gating & per-trigger context (`data-cui-ctx`)
 
-Widget chrome arrives in the document lazily: a `Hidden` widget's
-chrome is fetched on first open, SSR-inlined chrome appears at first
-paint. When it lands, the runtime dispatches `fui:widget-open` on
-`document`, so code that needs to touch the chrome the moment it
-exists can listen instead of running a MutationObserver over the whole
-document:
+`widget.Mount` registers `/core-ui/widget/<name>/{style.css,state,chrome}` (prefixed if mounted on a router group; read final URLs via `def.StyleURL()`, `StateURL()`, `ChromeURL()`—note that embedded screens require unprefixed widget mounts).
 
-```js
-// Re-apply per-language strings to the palette whenever its chrome
-// (re)enters the document.
-document.addEventListener('fui:widget-open', (e) => {
-  if (e.detail.name !== 'cmd-palette') return;
-  applyStrings(e.detail.root, currentLang);
-});
-```
-
-`e.detail` carries `{ name, root, hydrated, reinserted }`:
-
-| Field | Meaning |
-|---|---|
-| `name` | The widget's registered name |
-| `root` | The `[data-cui-widget]` element itself (safe to query and bind into) |
-| `hydrated` | `true` when SSR-inlined chrome was hydrated in place, `false` for fetched chrome |
-| `reinserted` | `true` only when a SPA shell swap re-inserted an already-mounted root |
-
-The event fires every time the root (re)enters a wired state: first
-mount (both chrome paths), every re-open after a close, and the
-post-swap re-insertion above. The close twin, `fui:widget-close`, fires
-with `{ name, root }` before the root is hidden or removed, on every
-close path (trigger-side close, the chrome's own close button, a
-backdrop click, Escape). Rebind on open, unbind on close; never assume
-a root mounts exactly once. The `fui:` prefix marks widget-UI events on
-`document`; the `gofastr:` prefix is reserved for window-level
-navigation events (`gofastr:navigate`, `gofastr:beforenavigate`,
-`gofastr:widgets-synced`).
-
-**DOM lifetime.** A registered widget root survives SPA navigation.
-Roots the runtime fetches are appended to `<body>`, outside the layout
-shell, and the framework inlines SSR chrome just before `</body>`, so
-a full-shell swap leaves both alone; if a host layout wraps inlined
-chrome inside the swapped shell anyway, the runtime re-appends the
-root to `<body>` after the swap and fires `fui:widget-open` again with
-`reinserted: true` (or, when the destination page inlines its own
-copy, dismisses the stale instance and hydrates the fresh node). What
-does NOT survive is an open modal: navigation closes every
-backdrop'd widget opened on the page being left, a closed widget's
-fetched chrome is dropped (the next open re-fetches it, served from
-the per-navigation chrome cache), and that close → reopen cycle fires
-`fui:widget-close` followed by `fui:widget-open`.
-
-Modals opened inside an intercepted pane belong to that pane, including
-modals opened from another owned modal. Closing the pane or refreshing its
-content closes those modals and their backdrops while leaving unrelated
-widgets alone. Chrome still loading for the old pane content cannot open
-later or apply its deep-link parameters to the refreshed pane.
-
-**Opens during a navigation.** An open belongs to the navigation it
-was issued under. Open a widget, then follow a link before its chrome
-arrives, and the late chrome mounts nothing on the new page. Follow a
-link, then open a widget from shared chrome (a header bell, a
-toolbar button) before the new page paints, and the widget opens on
-the page the link lands on: the commit does not drop it, and does not
-close it even when it is a modal.
-
-## Routing
-
-`widget.Mount(router, &def)` registers the per-widget HTTP routes:
-
-| Path | Purpose |
-|---|---|
-| `GET  <StylePath>` (default `/core-ui/widget/<name>/style.css`) | Theme-resolved widget styles |
-| `GET  <StatePath>` (default `/core-ui/widget/<name>/state`) | JSON snapshot of every named signal |
-| `GET  /core-ui/widget/<name>/chrome` | Rendered chrome HTML, fetched lazily on first open |
-| `<RPC method> <RPC.Path>` | Each registered RPC handler |
-
-Default paths are filled in on `def` if unset, so the caller can read
-them after `Mount` returns. Mount each widget once per router: a second
-`Mount` of the same name registers the same routes, and the router
-panics on the conflict. When a battery already mounts a widget, the app
-uses it rather than mounting it again.
-
-Every route sits under the prefix of the router group `Mount` is given.
-A widget mounted on `root.Group("/v2")` serves its styles at
-`/v2/core-ui/widget/<name>/style.css`, and the `/__gofastr/widgets`
-catalog publishes that URL. `StylePath` and `StatePath` keep the value
-you declared; `def.StyleURL()`, `def.StateURL()` and `def.ChromeURL()`
-return the served URLs, and `gofastr static` writes the widget's files at
-those URLs. RPC paths are registered under the prefix too, so markup that
-triggers an RPC names the full URL. Embedded screens
-(`framework/embed`) recognise widget routes by the unprefixed
-`/core-ui/widget/<name>/` path and refuse the prefixed ones, so mount a
-widget an embedded screen opens on an unprefixed router.
-
-The
-process-wide runtime routes (`/__gofastr/runtime.js`, `/__gofastr/widgets`)
-come from `widget.MountRuntime(r)`, once per host, not per widget.
-
-### Gating `/state`, `/chrome`, and RPCs
-
-By default every widget surface above is unauthenticated. Two levels
-tighten it, both installed by the host:
-
-- `Definition.RequireSession` — any valid browser session. Under
-  `framework/uihost` every page render auto-mints a session cookie, so
-  this level is per-session scoping / anti-recon, **not** a login gate.
-- `Definition.RequireAuthenticated` — the request must resolve to a
-  signed-in user. Under `framework/uihost` the check is satisfied only
-  when the app's session middleware (`battery/auth`
-  `SessionMiddleware`/`RequireAuth`, wired app-wide with `fwApp.Use`)
-  loaded a user onto the request context; the anonymous session a page
-  load mints never does. An embed grant and a scoped API token never
-  satisfy it, though `TokenMiddleware` loads the token's owner as the
-  user. This is the level for signals "not safe to expose anonymously".
-
-Both fail closed when the host installed no predicate, and both gate the
-RPC routes too. The predicate a host installs (`widget.SetSessionCheck`,
-`widget.SetAuthenticatedCheck`) learns which widget is asking from
-`widget.GatedWidget(r)`, the definition whose route or `GateSatisfied`
-call is being decided, never from the URL; `framework/uihost` uses it to
-admit an embed grant only for widgets offered on the grant's surface.
-SSR-inlined chrome honors the same verdict
-(`widget.GateSatisfied`), so a gated widget's chrome is not baked into a
-page its endpoints would refuse. See
-[Security](security.md) → "Widget signal exposure".
-
-The catalog lists, and the SSR layer inlines, only the widgets a request
-is offered (`Definition.OfferedTo`): its page scope, its gate, and
-`Definition.ListedFor` (builder `.ListedFor(fn)`), when set, must all
-accept the caller. Because a page view mints the session the catalog
-asks for, anonymous visitors read it too; a widget only some signed-in
-callers may use sets `ListedFor` so its name stays out of everyone
-else's catalog. `ListedFor` scopes what is listed, never what is
-served: the gate (or the router the widget mounts on) still refuses
-the request. A panicking `ListedFor` counts as false. `battery/admin`
-sets it on its drawer, palette and shortcut sheet, so they list only to
-a caller its gate admits.
-
-## Chrome context (`data-cui-ctx`)
-
-One widget definition is one chrome. Before #321 a per-entity dialog — a
-confirm modal whose body is
-`<form method="POST" action="/dashboard/inventories/{id}/layout-remove">` —
-could not express `{id}`: the chrome endpoint had no knowledge of the
-originating row, so every host either filled the action with client JS or
-registered N widgets, one per entity.
-
-The open trigger now carries the context:
+- **Gating:** Widget routes are public by default. Set `Definition.RequireSession` (any browser session, anti-recon) or `Definition.RequireAuthenticated` (signed-in user only; rejects anonymous page sessions, embed grants, and scoped API tokens). Both fail closed if no host predicate is installed and govern SSR-inlined chrome (`widget.GateSatisfied`). Use `.ListedFor(fn)` to hide a widget from `/__gofastr/widgets` for callers who shouldn't see it (always pair with a real route/session gate).
+- **Per-row chrome (`data-cui-ctx`):** Pass context from a trigger to a shared modal without registering N widgets:
 
 ```html
 <button data-cui-open="layout-remove" data-cui-ctx="inv-42">Remove…</button>
-<button data-cui-open="layout-remove" data-cui-ctx="inv-99">Remove…</button>
 ```
 
-The runtime forwards it as `?ctx=` on the chrome fetch
-(`/core-ui/widget/layout-remove/chrome?ctx=inv-42`) and keys the client-side
-chrome cache by `(name, ctx)`: the two triggers above get two distinct
-chromes, re-opening the same one is served from cache. A widget has one
-root, so a trigger whose context differs from the open chrome's (row 2's
-while row 1's dialog or popover is open) dismisses it and mounts its own;
-the same trigger again keeps the open chrome, and an open with no trigger
-(a deep link, `openWidget(name)`) keeps whatever context is mounted. When
-two opens are in flight, the newest wins whichever chrome lands first.
-The cache holds at
-most 32 contexts per document (least-recently-used eviction; an evicted
-entry simply refetches) and is cleared on every SPA navigation (#329).
-That covers each framework-blessed session flow — sign-in/sign-out forms
-are intercepted and the sign-out redirect is an SPA nav, so the first
-open after the flip refetches under the new principal. It does **not**
-cover a principal change with no navigation at all (a bare RPC that
-swaps the session cookie and updates the page in place): nothing fires
-`gofastr:navigate`, so a chrome cached before the flip is served after
-it. The runtime has no client-visible principal to key on (session
-cookies are HttpOnly), so a flow like that must clear the cache itself
-(`window.__gofastr._chromeCache = {}`) or navigate.
-
-Read it in a context-aware slot:
-
-```go
-type removeForm struct{ component.ContextOnly }
-
-func (removeForm) RenderCtx(ctx context.Context) render.HTML {
-    id := widget.ChromeContext(ctx) // "inv-42", or "" when no ctx was carried
-    return render.HTML(`<form method="post" action="/dashboard/inventories/` +
-        render.Escape(id) + `/layout-remove">…</form>`)
-}
-```
-
-`serveChrome` validates `?ctx=` before rendering: at most 256 bytes
-(`widget.MaxChromeContext`), valid UTF-8, and no control runes (NUL,
-CR/LF, DEL, C1). Over-bound, non-UTF-8, or control-carrying values get
-a 400, not a truncation — a truncated entity id would silently render
-chrome for the wrong row.
-
-**Authorisation boundary.** `ctx` is opaque to the framework: it is
-forwarded and keyed on, never parsed or validated for meaning. That means
-the runtime will cheerfully send `?ctx=inv-42` for a user who cannot see
-inventory 42. Whether that user may see the named entity is an
-authorisation question, and it is answered in the slot's `RenderCtx`,
-against the request context — exactly where `serveChrome` already resolves
-the signed-in user. Resolve the entity from the id and check access before
-rendering; if the check fails, render the refusal (or nothing). Never
-reflect `ctx` into markup unescaped, and never treat it as trusted input
-because "the page put it there" — the page runs in the visitor's browser.
-
-Notes:
-
-- `data-cui-ctx` rides on `data-cui-open` triggers; emit it from Go with
-  any attribute-injection surface (e.g. `html` element `ExtraAttrs`).
-  `interactive.OpenOnClick` covers the plain no-ctx case.
-- SSR-inlined chrome always renders with no ctx — `""`. Non-`Hidden`
-  widgets inline on every page; a `Hidden().DeepLink(...)` widget —
-  the per-entity dialog shape — inlines when the URL matches its deep
-  link, and arrival by URL has no trigger to carry `data-cui-ctx`. The
-  runtime accounts for that: a ctx-carrying open drops the inlined
-  node and fetches the per-ctx chrome rather than hydrating it, so
-  only the deep-link arrival paint itself is ctx-less.
-- A static export dumps one query-free chrome per widget, so `ctx` has no
-  effect there — the dump is unpersonalised by construction.
-
-## Theming
-
-Widgets resolve through `core-ui/style` and use the framework default
-theme without extra setup. Token overrides flow through:
-
-1. `core-ui/widget/theme.PageTheme()` returns the page `style.Theme`.
-   Mutate the returned value's typed fields to override tokens, then pass
-   it where you build widget chrome.
-2. Or rely on the default: `widget.Mount` builds a stylesheet with
-   `:root` CSS variables for every token.
-
-Kiln's `set_theme` tool (see `kiln/protocol`) is an example: the agent updates
-semantic theme tokens such as `primary`, `surface`, and `text`; its live pages
-use the same `framework/uihost` app stylesheet and component registry as a
-generated app.
+Read it inside a context-aware slot with `widget.ChromeContext(ctx)` (validated ≤ `widget.MaxChromeContext` 256 bytes, valid UTF-8, no control chars; cached per `(name, ctx)` up to 32 entries and cleared on SPA navigation). **Always authorize and escape `ctx` in `RenderCtx`**—it comes from the browser and is untrusted.
 
 ## Strict CSP
 
-The framework runtime is **strict-CSP safe**. The bootstrap never:
-
-- emits inline `style=` attributes
-- attaches inline event handlers (`onclick=`, etc.)
-- evaluates strings as code
-
-`kiln/render` additionally drops dangerous attrs server-side
-(`style`, `srcdoc`, `on*=`) so a bad agent turn can't poison the page.
-
-Compose typed `framework/ui` components, or semantic
-`core-ui/html` primitives. App-local utility-class palettes are a
-separate styling approach and are not part of the current contract.
-
-## Testing
-
-`examples/site` exercises every widget kind end-to-end:
-Modal (`/components/modal`), Drawer (`/components/drawer`), Toast
-(`/components/toast`), Menu (`/components/menu`), Sidebar
-(`/components/sidebar`), and the trigger-anchored Popover preset
-(`/components/popover`). The chromedp tests in
-`examples/site/e2e_*_test.go` cover open + dismiss flows, focus
-trap, scroll lock, deep-linking, anchored placement + auto-flip,
-scroll-tracking, and the trigger-active highlight contract.
-
-For backend-only verification (no chromedp), see
-`core-ui/widget/widget_test.go` and
-`core-ui/widget/preset/preset_test.go`; they cover the builder
-semantics, the mounted routes, preset defaults, and JSON state
-encoding.
+The widget runtime emits zero inline `style=` attributes, zero `onclick=` handlers, and never `eval`s strings.
 
 ## Common mistakes
 
-- **Expecting `Mount` to return a script tag.** It returns nothing:
-  it registers routes and adds the widget to the process registry. The
-  widget appears only on pages that carry the framework runtime, which
-  auto-mounts everything in `/__gofastr/widgets`. If your widget never
-  shows up, the page is missing the runtime: `framework/uihost` pages
-  get it injected; bare hosts must call `widget.MountRuntime(r)` and
-  embed `widget.RuntimeTag()` themselves.
-- **Forgetting `data-cui-rpc-signal`.** The RPC fires and succeeds,
-  but the response goes nowhere; no DOM update. Name the target
-  signal on the trigger (`data-cui-rpc-signal="count"`). This is the
-  only way to route an RPC response; there is no registration-side
-  binding.
-- **Inline `style=` / `onclick=` in slot HTML.** The default CSP
-  blocks both. Use theme-token class names for styling and the
-  `data-cui-*` attributes (`data-cui-rpc`, `data-cui-action="close"`)
-  for behavior; `kiln/render` strips the dangerous attrs server-side
-  anyway.
-- **Expecting the page runtime to handle a widget's form.** The core
-  dispatcher skips everything inside `[data-cui-widget]`; the widget's
-  own scoped handler owns `form[data-cui-rpc]`. A plain `<form
-  action=…>` inside a modal (no `data-cui-rpc`) does a native
-  full-page submit; put `data-cui-rpc` on the form and use
-  `data-cui-rpc-close` / `data-cui-rpc-reset` for the success path
-  (see the form-in-a-modal recipe above).
-- **Building in-page content as a widget.** Widgets are overlays that
-  float above any page. A sortable table, a form section, or anything
-  that belongs to one page's render tree is a component (or an island;
-  the island cookbook is [interactive-patterns](interactive-patterns.md)).
-  See the component/widget table at the top of this doc.
+- **Expecting `widget.Mount` to render a script tag.** It registers routes and adds the widget to the catalog; bare routers must call `widget.MountRuntime(r)` and embed `widget.RuntimeTag()`.
+- **Forgetting `data-cui-rpc-signal` on the trigger.** RPC responses only update a signal when the trigger names it.
+- **Putting a plain `<form action=...>` inside a modal.** Without `data-cui-rpc`, the browser performs a full-page submit instead of an in-modal RPC.
+- **Trusting `widget.ChromeContext(ctx)` without checking permissions.** Always verify the current user can access the referenced ID and escape it in markup.
+- **Building regular page content as a widget.** Widgets are floating overlays; in-page regions belong in components or islands.

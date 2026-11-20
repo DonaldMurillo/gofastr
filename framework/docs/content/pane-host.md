@@ -1,241 +1,85 @@
 # Pane-host: primary pane + openable side panes
 
-`framework/ui.PaneHost` is a layout shell: one always-visible
-**primary** pane and one or two openable side panes, `secondary` and
-`tertiary`. It owns the *pane lifecycle* (show/hide, focus handoff on
-open, focus restore on close, and a responsive collapse). It does NOT
-own content loading.
+`framework/ui.PaneHost` is a layout shell with one always-visible **primary** pane and one or two openable side panes (`secondary` and `tertiary`). It owns pane visibility, focus handoff/restore, optional URL deep-linking, and mobile overlay collapse—not data fetching.
 
-Use it for master/detail views, inspector panels, a list + a live
-preview: anywhere a primary region stays put while a side region opens
-and closes around it.
+Use it for master/detail inspectors, list + preview workspaces, or any screen where side panels open alongside persistent content.
 
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 
 body := ui.PaneHost(ui.PaneHostConfig{
-    Primary:        customerList,
+    Primary:        customerList,    // required (panics if empty)
     Secondary:      detailRegion,    // optional
     Tertiary:       inspectorRegion, // optional
-    SecondaryOpen:  false,           // SSR first-paint state (Hard Rule 6)
+    SecondaryOpen:  false,           // SSR first-paint state
     SecondaryLabel: "Customer details",
     ID:             "customers-host",
 })
 ```
 
-`Primary` is required (`PaneHost` panics when empty, mirroring
-`DataTable`). Each side pane is a labelled `role="region"`;
-`SecondaryLabel`/`TertiaryLabel` default to `"Secondary"`/`"Tertiary"`,
-said in the request's language when `Ctx` is set (the
-`ui.paneHost.secondary` / `ui.paneHost.tertiary` phrases).
+Closed side panes ship with `hidden` from SSR so first paint matches state with zero flash and zero inline `style=`. Customize widths via `--fui-pane-host-secondary-w` (360px), `--fui-pane-host-tertiary-w` (300px), and `--fui-pane-host-drawer-w` (420px).
 
-## What it renders
+## Driving panes & loading content
 
-A root `<div data-cui-comp="ui-pane-host" data-hui-panehost>` with
-three slot children, each carrying `data-hui-pane="primary|secondary|
-tertiary"`. The grid is `display:grid`; the column count derives from
-the open-state hook the runtime module maintains —
-`data-hui-pane-open`, the space-separated list of open side panes
-(matched token-wise, `[data-hui-pane-open~="secondary"]`) — with the
-`fui-pane-host--secondary-open` / `--tertiary-open` classes riding
-along as the first-paint spelling, so **no inline `style` is ever
-emitted** (strict CSP, Hard Rule 9b) and a pane opened in the browser
-changes the columns. A side pane closed at first paint carries
-`hidden`; the runtime reveals it on open.
-
-## Driving panes
-
-Three attribute-driven triggers (delegated, so they survive island
-swaps):
+Use the Go helpers in `core-ui/interactive` (`OpenPaneOnClick`, `ClosePaneOnClick`, `SwapPaneOnClick`) or the underlying delegated attributes:
 
 | Attribute | Effect |
 |---|---|
-| `data-hui-pane-open-control="secondary\|tertiary"` | Open that pane. Focus moves to the pane's first focusable (or the region); the trigger is remembered for restore. |
-| `data-hui-pane-close="secondary\|tertiary"` | Hide it and restore focus to the opener. Bare attribute (no value) closes the topmost open pane. |
-| `data-hui-pane-swap="secondary\|tertiary"` | Open the named pane and close the other side sibling: the "this link fills the third pane instead of navigating" flow. |
+| `data-hui-pane-open-control="secondary\|tertiary"` | Opens the pane, moves focus in, remembers opener |
+| `data-hui-pane-close="[secondary\|tertiary]"` | Closes that pane (or topmost open pane when empty) and restores focus |
+| `data-hui-pane-swap="secondary\|tertiary"` | Opens the named pane and closes its side sibling |
+| `data-hui-pane-host-target="<host-id>"` | Targets a `PaneHost` outside the trigger's ancestor chain |
 
-```html
-<button data-hui-pane-open-control="secondary">Show details</button>
-<!-- inside the secondary pane -->
-<button data-hui-pane-close>Close</button>
-```
+Programmatic JS API: `__gofastr.openPane(id, slot)`, `__gofastr.closePane(id, slot)`, `__gofastr.swapPane(id, slot)`. The host emits bubbling `pane-host:open` and `pane-host:close` events (`detail: { pane }`).
 
-A trigger resolves its host via the nearest `[data-hui-panehost]`
-ancestor. For a trigger that lives OUTSIDE the host (e.g. in a global
-toolbar), set `data-hui-pane-host-target="<host-id>"` to the host's
-`id`; with neither a target nor an enclosing host the first host on
-the page answers.
-
-App code can also drive panes programmatically; the API mirrors
-`openWidget`/`closeWidget`:
-
-```js
-__gofastr.openPane("customers-host", "secondary");
-__gofastr.closePane("customers-host", "secondary");
-__gofastr.swapPane("customers-host", "tertiary");
-```
-
-The host dispatches `pane-host:open` and `pane-host:close` events
-(`{ bubbles: true, detail: { pane } }`) for observability; no
-`data-hui-*` attribute is needed to receive them.
-
-## Filling a pane from the server
-
-`PaneHost` does NOT fetch pane content. To load a link's response into a
-pane, use the existing RPC + signal rail: the trigger carries
-`data-cui-rpc` + `data-cui-rpc-signal`, and the pane contains a region
-bound to that signal in HTML mode:
+To populate a side pane from the server, compose with standard RPC + HTML signals—don't invent a separate fetch layer:
 
 ```html
 <div data-hui-pane="secondary" role="region" aria-label="Details">
-  <div data-cui-signal="customer-detail" data-cui-signal-mode="html">
-    <!-- RPC response HTML lands here -->
-  </div>
+  <div data-cui-signal="customer-detail" data-cui-signal-mode="html"></div>
 </div>
-```
 
-A row trigger then both opens the pane and fires the fetch:
-
-```html
 <a href="/api/customers/42/detail"
    data-cui-rpc data-cui-rpc-method="GET"
    data-cui-rpc-signal="customer-detail"
    data-hui-pane-open-control="secondary">View</a>
 ```
 
-Open/close is in-page state, never a URL route (Hard Rule 1).
+## Deep-linking a pane (`?pane=...`)
 
-## Deep-linking a pane (`?pane=…`)
-
-Some pane state is worth sharing: send a colleague the workspace with
-ticket 4021 open and they should see ticket 4021 open. Set
-`DeepLinkParam` to opt the host in, and label each trigger with the
-identity of what it opens:
+To make an open pane shareable and Back/Forward-aware without turning it into a separate route, set `DeepLinkParam` on `PaneHostConfig` and attach `interactive.PaneKey` to keyed triggers:
 
 ```go
+// In the screen's Load/Render, parse the query param for SSR first paint:
+slot, key, ok := ui.PaneDeepLink(r.URL.Query(), "pane")
+detail, open := emptyState, false
+if ok && slot == "secondary" {
+    if t, found := ticketByID(key); found { // always look up; treat URL key as untrusted
+        detail, open = renderTicket(t), true
+    }
+}
+
 ui.PaneHost(ui.PaneHostConfig{
     Primary:       queue,
-    Secondary:     ticketPane,
-    DeepLinkParam: "pane",          // → ?pane=secondary:4021
-    SecondaryOpen: ticketLinked,    // first paint, see below
+    Secondary:     detail,
+    DeepLinkParam: "pane", // writes ?pane=secondary:<key>
+    SecondaryOpen: open,
 })
 ```
 
 ```go
-interactive.PaneKey(
-    interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
+interactive.PaneKey(interactive.OpenPaneOnClick(row, "secondary"), ticket.ID)
 ```
 
-Opening through a keyed trigger writes `?pane=secondary:4021`; closing
-strips it; Back and Forward move between those states. Back does not
-just re-show the column: it re-clicks the matching trigger, so the RPC
-runs again and the pane comes back **filled**. A refresh or a shared
-link does the same after hydration. The match is the key and the pane,
-so one record's id can key both its view (`secondary`) and its edit
-(`tertiary`) trigger; a key no trigger on the page carries opens the
-pane empty.
-
-This is not a route. The pane is still in-page state; the query
-parameter records it so refresh, share, and Back reproduce what is on
-screen, the same contract widget deep links give modals. Reach for a
-real route when the detail deserves its own page and its own title.
-
-**Render the first paint yourself.** The runtime can only act after
-hydration, so a shared link that the server renders closed shows a
-closed pane and then pops it open and fills it. Read the parameter with
-`ui.PaneDeepLink` and build the page from it:
-
-```go
-slot, key, ok := ui.PaneDeepLink(r.URL.Query(), "pane")
-detail := emptyState
-open := false
-if ok && slot == "secondary" {
-    if t, found := ticketByID(key); found {   // look it up, never
-        detail, open = renderTicket(t), true  // reflect the raw key
-    }
-}
-```
-
-`ok` is false when the parameter is missing or names something that is
-not an openable side pane, so an edited URL degrades to the ordinary
-closed-pane page instead of erroring. The key arrives from the URL, so
-treat it as untrusted: look it up, and let an unknown one fall back to
-the empty state.
-
-A trigger with **no** `PaneKey` still opens its pane and leaves the URL
-alone. That is the right choice for a pane whose contents have no
-addressable identity: in `examples/site/screen_workspace.go` the ticket
-pane is keyed and the customer pane is not, so opening a customer never
-disturbs the ticket's link.
-
-Only one pane is addressed at a time, because one parameter holds one
-value. If two panes both need to survive a refresh, give them separate
-`PaneHost` hosts with different `DeepLinkParam`s.
+Opening a keyed trigger writes `?pane=secondary:<id>`, closing removes it, and Back/Forward replays the trigger's RPC so the pane returns filled. Triggers without `PaneKey` open normally without changing the URL.
 
 ## Responsive collapse
 
-Below `768px` (the breakpoint the CSS and the runtime module share;
-they MUST stay in sync), an open side pane stops being an inline column
-and becomes a fixed overlay drawer. When `matchMedia('(max-width:
-768px)')` matches AND a pane is open, the module sets
-`data-hui-pane-mode="overlay"` on the host (and removes it otherwise,
-so a closed phone-width page never paints a scrim); CSS repositions
-the open pane to the right edge with a backdrop scrim (`::before`), and
-the module applies:
-
-- a **focus trap**: Tab cycles within the topmost open pane (the
-  kernel's shared `NS._focusSel` candidates, filtered by nonnegative
-  `tabIndex`; it never touches the
-  widgets module's private `_modalStack`, and defers while a modal
-  widget is open). Entering overlay mode moves focus to the drawer's
-  first focusable when focus sits outside it, so a drawer the server
-  rendered open (`SecondaryOpen`) on a phone-width first load, or a
-  window narrowed under an open pane, does not leave focus behind the
-  scrim; an open modal widget keeps focus instead. Tab with focus
-  outside the drawer re-enters it at the first
-  focusable, Shift+Tab at the last,
-- a refcounted **scroll lock**: `__gofastr.doc.lockScroll('panehost:<id>')`,
-  released on close / widen, and whenever the host leaves the document:
-  a client navigation that takes it away, or an island swap that
-  re-renders its region without it (no navigation needed; a swap that
-  renders the host again with its pane open hands the lock to the new
-  host),
-- **ESC** and **backdrop-click** to close — ESC and the backdrop are
-  light-dismiss for the OVERLAY drawer only; an open inline column at
-  desktop width is page content and survives both.
-
-With two hosts on a page, Tab and ESC act on the overlay host that
-holds focus, or on the only overlay host when focus is in none. With
-two open drawers and focus in neither, the keys leave both alone.
-
-Widening the viewport or closing the pane clears overlay mode and
-releases the lock. Pane widths and the drawer width are themeable via
-the `--fui-pane-host-secondary-w` / `--fui-pane-host-tertiary-w` /
-`--fui-pane-host-drawer-w` custom properties (defaults 360px / 300px /
-420px).
+Below `768px`, an open side pane switches to a fixed right-edge overlay drawer (`data-hui-pane-mode="overlay"`) with a backdrop scrim, Tab focus trap (deferring to any open modal dialog), refcounted scroll lock, and Escape/backdrop dismiss. Inline desktop panes stay page content and ignore Escape.
 
 ## Common mistakes
 
-- **Treating pane state as a route.** Open/close/swap is in-page state
-  (Hard Rule 1); don't register a route per pane. When the state should
-  survive a refresh or a share, use `DeepLinkParam` above; when the
-  detail really wants its own page and title, make it a real screen.
-- **Deep-linking without rendering it server-side.** Setting
-  `DeepLinkParam` and forgetting `PaneDeepLink` in the screen leaves
-  every shared link painting a closed pane that jumps open a moment
-  later. The parameter is only half the feature.
-- **Fetching pane content with a bespoke mechanism.** `PaneHost` is a
-  layout shell, not a content loader. Use `data-cui-rpc` +
-  `data-cui-rpc-signal` into a `data-cui-signal-mode="html"` region
-  inside the pane; don't build a new fetch path.
-- **Forgetting the `hidden` first-paint contract.** A closed side pane
-  must ship `hidden` from SSR so first paint matches state (Hard Rule 6)
-  and there is no flash. `PaneHostConfig.SecondaryOpen`/`TertiaryOpen`
-  control this; don't try to open a pane by removing `hidden` yourself.
-- **Editing the 768px breakpoint in only one place.** The CSS
-  `@media (max-width: 768px)` and the module's
-  `matchMedia('(max-width: 768px)')` MUST match, or the drawer and the
-  grid collapse disagree.
-- **Adding inline `style` to fix a column.** Column state comes from
-  the root's open-state hook and classes; CSP forbids inline style.
-  Theme widths via the `--fui-pane-host-*-w` custom properties instead.
+- **Modeling pane open/close as routes.** Side panes are in-page state—use `DeepLinkParam` for shareable URLs, or a real screen if the detail deserves its own page and title.
+- **Setting `DeepLinkParam` without reading `ui.PaneDeepLink` during SSR.** Without server-side initial rendering, shared links paint closed and pop open after hydration.
+- **Manually removing `hidden` or adding inline `style=` widths.** Use `SecondaryOpen`/`TertiaryOpen` for SSR state and `--fui-pane-host-*-w` CSS variables for widths.
+- **Changing the 768px breakpoint in only CSS or JS.** Both `@media (max-width: 768px)` and the module's `matchMedia` must stay in sync.
