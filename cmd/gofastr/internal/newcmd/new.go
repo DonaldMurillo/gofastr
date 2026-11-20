@@ -446,7 +446,7 @@ func resolveImportNames(dir string, files []*ast.File) map[string]string {
 	if err != nil {
 		return nil
 	}
-	modulePath, _ := project.FindEnclosingGoMod(absDir)
+	modulePath, moduleRoot := project.FindEnclosingGoMod(absDir)
 	var paths []string
 	seen := map[string]bool{}
 	for _, f := range files {
@@ -469,7 +469,13 @@ func resolveImportNames(dir string, files []*ast.File) map[string]string {
 	args := append([]string{"list", "-e", "-find", "-f", "{{.ImportPath}}\t{{.Name}}", "--"}, paths...)
 	cmd := importNameCommand("go", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local")
+	modFlag := "-mod=readonly"
+	if moduleRoot != "" {
+		if _, err := os.Stat(filepath.Join(moduleRoot, "vendor", "modules.txt")); err == nil {
+			modFlag = "-mod=vendor"
+		}
+	}
+	cmd.Env = append(os.Environ(), "GOFLAGS="+modFlag, "GOTOOLCHAIN=local")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil

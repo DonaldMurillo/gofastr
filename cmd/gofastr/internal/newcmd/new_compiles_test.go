@@ -190,6 +190,43 @@ func TestScaffoldHandlerDotlessModuleImportName(t *testing.T) {
 	}
 }
 
+func TestScaffoldHandlerVendoredImportName(t *testing.T) {
+	root := t.TempDir()
+	mod := "module example.com/app\n\ngo 1.23\n\nrequire example.com/gopher-lua v1.0.0\n"
+	writeGo(t, root, "go.mod", mod)
+	for _, subdir := range []string{"vendor/example.com/gopher-lua", "handlers"} {
+		if err := os.MkdirAll(filepath.Join(root, subdir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGo(t, filepath.Join(root, "vendor"), "modules.txt", "# example.com/gopher-lua v1.0.0\n## explicit; go 1.23\nexample.com/gopher-lua\n")
+	writeGo(t, filepath.Join(root, "vendor", "example.com", "gopher-lua"), "lua.go", "package lua\n")
+	dir := filepath.Join(root, "handlers")
+	writeGo(t, dir, "handlers.go", "package handlers\nimport \"example.com/gopher-lua\"\n")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOMODCACHE", t.TempDir())
+	t.Setenv("GOFLAGS", "-mod=mod")
+	clitest.CovT_chdir(t, dir)
+	if err := scaffoldHandler(dir, "lua", "GET", "/", false); err == nil || !strings.Contains(err.Error(), `import of "example.com/gopher-lua" in handlers.go`) {
+		t.Errorf("lua: %v, want declared-name import refusal", err)
+	}
+	if err := scaffoldHandler(dir, "gopher", "GET", "/", false); err != nil {
+		t.Errorf("gopher: %v, want success", err)
+	}
+	if err := checkRouteHandler("lua"); err == nil {
+		t.Error("route lua: want import refusal")
+	}
+	if err := checkRouteHandler("gopher"); err != nil {
+		t.Errorf("route gopher: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "go.mod")); err != nil || string(got) != mod {
+		t.Errorf("go.mod changed: %v\n%s", err, got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.sum")); !os.IsNotExist(err) {
+		t.Errorf("go.sum created: %v", err)
+	}
+}
+
 func TestScaffoldHandlerImportResolutionFallback(t *testing.T) {
 	for _, missingGo := range []bool{false, true} {
 		t.Run(strconv.FormatBool(missingGo), func(t *testing.T) {
