@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // PageHeaderConfig configures a page-top header.
@@ -59,33 +59,6 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role"),
 		Parts:      rootClassParts(cfg.Class),
 	}, pageHeaderClasses))
-}
-
-func slug(s string) string {
-	out := make([]rune, 0, len(s))
-	prevDash := false
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			out = append(out, r)
-			prevDash = false
-		case r >= 'A' && r <= 'Z':
-			out = append(out, r+('a'-'A'))
-			prevDash = false
-		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
-			out = append(out, unicode.ToLower(r))
-			prevDash = false
-		default:
-			if !prevDash && len(out) > 0 {
-				out = append(out, '-')
-				prevDash = true
-			}
-		}
-	}
-	for len(out) > 0 && out[len(out)-1] == '-' {
-		out = out[:len(out)-1]
-	}
-	return string(out)
 }
 
 // SectionConfig configures a content section. With no ID, the id is the
@@ -135,7 +108,7 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	if sectionID != "" {
 		render.ReserveID(cfg.Ctx, sectionID, headless.SectionIDChildren...)
 	} else if cfg.Heading != "" {
-		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading), headless.SectionIDChildren...)
+		sectionID = render.UniqueID(cfg.Ctx, idslug.Make(cfg.Heading), headless.SectionIDChildren...)
 	}
 	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
 		Title:           cfg.Heading,
@@ -275,11 +248,7 @@ func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Button requires Label")
 	}
-	v := cfg.Variant
-	if v == "" {
-		v = ButtonPrimary
-	}
-	checkButtonVariant("Button", v)
+	v := buttonVariant("Button", cfg.Variant)
 	checkButtonSize("Button", cfg.Size)
 	action, extra := splitButtonAttrs(cfg.ExtraAttrs)
 	aria := cfg.AriaLabel
@@ -350,11 +319,7 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if isCrossOriginAbsolute(cfg.Href) {
 		panic("ui: LinkButton refuses a protocol-relative Href — name the scheme (https://…) or keep the path root-relative: " + cfg.Href)
 	}
-	v := cfg.Variant
-	if v == "" {
-		v = ButtonPrimary
-	}
-	checkButtonVariant("LinkButton", v)
+	v := buttonVariant("LinkButton", cfg.Variant)
 	checkButtonSize("LinkButton", cfg.Size)
 	action, extra := splitLinkAttrs(cfg.ExtraAttrs)
 	aria := ""

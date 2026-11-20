@@ -38,19 +38,19 @@ fixed prefix:
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
 | `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full`. Any step can be `0`: a square theme sets them all to it |
-| `Strokes` | `--stroke-<name>` | `--stroke-thin` (1px: every control and card border, every divider, the inset ring on a shadow), `--stroke-thick` (2px: an emphasised border such as a selected card or an active tab's rule), `--stroke-focus` (2px: the focus outline) and `--stroke-focus-offset` (2px: its gap from the element). A value is `"0"` or a non-negative px/rem/em length. The group is optional: a stroke you leave unset is not emitted and the kit draws its default width, so a `theme.go` written before strokes existed keeps its borders |
+| `Strokes` | `--stroke-<name>` | `--stroke-thin` (1px for control and card borders, dividers, and inset shadow rings), `--stroke-thick` (2px for emphasized borders), `--stroke-focus` (2px for focus outlines), and `--stroke-focus-offset` (2px from the element). A value is `"0"` or a non-negative px/rem/em length. Unset slots emit the widths from the default theme. |
 | `Shadows` | `--shadow-<name>` | `--shadow-xs` … `--shadow-xl`: `xs` is the hairline lift under a resting control (button, input, select), `sm` sits under a card, `md` under a popover or menu, `lg` under a dialog |
 | `ZIndex` | `--z-<name>` | `--z-dropdown`, `--z-modal`, `--z-toast` |
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
-| `Leading` | `--leading-<name>` | `--leading-tight` (1.2: headings), `--leading-snug` (1.4: labels, captions, compact rows), `--leading-normal` (1.5: controls and body text), `--leading-relaxed` (1.6: reading text). A value is a unitless number or a px/rem/em length. Optional like `Strokes`: an unset step is not emitted and the kit draws its default |
+| `Leading` | `--leading-<name>` | `--leading-tight` (1.2 for headings), `--leading-snug` (1.4 for labels, captions, and compact rows), `--leading-normal` (1.5 for controls and body text), and `--leading-relaxed` (1.6 for reading text). A value is a unitless number or a px/rem/em length. Unset slots emit the values from the default theme. |
 | `Tracking` | `--tracking-<name>` | `--tracking-tighter` (-0.03em), `--tracking-tight` (-0.02em: display headings), `--tracking-snug` (-0.01em: titles, brand marks), `--tracking-wide` (0.04em), `--tracking-wider` (0.08em: eyebrows and small caps). A value is `0` or a px/rem/em length. Optional like `Strokes` |
 | `Opacities` | `--opacity-<name>` | `--opacity-faint` (0.2), `--opacity-disabled` (0.5: a disabled control), `--opacity-muted` (0.6: secondary glyphs and labels). A value is a number from 0 to 1. Optional like `Strokes` |
 | `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
 | `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls, pagination and DataTable rows reach it through `--fui-density-control-h` (see component options), and the mobile hamburger summary reads it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts and a `ui.Stack{StickyHeader: true}` publishes as `--ui-sticky-top`), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
-| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. Optional like `Strokes`: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, and `--tk-com` are syntax-highlight colors used by code blocks. An unset slot emits no variable, and code blocks fall back to the built-in palette. Dark values go in `Theme.DarkCode`. |
 | `Knobs` | `--ui-<name>` | a map of per-component knob values (`"ui-button-edge": "var(--color-border-strong)"`, `"ui-checkbox-box-size": "20px"`), emitted in the theme's own `:root` block. Keys are `ui-` plus lower-case words joined by single dashes; values pass the same check as any free-form CSS value. See [Per-component knobs](#per-component-knobs-the---ui--variables) |
 
 Token names come from the Go field path, converted to kebab-case
@@ -326,9 +326,10 @@ has no dark mode, so the dark values are dropped with it.
 Go code reads a token through its field: `ui.Tokens.Sizes.HeroGap.CSS()`
 is `var(--size-hero-gap)`. CSS reads it as `var(--size-hero-gap)`.
 
-`style.ParseToken(key, value)` is the parser underneath: it returns the
-typed slot for a `--<type>-<name>` key and a CSS value, or the
-validation error.
+`style.ParseToken(key, value)` takes the Go key without the leading
+dashes and the CSS value. For example,
+`style.ParseToken("size-page-width", "67.5rem")` returns the typed
+slot for the CSS property `--size-page-width` or a validation error.
 
 ### What the checks enforce
 
@@ -387,8 +388,8 @@ may each carry their own `siteheader` copy, so
 `--out=beta/siteheader` generates both. Packages no `main` imports are
 checked together as one group. A sheet two programs share is judged
 against each program's tokens, not their union, because a binary
-carries only its own. `gofastr gen styles` runs the same grouping as
-`gofastr verify`, so the two cannot disagree. One gap remains: a build
+carries only its own. `gofastr gen styles` and `gofastr verify` use the
+same program grouping for their shared owned-style checks. One gap remains: a build
 tag that names no platform (a project's own `extra`) is treated as
 set, so the imports of a `//go:build !extra` file are never followed.
 
@@ -398,9 +399,12 @@ When a line is deliberately off-token, waive the rule in place:
 .legacy { color: var(--vendor-ink); } /* gofastr:allow(GOFASTR1806) vendor widget sets this */
 ```
 
-The marker starts the comment, names one rule and carries a reason. It
-covers its own line when code comes before it, otherwise the next line
-with code. A marker with no reason waives nothing.
+The marker starts the comment, names one or more rule IDs (separated by
+commas or whitespace) and carries a reason. It covers its own line when
+code comes before it, otherwise the next line with code; a
+`gofastr:allow-file(...)` marker covers the whole sheet. A marker with no
+reason waives nothing. `gofastr gen styles` and `gofastr verify` read
+the same markers.
 
 `gofastr theme edit` edits the built-in tokens; app tokens stay in
 their tokens file.
@@ -435,18 +439,26 @@ session. That is why it refuses to overwrite an existing `--out` without
 `--force`. To try a change against an existing theme, point `--out` at a new
 path and copy across what you want.
 
-The preview renders the `framework/gallery` catalog, every design-system
-component against your theme, so you see the effect of a token change
-across buttons, badges, cards, inputs, and the status tones at once.
-Modal, drawer, bottom-sheet and mobile sidebar triggers open their real
-widgets in the preview, and a submitted demo form reloads it. Other
-gallery hosts call `gallery.MountDemoWidgets(router, sidebarPages...)`
-and `gallery.MountDemoFormRoute(router, demoPage)` once before mounting
-the UIHost; the optional paths scope the sidebar demo's drawer. Every
-demo form posts to `gallery.DemoFormPath`, which keeps nothing and
-answers 303 to `demoPage(slug)`, the host page that shows that demo
-(`/components/<slug>` on the docs site). `demoPage` must return a local
-path; the mount panics on anything else.
+The preview renders the component previews in `framework/gallery`
+against your theme, so you see the effect of a token change across
+buttons, badges, cards, inputs, and the status tones at once. This
+includes the FormRepeater, Repeater and PipelineImage previews. The
+component gallery also has wiring notes for entries that need a host
+integration.
+
+Modal, drawer, bottom-sheet and mobile sidebar triggers open their
+widgets in the preview. Submitting a stateless demo form redirects back
+to the preview. The StepWizard is a static preview in the editor, and
+the docs site's live wizard handles step transitions at `POST /forms/wizard`.
+Other gallery hosts can call
+`gallery.MountDemoWidgets(router, gallery.DemoWidgetPages{…})`
+to scope the overlays individually (an empty list leaves that overlay
+on every page), then call `gallery.MountDemoFormRoute(router, demoPage)`
+before mounting the UIHost. Stateless forms post to
+`gallery.DemoFormPath`, which discards submitted values and answers 303
+to `demoPage(slug)`, the local page that shows the demo
+(`/components/<slug>` on the docs site). The mount panics when
+`demoPage` returns anything but a local path.
 
 The controls pane groups tokens — Colors first, then **Component
 options**, then the rest. Component options (density, the button

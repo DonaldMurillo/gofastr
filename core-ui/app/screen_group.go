@@ -29,13 +29,12 @@ type ScreenGroup struct {
 	screens    []*Screen
 	children   []*ScreenGroup // nested sub-groups
 	parent     *ScreenGroup
-	parentApp  *Router
 	standalone bool // when true, the host's default layout does NOT wrap this group
 
 	// fills are this group's outlet-fill declarations, keyed by
 	// (layout, outlet), consulted after each member screen's own fills
 	// and before the outlet's Default (innermost group first). See
-	// fill.go..
+	// fill.go.
 	fills map[*Outlet]fillDecl
 
 	// resolvers are this group's route resolvers, visible to every

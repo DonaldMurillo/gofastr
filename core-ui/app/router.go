@@ -297,7 +297,7 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 			}
 			if !routeseg.Valid(c) {
 				panic("app: route " + pathLabel +
-					" has unknown constraint :" + c + " (supported: int, uuid, alpha, alnum)")
+					" has unknown constraint :" + c + " (supported: " + strings.Join(routeseg.Names(), ", ") + ")")
 			}
 		}
 		name := segParamName(p)

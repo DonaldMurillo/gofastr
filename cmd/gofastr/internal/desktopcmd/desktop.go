@@ -215,24 +215,7 @@ func runDesktopRun(args []string) {
 	// the loop below sees it on its first turn, and watchCtx has already
 	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
-	go func() {
-		poll := watch.Poller(before, since)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				if poll.Changed() {
-					select {
-					case reload <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go watch.Notify(before, since, stop, reload)
 
 	for {
 		select {

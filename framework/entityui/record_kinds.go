@@ -108,38 +108,6 @@ func bound(b *float64) string {
 func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[string]any) render.HTML {
 	v := fb.m.rowValue(row, f.Name)
 	switch f.Type {
-	case schema.Enum:
-		if s := cell(v); s != "" {
-			return render.Text(fb.m.valueLabel(ctx, f.Name, s))
-		}
-	case schema.Bool:
-		switch t := v.(type) {
-		case bool:
-			if t {
-				return render.Text(i18nui.EntityYes.Text(ctx))
-			}
-			return render.Text(i18nui.EntityNo.Text(ctx))
-		case nil:
-			return muted()
-		default:
-			return render.Text(boolText(t))
-		}
-	case schema.Date:
-		if s := formatDate(ctx, v, false); s != "" {
-			return render.Text(s)
-		}
-	case schema.Timestamp:
-		if s := formatDate(ctx, v, true); s != "" {
-			return render.Text(s)
-		}
-	case schema.Decimal, schema.Float:
-		if s := cell(v); s != "" {
-			return render.Text(decimal(ctx, f, s))
-		}
-	case schema.Int:
-		if s := cell(v); s != "" {
-			return render.Text(integer(ctx, s))
-		}
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)
 	case schema.Image, schema.File:
@@ -151,10 +119,11 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		if s := cell(v); s != "" {
 			return ui.JSONViewer(ui.JSONViewerConfig{Ctx: ctx, Value: s, OpenDepth: 1})
 		}
+		return muted()
 	default:
-		if s := cell(v); s != "" {
-			return render.Text(s)
-		}
+	}
+	if s := fb.m.fieldText(ctx, f, v); s != "" {
+		return render.Text(s)
 	}
 	return muted()
 }

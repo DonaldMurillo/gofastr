@@ -9,9 +9,10 @@ on_change:
   - A new or renamed data-cui-* attribute gets its row in the core-ui/ARCHITECTURE.md attribute table and a runtime test in the same change.
 invariants:
   - id: attributes-are-documented
-    rule: Every data-cui-* attribute the runtime or a registered behaviour reads has a row in the core-ui/ARCHITECTURE.md attribute table.
+    rule: Every data-cui-* attribute the runtime or a registered behaviour reads has a row in the core-ui/ARCHITECTURE.md attribute table, named in the row's first column; a mention in a description cell or in prose does not count.
     enforced_by:
       - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
+      - test: core-ui/runtime/internal/treegate.TestProseMentionIsNotARow
       - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
   - id: refused-submit-focuses-first-invalid
     rule: A refused form submit, on the data-cui-rpc path and the plain-form bridge alike, moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input or disabled control (a disabled fieldset's included) skipped, a radio group on its checked or first enabled radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.

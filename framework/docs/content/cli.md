@@ -116,7 +116,8 @@ stats use the single-document contract without needing an output flag.
   unknown flag is an error. A `<name>_handler.go` symlinked out of the
   directory is refused, dangling or not. `new handler` writes
   `<name>_handler.go` into the current directory in the package its Go
-  files already declare (`package main` when there are none). It refuses
+  files already declare (`package main` when there are none);
+  `-overwrite` rewrites an existing file and keeps its package. It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
   predeclared name such as `string`, a name imported by the generated
   handler or any existing non-test Go file in that package, or a name
@@ -215,7 +216,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid, exit 1 = failed validation, including the unscoped-PII
   lint). A missing path, a first argument starting with `--`, or an extra
-  path or flag exits 2.
+  path or flag exits 2. `--help` or `-h` in any position prints help and
+  exits 0.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -227,6 +229,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   A configured `styles` entry watches both `.style.css` and `.tokens.css`
   files under its package patterns, including additions and removals;
   generated Go siblings are outputs, not watch inputs.
+  Argument parsing errors exit 2 for `generate`, `generate --watch`, and
+  the `app`, `entity`, `screen`, `package`, `cli`, and `sdk` generators.
+  Use `--out=<dir>` when the path starts with a dash.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,
@@ -262,9 +267,13 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr remount <package> [--force] [--dry-run]`: rewire the imports
   back to the framework's package, delete the copy and its entry.
   Refuses a copy that changed since unmount unless `--force`.
-- `gofastr pack [app-dir]`: snapshot a generated app into a
-  best-effort `gofastr.yml`. The snapshot is lossy. An unknown option,
-  missing output name or second app directory exits 2. Packing failures exit 1.
+- `gofastr pack [app-dir] [-o out.yml]`: snapshot a generated app into a
+  best-effort `gofastr.yml` from its Go source. The snapshot is lossy.
+  The one optional app directory defaults to the current directory. YAML
+  goes to stdout unless `-o` or `--out` (also `-o=` / `--out=`) names a
+  file. The CLI version check reads the selected app's project. An
+  unknown option, missing output name or second app directory exits 2.
+  Packing failures exit 1.
 
 ### Owned styles (`generate styles`)
 
@@ -300,6 +309,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   name that becomes an invalid or colliding Go identifier is a
   generator error, never a mangled name.
 
+  Generation refuses a sheet whose custom media query is invalid
+  against the default theme's breakpoint vocabulary. Verify reports the
+  same source problem under GOFASTR1814.
+
   `ownstyle.Must` compiles the sheet against the default theme, and
   `App.WithTheme` compiles every registered sheet against the app's
   theme (`ownstyle.CheckTheme`): a theme that renames or drops a
@@ -308,13 +321,18 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   the request: the sheet ships empty under that theme and the error
   is logged.
 
-  The sheets are checked against the built-in tokens plus every app
-  token, so `gofastr gen styles` and `gofastr verify` report the same
-  findings. After the last sheet, a literal written in two or more
-  sheets for the same token type is a GOFASTR1822 warning. A
-  `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives that rule on
-  its line (or the next line with code); a marker with no reason waives
-  nothing.
+  `gofastr gen styles` and `gofastr verify` share owned-style checks
+  and group sheets by program and target platform. Each group sees the
+  built-in tokens and its own app tokens. Generation reports parse and
+  model diagnostics before writing Go. Verify reports shared diagnostics
+  with GOFASTR rule IDs and also checks for upstream candidates,
+  kit-root styling, and handle leaks. Repeating a literal for the same
+  token type in two or more sheets produces a GOFASTR1822 warning.
+  A `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule
+  IDs it lists, separated by commas or whitespace, and requires a
+  reason. A waiver on a line of its own covers from its first line
+  through the next line with code; one after code covers its first
+  line. Use `gofastr:allow-file` for a file-wide waiver.
 
   The command also writes `.gofastr/tokens.css`: every theme and app
   token as `--name: <light value>; /* dark: <value> */` under `:root`,
@@ -478,9 +496,9 @@ notes:
 The retired-markup check that test binaries and `gofastr dev` run over
 rendered pages reads a table generated from this registry, not the
 registry itself, so a release-note edit does not re-run every package
-that serves markup. The table lists every kit class and attribute
-(`ui-*`, `fui-*`, `data-cui-*`, `data-fui-*`, `data-hui-*`) a breaking
-note's `find:` names, with that note's version and `change:` text; the
+that serves markup. The table lists kit classes (`ui-*`, `fui-*`, `cui-*`) and attributes
+(`data-cui-*`, `data-fui-*`, `data-hui-*`) named by a breaking note's
+`find:` block, along with that note's version and `change:` text. The
 note above names `ui-site-header`. So run `go generate ./internal/retired`
 and commit `internal/retired/retired_table.gen.go` whenever you add,
 drop or rename such a name, edit the `change:` text of a note that names
@@ -633,7 +651,7 @@ class read from the database) never appears there, but the rendered
 HTML can't hide it. So in Go test binaries and under `gofastr dev`, the
 framework scans each markup response it serves (pages, island RPC
 answers, widget chrome, HTML carried in JSON signal values) for the
-registry's retired classes and `data-cui-*` attributes, read the way a
+registry's retired kit classes and attributes, read the way a
 browser reads them (nothing inside comments or raw-text elements such
 as `script`, `iframe` and `noscript`; character references decoded;
 the first of duplicate attributes only):
@@ -673,14 +691,18 @@ The `audit` subcommands run a browser accessibility scan against a
 running app and report global registration calls.
 
 - `gofastr audit a11y --url <base>`: axe-core scan of a running app in
-  both color schemes (`--email`/`--password` log in first). The
-  password takes the `-` marker and is then read from
+  both color schemes. With no `--pages` list, the browser discovers pages
+  from `/sitemap.xml`, including split sitemaps. Pass `--email` and
+  `--password` together with `--url` to log in before discovery.
+  The password takes the `-` marker and is then read from
   `GOFASTR_AUDIT_PASSWORD` or piped stdin; a literal value still
   works but warns that argv is visible to every local process via
   ps. The *static* accessibility rules are part of
   `gofastr verify accessibility`.
-- `gofastr audit deps`: list candidate global registration calls found
-  anywhere in the Go source, then the [unmounted](unmount.md) packages.
+- `gofastr audit deps [root]`: list candidate global registration calls
+  in the selected source tree (default the current directory), then the
+  [unmounted](unmount.md) packages. See
+  [Auditing global registration call sites](audit-deps.md).
 
 Static audit, sandbox, recursive CSP, behavior discovery, and provenance
 walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but

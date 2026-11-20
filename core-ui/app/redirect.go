@@ -351,9 +351,7 @@ func patternsOverlap(a, b []string) bool {
 
 // segsOverlap reports whether two single segments can match the same
 // value: literal-vs-literal by equality, literal-vs-param by the param's
-// constraint accepting the literal, param-vs-param by constraint-set
-// intersection (unconstrained overlaps everything; int⊂alnum, alpha⊂alnum;
-// uuid is disjoint from int/alpha/alnum because it requires hyphens).
+// constraint accepting the literal, param-vs-param by routeseg.Overlap.
 func segsOverlap(x, y string) bool {
 	px, py := isParamSeg(x), isParamSeg(y)
 	switch {
@@ -364,15 +362,5 @@ func segsOverlap(x, y string) bool {
 	case !px && py:
 		return routeseg.ConstraintOK(y, x)
 	}
-	cx, cy := routeseg.Constraint(x), routeseg.Constraint(y)
-	if cx == "" || cy == "" || cx == cy {
-		return true
-	}
-	disjoint := map[[2]string]bool{
-		{"int", "alpha"}: true, {"alpha", "int"}: true,
-		{"uuid", "int"}: true, {"int", "uuid"}: true,
-		{"uuid", "alpha"}: true, {"alpha", "uuid"}: true,
-		{"uuid", "alnum"}: true, {"alnum", "uuid"}: true,
-	}
-	return !disjoint[[2]string{cx, cy}]
+	return routeseg.Overlap(routeseg.Constraint(x), routeseg.Constraint(y))
 }

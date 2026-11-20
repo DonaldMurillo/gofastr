@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // ToggleConfig configures a Checkbox/Radio/Switch.
@@ -89,7 +90,7 @@ func switchProps(cfg ToggleConfig, id string) headless.SwitchProps {
 
 func choiceID(ctx context.Context, callerID, inputType, name, value string) string {
 	if inputType == "radio" && value != "" {
-		name += "-" + slug(value)
+		name += "-" + idslug.Make(value)
 	}
 	return scopedControlID(ctx, callerID, name, "-hint", "-error")
 }

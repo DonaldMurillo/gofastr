@@ -30,6 +30,13 @@ notes:
     breaking: true
     nodetect: "the command is called from scripts, CI files and Makefiles outside the app's Go source"
     guidance: "Replace gofastr audit lint with gofastr verify security data testing permissions entities, and gofastr validate for unscoped PII in gofastr.yml. A Public Go entity with PII-shaped fields is reported as the public-entity warning GOFASTR1702 instead of unscoped PII. A t.Skip whose message does not read as deferred work, and a bare t.SkipNow, are no longer reported."
+  - change: "BREAKING - core-ui/app.MustViewTransitionPresetCSS is removed"
+    breaking: true
+    hits: edit
+    guidance: "Call app.ViewTransitionPresetCSS(preset) and handle its error, which names an unknown preset."
+    find:
+      uses:
+        - gofastr/core-ui/app.MustViewTransitionPresetCSS
   - change: "BREAKING - framework/contracts/analyzers.AuditLint is removed with gofastr audit lint"
     breaking: true
     hits: edit

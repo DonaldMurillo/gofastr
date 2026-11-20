@@ -281,10 +281,14 @@ ui.PipelineImage(ui.PipelineImageConfig{
         {URL: "/uploads/hero-md.jpg",   Width:  800, Type: "image/jpeg"},
         {URL: "/uploads/hero-lg.jpg",   Width: 1600, Type: "image/jpeg"},
     },
-    Placeholder: result.BlurHash,
+    Placeholder: result.Placeholder, // a data: URL; a raw BlurHash renders nothing
     Sizes:       "(min-width: 1024px) 1024px, 100vw",
 })
 ```
+
+`Placeholder` takes only a `data:` URL. To paint from the stored
+BlurHash instead, decode it first with `image.BlurHashDataURL` (see
+[Placeholders](#placeholders)).
 
 Each variant's file name is `<BaseName>-<Suffix or width>.<ext>`. Two
 variants that compose the same name would overwrite each other in

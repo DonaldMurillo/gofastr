@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // TooltipPlacement selects the side the tooltip appears on; Left and
@@ -47,7 +48,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	}
 	id := cfg.ID
 	if id == "" {
-		id = "tip-" + slug(cfg.Text)
+		id = "tip-" + idslug.Make(cfg.Text)
 		if id == "tip-" {
 			id += textHash(cfg.Text)
 		}

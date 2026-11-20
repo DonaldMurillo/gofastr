@@ -58,14 +58,7 @@ type fillDecl struct {
 // screen component (fresh instance, route params, DI, Load). opts
 // attach a region guard (FillPolicy) to this declaration.
 func (s *Screen) Fill(o *Outlet, c component.Component, opts ...FillOption) *Screen {
-	if s.fills == nil {
-		s.fills = make(map[*Outlet]fillDecl)
-	}
-	d := fillDecl{comp: c}
-	for _, opt := range opts {
-		opt(&d)
-	}
-	s.fills[o] = d
+	addFill(&s.fills, o, c, opts)
 	return s
 }
 
@@ -77,20 +70,25 @@ func (s *Screen) Fill(o *Outlet, c component.Component, opts ...FillOption) *Scr
 // own fill and before the outlet's Default. opts attach a region guard
 // (FillPolicy) to this declaration.
 func (g *ScreenGroup) Fill(o *Outlet, c component.Component, opts ...FillOption) *ScreenGroup {
-	if g.fills == nil {
-		g.fills = make(map[*Outlet]fillDecl)
+	addFill(&g.fills, o, c, opts)
+	return g
+}
+
+// addFill records c, with opts applied, as the fill for o in *fills.
+func addFill(fills *map[*Outlet]fillDecl, o *Outlet, c component.Component, opts []FillOption) {
+	if *fills == nil {
+		*fills = make(map[*Outlet]fillDecl)
 	}
 	d := fillDecl{comp: c}
 	for _, opt := range opts {
 		opt(&d)
 	}
-	g.fills[o] = d
-	return g
+	(*fills)[o] = d
 }
 
-// WithLoading declares the group's swap-slot loading default (,
-// every member screen without its own
-// declaration shows this while a navigation to it is in flight.
+// WithLoading declares the group's swap-slot loading default: every
+// member screen without its own declaration shows it while a navigation
+// to that screen is in flight.
 func (g *ScreenGroup) WithLoading(ld *Loading) *ScreenGroup {
 	g.loading = ld
 	return g

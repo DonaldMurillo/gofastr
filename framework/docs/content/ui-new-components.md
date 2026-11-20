@@ -131,7 +131,7 @@ all indexed leaf IDs; standalone radio IDs disambiguate within `Ctx`.
 Generated entity-form checkboxes forward the same render context, including
 when an explicit control ID is supplied.
 
-- **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
+- **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, an RPC-driven listbox the module refreshes by a POST to `Island.Endpoint`, a native GET form to `NoScriptAction` for a reader without script (a separate route, required with `Island`, since the island route answers POST only), options that render as anchors when they carry a safe `Href` and are not disabled, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **inline edit**: `framework/ui.InlineEdit`, a value edited where it is shown (a table cell): the value is the trigger of a dismissable `<details>` editor laid over it: the caller's `Control` (give it a hidden label, `LabelHidden`, since the cell names it) and Save on one line of a `ui.Form`. Saving sends it to `Action` over the runtime's form RPC (`PUT`, or `PATCH` with `Method`), toasts Saved and navigates to `Return`, so the server redraws the page with the stored value; Escape or a press outside closes it unsaved. `Label` is the trigger's accessible name. The value tints on hover and shows a focus ring.
 - **segmented links**: `framework/ui.SegmentedLinks`, a strip of links drawn as a segmented control, one `Current` (`aria-current="true"`) inside a labelled `role="group"`: a list's Table / Cards switch. Every segment is a plain link, so the choice lives in the URL; `IconOnly` keeps each segment's text as its accessible name and title. `Count` draws a muted figure after a segment's text (the Jobs page's "Failed 3"). The strip keeps its own width in a flex column and wraps onto a second line in a box narrower than its segments, so the current one is never scrolled out of sight.
 - **shortcut sheet**: `framework/ui.ShortcutSheet`, the keyboard help sheet: returns a trigger snapshot and a Modal preset like `CommandPalette`. Mount the preset once, then render `ui.ShortcutSheetTrigger(ctx, cfg)` in each request's chrome so its default visible text and accessible label follow that reader's locale. `ctx` takes precedence over `cfg.Ctx`; nil uses English fallbacks, and an explicit `TriggerLabel` still wins. Keep `Name` and `Shortcut` consistent with the mount. The trigger opens it on its own chord (`?` by default) and is a plain link to `FallbackHref` without script. The modal lists `Items` (a chord and what it does) as keycaps beside each label under a heading that names the dialog, with a close button. Mount `ShortcutSheetFunc` for translated rows and render `ShortcutSheetTrigger(ctx, build(ctx))` beside it. `ui.ShortcutList(ctx, items)` draws the same rows for the fallback page. The list search in `ui.FilterToolbar` takes a chord too: `FilterSearch.Shortcut` (entity lists use `/`) focuses it from anywhere outside a text field, with a keycap at the input's end while it is empty.
@@ -254,7 +254,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
   Legend entries wrap at `Width`, count Unicode runes rather than UTF-8 bytes, and reserve a row of height for each line.
   Every series shares one x-axis: point `i` sits at the same x in each series, under label `i`, so a series with fewer values than the longest ends early instead of stretching across the plot.
 - **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; the `HighlightLines` *func* pre-tokenizes lines for syntax highlighting, and the `HighlightLines []LineRange` *field* (fence `{1,3-5}`), `Diff`, `HighlightWords`, and `Wrap` add line bands, diff marking, word marks, and soft wrapping — see [CodeBlock: line highlighting, diffs, wrapping](#codeblock-line-highlighting-diffs-wrapping). `Label` names the block for assistive tech in place of "source code" when the text is something else (a call stack, a server response), and its copy button then says what it copies ("copy Call stack")
-- **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `headless.Tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
+- **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a tab strip; pure composition of `headless.Tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. Switching samples needs the runtime: without script the first sample shows and the tab links cannot change it. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal
 - **jsonviewer**: `framework/ui.JSONViewer`, collapsible tree of arbitrary values
 - **diffviewer**: `framework/ui.DiffViewer`, unified or split diff renderer. File headers are recognized outside hunk ranges only, so removed `--` comments and added `++` expressions remain changed code in either mode; consecutive files may carry their own header pairs. A final line terminator creates no extra row; explicit blank context lines remain visible. LF and CRLF patches render identically: one trailing carriage return per physical line is removed, never carriage returns inside its content. Pass `Ctx` for localized split-column defaults (`i18nui.DiffOld` / `DiffNew`, keys `ui.diff.old` / `ui.diff.new`); nil falls back to English, and explicit `LeftLabel` / `RightLabel` override translations.
@@ -292,12 +292,18 @@ The LanguageMenu gallery shows disabled language choices because the docs
 site does not register locale-prefixed pages. A live `ui.LanguageMenu` reads
 the host's real locale configuration from its request context.
 
-The docs site mounts the sidebar drawer on both the Sidebar and
-SidebarDrawerTrigger showcase pages, including their mobile trigger previews.
+The docs site mounts the Modal, Drawer and BottomSheet overlays on their
+showcase pages. It mounts the mobile sidebar drawer on the Sidebar and
+SidebarDrawerTrigger pages. Gallery hosts can scope these overlays with
+`gallery.MountDemoWidgets(router, gallery.DemoWidgetPages{…})`.
 
-The Form, FormRepeater, Repeater and ConditionalField gallery previews submit to the docs site's
-no-op POST endpoint. They demonstrate native form submission, not sign-in or
-persistent row mutations; use example values rather than real credentials.
+The Form, FormRepeater, Repeater and ConditionalField previews submit to
+the shared `gallery.DemoFormPath`, which discards submitted values and
+redirects back to the demo. They demonstrate native form submission, not
+sign-in or persistent row mutations; use example values rather than real
+credentials. StepWizard uses the docs site's `POST /forms/wizard` for live
+step transitions. The theme editor shows the wizard with submission
+disabled.
 
 The FilterChipBar gallery is a static preview: its dismiss and Clear all
 controls use the docs site's no-op POST endpoint rather than a GET-only page.

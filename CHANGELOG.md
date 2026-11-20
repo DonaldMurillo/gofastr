@@ -125,6 +125,9 @@ few lines, and link the PR or the docs page for the rest.
   is removed too: blank-import the analyzers package, load
   `contracts.LoadConfig`, and run `contracts.Run` over a
   `contracts.NewPass`, as `gofastr verify` does.
+- **BREAKING: `app.MustViewTransitionPresetCSS` is gone.** Call
+  `app.ViewTransitionPresetCSS`, which returns the CSS and an error for an
+  unknown preset; nothing in the framework called the panicking form.
 - **BREAKING: `analyzers.EntityInfo.Scoped` and `EntityInfo.HasAccess` are gone.**
   They counted a gate on any operation as scoping reads. GOFASTR1901 now
   needs an owner field, tenant scope or a read permission; nothing in
@@ -763,6 +766,14 @@ few lines, and link the PR or the docs page for the rest.
 - **Semantic coverage flushes when an earlier process left its temporary
   file behind.** The axe and semantic coverage recorders share one
   locked, atomic manifest write.
+- **The entity record view shows the localized Yes/No for a bool stored
+  as a string or an integer,** and the muted dash for an empty value, as
+  the list already did.
+- **`ui.FileDropzone` with an error still names its help text in
+  `aria-describedby`,** next to the error message.
+- **`gofastr build`, `gofastr export` and the dev start-failure probe no
+  longer run git** when they resolve the package name
+  (`go list -buildvcs=false`).
 
 ### Security
 

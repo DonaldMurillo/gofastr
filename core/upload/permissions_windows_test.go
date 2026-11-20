@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 func requirePOSIXFileModes(t *testing.T) {
@@ -18,7 +19,7 @@ func requirePOSIXFileModes(t *testing.T) {
 
 func TestLocalStorageWindowsACLsAreOwnerOnly(t *testing.T) {
 	dir := t.TempDir()
-	if err := newTestLocalStorage(t, dir).Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
+	if err := teststorage.New(t, dir).Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{

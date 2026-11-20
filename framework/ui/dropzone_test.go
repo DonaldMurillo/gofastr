@@ -193,3 +193,10 @@ func TestFileDropzonePreviewDoesNotStealDropOwnership(t *testing.T) {
 		t.Errorf("the preview marker leaked onto the drop region:\n%s", h)
 	}
 }
+
+func TestDropzoneErrorKeepsHelpDescribed(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{Name: "f", Label: "Files", Help: "PDF only", Error: "Too big"}))
+	if !strings.Contains(h, `aria-describedby="f-error f-help"`) {
+		t.Fatalf("input must name the error, then the help it still shows:\n%s", h)
+	}
+}

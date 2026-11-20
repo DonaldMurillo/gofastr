@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-// PackageName asks Go for the package name in dir, with caller-supplied subprocess bounds.
+// PackageName asks Go for the package name in dir, with caller-supplied
+// subprocess bounds. It passes -buildvcs=false, so it never runs git.
 func PackageName(ctx context.Context, dir, pkg string, waitDelay time.Duration) (string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-f={{.Name}}", pkg)
+	cmd := exec.CommandContext(ctx, "go", "list", "-buildvcs=false", "-f={{.Name}}", pkg)
 	cmd.Dir = dir
 	cmd.WaitDelay = waitDelay
 	out, err := cmd.Output()

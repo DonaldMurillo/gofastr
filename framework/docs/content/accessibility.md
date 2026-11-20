@@ -57,9 +57,10 @@ app/screens/home.go:42: html.Image: missing required field "Alt" in ImageConfig
     screen readers skip it. Never omit the field.
 ```
 
-It scans every non-test, non-generated `.go` file for core-ui/html
-element configs missing their required accessibility fields, and each
-finding explains the rule. The goal is that the fix teaches WCAG
+Static mode, the default, scans every non-test, non-generated `.go` file
+under the selected root (default `.`) for core-ui/html element configs
+missing their required accessibility fields. Each finding explains the
+rule. The goal is that the fix teaches WCAG
 name/role/value basics rather than just flagging a line. Exit code 1 on findings,
 so it can gate CI directly.
 
@@ -117,7 +118,10 @@ and audits **both color schemes**: contrast, focus order, landmark
 structure, ARIA validity. These are the classes of failure only a
 rendered page exposes. Pages are discovered from the app's `/sitemap.xml`
 (`uihost.WithSitemap`), so a sitemap-configured app gets full-site
-coverage with zero flags. Page locations in URL sets must be HTTP(S)
+coverage with zero flags. For a sitemap index, the browser reads the
+listed parts in the same session (logged in, when credentials are
+given) and audits the unique page paths they contain; a part that
+cannot be read is a discovery failure. Page locations in URL sets must be HTTP(S)
 URLs with a host or root-relative paths. An origin-only HTTP(S) URL
 counts as `/`. A 404 or 410 from the root sitemap falls back to `/`.
 Discovery failures, including malformed sitemap XML or a sitemap with
