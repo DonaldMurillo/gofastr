@@ -104,15 +104,15 @@ WantedBy=sockets.target
 `
 }
 
-// preamble is the head of every script: fail on the first error, and
-// the paths and the health check the scripts share.
+func (p plan) appPath() string {
+	return fmt.Sprintf("set -eu\nNAME=%s\nROOT=%s\nAPP=\"$ROOT/opt/$NAME\"\n", p.name, shellQuote(p.root))
+}
+
+// preamble defines the paths and health checks the scripts share.
 func (p plan) preamble() string {
 	var b strings.Builder
-	b.WriteString("set -eu\n")
-	fmt.Fprintf(&b, "NAME=%s\n", p.name)
-	fmt.Fprintf(&b, "ROOT=%s\n", shellQuote(p.root))
-	b.WriteString(`APP="$ROOT/opt/$NAME"
-STATE="$ROOT/var/lib/$NAME"
+	b.WriteString(p.appPath())
+	b.WriteString(`STATE="$ROOT/var/lib/$NAME"
 UNITS="$ROOT/etc/systemd/system"
 LEGACY_ENV="$ROOT/etc/$NAME/env"
 `)
@@ -221,24 +221,44 @@ recover() {
 	return b.String()
 }
 
+func (p plan) locked(script string) string {
+	return p.appPath() + `install -d -m 0755 "$APP"
+exec flock -x -o "$APP/.deploy.lock" bash -s <<'GOFASTR_LOCKED'
+` + p.preamble() + `set -o pipefail
+ORDER="$APP/.release-order"
+release_dirs() {
+  find "$APP/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n'
+}
+init_order() {
+  if [ -f "$ORDER" ]; then return; fi
+  {
+    if [ -d "$APP/releases" ]; then
+      release_dirs | LC_ALL=C sort -r
+    fi
+  } > "$ORDER.new"
+  mv -T "$ORDER.new" "$ORDER"
+}
+` + script + "GOFASTR_LOCKED\n"
+}
+
 // install is the script that puts a release in place and starts it. It
 // leaves the server running the new release, or the one before it.
 func (p plan) install() string {
 	var b strings.Builder
-	b.WriteString(p.preamble())
 	fmt.Fprintf(&b, "REL=%s\nUPLOAD=%s\nKEEP=%d\n", p.release, shellQuote(p.upload), p.keep)
 	b.WriteString(`
+init_order
+PREV="$(running)"
 # The app's own user: no login, no shell, home in its state directory.
 if ! id -u "$NAME" >/dev/null 2>&1; then
   useradd --system --home-dir "$STATE" --shell /usr/sbin/nologin "$NAME"
 fi
 
-install -d -m 0755 "$APP" "$APP/releases"
+install -d -m 0755 "$APP/releases"
 if ! mkdir -m 0755 "$APP/releases/$REL"; then
   rm -rf "$UPLOAD"
   exit 1
 fi
-PREV="$(running)"
 install -m 0755 "$UPLOAD/bin" "$APP/releases/$REL/$NAME"
 install -d -m 0750 "$STATE"
 chown "$NAME:$NAME" "$STATE"
@@ -272,6 +292,11 @@ cat > "$APP/releases/$REL/units/$NAME.service" <<'GOFASTR_UNIT'
 		b.WriteString("GOFASTR_SOCKET\n")
 	}
 	b.WriteString(`
+{
+  printf '%s\n' "$REL"
+  head -n "$KEEP" "$ORDER"
+} > "$ORDER.new"
+
 if ! activate "$REL" enable; then
   echo "--- the last lines the new release logged ---"
   said
@@ -288,20 +313,31 @@ if ! activate "$REL" enable; then
   exit ` + strconv.Itoa(exitDown) + `
 fi
 
-ls -1 "$APP/releases" | sort -r | awk -v rel="$REL" -v keep="$KEEP" '$0 != rel && ++count > keep' | while IFS= read -r old; do
-  rm -rf "$APP/releases/$old"
+mv -T "$ORDER.new" "$ORDER"
+retained="$(cat "$ORDER")"
+release_dirs | while IFS= read -r old; do
+  if ! grep -Fxq -- "$old" <<< "$retained"; then rm -rf "$APP/releases/$old"; fi
 done
 echo "DEPLOYED $REL"
 `)
-	return b.String()
+	return p.locked(b.String())
 }
 
 // rollback is the script that points the server at the release before
 // the running one and starts it.
 func (p plan) rollback() string {
-	return p.preamble() + `
+	return p.locked(`
+init_order
 CUR="$(running)"
-PREV="$(ls -1 "$APP/releases" 2>/dev/null | sort -r | awk -v cur="$CUR" 'seen && !done { print; done = 1 } $0 == cur { seen = 1 }')"
+PREV="$(
+  while IFS= read -r release; do
+    if [ "$release" = "$CUR" ] || [ -x "$APP/releases/$release/$NAME" ]; then printf '%s\n' "$release"; fi
+  done < "$ORDER" | awk -v cur="$CUR" '
+    NR == 1 { latest = $0 }
+    $0 == cur { found = 1; next }
+    found && !done { print; done = 1 }
+    END { if (!found && NR > 0) print latest }'
+)"
 if [ -z "$CUR" ] || [ -z "$PREV" ]; then
   echo "NO-PREVIOUS"
   exit ` + strconv.Itoa(exitNoPrevious) + `
@@ -314,7 +350,7 @@ if ! activate "$PREV"; then
   exit "$code"
 fi
 echo "DEPLOYED $PREV"
-`
+`)
 }
 
 // status is the script that says what is running.

@@ -65,9 +65,10 @@ It asks the server what CPU it has, builds the package in this directory
 for it, copies the binary over SSH, starts it, and waits for the app to
 answer `/healthz` with a 2xx within 30 seconds. If activation or the
 health check fails, the command prints diagnostics, tries to start the
-previous release, and exits non-zero. Once it switches back, it removes
+release it replaced, and exits non-zero. Once it switches back, it removes
 the failed release. With no earlier release, the failed release stays
-in place.
+in place. Installs and rollbacks for the same app take turns on the
+server, including environment inheritance and recovery.
 
 `--name` defaults to the lowercased directory basename. Set it
 explicitly if that name is invalid. A valid name is 1 to 31 characters,
@@ -78,7 +79,7 @@ What it sets up, on the first deploy and kept the same on later ones:
 
 - `/opt/<name>/releases/<release ID>/<name>`, one directory per release,
   and `/opt/<name>/current`, a link to the release in place. The newest
-  five earlier releases are kept (`--keep`).
+  five earlier successful deployments are kept (`--keep`).
 - A system user `<name>` with no login, which the app runs as.
 - `/var/lib/<name>`, the only place the app may write (mode 0750). `HOME`
   and `XDG_STATE_HOME` point into it, so a SQLite file with a relative
@@ -125,8 +126,10 @@ gofastr deploy status deploy@203.0.113.7 --name shop     # release, service, hea
 gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
 ```
 
-`rollback` starts the release before the running one and checks it the
-same way. If activation or the health check fails, it tries to restore
+`rollback` starts the release before the running one in the server's
+recorded deployment order and checks it the same way. An older
+installation initializes that order from its retained release IDs.
+If activation or the health check fails, it tries to restore
 the release it left. Each release uses its own environment and saved
 `--port` and `--health` settings. For a release without saved health
 settings, pass those flags to `rollback` or `status` as needed.
@@ -134,8 +137,8 @@ settings, pass those flags to `rollback` or `status` as needed.
 health check. `status` probes the health URL only while the service is
 active.
 
-The server needs sshd, systemd and bash. The SSH user must be root or
-have passwordless sudo. The server is named as `user@host` or as a host
+The server needs sshd, systemd, bash and `flock` from util-linux. The SSH
+user must be root or have passwordless sudo. Use `user@host` or a host
 from your SSH config; `--ssh-port` and `-i` are passed to `ssh`. `--bin
 <file>` deploys a Linux binary you built yourself in place of building
 one, and `--pkg` names the main package when it is not `.`.

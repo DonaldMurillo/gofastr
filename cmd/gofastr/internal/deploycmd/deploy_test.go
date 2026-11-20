@@ -1,6 +1,7 @@
 package deploycmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -984,6 +986,138 @@ func TestSameInstantDeploysGetDistinctReleases(t *testing.T) {
 	if got := s.releases(); len(got) != 2 || s.current() == first {
 		t.Fatalf("same instant: first %q, current %q, releases %v", first, s.current(), got)
 	}
+}
+
+func TestRollbackFollowsServerOrderForEqualClientTimestamps(t *testing.T) {
+	s := newServer(t)
+	first := "20261114T040000Z-000000000-ZAAAAAAAAAAAAAAAAAAAAAAAAA"
+	second := "20261114T040000Z-000000000-AAAAAAAAAAAAAAAAAAAAAAAAAA"
+	for _, release := range []string{first, second} {
+		p := s.uploadPlan(release)
+		if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+		}
+	}
+	if out, err := s.run(t0, "rollback", "prod", "--name", "shop"); err != nil || s.current() != first {
+		t.Fatalf("rollback: %v, current %q, want %q\n%s", err, s.current(), first, out)
+	}
+}
+
+func TestRetentionFollowsServerOrderForEqualClientTimestamps(t *testing.T) {
+	s := newServer(t)
+	releases := []string{
+		"20261114T040000Z-000000000-ZAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"20261114T040000Z-000000000-AAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"20261114T040000Z-000000000-MAAAAAAAAAAAAAAAAAAAAAAAAA",
+	}
+	for _, release := range releases {
+		p := s.uploadPlan(release)
+		p.keep = 1
+		if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+		}
+	}
+	if got := s.releases(); !slices.Equal(got, releases[1:]) {
+		t.Fatalf("kept %q, want %q", got, releases[1:])
+	}
+}
+
+func TestDeployAndRollbackWaitForTheAppLock(t *testing.T) {
+	for _, action := range []string{"install", "rollback"} {
+		t.Run(action, func(t *testing.T) {
+			s := newServer(t)
+			env := filepath.Join(t.TempDir(), "env")
+			var first string
+			for i, at := range []time.Time{t0, t0.Add(time.Minute)} {
+				if err := os.WriteFile(env, []byte(fmt.Sprintf("SECRET=%d\n", i)), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if out, err := s.run(at, "prod", "--name", "shop", "--env-file", env); err != nil {
+					t.Fatalf("setup deploy: %v\n%s", err, out)
+				}
+				if i == 0 {
+					first = s.current()
+				}
+			}
+			current := s.current()
+			p := s.uploadPlan(rel2)
+			script, want := p.install(), rel2
+			if action == "rollback" {
+				script, want = p.rollback(), first
+			}
+			lock := exec.Command("flock", "-x", filepath.Join(s.dir, "opt/shop/.deploy.lock"), "bash", "-c", "echo locked; read -r unlock")
+			unlock, err := lock.StdinPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ready, err := lock.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := lock.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_ = unlock.Close()
+				_ = lock.Wait()
+			}()
+			if line, err := bufio.NewReader(ready).ReadString('\n'); line != "locked\n" || err != nil {
+				t.Fatalf("could not hold deploy lock: %q, %v", line, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "bash", "-s")
+			cmd.Env = append(os.Environ(), "PATH="+s.stubs+":"+os.Getenv("PATH"))
+			cmd.Stdin = strings.NewReader(script)
+			var out bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &out, &out
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				t.Fatalf("%s finished while lock held: %v\n%s", action, err, out.String())
+			case <-time.After(2 * time.Second):
+				if got := s.current(); got != current {
+					t.Errorf("%s changed current under a held lock: %q, want %q", action, got, current)
+				}
+			}
+			if action == "install" {
+				app := filepath.Join(s.dir, "opt/shop")
+				next := filepath.Join(app, "fixture-current")
+				if err := os.Symlink("releases/"+first, next); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(next, filepath.Join(app, "current")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := io.WriteString(unlock, "unlock\n"); err != nil {
+				t.Error(err)
+			}
+			if err := <-done; err != nil || s.current() != want {
+				t.Fatalf("%s: %v, current %q, want %q\n%s", action, err, s.current(), want, out.String())
+			}
+			if action == "install" {
+				got, err := os.ReadFile(filepath.Join(s.dir, "opt/shop/current/env"))
+				if err != nil || string(got) != "SECRET=0\n" {
+					t.Errorf("installed environment %q, error %v; want the release selected under the lock", got, err)
+				}
+			}
+		})
+	}
+}
+
+func (s *server) uploadPlan(release string) plan {
+	s.t.Helper()
+	upload := s.t.TempDir()
+	if err := s.build(context.Background(), ".", s.arch, filepath.Join(upload, "bin")); err != nil {
+		s.t.Fatal(err)
+	}
+	return plan{root: s.dir, name: "shop", release: release, upload: upload, port: s.port, health: "/healthz", wait: 5, keep: 2}
 }
 
 func TestInstallRefusesAnExistingReleaseDirectory(t *testing.T) {
