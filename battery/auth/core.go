@@ -275,14 +275,14 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 				Meta:   map[string]string{"reason": reason},
 			})
 			if isForm {
-				writeFormAuthError(w, r, status, why)
+				writeLoginFormError(w, r, status, why)
 			} else {
 				writeAuthError(w, r, status, why)
 			}
 		}
 		if email == "" || password == "" {
 			if isForm {
-				writeFormAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
+				writeLoginFormError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			} else {
 				writeAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			}
@@ -303,7 +303,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			if !allowed {
 				w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 				if isForm {
-					writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
+					writeLoginFormError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				} else {
 					writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				}

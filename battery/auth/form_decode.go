@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -358,10 +359,7 @@ func successRedirect(w http.ResponseWriter, r *http.Request, fallback string) st
 			next = r.PostFormValue("next")
 		}
 	}
-	if handler.IsSafeRelativePath(next) {
-		return next
-	}
-	return fallback
+	return handler.SafeRelativePathOr(next, fallback)
 }
 
 // defaultLoginErrorPath is the operator-configured fallback used by
@@ -456,6 +454,16 @@ func errorFallbackPath(r *http.Request) string {
 // error path (SetDefaultRegisterErrorPath for a register form when set,
 // SetDefaultLoginErrorPath otherwise) or JSON when neither is set.
 func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	redirectFormAuthError(w, r, status, reason, "")
+}
+
+// writeLoginFormError carries the submitted destination after login form decoding.
+func writeLoginFormError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
+	next := cmp.Or(r.URL.Query().Get("next"), r.PostForm.Get("next"))
+	redirectFormAuthError(w, r, status, reason, handler.SafeRelativePathOr(next, ""))
+}
+
+func redirectFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, next string) {
 	target := safeReferer(r)
 	if target == "" {
 		fallback := errorFallbackPath(r)
@@ -471,7 +479,11 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reas
 	if strings.Contains(target, "?") {
 		sep = "&"
 	}
-	http.Redirect(w, r, target+sep+"error="+sanitiseErr(reason.Code()), http.StatusSeeOther)
+	target += sep + "error=" + sanitiseErr(reason.Code())
+	if next != "" {
+		target += "&next=" + url.QueryEscape(next)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // safeReferer returns the request's Referer when its host matches the
@@ -480,8 +492,7 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reas
 // from the Referer into the redirect Location is a state-confusion
 // vector (the attacker plants `?return=evil` on the referring page,
 // the auth-error redirect echoes it, the login page reads `?return=`
-// and uses it as the next form action). The error context the caller
-// passes via msg is the only query value the redirect carries.
+// and uses it as the next form action).
 func safeReferer(r *http.Request) string {
 	ref := r.Referer()
 	if ref == "" {

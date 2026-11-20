@@ -35,3 +35,12 @@ func IsSafeRelativePath(p string) bool {
 	}
 	return true
 }
+
+// SafeRelativePathOr returns p if IsSafeRelativePath accepts it. Otherwise it
+// returns the caller's trusted fallback unchanged.
+func SafeRelativePathOr(p, fallback string) string {
+	if IsSafeRelativePath(p) {
+		return p
+	}
+	return fallback
+}
