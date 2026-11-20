@@ -2,10 +2,33 @@ primitive: kiln
 summary: Kiln authoring and graduation to owned Go.
 code:
   - kiln/freeze/
+  - kiln/live/
 docs:
   - framework/docs/content/kiln.md
 invariants:
+  - id: preview-docs-debug-retain-framework-gates
+    rule: Live mounts enabled aggregate Markdown and debug routes through the framework's shared mounting helper on startup, rebuild and reload; anonymous callers get 401, signed-in callers can read Markdown, and debug requires admin. Disabled routes stay unmounted and aggregate Markdown requires entities.
+    enforced_by:
+      - test: kiln/live.TestLiveDocsDebugRoutes
   - id: graduation-preserves-json-case
     rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
     enforced_by:
       - test: kiln/freeze.TestFreezeJSONCaseContract
+  - id: graduation-refuses-invalid-utf8-values
+    rule: Freeze refuses a string value with invalid UTF-8 and names its app-spec path rather than writing YAML that changes the string.
+    enforced_by:
+      - test: kiln/freeze.TestAppSpecRejectsInvalidUTF8SeedValue
+  - id: graduation-preserves-entity-docs
+    rule: Freeze explicitly carries the preview entity-doc setting into generated configuration without changing omitted hand-written app-spec defaults or the UI-doc switch.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeEntityLLMMD
+      - test: cmd/gofastr/internal/appspec.TestDecodeEntityLLMMD
+      - test: cmd/gofastr/internal/appgen.TestGeneratedEntityLLMMDConfig
+      - test: cmd/gofastr/internal/packcmd.TestEntityLLMMDRoundTrip
+      - test: cmd/gofastr/internal/packcmd.TestKilnFreezeEntityLLMMDReachesGeneratedGo
+      - test: cmd/gofastr/internal/appspec.TestEntityLLMMDFreesIndexScreenRoute
+  - id: graduation-warns-on-dropped-debug-endpoints
+    rule: Freeze drops dev-only debug_endpoints with a printed warning, producing the same app spec as debug off; a refused freeze creates no output directory.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeDebugEndpoints
+      - test: kiln/freeze.TestRefusedFreezeCreatesNoDirectory

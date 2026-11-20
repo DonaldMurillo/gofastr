@@ -41,7 +41,7 @@ func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
-			span.SetAttributes(attribute.String("error.type", "panic"))
+			span.SetAttributes(attribute.String("error.type", tracing.ErrorTypePanic))
 			span.SetStatus(codes.Error, "")
 		} else if err != nil {
 			// The type, not the message: a handler's error routinely

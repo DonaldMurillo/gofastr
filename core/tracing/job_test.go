@@ -111,7 +111,7 @@ type jobLedgerError struct{}
 func (jobLedgerError) Error() string { return "ledger closed" }
 
 // A failed job carries error.type like every other failing span: the
-// type under fmt's %w wrappers for a returned error, "panic" for a panic.
+// type under fmt's %w wrappers for a returned error, ErrorTypePanic for a panic.
 func TestJobSpanCarriesErrorType(t *testing.T) {
 	errorType := func(sp sdktrace.ReadOnlySpan) string {
 		for _, kv := range sp.Attributes() {
@@ -135,8 +135,8 @@ func TestJobSpanCarriesErrorType(t *testing.T) {
 		defer func() { _ = recover() }()
 		_ = Job(context.Background(), "cron export", jobThatPanics)
 	}()
-	if got := errorType(sr.Ended()[0]); got != "panic" {
-		t.Errorf("a panicked job's error.type = %q, want %q", got, "panic")
+	if got := errorType(sr.Ended()[0]); got != ErrorTypePanic {
+		t.Errorf("a panicked job's error.type = %q, want %q", got, ErrorTypePanic)
 	}
 
 	sr = recordSpans(t)

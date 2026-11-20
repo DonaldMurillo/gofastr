@@ -26,7 +26,7 @@ func Job(ctx context.Context, name string, fn func(context.Context) error) (err 
 		if r := recover(); r != nil {
 			span.SetStatus(codes.Error, textsafe.Recovered(r))
 			span.SetAttributes(
-				attribute.String("error.type", "panic"),
+				attribute.String("error.type", ErrorTypePanic),
 				attribute.String("exception.stacktrace", textsafe.Truncate(panicstack.Origin(string(debug.Stack())), maxJobStackLen)),
 			)
 			span.End()

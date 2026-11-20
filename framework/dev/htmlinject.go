@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/mediatype"
 )
 
 // LiveReloadHTMLInjector returns middleware that splices the livereload
@@ -77,8 +78,7 @@ func (w *injectWriter) decide() {
 	}
 	w.decided = true
 	h := w.Header()
-	ct := h.Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/html") {
+	if !mediatype.IsHTML(h.Get("Content-Type")) {
 		return
 	}
 	if ce := h.Get("Content-Encoding"); ce != "" && !strings.EqualFold(ce, "identity") {

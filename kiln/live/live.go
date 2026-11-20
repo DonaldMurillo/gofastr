@@ -550,6 +550,7 @@ func (l *Live) rebuild() (err error) {
 		// so a gated docs page here would 401 for everyone, always.
 		app.Router().Get("/api/docs/", openapi.DocsHandler(spec, "/api/docs", true))
 	}
+	app.MountLLMMDAndDebugRoutes()
 	l.app = app
 	l.stamp = kilnrender.WorldStamp(l.sess.World)
 	return nil

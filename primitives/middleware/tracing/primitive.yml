@@ -15,12 +15,15 @@ invariants:
     enforced_by:
       - test: core/middleware.TestTracing_ResponseCarriesTraceparent
   - id: span-named-for-the-route
-    rule: The span is named for the mux pattern, or for the first NoteRoute when the pattern is empty or takes a subtree, else "unmatched", and a status of 500 or more marks it an error.
+    rule: The span is named for the mux pattern, or for the first NoteRoute when the pattern is empty or takes a subtree, else "unmatched".
     enforced_by:
       - test: core/middleware.TestNoteRouteNamesTheSpan
-      - test: core/middleware.TestTracing_500MarksSpanError
+  - id: response-status-classifies-error
+    rule: A response that returns without panicking marks the span an error with the decimal status code as error.type for status 500 or more, and tracing does not set either for a lower status.
+    enforced_by:
+      - test: core/middleware.TestTracing_ResponseErrorType
   - id: panicked-span-carries-the-stack
-    rule: A panicked request's span gets the status the client got, an error status and an exception.stacktrace from the goroutine that panicked.
+    rule: A panicked request's span gets the status the client got, an error status, error.type set to tracing.ErrorTypePanic regardless of the response status, and an exception.stacktrace from the goroutine that panicked.
     enforced_by:
       - test: core/middleware.TestTracingMarksPanickedSpan
       - test: core/middleware.TestTracingSpanCarriesThePanicsStack
