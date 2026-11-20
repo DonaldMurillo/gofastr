@@ -44,6 +44,22 @@ func runRoute(t *testing.T, args ...string) (int, string) {
 	return code, out
 }
 
+func TestNewRouteRefusesImportedHandler(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	if code, out := runRoute(t, "/x", "--handler", "http"); code != -1 {
+		t.Fatalf("empty directory: exit %d: %s", code, out)
+	}
+	writeGo(t, dir, "main.go", "package main\nimport \"net/http\"\n")
+	code, out := runRoute(t, "/x", "--handler", "http")
+	if code != 1 || !strings.Contains(out, `conflicts with the import of "net/http" in main.go`) || strings.Contains(out, "app.Router()") {
+		t.Errorf("import collision: exit %d: %s", code, out)
+	}
+	if code, out := runRoute(t, "/x", "--handler", "http.List"); code != -1 {
+		t.Errorf("selector: exit %d: %s", code, out)
+	}
+}
+
 // The handler lands at an expression slot of the printed Go line and the
 // method in its route pattern, so both are checked before printing.
 func TestNewRouteRefusesBadHandler(t *testing.T) {
