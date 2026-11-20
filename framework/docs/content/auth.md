@@ -1,39 +1,29 @@
 # Authentication
 
-GoFastr's auth subsystem lives in `battery/auth`. It is built on a small
-`AuthManager` plus a set of plugins. The manager owns shared state
-(user store, session store, JWT settings, rate-limit config); plugins
-own individual authentication methods. Every plugin is opt-in: a
-service that only needs OAuth and 2FA never compiles the
-password-reset code in.
-
-The lower-level primitives live in `battery/auth` alongside the plugins
-that use them: password hashing (bcrypt by default, argon2id optional; set `auth.DefaultHasher` before Init), the rate-limit
-`Guard` (`ratelimit.go`), and the session/token stores. They are
-dependencies of the plugins, not a second API to reach for directly.
-Apps wire the `AuthManager` and its plugins.
+GoFastr's authentication lives in `battery/auth`. An `AuthManager` holds shared configuration (user store, session store, JWT secret, rate limits), and opt-in plugins add individual auth methods so unused flows stay out of your binary.
 
 ## Quickstart
 
 ```go
 mgr := auth.New(auth.AuthConfig{
-    JWTSecret:    "your-jwt-secret-here",
-    UserStore:    myUserStore,        // implements auth.UserStore
-    SessionStore: mySessionStore,     // optional; in-memory default
+    JWTSecret:    os.Getenv("AUTH_JWT_SECRET"),
+    UserStore:    myUserStore,    // required; auth.NewEntityUserStore(db, "users")
+    SessionStore: mySessionStore, // required in prod; auth.NewEntitySessionStore(db, "sessions")
     LoginRateLimit: &auth.RateLimiterConfig{
         MaxAttempts:   10,
         Window:        15 * time.Minute,
         BlockDuration: 30 * time.Minute,
     },
 })
-mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa")) // /auth/{login,register,me,logout}; the URL is required next to the 2FA plugin
+
+mgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa")) // register first
 mgr.Use(auth.NewMagicLinkPlugin(auth.MagicLinkConfig{
     BaseURL:      "https://app.example.com",
     EmailSender:  mySender,
-    TwoFactorURL: "/login/2fa", // required next to the 2FA plugin
+    TwoFactorURL: "/login/2fa",
 }))
-mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
-mgr.Use(auth.NewAccountsPlugin())                           // /auth/accounts, /auth/unlink/{provider}
+mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{Store: twofaStore}))
+mgr.Use(auth.NewAccountsPlugin())
 mgr.Use(auth.NewEmailVerificationPlugin(auth.EmailVerificationConfig{
     BaseURL:     "https://app.example.com",
     EmailSender: mySender,
@@ -49,571 +39,110 @@ if err := mgr.Init(nil); err != nil {
 mgr.RegisterRoutes(app.Router())
 ```
 
-`AuthConfig.defaults()` runs automatically inside `New`. In production
-posture (`DevMode` left false) it picks the `__Host-session` cookie
-name, sets `Secure=true`, and a seven-day session TTL.
+### Production defaults vs. `DevMode`
 
-When `DevMode: true` and `JWTSecret` is empty, `New` mints a random
-per-process secret and logs a WARN. That lets demo/boilerplate apps
-skip the "change-me" literal: sessions invalidate on restart, which
-is the right trade for dev.
+- **Production (`DevMode: false`, default):**
+  - `JWTSecret` is **mandatory**—`Init` fails closed if empty.
+  - Durable stores are **mandatory**—in-memory session, 2FA, passkey, and token stores fail `Init` unless `AuthConfig.AllowInMemoryStores: true` is explicitly set.
+  - Session cookie defaults to `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, 7-day `SessionTTL`).
+- **Development (`DevMode: true`):**
+  - Empty `JWTSecret` auto-mints an ephemeral per-process key with a warning.
+  - Session cookie defaults to `session_id` (`Secure=false`) so plain-HTTP localhost works.
 
-In production mode (`DevMode: false`) `JWTSecret` is **mandatory**:
-`Init` fails closed with
-`auth: production mode requires AuthConfig.JWTSecret — set it from
-your secret store, or set DevMode: true for local development`, and
-`App.Start` refuses to boot. There is no warn-and-continue path: an
-empty HMAC key would make every JWT forgeable.
+### Rotating `JWTSecret`
 
-### Rotating JWTSecret
-
-Rotating `AuthConfig.JWTSecret` no longer invalidates every session at once.
-List the retiring secret in `JWTPreviousSecrets`; new tokens are signed with
-`JWTSecret`, and tokens signed by any previous secret still verify for the
-drain window. The idiom mirrors the CSRF `AdditionalKeys` rotation path.
-
-1. Set `JWTSecret` to the new secret and move the old one into
-   `JWTPreviousSecrets`. Deploy across every replica.
-2. Hold both for the drain window: one `JWTExpiry` (default 1h).
-3. Once every pre-rotation token has expired, remove the old secret from
-   `JWTPreviousSecrets` and redeploy.
+Sign with the new secret while verifying tokens signed by the retiring secret for one `JWTExpiry` window (default 1h):
 
 ```go
 mgr := auth.New(auth.AuthConfig{
-    JWTSecret:          newSecret,            // signs new tokens
-    JWTPreviousSecrets: []string{oldSecret},  // verify-only during the drain
-    // ...rest unchanged
+    JWTSecret:          newSecret,
+    JWTPreviousSecrets: []string{oldSecret},
 })
 ```
 
-Production mode still requires a non-empty `JWTSecret`: a previous-only
-configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
-`Init`, because a verify-only setup cannot sign new tokens.
+Once the drain window passes, remove `JWTPreviousSecrets` and redeploy.
 
-## Password hashing
+## Plugins at a glance
 
-`auth.DefaultHasher` hashes every new password. It is `auth.BcryptHasher{}`
-by default; set it before `Init`:
+All plugins mount under `AuthConfig.BasePath` (default `/auth`). Built-in auth routes return `403` for in-process `App.InProcessHandler()` calls (those carry no browser session) and reserve `BasePath` against embedded surfaces.
 
-```go
-auth.DefaultHasher = auth.Argon2Hasher{} // argon2id: 64 MiB, t=3, p=2
-```
-
-- `CheckPassword` reads the stored hash's prefix: `$argon2id$` verifies
-  with argon2id, anything else with bcrypt. Rows hashed before a switch
-  keep signing in.
-- A custom `PasswordHasher` (a pepper, scrypt) works too: sign-in and
-  password change ask its `Verify` first, then fall back to the prefix
-  rule, so old bcrypt and argon2id rows still verify. `CheckPassword`
-  itself knows only the two built-in formats, so a custom `Verify` may
-  call it for legacy rows. A wrong password under a peppered bcrypt
-  hasher costs two bcrypt runs, the custom one and the fallback; an
-  unknown address costs the same.
-- `Argon2Hasher.Hash` returns an error for parameters past what its
-  verifier accepts from a stored hash (1 GiB of memory, 100 iterations,
-  16 threads, a 128-byte key). A hash made with them could never sign in.
-- Accounts created without a password (OAuth, magic link) and cleared
-  passwords store a hash of a random secret made by `DefaultHasher`. A
-  login against them costs what a login against an unknown address costs,
-  so timing does not show which addresses hold a passwordless account.
-  Rows written before the switch keep their bcrypt placeholder.
-- `ValidatePasswordStrength` refuses fewer than
-  `RecommendedMinPasswordBytes` (8) characters. It counts characters, not
-  bytes: `"🔑🔑"` is two.
-
-## Changing the password
-
-`POST /auth/password` takes `{"current_password": "…", "password": "…"}`
-(JSON only) from a signed-in user and replaces their password. A client
-may also send `confirm_password`, which must then equal `password`; the
-admin's account page does not, it asks once and offers a show toggle.
-It refuses:
-
-- a request with no session (401), an API token or an embed grant
-  (401): only the interactive session behind the cookie changes it;
-- a session still owed its second factor (403), whether pending or
-  minted before the user enrolled one;
-- a cross-site form post (`rejectCrossSiteForm`);
-- a wrong current password, a new one with fewer than
-  `RecommendedMinPasswordBytes` characters or longer than 128 bytes, and a new one
-  equal to the current one, and a confirmation that differs. These answer 422 with the form-errors
-  envelope, `{"error", "fields": {<field>: [message]}}`, so a form draws the message beside its field.
-
-On success the user's other sessions are revoked (`session.revoked`,
-`reason=password_change`), their outstanding reset links are spent
-(`reset_tokens.purged`), every magic link mailed to them is spent
-(`magiclink_tokens.purged`), and `password.changed` is emitted. A failed
-magic-link purge is logged and the change still stands. A failed session
-purge answers 500 `auth.change_incomplete`: the new password is set, but
-the other sessions may still work, so change it again. A reset or
-another change that lands while the new hash is computed wins: the
-change answers 422 on `current_password`, as for a wrong one
-(`password.change_failed`, `reason=credential_changed`). The caller
-gets a fresh session cookie that keeps the second factor the old
-session had passed; the response is `{"updated": true}`. A reset,
-another change or an account claim that finishes after this change
-revoked the sessions overtakes the fresh one: once it is stored the
-change re-reads the password hash, and when the hash is no longer the
-one it wrote, it deletes the fresh session and clears the cookie, so
-the caller signs in again. API tokens
-stay: the user minted them on purpose and revokes them under
-`/auth/tokens`. A failed current-password check emits
-`password.change_failed`.
-
-A JWT from `JWTAuth` with a user store carries a tag derived from the
-password hash it was issued against, checked on every request. A
-password change, a reset, and a mailbox claim of the account each write
-a new hash, so every JWT issued before them answers 401 from then on.
-The check costs one indexed lookup per JWT request, and JWTs issued by a
-version without the tag answer 401 once after the upgrade. A login that
-a reset overtakes between the password check and the new session fails
-with the ordinary invalid-credentials 401 and leaves no session.
-
-## The plugins
-
-| Plugin | Routes | Notes |
+| Plugin | Routes | Purpose |
 |---|---|---|
-| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. Next to a 2FA plugin, `Init` requires `NewCorePlugin().WithTwoFactorURL(path)`: an HTML form login of a 2FA account redirects there instead of to its `next` page, which would refuse the pending session (a JSON login answers `two_factor_required`). `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). A successful logout sends `Clear-Site-Data: "cache", "storage"`, which asks the browser to empty its caches and the origin's storage. Browsers act on it only over HTTPS, and not every browser honours every type (Firefox ignores `"cache"`), so a page can still come back from the cache. `WithLogoutClearSiteData(types...)` picks other types; called with none, logout sends no header. `"cookies"` is not in the default because browsers apply it to every subdomain of the site. |
-| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. Next to a 2FA plugin, `Init` requires `TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `OnSuccessURL` (see [Following a magic link does not sign you in; confirming does](#following-a-magic-link-does-not-sign-you-in-confirming-does)). The stores mint 32 random bytes per token. |
-| `EmailCodePlugin` | `POST /auth/email-code/{send,verify}` | Passwordless sign-in with an eight-digit code mailed to the address, typed into the browser that asked for it. Same account rules as `MagicLinkPlugin` (auto-create, claim an unverified account, 2FA stays pending). Needs `EmailSender` unless `DevMode`, and `TwoFactorURL` next to a 2FA plugin. See [Emailed sign-in codes](#emailed-sign-in-codes). |
-| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback`, `POST /auth/oauth/{provider}/callback` (form-post providers only) | OAuth 2.0 (Google, GitHub and Apple built in, any OIDC provider through `OIDCProvider`). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
-| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. TOTP codes are six digits; backup codes are eight mixed-case letters and digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
-| `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
-| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. A click with no Fetch Metadata (a browser sends none to a plain-HTTP LAN address) gets the page too, and its reload carries `gofastr_hop=1`. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link and emailed sign-in code (`magiclink_tokens.purged`, `emailcode_tokens.purged`), every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`) and every OAuth link with its stored provider tokens (`oauth.unlinked`, `reason=password_reset`), so an IdP identity linked from a stolen session cannot sign back in. If any of these stores errors, the reset still runs the other purges, then answers 500 and asks for another link instead of reporting success. On success it mails the account's address a notice naming the unlinked providers (`NoticeTemplate` overrides the body). On an account whose address was unverified it also claims the account and marks the address verified. |
-| `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,rename,delete,reauth/options,reauth}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in, step-up and self-service management. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
-| `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
+| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | Base password login/register/logout, `/me`, and self-service password change. Always register first. Requires `WithTwoFactorURL` when `TwoFAPlugin` is present. Logout sends `Clear-Site-Data: "cache", "storage"` (customize via `WithLogoutClearSiteData`). |
+| `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET/POST /auth/magic-link/verify` | Passwordless email links with a confirmation screen (`POST` redeems, `GET` never does). Auto-creates verified users or claims unverified ones. Requires `EmailSender` (unless `DevMode`) and `TwoFactorURL` next to 2FA. |
+| `EmailCodePlugin` | `POST /auth/email-code/{send,verify}` | 8-digit emailed sign-in code bound to an `HttpOnly` challenge cookie in the requesting browser. |
+| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET/POST /auth/oauth/{provider}/callback`, `GET /auth/oauth/{provider}/link` | Google, GitHub, Apple, and generic `OIDCProvider`. Requires `OAuthLinker` in prod and `TwoFactorURL` next to 2FA. |
+| `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP (6 digits, 30s default `Period`) + 8-char backup codes + `RequireTwoFA` middleware. |
+| `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | Lists and unlinks OAuth providers; refuses to remove the user's last login method. |
+| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Mails a verification token; redemption requires an active session of the requesting account. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Anti-enumeration async mail queue (200 for any address). Reset revokes all sessions, passkeys, OAuth links/tokens, API tokens, magic links, and email codes, then emails a security notice. |
+| `PasskeyPlugin` | `POST /auth/passkey/{login,register,reauth}/options`, `POST /auth/passkey/{login,register,rename,delete,reauth}`, `GET /auth/passkey/list` | WebAuthn passkeys, conditional autofill, silent upgrade, and step-up reauth. |
+| `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped personal API tokens (`gfsk_...`) for logged-in browser sessions. |
 
-Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
-(default `/auth`). The `AuthManager` reports that prefix to the embed host
-(`framework.EmbedReserving`), so no embed surface can sit over or reach a
-relocated `BasePath` either.
+Link-minting plugins (`MagicLinkPlugin`, `EmailVerificationPlugin`, `PasswordResetPlugin`) validate `BaseURL` at `Init` (must be absolute `http`/`https` or empty). Their `BodyTemplate` callbacks and `EmailSender.Send` receive the requester's locale context.
 
-All built-in auth routes return 403 for calls marked by
-`App.InProcessHandler()`. This includes logout and the session-based
-`/auth/me`, 2FA enroll/verify/challenge/disable/backup-codes, passkey
-sign-in and management, password change, API-token create/list/revoke,
-OAuth sign-in/link/callback, linked-account listing/unlinking,
-email-verification send/redeem, login/registration, password reset, and
-magic-link send/confirmation/sign-in. These operations act on browser
-sessions or account credentials; neither a context user nor a 2FA
-assurance fact is a browser session. The 2FA step-up session gate also
-returns 403 for a marked call. `RequireTwoFA` remains available to gate
-ordinary application routes reached through Local.
+## Stores, entities & passwords
 
-The three link-minting plugins (`MagicLinkPlugin`,
-`EmailVerificationPlugin`, `PasswordResetPlugin`) validate their
-`BaseURL` at `Init`: it must be an absolute `http`/`https` URL (or
-empty, for relative links). A scheme-relative or bare-host value
-fails boot next to the declaration instead of shipping inside an
-emailed reset, verify, or sign-in link.
+`auth.UserStore` (`FindByEmail`, `FindByID`, `CreateUser`, `UpdateRoles`) is the only required interface; return `auth.ErrUserNotFound` and `auth.ErrEmailTaken` for miss/conflict so DB transport errors fail loudly.
 
-`PasswordResetPlugin` sends its email off the request path, so a known
-address answers as fast as an unknown one. Forgot-password puts the
-message on a bounded queue (1,024 entries) drained by eight workers;
-`BodyTemplate` and `EmailSender.Send` run on a worker, each send with
-a 30-second deadline. The client already has its 200 by then, so a
-delivery can be dropped, with an `email delivery queue full` or
-`email delivery stopped` warning (`plugin="password-reset"` and the
-hashed address only), when the queue is full or the plugin has stopped. `PasswordResetPlugin.OnStop`
-(an `AuthPluginOnStop`, so `AuthManager.OnStop` calls it at app
-shutdown) cancels sends in flight, closes the queue and waits for the
-workers, bounded by the context it is given. Once stopped, the plugin
-queues nothing more and starts no new workers. `MagicLinkPlugin.OnStop`
-likewise stops its expired-token reaper, and an `OnStart` after
-`OnStop` is refused.
-
-## What the host app implements
-
-`auth.UserStore` is the only required interface. It maps email/ID to
-`auth.User` and creates new users:
+Use the built-in SQL stores—they implement the full optional extension matrix (`OAuthLinker`, `OAuthEnrichedLinker`, `OAuthProfileRefresher`, `OAuthUserCreator`, `AccountLister`, `AccountUnlinker`, `AtomicUnlinker`, `PasswordChecker`, `PasswordSetter`, `PasswordSwapper`, `PasswordClearer`, `EmailVerifier`, `EmailVerifiedChecker`, `NameStore`, `UserLister`):
 
 ```go
-type UserStore interface {
-    FindByEmail(ctx, email) (User, hashedPassword string, error)
-    FindByID(ctx, id) (User, error)
-    CreateUser(ctx, email, hashedPassword, roles) (User, error)
-    UpdateRoles(ctx, userID string, roles []string) error
-}
+app.Entity("users",    auth.UserEntityConfig())    // CRUD=false, MCP=false
+app.Entity("sessions", auth.SessionEntityConfig()) // CRUD=false, MCP=false
+mgr.SetUserStore(auth.NewEntityUserStore(db, "users"))
+mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
 ```
 
-Return `auth.ErrUserNotFound` from the `FindBy*` methods when no row
-matches. Return `auth.ErrEmailTaken` from `CreateUser` on a unique-
-violation. Any other error is treated as a transport failure and
-propagated: plugins refuse to silently auto-create users when they
-can't tell "not found" from "DB unreachable".
+- **Auth entities are private by default:** `*EntityConfig()` keeps user/session tables off auto-CRUD and MCP. Soft-deleting a user (`Scope.SoftDelete`) immediately signs out all of their sessions, JWTs, and API tokens.
+- **Durable 2FA store:** Seal TOTP secrets at rest with AES-GCM via `auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{EncryptionKey: key, PreviousEncryptionKeys: oldKeys})`. Retired keys auto-re-seal on read.
+- **Default roles:** New accounts receive `AuthConfig.DefaultRoles` (default `["user"]`). Client-supplied `roles` fields on registration are ignored.
+- **Listing users:** Use `mgr.ListUsers(ctx, auth.ListUsersOptions{Limit: 50, Offset: 0})` from trusted admin code instead of raw SQL; returns `id`/`email`/`roles` (never `password_hash`).
+- **Data erasure:** `AuthManager.Init` binds `App.EraseUserData` to your configured user, session, OAuth, passkey, token, and rate-limit tables.
+- **DB vs. wire JSON casing:** Auth columns use `snake_case` in SQL; auto-CRUD converts to `camelCase` JSON by default (override via `AppConfig.JSONCase`).
+- **Bootstrap admin seeds:** When creating a user programmatically (e.g., via `App.WithSeed`), call `MarkEmailVerified` immediately if your store implements `auth.EmailVerifier` so a future magic link doesn't claim and clear the seeded password.
 
-`auth.EntityUserStore` is a ready-made implementation that adapts a
-database table (SQLite or PostgreSQL) through the framework's entity
-system. Use it unless you have a reason not to.
+### Password hashing & password changes
 
-## Optional extension interfaces
+- `auth.DefaultHasher` defaults to `auth.BcryptHasher{}`. Switch to `auth.Argon2Hasher{}` (64 MiB, t=3, p=2) before `Init`; `CheckPassword` checks the `$argon2id$` prefix so legacy bcrypt rows continue working.
+- `ValidatePasswordStrength` enforces at least `RecommendedMinPasswordBytes` (8) characters (up to 128 bytes).
+- `POST /auth/password` (`{"current_password", "password"}`, optional `"confirm_password"`) requires an interactive non-pending cookie session (never API tokens or embed grants). On success it rotates the caller's session cookie, revokes all other sessions, purges reset/magic-link tokens, and invalidates older JWTs (JWTs embed a tag derived from the password hash). API tokens stay active.
 
-Plugins enable extra behaviour when the host's store implements an
-optional interface. Stores that don't, fall back to a documented
-safe-but-reduced path.
+### Canonical emails
 
-| Interface | Used by | Effect when implemented |
-|---|---|---|
-| `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
-| `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
-| `OAuthProfileRefresher` | `OAuth2Plugin` | Update the profile of an existing link on a returning sign-in, never inserting one. `EntityUserStore` implements it. Without it the profile stays as it was at link time. |
-| `OAuthUserCreator` | `OAuth2Plugin`, `MagicLinkPlugin` | Record at creation time that the user has no password. Lets `PasswordChecker.HasPassword` return false correctly. |
-| `OAuthTokenRefresher` | `RefreshOAuthToken` / `ValidOAuthToken` | Exchange a stored refresh token for a fresh access token. Implemented by `GoogleProvider` and `GitHubProvider`. See "OAuth token store + refresh". |
-| `AccountLister` | `AccountsPlugin` | Power `GET /auth/accounts`. Required. |
-| `AccountUnlinker` | `AccountsPlugin` | Power `DELETE /auth/unlink/{provider}`. Required. |
-| `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
-| `EmailVerifier` | `EmailVerificationPlugin`, `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Set the `email_verified` flag. Required by the verification plugin and by every account claim. |
-| `EmailVerifiedChecker` | `MagicLinkPlugin`, `OAuth2Plugin`, `PasswordResetPlugin` | Report whether the address was proven. Magic link refuses an existing account (500) on a store without it, because it cannot tell an owner from a squatter. OAuth treats its absence as unverified and never auto-links. Reset skips the claim. |
-| `PasswordClearer` | `MagicLinkPlugin` | Remove a squatter's password during a claim (placeholder hash, `password_set = false`). Without it the claim falls back to `PasswordSetter` with the placeholder hash. |
-| `PasswordSetter` | `PasswordResetPlugin` | Persist the new bcrypt hash. Required. |
-| `PasswordSwapper` | `POST /auth/password` | Write the new hash only while the stored one is still the hash the change verified, in one statement. `EntityUserStore` implements it. Without it the change re-reads the hash just before writing, which leaves a short window a reset can land in. |
-| `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
-| `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
-| `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
-| `NameStore` | Host code (the admin's account page and menu) | Keep an optional display name: `UserName` reads it ("" when none) and `SetUserName` stores it after `auth.CleanName` (trimmed, valid UTF-8, at most `MaxNameRunes` runes, no control, bidi or zero-width characters; `ErrInvalidName` otherwise; "" clears it). `EntityUserStore` implements it over a `name` column (`UserFieldMap.Name`) that `EnsureSchema` adds to an existing table as `''`. |
-| `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
+All auth flows canonicalize emails via `auth.CanonicalEmail` (strip invisible/bidi/C1 controls, Unicode NFC normalize, trim, lowercase) and reject NULs, invalid UTF-8, or non-`local@domain` strings with `400 invalid_email`. Override via `AuthConfig.CanonicalizeEmail` (must be idempotent, verified at `Init`) and call `mgr.CanonicalEmail(addr)` in host code.
 
-The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
-provided in this package implement every relevant interface; if you
-start from `EntityUserStore` you get the full feature matrix.
+## HTML forms & password reset
 
-`mgr.JWT()` is ready as soon as `auth.New` returns (when `JWTSecret` is
-set, or DevMode minted one), so `RequireAuth(mgr.JWT())` can be wired
-before `App.Start` runs `Init`. `RequireAuth(nil)` panics at wiring time.
-A request with no bearer token passes only when a verified embed grant or
-`App.InProcessHandler()` admitted it and the context already holds a
-non-nil user; every other one gets 401.
-A zero `AuthConfig.JWTExpiry` means one hour; `Init` refuses a negative
-one.
+`/auth/login`, `/auth/register`, and `/auth/logout` branch on `Content-Type`:
+- `application/json`: JSON response (`200` with `{user, token}` on login; `202 {"accepted": true}` on register—uniform for free or taken emails, never auto-logs in, burns the same hash work either way; optional `AuthConfig.RegisterEmailSender` notifies existing holders async).
+- `application/x-www-form-urlencoded` or `multipart/form-data` (1 MiB cap, no file parts): `303` redirect to `?next=` (validated same-origin path starting with `/`) or `/`. Failed form posts redirect `303` back to same-origin `Referer` or configured fallbacks (`auth.SetDefaultLoginErrorPath("/login")`, `auth.SetDefaultRegisterErrorPath("/register")`) with `?error=<code>`.
 
-A zero `AuthConfig.SessionTTL` means seven days. A negative one is a
-sign or unit error, and `AuthManager.Init` refuses it, so the app does
-not boot with a session lifetime nobody chose. The stores refuse one
-too when a caller passes it to `MintSession` directly:
-`EntitySessionStore.Create` rejects `ttl <= 0`, and
-`MemorySessionStore.Create` rejects `ttl < 0` while keeping `ttl == 0`
-as its one-week default.
+Duplicate or case-folded JSON/form keys (and unknown JSON keys) are refused with `400`.
 
-The default stores are **in-memory**: fine for dev and tests, a trap
-in production: sessions vanish on restart and never resolve on a
-second replica, and in-memory 2FA enrollment reverts accounts to
-password-only auth after a restart. Production mode enforces this at
-Init: **both** the in-memory session store and the in-memory 2FA store
-**fail Init** (a warn-only boot lets a broken deployment go unnoticed).
-Wire the durable store:
-
-```go
-store, err := auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{
-    // Seals the TOTP secret at rest (AES-GCM, same sealer as the OAuth
-    // token store). Rows written before the key was added still verify;
-    // new writes are sealed.
-    EncryptionKey: keyFromYourSecretManager,
-    // Optional rotation drain window (the JWT PreviousSecrets idiom):
-    // rows sealed under a retired key still open, are re-sealed under
-    // the CURRENT key on that read, and stop needing the old key — so
-    // drop old keys after one pass over the enrolled rows. Without a
-    // matching key a sealed row FAILS CLOSED with an explicit error
-    // naming the rotation instead of silently serving ciphertext.
-    PreviousEncryptionKeys: [][]byte{keyRetiredLastQuarter},
-})
-if err != nil { return err }
-mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{
-    Store: store, // plugin creates the table
-}))
-```
-
-or set `AuthConfig.AllowInMemoryStores: true` to acknowledge a
-deliberate single-node deployment (both stores then boot; the 2FA store
-still leaves a WARN trace so the downgrade stays visible). See
-[Horizontal scaling](scaling.md).
-
-## Default roles for new accounts
-
-Every newly created account, from register, magic-link auto-create, or
-OAuth auto-create, is stamped with `AuthConfig.DefaultRoles`. The
-default is `["user"]`.
-
-```go
-mgr := auth.New(auth.AuthConfig{
-    DefaultRoles: []string{"member"}, // everyone starts as "member", not "user"
-    // …
-})
-```
-
-These are **operator configuration, never request data.** The
-registration and auto-create flows are anonymous, so honoring a
-client-supplied `roles` field would let anyone self-promote to any
-role. The handlers read the value through `mgr.DefaultRoles()` and
-ignore any `roles` key on the incoming request; role elevation is a
-separate admin-gated flow.
-
-## HTML form support
-
-`/auth/login`, `/auth/register`, and `/auth/logout` accept both JSON
-and HTML-form bodies. The handler branches on `Content-Type`:
-
-| Request                                       | Response                                              |
-|-----------------------------------------------|--------------------------------------------------------|
-| `Content-Type: application/json`              | `200 OK` JSON body with `{user, token}` (login)        |
-| `application/x-www-form-urlencoded` (HTML)    | `303 See Other` with `Location` to `?next=` or `/`     |
-| `multipart/form-data`                         | Same as form-urlencoded                                |
-
-Both form encodings are capped at 1 MiB and read the same fields
-(`email`, `password`, `next`). A body that names `email` or `password`
-twice answers 400 rather than letting the parser pick one, and a
-multipart body with a file part answers 400: no auth form takes a file.
-The magic-link confirmation POST reads either encoding too.
-
-**`/auth/register` answers one uniform response for a free and a taken
-address**: `202 Accepted` with `{"accepted":true}` on the JSON surface,
-a `303` redirect on the form surface, and **no session cookie on either
-branch** — one unauthenticated request per address must not tell an
-attacker whether an account exists (the same policy forgot-password and
-login already pin). Consequences:
-
-- Register no longer auto-logs-in; clients follow up with `/auth/login`.
-- The JSON body no longer echoes the created user.
-- A registration attempt on an existing address creates nothing and,
-  when `AuthConfig.RegisterEmailSender` is wired, emails the existing
-  *holder* ("someone tried to register with your address") off the
-  timed path, through the same kind of queue password reset uses: 1,024
-  entries, eight workers, a 30-second deadline per send, dropped with a
-  warning (`plugin="core"`) when full. `CorePlugin.OnStop` cancels the
-  notices in flight and waits for the workers, so a stalled provider
-  holds at most eight sends and never outlives shutdown.
-- Both branches burn the same bcrypt work (the hash is computed before
-  the branch), so a clock cannot tell them apart either.
-
-Form-flow login responses set the session cookie before redirecting, so
-the runtime's [form interceptor](runtime-contract.md#forms)
-follows the `Location` header and lands the user on the next page.
-
-Both surfaces decode credentials strictly. A body that names `email` or
-`password` twice, or spells one as a case-folded variant (`EMAIL`,
-`PASSword`), is a `400` on the JSON and the form surface alike: the two
-parsers used to resolve such a body to different identities (`net/url`
-keeps the first value, `encoding/json` the last), so the ambiguity is
-refused rather than resolved by parser accident. The same strictness
-(`handler.UnmarshalStrict`, the rule `Bind` applies) covers every JSON
-auth endpoint — a duplicate or case-folded key, or an unknown top-level
-key, is a `400` before the handler acts. Extra keys that match no field
-are refused, not ignored: a body a reviewer reads differently from the
-handler is the attack, whichever key caused it.
-
-A failed form post (wrong password, weak password, missing field, a
-cross-site or throttled post) answers `303` back to the form with
-`?error=<code>`. The target is the same-origin `Referer` when the
-request carries one. Pages served with `Referrer-Policy: no-referrer`
-never send it, so the battery falls back to a configured path, and to a
-JSON body when none is set:
-
-```go
-auth.SetDefaultLoginErrorPath("/login")       // sign-in errors
-auth.SetDefaultRegisterErrorPath("/register") // sign-up errors
-```
-
-`/auth/register` uses the register path when it is set and the login
-path otherwise. Generated apps set the login path to their login screen,
-and the register path to their `signup_form` screen when they have one.
-
-Open-redirect protection: the `?next=` (query or form) override is
-honored only for same-origin paths starting with `/`. `//evil.example`
-and full URLs are rejected, falling back to `/`.
-After decoding a login form, the battery carries a valid submitted
-`next` to the retry page. It does not copy the Referer's query.
-
-Wire a plain HTML login form like this:
-
-```html
-<form action="/auth/login" method="POST" enctype="application/x-www-form-urlencoded">
-  <input name="email" type="email" required>
-  <input name="password" type="password" required>
-  <input name="next" type="hidden" value="/dashboard">
-  <button type="submit">Log in</button>
-</form>
-```
-
-No client-side JavaScript needed beyond the framework runtime.
-
-Build it from the kit rather than raw inputs, so password managers and
-phones get the hints they read:
-
-```go
-ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"},
-    html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}),
-    ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,
-        Input: func(c headless.FieldControl) render.HTML {
-            return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email",
-                AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
-        }}),
-    ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,
-        Input: func(c headless.FieldControl) render.HTML {
-            return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password",
-                Autocomplete: "current-password", EnterKeyHint: "go"})
-        }}),
-    ui.Link(ui.LinkConfig{Href: "/forgot-password", Text: i18nui.AuthForgotPassword.Text(ctx)}),
-)
-```
-
-- The identifier field asks for `autocomplete="username"`, not `email`:
-  that is the token a password manager pairs with the password field.
-- `ui.PasswordInput` has a show toggle, so a sign-up form asks for the
-  new password once (`autocomplete="new-password"`, `MinLength: 8`). Its
-  input never spell-checks or auto-capitalises, also while revealed.
-- Link a forgot-password page from the sign-in form (next section).
+Build login forms with `ui.Form`, `ui.Control` (`AutoComplete: "username"`, `NoSpellCheck: true`), and `ui.PasswordInput` (`Autocomplete: "current-password"` or `"new-password"`).
 
 ### Password reset from HTML forms
 
-`/auth/forgot-password` and `/auth/reset-password` take form posts too:
-
-| Form | Fields | Answer |
+| Route | Fields | Form response |
 |---|---|---|
-| `POST /auth/forgot-password` | `email`, `next` | `303` to `next` (or `/`) for **every** address, known or not |
-| `POST /auth/reset-password` | `token`, `password`, `next` | `303` to `next` (or `/`) once the password is set; a failure is the usual `303` back with `?error=` |
+| `POST /auth/forgot-password` | `email`, `next` | `303` to `next` (or `/`) for **every** address |
+| `POST /auth/reset-password` | `token`, `password`, `next` | `303` to `next` (or `/`) on success; `303` back with `?error=` on failure (query stripped so token isn't echoed) |
 
-`PasswordResetConfig.LinkPath` is the page the mailed link opens, with
-`?token=<token>` appended; default `<BasePath>/reset-password`, the
-endpoint itself. Point it at your own page, whose form posts the token
-back with the new password:
+Set `PasswordResetConfig.LinkPath` (same-origin path, e.g., `"/reset-password"`) to point emailed links at your reset screen (`?token=...` is appended).
 
-```go
-mgr.Use(auth.NewPasswordResetPlugin(auth.PasswordResetConfig{
-    BaseURL:     "https://app.example.com",
-    LinkPath:    "/reset-password",  // a same-origin path; Init refuses anything else
-    EmailSender: sender,
-}))
-```
+## Session middleware, SSR policies & BFF posture
 
-A reset signs nobody in (it revokes every session), so send `next` to
-your sign-in page. The forgot page's `next` should land on a notice that
-says a link is on its way *if* an account uses the address: the battery
-answers every address the same way. A failed reset redirects back to
-the `Referer` without its query, so the token is not carried back; the
-`minlength` on the field stops the common failure before it posts.
-`examples/meridian` has the three screens (`auth_screens.go`).
+Mount `auth.SessionMiddleware(mgr)` globally to resolve the session cookie into `auth.GetCurrentUser(ctx)` and populate `framework/owner` automatically (note: `battery/auth` registers a process-global owner extractor in `init()`; override with `owner.SetExtractor` after import if needed). Invalid, expired, or pending-2FA cookies clear any outer context user and 2FA assurance.
 
-### Owner extractor: global state and its limit
-
-`battery/auth.init()` installs a global owner extractor in
-`framework/owner` so any entity with `OwnerField` set in the process
-scopes by the current `auth.GetCurrentUser(ctx)`. **The extractor is
-process-global**: one extractor per process, last-import wins. Apps
-that need different extractors per `framework.App` instance (e.g. a
-single process hosting two unrelated apps) can't have them today.
-
-If you need a different identity source, call
-`owner.SetExtractor(yourFunc)` AFTER `battery/auth` is imported (the
-last call wins). Document this clearly in your app: the import-order
-coupling is subtle.
-
-**Safety**: when an entity has `OwnerField` set and the extractor
-can't produce an owner id for the request (no auth, anonymous request,
-extractor disabled), CRUD refuses the request with `401 Unauthorized`.
-There is no fail-open path: setting `OwnerField` makes the entity
-unconditionally require an authenticated owner.
-
-## Session middleware (cookie → ctx user)
-
-`battery/auth.SessionMiddleware(mgr)` reads the session cookie, looks
-up the user, and stashes them in the request context via
-`handler.SetUser`. After it runs, `auth.GetCurrentUser(ctx)` returns
-the live `User`, and any entity with `OwnerField` set automatically
-scopes per-user.
-
-Missing, invalid, expired, or pending-2FA cookies clear any pre-existing
-context user, so an outer tenant's identity cannot leak into an anonymous
-inner session. They also clear any 2FA assurance recorded by an outer
-`SessionMiddleware`. On a successful resolution the middleware replaces
-that assurance with the issuing `AuthManager`, the resolved user's id,
-and whether any of that user's live, non-pending session cookies on this
-request has completed 2FA.
-By default, assurance also binds to the lookup tenant, including an empty
-tenant id. Resolve that tenant before `SessionMiddleware` when a custom
-session or user store partitions lookup by tenant. Only known global lookup
-is exempt: an `EntityUserStore` paired with a `MemorySessionStore` or
-`EntitySessionStore` is recognized by its concrete types. Wrappers and other
-custom stores keep the enforcing default. A host may explicitly set
-`AuthConfig.GlobalSessionLookup` when both session and user lookup ignore
-the tenant; assurance is then about the user alone. This opt-out does not
-add tenant filtering. Global lookup carries no tenant binding, even when a
-tenant is already on the context. With these built-in stores, mount
-`tenant.ResolveMiddleware` after authentication to derive the authorization
-tenant without invalidating assurance or the `_events` identity recheck.
-It considers every candidate cookie, so an older unverified session cannot
-hide a later stepped-up session of the same user. The exceptions are a
-verified embed grant and a request admitted by `App.InProcessHandler()`:
-neither carries browser credentials,
-and each keeps the identity its trusted server-side context established.
-For a marked call, `SessionMiddleware` also preserves the outer request's
-recorded 2FA assurance; `RequireTwoFA` checks that it still belongs to its
-own manager and the same context user. For tenant-partitioned lookup it
-also requires the same lookup tenant. This is a fact
-captured on the outer request, not a credential, and does not re-check
-session expiry or revocation.
-Use that entry point, not `App.Router()`, for generated Local repositories.
-
-An explicit `handler.RecheckPrincipal` recomputes assurance from the
-original candidate cookies for that same principal, using the original lookup
-tenant for tenant-partitioned stores. The identity recheck does not refuse a
-tenant set or changed downstream; the tenant derivation steps run afterward.
-It fails when none of the principal's live, non-pending sessions remain.
-
-```go
-app.Use(auth.SessionMiddleware(mgr))
-```
-
-Pair with `auth.RequireSession()` (or
-`auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
-flows) on any route that needs a logged-in user.
+- **Route middleware:** `auth.RequireSession()` (or `auth.RequireSession(auth.WithRedirectOnFail("/login"))`) requires a browser session (refuses scoped API tokens). `auth.RequireAuth(mgr.JWT())` accepts Bearer JWTs (re-resolved against `UserStore` on every request so deletions and role downgrades take effect immediately).
+- **Custom tenant-partitioned stores:** Resolve the tenant before `SessionMiddleware`, or set `AuthConfig.GlobalSessionLookup: true` if your custom stores ignore tenant context (the built-in `EntityUserStore` + `EntitySessionStore` / `MemorySessionStore` are recognized as global automatically).
 
 ### A link from another site into a guarded page
 
-The session cookie is `SameSite=Strict`, so a browser leaves it off a
-page load that starts on another site: a link in mail, chat or an issue
-tracker. The gate would read a signed-in user as signed out and send
-them to the login page. `SessionMiddleware` answers that one case
-instead. When all of these hold:
+Because session cookies use `SameSite=Strict`, top-level links from email or chat omit the cookie. When a cross-site `GET`/`HEAD` document navigation arrives with no session cookie and would hit a `401` or a login redirect, `SessionMiddleware` responds with a `200` (`Cache-Control: no-store`) same-origin hop page (`Refresh: 0;url=<path>` + Continue link, customizable via `AuthConfig.Pages.Hop`). The browser reloads same-site with the cookie attached. Non-navigation requests (`fetch`, islands, `POST`, `curl`) are untouched.
 
-- the request is a `GET` or `HEAD` that `handler.IsCrossSiteRequest`
-  calls cross-site (`Sec-Fetch-Site: cross-site`, or `same-site` from a
-  sibling subdomain that sends no matching `Origin`), with
-  `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
-- it carries no session cookie at all,
-- and the app is about to answer `401`, or a gate is about to redirect
-  it for want of a session,
-
-the browser gets `200` with `Cache-Control: no-store`, a
-`Refresh: 0;url=<the same path and query>` header and a "Continue" link
-(phrases `auth.session_hop_title` and `auth.oauth_hop_continue`, drawn
-by `AuthConfig.Pages.Hop` when set). The reload starts on this site, so
-it carries the cookie and the page loads signed in. The reload is
-same-origin, so it is never answered with the page again: a visitor who
-is really signed out gets the gate's own redirect or `401` on it, one
-page load later than before.
-
-With `framework.WithLocalePrefixes`, a visitor who arrived on
-`/es/orders` is reloaded on `/es/orders`: the `Refresh` header and the
-link keep the locale prefix, like every other URL in a `/es/` response
-([i18n](i18n.md)). This holds for each hop page in this document, and
-for one drawn by your own `auth.Pages`: write `d.Target` as given.
-
-Nothing else changes. A public page, and a redirect that is no refusal,
-reach a cross-site visitor directly. A fetch, a form RPC, an island or
-`data-cui-poll` request, an event stream, a frame, a `POST`, a request
-with no Fetch Metadata (curl, a script) and any request that sent a
-session cookie, live or dead, get the gate's own answer.
-
-Every `401` counts as a refusal. A redirect counts only when the gate
-says so, because a redirect can follow work a reload must not repeat (a
-logout link, a callback). These gates say so already:
-`RequireSession(WithRedirectOnFail(...))`, `SessionPolicy` and
-`RolePolicy` when they redirect, and `battery/admin`. The UI host does
-not: a screen policy that sends `/` to `/en` is no refusal, and a
-cross-site visitor gets its plain `303`. A middleware or screen policy
-you write yourself that redirects to a login page calls
-`handler.NoteSessionRefusal` first, with the request's context or the
-context the policy was given:
+Built-in gates (`RequireSession`, `SessionPolicy`, `RolePolicy`, `battery/admin`) mark login redirects automatically. Custom redirect guards should call `handler.NoteSessionRefusal(ctx)` before redirecting:
 
 <!-- gofastr:compile
 import "net/http"
@@ -651,354 +180,25 @@ func membersOnly(ctx context.Context) app.Decision {
 }
 ```
 
-The call does nothing on any other request. A guard or policy that
-answers `401` needs no call.
+### Per-SSR-screen policies
 
-### Marked calls and what the gates accept
-
-On a marked call, `RequireSession()` accepts a non-nil server-set context
-user without re-reading a session or requiring 2FA assurance. It still
-rejects an API-token-authenticated context. It is not a replacement for
-`RequireTwoFA` when an application route requires step-up.
-
-These gates mean a **browser session**: `RequireSession`,
-`SessionPolicy`, and `RolePolicy` answer `401` to a caller
-authenticated only by an API token (the token middleware's
-`TokenScopes` in the context is the discriminator). A scoped `gfsk_`
-token is a leash for the JSON API, not a key to the SSR screens; a
-screen that should serve token callers says so with `RequireAuth` or
-a scope gate.
-
-`RequireAuth` is the JWT-Bearer equivalent for network requests; it also
-accepts a non-nil trusted context user on a marked Local call.
-
-JWTs validate the signature and expiry, then **re-resolve the subject on
-every request** through the manager's `UserStore` (`JWTAuth.SetUserStore`,
-wired by `AuthManager.Init`): the principal's identity AND roles come
-from the fresh user row, and the claims are trusted for nothing but the
-subject. Deletion, erasure, and role downgrades therefore take effect on
-the next request, not at token TTL — a deleted owner answers the same
-`401` as an invalid token, and a downgraded admin's pre-downgrade JWT
-loses the admin routes immediately. A bare `NewJWTAuth` with no store
-(service-to-server deployments with no user table) keeps the stateless
-claims-derived principal; `JWTSecret` rotation still drains old tokens
-over a TTL window via `PreviousSecrets`.
-
-## Service accounts & scoped API tokens
-
-The self-service token endpoints require an **interactive session**. An API
-token cannot mint another token, because that would let a scoped token escape its own
-leash, and neither can an embeddable surface's grant, for the same reason and
-more so: a grant is delegated authority, bounded to one surface and one origin
-with a deadline, sitting in a page the app does not control. Minting from it
-would exchange a bounded credential for an unbounded one.
-
-The same rule covers `battery/admin`, the framework's MCP tools, and
-`RequireRole`. If an embedded surface legitimately needs one of those, the
-answer is a scope on the surface plus `embeds.RequireScope`, not a wider
-credential.
-
-The `access.Decider` seam binds every gate, resource-scoped and
-role-scoped: a decider installed via `access.DeciderMiddleware` /
-`access.WithDecider` is consulted by `CanResource` (auto-CRUD permission
-gates) and by `RequireRole`, `MCPUser`, and `MCPRole` (with the zero Ref
-and the caller's roles), and a `DecisionDeny` refuses before the role
-policy runs. `DecisionAbstain` falls through to the role check.
-
-A scoped API token carries its owner's roles, but `RequireRole` and
-`MCPRole` count a role for it only when the token also holds the role
-scope `role:<name>` (`access.RoleScope`; `role:*` and `*:*` cover every
-role), the rule `framework.MCPRequireRole` follows. A `customers:read`
-token an admin minted does not pass `RequireRole("admin")`; a token meant
-to call admin routes is minted with `role:admin` in its scopes. Sessions
-and JWTs carry no scopes and are unaffected. The Decider still sees the
-owner's full role set, so a deny keyed on a role holds either way.
-
-
-Non-human identities such as CI runners, background workers, and internal scripts
-authenticate with **API tokens** (`gfsk_`-prefixed PATs) instead of session
-cookies or JWTs. Tokens are issued to a human user or to a **service
-account**: a non-interactive identity that holds roles like a user but has
-no mailbox and cannot log in. Both populate request context the same way
-sessions do, so owner-scoping and `access.Can` work unchanged.
-
-### Token format
-
-- Plaintext: `gfsk_` + 40 lowercase hex chars (20 bytes from `crypto/rand`).
-  The `gfsk_` prefix makes leaked tokens greppable by secret scanners the
-  way `ghp_` / `xoxb-` are.
-- At rest: only `sha256(full-plaintext)` is stored, plus a display
-  `Prefix` (the brand plus 7 random chars, `gfsk_1a2b3c4`) so listings
-  can identify a token without revealing it. The same hash-then-lookup grammar now covers every
-  password-equivalent secret the battery persists: magic-link,
-  password-reset, and email-verification tokens, and the session
-  rows of `EntitySessionStore` (a read-only dump of the session
-  table is no longer a pile of live session cookies).
-- The plaintext is returned **exactly once**, from `IssueToken` or
-  `POST /auth/tokens`. It is never persisted, logged, or placed in any
-  error string or audit event.
-
-### Issuing
+Gate `uihost` screens before `Load()` runs using `auth.SessionPolicy` (defaults to `Redirect("/login?next=...")`) and `auth.RolePolicy` (defaults to `Block(403)`, also consults any `access.Decider`):
 
 ```go
-ts, _ := auth.NewSQLAPITokenStore(db)
-ss, _ := auth.NewSQLServiceAccountStore(db)
-
-// Programmatic: mint a token for a user or service account.
-plaintext, rec, err := auth.IssueToken(ctx, ts, auth.TokenSpec{
-    Name:      "ci-deploy",           // required
-    OwnerKind: "user",                // "user" | "service"
-    OwnerID:   currentUser.GetID(),
-    Scopes:    []string{"posts:read", "deploys:run"},
-    TTL:       30 * 24 * time.Hour,   // 0 = no expiry
-})
-// Store `plaintext` in your secret manager NOW. It cannot be retrieved again.
-_ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
-```
-
-Validation: Name/OwnerKind/OwnerID required; Name is at most 256 bytes;
-Name and OwnerID must be valid UTF-8 without NUL. Token creation refuses
-invalid text before storage with `ErrInvalidTokenSpec` (HTTP 400, with
-a `fields.name` or `fields.owner_id` message). OwnerKind ∈ {user, service};
-scopes match `^[a-z0-9_*-]+:[a-z0-9_*-]+$` (so `*:read` and `*:*` mint);
-max 32 scopes. `POST /auth/tokens` answers 400 for a `ttl_seconds` below
-zero or above 9223372036 (about 292 years, the largest that fits a
-`time.Duration`).
-
-**A user-minted token has no default expiry.** An omitted `ttl_seconds`
-mints a token that never expires — the strongest credential the endpoint
-can hand out, by design (`TTL: 0` means "no expiry" in `TokenSpec` too).
-Every other credential in this battery carries a bounded default
-(sessions 7d, JWTs 1h, magic links 15m, reset tokens 1h, verification
-tokens 24h). To bound user tokens, set an explicit TTL at mint time, or
-layer a sweep of your own over `ExpiresAt`. A leak with no expiry has no
-natural remediation horizon; revocation depends on an operator noticing.
-
-### Middleware wiring
-
-Mount `TokenMiddleware` **alongside** `SessionMiddleware`. It only
-intercepts `Authorization: Bearer gfsk_…` credentials; non-`gfsk_` bearers
-(JWTs) and header-less requests pass through untouched for the session/JWT
-middleware to handle. A `gfsk_` credential that fails validation (unknown,
-revoked, expired, disabled owner) clears any prior ctx identity and
-proceeds anonymous: it never falls back to an outer identity.
-
-```go
-app.Use(auth.SessionMiddleware(mgr))
-app.Use(auth.TokenMiddleware(mgr.UserStore(), svcAccounts, apiTokens,
-    auth.WithTokenAudit(auditSink)))
-```
-
-`TokenMiddleware` has no `AuthManager`, so audit is wired with
-`WithTokenAudit(sink)`; a nil sink disables auditing and never panics.
-
-On the consumer side, the generated typed client
-([entity declarations](entity-declarations.md#code-generation))
-carries the token for you: set `client.Token` to a plaintext PAT and every
-request sends `Authorization: Bearer gfsk_…`. Bearer requests skip CSRF by
-design, so scripts and CLIs need no cookie or CSRF-token handling. The
-customer flow is: log in to the app's web UI, mint a scoped token via
-`POST /auth/tokens` (TokensPlugin), paste it into the tool once. The
-generated customer CLI ([Ship your API as a CLI](app-cli.md)) packages
-exactly this flow as its `login` command.
-
-### Scopes
-
-Sessions and JWTs are **unscoped**: a logged-in user carries their full
-capability. API tokens are **additionally restricted** by their scope list:
-
-- exact: `"posts:read"` grants `"posts:read"`
-- wildcard verb: `"posts:*"` grants any `"posts:…"`
-- wildcard resource: `"*:read"` grants `read` on every resource
-- global: `"*:*"` grants everything
-- empty scopes: the token authenticates but `RequireScope` always 403s
-
-`RequireScope` only gates the routes you mount it on, and sessions pass
-it unscoped. Mount it on the machine-facing routes you actually want
-scope-limited, and don't rely on it as a blanket gate for human traffic.
-
-```go
-// In a handler: token requests are scope-checked; sessions pass.
-if !auth.HasScope(ctx, "posts:read") { /* 403 */ }
-
-// As route middleware: 403s token-authenticated requests lacking the scope;
-// non-token (session/JWT) requests pass unscoped.
-r.Group("/posts", auth.RequireScope("posts:write")).Post("", handler)
-```
-
-For the auto-CRUD tree there is a blanket gate: `RequireAPIScopes(prefix)`
-derives the required scope from the route itself: the first path segment
-after the prefix is the resource, GET/HEAD need `<resource>:read`,
-everything else `<resource>:write`, so one mount makes every minted scope
-real across `/api`:
-
-```go
-app.Use(auth.TokenMiddleware(users, accounts, tokens))
-app.Use(auth.RequireAPIScopes("/api")) // ["customers:*"] token ⇒ 403 off /api/invoices
-```
-
-Every route an entity registers names the entity's table as its resource
-(`crud.EntityRouter`, built on `router.ResourceGroup`), and the middleware
-takes that name first. The CRUD routes and their subroutes (`/{id}`,
-`/_batch`, `/_events`, `/llm.md`), the entity's `Endpoints`, and EntityUI's
-`/_bulk`, `/_export.csv` and `/_pick` all answer to the table, wherever
-they are mounted: `POST /api/v1/_batch` on a table named `v1` needs
-`v1:write`, never `_batch:write`, and an `orders` handler mounted at
-`/api/orders/v1` needs `orders:read`. An Endpoint's HTTP route and its MCP
-twin ask the same `<table>:<verb>`.
-
-For any other route, a version segment (`v1`, `v2`, `v1.2`) is skipped, so
-`/api/v1/posts` and `/api/v2/posts` both need `posts`. Whether a segment is
-a version or a table comes from the route that matched, not from how the
-path is spelled:
-with a table named `v1` mounted at `/api`, `GET /api/v1/orders` is record
-`orders` of table `v1` (route `/api/v1/{id}`) and needs `v1:read`, never
-`orders:read`. Mounted outside a router (no matched route on the request),
-the path alone cannot tell the two apart, so the middleware requires every
-candidate: `v1:read` and `orders:read`.
-
-Without it (or per-route `RequireScope`), a token's scope list is
-**advisory only**: the token still authenticates as its owner everywhere.
-Session/JWT callers and paths outside the prefix are untouched.
-
-The CRUD layer holds the same line when one route reaches another entity.
-A scoped request needs `<target>:read` for every `?include=` target, at
-every depth, and for every `?rel.field=` filter hop, and `<target>:write`
-for every child a cascade write creates or updates; ManyToMany
-link-by-id needs `<target>:read`. A `["customers:read"]` token gets 403
-on `/api/customers?include=invoices`, and a `["customers:write"]` token
-cannot create invoices through a nested `"invoices": [...]` body. This
-applies wherever the CRUD routes are mounted, prefix or not. The token
-middleware marks the request through `access.WithHeldScopes`, which
-`auth.WithTokenScopes` calls; embed grants are marked the same way.
-
-`auth.TokenScopes(ctx)` returns `(scopes, true)` only for
-token-authenticated requests; `(nil, false)` for sessions/JWT.
-
-**The token-management endpoints are session-only.** `POST/GET/DELETE
-/auth/tokens` require an interactive session. A request authenticated by
-an API token is rejected with 401, even under the recommended global
-`TokenMiddleware` wiring. Otherwise a leaked scoped (or empty-scoped)
-token could mint a `*:*` token for its owner and escape its own scope
-leash, or list/revoke the owner's other tokens. Token holders manage
-their tokens by logging in, not with the token itself.
-
-On an account with a second factor, the endpoints also need the cookie
-session that passed it, the bar passkey add and password change hold. A
-session that predates enrollment answers 403 `auth.2fa_required`, and a
-bearer JWT with no such session answers 401. Without this, a stolen
-pre-enrollment cookie turned into a permanent `*:*` token the new factor
-never touched.
-
-A non-NULL `revoked_at` or `expires_at` that the store cannot parse (on
-SQLite, `unixepoch()` or `julianday('now')` written out of band) reads as
-the epoch: the token is revoked or expired, never live.
-
-### Service accounts (programmatic-only)
-
-A service account authenticates **only** via tokens. There is no login
-path. Create one in Go; its roles flow to `RequireRole` / `access.Can`
-through the `User` interface. Its tokens still need the matching scope:
-`role:deploy` for `RequireRole("deploy")`, and the permission itself for
-`access.Can`:
-
-```go
-sa := auth.NewServiceAccount("ci-runner", []string{"deploy", "reader"})
-ss.Create(ctx, sa)
-// then auth.IssueToken with OwnerKind: "service", OwnerID: sa.ID
-```
-
-Service-account management has **no HTTP endpoints in v1**: create and
-disable them from trusted server code (`SetDisabled`).
-
-### Management endpoints (`TokensPlugin`)
-
-Self-service token management for logged-in users:
-
-| Endpoint | Effect |
-|---|---|
-| `POST {base}/tokens` | Create a token for the **caller** (session user). Body `{name, scopes, ttl_seconds}`. Owner is forced from the session; `owner_kind`/`owner_id` in the body are ignored. Returns the plaintext once. A reset or password change that lands while the request is open (its body still unread), or one that already ended the request's session, wins: the new token is revoked and the request answers 401. The revoke runs detached from the request, so a client that hangs up cannot stop it. |
-| `GET {base}/tokens` | List the caller's tokens (prefix only, never the plaintext or hash). |
-| `DELETE {base}/tokens/{id}` | Revoke one of the caller's tokens. A foreign id is a 404 (owner-scoped). |
-
-```go
-mgr.Use(auth.NewTokensPlugin(apiTokens))
-```
-
-### Audit events
-
-| Kind | When | Meta |
-|---|---|---|
-| `token.created` | `POST /auth/tokens` succeeds | `token` (prefix), `name` |
-| `token.revoked` | `DELETE /auth/tokens/{id}` succeeds | `token_id` |
-| `token.auth_failed` | a `gfsk_` credential fails in `TokenMiddleware` | `reason` ∈ unknown\|revoked\|expired\|owner_missing\|owner_disabled, `token` (prefix) |
-
-Only the token **prefix** ever appears in an audit event, never the
-credential itself.
-
-## Per-SSR-screen policies (`auth.SessionPolicy`, `auth.RolePolicy`)
-
-For apps built with the `framework/uihost` SSR stack, gating happens
-at the **screen** layer, not the router middleware layer. Attach an
-`app.Policy` to a `Screen` or `ScreenGroup` and the dispatcher
-evaluates it before `Load()` runs:
-
-```go
-import "github.com/DonaldMurillo/gofastr/core-ui/app"
-
-// Public marketing pages: no policy, no gate.
-application.RegisterScreen(app.NewScreen("/",      &HomeScreen{}),  nil)
-application.RegisterScreen(app.NewScreen("/about", &AboutScreen{}), nil)
-
-// Gated dashboard group: every screen inherits SessionPolicy.
 dash := app.NewScreenGroup("/dashboard", dashLayout, auth.SessionPolicy())
-dash.Screen(app.NewScreen("home",    &Home{}),    nil)
 dash.Screen(app.NewScreen("billing", &Billing{}).
     WithPolicy(auth.RolePolicy(auth.Roles("admin"))), nil)
-application.Router.ScreenGroup(dash)
 
-// Same-URL marketing/dashboard duo via RenderAlt: factory, NOT
-// singleton, so each request gets a fresh instance (no cross-user
-// data leak on shared alt state).
+// Serve Landing to anonymous visitors and Dashboard to signed-in users on "/":
 application.RegisterScreen(
-    app.NewScreen("/", &Dashboard{}).
-        WithPolicy(auth.SessionPolicy(auth.WithRenderAlt(
-            func() component.Component { return &Landing{} },
-        ))),
+    app.NewScreen("/", &Dashboard{}).WithPolicy(
+        auth.SessionPolicy(auth.WithRenderAlt(func() component.Component { return &Landing{} })),
+    ),
     nil,
 )
 ```
 
-The dispatcher resolves each request as one of four outcomes:
-
-| Decision     | What happens                                                    |
-|--------------|-----------------------------------------------------------------|
-| Allow        | Normal Load + Render.                                           |
-| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`. A client-side navigation gets the same destination: a relative path in `X-Gofastr-Location`, an absolute http(s) URL (an identity provider's login) in `X-Gofastr-Document`, which the runtime loads as a page. |
-| RenderAlt    | The alt component takes the screen's place; its Load runs. The screen's title, description and article flag stay off the page. |
-| Block        | HTTP status from `WithBlock(status)`, default 401/403. The body is the status's phrase, or `WithBlockReason(status, phrase)`'s, in the request's locale. |
-
-### Option precedence: last-write-wins per call, alt > redirect > block on fail
-
-Each `With*` option overwrites the others' fields on the way in. If
-you chain `auth.WithRedirect("/x").WithBlock(403)` the Block wins.
-The second option clears the redirect URL. There is no "compose two
-failure outcomes"; pick one per policy.
-
-When more than one applies (e.g. through some custom option-builder),
-`failureDecision` resolves them in order: `RenderAlt` first if its
-factory is set; otherwise `Redirect` if a URL is set; otherwise
-`Block` (default 401 for SessionPolicy, 403 for RolePolicy).
-
-Defaults applied when no failure option is passed:
-
-| Policy           | Default failure outcome                            |
-|------------------|----------------------------------------------------|
-| `SessionPolicy`  | `Redirect("/login")` with `?next=<request-path>`   |
-| `RolePolicy`     | `Block(403, "forbidden")`                          |
-
-To suppress the auto-`?next=` on a redirect (e.g. anon "/" →
-"/marketing"), pass `auth.NoNext()`:
+Options are last-write-wins (`WithRedirect`, `WithBlock`, `WithBlockReason`, `WithRenderAlt`). Suppress `?next=` with `auth.NoNext()`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/battery/auth"
@@ -1007,385 +207,23 @@ import "github.com/DonaldMurillo/gofastr/battery/auth"
 auth.SessionPolicy(auth.WithRedirect("/marketing", auth.NoNext()))
 ```
 
-`RenderAlt` takes a factory, not an instance: the framework calls it
-once per request so the alt component cannot leak data across users:
+Inside a component's `RenderCtx`, call `auth.SessionFrom(ctx)` for conditional UI elements.
+
+### CSRF & Browser-Backend (BFF) posture
+
+Mount CSRF middleware and embed `auth.CSRFInputHTML(r)` (or `ui.Form`, which stamps it automatically):
 
 ```go
-auth.SessionPolicy(auth.WithRenderAlt(
-    func() component.Component { return &Landing{} },
-))
+app.Use(auth.CSRF(auth.WithCSRFSecret(secret), auth.WithCSRFAuthRoutes(mgr)))
 ```
 
-Inside a `RenderCtx`, call `auth.SessionFrom(ctx)` for in-component
-gating (sidebar nav, conditional CTAs); no policy machinery needed
-for a per-widget branch:
+Bearer tokens (`Authorization: Bearer`, `X-API-Key`), verified embed exchanges, and `App.InProcessHandler()` calls skip CSRF; Basic/Digest/Negotiate do not.
+
+**Login/register/logout carry their own cross-site guard.** Because login CSRF requires no pre-existing cookie, those endpoints (and bodyless 2FA endpoints `/2fa/{enroll,disable,backup-codes}`) refuse cross-site POSTs for all preflight-free content types (`application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain`, and missing `Content-Type`) whenever `Origin` or `Sec-Fetch-Site: cross-site` indicates another site. JSON POSTs stay exempt because browsers preflight cross-site JSON.
+
+For same-backend browser apps behind HTTPS, use the all-in-one BFF preset instead of wiring session, CSRF, and origin checks separately:
 
 ```go
-func (s *Header) RenderCtx(ctx context.Context) render.HTML {
-    if sess, ok := auth.SessionFrom(ctx); ok {
-        return AuthedHeader(sess)
-    }
-    return AnonHeader()
-}
-```
-
-Pair with `SessionMiddleware` upstream so the policy sees the loaded
-user. JSON/API routes still use `RequireSession` middleware as before.
-Policies are for the SSR page layer specifically.
-
-`RolePolicy` consults an installed `access.Decider` before its role
-check (the same seam `RequireRole` and the resource gates use): a
-`DecisionDeny` for the caller refuses the screen even when the role
-list alone would allow it, and `DecisionAbstain` falls through to
-the role check.
-
-## Auth entities are private by default
-
-The user / session tables back the auth subsystem: exposing them via
-auto-CRUD would leak password hashes and session tokens. Use the
-pre-built configs:
-
-```go
-app.Entity("users",    auth.UserEntityConfig())     // CRUD=false, MCP=false
-app.Entity("sessions", auth.SessionEntityConfig())  // CRUD=false, MCP=false
-mgr.SetUserStore(auth.NewEntityUserStore(db, "users"))
-mgr.SetSessionStore(auth.NewEntitySessionStore(db, "sessions"))
-```
-
-`auth.UserEntityFields()` and `auth.SessionEntityFields()` are still
-exported for hosts that want to assemble their own config, but the
-`*EntityConfig()` helpers are the safe default.
-
-`EntitySessionStore.EnsureSchema` creates a unique index on `token` and
-an index on `user_id` (and `expires_at`) whoever created the table. When
-AutoMigrate made it from `SessionEntityConfig()` first, the store's own
-`CREATE TABLE` did nothing and every cookie lookup scanned the table.
-
-**A soft-deleted account is signed out.** With `Scope.SoftDelete` on the
-users entity, a delete only stamps `deleted_at`. `EntityUserStore` finds
-that column when `AuthManager.Init` runs `EnsureSchema` (AutoMigrate has
-added it by then) and from then on `FindByID`, `FindByEmail` and
-`ListUsers` skip a trashed row: the password no longer signs in, and the
-account's sessions, API tokens and JWTs resolve to no user, so
-`GET /auth/me` answers 401. Restoring the row brings the account back.
-A column added by a migration after boot takes effect at the next
-restart.
-
-## Durable store schema and PostgreSQL first boot
-
-`EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore` create
-their tables when `AuthManager.Init` runs. On PostgreSQL their boolean
-columns use the native `BOOLEAN` type, matching the Go `bool` values
-bound by the stores. This includes `auth_users.password_set`, the
-session 2FA flags, and the durable 2FA flags.
-
-These stores, and the `<users>_oauth_links` table beside the user table,
-name their tables and the `UserFieldMap` columns the way AutoMigrate
-stores them: folded to lowercase, then quoted (`query.QuoteFolded`). A
-host that declares its users entity with `Table: "Members"` and a
-`PasswordHash` field gets one `members` table that the entity layer and
-the store share. Older versions quoted the name as written, so on
-PostgreSQL a mixed-case name got a second, case-kept `"Members"` table
-that held the store's rows. When `Init` finds such a table it stops
-with an error naming the rename (`ALTER TABLE "Members" RENAME TO
-members`, or move the rows when `members` already exists) instead of
-booting on an empty table.
-
-Apps generated from an app spec register a configured bootstrap admin through
-`App.WithSeed`. The hook runs after auto-migration and before the server
-accepts traffic. A missing `ADMIN_SEED_PASSWORD`, a lookup error other
-than `auth.ErrUserNotFound`, password hashing failure, or insert failure
-aborts startup instead of leaving a fresh app with an unusable admin
-login. The seed is idempotent: an existing account is left unchanged.
-
-The auth stores also convert legacy PostgreSQL `INTEGER` boolean columns
-(`0`/`1`) to `BOOLEAN` during `EnsureSchema`, preserving the value and
-setting a boolean `FALSE` default. This self-heals tables created by
-older GoFastr versions. Back up production data before the first boot
-after upgrading. The 2FA table likewise self-heals two columns added
-since its first release — `version` (optimistic concurrency) and
-`last_used_step` (the durable TOTP single-use counter: one code
-authenticates one session even across restarts and replicas).
-
-`EntityUserStore` adds `email_verified` (configurable through
-`UserFieldMap.EmailVerified`) to an existing users table with every row
-set to `FALSE`. Nothing the battery stored before said whether an
-address was proven, and registration never proved one, so marking old
-rows verified would bless every account an attacker registered under
-someone else's address. The cost lands once per legacy account:
-
-- The first magic link for a legacy account claims it. Its password is
-  cleared, its sessions, API tokens and OAuth links are removed, and the
-  owner signs in through the link. They set a password again through
-  forgot-password if they want one.
-- A completed password reset claims it the same way but keeps the new
-  password.
-- A passwordless OAuth account stops auto-linking a second provider
-  until one of its linked providers asserts `email_verified` for the
-  account's address on login, which marks it verified.
-- `EmailVerificationPlugin` marks an account verified without the claim,
-  so a host can backfill accounts it trusts by its own evidence with
-  `MarkEmailVerified`.
-
-A user your own code creates, such as a bootstrap admin seeded from an
-operator-chosen address, is unverified too. Mark it right after
-`CreateUser`, or its first magic link claims it and clears the seeded
-password:
-
-```go
-u, err := authCfg.UserStore.CreateUser(ctx, "admin@example.com", hash, []string{"admin"})
-if err != nil {
-	return err
-}
-if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok {
-	if err := v.MarkEmailVerified(ctx, u.GetID()); err != nil {
-		return err
-	}
-}
-```
-
-The app spec's generated admin seed does this.
-
-`AuthManager.Init` also re-registers the right-to-be-forgotten erasers
-against the table names the CONFIGURED stores actually use (the
-`datexport` registry is last-writer-wins per name), so an app wired as
-`NewEntityUserStore(db, "users")` + `NewEntitySessionStore(db,
-"sessions")` gets its `users` row, `sessions` rows, resolved
-`IdentityEmail`, and magic-link tokens erased — not just the canonical
-`auth_*` spellings the package registers at import time. When
-`LoginRateLimitPerAccount` uses a `SQLRateLimitStore`, the erasure also
-deletes that limiter's attempt and block rows for the user's email
-(the key is its `Scope`, `login_account` by default, then
-`|account:` and the email); other limiters' rows on the same store stay.
-
-## Email identity is canonical (invisible-stripped + NFC-normalized + trimmed + lowercased)
-
-Every flow that reads or stores an email — login, registration, magic
-links, OAuth account matching, password reset, and the login
-rate-limiter key — canonicalizes it with `auth.CanonicalEmail` at its
-ingestion point: invisible/bidi codepoints and C1 controls stripped
-(`core/textsafe`), then Unicode NFC normalization, then trim, then
-lowercase. Custom `UserStore` implementations therefore always receive
-canonical input; a host that accepts emails on its own surfaces should
-call `auth.CanonicalEmail` too so its lookups agree with the battery's.
-
-Every email ingestion path refuses NUL bytes and malformed UTF-8 with 400
-`invalid_email` before lookup, registration, or token creation. This storage
-invariant is checked before normalization and on both the input and output
-of `AuthConfig.CanonicalizeEmail`; an override cannot silently repair or
-introduce unstorable bytes. Other override errors retain the composed-email
-fallback, unless the error carries its own localized phrase.
-
-**Address shape**: after folding, the default refuses a value that is
-not one `local@domain` pair (exactly one `@`, text on both sides, no
-white space, no control character) with 400 `invalid_email`.
-Registration, login, magic links, password reset and OAuth all go
-through it, so `notanemail` can no longer become an account nobody can
-mail. It is a shape check, not RFC 5322 parsing. A host that keys
-accounts on something else (bare operator names, quoted local parts)
-installs `AuthConfig.CanonicalizeEmail`, which replaces the default and
-its shape check. An existing row the rule refuses stops matching email
-login, magic links and password reset once you upgrade. A signed-in
-user can still change their password: that path reads the stored row
-and falls back to its raw email. Find those rows first. On PostgreSQL:
-
-```sql
-SELECT id, email FROM auth_users
-WHERE email NOT LIKE '%_@_%' OR email LIKE '%@%@%'
-   OR email ~ '[[:space:][:cntrl:]]';
-```
-
-On SQLite, replace the last line with
-`OR email GLOB '*[' || char(1) || '-' || char(32) || char(127) || ']*'`,
-which matches ASCII spaces and controls. Neither catches every Unicode
-space (U+00A0, U+3000 and the like); search for those by hand if your
-users paste from word processors.
-
-**Invisible characters**: NFC cannot fold zero-width and bidi codepoints,
-so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
-right-to-left override inside the local part would otherwise register as
-a second account that renders identically to the first in every list,
-log, and mail template. The default canonicalizer strips them before
-folding, so the twin lands on the base account. The set includes the
-Unicode tag characters (U+E0000–U+E007F) and the Hangul fillers
-(U+115F, U+1160, U+3164, U+FFA0). `auth.CleanName` refuses the same set
-in a display name, except a subdivision flag such as Scotland's, whose
-tag letters stay.
-
-**Unicode normalization (NFC/NFD)**: the same mailbox can be spelled in
-composed (`é`) or decomposed (`e` + combining acute) form — macOS and
-iOS clipboards famously decompose copied text. Both spellings
-canonicalize to the composed form, so one mailbox is one identity and
-OIDC auto-linking never splits on the spelling. A deployment with
-different rules (a provider that ignores dots or plus tags, a legacy
-store keyed on raw bytes) installs `AuthConfig.CanonicalizeEmail`; it
-replaces the default at every ingestion point — including the invisible
-strip, an override owns its own invisible-character policy — and may
-return `auth.ErrEmailNotComposed` (or any error) to refuse an address,
-which the handlers surface as `400`. It must be idempotent: password
-reset and erasure canonicalize the stored address again before matching
-the tokens it was written into. `Init` checks this over a few sample
-addresses (mixed case, padding, dots and plus tags, a decomposed accent,
-a zero-width space, an IDN domain) and refuses to start when an address
-the override accepted moves on a second pass. An address the override
-refuses is skipped there, so every ingestion checks too: an address the
-override moves on a second pass is refused with `invalid_email` and
-logged.
-
-Host code that keys anything on an address calls
-`mgr.CanonicalEmail(addr)`, which applies the override; the package
-function `auth.CanonicalEmail` is the default rule only. Audit events the
-manager emits carry the address folded by the override, so the SQL
-sink's `email_hash` agrees with the battery's keys.
-
-```go
-mgr := auth.New(auth.AuthConfig{
-    // ...
-    // A host whose provider ignores dots in the local part folds them
-    // too, on top of the default NFC + trim + lowercase.
-    CanonicalizeEmail: func(e string) (string, error) {
-        c, err := auth.CanonicalEmail(e)
-        if err != nil {
-            return "", err
-        }
-        local, domain, ok := strings.Cut(c, "@")
-        if !ok {
-            return "", auth.ErrEmailNotComposed
-        }
-        return strings.ReplaceAll(local, ".", "") + "@" + domain, nil
-    },
-})
-```
-
-**Upgrading a store with mixed-case rows**: rows written by older
-versions keep their original casing and will no longer match. Before
-rewriting, find casings that would collapse into the same account —
-those must be resolved by the operator (merge or delete), not by the
-migration:
-
-```sql
-SELECT LOWER(TRIM(email)), COUNT(*) FROM auth_users
-GROUP BY LOWER(TRIM(email)) HAVING COUNT(*) > 1;
-```
-
-With zero collisions, normalize and then keep the invariant honest
-with an expression index. `TRIM` mirrors the runtime canonicalization
-(`CanonicalEmail` trims before lowercasing) so a legacy
-`"  Bob@Example.com  "` row collapses to the same identity. PostgreSQL
-shown; SQLite supports the same expression-index form:
-
-```sql
-UPDATE auth_users SET email = LOWER(TRIM(email));
-CREATE UNIQUE INDEX auth_users_email_canonical
-  ON auth_users (LOWER(TRIM(email)));
-```
-
-## Listing users
-
-Back-offices that need to enumerate accounts (an admin user list, a
-back-office screen) should call `mgr.ListUsers`, the supported
-replacement for raw SQL against `auth_users`. It pages through the
-store in a stable email-ordered sequence and returns only
-`id`/`email`/`roles`, never `password_hash`.
-
-```go
-users, total, err := mgr.ListUsers(ctx, auth.ListUsersOptions{
-    Limit:  50, // <=0 → 50, capped at 500
-    Offset: 0,  // <0 → 0
-})
-```
-
-`total` is the full row count (independent of the page), so a UI can
-render "showing 1–50 of 832". There is **no HTTP route**; call it
-from trusted server code (an admin handler you mount yourself), not
-the auth plugin's routes.
-
-`ListUsers` type-asserts the configured `UserStore` for the optional
-`UserLister` interface. `EntityUserStore` implements it; a custom
-store that does not gets `auth.ErrListUsersUnsupported`, a loud
-failure rather than a silently empty list, so a deployment that forgot
-a listable store is told explicitly.
-
-## CSRF protection
-
-For form-submit flows, mount the CSRF middleware globally and embed
-the hidden field helper in every form:
-
-```go
-app.Use(auth.CSRF(auth.WithCSRFSecret(secret)))
-```
-
-```html
-<form action="/save" method="POST" enctype="application/x-www-form-urlencoded">
-  {{ csrfField .Request }}
-  <input name="title">
-</form>
-```
-
-Where `csrfField` is a template helper bound to
-`auth.CSRFInputHTML(r)`. The middleware accepts the token either as a
-hidden `_csrf` field (HTML forms) or as the `X-CSRF-Token` header (XHR /
-fetch flows that don't go through a form).
-
-Bearer-token requests (`Authorization: Bearer …`, `X-API-Key: …`) are
-skipped: they don't ride on cookies and aren't subject to CSRF. Any other
-`Authorization` scheme (Basic, Digest, Negotiate, NTLM) is checked: the
-browser attaches those by itself, to a cross-site form too, once a proxy
-or an intranet has challenged for them.
-
-Verified embed exchanges and calls admitted by `App.InProcessHandler()`
-are also exempt. In-process admission refuses credential headers, URL
-userinfo, and TLS peer credentials before marking the context; network
-headers cannot forge that marker. This exception also applies under
-`WithBFFPosture`, not to ordinary anonymous browser writes. Custom core
-CSRF middleware can compose `framework.IsInProcessRequest` into its Skip
-predicate. See [sdk.md](sdk.md#typed-repositories).
-
-`auth.CSRFToken(r)` reads the token the middleware put on the request,
-on a verified POST too (a form re-rendered after a validation error).
-Without one it reads the `__Host-auth_csrf` cookie before `auth_csrf`.
-
-The CSRF cookie is `Secure`/`__Host-`-prefixed whenever the request is
-HTTPS, including behind a TLS-terminating proxy that sets
-`X-Forwarded-Proto: https` (the app itself sees plain HTTP there). A
-name set with `WithCSRFCookieName` gets the prefix too.
-
-**Login/register/logout carry their own cross-site guard.** Those
-endpoints can't rely on the CSRF cookie: a login CSRF needs no
-pre-existing cookie, so an attacker's page could silently log a victim
-into an attacker-controlled account. The guard refuses any POST a
-cross-site page can send without a CORS preflight: the three HTML form
-enctypes (`application/x-www-form-urlencoded`, `multipart/form-data`, and
-`text/plain`), plus a bodyless `fetch()` that carries no `Content-Type`
-at all, when `Origin` (or `Sec-Fetch-Site: cross-site`) names another
-site. `text/plain` and the missing `Content-Type` are the two shapes the
-old `urlencoded`/`multipart`-only check missed, and both are preflight-free.
-That is why a `text/plain` cross-site form could complete a magic-link
-sign-in before this guard widened. JSON stays exempt on purpose: a
-cross-site JSON POST is preflighted, and these routes answer no preflight,
-so a cross-origin SPA reaching them through configured CORS depends on the
-exemption. Requests with no `Origin` (curl, native apps) pass. This is on
-by default; no configuration required.
-
-The same guard covers the other bodyless POSTs a signed-in user's cookie
-can carry: `/2fa/disable`, `/2fa/backup-codes` and `/2fa/enroll` refuse a
-cross-site request, so a hidden form on another site cannot turn off a
-user's second factor or replace their backup codes. `/2fa/verify` and
-`/2fa/challenge` read a JSON body and answer 415 to anything else.
-
-## Browser-backend (BFF) posture
-
-For an application whose browser talks directly to the same GoFastr backend,
-use the explicit auth preset instead of wiring the session, CSRF, and Origin
-controls independently:
-
-```go
-mgr := auth.New(auth.AuthConfig{
-    JWTSecret: os.Getenv("AUTH_JWT_SECRET"),
-    UserStore: users,
-    SessionStore: sessions,
-})
-
 app := framework.NewApp(
     framework.WithAPIPrefix("/api"),
     auth.WithBFFPosture(mgr, auth.BFFPostureConfig{
@@ -1395,1034 +233,92 @@ app := framework.NewApp(
 app.RegisterBattery(mgr)
 ```
 
-The preset makes login cookie-only (no JWT in the JSON response), forces the
-session and CSRF cookies to `Secure`, installs `SessionMiddleware` and CSRF,
-and rejects non-allowlisted `Origin` values under the configured API prefix
-(`/api` in this example). Browser preflights
-receive credentialed CORS headers only for an exact allowed origin. Bearer JWTs
-are rejected on that API surface; `gfsk_` API tokens remain available for
-explicit non-browser automation.
+`WithBFFPosture` forces cookie-only login (omits JWT from login JSON), enforces `Secure` session and CSRF cookies (so run behind HTTPS even if `DevMode` is true), mounts `SessionMiddleware` + CSRF, rejects non-allowlisted origins and Bearer JWTs under `APIPrefix`, and still permits `gfsk_` API tokens (customize via `BFFPostureConfig.TokenPrefix`).
 
-For branded API credentials set `BFFPostureConfig.TokenPrefix` to the same
-prefix as `TokensPlugin.WithPrefix` and `TokenMiddleware(WithTokenPrefix(...))`.
-The default is `gfsk_`. A prefix must be 2–16 ASCII characters including the
-trailing `_`, start with a lowercase letter, and contain only lowercase
-letters/digits before the `_`; invalid prefixes panic at configuration time.
-Other bearer credentials remain refused by the BFF guard.
+`AllowedOrigins` requires exact `http://` or `https://` origins (no wildcards). When `APIPrefix` is unset, CRUD mounts at the root and the origin guard covers the whole app—include the app's own origin in `AllowedOrigins` for Origin-carrying browser requests. `framework/ui.SignOut` stays compatible: the logout path and form-POST OAuth callbacks are exempt from the generic CSRF token check (they verify origin themselves).
 
-`AllowedOrigins` requires exact `http://` or `https://` origins and rejects
-wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
-so `WithAPIPrefix` and `WithBFFPosture` may appear in either option order
-without duplicating configuration. With no `APIPrefix`, CRUD mounts at the
-root and the guard covers the whole app, not only `/api`: include the app's
-own origin in `AllowedOrigins` for Origin-carrying browser requests.
-Requests without an Origin still pass the origin check. Because cookies are
-always `Secure`, run this posture behind HTTPS, even if `AuthConfig.DevMode`
-is true.
+## Service accounts & scoped API tokens
 
-`framework/ui.SignOut` remains compatible with this preset. Its static logout
-form is exempt from the generic CSRF token check only at the configured auth
-logout path; the auth handler still rejects cross-origin form submissions.
-All other cookie-authenticated mutations require a CSRF token.
-
-A host that mounts `auth.CSRF()` itself, without `WithBFFPosture`, gets
-the same two exemptions from `auth.WithCSRFAuthRoutes(mgr)`: the logout
-path and the form-POST OAuth callback, which both check the request's
-origin themselves. No other path under `BasePath` is exempt.
+Non-human clients (CI, scripts, customer CLIs) authenticate with `gfsk_`-prefixed API tokens (`gfsk_` + 40 random hex chars; only `sha256` + display prefix are stored, plaintext shown once). Tokens belong to a human user or a programmatic-only **service account** (`auth.NewServiceAccount`):
 
 ```go
-app.Use(auth.CSRF(auth.WithCSRFSecret(secret), auth.WithCSRFAuthRoutes(mgr)))
-```
+ts, _ := auth.NewSQLAPITokenStore(db)
+ss, _ := auth.NewSQLServiceAccountStore(db)
 
-## Naming conventions: DB columns vs. wire JSON
+// Service account (no login path; manage from server code, disable via SetDisabled):
+sa := auth.NewServiceAccount("ci-runner", []string{"deploy", "reader"})
+_ = ss.Create(ctx, sa)
 
-Mixing DB-column casing with wire-JSON casing trips up most first-time
-users. The rule:
-
-| Layer | Convention | Where set |
-|---|---|---|
-| DB column names | `snake_case` (e.g. `password_hash`, `user_id`) | Entity declarations + `UserEntityFields()` |
-| JSON wire format | `camelCase` by default (e.g. `passwordHash`, `userId`) | `AppConfig.JSONCase` (or `CrudHandler.JSONCase` per handler); defaults to camelCase |
-
-The framework automatically converts snake_case DB columns to
-camelCase JSON keys at the response layer (via `crud.JSONCase`). You
-do NOT need to match auth's snake_case column names in your own
-entities: define your columns however you like at the DB layer and
-the wire format stays consistent.
-
-```go
-// Both of these expose the SAME wire format ({"userId":"...","notes":"..."}):
-app.Entity("logs", entity.EntityConfig{
-    Fields: []schema.Field{
-        {Name: "user_id", Type: schema.String}, // snake
-        {Name: "notes",   Type: schema.String},
-    },
-    Scope: &entity.ScopeConfig{OwnerField: "user_id"},
+plaintext, rec, err := auth.IssueToken(ctx, ts, auth.TokenSpec{
+    Name:      "ci-deploy",
+    OwnerKind: "service", // "user" | "service"
+    OwnerID:   sa.ID,
+    Scopes:    []string{"posts:read", "role:deploy"},
+    TTL:       30 * 24 * time.Hour, // 0 = no expiry
 })
-// Inside JSON payloads (POST body, response): {"userId": "...", "notes": "..."}
+
+// Middleware wiring alongside SessionMiddleware:
+app.Use(auth.SessionMiddleware(mgr))
+app.Use(auth.TokenMiddleware(mgr.UserStore(), ss, ts, auth.WithTokenAudit(auditSink)))
+app.Use(auth.RequireAPIScopes("/api")) // enforces <resource>:read / <resource>:write across /api
 ```
 
-If you genuinely need snake_case on the wire (matching a Python or Rails
-client's expectations), set `AppConfig.JSONCase = "snake_case"`.
-
-## Cookie defaults
-
-`AuthConfig.defaults()` produces two postures:
-
-- **Production** (default): `SessionCookie = "__Host-session"`,
-  `SessionSecure = true`. The `__Host-` prefix forces the browser to
-  reject the cookie unless `Path=/`, `Secure`, and no `Domain` are set,
-  which blocks sibling-subdomain cookie injection.
-- **Dev** (`DevMode: true`): `SessionCookie = "session_id"`,
-  `SessionSecure = false`. Use only over plain HTTP in local
-  development.
-
-Every mint goes through one helper, and the session cookie carries
-`SameSite=Strict` on all of them: password login, logout, magic-link
-verify, and the OAuth callback. (The OAuth *state* cookie is
-deliberately `SameSite=Lax` — see "The callback is bound to the
-browser that started the flow" under OAuth — because a Lax cookie is
-what still rides the provider's top-level redirect back.)
-
-An OAuth sign-in ends on a cross-site navigation too: the provider sent
-the browser to the callback, and a redirect from there would continue
-that navigation, so the browser would withhold the session cookie the
-callback just set and the landing page would render signed out. A
-callback that arrives cross-site (`Sec-Fetch-Site`) therefore answers
-`200` with the session cookie, a `Refresh: 0;url=…` header and a
-"Continue" link to the landing page (phrases
-`auth.oauth_signin_hop_title` and `auth.oauth_hop_continue`, drawn by
-`AuthConfig.Pages.Hop` when set). The page it loads starts on this site
-and carries the cookie. A callback with no Fetch Metadata at all gets
-the same page, because a browser sends none to a plain-HTTP address
-that is not localhost, and a click there looks like curl
-(`handler.NeedsSameSiteHop`). A callback that carries Fetch Metadata
-and is not cross-site gets the plain `302`.
-
-## Rate limiting
-
-```go
-auth.AuthConfig{
-    LoginRateLimit:           &auth.RateLimiterConfig{...}, // per-IP on /auth/login
-    LoginRateLimitPerAccount: &auth.RateLimiterConfig{...}, // per-email on /auth/login
-    RegisterRateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/register
-    MailAddressRateLimit:     &auth.RateLimiterConfig{...}, // per-address, both mail endpoints
-}
-auth.MagicLinkConfig{
-    RateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/send
-    VerifyRateLimit:  &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/verify
-}
-auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /2fa/{verify,challenge}
-auth.PasswordResetConfig{
-    RateLimit: &auth.RateLimiterConfig{...}, // per-IP on forgot/reset
-}
-auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
-```
-
-`POST /auth/password` spends the login limiters (per IP, and per
-account on the key login uses), so a stolen session guesses the current
-password no faster there than at the login form.
-
-Login (per-IP + per-account) **and** register (per-IP) carry defaults
-even when you set nothing: credential stuffing and account-table
-flooding are network attacks, not config-mode ones. Pass a config with a
-large `MaxAttempts` to loosen, not to leave them off.
-
-The same is true of the plugin endpoints — every one of these ships a
-default per-IP floor when its `RateLimit` is left nil:
-
-| Endpoint | Default floor |
-|---|---|
-| `POST /auth/forgot-password`, `POST /auth/reset-password` | 10/min, 15-min block (register floor; token minting + mail dispatch) |
-| `POST /auth/magic-link/send` | 10/min, 15-min block (register floor; mail dispatch) |
-| `POST /auth/magic-link/verify` | 30/min, 5-min block (login per-IP floor; secret redemption) — knob: `MagicLinkConfig.VerifyRateLimit` |
-| `POST /auth/send-verification` | 10/min, 15-min block (register floor) |
-| `POST /auth/2fa/challenge`, `POST /auth/2fa/verify` | 10/min, 15-min block (6-digit code guessing needs ~333k expected attempts at skew=1) |
-
-Loosening any of them is explicit: pass the plugin's `RateLimit` (or
-`VerifyRateLimit`) with a large `MaxAttempts`.
-
-The two endpoints that mail a link to whatever address they are given,
-`POST /auth/magic-link/send` and `POST /auth/forgot-password`, also
-share one per-address limit however many IPs ask: one mail every two
-minutes (`AuthConfig.MailAddressRateLimit`), spent from a single budget
-the auth manager owns, so a mail from either endpoint starts the
-cooldown for both — an address cannot draw two mails per window by
-alternating endpoints. Without it a rotating proxy could flood one inbox
-with links. It is a short cooldown, not an hourly budget with a long
-block: anyone can spend an address's budget, and a long block would let
-a stranger stop every link to its owner. The mails a stranger triggers
-still reach the owner, and each link outlives the cooldown, so the owner
-always holds a working one. Keep `TokenTTL` above `Window +
-BlockDuration` (4 minutes at the defaults) if you shorten it.
-
-The default per-address limiter keeps its state in memory on each
-replica, even when a plugin's `RateLimit` uses a shared
-`SQLRateLimitStore`, so the cooldown holds per replica. That is
-deliberate: the SQL store records an attempt before it counts, so a
-concurrent burst on one key can deny every caller, which on this limiter
-would let a stranger's burst stop the owner's mail again. Put
-`MailAddressRateLimit` on a shared store only knowing that. Past the budget the request gets the same 200 as any
-other and nothing is minted or mailed, so the limit says nothing about
-whether the address has an account; the audit event carries
-`throttled=address`. The limiter key is `address:` plus the SHA-256 of
-the canonical address, so a shared `SQLRateLimitStore` holds no
-addresses.
-
-`/auth/2fa/challenge` also counts attempts per pending session, whatever
-address they come from: a password holder can spread guesses over many
-addresses (one IPv6 /64 is plenty), so the per-IP floor alone does not
-bound them. After `TwoFAConfig.ChallengeAttemptsPerSession` codes
-(default 10) the next attempt deletes the session, answers 401 "too many
-attempts: sign in again", and emits `2fa.challenge_locked`. The account
-is not locked: a fresh login starts a fresh budget, and the login
-limiters meter how often that can happen. The counter uses
-`TwoFAConfig.RateLimit.Store` when one is set, so the budget holds
-across replicas. If that store errors, the challenge answers 503 with
-`Retry-After` and the pending session is kept.
-
-**Minted tokens are reaped automatically.** Rate limits bound the rate
-of anonymous mints, not the total; unredeemed magic-link, password-reset,
-and email-verification rows would otherwise accumulate forever. The
-SQL token store (`NewSQLMagicLinkTokenStore`) sweeps expired rows on its
-own mint path (at most once per 15 minutes), and the magic-link plugin
-runs a cleanup ticker from `OnStart` — no operator cron, no scheduled
-`Cleanup` calls to wire. A failed sweep is logged and the mint still
-returns its token (the row is already written); a failed sweep is tried
-again a minute later rather than on every mint, so a failing DELETE
-does not run on each one.
-
-**X-Forwarded-For is not trusted by default.** Set
-`RateLimiterConfig.TrustForwardedFor = true` only when your service
-runs behind a reverse proxy you control. Without one, an attacker
-rotates the header per request and bypasses every per-IP limit. The
-header is read from the right, so the client-supplied entries an
-appending proxy leaves on the left never pick the bucket; behind more
-than one proxy tier, list the tiers in `RateLimiterConfig.TrustedProxies`
-(see [rate-limit](rate-limit.md#x-forwarded-for-and-proxies)).
-
-**Limits are per-process by default.** At N replicas the brute-force
-budget multiplies by N and a block on one replica doesn't hold on the
-others. Share the ledger through the database:
-
-```go
-shared := auth.NewSQLRateLimitStore(db, "auth_rate_limits") // creates its tables itself
-
-auth.AuthConfig{
-    LoginRateLimit:           &auth.RateLimiterConfig{Store: shared},
-    LoginRateLimitPerAccount: &auth.RateLimiterConfig{Store: shared},
-}
-auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
-```
-
-One store instance can back every limiter: keys are namespaced by
-`RateLimiterConfig.Scope`, which each built-in limiter defaults to a
-distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
-A store error **fails closed** (denies with a short Retry-After): an
-attacker must never lift the limit by degrading its backend. See
-[Horizontal scaling](scaling.md).
-
-**Under a concurrent burst the shared store also fails closed.** Each
-attempt is recorded before it is counted, so no burst, on any number of
-replicas, admits more than `MaxAttempts`. The cost runs the other way:
-when a burst's inserts all land before its counts, every caller in it is
-refused, the legitimate one included, and the key is blocked. For a
-brute-force limiter that is the right side to err on. For a limiter
-whose budget a stranger can spend on someone else's behalf, it hands the
-stranger a way to lock the owner out, which is why the per-address mail
-limit (`MailAddressRateLimit`) keeps its default in memory. Put such a
-limiter on the shared store only if a fleet-wide bound matters more than
-the owner always getting through.
-
-## Security audit trail
-
-Login success/failure, the 2FA lifecycle, password resets, OAuth links, and
-magic-link issuance are security-sensitive auth events emitted to an
-`AuditSink` on `AuthConfig` and land in the same `audit_log` table as the
-CRUD hooks. One line of wiring:
-
-```go
-sink, _ := auth.NewSQLAuditSink(db, "")
-mgr := auth.New(auth.AuthConfig{ AuditSink: sink, … })
-```
-
-Events use a closed vocabulary (e.g. `login.succeeded`, `2fa.enrolled`,
-`password.reset_requested`) and never carry credentials; see the
-[audit log](audit-log.md#auth-security-events) page for the full taxonomy
-and the redaction posture. A nil sink disables auditing entirely.
-
-The identity mutations are covered too: a successful `GET
-/auth/verify-email` emits `email.verified`, an unlink emits
-`oauth.unlinked` (Meta: provider, mirroring `oauth.linked`), and
-`AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
-so a role change driven from a script or future surface leaves the same
-trail the admin back-office writes.
-
-`EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
-`AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8
-as `auth.ErrUserNotFound` before querying or mutating storage. A refused
-role update emits no success audit. Valid IDs keep their exact bytes,
-including any leading or trailing whitespace.
+- **Scopes narrow capabilities:** Scopes follow `resource:verb` with `*` wildcards (`posts:*`, `*:read`, `*:*`; max 32 scopes). Sessions and JWTs pass `auth.RequireScope` / `auth.RequireAPIScopes` unscoped; API tokens must hold the required scope on the route, on any `?include=` / `?rel.field=` / cascade target, and `"role:<name>"` for role gates (`RequireRole`, `MCPRole`). Without `RequireAPIScopes` or `RequireScope`, token scopes are advisory only.
+- **Self-service (`TokensPlugin`):** `POST/GET /auth/tokens` and `DELETE /auth/tokens/{id}` require an interactive browser session (and completed 2FA if enrolled)—an API token or embed grant cannot mint or list tokens (`401`). Omitted `ttl_seconds` mints a non-expiring token.
+- **Generated clients:** Set `client.Token = plaintext`; Bearer requests skip CSRF automatically.
 
 ## The 2FA flow
 
 ```
-POST /auth/login            → 200, Set-Cookie session (PendingTwoFactor=true)
-GET  /auth/me               → 403 "two-factor verification required"
-POST /auth/2fa/challenge    → 200, Set-Cookie: a fresh session with TwoFactorVerified
-                              (the pending one is deleted)
-GET  /auth/me               → 200
+POST /auth/login         → 200, Set-Cookie (PendingTwoFactor=true), {"two_factor_required": true} (no JWT)
+GET  /auth/me            → 403 "two-factor verification required"
+POST /auth/2fa/challenge → 200, Set-Cookie: fresh TwoFactorVerified session (pending session deleted)
+GET  /auth/me            → 200
 ```
 
-A **form** login of an account with a second factor answers `303` to
-`NewCorePlugin().WithTwoFactorURL` instead. That page posts the code
-back as a form: `POST /auth/2fa/challenge` with `code` (and `next`)
-answers `303` to `next` (or `/`) with the verified session's cookie, and
-a wrong code is the usual `303` back with `?error=invalid_code`. Draw the
-field with `ui.OneTimeCode`, which asks for `autocomplete="one-time-code"`
-on the digit keyboard:
-
-```go
-ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/2fa/challenge", Method: "POST", SubmitLabel: "Verify"},
-    html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}),
-    ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthOneTimeCode.Text(ctx), For: "auth-code", Required: true,
-        Input: func(c headless.FieldControl) render.HTML {
-            return ui.OneTimeCode(ui.OneTimeCodeConfig{Field: c})
-        }}),
-)
-```
-
-`ui.OneTimeCode` takes six digits only. A backup code (eight letters and
-digits) needs a plain `ui.Control` with `NoSpellCheck: true`; both post
-as `code`.
-
-The challenge replaces the pending session rather than marking it in
-place: a pending token that existed before the code was typed (one an
-attacker who knows the password minted and planted in the browser)
-never becomes a verified session. Clients that carry the session cookie
-by hand must take the new value from the challenge's `Set-Cookie`.
-
-The login response still returns 200, so clients can't tell whether 2FA
-is required by the status code alone. A pending JSON login carries
-`"two_factor_required": true` and **omits the JWT `token` field** (a
-stateless JWT issued before the challenge would bypass the second
-factor on every JWT-authenticated route). Clients either read the flag
-or notice a follow-up endpoint returning 403, then drive the user
-through `/auth/2fa/challenge` with the TOTP code or a backup code.
-
-If the session store cannot record the pending state, whether because it doesn't
-implement `SessionPendingMarker`, the mark call fails, or the 2FA
-state lookup itself errors, login **fails closed** with a 500 and the
-just-minted session is destroyed. A degraded 2FA backend never means
-"2FA is off".
-
-`TwoFAPlugin.RequireTwoFA()` returns middleware for application routes
-that require a session-backed principal. It enforces step-up when that
-user has enrolled in 2FA; an unenrolled user still needs the principal
-and session evidence described here.
-
-For a call marked by `App.InProcessHandler()`, `RequireTwoFA` requires a
-non-nil server-set context user and the 2FA assurance `SessionMiddleware`
-recorded for that same user on the outer request. The assurance is bound
-to the issuing `AuthManager` and the user. With custom stores, it also
-binds to the tenant under which the session was
-resolved by default. Only concrete built-in global stores or the explicit
-`AuthConfig.GlobalSessionLookup` opt-out omit this tenant binding.
-No assurance, a missing user, a different user or manager, or a mismatched
-tenant for tenant-partitioned lookup returns 401 with the no-session reason. It
-looks up current enrollment: an unenrolled user passes; an enrolled user needs
-verified assurance or gets 403. The assurance records whether any of that
-user's live, non-pending cookie sessions on the outer request completed
-2FA. It contains no session token or session object. This snapshot does
-not re-check expiry or revocation during Local dispatch.
-
-For an unmarked network request, install it behind `SessionMiddleware` or
-`RequireAuth`. It ignores context assurance and judges the
-request principal, the user `GetCurrentUser(ctx)` returns, and needs a
-live session cookie of that same user: 401 without a principal or
-without such a cookie, 403 when the user is enrolled and none of their
-session cookies on the request has cleared the challenge. A session of
-any other user proves nothing, so two cookies, or a JWT next to someone
-else's cookie, cannot borrow another session's step-up. A JWT or API
-token carries no step-up state of its own and passes only next to a
-stepped-up session cookie of the same user. The challenge records its
-result through `SessionTwoFAMarker`, which both built-in session stores
-implement. A custom session store without it cannot mark a session
-verified, so `RequireTwoFA` refuses an enrolled user on every request.
-
-The 2FA endpoints apply the same binding: when an outer middleware put
-a principal in the context, `verify`, `challenge`, `disable` and
-`backup-codes` act only on a session cookie of that user. Every same-name
-cookie is considered, not only the first. `disable` also deletes the
-user's sessions still waiting on a challenge (`SessionPendingPurger`,
-implemented by both built-in session stores), so a pending login cannot
-complete later against a newly enrolled factor.
-
-`backup-codes` regenerates against the row as it stands after the codes
-are hashed: a challenge, disable or re-enroll landing in between is kept,
-never written over. A row that was disabled, deleted or re-keyed in the
-meantime answers 409, as does a swap that keeps losing to other writes.
-It uses the store's `TwoFAStateSwapper`, which both built-in stores
-implement.
-
-### Every login path mints through `MintSession`
-
-`AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
-applies the pending-2FA mark. Every built-in login path, whether password,
-magic link, OAuth callback, or passkey, goes
-through it, and a host-added plugin that mints its own sessions must
-too. Calling `SessionStore().Create` directly produces a session the
-2FA enforcement never learns about: `PendingTwoFactor` stays false, so
-the session reads as fully authenticated and can even disable the
-factor it skipped.
-
-It returns `(session, pending, error)`. A failure to apply the pending
-mark is wrapped in `auth.ErrTwoFactorEnforcement`, the session is
-destroyed, and the caller must reject the login.
-
-### Step-up is checked positively
-
-The 2FA self-service endpoints (`enroll`, `verify`, `disable`,
-`backup-codes`) require `Session.TwoFactorVerified` when the user has an
-enabled factor, not merely the absence of `PendingTwoFactor`. A session
-minted **before** the user enrolled carries `PendingTwoFactor=false`
-forever, so a negative-only test would leave it able to disable a factor
-it never proved. `/auth/2fa/verify` marks the enrolling session verified,
-so enrolment does not lock you out of your own settings.
-
-`POST /auth/send-verification` applies the same pending check as those
-four.
+- HTML form logins redirect `303` to `WithTwoFactorURL`; render the 6-digit TOTP input with `ui.OneTimeCode` (or `ui.Control` for 8-char backup codes) posting `code` + `next` to `/auth/2fa/challenge`.
+- **Every login path must mint via `AuthManager.MintSession(ctx, userID, ttl)`** so pending 2FA is enforced uniformly and fails closed (`ErrTwoFactorEnforcement`) if 2FA state cannot be read.
+- **Positive step-up:** Self-service 2FA routes (`enroll`, `verify`, `disable`, `backup-codes`) and `RequireTwoFA()` verify `Session.TwoFactorVerified` (so a session minted *before* 2FA enrollment cannot disable 2FA). `RequireTwoFA` also binds to the same user's stepped-up cookie session on network requests (or outer recorded assurance on marked in-process calls).
+- **Challenge limit:** `TwoFAConfig.ChallengeAttemptsPerSession` (default 10) deletes the pending session after too many failed guesses across any IP.
 
 ## Emailed sign-in codes
 
-`EmailCodePlugin` signs a user in with a one-time code sent to their
-address. Use it where a link is awkward: on a phone, where the mail app
-opens links in another browser, or in a native app that cannot catch the
-link.
+`EmailCodePlugin` signs users in with an 8-digit code emailed to their address—ideal on mobile or native apps where magic links open the wrong browser:
 
 ```go
-tokens, err := auth.NewSQLMagicLinkTokenStore(db) // the link plugins' store
-if err != nil {
-	log.Fatal(err)
-}
+tokens, _ := auth.NewSQLMagicLinkTokenStore(db)
 mgr.Use(auth.NewEmailCodePlugin(auth.EmailCodeConfig{
-	EmailSender:  mailer, // SendSignInCode(ctx, email, code string) error
-	TokenStore:   tokens,
-	OnSuccessURL: "/app",
-	TwoFactorURL: "/login/2fa", // required when a 2FA plugin is registered
+    EmailSender:  mailer, // SendSignInCode(ctx, email, code string) error
+    TokenStore:   tokens,
+    OnSuccessURL: "/app",
+    TwoFactorURL: "/login/2fa",
 }))
 ```
 
-| Route | Body | What |
-|---|---|---|
-| `POST /auth/email-code/send` | `email` | Mails a code and sets the challenge cookie. Every address gets the same answer: `{"success": true}` to JSON, a 303 to `next`, the referring page or `/` for a form. |
-| `POST /auth/email-code/verify` | `code` | Checks the code against the challenge cookie and signs in. JSON gets `{"success": true, "redirect": "<OnSuccessURL>"}`, plus `"two_factor_required": true` and `TwoFactorURL` as the redirect when the account has 2FA. A form gets a 303 to the same place. |
+- `POST /auth/email-code/send` (`email`) sets an `HttpOnly`, `SameSite=Strict` challenge cookie (`__Host-gofastr_email_code`) and returns uniform success.
+- `POST /auth/email-code/verify` (`code`, ignoring spaces/hyphens) only succeeds in the browser holding that cookie. Capped at 5 guesses per challenge, `AddressGuessLimit` (default 10/hr) per address, and `CodeTTL` (default 10m). Codes are derived via HMAC from `JWTSecret` (nothing reusable stored). Account auto-creation, unverified-account claiming, and 2FA work identically to magic links.
 
-Both routes take JSON or a form post. Spaces and hyphens in a typed
-code are ignored.
-
-How a code is protected:
-
-- **It works only in the browser that asked for it.** Send sets an
-  `HttpOnly`, `SameSite=Strict` challenge cookie (`__Host-gofastr_email_code`,
-  or `gofastr_email_code` without `SessionSecure`). Verify takes the code
-  only with that cookie. Someone who knows a code but not the cookie has
-  nothing, and a cross-site page cannot post either route.
-- **It is eight digits, with guesses capped.** One challenge accepts five
-  guesses, then is dropped. Each address accepts `AddressGuessLimit`
-  guesses across all its challenges (default 10 an hour, then an hour's
-  block). Both are counted before the code is checked. A limiter store
-  error refuses the guess with 503.
-- **Nothing reusable is stored.** The code is derived from the challenge
-  token with a key taken from `JWTSecret`, so every replica can check it
-  and none stores it. The SQL token store holds only a digest of the token.
-  Rotating `JWTSecret` voids codes in flight.
-- **It is spent once,** on the first right guess. It expires after
-  `CodeTTL` (default 10 minutes).
-- **Mail is metered** by the per-IP `RateLimit` (default 10 a minute)
-  and by `AuthConfig.MailAddressRateLimit`, the cooldown the link
-  plugins share. An address in its cooldown gets the same answer and a
-  challenge cookie whose code is mailed to no one, and that challenge
-  behaves like a mailed one on resend and verify. A browser that already
-  holds a live challenge for the address keeps it, so the code it was
-  mailed still works.
-- **A password change or reset drops outstanding codes**, as it drops
-  magic links (`emailcode_tokens.purged`). Erasure deletes them too.
-
-After a right code the account rules are the magic link's, through the
-same code path: an unknown address gets a new, verified account; an
-unverified account is claimed (`account.claimed`, `via=email_code`);
-a 2FA account's session is pending until `/2fa/challenge`. Init refuses
-a `TokenStore` without `MagicLinkTokenPeeker` (both built-in stores have
-it), an in-memory store in production, and an empty `JWTSecret`.
-
-Without `EmailSender`, send answers 503 unless `DevMode` is set; in
-`DevMode` the log carries hashes of the address and code, never the code.
-
-The plugin sends no text messages. A phone number is not an identity
-the battery stores, and SMS codes can be stolen by moving the number to
-another SIM.
-
-## Passkeys
-
-`PasskeyPlugin` adds passkey sign-in. A passkey is a WebAuthn
-credential held by the device or password manager: the server stores a
-public key, and the browser proves possession by signing a one-time
-challenge. Nothing secret lives in the database.
-
-```go
-passkeys, err := auth.NewSQLPasskeyStore(db) // table "auth_passkeys"
-if err != nil {
-	log.Fatal(err)
-}
-challenges, err := auth.NewSQLMagicLinkTokenStore(db)
-if err != nil {
-	log.Fatal(err)
-}
-mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
-	RPID:           "example.com",
-	Origins:        []string{"https://example.com"},
-	Store:          passkeys,
-	ChallengeStore: challenges,
-	OnSuccessURL:   "/app",
-	TwoFactorURL:   "/login/2fa", // required when a 2FA plugin is registered
-	NoticeSender:   mailer,       // emails the owner when a passkey is added
-}))
-```
-
-`NoticeSender` (an `auth.EmailSender`) gets one email to the account's
-address whenever a passkey is added to it, telling the owner when and
-what kind of passkey was added and to remove it if they did not, as
-Google, Apple and GitHub do. The body is fixed text: it never carries the
-passkey's name or anything else the caller chose, which could put a
-phishing link into mail from the app's own domain. It goes only to an
-address the user store reports verified, since an unproven address may
-be someone else's, so Init refuses a `NoticeSender` when the user store
-does not implement `auth.EmailVerifiedChecker` (the battery's stores
-do); set `NoAddedNotice: true` instead if you tell owners another way.
-Outside `DevMode`, Init refuses a plugin with no `NoticeSender`
-unless `NoAddedNotice: true` says the app tells its users another way;
-`AuthConfig.RegisterEmailSender` does not stand in for it, because a
-host's duplicate-registration sender may send its own template whatever
-the body says. Delivery is best effort: the email goes out off the
-request, through a bounded queue, and the registration succeeds even
-when the queue is full or the sender fails. Shutdown (`OnStop`) cancels
-the sends still in flight and waits for them; a queued notice may never
-go out.
-
-`RPID` is the domain the passkeys belong to. Every origin in `Origins`
-must be that host or a subdomain of it, over `https` (or
-`http://localhost` in development), written the way browsers report it:
-no path, and no default port (`https://example.com`, not
-`https://example.com:443`). Init refuses anything else. A
-passkey registered for `example.com` works on `app.example.com` when
-both origins are listed. Outside `DevMode` and `AllowInMemoryStores`,
-Init also refuses to start without both stores, since a restart would
-forget every passkey and replicas could not share challenges. When a
-2FA plugin is registered, Init needs `TwoFactorURL` too: the page where
-a pending sign-in posts its code to `/auth/2fa/challenge`.
-
-Other knobs: `RPName` (shown by the browser, default `RPID`),
-`ChallengeTTL` (default 5 minutes), `MaxPerUser` (default 20),
-`ReauthTTL` (how long a step-up proof stays good, default 5 minutes),
-`ReauthMinAge` (see [Step-up](#step-up-confirm-with-a-passkey), default
-1 hour) and `RateLimit` (default 30 requests a minute per client, then a
-5-minute block). With an explicit `RateLimit.Scope` and a shared
-`Store`, the list and autofill limits (below) count under that scope
-plus `-list` and `-autofill`, so they stay apart from the ceremonies'.
-
-`MaxPerUser` holds when registrations race: the plugin passes it to
-`PasskeyStore.AddPasskey(ctx, cred, maxPerUser)`, which counts the
-user's passkeys and inserts as one step and answers `auth.ErrPasskeyLimit`
-past it. The SQL store does both in one transaction, behind an advisory
-lock on the user on Postgres; a custom store must make the pair atomic
-the same way.
-
-### Routes
-
-| Route | Who | What |
-|---|---|---|
-| `POST /auth/passkey/login/options` | anyone | A sign-in challenge. No account list: the browser offers whatever passkeys it holds for the RP ID. |
-| `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": "<OnSuccessURL>"}`. When the account has 2FA it answers `{"redirect": "<TwoFactorURL>", "two_factor_required": true}` instead. |
-| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. `excludeCredentials` lists the account's passkeys with their transports. Body `{"conditional": true}` asks for a create the browser runs without a prompt (see [After a password sign-in](#after-a-password-sign-in)); any other body, or none, is a normal registration. Once the account holds a passkey able to confirm a step-up, the body must also carry `"proof"` from this session's step-up, or the answer is 403 `passkey_reauth_required`. |
-| `POST /auth/passkey/register` | signed in | Stores the new passkey, unless the account already holds `MaxPerUser` (409). Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url, `transports` (optional, what `getTransports()` answered; unknown values are dropped), and `binding`, copied from the options answer. Only the session that asked for the options completes them: another session of the account, or a body without `binding`, is refused (400). |
-| `GET /auth/passkey/list` | signed in | `rpId`, `userId` (the base64url user handle), `userName` (the account's email) and `passkeys`: each `id`, `name`, `createdAt`, `lastUsedAt`, `backedUp`, `deviceType` (`multiDevice` when it can sync, else `singleDevice`), `transports` and, when the authenticator sent one, `aaguid` as a UUID. |
-| `POST /auth/passkey/rename` | signed in | Renames one of the account's own passkeys. Body: `id`, `name` (same rules as at registration). 204, or 404 for an id the account does not own. |
-| `POST /auth/passkey/delete` | signed in | Removes one of the account's own passkeys by `id`. Needs `proof` under the same rule as adding one. |
-| `POST /auth/passkey/reauth/options` | signed in | A step-up challenge whose `allowCredentials` lists only the account's passkeys that can confirm a step-up. 404 when the account has no passkey, 403 `passkey_too_new` when it has some but none qualifies. |
-| `POST /auth/passkey/reauth` | signed in | Verifies the step-up with one of the account's passkeys and answers `{"proof": "..."}`. `userHandle` may be empty here (the authenticator may leave it null when the options name the passkeys); one that is given must be the passkey's account. See [Step-up](#step-up-confirm-with-a-passkey). |
-
-Every POST takes `Content-Type: application/json`, the options calls
-included, so a cross-site page cannot reach one without a CORS
-preflight. `RateLimit` covers every route. Two kinds of request count
-against limits of their own (same settings), because the browser module
-sends them without a click and they must not use up the limit sign-in
-needs: `GET /auth/passkey/list`, and `POST
-/auth/passkey/login/options?autofill=1`. The query, not the body, picks
-the limit, so a blocked client is refused before its body is read. The
-sign-in that follows an autofill pick still counts against the main
-limit, and so does a quiet create after a password sign-in (its options
-and its registration both).
-
-"Signed in" means a full session. A session waiting on its second
-factor gets 403, and so does a password-only session of an account
-with 2FA turned on: adding a passkey adds a way in, so it takes the
-same proof as changing 2FA.
-
-### Buttons
-
-The battery ships the browser half as two runtime modules, each loaded
-only on a page that marks one of its elements: `passkey` signs in (the
-login button and the autofill field) and `passkey-manage` adds, renames
-and removes passkeys, runs step-ups and keeps the password manager in
-step, on `passkey`'s helpers, which the loader brings first. A sign-in
-page never downloads the management half. Mark a `ui.Button` with the
-attribute helpers:
-
-```go
-ui.Button(ui.ButtonConfig{
-	Label:      "Sign in with a passkey",
-	Variant:    ui.ButtonSecondary,
-	ExtraAttrs: auth.PasskeyLoginAttrs("/auth"),
-})
-```
-
-| Helper | The button |
-|---|---|
-| `PasskeyLoginAttrs(base)` | Signs in, then navigates where the server says. |
-| `PasskeyRegisterAttrs(base)` | Adds a passkey to the signed-in account. Inside a form, a text field carrying `PasskeyNameAttrs()` names it. Shown wherever the browser has WebAuthn: a USB or NFC security key can hold a passkey on a device with no platform authenticator. |
-| `PasskeyRenameAttrs(base, id)` | Renames passkey `id` to the value of the form's `PasskeyNameAttrs()` field. |
-| `PasskeyDeleteAttrs(base, id)` | Removes passkey `id` (a `PasskeyCredential.ID`). |
-| `PasskeyReauthAttrs(base)` | Inside a form: runs a step-up, puts the proof in the form's `PasskeyReauthField` and submits it. |
-
-Three helpers mark elements that are not buttons:
-
-| Helper | The element |
-|---|---|
-| `PasskeyAutofillAttrs(base)` | The sign-in form's username field. See [Autofill sign-in](#autofill-sign-in). |
-| `PasskeyUpgradeAttrs(base)` | Any element on the page a password sign-in lands on. See [After a password sign-in](#after-a-password-sign-in). |
-| `PasskeyListAttrs(base)` | The element around a passkey list the server drew. On load the module tells the password manager which passkeys the account still has. |
-
-The buttons render `hidden`. The module reveals them when the browser
-supports WebAuthn, so a page without script never shows a button that
-cannot work; keep the password form beside the passkey button. After
-an add or a remove the module re-renders the current page, so a list
-the server drew from `PasskeyStore.ListPasskeys` shows the change.
-Failures show as a toast. A prompt the user cancelled shows nothing.
-Two browser errors get their own message: `InvalidStateError` from
-adding a passkey (this device already holds one for the account) and
-`SecurityError` (the page's address does not fit the RP ID).
-The base path must be one or more non-empty path segments such as `/auth`
-or `/api/auth`; `/`, a trailing or doubled slash, or anything else leaves
-the element inert, and the module sends no request whose URL resolves to
-another origin and follows no redirect.
-
-Behind `auth.CSRF` or `WithBFFPosture`, render the page's token as
-`<meta name="csrf-token" content="…">` from `auth.CSRFToken(r)`. The
-module sends it as `X-CSRF-Token` on every request, the same way the
-runtime's actions do. Agent-authored node IR can't place these buttons:
-`noderender.RenderNode` drops every registered behaviour marker.
-
-### What a ceremony checks
-
-Registration asks for a discoverable credential with user verification
-and requests no attestation, so the server verifies nothing about the
-device. It does keep the authenticator's AAGUID when the browser sends
-one (it names the make of authenticator, not the device) and shows it in
-the list; nothing is trusted on its strength. The plugin accepts ES256, EdDSA and RS256
-keys (RSA keys of 2048 to 8192 bits with an odd modulus: verification
-cost grows with the square of the key size, so a larger key is refused
-at registration and at sign-in).
-
-Both ceremonies check the client data's type, origin and challenge,
-and refuse a cross-origin call. They check that the authenticator data
-names the RP ID and that the user was present and verified. Each
-challenge is spent on its first use, before the signature is checked,
-whether that use succeeds or not. A registration challenge belongs to
-the account that asked for it. At sign-in the passkey's stored account
-must match the user handle the authenticator returns.
-
-Once the request parses, every failed check answers the same 401
-`passkey sign-in failed` (404 with the same message when the credential
-is not one the server holds), and the reason goes to the audit trail as
-`passkey.refused` with a fixed `reason` code (the request's own text
-goes only to the log). A malformed body is a 400 that names the field. If
-two sign-ins with the same passkey race, the loser gets 409 and can
-retry. If the 2FA state cannot be read, the sign-in fails closed with
-a 500 and a `login.failed` event (`reason=twofa_failclosed`), the same
-as a password login. A user or passkey store that errors answers 500
-on every route; only a missing account reads as signed out.
-
-Backup eligibility is fixed for a credential's life. A sign-in whose
-authenticator data flips the BE bit from what registration recorded
-is refused.
-
-The signature counter catches cloned keys. When either the stored or
-the presented counter is non-zero and the presented one has not moved
-past the stored one, the sign-in fails with `passkey.clone_suspected`.
-Synced passkeys always report zero, so they never trip it.
-
-### Autofill sign-in
-
-Put `PasskeyAutofillAttrs` on the username field and set its
-autocomplete to `auth.PasskeyAutocomplete` (`"username webauthn"`). The
-browser then lists the device's passkeys beside saved usernames, and
-picking one signs in with no button press:
-
-<!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/battery/auth"
-import "github.com/DonaldMurillo/gofastr/framework/headless"
-import "github.com/DonaldMurillo/gofastr/core/render"
-import "github.com/DonaldMurillo/gofastr/framework/ui"
-stmt: _ = field
--->
-```go
-field := func(c headless.FieldControl) render.HTML {
-	return ui.Control(ui.ControlConfig{
-		Field: c, Type: "email", Name: "email",
-		AutoComplete: auth.PasskeyAutocomplete,
-		ExtraAttrs:   auth.PasskeyAutofillAttrs("/auth"),
-	})
-}
-```
-
-The module starts the request only where the browser supports
-conditional UI (`getClientCapabilities().conditionalGet`, or
-`isConditionalMediationAvailable()`), and appends `webauthn` to the
-field's autocomplete if it is missing. A browser runs one WebAuthn
-request at a time, so a passkey button withdraws the waiting autofill
-request and the module starts it again when that ceremony ends, unless
-it signed the user in. Ceremonies run one at a time: a second button
-waits for the first, and an autofill pick whose sign-in is on its way
-holds the buttons until it answers. One autofill field per page owns
-the request. A navigation that takes the field away withdraws the
-request too, and a request whose options arrive after the field left
-never starts. A conditional request has no timer of its own but its
-challenge expires after `ChallengeTTL`, so the module tries to renew it
-before then (30 seconds before, or halfway for a short `ChallengeTTL`,
-counted from when the options arrived); a slow network can still leave
-a pick with an expired challenge, which the server refuses. A request
-that is refused is started again five times at most, waiting longer
-each time, and its error shows once. Keep the password field and the passkey button: they are the way
-in for browsers without conditional UI.
-
-### After a password sign-in
-
-Put `PasskeyUpgradeAttrs` on the page a password sign-in lands on. Where
-the browser reports `getClientCapabilities().conditionalCreate`, the
-module asks the password manager to save a passkey for the account
-without showing a prompt, once per tab session (a reload does not ask
-again; where the module cannot keep that note, in `sessionStorage`, it
-never asks). It is silent either way: the password manager
-tells the user when it saved one. The registration options ask for user
-verification only as `preferred`, and such a registration is the one
-that may carry neither the user-present nor the user-verified flag; the
-signed-in session that asked for the challenge is the proof. Signing in
-with that passkey later still requires user verification.
-
-### Step-up: confirm with a passkey
-
-A sensitive action (delete the account, change the payout address) can
-ask the user to confirm with a passkey first. Put a
-`PasskeyReauthAttrs` button in the action's form. The module runs the
-ceremony against `/auth/passkey/reauth`, writes the proof it gets back
-into the form field `auth.PasskeyReauthField` (`passkey_reauth`, created
-when the form has none) and submits the form as the button would, with
-the button's own `formaction`, `name` and `value`. A form behind
-`auth.CSRF` needs its own CSRF field (`_csrf`): the meta tag covers the
-module's fetches, not the form's own POST. The handler spends it:
-
-<!-- gofastr:compile
-import "net/http"
-import "github.com/DonaldMurillo/gofastr/battery/auth"
-var passkeys *auth.PasskeyPlugin
-var w http.ResponseWriter
-var r *http.Request
--->
-```go
-if err := passkeys.RedeemReauthProof(r, r.FormValue(auth.PasskeyReauthField)); err != nil {
-	http.Error(w, "Confirm with your passkey first.", http.StatusForbidden)
-	return
-}
-```
-
-`RedeemReauthProof` answers `nil` once per proof, and only for the full
-session that earned it (not another session of the same account, not
-one waiting on its second factor, and not one minted before the account
-turned 2FA on); anything else is
-`auth.ErrReauthRequired`. Only the earning session can redeem it
-successfully, but any call uses it up, whatever it answers: if another
-session presents it first, the earning session needs a new one. It
-expires after `ReauthTTL`. A proof's stored payload is a digest of the
-session and names no user, so erasure does not select it; revoking the
-session makes it useless, and the token store drops it once it expires. A step-up offers only the
-signed-in account's passkeys, and a passkey of another account answers
-404.
-
-A stolen session can register a passkey of its own, so not every
-passkey on the account may confirm a step-up. It must have been
-registered before the session signed in, and at least `ReauthMinAge`
-ago (default 1 hour; a negative value keeps only the first rule). The
-options call lists only the passkeys that qualify, answers 404 when the
-account has no passkey at all, and 403 `passkey_too_new` when it has
-some but none qualifies; `POST /auth/passkey/reauth` with a
-passkey that does not qualify answers the same. A session store that
-returns no `CreatedAt` qualifies no passkey. Stores keep whole seconds, so
-a passkey predates a session only if its second ended before the session
-began.
-
-The same thief could add a key and wait out the hour, or remove the
-owner's passkeys. So once any of the account's passkeys is
-`ReauthMinAge` old, adding or removing one needs a `proof` this session
-earned, from every session, however old: `register/options` and
-`delete` answer 403 `passkey_reauth_required` when the session has a
-passkey that can confirm for it, and 403 `passkey_signin_required` when
-it has none (it began before every passkey, as the session that enrolled
-them did): sign in again with a passkey, then step up. The browser
-module handles the first: it runs the step-up (the user confirms with an
-existing passkey) and resends; the second shows its message. A silent
-create after a password sign-in gives up instead of prompting. An owner
-who cannot use the passkey that qualifies (it is not theirs, or the
-device is gone) cannot step up: a password change keeps passkeys, but a
-password reset, where the app offers one, removes every passkey and
-ends every session. Until the
-account's first passkey is `ReauthMinAge` old, adding and removing need
-only the session, and the owner learns of each addition from the
-`NoticeSender` email.
-
-### Keeping the password manager in step
-
-A passkey removed on the server stays in the user's password manager
-until something tells it. Where the browser has the Signal API (not
-Firefox), the module does:
-
-- a sign-in answered 404 with reason `passkey_unknown_credential` calls
-  `PublicKeyCredential.signalUnknownCredential` for that credential (a
-  404 from a proxy or a deploy, which carries no such reason, does not);
-- after an add or a remove, and when a `PasskeyListAttrs` element loads,
-  it reads `GET /auth/passkey/list` and calls
-  `signalAllAcceptedCredentials` with the account's passkey ids and
-  `signalCurrentUserDetails` with its email.
-
-Only a credential the server does not hold, or holds for another
-account, answers 404. A known passkey whose check fails is 401 as
-before, so a failed signature never makes the password manager drop a
-working passkey. Two limits remain: a replica that has not yet seen a
-passkey registered on another one answers 404 for it, so put the
-passkey store on one database every replica reads; and the 404 tells
-anyone whether a credential id exists, which reveals little, since ids
-are random and name no account.
-
-### The verifier
-
-`battery/auth` verifies both ceremonies itself, on the standard library,
-with a bounded CBOR and COSE parser (`webauthn.go`). It requests
-attestation `none` and trusts no authenticator metadata, so a WebAuthn
-library's attestation formats would add code it never runs. This is the
-registry decision `auth.passkey/keep-hand-rolled-verifier`; it is
-reopened if the battery starts verifying attestation.
-
-### Accounts and data
-
-A passkey sign-in mints through `MintSession`, so an account with 2FA
-lands on a pending session and the browser goes to `TwoFactorURL` to
-finish at `/auth/2fa/challenge`, like a password login. A completed
-password reset removes every passkey on the account along with its
-sessions and API tokens: a passkey added from a stolen session would
-otherwise sign in again. The passkeys go before the sessions, and a
-passkey sign-in re-reads its key after minting and drops the session if
-the key is gone, so a sign-in a reset overtakes ends with no session. A
-registration that a reset, change or claim overtakes removes the key it
-stored and answers 401. A
-password change keeps them, as it keeps API tokens. Claiming an unverified account (see
-[Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
-removes its passkeys, since the squatter may have added one, and the
-`account.claimed` event counts them in `passkeys_removed`.
-`App.EraseUserData` deletes the user's passkeys, their pending
-registration and step-up challenges and any unspent step-up proof, and `App.ExportData` includes the
-`auth_passkeys` table.
-
-## Account linking
-
-```
-GET    /auth/accounts                   → list of linked OAuth providers + profile
-DELETE /auth/unlink/{provider}          → remove a link
-GET    /auth/oauth/{provider}           → sign in with a provider (login flow)
-GET    /auth/oauth/{provider}/link      → link a provider to the CURRENT user (authenticated)
-GET    /auth/oauth/{provider}/callback  → callback, binds (provider, providerID)
-```
-
-Unlink refuses (`409`) when the requested unlink would leave the user
-with no remaining login method. The check considers both linked OAuth
-accounts and whether the user has set a real password.
-
-Unlink also **drops the stored provider tokens**: when the OAuth2 plugin
-has a `TokenStore` (`OAuth2Config.TokenStore`), a successful
-`DELETE /auth/unlink/{provider}` deletes the `(user, provider)` row, so
-`RefreshOAuthToken` / `ValidOAuthToken` stop serving a provider the user
-revoked — the stored refresh token is a password-equivalent for the
-provider API and must not outlive the link. If the row cannot be
-deleted, the response is `500` ("unlink succeeded but the stored
-provider token could not be revoked") rather than a silent half-revocation.
-The link is already gone at that point, so retry the same request: an
-unlink of a provider with no link still drops its stored tokens before
-answering `404`.
-
-### Linking a provider to a logged-in account (the recovery path)
-
-When an OAuth login's verified email matches an existing **password**
-account, the login callback refuses with `409`: a bare OAuth round-trip
-must not take over a local credential (see the decision table below). The
-supported way to add that provider is the **authenticated link flow**:
-
-1. While logged in, the user hits `GET /auth/oauth/{provider}/link`. This
-   requires a valid, fully-authenticated session (a pending-2FA session is
-   rejected) and encodes the current user's id into the HMAC-signed OAuth
-   `state`, then redirects to the provider.
-2. The provider returns to the normal callback. Because the signed state
-   carries a user id, the callback runs the **link** branch instead of the
-   login decision table: it re-checks that the session still belongs to
-   that same user, refuses (`409`) if the provider identity is already
-   bound to a *different* account, and otherwise links `(provider,
-   provider_id)` to the proven user. It then reads the binding back: a
-   concurrent link of the same identity to another account that won the
-   race also answers `409` (`auth.provider_linked_elsewhere`, an
-   `oauth.refused` event with `reason=provider_already_linked`), never a
-   success with an `oauth.linked` event. A successful link stores the
-   provider's tokens in `OAuth2Config.TokenStore`, as a login does.
-
-   The provider's redirect back is a cross-site navigation, so the
-   browser withholds the `SameSite=Strict` session cookie. When a
-   cross-site callback carries a valid, unspent link state and its
-   state cookie but no session, it answers a small page that reloads the
-   same callback from this site: a `Refresh: 0;url=…` header plus a
-   "Continue" link (phrases `auth.oauth_hop_title` and
-   `auth.oauth_hop_continue`), drawn by `AuthConfig.Pages` when set.
-   That second request carries the session cookie and completes the
-   link. A callback with no Fetch Metadata gets the page too, and its
-   reload carries `gofastr_hop=1` (`handler.SameSiteHopTarget`), so it
-   never hops twice.
-
-The user has proven ownership of both the account (session) and the
-provider (the OAuth round-trip), so this is the ONLY path that may link a
-provider whose email matches a password account. A forged or altered
-`state` fails the HMAC; a mismatched session is rejected (`403`); no
-session is rejected (`401`).
-
-The link callback checks again once the link is stored. An account claim
-that overtook it has already removed every link and is deleting the
-sessions; a reset or password change has moved the hash. When the
-callback's session is gone or the password hash moved since it started,
-it removes the link it just wrote and answers 401 `auth.invalid_session`.
-The removal runs detached from the request, so a client that hangs up
-cannot keep the link; if it fails, or the store has no
-`AccountUnlinker`, the callback answers 500 `auth.link_failed`.
-
-### Proving the mailbox claims an unverified account
-
-Anyone can register an address they do not own, or sign in through an
-IdP that does not verify email, before the address's owner shows up.
-Each account therefore carries `email_verified`, and only these flows
-set it:
-
-- a magic link redeemed for an account it creates;
-- a magic link or a completed password reset on an unverified account
-  (the claim below);
-- `GET /auth/verify-email` opened in the account's own session;
-- an OAuth callback whose IdP asserts `email_verified` for the account's
-  address (step 1 or step 3 of the [callback resolution
-  policy](#callback-resolution-policy)).
-
-When a magic link or a reset proves the mailbox of an account that is
-still unverified, the account is claimed before the owner gets a
-session. In order:
-
-1. every session is deleted, so a request attaching a credential under
-   one (an OAuth link callback, a token or passkey registration) finds
-   its session gone when it checks again after writing;
-2. every OAuth link is removed, and the provider tokens stored for the
-   account in `OAuth2Config.TokenStore` are deleted: one row per
-   provider it unlinked and per provider the OAuth2 plugin registers, so
-   a retry also reaches a row an earlier, failed attempt left behind. A
-   row that cannot be deleted fails the claim after the remaining steps
-   run, before the account is marked verified;
-3. the password is cleared (magic link only; a reset keeps the new
-   one);
-4. every passkey is removed;
-5. every API token issued through `TokensPlugin` is revoked;
-6. every session is deleted again, since a sign-in through a credential
-   steps 2-5 removed may have minted one after step 1;
-7. the account is marked verified and `account.claimed` is emitted.
-
-The account is marked verified last, so a failure anywhere leaves it
-unverified, the request answers 500, and the next proof runs the whole
-claim again. A store missing an extension the claim needs is an error,
-never a skipped step. An enrolled second factor survives the claim: the
-mailbox is one factor, and stripping 2FA here would let a mailbox alone
-remove it from every account that predates `email_verified`.
-
-An OAuth sign-in already under way when the claim lands does not keep
-the account. Its profile refresh is an UPDATE, so it cannot put back a
-link the claim removed, and once its session is stored it resolves the
-link again. A link that is gone or names another account drops the
-session: the callback answers 401 `auth.oauth_link_removed` and emits
-`oauth.refused` with `reason=link_removed`. The callback stores provider
-tokens only after that check passes, so a refused sign-in leaves none
-behind.
-
-A verified account is never claimed: a magic link signs its owner in
-and leaves the password and other sessions alone.
+## Magic links, unverified-account claiming & custom pages
 
 ### Following a magic link does not sign you in; confirming does
 
-`GET {basePath}/magic-link/verify?token=…` renders a confirmation
-screen ("Continue to sign in as x@y?") and redeems nothing. A
-same-origin `POST` from that page, carrying the token in a `token`
-field, is what actually signs the user in.
+`GET /auth/magic-link/verify?token=...` renders a confirmation page ("Continue to sign in as …?") and redeems nothing—blocking mail scanners and login-CSRF links. A same-origin `POST` from that page redeems the token and redirects `302` to `OnSuccessURL` (or `TwoFactorURL` when 2FA is enabled).
 
-The link IS the credential, so without a confirmation step an attacker
-could request a link for **their own** account and get a victim to open
-it: the victim's browser would silently hold a session for the
-attacker's account, and everything typed next would land there. The GET
-is invisible to the cross-site form rejection, and the usual fixes do
-not fit: a browser-binding cookie breaks cross-device links (request on
-a laptop, open on a phone) and refusing `Sec-Fetch-Site: cross-site`
-breaks every webmail client. A confirmation keeps both working.
+### Proving the mailbox claims an unverified account
 
-The confirming POST answers `302` to `OnSuccessURL`. For an account
-with a second factor the session it mints is pending, and every route
-but `/2fa/challenge` refuses it, so the redirect goes to
-`MagicLinkConfig.TwoFactorURL` instead: the app's page that posts the
-code. `Init` refuses to start when a 2FA plugin is registered (before
-or after the magic-link plugin) and `TwoFactorURL` is empty, as the
-passkey plugin does. The `magiclink.consumed` event carries
-`two_factor=pending` on that path. When the 2FA state cannot be read,
-no session is minted: the POST answers 500 and emits `login.failed`
-with `reason=twofa_failclosed`, `via=magic_link`.
+When a magic link, emailed code, or completed password reset proves ownership of an **unverified** account (blocking pre-registration squatting), GoFastr claims the account before minting a session: it revokes all sessions, removes all OAuth links and stored provider tokens, clears the squatter's password (for magic link/code), deletes all passkeys, revokes all API tokens, revokes sessions a second time, and finally marks `email_verified = true` (retaining any enrolled 2FA). Already-verified accounts are never claimed.
 
-The `magiclink.requested` event names the account (`UserID`) when the
-address has one, so an erasure, which scrubs the audit trail by actor
-id, reaches it. The response is the same either way.
+### Styling confirmation & hop pages
 
-Set `AuthConfig.Pages` to draw this screen, and the same-site hop
-below, with the design system. `authui.Pages`
-(`battery/auth/authui`) renders both as a `ui.AuthCard` through the
-app's UIHost, so they carry its layout, theme and runtime:
+Pass `authui.Pages(host)` from `battery/auth/authui` to render confirmation and same-site hop pages with your app's `ui.AuthCard` and theme:
 
 ```go
-import "github.com/DonaldMurillo/gofastr/battery/auth/authui"
-
-host := uihost.New(site)
 mgr := auth.New(auth.AuthConfig{
-    // ...
     Pages: authui.Pages(host),
 })
 ```
 
-To draw them some other way, implement `auth.Pages`. Its two methods
-get the response writer, the request and the page data; the battery
-has already set `Cache-Control: no-store` and `Referrer-Policy:
-no-referrer`, because both URLs carry a credential:
+To draw them some other way, implement `auth.Pages`. Its two methods get the response writer, the request and the page data; the battery has already set `Cache-Control: no-store` and `Referrer-Policy: no-referrer`:
 
 ```go
 type myPages struct{ host *uihost.UIHost }
@@ -2442,387 +338,109 @@ func (s confirmScreen) RenderCtx(ctx context.Context) render.HTML {
             Action:      s.d.Action,
             SubmitLabel: s.d.Words.Submit,
         },
-            // Words.Ask is escaped already, the address included. Any
-            // other dynamic value (d.Email, d.Token) goes through an
-            // escaping builder, never into render.HTML: a magic-link
-            // request accepts any address, so d.Email is
-            // caller-supplied.
+            // Words.Ask is escaped already. Any other dynamic value (d.Email, d.Token)
+            // must go through an escaping builder, never raw into render.HTML.
             html.Paragraph(html.TextConfig{}, render.HTML(s.d.Words.Ask)),
             html.Paragraph(html.TextConfig{}, render.Text(s.d.Words.Warning)),
-            // token is the credential, posted back to d.Action.
             html.Input(html.InputConfig{Type: "hidden", Name: "token", Value: s.d.Token}),
-            // CSRFField is required: without it the submit 403s
-            // under auth.CSRF(), which WithBFFPosture mounts app-wide.
+            // CSRFField is required under auth.CSRF() / WithBFFPosture.
             render.HTML(s.d.CSRFField)),
     })
 }
 ```
 
-Render `d.CSRFField` inside the form. Omit it and the submit 403s
-under `auth.CSRF()`, which `WithBFFPosture` mounts app-wide, so
-passwordless sign-in stops at the confirmation step. (`authui` passes
-the request context to `ui.Form`, which stamps the same field itself,
-and adds `d.CSRFField` only when the context carries no token.)
-`d.Words` holds the screen's words in the caller's locale: the phrases
-are `auth.confirm_title`, `auth.confirm_as`,
-`auth.confirm_this_account`, `auth.confirm_warning` and
-`auth.confirm_submit`.
+## Passkeys (WebAuthn)
 
-Leave `Pages` nil and you get plain but correct documents with no CSS
-and no script, in the caller's language when the app has a
-translator. The battery does not import `framework/ui` itself:
-API-only apps use auth too and should not pay for the design system.
-
-The emails follow the same rule. `BodyTemplate` on
-`MagicLinkConfig`, `EmailVerificationConfig` and
-`PasswordResetConfig` is `func(ctx context.Context, url string)
-string`, and `EmailSender.Send` takes a ctx too. Both carry the
-requester's locale (the reset worker gets a detached copy that keeps
-it), so a body or subject rendered from your phrases goes out in the
-language the person asked in:
+`PasskeyPlugin` implements stdlib WebAuthn (ES256, EdDSA, RS256 2048–8192 bits, attestation `none`, clone-counter detection, immutable backup-eligibility check) with lazy-loaded browser modules (`passkey` for login/autofill, `passkey-manage` for settings/step-up):
 
 ```go
-var resetBody = i18n.Define("myapp.reset_body", "Reset your password: {{url}}")
+passkeys, _ := auth.NewSQLPasskeyStore(db)
+challenges, _ := auth.NewSQLMagicLinkTokenStore(db)
 
-auth.PasswordResetConfig{
-    BodyTemplate: func(ctx context.Context, url string) string {
-        return resetBody.Text(ctx, map[string]any{"url": url})
-    },
+mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
+    RPID:           "example.com",
+    Origins:        []string{"https://example.com"},
+    Store:          passkeys,
+    ChallengeStore: challenges,
+    OnSuccessURL:   "/app",
+    TwoFactorURL:   "/login/2fa", // required next to 2FA
+    NoticeSender:   mailer,       // emails verified owner on add (or set NoAddedNotice: true)
+}))
+```
+
+Key options: `RPName`, `ChallengeTTL` (5m), `MaxPerUser` (20, enforced atomically), `ReauthTTL` (5m), `ReauthMinAge` (1h), `RateLimit` (30/min).
+
+- **Buttons & attributes:** Add `ExtraAttrs` from `PasskeyLoginAttrs(base)`, `PasskeyRegisterAttrs(base)`, `PasskeyRenameAttrs(base, id)`, `PasskeyDeleteAttrs(base, id)`, `PasskeyReauthAttrs(base)`, `PasskeyNameAttrs()`, `PasskeyListAttrs(base)` (syncs removals to password managers via the WebAuthn Signal API), or `PasskeyUpgradeAttrs(base)` (silent conditional create after password login). Buttons render `hidden` and appear only when WebAuthn is available; include `<meta name="csrf-token">` behind `auth.CSRF`.
+- **Autofill sign-in:** Combine `auth.PasskeyAutocomplete` (`"username webauthn"`) and `auth.PasskeyAutofillAttrs`:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "github.com/DonaldMurillo/gofastr/framework/headless"
+import "github.com/DonaldMurillo/gofastr/core/render"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+stmt: _ = field
+-->
+```go
+field := func(c headless.FieldControl) render.HTML {
+	return ui.Control(ui.ControlConfig{
+		Field: c, Type: "email", Name: "email",
+		AutoComplete: auth.PasskeyAutocomplete,
+		ExtraAttrs:   auth.PasskeyAutofillAttrs("/auth"),
+	})
 }
 ```
 
-The screen names the account when the token store implements
-`MagicLinkTokenPeeker` (both shipped stores do). Naming it is the point:
-it is how someone recognises the link was not meant for them.
+- **Step-up confirmation:** Put `PasskeyReauthAttrs(base)` on a form button; the module writes a single-use proof into `auth.PasskeyReauthField` (`passkey_reauth`), and your handler redeems it:
 
-### The callback is bound to the browser that started the flow
-
-Starting an OAuth flow (`GET /auth/oauth/{provider}` or
-`.../{provider}/link`) plants a short-lived `HttpOnly`, `SameSite=Lax`
-cookie holding the same signed state token that goes into the redirect
-URL. The callback requires the two to match and clears the cookie
-either way.
-
-With `SessionSecure` on (the production default) the cookie is
-`__Host-gofastr_oauth_state`, and the callback reads that name alone. A
-sibling subdomain can set a cookie for the parent domain, so a plain name
-let `evil.example.com` plant its own state for the victim's callback and
-sign the victim into the attacker's account. A browser accepts a
-`__Host-` cookie only from the host itself, `Secure`, with `Path=/`.
-DevMode over plain HTTP uses `gofastr_oauth_state`, since a browser
-refuses a `__Host-` cookie without `Secure`.
-
-Without it the state token, unforgeable and single-use though it is,
-binds the callback to nothing about the caller: an attacker could start
-a flow in their own browser, capture the resulting callback URL, and
-get a victim to load it, leaving the victim's browser holding a session
-for the attacker's account. The callback is a `GET`, so the form-level
-cross-site rejection never sees it.
-
-`SameSite=Lax` is the reason this does not break the flow: a Lax cookie
-still rides the provider's top-level redirect back. A callback URL
-replayed into any other browser carries no cookie and is refused with
-`400 oauth flow was not started in this browser`.
-
-Single use is enforced by an in-process map of spent state nonces, kept
-until each state's expiry. A callback with no `code` is refused before
-its nonce is recorded. The map holds at most 65,536 nonces; when it is
-full, the earliest-expiring ones are dropped to make room. It does not
-refuse callbacks at the cap: anyone can start a flow and keep its
-cookie, so a cap that refused would let two requests per entry lock
-every user out of OAuth sign-in for ten minutes. Dropping an entry
-leaves replay closed in practice, because a replay also needs the state
-cookie, which the callback clears, and the IdP accepts a code once.
-
-### Provider keys
-
-The key a provider is registered under (`OAuth2Config.Providers` or
-`RegisterProvider`) is its `{provider}` route segment and a field of the
-state token. It must be 1 to 64 ASCII letters, digits, `-` or `_`;
-`NewOAuth2Plugin` and `RegisterProvider` panic on any other key, as
-they do on a short `StateSecret`. A key holding a `.` used to register
-cleanly and then fail every login with "invalid or expired state",
-since the state token separates its fields with dots.
-
-## OAuth identity linking
-
-OAuth login MUST bind the returned identity to `(provider, provider_id)`
-via a durable link store. `(provider, provider_id)` is the only assertion
-an IdP makes that survives an email change: email is mutable, names
-collide, and an unverified email is attacker-controllable. The link store
-is the serialization point that closes the account-takeover hole where an
-IdP emitting an unverified email signs in as an existing local account.
-
-`EntityUserStore` implements `OAuthLinker` and creates its link table on
-`EnsureSchema`, named `<user_table>_oauth_links` by convention, with a
-composite primary key on `(provider, provider_id)` and a `user_id` index
-that powers `ListAccounts` / `UnlinkOAuth`. The table is created
-automatically; hosts never hand-roll the DDL. A user may link more than
-one provider (Google + GitHub + a corporate OIDC), so links live in their
-own table rather than as columns on the users table.
-
-### Fail-closed Init
-
-`OAuth2Plugin.Init` refuses to boot when the configured `UserStore` does
-not implement `OAuthLinker` and neither `DevMode` nor
-`AllowInMemoryStores` is set:
-
-```
-auth: OAuth login requires a durable (provider, provider_id) → user_id
-link store — the configured UserStore does not implement OAuthLinker, so
-an IdP emitting an unverified email could sign in as an existing account.
-Use auth.NewEntityUserStore(...) (now a linker) or set
-AuthConfig.AllowInMemoryStores: true for local dev
+<!-- gofastr:compile
+import "net/http"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+var passkeys *auth.PasskeyPlugin
+var w http.ResponseWriter
+var r *http.Request
+-->
+```go
+if err := passkeys.RedeemReauthProof(r, r.FormValue(auth.PasskeyReauthField)); err != nil {
+	http.Error(w, "Confirm with your passkey first.", http.StatusForbidden)
+	return
+}
 ```
 
-The legacy email-only fallback is gone. `DevMode: true` and
-`AllowInMemoryStores: true` keep the no-linker path reachable so the
-rest of the OAuth plumbing (redirect, state token, callback errors) stays
-unit-testable; the path logs a WARN, and `resolveOAuthUser` itself
-returns `errOAuthNoLinker` at request time rather than silently
-downgrading.
+Only passkeys registered *before* the current session began and at least `ReauthMinAge` old qualify for step-up. Once an account has a qualifying passkey, adding or deleting passkeys requires a step-up proof too. Password resets delete all passkeys; password changes keep them.
 
-### Callback resolution policy
+## OAuth 2.0, OIDC & Sign in with Apple
 
-`resolveOAuthUser` runs this decision table on every callback:
+### Identity linking & security guarantees
 
-1. **Existing link.** `FindByOAuth(provider, providerID)` hit → log in
-   as the linked user. Profile refresh via `RefreshOAuthProfile` is
-   best-effort and does not block login. When the IdP asserts
-   `email_verified` for exactly the account's address, the account is
-   marked verified (best-effort).
-2. **Verified-email match.** No link, but the IdP asserts the email is
-   verified (`OAuth2UserInfo.EmailVerified == true`) and `FindByEmail`
-   returns an existing account. The branch depends on whether the
-   existing account has a password:
-   - **Password account** → refuse with `409 errOAuthEmailCollision`.
-     The user must log in with their password and link the provider
-     from `/auth/accounts`: a verified email alone must not bind to a
-     credential the IdP didn't issue.
-   - **Passwordless account, address unproven** → refuse with `409
-     errOAuthEmailCollision`. The account may have been created through
-     an IdP that does not verify email, by someone who does not own the
-     address. The owner claims it with a magic link or a password reset
-     (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)),
-     which removes the other link, and then signs in here. A store
-     without `EmailVerifiedChecker` always lands here.
-   - **Passwordless account, address proven** → AUTO-LINK and log in.
-     The verified email re-binds the same identity.
-3. **Otherwise.** No link, no verified-email match (this includes an
-   UNVERIFIED email matching an existing account), or no email match at
-   all → create a new passwordless user and link the `(provider,
-   provider_id)`. The new user is marked verified only when the IdP
-   asserted `email_verified`. An unverified address is stored as given
-   but the account stays unproven, so it cannot absorb a verified login
-   and the mailbox owner can claim it. A concurrent create that wins the
-   link PK is authoritative; the just-created user is left as an orphan
-   (best-effort ignore; the email-unique constraint means a future
-   callback re-resolves cleanly).
+- **Durable link required:** `OAuth2Plugin` binds `(provider, provider_id)` via `OAuthLinker` (`EntityUserStore` creates `<users>_oauth_links`) and fails closed at `Init` without it (unless `DevMode` or `AllowInMemoryStores`).
+- **Browser-bound state + PKCE:** Starting a flow sets an `HttpOnly`, `SameSite=Lax` state cookie (`__Host-gofastr_oauth_state` in prod) matched at callback, with single-use nonces and S256 PKCE enabled by default (`DisablePKCE` opts out). `StateSecret` must be ≥16 bytes (panics otherwise). Provider keys must match `[A-Za-z0-9_-]{1,64}`.
+- **Callback resolution:**
+  1. Existing `(provider, provider_id)` link → sign in (and refresh profile).
+  2. No link, verified email matches existing account → `409` if the account has a password or an unverified address (prevents takeover; user must log in and link via `GET /auth/oauth/{provider}/link`); auto-links only onto a passwordless account whose email is already verified.
+  3. Otherwise (including any unverified email) → create a new passwordless account and link it. Empty provider emails answer `400`.
+- **Authenticated link & unlink:** `GET /auth/oauth/{provider}/link` binds a provider to the signed-in session (using a same-site hop if the callback arrives cross-site without the `SameSite=Strict` cookie). `DELETE /auth/unlink/{provider}` refuses (`409`) to remove the user's last login method and deletes any stored provider tokens.
 
-**An empty email is no email.** When the provider shares no address
-(a GitHub account with no verified email, an IdP that omits the claim)
-and no link names the identity, steps 2 and 3 do not run: the callback
-answers `400 auth.oauth_no_email` and emits `oauth.refused` with
-`reason=no_email`. Matching by `""` merged every email-less identity
-into the first one's account. An identity that is already linked signs
-in through step 1 with or without an email. A provider address longer
-than 254 bytes is refused with `400 auth.invalid_email`, the bound the
-form paths apply.
+### OAuth token store & refresh
 
-The `409` refusals in step 2 emit `oauth.refused` with
-`reason=link_conflict` and `UserID` set to the local account the address
-belongs to, so `App.EraseUserData` removes the row with that account's
-other audit history.
-
-**An unverified email NEVER binds to an existing account.** It falls
-through to step 3 as if the email didn't match: the core takeover
-regression. If the email happens to collide with an existing account,
-the unique-email constraint then blocks the fresh create and the
-callback fails closed.
-
-### `email_verified` enforcement
-
-`OAuth2UserInfo.EmailVerified` is the signal step 2 uses. It is set
-strictly:
-
-- **OIDC**: parsed from the id_token's `email_verified` claim (or the
-   configured `OIDCClaimsMapping.EmailVerifiedClaim`). Accepts a JSON
-   bool or the string `"true"` (some IdPs emit the value as a string).
-   When the id_token lacks the claim, the userinfo response's flag is
-   used only if its email is exactly the one kept; a flag about another
-   address does not verify this one. Defaults to `false` when absent: a
-   missing assertion is never a verified email. The flag describes the
-   standard `email` claim only, so it counts only when that claim (in
-   the same id_token or userinfo response) is exactly the address kept.
-   With `OIDCClaimsMapping.EmailClaim` mapped to another claim, the
-   address is verified only when it equals the verified `email`.
-- **Google**: from the `email_verified` (modern) or `verified_email`
-   (legacy) userinfo field.
-- **GitHub**: `true` only when the email came back from
-   `/user/emails?verified=true`. GitHub's `/user` endpoint surfaces the
-   public email but does not assert verification; the conservative
-   default is `false`.
-
-A provider that cannot assert verification always yields
-`EmailVerified == false`, which means email-only matching is off for
-that callback.
-
-### Migration (BREAKING)
-
-Before this change, the callback fell back to email-only matching when
-the `UserStore` did not implement `OAuthLinker`, and OIDC never checked
-`email_verified`. Both paths silently let an IdP emitting an unverified
-email sign in as an existing local account.
-
-After upgrade:
-
-- **Existing OAuth links are unchanged.** Users who logged in via OAuth
-   before the upgrade already have a `(provider, provider_id)` row in the
-   link table (or get one on their first post-upgrade callback, via the
-   verified-email + passwordless auto-link branch).
-- **Passwordless accounts auto-relink once their address is proven.** An
-   account whose only credential is a prior OAuth login has
-   `password_set = false`. A verified-email callback re-binds it once the
-   account reads `email_verified`, which a login through an already
-   linked provider asserting that address records. Until then the
-   callback answers `409`.
-- **Password accounts must link a provider from settings.** The first
-   OAuth login for an email that belongs to a password account is
-   refused with `409` by design: the user must log in with their
-   password and link the provider via `/auth/oauth/{provider}` while
-   authenticated, then `/auth/accounts` reflects the bind. This blocks
-   an attacker controlling a verified-but-not-theirs email from taking
-   over a password account.
-- **Hosts on a non-`EntityUserStore` backend** must implement
-   `OAuthLinker` (and ideally `OAuthEnrichedLinker`, `AccountLister`,
-   `AccountUnlinker`, `PasswordChecker`) or set
-   `AuthConfig.AllowInMemoryStores: true` to acknowledge the risk. The
-   `Init` failure message names both options.
-
-## OAuth token store + refresh
-
-A provider access token is short-lived (Google's is ~1h). Without a
-durable store, the provider's refresh token is discarded at login and
-any call made on the user's behalf fails once the access token expires,
-with no recovery. The `OAuthTokenStore` makes that recoverable. It is
-**opt-in**: OAuth login behaves exactly as before when no store is
-configured. A stored row is dropped automatically when the user unlinks
-the provider (see [Account linking](#account-linking)).
-
-`OAuth2Config.StateSecret` signs the HMAC state token. It must be at
-least **16 bytes** — `NewOAuth2Plugin` panics on a shorter non-empty
-value, because state tokens travel in redirect URLs and are
-brute-forceable offline under a short key. Empty keeps the
-mint-a-random-per-process-key behaviour (single-instance deployments).
+Opt in to storing and refreshing provider access/refresh tokens (sealed with AES-GCM; `EncryptionKey` required):
 
 ```go
 tokStore, _ := auth.NewSQLOAuthTokenStore(db, auth.SQLOAuthTokenStoreConfig{
-    EncryptionKey: []byte(os.Getenv("OAUTH_TOKEN_KEY")), // seals tokens at rest
+    EncryptionKey: []byte(os.Getenv("OAUTH_TOKEN_KEY")),
 })
-
 oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
     Providers:   map[string]auth.OAuth2Provider{"google": google},
     StateSecret: os.Getenv("OAUTH_STATE_SECRET"),
-    TokenStore:  tokStore, // persist {user, provider, access, refresh, expiry} at login
+    TokenStore:  tokStore,
 })
+
+// Always pass the authenticated session userID, never request input:
+accessToken, err := oauth.ValidOAuthToken(ctx, "google", userID)
 ```
 
-With a store wired in, the callback handler persists the access and
-refresh tokens (upsert per `(user_id, provider)`). Both token columns are
-sealed with AES-GCM before they touch the database; a raw table dump does
-not surface live secrets. `EncryptionKey` is **required and non-empty**:
-stored refresh tokens are password-equivalent, so `NewSQLOAuthTokenStore`
-fails closed rather than sealing them with a default key. Source it from a
-secret manager, not source code.
+`ValidOAuthToken` refreshes transparently within ~60s of expiry (`GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`), serializing refreshes both in-process and across replicas via a row lease (`OAuthTokenLeaser`) so rotating refresh tokens are never double-spent. Prefer `oauth.ValidOAuthToken` / `oauth.RefreshOAuthToken` (keyed by registry name) over the package-level helpers when registering custom OIDC names.
 
-> **Pass the authenticated user's id.** `RefreshOAuthToken` / `ValidOAuthToken`
-> take a `userID`; it must be the resolved session principal, never a
-> request-supplied value, or it is an IDOR onto another user's tokens.
-
-Making a call on the user's behalf:
-
-```go
-// Returns a currently-valid access token, refreshing transparently when
-// the stored one is expired or within ~60s of expiry.
-accessToken, err := auth.ValidOAuthToken(ctx, tokStore, google, userID)
-
-// Or force a refresh and get the full updated record:
-rec, err := auth.RefreshOAuthToken(ctx, tokStore, google, userID)
-```
-
-The callback stores each row under the provider's **registry key**, the
-`{provider}` of `/auth/oauth/{provider}`. The package functions above
-read the row under `provider.Name()`, which is the same string only when
-the provider is registered under its own name. An `OIDCProvider`
-registered as `"keycloak"` reports `Name()` `"oidc"` unless
-`ProviderName` says otherwise, and the package functions then find no
-row (`ErrOAuthTokenNotFound`). The plugin's methods take the registry
-key and always match the callback:
-
-```go
-accessToken, err := oauth.ValidOAuthToken(ctx, "keycloak", userID)
-rec, err := oauth.RefreshOAuthToken(ctx, "keycloak", userID)
-```
-
-They use the plugin's `OAuth2Config.TokenStore` and return an error for
-a key no provider is registered under.
-
-A token whose provider stated no `expires_in` (GitHub's classic
-OAuth-app tokens, which never expire) is stored with a zero `Expiry`, and
-`ValidOAuthToken` returns it as it is. Before, its expiry was set to the
-moment it arrived, so every call forced a refresh that could not happen
-(no refresh token) and failed. A provider call refused with such a token
-means the grant was revoked: refresh, or have the user sign in again.
-
-Refreshes of one `(user, provider)` run one at a time, within a process
-and across replicas. A refresh token spent twice fails under a provider
-that rotates them, and one that detects reuse (Auth0, Okta; RFC 9700
-§4.14.2) revokes the whole grant, so the user has to reconnect.
-
-- Within a process, a caller that waited behind another's refresh gets
-  that refresh's record instead of spending the token again.
-- Across replicas, `SQLOAuthTokenStore` leases the grant in its row (one
-  conditional `UPDATE`) before the token is spent. A replica that finds
-  another's lease never spends it: it waits up to 10 seconds, bounded by
-  its context, for that refresh to land and returns the stored record.
-  If nothing lands it fails closed with `auth.ErrOAuthRefreshInProgress`
-  and the token stays unspent; retry shortly. A lease lapses after 30
-  seconds, so a replica that died mid-exchange frees the grant, and a
-  failed exchange releases it at once.
-- A custom store opts in by implementing `auth.OAuthTokenLeaser`
-  (`LeaseRefresh`, `ReleaseRefresh`); one that does not is serialized
-  per process only.
-
-The final write stays a compare-and-swap on the refresh token refreshed
-from, so a grant a login stored meanwhile is never overwritten. The
-lease column (`refresh_lease_ms`) is added to an existing table on
-first use.
-
-Refresh is concrete per provider; there is no generic provider registry.
-`GoogleProvider` and `GitHubProvider` implement `OAuthTokenRefresher`
-(`RefreshToken(ctx, refreshToken)`), POSTing a `refresh_token` grant to the
-provider's token endpoint. Providers commonly omit the refresh token on a
-refresh grant (Google does), so the stored refresh token is retained.
-`GoogleProvider.AuthURL` now requests `access_type=offline` so Google
-actually issues a refresh token.
-
-Every built-in provider fetch — token exchange, refresh, userinfo,
-`/user/emails` — refuses redirects and caps the response body at
-1 MiB, the same egress posture as the OIDC provider: a compromised or
-misconfigured endpoint can neither re-point the credential-bearing
-request at another origin (a 307 re-sends the POST body verbatim) nor
-stream an unbounded body into the callback goroutine.
-
-`RefreshOAuthToken` errors when no refresh token is stored; the user must
-re-authenticate. **Security-sensitive code:** route changes here through
-the auth audit gate before merge.
-
-## OIDC (any compliant IdP)
-
-`OIDCProvider` adapts any OpenID Connect-compliant identity provider
-(Keycloak, Authentik, Authelia, Zitadel, Entra ID, Okta) to the same
-`OAuth2Provider` interface as the built-in Google/GitHub providers: one
-config block, discovered endpoints, JWKS-verified id_tokens.
+### OIDC (Keycloak, Okta, Entra ID, Authentik, etc.)
 
 <!-- gofastr:compile
 stmt: _ = err
@@ -2836,10 +454,7 @@ provider, err := auth.NewOIDCProvider(auth.OIDCConfig{
     ClientID:     "my-client",
     ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
     RedirectURL:  "https://app.example.com/auth/oauth/keycloak/callback",
-    ProviderName: "keycloak", // Name() and OAuth2UserInfo.Provider
-    // Scopes defaults to ["openid","email","profile"]; set to override.
-    // JWKSCacheTTL defaults to 1h.
-    // TokenAuthMethod: "" follows discovery (see below).
+    ProviderName: "keycloak",
 })
 
 oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
@@ -2848,59 +463,9 @@ oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
 })
 ```
 
-Discovery (`<issuer>/.well-known/openid-configuration`) runs lazily on
-first use and is cached for the life of the process; a restart picks up
-IdP endpoint moves. The document's `issuer` MUST match the configured
-`Issuer` exactly (OIDC §4.3, issuer-spoofing guard), except for a
-multi-tenant issuer with `Tenants` set (below). `Issuer` must be
-an `https://` URL; `http://` is accepted only for `localhost`/`127.0.0.1`
-(local IdPs and tests).
+Discovery is cached lazily, enforces exact `issuer` matching and HTTPS endpoints (loopback `http://` only for local dev), disables redirects on all IdP fetches, pins `alg` to `RS256`/`ES256` (RSA 2048–8192 bits), validates `iss`/`aud`/`azp`/`exp`/`nbf`/`iat`/`sub`, and maps claims via `OIDCClaimsMapping` (remapped email claims only count as verified if they match the verified `email` claim). Set `TokenAuthMethod` (`OIDCAuthClientSecretPost` or `OIDCAuthClientSecretBasic`) only if discovery misreports it.
 
-A JWKS RSA key over 8192 bits is refused, like one under 2048: a huge
-modulus would make every sign-in burn CPU on verification.
-
-Discovery and JWKS fetches run one at a time and never under a lock
-other logins wait on. A login waiting for another login's discovery
-fetch gives up at its own deadline. Once a key set is cached, a login
-whose set is past `JWKSCacheTTL` verifies against the cached set while a
-single refresh runs, and when that refresh fails the next attempt waits
-a minute: an IdP outage no longer turns every login into a JWKS fetch
-that runs into the HTTP timeout. A token signed by an unknown `kid`
-still triggers its own refetch, at most once per kid per five minutes
-and not during that minute.
-
-Every endpoint the discovery document names (`token_endpoint`, `jwks_uri`,
-`userinfo_endpoint`, `authorization_endpoint`) is transport-validated when
-the document is accepted: it must be `https://` — or, under a
-literal-loopback `http://` issuer, plain `http://` on a literal-loopback
-host only — and must not carry userinfo. Distinct hosts are allowed (OIDC
-legitimately serves JWKS or userinfo from another origin); a scheme or
-cleartext-host downgrade is not. None of the provider's fetches follow
-redirects: these endpoints are pinned by the issuer's document, a
-redirect answer is not a shape a conformant IdP produces on them, and
-following one would re-send the token exchange's POST body —
-`client_secret` and code — verbatim to the redirect target (Go's client
-preserves method and body on 307/308). Mirrors the redirects-off posture
-of A2A push delivery and webhook egress.
-
-The code exchange authenticates the client one of two ways.
-`auth.OIDCAuthClientSecretPost` sends `client_id` and `client_secret` in
-the form body; `auth.OIDCAuthClientSecretBasic` sends them in an HTTP
-Basic `Authorization` header, each form-encoded first (RFC 6749 §2.3.1).
-With `TokenAuthMethod` empty, the discovery document's
-`token_endpoint_auth_methods_supported` decides: the body form when the
-list is absent or names `client_secret_post`, Basic when it names
-`client_secret_basic` and not post. A list naming neither fails the
-exchange before the secret is sent. Set `TokenAuthMethod` when a
-provider's document is wrong about what its endpoint accepts; any other
-value fails `NewOIDCProvider`.
-
-**Multi-tenant issuers (Microsoft).** Microsoft's
-`https://login.microsoftonline.com/common/v2.0` and `/organizations/v2.0`
-publish the issuer `https://login.microsoftonline.com/{tenantid}/v2.0`,
-and each id_token names the user's own tenant in `iss` and in its `tid`
-claim. The exact match refuses that at discovery. Set `Tenants` to admit
-it:
+**Multi-tenant Microsoft Entra ID:** Set `Tenants` (explicit tenant IDs or `"*"`) when using `/organizations/v2.0` or `/common/v2.0`. Accounts are keyed by `<tid>/<sub>`, never auto-link by email, and only mark email verified when the signed `id_token` carries both `xms_edov: true` and `email_verified: true`:
 
 <!-- gofastr:compile
 stmt: _ = err
@@ -2915,133 +480,11 @@ microsoft, err := auth.NewOIDCProvider(auth.OIDCConfig{
     ClientSecret: os.Getenv("MS_CLIENT_SECRET"),
     RedirectURL:  "https://app.example.com/auth/oauth/microsoft/callback",
     ProviderName: "microsoft",
-    Tenants:      []string{"72f988bf-86f1-41af-91ab-2d7cd011db47"}, // or "*" for every tenant
+    Tenants:      []string{"72f988bf-86f1-41af-91ab-2d7cd011db47"}, // or "*"
 })
 ```
 
-With `Tenants` set, discovery must name a `{tenantid}` issuer that is
-the configured `Issuer` with one whole path segment open; anything else,
-an exact issuer included, fails discovery, so the list is never set and
-left unread. An id_token is accepted
-only when its `iss` is that template filled with its own `tid` and the
-`tid` is listed (`"*"` admits every tenant: any work account, and under
-`/common` any personal Microsoft account too). The account is keyed by
-`<tid>/<id>`, where `<id>` is the configured `Claims.IDClaim` (`sub` by
-default), so one subject in two tenants is two accounts, and a
-sign-in that has only the userinfo endpoint to go on (no verified
-id_token, as after a restart) is refused. Without `Tenants` nothing changes. A
-single-tenant issuer (`.../<tenant id>/v2.0`) needs no `Tenants`. A key
-in Microsoft's shared key set that names an `issuer` signs only for that
-issuer (its `{tenantid}` filled with the token's `tid`); a token signed
-by a key scoped to another issuer is refused.
-
-Any tenant's admin sets the `email` of that tenant's users, so under
-`Tenants` an email proves nothing on its own (the "nOAuth" takeover: an
-attacker's tenant names a victim's address and is linked to the victim's
-account). The provider marks the email verified only when the signed
-id_token carries `xms_edov: true` (Microsoft's "email domain owner
-verified" optional claim; add it in the app registration's token
-configuration) and also a signed `email_verified: true`, both for the
-id_token's own `email` claim. Either one alone, or a userinfo answer,
-leaves it unverified.
-
-Even a verified address never joins an existing account under
-`Tenants`: one address can belong to identities in many tenants. A
-sign-in with no link yet whose email matches an existing account is
-refused as a collision (409); the owner signs in another way and links
-the provider from their account. A sign-in through an existing link
-works as before.
-
-Turning `Tenants` on for a provider that already signed people in
-changes their account key from `<id>` to `<tid>/<id>`, so existing
-links no longer match. Either migrate in place, rewriting each stored
-`provider_id` to `<tid>/<id>` (keeping the same mapped id claim) before
-switching, or roll out in parallel: keep the old provider signing in,
-add the multi-tenant one under a new provider name, and let users link
-it from their account while signed in. A new provider name alone does
-not carry links over, and with the old sign-in gone an existing user's
-first sign-in through the new name is a collision.
-
-**What gets verified** before `ExchangeCode` returns:
-
-- the id_token signature against the IdP's JWKS;
-- `alg` is pinned to **RS256 or ES256**; `none`, `HS256`, and case
-  variants are rejected before any key lookup (alg-confusion defense);
-- the signing key's `kty`/`crv` matches the `alg` (no RSA-vs-EC
-  confusion); RSA moduli below 2048 bits and off-curve EC points are
-  rejected at JWKS parse time;
-- `iss` equals `Issuer` (or, with `Tenants`, the issuer for the token's
-  own admitted `tid`); `aud` contains `ClientID`; a present `azp` must
-  equal `ClientID` (and a multi-audience token must carry one);
-- `exp` (60s skew), `nbf` (tokens not yet valid are rejected), and `iat`
-  (tokens issued in the future are rejected);
-- a non-empty `sub`.
-
-No `nonce` is sent on the authorize request: this is the
-confidential-client authorization-code flow: the code is single-use and
-exchanged server-to-server with the secret, and the plugin's HMAC state
-token already binds the callback. A nonce only matters for the
-implicit/hybrid flow.
-
-**PKCE** (RFC 7636, S256) is sent by the OIDC, Google and GitHub
-providers. The client secret protects the code→token step, but not
-against authorization-code injection: an attacker holding a victim's code
-(a leaked redirect, a log, a referer) starts a flow of their own and
-swaps the code into its callback. Their state and cookie check out and
-the server redeems the code with its own secret, signing them in as the
-victim. RFC 9700 recommends PKCE for confidential clients for this
-reason. The verifier is the HMAC of the flow's signed state under the
-state key: secret (the key never leaves the server), different per flow,
-and recomputed at the callback, so nothing is stored. A stolen code fails
-the IdP's verifier check in any flow but its own.
-
-`OIDCConfig.DisablePKCE`, `GoogleProvider.DisablePKCE` and
-`GitHubProvider.DisablePKCE` turn it off for an IdP that refuses the
-parameters. A custom provider opts in by implementing
-`auth.OAuth2PKCEProvider` (`AuthURLWithChallenge`,
-`ExchangeCodeWithVerifier`); one that does not keeps working without
-PKCE.
-
-**Claims mapping.** `OIDCClaimsMapping` overrides which claim supplies
-each field (defaults `sub`, `email`, `name`, `picture`, `email_verified`)
-for IdPs that use `preferred_username` or `upn`:
-
-```go
-Claims: auth.OIDCClaimsMapping{EmailClaim: "upn", NameClaim: "preferred_username"},
-```
-
-A remapped `EmailClaim` does not inherit `email_verified`. That flag
-(OIDC Core §5.1) is about the standard `email` claim, so an address
-taken from `upn` or `preferred_username` counts as verified only when
-it is exactly the `email` the IdP verified. Otherwise anyone who could
-set their own `preferred_username` to someone else's address, while
-verifying their own `email`, would arrive as a verified owner of that
-address and be linked into its account. Under a remap most sign-ins
-therefore arrive unverified: they get a new account and never
-auto-link into an existing one.
-
-**`email_verified` is enforced.** The callback reads the IdP's
-`email_verified` claim (JSON bool, or the string `"true"` for IdPs that
-emit it that way) and refuses to bind an UNVERIFIED email to an existing
-account; see [OAuth identity linking](#oauth-identity-linking). A
-missing claim defaults to `false`: a missing assertion is never a
-verified email.
-
-If the mapped email is empty and the IdP exposes a `userinfo_endpoint`,
-it is fetched with the bearer token and only the missing fields are
-merged in; the userinfo `sub` MUST match the id_token `sub` (OIDC §5.3.2).
-
-**Separation from app JWTs.** This is a distinct verifier from the
-HS256-only JWT verifier in `token.go`. Application-issued session JWTs
-stay HS256-only by design; only third-party id_tokens are validated here,
-against the IdP's published asymmetric keys. The two never share a code
-path.
-
-## Sign in with Apple
-
-`AppleProvider` is the OIDC provider set up for Apple. Register it under
-the key `apple`; the callback is `/auth/oauth/apple/callback`, the
-Return URL you give the Services ID.
+### Sign in with Apple
 
 <!-- gofastr:compile
 stmt: _ = err
@@ -3051,10 +494,10 @@ stmt: _ = oauth
 -->
 ```go
 provider, err := auth.NewAppleProvider(auth.AppleConfig{
-    ClientID:    "com.example.web", // the Services ID
+    ClientID:    "com.example.web", // Services ID
     TeamID:      "ABCDE12345",
-    KeyID:       "FGHIJ67890",      // the Sign in with Apple key
-    PrivateKey:  []byte(os.Getenv("APPLE_PRIVATE_KEY")), // the .p8 file
+    KeyID:       "FGHIJ67890",
+    PrivateKey:  []byte(os.Getenv("APPLE_PRIVATE_KEY")), // P-256 PKCS #8 .p8
     RedirectURL: "https://app.example.com/auth/oauth/apple/callback",
 })
 
@@ -3064,95 +507,38 @@ oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
 })
 ```
 
-What it does differently from a plain `OIDCProvider`:
+`AppleProvider` signs a fresh 5-minute ES256 client-secret JWT on each exchange and handles Apple's cross-site `form_post` callback via a same-origin hop to the `GET` callback (automatically exempted by `WithBFFPosture` and `WithCSRFAuthRoutes(mgr)`).
 
-- **The client secret is signed, not stored.** Each code exchange sends
-  a fresh ES256 JWT signed with the `.p8` key (`iss` the team, `sub` the
-  Services ID, `aud` `https://appleid.apple.com`, valid five minutes).
-  The key must be the P-256 PKCS #8 key Apple issues; anything else
-  fails `NewAppleProvider`.
-- **The callback is a form POST.** Apple sends the code as a cross-site
-  `POST` whenever the `email` scope is asked for, which it is. That POST
-  carries no `SameSite=Lax` state cookie, so the plugin answers it with
-  a page from this origin that loads the usual GET callback with the
-  same `code` and `state`, and the GET runs every check with the cookie.
-  The POST itself signs in nobody. Any provider can opt in by
-  implementing `OAuth2FormPostProvider`.
-- **Scopes are `openid email`.** Apple sends the user's name only once,
-  in the first callback's `user` field, which the plugin drops; the
-  account's name stays empty.
-- **`email_verified` arrives as the string `"true"`,** which counts.
-  A "Hide My Email" relay address (`…@privaterelay.appleid.com`) is a
-  verified address like any other.
+## Rate limiting & security audit trail
 
-`WithBFFPosture` lets Apple's POST through its CSRF check and origin
-guard on `{BasePath}/oauth/{provider}/callback` only. A host that mounts
-`auth.CSRF()` itself must exempt that path with
-`auth.CSRF(auth.WithCSRFAuthRoutes(mgr))`, which reads `BasePath` from
-the manager.
+All auth endpoints ship with built-in per-IP rate-limit floors (plus per-account login limits and a shared per-address mail cooldown `MailAddressRateLimit` across magic-link and password-reset endpoints). `X-Forwarded-For` is ignored unless `TrustForwardedFor: true` (and `TrustedProxies` for multi-hop proxies) is set.
 
-PKCE is sent as with every provider. If Apple ever refuses it, set
-`DisablePKCE`. `Issuer` and `HTTPClient` exist for tests.
+Limits are in-memory per replica by default. Share them across replicas with a SQL store (fails closed on store errors):
 
-## Threat model assumptions
+```go
+shared := auth.NewSQLRateLimitStore(db, "auth_rate_limits")
+auth.AuthConfig{
+    LoginRateLimit:           &auth.RateLimiterConfig{Store: shared},
+    LoginRateLimitPerAccount: &auth.RateLimiterConfig{Store: shared},
+}
+```
 
-- The application sits behind a TLS terminator that rewrites
-  `r.RemoteAddr` to the real client IP. Client-supplied XFF is not
-  trusted; if you need it, set `TrustForwardedFor` explicitly.
-- Cookies are scoped to a single origin. The `__Host-` prefix
-  enforces this on the browser side. Cross-subdomain attacker?
-  Blocked by the prefix.
-- The session table stores `sha256(token)`, never the cookie value,
-  so a read-only dump of it is not a pile of live sessions. A
-  write-capable compromise of the session table is still game over:
-  sessions are bearer tokens by design, and an attacker who can
-  insert rows can mint sessions directly.
-- The `EmailSender` is reliable. Plugins that need email return 503
-  if no sender is configured and `DevMode` is off: they refuse to
-  silently log live tokens to stdout in production.
-- The `crypto/rand` source is available. If it fails, the process
-  panics (entropy starvation makes the rest of the system unsound).
+Note: keep `MailAddressRateLimit` in memory unless a fleet-wide cap matters more than preventing concurrent bursts from temporarily locking out a target address.
+
+Wire security audit logging (`login.succeeded`, `2fa.enrolled`, `password.reset_requested`, `oauth.linked`, `token.created`, `roles.updated`, etc.—never logging raw credentials) in one line:
+
+```go
+sink, _ := auth.NewSQLAuditSink(db, "")
+mgr := auth.New(auth.AuthConfig{AuditSink: sink})
+```
+
+See [audit-log.md](audit-log.md#auth-security-events) for the full event taxonomy.
 
 ## Common mistakes
 
-- **Wiring a custom token store for one plugin only.** The magic-link,
-  email-verification, and password-reset plugins each construct their
-  own `MemoryMagicLinkTokenStore`. If you replace one with a Redis
-  store, replace all three; they share the same shape but not the
-  same instance. In production mode a plugin left on its memory store
-  refuses to boot (a link emailed from one replica would be invalid on
-  the next) unless `AuthConfig.AllowInMemoryStores` is set.
-- **Forgetting `DevMode` over plain HTTP.** Without it, browsers
-  refuse to accept the production `__Host-session` cookie over an
-  insecure connection, and the user appears never to log in. The
-  symptom is "login returns 200 but `/auth/me` returns 401".
-- **Leaving `EmailSender` nil in production.** Magic-link and email
-  verification fail closed with a 503 (`magic link delivery not
-  configured` / `email delivery not configured`). Password reset is the
-  exception: to preserve its anti-enumeration guarantee it still returns
-  200 and simply sends nothing, so the reset flow is silently
-  non-functional until an `EmailSender` is wired. A failing (non-nil)
-  sender now logs a server-side `password-reset email send failed`
-  warning while keeping the 200; a nil sender is the quiet footgun to
-  watch for.
-  Don't set `DevMode=true` as a workaround; that logs live tokens.
-- **Trusting X-Forwarded-For without a proxy.** Per the docs above:
-  default is off, and turning it on without a proxy you control
-  defeats every per-IP rate limit.
-- **Treating `/auth/login` success as "fully authenticated".** A 2FA-
-  enrolled user has a `PendingTwoFactor` session until they complete
-  `/auth/2fa/challenge`. Don't read user PII from a session that's
-  still pending.
-- **Losing or leaking the 2FA encryption key.** `NewEntityTwoFAStore`
-  refuses an empty `EntityTwoFAStoreConfig.EncryptionKey` and seals
-  every TOTP secret it writes with AES-GCM under it. Rows written as
-  plaintext before the key existed still verify until they are
-  rewritten only when they use **unpadded uppercase base32**.
-  Lowercase-base32 seeds and other legacy encodings fail closed.
-  For an offline migration, decode each seed using its original
-  encoding, encode the same bytes as unpadded uppercase base32,
-  then rewrite it through the configured store so it is sealed.
-  If the original encoding is unknown, require re-enrollment rather
-  than guessing. Keep the key in a secret manager, not beside the
-  database: a DB leak plus the key is a full second-factor bypass.
-  Rotate through `PreviousEncryptionKeys`.
+- **Replacing the token store on only one plugin.** `MagicLinkPlugin`, `EmailVerificationPlugin`, and `PasswordResetPlugin` each default to an independent in-memory store (which fails `Init` in production). Wire a shared durable store (e.g., `NewSQLMagicLinkTokenStore`) on every link/code plugin you use.
+- **Forgetting `DevMode: true` over plain HTTP.** Production defaults to `__Host-session` (`Secure=true`), which browsers reject over plain HTTP—login returns 200, then `/auth/me` returns 401.
+- **Leaving `EmailSender` nil in production.** Magic-link and email-verification return 503; password-reset still returns 200 to prevent enumeration, silently dropping reset emails. Never set `DevMode: true` in production to work around it.
+- **Trusting `X-Forwarded-For` without a controlled proxy.** Clients can spoof headers and bypass every per-IP rate limit.
+- **Treating `/auth/login` 200 as fully authenticated.** Users with 2FA enabled hold a `PendingTwoFactor` session until `/auth/2fa/challenge` succeeds.
+- **Losing or leaking the 2FA encryption key.** `NewEntityTwoFAStore` seals TOTP secrets with AES-GCM under `EncryptionKey`. Unsealed legacy plaintext rows only verify if encoded as **unpadded uppercase base32**; Lowercase-base32 seeds and other legacy encodings fail closed. Migrate offline by decoding with the original encoding, re-encoding as unpadded uppercase base32, and rewriting through the store (if the original encoding is unknown, require re-enrollment). Rotate keys with `PreviousEncryptionKeys` and store keys outside the database.
