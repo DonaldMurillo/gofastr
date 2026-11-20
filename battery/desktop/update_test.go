@@ -276,6 +276,13 @@ func TestUpdatesMethodsUnconfiguredRefuse(t *testing.T) {
 	if err := b.InstallUpdate(context.Background()); err != errUpdateNotConfigured {
 		t.Fatalf("InstallUpdate err = %v", err)
 	}
+	// A configured updater holding no usable key refuses instead of verifying against it.
+	feed := newUpdateFeedServer(t, "1.2.0")
+	kb, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	kb.updaterFor().pub = nil
+	if _, err := kb.CheckForUpdates(context.Background()); err != errUpdateNotConfigured {
+		t.Fatalf("CheckForUpdates with no key err = %v, want %v", err, errUpdateNotConfigured)
+	}
 }
 
 func TestCheckUnbundledRefuses(t *testing.T) {

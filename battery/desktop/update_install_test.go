@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -156,6 +157,7 @@ func TestInstallRefusesConcurrentInstall(t *testing.T) {
 	if got := runningExe(t, bundleDir); got != "#!new 1.2.0" {
 		t.Fatalf("installed executable = %q", got)
 	}
+	assertNoStaging(t, b)
 	// After the swap the process is quitting: a third call must not
 	// swap over the new bundle.
 	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateInstalled) {
@@ -218,9 +220,24 @@ func (p *blankIDLayout) Inspect(extracted string) (update.BundleInfo, error) {
 	return info, err
 }
 
-// assertNothingInstalled checks the running bundle is untouched and nothing relaunched.
-func assertNothingInstalled(t *testing.T, fp *fakeUpdatePlatform, bundleDir string) {
+// assertNoStaging fails when an update- staging directory survived in the data dir.
+func assertNoStaging(t *testing.T, b *Battery) {
 	t.Helper()
+	entries, err := os.ReadDir(b.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "update-") {
+			t.Fatalf("staging directory %s survived the install", e.Name())
+		}
+	}
+}
+
+// assertNothingInstalled checks the running bundle is untouched, nothing relaunched and no staging is left.
+func assertNothingInstalled(t *testing.T, b *Battery, fp *fakeUpdatePlatform, bundleDir string) {
+	t.Helper()
+	assertNoStaging(t, b)
 	if got := runningExe(t, bundleDir); got != "#!old 1.0.0" {
 		t.Fatalf("the running bundle was replaced: %q", got)
 	}
@@ -243,7 +260,7 @@ func TestInstallRefusesArchiveOffTheFeed(t *testing.T) {
 	if len(fp.verified) != 0 {
 		t.Fatalf("the signature check ran on an unverified archive: %v", fp.verified)
 	}
-	assertNothingInstalled(t, fp, bundleDir)
+	assertNothingInstalled(t, b, fp, bundleDir)
 }
 
 func TestInstallRefusesFailedSignatureCheck(t *testing.T) {
@@ -255,7 +272,7 @@ func TestInstallRefusesFailedSignatureCheck(t *testing.T) {
 	if len(fp.verified) != 1 {
 		t.Fatalf("signature checks = %v, want one", fp.verified)
 	}
-	assertNothingInstalled(t, fp, bundleDir)
+	assertNothingInstalled(t, b, fp, bundleDir)
 }
 
 func TestInstallRefusesDowngrade(t *testing.T) {
@@ -264,5 +281,5 @@ func TestInstallRefusesDowngrade(t *testing.T) {
 	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateNotAvailable) {
 		t.Fatalf("install of feed 1.2.0 over running 2.0.0 = %v, want %v", err, errUpdateNotAvailable)
 	}
-	assertNothingInstalled(t, fp, bundleDir)
+	assertNothingInstalled(t, b, fp, bundleDir)
 }

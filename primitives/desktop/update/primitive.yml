@@ -28,6 +28,21 @@ invariants:
     enforced_by:
       - test: battery/desktop.TestCheckComparesAgainstRunningVersion
       - test: battery/desktop.TestInstallRefusesDowngrade
+  - id: no-key-no-check
+    rule: An updater whose public key did not decode refuses check and install with not configured before fetching or verifying anything.
+    enforced_by:
+      - test: battery/desktop.TestUpdatesMethodsUnconfiguredRefuse
+  - id: staging-is-removed
+    rule: install stages the download in an update- directory under the data directory and removes it on every return, success or refusal.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusesConcurrentInstall
+      - test: battery/desktop.TestInstallRefusesArchiveOffTheFeed
+      - test: battery/desktop.TestInstallRefusesFailedSignatureCheck
+  - id: fetch-errors-carry-no-url
+    rule: Every error Fetch returns names the failure in fixed words (a status code, transport error, cancelled or timed out) and never the URL, so the updater's log lines that print it carry none.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestFetchErrorsCarryNoURL
+      - test: battery/desktop.TestCheckFeedFailureIsClosedCodeWithoutURL
   - id: archive-matches-the-feed
     rule: install refuses a downloaded archive whose sha256 or size is not the feed entry's before extracting it or running the signature check.
     enforced_by:
@@ -91,7 +106,7 @@ invariants:
       - test: battery/desktop/internal/update.TestCompareOrdersVersions
       - test: battery/desktop/internal/update.TestIsNewerRules
   - id: windows-trust-never-loosens
-    rule: CheckWindowsTrust refuses a new loader DLL that is not trusted or, when the installed one is trusted, signed by another subject, a new executable whose signature does not verify, and, when the running executable is trusted, a new one from another subject.
+    rule: CheckWindowsTrust refuses a new loader DLL that is not trusted, or, when the installed loader is trusted, one whose subject differs or when the installed subject is empty, a new executable whose signature does not verify, and, when the running executable is trusted, a new one from another subject or when the running subject is empty.
     enforced_by:
       - test: battery/desktop/internal/update.TestCheckWindowsTrustPolicy
   - id: move-tree-never-merges
