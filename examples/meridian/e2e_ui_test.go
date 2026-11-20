@@ -56,11 +56,6 @@ func e2eBootAppIn(t *testing.T, prepare func(dir string)) string {
 	if prepare != nil {
 		prepare(dir)
 	}
-	return e2eStartApp(t, bin, dir)
-}
-
-func e2eStartApp(t *testing.T, bin, dir string) string {
-	t.Helper()
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
 	srv.Dir = dir

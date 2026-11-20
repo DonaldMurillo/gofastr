@@ -78,7 +78,7 @@ func runGenerator(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// TestAppSpecStillGenerates compiles gofastr.yml and checks sign-in on the result.
+// TestAppSpecStillGenerates compiles gofastr.yml.
 //
 // The app spec that seeded this app must keep producing an app that
 // BUILDS. Without this gate, gofastr.yml can rot silently, which is
@@ -88,7 +88,7 @@ func runGenerator(t *testing.T, dir string, args ...string) {
 // gate in TestGeneratedTreesMatchGenerator below.
 func TestAppSpecStillGenerates(t *testing.T) {
 	if testing.Short() {
-		t.Skip("runs the generator and builds and boots its output")
+		t.Skip("runs the generator and compiles its output; skipped under -short")
 	}
 	dir, _ := scratchWithAppSpec(t)
 	runGenerator(t, dir, "generate", "app", "gofastr.yml")
@@ -109,11 +109,6 @@ func TestAppSpecStillGenerates(t *testing.T) {
 	if out, err := rest.CombinedOutput(); err != nil {
 		t.Fatalf("generated entities packages do not compile:\n%s", out)
 	}
-
-	const adminPass = "e2e-seed-admin-pw"
-	t.Setenv("ADMIN_SEED_PASSWORD", adminPass)
-	base := e2eStartApp(t, bin, dir)
-	e2eLoginRedirect(t, base, adminPass)
 }
 
 // TestGeneratedTreesMatchGenerator gates the two generator-owned trees,

@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 func TestOwnedJoinRecord(t *testing.T) {
@@ -41,6 +43,9 @@ func TestOwnedJoinRecord(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })
 	base := "http://" + addr
 	e2eWaitReady(t, base)
+	t.Run("LoginPreservesDestination", func(t *testing.T) {
+		checkLoginDestination(t, base)
+	})
 	user := func(email string) *http.Client {
 		jar, _ := cookiejar.New(nil)
 		c := &http.Client{Jar: jar, Timeout: 10 * time.Second}
@@ -125,6 +130,68 @@ func TestOwnedJoinRecord(t *testing.T) {
 	}
 	if code, _ := e2eDo(t, ann, "GET", base+"/account/me", ""); code != http.StatusUnauthorized {
 		t.Errorf("GET /account/me after Sign out = %d, want 401", code)
+	}
+}
+
+func checkLoginDestination(t *testing.T, base string) {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	readNext := func(path string) string {
+		t.Helper()
+		code, body := e2eDo(t, client, http.MethodGet, base+path, "")
+		if code != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, code)
+		}
+		page, err := html.Parse(strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for node := range page.Descendants() {
+			if node.Type != html.ElementNode || node.Data != "input" {
+				continue
+			}
+			attrs := make(map[string]string, len(node.Attr))
+			for _, attr := range node.Attr {
+				attrs[attr.Key] = attr.Val
+			}
+			if attrs["type"] == "hidden" && attrs["name"] == "next" {
+				return attrs["value"]
+			}
+		}
+		t.Fatalf("GET %s has no hidden next input", path)
+		return ""
+	}
+	if got := readNext("/login"); got != "/app" {
+		t.Errorf("direct login form next = %q, want /app", got)
+	}
+
+	const target = "/app/invoices"
+	resp, err := client.Get(base + target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	loginPath := resp.Header.Get("Location")
+	if want := "/login?next=" + url.QueryEscape(target); resp.StatusCode != http.StatusSeeOther || loginPath != want {
+		t.Fatalf("GET %s = %d Location %q, want 303 to %s", target, resp.StatusCode, loginPath, want)
+	}
+
+	next := readNext(loginPath)
+	resp, err = client.PostForm(base+"/account/login", url.Values{
+		"email": {"admin@example.com"}, "password": {"roster-pw-123"}, "next": {next},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Location"); resp.StatusCode != http.StatusSeeOther || got != target {
+		t.Fatalf("sign-in with rendered next=%q = %d Location %q, want 303 to %s", next, resp.StatusCode, got, target)
+	}
+	if code, _ := e2eDo(t, client, http.MethodGet, base+target, ""); code != http.StatusOK {
+		t.Fatalf("signed-in GET %s = %d, want 200", target, code)
 	}
 }
 `
