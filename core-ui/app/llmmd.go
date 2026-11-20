@@ -17,17 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// ScreenLLMMDWithMeta renders the screen's llm.md with an optional
-// caller-supplied metadata block (e.g. SEO front-matter resolved by an
-// upper layer that can see the screen's SEO interfaces) inserted at the
-// very top of the document. metaPrefix is emitted verbatim before the
-// "# <title>" heading; pass "" for no prefix.
-//
-// The layering contract: core-ui/app cannot import framework/uihost,
-// so the SEO bundle is resolved in the host layer and passed down here
-// as an opaque prefix string. This keeps the markdown builder free of
-// the SEO type graph while still inheriting every field the HTML head
-// emits.
+// ScreenLLMMDWithMeta renders the screen's llm.md after an optional caller-supplied metadata block.
 func ScreenLLMMDWithMeta(ctx context.Context, screen *Screen, metaPrefix string) string {
 	if metaPrefix == "" {
 		return ScreenLLMMD(ctx, screen)
@@ -35,43 +25,27 @@ func ScreenLLMMDWithMeta(ctx context.Context, screen *Screen, metaPrefix string)
 	return metaPrefix + "\n" + ScreenLLMMD(ctx, screen)
 }
 
-// ScreenLLMMD generates an LLM-friendly markdown document for a single
-// screen/page. The output describes the route, its parameters, the
-// screen type, and any metadata useful for LLM agents navigating the app.
-//
-// When a screen implements ScreenDescriber, the description is included.
-// When it implements StaticPathsProvider, the SSG behavior is documented.
-// When it implements ScreenActions, the server-action contract is noted.
-// Under a locale prefix on ctx the content's links carry it, as the
-// page's do.
+// ScreenLLMMD generates an LLM-friendly markdown document for a single screen/page.
 func ScreenLLMMD(ctx context.Context, screen *Screen) string {
 	var b strings.Builder
 
-	// Title
 	title := screen.Title
 	if title == "" {
 		title = screen.Path
 	}
 	writeScreenLLMMDHead(&b, screen, title, screen.Path)
 
-	// Page content, render the screen and convert HTML → markdown
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
 	if screen.Component != nil {
-		// ScreenLoader screens load data dynamically at request time.
-		// Render() without Load() produces placeholder content.
 		if _, ok := screen.Component.(ScreenLoader); ok {
 			b.WriteString("_(Content is loaded dynamically via ScreenLoader, not available in static context. See the rendered page for full content.)_\n")
 			return b.String()
 		}
 
-		// Guard against panics in Render()
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// Scrub the panicked-on bytes (textsafe.Recovered):
-					// they are host/component state and must not forge
-					// lines in the operator's log tail.
 					log.Printf("llm.md: panic rendering screen %s: %s", screen.Path, textsafe.Recovered(r))
 					b.WriteString("_(error rendering content: see server logs)_\n")
 				}
@@ -96,15 +70,9 @@ func ScreenLLMMD(ctx context.Context, screen *Screen) string {
 	return b.String()
 }
 
-// writeScreenLLMMDHead writes the title + route-info header shared by the
-// pattern-level doc (ScreenLLMMD) and the concrete-URL doc
-// (ScreenLLMMDForPath). path is the path to display, the registered
-// pattern for the former, the concrete URL for the latter (with the
-// pattern shown alongside when they differ).
 func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string) {
 	fmt.Fprintf(b, "# %s\n\n", mdHeadField(title))
 
-	// Route info (compact summary)
 	b.WriteString("## Route\n\n")
 	fmt.Fprintf(b, "- **Path:** `%s`\n", mdCodeSpan(path))
 	if path != screen.Path {
@@ -116,7 +84,6 @@ func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string
 		fmt.Fprintf(b, "- **Description:** %s\n", mdHeadField(screen.Description))
 	}
 
-	// Dynamic params
 	params := extractParamNames(screen.Path)
 	if len(params) > 0 {
 		b.WriteString("- **Params:** ")
@@ -129,7 +96,6 @@ func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string
 		b.WriteString("\n")
 	}
 
-	// Screen capabilities (compact)
 	var capabilities []string
 	if _, ok := screen.Component.(ScreenLoader); ok {
 		capabilities = append(capabilities, "ScreenLoader")
@@ -149,13 +115,7 @@ func writeScreenLLMMDHead(b *strings.Builder, screen *Screen, title, path string
 	b.WriteString("\n")
 }
 
-// ScreenLLMMDWithheld renders a metadata-free llm.md for a screen whose
-// policy chain returned non-Allow. ONLY the route's path, pattern, and
-// type appear, the title, description, SEO bundle, and content are all
-// component-supplied and therefore protected by the same policy that
-// gates the page render (a screen titled "Project X" must not leak the
-// name through its doc). The route's existence and shape are
-// documentation; everything else is not.
+// ScreenLLMMDWithheld renders a metadata-free llm.md for a screen whose policy chain returned non-Allow.
 func ScreenLLMMDWithheld(screen *Screen) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", mdHeadField(screen.Path))
@@ -168,15 +128,7 @@ func ScreenLLMMDWithheld(screen *Screen) string {
 	return b.String()
 }
 
-// ScreenLLMMDResult is what ScreenLLMMDForPath produced for a concrete
-// URL. Allowed reports whether the policy chain returned Allow, when
-// false, MD is the metadata-free withheld doc and callers MUST NOT
-// attach any component-derived metadata (titles, SEO front matter) of
-// their own. Component is the loaded per-request instance when Allowed
-// (nil otherwise), for hosts that resolve per-instance SEO. Decision is
-// the refusal when not Allowed (a block or a redirect), so a host that
-// serves the doc as the page's own representation answers with the
-// status the HTML would.
+// ScreenLLMMDResult is what ScreenLLMMDForPath produced for a concrete URL.
 type ScreenLLMMDResult struct {
 	MD        string
 	Title     string
@@ -185,29 +137,13 @@ type ScreenLLMMDResult struct {
 	Decision  Decision
 }
 
-// ScreenLLMMDForPath generates the per-screen llm.md for a CONCRETE URL
-// of a (possibly dynamic) route. Unlike ScreenLLMMD, which documents the
-// registered pattern and emits a placeholder for ScreenLoader screens,
-// this builds the same per-request instance the page render uses
-// (SetParams → DI → Load) so the document carries the loaded title and
-// rendered content. ok is false when the path resolves to no screen or
-// its page answers 404: a route resolver or Load answering ErrNotFound
-// (Load swallowing the resolver's error included), or an outlet nothing
-// fills (FallbackNotFound). Any other resolver, DI or Load failure falls
-// back to the pattern-level doc rather than erroring (llm.md is
-// documentation, a degraded doc beats a 500).
+// ScreenLLMMDForPath generates the per-screen llm.md for a CONCRETE URL of a (possibly dynamic) route.
 func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDResult, bool) {
 	screen, params, found := a.Router.Resolve(path)
 	if !found {
 		return ScreenLLMMDResult{}, false
 	}
 
-	// The page render's order: the match and the route resolvers come
-	// first, so a Load that reads a resolver (a catch-all route that
-	// resolves its slug) loads here too, and a guard may read one.
-	// A match for another path (route middleware matched the /llm.md
-	// URL, which a catch-all also matches) would hand this page's
-	// resolvers the wrong params ("foo/llm.md" for "foo"): replace it.
 	if m, ok := MatchFromContext(ctx); !ok || m.path != decodeRouteSeg(path) {
 		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
 	}
@@ -216,27 +152,13 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 		chain = resolveChainKeys(a.Router.layoutChainFor(screen), params)
 	}
 
-	// The page render's policy phase BEFORE building the instance: this
-	// function runs Load, so skipping the chain or the region guards
-	// would leak loaded content a Redirect/Block protects on the page
-	// render (an authed detail screen must not answer via its /llm.md
-	// sibling). Anything but a plain Allow degrades to the metadata-free
-	// withheld doc: the pattern doc is NOT safe here, its
-	// title/description/content are component-supplied, which the
-	// policy protects too.
 	ctx, phase := runPolicyPhase(ctx, screen, path, chain)
-	// A resolver that names no such page (an unknown slug), read
-	// eagerly, by the chain or by a guard, is no screen, as the page
-	// render answers 404; any other resolver failure degrades to the
-	// pattern doc like a failed Load, once the chain and the region
-	// guards allow the page.
 	if errors.Is(phase.err, ErrNotFound) {
 		return ScreenLLMMDResult{}, false
 	}
 	if phase.decision.Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: phase.decision}, true
 	}
-	// A region guard that redirects moves the whole page.
 	guards, guardRedirect := phase.guards, phase.redirect
 	if guardRedirect.Kind == DecisionRedirect {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: guardRedirect}, true
@@ -252,9 +174,6 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 		}
 	}
 	loaded := true
-	// The page render's DI contract (injectComponent): a value component
-	// is the stateless form and skips DI, so it renders per URL like a
-	// pointer one instead of falling back to the pattern doc.
 	if err := a.injectComponent(comp, path); err != nil {
 		loaded = false
 	}
@@ -262,8 +181,6 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if loaded {
 		if loader, ok := comp.(ScreenLoader); ok {
 			if err := safeScreenLoad(loader, ctx); err != nil {
-				// Load answering ErrNotFound (a lazy resolver read, or
-				// its own lookup) is the page render's 404: no screen.
 				if errors.Is(err, ErrNotFound) {
 					return ScreenLLMMDResult{}, false
 				}
@@ -271,8 +188,6 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 			}
 		}
 	}
-	// A resolver the Load read decides the outcome even when Load
-	// swallowed its error, as on the page render.
 	if pe := resolverPageError(ctx, path); pe != nil {
 		if errors.Is(pe, ErrNotFound) {
 			return ScreenLLMMDResult{}, false
@@ -299,18 +214,12 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
-	// Below the screen, resolvers read in the region phase, as on the
-	// page render: the screen first, then its outlets.
 	ctx = withResolvePhase(ctx, resolvePhaseRegion)
 	content, err := component.SafeRenderCtx(ctx, comp)
-	// An outlet nothing fills (FallbackNotFound) makes the page the
-	// not-found page: no doc.
 	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
 		return ScreenLLMMDResult{}, false
 	}
 	if err != nil {
-		// The path is request-derived and the error carries panicked-on
-		// component state: scrub both so neither can forge a log line.
 		log.Printf("llm.md: render error for %s: %s", textsafe.ScrubControlBytes(path), textsafe.Recovered(err))
 		b.WriteString("_(error rendering content: see server logs)_\n")
 		return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
@@ -324,9 +233,6 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
 }
 
-// localizeLinks gives the page's links the request's locale prefix, the
-// rewrite urlprefix.Middleware applies to the HTML: markdown is no
-// text/html body, so /es/pricing/llm.md linked the English pages.
 func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
 	prefix := i18n.PathPrefix(ctx)
 	if prefix == "" {
@@ -334,7 +240,6 @@ func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
 	}
 	set, _, _ := i18n.PathLocale(ctx)
 	rule := urlprefix.Rule{Prefix: prefix, Locales: set.All()}
-	// A static export's copied files sit at its root only: /es/brochure.pdf 404s.
 	rule.Keep, _ = ctx.Value(linkKeepKey{}).(func(string) bool)
 	if r := RequestFromContext(ctx); r != nil && r.Host != "" {
 		rule.Origins = []string{"http://" + r.Host, "https://" + r.Host}
@@ -344,31 +249,20 @@ func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
 
 type linkKeepKey struct{}
 
-// WithLinkKeep returns ctx carrying keep, the urlprefix.Rule Keep the
-// markdown docs' locale link rewrite asks: a link whose path it claims
-// keeps its unprefixed form. A static export sets it, so a doc in the
-// /es/ tree links a copied file at the export root the way the tree's
-// pages do. The live host leaves it unset: its router serves every
-// file under every prefix.
+// WithLinkKeep returns ctx carrying keep, the urlprefix.Rule Keep the markdown docs' locale link
+// rewrite asks: a link whose path it claims keeps its unprefixed form.
 func WithLinkKeep(ctx context.Context, keep func(path string) bool) context.Context {
 	return context.WithValue(ctx, linkKeepKey{}, keep)
 }
 
 type exportedDocsKey struct{}
 
-// WithExportedDocs returns ctx for a static export's page index: docs
-// maps each route pattern to the pages, in routing form and without a
-// locale prefix, whose llm.md the export wrote. AppLLMMDCtx then links
-// only those: a page or overlay row when its doc was written, and under
-// a dynamic route each exported page in place of the pattern doc, which
-// no export writes. The live host leaves it unset: it serves every doc
-// the index links.
+// WithExportedDocs returns ctx for a static export's page index: docs maps each route pattern to
+// the pages, in routing form and without a locale prefix, whose llm.md the export wrote.
 func WithExportedDocs(ctx context.Context, docs map[string][]string) context.Context {
 	return context.WithValue(ctx, exportedDocsKey{}, docs)
 }
 
-// rowLLMMDLink is pageLLMMDLink for an index row, or "" when ctx names
-// the docs an export wrote and the row's is not among them.
 func rowLLMMDLink(ctx context.Context, path string) string {
 	if docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string); ok && !slices.Contains(docs[path], path) {
 		return ""
@@ -376,9 +270,6 @@ func rowLLMMDLink(ctx context.Context, path string) string {
 	return pageLLMMDLink(ctx, path)
 }
 
-// dynamicPatternCell is a dynamic route's Pattern cell: a link to its
-// pattern doc, or, in an export, the pattern followed by a link to
-// each exported page's doc.
 func dynamicPatternCell(ctx context.Context, pattern string) string {
 	docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string)
 	if !ok {
@@ -395,34 +286,21 @@ func dynamicPatternCell(ctx context.Context, pattern string) string {
 	return cell
 }
 
-// pageLLMMDLink returns the llm.md link for a route path, or empty
-// string if the route has no per-page llm.md. Under a locale prefix the
-// link carries it, so a reader stays in the index's language.
 func pageLLMMDLink(ctx context.Context, path string) string {
 	pre := i18n.PathPrefix(ctx)
 	clean := strings.TrimRight(path, "/")
 	if clean == "" {
-		// Root "/", its llm.md is at /llm.md (entity index moved to /api/llm.md)
 		return pre + "/llm.md"
 	}
 	return pre + clean + "/llm.md"
 }
 
-// AppLLMMD generates a top-level LLM-friendly markdown index listing all
-// screens/pages registered in the app. Each entry links to its per-page
-// llm.md endpoint.
+// AppLLMMD generates a top-level LLM-friendly markdown index listing all screens/pages registered in the app.
 func AppLLMMD(a *App) string {
 	return AppLLMMDCtx(context.Background(), a)
 }
 
-// AppLLMMDCtx is AppLLMMD with a request context: each screen's policy
-// phase (PatternPolicy: its chain and its region guards) is evaluated
-// and non-Allow screens are listed with their PATH
-// ONLY, the title and description are component-supplied and protected
-// by the same policy that gates the page render. Hosts pass the live
-// request context so an authenticated agent sees the full index; the
-// background-context AppLLMMD (and the static export) fail closed for
-// gated screens.
+// AppLLMMDCtx is AppLLMMD with each screen's policy evaluated; a refused screen is listed by path only.
 func AppLLMMDCtx(ctx context.Context, a *App) string {
 	var b strings.Builder
 
@@ -440,7 +318,6 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 		return b.String()
 	}
 
-	// Group by type
 	pages := make([]RouteEntry, 0)
 	overlays := make([]RouteEntry, 0)
 	dynamic := make([]RouteEntry, 0)
@@ -456,10 +333,6 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 		if screen.NoLLMMD {
 			continue
 		}
-		// Policy-gated screens stay listed (existence and shape are
-		// documentation) but metadata-free. A region guard that moves
-		// the page gates it too (PatternPolicy). A not-found answer
-		// hides the route, so it is not listed at all.
 		if d := a.PatternPolicy(ctx, screen); d.notFound() {
 			continue
 		} else if d.Kind != DecisionAllow {
@@ -531,7 +404,6 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 		b.WriteString("\n")
 	}
 
-	// Architecture notes for LLMs
 	b.WriteString("## Architecture\n\n")
 	b.WriteString("This application uses server-side rendering (SSR) with client-side hydration:\n\n")
 	b.WriteString("1. **Initial load:** Every page is fully server-rendered as HTML.\n")
@@ -553,11 +425,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 	return b.String()
 }
 
-// ScreenLLMMDHandler returns an http.Handler that serves the LLM-friendly
-// markdown for a single screen of a. Content-Type is text/markdown.
-// The screen's policy phase (PatternPolicy: its chain and region
-// guards) is evaluated per request, a non-Allow decision serves the
-// metadata-free withheld doc, matching every other llm.md surface.
+// ScreenLLMMDHandler returns an http.Handler that serves the LLM-friendly markdown for a single screen of a.
 func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 	md := ScreenLLMMD(context.Background(), screen)
 	withheld := ScreenLLMMDWithheld(screen)
@@ -578,10 +446,8 @@ func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 	})
 }
 
-// AppLLMMDHandler returns an http.Handler that serves the top-level
-// page index markdown for all screens in the app. Policy-gated screens
-// are listed metadata-free unless the request's policy evaluation
-// allows them (see AppLLMMDCtx).
+// AppLLMMDHandler returns an http.Handler that serves the top-level page index markdown for all
+// screens in the app.
 func AppLLMMDHandler(a *App) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		md := AppLLMMDCtx(WithRequest(r.Context(), r), a)
@@ -597,8 +463,6 @@ func setMarkdownHeaders(writer http.ResponseWriter) {
 	writer.Header().Add("Vary", "Cookie")
 }
 
-// extractParamNames parses a route path like "/products/:slug/reviews/:id"
-// and returns the parameter names ["slug", "id"].
 func extractParamNames(path string) []string {
 	var names []string
 	for seg := range strings.SplitSeq(strings.Trim(path, "/"), "/") {

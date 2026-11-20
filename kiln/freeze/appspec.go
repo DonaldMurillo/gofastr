@@ -37,7 +37,24 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
+// GraduationWarnings names preview settings the app spec cannot carry
+// and that freeze drops on purpose.
+func GraduationWarnings(w *world.World) []string {
+	var out []string
+	if w != nil && w.App.DebugEndpoints {
+		out = append(out, "debug routes are not carried into the app: debug_endpoints is dev-only; set framework.AppConfig.DebugEndpoints = true in owned Go if you need them")
+	}
+	return out
+}
+
 func validateGraduation(w *world.World) error {
+	switch w.App.JSONCase {
+	case "", "camel", "camelCase":
+	case "snake", "snake_case":
+		return fmt.Errorf("freeze: app.json_case %q cannot be expressed by the current app spec (camelCase only); keep the Kiln preview for snake_case, or explicitly change app.json_case to camel before freezing and set framework.AppConfig.JSONCase = framework.CaseSnake in owned Go before serving clients", w.App.JSONCase)
+	default:
+		return fmt.Errorf("freeze: unknown app.json_case %q (want camel|snake)", w.App.JSONCase)
+	}
 	if _, err := freezeEndpoints(w); err != nil {
 		return err
 	}
@@ -191,6 +208,7 @@ func appMap(a world.AppConfig) map[string]any {
 	if a.LLMMD {
 		m["llm_md"] = true
 	}
+	m["entity_llm_md"] = a.LLMMD
 	return m
 }
 
@@ -1030,7 +1048,7 @@ func OrderedKeys(m map[string]any, order []string) []string {
 
 var (
 	topLevelOrder = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
-	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md"}
+	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md", "entity_llm_md"}
 	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "cross_owner_read", "search_fields", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}

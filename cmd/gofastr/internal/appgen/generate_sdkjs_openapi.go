@@ -157,7 +157,7 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 				opt = ""
 			}
 			bodyType := op.Body.tsExpr()
-			if op.BodyNullable {
+			if op.BodyNullable && bodyType != "unknown" {
 				bodyType += " | null"
 			}
 			args = append(args, "body"+opt+": "+bodyType)

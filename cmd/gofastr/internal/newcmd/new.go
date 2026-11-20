@@ -7,7 +7,10 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -221,6 +224,10 @@ func checkRouteHandler(handler string) error {
 		if reason := unusableFuncName(handler); reason != "" {
 			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
 		}
+		_, _, imports := dirPackage(".", "")
+		if conflict := imports[handler]; conflict != "" {
+			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, conflict)
+		}
 	}
 	return nil
 }
@@ -287,12 +294,7 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	// beside main.go, package entities under entities/); writing package
 	// main everywhere broke the build with "found packages entities and
 	// main". A name that package already declares would be redeclared.
-	pkg, declared := dirPackage(realDir, filepath.Base(filename))
-	if declared[name] {
-		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
-	}
-
-	content := fmt.Sprintf(`// %s handler: scaffolded by gofastr new handler.
+	const handlerTemplate = `// %s handler: scaffolded by gofastr new handler.
 package %s
 
 import (
@@ -305,7 +307,20 @@ func %s(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("{\"ok\": true}"))
 }
-`, name, pkg, name, method, path, name)
+`
+
+	f, err := parser.ParseFile(token.NewFileSet(), filename, fmt.Sprintf(handlerTemplate, name, "main", name, method, path, name), parser.ImportsOnly)
+	if err != nil {
+		return fmt.Errorf("parse generated handler: %w", err)
+	}
+	pkg, declared, imports := dirPackage(realDir, filepath.Base(filename), f)
+	if declared[name] {
+		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
+	}
+	if conflict := imports[name]; conflict != "" {
+		return fmt.Errorf("invalid handler name %q: %s; pick another name", name, conflict)
+	}
+	content := fmt.Sprintf(handlerTemplate, name, pkg, name, method, path, name)
 
 	if err := projectfs.Replace(root, leaf, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", filename, err)
@@ -329,30 +344,43 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage returns the package the non-test Go files in dir declare
-// ("main" when there are none) and the names that package declares at
-// top level. skip, the file being scaffolded, is left out: -overwrite
-// rewrites it. A file that does not parse is skipped, as go build would
-// report it on its own.
-func dirPackage(dir, skip string) (string, map[string]bool) {
+// dirPackage selects the package from non-test files (defaulting to main)
+// and collects declarations and imports, including in-package tests.
+// External tests, unparseable files and skip (the overwrite target) are omitted.
+func dirPackage(dir, skip string, generated ...*ast.File) (string, map[string]bool, map[string]string) {
 	pkg := ""
 	declared := map[string]bool{}
+	imports := map[string]string{}
+	type sourceFile struct {
+		name string
+		file *ast.File
+	}
+	var files []sourceFile
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") {
 			continue
 		}
 		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
 		if err != nil {
 			continue
 		}
-		if pkg == "" {
+		if pkg == "" && !strings.HasSuffix(n, "_test.go") {
 			pkg = f.Name.Name
 		}
+		files = append(files, sourceFile{n, f})
+	}
+	if pkg == "" {
+		pkg = "main"
+	}
+	var importFiles []sourceFile
+	for _, source := range files {
+		f := source.file
 		if f.Name.Name != pkg {
 			continue
 		}
+		importFiles = append(importFiles, source)
 		for _, d := range f.Decls {
 			switch d := d.(type) {
 			case *ast.FuncDecl:
@@ -373,8 +401,105 @@ func dirPackage(dir, skip string) (string, map[string]bool) {
 			}
 		}
 	}
-	if pkg == "" {
-		pkg = "main"
+	for _, f := range generated {
+		importFiles = append(importFiles, sourceFile{"the generated handler", f})
 	}
-	return pkg, declared
+	var astFiles []*ast.File
+	for _, source := range importFiles {
+		astFiles = append(astFiles, source.file)
+	}
+	resolved := resolveImportNames(dir, astFiles)
+	for _, source := range importFiles {
+		for name, conflict := range importNames(source.file, source.name, resolved) {
+			if imports[name] == "" {
+				imports[name] = conflict
+			}
+		}
+	}
+	return pkg, declared, imports
+}
+
+func importNames(f *ast.File, source string, resolved map[string]string) map[string]string {
+	names := map[string]string{}
+	for _, spec := range f.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := assumedImportName(importPath)
+		if spec.Name != nil {
+			name = spec.Name.Name
+		} else if resolved[importPath] != "" {
+			name = resolved[importPath]
+		}
+		if name != "_" && name != "." {
+			names[name] = fmt.Sprintf("conflicts with the import of %q in %s", importPath, source)
+		}
+	}
+	return names
+}
+
+var importNameCommand = exec.Command
+
+func resolveImportNames(dir string, files []*ast.File) map[string]string {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil
+	}
+	modulePath, moduleRoot := project.FindEnclosingGoMod(absDir)
+	var paths []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		for _, spec := range f.Imports {
+			if spec.Name != nil {
+				continue
+			}
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			first, _, _ := strings.Cut(importPath, "/")
+			nonStdlib := strings.Contains(first, ".") || modulePath != "" && (importPath == modulePath || strings.HasPrefix(importPath, modulePath+"/"))
+			if err == nil && nonStdlib && !seen[importPath] {
+				seen[importPath] = true
+				paths = append(paths, importPath)
+			}
+		}
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	args := append([]string{"list", "-e", "-find", "-f", "{{.ImportPath}}\t{{.Name}}", "--"}, paths...)
+	cmd := importNameCommand("go", args...)
+	cmd.Dir = dir
+	modFlag := "-mod=readonly"
+	if moduleRoot != "" {
+		if _, err := os.Stat(filepath.Join(moduleRoot, "vendor", "modules.txt")); err == nil {
+			modFlag = "-mod=vendor"
+		}
+	}
+	cmd.Env = append(os.Environ(), "GOFLAGS="+modFlag, "GOTOOLCHAIN=local")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	names := map[string]string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		importPath, name, ok := strings.Cut(line, "\t")
+		if ok && seen[importPath] && token.IsIdentifier(name) {
+			names[importPath] = name
+		}
+	}
+	return names
+}
+
+func assumedImportName(importPath string) string {
+	name := path.Base(importPath)
+	if len(name) > 1 && name[0] == 'v' && strings.Trim(name[1:], "0123456789") == "" && path.Dir(importPath) != "." {
+		name = path.Base(path.Dir(importPath))
+	}
+	name = strings.TrimPrefix(name, "go-")
+	for i, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return name[:i]
+		}
+	}
+	return name
 }

@@ -526,3 +526,72 @@ func TestHeadersAfterWriteHeaderIgnored(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryRefreshLineGainsPrefix(t *testing.T) {
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Refresh", "0;url=/a")
+		w.Header().Add("Refresh", "5;url=/b")
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	got := rec.Header().Values("Refresh")
+	if len(got) != 2 || got[0] != "0;url=/es/a" || got[1] != "5;url=/es/b" {
+		t.Fatalf("Refresh lines = %q", got)
+	}
+}
+
+func TestFlushHoldsBufferedHTML(t *testing.T) {
+	rec := httptest.NewRecorder()
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		io.WriteString(w, `<a href="/pricing">p</a>`)
+		http.NewResponseController(w).Flush()
+		if rec.Flushed || rec.Body.Len() != 0 {
+			t.Fatalf("a flush reached the client before the HTML was rewritten: %q", rec.Body.String())
+		}
+	}))
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if got := rec.Body.String(); got != `<a href="/es/pricing">p</a>` {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFlushWhileSniffingSettlesTheType(t *testing.T) {
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `<html><a href="/pricing">`)
+		http.NewResponseController(w).Flush()
+		io.WriteString(w, `p</a>`)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if got := rec.Body.String(); got != `<html><a href="/es/pricing">p</a>` {
+		t.Fatalf("got %q", got)
+	}
+	if ct := rec.Result().Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", ct)
+	}
+}
+
+func TestInformationalStatusPassesThrough(t *testing.T) {
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, `<a href="/pricing">p</a>`)
+	}))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(esRequest("GET", "/x").Context()))
+	}))
+	defer srv.Close()
+	res, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated || string(body) != `<a href="/es/pricing">p</a>` {
+		t.Fatalf("got %d %q", res.StatusCode, body)
+	}
+}

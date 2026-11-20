@@ -1,18 +1,4 @@
-// Package decide provides the constructors for app.Decision values
-// returned from Policy.Decide implementations. Lives in a subpackage
-// (rather than under app directly) so call sites read like
-// `decide.Block(403)` without shadowing common variable names
-// ("block", "redirect") that authors reach for.
-//
-//	import (
-//	    "github.com/DonaldMurillo/gofastr/core-ui/app"
-//	    "github.com/DonaldMurillo/gofastr/core-ui/app/decide"
-//	)
-//
-//	pol := app.PolicyFunc(func(ctx context.Context) app.Decision {
-//	    if authed(ctx) { return decide.Allow() }
-//	    return decide.Redirect("/login")
-//	})
+// Package decide constructs the app.Decision values a Policy returns.
 package decide
 
 import (
@@ -27,41 +13,26 @@ import (
 func Allow() app.Decision { return app.Decision{Kind: app.DecisionAllow} }
 
 // Redirect returns a Decision that redirects the request to url.
-// Hosts typically use HTTP 303 See Other so POST→Redirect→GET works.
 func Redirect(url string) app.Decision {
 	return app.Decision{Kind: app.DecisionRedirect, URL: url}
 }
 
-// RenderAlt returns a Decision that renders an alt component in place
-// of the screen's own. factory MUST return a FRESH instance per call,
-// the framework invokes it once per request and the returned
-// component is then mutated by SetParams / Inject / Load under the
-// screen lock. Sharing a singleton is a cross-user data leak.
+// RenderAlt returns a Decision that renders an alt component in place of the screen's own.
 func RenderAlt(factory func() component.Component) app.Decision {
 	return app.Decision{Kind: app.DecisionRenderAlt, AltFactory: factory}
 }
 
-// Block returns a Decision that aborts with status (e.g. 401, 403,
-// 404). The body is the status's generic phrase in the request's
-// locale.
+// Block returns a Decision that answers status with its generic phrase.
 func Block(status int) app.Decision {
 	return app.Decision{Kind: app.DecisionBlock, Status: status}
 }
 
-// NotFound returns a Decision that answers 404 with exactly what a URL
-// no route matches gets: the host's not-found page, partial, problem
-// JSON or markdown, with no meta from the route. Use it to make a route
-// the caller may not see look like one that does not exist. Returned by
-// a region guard, it takes the whole page to 404.
+// NotFound returns a Decision that answers exactly what a URL no route matches gets.
 func NotFound() app.Decision {
 	return app.Decision{Kind: app.DecisionBlock, Status: http.StatusNotFound, NotFound: true}
 }
 
-// BlockWith is Block with the body naming reason, translated per
-// request with params:
-//
-//	var exporterDown = i18n.Define("reports.exporter_down", "The CSV exporter is down for maintenance.")
-//	return decide.BlockWith(http.StatusServiceUnavailable, exporterDown)
+// BlockWith is Block with the body naming reason, translated per request with params.
 func BlockWith(status int, reason i18n.Phrase, params ...map[string]any) app.Decision {
 	d := app.Decision{Kind: app.DecisionBlock, Status: status, Reason: reason}
 	if len(params) > 0 {

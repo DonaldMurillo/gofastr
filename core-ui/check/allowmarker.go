@@ -7,30 +7,14 @@ import (
 	"strings"
 )
 
-// The //gofastr:allow(<name>) <why> marker, read with the grammar of
-// internal/analyzers/allow (that package needs go/analysis, which this
-// one must not import). A marker is live only as the FIRST thing in a
-// comment: a marker quoted in a string, or in prose partway through a
-// comment, is documentation. The reason is the comment's own text after
-// the parenthesis (less a block comment's closing delimiter) and must
-// not be empty; code after a block comment is not a reason. A trailing
-// marker covers its own line; a marker alone on its line covers that
-// line and the next one.
-//
-// The runtimeprose and layerprefix lints used to find the marker with
-// strings.Index anywhere on the line or the line above, so a trailing
-// marker silenced the next line too, and code after it counted as the
-// reason.
 var reAllowMarker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
 
-// markerComment is one comment and where it sits.
 type markerComment struct {
 	text      string
 	line, end int // 1-based lines of its first and last byte
 	alone     bool
 }
 
-// allowedLines returns the lines a marker naming name covers.
 func allowedLines(comments []markerComment, name string) map[int]bool {
 	out := map[int]bool{}
 	for _, c := range comments {
@@ -42,8 +26,6 @@ func allowedLines(comments []markerComment, name string) map[int]bool {
 		if strings.HasPrefix(c.text, "/*") {
 			rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
 		}
-		// Separator punctuation alone ("--", "— :") is not a reason,
-		// the rule framework/contracts and internal/analyzers/allow hold.
 		if strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:")) == "" {
 			continue
 		}
@@ -64,9 +46,6 @@ func markerNames(list, name string) bool {
 	return false
 }
 
-// jsComments returns the comments of a JS source. Code blanks every
-// comment byte to a space and keeps everything else, so a comment starts
-// wherever the two views first disagree.
 func jsComments(f jsSource) []markerComment {
 	var out []markerComment
 	for i := 0; i < len(f.Src) && i < len(f.Code); i++ {
@@ -92,7 +71,6 @@ func jsComments(f jsSource) []markerComment {
 	return out
 }
 
-// goComments returns the comments of a parsed Go file.
 func goComments(fset *token.FileSet, file *ast.File, src []byte) []markerComment {
 	var out []markerComment
 	for _, cg := range file.Comments {
@@ -109,8 +87,6 @@ func goComments(fset *token.FileSet, file *ast.File, src []byte) []markerComment
 	return out
 }
 
-// aloneOnLine reports whether src[start:end] has only whitespace before
-// it on its first line and after it on its last.
 func aloneOnLine(src string, start, end int) bool {
 	if start > len(src) || end > len(src) {
 		return false

@@ -122,6 +122,11 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestConfirmTeardownRunsInTheClosingTask
       - test: core-ui/runtime.TestConfirmInsideModalWidgetOwnsKeyboard
+  - id: route-constraints-match-server
+    rule: Navigation, route prefetch and intercept selection test typed parameters against the server router's constraints on decoded segment values; a constraint mismatch falls through to the next route.
+    enforced_by:
+      - test: core-ui/runtime.TestTypedSegmentPicksServerRoute
+      - test: core-ui/runtime/hosttest.TestHoverPrefetchUsesServerRouteConstraints
   - id: background-fetches-yield
     rule: A scheduled poll tick (data-cui-poll and a widget's state poll) and a visible or eager prefetch ask for priority 'low'; a hover prefetch, a widget's pollNow after its own RPC and the refresh when a hidden tab becomes visible keep the default, since the user is waiting on them.
     enforced_by:

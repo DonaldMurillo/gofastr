@@ -1,0 +1,24 @@
+primitive: uiregistry.datablock
+summary: RegisterDataBlock and DataBlocksHTML - inert JSON documents an optional package hands every page head, so its browser module gets server-declared data without the host importing the package.
+code:
+  - core-ui/registry/datablock.go
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: blocks-are-inert-and-ordered
+    rule: DataBlocksHTML writes each block as <script type="application/json" id="..."> sorted by id, skips a block whose source returns nil, and writes every < as <.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterDataBlock
+  - id: block-ids-never-shadow
+    rule: RegisterDataBlock panics on an id outside ^gofastr-[a-z0-9-]{1,56}$, a nil source, a second registration, and an id the kernel or host emits itself, and every gofastr-* id the runtime reads is reserved.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterDataBlock
+      - test: core-ui/registry.TestRuntimeIDsReserved
+decisions:
+  - id: data-without-the-import
+    date: 2026-11-20
+    status: accepted
+    decision: An optional package such as core-ui/localdb registers its data block, and the host emits every registered block.
+    rejected:
+      - option: Have the host call the package to render its data.
+        why: The host would import the package, and every binary would carry its code whether or not the app uses it.

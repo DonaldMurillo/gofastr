@@ -1,0 +1,26 @@
+primitive: uiregistry.inject
+summary: The attribute splice on a component's first opening tag - the data-cui-comp marker, InjectAttribute and Attribute - with no HTML parser, one quote-aware scan to the tag's >.
+code:
+  - core-ui/registry/inject.go
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: splice-into-the-first-open-tag
+    rule: The splice skips leading whitespace and comments, refuses output whose first token is not an element open tag or whose tag never ends, inserts before a self-closing / keeping a space before it, and writes InjectAttribute's value HTML-escaped after refusing an unsafe attribute name.
+    enforced_by:
+      - test: core-ui/registry.TestInjectIntoSimpleDiv
+      - test: core-ui/registry.TestInjectIntoSelfClosingTag
+      - test: core-ui/registry.TestInjectSelfClosingPreservesSpace
+      - test: core-ui/registry.TestInjectSkipsLeadingComment
+      - test: core-ui/registry.TestInjectRejectsBareText
+      - test: core-ui/registry.TestInjectRespectsAttrQuotes
+      - test: core-ui/registry.TestInjectAttrWithEmbeddedGreaterThan
+      - test: core-ui/registry.TestInjectAttribute
+  - id: attribute-found-at-a-name-boundary
+    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; a tag that already carries it is returned unchanged, and Attribute reads a quoted value to its own closing quote.
+    enforced_by:
+      - test: core-ui/registry.TestInjectIdempotentWhenAlreadyMarked
+      - test: core-ui/registry.TestInjectIgnoresAttrNameInsideQuotedValue
+      - test: core-ui/registry.TestInjectIdempotentAcrossLineBreaks
+      - test: core-ui/registry.TestInjectSkipsWhenWrappedByDifferentName
+      - test: core-ui/registry.TestAttribute

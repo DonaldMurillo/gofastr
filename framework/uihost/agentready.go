@@ -570,59 +570,39 @@ func (ds *UIHost) baseURLPinned() bool {
 	return ds.pinnedBaseURL() != ""
 }
 
-func acceptRangeMatches(accept string, wanted ...string) bool {
-	for part := range strings.SplitSeq(accept, ",") {
-		fields := strings.Split(part, ";")
-		ct := strings.TrimSpace(fields[0])
-		matched := false
-		for _, w := range wanted {
-			if strings.EqualFold(ct, w) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			continue
-		}
-		for _, param := range fields[1:] {
-			if k, v, ok := strings.Cut(strings.TrimSpace(param), "="); ok &&
-				strings.EqualFold(strings.TrimSpace(k), "q") {
-				if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && q == 0 {
-					matched = false
-				}
-			}
-		}
-		if matched {
-			return true
-		}
-	}
-	return false
+type acceptPreference struct {
+	quality     float64
+	specificity int
 }
 
-func acceptsMarkdown(r *http.Request) bool {
-	type preference struct {
-		quality     float64
-		specificity int
-	}
-	var html, markdown preference
+type acceptPreferences struct {
+	html, markdown, json, problemJSON acceptPreference
+}
+
+func readAcceptPreferences(r *http.Request) acceptPreferences {
+	var prefs acceptPreferences
 	for _, field := range r.Header.Values("Accept") {
 		for mediaRange := range splitAcceptRanges(field) {
 			mediaType, params, err := mime.ParseMediaType(mediaRange)
 			if err != nil {
 				continue
 			}
-			var best *preference
+			var best *acceptPreference
 			var specificity int
 			switch mediaType {
 			case "text/markdown":
-				best, specificity = &markdown, 6
+				best, specificity = &prefs.markdown, 6
 				delete(params, "variant")
+			case "application/json":
+				best, specificity = &prefs.json, 6
+			case "application/problem+json":
+				best, specificity = &prefs.problemJSON, 6
 			case "text/html":
-				best, specificity = &html, 6
+				best, specificity = &prefs.html, 6
 			case "text/*":
-				best, specificity = &html, 4
+				best, specificity = &prefs.html, 4
 			case "*/*":
-				best, specificity = &html, 2
+				best, specificity = &prefs.html, 2
 			default:
 				continue
 			}
@@ -634,18 +614,35 @@ func acceptsMarkdown(r *http.Request) bool {
 				}
 				delete(params, "q")
 			}
-			if len(params) > 0 {
+			if len(params) > 0 && !strings.HasPrefix(mediaType, "application/") {
 				if len(params) != 1 || !strings.EqualFold(params["charset"], "utf-8") {
 					continue
 				}
 				specificity++
 			}
 			if specificity > best.specificity || (specificity == best.specificity && quality > best.quality) {
-				*best = preference{quality, specificity}
+				*best = acceptPreference{quality, specificity}
 			}
 		}
 	}
-	return markdown.quality > 0 && markdown.quality >= html.quality
+	return prefs
+}
+
+func (p acceptPreferences) prefersMarkdown() bool {
+	return p.markdown.quality > 0 && p.markdown.quality >= p.html.quality
+}
+
+func (p acceptPreferences) prefersProblemJSON(markdownAvailable bool) bool {
+	problem := p.problemJSON.quality
+	if p.problemJSON.specificity == 0 {
+		problem = p.json.quality
+	}
+	return problem > 0 && problem >= p.html.quality &&
+		(!markdownAvailable || problem >= p.markdown.quality)
+}
+
+func acceptsMarkdown(r *http.Request) bool {
+	return readAcceptPreferences(r).prefersMarkdown()
 }
 
 func splitAcceptRanges(field string) iter.Seq[string] {
@@ -674,7 +671,7 @@ func splitAcceptRanges(field string) iter.Seq[string] {
 }
 
 func acceptsProblemJSON(r *http.Request) bool {
-	return acceptRangeMatches(r.Header.Get("Accept"), "application/json", "application/problem+json")
+	return readAcceptPreferences(r).prefersProblemJSON(false)
 }
 
 func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request) {

@@ -5,9 +5,7 @@ import (
 	"unicode/utf8"
 )
 
-// ServedCSS is a stylesheet as it goes on the wire: CSS(css) when the
-// process serves minified code (Enabled), css unchanged otherwise.
-// Every path that composes CSS for a browser sends it through here.
+// ServedCSS returns CSS(css) when Enabled, css otherwise.
 func ServedCSS(css string) string {
 	if !Enabled() {
 		return css
@@ -15,28 +13,7 @@ func ServedCSS(css string) string {
 	return CSS(css)
 }
 
-// CSS minifies a stylesheet without parsing it. The design system's
-// sources carry long explanatory comments, and those, with the
-// indentation, are about half of every sheet after gzip.
-//
-//   - Strip comments. A comment is not whitespace: `.a/**/.b` selects
-//     one element with both classes, and a space would make it a
-//     descendant combinator. So a comment goes where whitespace would
-//     go too, beside `{` `;` and the like, and where no whitespace
-//     surrounds it and the tokens around it could join (`1px/**/solid`)
-//     it stays as an empty `/**/`.
-//   - Collapse each whitespace run to one space, then drop the space
-//     next to `{`, `}`, `;` and `,`, after `(` and `:`, and before `)`.
-//     The space before `(` stays (`and (` must not become the function
-//     token `and(`), and so does the space before `:` (`a :hover`
-//     selects descendants), around `>`/`+`/`~`, and inside calc().
-//   - Drop the run of `;` right before `}`: `a:b;;}` is `a:b}`.
-//   - Keep strings, escapes and unquoted url() bodies byte for byte.
-//     A hex escape keeps its terminating space (`\31 0` is "10").
-//   - A space between `:` and `;` or `}` stays: `--x: ;` declares an
-//     empty custom property, and `--x:;` is invalid in older engines.
-//
-// The output is a fixed point: CSS(CSS(x)) == CSS(x).
+// CSS minifies a stylesheet without parsing it; CSS(CSS(x)) == CSS(x).
 func CSS(src string) string {
 	m := cssMinifier{src: src, out: make([]byte, 0, len(src))}
 	m.run()
@@ -44,19 +21,11 @@ func CSS(src string) string {
 }
 
 type cssMinifier struct {
-	src string
-	out []byte
-	// space records whitespace since the last token.
-	space bool
-	// comment records a comment since the last token.
-	comment bool
-	// punct is the last token when it was a bare `{};,(:` character,
-	// 0 otherwise: an escaped `\;` or a string ending in `;` is not
-	// punctuation and keeps the space after it.
-	punct byte
-	// semi is the length of the output just past a bare `;`, and
-	// semiRun where the run of bare `;` ending there began, so a
-	// following `}` can drop the whole run.
+	src           string
+	out           []byte
+	space         bool
+	comment       bool
+	punct         byte
 	semi, semiRun int
 }
 
@@ -99,8 +68,6 @@ func (m *cssMinifier) run() {
 	}
 }
 
-// token writes t, first settling the pending space. p is t's byte when
-// t is bare punctuation, 0 otherwise.
 func (m *cssMinifier) token(t string, p byte) {
 	if (m.space || m.comment) && len(m.out) > 0 && m.keepSpace(p) {
 		if m.space {
@@ -125,14 +92,11 @@ func (m *cssMinifier) token(t string, p byte) {
 	}
 }
 
-// keepSpace reports whether the whitespace before a token whose bare
-// punctuation byte is next (0 for anything else) is significant.
 func (m *cssMinifier) keepSpace(next byte) bool {
 	switch m.punct {
 	case '{', '}', ';', ',', '(':
 		return false
 	case ':':
-		// `--x: ;` and `--x: }` keep their space: an empty value.
 		return next == ';' || next == '}'
 	}
 	switch next {
@@ -142,8 +106,6 @@ func (m *cssMinifier) keepSpace(next byte) bool {
 	return true
 }
 
-// url copies an unquoted url(...) body verbatim (a url token may hold
-// `/*` and `//`); a quoted one goes through the string path.
 func (m *cssMinifier) url(i int) int {
 	src := m.src
 	j := i + 4
@@ -154,8 +116,6 @@ func (m *cssMinifier) url(i int) int {
 		m.token(src[i:i+4], '(')
 		return i + 4
 	}
-	// end is past the body's last unit that is not whitespace: an
-	// escaped space (`url(a\ )`) is part of the URL.
 	k, end := j, j
 	for k < len(src) && src[k] != ')' {
 		if src[k] == '\\' {
@@ -177,8 +137,6 @@ func (m *cssMinifier) url(i int) int {
 	return k
 }
 
-// isURLStart reports whether src[i:] begins a url( function token: the
-// name is not the tail of a longer identifier.
 func isURLStart(src string, i int) bool {
 	if len(src) < i+4 || !strings.EqualFold(src[i:i+4], "url(") {
 		return false
@@ -202,9 +160,6 @@ func scanCSSString(src string, i int) int {
 	return j
 }
 
-// scanCSSEscape returns the end of the escape at src[i] (a backslash):
-// up to six hex digits plus one terminating whitespace (CRLF counts as
-// one), or the single code point after the backslash.
 func scanCSSEscape(src string, i int) int {
 	j := i + 1
 	if j >= len(src) {
@@ -230,7 +185,6 @@ func isCSSSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
 }
 
-// isCSSBreak reports the bytes that end a run of ordinary characters.
 func isCSSBreak(c byte) bool {
 	return isCSSSpace(c) || c == '/' || c == '"' || c == '\'' || c == '\\' ||
 		c == 'u' || c == 'U' || strings.IndexByte("{};,(:)", c) >= 0

@@ -1,0 +1,79 @@
+primitive: runtime.minify
+summary: The token-aware JavaScript and CSS minifiers that shrink the embedded runtime and every composed stylesheet without a parser, and Enabled, the once-per-process switch that decides whether they run.
+code:
+  - core-ui/runtime/minify/
+docs:
+  - framework/docs/content/runtime-minification.md
+on_change:
+  - A JS construct the runtime starts using that the scanner does not yet classify gets a TestMinifyCorrectness case, run raw and minified in node by TestMinifyCorrectnessNode.
+invariants:
+  - id: js-output-runs-the-same
+    rule: Minify's output parses whenever its input does and ends with the same completion value or thrown error, for every correctness case, and it always returns, even on input that is not valid JavaScript.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestMinifyCorrectness
+      - test: core-ui/runtime/minify.TestMinifyCorrectnessNode
+      - test: core-ui/runtime/minify.TestMinifyTerminates
+  - id: js-strips-only-what-is-safe
+    rule: Minify removes comments and whitespace, keeps a newline after an ASI keyword and before an identifier, digit or ASI-hazard byte that follows an expression, puts one space only where the source had whitespace and the two tokens would fuse, and copies string, template-text and regex payloads byte for byte.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestMinify
+      - test: core-ui/runtime/minify.TestMinifyPreservesStringContent
+      - test: core-ui/runtime/minify.TestMinify_PreservesURLSchemeGuardRegex
+      - test: core-ui/runtime/minify.TestMinify_PreservesSchemeStringLiterals
+      - test: core-ui/runtime/minify.TestMinify_DoesNotIntroduceScriptCloser
+  - id: js-const-becomes-let
+    rule: A const that is a declaration keyword (not a property name, not directly in a class body or object literal, followed by an identifier, { or [) is written let, and every other const is left as written.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestMinify
+      - test: core-ui/runtime/minify.TestMinifyCorrectness
+  - id: js-drops-separator-before-brace
+    rule: A ; or , right before } is dropped, except a ; after ), else or a colon, which may be an empty statement, and a trailing ; or , at the end of input is kept.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestMinify
+      - test: core-ui/runtime/minify.TestMinifyCorrectness
+  - id: js-minify-is-a-fixed-point
+    rule: Every embedded runtime source minifies to something smaller, and minifying the output again changes nothing.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestMinifyRuntimeCorpus
+      - test: core-ui/runtime/minify.TestMinifyShrinks
+  - id: css-minify-keeps-meaning
+    rule: "CSS strips comments, leaving /**/ where neither side had whitespace and the tokens could join, collapses whitespace and drops it only beside { } ; , after ( and :, and before ), keeps the space of an empty custom property (--x: ;), drops a run of ; before }, and copies strings, escapes and unquoted url() bodies byte for byte; CSS(CSS(x)) is CSS(x)."
+    enforced_by:
+      - test: core-ui/runtime/minify.TestCSS
+  - id: enabled-production-wins
+    rule: Enabled is decided once per process - RUNTIME_NOMINIFY forces raw, else RUNTIME_MINIFY forces minify, else a GOFASTR_ENV of production, prod, live or staging (any case, trimmed) minifies, else a truthy GOFASTR_DEV keeps raw, else it minifies.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestEnabledEnvTable
+decisions:
+  - id: no-parser
+    date: 2026-11-20
+    status: accepted
+    decision: The minifiers scan tokens with a paren and brace stack and do no identifier renaming, dead-code elimination or constant folding.
+    rejected:
+      - option: A full parser with renaming, as a tier-3 minifier does.
+        why: The output must stay readable JavaScript a developer can set breakpoints in without source maps, and the scanner already halves the gzip size.
+    upholds: [js-output-runs-the-same]
+  - id: const-to-let-is-safe
+    date: 2026-11-20
+    status: accepted
+    decision: A declaration const is rewritten to let.
+    rejected:
+      - option: Leave const alone.
+        why: For any program that runs without throwing the two are the same (block scope, TDZ, per-iteration binding); const's extra check fires only in code that is already broken.
+    upholds: [js-const-becomes-let]
+  - id: unsure-leans-safe
+    date: 2026-11-20
+    status: accepted
+    decision: A } of unknown kind leans regex for a following /, and a { the scanner cannot classify leans object literal.
+    rejected:
+      - option: Lean division and block.
+        why: A division misread as a regex is copied verbatim and an extra newline after an object } is harmless, while a regex misread as division is re-tokenized and a dropped newline breaks ASI.
+    upholds: [js-output-runs-the-same]
+  - id: production-is-the-default
+    date: 2026-11-20
+    status: accepted
+    decision: With no environment hint the process minifies.
+    rejected:
+      - option: Minify only under an explicit production setting.
+        why: An app that is just run in production with no env hints would ship raw sources; a dev sets GOFASTR_DEV to keep them readable.
+    upholds: [enabled-production-wins]

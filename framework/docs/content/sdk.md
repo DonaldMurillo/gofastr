@@ -505,12 +505,38 @@ NSwag write a nullable reference, is a nullable `Person`); an `allOf`
 of several members, or one beside properties, is the merged object. A
 document deriving more than 5000 struct types is refused.
 
+When an object declares both named properties and `additionalProperties`,
+the generated Go struct exposes the extra keys in
+`AdditionalProperties map[string]json.RawMessage`. Extra values stay raw
+even if the schema gives them a type: callers can decode them as needed,
+and a round trip preserves values such as large numbers and nested nulls.
+The map's entries are sibling JSON keys, not a nested field. Matching is
+case-sensitive in these structs: a declared `label` takes precedence
+over a map key named `label`, but `Label` goes in the map.
+
+The Go generator reports a collision rather than renaming a property
+that derives `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
+Omitting `additionalProperties` or setting it to `false` does not add a map.
+When flattening `allOf`, an explicit allowance from the wrapper or any
+member is enough. Flattened objects with no named properties keep their
+existing raw JSON map type.
+Encoding a recursive Go value with a cycle returns a JSON encoding error.
+
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
-`type` list containing `"null"` in 3.1) retain null separately from
+`type` list containing `"null"` in 3.1 and later) retain null separately from
 absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
-`| null`. For non-nullable bodies, `null` still means absent.
+`| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1 and later,
+a type-less JSON request body is implicitly nullable only when its keywords
+are annotations, schema metadata or definitions, type-specific assertions that
+ignore null, or `x-` extensions.
+This includes `{}` and properties-only schemas, but excludes conditional,
+composition and unknown keywords. Both the resolved schema and `$ref` siblings
+must qualify; this does not change response or field typing. OpenAPI 3.0 `{}`
+bodies retain their existing behavior: JS treats null as absent (and
+throws when required), while Go keeps its existing nil behavior described
+below. For other non-nullable bodies, `null` still means absent.
 
 The Go SDK does not model request-body nullability separately from
 presence, so nullable scalar bodies cannot send an explicit JSON `null`.

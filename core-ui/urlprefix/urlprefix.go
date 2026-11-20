@@ -1,24 +1,4 @@
-// Package urlprefix puts a path prefix in front of the root-relative
-// URLs a response carries. An app that names the reader's language in
-// the URL (framework.WithLocalePrefixes) serves "/es/pricing" by
-// routing "/pricing" with the es locale on the context. Every screen,
-// island and handler keeps writing "/about"; [Middleware] turns that
-// into "/es/about" on the way out, so a reader who arrived in Spanish
-// keeps following Spanish links.
-//
-// The rewrite reaches the navigation and request URLs of an HTML
-// response (anchor and area href, form action, button formaction, the
-// URL-valued data-cui-* attributes, and a meta refresh) and the
-// Location, Content-Location, Refresh, X-Gofastr-Location,
-// X-Gofastr-Push-State and X-Gofastr-Document headers. It leaves assets
-// alone (src, srcset, <link>, the Link header), the runtime's
-// /__gofastr/ endpoints, external and
-// protocol-relative URLs, fragments, query-only and relative URLs, an
-// anchor with hreflang (a language switcher, already built with
-// i18n.LocalePath) or download, any URL whose first segment already
-// names a locale, and any path a Rule's Keep claims (a static export's
-// copied files). JSON bodies and SSE pushes are not rewritten: code
-// that writes a URL there reads i18n.PathPrefix itself.
+// Package urlprefix puts a locale prefix in front of the root-relative URLs a response carries.
 package urlprefix
 
 import (
@@ -36,30 +16,17 @@ import (
 
 // Rule says how to prefix a URL.
 type Rule struct {
-	// Prefix goes in front of each root-relative URL: "/es". Empty
-	// leaves every URL alone.
+	// Prefix goes in front of each root-relative URL: "/es".
 	Prefix string
-	// Locales lists every locale segment of the app, the default
-	// included. A URL whose first segment names one is already
-	// localized and stays as written.
+	// Locales lists every locale segment, the default included.
 	Locales []string
-	// Origins lists absolute origins ("https://shop.example") whose
-	// URLs are prefixed too.
+	// Origins lists absolute origins whose URLs are prefixed too.
 	Origins []string
-	// Keep, when set, is asked about the path of each root-relative URL
-	// the rule would prefix (query and fragment cut off, as written);
-	// true leaves the URL alone. A static export sets it: its files are
-	// copied once, to the export root, so a link to one keeps its
-	// unprefixed path, while the live router serves them under every
-	// prefix.
+	// Keep, when set and true for a path, leaves its URL alone.
 	Keep func(path string) bool
 }
 
-// URLAttrs lists the data-cui-* attributes whose value is a same-origin
-// URL the runtime navigates to, requests, or compares with the
-// browser's path. core-ui/ARCHITECTURE.md documents each;
-// TestURLAttrsAllCovered fails when the table gains a URL-valued
-// attribute this list lacks.
+// URLAttrs lists the data-cui-* attributes whose value is a same-origin URL.
 var URLAttrs = []string{
 	"data-cui-intercept-panel",
 	"data-cui-match-prefix",
@@ -96,9 +63,6 @@ func Path(u string, rule Rule) string {
 	if i := strings.IndexAny(seg, "/?#"); i >= 0 {
 		seg = seg[:i]
 	}
-	// The router splits the locale off the decoded path, so /%65s/ is
-	// /es/ to it: compare the segment as the router reads it, or the
-	// link gets a second prefix (/es/%65s/about).
 	if dec, err := url.PathUnescape(seg); err == nil {
 		seg = dec
 	}
@@ -124,11 +88,7 @@ func Path(u string, rule Rule) string {
 	return rule.Prefix + u
 }
 
-// Refresh returns v, the value of a Refresh header or of a meta
-// refresh's content ("0;url=/orders"), with the rule applied to its
-// URL. It finds the URL the way a browser does (the HTML standard's
-// shared declarative refresh steps), so a value a browser ignores, or
-// one with no URL, comes back unchanged.
+// Refresh returns v, a Refresh header or meta refresh content, with the rule applied to its URL.
 func Refresh(v string, rule Rule) string {
 	start, end, ok := refreshURL(v)
 	if !ok || rule.Prefix == "" {
@@ -137,7 +97,6 @@ func Refresh(v string, rule Rule) string {
 	return v[:start] + Path(v[start:end], rule) + v[end:]
 }
 
-// refreshURL finds the URL in a refresh value: v[start:end].
 func refreshURL(v string) (start, end int, ok bool) {
 	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' }
 	i := 0
@@ -159,7 +118,6 @@ func refreshURL(v string) (start, end int, ok bool) {
 		i++
 	}
 	skip()
-	// "url" with no "=" after it is the start of the URL itself.
 	if len(v)-i >= 3 && strings.EqualFold(v[i:i+3], "url") {
 		at := i
 		i += 3
@@ -182,10 +140,7 @@ func refreshURL(v string) (start, end int, ok bool) {
 	return i, end, i < end
 }
 
-// HTML returns page with the rule applied to each navigation and
-// request URL attribute. Markup it does not change keeps its bytes; a
-// tag it changes is written back in normalized form. A page the
-// tokenizer cannot read comes back unchanged.
+// HTML returns page with the rule applied to each navigation URL attribute, or page unchanged when it cannot be read.
 func HTML(page []byte, rule Rule) []byte {
 	if rule.Prefix == "" {
 		return page
@@ -215,8 +170,6 @@ func HTML(page []byte, rule Rule) []byte {
 	}
 }
 
-// rewriteTag applies rule to tok's URL attributes and reports whether
-// any changed.
 func rewriteTag(tok *html.Token, rule Rule) bool {
 	switch tok.Data {
 	case "meta":
@@ -244,8 +197,6 @@ func rewriteTag(tok *html.Token, rule Rule) bool {
 	return changed
 }
 
-// rewriteMetaRefresh applies rule to the URL of a meta refresh, the
-// Refresh header written in the page, and reports whether it changed.
 func rewriteMetaRefresh(tok *html.Token, rule Rule) bool {
 	refresh, content := false, -1
 	for i, a := range tok.Attr {
@@ -279,20 +230,7 @@ func urlAttr(tag, key string) bool {
 	return strings.HasPrefix(key, "data-cui-") && slices.Contains(URLAttrs, key)
 }
 
-// Middleware rewrites the responses to a request whose URL named a
-// prefixed locale (i18n.PathPrefix is not empty): text/html bodies
-// through [HTML], the Location, Content-Location, X-Gofastr-Location,
-// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path],
-// and the Refresh header through [Refresh].
-// Any other request passes straight through. An HTML body is buffered
-// until the handler returns, so Flush waits for it; other bodies stream.
-// A body with no Content-Type is typed by the sniff net/http applies, over
-// its first 512 bytes across writes, even when the handler wrote its
-// status first. While the status waits, the header stays as it stood at
-// WriteHeader, as net/http keeps it: a header set later is ignored,
-// trailers aside. A body that is already encoded (gzip) passes through as
-// written: the framework places this middleware inside Compress, which
-// encodes after it.
+// Middleware rewrites the URLs of every response to a request under a prefixed locale.
 func Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -314,27 +252,17 @@ func Middleware() func(http.Handler) http.Handler {
 	}
 }
 
-// writer buffers an HTML body and rewrites the URL headers once, on the
-// first write or at the end.
 type writer struct {
 	http.ResponseWriter
 	rule      Rule
 	headed    bool
 	buffering bool
-	// pending: the handler wrote a status with no Content-Type, so the
-	// status waits for the first body bytes. net/http sniffs the type
-	// from the first 512 of them, across writes, and an untyped HTML
-	// body must be rewritten like a typed one. The held bytes sit in buf.
-	pending bool
-	code    int
-	buf     bytes.Buffer
-	// snap is the header as it stood at WriteHeader while the real
-	// status waits. net/http fixes the header there: a header set after
-	// it is ignored, trailers aside, so commit sends snap.
-	snap http.Header
+	pending   bool
+	code      int
+	buf       bytes.Buffer
+	snap      http.Header
 }
 
-// sniffLen is how many bytes net/http's sniff reads.
 const sniffLen = 512
 
 func (w *writer) rewriteHeaders() {
@@ -344,8 +272,6 @@ func (w *writer) rewriteHeaders() {
 			h.Set(k, Path(v, w.rule))
 		}
 	}
-	// Every Refresh line, not the first: which one a browser follows
-	// differs, so none may leave the locale.
 	for i, v := range h.Values("Refresh") {
 		h["Refresh"][i] = Refresh(v, w.rule)
 	}
@@ -370,8 +296,6 @@ func (w *writer) WriteHeader(code int) {
 			w.snap.Del("Content-Length")
 			return
 		}
-		// net/http sniffs only when the key is absent: a key set to nil
-		// is the handler opting out, and the body goes out untyped.
 		if _, typed := h["Content-Type"]; !typed && bodyAllowed(code) {
 			w.pending = true
 			w.snap = h.Clone()
@@ -381,10 +305,6 @@ func (w *writer) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// commit sends the deferred status with the header as it stood at
-// WriteHeader. A trailer the handler declared there, or sets under
-// http.TrailerPrefix, is kept from the live map: net/http reads those
-// when the handler returns.
 func (w *writer) commit() {
 	h := w.ResponseWriter.Header()
 	declared := map[string]bool{}
@@ -409,20 +329,14 @@ func (w *writer) commit() {
 	w.ResponseWriter.WriteHeader(w.code)
 }
 
-// bodyAllowed mirrors net/http: these statuses carry no body, so it
-// never sniffs one for them.
 func bodyAllowed(code int) bool {
 	return code != http.StatusNoContent && code != http.StatusNotModified
 }
 
-// settle decides a pending status from the held body bytes, the same
-// sniff net/http applies to an untyped response: HTML stays buffered
-// and is rewritten, anything else is forwarded and streams.
 func (w *writer) settle() error {
 	w.pending = false
 	held := w.buf.Bytes()
 	if len(held) == 0 {
-		// net/http sniffs no type from an empty body.
 		w.commit()
 		return nil
 	}
@@ -459,8 +373,6 @@ func (w *writer) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// Flush forwards a flush of a streamed body. A buffered HTML body
-// flushes once, rewritten, when the handler returns.
 func (w *writer) Flush() {
 	if w.buffering {
 		return
@@ -472,9 +384,6 @@ func (w *writer) Flush() {
 		}
 	}
 	if w.pending {
-		// A flush ends the sniff: net/http types the response from
-		// what it holds. With nothing held the type is not HTML, so
-		// what follows streams.
 		if w.settle() != nil || w.buffering {
 			return
 		}

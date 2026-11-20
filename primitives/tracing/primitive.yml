@@ -5,14 +5,6 @@ code:
   - core/tracing/job.go
 docs:
   - framework/docs/content/observability.md
-twins:
-  - job: Name the Go type of a failed call's error as a span's error.type, seeing through fmt.Errorf wrapping.
-    why: errorType is unexported in core/tracing and battery/queue builds its consumer span itself, so its %T reads a wrapped error as *fmt.wrapError; moving errorType to a shared package is work not yet done.
-    sites:
-      - path: core/tracing/tracing.go
-        note: errorType, which unwraps fmt's wrapper types.
-      - path: battery/queue/invoke.go
-        note: invokeRecovering, fmt.Sprintf("%T", err) on the handler's error.
 invariants:
   - id: tracer-looked-up-per-span
     rule: Every span is started from the global TracerProvider as it is when the span opens, so a provider installed after a wrapper was built receives that wrapper's spans.
@@ -26,8 +18,11 @@ invariants:
       - test: core/tracing.TestSQLSpanMarksErrors
   - id: error-type-sees-through-fmt
     rule: error.type is the type under any fmt.Errorf %w wrapping, and the first wrapped error's type for a wrapper with several %w verbs.
+    applies:
+      - battery/queue/invoke.go
     enforced_by:
       - test: core/tracing.TestErrorTypeSeesThroughWrapping
+      - test: battery/queue.TestJobSpanErrorTypeSeesThroughWrapping
   - id: job-is-its-own-trace
     rule: Job opens an internal root span named by the scrubbed name, parents fn's spans under it, sets fn's error text, scrubbed and capped, as its status, and on a panic records the value and the panicking function's stack, ends the span and panics on.
     enforced_by:

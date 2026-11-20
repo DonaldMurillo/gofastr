@@ -351,6 +351,28 @@ Freeze writes exactly:
   one-shot generator;
 - `build/world.json`: lossless authoring snapshot.
 
+Freeze always writes `app.entity_llm_md` from the world's `llm_md` value.
+The generated app keeps the preview's entity API markdown routes on or off,
+including the default off state. `app.llm_md` still controls public page
+documentation separately in the app spec. Hand-written specs that omit
+`entity_llm_md` keep entity docs on.
+
+Debug routes are dev-only and the app spec has no debug-endpoint
+setting, so freeze drops `app.debug_endpoints` and prints a warning
+("debug routes are not carried into the app"). Set
+`framework.AppConfig.DebugEndpoints = true` in owned Go if the graduated
+app needs them. A refused freeze writes nothing, not even its output
+directory.
+
+The current app spec and generated clients support camelCase JSON only.
+Freeze refuses `app.json_case: snake` (also `snake_case`) instead of silently
+changing the preview's wire contract. Keep using the Kiln preview for
+snake_case, or explicitly change `app.json_case` to `camel` before freezing,
+then set `framework.AppConfig.JSONCase` to `framework.CaseSnake` in owned Go
+before serving clients. Generated clients still target camelCase; adapt them
+to the owned app's wire contract as well. Empty, `camel`, and `camelCase`
+retain the default behavior. Unknown casing values are rejected.
+
 A database URL with an embedded password never lands in either file:
 freeze writes a `${DATABASE_URL}` reference instead, and the generated
 app refuses to boot until the variable is supplied (credential-free DSNs,

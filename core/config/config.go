@@ -457,6 +457,9 @@ func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) e
 		}
 		return err
 	}
+	if err := validateTags(v, sf.Tag.Get("validate")); err != nil {
+		return fmt.Errorf("config: field %s: %s", sf.Name, redactSecrets(err.Error(), *secrets))
+	}
 	return nil
 }
 

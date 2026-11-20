@@ -1,0 +1,65 @@
+primitive: check
+summary: core-ui/check, the source lints that cmd/check-csp, gofastr verify and the runtime's tree gates run - the .ui.go subset linter, the core-ui/html accessibility lint and the //gofastr:allow marker every lint here reads; the CSP, JavaScript-idiom and runtime-shape lints are its parts.
+code:
+  - core-ui/check/
+docs:
+  - framework/docs/content/contracts.md
+  - internal/analyzers/README.md
+on_change:
+  - A new lint here is run by a test over the live tree (a _RepoIsClean or _Repo test) and listed in internal/analyzers/README.md.
+twins:
+  - job: Parse the //gofastr:allow(<name>) <why> marker, live only as a comment's first text and void without a reason.
+    why: internal/analyzers/allow needs go/analysis, which core-ui/check must not import; the merge is a dependency-free parser both call.
+    sites:
+      - path: core-ui/check/allowmarker.go
+        note: reAllowMarker and allowedLines, for the JS and Go lints here.
+      - path: internal/analyzers/allow/allow.go
+        note: The marker grammar the vet analyzers read.
+invariants:
+  - id: ui-go-subset
+    rule: LintFile flags in a .ui.go file every goroutine, channel send, receive and make(chan), type switch, close and recover call, and import outside allowedImports and the gofastr module.
+    enforced_by:
+      - test: core-ui/check.TestLintGoroutine
+      - test: core-ui/check.TestLintChannel
+      - test: core-ui/check.TestLintMakeChan
+      - test: core-ui/check.TestLintForbiddenImport
+      - test: core-ui/check.TestLintAllowedImports
+      - test: core-ui/check.TestProbe_TypeSwitchIsFlagged
+      - test: core-ui/check.TestProbe_CloseAndRecoverAreFlagged
+  - id: element-config-required-fields
+    rule: A core-ui/html element called with a literal config missing a required field is flagged, a field's ARIA equivalent in a literal ExtraAttrs satisfies it, and a non-literal config or ExtraAttrs passes.
+    enforced_by:
+      - test: core-ui/check.TestLintButtonMissingLabel
+      - test: core-ui/check.TestLintA11yAcceptsIconOnlyButtonAriaLabel
+      - test: core-ui/check.TestLintA11yOpaqueExtraAttrsFailsOpen
+      - test: core-ui/check.TestLintConfigPassedAsVariable
+      - test: core-ui/check.TestLintA11yNavAriaLabelViaExtraAttrs
+  - id: a11y-only-real-html-calls
+    rule: LintA11yFile checks only calls through the file's core-ui/html import whose first argument is a literal of that package's <Elem>Config type, so an aliased import is followed and a shadowing local is skipped.
+    enforced_by:
+      - test: core-ui/check.TestLintA11yAliasedImport
+      - test: core-ui/check.TestLintA11ySkipsShadowedAlias
+      - test: core-ui/check.TestLintA11ySkipsLocalFunctions
+      - test: core-ui/check.TestLintA11yStillFlagsQualifiedConfig
+  - id: allow-marker-grammar
+    rule: A //gofastr:allow(name) marker counts only as a comment's first text with a reason that is more than separator punctuation, covering its own line when trailing and its line and the next when alone.
+    enforced_by:
+      - test: core-ui/check.TestTrailingProseMarkerOwnLineOnly
+      - test: core-ui/check.TestTrailingLayerMarkerOwnLineOnly
+      - test: core-ui/check.TestTrailingLayerMarkerGoOwnLineOnly
+decisions:
+  - id: a11y-fails-open
+    date: 2026-11-20
+    status: accepted
+    decision: A config or ExtraAttrs the lint cannot read statically passes.
+    rejected:
+      - option: Flag every config the lint cannot see into.
+        why: The element still panics at render on a missing name, while a false finding blocks gofastr build.
+    upholds: [element-config-required-fields]
+  - id: shape-not-site
+    date: 2026-11-20
+    status: accepted
+    decision: Each lint matches a bug's shape, so an instance with entirely different names fires and every audited fix spelling stays quiet, and each is pinned by fixtures and by a test over the live tree.
+    rejected:
+      - option: Match the audited sites by name.
+        why: The next instance of the bug would have different names.

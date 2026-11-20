@@ -1,20 +1,3 @@
-// Package runtime ships the framework's client-side JavaScript runtime.
-//
-// Two surfaces are exposed:
-//
-//   - The core runtime (`runtime.js`): the one-script substrate for SPA
-//     navigation, signals, widgets, hydration, and demand-module loading.
-//     Served at `/__gofastr/runtime.js`.
-//
-//   - Per-module bundles (`src/<name>.js`): payloads loaded on demand via
-//     `__gofastr.loadModule(name)`. RPC is prefetched when its marker exists
-//     and awaited by the core delegation bridge; optional UI behaviors use
-//     the same loader.
-//
-// The HTTP server (core-ui/widget/server.go) consumes Module(name) +
-// ModuleNames() to wire `/__gofastr/runtime/<name>.js` routes; the
-// uihost emits `<link rel="preload" as="script">` tags per page based on the
-// components rendered on it.
 package runtime
 
 import (
@@ -39,13 +22,8 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
-// nominify reports whether this process serves code unminified; the
-// rule (production wins, GOFASTR_DEV keeps it raw) is minify.Enabled.
 func nominify() bool { return !minify.Enabled() }
 
-// Cached minified payloads. Computed lazily on first read so the
-// minify pass runs at most once per source per process; subsequent
-// reads (and there are many, every page render) are pure map lookups.
 var (
 	bundleOnce  sync.Once
 	bundleData  string
@@ -54,16 +32,6 @@ var (
 	modulesData map[string]string
 )
 
-// composeFull assembles the `full` core runtime: kernel + signals + nav +
-// widgets-boot plus boot.js (the kernel boot tail), concatenated inside one
-// IIFE. RPC request machinery is a demand module; boot retains its delegated
-// interaction bridge.
-//
-// The served runtime.js is assembled from fragments so static and embed
-// compositions can select their boot behavior without copying code.
-//
-// Composed once at init and cached (bundleOnce in RuntimeJS); the
-// token-aware minifier runs on the composed output, unchanged.
 const iifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = kernel+signals+nav+widgets-boot)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from\n" +
 	"// core-ui/runtime/frag/*.js; RuntimeJS() serves it minified.\n" +
@@ -72,15 +40,8 @@ const iifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = k
 
 const iifeFooter = "\n})();\n"
 
-// fullFragmentOrder is the composition order for the `full` bundle.
-// kernel creates window.__gofastr; boot runs last because its initial pass
-// calls nav and signal helpers. The RPC implementation is src/rpc.js and is
-// loaded through boot's delegated interaction bridge.
 var fullFragmentOrder = []string{"kernel", "signals", "nav", "widgets-boot", "boot"}
 
-// composeFragments concatenates the named fragments inside one IIFE. Every
-// composition goes through it, so a new bundle cannot accidentally assemble
-// itself differently from the ones the gate tests cover.
 func composeFragments(header string, order []string) (string, error) {
 	var b strings.Builder
 	b.WriteString(header)
@@ -101,9 +62,7 @@ func composeFull() (string, error) {
 	return composeFragments(iifeHeader, fullFragmentOrder)
 }
 
-// RuntimeJS returns the composed runtime, the single-file IIFE every
-// page ships by default. Assembled from the fragment files once, then
-// minified (or returned verbatim when RUNTIME_NOMINIFY=1).
+// RuntimeJS returns the full composition, the runtime every page ships.
 func RuntimeJS() (string, error) {
 	bundleOnce.Do(func() {
 		raw, err := composeFull()
@@ -138,11 +97,6 @@ func RuntimeSize() int {
 	return len(js)
 }
 
-// staticIifeHeader is the IIFE wrapper for the `static` composition (SSG
-// export). Same wrapper structure as iifeHeader, but names the static
-// fragment set and omits the on-disk-canonical-form note, only `full`
-// (runtime.js) has an on-disk form the gate tests scan. The static bundle
-// is assembled purely in memory and served by StaticJS().
 const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: static = kernel+rpc-stub+signals+nav+widgets-boot-static)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeStatic) from\n" +
 	"// core-ui/runtime/frag/*.js. Served only by the static exporter\n" +
@@ -150,16 +104,8 @@ const staticIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: st
 	"(() => {\n" +
 	"  'use strict';\n"
 
-// staticFragmentOrder is the composition order for the `static` bundle.
-// rpc-stub runs before the shared boot tail, installs the serverless notice,
-// and prevents boot from installing or prefetching the live RPC bridge.
-// widgets-boot-static fetches the exported widget catalog and chrome while nav
-// continues to work against static HTML.
 var staticFragmentOrder = []string{"kernel", "rpc-stub", "signals", "nav", "widgets-boot-static", "boot"}
 
-// composeStatic assembles the `static` runtime composition for SSG export.
-// Same concatenation shape as composeFull, fragments are embedded JS files
-// joined inside one IIFE so closure semantics are preserved exactly.
 func composeStatic() (string, error) {
 	return composeFragments(staticIifeHeader, staticFragmentOrder)
 }
@@ -170,10 +116,7 @@ var (
 	staticErr  error
 )
 
-// StaticJS returns the `static` runtime composition used by serverless exports.
-// rpc-stub intercepts server-backed controls and boot skips the RPC module
-// marker. widgets-boot-static reads the dumped widget catalog so overlays still
-// resolve from exported files.
+// StaticJS returns the static composition a serverless export ships.
 func StaticJS() (string, error) {
 	staticOnce.Do(func() {
 		raw, err := composeStatic()
@@ -199,8 +142,6 @@ func MustStaticJS() string {
 	return js
 }
 
-// embedIifeHeader is the IIFE wrapper for the `embed` composition, the
-// runtime that ships INSIDE an embedded surface's iframe.
 const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: embed = kernel+signals+widgets-boot+boot-embed)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeEmbed) from\n" +
 	"// core-ui/runtime/frag/*.js. Served at /__gofastr/embed-runtime.js and loaded\n" +
@@ -208,15 +149,6 @@ const embedIifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: emb
 	"(() => {\n" +
 	"  'use strict';\n"
 
-// embedFragmentOrder is the composition order for the `embed` bundle.
-//
-// The nav fragment is ABSENT, and that absence is the feature: SPA navigation
-// inside a frame is impossible because the code is not there, not because a
-// flag is off. Nothing downstream can re-enable it by mistake.
-//
-// boot still ships for hydration, mutation observation, and demand loading.
-// Its updateActiveLink call is guarded because nav is absent. boot-embed runs
-// last after the core namespace is complete.
 var embedFragmentOrder = []string{"kernel", "signals", "widgets-boot", "boot", "boot-embed"}
 
 func composeEmbed() (string, error) {
@@ -229,12 +161,7 @@ var (
 	embedErr  error
 )
 
-// EmbedJS returns the `embed` runtime composition, the bundle served inside an
-// embedded surface's iframe.
-//
-// Its budget is looser than the core runtime's on purpose: it loads inside a
-// frame and blocks nothing on the host page. It is still budgeted, because how
-// fast an embed paints is the product.
+// EmbedJS returns the embed composition served inside an embed frame.
 func EmbedJS() (string, error) {
 	embedOnce.Do(func() {
 		raw, err := composeEmbed()
@@ -270,11 +197,6 @@ var (
 )
 
 // EmbedLoaderJS returns the loader a customer pastes into their own page.
-//
-// This is the tightest budget in the repo: it lands on a stranger's critical
-// path, on a site whose performance we do not control and whose owner did not
-// choose GoFastr. It creates the iframe, hands over the nonce by postMessage,
-// and resizes. Anything else belongs inside the frame.
 func EmbedLoaderJS() (string, error) {
 	embedLoaderOnce.Do(func() {
 		raw, err := fs.ReadFile(embedLoaderFS, "embed-loader.js")
@@ -300,25 +222,8 @@ func MustEmbedLoaderJS() string {
 	return js
 }
 
-// ColorSchemeJS returns the color-scheme bootstrap script, a tiny
-// synchronous snippet meant to ship at the TOP of <head> so dark-mode
-// CSS tokens take effect during the same first paint that hits the
-// page. Reads localStorage("gofastr.colorScheme") + the OS
-// prefers-color-scheme hint, then sets <html data-color-scheme="…">
-// and a matching <meta name="color-scheme">.
-//
-// Apps that ship a theme toggle call
-// `window.__gofastr_colorScheme.set('auto'|'light'|'dark')` to
-// override the OS preference.
-//
-// The same script applies the page theme ui.ThemePicker stored in
-// localStorage("gofastr.theme"): one cui-theme-<hex> override class,
-// added to <html> before first paint, and set through
-// `window.__gofastr_theme.set(class)`; an empty class returns to the
-// app's own theme.
-//
-// It is the one script that blocks first paint, so it is minified like
-// the runtime modules (unless the environment disables minification).
+// ColorSchemeJS returns the first-paint bootstrap that applies the stored
+// colour scheme and page theme before the page renders.
 func ColorSchemeJS() (string, error) {
 	colorSchemeOnce.Do(func() {
 		data, err := fs.ReadFile(colorSchemeFS, "colorscheme.js")
@@ -340,10 +245,7 @@ var (
 	colorSchemeErr  error
 )
 
-// Module returns the source of a single split runtime module by name
-// (e.g. "popover"). Used by the HTTP server to serve
-// /__gofastr/runtime/<name>.js. Returns "", false when the module is
-// not embedded. Minified on first read (cached).
+// Module returns the served source of an embedded module or registered behaviour.
 func Module(name string) (string, bool) {
 	if !compute.ValidName(name) {
 		return "", false
@@ -351,8 +253,6 @@ func Module(name string) (string, bool) {
 	if src, ok := embeddedModule(name); ok {
 		return src, true
 	}
-	// A registered behaviour (registry.RegisterBehavior) is a module
-	// from here down: same URL, same manifest, same cache headers.
 	return registeredModule(name)
 }
 
@@ -382,9 +282,7 @@ func loadModules() {
 	}
 }
 
-// ModuleSize returns the byte size of a single embedded module, or 0
-// if the module isn't present. Used by tests asserting per-module size
-// budgets.
+// ModuleSize returns the byte size of a module, or 0.
 func ModuleSize(name string) int {
 	src, ok := Module(name)
 	if !ok {
@@ -393,13 +291,7 @@ func ModuleSize(name string) int {
 	return len(src)
 }
 
-// ModuleNames returns the sorted list of split modules: the embedded
-// ones and every registered behaviour. Each name maps 1:1 to a
-// /__gofastr/runtime/<name>.js URL. A behaviour registered under an
-// embedded module's name is refused at registration; if one slipped
-// past (registered before this package's init reserved the names) it
-// panics here, where the two sets meet, rather than serving one of the
-// two in silence.
+// ModuleNames returns the sorted embedded modules and registered behaviours.
 func ModuleNames() []string {
 	out := embeddedModuleNames()
 	seen := make(map[string]bool, len(out))

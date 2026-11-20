@@ -118,8 +118,24 @@ stats use the single-document contract without needing an output flag.
   `<name>_handler.go` into the current directory in the package its Go
   files already declare (`package main` when there are none). It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
-  predeclared name such as `string`, or a name that package already
-  declares. `new route` validates the method and path with the router before
+  predeclared name such as `string`, a name imported by the generated
+  handler or any existing Go file in that package (including in-package
+  test files, but not external test packages), or a name that package
+  already declares, including in its in-package tests. Test files do not
+  determine the target package name. Import aliases are respected; blank
+  and dot imports do not reserve their package names. Unaliased non-stdlib
+  import names (first path element contains a dot, or the import belongs
+  to the enclosing module, including dotless paths such as `local/myapp`)
+  are resolved together with `go list` in the target directory, using
+  `GOFLAGS=-mod=vendor` when the module root contains `vendor/modules.txt`,
+  or `GOFLAGS=-mod=readonly` otherwise, and `GOTOOLCHAIN=local`
+  so name checks do not update module files or
+  switch toolchains. Stdlib-only imports do not invoke `go list`.
+  If Go is unavailable, resolution fails, or a package name is unavailable,
+  the assumed name uses the last import-path element, skipping
+  a trailing major version such as `/v2`, stripping a `go-` prefix and
+  stopping at the first non-identifier character (so `yaml.v3` is `yaml`).
+  `new route` validates the method and path with the router before
   printing anything, rejecting malformed ServeMux patterns such as `/{wx`.
   The path must start with `/` and contain no whitespace; host-qualified
   patterns and method-prefixed paths such as `POST /x` are refused.
@@ -127,7 +143,9 @@ stats use the single-document contract without needing an output flag.
   error-returning validation, without checking conflicts with existing routes.
   It prints the line without writing anything; it
   refuses a `--handler` that is not a Go identifier or a selector of
-  them (`h.List`), and a bare name `new handler` would refuse. The
+  them (`h.List`). A bare handler name also cannot be a keyword, entry
+  point, predeclared name, or an import name in the current package's
+  Go files, including in-package tests. Selectors are not checked against package imports. The
   printed line passes the handler as written, since `Router.Handle`
   takes an `http.Handler`, and a hint names the `http.HandlerFunc(…)`
   conversion a plain func, such as the one `new handler` writes, needs. Both take any HTTP method token for

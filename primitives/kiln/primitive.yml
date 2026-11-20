@@ -1,0 +1,25 @@
+primitive: kiln
+summary: Kiln authoring and graduation to owned Go.
+code:
+  - kiln/freeze/
+docs:
+  - framework/docs/content/kiln.md
+invariants:
+  - id: graduation-preserves-json-case
+    rule: Freeze refuses JSON casing the generated app spec cannot express rather than silently changing the preview wire contract.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeJSONCaseContract
+  - id: graduation-preserves-entity-docs
+    rule: Freeze explicitly carries the preview entity-doc setting into generated configuration without changing omitted hand-written app-spec defaults or the UI-doc switch.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeEntityLLMMD
+      - test: cmd/gofastr/internal/appspec.TestDecodeEntityLLMMD
+      - test: cmd/gofastr/internal/appgen.TestGeneratedEntityLLMMDConfig
+      - test: cmd/gofastr/internal/packcmd.TestEntityLLMMDRoundTrip
+      - test: cmd/gofastr/internal/packcmd.TestKilnFreezeEntityLLMMDReachesGeneratedGo
+      - test: cmd/gofastr/internal/appspec.TestEntityLLMMDFreesIndexScreenRoute
+  - id: graduation-warns-on-dropped-debug-endpoints
+    rule: Freeze drops dev-only debug_endpoints with a printed warning, producing the same app spec as debug off; a refused freeze creates no output directory.
+    enforced_by:
+      - test: kiln/freeze.TestFreezeDebugEndpoints
+      - test: kiln/freeze.TestRefusedFreezeCreatesNoDirectory
