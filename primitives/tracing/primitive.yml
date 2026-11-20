@@ -23,11 +23,13 @@ invariants:
     enforced_by:
       - test: core/tracing.TestErrorTypeSeesThroughWrapping
       - test: battery/queue.TestJobSpanErrorTypeSeesThroughWrapping
+      - test: core/tracing.TestJobSpanCarriesErrorType
   - id: job-is-its-own-trace
-    rule: Job opens an internal root span named by the scrubbed name, parents fn's spans under it, sets fn's error text, scrubbed and capped, as its status, and on a panic records the value and the panicking function's stack, ends the span and panics on.
+    rule: Job opens an internal root span named by the scrubbed name, parents fn's spans under it, sets fn's error type as error.type and its text, scrubbed and capped, as its status, and on a panic sets error.type to panic and records the value and the panicking function's stack, ends the span and panics on.
     enforced_by:
       - test: core/tracing.TestJobIsATraceOfItsOwn
       - test: core/tracing.TestJobWithNoTracerIsACall
+      - test: core/tracing.TestJobSpanCarriesErrorType
   - id: span-text-is-scrubbed
     rule: A span name or attribute built from a request, a statement or a job name has its control bytes scrubbed.
     enforced_by:

@@ -345,8 +345,10 @@ err := tracing.Job(ctx, "import customers", func(ctx context.Context) error {
 })
 ```
 
-The span's status is the error's text, or the panic's value with the
-call stack as `exception.stacktrace`; a panic goes on to the caller.
+A failed job's span carries `error.type` (the error's Go type, or
+`panic`) and, unlike the spans below, its status is the error's text,
+or the panic's value with the call stack as `exception.stacktrace`; a
+panic goes on to the caller.
 
 | Span | Attributes |
 |---|---|
@@ -362,15 +364,16 @@ identifier shows as `?` there. Comments are dropped (PostgreSQL's nest;
 MySQL's `#` counts). For a `db.system.name` other than `postgresql`,
 `sqlite` and `mysql`, every one of those rules applies at once, and a
 string whose end depends on whether a backslash escapes hides the rest
-of the statement. `url.full` drops the query string, fragment and user info. A failure sets
-the span status to `codes.Error` with `error.type` holding the error's Go
-type (or the HTTP status code, or `panic`), never its message, since
-driver and handler errors routinely quote row values.
+of the statement. `url.full` drops the query string, fragment and user info. A failed SQL,
+outbound HTTP or queue job span has the status `codes.Error` with
+`error.type` holding the error's Go type (or the HTTP status code, or
+`panic`), never its message, since driver and handler errors routinely
+quote row values.
 
 `tracing.ErrorType(err)` supplies the same Go type name for custom spans.
 It sees through `fmt.Errorf` wrappers using `%w` (following the first error
 when there are several `%w` operands), and returns `"<nil>"` for nil.
-SQL, HTTP client and queue job spans share this logic.
+SQL, HTTP client, queue job and `tracing.Job` spans share this logic.
 
 ### Exporting traces to a collector (OTLP)
 

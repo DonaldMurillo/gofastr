@@ -24,6 +24,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+- **`tracing.Job` spans carry `error.type`** like SQL, HTTP client and
+  queue job spans: the error's Go type under `%w` wrappers, or `panic`.
+  The status still holds the error's text.
+
 ## [0.97.0] - 2026-11-19
 
 ### Added
