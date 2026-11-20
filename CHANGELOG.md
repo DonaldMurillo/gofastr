@@ -28,8 +28,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.
-- **`gofastr audit a11y` skips blank sitemap locations;** a sitemap with
-  only blank `<loc>` entries fails discovery.
+- **`gofastr audit a11y` skips sitemap locations that are not pages**
+  (blank, `#fragment`, `mailto:` and other schemes); a sitemap with none
+  left fails discovery.
 - **`gofastr pack ""` exits 2,** like every other usage error.
 - **`gofastr test` no longer hangs** when a process the tests started
   keeps stdout or stderr open after the Go test process exits.
@@ -850,6 +851,10 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Removed
+- **`analyzers.EntityInfo.Scoped` and `EntityInfo.HasAccess` are gone.**
+  They counted a gate on any operation as scoping reads. GOFASTR1901 now
+  needs an owner field, tenant scope or a read permission; nothing in
+  the framework called either method.
 - **Generated entity files no longer carry the unused
   `extract<Entity>Record` wrapper.** Regenerating an app removes it.
 - **`TenantConfig.AutoScope` is gone.** It was never read: multi-tenant
