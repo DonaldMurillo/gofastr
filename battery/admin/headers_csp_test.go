@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +45,25 @@ func TestAdminKeepsTheAppSecurityHeaders(t *testing.T) {
 		if w.Header().Get(name) == "" {
 			t.Errorf("admin did not fill the missing %s", name)
 		}
+	}
+
+	// The fill follows the request: HSTS goes out over TLS and behind a TLS proxy.
+	for _, secure := range []func(*http.Request){
+		func(r *http.Request) { r.TLS = &tls.ConnectionState{} },
+		func(r *http.Request) { r.Header.Set("X-Forwarded-Proto", "https") },
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/admin/posts", nil)
+		secure(r)
+		w = httptest.NewRecorder()
+		onlyCSP.ServeHTTP(w, r)
+		if w.Header().Get("Strict-Transport-Security") == "" {
+			t.Errorf("an HTTPS admin answer under the app's own CSP lacks HSTS (TLS %v, proto %q)", r.TLS != nil, r.Header.Get("X-Forwarded-Proto"))
+		}
+	}
+	w = httptest.NewRecorder()
+	onlyCSP.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/posts", nil))
+	if w.Header().Get("Strict-Transport-Security") != "" {
+		t.Error("a plain-HTTP admin answer carries HSTS")
 	}
 
 	w = httptest.NewRecorder()

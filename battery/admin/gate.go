@@ -90,10 +90,7 @@ func (headerSink) WriteHeader(int)             {}
 
 func (b *Battery) headers(next http.Handler) http.Handler {
 	secure := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(next)
-	defaults := headerSink{}
-	probe, _ := http.NewRequest(http.MethodGet, "/", nil)
-	middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).
-		ServeHTTP(defaults, probe)
+	defaults := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !b.underPrefix(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -105,7 +102,9 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 			secure.ServeHTTP(w, r)
 			return
 		}
-		for name, values := range defaults {
+		fill := headerSink{}
+		defaults.ServeHTTP(fill, r)
+		for name, values := range fill {
 			if h.Get(name) == "" {
 				h[name] = values
 			}

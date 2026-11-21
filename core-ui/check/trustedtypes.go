@@ -117,7 +117,21 @@ func wrapsWhole(f jsSource, from, end int, call *regexp.Regexp) bool {
 		}
 		i = skipSpaceTo(f.Blank, i, end)
 	}
-	return i >= end || strings.IndexByte("+-*/%&|^?:.[<>=`", f.Blank[i]) < 0
+	if i >= end {
+		return true
+	}
+	if strings.IndexByte("+-*/%&|^?:.[<>=`", f.Blank[i]) >= 0 {
+		return false
+	}
+	word := i
+	for word < end && isJSIdentChar(f.Blank[word]) {
+		word++
+	}
+	switch f.Blank[i:word] {
+	case "instanceof", "in":
+		return false
+	}
+	return true
 }
 
 func skipSpaceTo(s string, i, end int) int {
