@@ -657,10 +657,10 @@ func renderOASDKGoReadme(spec oaSDKSpec) string {
 	fmt.Fprintf(&sb, "# %s Go SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	fmt.Fprintf(&sb, "A standalone, stdlib-only Go client for the %s HTTP API, generated from its\nOpenAPI document: one method on `Client` per operation.\n\n", spec.App)
 	sb.WriteString("## Install\n\nUnzip next to your project (or anywhere), then wire the module locally:\n\n")
-	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s-sdk\ngo get %s\n```\n\n", spec.Module, sdkFenceWord(spec.App), spec.Module)
+	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s\ngo get %s\n```\n\n", spec.Module, spec.GoDirectory, spec.Module)
 	sb.WriteString("## Use\n\n")
 	fmt.Fprintf(&sb, "```go\nimport client %q\n\n", spec.Module)
-	fmt.Fprintf(&sb, "c := client.NewClient(%q+client.APIPrefix, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // sent as %s\n```\n\n", sdkExampleHost(spec.sdkSpec), sdkFenceWord(spec.API.TokenHeader))
+	fmt.Fprintf(&sb, "c := client.NewClient(%q+client.APIPrefix, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // sent as %s\n```\n\n", sdk.ExampleHost(spec.BaseURL), sdkFenceWord(spec.API.TokenHeader))
 	sb.WriteString("## Operations\n\n")
 	for _, op := range spec.Ops {
 		fmt.Fprintf(&sb, "- `%s`: %s `%s`\n", op.GoName, op.Method, oaMarkdownPath(op.PathTemplate))

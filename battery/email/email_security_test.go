@@ -57,23 +57,6 @@ func TestEmail_HeaderInjection(t *testing.T) {
 	}
 }
 
-// TestEmail_TemplateInjection verifies that template content doesn't
-// allow arbitrary Go template execution. Attack: SSTI via email template.
-func TestEmail_TemplateInjection(t *testing.T) {
-	for _, attack := range []string{`<script>alert(1)</script>`, `<img src=x onerror="alert(2)">{{.secret}}`} {
-		message, err := Execute(Template{HTMLBody: "<p>{{.input}}</p>"}, map[string]any{
-			"input": attack, "secret": "private-value",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(message.HTMLBody, attack) || strings.Contains(message.HTMLBody, "private-value") ||
-			!strings.Contains(message.HTMLBody, "&lt;") {
-			t.Fatalf("template data executed or escaped its text node: %s", message.HTMLBody)
-		}
-	}
-}
-
 // TestEmail_Base64Encoding verifies that Base64 encoding is correct
 // and doesn't leak data. Attack: side-channel via encoding errors.
 func TestEmail_Base64Encoding(t *testing.T) {
@@ -233,8 +216,6 @@ func TestLogSender_DoesNotExposeLiveResetLinks(t *testing.T) {
 // caller-controlled template DATA safe: Execute renders HTMLBody through
 // html/template (contextual escaping) and subject/text through text/template
 // (literal plain text, guarded downstream by buildMessage's CRLF refusal).
-// Supersedes the vacuous TestEmail_TemplateInjection above (a bare t.Logf
-// that can never fail); that one is flagged for central deletion.
 func TestExecuteEscapesHTMLBodyVars(t *testing.T) {
 	const attack = "<script>alert(1)</script>"
 
@@ -259,6 +240,19 @@ func TestExecuteEscapesHTMLBodyVars(t *testing.T) {
 	}
 	if got.TextBody != "Hello "+attack {
 		t.Errorf("text body should render the value literally; got %q", got.TextBody)
+	}
+
+	for _, input := range []string{attack, `<img src=x onerror="alert(2)">{{.secret}}`} {
+		rendered, err := Execute(Template{HTMLBody: "<p>{{.input}}</p>"}, map[string]any{
+			"input": input, "secret": "private-value",
+		})
+		if err != nil {
+			t.Fatalf("Execute(%q): %v", input, err)
+		}
+		if strings.Contains(rendered.HTMLBody, input) || strings.Contains(rendered.HTMLBody, `onerror="alert(2)"`) ||
+			strings.Contains(rendered.HTMLBody, "private-value") || !strings.Contains(rendered.HTMLBody, "&lt;") {
+			t.Errorf("SECURITY: [email] template data executed or leaked a sibling value: %q", rendered.HTMLBody)
+		}
 	}
 
 	// A CR/LF smuggled in through template data renders literally into the

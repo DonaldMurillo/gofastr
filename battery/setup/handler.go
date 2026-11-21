@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -111,7 +112,10 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 
 func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 	if r.tokenEnabled {
-		if !hasSetupCookie(req, r.cookieSecret) {
+		r.mu.Lock()
+		cookieSecret := r.cookieSecret
+		r.mu.Unlock()
+		if !hasSetupCookie(req, cookieSecret) {
 			if r.recheckElsewhere(req.Context()) {
 				r.renderCompletionPage(w, req)
 				return
@@ -130,7 +134,7 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 	case http.MethodGet:
 		r.renderStep(w, req)
 	case http.MethodPost:
-		if rejectCrossSiteForm(w, req) {
+		if auth.RejectCrossSiteForm(w, req) {
 			return
 		}
 		r.handleSubmit(w, req)
@@ -184,6 +188,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Keep the claim through currentStep advancement to serialize racing POSTs.
 	if err := r.runStepSerialized(req.Context(), stepIdx, step, values); err != nil {
 		msg, _ := i18n.ErrorText(req.Context(), err, i18n.Phrase{})
 		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": msg}, values)
@@ -224,19 +229,15 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 		r.mu.Unlock()
 		return nil
 	}
-	if r.stepInFlight {
+	if r.stepInFlight != nil {
 		r.mu.Unlock()
 		return nil
 	}
 
-	r.stepInFlight = true
+	r.stepInFlight = make(chan struct{})
 	r.mu.Unlock()
 
-	defer func() {
-		r.mu.Lock()
-		r.stepInFlight = false
-		r.mu.Unlock()
-	}()
+	defer r.releaseStepClaim()
 
 	err = step.Run(ctx, values)
 	if err != nil {
@@ -276,7 +277,7 @@ func (r *Runner) wizardFinished() bool {
 	if r.currentStep >= len(r.cfg.Steps) {
 		return true
 	}
-	return r.currentStep == 0 && !r.stepInFlight && !isForceMode()
+	return r.currentStep == 0 && r.stepInFlight == nil && !isForceMode()
 }
 
 const completeRecheckInterval = time.Second

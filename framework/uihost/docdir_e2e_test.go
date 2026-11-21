@@ -22,7 +22,7 @@ func TestE2E_DocDirFollowsNavigation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	_ = browserExecutable(t)
+	execPath := chromedptest.BrowserPath(t)
 
 	application := app.NewApp("DirSite").WithLangFunc(func(path string) string {
 		if strings.HasPrefix(path, "/ar") {
@@ -46,7 +46,10 @@ func TestE2E_DocDirFollowsNavigation(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	ctx := chromedptest.Context(t,
+		chromedptest.Timeout(60*time.Second),
+		chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)),
+	)
 	dirIs := func(want string) bool {
 		var ok bool
 		_ = chromedp.Run(ctx, chromedp.Poll(`document.documentElement.dir === '`+want+`'`, &ok,

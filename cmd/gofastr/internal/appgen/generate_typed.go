@@ -119,20 +119,10 @@ func On%sUpdated(app *framework.App, fn func(ctx context.Context, row *%s) error
 func On%sDeleted(app *framework.App, fn func(ctx context.Context, id %s) error) func() {
 	%s
 }
-
-// extract%sRecord unmarshals an event payload's "record" field into a
-// *%s, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extract%sRecord(ev framework.Event, entityName string) (*%s, bool) {
-	return extractEntityRecord[%s](ev, entityName)
-}
-
 `,
 		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
 		struct_, decl.Name, struct_, struct_, struct_, decl.Name,
-		struct_, decl.Name, struct_, goIDType(decl), deletedBody(decl),
-		struct_, struct_, struct_, struct_, struct_,
-	)
+		struct_, decl.Name, struct_, goIDType(decl), deletedBody(decl))
 }
 
 // deletedBody is On<Entity>Deleted's body. An entity keyed on a string
@@ -191,8 +181,8 @@ func deletedBody(decl framework.EntityDeclaration) string {
 // renderEntityEvents formerly emitted per entity: the record-lifecycle
 // subscription (on<Camel>Event, now onEntityEvent), the deleted-subscription
 // body (formerly inlined in every On<Camel>Deleted, now onEntityDeleted),
-// and the record extractor (extract<Camel>Record, now the generic
-// extractEntityRecord). Like register.go it carries no entity-specific text,
+// and the record extractor extractEntityRecord). Like register.go it
+// carries no entity-specific text,
 // so its bytes are identical for every project and additive generation
 // writes it only when absent.
 func renderEventHelpers() string {
@@ -239,8 +229,7 @@ func onEntityDeleted(app *framework.App, entity string, fn func(ctx context.Cont
 
 // extractEntityRecord unmarshals an event payload's "record" field for entity
 // into a *T, returning ok=false if the event is for a different entity or the
-// payload shape doesn't match. Shared body behind every generated
-// extract<Camel>Record wrapper.
+// payload shape doesn't match. Called by onEntityEvent.
 func extractEntityRecord[T any](ev framework.Event, entity string) (*T, bool) {
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["entity"] != entity {
@@ -304,7 +293,7 @@ func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 		names[struct_+suffix]++
 	}
 	for _, name := range []string{"New" + struct_ + "Repo", "On" + struct_ + "Created",
-		"On" + struct_ + "Updated", "On" + struct_ + "Deleted", "extract" + struct_ + "Record",
+		"On" + struct_ + "Updated", "On" + struct_ + "Deleted",
 		"register" + struct_} {
 		names[name]++
 	}

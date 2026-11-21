@@ -2,13 +2,16 @@ package testcmd
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 func RunTest(args []string) {
@@ -22,56 +25,61 @@ func RunTest(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		cli.Info("Run 'gofastr test --help' for the flags it takes")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
 	cmd := exec.Command("go", testArgs...)
-	cmd.Stdout = nil // We'll pipe and colorize
-	cmd.Stderr = os.Stderr
+	stdout, output := io.Pipe()
+	defer stdout.Close()
+	defer output.Close()
+	cmd.Stdout = output
+	stderr := &scrubWriter{out: os.Stderr}
+	cmd.Stderr = stderr
+	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GOFASTR_TEST=1")
-
-	// Capture stdout and colorize
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cli.Fail("Failed to pipe stdout: %v", err)
-		// Fallback: run without colorization
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			cli.Fail("Tests failed")
-			cli.OsExit(1)
-		}
-		cli.Success("All tests passed!")
-		return
-	}
 
 	if err := cmd.Start(); err != nil {
 		cli.Fail("Failed to start tests: %v", err)
 		cli.OsExit(1)
+		return
 	}
 
-	// Colorize test output
 	passed := 0
 	failed := 0
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		fmt.Println(colorizeTestLine(scanner.Text(), &passed, &failed))
-	}
+	scanDone := make(chan error, 1)
+	go func() {
+		defer stdout.Close()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			fmt.Println(colorizeTestLine(scanner.Text(), &passed, &failed))
+		}
+		if scanner.Err() != nil {
+			_ = cmd.Process.Kill()
+		}
+		scanDone <- scanner.Err()
+	}()
+	// exec owns both child pipes, so WaitDelay can close either after exit.
+	waitErr := cmd.Wait()
+	_ = output.Close()
+	scanErr := <-scanDone
+	stderrErr := stderr.flush()
 
-	if err := scanner.Err(); err != nil {
+	if scanErr != nil {
 		// Output stopped early, so the tally below counted only part of
 		// the run. Saying so beats printing a confident wrong number.
 		fmt.Println()
-		cli.Fail("test output truncated after %d passed / %d failed: %v", passed, failed, err)
+		cli.Fail("test output truncated after %d passed / %d failed: %v", passed, failed, scanErr)
 		cli.OsExit(1)
+		return
 	}
 
-	if err := cmd.Wait(); err != nil {
+	if waitErr != nil || stderrErr != nil {
 		fmt.Println()
 		cli.Fail("%d test(s) passed, %d test(s) failed", passed, failed)
 		cli.Info("Run 'gofastr test --run=TestName' to run a specific test")
 		cli.OsExit(1)
+		return
 	}
 
 	fmt.Println()
@@ -102,6 +110,39 @@ func colorizeTestLine(line string, passed, failed *int) string {
 	default:
 		return "  " + line
 	}
+}
+
+// scrubWriter writes each whole line through the terminal scrub, so
+// child output reaches out without raw control bytes.
+type scrubWriter struct {
+	out io.Writer
+	buf []byte
+}
+
+func (w *scrubWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		line := string(w.buf[:i])
+		w.buf = w.buf[i+1:]
+		if _, err := fmt.Fprintln(w.out, textsafe.ScrubTerminal(line)); err != nil {
+			return len(p), err
+		}
+	}
+	return len(p), nil
+}
+
+func (w *scrubWriter) flush() error {
+	if len(w.buf) == 0 {
+		return nil
+	}
+	remainder := textsafe.ScrubTerminal(string(w.buf))
+	w.buf = nil
+	_, err := io.WriteString(w.out, remainder)
+	return err
 }
 
 // goTestArgs maps gofastr test's arguments onto go test's. A flag takes

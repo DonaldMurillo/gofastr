@@ -2,11 +2,12 @@ package admin
 
 import (
 	"context"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/entity"

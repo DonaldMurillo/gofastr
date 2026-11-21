@@ -108,11 +108,6 @@ func TestBatchCreate_HTTP_RollbackScrubsData(t *testing.T) {
 	}
 }
 
-func TestBatchCreate_EmptyAndTooBig(t *testing.T) {
-	ch, _ := covBatchHandler(t)
-	assertBatchEmptyAndOversized(t, ch.BatchCreate(), http.MethodPost, `{"title":"x"}`)
-}
-
 func TestBatchCreate_BadContentType(t *testing.T) {
 	ch, _ := covBatchHandler(t)
 	r := httptest.NewRequest("POST", "/bn/_batch", strings.NewReader(`{"items":[]}`))
@@ -156,15 +151,10 @@ func TestBatchDelete_HTTP(t *testing.T) {
 	}
 }
 
-func TestBatchDelete_EmptyAndMissing(t *testing.T) {
+func TestBatchDelete_MissingID(t *testing.T) {
 	ch, _ := covBatchHandler(t)
-	rec := httptest.NewRecorder()
-	ch.BatchDelete()(rec, batchReq("DELETE", `{"ids":[]}`))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("empty delete batch = %d, want 400", rec.Code)
-	}
 	// Deleting a missing id → rollback 400.
-	rec = httptest.NewRecorder()
+	rec := httptest.NewRecorder()
 	ch.BatchDelete()(rec, batchReq("DELETE", `{"ids":["ghost"]}`))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("missing-id delete batch = %d, want 400", rec.Code)

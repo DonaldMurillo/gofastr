@@ -224,10 +224,7 @@ func (p *Plugin) toolRequests(_ context.Context, params map[string]any) (any, er
 	}
 	out := make([]map[string]any, len(sums))
 	for i, s := range sums {
-		out[i] = map[string]any{
-			"time": s.Time.UTC().Format(time.RFC3339Nano), "trace_id": s.TraceID, "route": s.Route, "path": s.Path,
-			"status": s.Status, "dur_us": s.Dur.Microseconds(), "error": s.Error, "failed_steps": s.FailedSteps,
-		}
+		out[i] = itel.RequestRow(s)
 	}
 	return map[string]any{"requests": out, "count": len(out)}, nil
 }
@@ -255,10 +252,7 @@ func (p *Plugin) toolIssues(_ context.Context, params map[string]any) (any, erro
 	}
 	out := make([]map[string]any, len(issues))
 	for i, is := range issues {
-		out[i] = map[string]any{
-			"id": is.ID, "route": is.Route, "status": is.Status, "error": is.Err, "example": is.Example, "count": is.Count,
-			"first": is.First.UTC().Format(time.RFC3339Nano), "last": is.Last.UTC().Format(time.RFC3339Nano), "last_trace_id": is.LastTraceID,
-		}
+		out[i] = itel.IssueRow(is)
 	}
 	firing := []string{}
 	for _, a := range p.Firing() {
@@ -376,7 +370,8 @@ func (p *Plugin) toolRequest(_ context.Context, params map[string]any) (any, err
 	if err != nil {
 		return nil, errors.New("telemetry: the trace line could not be read")
 	}
-	logs, err := store.LogsForTrace(id, tr.Time.Add(-tr.Dur-time.Second), tr.Time.Add(time.Second))
+	from, to := tr.LogWindow()
+	logs, err := store.LogsForTrace(id, from, to)
 	if err != nil {
 		return nil, errors.New("telemetry: the log files could not be read")
 	}

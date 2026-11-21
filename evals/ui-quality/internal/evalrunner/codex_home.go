@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 )
 
 func resolveCodexHome(source string) (string, error) {
@@ -35,7 +37,7 @@ func resolveCodexHome(source string) (string, error) {
 // The child gets only the selected authenticated home, then starts a brand-new
 // ephemeral exec session; no parent task is resumed or named.
 func codexEnvironment(home string) []string {
-	env := filteredAgentEnvironment("codex")
+	env := childenv.AgentEnvironment(nil, nil)
 	env = append(env, "CODEX_HOME="+home)
 	sort.Strings(env)
 	return env

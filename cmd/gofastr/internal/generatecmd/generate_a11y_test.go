@@ -14,7 +14,7 @@ import (
 func TestGenerateScreenDispatches(t *testing.T) {
 	dir := clitest.ScaffoldEmptyDir(t)
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { RunGenerate([]string{"screen", "contact"}) })
+		clitest.CovT_capOutput(t, func() { RunGenerate([]string{"screen", "contact"}) })
 	})
 	if code != -1 {
 		t.Fatalf("`generate screen contact` exited %d", code)
@@ -30,17 +30,20 @@ func TestGenerateScreenFromA11yErrors(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("- button \"Save"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"screen", "x", "--from-a11y=" + bad},
-		{"screen", "x", "--from-a11y=" + filepath.Join(dir, "missing.yml")},
-		{"screen", "x", "--from-a11y"},
-		{"entity", "x", "--from-a11y=" + bad},
+	for _, tc := range []struct {
+		args []string
+		exit int
+	}{
+		{[]string{"screen", "x", "--from-a11y=" + bad}, 1},
+		{[]string{"screen", "x", "--from-a11y=" + filepath.Join(dir, "missing.yml")}, 1},
+		{[]string{"screen", "x", "--from-a11y"}, 2},
+		{[]string{"entity", "x", "--from-a11y=" + bad}, 2},
 	} {
 		code := clitest.CovT_capExit(t, func() {
-			clitest.CovT_capStdout(t, func() { RunGenerate(args) })
+			clitest.CovT_capOutput(t, func() { RunGenerate(tc.args) })
 		})
-		if code != 1 {
-			t.Errorf("%v: exit %d, want 1", args, code)
+		if code != tc.exit {
+			t.Errorf("%v: exit %d, want %d", tc.args, code, tc.exit)
 		}
 	}
 	if clitest.FileExists(dir, "screen_x.go") {

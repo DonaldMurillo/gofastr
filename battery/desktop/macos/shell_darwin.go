@@ -236,7 +236,7 @@ type darwinShell struct {
 	menuNames          map[objc.ID]menuName
 	onWindowClosed     func(id string)
 	allowNavigation    func(url string) bool
-	onWindowFrame      func(id string, f desktop.Frame)
+	onWindowFrame      func(desktop.Window, desktop.Frame)
 	onWindowFocus      func(id string)
 	onWindowBlur       func(id string)
 	onAppearance       func(desktop.Appearance)
@@ -330,7 +330,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.textCtx = textCtx
 	s.onWindowClosed = cfg.OnWindowClosed
 	s.allowNavigation = cfg.AllowNavigation
-	s.onWindowFrame = cfg.OnWindowFrame
+	s.onWindowFrame = cfg.WindowFrameReporter()
 	s.onWindowFocus = cfg.OnWindowFocus
 	s.onWindowBlur = cfg.OnWindowBlur
 	s.onAppearance = cfg.OnAppearance
@@ -392,13 +392,6 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	if framePlaced {
 		applyRememberedFrame(window, cfg.Frame)
 	}
-	objc.Send(window, objc.Sel("makeKeyAndOrderFront:"), 0)
-	if !framePlaced && (cfg.Style.X == nil || cfg.Style.Y == nil) {
-		objc.Send(window, objc.Sel("center"))
-	}
-	applyTrafficLightInset(window, cfg.Style.TrafficLightInset)
-	objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
-
 	main := &darwinWindow{shell: s, id: desktop.MainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title, chrome: mainChrome}
 	s.mu.Lock()
 	s.window = window
@@ -408,6 +401,30 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.windowsByID[main.id] = main
 	s.windowsByUCC[ucc] = main
 	s.mu.Unlock()
+
+	order, activate := windowLaunchOrder(cfg.Style)
+	front := func() {
+		if win, _ := main.ids(); win == 0 {
+			return
+		}
+		objc.Send(window, objc.Sel(order), 0)
+		if !framePlaced && (cfg.Style.X == nil || cfg.Style.Y == nil) {
+			objc.Send(window, objc.Sel("center"))
+		}
+		applyTrafficLightInset(window, cfg.Style.TrafficLightInset)
+		if activate {
+			objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
+		}
+	}
+	if cfg.Style.Panel {
+		go func() {
+			if err := s.onMain(front); err != nil {
+				s.logger.Warn("desktop: showing the main panel failed", "error", err)
+			}
+		}()
+	} else {
+		front()
+	}
 
 	if cfg.Tray != nil {
 		s.installTray(cfg.Tray, trayRows)
@@ -449,6 +466,13 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	return nil
 }
 
+func windowLaunchOrder(style desktop.WindowStyle) (selector string, activate bool) {
+	if style.Panel {
+		return "orderFront:", false
+	}
+	return "makeKeyAndOrderFront:", true
+}
+
 func killPage(wv objc.ID) {
 	if wv == 0 {
 		return
@@ -475,12 +499,6 @@ func (s *darwinShell) stopLoop() {
 }
 
 func (s *darwinShell) Quit() { s.stopLoop() }
-
-func (s *darwinShell) webViewID() objc.ID {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.webView
-}
 
 func (s *darwinShell) windowID() objc.ID {
 	s.mu.Lock()
@@ -832,6 +850,15 @@ func (w *darwinWindow) Title() string {
 }
 
 func (w *darwinWindow) SetTitle(title string) error {
+	return w.withLiveWindow(func(win objc.ID) {
+		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		w.mu.Lock()
+		w.title = title
+		w.mu.Unlock()
+	})
+}
+
+func (w *darwinWindow) withLiveWindow(fn func(objc.ID)) error {
 	if win, _ := w.ids(); win == 0 {
 		return errWindowClosed()
 	}
@@ -842,10 +869,7 @@ func (w *darwinWindow) SetTitle(title string) error {
 			closed = true
 			return
 		}
-		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
-		w.mu.Lock()
-		w.title = title
-		w.mu.Unlock()
+		fn(win)
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
@@ -857,27 +881,10 @@ func (w *darwinWindow) SetTitle(title string) error {
 }
 
 func (w *darwinWindow) Focus() error {
-	if win, _ := w.ids(); win == 0 {
-		return errWindowClosed()
-	}
-	s := w.shell
-	closed := false
-	err := s.onMain(func() {
-		win, _ := w.ids()
-		if win == 0 {
-			closed = true
-			return
-		}
+	return w.withLiveWindow(func(win objc.ID) {
 		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
-		objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
+		objc.Send(w.shell.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 	})
-	if err != nil {
-		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if closed {
-		return errWindowClosed()
-	}
-	return nil
 }
 
 func (w *darwinWindow) Native() uintptr {
@@ -886,17 +893,9 @@ func (w *darwinWindow) Native() uintptr {
 }
 
 func (w *darwinWindow) Frame() (desktop.Frame, error) {
-	if win, _ := w.ids(); win == 0 {
-		return desktop.Frame{}, errWindowClosed()
-	}
 	var f desktop.Frame
-	var ok bool
-	err := w.shell.onMain(func() { f, ok = w.readFrameOnMain() })
-	if err != nil {
-		return desktop.Frame{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if !ok {
-		return desktop.Frame{}, errWindowClosed()
+	if err := w.withLiveWindow(func(win objc.ID) { f = readFrameOnMain(win) }); err != nil {
+		return desktop.Frame{}, err
 	}
 	return f, nil
 }
@@ -905,34 +904,14 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
-	if win, _ := w.ids(); win == 0 {
-		return errWindowClosed()
-	}
-	closed := false
-	err := w.shell.onMain(func() {
-		win, _ := w.ids()
-		if win == 0 {
-			closed = true
-			return
-		}
+	return w.withLiveWindow(func(win objc.ID) {
 		objc.SendRect(win, objc.Sel("setFrame:display:"), frameToRect(f, readScreens()), 1)
 		w.shell.reportWindowFrame(w)
 	})
-	if err != nil {
-		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if closed {
-		return errWindowClosed()
-	}
-	return nil
 }
 
-func (w *darwinWindow) readFrameOnMain() (desktop.Frame, bool) {
-	win, _ := w.ids()
-	if win == 0 {
-		return desktop.Frame{}, false
-	}
-	return rectToFrame(objc.SendRectRet(win, objc.Sel("frame")), readScreens()), true
+func readFrameOnMain(win objc.ID) desktop.Frame {
+	return rectToFrame(objc.SendRectRet(win, objc.Sel("frame")), readScreens())
 }
 
 func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
@@ -942,8 +921,9 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 	if cb == nil {
 		return
 	}
-	if f, ok := w.readFrameOnMain(); ok {
-		deliverOnGoroutine(func() { cb(w.id, f) })
+	if win, _ := w.ids(); win != 0 {
+		f := readFrameOnMain(win)
+		deliverOnGoroutine(func() { cb(w, f) })
 	}
 }
 
@@ -1025,10 +1005,9 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		applyWindowStyle(window, webView, spec.Style, height, nativeStylePlacement())
 		chrome := applyWindowMaterial(window, webView, spec.Style, spec.SidebarWidth, s.reduceTransparency.Load(), s.logger)
 		applyRememberedFrame(window, spec.Frame)
-		if spec.Style.Panel {
-			objc.Send(window, objc.Sel("orderFront:"), 0)
-		} else {
-			objc.Send(window, objc.Sel("makeKeyAndOrderFront:"), 0)
+		order, activate := windowLaunchOrder(spec.Style)
+		objc.Send(window, objc.Sel(order), 0)
+		if activate {
 			objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 		}
 		applyTrafficLightInset(window, spec.Style.TrafficLightInset)

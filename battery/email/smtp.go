@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"maps"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 const defaultSMTPDialTimeout = 10 * time.Second
@@ -186,6 +190,43 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) (sendErr error) {
 	return nil
 }
 
+func checkCustomHeaders(headers map[string]string) error {
+	for k, v := range headers {
+		if err := assertNoHeaderInjection(k, k); err != nil {
+			return err
+		}
+		if err := assertNoHeaderInjection(k, v); err != nil {
+			return err
+		}
+	}
+	seen := make(map[string]string, len(headers))
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		if !isFieldName(k) {
+			return fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
+		}
+		folded := asciicase.Lower(k)
+		if prev, dup := seen[folded]; dup {
+			return fmt.Errorf("%w: Headers keys %q and %q name one field", ErrSendFailed, prev, k)
+		}
+		seen[folded] = k
+	}
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Resent-Bcc", "Subject"} {
+		if hasHeader(headers, name) {
+			return fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
+		}
+	}
+	return nil
+}
+
+func writeCustomHeaders(buf *strings.Builder, headers map[string]string) error {
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		if err := writeHeader(buf, scrubHeaderValue(k), scrubHeaderValue(headers[k])); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 	for i := range len(raw) {
 		if b := raw[i]; b < 0x20 || b == 0x7f {
@@ -208,6 +249,16 @@ func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// ValidateHeaders applies the same custom header checks as [SMTPSender.Send].
+// It returns an error wrapping [ErrSendFailed] for unsafe names or values,
+// duplicate or reserved names, and lines that cannot be folded safely.
+func ValidateHeaders(headers map[string]string) error {
+	if err := checkCustomHeaders(headers); err != nil {
+		return err
+	}
+	return writeCustomHeaders(nil, headers)
 }
 
 // ValidateAddress reports whether addr is one mailbox [SMTPSender] sends

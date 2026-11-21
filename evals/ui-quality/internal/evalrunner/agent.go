@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 	"io"
 	"os"
 	"os/exec"
@@ -134,8 +135,7 @@ func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir s
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, cfg.Program, args...)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(cfg.Program, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	cmd.Stderr = stderr
@@ -152,11 +152,11 @@ func runCapturedAgent(ctx context.Context, cfg AgentConfig, args []string, dir s
 		// descendant holds stdout open.
 		compact := &ompCompactWriter{dst: stdout}
 		cmd.Stdout = compact
-		runErr = runOwnedCommand(cmd)
+		runErr = proctree.Run(runCtx, cmd)
 		stdoutErr = compact.Flush()
 	} else {
 		cmd.Stdout = stdout
-		runErr = runOwnedCommand(cmd)
+		runErr = proctree.Run(runCtx, cmd)
 	}
 	closeStdoutErr := stdout.Close()
 	if stdoutErr == nil {
@@ -372,32 +372,9 @@ func agentEnvironment(cfg AgentConfig, codexHome string) []string {
 	// Machine-specific TLS interception (corporate/AV root CAs) is the
 	// host's concern: export NODE_EXTRA_CA_CERTS in the runner's
 	// environment and it passes through untouched.
-	env := filteredAgentEnvironment(cfg.Backend)
+	env := childenv.AgentEnvironment(nil, func(name string) bool { return backendCredentialAllowed(cfg.Backend, name) })
 	sort.Strings(env)
 	return env
-}
-
-func filteredAgentEnvironment(backend string) []string {
-	env := make([]string, 0, len(os.Environ()))
-	for _, entry := range os.Environ() {
-		name, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		upper := strings.ToUpper(name)
-		if strings.HasPrefix(upper, "CODEX_") || (looksCredentialBearing(upper) && !backendCredentialAllowed(backend, upper)) {
-			continue
-		}
-		env = append(env, entry)
-	}
-	return env
-}
-
-// looksCredentialBearing delegates to the shared list. The rule used to
-// be hand-copied here and in backend-adoption's runner, and the two had
-// already drifted apart.
-func looksCredentialBearing(name string) bool {
-	return childenv.LooksCredentialBearing(name)
 }
 
 func backendCredentialAllowed(backend, name string) bool {

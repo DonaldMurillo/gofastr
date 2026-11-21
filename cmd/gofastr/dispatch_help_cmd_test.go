@@ -36,10 +36,10 @@ func TestHelpCommand(t *testing.T) {
 
 func TestHelpUnknownCommandIsUnknown(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { dispatch([]string{"help", "devv"}) })
 	})
-	if code != 1 || !strings.Contains(out, "Unknown command: devv") || !strings.Contains(out, "gofastr dev?") {
+	if code != 2 || !strings.Contains(out, "Unknown command: devv") || !strings.Contains(out, "gofastr dev?") {
 		t.Fatalf("help devv: exit %d, want the unknown-command answer with a suggestion:\n%s", code, out)
 	}
 }

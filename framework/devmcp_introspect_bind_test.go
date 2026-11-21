@@ -5,23 +5,16 @@ import (
 	"testing"
 )
 
-// devIntrospectionTools names the dev-implied introspection surface in a's
-// registry: the app_* tools (routes, goroutine stacks, config) and
-// contracts_verify (source-tree lint output).
 func devIntrospectionTools(a *App) []string {
 	var out []string
 	for _, tl := range a.MCP.ListTools() {
-		if strings.HasPrefix(tl.Name, "app_") || tl.Name == "contracts_verify" {
+		if strings.HasPrefix(tl.Name, "app_") || strings.HasPrefix(tl.Name, "contracts_") {
 			out = append(out, tl.Name)
 		}
 	}
 	return out
 }
 
-// The bind guard withdrew the dev control tools and the WithDevImplied set
-// on a non-loopback bind, but the introspection tools dev turns on stayed
-// live to any TCP client that sets Host: localhost. They go the way the
-// log read tools go, unless GOFASTR_DEV_MCP_EXPOSE accepts the risk.
 func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")
 	t.Setenv("GOFASTR_ENV", "development")
@@ -29,7 +22,6 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 	devApp := func(t *testing.T, guardFirst bool, addr string) *App {
 		t.Helper()
 		a := NewApp()
-		a.mcpIntrospection, a.mcpIntrospectionDevImplied = true, true
 		if guardFirst {
 			a.guardDevMCPBind(addr, "tcp")
 		}
@@ -41,6 +33,7 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 		}
 		return a
 	}
+	introspection := []string{"app_routes", "contracts_list", "contracts_explain", "contracts_capabilities"}
 	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
 	for _, guardFirst := range []bool{true, false} {
 		if got := devIntrospectionTools(devApp(t, guardFirst, "0.0.0.0:8080")); len(got) != 0 {
@@ -49,12 +42,12 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 	}
 
 	loop := devIntrospectionTools(devApp(t, false, "localhost:8080"))
-	if !hasAll(loop, "app_routes", "app_config", "contracts_verify") {
+	if !hasAll(loop, introspection...) || !hasAll(loop, "app_config", "contracts_verify", "contracts_fix") {
 		t.Errorf("a loopback dev bind must keep its introspection tools, got %v", loop)
 	}
 
 	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "1")
-	if got := devIntrospectionTools(devApp(t, false, "0.0.0.0:8080")); !hasAll(got, "app_routes", "contracts_verify") {
+	if got := devIntrospectionTools(devApp(t, false, "0.0.0.0:8080")); !hasAll(got, introspection...) || !hasAll(got, "contracts_verify") {
 		t.Errorf("GOFASTR_DEV_MCP_EXPOSE=1 must keep the introspection tools, got %v", got)
 	}
 	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
@@ -62,11 +55,11 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 	// An explicit WithMCPIntrospection is a production choice, not dev's.
 	t.Setenv("GOFASTR_DEV", "0")
 	explicit := NewApp(WithMCPIntrospection())
-	explicit.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if err := explicit.InitPlugins(); err != nil {
 		t.Fatal(err)
 	}
-	if got := devIntrospectionTools(explicit); !hasAll(got, "app_routes") {
+	explicit.guardDevMCPBind("0.0.0.0:8080", "tcp")
+	if got := devIntrospectionTools(explicit); !hasAll(got, introspection...) {
 		t.Errorf("an explicit WithMCPIntrospection was withdrawn by the dev bind guard, got %v", got)
 	}
 }

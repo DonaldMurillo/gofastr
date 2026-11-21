@@ -10,7 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-const dataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
+// DataDirEnv names the absolute base-directory override for DataDir.
+const DataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
 
 // DataDir returns the per-app data directory under os.UserConfigDir, creating it 0700.
 func DataDir(id string) (string, error) {
@@ -45,9 +46,9 @@ func dataDirPath(id string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("desktop: resolve user config dir: %w", err)
 	}
-	if v := os.Getenv(dataDirEnv); v != "" {
+	if v := os.Getenv(DataDirEnv); v != "" {
 		if !filepath.IsAbs(v) {
-			return "", fmt.Errorf("desktop: %s must be absolute, got %q", dataDirEnv, v)
+			return "", fmt.Errorf("desktop: %s must be absolute, got %q", DataDirEnv, v)
 		}
 		base = v
 	}

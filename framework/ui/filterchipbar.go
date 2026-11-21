@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -25,16 +26,16 @@ type FilterChip struct {
 
 // FilterChipBarConfig configures the bar.
 type FilterChipBarConfig struct {
-	// Filters are the active filters; empty renders an empty toolbar.
+	// Filters are the active filters; empty renders an empty group.
 	Filters []FilterChip
 	// ClearAllPath draws a "Clear all" link POSTing here when a filter
 	// is active.
 	ClearAllPath  string
 	ClearAllLabel string
-	// Label names the toolbar. Default "Active filters".
+	// Label names the group. Default "Active filters".
 	Label string
-	// RPCSignal is the signal every dismiss and Clear all targets;
-	// default "filter-bar".
+	// RPCSignal is the target for dismiss and Clear all. It defaults to
+	// SignalName, or "filter-bar" if that is empty.
 	RPCSignal string
 	// SignalName makes the bar itself the html-mode signal region.
 	SignalName string
@@ -47,8 +48,8 @@ type FilterChipBarConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// FilterChipBar renders a role=toolbar of removable filter chips (ui.Tag
-// with Dismiss) and an optional Clear all.
+// FilterChipBar renders a labelled group of removable filter chips and
+// an optional Clear all action.
 func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 	if cfg.ClearAllPath != "" {
 		checkRPCPath("FilterChipBar", "ClearAllPath", cfg.ClearAllPath)
@@ -76,7 +77,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		wrapAttrs = html.Attrs{}
 	}
 	wrapAttrs["class"] = cls
-	wrapAttrs["role"] = "toolbar"
+	wrapAttrs["role"] = "group"
 	wrapAttrs["aria-label"] = label
 	if cfg.ID != "" {
 		wrapAttrs["id"] = cfg.ID
@@ -86,6 +87,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		wrapAttrs["data-cui-signal-mode"] = "html"
 	}
 
+	signal := cmp.Or(cfg.RPCSignal, cfg.SignalName, "filter-bar")
 	items := make([]render.HTML, 0, len(cfg.Filters)+1)
 	for _, f := range cfg.Filters {
 		if f.Label == "" {
@@ -93,10 +95,6 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		}
 		if f.DismissPath == "" {
 			panic("ui: FilterChip requires DismissPath")
-		}
-		signal := cfg.RPCSignal
-		if signal == "" {
-			signal = "filter-bar"
 		}
 		items = append(items, headless.Own(Tag(TagConfig{
 			Ctx:           ctx,
@@ -111,10 +109,6 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 	}
 
 	if cfg.ClearAllPath != "" && len(cfg.Filters) > 0 {
-		signal := cfg.RPCSignal
-		if signal == "" {
-			signal = "filter-bar"
-		}
 		items = append(items, render.Tag("a", map[string]string{
 			"href":                cfg.ClearAllPath,
 			"class":               "fui-filter-bar__clear",

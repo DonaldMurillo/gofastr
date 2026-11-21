@@ -1,6 +1,7 @@
 package packcmd
 
 import (
+	"go/parser"
 	"reflect"
 	"strings"
 	"testing"
@@ -111,5 +112,26 @@ func TestPackFormKeepsMultiWordFields(t *testing.T) {
 		if rendered[f.Name] != f.Content {
 			t.Errorf("%s differs after generate, pack, generate", f.Name)
 		}
+	}
+}
+
+func TestEntityFormControlFieldIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name, control, want string
+	}{
+		{"scoped", `ui.Select(ui.SelectConfig{Name: "mainSupplier", ID: "field-entity_form_home_0_1-main_supplier"})`, "main_supplier"},
+		{"scoped For before Name", `ui.FormField(ui.FormFieldConfig{For: "field-entity_form_home_0-launch-date", Input: func() { ui.Control(ui.ControlConfig{Name: "launch-date"}) }})`, "launch-date"},
+		{"legacy", `ui.Select(ui.SelectConfig{Name: "entityFormHome0-launchDate", ID: "field-entity_form_home_0-launch_date"})`, "entity_form_home_0-launch_date"},
+		{"wire fallback", `ui.Select(ui.SelectConfig{Name: "mainSupplier"})`, "mainSupplier"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			control, err := parser.ParseExpr(tc.control)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := entityFormControlField(control); got != tc.want {
+				t.Errorf("field name = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

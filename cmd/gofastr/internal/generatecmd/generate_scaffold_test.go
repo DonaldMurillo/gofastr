@@ -16,7 +16,7 @@ func TestScaffoldEntityNoLongerTombstone(t *testing.T) {
 	clitest.WriteAddGoMod(t, dir, "example.com/scaffold")
 	var out string
 	code := clitest.CovT_capExit(t, func() {
-		out = clitest.CovT_capStdout(t, func() {
+		out = clitest.CovT_capOutput(t, func() {
 			RunGenerate([]string{"entity", "posts"})
 		})
 	})
@@ -38,7 +38,7 @@ func TestScaffoldEntityMissingNameUsage(t *testing.T) {
 	// parseScaffoldArgs prints usage and returns ok=false (no osExit), so the
 	// guidance text is capturable.
 	var ok bool
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		_, _, ok = appgen.ParseScaffoldArgs([]string{}, "entity")
 	})
 	if ok {
@@ -49,18 +49,18 @@ func TestScaffoldEntityMissingNameUsage(t *testing.T) {
 	}
 	// The dispatch path must exit non-zero on the same input.
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() {
+		clitest.CovT_capOutput(t, func() {
 			RunGenerate([]string{"entity"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for `generate entity` with no name, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for `generate entity` with no name, got %d", code)
 	}
 }
 
 func TestScaffoldEntityExtraArgsUsage(t *testing.T) {
 	var ok bool
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		_, _, ok = appgen.ParseScaffoldArgs([]string{"a", "b"}, "entity")
 	})
 	if ok {
@@ -70,11 +70,11 @@ func TestScaffoldEntityExtraArgsUsage(t *testing.T) {
 		t.Errorf("expected 'exactly one name' guidance:\n%s", out)
 	}
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() {
+		clitest.CovT_capOutput(t, func() {
 			RunGenerate([]string{"entity", "a", "b"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for `generate entity a b` (extra arg), got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for `generate entity a b` (extra arg), got %d", code)
 	}
 }

@@ -40,8 +40,11 @@ type Config struct {
 	// field.
 	TrustForwardedFor bool
 
-	// Console controls an optional human-readable colorized sink on stderr,
-	// intended for local development.
+	// and NO_COLOR is unset or empty, so Config{} gives a local dev a
+	// to force attachment regardless of TTY or NO_COLOR, or ConsoleOff
+	// to skip automatic attachment. The attached sink uses the same TTY
+	// and NO_COLOR checks for color in both modes. An explicit ConsoleSink
+	// in Sinks can set its own writer and color.
 	Console ConsoleMode
 
 	// EnableMCP installs a RingSink + MCP tools (log_recent, log_filter,
@@ -284,13 +287,15 @@ func newFanoutHandler(sinks []Sink, opts *slog.HandlerOptions) *fanoutHandler {
 	return &fanoutHandler{sinks: sinks, opts: opts, metrics: &fanoutMetrics{}}
 }
 
-func (h *fanoutHandler) shouldEmitWriteFailure() bool {
+// allowWarn reports whether a fresh stderr warning may be emitted: true
+// at most once per interval. CAS-based so concurrent warnings don't race past.
+func allowWarn(last *atomic.Int64, interval time.Duration) bool {
 	now := time.Now().UnixNano()
-	last := h.metrics.lastWriteWarnAt.Load()
-	if last != 0 && time.Duration(now-last) < stderrWarnInterval {
+	prev := last.Load()
+	if prev != 0 && time.Duration(now-prev) < interval {
 		return false
 	}
-	return h.metrics.lastWriteWarnAt.CompareAndSwap(last, now)
+	return last.CompareAndSwap(prev, now)
 }
 
 func (h *fanoutHandler) Enabled(_ context.Context, l slog.Level) bool {
@@ -339,7 +344,7 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 				h.metrics.closedDrops.Add(1)
 			} else {
 				h.metrics.failedSinks.Add(1)
-				if h.shouldEmitWriteFailure() {
+				if allowWarn(&h.metrics.lastWriteWarnAt, stderrWarnInterval) {
 					preview := entry
 					if len(preview) > 256 {
 						preview = preview[:256]
@@ -399,6 +404,8 @@ func (h *fanoutHandler) close() error {
 	return errors.Join(errs...)
 }
 
+// stateDir returns the per-app state directory under XDG_STATE_HOME
+// when it is non-empty, or under ~/.local/state otherwise.
 func stateDir(appName string) (string, error) {
 	if appName == "" {
 		return "", fmt.Errorf("log: stateDir requires a non-empty app name")

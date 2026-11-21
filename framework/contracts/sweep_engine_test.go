@@ -1,6 +1,7 @@
 package contracts
 
 import (
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -236,6 +237,86 @@ func TestSweepEngineNarrowedRunKeepsOtherSuppressionsQuiet(t *testing.T) {
 	for _, d := range report.Diagnostics {
 		if d.RuleID == RuleSuppressionStale {
 			t.Fatalf("a suppression for a rule that did not run was reported stale: %+v", d)
+		}
+	}
+}
+
+var capabilitySplitOnce sync.Once
+
+func TestSweepEngineCapabilityFiltersRulesAndWaivers(t *testing.T) {
+	const name = "test-capability-split"
+	capabilitySplitOnce.Do(func() {
+		Register(&Analyzer{
+			Name:  name,
+			Rules: []string{RuleHTMLConcat, RuleUnscopedPII},
+			Run: func(*Pass) ([]Diagnostic, error) {
+				return []Diagnostic{
+					{RuleID: RuleHTMLConcat, File: "a.go", Line: 2},
+					{RuleID: RuleUnscopedPII, File: "a.go", Line: 3},
+					{RuleID: RuleUnscopedPII, File: "a.go", Line: 4},
+				}, nil
+			},
+		})
+	})
+	dir := t.TempDir()
+	writeTemp(t, dir, "a.go", `package a
+var a = 1
+var b = 2
+var c = 3 //gofastr:allow(GOFASTR1901) test waiver
+//gofastr:allow(GOFASTR1901) stale in a permissions run
+//gofastr:allow(GOFASTR1403)
+`)
+	writeTemp(t, dir, "b.go", `package a
+//gofastr:allow(GOFASTR0002) keep the next waiver for the permissions run
+//gofastr:allow(GOFASTR1901) finding went away
+var d = 4
+`)
+	pass := mustPass(t, dir, DefaultConfig())
+	for _, c := range []struct {
+		cap        Capability
+		rule       string
+		suppressed int
+		stale      bool
+	}{
+		{CapSecurity, RuleHTMLConcat, 0, false},
+		{CapPermissions, RuleUnscopedPII, 2, true},
+	} {
+		t.Run(string(c.cap), func(t *testing.T) {
+			r, err := Run(pass, RunOptions{Analyzers: []string{name}, Capabilities: []Capability{c.cap}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Suppressed != c.suppressed {
+				t.Errorf("suppressed = %d, want %d", r.Suppressed, c.suppressed)
+			}
+			got := map[string]int{}
+			for _, d := range r.Diagnostics {
+				got[d.RuleID]++
+			}
+			want := map[string]int{c.rule: 1, RuleSuppressionNoReason: 1}
+			if c.stale {
+				want[RuleSuppressionStale] = 1
+			}
+			if !maps.Equal(got, want) {
+				t.Errorf("findings = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestSweepEngineCountsParseFailuresFoundBySuppressionCollection(t *testing.T) {
+	registerTripAnalyzer()
+	dir := t.TempDir()
+	writeTemp(t, dir, "broken.go", "package a\nfunc broken( {\n")
+	p := mustPass(t, dir, DefaultConfig())
+	for range 2 {
+		r, err := Run(p, RunOptions{Analyzers: []string{"test-trip"}})
+		if err != nil {
+			t.Errorf("parse failure surfaced as a discovery error: %v", err)
+			continue
+		}
+		if r.Unparsed != 1 || r.Passed() {
+			t.Errorf("unparsed = %d, passed = %v; want 1 and false", r.Unparsed, r.Passed())
 		}
 	}
 }

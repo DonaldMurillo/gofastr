@@ -50,7 +50,7 @@ func main() {
 	flag.BoolVar(&cfg.keep, "keep", false, "keep each cell's workspace after it is graded")
 	flag.Float64Var(&cfg.cellBudget, "cell-budget", 2, "most one cell may spend, in USD")
 	budget := flag.Float64("budget", 10, "stop starting cells once the run has spent this much, in USD; cells already running finish, so a run can pass it by -concurrency times -cell-budget")
-	suite := flag.String("suite", suiteTrap, "which tasks to run: trap, replay or all")
+	suite := flag.String("suite", suiteTrap, "which tasks to run: trap, replay, guide or all")
 	runs := flag.Int("runs", 1, "trials per task and condition")
 	concurrency := flag.Int("concurrency", 3, "cells running at once")
 	flag.Var(&tasksFilter, "task", "run only this task (repeatable)")

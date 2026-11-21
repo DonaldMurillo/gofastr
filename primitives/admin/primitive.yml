@@ -19,6 +19,7 @@ invariants:
     enforced_by:
       - test: battery/admin.TestReplayOfAJobThatIsNotFailedDoesNothing
       - test: battery/admin.TestReplayAllAuditsOnlyWhatItQueued
+      - test: battery/admin.TestReplayAllRefusesWhenNothingWasQueued
       - test: battery/admin.TestRefusedModuleLeverIsNotAuditedAsDone
       - test: battery/queue.TestReplayJobReportsWhetherItQueued
       - test: framework.TestRevokeGrantsOfAnUnheldGrantErrors
@@ -26,13 +27,21 @@ invariants:
     rule: A single replay makes one call to the queue and never reads the job list, and a queue without ReplayReporter replays and audits as a plain Replay does.
     enforced_by:
       - test: battery/admin.TestSingleReplayNeverScansTheFailedList
-  - id: init-refuses-what-it-cannot-draw
-    rule: Init errors, naming what is missing, on an app with no UI host, an exposed entity without Config.UI, an app page path the admin owns, and a Link whose Href is not a same-origin path.
+  - id: dropped-filter-warns
+    rule: The Audit and Jobs pages warn when a decoded filter value cannot be used, including invalid UTF-8 in an Audit actor and an unknown status in Jobs.
     enforced_by:
-      - test: battery/admin.TestInitNeedsAUIHost
-      - test: battery/admin.TestEntitiesNeedTheUI
-      - test: battery/admin.TestPageRefusesTheAdminsOwnPaths
-      - test: battery/admin.TestLinksMustBeSameOrigin
+      - test: battery/admin.TestAuditFilterIgnoresBadValues
+      - test: battery/admin.TestAuditFilterIgnoresInvalidActorUTF8
+      - test: battery/admin.TestUnknownFilterValueWarns
+  - id: audit-ops-cover-admin-writes
+    rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
+    enforced_by:
+      - test: battery/admin.TestAuditOpsCoverWhatTheAdminWrites
+  - id: wildcard-change-needs-decider-allow
+    rule: Under a configured Decider, every RBAC change that moves the global wildcard (assigning or removing a role that grants "*", and granting or revoking "*" on a role through _grant or a grid save) goes through assignmentDeciderRefuses and needs DecisionAllow for "*"; an abstention or deny refuses it before anything is written.
+    enforced_by:
+      - test: battery/admin.TestWildcardRoleChangesRequireDeciderAllow
+      - test: battery/admin.TestWildcardGrantRequiresDeciderAllow
   - id: embed-reserves-the-mounted-prefix
     rule: ReservedEmbedPrefixes reports the prefix the battery mounted, Config.PathPrefix included, so no embed grant reaches a relocated back office.
     enforced_by:
@@ -42,10 +51,26 @@ invariants:
     enforced_by:
       - test: battery/admin.TestBulkQueuedRunsOnCRUDOffEntity
       - test: battery/admin.TestBulkQueuedRunsOnAppOnlyEntity
-  - id: audit-ops-cover-admin-writes
-    rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
+  - id: init-refuses-what-it-cannot-draw
+    rule: Init errors, naming what is missing, on an app with no UI host, an exposed entity without Config.UI, an app page path the admin owns, and a Link whose Href is not a same-origin path.
     enforced_by:
-      - test: battery/admin.TestAuditOpsCoverWhatTheAdminWrites
+      - test: battery/admin.TestInitNeedsAUIHost
+      - test: battery/admin.TestEntitiesNeedTheUI
+      - test: battery/admin.TestPageRefusesTheAdminsOwnPaths
+      - test: battery/admin.TestLinksMustBeSameOrigin
+  - id: undecodable-filter-warns
+    rule: The Audit, Jobs and Search pages warn that a filter was not applied when a narrowing query pair cannot be decoded, instead of silently listing wider.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+  - id: only-narrowing-pairs-warn
+    rule: listfilter.DroppedNarrowing reports a dropped pair whose key does not decode or carries a ';', or whose key is one of the screen's narrowing params, and ignores an undecodable pair that narrows nothing, such as limit.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+  - id: every-narrowing-param-is-named
+    rule: Each screen passes listfilter.DroppedNarrowing every param it narrows by - the Audit page actor, entity, op, from and to, the Jobs page status, the Search page q.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+    judge: Does this change make an admin screen narrow by a new query param without adding it to the screen's listfilter.DroppedNarrowing call?
 decisions:
   - id: new-link-asks-can-create-entity
     date: 2026-11-16

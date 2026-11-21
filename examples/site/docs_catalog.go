@@ -193,7 +193,7 @@ var docIntents = []docIntent{
 			{"web-bot-auth", "Web Bot Auth", "Publish your signing JWKS, and (experimental) verify RFC 9421 signatures on inbound agent traffic against draft-meunier-webbotauth-httpsig-protocol-02."},
 			{"generative-ui", "Generative UI", "The position: models compose the design system, never emit markup or CSS; what that means per surface."},
 			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
-			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
+			{"audit-deps", "Audit deps", "Find candidate global registration calls in a source tree."},
 			{"app-spec", "App specs", "Reusable bundles of entities + screens an agent can apply."},
 		},
 	},

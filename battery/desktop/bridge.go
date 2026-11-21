@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 const (
@@ -26,7 +27,9 @@ const (
 	bridgeScriptFn = bridgePrefix + "/bridge.js"
 )
 
-const maxCallBody = 1 << 20
+// maxCallBody caps a bridge call body at the repo's
+// bodylimit.MaxJSONBodyBytes (the unboundedbody posture).
+const maxCallBody = bodylimit.MaxJSONBodyBytes
 
 const callBudget = 11 * time.Minute
 
@@ -247,14 +250,8 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 	if m.Permission == "" {
 		return true, ""
 	}
-	decision, found, err := b.grants.Get(ctx, cap.Name, m.Permission)
-	if err != nil {
-		b.logger.Error("desktop: grant store read failed",
-			"capability", cap.Name, "permission", m.Permission, "error", err)
-		return false, CodeInternal
-	}
-	if found {
-		return decision == grantAllow, denyCode(decision)
+	if allowed, code, decided := b.lookupGrant(ctx, cap.Name, m.Permission); decided {
+		return allowed, code
 	}
 
 	select {
@@ -263,14 +260,8 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 		return false, CodeCancelled
 	}
 	defer func() { <-b.promptSlot() }()
-	decision, found, err = b.grants.Get(ctx, cap.Name, m.Permission)
-	if err != nil {
-		b.logger.Error("desktop: grant store read failed",
-			"capability", cap.Name, "permission", m.Permission, "error", err)
-		return false, CodeInternal
-	}
-	if found {
-		return decision == grantAllow, denyCode(decision)
+	if allowed, code, decided := b.lookupGrant(ctx, cap.Name, m.Permission); decided {
+		return allowed, code
 	}
 
 	d, perr := b.shell.Prompt(ctx, PermissionRequest{
@@ -294,6 +285,19 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 		b.persistGrant(ctx, cap.Name, m.Permission, grantDeny)
 		return false, CodeDenied
 	}
+}
+
+func (b *Battery) lookupGrant(ctx context.Context, capability, permission string) (allowed bool, code string, decided bool) {
+	decision, found, err := b.grants.Get(ctx, capability, permission)
+	if err != nil {
+		b.logger.Error("desktop: grant store read failed",
+			"capability", capability, "permission", permission, "error", err)
+		return false, CodeInternal, true
+	}
+	if !found {
+		return false, "", false
+	}
+	return decision == grantAllow, denyCode(decision), true
 }
 
 func (b *Battery) persistGrant(ctx context.Context, capability, permission, decision string) {

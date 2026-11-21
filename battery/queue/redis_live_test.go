@@ -232,7 +232,7 @@ func (c *liveRedis) RPopHSet(ctx context.Context, list, hash, field string) (str
 func TestEraseScriptOnLiveRedis(t *testing.T) {
 	ctx := context.Background()
 	c := dialLiveRedis(t)
-	name := "live-erase-" + redisRandomID()
+	name := "live-erase-" + randomID()
 	q := NewRedisQueue(c, name)
 	keys := []string{name, name + ":processing", name + ":dead", name + ":delayed", name + ":popped"}
 	t.Cleanup(func() {
@@ -345,7 +345,7 @@ func deepJob(id, user string, depth int) Job {
 func TestEraseDeepPayloadOnLiveRedis(t *testing.T) {
 	ctx := context.Background()
 	c := dialLiveRedis(t)
-	name := "live-deep-" + redisRandomID()
+	name := "live-deep-" + randomID()
 	q := NewRedisQueue(c, name)
 	keys := []string{name, name + ":processing", name + ":dead", name + ":delayed", name + ":popped"}
 	t.Cleanup(func() {
@@ -408,7 +408,7 @@ func TestEraseDeepPayloadOnLiveRedis(t *testing.T) {
 func TestEraseScanSkipsStringsOnLiveRedis(t *testing.T) {
 	ctx := context.Background()
 	c := dialLiveRedis(t)
-	name := "live-scan-" + redisRandomID()
+	name := "live-scan-" + randomID()
 	q := NewRedisQueue(c, name)
 	t.Cleanup(func() {
 		_ = q.Close()

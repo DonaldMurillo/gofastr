@@ -35,13 +35,14 @@ Read `stability/stability.go` for the exact rules (longest matching path prefix
 wins). The seed:
 
 - **Provisional**: `framework/` (except `framework/experimental/`), `core/`,
-  `core-ui/`, `battery/` (except `battery/desktop` and `battery/service`),
-  `sqlite/`, `cmd/`.
+  `core-ui/`, `battery/` (except `battery/desktop`, `battery/service` and
+  `battery/telemetry`), `sqlite/`, `cmd/`.
 - **Experimental**: `framework/experimental/*`, `kiln/`, `codegen/`,
-  `battery/desktop`, `battery/service`.
+  `battery/desktop`, `battery/service`, `battery/telemetry`.
 - **Internal**: anything under an `internal/` directory, the `stability`
   gate package, and `assets/` (the project's own brand files).
-- **Excluded**: `examples/`, `benchmarks/`, `evals/`, `dist/`.
+- **Excluded**: `examples/`, `benchmarks/`, `evals/`, `dist/`,
+  `internal/testapps/`.
 
 ## Changing a classification
 

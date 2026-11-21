@@ -51,9 +51,12 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	}
 	if err := s.ensureScheduleColumns([]scheduleColumn{
 		{"lane", "TEXT", "''"},
-		{"priority", "INTEGER", "0"},
-		{"max_attempts", "INTEGER", "0"},
+		{"priority", s.queue.intType(), "0"},
+		{"max_attempts", s.queue.intType(), "0"},
 	}); err != nil {
+		return err
+	}
+	if err := s.queue.widenPostgresInts(s.queue.schedulerSchedulesTable(), "priority", "max_attempts"); err != nil {
 		return err
 	}
 	if err := s.ensureScheduleColumns([]scheduleColumn{

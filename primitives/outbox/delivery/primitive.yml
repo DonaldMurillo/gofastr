@@ -6,15 +6,15 @@ code:
 docs:
   - framework/docs/content/events.md
 on_change:
-  - A change to how a pending parent counts as complete is made in completeParent and in sweepParents' backstop together, and in the Semantics section of events.md.
+  - A change to parentCompletionCondition is reflected in the Semantics section of events.md.
 twins:
-  - job: Decide that a pending parent is complete - older than the handler grace, no pending delivery, and a delivery for every consumer this relay declares for its type.
-    why: completeParent settles one row right after one of its deliveries settles, and the sweep settles every aged row in one UPDATE, so the same conditions are written twice in SQL; no shared builder has been written.
+  - job: Claim a batch of due deliveries under a lease and spend one attempt per delivery.
+    why: Postgres skips locked rows in a single update while SQLite serializes selection and bounded updates with BEGIN IMMEDIATE, with both claim paths covered by the large-claim and wide-budget parity tests.
     sites:
       - path: framework/outbox/delivery.go
-        note: completeParent, the per-delivery completion.
+        note: claimDeliveriesPostgres.
       - path: framework/outbox/delivery.go
-        note: sweepParents part (ii), the completion backstop, which also requires at least one delivery row.
+        note: claimDeliveriesSQLite.
 invariants:
   - id: one-delivery-per-consumer
     rule: Expansion creates at most one delivery per (row, consumer), and two relays racing to create the same one is a silent no-op (ON CONFLICT DO NOTHING on Postgres, INSERT OR IGNORE on SQLite), never a statement error that stalls the pump.
@@ -32,6 +32,14 @@ invariants:
       - test: framework/outbox.TestClaimDeliveriesConcurrentNoBusy
       - test: framework/outbox.TestClaim_DeliveryExclusivity
       - test: framework/outbox.TestPostgres_ClaimDeliveryExclusivity
+  - id: claim-supports-large-batches
+    rule: A 1200-delivery claim leases every selected row once on both engines, with SQLite applying bounded updates in its original immediate transaction.
+    enforced_by:
+      - test: framework/outbox.TestLargeDeliveryClaimParity
+  - id: attempt-budget-comparison-is-wide
+    rule: The shared expired-lease sweep and both claim paths compare the configured attempt budget as a 64-bit integer.
+    enforced_by:
+      - test: framework/outbox.TestWideDeliveryAttemptBudgetParity
   - id: claim-spends-an-attempt
     rule: Each claim adds one to the delivery's attempts in SQL and neither the success nor the failure settle writes the counter, so a relay that dies between claim and settle still spends the attempt; the count goes back only where no handler ran, shutdown interrupted the handler, or an operator asked - a no-handler requeue and releaseUnstarted (shutdown hand-back of unstarted deliveries and of a handler that failed after its context was cancelled, the batch lease check) refund the claim's attempt, and Replay and ReplayConsumer reset it to zero.
     enforced_by:
@@ -66,12 +74,12 @@ invariants:
       - test: framework/outbox.TestAddedConsumer_FreshDeliveryNotAbandoned
       - test: framework/outbox.TestRemovedConsumer_AbandonedSiblingPending
   - id: parent-completes-only-when-covered
-    rule: A parent is marked dispatched only once it is older than the handler grace, has no pending delivery and holds a delivery for every consumer this relay declares for its type, by completeParent and by the sweep backstop alike.
+    rule: completeParent and the sweep backstop use parentCompletionCondition to require an age past the handler grace, no pending delivery and a delivery for every declared consumer of the parent's type. The sweep backstop also requires at least one delivery.
     enforced_by:
       - test: framework/outbox.TestParentWaitsForLaggingConsumer
       - test: framework/outbox.TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands
       - test: framework/outbox.TestSweepBackstopCompletesAgedParent
-    judge: Does this change the completion conditions in completeParent without the same change in sweepParents' backstop, or the reverse?
+    judge: Do completeParent and the sweep backstop get their shared completion conditions from parentCompletionCondition?
   - id: orphan-drop-needs-age-and-unconsumed-type
     rule: The sweep drops a pending parent with no delivery only when it is older than the handler grace and no consumer here declares its type.
     enforced_by:

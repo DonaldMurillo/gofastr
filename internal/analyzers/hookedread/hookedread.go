@@ -60,6 +60,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -110,7 +112,7 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(file.Pos()).Filename, "_test.go") {
+		if pathflow.InTestFile(pass, file) {
 			continue
 		}
 		for _, decl := range file.Decls {

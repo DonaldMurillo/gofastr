@@ -22,13 +22,31 @@ import (
 // may name in place of a Body. A local bound more than once is left out,
 // since which binding the read sees is flow-dependent.
 func SingleBindings(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+	return singleBindings(pass, f, false)
+}
+
+// BindingsPreferringAssignments uses a declaration initializer only
+// when there is no explicit assignment. Multiple explicit assignments
+// still leave the variable unresolved.
+func BindingsPreferringAssignments(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
+	return singleBindings(pass, f, true)
+}
+
+func singleBindings(pass *analysis.Pass, f *ast.File, preferAssignments bool) map[types.Object]ast.Expr {
 	out := map[types.Object]ast.Expr{}
 	count := map[types.Object]int{}
-	bind := func(id *ast.Ident, v ast.Expr) {
-		if obj := pass.TypesInfo.ObjectOf(id); obj != nil && id.Name != "_" {
-			count[obj]++
-			out[obj] = v
+	initializers := map[types.Object]ast.Expr{}
+	bind := func(id *ast.Ident, v ast.Expr, declaration bool) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil || id.Name == "_" {
+			return
 		}
+		if declaration && preferAssignments {
+			initializers[obj] = v
+			return
+		}
+		count[obj]++
+		out[obj] = v
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch st := n.(type) {
@@ -36,19 +54,24 @@ func SingleBindings(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr 
 			if len(st.Lhs) == len(st.Rhs) {
 				for i, lhs := range st.Lhs {
 					if id, ok := lhs.(*ast.Ident); ok {
-						bind(id, st.Rhs[i])
+						bind(id, st.Rhs[i], false)
 					}
 				}
 			}
 		case *ast.ValueSpec:
 			if len(st.Names) == len(st.Values) {
 				for i, id := range st.Names {
-					bind(id, st.Values[i])
+					bind(id, st.Values[i], true)
 				}
 			}
 		}
 		return true
 	})
+	for obj, initializer := range initializers {
+		if count[obj] == 0 {
+			out[obj] = initializer
+		}
+	}
 	for obj, n := range count {
 		if n > 1 {
 			delete(out, obj)

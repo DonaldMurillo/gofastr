@@ -127,8 +127,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"math"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
@@ -202,7 +202,7 @@ func run(pass *analysis.Pass) (any, error) {
 	// name. It only ever silences, never fires.
 	memo := map[string]bool{}
 	for _, f := range pass.Files {
-		bound := boundExprs(pass, f)
+		bound := bodyBindings(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || !isCheckCall(pass, call.Fun) {
@@ -231,7 +231,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	var calls []siteCall
 	for _, f := range pass.Files {
-		bound := boundExprs(pass, f)
+		bound := bodyBindings(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -301,7 +301,7 @@ func run(pass *analysis.Pass) (any, error) {
 // loop body only). A check that only warns and falls
 // through gates nothing: the hostile name still reaches the format.
 func checkFile(pass *analysis.Pass, f *ast.File, helperDecls map[*types.Func]*ast.FuncDecl, memo map[string]bool, paramGate map[*types.Var]bool) {
-	bound := boundExprs(pass, f)
+	bound := bodyBindings(pass, f)
 
 	type guard struct {
 		obj        types.Object
@@ -487,7 +487,7 @@ func checkEmit(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 	if !ok {
 		return
 	}
-	for _, s := range scanSlots(format) {
+	for _, s := range scanSlots(format, len(call.Args)-formatIndex-1) {
 		argIndex := formatIndex + 1 + s.argIndex
 		if argIndex >= len(call.Args) {
 			break
@@ -526,68 +526,18 @@ const identChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 
 // scanSlots returns every %s/%q verb of the format that sits in an
 // identifier slot of the emitted code.
-func scanSlots(format string) []slot {
+func scanSlots(format string, argCount int) []slot {
 	var out []slot
-	next := 0 // 0-based argument position the next verb consumes
-	for i := 0; i < len(format); i++ {
-		if format[i] != '%' {
+	for d := range astx.FormatDirectives(format, argCount) {
+		if d.Invalid || d.Verb != 's' && d.Verb != 'q' {
 			continue
 		}
-		length, index, explicit := verbLen(format, i)
-		if length == 0 {
-			// `%%` is an escaped percent that renders a literal `%`,
-			// not a verb: consume the pair, or the second `%` is read
-			// as a verb start (the nested format('ALTER TABLE %%s …')
-			// of emitted SQL, foreign_key.go's DO block).
-			if i+1 < len(format) && format[i+1] == '%' {
-				i++
-			}
-			continue
+		quoted := d.Verb == 'q'
+		if text, ok := identSlotText(format, d.Start, quoted); ok {
+			out = append(out, slot{argIndex: d.Arg, text: text, quoted: quoted})
 		}
-		cur := next
-		if explicit {
-			cur = index - 1
-		}
-		verb := format[i+length-1]
-		if verb == 's' || verb == 'q' {
-			if text, ok := identSlotText(format, i, verb == 'q'); ok {
-				out = append(out, slot{argIndex: cur, text: text, quoted: verb == 'q'})
-			}
-		}
-		next = cur + 1
-		i += length - 1
 	}
 	return out
-}
-
-// verbLen is the length of the verb sequence starting at '%' (0 for
-// %%). A verb may open with an explicit argument index (`%[2]s`),
-// returned as its 1-based position; without one, verbs consume the
-// format arguments in order.
-func verbLen(format string, i int) (length, index int, explicit bool) {
-	j, n := i+1, len(format)
-	if j < n && format[j] == '[' {
-		if k := strings.IndexByte(format[j:], ']'); k > 0 {
-			if v, err := strconv.Atoi(format[j+1 : j+k]); err == nil && v > 0 {
-				index, explicit = v, true
-				j += k + 1
-			}
-		}
-	}
-	for j < n && strings.IndexByte("+-# 0123456789.", format[j]) >= 0 {
-		j++
-	}
-	if j < n && format[j] != '%' {
-		return j - i + 1, index, explicit
-	}
-	return 0, 0, false
-}
-
-// verbLenOnly is verbLen's length, for callers that do not read the
-// explicit argument index.
-func verbLenOnly(format string, i int) int {
-	length, _, _ := verbLen(format, i)
-	return length
 }
 
 // identSlotText reports whether the verb at byte offset i sits in an
@@ -598,7 +548,7 @@ func verbLenOnly(format string, i int) int {
 // reports not-scanned.
 func identSlotText(format string, i int, quoted bool) (string, bool) {
 	lower := strings.ToLower(format)
-	after := i + verbLenOnly(format, i)
+	after := i + astx.FormatVerbLen(format, i)
 
 	// b is the start of the emitted identifier token containing the verb.
 	b := i
@@ -806,8 +756,8 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 		for b > 0 && isIdentByte(format[b-1]) {
 			b--
 		}
-		if onlyBlank(format[mw+len(kw) : b]) {
-			if r := i + verbLenOnly(format, i); r < len(format) {
+		if end := mw + len(kw); end <= b && onlyBlank(format[end:b]) {
+			if r := i + astx.FormatVerbLen(format, i); r < len(format) {
 				r = skipIdent(format, r)
 				if jsDeclEvidence(format, r, kw) {
 					spelling := strings.Join(append(mods, kw), " ") + " %s"
@@ -835,7 +785,7 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 	for k < len(format) {
 		if k == i {
 			sawVerb = true
-			k += verbLenOnly(format, i)
+			k += astx.FormatVerbLen(format, i)
 			continue
 		}
 		if isIdentByte(format[k]) {
@@ -843,7 +793,7 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 			continue
 		}
 		if format[k] == '%' {
-			if l := verbLenOnly(format, k); l > 0 {
+			if l := astx.FormatVerbLen(format, k); l > 0 {
 				k += l
 				continue
 			}
@@ -1287,23 +1237,21 @@ func isStringShaped(pass *analysis.Pass, e ast.Expr) bool {
 
 // numericOnlyVerbs reports whether a constant format's verbs are all
 // numeric (%d and friends): no string argument can shape the output.
-func numericOnlyVerbs(f string) bool {
+func numericOnlyVerbs(format string) bool {
 	saw := false
-	for i := 0; i < len(f); i++ {
-		if f[i] != '%' {
+	for d := range astx.FormatDirectives(format, math.MaxInt) {
+		if d.Verb == '%' || d.Verb == 0 {
 			continue
 		}
-		length := verbLenOnly(f, i)
-		if length == 0 {
-			continue
+		if d.Invalid || d.Star {
+			return false
 		}
-		switch f[i+length-1] {
+		switch d.Verb {
 		case 'd', 'b', 'o', 'x', 'X', 'c', 'U', 'e', 'E', 'f', 'F', 'g', 'G':
 			saw = true
 		default:
 			return false
 		}
-		i += length - 1
 	}
 	return saw
 }
@@ -1413,56 +1361,20 @@ func fieldRoots(pass *analysis.Pass, x ast.Expr, bound map[types.Object]ast.Expr
 	return fields
 }
 
-func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
-	return bodyBindings(pass, f)
-}
-
-// bodyBindings maps each local defined inside n to the expression it was
-// last bound to: single and tuple assignments, := declarations, and
-// range value variables.
-func bodyBindings(pass *analysis.Pass, n ast.Node) map[types.Object]ast.Expr {
-	m := map[types.Object]ast.Expr{}
-	ast.Inspect(n, func(node ast.Node) bool {
-		switch st := node.(type) {
-		case *ast.AssignStmt:
-			if st.Tok.String() != ":=" && st.Tok.String() != "=" {
-				return true
-			}
-			switch {
-			case len(st.Lhs) == len(st.Rhs): // tuple: bind each lhs to its rhs
-				for idx, lhs := range st.Lhs {
-					if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-						if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-							m[obj] = st.Rhs[idx]
-						}
-					}
-				}
-			case len(st.Lhs) == 2 && len(st.Rhs) == 1: // v, err := call()
-				if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
-					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-						m[obj] = st.Rhs[0]
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			if len(st.Names) != 1 || len(st.Values) != 1 || st.Names[0].Name == "_" {
-				return true
-			}
-			if obj := pass.TypesInfo.ObjectOf(st.Names[0]); obj != nil {
-				m[obj] = st.Values[0]
-			}
-		case *ast.RangeStmt:
-			// Bind a range value variable to its source, so a selector on
-			// it (a.col) can resolve to a literal's field.
-			if id, ok := st.Value.(*ast.Ident); ok && id.Name != "_" {
+// bodyBindings also records the source of each range value.
+func bodyBindings(pass *analysis.Pass, root ast.Node) map[types.Object]ast.Expr {
+	bound := map[types.Object]ast.Expr{}
+	for n := range ast.Preorder(root) {
+		astx.RecordLocalBindings(pass, n, bound)
+		if rng, ok := n.(*ast.RangeStmt); ok {
+			if id, ok := rng.Value.(*ast.Ident); ok && id.Name != "_" {
 				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					m[obj] = st.X
+					bound[obj] = rng.X
 				}
 			}
 		}
-		return true
-	})
-	return m
+	}
+	return bound
 }
 
 // isPkgIdent reports whether x is an identifier that resolves to an

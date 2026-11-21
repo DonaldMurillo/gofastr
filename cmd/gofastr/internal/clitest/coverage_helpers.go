@@ -36,20 +36,42 @@ func CovT_capExit(t *testing.T, fn func()) (code int) {
 
 type CovT_exitSentinel struct{}
 
-// CovT_capStdout captures everything fn writes to os.Stdout. It backs the
-// capture with a temp file (not a pipe) so a panicking fn, e.g. one that
-// trips a captured osExit, can never leave a blocked reader goroutine
-// behind. Output is restored and read on the deferred path regardless.
+// CovT_capStdout reads stdout when fn returns and restores it even on panic.
+// To capture output and an exit code, call CovT_capExit inside fn.
 func CovT_capStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stdout
-	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	return captureOutput(t, &os.Stdout, fn)
+}
+
+// CovT_capStderr is CovT_capStdout for stderr.
+func CovT_capStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	return captureOutput(t, &os.Stderr, fn)
+}
+
+// CovT_capOutput captures stdout and stderr together, stdout first. For
+// tests that assert a refusal's text without caring which stream carried
+// it: the ✗ line and usage errors go to stderr (cli.UsageFail), while
+// usage blocks and help stay on stdout.
+func CovT_capOutput(t *testing.T, fn func()) string {
+	t.Helper()
+	var errOut string
+	out := CovT_capStdout(t, func() {
+		errOut = CovT_capStderr(t, fn)
+	})
+	return out + errOut
+}
+
+func captureOutput(t *testing.T, stream **os.File, fn func()) string {
+	t.Helper()
+	old := *stream
+	f, err := os.CreateTemp(t.TempDir(), "output-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = f
+	*stream = f
 	defer func() {
-		os.Stdout = old
+		*stream = old
 		_ = f.Close()
 	}()
 	fn()

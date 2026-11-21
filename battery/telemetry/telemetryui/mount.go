@@ -38,7 +38,7 @@ func New(tel *telemetry.Plugin, cfg Config) *Plugin { return &Plugin{tel: tel, c
 // Name implements framework.Plugin.
 func (*Plugin) Name() string { return "telemetry-ui" }
 
-// Init registers the two screens behind Authorize.
+// Init registers the four screens behind Authorize.
 func (p *Plugin) Init(app *framework.App) error {
 	if p.tel == nil {
 		return errors.New("telemetryui: New needs the telemetry plugin")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,18 +18,18 @@ import (
 // object the row's key never named. Property: both refuse an absolute key,
 // a control byte, and a key that is not its own clean form, with
 // upload.ErrInvalidKey; clean relative keys pass.
-var unformedKeys = []string{
+var unformedPathKeys = []string{
 	"/etc/passwd",
 	"/a/b.png",
 	"a\x00b.png",
-	"a\nb.png",
-	"a\x7fb.png",
 	"a//b.png",
 	"./a.png",
 	"a/./b.png",
 	"a/b/",
 	".",
 }
+
+var unformedKeys = append(slices.Clone(unformedPathKeys), "a\nb.png", "a\x7fb.png")
 
 var formedKeys = []string{"a.png", "uploads/posts/photo/x_1_abc.png", "a b/c-d_e.txt"}
 
@@ -70,6 +71,49 @@ func TestS3RefusesUnformedKeys(t *testing.T) {
 		if err := ops["Save"](k); err != nil {
 			t.Errorf("Save(%q) refused a clean key: %v", k, err)
 		}
+	}
+}
+
+// TestLocalRefusesUnformedKeys covers invalid paths on every operation
+// and Windows-portability refusals on writes.
+func TestLocalRefusesUnformedKeys(t *testing.T) {
+	ctx := context.Background()
+	ls := newTestLocalStorage(t, t.TempDir())
+	ops := map[string]func(string) error{
+		"Save":     func(k string) error { return ls.Save(ctx, k, bytes.NewReader([]byte("x"))) },
+		"Get":      func(k string) error { _, err := ls.Get(ctx, k); return err },
+		"GetRange": func(k string) error { _, err := ls.GetRange(ctx, k); return err },
+		"Delete":   func(k string) error { return ls.Delete(ctx, k) },
+		"Exists":   func(k string) error { _, err := ls.Exists(ctx, k); return err },
+	}
+	for name, op := range ops {
+		keys := unformedPathKeys
+		if name == "Save" {
+			keys = unformedKeys
+		}
+		for _, k := range append([]string{""}, keys...) {
+			if err := op(k); !errors.Is(err, upload.ErrInvalidKey) {
+				t.Errorf("%s(%q) = %v, want upload.ErrInvalidKey", name, k, err)
+			}
+		}
+	}
+	for _, k := range unportableButExistingKeys {
+		if err := ls.Save(ctx, k, bytes.NewReader([]byte("x"))); !errors.Is(err, upload.ErrInvalidKey) {
+			t.Errorf("Save(%q) = %v, want upload.ErrInvalidKey", k, err)
+		}
+	}
+	for _, k := range formedKeys {
+		if err := ls.Save(ctx, k, bytes.NewReader([]byte("x"))); err != nil {
+			t.Errorf("Save(%q) refused a clean key: %v", k, err)
+		}
+	}
+}
+
+// TestMemorySaveEmptyKeyIsInvalidKey: MemoryStorage's empty-key refusal must
+// wrap upload.ErrInvalidKey, not a plain error ServeHandler would call a 500.
+func TestMemorySaveEmptyKeyIsInvalidKey(t *testing.T) {
+	if err := NewMemoryStorage().Save(context.Background(), "", bytes.NewReader([]byte("x"))); !errors.Is(err, upload.ErrInvalidKey) {
+		t.Errorf("Save(\"\") = %v, want upload.ErrInvalidKey", err)
 	}
 }
 

@@ -14,7 +14,6 @@ invariants:
     rule: Set with a negative effective TTL deletes the key and never passes the TTL to the client.
     enforced_by:
       - test: battery/cache.TestRedisCache_NegativeTTLNotImmortal
-      - test: battery/cache.TestRedisCache_NegativeTTLStoresNothing
   - id: prefix-is-injective
     rule: A prefix is written with % and colon percent-encoded, so two prefix and key pairs never produce one Redis key.
     enforced_by:

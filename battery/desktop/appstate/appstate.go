@@ -5,6 +5,7 @@
 package appstate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// MaxValueBytes caps one value, measured on its encoded JSON.
+// MaxValueBytes caps one value, measured on compact JSON without HTML escaping.
 const MaxValueBytes = 64 << 10
 
 // ErrKey is returned for a key off the grammar.
@@ -118,7 +119,7 @@ func (s *Store) Set(key string, v any) error {
 	if !reKey.MatchString(key) {
 		return fmt.Errorf("%w: %q", ErrKey, key)
 	}
-	data, err := json.Marshal(v)
+	data, err := encodeJSON(v, "")
 	if err != nil {
 		return fmt.Errorf("appstate: encode %q: %w", key, err)
 	}
@@ -226,43 +227,42 @@ func (s *Store) snapshotLocked() map[string]json.RawMessage {
 }
 
 func (s *Store) persist(entries map[string]json.RawMessage) error {
-	data, err := json.MarshalIndent(stateFile{Entries: entries}, "", "  ")
+	data, err := encodeJSON(stateFile{Entries: entries}, "  ")
 	if err != nil {
 		s.logger.Warn("appstate: encoding the state file failed", "error", err.Error())
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".state-*.tmp")
-	if err != nil {
-		s.logger.Warn("appstate: creating the temp state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
+	stage, err := atomicfile.WriteFileNoFollow(s.path, data, fileperm.RestrictOpenFile)
+	if err == nil || stage == atomicfile.WritePrepareTemp {
 		return err
 	}
-	name := tmp.Name()
-	if err := fileperm.RestrictOpenFile(tmp); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		return err
+	var action string
+	switch stage {
+	case atomicfile.WriteCreateTemp:
+		action = "creating the temp"
+	case atomicfile.WriteData:
+		action = "writing the"
+	case atomicfile.WriteCloseTemp:
+		action = "closing the"
+	case atomicfile.WriteReplace:
+		action = "replacing the"
+	default:
+		action = "persisting the"
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		s.logger.Warn("appstate: writing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
+	s.logger.Warn("appstate: "+action+" state file failed",
+		"file", filepath.Base(s.path), "error", err.Error())
+	return err
+}
+
+func encodeJSON(v any, indent string) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", indent)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
 	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		s.logger.Warn("appstate: closing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
-	}
-	if err := atomicfile.Replace(name, s.path); err != nil {
-		os.Remove(name)
-		s.logger.Warn("appstate: replacing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
-	}
-	return nil
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
 func (s *Store) notify(key string) {

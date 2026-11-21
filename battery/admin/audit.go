@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
 type auditRow struct {
@@ -63,7 +64,7 @@ func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
 	var f auditFilter
 	var warned []string
 	if a := q.Get("actor"); a != "" {
-		if len(a) > maxAuditActor || textsafe.HasControlBytes(a) {
+		if len(a) > maxAuditActor || !textsafe.Storable(a) || textsafe.HasControlBytes(a) {
 			warned = append(warned, "actor")
 		} else {
 			f.actor = a
@@ -97,26 +98,22 @@ func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
 	return f, warned
 }
 
-const auditPageParam = "p"
-
 func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.HTML {
-	limit := b.cfg.AuditListLimit
-	page := 1
-	var f auditFilter
-	var warned []string
 	dropped := false
-	carry := url.Values{}
+	var q url.Values
 	if r := appui.RequestFromContext(ctx); r != nil {
-		dropped = droppedNarrowing(r, "actor", "entity", "op", "from", "to")
-		q := r.URL.Query()
-		limit = parseLimit(q.Get("limit"), b.cfg.AuditListLimit)
-		f, warned = b.parseAuditFilter(q)
-		if n, err := strconv.Atoi(q.Get(auditPageParam)); err == nil && n > 1 {
-			page = n
-		}
-		carry = q
-		carry.Del(auditPageParam)
+		q = r.URL.Query()
+		dropped = listfilter.DroppedNarrowing(r.URL.RawQuery, func(name string) bool {
+			switch name {
+			case "actor", "entity", "op", "from", "to":
+				return true
+			}
+			return false
+		})
 	}
+	page, limit := decodePage(q, b.cfg.AuditListLimit, opsMaxLimit)
+	f, warned := b.parseAuditFilter(q)
+	q.Del(pageParam)
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.AdminAudit.Text(ctx),
 		Subtitle: i18nui.AdminAuditSub.Text(ctx),
@@ -130,29 +127,17 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		rows, err = b.queryAuditWhere(ctx, limit, (page-1)*limit, f)
 	}
 	if err != nil {
-		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: load audit rows", i18nui.AdminAuditLoadFailed, err, []render.HTML{header}, "table", b.cfg.AuditTable)
 	}
 	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
 	if dropped {
-		above = append(above, filterNotApplied(ctx))
+		above = append(above, listfilter.Warning(ctx))
 	}
 	for _, param := range warned {
 		above = append(above, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
 			render.Text(i18nui.AdminAuditBadFilter.Text(ctx, map[string]any{"param": param}))))
 	}
-	var pager *ui.PaginationConfig
-	if pages > 1 {
-		pager = &ui.PaginationConfig{
-			Page:      page,
-			Pages:     pages,
-			Path:      b.cfg.PathPrefix + "/audit",
-			Query:     carry,
-			PageParam: auditPageParam,
-			Ctx:       ctx,
-		}
-	}
+	pager := pagePager(ctx, b.cfg.PathPrefix+"/audit", q, page, pages)
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2, pager))...)
 }
 
@@ -401,12 +386,12 @@ func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, chang
 		return "", "", false
 	}
 	var verb i18n.Phrase
-	switch {
-	case d.Action == "delete":
+	switch bulkOperation(d.Action) {
+	case "delete":
 		verb = i18nui.AdminAuditBulkDeleted
-	case d.Action == "restore":
+	case "restore":
 		verb = i18nui.AdminAuditBulkRestored
-	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
+	case "update":
 		verb = i18nui.AdminAuditBulkUpdated
 	default:
 		return "", "", false
@@ -423,6 +408,16 @@ func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, chang
 		parts = append(parts, ui.Muted(render.Text(i18nui.AdminAuditBulkFailed.Text(ctx, map[string]any{"count": d.Failed}))))
 	}
 	return record, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, parts...), true
+}
+
+func bulkOperation(action string) string {
+	switch {
+	case action == "delete", action == "restore":
+		return action
+	case strings.HasPrefix(action, "set:"), strings.HasPrefix(action, "move:"):
+		return "update"
+	}
+	return ""
 }
 
 func (b *Battery) auditTitle(ctx context.Context, e *entity.Entity, r auditRow, before, after map[string]any) (title string, live bool) {
@@ -532,21 +527,6 @@ func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID
 		b.logger().Error("admin: audit write failed after the change committed",
 			"entity", entity, "op", op, "record", recordID, "actor", actorID, "error", err)
 	}
-}
-
-func pageCount(total, limit int) int {
-	if limit <= 0 {
-		return 1
-	}
-	return max((total+limit-1)/limit, 1)
-}
-
-func parseLimit(raw string, fallback int) int {
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return min(n, 1000)
 }
 
 func sortedKeys[V any](m map[string]V) []string {

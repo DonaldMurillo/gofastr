@@ -1,10 +1,88 @@
 version: v0.98.0
-title: YAML hex and octal integers
+title: Pending release
 notes:
+  - change: "BREAKING - the admin role editor saves a role change through auth.RoleSwapper, a compare-and-set on the roles it read; a custom auth.UserStore that does not implement it refuses every role edit"
+    breaking: true
+    nodetect: "any type satisfying auth.UserStore can be passed in; whether it also has SwapRoles is a fact of the host's own type, and EntityUserStore already implements it"
+    guidance: "Add SwapRoles(ctx, userID, old, new []string) (bool, error) to a custom store: update the roles only when the stored set still equals old, and return false when it does not. The editor answers a false with 409 roles-conflict."
+  - change: "BREAKING - outbox delivery table names are fitted to 63 bytes on SQLite and Postgres alike, and a table name part over 63 bytes is refused at boot"
+    breaking: true
+    nodetect: "the table name is a runtime string passed to outbox.WithTable; only names near or over 63 bytes change"
+    guidance: "Before upgrading, rename a SQLite delivery table over 63 bytes, or the Postgres delivery table of a parent named 55 to 62 bytes (old name left('<parent>_delivery', 63)), to the fitted name. A SQLite parent over 63 bytes needs a new parent name of 63 bytes or fewer: rename the parent, rename <old parent>_delivery to the delivery name the new parent gets, and pass the new name to outbox.WithTable."
+  - change: "BREAKING - a grouped entity endpoint with an absolute Path takes its default MCP tool name from the path without the group prefix (v1.posts_get_v1_health_posts becomes v1.posts_get_health_posts)"
+    breaking: true
+    nodetect: "the tool name is derived at runtime from the group prefix and the endpoint path; MCP clients hold the old name outside the app's source"
+    guidance: "Update MCP clients to the new name, or set Endpoint.Name to the old name without the namespace (posts_get_v1_health_posts) to keep it."
+  - change: "a // safe-sql: waiver covers only the statement it is attached to, in gofastr verify"
+    guidance: "Put the waiver, with its reason, on the statement that builds the SQL or on the line above it. A waiver that used to reach a query a few lines further down no longer does."
+    nodetect: "the waiver is a comment; which statement it reaches depends on layout"
+  - change: "every gofastr usage error exits 2 and prints its error line on stderr"
+    guidance: "Scripts that test for exit 1 or read error text from stdout after a bad flag or missing argument should test for 2 and read stderr. --help output stays on stdout."
+    nodetect: "the change is in CLI exit codes, outside the app's Go source"
+  - change: "BREAKING - static export refuses a route whose output file name is not portable (one holding : or ? after expansion, a locale prefix included) before writing anything; such a route used to export on Linux and macOS"
+    breaking: true
+    nodetect: "the route string and its expanded StaticPaths values decide it at build time"
+    guidance: "Rename the route, or give it StaticPaths values whose output names hold no : or ?. The build error names the route."
+  - change: "on Postgres, opening a queue widens the jobs table's priority, attempts and max_attempts columns (and the durable schedule's option columns) from INTEGER to BIGINT"
+    guidance: "The ALTER rewrites the table once and holds its lock while it runs. On a large jobs table, run the first boot of the new release in a quiet window, or widen the columns yourself beforehand with ALTER TABLE ... ALTER COLUMN ... TYPE BIGINT."
+    nodetect: "the column types live in the database, not the app's source"
+  - change: "BREAKING - gofastr audit lint is removed; gofastr verify security data testing permissions entities runs its checks and honors gofastr.settings.yml and //gofastr:allow"
+    breaking: true
+    nodetect: "the command is called from scripts, CI files and Makefiles outside the app's Go source"
+    guidance: "Replace gofastr audit lint with gofastr verify security data testing permissions entities, and gofastr validate for unscoped PII in gofastr.yml. A Public Go entity with PII-shaped fields is reported as the public-entity warning GOFASTR1702 instead of unscoped PII. A t.Skip whose message does not read as deferred work, and a bare t.SkipNow, are no longer reported."
+  - change: "BREAKING - core-ui/app.MustViewTransitionPresetCSS is removed"
+    breaking: true
+    hits: edit
+    guidance: "Call app.ViewTransitionPresetCSS(preset) and handle its error, which names an unknown preset."
+    find:
+      uses:
+        - gofastr/core-ui/app.MustViewTransitionPresetCSS
+  - change: "BREAKING - framework/contracts/analyzers EntityInfo.Scoped and EntityInfo.HasAccess are removed"
+    breaking: true
+    hits: edit
+    guidance: "Check OwnerField, MultiTenant and the entity's read permission yourself; a gate on create, update or delete does not scope reads."
+    find:
+      uses:
+        - gofastr/framework/contracts/analyzers.EntityInfo.Scoped
+        - gofastr/framework/contracts/analyzers.EntityInfo.HasAccess
   - change: "BREAKING - unquoted hex and octal integers in app specs and snapshots now read as numbers"
     breaking: true
     guidance: "Quote values meant to stay strings before loading an existing app spec or older Pack or Kiln snapshot, for example default: \"0x10\" or values: [\"0x01\", \"0x02\"]."
     nodetect: "whether a YAML value is meant as a number or as text depends on the field and the app, not the value's spelling"
+  - change: "BREAKING - framework/access.EditDistance is removed"
+    breaking: true
+    hits: edit
+    guidance: "Call fuzzy.Levenshtein from github.com/DonaldMurillo/gofastr/core/fuzzy; it takes the same two strings and returns the same distance."
+    find:
+      uses:
+        - gofastr/framework/access.EditDistance
+  - change: "BREAKING - framework/tenant TenantConfig.AutoScope is removed; it was never read"
+    breaking: true
+    hits: edit
+    guidance: "Delete the field. Multi-tenant scoping is always on; tenant.AllowCrossTenant on a context with no tenant ID stays the cross-tenant opt-in."
+    find:
+      uses:
+        - gofastr/framework/tenant.TenantConfig.AutoScope
+  - change: "BREAKING - core-ui/store.RouteSlices is removed"
+    breaking: true
+    hits: edit
+    guidance: "Read the route through store.Route instead: Path, Pattern, Title, Param(name) and Query(key)."
+    find:
+      uses:
+        - gofastr/core-ui/store.RouteSlices
+  - change: "BREAKING - the unused core-ui/component lifecycle and server-call APIs are removed (Lifecycle, LifecycleHook, NewLifecycle, Server, ServerCall, ActionDef.Server, ActionDef.Debounce)"
+    breaking: true
+    hits: edit
+    guidance: "Delete the reference. Nothing in the framework fired a lifecycle hook or read ActionDef.Server or ActionDef.Debounce, so the code had no effect."
+    find:
+      uses:
+        - gofastr/core-ui/component.Lifecycle
+        - gofastr/core-ui/component.LifecycleHook
+        - gofastr/core-ui/component.NewLifecycle
+        - gofastr/core-ui/component.Server
+        - gofastr/core-ui/component.ServerCall
+        - gofastr/core-ui/component.ActionDef.Server
+        - gofastr/core-ui/component.ActionDef.Debounce
   - change: "BREAKING - battery/desktop.New panics on a relative Config.DataDir, which used to resolve against the working directory at launch; Init now creates a missing Config.DataDir owner-only (0700), where it used to fail writing the identity file"
     breaking: true
     nodetect: "the value is usually built at runtime or read from configuration; a literal relative path is the only spelling that shows it, and an absolute one is unaffected"

@@ -3,12 +3,9 @@ package unmountcmd
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -26,8 +23,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/mod/module"
 )
 
@@ -91,8 +90,8 @@ func parseUnmountArgs(cmd string, args []string) (pkg, outDir string, dryRun, fo
 		case strings.HasPrefix(arg, "--out=") && cmd == "unmount":
 			outDir = strings.TrimPrefix(arg, "--out=")
 		case arg == "--out" && cmd == "unmount":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				cli.Fail("--out requires a directory argument")
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				cli.Fail("%v", cli.NeedsValue("--out"))
 				cli.Info("%s", usage)
 				return "", "", false, false, false
 			}
@@ -228,6 +227,14 @@ func gofastrModuleSource(ctx context.Context, moduleRoot string) (dir, version s
 	return dir, version, nil
 }
 
+// skipUnmountDir reports whether a module walk skips the directory:
+// vendor, testdata, node_modules, hidden and _-prefixed trees are not
+// part of what the app builds.
+func skipUnmountDir(name string) bool {
+	return name == "vendor" || name == "testdata" || name == "node_modules" ||
+		strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
+}
+
 // readUnmountTree reads the package at source and every package under
 // it from the module directory, through an os.Root so nothing outside
 // the tree is read. Tests, testdata, vendor, hidden and _-prefixed
@@ -255,8 +262,7 @@ func readUnmountTree(moduleDir, source, version string) (appgen.UnmountTree, err
 			if p == "." {
 				return nil
 			}
-			if (name == "vendor" || name == "testdata" || name == "node_modules" ||
-				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) && !embeddedDir(root, path.Dir(p), name, embeds) {
+			if skipUnmountDir(name) && !embeddedDir(root, path.Dir(p), name, embeds) {
 				return fs.SkipDir
 			}
 			if _, err := root.Stat(path.Join(p, "go.mod")); err == nil {
@@ -451,8 +457,7 @@ func planImportRewire(moduleRoot, skip, from, to string) ([]importRewire, error)
 			if p == "." {
 				return nil
 			}
-			if p == skip || name == "vendor" || name == "testdata" || name == "node_modules" ||
-				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			if p == skip || skipUnmountDir(name) {
 				return fs.SkipDir
 			}
 			if _, err := root.Stat(path.Join(p, "go.mod")); err == nil {
@@ -501,53 +506,11 @@ func applyImportRewire(moduleRoot string, plan []importRewire, undo bool) (int, 
 		if undo {
 			content = r.old
 		}
-		if err := replaceInRoot(root, r.name, []byte(content), r.mode); err != nil {
+		if err := projectfs.ReplaceFixedMode(root, r.name, []byte(content), r.mode); err != nil {
 			return i + 1, fmt.Errorf("%s: %w", r.name, err)
 		}
 	}
 	return len(plan), nil
-}
-
-// replaceInRoot replaces name under root with data at mode through a
-// temporary file beside it, synced and renamed over it: a crash or a full
-// disk mid-rewire leaves each source file whole, old or new, where a
-// truncate-then-write left it empty with the undo never run. The plan
-// holds regular files only, so the rename never replaces a symlink, and
-// a read-only file is refused, as opening it for writing was.
-func replaceInRoot(root *os.Root, name string, data []byte, mode fs.FileMode) (err error) {
-	if fi, serr := root.Stat(name); serr == nil && fi.Mode().Perm()&0o200 == 0 {
-		return &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
-	}
-	var nonce [8]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return err
-	}
-	tmp := path.Join(path.Dir(name), "."+path.Base(name)+".tmp-"+hex.EncodeToString(nonce[:]))
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = root.Remove(tmp)
-		}
-	}()
-	if err = f.Chmod(mode); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return root.Rename(tmp, name)
 }
 
 // checkUnmountRegistry refuses a gofastr version that predates
@@ -572,7 +535,7 @@ func RunUnmount(args []string) {
 	}
 	arg, outDir, dryRun, _, ok := parseUnmountArgs("unmount", args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	wd, err := os.Getwd()
@@ -587,7 +550,7 @@ func RunUnmount(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	settingsPath, entries, err := appgen.UnmountedEntries(moduleRoot)
+	settingsPath, entries, err := project.UnmountedSettings(moduleRoot)
 	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
@@ -721,7 +684,7 @@ func RunRemount(args []string) {
 	}
 	arg, _, dryRun, force, ok := parseUnmountArgs("remount", args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if err := remountPackage(arg, dryRun, force); err != nil {
@@ -739,7 +702,7 @@ func remountPackage(arg string, dryRun, force bool) error {
 	if modulePath == "" {
 		return appgen.ErrPackageNoModule
 	}
-	settingsPath, entries, err := appgen.UnmountedEntries(moduleRoot)
+	settingsPath, entries, err := project.UnmountedSettings(moduleRoot)
 	if err != nil {
 		return err
 	}

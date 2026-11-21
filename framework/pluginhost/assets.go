@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -191,7 +190,7 @@ func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 }
 
 func confinedAssetFS(fsys fs.FS) (fs.FS, error) {
-	if !plainDiskAssetFS(reflect.ValueOf(fsys)) {
+	if _, ok := rootfs.DiskFS(fsys); !ok {
 		return fsys, nil
 	}
 	directory, err := fsys.Open(".")
@@ -219,27 +218,6 @@ func confinedAssetFS(fsys fs.FS) (fs.FS, error) {
 		return nil, fs.ErrNotExist
 	}
 	return root.FS(), nil
-}
-
-func plainDiskAssetFS(value reflect.Value) bool {
-	if !value.IsValid() {
-		return false
-	}
-	if value.Type() == reflect.TypeOf(os.DirFS(".")) {
-		return true
-	}
-	if value.Kind() != reflect.Pointer || value.IsNil() {
-		return false
-	}
-	elem := value.Type().Elem()
-	if elem.PkgPath() != "io/fs" || elem.Name() != "subFS" || elem.Kind() != reflect.Struct {
-		return false
-	}
-	inner := value.Elem().FieldByName("fsys")
-	if !inner.IsValid() || inner.Kind() != reflect.Interface || inner.IsNil() {
-		return false
-	}
-	return plainDiskAssetFS(inner.Elem())
 }
 
 func resolveContentType(name, declared string) string {

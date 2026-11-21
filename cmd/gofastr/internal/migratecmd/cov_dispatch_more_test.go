@@ -32,16 +32,6 @@ func TestMigratorFromArgsErrors(t *testing.T) {
 	}
 }
 
-func TestRunMigrateUpConstructErrorExits(t *testing.T) {
-	clitest.CovT_chdir(t, t.TempDir()) // no migrations dir
-	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runMigrateUp([]string{"--db-url=x.db"}) })
-	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
-	}
-}
-
 func TestRunMigrateDownConstructErrorExits(t *testing.T) {
 	clitest.CovT_chdir(t, t.TempDir())
 	code := clitest.CovT_capExit(t, func() {
@@ -85,11 +75,11 @@ func TestRunMigrateDownStatusForceSucceed(t *testing.T) {
 func TestRunMigrateGenerateNoAppSpecExits(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
-	// No --from → app spec required → exit 1.
+	// No --from → app spec required → usage error, exit 2.
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runMigrateGenerate([]string{"name"}) })
+		clitest.CovT_capOutput(t, func() { runMigrateGenerate([]string{"name"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }

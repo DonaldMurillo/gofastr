@@ -28,9 +28,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 func getHandlerUser(ctx context.Context) (any, bool) {
@@ -214,14 +214,18 @@ func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *htt
 }
 
 func (ch *CrudHandler) applySoftDeleteFilterQ(qb *query.QueryBuilder, q url.Values, ctx context.Context) {
-	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
-		qb.Where("deleted_at IS NULL")
-	}
+	ch.applySoftDeleteWhere(func(sql string, args ...any) { qb.Where(sql, args...) }, q, ctx)
 }
 
 func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url.Values, ctx context.Context) {
+	ch.applySoftDeleteWhere(func(sql string, args ...any) { cb.Where(sql, args...) }, q, ctx)
+}
+
+// applySoftDeleteWhere is the one soft-delete predicate the row and
+// count twins apply, so the two can never drift.
+func (ch *CrudHandler) applySoftDeleteWhere(addWhere func(sql string, args ...any), q url.Values, ctx context.Context) {
 	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
-		cb.Where("deleted_at IS NULL")
+		addWhere("deleted_at IS NULL")
 	}
 }
 
@@ -396,9 +400,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
+		cursorMode := q.Has("cursor")
 		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 
-		if !ch.requireBoundedOffset(w, r, q, page, perPage) {
+		if !cursorMode && !ch.requireBoundedOffset(w, r, q, perPage) {
 			return
 		}
 
@@ -468,7 +473,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		hookWheres := listPayload.Where
 		listPayload.Where = append(searchWheres, listPayload.Where...)
 
-		if q.Has("cursor") {
+		if cursorMode {
 			if _, err := filter.ParseSortValues(q, ch.snapshotFields()); err != nil {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
@@ -478,7 +483,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			ch.serveCursorList(ctx, w, r, q, cols, includes, filters, nested, listPayload.Where, hookWheres)
+			ch.serveCursorList(ctx, w, r, q, cols, includes, filters, nested, perPage, listPayload.Where, hookWheres)
 			return
 		}
 
@@ -604,17 +609,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			results = listPayload.Results
 		}
 
-		totalPages := total / perPage
-		if total%perPage != 0 {
-			totalPages++
-		}
-
 		resp := ListResponse{
 			Data:       results,
 			Total:      total,
 			Page:       page,
 			PerPage:    perPage,
-			TotalPages: totalPages,
+			TotalPages: pagination.TotalPages(total, perPage),
 		}
 
 		writeJSONStatus(w, r, http.StatusOK, resp)
@@ -1116,33 +1116,16 @@ func isForeignKeyViolation(err error) bool {
 	return false
 }
 
+const defaultListSize = 20
+
 // parsePaginationValues reads ?page and ?limit (alias ?per_page, ?limit wins),
 // defaulting to 1 and 20 and clamping the size to listLimitCap.
 func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
-	page = 1
-	perPage = 20
-
-	if v := q.Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = n
-		}
-	}
-
-	maxPerPage := listLimitCap(entityMax)
-
 	sizeParam := q.Get("limit")
 	if sizeParam == "" {
 		sizeParam = q.Get("per_page")
 	}
-	if sizeParam != "" {
-		if n, err := strconv.Atoi(sizeParam); err == nil && n > 0 {
-			perPage = n
-		}
-	}
-	if perPage > maxPerPage {
-		perPage = maxPerPage
-	}
-	return
+	return pagination.ParsePositiveInt(q.Get("page"), 1), pagination.ParseLimit(sizeParam, defaultListSize, listLimitCap(entityMax))
 }
 
 // explicitOffsetValues reads a non-negative ?offset=.
@@ -1168,7 +1151,7 @@ func (ch *CrudHandler) maxListOffset() int {
 
 // requireBoundedOffset refuses with 400 a skip, explicit or page-derived,
 // past maxListOffset, reckoned exactly at any size.
-func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, page, perPage int) bool {
+func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, perPage int) bool {
 	offset := requestedOffset(q, perPage)
 	if offset.Cmp(big.NewInt(int64(ch.maxListOffset()))) <= 0 {
 		return true
@@ -1203,18 +1186,17 @@ func requestedOffset(q url.Values, perPage int) *big.Int {
 // listLimitCap is the per-request row cap of every list path: 100, or
 // MaxListLimit up to streamListThreshold.
 func listLimitCap(entityMax int) int {
-	limitCap := 100
 	if entityMax > 0 {
-		limitCap = min(entityMax, streamListThreshold)
+		return min(entityMax, streamListThreshold)
 	}
-	return limitCap
+	return 100
 }
 
 // ListLimits returns a list's default page size and the ?limit cap for an
 // entity whose Pagination.MaxListLimit is entityMax.
 func ListLimits(entityMax int) (def, max int) {
 	max = listLimitCap(entityMax)
-	return min(20, max), max
+	return pagination.ClampLimit(defaultListSize, max), max
 }
 
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {

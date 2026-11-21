@@ -2,8 +2,9 @@ package clitest
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 )
 
 // moduleRoot is the repo's module root, found at package init by walking
@@ -20,16 +21,8 @@ func findModuleRoot() string {
 	if err != nil {
 		return ""
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
+	root, _ := coverageroot.FindUp(dir, "go.mod")
+	return root
 }
 
 // mustModuleRoot returns moduleRoot, panicking when init found none.

@@ -10,100 +10,10 @@ import (
 // This file pins the trust boundary that splits RenderNode (untrusted IR)
 // from RenderTrustedNode (first-party IR): the action-attribute family that
 // core-ui/runtime/frag/boot.js turns into window.__gofastr.trigger() calls.
-//
-// withoutActionAttrs runs at the untrusted entry points only and removes
-// data-action, data-action-* and data-param-*. The trusted entry points skip
-// it, so a developer-authored app spec can still wire button actions through
-// those exact attributes. attrAllowed then independently strips the
-// privileged data-cui-* family on BOTH paths, that is asserted here only for
-// the untrusted path (the case the task names), since the code strips it
-// regardless of trust.
-//
-// "Sentinel" attributes (class, data-testid) ride along in every case to prove
-// the element still rendered and the strip was surgical, not a blanket drop.
-
-// strippedActionAttrs is the closed set withoutActionAttrs removes. data-action
-// is the click-handler form; data-action-* selects the event (and
-// data-action-mount fires at hydration with no interaction); data-param-* is
-// how the IR chooses the trigger's arguments.
-var strippedActionAttrs = []string{
-	"data-action",
-	"data-action-click",
-	"data-action-mount",
-	"data-action-type",
-	"data-param-id",
-	"data-param-entity",
-}
-
-// RenderNode strips the action family from an element's own props.
-func TestRenderNodeStripsActionAttrs(t *testing.T) {
-	for _, attr := range strippedActionAttrs {
-		t.Run(attr, func(t *testing.T) {
-			got := string(RenderNode(node.Node{Kind: "div", Props: map[string]any{
-				attr:          "deleteAllRecords",
-				"data-testid": "sentinel",
-			}}))
-			if !strings.Contains(got, `data-testid="sentinel"`) {
-				t.Fatalf("element did not render at all — sentinel lost. Rendered: %s", got)
-			}
-			if strings.Contains(strings.ToLower(got), strings.ToLower(attr)) {
-				t.Errorf("SECURITY: untrusted RenderNode emitted action attr %s. Rendered: %s", attr, got)
-			}
-		})
-	}
-}
-
-// RenderTrustedNode keeps the same family (emits it as an attribute), that is
-// the whole reason the trusted variant exists. If it ever stops, every
-// generated action goes silently dead.
-func TestRenderTrustedNodeKeepsActionAttrs(t *testing.T) {
-	for _, attr := range strippedActionAttrs {
-		t.Run(attr, func(t *testing.T) {
-			got := string(RenderTrustedNode(node.Node{Kind: "div", Props: map[string]any{
-				attr: "save",
-			}}))
-			want := attr + `="save"`
-			if !strings.Contains(got, want) {
-				t.Errorf("trusted RenderTrustedNode dropped %s. Rendered: %s", want, got)
-			}
-		})
-	}
-}
-
-// RenderKind (the single-element entry point) strips the action family exactly
-// like RenderNode does, it routes through withoutActionAttrs before
-// renderKind.
-func TestRenderKindStripsActionAttrs(t *testing.T) {
-	for _, attr := range strippedActionAttrs {
-		t.Run(attr, func(t *testing.T) {
-			got := string(RenderKind("div", map[string]any{
-				attr:          "deleteAllRecords",
-				"data-testid": "sentinel",
-			}, nil))
-			if !strings.Contains(got, `data-testid="sentinel"`) {
-				t.Fatalf("element did not render at all — sentinel lost. Rendered: %s", got)
-			}
-			if strings.Contains(strings.ToLower(got), strings.ToLower(attr)) {
-				t.Errorf("SECURITY: RenderKind emitted action attr %s. Rendered: %s", attr, got)
-			}
-		})
-	}
-}
-
-// RenderTrustedKind is RenderKind's first-party counterpart and keeps the family.
-func TestRenderTrustedKindKeepsActionAttrs(t *testing.T) {
-	for _, attr := range strippedActionAttrs {
-		t.Run(attr, func(t *testing.T) {
-			got := string(RenderTrustedKind("div", map[string]any{
-				attr: "save",
-			}, nil))
-			want := attr + `="save"`
-			if !strings.Contains(got, want) {
-				t.Errorf("trusted RenderTrustedKind dropped %s. Rendered: %s", want, got)
-			}
-		})
-	}
-}
+// The per-attribute strip/keep tables live in noderender_security_test.go
+// (TestIRCannotFireActions, TestTrustedIRKeepsActions,
+// TestIRDropsScriptAndURLGadgets); this file holds the dimensions those
+// tables do not: trust flowing down the whole tree, and case folding.
 
 // Trust flows down the whole tree (renderNode passes its trusted flag to each
 // child), so a child carrying data-action is stripped under RenderNode and kept
@@ -165,21 +75,5 @@ func TestRenderNodeStripsActionAttrsCaseInsensitive(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// The privileged data-cui-* family drives the runtime (signals, RPC, polling,
-// navigation). It is stripped on the untrusted path by attrAllowed's
-// privilegedDataPrefixes check. Assert at least data-cui-rpc is removed.
-func TestRenderNodeStripsPrivilegedDataFuiFamily(t *testing.T) {
-	got := string(RenderNode(node.Node{Kind: "div", Props: map[string]any{
-		"data-cui-rpc": "https://evil.example/r",
-		"data-testid":  "sentinel",
-	}}))
-	if !strings.Contains(got, `data-testid="sentinel"`) {
-		t.Fatalf("element did not render at all — sentinel lost. Rendered: %s", got)
-	}
-	if strings.Contains(strings.ToLower(got), "data-cui-rpc") {
-		t.Errorf("SECURITY: untrusted RenderNode emitted privileged data-cui-rpc. Rendered: %s", got)
 	}
 }

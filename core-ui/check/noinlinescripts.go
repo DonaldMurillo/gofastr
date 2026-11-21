@@ -66,20 +66,29 @@ func ScanInlineScriptsIn(fset *token.FileSet, file *ast.File, filename string, r
 }
 
 func LintNoInlineScripts(dir string) (*Result, error) {
-	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
-		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1805")
-		sub := &Result{}
-		scanInlineScripts(fset, file, filename, sub)
-		for _, v := range sub.Violations {
-			if !allowed[v.Line] {
-				result.Violations = append(result.Violations, v)
-			}
-		}
-	})
+	res, err := lintGoDir(dir, lintInlineScripts)
+	if err != nil {
+		return nil, err
+	}
+	return res[0], nil
 }
 
-func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result)) (*Result, error) {
-	result := &Result{}
+func lintInlineScripts(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
+	allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1805")
+	sub := &Result{}
+	scanInlineScripts(fset, file, filename, sub)
+	for _, v := range sub.Violations {
+		if !allowed[v.Line] {
+			result.Violations = append(result.Violations, v)
+		}
+	}
+}
+
+func lintGoDir(dir string, scans ...func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result)) ([]*Result, error) {
+	results := make([]*Result, len(scans))
+	for i := range results {
+		results[i] = &Result{}
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read dir: %w", err)
@@ -105,21 +114,40 @@ func lintGoDir(dir string, scan func(fset *token.FileSet, file *ast.File, filena
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", filename, err)
 		}
-		scan(fset, file, filename, raw, result)
+		for i, scan := range scans {
+			scan(fset, file, filename, raw, results[i])
+		}
 	}
-	return result, nil
+	return results, nil
 }
 
 // LintNoInlineScriptsRecursive walks dir and every subdirectory, running LintNoInlineScripts on
 // each.
 func LintNoInlineScriptsRecursive(root string) (*Result, error) {
-	return lintRecursive(root, LintNoInlineScripts, "dist")
+	return lintRecursive(root, LintNoInlineScripts)
 }
 
-func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
+// LintNoInlineRecursive runs both inline detectors in one walk, answering the script result first.
+func LintNoInlineRecursive(root string) (*Result, *Result, error) {
+	scripts, styles := &Result{}, &Result{}
+	err := lintRecursiveDirs(root, func(dir string) error {
+		res, err := lintGoDir(dir, lintInlineScripts, lintInlineStyles)
+		if err != nil {
+			return err
+		}
+		scripts.Violations = append(scripts.Violations, res[0].Violations...)
+		styles.Violations = append(styles.Violations, res[1].Violations...)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return scripts, styles, nil
+}
+
+func lintRecursiveDirs(root string, visitDir func(dir string) error, skip ...string) error {
 	root = filepath.Clean(root)
-	result := &Result{}
-	err := sourcewalk.Walk(root, func(path string, d os.DirEntry, err error) error {
+	return sourcewalk.Walk(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -132,13 +160,20 @@ func lintRecursive(root string, lint func(string) (*Result, error), skip ...stri
 			slices.Contains(skip, base)) {
 			return filepath.SkipDir
 		}
-		sub, err := lint(path)
+		return visitDir(path)
+	})
+}
+
+func lintRecursive(root string, lint func(string) (*Result, error), skip ...string) (*Result, error) {
+	result := &Result{}
+	err := lintRecursiveDirs(root, func(dir string) error {
+		sub, err := lint(dir)
 		if err != nil {
 			return err
 		}
 		result.Violations = append(result.Violations, sub.Violations...)
 		return nil
-	})
+	}, skip...)
 	if err != nil {
 		return nil, err
 	}

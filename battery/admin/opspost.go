@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -15,9 +14,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
-const maxAdminBodyBytes int64 = 1 << 20
+// maxAdminBodyBytes caps an ops post body at the repo's
+// bodylimit.MaxJSONBodyBytes.
+const maxAdminBodyBytes int64 = bodylimit.MaxJSONBodyBytes
 
 func isRPC(r *http.Request) bool {
 	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -26,19 +28,11 @@ func isRPC(r *http.Request) bool {
 
 func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (url.Values, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-	tooLarge := func(err error) bool {
-		_, ok := errors.AsType[*http.MaxBytesError](err)
-		return ok
-	}
 	if isRPC(r) {
 		var raw map[string]any
 		//gofastr:allow(floatnum) only strings and string arrays become form values; a number is refused
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
-			if tooLarge(err) {
-				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return nil, false
-			}
-			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+			b.refuseBodyError(w, r, page, err)
 			return nil, false
 		}
 		vals := url.Values{}
@@ -63,11 +57,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		return vals, true
 	}
 	if err := r.ParseForm(); err != nil {
-		if tooLarge(err) {
-			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return nil, false
-		}
-		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+		b.refuseBodyError(w, r, page, err)
 		return nil, false
 	}
 	return r.PostForm, true
@@ -93,9 +83,11 @@ var results = map[string]result{
 	"module-revoked":         {i18nui.AdminModuleRevoked, true},
 	"refused":                {i18nui.AdminRefused, false},
 	"failed":                 {i18nui.AdminFailed, false},
+	"body-too-large":         {i18nui.AdminBodyTooLarge, false},
 	"bad-input":              {i18nui.AdminBadInput, false},
 	"grant-refused":          {i18nui.AdminGrantRefused, false},
 	"assign-refused":         {i18nui.AdminAssignRefused, false},
+	"roles-conflict":         {i18n.StatusPhrase(http.StatusConflict), false},
 	"own-admin-refused":      {i18nui.AdminOwnAdminRefused, false},
 	"own-permission-refused": {i18nui.AdminOwnPermRefused, false},
 	"name-refused":           {i18nui.AdminNameRefused, false},
@@ -106,7 +98,8 @@ var results = map[string]result{
 	"queue-load-failed":      {i18nui.AdminQueueLoadFailed, false},
 	"replay-unsupported":     {i18nui.AdminFailed, false},
 	"replay-duplicate":       {i18nui.AdminReplayDuplicate, false},
-	"replay-nothing":         {replayNothing, false},
+	"replay-nothing":         {i18nui.AdminReplayNothing, false},
+	"replay-all-nothing":     {i18nui.AdminReplayAllNothing, false},
 }
 
 func (b *Battery) done(w http.ResponseWriter, r *http.Request, page, name string) {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // TestEnableAfterStartLoopsSpawns: a module registered after StartLoops
@@ -22,12 +23,12 @@ import (
 // StateAbsent, which Register never sets, so the module sat in
 // InstalledDisabled forever.
 func TestEnableAfterStartLoopsSpawns(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := newTestStore(t)
-	d := descriptorForChild(t, childModeEcho)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	base := superviseLoops()
 	sup.StartLoops()
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
@@ -36,7 +37,7 @@ func TestEnableAfterStartLoopsSpawns(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	// Repeat toggles and a second StartLoops must not stack loops: one
 	// slot, one supervise goroutine.
@@ -56,16 +57,16 @@ func TestEnableAfterStartLoopsSpawns(t *testing.T) {
 // charge the restart circuit; enough of them would wedge the module in
 // Crashed with the circuit open.
 func TestLeaseDrainChargesNoCrash(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := &redLeaseFlakyStore{SQLProcessModuleStore: newTestStore(t)}
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	// Each outage respawns the child. A race-built child on a loaded
 	// runner can miss the shared 3s spawn deadline, and that honest
 	// handshake timeout charges the circuit after the outage, which this
 	// test would then blame on the drain.
-	sup := newTestSupervisorWith(t, store, childModeEcho, func(c *SupervisorConfig) {
+	sup := newTestSupervisorWith(t, store, pmtestkit.ModeEcho, func(c *SupervisorConfig) {
 		c.SpawnDeadline = 20 * time.Second
 	})
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
@@ -75,7 +76,7 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	// The exit watcher's rule on its own, free of the race with
 	// handleLeaseExpired's state restore: a child that exits while the
@@ -110,7 +111,7 @@ func TestLeaseDrainChargesNoCrash(t *testing.T) {
 		t.Fatalf("a child killed during a lease drain was recorded as a crash (last exit %q)", info.LastExit)
 	}
 	store.broken.Store(false)
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	for outage := 1; outage <= 3; outage++ {
 		before, _ := sup.Info(d.Name)
@@ -195,13 +196,13 @@ func TestProxyOversizeBody413(t *testing.T) {
 // when the child is reaped, so a crash-looping module does not leave one
 // directory per restart under the temp root.
 func TestRunnerRemovesScratchDir(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
-	d := descriptorForChild(t, childModeCrashExit)
+	d := descriptorForChild(t, pmtestkit.ModeCrashExit)
 	gone := func(what, instance string) {
 		t.Helper()
-		dir := filepath.Join(os.TempDir(), "gofastr-module-"+safeDirName(d.Name)+"-"+shortID(instance))
+		dir := filepath.Join(os.TempDir(), "gofastr-module-"+safeDirName(d.Name)+"-"+shortHash(instance))
 		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 			_ = os.RemoveAll(dir)
 			t.Errorf("%s: scratch dir %s survived (stat err %v)", what, dir, err)
@@ -209,7 +210,7 @@ func TestRunnerRemovesScratchDir(t *testing.T) {
 	}
 
 	instance := mintInstanceID()
-	runner := &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeCrashExit, nil)}
+	runner := &envRunner{inner: &TrustedProcessRunner{}, env: pmtestkit.Env(pmtestkit.ModeCrashExit, nil)}
 	rc, err := runner.Start(context.Background(), ChildSpec{Descriptor: d, InstanceID: instance})
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -223,7 +224,7 @@ func TestRunnerRemovesScratchDir(t *testing.T) {
 	failCodec := &TrustedProcessRunner{NewCodec: func(io.Reader, io.Writer, int) (*moduleproto.Codec, error) {
 		return nil, errors.New("codec refused")
 	}}
-	if _, err := (&envRunner{inner: failCodec, env: childEnv(childModeCrashExit, nil)}).Start(context.Background(), ChildSpec{Descriptor: d, InstanceID: instance}); err == nil {
+	if _, err := (&envRunner{inner: failCodec, env: pmtestkit.Env(pmtestkit.ModeCrashExit, nil)}).Start(context.Background(), ChildSpec{Descriptor: d, InstanceID: instance}); err == nil {
 		t.Fatal("start with a failing codec: want error")
 	}
 	gone("codec failure", instance)
@@ -268,11 +269,11 @@ func TestProcessModuleNoSupervisorClosed(t *testing.T) {
 // TestEnableBeforeStartLoopsWaits: Enable before StartLoops records the
 // desired state but spawns nothing; StartLoops then brings the module up.
 func TestEnableBeforeStartLoopsWaits(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
-	d := descriptorForChild(t, childModeEcho)
-	sup := newTestSupervisor(t, newTestStore(t), childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
+	sup := newTestSupervisor(t, newTestStore(t), pmtestkit.ModeEcho)
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -284,7 +285,7 @@ func TestEnableBeforeStartLoopsWaits(t *testing.T) {
 		t.Fatalf("Enable before StartLoops moved the module to %s, want InstalledDisabled", info.State)
 	}
 	sup.StartLoops()
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 }
 
 // superviseLoops counts the running supervise goroutines.

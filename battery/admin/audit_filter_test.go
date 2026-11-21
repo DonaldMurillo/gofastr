@@ -140,6 +140,19 @@ func TestAuditFilterInjectionActorMatchesNothing(t *testing.T) {
 	}
 }
 
+func TestAuditFilterIgnoresInvalidActorUTF8(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig(), "notes": notesConfig()}, Config{Entities: []string{"posts", "notes"}}, nil)
+	seedAuditDays(x, time.Now().UTC())
+	rr := get(x.as(theAdmin), "/admin/audit?actor=u%FF")
+	body := rr.Body.String()
+	if n := auditRowsShown(body); rr.Code != 200 || n != 3 {
+		t.Errorf("invalid UTF-8 actor = %d with %d rows, want 200 and all 3", rr.Code, n)
+	}
+	if !strings.Contains(body, "actor&#34; was ignored") && !strings.Contains(body, "actor&quot; was ignored") {
+		t.Error("Audit page is missing the ignored-actor warning")
+	}
+}
+
 func TestAuditFilterFormDraws(t *testing.T) {
 	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig(), "notes": notesConfig()}, Config{Entities: []string{"posts", "notes"}}, nil)
 	body := get(x.as(theAdmin), "/admin/audit").Body.String()

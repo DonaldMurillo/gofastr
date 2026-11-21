@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0736fbc30147c9b2
+//gofastr:generated generator=app kind=scaffold version=dev sum=31d2fd7024b62978
 
 package entities
 
@@ -319,13 +319,6 @@ func OnOrdersUpdated(app *framework.App, fn func(ctx context.Context, row *Order
 // has been removed (or soft-deleted).
 func OnOrdersDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return onEntityDeleted(app, "orders", fn)
-}
-
-// extractOrdersRecord unmarshals an event payload's "record" field into a
-// *Orders, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extractOrdersRecord(ev framework.Event, entityName string) (*Orders, bool) {
-	return extractEntityRecord[Orders](ev, entityName)
 }
 
 // registerOrders registers the "orders" entity with app.

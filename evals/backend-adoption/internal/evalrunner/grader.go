@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 	"io"
 	"net"
 	"net/http"
@@ -17,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 const (
@@ -47,7 +49,7 @@ func Grade(ctx context.Context, workspace, resultDir string, maintenance bool) P
 
 	buildCtx, cancelBuild := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancelBuild()
-	binary := filepath.Join(resultDir, executableName("candidate-app"))
+	binary := filepath.Join(resultDir, proctree.ExecutableName("candidate-app"))
 	buildOut, buildErr := commandOutput(buildCtx, workspace, "go", "build", "-o", binary, ".")
 	result.BuildOK = buildErr == nil
 
@@ -328,10 +330,11 @@ func (g *grader) request(client *http.Client, method, path, body string, headers
 }
 
 type runningServer struct {
-	cmd     *exec.Cmd
+	command *proctree.Command
 	binary  string
 	baseURL string
-	done    chan error
+	done    chan struct{}
+	waitErr error
 }
 
 func startServer(ctx context.Context, binary, workspace, dbPath, logPath string) (*runningServer, error) {
@@ -346,8 +349,7 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, binary)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(binary)
 	cmd.Dir = workspace
 	// Allowlisted, not inherited. This binary is code an unsupervised
 	// agent wrote and we are about to execute it; handing it
@@ -356,16 +358,18 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 	// allowlisted environment; this one did not.
 	cmd.Env = append(childenv.Allowlisted(), "PORT="+addr, "DATABASE_PATH="+dbPath)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := cmd.Start(); err != nil {
+	command, err := proctree.Start(ctx, cmd)
+	if err != nil {
 		_ = logFile.Close()
 		return nil, err
 	}
 	server := &runningServer{
-		cmd: cmd, binary: binary, baseURL: "http://" + addr, done: make(chan error, 1),
+		command: command, binary: binary, baseURL: "http://" + addr, done: make(chan struct{}),
 	}
 	go func() {
-		server.done <- cmd.Wait()
+		server.waitErr = command.Wait()
 		_ = logFile.Close()
+		close(server.done)
 	}()
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	deadline := time.Now().Add(20 * time.Second)
@@ -378,8 +382,8 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 			}
 		}
 		select {
-		case waitErr := <-server.done:
-			return nil, fmt.Errorf("server exited before ready: %v", waitErr)
+		case <-server.done:
+			return nil, fmt.Errorf("server exited before ready: %v", server.waitErr)
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -388,25 +392,16 @@ func startServer(ctx context.Context, binary, workspace, dbPath, logPath string)
 }
 
 func (s *runningServer) stop() {
-	if s == nil || s.cmd == nil || s.cmd.Process == nil {
-		return
-	}
-	killCommandTree(s.cmd)
-	select {
-	case <-s.done:
-	case <-time.After(3 * time.Second):
-		_ = s.cmd.Process.Kill()
-	}
-	s.cmd = nil
+	s.command.Stop()
+	<-s.done
 }
 
 func commandOutput(ctx context.Context, dir, program string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, program, args...)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(program, args...)
 	cmd.Dir = dir
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
-	err := cmd.Run()
+	err := proctree.Run(ctx, cmd)
 	return output.String(), err
 }
 

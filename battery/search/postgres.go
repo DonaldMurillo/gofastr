@@ -43,7 +43,9 @@ type PostgresConfig struct {
 	Language string
 
 	// WeightedFields maps Document.Fields keys (string values only) to a
-	// tsvector weight in the range 'A'..'D'.
+	// is indexed at that weight; Document.Text is always weight 'A'. A
+	// configured field present with a non-string value makes Index
+	// return an error.
 	WeightedFields map[string]byte
 }
 
@@ -302,18 +304,12 @@ func (p *PostgresSearch) ensurePrefixTrigger(ctx context.Context) error {
 
 // Index inserts or replaces a document (UPSERT on id).
 func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
-	var fieldsArg any
-	if len(doc.Fields) == 0 {
-		fieldsArg = []byte("{}")
-	} else {
-		b, err := json.Marshal(doc.Fields)
-		if err != nil {
-			return fmt.Errorf("search: marshal fields: %w", err)
-		}
-		fieldsArg = b
+	fieldsJSON, err := marshalFields(doc.Fields)
+	if err != nil {
+		return err
 	}
 
-	args := []any{doc.ID, doc.Type, doc.Text, fieldsArg, p.language, doc.Owner}
+	args := []any{doc.ID, doc.Type, doc.Text, fieldsJSON, p.language, doc.Owner}
 	const textIdx, langIdx = 3, 5
 
 	var tsv strings.Builder
@@ -358,8 +354,19 @@ func (p *PostgresSearch) Delete(ctx context.Context, id string) error {
 
 // Search runs a ranked full-text query.
 func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) {
+	if err := validateFieldEquals(q.FieldEquals); err != nil {
+		return nil, err
+	}
+	var fieldFilter []byte
+	if len(q.FieldEquals) > 0 {
+		var err error
+		fieldFilter, err = json.Marshal(q.FieldEquals)
+		if err != nil {
+			return nil, fmt.Errorf("search: marshal field filter: %w", err)
+		}
+	}
 	if len(strings.Fields(q.Text)) == 0 {
-		return p.searchAll(ctx, q)
+		return p.searchAll(ctx, q, fieldFilter)
 	}
 	terms := queryTerms(q.Text)
 	if len(terms) == 0 {
@@ -381,12 +388,8 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 		args = append(args, q.Type)
 		fmt.Fprintf(&where, " AND type = $%d", len(args))
 	}
-	if len(q.FieldEquals) > 0 {
-		b, err := json.Marshal(q.FieldEquals)
-		if err != nil {
-			return nil, fmt.Errorf("search: marshal field filter: %w", err)
-		}
-		args = append(args, b)
+	if len(fieldFilter) > 0 {
+		args = append(args, fieldFilter)
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 
@@ -417,7 +420,7 @@ ORDER BY score DESC, id ASC%s`,
 	return scanSearchRows(rows)
 }
 
-func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, error) {
+func (p *PostgresSearch) searchAll(ctx context.Context, q Query, fieldFilter []byte) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder
 	where.WriteString("TRUE")
@@ -425,12 +428,8 @@ func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, erro
 		args = append(args, q.Type)
 		fmt.Fprintf(&where, " AND type = $%d", len(args))
 	}
-	if len(q.FieldEquals) > 0 {
-		b, err := json.Marshal(q.FieldEquals)
-		if err != nil {
-			return nil, fmt.Errorf("search: marshal field filter: %w", err)
-		}
-		args = append(args, b)
+	if len(fieldFilter) > 0 {
+		args = append(args, fieldFilter)
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 

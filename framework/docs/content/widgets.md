@@ -143,6 +143,9 @@ The runtime opens it with `showModal()`, so the browser supplies:
   `CloseOnEscape` is set. With `CloseOnEscape` off the chrome carries
   `closedby="none"`, and the runtime cancels the request.
 
+`Builder.Dismissible()` enables Escape and outside-click dismissal.
+Backdrop, role, and placement are configured independently.
+
 A click on the scrim closes it when `CloseOnClickOutside` is set. The
 press has to start on the scrim too, so a text selection dragged out of
 the panel does not close it. The page scroll lock and focus return to
@@ -332,11 +335,8 @@ named signal.
 For forms, set `data-cui-rpc` on the `<form>` itself; the runtime
 serializes inputs into a JSON body.
 
-For RPCs that don't update a signal, drop the `…WithSignal` suffix:
-
-```go
-.RPC("POST", "/api/log-out", logoutHandler)
-```
+Omit `data-cui-rpc-signal` from the trigger when the RPC has no response
+signal to update.
 
 ### Custom request body
 
@@ -667,14 +667,19 @@ Notes:
 
 ## Theming
 
-Widgets resolve through `core-ui/style` and use the framework default
-theme without extra setup. Token overrides flow through:
+Widget chrome uses CSS custom properties from the host's page stylesheet.
+The standard UI host emits those token declarations. A bare HTML host can
+serve `theme.PageCSS` from `core-ui/widget/theme` as its page stylesheet.
+Override typed tokens before generating the stylesheet:
 
-1. `core-ui/widget/theme.PageTheme()` returns the page `style.Theme`.
-   Mutate the returned value's typed fields to override tokens, then pass
-   it where you build widget chrome.
-2. Or rely on the default: `widget.Mount` builds a stylesheet with
-   `:root` CSS variables for every token.
+```go
+t := theme.PageTheme()
+t.Colors.Primary = style.Color{Name: "primary", Value: "#0F172A"}
+css := theme.PageCSS(t)
+```
+
+Serve `css` from a stylesheet route and link it from the page. `widget.Mount`
+serves the widget-specific chrome rules at the widget's style URL.
 
 Kiln's `set_theme` tool (see `kiln/protocol`) is an example: the agent updates
 semantic theme tokens such as `primary`, `surface`, and `text`; its live pages

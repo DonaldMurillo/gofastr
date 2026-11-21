@@ -98,7 +98,7 @@ func TestRecordPortKeepsFirstMapping(t *testing.T) {
 // not add a table to the process-wide set.
 func TestInactiveResolveSharesNoTable(t *testing.T) {
 	clearIsolationEnv(t)
-	t.Setenv(envIsolation, "off")
+	t.Setenv(EnvIsolation, "off")
 	dir := linkedWorktree(t)
 	if _, err := Resolve(dir); err != nil {
 		t.Fatal(err)

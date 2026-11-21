@@ -86,9 +86,9 @@ func TestDeliverySignsInReceiverFormat(t *testing.T) {
 
 func TestDefaultFormatIsSignWithTimestamp(t *testing.T) {
 	body := []byte(`{"id":1}`)
-	if a, b := defaultSignatureFormat.Sign(formatSecret, 1700000000, "a.b", "d1", body),
-		SignWithTimestamp(formatSecret, 1700000000, "a.b", "d1", body); a != b {
-		t.Fatalf("default format %q, SignWithTimestamp %q", a, b)
+	want := "t=1700000000,v1=" + hexMAC(formatSecret, "1700000000\na.b\nd1\n"+string(body))
+	if got := SignWithTimestamp(formatSecret, 1700000000, "a.b", "d1", body); got != want {
+		t.Fatalf("SignWithTimestamp = %q, want %q", got, want)
 	}
 	if err := defaultSignatureFormat.Validate(); err != nil {
 		t.Fatal(err)
@@ -207,6 +207,48 @@ func TestFormatVerifyPrefixTimestamp(t *testing.T) {
 	}
 }
 
+func TestFormatVerifyRequiresConfiguredTimestampHeader(t *testing.T) {
+	body := []byte(`{}`)
+	for _, prefix := range []string{"sha256=", "ts={timestamp},mac="} {
+		t.Run(prefix, func(t *testing.T) {
+			f := acmeFormat
+			f.Prefix = prefix
+			h := http.Header{}
+			f.setHeaders(h, formatSecret, time.Now().Unix(), "ping", "d1", body)
+			if !f.Verify(formatSecret, h, body, time.Minute) {
+				t.Fatal("genuine request refused")
+			}
+			h.Del(f.TimestampHeader)
+			if f.Verify(formatSecret, h, body, time.Minute) {
+				t.Error("request verified without the configured timestamp header")
+			}
+			h.Set(f.TimestampHeader, "")
+			if f.Verify(formatSecret, h, body, time.Minute) {
+				t.Error("request verified with an empty timestamp header")
+			}
+		})
+	}
+}
+
+func TestFormatVerifyRequiresExactCustomSignature(t *testing.T) {
+	body := []byte(`{}`)
+	for _, prefix := range []string{"sha256=", "t={timestamp},v1="} {
+		t.Run(prefix, func(t *testing.T) {
+			f := acmeFormat
+			f.Prefix = prefix
+			h := http.Header{}
+			f.setHeaders(h, formatSecret, time.Now().Unix(), "ping", "d1", body)
+			if !f.Verify(formatSecret, h, body, time.Minute) {
+				t.Fatal("genuine request refused")
+			}
+			h.Set(f.Header, h.Get(f.Header)+",kid=other-key")
+			if f.Verify(formatSecret, h, body, time.Minute) {
+				t.Error("custom signature verified with an unsigned field appended")
+			}
+		})
+	}
+}
+
 func TestSubscribeRefusesAuthOnSigHeader(t *testing.T) {
 	f := acmeFormat
 	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true, Signature: &f})
@@ -281,13 +323,21 @@ func TestPrefixTimestampAtPrefixEnd(t *testing.T) {
 }
 
 func TestPrefixDigitAfterTimestamp(t *testing.T) {
-	f := SignatureFormat{Header: "X-Sig", TimestampHeader: "X-Ts", Prefix: "t={timestamp}0,", Signed: "{timestamp}.{body}"}
-	if err := f.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	h := http.Header{}
-	f.setHeaders(h, formatSecret, time.Now().Unix(), "ping", "d1", []byte(`{}`))
-	if !f.Verify(formatSecret, h, []byte(`{}`), time.Minute) {
-		t.Fatalf("genuine signature %q refused", h.Get("X-Sig"))
+	now := time.Now().Unix()
+	// The suffix also occurs inside the timestamp. Locate it relative to
+	// the fixed-size MAC, so the genuine value still verifies.
+	for _, suffix := range []string{"0,", strconv.FormatInt(now, 10)[:1]} {
+		t.Run(suffix, func(t *testing.T) {
+			body := []byte(`{}`)
+			f := SignatureFormat{Header: "X-Sig", TimestampHeader: "X-Ts", Prefix: "t={timestamp}" + suffix, Signed: "{timestamp}.{body}"}
+			if err := f.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			h := http.Header{}
+			f.setHeaders(h, formatSecret, now, "ping", "d1", body)
+			if !f.Verify(formatSecret, h, body, time.Minute) {
+				t.Fatalf("genuine signature %q refused", h.Get("X-Sig"))
+			}
+		})
 	}
 }

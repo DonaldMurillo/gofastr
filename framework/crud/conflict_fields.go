@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 const (
@@ -54,8 +55,11 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 	fields := map[string][]schema.Violation{}
 	for _, c := range cols {
 		f, declared := fieldNamed(ch.Entity, c)
-		key := ch.convertKey(c)
-		if !declared || !(sent[c] || sent[key]) {
+		if !declared {
+			continue
+		}
+		key := ch.convertKey(f.Name)
+		if !(sent[f.Name] || sent[key]) {
 			continue
 		}
 		if f.Hidden || f.NoQuery {
@@ -152,10 +156,18 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 		}
 		var cols []string
 		for c := range strings.SplitSeq(rest, ", ") {
-			cols = append(cols, strings.TrimPrefix(strings.TrimSpace(c), table+"."))
+			col := sqliteConstraintColumn(table, c)
+			if col == "" {
+				return nil
+			}
+			cols = append(cols, col)
 		}
 		for _, g := range uniqueGroups(e) {
-			if sameSet(g.cols, cols) {
+			folded := make([]string, len(g.cols))
+			for i, col := range g.cols {
+				folded[i] = foldIdent(col)
+			}
+			if sameSet(folded, cols) {
 				return g.cols
 			}
 		}
@@ -222,11 +234,7 @@ func notNullColumn(table, msg string) string {
 		if j := strings.Index(rest, " ("); j >= 0 {
 			rest = rest[:j]
 		}
-		col, ok := strings.CutPrefix(strings.TrimSpace(rest), table+".")
-		if !ok {
-			return ""
-		}
-		return col
+		return sqliteConstraintColumn(table, rest)
 	}
 	if i := strings.Index(msg, pgNotNullLead); i >= 0 {
 		col, rest, ok := strings.Cut(msg[i+len(pgNotNullLead):], `"`)
@@ -241,6 +249,14 @@ func notNullColumn(table, msg string) string {
 		return col
 	}
 	return ""
+}
+
+func sqliteConstraintColumn(table, diagnostic string) string {
+	namedTable, col, ok := strings.Cut(strings.TrimSpace(diagnostic), ".")
+	if !ok || !asciicase.EqualFold(namedTable, table) {
+		return ""
+	}
+	return foldIdent(col)
 }
 
 func sameSet(a, b []string) bool {

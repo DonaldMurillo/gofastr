@@ -148,10 +148,6 @@ func (ds *UIHost) siteDescriptionText() string {
 	return ""
 }
 
-func resolveScreenSEO(ctx context.Context, screen *app.Screen) SEO {
-	return resolveScreenSEOFor(ctx, screen, nil)
-}
-
 func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component.Component) SEO {
 	src := component.Component(screen.Component)
 	if comp != nil {

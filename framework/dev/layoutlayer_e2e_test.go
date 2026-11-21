@@ -15,7 +15,6 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
@@ -41,13 +40,7 @@ const layoutPageCSS = `body { margin: 0 }
 // that widens the page (not a scroll box's or a clip's content, not an
 // off-canvas fixed drawer), and keeps its on/off across a reload.
 func TestLayoutLayerDrawsAndFlags(t *testing.T) {
-	if testing.Short() {
-		t.Skip("browser e2e: -short")
-	}
-	path, ok := browserpath.Find()
-	if !ok {
-		t.Skip("needs Chrome, Chromium, or Edge")
-	}
+	path := chromedptest.BrowserPath(t)
 	r := router.New()
 	RegisterLayoutLayer(r)
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -147,13 +140,7 @@ const topLayerCSS = `body { margin: 0 }
 // in the top layer, above any z-index. The layer has to be read on top of
 // them, since they are what it is most often opened to inspect.
 func TestLayoutLayerPaintsOverTopLayer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("browser e2e: -short")
-	}
-	path, ok := browserpath.Find()
-	if !ok {
-		t.Skip("needs Chrome, Chromium, or Edge")
-	}
+	path := chromedptest.BrowserPath(t)
 	r := router.New()
 	RegisterLayoutLayer(r)
 	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

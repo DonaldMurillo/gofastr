@@ -3,8 +3,6 @@ package queue
 import (
 	"container/heap"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -485,17 +483,8 @@ func (q *MemoryQueue) enqueue(ctx context.Context, job Job, acquire bool) error 
 	if job.SequenceKey != "" {
 		return ErrSequenceUnsupported
 	}
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = q.now()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	if err := normalizeJob(&job, func(job *Job) { defaultCreatedAt(job, q.now) }); err != nil {
+		return err
 	}
 	q.pmu.Lock()
 	defer q.pmu.Unlock()
@@ -585,12 +574,6 @@ func (q *MemoryQueue) deferGated(job Job) {
 	q.pushLocked(job)
 }
 
-func randomID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // Ack confirms a manually dequeued job is done.
 func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 	if stored, ok := q.takeInflight(job.ID); ok {
@@ -599,8 +582,8 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 	return nil
 }
 
-// Nack marks a manually dequeued job failed, re-queuing it while attempts
-// remain.
+// counter and re-enqueues the job when retries remain, otherwise retains it
+// as terminally failed in the dead-letter set.
 func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 	q.moveMu.RLock()
 	defer q.moveMu.RUnlock()

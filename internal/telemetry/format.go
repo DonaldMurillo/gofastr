@@ -3,6 +3,7 @@ package telemetry
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +70,71 @@ type Trace struct {
 	// panic, from the function that panicked on. Written after the
 	// spans, and only when there is one.
 	Stack string
+}
+
+// LogWindow is where a request's own log lines are looked for: its
+// span, and a second of margin either side.
+func (tr Trace) LogWindow() (from, to time.Time) {
+	return tr.Time.Add(-tr.Dur).Add(-time.Second), tr.Time.Add(time.Second)
+}
+
+// StepAttrs are the span attributes worth a line under a step's name,
+// first match wins: what was run, or what was called.
+var StepAttrs = []string{"db.query.text", "db.statement", "http.url", "url.full", "http.target", "messaging.destination.name"}
+
+// Step is one of a trace's spans in Steps' order: its depth under the
+// root, and the first of StepAttrs it carries as its Detail.
+type Step struct {
+	Span
+	Depth int
+	// Detail is the value of the span's first attribute of StepAttrs.
+	Detail string
+	// HasDetail reports whether an attribute matched, even if its value is empty.
+	HasDetail bool
+}
+
+// Steps orders a trace's spans as a tree, each under its parent and
+// siblings by start. A span whose parent is not in the trace hangs
+// from the top; a parent loop is drawn once, where it is reached.
+func Steps(tr Trace) []Step {
+	known := map[string]bool{}
+	for _, sp := range tr.Spans {
+		known[sp.SpanID] = true
+	}
+	children := map[string][]int{}
+	var roots []int
+	for i, sp := range tr.Spans {
+		if sp.ParentID != "" && sp.ParentID != sp.SpanID && known[sp.ParentID] {
+			children[sp.ParentID] = append(children[sp.ParentID], i)
+		} else {
+			roots = append(roots, i)
+		}
+	}
+	out := make([]Step, 0, len(tr.Spans))
+	seen := make([]bool, len(tr.Spans))
+	var walk func(idx []int, depth int)
+	walk = func(idx []int, depth int) {
+		slices.SortStableFunc(idx, func(a, b int) int { return int(tr.Spans[a].Offset - tr.Spans[b].Offset) })
+		for _, i := range idx {
+			if seen[i] {
+				continue
+			}
+			seen[i] = true
+			sp := tr.Spans[i]
+			step := Step{Span: sp, Depth: depth}
+			for _, key := range StepAttrs {
+				if j := slices.IndexFunc(sp.Attrs, func(a Attr) bool { return a.Key == key }); j >= 0 {
+					step.Detail = sp.Attrs[j].Value
+					step.HasDetail = true
+					break
+				}
+			}
+			out = append(out, step)
+			walk(children[sp.SpanID], depth+1)
+		}
+	}
+	walk(roots, 0)
+	return out
 }
 
 // traceHead bounds the bytes a query reads to learn a trace's summary:

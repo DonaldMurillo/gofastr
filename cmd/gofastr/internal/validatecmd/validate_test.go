@@ -13,7 +13,7 @@ func TestValidateCmdParseErrorHasLine(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, "entities:\n  - name: posts\n    bogus_key: 1\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -26,32 +26,33 @@ func TestValidateCmdParseErrorHasLine(t *testing.T) {
 	}
 }
 
-func TestValidateCmdNoArgsExits1(t *testing.T) {
-	var code int
-	out := clitest.CovT_capStdout(t, func() {
-		code = clitest.CovT_capExit(t, func() { RunValidate(nil) })
-	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+func TestValidateCmdMissingOrFlagOperandExits2(t *testing.T) {
+	for _, args := range [][]string{nil, {"--bogus"}, {"app.yml", "extra.yml"}, {"app.yml", "--bogus"}} {
+		var code int
+		out := clitest.CovT_capOutput(t, func() {
+			code = clitest.CovT_capExit(t, func() { RunValidate(args) })
+		})
+		if code != 2 || !strings.Contains(out, "Usage") {
+			t.Errorf("validate %q: exit %d, want usage error 2:\n%s", args, code, out)
+		}
 	}
-	if !strings.Contains(out, "Usage") {
-		t.Fatalf("expected usage text, got:\n%s", out)
+	help := clitest.CovT_capStdout(t, func() { RunValidate([]string{"--help"}) })
+	want := "Exit status 2 indicates a missing app spec path, a first argument starting with --, or an extra path or flag."
+	if !strings.Contains(strings.Join(strings.Fields(help), " "), want) {
+		t.Errorf("help should describe the usage errors observed above:\n%s", help)
 	}
 }
 
-// validate read args[0] and ignored the rest: `gofastr validate good.yml
-// bad.yml` printed "good.yml is valid" and exited 0 without opening
-// bad.yml, and `validate gofastr.yml --json` printed text as if --json
-// meant something.
+// `validate gofastr.yml --json` printed text as if --json meant
+// something: validate reads no flags. A flag after the path is a usage
+// error, exit 2.
 func TestValidateCmdRefusesExtraArguments(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.yml")
-	bad := filepath.Join(dir, "bad.yml")
 	clitest.WriteFileAll(t, good, "app:\n  name: Demo\n  module: example.com/demo\n")
-	clitest.WriteFileAll(t, bad, "entities:\n  - name: posts\n    bogus_key: 1\n")
-	for _, args := range [][]string{{good, bad}, {good, "--json"}, {good, "--strict"}} {
+	for _, args := range [][]string{{good, "--json"}, {good, "--strict"}} {
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() { RunValidate(args) })
 		})
 		if code != 2 {
@@ -69,7 +70,7 @@ func TestValidateCmdModuleMismatchExits1(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, "app:\n  name: Demo\n  module: example.com/other\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -90,7 +91,7 @@ func TestValidateRefusesSecondPath(t *testing.T) {
 	bad := filepath.Join(dir, "b.yml")
 	clitest.WriteFileAll(t, bad, "entities:\n  - name: posts\n    bogus_key: 1\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{good, bad}) })
 	})
 	if code != 2 {

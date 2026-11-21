@@ -33,6 +33,13 @@ func saveRoles(vals url.Values, update func(string) error) error {
 	return update(userID)
 }
 
+// varDeclBound: the same request read through a var declaration —
+// the local binds once, so the trim still rewrites the identity value.
+func varDeclBound(vals url.Values, update func(string) error) error {
+	var raw = vals.Get("user_id")
+	return update(strings.TrimSpace(raw)) // want `keytrim: strings\.TrimSpace rewrites the identity value raw`
+}
+
 // formValue: the request accessor spelling.
 func formValue(r *http.Request, find func(string)) {
 	find(strings.TrimSpace(r.FormValue("tenantID"))) // want `keytrim: strings\.TrimSpace rewrites the identity value r\.FormValue\("tenantID"\)`
@@ -114,4 +121,10 @@ func tenantKeyForms(vals url.Values) (string, string, string) {
 	return strings.TrimSpace(vals.Get("tenant")), // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("tenant"\)`
 		strings.TrimSpace(vals.Get("tenant_key")), // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("tenant_key"\)`
 		strings.TrimSpace(vals.Get("actorID")) // want `keytrim: strings\.TrimSpace rewrites the identity value vals\.Get\("actorID"\)`
+}
+
+func reassignedVar(vals url.Values, update func(string) error) error {
+	var raw = "anonymous"
+	raw = vals.Get("user_id")
+	return update(strings.TrimSpace(raw)) // want `keytrim: strings\.TrimSpace rewrites the identity value raw`
 }

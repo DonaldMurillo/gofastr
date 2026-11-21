@@ -126,10 +126,6 @@ func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) e
 	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "BIGINT NOT NULL DEFAULT 0")
 }
 
-func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
-	return sqliteTableHasColumn(ctx, s.db, s.table, col)
-}
-
 func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, col, typ string) error {
 	if d == migrate.DialectPostgres {
 		_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",

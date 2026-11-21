@@ -5,5 +5,6 @@
 // EXPERIMENTAL: the capability surface, the Shell and Window contracts and
 // the generated bridge may change without a major version bump.
 //
-// See framework/docs/content/desktop.md for the guide.
+//   - battery/desktop/linux: the real shell on linux/amd64 and linux/arm64
+//     (GTK 3 + WebKitGTK 4.1). Other Linux architectures are unsupported.
 package desktop

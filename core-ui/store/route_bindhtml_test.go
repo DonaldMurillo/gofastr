@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-// TestRouteSlicesRefuseBindHTML (DESIGN "Route signals": every value is
-// text): the route family refuses html mode outright — the path and
+// TestRouteFamilyRefusesBindHTML (DESIGN "Route signals": every value
+// is text): the route family refuses html mode outright — the path and
 // title carry user-influenced text, params and query come from the URL,
 // so BindHTML panics naming the slice while Bind and BindAttr keep
 // working. The guard is the emitter (slice.go), not a runtime warning
 // after the markup shipped.
-func TestRouteSlicesRefuseBindHTML(t *testing.T) {
+func TestRouteFamilyRefusesBindHTML(t *testing.T) {
 	slices := map[string]*Slice[string]{
-		"route.path":      RouteSlices{}.Path(),
-		"route.title":     RouteSlices{}.Title(),
-		"route.params.id": RouteSlices{}.Param("id"),
-		"route.query.q":   RouteSlices{}.Query("q"),
+		"route.path":      Route.Path,
+		"route.title":     Route.Title,
+		"route.params.id": Route.Param("id"),
+		"route.query.q":   Route.Query("q"),
 	}
 	for name, sl := range slices {
 		func() {

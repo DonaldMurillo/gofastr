@@ -250,7 +250,7 @@ func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, user
 func (s *EntityUserStore) txHasPassword(ctx context.Context, tx *sql.Tx, users, userID string) (bool, error) {
 	var hasPW bool
 	err := tx.QueryRowContext(ctx, fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s = $1",
+		"SELECT COALESCE(%s, FALSE) FROM %s WHERE %s = $1",
 		query.QuoteFolded(s.fieldMap.PasswordSet), users,
 		query.QuoteFolded(s.fieldMap.ID),
 	), userID).Scan(&hasPW)

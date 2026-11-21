@@ -92,6 +92,32 @@ var allowedNames = map[string]bool{
 // an agent-driven child.
 func Allowed(name string) bool { return allowedNames[strings.ToUpper(name)] }
 
+// AgentEnvironment returns the entries of os.Environ() an agent-driven
+// child may inherit: no CODEX_* variable and no credential-bearing
+// name, minus the extra names in drop, plus the names allow admits
+// (nil drops or admits nothing). The loop that applies the shared list
+// used to be hand-copied in both eval runners.
+func AgentEnvironment(drop []string, allow func(name string) bool) []string {
+	dropped := make(map[string]bool, len(drop))
+	for _, name := range drop {
+		dropped[strings.ToUpper(name)] = true
+	}
+	var out []string
+	for _, entry := range os.Environ() {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		upper := strings.ToUpper(name)
+		if strings.HasPrefix(upper, "CODEX_") || dropped[upper] ||
+			(LooksCredentialBearing(upper) && (allow == nil || !allow(upper))) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
 // Allowlisted returns the entries of os.Environ() that Allowed accepts,
 // in "NAME=value" form.
 func Allowlisted() []string {

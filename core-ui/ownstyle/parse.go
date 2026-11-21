@@ -46,12 +46,11 @@ type Rule struct {
 	Text string
 }
 
-// Decl is one declaration ("padding.
+// Decl is one declaration, such as "padding: 16px !important" or "--accent: red".
 type Decl struct {
 	// Name is the property name.
 	Name string
-	// Value holds the significant value tokens (no whitespace, no comments), in
-	// order.
+	// Value holds the value tokens with interior trivia and without priority.
 	Value []Token
 	// Important reports a trailing !important; ImpPos points at the '!'.
 	Important bool
@@ -80,7 +79,8 @@ type parseIssue struct {
 
 // Parse parses an owned-style stylesheet.
 func Parse(src string) (*Stylesheet, []Diagnostic) {
-	p := &parser{src: src, toks: Tokenize(src)}
+	src = stripBOM(src)
+	p := &parser{src: src, toks: tokenize(src)}
 	rules := p.parseRuleList(false)
 	diags := make([]Diagnostic, 0, len(p.issues))
 	for _, is := range p.issues {
@@ -356,28 +356,35 @@ func lastRunPos(run []Token) Pos {
 }
 
 func (p *parser) declFromRun(run []Token) []*Decl {
-	sig := trimTokens(run)
-	if len(sig) == 0 {
+	run = trimTokens(run)
+	if len(run) == 0 {
 		return nil
 	}
-	name := sig[0]
+	name := run[0]
 	if name.Type != TokenIdent {
 		p.errorf(tokPos(name), "expected a property name before ':', found %s %q", name.Type, name.Text)
 		return nil
 	}
-	if len(sig) < 2 || sig[1].Type != TokenColon {
+	colon := 1
+	for colon < len(run) && isTrivia(run[colon]) {
+		colon++
+	}
+	if colon == len(run) || run[colon].Type != TokenColon {
 		p.errorf(tokPos(name), "declaration %q has no ':'", name.Text)
 		return nil
 	}
 	d := &Decl{Name: name.Text, Pos: tokPos(name)}
-	value := trimTokens(sig[2:])
+	value := trimTokens(run[colon+1:])
 	if len(value) >= 2 {
-		last, prev := value[len(value)-1], value[len(value)-2]
-		if last.Type == TokenIdent && strings.EqualFold(last.Text, "important") &&
-			prev.Type == TokenDelim && prev.Text == "!" {
-			d.Important = true
-			d.ImpPos = tokPos(prev)
-			value = trimTokens(value[:len(value)-2])
+		last := value[len(value)-1]
+		if last.Type == TokenIdent && strings.EqualFold(last.Text, "important") {
+			prefix := trimTokens(value[:len(value)-1])
+			prev := prefix[len(prefix)-1]
+			if prev.Type == TokenDelim && prev.Text == "!" {
+				d.Important = true
+				d.ImpPos = tokPos(prev)
+				value = trimTokens(prefix[:len(prefix)-1])
+			}
 		}
 	}
 	d.Value = value

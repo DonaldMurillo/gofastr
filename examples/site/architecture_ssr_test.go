@@ -134,30 +134,55 @@ func TestArchSSR_BareURLHasNoHiddenWidgets(t *testing.T) {
 // don't appear in unrelated pages' HTML or catalog. site-toasts
 // stays global; demo widgets are scoped to their specific pages.
 func TestArchSSR_ScopedWidgetsAbsentFromOtherPages(t *testing.T) {
-	base := archStartServer(t)
-
-	// site-demo-modal is scoped to /components/modal.
-	// On /components/drawer it should be absent from BOTH the page
-	// HTML and the catalog endpoint.
-	drawerPage := archFetch(t, base, "/components/drawer")
-	if strings.Contains(drawerPage, `data-cui-widget="site-demo-modal"`) {
-		t.Error("scoped widget site-demo-modal leaked onto /components/drawer SSR")
+	routes := newTestApp(t).Router()
+	var session *http.Cookie
+	fetch := func(path string) string {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "localhost:8083"
+		if session != nil {
+			req.AddCookie(session)
+		}
+		routes.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: status %d", path, rec.Code)
+		}
+		for _, cookie := range rec.Result().Cookies() {
+			if cookie.Name == "gofastr-session" {
+				session = cookie
+			}
+		}
+		return rec.Body.String()
 	}
-	catalog := archFetch(t, base, "/__gofastr/widgets?page=/components/drawer")
-	if strings.Contains(catalog, `"name":"site-demo-modal"`) {
-		t.Error("scoped widget site-demo-modal leaked into /components/drawer catalog")
+	fetch("/")
+	if session == nil {
+		t.Fatal("site did not issue a runtime session cookie")
 	}
-
-	// site-demo-drawer is scoped to /components/drawer. Absent on
-	// /components/modal.
-	modalPage := archFetch(t, base, "/components/modal")
-	if strings.Contains(modalPage, `data-cui-widget="site-demo-drawer"`) {
-		t.Error("scoped widget site-demo-drawer leaked onto /components/modal SSR")
+	widgets := map[string]string{
+		"site-demo-modal":       "/components/modal",
+		"site-demo-drawer":      "/components/drawer",
+		"site-demo-bottomsheet": "/components/bottomsheet",
+		"ui-sidebar-drawer":     "/components/sidebar",
+	}
+	for _, page := range []string{"/", "/components/modal", "/components/drawer", "/components/bottomsheet", "/components/sidebar", "/components/sidebardrawertrigger"} {
+		catalog := fetch("/__gofastr/widgets?page=" + page)
+		for name, showcase := range widgets {
+			want := page == showcase || (name == "ui-sidebar-drawer" && page == "/components/sidebardrawertrigger")
+			if got := strings.Contains(catalog, `"name":"`+name+`"`); got != want {
+				t.Errorf("%s catalog contains %s = %v, want %v", page, name, got, want)
+			}
+		}
+	}
+	for _, page := range []string{"/components/modal", "/components/drawer"} {
+		body := fetch(page + "?modal=user-edit&user_id=42")
+		if got := strings.Contains(body, `data-cui-widget="site-demo-modal"`); got != (page == "/components/modal") {
+			t.Errorf("%s SSR contains deep-linked modal = %v", page, got)
+		}
 	}
 
 	// site-toasts is global, appears on every page.
 	for _, page := range []string{"/", "/get-started", "/components/modal", "/components/drawer"} {
-		body := archFetch(t, base, page)
+		body := fetch(page)
 		if !strings.Contains(body, `data-cui-widget="site-toasts"`) {
 			t.Errorf("global widget site-toasts missing from %s", page)
 		}

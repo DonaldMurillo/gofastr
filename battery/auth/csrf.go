@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -108,4 +110,30 @@ func renderCSRFInput(tok string) template.HTML {
 	}
 	return template.HTML(`<input type="hidden" name="` + CSRFFormField +
 		`" value="` + template.HTMLEscapeString(tok) + `">`)
+}
+
+// crossSiteForm reports whether r is a forgeable browser form post from
+// another site. The gate is handler.IsForgeableRequest, NOT the
+// Content-Type alone: a form with enctype="text/plain" and a bodyless
+// fetch() POST are CORS-simple, preflight-free CSRF vehicles exactly
+// like a urlencoded form. handler.IsCrossSiteRequest is the repo's one
+// cross-site predicate (Sec-Fetch-Site first; "same-site" falls through
+// to the Origin-host compare — a sibling subdomain is same-site while
+// its Origin names another host, and the SameSite session cookie still
+// attaches). Non-browser clients (curl, tests, native apps) send neither
+func crossSiteForm(r *http.Request) bool {
+	return handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r)
+}
+
+// RejectCrossSiteForm refuses a browser cross-site submission to a
+// mutating route and reports whether it wrote a response. Batteries that
+// answer with i18n.HTTPError share this copy; the CSRF middleware is an
+// optional app-level add-on, so a battery that serves mutating posts
+// without it must still refuse the forgeable cross-site shape itself.
+func RejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
+	if !crossSiteForm(r) {
+		return false
+	}
+	i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
+	return true
 }

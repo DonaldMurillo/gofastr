@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
@@ -137,12 +136,8 @@ func (p *EmailCodePlugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("email-code", "EmailCodeConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
 	}
-	if p.config.TwoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: email-code plugin: %q handles two-factor sign-in, so set EmailCodeConfig.TwoFactorURL to the page that finishes it: an emailed-code sign-in of a 2FA account is pending until /2fa/challenge, and OnSuccessURL would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "email-code", "EmailCodeConfig.TwoFactorURL", p.config.TwoFactorURL, "an emailed-code sign-in", "OnSuccessURL"); err != nil {
+		return err
 	}
 	secret := mgr.Config().JWTSecret
 	if secret == "" {
@@ -194,8 +189,8 @@ func (p *EmailCodePlugin) setChallengeCookie(w http.ResponseWriter, token string
 	http.SetCookie(w, c)
 }
 
-func readField(w http.ResponseWriter, r *http.Request, name string) (string, bool) {
-	if isFormRequest(r) {
+func readField(w http.ResponseWriter, r *http.Request, isForm bool, name string) (string, bool) {
+	if isForm {
 		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if !parseAuthFormOrRefuse(w, r) {
 			return "", false
@@ -215,14 +210,6 @@ func readField(w http.ResponseWriter, r *http.Request, name string) (string, boo
 	return body.Email, true
 }
 
-func (p *EmailCodePlugin) refuse(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
-	if isFormRequest(r) {
-		writeFormAuthError(w, r, status, reason)
-		return
-	}
-	writeAuthError(w, r, status, reason)
-}
-
 func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if !guardAuthLimit(p.sendLimit, w, r) {
 		return
@@ -230,7 +217,8 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if rejectCrossSiteForm(w, r) {
 		return
 	}
-	raw, ok := readField(w, r, "email")
+	isForm := isFormRequest(r)
+	raw, ok := readField(w, r, isForm, "email")
 	if !ok {
 		return
 	}
@@ -240,7 +228,7 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if email == "" {
-		p.refuse(w, r, http.StatusBadRequest, reasonEmailIsRequired)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonEmailIsRequired)
 		return
 	}
 	if !emailWithinLimit(w, r, email) {
@@ -352,30 +340,31 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	if rejectCrossSiteForm(w, r) {
 		return
 	}
-	raw, ok := readField(w, r, "code")
+	isForm := isFormRequest(r)
+	raw, ok := readField(w, r, isForm, "code")
 	if !ok {
 		return
 	}
 	code := normalizeCode(raw)
 	if code == "" {
-		p.refuse(w, r, http.StatusBadRequest, reasonCodeRequired)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonCodeRequired)
 		return
 	}
 	cookie, err := r.Cookie(p.cookieName())
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 128 {
-		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 	token := cookie.Value
 
 	stored, err := p.peeker.PeekToken(r.Context(), token)
 	if err != nil {
-		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 	email, ok := peekPurposePayload(stored, purposeEmailCode)
 	if !ok {
-		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 
@@ -389,19 +378,19 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	want := p.codeFor(token)
 	if len(code) != len(want) || subtle.ConstantTimeCompare([]byte(code), []byte(want)) != 1 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "emailcode.failed", Email: email, Remote: remoteHost(r)})
-		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 
 	if _, err := redeemPurposeToken(r.Context(), p.tokenStore, purposeEmailCode, token); err != nil {
-		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 	p.setChallengeCookie(w, "")
 
 	user, sess, pending, refused := p.mgr.signInMailboxOwner(r.Context(), r, email, "email_code")
 	if refused != nil {
-		p.refuse(w, r, refused.status(), refused.reason)
+		refuseAuth(w, r, isForm, refused.status(), refused.reason)
 		return
 	}
 	mintSessionCookie(w, p.mgr.Config(), sess.Token, sess.ExpiresAt)
@@ -416,7 +405,7 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		target = p.config.TwoFactorURL
 	}
 	target = safeRedirectURL(target)
-	if isFormRequest(r) {
+	if isForm {
 		http.Redirect(w, r, target, http.StatusSeeOther)
 		return
 	}
@@ -446,6 +435,6 @@ func (p *EmailCodePlugin) spendGuess(w http.ResponseWriter, r *http.Request, rl 
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "emailcode.locked", Email: email, Remote: remoteHost(r)})
 	w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
-	p.refuse(w, r, http.StatusTooManyRequests, reasonCodeAttemptsSpent)
+	refuseAuth(w, r, isFormRequest(r), http.StatusTooManyRequests, reasonCodeAttemptsSpent)
 	return false
 }

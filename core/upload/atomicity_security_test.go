@@ -5,6 +5,8 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // Pins torn reads of an in-flight Save, found by the 2026-09-04
@@ -41,7 +43,7 @@ func (r *stallReader) Read(p []byte) (int, error) {
 
 func TestSaveNotVisibleUntilComplete(t *testing.T) {
 	base := t.TempDir()
-	store := newTestLocalStorage(t, base)
+	store := teststorage.New(t, base)
 	ctx := context.Background()
 
 	r := &stallReader{wroteFirst: make(chan struct{}), release: make(chan struct{})}

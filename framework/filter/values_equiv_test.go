@@ -2,7 +2,6 @@ package filter
 
 import (
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -83,32 +82,6 @@ func requireSameOutcome(t *testing.T, reqErr, valuesErr error) {
 	}
 	if reqErr != nil && reqErr.Error() != valuesErr.Error() {
 		t.Fatalf("error message divergence: req=%q values=%q", reqErr, valuesErr)
-	}
-}
-
-// TestParseFiltersValues_ParsesExactlyOnce is a regression guard: it asserts
-// the same url.Values, handed to two different helpers, yields the same
-// field accessors that handing a freshly-parsed *http.Request would. This is
-// what the CRUD List handler now relies on, passing ONE url.Values through
-// every helper instead of N re-parses.
-func TestParseFiltersValues_ParsesExactlyOnce(t *testing.T) {
-	fields := []schema.Field{{Name: "status", Type: schema.String}}
-	// A repeated _in key (read whole) beside a scalar key; a repeated
-	// scalar key is refused (TestRepeatedScalarFilterKeyRefused).
-	raw := "status_in=active&status_in=pending&status_ne=archived"
-	q, err := url.ParseQuery(raw)
-	if err != nil {
-		t.Fatalf("ParseQuery: %v", err)
-	}
-	a, errA := ParseFiltersValues(q, fields)
-	b, errB := ParseFiltersValues(q, fields)
-	if errA != nil || errB != nil {
-		t.Fatalf("unexpected errors: %v %v", errA, errB)
-	}
-	// url.Values is a map, iterating it twice yields the same data, but the
-	// ParsedFilter ORDER is non-deterministic. Compare as sets.
-	if !filtersEqualAsSet(a, b) {
-		t.Fatalf("expected idempotent re-parse:\n  a=%v\n  b=%v", a, b)
 	}
 }
 

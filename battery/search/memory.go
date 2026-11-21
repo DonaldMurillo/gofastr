@@ -67,6 +67,9 @@ func (m *Memory) Index(ctx context.Context, doc Document) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if _, err := marshalFields(doc.Fields); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	doc.Fields = maps.Clone(doc.Fields)
@@ -93,6 +96,9 @@ const maxQueryTerms = 64
 // stemming.
 func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateFieldEquals(query.FieldEquals); err != nil {
 		return nil, err
 	}
 	m.mu.RLock()

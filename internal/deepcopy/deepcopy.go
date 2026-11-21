@@ -19,8 +19,11 @@ func Map(row map[string]any) map[string]any {
 	return out
 }
 
-// Value rebuilds every map and slice reachable from v.
-//
+// Value rebuilds every map and slice reachable from v, preserving
+// nilness on every path: a nil container copies to the nil container
+// of the same type and an empty one stays empty, so a payload's JSON
+// null survives the copy. [Map] is the documented exception: a nil ROW
+// copies to an empty map.
 // The fast paths below are the shapes the framework itself produces. They are
 // not sufficient on their own: the containers that matter here are the ones an
 // application's write hook INJECTS, and a hand-written type switch only ever
@@ -56,21 +59,37 @@ func Value(v any) any {
 		uint, uint8, uint16, uint32, uint64, float32, float64, time.Time:
 		return v
 	case map[string]any:
+		if t == nil {
+			return t
+		}
 		return Map(t)
 	case []map[string]any:
+		if t == nil {
+			return t
+		}
 		cp := make([]map[string]any, len(t))
 		for i, m := range t {
-			cp[i] = Map(m)
+			if m != nil {
+				cp[i] = Map(m)
+			}
 		}
 		return cp
 	case []any:
+		if t == nil {
+			return t
+		}
 		cp := make([]any, len(t))
 		for i, e := range t {
 			cp[i] = Value(e)
 		}
 		return cp
 	case []byte:
-		return append([]byte(nil), t...)
+		if t == nil {
+			return t
+		}
+		cp := make([]byte, len(t))
+		copy(cp, t)
+		return cp
 	}
 	return reflectCopy(v)
 }

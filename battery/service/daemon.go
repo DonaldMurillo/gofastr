@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
@@ -105,7 +106,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		}
 	})
 	if !mode.dev {
-		os.Setenv("GOFASTR_ISOLATION", "off")
+		os.Setenv(isolation.EnvIsolation, "off")
 	}
 
 	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: rt.MCPCommand(), Dev: mode.dev})

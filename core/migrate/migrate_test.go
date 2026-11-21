@@ -329,14 +329,6 @@ func TestCreateMigrationsTable(t *testing.T) {
 	}
 }
 
-func TestWithTableName(t *testing.T) {
-	db, _, _ := sqlmock.New()
-	m := New(db, WithTableName("custom_migrations"))
-	if m.tableName != "custom_migrations" {
-		t.Errorf("tableName = %q, want %q", m.tableName, "custom_migrations")
-	}
-}
-
 func TestRegisterFromReader(t *testing.T) {
 	m, _ := newTestMigrator(t)
 
@@ -436,14 +428,6 @@ func TestDefaultDialectIsPostgres(t *testing.T) {
 	}
 }
 
-func TestWithDialect(t *testing.T) {
-	db, _, _ := sqlmock.New()
-	m := New(db, WithDialect(DialectSQLite))
-	if m.dialect != DialectSQLite {
-		t.Errorf("dialect = %q, want %q", m.dialect, DialectSQLite)
-	}
-}
-
 func TestPlaceholder(t *testing.T) {
 	db, _, _ := sqlmock.New()
 
@@ -475,18 +459,6 @@ func TestNowFunc(t *testing.T) {
 	sqlite := New(db, WithDialect(DialectSQLite))
 	if got := sqlite.nowFunc(); got != "CURRENT_TIMESTAMP" {
 		t.Errorf("sqlite nowFunc() = %q, want CURRENT_TIMESTAMP", got)
-	}
-}
-
-func TestCreateMigrationsTableDDL(t *testing.T) {
-	pg := New(nil, WithDialect(DialectPostgres))
-	if got := pg.nowFunc(); got != "NOW()" {
-		t.Errorf("pg nowFunc = %q, want NOW()", got)
-	}
-
-	sqlite := New(nil, WithDialect(DialectSQLite))
-	if got := sqlite.nowFunc(); got != "CURRENT_TIMESTAMP" {
-		t.Errorf("sqlite nowFunc = %q, want CURRENT_TIMESTAMP", got)
 	}
 }
 

@@ -10,10 +10,10 @@ imports:
     why: authui imports battery/auth to draw the battery's pages through a UIHost, so the battery reaches those pages only through the Pages interface a host sets.
     instead: Let the host pass authui.Pages(host) as AuthConfig.Pages.
 invariants:
-  - id: battery-draws-no-design-system
-    rule: No non-test file in battery/auth imports framework/ui or a package under it; the battery's own screens are drawn through AuthConfig.Pages by battery/auth/authui.
+  - id: an-unset-password-keeps-the-last-oauth-link
+    rule: The entity user store treats a NULL password flag as unset on SQLite and Postgres and refuses to remove the last link from that account.
     enforced_by:
-      - test: battery/auth.TestBatteryDoesNotImportTheDesignSystem
+      - test: battery/auth.TestUnlinkNullPasswordParity
   - id: cross-site-arrival-reloads-same-site
     rule: SessionMiddleware answers a cookieless document navigation (GET or HEAD) that handler.IsCrossSiteRequest calls cross-site and that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
     enforced_by:
@@ -96,66 +96,11 @@ invariants:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
-  - id: production-needs-a-jwt-secret
-    rule: Init refuses an empty JWTSecret outside DevMode, and New in DevMode mints a random per-process secret when none is set.
+  - id: backup-code-regeneration-requires-post
+    rule: Backup-code regeneration runs on POST because it invalidates the previous set and CSRF middleware exempts safe methods such as GET.
     enforced_by:
-      - test: battery/auth.TestInit_ProdEmptySecretFailsClosed
-      - test: battery/auth.TestAuthManager_DevModeMintsJWT
-  - id: lifetimes-default-and-refuse-negative
-    rule: A zero SessionTTL means seven days and a zero JWTExpiry one hour, BasePath defaults to /auth, and Init refuses a negative SessionTTL or JWTExpiry.
-    enforced_by:
-      - test: battery/auth.TestZeroSessionTTLDefaultsToSevenDays
-      - test: battery/auth.TestNegativeSessionTTLRefused
-      - test: battery/auth.TestNegativeJWTExpiryRefused
-  - id: cookie-defaults-by-mode
-    rule: Outside DevMode the session cookie defaults to __Host-session and Secure; in DevMode to session_id and not Secure.
-    enforced_by:
-      - test: battery/auth.TestAuthConfig_DefaultsAreSecure
-      - test: battery/auth.TestAuthConfig_DevMode_RelaxedDefaults
-  - id: default-throttles-in-every-mode
-    rule: A nil LoginRateLimit, LoginRateLimitPerAccount, RegisterRateLimit or MailAddressRateLimit gets its default (30/min with a 5-minute block; 10/min, 15 minutes; 10/min, 15 minutes; one mail per address per two minutes) in DevMode and production alike.
-    enforced_by:
-      - test: battery/auth.TestDefaultThrottlesInstalledInDevModeToo
-      - test: battery/auth.TestAuthBypass_DefaultBruteForceLimiter
-      - test: battery/auth.TestRegisterRateLimitedByDefault
-  - id: production-refuses-memory-sessions
-    rule: Outside DevMode and AllowInMemoryStores, Init refuses the default in-memory session store, including one a plugin installed during its own Init.
-    enforced_by:
-      - test: battery/auth.TestProdRefusesMemorySessionStoreInstalledByPlugin
-      - test: battery/auth.TestNoMemoryStoreWarnWhenOptedIn
-  - id: default-roles-are-server-config
-    rule: DefaultRoles returns a fresh copy of AuthConfig.DefaultRoles, or ["user"] when it is empty, and every account-creating flow reads it, never the request.
-    enforced_by:
-      - test: battery/auth.TestDefaultRolesReturnsACopy
-      - test: battery/auth.TestRegisterUsesConfiguredRoles
-  - id: set-user-roles-audited
-    rule: SetUserRoles refuses a user id that is not storable text with ErrUserNotFound and emits roles.updated only after the store changed the roles.
-    enforced_by:
-      - test: battery/auth.TestSetUserRolesAuditsMutation
-      - test: battery/auth.TestSetUserRolesRefusesUnstorableID
-  - id: jwt-helper-built-in-new
-    rule: New builds the manager's JWTAuth when JWTSecret is set, so RequireAuth(mgr.JWT()) wired before Init holds the same value Init finishes; after plugin Init the helper resolves owners against the user store the app runs with.
-    enforced_by:
-      - test: battery/auth.TestRequireAuthWiredBeforeInit
-      - test: battery/auth.TestJWTResolvesAgainstStoreAPluginInstalled
-  - id: auth-noted-only-when-resolving
-    rule: The app is told an authenticator is wired only once Init has run with it and a resolving middleware (SessionMiddleware, Middleware, or RequireAuth over the manager's JWT) exists, in either order.
-    enforced_by:
-      - test: battery/auth.TestAuthNotedOnlyWithMiddleware
-  - id: plugin-order
-    rule: Use panics on a duplicate plugin name; Middleware makes the first registered plugin outermost; OnStop stops plugins in reverse order, returns the first failure, and unregisters the manager's in-memory store eraser.
-    enforced_by:
-      - test: battery/auth.TestAuthManager_UseDuplicatePanics
-      - test: battery/auth.TestPluginMiddlewareFirstRegisteredOutermostAndStopReversed
-      - test: battery/auth.TestMemoryStoresReachedByErasure
-  - id: base-path-reserved-from-embeds
-    rule: ReservedEmbedPrefixes on the manager and on TokensPlugin report the configured BasePath, so no embed grant sits over or reaches an auth route.
-    enforced_by:
-      - test: battery/auth.TestAuthReservesItsBasePathFromEmbeds
-  - id: owner-extractor-is-current-user
-    rule: Importing battery/auth installs framework/owner's extractor, which answers the ID of the context user and no owner for no user or an empty ID.
-    enforced_by:
-      - test: battery/auth.TestOwnerExtractorReadsCurrentUser
+      - test: battery/auth.TestBackupCodesRejectsGetRequests
+      - test: battery/auth.TestTwoFA_BackupCodesRefresh
   - id: init-refuses-non-idempotent-canonicalizer
     rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass, and every ingestion refuses an address the override moves on a second pass.
     enforced_by:
@@ -191,6 +136,70 @@ invariants:
       - test: battery/auth.TestAuditEmailHashIsCanonical
       - test: battery/auth.TestAuditDigestFollowsTheManagersFold
       - test: battery/auth.TestAuditEventKeepsNoSecondAddress
+  - id: production-needs-a-jwt-secret
+    rule: Init refuses an empty JWTSecret outside DevMode, and New in DevMode mints a random per-process secret when none is set.
+    enforced_by:
+      - test: battery/auth.TestInit_ProdEmptySecretFailsClosed
+      - test: battery/auth.TestAuthManager_DevModeMintsJWT
+  - id: jwt-helper-built-in-new
+    rule: New builds the manager's JWTAuth when JWTSecret is set, so RequireAuth(mgr.JWT()) wired before Init holds the same value Init finishes; after plugin Init the helper resolves owners against the user store the app runs with.
+    enforced_by:
+      - test: battery/auth.TestRequireAuthWiredBeforeInit
+      - test: battery/auth.TestJWTResolvesAgainstStoreAPluginInstalled
+  - id: lifetimes-default-and-refuse-negative
+    rule: A zero SessionTTL means seven days and a zero JWTExpiry one hour, BasePath defaults to /auth, and Init refuses a negative SessionTTL or JWTExpiry.
+    enforced_by:
+      - test: battery/auth.TestZeroSessionTTLDefaultsToSevenDays
+      - test: battery/auth.TestNegativeSessionTTLRefused
+      - test: battery/auth.TestNegativeJWTExpiryRefused
+  - id: default-throttles-in-every-mode
+    rule: A nil LoginRateLimit, LoginRateLimitPerAccount, RegisterRateLimit or MailAddressRateLimit gets its default (30/min with a 5-minute block; 10/min, 15 minutes; 10/min, 15 minutes; one mail per address per two minutes) in DevMode and production alike.
+    enforced_by:
+      - test: battery/auth.TestDefaultThrottlesInstalledInDevModeToo
+      - test: battery/auth.TestAuthBypass_DefaultBruteForceLimiter
+      - test: battery/auth.TestRegisterRateLimitedByDefault
+  - id: owner-extractor-is-current-user
+    rule: Importing battery/auth installs framework/owner's extractor, which answers the ID of the context user and no owner for no user or an empty ID.
+    enforced_by:
+      - test: battery/auth.TestOwnerExtractorReadsCurrentUser
+  - id: cookie-defaults-by-mode
+    rule: Outside DevMode the session cookie defaults to __Host-session and Secure; in DevMode to session_id and not Secure.
+    enforced_by:
+      - test: battery/auth.TestAuthConfig_DefaultsAreSecure
+      - test: battery/auth.TestAuthConfig_DevMode_RelaxedDefaults
+  - id: base-path-reserved-from-embeds
+    rule: ReservedEmbedPrefixes on the manager and on TokensPlugin report the configured BasePath, so no embed grant sits over or reaches an auth route.
+    enforced_by:
+      - test: battery/auth.TestAuthReservesItsBasePathFromEmbeds
+  - id: auth-noted-only-when-resolving
+    rule: The app is told an authenticator is wired only once Init has run with it and a resolving middleware (SessionMiddleware, Middleware, or RequireAuth over the manager's JWT) exists, in either order.
+    enforced_by:
+      - test: battery/auth.TestAuthNotedOnlyWithMiddleware
+  - id: default-roles-are-server-config
+    rule: DefaultRoles returns a fresh copy of AuthConfig.DefaultRoles, or ["user"] when it is empty, and every account-creating flow reads it, never the request.
+    enforced_by:
+      - test: battery/auth.TestDefaultRolesReturnsACopy
+      - test: battery/auth.TestRegisterUsesConfiguredRoles
+  - id: set-user-roles-audited
+    rule: SetUserRoles refuses a user id that is not storable text with ErrUserNotFound and emits roles.updated only after the store changed the roles.
+    enforced_by:
+      - test: battery/auth.TestSetUserRolesAuditsMutation
+      - test: battery/auth.TestSetUserRolesRefusesUnstorableID
+  - id: production-refuses-memory-sessions
+    rule: Outside DevMode and AllowInMemoryStores, Init refuses the default in-memory session store, including one a plugin installed during its own Init.
+    enforced_by:
+      - test: battery/auth.TestProdRefusesMemorySessionStoreInstalledByPlugin
+      - test: battery/auth.TestNoMemoryStoreWarnWhenOptedIn
+  - id: battery-draws-no-design-system
+    rule: No non-test file in battery/auth imports framework/ui or a package under it; the battery's own screens are drawn through AuthConfig.Pages by battery/auth/authui.
+    enforced_by:
+      - test: battery/auth.TestBatteryDoesNotImportTheDesignSystem
+  - id: plugin-order
+    rule: Use panics on a duplicate plugin name; Middleware makes the first registered plugin outermost; OnStop stops plugins in reverse order, returns the first failure, and unregisters the manager's in-memory store eraser.
+    enforced_by:
+      - test: battery/auth.TestAuthManager_UseDuplicatePanics
+      - test: battery/auth.TestPluginMiddlewareFirstRegisteredOutermostAndStopReversed
+      - test: battery/auth.TestMemoryStoresReachedByErasure
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17

@@ -58,6 +58,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -82,7 +84,7 @@ func run(pass *analysis.Pass) (any, error) {
 		pass.ExportObjectFact(fn, &mustUse{Index: marks[fn]})
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {

@@ -30,7 +30,6 @@
     if (!labels.has(a)) labels.set(a, a.textContent);
     return labels.get(a);
   };
-  const here = () => location.pathname + location.search;
 
   // Writes the label back with the matched run in a <mark>, or plain.
   // Text nodes only: a label is never parsed as markup.
@@ -79,29 +78,22 @@
     if (body) body.scrollTop = 0;
   }
 
-  // The link for the page at path: an exact href match (the active-link
-  // pass's rule), then the path without its query, then, when marked is
-  // set, whatever the server marked current (Active on a URL the href
-  // does not spell exactly). A navigation passes marked false: the old
-  // page's mark may not have moved yet.
-  function currentLink(scope, path, marked) {
+  function currentLink(scope, useServerMark) {
     if (!scope) return null;
-    const links = scope.querySelectorAll(LINKS);
-    const bare = path.split('?')[0];
-    for (const want of [path, bare]) {
-      for (const a of links) if (a.getAttribute('href') === want) return a;
-    }
-    return marked ? scope.querySelector('[aria-current="page"]') : null;
+    const links = Array.from(scope.querySelectorAll(LINKS));
+    const current = (a) => a.getAttribute('aria-current') === 'page';
+    return links.find((a) => current(a) && a.classList.contains('active')) ||
+      (useServerMark ? links.find(current) : null);
   }
 
   // The pill names the current page and its group, or falls back to the
   // trigger label it carries at the start of its accessible name.
-  function sync(menu, path, marked) {
+  function sync(menu, useServerMark) {
     const btn = menu.querySelector(':scope > .cui-sheet-pill');
     const label = btn && btn.querySelector('.cui-sheet-pill__label');
     const group = btn && btn.querySelector('.cui-sheet-pill__detail');
     if (!label || !group) return;
-    const a = currentLink(menu.querySelector(':scope > .cui-section-menu__rail'), path, marked);
+    const a = currentLink(menu.querySelector(':scope > .cui-section-menu__rail'), useServerMark);
     if (a) {
       label.textContent = labelOf(a);
       const g = a.closest('.cui-section-menu__group');
@@ -128,7 +120,7 @@
   // A sheet's stylesheet may land after it opens, so a list with no
   // scroller yet is retried for a few frames.
   function reveal(scope, tries) {
-    const a = currentLink(scope, here(), true);
+    const a = currentLink(scope, true);
     if (!a || !a.getClientRects().length) return;
     const box = scroller(a);
     if (!box) {
@@ -165,7 +157,7 @@
     // marks of its last filter but not the box's text: settle the list
     // to what the box says now.
     if (input) filter(menu, input.value);
-    sync(menu, here(), true);
+    sync(menu, true);
     reveal(menu.querySelector(':scope > .cui-section-menu__rail'), 0);
   }
 
@@ -183,10 +175,9 @@
   // A menu the navigation swapped in carries the server's mark for the
   // new page; one that stayed may still carry the old page's.
   window.addEventListener('gofastr:navigate', (e) => {
-    const path = (e.detail && e.detail.path) || here();
     const root = e.detail && e.detail.root;
     for (const menu of document.querySelectorAll(ROOT)) {
-      sync(menu, path, !!(root && root.contains && root.contains(menu)));
+      sync(menu, !!(root && root.contains && root.contains(menu)));
     }
   });
   // The sheet mounts when it opens: wire its filter and bring the

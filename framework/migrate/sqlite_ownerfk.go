@@ -208,7 +208,8 @@ func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
 	}
 	var violations []string
 	for _, schema := range schemas {
-		rows, err := q.QueryContext(ctx, "PRAGMA "+quoteIdent(schema)+".foreign_key_check")
+		//gofastr:allow(quoteident) schema was read from PRAGMA database_list with its case kept
+		rows, err := q.QueryContext(ctx, "PRAGMA "+query.QuoteIdent(schema)+".foreign_key_check")
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +260,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	schema, base := splitTable(s.Table)
 	master, seqTable, prefix := "sqlite_master", "sqlite_sequence", ""
 	if schema != "" {
-		master, seqTable, prefix = quoteIdent(schema)+".sqlite_master", quoteIdent(schema)+".sqlite_sequence", quoteIdent(schema)+"."
+		//gofastr:allow(quoteident) schema is split from the SafeIdent-checked SQLite table name being rebuilt and keeps its supplied spelling for the attached schema
+		master, seqTable, prefix = query.QuoteIdent(schema)+".sqlite_master", query.QuoteIdent(schema)+".sqlite_sequence", query.QuoteIdent(schema)+"."
 	}
 
 	var stored, createSQL string
@@ -271,7 +273,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	if err != nil {
 		return err
 	}
-	qualified := prefix + quoteIdent(stored)
+	//gofastr:allow(quoteident) stored was read from sqlite_master with its case kept
+	qualified := prefix + query.QuoteIdent(stored)
 
 	var replays []string
 	objRows, err := conn.QueryContext(ctx,
@@ -312,7 +315,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	quoted := make([]string, len(cols))
 	for i, c := range cols {
-		quoted[i] = quoteIdent(c)
+		//gofastr:allow(quoteident) c was read from PRAGMA table_info with its case kept
+		quoted[i] = query.QuoteIdent(c)
 	}
 	colList := strings.Join(quoted, ", ")
 
@@ -329,9 +333,11 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 
 	stmts := []string{
 		newDDL,
-		fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", prefix+quoteIdent(newTable), colList, colList, qualified),
+		//gofastr:allow(quoteident) newTable is the sqlite_master name plus a literal repair suffix
+		fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", prefix+query.QuoteIdent(newTable), colList, colList, qualified),
 		fmt.Sprintf("DROP TABLE %s", qualified),
-		fmt.Sprintf("ALTER TABLE %s RENAME TO %s", prefix+quoteIdent(newTable), quoteIdent(stored)),
+		//gofastr:allow(quoteident) newTable is the sqlite_master name plus a literal repair suffix, stored came from sqlite_master
+		fmt.Sprintf("ALTER TABLE %s RENAME TO %s", prefix+query.QuoteIdent(newTable), query.QuoteIdent(stored)),
 	}
 	stmts = append(stmts, replays...)
 	for _, stmt := range stmts {
@@ -449,6 +455,8 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 }
 
 // skipComment returns the index just past a comment beginning at i, or i.
+// A line comment stops at the newline, leaving it in place: it separates
+// tokens.
 func skipComment(s string, i int) int {
 	if i >= len(s) {
 		return i
@@ -520,18 +528,8 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	head := strings.TrimRight(item[:idx], " \t\r")
 	rest := item[idx+len("REFERENCES"):]
 	rest = trimLeadingInert(rest)
-	i := 0
-	for i < len(rest) {
-		if j := skipQuoted(rest, i); j > i {
-			i = j
-			continue
-		}
-		if rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r' || rest[i] == '(' {
-			break
-		}
-		i++
-	}
-	rest = trimLeadingInert(rest[i:])
+	_, rest = nextSQLToken(rest)
+	rest = trimLeadingInert(rest)
 	if strings.HasPrefix(rest, "(") {
 		if end := matchingParen(rest, 0); end >= 0 {
 			rest = rest[end+1:]
@@ -686,11 +684,6 @@ func nextSQLToken(s string) (string, string) {
 	return s[:i], s[i:]
 }
 
-// quoteIdent quotes an identifier the SQLite way, doubling a literal quote.
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
 // skipQuoted returns the index just past the quoted run opening at i, or i.
 func skipQuoted(s string, i int) int {
 	if i >= len(s) {
@@ -829,17 +822,8 @@ func skipInert(s string, i int) int {
 	if i >= len(s) {
 		return i
 	}
-	if s[i] == '-' && i+1 < len(s) && s[i+1] == '-' {
-		if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
-			return i + nl // leave the newline in place: it separates tokens
-		}
-		return len(s)
-	}
-	if s[i] == '/' && i+1 < len(s) && s[i+1] == '*' {
-		if end := strings.Index(s[i+2:], "*/"); end >= 0 {
-			return i + 2 + end + 2
-		}
-		return len(s)
+	if next := skipComment(s, i); next > i {
+		return next
 	}
 	var closer byte
 	switch s[i] {

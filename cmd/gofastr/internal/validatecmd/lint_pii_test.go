@@ -25,7 +25,7 @@ func TestValidatePIIExits1(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, clitest.PiiTripYML)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -45,7 +45,7 @@ func TestValidateAuthOnPIIExits1(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, piiAuthOnYML)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -61,7 +61,7 @@ func TestValidatePIIOwnerFieldOk(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, clitest.PiiOwnerYML)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != -1 {

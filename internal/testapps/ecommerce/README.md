@@ -3,8 +3,7 @@
 This is the largest example in the repo and the proof of the framework's
 thesis: a complete storefront described **once** in
 [`gofastr.yml`](gofastr.yml): 5 related entities (categories, products,
-orders, order_items, reviews), a themed 8-screen UI, custom endpoints,
-seed data, middleware, and a plugin, all emitted as runnable Go by a
+orders, order_items, reviews), a themed 8-screen UI, seed data, middleware, and a plugin, all emitted as runnable Go by a
 single command. The owned `app/entities/order_totals_hooks.go` adds the
 transactional catalog-pricing and order-total derivations to that scaffold.
 

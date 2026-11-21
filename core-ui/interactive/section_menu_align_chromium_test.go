@@ -4,14 +4,16 @@ package interactive
 
 import (
 	"fmt"
-	"github.com/chromedp/cdproto/runtime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	uiruntime "github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -23,7 +25,11 @@ func menuPage(t *testing.T, body string, js bool) string {
 	css := kitCSS(sectionMenuStyle)
 	script := ""
 	if js {
-		script = `<script src="/__menu-runtime.js"></script><script>` + sectionMenuJS + "</script>"
+		activeLink, ok := uiruntime.Module("activelink")
+		if !ok {
+			t.Fatal("activelink module not embedded")
+		}
+		script = `<script src="/__menu-runtime.js"></script><script>` + activeLink + "</script><script>" + sectionMenuJS + "</script>"
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__menu-runtime.js" {
@@ -367,6 +373,39 @@ func TestSectionMenuPillFollowsNavigation(t *testing.T) {
 	}
 	if fresh != "Entities|Modeling" {
 		t.Errorf("pill on a swapped-in menu: %q; want the server's mark, Entities|Modeling", fresh)
+	}
+}
+
+func TestSectionMenuRetainedPillUsesNormalizedCurrentLink(t *testing.T) {
+	cfg := sampleMenu()
+	cfg.Groups[0].Items = append(cfg.Groups[0].Items, SectionItem{Label: "Guía", Href: "/guía/"})
+	r := router.New()
+	widget.MountRuntime(r)
+	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><main></main>%s%s`, SectionMenu(cfg), widget.RuntimeTag())
+	}))
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(600, 800))
+	var got struct{ Current, Pill string }
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.Poll(`window.__gofastr?.loadedModules?.sectionmenu && window.__gofastr?.loadedModules?.activelink === true`, nil),
+		chromedp.Evaluate(`(() => {
+			const menu = document.querySelector('.cui-section-menu');
+			history.pushState({}, '', '/gu%C3%ADa');
+			window.dispatchEvent(new CustomEvent('gofastr:navigate', {detail: {path: location.pathname}}));
+			return {
+				Current: menu.querySelector('a[href="/guía/"]').getAttribute('aria-current'),
+				Pill: menu.querySelector('.cui-sheet-pill__label').textContent
+			};
+		})()`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got.Current != "page" || got.Pill != "Guía" {
+		t.Errorf("current mark = %q, pill = %q, want page and Guía", got.Current, got.Pill)
 	}
 }
 

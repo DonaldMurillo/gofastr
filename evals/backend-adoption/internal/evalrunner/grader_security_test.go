@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 // The candidate server launched by startServer is unsupervised agent-written
@@ -50,15 +52,15 @@ func main() {
 	}
 	buildCtx, buildCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer buildCancel()
-	bin := filepath.Join(probeDir, executableName("envprobe"))
+	bin := filepath.Join(probeDir, proctree.ExecutableName("envprobe"))
 	if out, err := commandOutput(buildCtx, probeDir, "go", "build", "-o", bin, "."); err != nil {
 		t.Fatalf("build env probe: %v\n%s", err, out)
 	}
 
 	// Five distinct credential shapes: cloud-provider prefix, SCM token,
 	// bare TOKEN suffix, API_TOKEN suffix, and the connection-string class
-	// this package's own denylist (looksCredentialBearing) already strips
-	// for its codex child.
+	// this package's env strip (childenv.LooksCredentialBearing) already
+	// removes for its codex child.
 	sentinels := []string{
 		"AWS_SECRET_ACCESS_KEY",
 		"GITHUB_TOKEN",

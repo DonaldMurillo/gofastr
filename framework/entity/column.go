@@ -3,10 +3,10 @@ package entity
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Condition is a where-clause fragment, numbered from $1, and its bound arguments.
@@ -119,12 +119,32 @@ func (c StringColumn) Eq(v string) Condition {
 func (c StringColumn) Neq(v string) Condition {
 	return Condition{sql: c.name() + " != $1", args: []any{v}}
 }
+
+// Like matches a SQL pattern with ASCII case folding and backslash escapes.
 func (c StringColumn) Like(pattern string) Condition {
-	return Condition{sql: c.name() + " LIKE $1", args: []any{pattern}}
+	return c.likePattern(" LIKE ", pattern)
 }
+
+// NotLike matches non-NULL values that do not match Like.
 func (c StringColumn) NotLike(pattern string) Condition {
-	return Condition{sql: c.name() + " NOT LIKE $1", args: []any{pattern}}
+	return c.likePattern(" NOT LIKE ", pattern)
 }
+
+func (c StringColumn) likePattern(operator, pattern string) Condition {
+	var expr strings.Builder
+	expr.WriteString(strings.Repeat("replace(", 26))
+	expr.WriteString(c.name())
+	for upper := 'A'; upper <= 'Z'; upper++ {
+		fmt.Fprintf(&expr, ", '%c', '%c')", upper, upper+'a'-'A')
+	}
+	expr.WriteString(operator)
+	expr.WriteString("$1 ESCAPE $2")
+	if (len(pattern)-len(strings.TrimRight(pattern, `\`)))%2 != 0 {
+		pattern += `\`
+	}
+	return Condition{sql: expr.String(), args: []any{asciicase.Lower(pattern), `\`}}
+}
+
 func (c StringColumn) In(values ...string) Condition {
 	args := make([]any, len(values))
 	for i, v := range values {
@@ -222,23 +242,7 @@ func (c TimestampColumn) Lt(v any) Condition  { return c.compare(" < $1", v) }
 func (c TimestampColumn) Lte(v any) Condition { return c.compare(" <= $1", v) }
 
 func (c TimestampColumn) compare(op string, v any) Condition {
-	return Condition{sql: c.name() + op, args: []any{timestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
-}
-
-func timestampArg(v any) any {
-	switch t := v.(type) {
-	case time.Time:
-		return schema.FormatTimestamp(t)
-	case *time.Time:
-		if t != nil {
-			return schema.FormatTimestamp(*t)
-		}
-	case string:
-		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
-			return schema.FormatTimestamp(parsed)
-		}
-	}
-	return v
+	return Condition{sql: c.name() + op, args: []any{schema.TimestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
 }
 
 // UUIDColumn is a UUID or text identity column.

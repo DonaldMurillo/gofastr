@@ -912,39 +912,11 @@ func containsFoldASCII(name string) bool {
 }
 
 func boundExprs(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
-	m := map[types.Object]ast.Expr{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch st := n.(type) {
-		case *ast.AssignStmt:
-			if st.Tok.String() != ":=" && st.Tok.String() != "=" {
-				return true
-			}
-			if len(st.Lhs) == len(st.Rhs) {
-				for idx, lhs := range st.Lhs {
-					if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-						if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-							m[obj] = st.Rhs[idx]
-						}
-					}
-				}
-			} else if len(st.Lhs) == 2 && len(st.Rhs) == 1 {
-				if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name != "_" {
-					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-						m[obj] = st.Rhs[0]
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			if len(st.Names) != 1 || len(st.Values) != 1 || st.Names[0].Name == "_" {
-				return true
-			}
-			if obj := pass.TypesInfo.ObjectOf(st.Names[0]); obj != nil {
-				m[obj] = st.Values[0]
-			}
-		}
-		return true
-	})
-	return m
+	bound := map[types.Object]ast.Expr{}
+	for n := range ast.Preorder(f) {
+		astx.RecordLocalBindings(pass, n, bound)
+	}
+	return bound
 }
 
 func qualifiedCallee(pass *analysis.Pass, fun ast.Expr) string {

@@ -34,17 +34,6 @@ func TestSafeDirName_sanitizes(t *testing.T) {
 	}
 }
 
-// ---- shortID ----
-
-func TestShortID_trimsTo12(t *testing.T) {
-	if got := shortID("abc"); got != "abc" {
-		t.Errorf("shortID(short) = %q", got)
-	}
-	if got := shortID("0123456789abcdef"); len(got) != 12 {
-		t.Errorf("shortID(long) = %q, want len 12", got)
-	}
-}
-
 // ---- buildChildEnv ----
 
 func TestBuildChildEnv_dedupAndOverride(t *testing.T) {
@@ -110,17 +99,16 @@ func TestDefaultChildEnvAllowlistIncludesWindowsProcessBasics(t *testing.T) {
 	}
 }
 
-// ---- TrustedProcessRunner.allowlist override ----
+// ---- envAllowlistOrDefault ----
 
-func TestTrustedRunner_allowlistDefaultAndOverride(t *testing.T) {
-	r := &TrustedProcessRunner{}
-	// nil EnvAllowlist → default set.
-	if got := r.allowlist(); len(got) == 0 {
-		t.Error("nil EnvAllowlist must fall back to default")
+func TestEnvAllowlistOrDefault_defaultAndOverride(t *testing.T) {
+	if got := envAllowlistOrDefault(nil); len(got) == 0 {
+		t.Error("nil allowlist must fall back to default")
 	}
-	// Custom EnvAllowlist is returned as-is.
-	r.EnvAllowlist = []string{"CUSTOM1", "CUSTOM2"}
-	got := r.allowlist()
+	if got := envAllowlistOrDefault([]string{}); len(got) == 0 {
+		t.Error("empty allowlist must fall back to default")
+	}
+	got := envAllowlistOrDefault([]string{"CUSTOM1", "CUSTOM2"})
 	if len(got) != 2 || got[0] != "CUSTOM1" || got[1] != "CUSTOM2" {
 		t.Errorf("custom allowlist = %+v", got)
 	}

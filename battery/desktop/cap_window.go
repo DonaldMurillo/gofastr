@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -75,7 +76,7 @@ func (b *Battery) windowCapability() Capability {
 						return nil, err
 					}
 					if !validNavigatePath(req.Path) {
-						return nil, &Error{Code: CodeInvalidInput, Message: "path must be a same-origin absolute path (leading /, no scheme, no //, no .. segments)"}
+						return nil, &Error{Code: CodeInvalidInput, Message: "path " + windowPathRequirements}
 					}
 					if s := b.winStore.Load(); s != nil && callerWindowID(ctx) == MainWindowID {
 						s.setMainPath(req.Path)
@@ -86,7 +87,7 @@ func (b *Battery) windowCapability() Capability {
 			{
 				Name:        "setChrome",
 				Description: "Reports the sidebar zone's width in points as the page measured it (a ResizeObserver on the sidebar element). Ungated like setPath: a claim, applied to the calling window only.",
-				Input:       json.RawMessage(`{"type":"object","properties":{"sidebarWidth":{"type":"integer","minimum":0,"maximum":4096}},"required":["sidebarWidth"]}`),
+				Input:       json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"sidebarWidth":{"type":"integer","minimum":0,"maximum":%d}},"required":["sidebarWidth"]}`, MaxSidebarWidth)),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 					var req struct {
 						SidebarWidth int `json:"sidebarWidth"`
@@ -94,8 +95,8 @@ func (b *Battery) windowCapability() Capability {
 					if err := decodeInput(in, &req); err != nil {
 						return nil, err
 					}
-					if req.SidebarWidth < 0 || req.SidebarWidth > MaxSidebarWidth {
-						return nil, &Error{Code: CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+					if err := ValidateSidebarWidth(req.SidebarWidth); err != nil {
+						return nil, err
 					}
 					w, ok := b.windowByID(callerWindowID(ctx))
 					if !ok {

@@ -527,3 +527,47 @@ func TestVariantSetPreservesAspect(t *testing.T) {
 		t.Errorf("variant height = %d, want 60 (aspect preserved)", res.Variants[0].Height)
 	}
 }
+
+func TestProcessToRejectsInvalidLaterVariant(t *testing.T) {
+	src := FromImage(gradient(16, 16), FormatPNG)
+	for _, tc := range []struct {
+		name string
+		last Variant
+		want string
+	}{
+		{"zero width", Variant{Format: FormatPNG}, "Width must be >= 1"},
+		{"unsupported format", Variant{Width: 4, Format: Format(100)}, "unsupported format"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			set := VariantSet{Variants: []Variant{{Width: 8, Format: FormatPNG}, tc.last}}
+			calls := 0
+			_, err := set.ProcessTo(src, func(VariantHeader, io.Reader) error {
+				calls++
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ProcessTo error = %v, want %q", err, tc.want)
+			}
+			if calls != 0 {
+				t.Errorf("sink called %d time(s) before refusal, want 0", calls)
+			}
+		})
+	}
+}
+
+func TestProcessToUsesValidatedVariants(t *testing.T) {
+	src := FromImage(gradient(16, 16), FormatPNG)
+	set := VariantSet{Variants: []Variant{{Width: 8, Format: FormatPNG}, {Width: 4, Format: FormatPNG}}}
+	var widths []int
+	_, err := set.ProcessTo(src, func(h VariantHeader, _ io.Reader) error {
+		widths = append(widths, h.Width)
+		set.Variants[1].Width = 0
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(widths) != 2 || widths[0] != 8 || widths[1] != 4 {
+		t.Errorf("output widths = %v, want [8 4]", widths)
+	}
+}

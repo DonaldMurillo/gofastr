@@ -275,8 +275,33 @@ func TestTrashWriteCrossSiteRefused(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("a cross-site purge answered %d, want 403", w.Code)
 	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"error":"forbidden","reason":"forbidden"}`; got != want {
+		t.Errorf("the cross-site refusal changed body: got %s, want %s", got, want)
+	}
 	if !strings.Contains(listHTML(t, x.ui.List("notes").Deleted(), x.ctx("/notes", "?view=deleted")), "dead one") {
 		t.Errorf("a cross-site purge deleted the row")
+	}
+}
+
+// The JSON body a browser could only send after a preflight is refused
+// like a form post, with the one refusal the write handlers share.
+func TestTrashWriteCrossSiteJSONRefused(t *testing.T) {
+	x := deletedUI(t)
+	installOwnerExtractor(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/notes/n2/_purge", strings.NewReader(`{"back":"/notes?view=deleted"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r = withUserRequest(r, "u1")
+	w := httptest.NewRecorder()
+	deletedWriteMux(x).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("a cross-site JSON purge answered %d (%s), want 403", w.Code, w.Body.String())
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"error":"forbidden","reason":"forbidden"}`; got != want {
+		t.Errorf("the refusal is not the one the trash handlers answer: got %s, want %s", got, want)
+	}
+	if !strings.Contains(listHTML(t, x.ui.List("notes").Deleted(), x.ctx("/notes", "?view=deleted")), "dead one") {
+		t.Errorf("a cross-site JSON purge deleted the row")
 	}
 }
 

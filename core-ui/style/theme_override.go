@@ -75,7 +75,8 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
 	lines = append(lines, knobDecls(t.Knobs)...)
-	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
+	opts := componentOptionDecls(withDefaultOptions(t.Components))
+	lines = append(lines, opts...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ":root.cui-theme-%s,\n.cui-theme-%s {\n", hash, hash)
 	writeScopeLines(&b, "  ", lines)
@@ -86,7 +87,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	if len(t.DarkColors) == 0 && len(t.DarkCode) == 0 {
 		return b.String()
 	}
-	darkLines := darkScopeLines(t)
+	darkLines := darkScopeLines(t, opts)
 	b.WriteString("\n[data-color-scheme=\"dark\"]:root.cui-theme-" + hash + ",\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "  ", darkLines)
 	b.WriteString("}\n")
@@ -98,15 +99,9 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	return b.String()
 }
 
-func darkScopeLines(t Theme) []string {
-	lines := make([]string, 0, len(t.DarkColors)+len(t.DarkCode)+16)
-	for _, name := range sortedMapKeys(t.DarkColors) {
-		lines = append(lines, fmt.Sprintf("--color-%s: %s;", name, t.DarkColors[name]))
-	}
-	for _, name := range sortedMapKeys(t.DarkCode) {
-		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
-	}
-	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
+func darkScopeLines(t Theme, opts []string) []string {
+	lines, _ := paletteLines(t.DarkColors, t.DarkCode, nil)
+	lines = append(lines, opts...)
 	if len(t.DarkColors) > 0 {
 		lines = append(lines, "color-scheme: dark;")
 	}

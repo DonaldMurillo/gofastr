@@ -2,7 +2,6 @@ primitive: admin.gate
 summary: The one default-deny gate in front of every admin page and route - who may enter, the cross-site refusal, the answer headers and the platform-only pages.
 code:
   - battery/admin/gate.go
-  - battery/admin/csrf.go
   - battery/admin/platform.go
 docs:
   - framework/docs/content/admin.md

@@ -69,7 +69,7 @@ invariants:
       - test: battery/admin.TestAuditWriteFailureIsLogged
       - test: battery/admin.TestAuditWithNoDatabaseIsLogged
   - id: limit-is-capped
-    rule: parseLimit answers the fallback for an absent, unparsable or non-positive ?limit= and caps a larger one at 1000.
+    rule: decodePage answers the fallback for an absent, unparsable or non-positive ?limit= and caps a larger one at opsMaxLimit, 1000.
     enforced_by:
       - test: battery/admin.TestParseLimitIsCapped
 decisions:

@@ -233,12 +233,8 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("magic-link", "MagicLinkConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
 	}
-	if p.config.TwoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: magic-link plugin: %q handles two-factor sign-in, so set MagicLinkConfig.TwoFactorURL to the page that finishes it: a magic-link sign-in of a 2FA account is pending until /2fa/challenge, and OnSuccessURL would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "magic-link", "MagicLinkConfig.TwoFactorURL", p.config.TwoFactorURL, "a magic-link sign-in", "OnSuccessURL"); err != nil {
+		return err
 	}
 	p.mgr = mgr
 	return nil
@@ -552,14 +548,6 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, safeRedirectURL(target), http.StatusFound)
 }
 
-func generateRandomPassword(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
 func safeRedirectURL(u string) string {
 	if handler.IsSafeRelativePath(u) {
 		return u
@@ -572,4 +560,16 @@ func checkTwoFactorURL(plugin, option, value string) error {
 		return nil
 	}
 	return fmt.Errorf("auth: %s plugin: %s %q is not a same-origin path (one leading \"/\", no scheme or host), so a two-factor sign-in would be sent to \"/\", which refuses it", plugin, option, value)
+}
+
+func requireTwoFactorURL(mgr *AuthManager, plugin, option, value, signIn, fallback string) error {
+	if value != "" {
+		return nil
+	}
+	for _, name := range mgr.order {
+		if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+			return fmt.Errorf("auth: %s plugin: %q handles two-factor sign-in, so set %s to the page that finishes it: %s of a 2FA account is pending until /2fa/challenge, and %s would refuse it", plugin, name, option, signIn, fallback)
+		}
+	}
+	return nil
 }

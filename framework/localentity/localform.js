@@ -92,16 +92,12 @@
   const typed = (c) => /^(text|search|textarea)$/.test(c.type);
   const pad = (n) => String(n).padStart(2, '0');
 
-  // day accepts a real calendar date, YYYY-MM-DD, as core/schema's
-  // Date does (2024-02-31 is refused, not rolled into March). The year
-  // is set with setUTCFullYear: Date.UTC reads 0-99 as 1900-1999, so
-  // 0050-01-01 failed its own round-trip.
+  // ISO date-only strings parse in UTC. Round-trip to check that the
+  // date exists and that early years retain their four-digit spelling.
   const day = (raw) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-    if (!m) return null;
-    const d = new Date(0);
-    d.setUTCFullYear(+m[1], m[2] - 1, +m[3]);
-    return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === m[2] - 1 && d.getUTCDate() === +m[3] ? raw : null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    const d = new Date(raw);
+    return Number.isFinite(+d) && d.toISOString().slice(0, 10) === raw ? raw : null;
   };
   // stamp accepts RFC 3339 (what core/schema's Timestamp parses) or a
   // datetime-local value, read in the visitor's time zone, and stores
@@ -141,8 +137,11 @@
     const ctl = live(form, f.name)[0];
     if (!ctl) return { absent: true };
     if (f.t === 'bool') {
-      // A checked box submits its value (whatever it is: "true", "on",
-      // "yes"); the hidden "false" twin is the unchecked half.
+      // A checked box is true whatever its value attribute says; the
+      // hidden "false" twin is the unchecked half. Other controls (a
+      // select, radios, a hidden input) carry "false" or "" as false.
+      const boxes = live(form, f.name).filter((c) => c.type === 'checkbox');
+      if (boxes.length) return { value: boxes.some((c) => c.checked) };
       return { value: data.getAll(f.name).some((x) => x !== 'false' && x !== '') };
     }
     const raw = data.get(f.name);
@@ -276,7 +275,7 @@
         if (c.type === 'checkbox') c.checked = value === true;
         else if (c.type === 'datetime-local' && Number.isFinite(Date.parse(text(value)))) {
           const d = new Date(text(value));
-          c.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+          c.value = String(d.getFullYear()).padStart(4, '0') + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
             'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
           shown.set(c, { value: c.value, id: text(rec.id), stored: text(value) });
         }

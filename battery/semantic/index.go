@@ -672,10 +672,7 @@ func (i *index) Query(ctx context.Context, q Query) (hits []Hit, err error) {
 	if q.Text == "" {
 		return nil, nil
 	}
-	k := q.K
-	if k <= 0 {
-		k = 10
-	}
+	k := defaultTop(q.K)
 	if k > maxQueryK {
 		k = maxQueryK
 	}

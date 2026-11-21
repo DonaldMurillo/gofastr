@@ -3,7 +3,6 @@ package auth
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestPassword_HashIsBcrypt verifies that HashPassword produces a bcrypt
@@ -144,27 +143,6 @@ func TestTiming_PlaceholderHashExists(t *testing.T) {
 	}
 	if CheckPassword("password123", passwordPlaceholderHash) {
 		t.Errorf("SECURITY: [password] common password 'password123' matches placeholder hash. Attack: OAuth account takeover.")
-	}
-}
-
-// TestPassword_TimingSafeCheck verifies that CheckPassword takes
-// roughly the same time for valid vs invalid hashes. This is a
-// statistical test, it verifies bcrypt timing is consistent.
-func TestPassword_TimingSafeCheck(t *testing.T) {
-	hash, _ := HashPassword("testpassword")
-
-	start := time.Now()
-	CheckPassword("wrong1", hash)
-	wrongDuration := time.Since(start)
-
-	start = time.Now()
-	CheckPassword("wrong2", "$2a$10$invalidhashthatdoesnotmatchaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	// This should still take ~same time because bcrypt always runs
-	invalidDuration := time.Since(start)
-
-	ratio := float64(wrongDuration) / float64(invalidDuration)
-	if ratio < 0.1 || ratio > 10 {
-		t.Logf("SECURITY: [timing] CheckPassword timing ratio %.2f (valid hash: %v, invalid hash: %v). Attack: timing side-channel may leak hash validity.", ratio, wrongDuration, invalidDuration)
 	}
 }
 

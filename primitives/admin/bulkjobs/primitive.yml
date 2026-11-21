@@ -17,7 +17,7 @@ invariants:
     applies:
       - battery/admin/admin.go
   - id: resume-waits-out-the-grace
-    rule: Init resumes only an unenqueued job older than bulkResumeGrace, a minute, so a confirm between writing its snapshot and enqueuing it is left alone.
+    rule: Init resumes only an unenqueued job older than entityui.BulkResumeGrace, so a confirm between writing its snapshot and enqueuing it is left alone.
     enforced_by:
       - test: battery/admin.TestBulkInitLeavesAYoungUnenqueuedJob
   - id: payload-is-the-job-id

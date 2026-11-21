@@ -33,17 +33,22 @@ type jsLiteral struct {
 
 func jsStringLiterals(code string) []jsLiteral {
 	var lits []jsLiteral
-	var seen []byte
-	for i := 0; i < len(code); i++ {
+	prev := -1
+	afterLiteral := false
+	for i := 0; i < len(code); {
+		if next := skipSpace(code, i); next != i {
+			i = next
+			continue
+		}
 		q := code[i]
 		if q != '\'' && q != '"' && q != '`' {
-			if q == '/' && regexLiteralStartsAt(seen) {
-				end := regexLiteralEnd(code, i)
-				seen = append(seen, code[i:end+1]...)
-				i = end
+			if q == '/' && !afterLiteral && regexLiteralStartsAt(code, prev) {
+				i = regexLiteralEnd(code, i)
+				afterLiteral = true
 				continue
 			}
-			seen = append(seen, q)
+			prev, afterLiteral = i, false
+			i++
 			continue
 		}
 		j := i + 1
@@ -62,30 +67,9 @@ func jsStringLiterals(code string) []jsLiteral {
 			j = len(code)
 		}
 		lits = append(lits, jsLiteral{pos: i, text: code[i+1 : j]})
-		seen = append(seen, code[i:min(j+1, len(code))]...)
-		i = j
+		i, afterLiteral = min(j+1, len(code)), true
 	}
 	return lits
-}
-
-func regexLiteralEnd(s string, i int) int {
-	j := i + 1
-	inClass := false
-	for j < len(s) && s[j] != '\n' {
-		if s[j] == '\\' && j+1 < len(s) {
-			j += 2
-			continue
-		}
-		if s[j] == '[' {
-			inClass = true
-		} else if s[j] == ']' {
-			inClass = false
-		} else if s[j] == '/' && !inClass {
-			return j
-		}
-		j++
-	}
-	return min(j, len(s)-1)
 }
 
 // LintLayerPrefixJS lints the JavaScript under roots (a runtime package dir, a fixture dir, or .js

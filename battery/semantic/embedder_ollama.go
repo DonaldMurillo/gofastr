@@ -28,7 +28,8 @@ type OllamaConfig struct {
 	BaseURL string
 	// Model is the embedding model name. Defaults to "nomic-embed-text".
 	Model string
-	// Dim is the embedding dimension; 0 detects it on the first call.
+	// Dim sets the embedding dimension so [FlatStore] can size itself on open.
+	// If zero, the first successful [Embed] response determines the dimension.
 	Dim int
 	// Timeout is the per-request HTTP timeout. Defaults to 30s.
 	Timeout time.Duration

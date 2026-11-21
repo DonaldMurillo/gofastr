@@ -90,9 +90,10 @@ func (c Config) theme() style.Theme {
 type Runner struct {
 	cfg Config
 
-	mu           sync.Mutex
-	currentStep  int
-	stepInFlight bool
+	mu          sync.Mutex
+	currentStep int
+	// stepInFlight is closed when the current setup claim is released.
+	stepInFlight chan struct{}
 
 	token        string
 	cookieSecret string
@@ -142,8 +143,10 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 
 // RunSteps resolves all fields from env and runs every step in order.
 func (r *Runner) RunSteps(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	if err := r.claimSteps(ctx); err != nil {
+		return err
+	}
+	defer r.releaseStepClaim()
 
 	if r.cfg.Complete != nil {
 		done, err := r.cfg.Complete(ctx)
@@ -167,16 +170,46 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runner) claimSteps(ctx context.Context) error {
+	r.mu.Lock()
+	for r.stepInFlight != nil {
+		inFlight := r.stepInFlight
+		r.mu.Unlock()
+		select {
+		case <-inFlight:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		r.mu.Lock()
+	}
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.stepInFlight = make(chan struct{})
+	return nil
+}
+
+func (r *Runner) releaseStepClaim() {
+	r.mu.Lock()
+	close(r.stepInFlight)
+	r.stepInFlight = nil
+	r.mu.Unlock()
+}
+
 // SetupURL returns the operator-facing setup URL for the startup banner.
 func (r *Runner) SetupURL(scheme, addr string) string {
 	host := r.cfg.HostName
 	if host == "" {
 		host = addr
 	}
-	if !r.tokenEnabled || r.token == "" {
+	r.mu.Lock()
+	token := r.token
+	r.mu.Unlock()
+	if !r.tokenEnabled || token == "" {
 		return scheme + "://" + host + "/setup"
 	}
-	return scheme + "://" + host + "/setup?token=" + r.token
+	return scheme + "://" + host + "/setup?token=" + token
 }
 
 func allFieldsFromEnv(steps []Step) bool {

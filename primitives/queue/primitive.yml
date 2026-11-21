@@ -33,14 +33,10 @@ twins:
       - path: battery/queue/redis.go
         note: RedisQueue.Nack, which applies MaxAge and the budget.
 invariants:
-  - id: handler-panic-is-an-error
-    rule: invokeRecovering turns a handler panic into an error the job's retry path handles, so the worker survives it.
+  - id: job-and-schedule-integers-fit
+    rule: The SQL queue persists and increments 64-bit job attempts and carries 64-bit priorities and attempt limits through durable scheduling, on both fresh and upgraded databases.
     enforced_by:
-      - test: battery/queue.TestDBWorkerSurvivesHandlerPanic
-  - id: span-names-the-error-type
-    rule: A failed job's span records the error's type as error.type, never its message, which can quote the payload.
-    enforced_by:
-      - test: battery/queue.TestMemoryJobSpans
+      - test: battery/queue.TestWideQueueNumbersParity
   - id: replay-reports-whether-it-queued
     rule: ReplayJob on DBQueue, MemoryQueue and RedisQueue answers true only when it queued a failed job again, and false with a nil error for an unknown id, a job that is not failed and a second replay.
     enforced_by:
@@ -89,6 +85,14 @@ invariants:
       - test: battery/queue.TestNextIntervalRunSkipsMissedRuns
       - test: battery/queue.TestSchedulerNextWakeBounds
       - test: battery/queue.TestSchedulerFiresJobsRegisteredAfterStart
+  - id: handler-panic-is-an-error
+    rule: invokeRecovering turns a handler panic into an error the job's retry path handles, so the worker survives it.
+    enforced_by:
+      - test: battery/queue.TestDBWorkerSurvivesHandlerPanic
+  - id: span-names-the-error-type
+    rule: A failed job's span records the error's type as error.type, never its message, which can quote the payload.
+    enforced_by:
+      - test: battery/queue.TestMemoryJobSpans
 decisions:
   - id: stress-soak-scales-under-race
     date: 2026-11-16

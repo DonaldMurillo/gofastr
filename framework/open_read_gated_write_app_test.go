@@ -1,7 +1,6 @@
 package framework
 
 import (
-	"context"
 	"database/sql"
 	"net/http"
 	"strings"
@@ -9,7 +8,6 @@ import (
 
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -63,14 +61,7 @@ func openReadGatedWriteApp(t *testing.T) *App {
 	// What a generated app installs on every request, including anonymous ones.
 	policy := access.NewRolePolicy()
 	policy.Grant("admin", access.Wildcard)
-	app.Use(access.Middleware(policy, func(ctx context.Context) []string {
-		if u, ok := handler.GetUser(ctx); ok && u != nil {
-			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				return rh.GetRoles()
-			}
-		}
-		return nil
-	}))
+	app.Use(access.Middleware(policy, access.RequestUserRoles))
 	return app
 }
 

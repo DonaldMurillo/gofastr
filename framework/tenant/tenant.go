@@ -31,16 +31,12 @@ func IsCrossTenant(ctx context.Context) bool {
 type TenantConfig struct {
 	// Field is the tenant column, "tenant_id" by default.
 	Field string
-
-	// AutoScope adds the tenant filter to every query.
-	AutoScope bool
 }
 
-// DefaultTenantConfig returns tenant_id with AutoScope on.
+// DefaultTenantConfig returns the tenant_id column configuration.
 func DefaultTenantConfig() TenantConfig {
 	return TenantConfig{
-		Field:     "tenant_id",
-		AutoScope: true,
+		Field: "tenant_id",
 	}
 }
 
@@ -72,24 +68,12 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 		ent.Config.Fields = fields
 		return ent
 	}
-	ent.Config.Fields = append(slices.Clone(ent.Config.Fields), schema.Field{
-		Name:         col,
-		Type:         schema.String,
-		AutoGenerate: schema.AutoNone,
-		ReadOnly:     true,
-		Hidden:       true,
-	})
+	ent.Config.Fields = append(slices.Clone(ent.Config.Fields), entity.TenantColumnField(col))
 	return ent
 }
 
 func isInjectedTenantField(f schema.Field) bool {
-	return reflect.DeepEqual(f, schema.Field{
-		Name:         f.Name,
-		Type:         schema.String,
-		AutoGenerate: schema.AutoNone,
-		ReadOnly:     true,
-		Hidden:       true,
-	})
+	return reflect.DeepEqual(f, entity.TenantColumnField(f.Name))
 }
 
 // ApplyTenantFilter scopes builder to tenantID on tenant_id, and to no rows when tenantID is empty.

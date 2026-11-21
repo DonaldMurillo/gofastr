@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // Another replica that boots a newer artifact moves the row's digest and
@@ -19,13 +20,13 @@ import (
 // TestOtherArtifactDrainsReadyChild: the upgrade drain does not respawn
 // the old binary.
 func TestOtherArtifactDrainsReadyChild(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	ctx := context.Background()
 	store := newTestStore(t)
-	d := descriptorForChild(t, childModeEcho)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	if _, err := sup.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -33,12 +34,12 @@ func TestOtherArtifactDrainsReadyChild(t *testing.T) {
 	if err := sup.Enable(ctx, d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	if _, err := store.InstallOrUpdate(ctx, DesiredState{Module: d.Name, ArtifactSHA256: hex256("bb"), EffectiveGrants: []access.Permission{"articles:read"}}); err != nil {
 		t.Fatalf("InstallOrUpdate: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateInstalledDisabled, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateInstalledDisabled, 8*time.Second)
 	// Several polls: the hold must stay, not flap back to a spawn.
 	time.Sleep(300 * time.Millisecond)
 	if info, _ := sup.Info(d.Name); info.State != StateInstalledDisabled {
@@ -71,13 +72,13 @@ func TestOtherArtifactRule(t *testing.T) {
 // TestUpgradeDrainRefusesOtherArtifact: an upgrade drain that ends after
 // the row moved to another artifact holds instead of respawning.
 func TestUpgradeDrainRefusesOtherArtifact(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	ctx := context.Background()
 	store := newTestStore(t)
-	d := descriptorForChild(t, childModeEcho)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	if _, err := sup.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}

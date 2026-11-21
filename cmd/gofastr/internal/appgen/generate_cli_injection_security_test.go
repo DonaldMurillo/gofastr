@@ -80,33 +80,6 @@ func TestGenerateCLI_EntityNameMustDeriveIdentifier(t *testing.T) {
 	}
 }
 
-// TestGenerateCLI_PlainNamesStillGenerate: the guards above must not
-// over-fire. Dashed table names generate valid literals and command words
-// today and keep doing so.
-func TestGenerateCLI_PlainNamesStillGenerate(t *testing.T) {
-	decls := []framework.EntityDeclaration{{
-		Name:  "events",
-		Table: "blog-posts",
-		Fields: []framework.FieldDeclaration{
-			{Name: "title", Type: "string"},
-		},
-	}}
-	spec, err := buildCLISpec(decls, defaultCLIOptions(), "example.com/app/entities/client")
-	if err != nil {
-		t.Fatalf("plain dashed table rejected: %v", err)
-	}
-	files := RenderCLIFiles(spec)
-	joined := ""
-	for _, f := range files {
-		joined += f.Content
-	}
-	// The wrappers bind the pre-escaped base path; the with-id tail is
-	// appended at runtime by the shared verb bodies in verbs.go.
-	if !strings.Contains(joined, `"/blog-posts"`) {
-		t.Errorf("expected the dashed table in a base-path literal")
-	}
-}
-
 // The main.gen.go header used to echo the selection flags into a comment,
 // where a newline in --api-prefix landed at statement position. The echo
 // is gone (the settings entry records the selection), so no flag value

@@ -92,7 +92,7 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
-	for _, body := range astx.AllBodies(pass) {
+	for _, body := range astx.AllBodies(pass.Files...) {
 		if f := fileOf(pass, body); f != nil && pathflow.IsTestFile(pass, f) {
 			continue
 		}
@@ -159,10 +159,10 @@ func requestSized(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Ex
 		if collectors[fn] {
 			return types.ExprString(x)
 		}
-		if recvIs(fn, "net/http", "Request") && (fn.Name() == "Cookies" || fn.Name() == "CookiesNamed") {
+		if astx.ReceiverIs(fn, "net/http", "Request") && (fn.Name() == "Cookies" || fn.Name() == "CookiesNamed") {
 			return types.ExprString(x)
 		}
-		if recvIs(fn, "net/http", "Header") && fn.Name() == "Values" {
+		if astx.ReceiverIs(fn, "net/http", "Header") && fn.Name() == "Values" {
 			sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr)
 			if ok && fromRequest(pass, sel.X) {
 				return types.ExprString(x)
@@ -205,11 +205,6 @@ func fromRequest(pass *analysis.Pass, e ast.Expr) bool {
 		}
 	}
 	return false
-}
-
-func recvIs(fn *types.Func, pkg, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	return ok && sig.Recv() != nil && astx.IsNamed(astx.Deref(sig.Recv().Type()), pkg, name)
 }
 
 // capped reports whether rs bounds its iterations: a re-sliced
@@ -340,11 +335,11 @@ func backendCall(pass *analysis.Pass, body *ast.BlockStmt) *ast.CallExpr {
 		switch {
 		case sig != nil && takesContext(sig):
 			found = call
-		case recvIs(fn, "database/sql", "DB") || recvIs(fn, "database/sql", "Tx") || recvIs(fn, "database/sql", "Conn") || recvIs(fn, "database/sql", "Stmt"):
+		case astx.ReceiverIs(fn, "database/sql", "DB") || astx.ReceiverIs(fn, "database/sql", "Tx") || astx.ReceiverIs(fn, "database/sql", "Conn") || astx.ReceiverIs(fn, "database/sql", "Stmt"):
 			if strings.HasPrefix(fn.Name(), "Query") || strings.HasPrefix(fn.Name(), "Exec") {
 				found = call
 			}
-		case recvIs(fn, "net/http", "Client"):
+		case astx.ReceiverIs(fn, "net/http", "Client"):
 			found = call
 		case fn.Pkg() != nil && fn.Pkg().Path() == "net/http" && sig != nil && sig.Recv() == nil:
 			switch fn.Name() {

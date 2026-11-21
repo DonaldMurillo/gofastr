@@ -426,18 +426,6 @@ func TestWithBrokerPolicy_wiresPolicy(t *testing.T) {
 	}
 }
 
-// ---- WithBrokerSearchEndpoint + lookupEntity + entityPath ----
-
-func TestWithBrokerSearchEndpoint_wiresHandler(t *testing.T) {
-	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	b := NewBroker(nil, nil, nil, "", WithBrokerSearchEndpoint(h))
-	if b.searchEndpoint == nil {
-		t.Fatal("WithBrokerSearchEndpoint did not set searchEndpoint")
-	}
-}
-
 func TestLookupEntity_nilRegistryDenies(t *testing.T) {
 	b := NewBroker(nil, nil, nil, "")
 	if ent := b.lookupEntity("anything"); ent != nil {

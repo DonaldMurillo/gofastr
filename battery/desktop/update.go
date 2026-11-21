@@ -142,8 +142,6 @@ func (b *Battery) updaterFor() *updater {
 	return b.updater
 }
 
-func (u *updater) platformOverride() update.Platform { return u.platform }
-
 func (u *updater) renameFile(oldpath, newpath string) error {
 	if u.rename != nil {
 		return u.rename(oldpath, newpath)
@@ -183,11 +181,7 @@ func (b *Battery) CheckForUpdates(ctx context.Context) (Update, error) {
 	if err := ctx.Err(); err != nil {
 		return Update{}, ErrCancelled
 	}
-	r, err := b.updaterFor().resolve(ctx)
-	if err != nil {
-		return Update{}, err
-	}
-	return Update{Available: r.newer, Version: r.release.Version, Notes: clipNotes(r.release.Notes)}, nil
+	return b.updaterFor().check(ctx)
 }
 
 func clipNotes(notes string) string {
@@ -203,9 +197,17 @@ type resolved struct {
 	newer   bool
 }
 
-func (u *updater) resolve(ctx context.Context) (resolved, error) {
+func (u *updater) resolve(ctx context.Context, platform update.Platform) (resolved, error) {
 	if u.pub == nil {
 		return resolved{}, errUpdateNotConfigured
+	}
+	running := platform.Version()
+	if running == "" {
+		return resolved{}, errUpdateNeedsBundle
+	}
+	if _, err := update.ParseVersion(running); err != nil {
+		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
+		return resolved{}, errUpdateRunningVersion
 	}
 	cfg := u.b.cfg.Update
 	fctx, cancel := context.WithTimeout(ctx, updateFeedTimeout)
@@ -230,14 +232,6 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 		return resolved{}, errUpdateFeedBad
 	}
 	rel := feed.Select(cfg.Channel)
-	running := u.platformOrDefault().Version()
-	if running == "" {
-		return resolved{}, errUpdateNeedsBundle
-	}
-	if _, err := update.ParseVersion(running); err != nil {
-		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
-		return resolved{}, errUpdateRunningVersion
-	}
 	newer, err := update.IsNewer(rel.Version, running)
 	if err != nil {
 		u.b.logger.Warn("desktop: update feed version comparison failed", "error", err.Error())
@@ -285,7 +279,7 @@ func (u *updater) install(ctx context.Context) error {
 	if !ok {
 		return errUpdateNeedsBundle
 	}
-	r, err := u.resolve(ctx)
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return err
 	}
@@ -471,6 +465,7 @@ func (u *updater) removeStaleOld() {
 	}
 }
 
+// stops the loop after one look so the
 func (u *updater) loop(ctx context.Context, interval time.Duration) {
 	timer := time.NewTimer(firstUpdateCheckDelay)
 	defer timer.Stop()
@@ -512,7 +507,11 @@ func (u *updater) checkAndNotify(ctx context.Context) (stop bool) {
 }
 
 func (u *updater) check(ctx context.Context) (Update, error) {
-	r, err := u.resolve(ctx)
+	platform := u.platformOrDefault()
+	if _, _, ok := platform.Bundle(); !ok {
+		return Update{}, errUpdateNeedsBundle
+	}
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return Update{}, err
 	}

@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/DonaldMurillo/gofastr/framework/access"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 
 	"github.com/DonaldMurillo/gofastr/battery/email"
 )

@@ -27,11 +27,20 @@ type Issue struct {
 	LastTraceID string
 }
 
-// maxIssues bounds how many distinct issues one listing tracks. Past
+// IssueRow is one issue as telemetry_issues and `gofastr telemetry
+// issues --json` print it.
+func IssueRow(is Issue) map[string]any {
+	return map[string]any{
+		"id": is.ID, "route": is.Route, "status": is.Status, "error": is.Err, "example": is.Example, "count": is.Count,
+		"first": is.First.UTC().Format(time.RFC3339Nano), "last": is.Last.UTC().Format(time.RFC3339Nano), "last_trace_id": is.LastTraceID,
+	}
+}
+
+// MaxIssues bounds how many distinct issues one listing tracks. Past
 // it, failures that fit no issue already seen are counted as left out:
 // an app failing in two thousand different ways has a bug in how its
 // errors are worded, and the list cannot help.
-const maxIssues = 2000
+const MaxIssues = 2000
 
 type issueKey struct {
 	route  string
@@ -113,7 +122,7 @@ func (s *Store) Issues(from, to time.Time, limit int) (issues []Issue, leftOut i
 		k := keyOf(sum)
 		g := groups[k]
 		if g == nil {
-			if len(groups) >= maxIssues {
+			if len(groups) >= MaxIssues {
 				leftOut++
 				return true
 			}

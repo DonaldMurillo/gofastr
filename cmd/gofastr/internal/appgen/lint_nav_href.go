@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	corestatic "github.com/DonaldMurillo/gofastr/core/static"
@@ -39,18 +38,9 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 	serve := func(pattern string) {
 		// Other checks report malformed or conflicting declarations.
 		defer func() { _ = recover() }()
-		if _, path, ok := strings.Cut(pattern, " "); ok {
-			pattern = path
-		}
 		mux.Handle(pattern, http.NotFoundHandler())
 	}
-	screens := app.NewRouter()
-	for _, screen := range appspec.AppSpecSynthesizeCRUDScreens(bp).Screens {
-		func() {
-			defer func() { _ = recover() }() // route validation owns malformed patterns
-			screens.Screen(&app.Screen{Path: screen.Route, Component: navRouteProbe{}}, nil)
-		}()
-	}
+	screens := appSpecScreenProbeRouter(appspec.AppSpecSynthesizeCRUDScreens(bp))
 	for _, decl := range bp.Entities {
 		if !appspec.EntityDeclarationCRUDEnabled(decl) {
 			continue
@@ -63,9 +53,9 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		for _, pattern := range crud.CrudRoutePatterns(mount, crud.CrudRouteOptions{States: cfg.States, Key: cfg.PrimaryKey}) {
 			serve(pattern)
 		}
-		for _, suffix := range []string{"/_bulk", "/_export.csv", "/_pick"} {
-			serve(mount + suffix)
-		}
+		serve("POST " + mount + "/_bulk")
+		serve("GET " + mount + "/_export.csv")
+		serve("POST " + mount + "/_pick")
 	}
 	// Endpoint paths are relative to the same entity API mount.
 	for _, ep := range bp.Endpoints {
@@ -83,8 +73,9 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		if base == "" {
 			base = "/auth"
 		}
-		for _, suffix := range []string{"/login", "/logout", "/me", "/register", "/password"} {
-			serve(base + suffix)
+		serve("GET " + base + "/me")
+		for _, suffix := range []string{"/login", "/logout", "/register", "/password"} {
+			serve("POST " + base + suffix)
 		}
 	}
 	for _, pattern := range appspec.AppSpecFrameworkRoutePatterns(bp) {
@@ -188,12 +179,21 @@ func navInternalPath(href string) (string, bool) {
 	return h, true
 }
 
-// navRouteProbe supplies the screen router's parameter contract without
-// rendering or loading an app component during validation.
-type navRouteProbe struct{}
+func appSpecScreenProbeRouter(bp appspec.AppSpec) *app.Router {
+	router := app.NewRouter()
+	for _, screen := range bp.Screens {
+		func() {
+			defer func() { _ = recover() }() // route validation owns malformed patterns
+			router.Screen(&app.Screen{Path: appSpecScreenPattern(bp, screen), Component: screenRouteProbe{route: screen.Route}}, nil)
+		}()
+	}
+	return router
+}
 
-func (navRouteProbe) Render() render.HTML         { return "" }
-func (navRouteProbe) SetParams(map[string]string) {}
+type screenRouteProbe struct{ route string }
+
+func (screenRouteProbe) Render() render.HTML         { return "" }
+func (screenRouteProbe) SetParams(map[string]string) {}
 
 func navStaticServes(root *os.Root, path string) bool {
 	rel := strings.TrimPrefix(stdpath.Clean("/"+path), "/")

@@ -368,12 +368,33 @@ func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []s
 	if err := m.userStore.UpdateRoles(ctx, userID, roles); err != nil {
 		return err
 	}
+	m.emitRolesUpdated(ctx, userID, roles)
+	return nil
+}
+
+// SwapUserRoles applies an authorized change through RoleSwapper and audits
+// only a successful swap. It returns false, nil if the prior roles changed.
+func (m *AuthManager) SwapUserRoles(ctx context.Context, userID string, previous, roles []string) (bool, error) {
+	if !textsafe.Storable(userID) {
+		return false, ErrUserNotFound
+	}
+	store, ok := m.userStore.(RoleSwapper)
+	if !ok {
+		return false, fmt.Errorf("auth: user store does not support conditional role updates")
+	}
+	swapped, err := store.SwapRoles(ctx, userID, previous, roles)
+	if err == nil && swapped {
+		m.emitRolesUpdated(ctx, userID, roles)
+	}
+	return swapped, err
+}
+
+func (m *AuthManager) emitRolesUpdated(ctx context.Context, userID string, roles []string) {
 	m.emitSecurity(ctx, SecurityEvent{
 		Kind:   "roles.updated",
 		UserID: userID,
 		Meta:   map[string]string{"roles": strings.Join(roles, ",")},
 	})
-	return nil
 }
 
 func (m *AuthManager) refuseInMemorySessionStore() error {

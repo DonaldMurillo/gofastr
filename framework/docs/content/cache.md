@@ -272,9 +272,10 @@ cb := b.(*cache.Battery)
 _ = cb.Cache().Get(ctx, "key", &dest)
 ```
 
-`Battery.OnStop` calls `Close()` on any cache that implements
-`io.Closer` (i.e., `MemoryCache`).  `RedisCache` does not implement
-`io.Closer`, so `OnStop` is a no-op for Redis.
+`Battery.OnStop` calls `Close()` on any cache that has one — an
+`io.Closer` a host-supplied cache may implement, or a plain `Close()`
+like `MemoryCache`'s, which stops the cleanup goroutine. `RedisCache`
+has neither, so `OnStop` is a no-op for Redis.
 
 Other batteries can declare `"cache"` as a dependency at registration:
 

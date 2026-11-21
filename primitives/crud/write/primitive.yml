@@ -15,6 +15,14 @@ code:
 docs:
   - framework/docs/content/batch-endpoints.md
   - framework/docs/content/hooks-and-transactions.md
+twins:
+  - job: Map a driver-reported UNIQUE or NOT NULL refusal to the entity's declared wire field.
+    why: SQLite reports table and columns, while Postgres names the unique constraint or describes the not-null column and relation in a different format, and TestConstraintFieldCasingParity enforces the same HTTP response.
+    sites:
+      - path: framework/crud/conflict_fields.go
+        note: SQLite diagnostic branches in conflictColumns and notNullColumn.
+      - path: framework/crud/conflict_fields.go
+        note: Postgres diagnostic branches in conflictColumns and notNullColumn.
 invariants:
   - id: foreign-key-target-readable
     rule: A create or update whose BelongsTo foreign key names a row the caller cannot read answers 404, never 403, unless the context carries WithServerWrites or a cross-scope grant.
@@ -91,6 +99,10 @@ invariants:
       - test: framework/crud.TestConflictOnSensitiveFieldIsBare
       - test: framework/crud.TestNotNullNamesField
       - test: framework/crud.TestNotNullColumnOtherRelationIsNotOurs
+  - id: constraint-diagnostics-fold-ascii
+    rule: SQLite UNIQUE and NOT NULL decode diagnostic identifiers through sqliteConstraintColumn and match with ASCII case folding, so both engines return the declared wire key for the same named field.
+    enforced_by:
+      - test: framework/crud.TestConstraintFieldCasingParity
   - id: transition-route-hides-unreadable-row
     rule: The transition route answers the id only when the move leaves the row outside the caller's read scope.
     enforced_by:

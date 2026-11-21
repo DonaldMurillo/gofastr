@@ -326,14 +326,15 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 		return
 	}
 	now := time.Now()
+	merged := s.mergedPeersLocked(msg.Room, now)
 	known := false
-	for _, p := range s.mergedPeersLocked(msg.Room, now) {
+	for _, p := range merged {
 		if p.ID == msg.Peer.ID {
 			known = true
 			break
 		}
 	}
-	if !known && len(s.mergedPeersLocked(msg.Room, now)) >= s.cfg.MaxPeers {
+	if !known && len(merged) >= s.cfg.MaxPeers {
 		return
 	}
 	prev := s.remoteViewLocked(msg.Room, time.Time{})

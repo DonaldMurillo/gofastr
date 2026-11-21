@@ -294,10 +294,7 @@ func validateUpstreamURL(raw string, lookup func(string) ([]net.IP, error)) erro
 	host := u.Hostname()
 	lower := strings.ToLower(host)
 
-	isLoopback := lower == "localhost" || strings.HasSuffix(lower, ".localhost")
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		isLoopback = true
-	}
+	isLoopback := isLoopbackHost(host)
 	if scheme == "http" && !isLoopback {
 		return fmt.Errorf("http:// upstream %q refused: plaintext is only allowed for loopback hosts; use https", u.Host)
 	}

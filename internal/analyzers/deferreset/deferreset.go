@@ -57,11 +57,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
-	"unicode"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -77,7 +78,7 @@ var (
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -170,7 +171,7 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 						deferredFlags[key] = true
 					}
 				case *ast.CallExpr:
-					if resetVerbs[firstWord(calleeName(m))] {
+					if resetVerbs[astx.FirstWord(calleeName(m))] {
 						deferredVerbs[verbKey(m)] = true
 					}
 				}
@@ -206,9 +207,9 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, params map[types.Object]boo
 			switch {
 			case canPanicInto(pass, n, params):
 				events = append(events, event{pos: n.Pos(), kind: evCall, desc: types.ExprString(n.Fun)})
-			case setVerbs[firstWord(name)]:
+			case setVerbs[astx.FirstWord(name)]:
 				events = append(events, event{pos: n.Pos(), kind: evSet, desc: name})
-			case resetVerbs[firstWord(name)]:
+			case resetVerbs[astx.FirstWord(name)]:
 				events = append(events, event{pos: n.Pos(), kind: evReset, desc: name, verb: verbKey(n)})
 			}
 		}
@@ -342,17 +343,4 @@ func calleeName(call *ast.CallExpr) string {
 		return fun.Sel.Name
 	}
 	return ""
-}
-
-// firstWord returns the leading camel-case word of name, lowercased.
-func firstWord(name string) string {
-	rs := []rune(name)
-	end := len(rs)
-	for i := 1; i < len(rs); i++ {
-		if unicode.IsUpper(rs[i]) {
-			end = i
-			break
-		}
-	}
-	return strings.ToLower(string(rs[:end]))
 }

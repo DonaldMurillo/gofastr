@@ -13,9 +13,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
-const maxRequestBody = 1 << 20
+// maxRequestBody caps the JSON body of /index and /query at the repo's
+// bodylimit.MaxJSONBodyBytes, so a hostile or buggy client cannot
+// exhaust memory by streaming a huge payload at us.
+const maxRequestBody = bodylimit.MaxJSONBodyBytes
 
 // Handler returns an http.Handler exposing the index over HTTP; with no auth
 // option it refuses every request.
@@ -255,7 +259,3 @@ type errorResponse struct {
 func writeErr(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
 	writeJSON(w, r, code, errorResponse{Error: reason.Text(r.Context(), params...), Reason: reason.Code()})
 }
-
-var errMethodNotAllowed = errors.New("method not allowed")
-
-var _ = errMethodNotAllowed

@@ -3,6 +3,7 @@ package auditcmd
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -27,15 +28,15 @@ func runAuditA11y(args []string) {
 		fmt.Println("Usage: gofastr audit a11y [root] [--url <base>] [--email EMAIL --password -] [--pages /a,/b]")
 		fmt.Println("  --password - reads the secret from stdin; GOFASTR_AUDIT_PASSWORD env also works (preferred: argv is ps-visible)")
 		fmt.Println()
-		fmt.Println("Static mode (default): lints every .go file under root for missing")
-		fmt.Println("required accessibility fields on core-ui/html elements (Alt on")
+		fmt.Println("Static mode (default): lints every non-test, non-generated .go file")
+		fmt.Println("under root for missing accessibility fields on core-ui/html elements (Alt on")
 		fmt.Println("images, Label on buttons/landmarks, For on labels, …) and explains")
 		fmt.Println("how to fix each finding. The same check runs in `gofastr build`.")
 		fmt.Println()
 		fmt.Println("Runtime mode (--url): runs the vendored axe-core engine via headless")
 		fmt.Println("Chrome against the running app, checking contrast, focus, landmarks, and ARIA")
 		fmt.Println("under BOTH color schemes. Pages come from the app's /sitemap.xml")
-		fmt.Println("(uihost.WithSitemap) unless --pages is given. Pass --email and")
+		fmt.Println("(including split sitemaps) unless --pages is given. Pass --email and")
 		fmt.Println("--password - (stdin; or GOFASTR_AUDIT_PASSWORD) to submit the app's")
 		fmt.Println("/login form before discovery/auditing.")
 		cli.OsExit(0)
@@ -54,8 +55,21 @@ func runAuditA11y(args []string) {
 	}
 
 	if opts.baseURL != "" {
+		base, err := url.Parse(opts.baseURL)
+		if err != nil || base.Hostname() == "" || (base.Scheme != "http" && base.Scheme != "https") {
+			fmt.Fprintln(os.Stderr, "audit a11y: --url must be an absolute HTTP or HTTPS URL")
+			cli.OsExit(2)
+		}
+		var password string
+		if opts.password != "" {
+			password = resolveAuditPassword(opts.password)
+			if password == "" {
+				fmt.Fprintln(os.Stderr, "audit a11y: --password requires a non-empty secret")
+				cli.OsExit(2)
+			}
+		}
 		run, err := auditA11yURL(opts.baseURL, opts.pages, a11yCredentials{
-			Email: opts.email, Password: opts.password,
+			Email: opts.email, Password: password,
 		})
 		if err != nil {
 			cli.Fprintf(os.Stderr, "audit a11y: %v\n", err)
@@ -71,6 +85,10 @@ func runAuditA11y(args []string) {
 			}
 		}
 		return
+	}
+	if opts.email != "" {
+		fmt.Fprintln(os.Stderr, "audit a11y: --email and --password require --url")
+		cli.OsExit(2)
 	}
 
 	findings, err := gates.AuditA11y(opts.root)
@@ -108,6 +126,7 @@ func parseA11yArgs(args []string) a11yArgs {
 			out.missingValue = flag
 		}
 	}
+	stringFlags := map[string]*string{"--url": &out.baseURL, "--email": &out.email, "--password": &out.password}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password" {
@@ -118,24 +137,17 @@ func parseA11yArgs(args []string) a11yArgs {
 			arg = arg + "=" + args[i+1]
 			i++
 		}
+		if name, val, ok := strings.Cut(arg, "="); ok {
+			if dst := stringFlags[name]; dst != nil {
+				if *dst = val; val == "" {
+					missing(name)
+				}
+				continue
+			}
+		}
 		switch {
 		case arg == "--help" || arg == "-h":
 			out.help = true
-		case strings.HasPrefix(arg, "--url="):
-			if out.baseURL = strings.TrimPrefix(arg, "--url="); out.baseURL == "" {
-				missing("--url")
-			}
-		case strings.HasPrefix(arg, "--email="):
-			if out.email = strings.TrimPrefix(arg, "--email="); out.email == "" {
-				missing("--email")
-			}
-		case strings.HasPrefix(arg, "--password="):
-			v := strings.TrimPrefix(arg, "--password=")
-			if v == "" {
-				missing("--password")
-			} else {
-				out.password = resolveAuditPassword(v)
-			}
 		case strings.HasPrefix(arg, "--pages="):
 			n := len(out.pages)
 			for _, p := range strings.Split(strings.TrimPrefix(arg, "--pages="), ",") {

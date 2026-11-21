@@ -149,8 +149,5 @@ func TestFormRepeaterExtraAttrsOnRoot(t *testing.T) {
 		Name:       "items",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("form repeater root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "form repeater root")
 }

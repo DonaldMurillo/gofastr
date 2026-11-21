@@ -46,7 +46,8 @@ func PipelineSourcesFromHeaders(headers []HeaderInfo, urlFor func(name string) s
 }
 
 // PipelineImageConfig configures a multi-format <picture> with an
-// optional placeholder (LQIP data URL or BlurHash string).
+// optional placeholder: an inline raster data: URL (decode a stored
+// BlurHash with image.BlurHashDataURL first).
 type PipelineImageConfig struct {
 	// Fallback is the <img>'s src (required).
 	Fallback string

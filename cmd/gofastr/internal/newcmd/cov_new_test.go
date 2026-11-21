@@ -9,13 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
-func TestNewUsagePrints(t *testing.T) {
-	out := clitest.CovT_capStdout(t, newUsage)
-	if !strings.Contains(out, "Usage:") {
-		t.Fatalf("newUsage output: %s", out)
-	}
-}
-
 func TestRunNewDispatchesAllResources(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
@@ -53,8 +46,8 @@ func TestRunNewTakesSpaceForm(t *testing.T) {
 		code := clitest.CovT_capExit(t, func() {
 			clitest.CovT_capStdout(t, func() { RunNew(args) })
 		})
-		if code != 1 {
-			t.Errorf("RunNew(%q) exit %d, want 1", args, code)
+		if code != 2 {
+			t.Errorf("RunNew(%q) exit %d, want 2", args, code)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "pong_handler.go")); err == nil {
@@ -73,8 +66,8 @@ func TestRunNewNoArgsExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunNew(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 
@@ -82,8 +75,8 @@ func TestRunNewUnknownResourceExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunNew([]string{"frobnicate"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 
@@ -100,8 +93,8 @@ func TestRunNewHandlerNoNameExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { runNewHandler(nil, false) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 
@@ -118,8 +111,8 @@ func TestRunNewRouteNoArgsExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { runNewRoute(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 

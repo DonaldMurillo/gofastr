@@ -84,9 +84,11 @@ func (s *PostScreen) ScreenSEO(ctx context.Context) uihost.SEO {
 
 `core-ui/seo` ships typed Schema.org builders: `NewArticle`,
 `NewBreadcrumbList`, `NewFAQPage`, `NewOrganization`, `NewPerson`,
-`NewWebSite` (with SearchAction), `NewWebPage`, `NewProduct`/`Offer`.
-Each is rendered as `<script type="application/ld+json">` with `</`
-neutralized so content can't break out of the script block.
+`NewWebSite`, `NewSearchAction`, `NewWebPage`, `NewWebApplication`,
+`NewProduct`, and `NewOffer`. Use `NewSearchAction` to build a website's
+`PotentialAction`.
+Each top-level schema item is rendered in its own
+`<script type="application/ld+json">` block.
 
 ## Browser Reader Mode
 

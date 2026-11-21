@@ -31,7 +31,7 @@ invariants:
     enforced_by:
       - test: framework/migrate.TestOlderSQLiteKeyTableBootsUnchanged
   - id: hand-written-keys-say-not-null
-    rule: Every primary-key column in a CREATE TABLE string written by hand in non-test Go code, in the framework, the batteries, core and the files gofastr init writes, says NOT NULL, except a lone INTEGER PRIMARY KEY and a SERIAL key, which the engine fills itself.
+    rule: GOFASTR1418 checks hand-written CREATE TABLE strings in non-test Go. A rowid alias is a single INTEGER key declared inline without DESC or in a table-level PRIMARY KEY. STRICT and WITHOUT ROWID keys enforce non-nullability, and inline SERIAL keys fill themselves on Postgres.
     enforced_by:
       - contract: GOFASTR1418
       - test: framework/contracts/analyzers.TestNullableKeyRuleMatchesSQLite

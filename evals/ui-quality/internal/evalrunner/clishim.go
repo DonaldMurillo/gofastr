@@ -97,14 +97,6 @@ func cliDocsInvocationStats(logPath string) cliDocumentationStats {
 	searches := map[string]bool{}
 	topics := map[string]bool{}
 	scanner := bufio.NewScanner(f)
-	defer func() {
-		// A short read here silently lowers every count derived below,
-		// which reads as "the agent did less work" rather than "the log
-		// was not fully read".
-		if err := scanner.Err(); err != nil {
-			stats.ReadErr = err
-		}
-	}()
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		fields := strings.Fields(line)
@@ -162,6 +154,7 @@ func cliDocsInvocationStats(logPath string) cliDocumentationStats {
 	}
 	sort.Strings(stats.Searches)
 	sort.Strings(stats.Topics)
+	stats.ReadErr = scanner.Err()
 	return stats
 }
 

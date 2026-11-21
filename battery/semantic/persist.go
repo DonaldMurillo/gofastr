@@ -87,8 +87,7 @@ func (s *FlatStore) Snapshot(path string) error {
 	return nil
 }
 
-// LoadSnapshot replaces the store's contents with the snapshot at path, or
-// returns ErrModelMismatch and changes nothing.
+// dimension, a [*ModelMismatchError] is returned and the store is left
 func (s *FlatStore) LoadSnapshot(path string) error {
 	f, err := atomicfile.Open(path)
 	if err != nil {

@@ -46,15 +46,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	if b.cfg.Authorize != nil {
 		return b.askPolicy("Authorize", func() bool { return b.cfg.Authorize(ctx) })
 	}
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return false
-	}
-	rh, ok := u.(interface{ GetRoles() []string })
-	if !ok {
-		return false
-	}
-	return slices.Contains(rh.GetRoles(), b.adminRole())
+	return slices.Contains(callerHeldRoles(ctx), b.adminRole())
 }
 
 func (b *Battery) admitJob(ctx context.Context) context.Context {
@@ -85,6 +77,7 @@ func (b *Battery) authzStatus(ctx context.Context) int {
 	return http.StatusUnauthorized
 }
 
+// gate.
 func (b *Battery) routes() *router.Router {
 	return b.router.Group("", func(next http.Handler) http.Handler { return b.gate(next) })
 }
@@ -103,7 +96,7 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 
 func (b *Battery) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
+		if !isSafeAdminMethod(r.Method) && auth.RejectCrossSiteForm(w, r) {
 			return
 		}
 		if !b.authorized(r.Context()) {

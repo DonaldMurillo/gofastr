@@ -1,12 +1,63 @@
 package docs
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
 )
+
+func TestDotenvExamplesLoad(t *testing.T) {
+	body, err := Get("dotenv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fences := regexp.MustCompile("(?ms)^```([^\\n]*)\\n(.*?)^```[ \\t]*$")
+	var examples []string
+	for _, block := range fences.FindAllStringSubmatch(string(body), -1) {
+		if block[1] == "" || block[1] == "dotenv" {
+			examples = append(examples, block[2])
+		}
+	}
+	want := []map[string]string{
+		{
+			"FOO":      "bar",
+			"QUOTED":   "hello world",
+			"LITERAL":  `hello\nworld`,
+			"PORT":     "8080",
+			"PATH_TPL": "/home/example/bin",
+			"ESCAPED":  "${not expanded}",
+		},
+		{"PW": "a${b}c", "DSN": "postgres://u:a${b}c@h/db"},
+	}
+	if len(examples) != len(want) {
+		t.Fatalf("found %d dotenv example blocks, want %d", len(examples), len(want))
+	}
+	t.Setenv("HOME", "/home/example")
+	t.Setenv("PW", "")
+	if err := os.Unsetenv("PW"); err != nil {
+		t.Fatal(err)
+	}
+	for i, example := range examples {
+		t.Run("example", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), ".env")
+			if err := os.WriteFile(path, []byte(example), 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := dotenv.Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got, want[i]) {
+				t.Errorf("loaded values = %q, want %q", got, want[i])
+			}
+		})
+	}
+}
 
 // MinExpectedTopics is the manifest floor: if a doc is accidentally
 // deleted in a rebase, the embed FS is silently smaller and the count

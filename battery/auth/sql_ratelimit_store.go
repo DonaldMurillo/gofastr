@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,10 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
-
-func escapeLikeLiteral(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
-}
 
 // RateLimitStore is a limiter backend shared by replicas, so a budget and a block hold across them.
 type RateLimitStore interface {
@@ -102,14 +97,15 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	}
 	s.mu.Unlock()
 	if sweep {
-		scopePrefix := escapeLikeLiteral(ratelimit.NamespaceScope(cfg.Scope)) + "|%"
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND attempted_at_ms <= $2`, attempts), scopePrefix, cutoffMs); err != nil {
+		scopePrefix := ratelimit.NamespaceScope(cfg.Scope) + "|"
+		const inScope = "substr(a.rl_key, 1, length(CAST($1 AS TEXT))) = $1"
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND attempted_at_ms <= $2`, attempts, inScope), scopePrefix, cutoffMs); err != nil {
 			return false, 0, err
 		}
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE a.rl_key LIKE $1 ESCAPE '\' AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, blocks), scopePrefix, nowMs); err != nil {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, inScope, blocks), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND blocked_until_ms <= $2`, blocks), scopePrefix, nowMs); err != nil {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND blocked_until_ms <= $2`, blocks, inScope), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
 	}

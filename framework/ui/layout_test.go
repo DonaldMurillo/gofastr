@@ -109,18 +109,12 @@ func TestLayoutCustomClassAppended(t *testing.T) {
 
 func TestStackExtraAttrsOnRoot(t *testing.T) {
 	h := Stack(StackConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Stack root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "Stack root")
 }
 
 func TestClusterExtraAttrsOnRoot(t *testing.T) {
 	h := Cluster(ClusterConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Cluster root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "Cluster root")
 }
 
 func TestGridExtraAttrsOnRoot(t *testing.T) {
@@ -135,18 +129,12 @@ func TestGridExtraAttrsOnRoot(t *testing.T) {
 
 func TestCenterExtraAttrsOnRoot(t *testing.T) {
 	h := Center(CenterConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Center root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "Center root")
 }
 
 func TestBoxExtraAttrsOnRoot(t *testing.T) {
 	h := Box(BoxConfig{ExtraAttrs: map[string]string{"data-test": "hook"}}, render.Text("x"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("Box root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "Box root")
 }
 
 func TestStickyExtraAttrsOnRoot(t *testing.T) {

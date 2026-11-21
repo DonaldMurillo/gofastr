@@ -649,6 +649,18 @@ func TestThemeEditGalleryPreviewRenders(t *testing.T) {
 	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
 		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", clitest.Truncate(html, 400))
 	}
+	for _, marker := range []string{
+		`action="/__gallery/demo-form?demo=formrepeater"`,
+		`action="/__gallery/demo-form?demo=repeater"`,
+		"BlurHash decoded to a placeholder",
+	} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("preview is missing %q", marker)
+		}
+	}
+	if !strings.Contains(html, `<div inert=""><form action="/forms/wizard"`) {
+		t.Error("StepWizard preview needs an inert container around the form")
+	}
 	// Each demo sits in a plain block box after its name, as on the docs
 	// site, so a lone button keeps its own width instead of stretching
 	// across the stack's column.
@@ -946,6 +958,24 @@ func TestThemeEditServeHTTPDelegatesPreviewToHost(t *testing.T) {
 	if rec.Header().Get("X-Frame-Options") != "" {
 		t.Errorf("preview page still carries X-Frame-Options: %q", rec.Header().Get("X-Frame-Options"))
 	}
+	cookies := rec.Result().Cookies()
+	for _, page := range []string{"/preview", "/other"} {
+		req := httptest.NewRequest(http.MethodGet, "/__gofastr/widgets?page="+page, nil)
+		req.Host = "127.0.0.1:0"
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("widget catalog for %s: status %d", page, rec.Code)
+		}
+		for _, name := range []string{"site-demo-modal", "site-demo-drawer", "site-demo-bottomsheet", "ui-sidebar-drawer"} {
+			if got := strings.Contains(rec.Body.String(), `"name":"`+name+`"`); got != (page == "/preview") {
+				t.Errorf("widget catalog for %s contains %s = %v", page, name, got)
+			}
+		}
+	}
 }
 
 // A refresh mid-session must show what the server holds, not what it started
@@ -1013,7 +1043,7 @@ func TestPackageNameForPathIsAlwaysALegalIdentifier(t *testing.T) {
 // Attribute values are HTML, not Go literals. %q renders a double quote as \",
 // which HTML does not treat as an escape; the attribute simply ends early. Not
 // reachable with the default theme, which is exactly why it is a trap: the
-// label two lines above used htmlEscape correctly while the value beside it
+// label two lines above escaped its text correctly while the value beside
 // did not.
 func TestThemeEditControlsEscapeAttributeValues(t *testing.T) {
 	controls := renderTokenControls(map[string]string{

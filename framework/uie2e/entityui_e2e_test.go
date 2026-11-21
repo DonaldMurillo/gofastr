@@ -15,7 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+
 	"github.com/chromedp/chromedp"
 )
 
@@ -84,7 +84,7 @@ func entityUIE2EApp(t *testing.T, tune func(*entityui.UI) *entityui.UI) (*httpte
 // The route requires JSON content type even though this POST takes no body.
 func TestEntityUIStateMoveBrowser(t *testing.T) {
 	srv, db := entityUIE2EApp(t, nil)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(30*time.Second))
+	ctx := newE2EChrome(t, 30*time.Second)
 	selector := `[data-cui-rpc="/api/deals/d1/transitions/qualify"]`
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/deals/d1"),
@@ -109,7 +109,7 @@ func TestEntityUICustomCreatePathBrowser(t *testing.T) {
 			return "/" + e.GetName() + "/new", true
 		})
 	})
-	ctx := chromedptest.Context(t, chromedptest.Timeout(30*time.Second))
+	ctx := newE2EChrome(t, 30*time.Second)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/deals"),
 		chromedp.WaitVisible(`a[href="/deals/new"]`, chromedp.ByQuery),

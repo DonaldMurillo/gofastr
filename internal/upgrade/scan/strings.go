@@ -7,7 +7,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
+	retirednames "github.com/DonaldMurillo/gofastr/internal/retired/names"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"golang.org/x/tools/go/packages"
 )
@@ -351,7 +353,7 @@ func classInValue(v string, names []string) (string, bool) {
 	}
 	for _, tok := range tokens {
 		for _, name := range names {
-			if tok == name || strings.HasPrefix(tok, name+"--") || strings.HasPrefix(tok, name+"__") {
+			if retirednames.ClassMatches(tok, name) {
 				return name, true
 			}
 		}
@@ -380,7 +382,7 @@ func cssSelectorIn(v, name string) bool {
 		}
 		end := i + j + len(sel)
 		rest := v[end:]
-		if rest == "" || !isIdentByte(rest[0]) || strings.HasPrefix(rest, "--") || strings.HasPrefix(rest, "__") {
+		if rest == "" || !isIdentByte(rest[0]) || retirednames.IsBEMSuffix(rest) {
 			return true
 		}
 		i = end
@@ -414,7 +416,7 @@ func markupClassTokens(v string) (tokens []string, ok bool) {
 // or prefixed when the name ends in "-".
 func attrKeyMatch(key string, names []string) (string, bool) {
 	for _, name := range names {
-		if attrNameEqual(key, name) || (strings.HasSuffix(name, "-") && len(key) >= len(name) && attrNameEqual(key[:len(name)], name)) {
+		if asciicase.EqualFold(key, name) || (strings.HasSuffix(name, "-") && len(key) >= len(name) && asciicase.EqualFold(key[:len(name)], name)) {
 			return name, true
 		}
 	}
@@ -429,7 +431,7 @@ func attrInValue(v string, names []string) (string, bool) {
 	for _, name := range names {
 		prefix := strings.HasSuffix(name, "-")
 		for i := 0; i+len(name) <= len(v); i++ {
-			if !attrNameEqual(v[i:i+len(name)], name) {
+			if !asciicase.EqualFold(v[i:i+len(name)], name) {
 				continue
 			}
 			if i > 0 && !attrBoundary(v[i-1], false) {

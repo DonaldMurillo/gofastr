@@ -107,10 +107,10 @@ func TestSweepAccessSubscribeFailureDisarmsPublish(t *testing.T) {
 		t.Fatalf("Grant: %v", err)
 	}
 	store.fanoutMu.Lock()
-	send := store.send
+	attachment := store.attachment
 	store.fanoutMu.Unlock()
-	if send != nil || f.published != 0 {
-		t.Fatalf("a store whose Subscribe failed still publishes (send set=%v, published=%d)", send != nil, f.published)
+	if attachment != nil || f.published != 0 {
+		t.Fatalf("a store whose Subscribe failed still publishes (attached=%v, published=%d)", attachment != nil, f.published)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestSweepAccessRemoteSignalDoesNotReloadInline(t *testing.T) {
 	store.transitionMu.Lock()
 	done := make(chan struct{})
 	go func() {
-		store.handleRemote(fanout.Wrap("other-node", payload))
+		store.attachment.handleRemote(fanout.Wrap("other-node", payload))
 		close(done)
 	}()
 	select {

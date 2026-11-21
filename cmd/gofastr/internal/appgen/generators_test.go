@@ -95,7 +95,7 @@ func TestGenerateConfigScaffoldExits(t *testing.T) {
 	clitest.CovT_chdir(t, dir)
 	writeCodegenConfig(t, dir, "    - name: app\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { GenerateProject(nil) })
 	})
 	if code != 1 || !strings.Contains(out, "`gofastr generate app`") {
@@ -108,13 +108,13 @@ func TestGenerateStylesOnlyDryRun(t *testing.T) {
 	clitest.CovT_chdir(t, dir)
 	writeCodegenConfig(t, dir, "    - name: styles\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { GenerateProject([]string{"--dry-run"}) })
 	})
 	if code != -1 || !strings.Contains(out, "styles has no dry run") {
 		t.Fatalf("exit %d, output:\n%s", code, out)
 	}
-	out = clitest.CovT_capStdout(t, func() {
+	out = clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { GenerateProject([]string{"--dry-run", "--json"}) })
 	})
 	if code != 1 || !strings.Contains(out, "no dry run") {

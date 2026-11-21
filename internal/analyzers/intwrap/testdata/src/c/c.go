@@ -60,23 +60,6 @@ func clampDays(v any) (int64, bool) {
 	return 0, false
 }
 
-// clampDaysFixed checks both arms.
-func clampDaysFixed(v any) (int64, bool) {
-	switch n := v.(type) {
-	case uint:
-		if n > math.MaxInt64 {
-			return 0, false
-		}
-		return int64(n), true
-	case uint64:
-		if n > math.MaxInt64 {
-			return 0, false
-		}
-		return int64(n), true
-	}
-	return 0, false
-}
-
 // negate flips a sign outside any abs context: not this rule's shape.
 func negate(v int64) int64 {
 	return -v

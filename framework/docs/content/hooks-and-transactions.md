@@ -1,37 +1,48 @@
 # Hooks & transactions
 
-Lifecycle hooks run inside the same transaction as the entity write
-they observe. A hook that errors rolls back the parent write. This
-is how the framework keeps audit logs, denormalisations, and side-
-effect SQL atomic with the change that triggered them.
+Write hooks share the transaction of the entity write when one is
+available. SQL they execute through that transaction rolls back with
+the write if the hook fails.
 
 ## Hook points
 
 | Constant       | Fires                                              | `data` argument             |
 |----------------|----------------------------------------------------|------------------------------|
 | `BeforeCreate` | Before validation and INSERT                       | `map[string]any` (body)     |
-| `AfterCreate`  | After INSERT, before tx commit                     | `map[string]any` (record)    |
+| `AfterCreate`  | After INSERT, before the write operation returns   | `map[string]any` (record)    |
 | `BeforeUpdate` | Before validation and UPDATE                       | `map[string]any` (patch)    |
-| `AfterUpdate`  | After UPDATE, before tx commit                     | `map[string]any` (record)    |
+| `AfterUpdate`  | After UPDATE, before the write operation returns   | `map[string]any` (record)    |
 | `BeforeDelete` | Before DELETE / soft-delete                        | `string` (record id)        |
-| `AfterDelete`  | After DELETE, before tx commit                     | `string` (record id)        |
+| `AfterDelete`  | After DELETE, before the write operation returns   | `string` (record id)        |
 | `BeforeList`   | Before SELECT (both data + count queries)          | `*hook.ListPayload`          |
 | `AfterList`    | After SELECT, before response                      | `*hook.ListPayload`          |
 | `BeforeGet`    | Before single-row SELECT (`/api/<entity>/{id}`)    | `*hook.GetPayload`           |
 | `AfterGet`     | After single-row SELECT, before response           | `*hook.GetPayload`           |
 
 Hooks run in registration order. The first error stops execution and
-returns to the caller. For `Before*` hooks the error cancels the
-operation. For `After*` hooks the error rolls back the transaction.
+returns to the caller. On create, update and delete, a write hook error
+rolls back the transaction CRUD opened. If the write joins an existing
+transaction, the error rolls back to the operation's savepoint and the
+outer caller controls the commit. With a custom executor that supplies
+neither an existing transaction nor `BeginTx`, CRUD runs the operation
+directly and cannot roll back any SQL it has already executed.
+
+On the entity's own List and Get, a `BeforeList` or `BeforeGet` error
+returns 400 and an `AfterList` or `AfterGet` error returns 500. The
+create, update and batch routes shape their response after the write
+succeeds, after commit when CRUD owns the transaction or after savepoint
+release when it joins one. An `AfterGet` error there is logged and the
+affected record falls back to its id alone. Create returns 201. Update
+and successful batches return 200.
 
 A Before hook that returns an error refuses the write: the HTTP handlers
 answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
 `DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
 
 A hook that panics has faulted rather than refused. The registry
-recovers it, logs the value and stack, and returns a `*hook.PanicError`;
-the write rolls back and the HTTP handlers answer 500 with the generic
-body, never the panic value, and `crud.IsHookRefusal` reports false.
+recovers it, logs the value and stack, and returns a `*hook.PanicError`.
+The same transaction rules apply. The HTTP handlers answer 500 with the
+generic body, and `crud.IsHookRefusal` reports false.
 Reads hold the same line: a `BeforeList` or `BeforeGet` hook that
 returns an error answers 400 with it, and one that panics answers 500,
 on the entity's own List and Get, on a parent's `?include=` or
@@ -49,7 +60,7 @@ tenant's, a trashed row and a missing id answer 404 there, and the hook
 is never called. That matters because a hook's database work rolls back
 with the write but an email it sent or a file it deleted does not.
 Restore, purge and state moves already read their target before their
-hooks. The check is one keyed `SELECT` inside the write's transaction,
+hooks. The check is one keyed `SELECT` using the same executor as the write,
 and runs only when such a hook is registered.
 
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
@@ -193,9 +204,10 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
     })
 ```
 
-The `*sql.Tx` returned by `TxFromContext` is the same transaction the
-CRUD handler will commit. Any work performed through it is committed
-or rolled back atomically with the parent operation.
+Work performed through the `*sql.Tx` returned by `TxFromContext`
+shares the write's rollback boundary. CRUD commits a transaction it
+opens. When it joins an existing transaction, it releases the write's
+savepoint and leaves the commit to the transaction's owner.
 
 ## Running your own code in a transaction
 
@@ -380,17 +392,23 @@ preserve those events.
 When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
 fails schema validation, the returned error unwraps to
 `*crud.ValidationError`. Use `errors.As` to detect it and read the
-per-field messages:
+per-field violations:
 
 ```go
 import "errors"
+import "log"
 import "github.com/DonaldMurillo/gofastr/framework/crud"
 
-row, err := ch.CreateOne(ctx, body)
+_, err := ch.CreateOne(ctx, body)
 var ve *crud.ValidationError
 if errors.As(err, &ve) {
-    // ve.Fields() → map[string][]string, e.g. {"email": ["is required"}}
-    return ve.Fields()
+    // ve.Fields() → map[string][]schema.Violation, e.g.
+    // ve.Fields()["email"][0].Error() → "is required"
+    for field, violations := range ve.Fields() {
+        for _, v := range violations {
+            log.Printf("%s: %s", field, v.Error())
+        }
+    }
 }
 ```
 
@@ -400,10 +418,11 @@ if errors.As(err, &ve) {
 
 ## Batch behaviour
 
-In a `_batch` request, every item shares one transaction:
+For a transactional `_batch` request, every item shares the same
+transaction or savepoint:
 
 - All `Before*` and `After*` hooks fire per item, in input order.
-- The first per-item hook error rolls back the entire batch.
+- The first per-item hook error rolls back the entire batch at that boundary.
 - Lifecycle events emit only on a successful commit, never on
   rollback, one per item in input order. Delivery is asynchronous
   ([events](events.md)): each subscriber runs on its own goroutine per
@@ -425,9 +444,9 @@ paths that skip hooks entirely; by design, not accident:
 | Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
 | `_events` payloads | none: BeforeList, BeforeGet and AfterGet fire at delivery | Each delivery runs the subscriber's own BeforeList chain and its BeforeGet chain (with the row's id) on the stream's refreshed context, and checks the stored row against their clauses with one keyed `SELECT`: a row either route would hide is not sent. A hard delete leaves no row to check, so it reaches only a subscriber the hooks append no clause for; a soft delete is checked against the row it left. A Before hook error withholds the event. AfterGet then redacts per subscriber, which keeps the hook out of the write transaction and runs it once per delivery. Delete stubs pass AfterGet untouched; an AfterGet error omits the record rather than publishing it raw. |
 | Record writes (`PUT`/`PATCH`/`DELETE /{id}`, transitions, `_batch` update and delete) | none; BeforeGet also fires before the write | Inside the write's transaction, before it touches the row, the route runs the BeforeGet chain GET would, with the record's id. When the chain appends a clause, one keyed `SELECT` under the write's own scope plus those clauses must find the row, or the write answers the 404 a missing id gets and writes nothing; a `_batch` item fails as a missing one does and the batch rolls back. A hook error hides the row. In process (`UpdateOne`, `DeleteOne`, the batch helpers, `RunTransition`, `RestoreOne`, `PurgeOne`, an update under `WithStateOverride`) the check runs only under `WithReadHooks`, and `UpsertOne` there refuses a hidden existing key as it refuses another owner's row. See "A `BeforeGet` scope binds writes too" above. |
-| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a create, or a write that moves its row out of the caller's sight, returns nothing a GET would 404 (a write to a row the chain already hides answers 404 before it runs, the row above). This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A nested child the child entity's own BeforeList scope (plus BeforeGet for a to-one relation, as `?include=` picks them) hides comes back as its id alone, and a cascade item or `belongs_to` reference that names an existing row that scope hides answers 404, the same as a row that is not there, without writing it. A 409 or 422 state refusal names the stored state only when the BeforeGet chain admits the row. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
+| Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the write succeeds the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a create, or a write that moves its row out of the caller's sight, returns nothing a GET would 404 (a write to a row the chain already hides answers 404 before it runs, the row above). This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A nested child the child entity's own BeforeList scope (plus BeforeGet for a to-one relation, as `?include=` picks them) hides comes back as its id alone, and a cascade item or `belongs_to` reference that names an existing row that scope hides answers 404, the same as a row that is not there, without writing it. A 409 or 422 state refusal names the stored state only when the BeforeGet chain admits the row. A hook error here degrades the body to a new row's id: answering 500 after a successful write could lead the caller to retry it. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
-| `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
+| `_batch` requests | none: per-item Before/After* all fire | Each item runs its write hooks during the batch. AfterGet runs over each item body after the batch succeeds and is skipped if the batch fails. |
 
 **Upsert refuses entities with `BeforeUpdate` hooks.** `UpsertOne` returns
 `upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne`
@@ -582,8 +601,8 @@ INSERT/UPDATE body. `OnAfterCreate[T]`/`OnAfterUpdate[T]` mutations cannot
 change the stored row (the INSERT/UPDATE has already run) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
-path. They run inside the write transaction, before commit; an error rolls
-the write back. See "Redaction implication" below for the surfaces this covers.
+path. Typed and untyped hooks share the rollback rules above. See
+"Redaction implication" below for the surfaces this covers.
 
 `T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
 models use) or snake_case (`json:"is_admin"`): the payload is offered
@@ -726,8 +745,9 @@ does).
 - **Calling `app.DB.ExecContext` from inside a hook.** That bypasses
   the transaction. Use `TxFromContext` to get the active tx.
 - **Returning an error from an `AfterDelete` hook expecting the
-  delete to "stand".** It won't: `After*` errors roll back. If you
-  want a side effect that survives hook failure, do it after commit
+  delete to "stand".** In a transactional write, an `AfterDelete` error
+  rolls back the delete. If you want a side effect that survives hook
+  failure, do it after commit
   (e.g. subscribe to the event bus from `EventStream`).
 - **Long-running work inside a hook.** Hooks hold the transaction
   open. Push slow side effects onto a queue and ack quickly.
@@ -737,6 +757,5 @@ does).
   supported way to mask a create/update response, and it behaves identically
   for typed hooks (`OnAfterCreate[T]`/`OnAfterUpdate[T]`) and untyped ones.
   The INSERT/UPDATE has already run, so mutating the payload cannot change
-  what is stored. The hook still runs inside the transaction, before commit;
-  an error rolls the write back. To alter the stored value, use a
+  what is stored. To alter the stored value, use a
   `BeforeCreate`/`BeforeUpdate` hook before the INSERT/UPDATE runs.

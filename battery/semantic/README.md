@@ -11,7 +11,7 @@ idx, _ := semantic.Open(semantic.Options{
     // Or the dependency-free deterministic stub for tests/offline dev:
     // Embedder: semantic.NewStubEmbedder(128),
     Keyword:  semantic.NewMemoryKeyword(),       // optional, enables hybrid
-    Path:     "~/.gofastr/semantic/myapp",       // optional, enables persistence
+    Path:     "./.gofastr/semantic/myapp",        // optional, enables persistence
 })
 defer idx.Close()
 
@@ -26,6 +26,8 @@ hits, _ := idx.Query(ctx, semantic.Query{
 })
 ```
 
+The library uses `Path` as written, including any leading `~`.
+
 ## What's in the box
 
 `POST /semantic/index` refuses invalid UTF-8 in the JSON body with HTTP 400
@@ -39,8 +41,8 @@ more than 131072 digits before the decimal point or 16383 after it, or an
 exponent above 1073741823 (jsonb's numeric range), answers 400 `document_metadata_number_out_of_range`, and Go
 callers get `*MetadataNumberRangeError`. Invalid UTF-8 in ordinary Go strings
 is normalized by JSON encoding, except `metadata["kind"]`: the store also binds
-that raw string to a text column, so it must itself be valid UTF-8 without NUL
-bytes. For Go callers only, metadata values that JSON cannot encode (a NaN,
+it raw to a text column, so it must be a Go string that is itself valid UTF-8
+without NUL bytes. For Go callers only, metadata values that JSON cannot encode (a NaN,
 a channel) fail with a plain encoding error; the route cannot receive such a
 value, since JSON has no NaN.
 `Index.Add` returns `*InvalidDocumentTextError` before batch writes, even with
@@ -101,6 +103,9 @@ The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on l
 
 ## HTTP surface
 
+The handler fails closed with HTTP 401 when no token is configured.
+Send `Authorization: Bearer <token>` with each request.
+
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
 | POST | `/semantic/index` | `{"documents":[…]}` | 202 + `{"added": N}` |
@@ -111,14 +116,16 @@ The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on l
 Mount via the plugin:
 
 ```go
-app.RegisterPlugin(semantic.NewPlugin(idx))
+app.RegisterPlugin(semantic.NewPlugin(idx).
+    WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))
 app.InitPlugins()
 ```
 
 Or wire the raw handler onto any router:
 
 ```go
-mux.Handle("/semantic/", http.StripPrefix("/semantic", semantic.Handler(idx)))
+mux.Handle("/semantic/", http.StripPrefix("/semantic",
+    semantic.Handler(idx, semantic.WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))))
 ```
 
 ## CLI

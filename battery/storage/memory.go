@@ -40,7 +40,7 @@ func (ms *MemoryStorage) Save(ctx context.Context, key string, r io.Reader) erro
 		return err
 	}
 	if key == "" {
-		return fmt.Errorf("storage: empty key")
+		return fmt.Errorf("%w: empty key", upload.ErrInvalidKey)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(r, maxMemoryFileSize+1))

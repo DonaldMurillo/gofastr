@@ -24,8 +24,8 @@ type FlatStore struct {
 	byDoc  map[string][]int
 }
 
-// NewFlatStore returns an empty FlatStore for vectors of dimension dim from
-// model.
+// NewFlatStore returns an empty store sized for vectors of dimension dim.
+// It records dim and model to validate snapshots on load.
 func NewFlatStore(dim int, model string) *FlatStore {
 	return &FlatStore{
 		dim:   dim,
@@ -107,9 +107,7 @@ func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter,
 	if s.dim != 0 && len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
 	}
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	q := make([]float32, len(qv))
 	copy(q, qv)
 	normalize(q)
@@ -387,10 +385,6 @@ func (e *dimError) Error() string {
 }
 
 var _ Store = (*FlatStore)(nil)
-
-var errEmptyStore = errors.New("semantic: store snapshot has no chunks")
-
-var _ = errEmptyStore
 
 func cloneChunk(c Chunk) Chunk {
 	c.Vec = slices.Clone(c.Vec)

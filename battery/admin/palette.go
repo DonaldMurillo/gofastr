@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
 const (
@@ -37,7 +38,7 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 	dropped := false
 	if r := appui.RequestFromContext(ctx); r != nil {
 		q = r.URL.Query().Get("q")
-		dropped = droppedNarrowing(r, "q")
+		dropped = listfilter.DroppedNarrowing(r.URL.RawQuery, func(name string) bool { return name == "q" })
 	}
 	label := i18nui.AdminSearch.Text(ctx)
 	parts := []render.HTML{
@@ -50,7 +51,7 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 		}),
 	}
 	if dropped {
-		parts = append(parts, filterNotApplied(ctx))
+		parts = append(parts, listfilter.Warning(ctx))
 	}
 	cmds := b.paletteCommands(ctx, q)
 	if len(cmds) == 0 {

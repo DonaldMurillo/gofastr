@@ -34,6 +34,8 @@ func (s *S) Handle(line []byte) {
 	s.CallGuardedMethod(t)
 	s.CallNestedDeferGuard(t)
 	s.CallUnguarded(t)
+	s.CallConditionalInlineGuard(t, len(line) > 2)
+	s.CallRethrowInlineGuard(t)
 }
 
 // CallGuarded defers the named guard: quiet.
@@ -81,4 +83,22 @@ func nestedDeferGuard() {
 	defer func() {
 		_ = recover()
 	}()
+}
+
+func (s *S) CallConditionalInlineGuard(t Tool, enabled bool) {
+	defer func() {
+		if enabled {
+			_ = recover()
+		}
+	}()
+	_ = t.Gate(context.Background()) // want `recovercallback: t\.Gate is invoked with no recover in scope`
+}
+
+func (s *S) CallRethrowInlineGuard(t Tool) {
+	defer func() {
+		if value := recover(); value != nil {
+			panic(value)
+		}
+	}()
+	_ = t.Gate(context.Background()) // want `recovercallback: t\.Gate is invoked with no recover in scope`
 }

@@ -297,8 +297,8 @@ func TestAuditWithNoDatabaseIsLogged(t *testing.T) {
 
 func TestParseLimitIsCapped(t *testing.T) {
 	for raw, want := range map[string]int{"": 50, "-3": 50, "x": 50, "20": 20, "5000": 1000} {
-		if got := parseLimit(raw, 50); got != want {
-			t.Errorf("parseLimit(%q) = %d, want %d", raw, got, want)
+		if _, got := decodePage(url.Values{"limit": {raw}}, 50, opsMaxLimit); got != want {
+			t.Errorf("decodePage limit %q = %d, want %d", raw, got, want)
 		}
 	}
 }

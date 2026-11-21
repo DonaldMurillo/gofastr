@@ -6,15 +6,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/config"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/internal/devmode"
 )
 
 // LiveReloadStreamURL is the SSE endpoint the dev client connects to.
@@ -37,10 +36,7 @@ func LiveReloadEnabled() bool {
 }
 
 func devFeatureEnabled(optOutEnv string) bool {
-	if isNonDevEnv(os.Getenv("GOFASTR_ENV")) {
-		return false
-	}
-	if !config.EnvBool("GOFASTR_DEV") {
+	if !Enabled() {
 		return false
 	}
 	if v := os.Getenv(optOutEnv); v != "" {
@@ -54,15 +50,7 @@ func devFeatureEnabled(optOutEnv string) bool {
 // Enabled reports whether the process runs under `gofastr dev`: GOFASTR_DEV
 // is truthy and GOFASTR_ENV is not production-like.
 func Enabled() bool {
-	return !isNonDevEnv(os.Getenv("GOFASTR_ENV")) && config.EnvBool("GOFASTR_DEV")
-}
-
-func isNonDevEnv(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "production", "prod", "live", "staging":
-		return true
-	}
-	return false
+	return devmode.Enabled()
 }
 
 var (

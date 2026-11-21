@@ -86,11 +86,11 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
-		if handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+		if refuseCrossSitePost(w, r, i18n.StatusPhrase(http.StatusForbidden)) {
 			return
 		}
 		ctx := crud.WithReadHooks(r.Context())
@@ -110,7 +110,6 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, deletedBodyLimit)
 		jsonCall := handler.IsJSONContentType(r.Header.Get("Content-Type"))
 		var back string
 		var haveBack bool
@@ -118,22 +117,12 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			var body struct {
 				Back string `json:"back"`
 			}
-			if err := handler.DecodeStrict(r.Body, &body); err != nil {
-				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-					return
-				}
-				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			if !decodeBody(w, r, deletedBodyLimit, &body) {
 				return
 			}
 			back, haveBack = scrubBackPath(body.Back)
 		} else {
-			if err := r.ParseForm(); err != nil {
-				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-					return
-				}
-				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			if !parseBodyForm(w, r, deletedBodyLimit) {
 				return
 			}
 			back, haveBack = scrubBackPath(r.PostFormValue("back"))

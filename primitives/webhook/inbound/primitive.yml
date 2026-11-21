@@ -55,7 +55,7 @@ invariants:
     enforced_by:
       - test: battery/webhook.TestInboundRedStaleSettleFenced
   - id: outcome-outlives-cancellation
-    rule: ProcessInbound writes the handler's outcome on a context detached from the job's, bounded by inboundSettleTimeout, and logs a lost failed write.
+    rule: ProcessInbound writes the handler's outcome on a context detached from the job's, bounded by settleTimeout, and logs a lost failed write.
     enforced_by:
       - test: battery/webhook.TestInboundOutcomeSurvivesCancel
       - test: battery/webhook.TestProcessInbound_FailedStateUpdateLogged

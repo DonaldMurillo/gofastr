@@ -51,11 +51,7 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	if cfg.SuccessLabel == "" {
 		panic("ui: OptimisticAction requires SuccessLabel")
 	}
-	ov := cfg.Variant
-	if ov == "" {
-		ov = ButtonPrimary
-	}
-	checkButtonVariant("OptimisticAction", ov)
+	ov := buttonVariant("OptimisticAction", cfg.Variant)
 	checkButtonSize("OptimisticAction", cfg.Size)
 
 	parts := headless.Parts{}
@@ -73,7 +69,7 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 		SuccessLabel: cfg.SuccessLabel,
 		IdleIcon:     cfg.IdleIcon,
 		DoneIcon:     cfg.SuccessIcon,
-		Variant:      string(cfg.Variant),
+		Variant:      string(ov),
 		Size:         string(cfg.Size),
 		FailedText:   cfg.FailedText,
 		ID:           cfg.ID,

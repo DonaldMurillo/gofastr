@@ -1211,9 +1211,9 @@ gofastr verify --explain <id>   full description, why it matters, and the fix
       "title": "Owned style CSS changed since its Go was generated",
       "capability": "rendering",
       "severity": "error",
-      "summary": "A *.style.css has no sibling \u003cname\u003e_style.gen.go (a *.tokens.css no \u003cname\u003e_tokens.gen.go), or the sibling's Source hash does not match the CSS bytes.",
-      "why": "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is valid CSS and the Go is valid Go.",
-      "fix": "Run `gofastr gen styles` (regenerates every \u003cname\u003e_style.gen.go and \u003cname\u003e_tokens.gen.go whose CSS changed, and writes .gofastr/tokens.css for editor completion). Never hand-edit a generated file.",
+      "summary": "The generated Go sibling of a *.style.css or *.tokens.css is missing or stale, or an owned stylesheet uses a custom media query the compiler rejects.",
+      "why": "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is valid CSS and the Go is valid Go. A rejected custom media query can also make the generated initializer panic at startup.",
+      "fix": "Fix any rejected custom media query at the reported position, then run `gofastr gen styles` to regenerate the Go. Never hand-edit a generated file.",
       "examples": [
         {
           "bad": "/* board.style.css */\n:scope { display: grid; }\n/* edited after board_style.gen.go was generated;\n   its Source hash line no longer matches these bytes */",
@@ -1421,7 +1421,7 @@ gofastr verify --explain <id>   full description, why it matters, and the fix
       "title": "Kit CSS pins a physical side where a reading-direction one exists",
       "capability": "rendering",
       "severity": "error",
-      "summary": "Design-system CSS names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, a corner radius, text-align, float or clear set to left or right, a background position on a side with no `:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling (framework/dev) is exempt.",
+      "summary": "CSS in design-system stylesheets, Go strings or style builder property/value arguments names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, a corner radius, text-align, float or clear set to left or right, a background position on a side with no `:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling (framework/dev) is exempt.",
       "why": "A page renders \u003chtml dir=\"rtl\"\u003e for Arabic, Hebrew, Persian and the other right-to-left scripts. Logical properties follow that direction on their own; a physical one keeps the sidebar border, the list indent, the toast corner and the select chevron on the left-to-right side, so the kit looks broken to every right-to-left reader.",
       "fix": "Write the logical property: inset-inline-start/end for left/right, margin-inline-start, padding-inline-end, border-inline-end, border-start-start-radius, text-align: start, float: inline-start, padding-block plus padding-inline for an asymmetric shorthand. A value with no logical spelling (a background position, a translateX travel) gets a :dir(rtl) override beside it. A side that must stay physical carries //gofastr:allow(GOFASTR1824) with the reason.",
       "examples": [
@@ -5502,9 +5502,9 @@ GOFASTR1814  Owned style CSS changed since its Go was generated
 rendering · rendering/stale-style-source · default severity: error
 
 What
-  A *.style.css has no sibling <name>_style.gen.go (a *.tokens.css no
-  <name>_tokens.gen.go), or the sibling's Source hash does not match the CSS
-  bytes.
+  The generated Go sibling of a *.style.css or *.tokens.css is missing or
+  stale, or an owned stylesheet uses a custom media query the compiler
+  rejects.
 
 Why
   The generated file is the only thing connecting a hand-written stylesheet to
@@ -5513,12 +5513,12 @@ Why
   CSS without regenerating and the Go silently serves the OLD bytes — the
   class methods keep naming classes the sheet no longer declares, and the
   scope still loads the stale CSS. Nothing else can see the drift: the CSS is
-  valid CSS and the Go is valid Go.
+  valid CSS and the Go is valid Go. A rejected custom media query can also
+  make the generated initializer panic at startup.
 
 Fix
-  Run `gofastr gen styles` (regenerates every <name>_style.gen.go and
-  <name>_tokens.gen.go whose CSS changed, and writes .gofastr/tokens.css for
-  editor completion). Never hand-edit a generated file.
+  Fix any rejected custom media query at the reported position, then run
+  `gofastr gen styles` to regenerate the Go. Never hand-edit a generated file.
 
 Example
   ✗ /* board.style.css */
@@ -5549,9 +5549,9 @@ Relax project-wide
       "title": "Owned style CSS changed since its Go was generated",
       "capability": "rendering",
       "severity": "error",
-      "summary": "A *.style.css has no sibling \u003cname\u003e_style.gen.go (a *.tokens.css no \u003cname\u003e_tokens.gen.go), or the sibling's Source hash does not match the CSS bytes.",
-      "why": "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is valid CSS and the Go is valid Go.",
-      "fix": "Run `gofastr gen styles` (regenerates every \u003cname\u003e_style.gen.go and \u003cname\u003e_tokens.gen.go whose CSS changed, and writes .gofastr/tokens.css for editor completion). Never hand-edit a generated file.",
+      "summary": "The generated Go sibling of a *.style.css or *.tokens.css is missing or stale, or an owned stylesheet uses a custom media query the compiler rejects.",
+      "why": "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is valid CSS and the Go is valid Go. A rejected custom media query can also make the generated initializer panic at startup.",
+      "fix": "Fix any rejected custom media query at the reported position, then run `gofastr gen styles` to regenerate the Go. Never hand-edit a generated file.",
       "examples": [
         {
           "bad": "/* board.style.css */\n:scope { display: grid; }\n/* edited after board_style.gen.go was generated;\n   its Source hash line no longer matches these bytes */",
@@ -6223,9 +6223,10 @@ GOFASTR1824  Kit CSS pins a physical side where a reading-direction one exists
 rendering · rendering/physical-side · default severity: error
 
 What
-  Design-system CSS names left or right: a left/right offset, a margin,
-  padding, scroll margin or border on one side, a corner radius, text-align,
-  float or clear set to left or right, a background position on a side with no
+  CSS in design-system stylesheets, Go strings or style builder property/value
+  arguments names left or right: a left/right offset, a margin, padding,
+  scroll margin or border on one side, a corner radius, text-align, float or
+  clear set to left or right, a background position on a side with no
   `:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or
   border shorthand whose left and right differ. left: 50% and right: 50%
   (centring), auto, and a line that is itself a :dir() override pass. Dev
@@ -6273,7 +6274,7 @@ Relax project-wide
       "title": "Kit CSS pins a physical side where a reading-direction one exists",
       "capability": "rendering",
       "severity": "error",
-      "summary": "Design-system CSS names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, a corner radius, text-align, float or clear set to left or right, a background position on a side with no `:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling (framework/dev) is exempt.",
+      "summary": "CSS in design-system stylesheets, Go strings or style builder property/value arguments names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, a corner radius, text-align, float or clear set to left or right, a background position on a side with no `:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling (framework/dev) is exempt.",
       "why": "A page renders \u003chtml dir=\"rtl\"\u003e for Arabic, Hebrew, Persian and the other right-to-left scripts. Logical properties follow that direction on their own; a physical one keeps the sidebar border, the list indent, the toast corner and the select chevron on the left-to-right side, so the kit looks broken to every right-to-left reader.",
       "fix": "Write the logical property: inset-inline-start/end for left/right, margin-inline-start, padding-inline-end, border-inline-end, border-start-start-radius, text-align: start, float: inline-start, padding-block plus padding-inline for an asymmetric shorthand. A value with no logical spelling (a background position, a translateX travel) gets a :dir(rtl) override beside it. A side that must stay physical carries //gofastr:allow(GOFASTR1824) with the reason.",
       "examples": [

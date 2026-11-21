@@ -6,6 +6,13 @@ Updating `go.mod` does NOT update the CLI binary; keep them on the same
 release. Every command below uses `vX.Y.Z` as a placeholder; substitute
 the release you're upgrading to.
 
+If your locale catalog translates the obsolete-job replay notice,
+rename `admin.replay_nothing` to `ui.admin.replayNothing`.
+
+For route groups without an MCP namespace, update any code that expects
+`RouteGroup.MCPToolName("posts", "list")` to return `posts.list`. It now
+returns the registered name, `posts_list`.
+
 Crossing v0.87.0? Read [What changed in v0.87.0](release-0-87.md)
 first. That release reskinned the default theme, added entity screens
 (`framework/entityui`) and rebuilt the admin on them, and the page lists

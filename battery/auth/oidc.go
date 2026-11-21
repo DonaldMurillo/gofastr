@@ -284,7 +284,7 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oidc: discovery returned %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, oauthProviderMaxBody))
 	if err != nil {
 		return nil, err
 	}
@@ -393,31 +393,19 @@ func (p *OIDCProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verif
 		data.Set("client_id", p.cfg.ClientID)
 		data.Set("client_secret", secret)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		d.TokenEndpoint, strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	if method == OIDCAuthClientSecretBasic {
-		req.SetBasicAuth(url.QueryEscape(p.cfg.ClientID), url.QueryEscape(secret))
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oidc: token exchange returned %d", resp.StatusCode)
-	}
 	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		IDToken      string `json:"id_token"`
+		tokenBody
+		IDToken string `json:"id_token"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+	err = postTokenRequest(ctx, p.httpClient, d.TokenEndpoint, data, &body, func(req *http.Request) {
+		acceptTokenJSON(req)
+		if method == OIDCAuthClientSecretBasic {
+			req.SetBasicAuth(url.QueryEscape(p.cfg.ClientID), url.QueryEscape(secret))
+		}
+	}, func(resp *http.Response) error {
+		return fmt.Errorf("oidc: token exchange returned %d", resp.StatusCode)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if body.IDToken == "" {
@@ -430,11 +418,7 @@ func (p *OIDCProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verif
 	if body.AccessToken != "" {
 		p.claims.put(body.AccessToken, claims)
 	}
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body.tokenBody), nil
 }
 
 // FetchUserInfo maps the verified id_token claims, filling a missing email or email_verified from userinfo with the same subject.
@@ -526,24 +510,24 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	}, nil
 }
 
+// parseEmailVerifiedClaim preserves claim presence even for invalid values.
+// OIDC consults unsigned userinfo only when the signed claim is absent.
 func parseEmailVerifiedClaim(claims map[string]any, claimName string) (value, present bool) {
-	if len(claims) == 0 {
-		return false, false
-	}
 	if claimName == "" {
 		claimName = "email_verified"
 	}
-	raw, ok := claims[claimName]
-	if !ok {
-		return false, false
-	}
-	switch v := raw.(type) {
+	raw, present := claims[claimName]
+	return emailVerifiedValue(raw), present
+}
+
+func emailVerifiedValue(raw any) bool {
+	switch value := raw.(type) {
 	case bool:
-		return v, true
+		return value
 	case string:
-		return strings.EqualFold(v, "true"), true
+		return strings.EqualFold(value, "true")
 	}
-	return false, true
+	return false
 }
 
 func parseEmailVerified(claims map[string]any, claimName string) bool {
@@ -566,7 +550,7 @@ func (p *OIDCProvider) fetchUserinfo(ctx context.Context, token, endpoint string
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oidc: userinfo returned %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, oauthProviderMaxBody))
 	if err != nil {
 		return nil, err
 	}

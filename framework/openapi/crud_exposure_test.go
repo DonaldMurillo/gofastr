@@ -8,12 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// boolPtr is local to the test file; the framework's own helper lives in
-// package framework and importing it here would be a cycle.
-//
-//go:fix inline
-func boolPtr(b bool) *bool { return new(b) }
-
 // An entity that opted out of auto-CRUD must not appear in the spec. The
 // router refuses every generated path for it (404), so advertising them
 // documents an API the server does not have, and a generated SDK ships

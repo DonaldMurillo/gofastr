@@ -516,14 +516,7 @@ func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
 	// rather than a hand-built context a unit test could fake.
 	policy := access.NewRolePolicy()
 	policy.Grant("auditor", "notes:read:all")
-	app.Use(access.Middleware(policy, func(ctx context.Context) []string {
-		if u, ok := handler.GetUser(ctx); ok && u != nil {
-			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				return rh.GetRoles()
-			}
-		}
-		return nil
-	}))
+	app.Use(access.Middleware(policy, access.RequestUserRoles))
 	stop := covStartAndStop(t, app)
 	defer stop()
 

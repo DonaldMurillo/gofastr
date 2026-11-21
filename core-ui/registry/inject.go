@@ -3,78 +3,25 @@ package registry
 import (
 	"fmt"
 	"html"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-type tagFault int
-
-const (
-	tagOK tagFault = iota
-	tagOpenComment
-	tagNotElement
-	tagIncomplete
-	tagNotOpen
-	tagUnterminated
-)
-
-func firstOpenTag(html string) (i, end int, fault tagFault) {
-	for {
-		j := skipWhitespace(html, i)
-		if j+4 <= len(html) && html[j:j+4] == "<!--" {
-			e := strings.Index(html[j+4:], "-->")
-			if e < 0 {
-				return 0, 0, tagOpenComment
-			}
-			i = j + 4 + e + 3
-			continue
-		}
-		i = j
-		break
-	}
-	if i >= len(html) || html[i] != '<' {
-		return 0, 0, tagNotElement
-	}
-	if i+1 >= len(html) {
-		return 0, 0, tagIncomplete
-	}
-	if c := html[i+1]; c == '/' || c == '!' || c == '?' {
-		return 0, 0, tagNotOpen
-	}
-	end = findOpenTagEnd(html, i+1)
-	if end < 0 {
-		return 0, 0, tagUnterminated
-	}
-	return i, end, tagOK
-}
-
 func injectMarker(html, name string) (render.HTML, error) {
 	if name == "" {
 		return render.HTML(html), fmt.Errorf("injectMarker: empty name")
 	}
-	i, end, fault := firstOpenTag(html)
-	switch fault {
-	case tagOpenComment:
-		return render.HTML(html), fmt.Errorf("injectMarker: unterminated <!-- comment in component output")
-	case tagNotElement:
-		return render.HTML(html), fmt.Errorf(
-			"registry: component %q must render a single rooted element; "+
-				"got fragment starting with %q. Wrap your output in <div> or a semantic tag.",
-			name, preview(html))
-	case tagIncomplete:
-		return render.HTML(html), fmt.Errorf("registry: component %q produced an incomplete tag", name)
-	case tagNotOpen:
-		return render.HTML(html), fmt.Errorf(
-			"registry: component %q must start with an element open tag, got %q",
-			name, preview(html))
-	case tagUnterminated:
-		return render.HTML(html), fmt.Errorf("registry: component %q produced an unterminated open tag", name)
+	start, end, err := rootTag(html)
+	if err != nil {
+		return render.HTML(html), fmt.Errorf("registry: component %q must render a single rooted element: %w", name, err)
 	}
-	if attrIndex(html[i:end], "data-cui-comp") >= 0 {
+	if attrIndex(html[start:end], "data-cui-comp") >= 0 {
 		return render.HTML(html), nil
 	}
-	return render.HTML(spliceAttr(html, i, end, "data-cui-comp", name)), nil
+	return render.HTML(spliceAttr(html, end, "data-cui-comp", name)), nil
 }
 
 func attrNameOK(name string) bool {
@@ -99,44 +46,78 @@ func InjectAttribute(src render.HTML, name, value string) (render.HTML, error) {
 		return src, fmt.Errorf("registry: InjectAttribute: %q is not a valid attribute name", name)
 	}
 	html := string(src)
-	i, end, err := openTagFor(html, "InjectAttribute")
+	start, end, err := rootTag(html)
 	if err != nil {
-		return src, err
+		return src, fmt.Errorf("registry: InjectAttribute: %w", err)
 	}
-	if attrIndex(html[i:end], name) >= 0 {
+	if attrIndex(html[start:end], name) >= 0 {
 		return src, nil
 	}
-	return render.HTML(spliceAttr(html, i, end, name, htmlEscape(value))), nil
+	return render.HTML(spliceAttr(html, end, name, value)), nil
 }
 
-func openTagFor(html, who string) (i, end int, err error) {
-	i, end, fault := firstOpenTag(html)
-	switch fault {
-	case tagOpenComment:
-		return 0, 0, fmt.Errorf("registry: %s: unterminated <!-- comment in html", who)
-	case tagNotElement, tagIncomplete, tagNotOpen:
-		return 0, 0, fmt.Errorf("registry: %s: html must begin with an element open tag, got %q", who, preview(html))
-	case tagUnterminated:
-		return 0, 0, fmt.Errorf("registry: %s: unterminated open tag", who)
+// AppendAttributes appends sorted render.Attr values to the root tag, keeping existing attributes.
+func AppendAttributes(src render.HTML, attrs map[string]string) render.HTML {
+	if len(attrs) == 0 {
+		return src
 	}
-	return i, end, nil
+	html := string(src)
+	_, end, err := rootTag(html)
+	if err != nil {
+		return src
+	}
+	var out strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(attrs)) {
+		if attr := render.Attr(name, attrs[name]); attr != "" {
+			if out.Len() > 0 {
+				out.WriteByte(' ')
+			}
+			out.WriteString(attr)
+		}
+	}
+	if out.Len() == 0 {
+		return src
+	}
+	return render.HTML(spliceAttrs(html, end, out.String()))
 }
 
-func spliceAttr(html string, i, end int, name, value string) string {
+func rootTag(html string) (start, end int, err error) {
+	start = skipWhitespace(html, 0)
+	for strings.HasPrefix(html[start:], "<!--") {
+		close := strings.Index(html[start+4:], "-->")
+		if close < 0 {
+			return 0, 0, fmt.Errorf("unterminated <!-- comment in html")
+		}
+		start = skipWhitespace(html, start+4+close+3)
+	}
+	if start+1 >= len(html) || html[start] != '<' || html[start+1] == '/' || html[start+1] == '!' || html[start+1] == '?' {
+		return 0, 0, fmt.Errorf("html must begin with an element open tag, got %q", preview(html))
+	}
+	end = findOpenTagEnd(html, start+1)
+	if end < 0 {
+		return 0, 0, fmt.Errorf("unterminated open tag")
+	}
+	return start, end, nil
+}
+
+func spliceAttrs(html string, end int, attrs string) string {
 	insertAt := end
-	selfClose := end > 0 && html[end-1] == '/'
+	selfClose := html[end-1] == '/'
 	if selfClose {
-		insertAt = end - 1
+		insertAt--
 	}
 	sep := " "
-	if insertAt > 0 && (html[insertAt-1] == ' ' || html[insertAt-1] == '\t' || html[insertAt-1] == '\n') {
+	if insertAt > 0 && strings.ContainsRune(" \t\n", rune(html[insertAt-1])) {
 		sep = ""
 	}
-	attr := sep + name + `="` + value + `"`
 	if selfClose && insertAt > 0 && html[insertAt-1] == ' ' {
-		attr += " "
+		attrs += " "
 	}
-	return html[:insertAt] + attr + html[insertAt:]
+	return html[:insertAt] + sep + attrs + html[insertAt:]
+}
+
+func spliceAttr(html string, end int, name, value string) string {
+	return spliceAttrs(html, end, name+`="`+htmlEscape(value)+`"`)
 }
 
 func attrIndex(openTag, name string) int {
@@ -223,11 +204,11 @@ func Attribute(src render.HTML, name string) (string, bool, error) {
 		return "", false, fmt.Errorf("registry: Attribute: %q is not a valid attribute name", name)
 	}
 	html := string(src)
-	i, end, err := openTagFor(html, "Attribute")
+	start, end, err := rootTag(html)
 	if err != nil {
-		return "", false, err
+		return "", false, fmt.Errorf("registry: Attribute: %w", err)
 	}
-	openTag := html[i:end]
+	openTag := html[start:end]
 	at := attrIndex(openTag, name)
 	if at < 0 {
 		return "", false, nil

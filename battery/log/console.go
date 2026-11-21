@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/term"
@@ -19,21 +20,20 @@ import (
 type ConsoleMode int
 
 const (
-	// ConsoleAuto is the zero value: the console sink is attached only when
-	// stderr is a terminal and NO_COLOR is unset.
+	// when stderr is a terminal and NO_COLOR is unset or empty. This is the
 	ConsoleAuto ConsoleMode = iota
 	// ConsoleOn forces the console sink on regardless of TTY.
 	ConsoleOn
-	// ConsoleOff disables the console sink entirely.
+	// ConsoleOff skips automatic attachment of the console sink.
 	ConsoleOff
 )
 
-// ConsoleOpts configures a console sink.
+// and NO_COLOR being unset or empty.
 type ConsoleOpts struct {
 	// Writer is the destination.
 	Writer io.Writer
 
-	// Color forces color on (true) or off (false).
+	// unset or empty, so piping to a file or through `cat` drops the ANSI codes
 	Color *bool
 
 	// TimeFormat overrides the timestamp format.
@@ -234,14 +234,28 @@ func jsonText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func escapeUnsafe(s string) string {
-	if !textsafe.ContainsUnsafe(s) {
+// escapeTerminal returns s with every C0/DEL/C1 control and zero-width
+// or bidi rune escaped. It uses \n, \r, and \t for those three controls
+// and hexadecimal escapes for the rest. With quotes enabled, it also
+// escapes " and \.
+func escapeTerminal(s string, quotes bool) string {
+	if !quotes && !textsafe.ContainsUnsafe(s) {
+		return s
+	}
+	// The quoted walk escapes subdivision flag tags, which ContainsUnsafe
+	// skips, and rewrites invalid UTF-8 bytes as U+FFFD.
+	if quotes && strings.IndexFunc(s, func(r rune) bool {
+		return r == '"' || r == '\\' || r == utf8.RuneError || textsafe.IsUnsafe(r)
+	}) == -1 {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s) + 8)
 	for _, r := range s {
 		switch {
+		case quotes && (r == '"' || r == '\\'):
+			b.WriteByte('\\')
+			b.WriteRune(r)
 		case r == '\n':
 			b.WriteString(`\n`)
 		case r == '\r':
@@ -257,33 +271,9 @@ func escapeUnsafe(s string) string {
 	return b.String()
 }
 
-func quoteTerminalSafe(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 2)
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if textsafe.IsUnsafe(r) {
-				fmt.Fprintf(&b, `\u%04x`, r)
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
+func escapeUnsafe(s string) string { return escapeTerminal(s, false) }
+
+func quoteTerminalSafe(s string) string { return `"` + escapeTerminal(s, true) + `"` }
 
 func needsQuoting(s string) bool {
 	if s == "" {

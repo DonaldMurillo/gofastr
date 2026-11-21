@@ -86,7 +86,13 @@ func (s *SQLInboundStore) ensureTable() error {
 			return err
 		}
 	}
-	return addColumn(s.db, s.dialect, s.table, "owner TEXT NOT NULL DEFAULT ''")
+	if err := addColumn(s.db, s.dialect, s.table, "owner TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if s.dialect == "postgres" {
+		return nil
+	}
+	return normalizeSQLiteTimes(s.db, s.table, "received_at", "updated_at")
 }
 
 func (s *SQLInboundStore) registerData() {
@@ -244,11 +250,7 @@ func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Ti
 const inboundColumns = "id, source, dedupe_key, headers, payload, status, attempts, last_error, received_at, updated_at, owner"
 
 func (s *SQLInboundStore) insert() string {
-	ph := make([]string, 11)
-	for i := 1; i <= 11; i++ {
-		ph[i-1] = s.placeholder(i)
-	}
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.table, inboundColumns, strings.Join(ph, ", "))
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.table, inboundColumns, placeholderList(11, s.placeholder))
 }
 
 func (s *SQLInboundStore) selectOne() string {

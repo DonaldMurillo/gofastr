@@ -52,10 +52,7 @@ func TestTooltipExtraAttrsOnRoot(t *testing.T) {
 		Text:       "tip",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	}, render.Text("trigger"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("wrapper span missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "wrapper span")
 }
 
 // The idempotence check is scoped to the trigger's FIRST OPEN TAG: a
@@ -100,6 +97,20 @@ func TestTooltipIdempotentWhenRootCarriesDescribedBy(t *testing.T) {
 	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-x"}, trigger)
 	if n := strings.Count(string(h), `aria-describedby="tip-x"`); n != 1 {
 		t.Errorf("aria-describedby rendered %d times, want 1:\n%s", n, h)
+	}
+}
+
+func TestTooltipWiresTriggerWithDescribedByInTitle(t *testing.T) {
+	trigger := render.HTML(`<button title="example aria-describedby=help">Help</button>`)
+	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-help"}, trigger)
+	mustContain(t, h, `<button title="example aria-describedby=help" aria-describedby="tip-help">`)
+}
+
+func TestTooltipKeepsTextOnlyTrigger(t *testing.T) {
+	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-help"}, render.Text("Help & support"))
+	mustContain(t, h, `>Help &amp; support<span`)
+	if strings.Contains(string(h), "aria-describedby=") {
+		t.Errorf("unexpected trigger attribute in %s", h)
 	}
 }
 

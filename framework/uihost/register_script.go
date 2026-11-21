@@ -70,10 +70,12 @@ func (ds *UIHost) registerScript(s externalScript, caller string) error {
 // patterns, or the path itself for a page no screen matches.
 func (ds *UIHost) ExtraScriptSrcs(routes []string) []string {
 	ds.scriptMu.Lock()
-	defer ds.scriptMu.Unlock()
-	seen := make(map[string]bool, len(ds.extraScripts))
-	out := make([]string, 0, len(ds.extraScripts))
-	for _, s := range ds.extraScripts {
+	scripts := slices.Clone(ds.extraScripts)
+	ds.scriptMu.Unlock()
+
+	seen := make(map[string]bool, len(scripts))
+	out := make([]string, 0, len(scripts))
+	for _, s := range scripts {
 		if s.scope != nil && !slices.ContainsFunc(routes, s.scope) {
 			continue
 		}

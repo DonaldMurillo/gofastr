@@ -32,7 +32,9 @@ func isTerminalInboundStatus(s string) bool {
 	return s == InboundStatusProcessed
 }
 
-const defaultInboundMaxBody int64 = 1 << 20
+// is unset: MaxPayloadBytes, so an inbound envelope is never larger than
+// what the outbound side would send.
+const defaultInboundMaxBody int64 = MaxPayloadBytes
 
 // InboundEnvelope is one persisted inbound request, walking received,
 // processing, then processed or failed.
@@ -160,6 +162,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
@@ -333,7 +336,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		}
 
 		err = fn(ctx, *env)
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboundSettleTimeout)
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 		defer cancel()
 		if err != nil {
 			failed := *env
@@ -355,8 +358,6 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		return nil
 	}
 }
-
-const inboundSettleTimeout = 10 * time.Second
 
 // ProcessInboundOption configures ProcessInbound.
 type ProcessInboundOption func(*processInboundOpts)

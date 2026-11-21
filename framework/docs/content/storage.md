@@ -46,6 +46,11 @@ rewrite the key.
 
 ## Local backend
 
+`LocalStorage.Save` rejects control bytes in object keys. Legacy keys
+containing a control byte, such as a tab in a Unix filename, remain
+readable and deletable by their exact spelling when the filesystem
+supports them.
+
 <!-- gofastr:compile
 stmt: _ = store
 import "github.com/DonaldMurillo/gofastr/battery/storage"

@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -20,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // Config configures the Admin battery.
@@ -69,7 +73,8 @@ type Config struct {
 	// AuditListLimit is the Audit log page's rows per page. Default 50.
 	AuditListLimit int
 
-	// SavedViews turns on per-user saved views over the admin's database.
+	// SavedViews enables the admin database's saved filters and columns, up to
+	// entityui.SavedViewCap named views per user, tenant and entity.
 	SavedViews bool
 
 	// SavedViewsTable is the saved views table, a lowercase identifier.
@@ -135,7 +140,7 @@ type Config struct {
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
-	// Commands are extra palette entries that go to a URL.
+	// Commands are extra palette entries with fixed labels and URLs.
 	Commands []ui.PaletteCommand
 
 	// EmailPreviews are the mails the Emails page renders with sample data.
@@ -155,8 +160,9 @@ type Battery struct {
 	host   *uihost.UIHost
 	router *router.Router
 	ents   []*entity.Entity
-	names  []string
-	ui     *entityui.UI
+	names  []string     // the names of ents, the set the admin elevates
+	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
+	ops    []opsPage
 
 	savedViews entityui.SavedViewStore
 }
@@ -193,6 +199,19 @@ func (b *Battery) logger() *slog.Logger {
 		return b.cfg.Logger
 	}
 	return slog.Default()
+}
+
+// loadFailed logs a list read that failed and draws the screen's
+// failure notice: a danger callout, under the page's header when the
+// screen has one. logAttrs carry any extra log attributes.
+func (b *Battery) loadFailed(ctx context.Context, label string, phrase i18n.Phrase, err error, header []render.HTML, logAttrs ...any) render.HTML {
+	args := append(logAttrs, "error", err)
+	b.logger().Error(label, args...)
+	callout := ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(phrase.Text(ctx)))
+	if len(header) == 0 {
+		return callout
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(header, callout)...)
 }
 
 // Name implements framework.Battery.
@@ -265,7 +284,7 @@ func (b *Battery) Init(app *framework.App) error {
 		b.cfg.BulkJobs.setAdmit(b.admitJob)
 		jobsUI := b.jobsUI()
 		b.cfg.BulkJobs.Bind(jobsUI)
-		if n, err := jobsUI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
+		if n, err := jobsUI.ResumeBulkJobs(context.Background(), entityui.BulkResumeGrace); err != nil {
 			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
 		} else if n > 0 {
 			b.logger().Info("admin: resumed bulk jobs", "count", n)
@@ -407,4 +426,14 @@ func entityNames(ents []*entity.Entity) string {
 		names[i] = e.GetName()
 	}
 	return strings.Join(names, ", ")
+}
+
+// refuseBodyError answers a failed ops-post body read through the ops
+// envelope: 413 over the cap, 400 bad-input otherwise.
+func (b *Battery) refuseBodyError(w http.ResponseWriter, r *http.Request, page string, err error) {
+	if bodylimit.TooLarge(err) {
+		b.refuse(w, r, page, http.StatusRequestEntityTooLarge, "body-too-large")
+		return
+	}
+	b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 }

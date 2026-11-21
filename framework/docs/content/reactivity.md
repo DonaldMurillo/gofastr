@@ -6,7 +6,7 @@ reach for the next one only when the lower one cannot do the job.
 
 | Rung | What it is | When it fits |
 |---|---|---|
-| **Client signal** | A string value held in the runtime signal store, mutated by `data-cui-signal-set/inc/toggle`. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
+| **Client signal** | A named value held in the browser's runtime signal store. Click handlers can set a string, increment a number, or toggle a Boolean. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
 | **RPC** | A `fetch` to a server handler. The server reads from the DB and returns HTML or a value; the runtime swaps the region or sets a signal. | Anything the user triggered. The default for data. |
 | **Polling** | The runtime re-fetches a region on an interval. | Passive freshness for a counter, a status, or a dashboard, without holding a connection. |
 | **SSE push** | One long-lived `/__gofastr/sse` connection per page. The server pushes when state changes. | Semantics that need the connection: presence, collaborative editing, sub-second internal dashboards. |
@@ -15,14 +15,18 @@ reach for the next one only when the lower one cannot do the job.
 
 ### 1. Client signals
 
-A signal is a named string kept in the runtime signal store in the browser.
-Three click-time primitives mutate it:
+A signal is a named value held in the browser's runtime signal store.
+Click handlers can update that value:
 
 | Attribute | Effect |
 |---|---|
-| `data-cui-signal-set="name:value"` | Sets `name` to `value` |
-| `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
-| `data-cui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
+| `data-cui-signal-set="name:value"` | Stores `value` as a string. |
+| `data-cui-signal-inc="name[:delta]"` | Converts the existing value to a number (using 0 if conversion fails), adds `delta`, and stores the numeric result. The default delta is 1; a negative delta decrements. |
+| `data-cui-signal-toggle="name"` | Stores a Boolean, alternating between `true` and `false`. |
+
+`getSignal`, subscriptions, and computed reducers see the stored value's
+type. An attribute binding writes the rendered value as text or
+toggles the presence of a Boolean HTML attribute.
 
 They work anywhere on the page, inside a modal, drawer or popover too. On
 a node that also carries `data-cui-rpc`, the signal mutation wins and no

@@ -51,6 +51,25 @@ func TestBuildRejectsOptionLikePackageValue(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsEmptyFlagValues(t *testing.T) {
+	for _, flag := range []string{"--pkg", "--output", "-o"} {
+		for _, args := range [][]string{{flag + "="}, {flag, ""}, {flag + "=", flag + "=value"}} {
+			if _, err := parseBuildOptions(args); err == nil || !strings.Contains(err.Error(), flag) {
+				t.Errorf("parseBuildOptions(%q) = %v, want an error naming %s", args, err, flag)
+			}
+		}
+	}
+}
+
+func TestBuildAcceptsSpacedOutputValues(t *testing.T) {
+	for _, flag := range []string{"--output", "-o"} {
+		opts, err := parseBuildOptions([]string{flag, "bin/app"})
+		if err != nil || opts.output != "bin/app" {
+			t.Errorf("parseBuildOptions(%s bin/app) output = %q, %v; want bin/app", flag, opts.output, err)
+		}
+	}
+}
+
 func TestBuildAcceptsNoEmbedCheckFlag(t *testing.T) {
 	opts, err := parseBuildOptions([]string{"--no-embed-check"})
 	if err != nil {

@@ -73,7 +73,8 @@ func MustFileSink(path string, opts FileOpts) Sink {
 	return s
 }
 
-// DefaultFileSink resolves a per-app file under the OS state dir.
+// DefaultFileSink resolves $XDG_STATE_HOME/<app>/server.log when the
+// variable is non-empty, or ~/.local/state/<app>/server.log otherwise.
 func DefaultFileSink(appName string, opts FileOpts) (Sink, error) {
 	if appName == "" {
 		return nil, fmt.Errorf("log: DefaultFileSink requires a non-empty app name (set framework.AppConfig.Name or pass a custom Sink)")

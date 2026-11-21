@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -279,50 +278,43 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	} else if !decodeJSONLimited(w, r, &body) {
 		return
 	}
-	fail := func(status int, reason i18n.Phrase) {
-		if isForm {
-			writeFormAuthError(w, r, status, reason)
-			return
-		}
-		writeAuthError(w, r, status, reason)
-	}
 	if body.Token == "" || body.Password == "" {
-		fail(http.StatusBadRequest, reasonTokenAndPasswordRequired)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonTokenAndPasswordRequired)
 		return
 	}
 	if len(body.Password) > 128 {
-		fail(http.StatusBadRequest, reasonPasswordTooLong)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonPasswordTooLong)
 		return
 	}
 
 	setter, ok := p.mgr.UserStore().(PasswordSetter)
 	if !ok {
-		fail(http.StatusInternalServerError, reasonStoreNoPasswordSetter)
+		refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonStoreNoPasswordSetter)
 		return
 	}
 
 	if err := ValidatePasswordStrength(body.Password); err != nil {
-		fail(http.StatusBadRequest, reasonPasswordTooShort)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonPasswordTooShort)
 		return
 	}
 
 	hash, err := HashPassword(body.Password)
 	if err != nil {
-		fail(http.StatusInternalServerError, reasonHashFailed)
+		refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonHashFailed)
 		return
 	}
 
 	userID, err := redeemPurposeToken(r.Context(), p.store, purposeReset, body.Token)
 	if err != nil {
-		fail(http.StatusUnauthorized, reasonInvalidToken)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 	if err := setter.SetPassword(r.Context(), userID, hash); err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			fail(http.StatusNotFound, reasonUserNotFound)
+			refuseAuth(w, r, isForm, http.StatusNotFound, reasonUserNotFound)
 			return
 		}
-		fail(http.StatusInternalServerError, reasonSetPasswordFailed)
+		refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonSetPasswordFailed)
 		return
 	}
 
@@ -385,7 +377,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		})
 	}
 	if incomplete {
-		fail(http.StatusInternalServerError, reasonResetIncomplete)
+		refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonResetIncomplete)
 		return
 	}
 	if checker, ok := p.mgr.UserStore().(EmailVerifiedChecker); ok {
@@ -396,7 +388,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Warn("password-reset account claim failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-			fail(http.StatusInternalServerError, reasonResetIncomplete)
+			refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonResetIncomplete)
 			return
 		}
 	}
@@ -407,8 +399,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"updated": true}, skipCredentialHeaders)
 }
 
 func (p *PasswordResetPlugin) queueResetNotice(requestCtx context.Context, userID string, unlinked []string) {

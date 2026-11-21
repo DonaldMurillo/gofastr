@@ -8,7 +8,7 @@ type WhereClause struct {
 	Args []any
 }
 
-// ListPayload is the data of BeforeList (AddWhere scopes it) and AfterList (Results; keep the row count, mask only NoQuery fields).
+// ListPayload is the data of BeforeList (AddWhere scopes it) and AfterList (Results; rows may be edited or redacted in place, the row count must not change).
 type ListPayload struct {
 	Request *http.Request
 	Where   []WhereClause

@@ -14,7 +14,7 @@ func TestFilterChipBarRendersChips(t *testing.T) {
 		},
 	}))
 	wants := []string{
-		`role="toolbar"`,
+		`role="group"`,
 		`aria-label="Active filters"`,
 		`Status: Active`,
 		`Tag: urgent`,
@@ -29,12 +29,15 @@ func TestFilterChipBarRendersChips(t *testing.T) {
 			t.Errorf("FilterChipBar missing %q\nout: %s", w, out)
 		}
 	}
+	if n := strings.Count(out, `data-cui-rpc-signal="filter-bar"`); n != 2 {
+		t.Errorf("expected both unbound dismiss actions to target filter-bar, got %d:\n%s", n, out)
+	}
 }
 
 func TestFilterChipBarEmpty(t *testing.T) {
 	out := string(FilterChipBar(FilterChipBarConfig{}))
-	if !strings.Contains(out, `role="toolbar"`) {
-		t.Errorf("expected empty toolbar still rendered, got: %s", out)
+	if !strings.Contains(out, `role="group"`) || !strings.Contains(out, `aria-label="Active filters"`) {
+		t.Errorf("expected an empty labelled group, got: %s", out)
 	}
 	if strings.Contains(out, "fui-tag") {
 		t.Errorf("did not expect any chips when empty, got: %s", out)
@@ -75,18 +78,20 @@ func TestFilterChipBarRPCSignal(t *testing.T) {
 		Filters: []FilterChip{
 			{Label: "x", DismissPath: "/x/clear"},
 		},
-		RPCSignal:    "filter-bar",
-		SignalName:   "filter-bar",
+		RPCSignal:    "outer-filters",
+		SignalName:   "chips",
 		ClearAllPath: "/clear",
 	}))
 	for _, w := range []string{
-		`data-cui-rpc-signal="filter-bar"`,
-		`data-cui-signal="filter-bar"`,
+		`data-cui-signal="chips"`,
 		`data-cui-signal-mode="html"`,
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("missing %q in: %s", w, out)
 		}
+	}
+	if n := strings.Count(out, `data-cui-rpc-signal="outer-filters"`); n != 2 {
+		t.Errorf("expected both actions to target the explicit RPCSignal, got %d:\n%s", n, out)
 	}
 }
 
@@ -124,10 +129,7 @@ func TestFilterChipBarExtraAttrsOnRoot(t *testing.T) {
 		},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("filter bar root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "filter bar root")
 }
 
 // TestFilterChipBarIslandSwapContract: the bar's chips clear through
@@ -145,8 +147,14 @@ func TestFilterChipBarIslandSwapContract(t *testing.T) {
 	if !strings.Contains(h, `data-cui-signal="chips"`) || !strings.Contains(h, `data-cui-signal-mode="html"`) {
 		t.Errorf("the bar must swap wholesale through its signal:\n%s", h)
 	}
-	if !strings.Contains(h, `data-cui-rpc="/filters/clear"`) || !strings.Contains(h, `data-cui-rpc-method="POST"`) {
-		t.Errorf("clear-all must ride the RPC rail:\n%s", h)
+	for _, path := range []string{"/filters/open", "/filters/clear"} {
+		action := `data-cui-rpc="` + path + `"`
+		_, rest, found := strings.Cut(h, action)
+		attrs, _, _ := strings.Cut(rest, ">")
+		if !found || !strings.Contains(attrs, `data-cui-rpc-method="POST"`) ||
+			!strings.Contains(attrs, `data-cui-rpc-signal="chips"`) {
+			t.Errorf("%s must POST and target the bound chips signal:\n%s", path, h)
+		}
 	}
 	// No bespoke handler: the surface carries no onclick, no inline
 	// script, and no bespoke EventSource — the island contract only.

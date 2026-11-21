@@ -37,7 +37,7 @@ func TestVersionFlagIsGlobalOnlyInTheCommandSlot(t *testing.T) {
 // refuses the unknown flag, instead of printing the version and exiting 0.
 func TestDispatchDevDashVIsDevsFlag(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { dispatch([]string{"dev", "-v"}) })
 	})
 	if strings.Contains(out, "commit:") {
@@ -45,5 +45,23 @@ func TestDispatchDevDashVIsDevsFlag(t *testing.T) {
 	}
 	if code == 0 || code == -1 || !strings.Contains(out, "unknown flag -v") {
 		t.Fatalf("dev -v: exit %d, want dev's unknown-flag refusal:\n%s", code, out)
+	}
+}
+
+// `gofastr version` takes no flags: a typo'd one used to print the
+// version and exit 0, a green step that checked nothing.
+func TestVersionCommandRefusesUnknownFlag(t *testing.T) {
+	var code int
+	var out, errOut string
+	out = clitest.CovT_capStdout(t, func() {
+		errOut = clitest.CovT_capStderr(t, func() {
+			code = clitest.CovT_capExit(t, func() { dispatch([]string{"version", "--zzz-unknown-flag=1"}) })
+		})
+	})
+	if strings.Contains(out, "commit:") {
+		t.Fatalf("version --zzz printed the version:\n%s", out)
+	}
+	if code != 2 || !strings.Contains(errOut, "--zzz-unknown-flag") {
+		t.Fatalf("version --zzz: exit %d, want the unknown-flag refusal on stderr:\n%s", code, errOut)
 	}
 }

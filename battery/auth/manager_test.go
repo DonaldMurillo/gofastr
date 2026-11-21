@@ -201,6 +201,12 @@ func TestCorePlugin_Register(t *testing.T) {
 		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
 
+	for _, header := range []string{"Cache-Control", "Pragma", "Expires"} {
+		if got := w.Header().Get(header); got != "" {
+			t.Errorf("registration response %s = %q, want no credential header", header, got)
+		}
+	}
+
 	// The uniform 202 body is deliberately non-committal (no user echo:
 	// an account-existence oracle); verify the account via the store.
 	var resp map[string]any

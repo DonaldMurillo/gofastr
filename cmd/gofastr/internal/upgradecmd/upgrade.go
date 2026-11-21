@@ -30,6 +30,18 @@ var loadRegistry = upgrade.Load
 // compile errors) so one pervasive pattern doesn't drown the report.
 const maxNoteHits = 20
 
+// writeCapped renders at most maxNoteHits items through render, then an
+// "… and N more" line at indent when more remain.
+func writeCapped(b *strings.Builder, n int, indent string, render func(int)) {
+	for i := range n {
+		if i == maxNoteHits {
+			fmt.Fprintf(b, "%s… and %d more\n", indent, n-maxNoteHits)
+			return
+		}
+		render(i)
+	}
+}
+
 // upgradeReport scans root once for every note in range and renders
 // the whole notes block: the not-type-checked NOTE, the releases with
 // their guidance and hits, and the unexplained compile errors. When
@@ -68,25 +80,18 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 		}
 		fmt.Fprintf(&b, "NOTE: %d %s could not be scanned, so no line in them is pointed at\n", len(result.Unscanned), files)
 		b.WriteString("      below. Read them against every note by hand:\n")
-		for i, f := range result.Unscanned {
-			if i == maxNoteHits {
-				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unscanned)-maxNoteHits)
-				break
-			}
-			b.WriteString("  " + textsafe.ScrubTerminal(f) + "\n")
-		}
+		writeCapped(&b, len(result.Unscanned), "  ", func(i int) {
+			b.WriteString("  " + textsafe.ScrubTerminal(result.Unscanned[i]) + "\n")
+		})
 		b.WriteString("\n")
 	}
 	b.WriteString(formatUpgradeNotes(result, inRange))
 	if len(result.Unexplained) > 0 {
 		b.WriteString("Compile errors no note explains:\n")
-		for i, h := range result.Unexplained {
-			if i == maxNoteHits {
-				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unexplained)-maxNoteHits)
-				break
-			}
+		writeCapped(&b, len(result.Unexplained), "  ", func(i int) {
+			h := result.Unexplained[i]
 			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(textsafe.ScrubTerminal(h.Why), "\n", "\n      "))
-		}
+		})
 	}
 	// Edit hits only, the ones the report files as edits (hitsFor): a
 	// hits: review hit may already be right and never clears, so
@@ -193,16 +198,13 @@ func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hi
 			}
 			fmt.Fprintf(&b, "  %s %s\n", marker, n.Change)
 			fmt.Fprintf(&b, "      %s\n", n.Guidance)
-			for i, h := range hits {
-				if i == maxNoteHits {
-					fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
-					break
-				}
+			writeCapped(&b, len(hits), "        ", func(i int) {
+				h := hits[i]
 				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), textsafe.ScrubTerminal(h.Why))
 				if h.Err != "" {
 					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(textsafe.ScrubTerminal(h.Err), "\n", "\n          "))
 				}
-			}
+			})
 		}
 		if headed {
 			b.WriteString("\n")

@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -38,6 +40,17 @@ func TestEveryPathFindsItsScreenByPattern(t *testing.T) {
 		t.Error("ScreenByPattern missed a pattern spelled as it was registered")
 	}
 	r.ValidateIntercepts()
+}
+
+func TestScreenRouterRejectsExactEndMarker(t *testing.T) {
+	r := NewRouter()
+	defer func() {
+		got := fmt.Sprint(recover())
+		if !strings.Contains(got, "/notes/{$}") || !strings.Contains(got, "{$} end marker") {
+			t.Errorf("registration panic = %q, want the path and an unsupported end marker message", got)
+		}
+	}()
+	r.Screen(NewScreen("/notes/{$}", &matchParamComp{}), nil)
 }
 
 func TestTrailingSlashOnADynamicPatternIsIgnored(t *testing.T) {

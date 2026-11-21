@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 )
 
 // fixture is a tiny module with the import shapes the tool must read:
@@ -445,28 +447,28 @@ func envValue(env []string, key string) (string, bool) {
 }
 
 func TestCoverageDirIsOutsideTheModule(t *testing.T) {
-	t.Setenv(coverageDirEnv, "")
+	t.Setenv(coverageroot.AxeDirEnv, "")
 	root := t.TempDir()
-	dir, ok := envValue(commandEnv(root), coverageDirEnv)
+	dir, ok := envValue(commandEnv(root), coverageroot.AxeDirEnv)
 	if !ok || dir == "" {
-		t.Fatalf("%s not set for the wrapped command", coverageDirEnv)
+		t.Fatalf("%s not set for the wrapped command", coverageroot.AxeDirEnv)
 	}
 	if rel, err := filepath.Rel(root, dir); err == nil && !strings.HasPrefix(rel, "..") {
 		t.Fatalf("coverage dir %q is inside the module %q", dir, root)
 	}
 	// The value is a test cache input: it must not move between runs.
-	if again, _ := envValue(commandEnv(root), coverageDirEnv); again != dir {
+	if again, _ := envValue(commandEnv(root), coverageroot.AxeDirEnv); again != dir {
 		t.Fatalf("coverage dir moved between runs: %q then %q", dir, again)
 	}
-	if other, _ := envValue(commandEnv(t.TempDir()), coverageDirEnv); other == dir {
+	if other, _ := envValue(commandEnv(t.TempDir()), coverageroot.AxeDirEnv); other == dir {
 		t.Fatalf("two checkouts share coverage dir %q", dir)
 	}
 }
 
 func TestExplicitCoverageDirWins(t *testing.T) {
-	t.Setenv(coverageDirEnv, "/elsewhere")
-	if got, _ := envValue(commandEnv(t.TempDir()), coverageDirEnv); got != "/elsewhere" {
-		t.Fatalf("explicit %s replaced: got %q", coverageDirEnv, got)
+	t.Setenv(coverageroot.AxeDirEnv, "/elsewhere")
+	if got, _ := envValue(commandEnv(t.TempDir()), coverageroot.AxeDirEnv); got != "/elsewhere" {
+		t.Fatalf("explicit %s replaced: got %q", coverageroot.AxeDirEnv, got)
 	}
 }
 
@@ -475,20 +477,20 @@ func TestWrappedCommandGetsCoverageDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("prints the variable through sh")
 	}
-	t.Setenv(coverageDirEnv, "")
+	t.Setenv(coverageroot.AxeDirEnv, "")
 	bin := buildAffected(t)
 	root := newRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "c", "c.go"), []byte("package c\n\nfunc C() int { return 7 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(bin, "-base", "main", "--", "sh", "-c", `printf %s "$`+coverageDirEnv+`"`)
+	cmd := exec.Command(bin, "-base", "main", "--", "sh", "-c", `printf %s "$`+coverageroot.AxeDirEnv+`"`)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("affected -- sh: %v", err)
 	}
-	if want, _ := envValue(commandEnv(root), coverageDirEnv); string(out) != want {
-		t.Fatalf("wrapped command saw %s=%q, want %q", coverageDirEnv, out, want)
+	if want, _ := envValue(commandEnv(root), coverageroot.AxeDirEnv); string(out) != want {
+		t.Fatalf("wrapped command saw %s=%q, want %q", coverageroot.AxeDirEnv, out, want)
 	}
 }
 
@@ -582,7 +584,7 @@ func buildAffected(t *testing.T) string {
 // The hooks export what -coverage-dir prints before the sweep, so the
 // sweep and the gofastr verify after it agree on where the manifests are.
 func TestCoverageDirFlagPrintsTheWrappedValue(t *testing.T) {
-	t.Setenv(coverageDirEnv, "")
+	t.Setenv(coverageroot.AxeDirEnv, "")
 	bin := buildAffected(t)
 	root := newRepo(t)
 	cmd := exec.Command(bin, "-coverage-dir")
@@ -591,7 +593,7 @@ func TestCoverageDirFlagPrintsTheWrappedValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("affected -coverage-dir: %v", err)
 	}
-	want, _ := envValue(commandEnv(root), coverageDirEnv)
+	want, _ := envValue(commandEnv(root), coverageroot.AxeDirEnv)
 	if got := strings.TrimSpace(string(out)); got != want || want == "" {
 		t.Fatalf("-coverage-dir printed %q, want the wrapped value %q", got, want)
 	}
@@ -600,7 +602,7 @@ func TestCoverageDirFlagPrintsTheWrappedValue(t *testing.T) {
 // Without a user cache the manifests fall back into the module, where they
 // break the test cache, so the fallback has to be visible.
 func TestCoverageDirWarnsWithoutAUserCache(t *testing.T) {
-	t.Setenv(coverageDirEnv, "")
+	t.Setenv(coverageroot.AxeDirEnv, "")
 	bin := buildAffected(t)
 	cmd := exec.Command(bin, "-coverage-dir")
 	cmd.Dir = newRepo(t)
@@ -628,9 +630,9 @@ func TestCommandEnvTurnsOffVCSStamping(t *testing.T) {
 	} {
 		t.Setenv("GOFLAGS", tc.in)
 		for _, cov := range []string{"", "/elsewhere"} {
-			t.Setenv(coverageDirEnv, cov)
+			t.Setenv(coverageroot.AxeDirEnv, cov)
 			if got, _ := envValue(commandEnv(t.TempDir()), "GOFLAGS"); got != tc.want {
-				t.Errorf("GOFLAGS=%q, %s=%q: wrapped GOFLAGS=%q, want %q", tc.in, coverageDirEnv, cov, got, tc.want)
+				t.Errorf("GOFLAGS=%q, %s=%q: wrapped GOFLAGS=%q, want %q", tc.in, coverageroot.AxeDirEnv, cov, got, tc.want)
 			}
 		}
 	}
@@ -643,7 +645,7 @@ func TestWrappedBuildLeavesGitDirAlone(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("runs the build through sh")
 	}
-	t.Setenv(coverageDirEnv, "")
+	t.Setenv(coverageroot.AxeDirEnv, "")
 	bin := buildAffected(t)
 	root := newRepo(t)
 	if err := os.MkdirAll(filepath.Join(root, "app"), 0o700); err != nil {

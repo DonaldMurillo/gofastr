@@ -213,21 +213,11 @@ func TestClassifyIsNotFooledByApplicationLogOutput(t *testing.T) {
 			output: "app: undefined: column\napp: cannot use value\n--- FAIL: TestThing (0.00s)\nFAIL\tgithub.com/x/y\t0.2s\n",
 			want:   caughtStatus,
 		},
-		{
-			name:   "a genuine compile error",
-			output: "# github.com/x/y\n./a.go:9:2: undefined: thing\nFAIL\tgithub.com/x/y [build failed]\n",
-			want:   brokenStatus,
-		},
-		{
-			name:   "a compile error reported without the build-failed marker",
-			output: "# github.com/x/y\n./a.go:12:6: declared and not used: cond\n",
-			want:   brokenStatus,
-		},
-		{
-			name:   "a package-level FAIL with no per-test line still counts as caught",
-			output: "FAIL\tgithub.com/x/y\t0.21s\n",
-			want:   caughtStatus,
-		},
+		// The remaining compile-error and bare-FAIL shapes are pinned
+		// byte-for-byte by TestClassifyDistinguishesFailureFromNotRunning;
+		// this test keeps only the cases its name promises: compiler-ish
+		// words in APPLICATION LOG OUTPUT must not masquerade as a
+		// compile failure.
 	}
 	for _, c := range cases {
 		got, err := classify(exit, c.output)

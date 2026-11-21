@@ -14,7 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 

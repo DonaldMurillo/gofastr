@@ -282,8 +282,8 @@ func (s *darwinShell) WindowState(id string) (desktop.WindowState, error) {
 			return
 		}
 		st.Title = objc.GoString(objc.ID(objc.Send(win, objc.Sel("title"))))
-		st.Visible = objc.Send(win, objc.Sel("isVisible")) != 0
-		st.Key = objc.Send(win, objc.Sel("isKeyWindow")) != 0
+		st.Visible = objc.SendBool(win, objc.Sel("isVisible"))
+		st.Key = objc.SendBool(win, objc.Sel("isKeyWindow"))
 		st.Level = int(int64(objc.Send(win, objc.Sel("level"))))
 		st.StyleMask = uint64(objc.Send(win, objc.Sel("styleMask")))
 		st.Class = objc.GoString(objc.ID(objc.Send(objc.ID(objc.Send(win, objc.Sel("class"))), objc.Sel("description"))))

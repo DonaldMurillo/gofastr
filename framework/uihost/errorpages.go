@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 
@@ -75,20 +74,24 @@ func backToHomeLink(ctx context.Context) render.HTML {
 	})
 }
 
-func (s *defaultNotFoundScreen) RenderCtx(ctx context.Context) render.HTML {
-	if s.path == "" {
-		return render.Join(
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
-			html.Paragraph(html.TextConfig{}, render.Text(pageNotFoundBody.Text(ctx))),
-			html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
-		)
-	}
+func errorPageBody(ctx context.Context, title i18n.Phrase, message render.HTML) render.HTML {
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
-			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), nil)),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(title.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, message),
 		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 	)
+}
+
+func notFoundPathMessage(ctx context.Context, path string) render.HTML {
+	return phraseAround(ctx, pageNoRoute, "path",
+		html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)
+}
+
+func (s *defaultNotFoundScreen) RenderCtx(ctx context.Context) render.HTML {
+	if s.path == "" {
+		return errorPageBody(ctx, pageNotFoundTitle, render.Text(pageNotFoundBody.Text(ctx)))
+	}
+	return errorPageBody(ctx, pageNotFoundTitle, notFoundPathMessage(ctx, s.path))
 }
 
 func (ds *UIHost) notFoundBodyComponent(path string) component.Component {
@@ -161,21 +164,14 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		screen := ds.notFoundBodyComponent(path)
 		if body, err := component.SafeRenderCtx(ctx, screen); err == nil {
 			if name := safeNotFoundTitle(ctx, screen, path); name != "" {
-				title = name
-				if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
-					title += suffix
-				}
+				title = suffixTitle(name, appName)
 			}
 			writeMinimalPage(w, ds.LangFor(ctx, path), textsafe.StripInvisible(title), body)
 			return
 		}
 	}
 	writeMinimalPage(w, ds.LangFor(ctx, path), title,
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
-			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
-		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
-	)
+		errorPageBody(ctx, pageNotFoundTitle, notFoundPathMessage(ctx, path)))
 }
 
 func safeNotFoundTitle(ctx context.Context, screen component.Component, path string) (title string) {
@@ -237,11 +233,7 @@ func (ds *UIHost) serveNotFoundPartial(w http.ResponseWriter, r *http.Request, p
 type defaultErrorScreen struct{ component.ContextOnly }
 
 func (s *defaultErrorScreen) RenderCtx(ctx context.Context) render.HTML {
-	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
-	)
+	return errorPageBody(ctx, pageErrorTitle, render.Text(pageErrorBody.Text(ctx)))
 }
 
 func (ds *UIHost) errorBodyComponent() component.Component {
@@ -300,10 +292,7 @@ func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string
 	w.WriteHeader(http.StatusInternalServerError)
 	ctx := r.Context()
 	writeMinimalPage(w, ds.LangFor(ctx, path), pageErrorTitle.Text(ctx),
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
-	)
+		errorPageBody(ctx, pageErrorTitle, render.Text(pageErrorBody.Text(ctx))))
 }
 
 func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path string) {
@@ -322,10 +311,7 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 	}
 	ctx := r.Context()
 	writeMinimalPage(w, ds.LangFor(ctx, path), pageServerErrorDocTitle.Text(ctx, map[string]any{"app": appName}),
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageServerErrorTitle.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, render.Text(problemRenderFailed.Text(ctx))),
-		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
-	)
+		errorPageBody(ctx, pageServerErrorTitle, render.Text(problemRenderFailed.Text(ctx))))
 }
 
 func (ds *UIHost) renderErrorDocument(w http.ResponseWriter, r *http.Request, path string) bool {

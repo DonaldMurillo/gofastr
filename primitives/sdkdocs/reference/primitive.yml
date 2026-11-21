@@ -15,9 +15,10 @@ invariants:
     enforced_by:
       - test: framework/sdkdocs.TestEntityMetadataEscapedOnDocsPage
   - id: install-hints-keep-the-module-alphabet
-    rule: The Go install snippet's module and directory hints hold only letters, digits, dot, dash, underscore, tilde and slash, whatever the manifest's App and module hold, so manifest text cannot start its own line in the copyable shell block.
+    rule: The Go install snippet uses the recorded archive directory and scrubs its module to the module-path alphabet, so manifest text cannot add a new shell command.
     enforced_by:
       - test: framework/sdkdocs.TestSweepInstallHintsKeepTheModuleAlphabet
+      - test: framework/sdkdocs.TestInstallFenceScrubManifestApp
   - id: versioned-entity-documents-its-path
     rule: An entity mounted under a version documents its paths and example origin under that version's prefix, and every registered version of a table gets its own section on the one page.
     enforced_by:
@@ -46,11 +47,25 @@ invariants:
     enforced_by:
       - test: framework/sdkdocs.TestSweepSystemMovesHaveNoRow
   - id: typed-endpoint-calls
-    rule: A declared endpoint with SDK set and a name shows its typed Go and TypeScript calls, and any other endpoint points at the SDK's Do.
+    rule: A declared HTTP endpoint with SDK set and a name shows its typed Go and TypeScript calls, and other HTTP endpoints point at the SDK's Do.
     enforced_by:
       - test: framework/sdkdocs.TestEndpointRowsNameTypedCalls
+  - id: endpoint-rows-use-mounted-paths
+    rule: The endpoints table builds record and custom paths with the same path helpers as the mount and omits custom declarations without an HTTP handler.
+    enforced_by:
+      - test: framework/sdkdocs.TestEndpointRowsUseMountedPaths
+      - test: framework/sdkdocs.TestEndpointRowsOmitMCPOnlyDeclarations
+  - id: endpoint-rows-use-mounted-methods
+    rule: The SDK endpoints table and OpenAPI use the same trimmed, uppercase method as the HTTP route mount and skip declarations whose normalized method is empty.
+    enforced_by:
+      - test: framework/sdkdocs.TestEndpointRowsTrimMethods
+      - test: framework/openapi.TestEndpointMethodIgnoresCase
+  - id: errors-use-response-wire-keys
+    rule: The errors guide uses response wire keys in both per-field maps and describes them as part of field-level refusals.
+    enforced_by:
+      - test: framework/sdkdocs.TestErrorsGuideUsesResponseWireKeys
   - id: example-filter-is-one-the-server-accepts
-    rule: The example filter skips Hidden, NoQuery, auto-generated and relation fields, uses _gte only on a type filter.OpSuitsType accepts it for, and falls back to a filterable created_at, then the entity's first key column.
+    rule: The example filter uses a value and operator suited to an exposed queryable column. It prefers non-generated columns, then checks created_at and the first key column, and omits the filter if no suitable column exists.
     enforced_by:
       - test: framework/sdkdocs.TestExampleFilterFieldSkipsNoQueryFields
       - test: framework/sdkdocs.TestExampleFilterOperatorSuitsPickedField
@@ -58,10 +73,12 @@ invariants:
       - test: framework/sdkdocs.TestExampleFilterFieldRejectsNoQueryCreatedAtFallback
       - test: framework/sdkdocs.TestSweepExampleFilterFallsBackToTheRealKey
       - test: framework/sdkdocs.TestSweepExampleFilterSkipsHidden
+      - test: framework/sdkdocs.TestExampleTabsUseValuesTheServerAccepts
   - id: example-key-as-the-server-reads-it
-    rule: The examples spell the filter key with brackets where the bare key reads two ways, and the curl example query-escapes it.
+    rule: The examples spell the filter key with brackets where the bare key reads two ways or acts as a list control, and the curl example query-escapes it.
     enforced_by:
       - test: framework/sdkdocs.TestExampleTabsSpellCollidingKey
+      - test: framework/sdkdocs.TestExampleTabsUseValuesTheServerAccepts
   - id: notes-name-what-the-server-reads
     rule: The fields table marks a NoQuery field, the quickstart omits a sort the entity cannot take, and the listing notes name the trashed value the server reads.
     enforced_by:

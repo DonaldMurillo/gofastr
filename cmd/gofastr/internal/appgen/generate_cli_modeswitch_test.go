@@ -14,7 +14,7 @@ import (
 func runOpenAPICLI(t *testing.T, extra ...string) (int, string) {
 	t.Helper()
 	code := -1
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			RunGenerateCLI(append([]string{"--from-openapi=openapi.json", "--binary=oapp"}, extra...))
 		})

@@ -172,7 +172,8 @@ region waits while you are in it (see
 
 The Logs page leaves out the access lines of quiet paths (scripts,
 styles, anything in `Config.QuietPaths`), which would otherwise fill
-every page; a link on the page shows them.
+every page. A link on the page shows them. An empty quiet prefix matches
+paths starting with `/`. Lines with an empty path stay visible.
 
 A search for a rare word has to read every kept line. After three
 seconds the page shows what it found, says how far back it read, and
@@ -214,7 +215,8 @@ They run behind `Config.MCPGate`, by default
 an error, never a filter quietly dropped. `telemetry_logs` gives up
 after ten seconds and returns what it found with `stopped_at`; pass
 that as `until_ts` to carry on. `gofastr dev` turns the tools on,
-ungated, for a loopback listener.
+ungated, for a loopback listener. Set `GOFASTR_DEV_MCP=0` to disable
+automatic registration in dev mode.
 
 ## Request counts
 
@@ -442,8 +444,12 @@ A day is about 300 KB. The file is sealed and removed with its day.
 ## What is written
 
 Files go in `Config.Dir`, by default `telemetry/` under the app's state
-directory (`$XDG_STATE_HOME/<app>` or `~/.local/state/<app>`). Today's
-lines go to one plain file per kind, owner-readable only:
+directory (`$XDG_STATE_HOME/<app>` or `~/.local/state/<app>`).
+`telemetry.DefaultDir(appName)` resolves that default path. It returns an
+error if the app name is empty or if `XDG_STATE_HOME` is unset or empty
+and the home directory cannot be determined.
+
+Today's lines go to one plain file per kind, owner-readable only:
 
 | File | One line is |
 |------|-------------|

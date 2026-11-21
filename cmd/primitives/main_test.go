@@ -507,6 +507,56 @@ func TestStopBlocksOnARegistryThatCannotBeRead(t *testing.T) {
 	}
 }
 
+func TestStopBlocksWhenGeneratedFilesCannotBeChecked(t *testing.T) {
+	root := t.TempDir()
+	const manifest = "primitives/x/primitive.yml"
+	const primitive = "primitive: x\nsummary: Does x.\ncode:\n  - a/\n"
+	for name, body := range map[string]string{
+		"go.mod": "module example.test/m\n",
+		"a/a.go": "package a\n",
+		"b/b.go": "package b\n",
+		manifest: primitive,
+	} {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "start"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	const imports = "imports:\n  - deny: b\n    from: [a]\n    why: B is optional.\n    instead: Accept an interface.\n"
+	if err := os.WriteFile(filepath.Join(root, manifest), []byte(primitive+imports), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const generated = "a/" + primitives.ImportsTestFile
+	if err := os.Mkdir(filepath.Join(root, generated), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(root, []string{"gen", "--check"}, strings.NewReader(""), &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), generated) {
+		t.Fatalf("gen --check: exit %d, stderr %q", code, stderr.String())
+	}
+	stderr.Reset()
+	if code := run(root, []string{"stop"}, strings.NewReader(`{}`), &stdout, &stderr); code != 0 {
+		t.Fatalf("stop exits %d: the decision must be on stdout", code)
+	}
+	if !strings.Contains(stdout.String(), `"decision":"block"`) || !strings.Contains(stdout.String(), generated) {
+		t.Errorf("stop did not block with the generated file error: %q", stdout.String())
+	}
+	if passed := toldFiles(root, "stop-pass"); len(passed) != 0 {
+		t.Errorf("stop recorded a pass with an unreadable generated file: %v", passed)
+	}
+}
+
 func TestTheSameChangeOverAnotherBaseIsAnotherTree(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/m\n"), 0o600); err != nil {
@@ -596,9 +646,10 @@ func TestAppliedRulesReachForAndStop(t *testing.T) {
 		return decision.Reason
 	}
 	write("b/b.go", "package b\n\nfunc Two() int { return 1 + 1 }\n")
+	write("b/b_test.go", "package b\n\nimport \"testing\"\n\nfunc TestTwo(t *testing.T) {\n\tif Two() != 2 {\n\t\tt.Fatal(\"Two must be 2\")\n\t}\n}\n")
 	write("b/c.go", "package b\n\nfunc Three() int { return 3 }\n")
 	msg := fire(`{"session_id":"s1"}`)
-	for _, want := range []string{"You changed b/b.go, b/c.go, which x/no-css also governs", "Ask of your change: Does this change add CSS"} {
+	for _, want := range []string{"You changed b/b.go, b/b_test.go, b/c.go, which x/no-css also governs", "Ask of your change: Does this change add CSS"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("stop after changing b/b.go lacks %q:\n%s", want, msg)
 		}

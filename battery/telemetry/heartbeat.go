@@ -12,7 +12,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-var heartbeatClient = &http.Client{
+// outboundClient is how the plugin talks to the outside on its own, a
+// heartbeat ping or an alert webhook: a deadline, and no following a
+var outboundClient = &http.Client{
 	Timeout:       10 * time.Second,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
@@ -54,7 +56,7 @@ func ping(ctx context.Context, u *url.URL) error {
 	if err != nil {
 		return errors.New("the URL could not be asked")
 	}
-	resp, err := heartbeatClient.Do(req)
+	resp, err := outboundClient.Do(req)
 	if err != nil {
 		return errors.New("no answer")
 	}

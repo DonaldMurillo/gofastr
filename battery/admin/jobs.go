@@ -21,8 +21,6 @@ const bulkJobType = "entityui.bulk"
 
 const bulkJobMaxAttempts = 5
 
-const bulkResumeGrace = time.Minute
-
 var errBulkJobsUnbound = errors.New("admin: BulkJobs is not bound to the entity UI yet; pass it as admin.Config.BulkJobs so Init binds it")
 
 // PrincipalFunc rebuilds userID's request context with their current roles in

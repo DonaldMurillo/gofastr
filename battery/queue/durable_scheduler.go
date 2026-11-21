@@ -164,21 +164,9 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 		b.payload = json.RawMessage("null")
 		return b
 	}
-	switch v := payload.(type) {
-	case json.RawMessage:
-		b.payload = v
-	case []byte:
-		b.payload = json.RawMessage(v)
-	case string:
-		b.payload = json.RawMessage(v)
-	default:
-		data, err := json.Marshal(payload)
-		if err != nil {
-			b.payload = nil
-			b.payloadErr = fmt.Errorf("queue: marshal durable schedule payload: %w", err)
-			return b
-		}
-		b.payload = data
+	b.payload, b.payloadErr = encodeSchedulePayload(payload, "queue: marshal durable schedule payload")
+	if b.payloadErr != nil {
+		return b
 	}
 	if len(b.payload) == 0 {
 		b.payload = json.RawMessage("null")
@@ -676,13 +664,13 @@ func (s *DurableScheduler) ensureTables() error {
 			cron_spec TEXT NOT NULL DEFAULT '',
 			tz TEXT NOT NULL DEFAULT '',
 			lane TEXT NOT NULL DEFAULT '',
-			priority INTEGER NOT NULL DEFAULT 0,
-			max_attempts INTEGER NOT NULL DEFAULT 0,
+			priority %s NOT NULL DEFAULT 0,
+			max_attempts %s NOT NULL DEFAULT 0,
 			user_id TEXT NOT NULL DEFAULT '',
 			next_run %s NOT NULL,
 			updated_at %s NOT NULL,
 			version BIGINT NOT NULL DEFAULT 0
-		)`, s.queue.schedulerSchedulesTable(), tsType, tsType),
+		)`, s.queue.schedulerSchedulesTable(), s.queue.intType(), s.queue.intType(), tsType, tsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			occurrence_id TEXT PRIMARY KEY NOT NULL,
 			schedule_id TEXT NOT NULL,
@@ -723,25 +711,21 @@ type contextExecer interface {
 }
 
 func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) error {
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	now := q.now().UTC()
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = now
-	} else {
-		job.CreatedAt = job.CreatedAt.UTC()
-	}
-	if job.ScheduledAt.IsZero() {
-		job.ScheduledAt = now
-	} else {
-		job.ScheduledAt = job.ScheduledAt.UTC()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	var now time.Time
+	if err := normalizeJob(&job, func(job *Job) {
+		now = q.now().UTC()
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		} else {
+			job.CreatedAt = job.CreatedAt.UTC()
+		}
+		if job.ScheduledAt.IsZero() {
+			job.ScheduledAt = now
+		} else {
+			job.ScheduledAt = job.ScheduledAt.UTC()
+		}
+	}); err != nil {
+		return err
 	}
 	payload := string(job.Payload)
 	if payload == "" {

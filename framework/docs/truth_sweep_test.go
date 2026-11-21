@@ -1,11 +1,71 @@
 package docs
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
+
+func TestSDKStaticExportStagesDownloadURLs(t *testing.T) {
+	doc := readDoc(t, "sdk.md")
+	_, recipe, found := strings.Cut(sectionAfter(t, doc, "### Static export", 2000), "```sh\n")
+	if !found {
+		t.Fatal("static export needs a staging recipe that maps the dist archive to the download URL")
+	}
+	recipe, _, _ = strings.Cut(recipe, "```")
+	if !strings.Contains(doc, `"/docs/api/sdk": os.DirFS("gen/sdk/export")`) {
+		t.Error("the static builder must mount the staged files under the SDK download path")
+	}
+	t.Run("staging recipe", func(t *testing.T) {
+		shell, err := exec.LookPath("sh")
+		if errors.Is(err, exec.ErrNotFound) {
+			t.Skip("staging recipe requires sh")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := t.TempDir()
+		dist := filepath.Join(root, "gen/sdk/dist")
+		if err := os.MkdirAll(dist, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		files := map[string]string{
+			"go.zip": sdk.GoArtifact, sdk.JSArtifact: sdk.JSArtifact,
+			sdk.JSTypesArtifact: sdk.JSTypesArtifact, sdk.ManifestFile: sdk.ManifestFile,
+		}
+		for _, source := range files {
+			if err := os.WriteFile(filepath.Join(dist, source), []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		command := exec.Command(shell, "-eu", "-c", recipe)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("static SDK staging failed: %v\n%s", err, output)
+		}
+		for public, source := range files {
+			got, err := os.ReadFile(filepath.Join(root, "gen/sdk/export", public))
+			if err != nil || string(got) != source {
+				t.Errorf("staged %s = %q, %v; want contents of %s", public, got, err, source)
+			}
+		}
+	})
+}
+
+func TestSDKDriftDocsDescribeMountLifetimeAndSchemaVersion(t *testing.T) {
+	drift := sectionAfter(t, readDoc(t, "sdk.md"), "### Drift detection", 800)
+	drift = strings.Join(strings.Fields(drift), " ")
+	for _, want := range []string{"first check per mount", "redeploy or remount", "`schemaVersion`", "`gofastrVersion`"} {
+		if !strings.Contains(drift, want) {
+			t.Errorf("SDK drift docs lack %q", want)
+		}
+	}
+}
 
 // The 2026-07-31 doc truth sweep corrected a batch of claims that
 // contradicted the code. Each gate below pins one correction against

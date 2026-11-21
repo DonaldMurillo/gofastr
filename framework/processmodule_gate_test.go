@@ -152,8 +152,8 @@ func gateSafeLogf(tb testing.TB) func(string, ...any) {
 	}
 }
 
-// waitForStateTB is the testing.TB analog of waitForState (which takes
-// *testing.T). Shared by the gate helpers so they work under both T and B.
+// waitForStateTB polls the supervisor's Info for name until state == want
+// or the timeout elapses. Fatal on timeout.
 func waitForStateTB(tb testing.TB, sup *ProcessModuleSupervisor, name string, want ProcessState, timeout time.Duration) {
 	tb.Helper()
 	deadline := time.Now().Add(timeout)
@@ -283,7 +283,7 @@ func TestGate_ConvergenceAndRevoke(t *testing.T) {
 	if err := supA.Enable(ctx, d.Name); err != nil {
 		t.Fatalf("supA enable: %v", err)
 	}
-	waitForState(t, supA, d.Name, StateReady, 6*time.Second)
+	waitForStateTB(t, supA, d.Name, StateReady, 6*time.Second)
 	waitForStateOn(t, supB, d.Name, StateReady, 6*time.Second)
 
 	// Pre-revoke: /items on B (as userA) succeeds, articles:read is granted.

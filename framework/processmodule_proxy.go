@@ -289,39 +289,50 @@ func decodeBody(b *moduleproto.HTTPResponseBody, renderer *uinoderender.Renderer
 // ProcessModuleInfo is the operator introspection view of one supervised
 // module.
 type ProcessModuleInfo struct {
-	Name               string
-	Version            string
-	State              ProcessState
-	DesiredGeneration  uint64
+	Name    string
+	Version string
+	State   ProcessState
+
+	// DesiredGeneration is the store row's generation at read time.
+	// Zero means no desired generation was available.
+	DesiredGeneration uint64
+	// ObservedGeneration is the generation this replica last reconciled.
 	ObservedGeneration uint64
-	InstanceID         string
-	RestartCount       int
-	CircuitOpen        bool
-	LastExit           string
-	TrustTier          TrustTier
-	RouteCount         int
-	ToolCount          int
-	LeaseFailing       bool
+
+	InstanceID   string
+	RestartCount int
+	CircuitOpen  bool
+	LastExit     string
+	TrustTier    TrustTier
+	RouteCount   int
+	ToolCount    int
+	LeaseFailing bool
 }
 
 // Info returns the introspection snapshot for name, or [ErrNoDesiredRow]
-// (wrapped) if the module is not registered.
+// (wrapped) if the module is not registered. It reports the local snapshot
+// even when the store cannot supply the desired generation.
 func (s *ProcessModuleSupervisor) Info(name string) (ProcessModuleInfo, error) {
 	sl := s.Slot(name)
 	if sl == nil {
 		return ProcessModuleInfo{}, fmt.Errorf("processmodule: %w: %q", ErrNoDesiredRow, name)
 	}
+	info := sl.info()
+	ctx, cancel := context.WithTimeout(context.Background(), desiredStateReadTimeout)
+	defer cancel()
+	if row, err := sl.getDesiredSafely(ctx); err == nil {
+		info.DesiredGeneration = row.DesiredGeneration
+	}
+	return info, nil
+}
+
+func (sl *moduleSlot) info() ProcessModuleInfo {
 	snap := sl.snapshot()
-	sl.mu.RLock()
-	leaseFailing := sl.leaseFailing
-	observedGen := sl.desiredGen
-	sl.mu.RUnlock()
 	return ProcessModuleInfo{
-		Name:               name,
+		Name:               sl.name,
 		Version:            sl.desc.Version,
 		State:              snap.state,
-		DesiredGeneration:  observedGen,
-		ObservedGeneration: observedGen,
+		ObservedGeneration: snap.desiredGen,
 		InstanceID:         snap.instanceID,
 		RestartCount:       snap.restartCnt,
 		CircuitOpen:        snap.circuitOpen,
@@ -329,30 +340,41 @@ func (s *ProcessModuleSupervisor) Info(name string) (ProcessModuleInfo, error) {
 		TrustTier:          sl.desc.TrustTier,
 		RouteCount:         len(sl.desc.Routes),
 		ToolCount:          len(sl.desc.Tools),
-		LeaseFailing:       leaseFailing,
-	}, nil
+		LeaseFailing:       snap.leaseFailing,
+	}
 }
 
 // List returns introspection for every registered process module, ordered
-// by name.
+// by name. It reads desired generations together and keeps local snapshots
+// available when that read fails.
 func (s *ProcessModuleSupervisor) List() []ProcessModuleInfo {
 	s.mu.Lock()
-	names := make([]string, 0, len(s.slots))
-	for n := range s.slots {
-		names = append(names, n)
-	}
+	names := slices.Collect(maps.Keys(s.slots))
 	s.mu.Unlock()
-	for i := 1; i < len(names); i++ {
-		for j := i; j > 0 && names[j-1] > names[j]; j-- {
-			names[j-1], names[j] = names[j], names[j-1]
+	slices.Sort(names)
+
+	out := make([]ProcessModuleInfo, 0, len(names))
+	for _, name := range names {
+		if sl := s.Slot(name); sl != nil {
+			out = append(out, sl.info())
 		}
 	}
-	out := make([]ProcessModuleInfo, 0, len(names))
-	for _, n := range names {
-		info, err := s.Info(n)
-		if err == nil {
-			out = append(out, info)
-		}
+	if len(out) == 0 {
+		return out
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), desiredStateReadTimeout)
+	defer cancel()
+	rows, err := s.listDesiredSafely(ctx)
+	if err != nil {
+		return out
+	}
+	generations := make(map[string]uint64, len(rows))
+	for _, row := range rows {
+		generations[row.Module] = row.DesiredGeneration
+	}
+	for i := range out {
+		out[i].DesiredGeneration = generations[out[i].Name]
 	}
 	return out
 }

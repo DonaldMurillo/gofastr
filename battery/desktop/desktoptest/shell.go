@@ -107,7 +107,7 @@ func (f *Shell) SetTrayTitle(title string) error {
 func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	f.mu.Lock()
 	w := f.openWindows[id]
-	cb := f.runCfg.OnWindowFrame
+	cb := f.runCfg.WindowFrameReporter()
 	f.mu.Unlock()
 	if w == nil {
 		return
@@ -115,7 +115,7 @@ func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	w.setFrameUser(fr)
 	if cb != nil {
 		//gofastr:allow(recovercallback) test double simulating the OS: an app callback that panics must fail the test loudly, not be swallowed
-		go cb(id, fr)
+		go cb(w, fr)
 	}
 }
 

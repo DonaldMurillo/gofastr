@@ -119,9 +119,7 @@ func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]Key
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	terms := keywordTokens(text)
 	seen := make(map[string]bool, len(terms))
 	unique := terms[:0]

@@ -30,6 +30,9 @@ invariants:
     rule: The savepoint's writes are undone even when ctx is cancelled, whether fn fails or the release does.
     enforced_by:
       - test: framework/db.TestInSavepointRollsBackDespiteACancelledContext
+      - test: framework/migrate.TestPGReplaceViewRollsBackDespiteACancelledContext
+    applies:
+      - framework/migrate/view.go
   - id: savepoint-work-waits-for-the-outer-commit
     rule: Work staged inside a released savepoint joins the outer queue and runs only when it drains, and work staged inside a rolled-back one never runs.
     enforced_by:

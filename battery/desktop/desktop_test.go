@@ -246,7 +246,7 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 
 func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv(dataDirEnv, base)
+	t.Setenv(DataDirEnv, base)
 
 	opts, err := AppOptions("notes.example.app")
 	if err != nil {

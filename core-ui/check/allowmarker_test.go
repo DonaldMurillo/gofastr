@@ -35,6 +35,22 @@ func TestTrailingProseMarkerOwnLineOnly(t *testing.T) {
 	assertLines(t, res, []int{3, 5, 6, 8, 12})
 }
 
+func TestProseMarkerAcceptsMultilineCommentAndSpaceSeparatedNames(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "p.js", `(function () {
+  /* gofastr:allow(layerprefix runtimeprose) fixture deliberately renders prose
+  */
+  el.textContent = 'Covered by the block marker';
+  el.textContent = 'Outside the marker scope';
+})();
+`)
+	res, err := LintRuntimeProse(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{5})
+}
+
 const layerMarkerJSFixture = `(function () {
   if (k === 'data-fui-a') return; // gofastr:allow(layerprefix) refusal filter
   el.className = 'fui-card';

@@ -20,7 +20,7 @@ func TestForceSkipsUntouchedOldTemplate(t *testing.T) {
 	if err := os.WriteFile(bp, []byte(clitest.TestAppSpecYAML()), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp}) })
+	clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp}) })
 
 	appGo := filepath.Join(dir, "app.go")
 	data, err := os.ReadFile(appGo)
@@ -38,7 +38,7 @@ func TestForceSkipsUntouchedOldTemplate(t *testing.T) {
 	if err := os.WriteFile(appGo, []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
+	out := clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
 	if strings.Contains(out, "edited since they were generated") {
 		t.Fatalf("--force listed an untouched file:\n%s", out)
 	}
@@ -48,7 +48,7 @@ func TestForceSkipsUntouchedOldTemplate(t *testing.T) {
 // before its edit is dropped, and an untouched one is not.
 func TestGenerateCLIProvenance(t *testing.T) {
 	dir := cliTempModule(t)
-	clitest.CovT_capStdout(t, func() { appgen.RunGenerateCLI([]string{"--binary=myapp"}) })
+	clitest.CovT_capOutput(t, func() { appgen.RunGenerateCLI([]string{"--binary=myapp"}) })
 
 	mainGo := filepath.Join(dir, "cmd", "myapp", "main.gen.go")
 	data, err := os.ReadFile(mainGo)
@@ -62,7 +62,7 @@ func TestGenerateCLIProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { appgen.RunGenerateCLI([]string{"--binary=myapp"}) })
 	})
 	if code > 0 {
@@ -82,7 +82,7 @@ func TestGenerateCLIProvenance(t *testing.T) {
 // generate sdk rebuilds its output; an edited file is named first.
 func TestGenerateSDKWarnsEditedOutput(t *testing.T) {
 	dir := cliTempModule(t)
-	clitest.CovT_capStdout(t, func() { appgen.RunGenerateSDK(nil) })
+	clitest.CovT_capOutput(t, func() { appgen.RunGenerateSDK(nil) })
 	var clientGo string
 	_ = filepath.WalkDir(filepath.Join(dir, "gen", "sdk"), func(p string, d os.DirEntry, err error) error {
 		if err == nil && clientGo == "" && !d.IsDir() && strings.HasSuffix(p, ".go") {
@@ -103,12 +103,12 @@ func TestGenerateSDKWarnsEditedOutput(t *testing.T) {
 	if err := os.WriteFile(clientGo, append(data, "\n// hand edit\n"...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := clitest.CovT_capStdout(t, func() { appgen.RunGenerateSDK(nil) })
+	out := clitest.CovT_capOutput(t, func() { appgen.RunGenerateSDK(nil) })
 	rel, _ := filepath.Rel(dir, clientGo)
 	if !strings.Contains(out, rel+" was edited since `gofastr generate sdk` wrote it") {
 		t.Fatalf("no edit warning for %s:\n%s", rel, out)
 	}
-	if again := clitest.CovT_capStdout(t, func() { appgen.RunGenerateSDK(nil) }); strings.Contains(again, "was edited since") {
+	if again := clitest.CovT_capOutput(t, func() { appgen.RunGenerateSDK(nil) }); strings.Contains(again, "was edited since") {
 		t.Fatalf("warned again after the rebuild:\n%s", again)
 	}
 }

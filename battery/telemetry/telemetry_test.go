@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -240,9 +241,13 @@ func TestDefaultDirNeedsAnAppName(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", state)
 
+	const want = "set Config.Dir or framework.AppConfig.Name: the default directory is named after the app"
+	if _, err := telemetry.DefaultDir(""); err == nil || err.Error() != want {
+		t.Errorf("DefaultDir with no app name: %v, want %q", err, want)
+	}
 	app := framework.NewApp()
 	app.RegisterPlugin(telemetry.New(telemetry.Config{}))
-	if err := app.InitPlugins(); err == nil || !strings.Contains(err.Error(), "Config.Dir") {
+	if err := errors.Unwrap(app.InitPlugins()); err == nil || err.Error() != "telemetry: "+want {
 		t.Fatalf("no app name and no Dir: err = %v", err)
 	}
 
@@ -261,6 +266,26 @@ func TestDefaultDirNeedsAnAppName(t *testing.T) {
 		t.Fatalf("the default directory was not created: %v", err)
 	}
 	store.Close()
+}
+
+func TestPluginWrapsMissingHomeError(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+	_, homeErr := os.UserHomeDir()
+	if homeErr == nil {
+		t.Skip("os.UserHomeDir provides a fallback on this platform")
+	}
+	if _, err := telemetry.DefaultDir("shop"); err == nil || err.Error() != homeErr.Error() {
+		t.Errorf("DefaultDir with no home: %v, want %v", err, homeErr)
+	}
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "shop"}))
+	err := telemetry.New(telemetry.Config{}).Init(app)
+	cause := errors.Unwrap(err)
+	if err == nil || err.Error() != "telemetry: "+homeErr.Error() || cause == nil || cause.Error() != homeErr.Error() {
+		t.Fatalf("plugin Init with no home: %v (wraps %v), want telemetry: %v (wrapping that error)", err, cause, homeErr)
+	}
 }
 
 // A handler that logs an error and answers 500 has its failure named by

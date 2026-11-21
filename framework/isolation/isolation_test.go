@@ -57,7 +57,7 @@ func TestResolveHonorsConfigAndEnvOff(t *testing.T) {
 	}
 
 	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
-	t.Setenv(envIsolation, "off")
+	t.Setenv(EnvIsolation, "off")
 	rt, err = Resolve(dir)
 	if err != nil {
 		t.Fatalf("Resolve with env off: %v", err)
@@ -243,7 +243,7 @@ func linkedWorktree(t *testing.T) string {
 func clearIsolationEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		envIsolation,
+		EnvIsolation,
 		envApplied,
 		envID,
 		envRewriteExplicit,

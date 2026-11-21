@@ -168,7 +168,12 @@ func readWindowsVersionString(t *testing.T, path, query string) string {
 	if ok == 0 || value == 0 || length == 0 {
 		t.Fatalf("VerQueryValueW(%q): %v", query, windowsResourceCallError("VerQueryValueW", callErr))
 	}
-	return syscall.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(value)), int(length)))
+	// VerQueryValueW points value into buffer; read it from there.
+	base := uintptr(unsafe.Pointer(&buffer[0]))
+	if value < base || value-base > uintptr(len(buffer)) || uintptr(len(buffer))-(value-base) < uintptr(length)*2 {
+		t.Fatalf("VerQueryValueW(%q) returned %d chars outside the %d-byte block", query, length, len(buffer))
+	}
+	return syscall.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(&buffer[value-base])), int(length)))
 }
 
 func TestWindowsVersionResourceErrorIsNamed(t *testing.T) {

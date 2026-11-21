@@ -17,6 +17,17 @@ func TestInjectIntoSimpleDiv(t *testing.T) {
 	}
 }
 
+func TestInjectMarkerEscapesName(t *testing.T) {
+	got, err := injectMarker(`<div>hi</div>`, `modal">`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `<div data-cui-comp="modal&#34;&gt;">hi</div>`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestInjectIntoDivWithAttrs(t *testing.T) {
 	got, err := injectMarker(`<div class="x" id="y">hi</div>`, "modal")
 	if err != nil {
@@ -84,20 +95,6 @@ func TestInjectRejectsBareText(t *testing.T) {
 	}
 }
 
-func TestInjectRespectsAttrQuotes(t *testing.T) {
-	// '>' inside an attribute must not be treated as tag end.
-	got, err := injectMarker(`<div title="a > b">hi</div>`, "modal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(got), `data-cui-comp="modal"`) {
-		t.Errorf("got %s", got)
-	}
-	if !strings.Contains(string(got), `title="a > b"`) {
-		t.Errorf("attribute corrupted: %s", got)
-	}
-}
-
 func TestInjectRejectsEmptyName(t *testing.T) {
 	_, err := injectMarker(`<div></div>`, "")
 	if err == nil {
@@ -153,6 +150,9 @@ func TestInjectAttrWithEmbeddedGreaterThan(t *testing.T) {
 	s := string(out)
 	if !strings.Contains(s, `data-cui-comp="tip"`) {
 		t.Errorf("marker not injected: %q", s)
+	}
+	if !strings.Contains(s, `title="a > b"`) {
+		t.Errorf("attribute corrupted: %q", s)
 	}
 	// Marker must be inside the opening tag, BEFORE the > that closes
 	// the element's open tag (not after the > inside the title attr).

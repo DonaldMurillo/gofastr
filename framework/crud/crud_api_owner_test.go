@@ -2,7 +2,7 @@ package crud
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -25,15 +25,10 @@ func TestCrudAPI_GetOneScopesByOwner(t *testing.T) {
 	ctx := ctxWithUser("bob")
 	got, err := ch.GetOne(ctx, "log-a1", nil)
 	if err == nil {
-		if got["user_id"] == "alice" {
-			t.Errorf("PROGRAMMATIC BYPASS: bob.GetOne(alice's id) returned alice's row: %+v", got)
-		}
+		t.Fatalf("PROGRAMMATIC BYPASS: bob.GetOne(alice's id) returned alice's row: %+v", got)
 	}
-	// Acceptable outcomes: errNotFound or err containing "not found".
-	if err == nil {
-		t.Errorf("GetOne should error for cross-user lookup, got row: %+v", got)
-	} else if !strings.Contains(err.Error(), "not found") {
-		t.Logf("note: cross-user GetOne returned %v (want some not-found signal)", err)
+	if !errors.Is(err, errNotFound) {
+		t.Errorf("cross-user GetOne err = %v, want errNotFound", err)
 	}
 }
 

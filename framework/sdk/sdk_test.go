@@ -3,6 +3,7 @@ package sdk
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"testing"
 	"testing/fstest"
 
@@ -116,7 +117,7 @@ func TestPackZipRejectsUnsafePaths(t *testing.T) {
 }
 
 func TestReadManifestValidates(t *testing.T) {
-	good := `{"schemaVersion":1,"app":"x","entities":["posts"],"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2}}}`
+	good := `{"schemaVersion":1,"app":"x","entities":["posts"],"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","bytes":2,"directory":"x-sdk"}}}`
 	m, err := ReadManifest(fstest.MapFS{ManifestFile: {Data: []byte(good)}})
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +138,29 @@ func TestReadManifestValidates(t *testing.T) {
 	}
 	if _, err := ReadManifest(fstest.MapFS{}); err == nil {
 		t.Fatal("missing manifest was accepted")
+	}
+}
+
+func TestReadManifestRequiresSafeGoArchiveDirectory(t *testing.T) {
+	for _, dir := range []string{"", ".", "..", "../myapp-sdk", "myapp/sdk", "My App-sdk", "sdk\necho unexpected"} {
+		t.Run(dir, func(t *testing.T) {
+			raw := fmt.Sprintf(`{"schemaVersion":%d,"entities":["posts"],"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","directory":%q}}}`, SchemaVersion, dir)
+			if _, err := ReadManifest(fstest.MapFS{ManifestFile: {Data: []byte(raw)}}); err == nil {
+				t.Errorf("manifest accepted unsafe Go archive directory %q", dir)
+			}
+		})
+	}
+}
+
+func TestExampleHost(t *testing.T) {
+	for input, want := range map[string]string{
+		"":                       "https://your-app.example.com",
+		"https://app.test/path/": "https://app.test/path",
+		"https://app.test///":    "https://app.test",
+	} {
+		if got := ExampleHost(input); got != want {
+			t.Errorf("ExampleHost(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 

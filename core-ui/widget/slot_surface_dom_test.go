@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
@@ -109,5 +110,45 @@ func TestCenterPanelNamesNoComponentMarker(t *testing.T) {
 	// is no longer an opt-out.
 	if bg := barePanelBackgroundRGB(t, ctx, mountBarePage(t, `<div data-cui-comp="ui-cmd-palette">palette</div>`)); bg != bareProbeSurface {
 		t.Errorf("cmd-palette-marked panel background = %q, want %q — a component marker must not opt the panel out; only .cui-slot-bare does", bg, bareProbeSurface)
+	}
+}
+
+func TestBottomSheetDragHandleCursor(t *testing.T) {
+	def := New("drag-cursor").Mount(Bottom).DragDismiss().Build()
+	js, ok := runtime.Module("dragdismiss")
+	if !ok {
+		t.Fatal("dragdismiss module not embedded")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><style>%s</style>%s<script>%s</script>`, widgetCSS(def), RenderChrome(&def), js)
+	}))
+	t.Cleanup(srv.Close)
+	ctx := chromedptest.Context(t)
+	const selector = `[data-cui-drag-handle]`
+	const cursor = `getComputedStyle(document.querySelector('[data-cui-drag-handle]')).cursor`
+	var at struct{ X, Y float64 }
+	var before, during, after string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.Evaluate(`(() => {
+			const r = document.querySelector('[data-cui-drag-handle]').getBoundingClientRect();
+			return {X: r.left + r.width / 2, Y: r.top + r.height / 2};
+		})()`, &at),
+		chromedp.Evaluate(cursor, &before),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.MouseEvent("mousePressed", at.X, at.Y, chromedp.ButtonLeft, chromedp.ClickCount(1)),
+		chromedp.Evaluate(cursor, &during),
+		chromedp.MouseEvent("mouseReleased", at.X, at.Y, chromedp.ButtonLeft, chromedp.ClickCount(1)),
+		chromedp.Evaluate(cursor, &after),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if before != "grab" || during != "grabbing" || after != "grab" {
+		t.Errorf("handle cursor before, during, after drag = %q, %q, %q; want grab, grabbing, grab", before, during, after)
 	}
 }

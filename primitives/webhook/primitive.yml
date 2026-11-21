@@ -5,6 +5,13 @@ code:
 docs:
   - framework/docs/content/webhooks.md
 twins:
+  - job: List or claim due deliveries in the same order.
+    why: Memory picks from an in-process map under a mutex. SQL orders database rows, and its claims use engine-specific locking. SQLite and Postgres share the SQL ordering clause.
+    sites:
+      - path: battery/webhook/memory.go
+        note: MemoryStore sorts the due snapshot before applying its limit.
+      - path: battery/webhook/sql.go
+        note: SQLStore shares the order across the due list, both claim selections, and the Postgres claim result.
   - job: Store a subscriber and read it back with the paused state it was given.
     why: MemoryStore keeps the Subscriber struct, while SQLStore keeps one active column that other replicas read and derives Paused from it on the scan, so the two cannot share the round trip.
     sites:
@@ -20,6 +27,20 @@ twins:
       - path: battery/webhook/inbound_sql.go
         note: SQLInboundStore's MarkEnvelopeProcessing, UpdateEnvelope and RegisterDedupeKey.
 invariants:
+  - id: due-order-is-stable-across-stores
+    rule: Due lists and returned claims put unset deadlines first, then order by earliest due instant and break ties by delivery ID in byte order.
+    enforced_by:
+      - test: battery/webhook.TestDueDeliveryOrderParity
+  - id: upgraded-sqlite-stores-compare-utc-instants
+    rule: On open, SQLite stores rewrite legacy due, creation, receipt, and update times to the driver's UTC encoding, only while the exact stored value still matches.
+    enforced_by:
+      - test: battery/webhook.TestLegacyWebhookTimesParity
+      - test: battery/webhook.TestSQLiteStoreRewritesZonedDueTimes
+  - id: webhook-writes-share-templates
+    rule: Each subscriber upsert, delivery insert, and delivery settle uses one SQL template, with dialect-specific bind markers.
+    enforced_by:
+      - test: battery/webhook.TestWebhookWriteParity
+    judge: Does a subscriber upsert, delivery insert, or delivery settle define its statement separately for SQLite and Postgres?
   - id: paused-survives-the-store-round-trip
     rule: A subscriber stored paused reads back paused and inactive from MemoryStore and SQLStore alike, and a Subscribe of the value read back keeps it paused.
     enforced_by:
@@ -35,6 +56,14 @@ invariants:
       - test: battery/webhook.TestDeliveryRedactsCredentialCutByBodyLimit
       - test: battery/webhook.TestDeliveryRedactsRepeatedCredentialEcho
 decisions:
+  - id: share-outbound-write-statements
+    date: 2026-11-20
+    status: accepted
+    decision: Keep one aliased upsert, one delivery insert column list, and one settle assignment list. Render the bind markers separately so both dialects use the same column and attempt semantics.
+    rejected:
+      - option: Keep duplicate Postgres and SQLite statements.
+        why: Both accept the same SQL once the bind markers are rendered.
+    upholds: [webhook-writes-share-templates]
   - id: redact-in-the-body-offsets-before-the-cut
     date: 2026-11-16
     status: accepted

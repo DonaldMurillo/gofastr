@@ -37,7 +37,7 @@ func TestRenderAlt_AnonSeesAltAtSameURL(t *testing.T) {
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 	var body string
 	var shot []byte
 	err := chromedp.Run(chCtx,

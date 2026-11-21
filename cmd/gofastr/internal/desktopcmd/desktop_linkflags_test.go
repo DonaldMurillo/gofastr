@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,9 @@ func TestLaunchArgsStampReachesBattery(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(t.TempDir(), "launchmain")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	build := exec.CommandContext(ctx, "go", "build", "-ldflags", strings.TrimSpace(extra), "-o", bin, "./testdata/launchmain")

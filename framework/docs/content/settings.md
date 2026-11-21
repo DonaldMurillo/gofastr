@@ -56,13 +56,16 @@ each other's sections. The lock file is
 
 ## How the file is found
 
-Each reader looks for `gofastr.settings.yml` in the directory it starts
-from and in each parent up to the project root: the first directory that
+Readers that search for `gofastr.settings.yml` start in their working
+directory and walk up to the project root, the first directory that
 holds `go.work`, `go.mod` or `.git`. It never looks past that root. A
 settings file can name a command that `gofastr generate` runs, so one
 planted in a shared parent (a workspace directory, `/tmp`, `$HOME`) must
 never apply to the project below it. With no root marker anywhere above
 the start directory, only the start directory is searched.
+
+Pack and endpoint rebuilds read endpoint declarations only from the
+`gofastr.settings.yml` in the app directory.
 
 `gofastr generate --config=<file>` and `gofastr verify --config <file>`
 name a settings file directly instead.
@@ -77,6 +80,8 @@ name a settings file directly instead.
   `gofastr.isolation.yml` (or their `.yaml` spellings). The reader of that
   section refuses to run and names the section to move the content into,
   so a relaxation or a disabled setting never drops away unnoticed.
+- A section or block that is not a mapping. Codegen and isolation use
+  `core/yaml.ExpectMap`, which returns `<label> must be a map`.
 
 The app spec (`gofastr.yml`) describes the app, not the tools. A `codegen:`,
 `contracts:` or `isolation:` key in it is an error that points here.

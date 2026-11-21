@@ -24,7 +24,7 @@ func TestBuildPkgNonMainFailureNamesTarget(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldWD) })
 
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			RunBuild([]string{"--no-generate", "--no-a11y", "--pkg=./lib"})
 		})

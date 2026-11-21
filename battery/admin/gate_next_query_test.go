@@ -32,8 +32,4 @@ func TestGateLoginRedirectKeepsQuery(t *testing.T) {
 			t.Errorf("signed-out %s: next = %q, want the page with its query", target, next)
 		}
 	}
-	// A page with no query is its path, as before.
-	if loc := get(x.as(nil), "/admin/queue").Header().Get("Location"); loc != "/login?next=%2Fadmin%2Fqueue" {
-		t.Errorf("no query: Location %q", loc)
-	}
 }

@@ -9,8 +9,13 @@
 // directive, so the type checker resolves the app's uses against the
 // stub exactly as it would against the old release.
 //
-// Every scan runs hermetic: no network, no workspace, modules resolved
-// through replace directives only.
+// Run sets the scan's environment: no workspace (GOWORK=off), no
+// network (GOPROXY=off — the local module cache still answers), and
+// GOFLAGS=-mod=mod so a scan may add requirements. A stub Kit is
+// resolved through its replace directive; a scan over a real tree
+// (the repo's examples/) resolves that module's ordinary requirements
+// from the local module cache, so those tests need the dependencies
+// downloaded first.
 package scantest
 
 import (

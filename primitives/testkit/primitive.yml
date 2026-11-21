@@ -23,7 +23,21 @@ invariants:
       - test: framework/axecov.TestDefaultDirPrefersEnvThenModuleRoot
       - test: framework/axecov.TestDefaultDirResolvesOutermostWorkspaceRoot
       - test: framework/axecov.TestDefaultDirFallsBackToCwdWithoutModule
+  - id: manifests-use-unique-temp-files
+    rule: Axe and semantic coverage replace their manifests through a unique sibling temporary file while holding their respective manifest locks.
+    enforced_by:
+      - test: framework/semcov.TestFlushUsesUniqueTemp
+      - test: framework/semcov.TestFlushWaitsForOtherProcess
+      - test: framework/axecov.TestRecordAcrossProcessesKeepsEveryPage
 decisions:
+  - id: coverage-manifest-writer-shared
+    date: 2026-11-20
+    status: accepted
+    decision: Axe and semantic coverage share manifest locking and atomic replacement through internal/coverageroot and keep their own merge rules.
+    rejected:
+      - option: Name a temporary file after the current process.
+        why: A file left by a process with the same PID can block a later flush.
+    upholds: [manifests-use-unique-temp-files]
   - id: coverage-root-shared
     date: 2026-11-17
     status: accepted

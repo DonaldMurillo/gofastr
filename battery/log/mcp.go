@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -117,9 +118,7 @@ func (p *Plugin) toolRecent(_ context.Context, params map[string]any) (any, erro
 		}
 		out = append(out, e)
 	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return map[string]any{
 		"entries": out,
 		"count":   len(out),
@@ -215,9 +214,7 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 		}
 		out = append(out, e)
 	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return map[string]any{
 		"entries": out,
 		"count":   len(out),

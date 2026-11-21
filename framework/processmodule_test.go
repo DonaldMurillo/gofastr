@@ -115,13 +115,19 @@ func TestValidateDescriptor_rejectsBadScope(t *testing.T) {
 
 func TestValidateDescriptor_rejectsGrantCap(t *testing.T) {
 	d := validDescriptor()
-	d.RequestedGrants = make([]access.Permission, maxModuleGrants+1)
-	for i := range d.RequestedGrants {
-		d.RequestedGrants[i] = access.Permission(fmt.Sprintf("r%d:read", i))
+	distinct := make([]access.Permission, maxModuleGrants+1)
+	repeated := make([]access.Permission, len(distinct))
+	for i := range distinct {
+		distinct[i] = access.Permission(fmt.Sprintf("r%d:read", i))
+		repeated[i] = "x:read"
 	}
-	_, err := ValidateProcessModuleDescriptor(d, nil)
-	if err == nil {
-		t.Fatal("grant cap exceeded should be rejected")
+	for _, grants := range [][]access.Permission{distinct, repeated} {
+		d.RequestedGrants = grants
+		_, err := ValidateProcessModuleDescriptor(d, nil)
+		var dv *DescriptorValidationError
+		if !errors.As(err, &dv) || dv.Rule != "cap" {
+			t.Errorf("over-cap grants starting with %q: want cap error, got %v", grants[0], err)
+		}
 	}
 }
 
@@ -151,7 +157,7 @@ func TestValidateDescriptor_rejectsDigestShape(t *testing.T) {
 
 func TestValidateDescriptor_rejectsRaisedLimits(t *testing.T) {
 	d := validDescriptor()
-	d.Limits.Deadline = maxModuleCallDeadline + time.Second
+	d.Limits.Deadline = maxModuleCallDeadline + 1
 	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
 		t.Error("deadline above ceiling should be rejected")
 	}

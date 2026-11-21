@@ -6,9 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
-
-	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 const (
@@ -50,15 +47,4 @@ func hasSetupCookie(r *http.Request, expected string) bool {
 		return false
 	}
 	return tokenEqual(c.Value, expected)
-}
-
-func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !handler.IsForgeableRequest(r) {
-		return false
-	}
-	if handler.IsCrossSiteRequest(r) {
-		i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
-		return true
-	}
-	return false
 }

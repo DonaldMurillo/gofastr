@@ -74,7 +74,7 @@ func buildFixtureBundle(t *testing.T, name string, extra ...string) (string, int
 	id := "dev.gofastr." + strings.ToLower(strings.ReplaceAll(name, " ", ""))
 	args := append([]string{"--id", id, "--name", name, "--pkg", ".", "-o", out}, extra...)
 	var code int
-	captured := clitest.CovT_capStdout(t, func() {
+	captured := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runDesktopBuildForOS(args, "darwin") })
 	})
 	return captured, code, out
@@ -129,7 +129,7 @@ func TestDesktopBuildNotarizeRefusesAdhoc(t *testing.T) {
 
 			args := append([]string{"--id", "dev.gofastr.x", "--pkg", "./does/not/exist"}, tc.args...)
 			var code int
-			out := clitest.CovT_capStdout(t, func() {
+			out := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() { runDesktopBuild(args) })
 			})
 			if code != 1 {

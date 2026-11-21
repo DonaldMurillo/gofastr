@@ -28,7 +28,7 @@ type ThemeToggleConfig struct {
 	Fill  bool
 	ID    string
 	Class string
-	// ExtraAttrs lands on the root; class, id, data-cui-*, type, role and aria-label are dropped.
+	// ExtraAttrs lands on the root; class, id, data-cui-*, data-hui-theme-*, type, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
 	// LightLabel overrides the light-mode label. Default "Light".
 	LightLabel string
@@ -48,32 +48,21 @@ func ThemeToggle(cfg ThemeToggleConfig) render.HTML {
 	if variant == "" {
 		variant = ThemeToggleIcon
 	}
-	cls := ""
-
-	switch variant {
-	case ThemeTogglePill:
-		return themeToggleStyle.WrapHTML(renderThemeTogglePill(cfg, cls))
-	default:
-		return themeToggleStyle.WrapHTML(renderThemeToggleButton(cfg, cls, variant))
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
+	if variant == ThemeTogglePill {
+		return renderThemeTogglePill(cfg, extra)
 	}
+	return themeToggleStyle.WrapHTML(renderThemeToggleButton(cfg, extra, variant))
 }
 
-func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeToggleVariant) render.HTML {
+func renderThemeToggleButton(cfg ThemeToggleConfig, extra html.Attrs, variant ThemeToggleVariant) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
-	if attrs == nil {
-		attrs = map[string]string{}
-	}
+	attrs := themeControlAttrs(extra, cfg.ID, i18nui.ThemeToggle.Text(ctx), "data-hui-theme-toggle")
 	attrs["type"] = "button"
-	attrs["data-hui-theme-toggle"] = ""
 	attrs["data-hui-theme-cycle"] = ""
-	attrs["aria-label"] = i18nui.ThemeToggle.Text(ctx)
-	if cfg.ID != "" {
-		attrs["id"] = cfg.ID
-	}
 
 	switch variant {
 	case ThemeToggleIcon:
@@ -99,7 +88,7 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 	}
 }
 
-func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
+func renderThemeTogglePill(cfg ThemeToggleConfig, extra html.Attrs) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -117,37 +106,54 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		autoLabel = i18nui.ThemeAuto.Text(ctx)
 	}
 
-	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
-	if rootAttrs == nil {
-		rootAttrs = map[string]string{}
-	}
-	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class
-	rootAttrs["data-hui-theme-toggle"] = ""
-	rootAttrs["role"] = "radiogroup"
-	rootAttrs["aria-label"] = i18nui.ThemeColorScheme.Text(ctx)
-	if cfg.ID != "" {
-		rootAttrs["id"] = cfg.ID
-	}
-
-	optBtn := func(label, opt string) render.HTML {
-		checked, tab := "false", "-1"
-		if opt == "auto" {
-			checked, tab = "true", "0"
-		}
-		return render.Tag("button", map[string]string{
-			"type":                  "button",
-			"class":                 "fui-theme-toggle__option",
-			"data-cui-internal":     "",
-			"data-hui-theme-option": opt,
-			"aria-checked":          checked,
-			"tabindex":              tab,
-			"role":                  "radio",
-		}, render.Text(label))
-	}
-
-	return render.Tag("div", rootAttrs,
-		optBtn(lightLabel, "light"),
-		optBtn(autoLabel, "auto"),
-		optBtn(darkLabel, "dark"),
+	attrs := themeControlAttrs(extra, cfg.ID, i18nui.ThemeColorScheme.Text(ctx), "data-hui-theme-toggle")
+	const hook = "data-hui-theme-option"
+	return themeRadioGroup(attrs, cfg.Class, cfg.Fill,
+		themeRadioOption(lightLabel, hook, "light", false),
+		themeRadioOption(autoLabel, hook, "auto", true),
+		themeRadioOption(darkLabel, hook, "dark", false),
 	)
+}
+
+func themeControlAttrs(attrs html.Attrs, id, label, hook string) html.Attrs {
+	if attrs == nil {
+		attrs = html.Attrs{}
+	}
+	for k := range attrs {
+		if strings.HasPrefix(strings.ToLower(k), "data-hui-theme-") {
+			delete(attrs, k)
+		}
+	}
+	attrs[hook] = ""
+	attrs["aria-label"] = label
+	if id != "" {
+		attrs["id"] = id
+	}
+	return attrs
+}
+
+func themeRadioGroup(attrs html.Attrs, class string, fill bool, options ...render.HTML) render.HTML {
+	cls := "fui-theme-toggle fui-theme-toggle--pill"
+	if fill {
+		cls += " fui-theme-toggle--fill"
+	}
+	attrs["class"] = strings.TrimSpace(cls + " " + class)
+	attrs["role"] = "radiogroup"
+	return themeToggleStyle.WrapHTML(render.Tag("div", attrs, options...))
+}
+
+func themeRadioOption(label, hook, value string, selected bool) render.HTML {
+	checked, tab := "false", "-1"
+	if selected {
+		checked, tab = "true", "0"
+	}
+	return render.Tag("button", html.Attrs{
+		"type":              "button",
+		"class":             "fui-theme-toggle__option",
+		"data-cui-internal": "",
+		hook:                value,
+		"aria-checked":      checked,
+		"tabindex":          tab,
+		"role":              "radio",
+	}, render.Text(label))
 }

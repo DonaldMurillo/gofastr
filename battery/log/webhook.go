@@ -101,15 +101,6 @@ func WebhookSink(url string, opts WebhookOpts) Sink {
 	return s
 }
 
-func (s *webhookSink) shouldWarn() bool {
-	now := time.Now().UnixNano()
-	last := s.lastWarnAt.Load()
-	if last != 0 && time.Duration(now-last) < s.warnInterval {
-		return false
-	}
-	return s.lastWarnAt.CompareAndSwap(last, now)
-}
-
 func (s *webhookSink) Write(entry []byte) error {
 	select {
 	case <-s.closed:
@@ -207,7 +198,7 @@ func (s *webhookSink) send(batch [][]byte) {
 		}
 		if !isRetryable(err) || attempt == s.opts.MaxRetries {
 			s.gaveUp.Add(1)
-			if s.shouldWarn() {
+			if allowWarn(&s.lastWarnAt, s.warnInterval) {
 				fmt.Fprintf(os.Stderr, "log: webhook sink gave up after %d attempt(s): %v\n", attempt+1, err)
 			}
 			return

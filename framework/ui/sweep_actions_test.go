@@ -80,7 +80,7 @@ func TestSweepActionsConfirmTemplateCancelFirst(t *testing.T) {
 }
 
 func TestSweepActionsConfirmTemplateWordsPerRequest(t *testing.T) {
-	h := string(confirmDialogTemplate(frenchCtx(map[i18n.Phrase]string{
+	h := string(confirmDialogTemplate(frenchWords(map[i18n.Phrase]string{
 		i18nui.DialogConfirmTitle: "Êtes-vous sûr ?", i18nui.DialogCancel: "Annuler", i18nui.DialogConfirm: "Confirmer",
 	})))
 	for _, want := range []string{"Êtes-vous sûr ?", ">Annuler<", ">Confirmer<"} {

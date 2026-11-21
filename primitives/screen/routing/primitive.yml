@@ -17,6 +17,10 @@ invariants:
       - test: core-ui/app.TestRegisterCatchAllNotFinalPanics
       - test: core-ui/app.TestConstraintOnCatchAllPanics
       - test: core-ui/app.TestResolveCatchAllDecodesOnce
+  - id: no-end-marker
+    rule: Screen registration panics on the HTTP router's "{$}" end marker instead of registering it as a literal segment.
+    enforced_by:
+      - test: core-ui/app.TestScreenRouterRejectsExactEndMarker
   - id: constraints-are-a-closed-set
     rule: A param constraint is int, uuid, alpha or alnum, an unknown one panics at registration, and a value failing its constraint falls through to the next route.
     enforced_by:

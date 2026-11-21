@@ -16,6 +16,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+var _ processModuleController = (*framework.ProcessModuleSupervisor)(nil)
+
 type processModuleController interface {
 	List() []framework.ProcessModuleInfo
 	Enable(ctx context.Context, name string) error
@@ -23,8 +25,6 @@ type processModuleController interface {
 	RevokeGrants(ctx context.Context, name string, grants []access.Permission) (uint64, error)
 	BumpGeneration(ctx context.Context, name string) (uint64, error)
 }
-
-var _ processModuleController = (*framework.ProcessModuleSupervisor)(nil)
 
 const modulesManage access.Permission = "modules:manage"
 
@@ -124,7 +124,11 @@ func moduleServes(state framework.ProcessState) i18n.Phrase {
 }
 
 func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
-	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + i18n.Number(ctx, m.ObservedGeneration)
+	observed := i18n.Number(ctx, m.ObservedGeneration)
+	if m.DesiredGeneration == 0 {
+		return render.Text("— / " + observed)
+	}
+	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + observed
 	if m.ObservedGeneration < m.DesiredGeneration {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: ui.StatusDanger})
 	}

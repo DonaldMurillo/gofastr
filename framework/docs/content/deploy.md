@@ -15,10 +15,13 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o app ./
 ./app                 # listens on :8080 (or $PORT)
 ```
 
-The CLI runs generation, project-wide vet, and the accessibility gate before
-building. It targets the project root by default; when the executable lives
-under `cmd/`, select only the final main package with `--pkg`. Vet and
-accessibility checks still run from the project root, matching `gofastr dev`:
+Run `gofastr build` from the project root. It runs code generation when
+configured or when the app has derived client or endpoint files. It runs
+`go vet ./...`, the accessibility and `.ui.go` hydration sandbox checks, the
+embed server-action check, and contract verification from the invoking
+directory. The final build compiles the current package by default. Use
+`--pkg` to select a main package under `cmd/`, including one created by
+code generation. Set a binary path with `-o=<path>` or `--output=<path>`.
 
 ```bash
 gofastr build
@@ -60,21 +63,33 @@ gofastr deploy deploy@203.0.113.7 --name shop --env-file prod.env --port 8080
 
 It asks the server what CPU it has, builds the package in this directory
 for it, copies the binary over SSH, starts it, and waits for the app to
-answer `/healthz` with a 2xx. If it does not within 30 seconds, the
-release before is started again, the failed one is removed, the last
-lines the app logged are printed, and the command exits non-zero.
+answer `/healthz` with a 2xx within 30 seconds. If activation or the
+health check fails, the command prints diagnostics and exits non-zero.
+It tries to restore the previous release, or the latest eligible release
+in the order if the previous one was incomplete. Once it switches back,
+it removes the failed release. With no earlier release, the failed
+release stays in place. Installs and rollbacks for the same app take
+turns on the server, including environment inheritance and recovery.
+
+`--name` defaults to the lowercased directory basename. Set it
+explicitly if that name is invalid. A valid name is 1 to 31 characters,
+starts with a lower-case ASCII letter, and uses only lower-case ASCII
+letters, digits, and hyphens.
 
 What it sets up, on the first deploy and kept the same on later ones:
 
-- `/opt/<name>/releases/<UTC time>/<name>`, one directory per release,
-  and `/opt/<name>/current`, a link to the one running. The newest five
-  earlier releases are kept (`--keep`).
+- `/opt/<name>/releases/<release ID>/<name>`, one directory per release,
+  and `/opt/<name>/current`, a link to the release in place. The newest
+  five earlier successful deployments are kept (`--keep`).
 - A system user `<name>` with no login, which the app runs as.
 - `/var/lib/<name>`, the only place the app may write (mode 0750). `HOME`
   and `XDG_STATE_HOME` point into it, so a SQLite file with a relative
   path and the [telemetry](telemetry.md) files land there.
-- `/etc/<name>/env`, from `--env-file`: `KEY=value` lines, readable by
-  root and the app only. A deploy without `--env-file` leaves it as it is.
+- Each release keeps its environment as `KEY=value` lines from
+  `--env-file`, readable by root and the app only. The active file is
+  `/opt/<name>/current/env`. A deploy without `--env-file` inherits the
+  current release's environment, including `/etc/<name>/env` on an
+  older installation.
 - `/etc/systemd/system/<name>.service`: restarts the app after a crash,
   every time, and starts it at boot. It sets `GOFASTR_ENV=production`,
   which turns the dev-only features off whatever `GOFASTR_DEV` says in
@@ -104,18 +119,36 @@ about a second of closed port on each restart. The first deploy that
 moves an app from one way to the other closes the port once.
 
 Each release keeps the units it was deployed with, in
-`releases/<time>/units/`, and going back to a release puts them back.
+`releases/<release ID>/units/`, and going back to a release puts them
+back. When the port changes, systemd opens the socket on the new port.
 
 ```sh
 gofastr deploy status deploy@203.0.113.7 --name shop     # release, service, health
 gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
 ```
 
-`rollback` starts the release before the running one and checks it the
-same way; if that one does not answer, the release it left runs again.
+`rollback` starts the release before the running one in the server's
+recorded deployment order and checks it the same way. Before a deploy or
+rollback, the server reconciles that order with releases on disk.
+A deploy marks a release incomplete until activation and its health
+check succeed. Reconciliation and rollback skip incomplete releases.
+A release left unrecorded by an older client or by an interruption after
+successful activation can still enter the order. An eligible unrecorded
+running release goes first, followed by other eligible unrecorded
+releases in descending release ID order. Previously recorded releases
+keep their relative order. An installation without a recorded order
+starts with descending release ID order.
+If rollback activation or its health check fails, the server tries to
+restore the release it left if it is eligible. Each release uses its own
+environment and saved `--port` and `--health` settings. For a release
+without saved health settings, pass those flags to `rollback` or
+`status` as needed.
+`--wait <seconds>` sets the elapsed time allowed for each release's
+health check. `status` probes the health URL only while the service is
+active.
 
-The server needs sshd, systemd and bash. The SSH user must be root or
-have passwordless sudo. The server is named as `user@host` or as a host
+The server needs sshd, systemd, bash and `flock` from util-linux. The SSH
+user must be root or have passwordless sudo. Use `user@host` or a host
 from your SSH config; `--ssh-port` and `-i` are passed to `ssh`. `--bin
 <file>` deploys a Linux binary you built yourself in place of building
 one, and `--pkg` names the main package when it is not `.`.
@@ -153,9 +186,9 @@ ENTRYPOINT ["/app"]
 ## Configuration (env)
 
 GoFastr reads config from the environment. `NewApp` also loads `.env`
-files at boot in every environment, not just development; set
-`GOFASTR_DOTENV=off` to suppress it, see [dotenv](dotenv.md); real env
-always wins. Common vars:
+files in every environment and gives process environment variables precedence.
+It skips missing files and panics on load errors, including malformed files.
+Set `GOFASTR_DOTENV=off` to disable this automatic load. See [dotenv](dotenv.md).
 
 | Var | Purpose |
 |-----|---------|

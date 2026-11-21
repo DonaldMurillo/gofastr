@@ -43,7 +43,8 @@ func UIHostOption() uihost.Option {
 
 // BrokerRegistration is the shape a JavaScript adapter registers with.
 type BrokerRegistration struct {
-	Manifest Manifest                                 `json:"manifest"`
-	Config   any                                      `json:"config,omitempty"`
-	OnEvent  func(method string, params any, api any) `json:"-"`
+	Manifest  Manifest                                     `json:"manifest"`
+	Config    any                                          `json:"config,omitempty"`
+	OnEvent   func(method string, params any, api any)     `json:"-"`
+	OnRequest func(method string, params any, api any) any `json:"-"`
 }

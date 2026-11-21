@@ -115,6 +115,12 @@ func (s *winShell) SetTrayTitle(title string) error {
 	})
 }
 
+func (s *winShell) trayTitleSnapshot() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.trayTitle
+}
+
 func (s *winShell) installTray(cfg *desktop.Tray) {
 	if cfg == nil {
 		return
@@ -127,8 +133,8 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	if !cfg.Tooltip.IsZero() {
 		tip = cfg.Tooltip.Text(s.text())
 	}
-	if s.trayTitle != "" {
-		tip = s.trayTitle
+	if title := s.trayTitleSnapshot(); title != "" {
+		tip = title
 	} else if cfg.Title != "" {
 		tip = cfg.Title
 	}
@@ -665,7 +671,7 @@ func (s *winShell) WriteText(ctx context.Context, value string) error {
 			clipErr = errors.New("desktop/windows: could not lock clipboard text")
 			return
 		}
-		copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(words)), words)
+		copy(unsafe.Slice((*uint16)(win32.NativePtr(p)), len(words)), words)
 		_, _, _ = callWindows(capKernel, "GlobalUnlock", h)
 		if set, _, _ := callWindows(capUser32, "SetClipboardData", cfUnicodeText, h); set == 0 {
 			_, _, _ = callWindows(capKernel, "GlobalFree", h)

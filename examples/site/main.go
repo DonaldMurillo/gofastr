@@ -586,6 +586,7 @@ func setupServer() *framework.App {
 		// Read path: a 409 reconciliation GET only ever follows a move that
 		// already created the session, so it reads state and never mints a
 		// cookie or creates one. A cookieless edge case reconciles to the seed.
+		w.Header().Set("Cache-Control", "no-store")
 		sess := demoStateForRequest(r)
 		sess.mu.Lock()
 		defer sess.mu.Unlock()
@@ -594,22 +595,10 @@ func setupServer() *framework.App {
 			http.Error(w, "unknown container", http.StatusNotFound)
 			return
 		}
-		items := make([]ui.SortableItem, len(col.Cards))
-		for i, c := range col.Cards {
-			items[i] = ui.SortableItem{Key: c.Key, Label: c.Title}
-		}
-		version := fmt.Sprintf("v%d", sess.kanbanVer)
+		cfg := col.SortableConfig(sess.kanbanVer)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		ui.RenewSortableVersion(w, version)
-		fmt.Fprint(w, string(ui.SortableListItems(ui.SortableListConfig{
-			Label:       col.Title,
-			Group:       "kanban-demo",
-			Container:   col.ID,
-			RPCPath:     "/__site/sortable/move",
-			Version:     version,
-			ConflictRPC: "/__site/sortable/conflict?container=" + col.ID,
-			Items:       items,
-		})))
+		ui.RenewSortableVersion(w, cfg.Version)
+		fmt.Fprint(w, string(ui.SortableListItems(cfg)))
 	}))
 
 	// Workspace example (/examples/workspace): GET handlers returning the
@@ -652,7 +641,12 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(modalBody)).
 		Hidden())
 
-	gallery.MountDemoWidgets(fwApp.Router(), "/components/sidebar", "/components/sidebardrawertrigger")
+	gallery.MountDemoWidgets(fwApp.Router(), gallery.DemoWidgetPages{
+		Modal:       []string{"/components/modal"},
+		Drawer:      []string{"/components/drawer"},
+		BottomSheet: []string{"/components/bottomsheet"},
+		Sidebar:     []string{"/components/sidebar", "/components/sidebardrawertrigger"},
+	})
 	gallery.MountDemoFormRoute(fwApp.Router(), func(slug string) string { return "/components/" + slug })
 
 	// Toast stack anchored top-right; auto-mount so every page can fire one.

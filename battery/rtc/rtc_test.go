@@ -268,7 +268,8 @@ func mustPanic(t *testing.T, what string, fn func()) {
 // limits are refused at New with an "rtc:"-prefixed panic, not at
 // first use.
 func TestNewPanicsOnBadConfig(t *testing.T) {
-	badPaths := []string{"rel", "/", "/tail/", "/a/b/..", "/p%20th", "/a//b", "/a?b"}
+	badPaths := []string{"rel", "/", "/tail/", "/a/b/..", "/p%20th", "/a//b", "/a?b",
+		"/live/{room}", "/a$b", "/__gofastr", "/__gofastr/sse"}
 	for _, p := range badPaths {
 		mustPanic(t, "path "+p, func() { New(Config{Path: p}) })
 	}

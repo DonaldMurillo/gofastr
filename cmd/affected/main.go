@@ -138,6 +138,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 )
 
 // alwaysAll lists repo-relative paths whose change widens the set to every
@@ -298,10 +300,6 @@ func main() {
 	}
 }
 
-// coverageDirEnv moves the axe and semantic-coverage manifests (semcov
-// falls back to it) out of the module.
-const coverageDirEnv = "GOFASTR_AXE_COVERAGE_DIR"
-
 // commandEnv is the wrapped command's environment. Test binaries merge
 // what they scanned into one manifest per coverage root, by default
 // .gofastr/ at the module root, and read it back: a strict-mode boot
@@ -320,11 +318,11 @@ const coverageDirEnv = "GOFASTR_AXE_COVERAGE_DIR"
 // not read the stamp.
 func commandEnv(root string) []string {
 	env := append(os.Environ(), "GOFLAGS="+noVCSStamp(os.Getenv("GOFLAGS")))
-	if os.Getenv(coverageDirEnv) != "" {
+	if os.Getenv(coverageroot.AxeDirEnv) != "" {
 		return env
 	}
 	if dir := coverageDir(root); dir != "" {
-		env = append(env, coverageDirEnv+"="+dir)
+		env = append(env, coverageroot.AxeDirEnv+"="+dir)
 	}
 	return env
 }
@@ -377,7 +375,7 @@ func noVCSStamp(goflags string) string {
 // -coverage-dir prints it, so `gofastr verify` in the hooks reads the
 // manifests the sweep wrote.
 func coverageDir(root string) string {
-	if v := os.Getenv(coverageDirEnv); v != "" {
+	if v := os.Getenv(coverageroot.AxeDirEnv); v != "" {
 		return v
 	}
 	base, err := os.UserCacheDir()

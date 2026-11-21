@@ -586,7 +586,6 @@ func TestDownUnknownGroupErrors(t *testing.T) {
 	}
 }
 
-// TestStatusUnknownGroupErrors proves Status with an unknown group errors.
 func TestStatusUnknownGroupEmptyNotError(t *testing.T) {
 	// Status is a read: an unregistered group is inspectable (it may be a
 	// disabled module's applied rows), so selection is syntax-validated only

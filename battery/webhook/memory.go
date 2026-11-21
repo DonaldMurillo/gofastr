@@ -158,17 +158,27 @@ func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int)
 		if d.Status != StatusPending {
 			continue
 		}
-		if d.NextAttemptAt.After(now) {
+		if !d.NextAttemptAt.IsZero() && d.NextAttemptAt.After(now) {
 			continue
 		}
 		d.Payload = cloneBytes(d.Payload)
 		out = append(out, d)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].NextAttemptAt.Before(out[j].NextAttemptAt) })
+	sort.Slice(out, func(i, j int) bool { return dueDeliveryLess(out[i], out[j]) })
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func dueDeliveryLess(a, b Delivery) bool {
+	if a.NextAttemptAt.IsZero() != b.NextAttemptAt.IsZero() {
+		return a.NextAttemptAt.IsZero()
+	}
+	if a.NextAttemptAt.Equal(b.NextAttemptAt) {
+		return a.ID < b.ID
+	}
+	return a.NextAttemptAt.Before(b.NextAttemptAt)
 }
 
 // ClaimDueDeliveries implements LeasedStore under the store's lock.
@@ -189,12 +199,12 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		if d.Status != StatusPending {
 			continue
 		}
-		if d.NextAttemptAt.After(now) {
+		if !d.NextAttemptAt.IsZero() && d.NextAttemptAt.After(now) {
 			continue
 		}
 		candidates = append(candidates, d)
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].NextAttemptAt.Before(candidates[j].NextAttemptAt) })
+	sort.Slice(candidates, func(i, j int) bool { return dueDeliveryLess(candidates[i], candidates[j]) })
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}

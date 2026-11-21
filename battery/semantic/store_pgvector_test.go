@@ -377,7 +377,7 @@ func TestPgVectorLongTableDocIndex(t *testing.T) {
 	}
 }
 
-// TestPgVectorHybridEndToEnd proves the store composes through embed.Open with
+// TestPgVectorHybridEndToEnd proves the store composes through semantic.Open with
 // a keyword backend (chunkLister is what makes hydration work).
 func TestPgVectorHybridEndToEnd(t *testing.T) {
 	dim := 16

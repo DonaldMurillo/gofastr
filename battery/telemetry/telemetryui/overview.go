@@ -84,10 +84,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 		}
 		return page(s.tabNav(ctx, tabOverview), ui.PageHeader(header), problem(ctx, i18nui.TelemetryLoadFailed))
 	}
-	wkey := sp.key
-	if wkey == defaultWindow {
-		wkey = ""
-	}
+	wkey := windowParam(sp.key)
 	var machine render.HTML
 	if host, err := store.Host(now.Add(-sp.span), now, sp.step); err != nil {
 		slog.ErrorContext(ctx, "telemetry: read machine readings", "err", err)
@@ -143,19 +140,11 @@ func share(ctx context.Context, part, whole int64) string {
 }
 
 func within(ctx context.Context, d time.Duration) string {
-	text := ui.DurationText(ctx, twoDigits(d))
+	text := ui.DurationText(ctx, itel.RoundDuration(d))
 	if d >= itel.StatsCeiling {
 		return i18nui.TelemetryOrMore.Text(ctx, map[string]any{"duration": text})
 	}
 	return text
-}
-
-func twoDigits(d time.Duration) time.Duration {
-	unit := time.Duration(1)
-	for d/unit >= 100 {
-		unit *= 10
-	}
-	return (d + unit/2) / unit * unit
 }
 
 func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) render.HTML {
@@ -180,12 +169,13 @@ func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) re
 	}})
 }
 
+// byteText writes a size the way a machine's are read.
 func byteText(ctx context.Context, n int64) string {
-	const mb, gb = 1 << 20, 1 << 30
-	if n < gb {
-		return i18nui.TelemetryBytesMB.Text(ctx, map[string]any{"n": i18n.Number(ctx, (n+mb/2)/mb)})
+	v, unit := itel.ByteSize(n)
+	if unit == "GB" {
+		return i18nui.TelemetryBytesGB.Text(ctx, map[string]any{"n": i18n.Number(ctx, v, i18n.MaxFraction(1))})
 	}
-	return i18nui.TelemetryBytesGB.Text(ctx, map[string]any{"n": i18n.Number(ctx, float64(n)/gb, i18n.MaxFraction(1))})
+	return i18nui.TelemetryBytesMB.Text(ctx, map[string]any{"n": i18n.Number(ctx, v)})
 }
 
 const diskWarnAt = 90
@@ -213,11 +203,7 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 			disk.Trend = i18nui.TelemetryDiskNearlyFull.Text(ctx, map[string]any{"used": disk.Trend})
 		}
 	}
-	held := l.RSSBytes
-	if held == 0 {
-		held = l.HeapBytes
-	}
-	proc := ui.StatCardConfig{Label: i18nui.TelemetryProcess.Text(ctx), Value: byteText(ctx, held), Plain: true,
+	proc := ui.StatCardConfig{Label: i18nui.TelemetryProcess.Text(ctx), Value: byteText(ctx, l.HeldBytes()), Plain: true,
 		Trend: i18nui.TelemetryGoroutines.Text(ctx, map[string]any{"n": i18n.Number(ctx, l.Goroutines)})}
 	strip := ui.StatStrip(ui.StatStripConfig{Label: i18nui.TelemetryMachineStats.Text(ctx), Cells: []render.HTML{
 		ui.StatCard(cpu), ui.StatCard(mem), ui.StatCard(disk), ui.StatCard(proc)}})

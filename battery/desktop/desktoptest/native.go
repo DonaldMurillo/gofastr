@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -552,20 +553,7 @@ func (h *NativeHarness) Events() []Event {
 
 // WaitEvent waits for the next event named name that Events has not handed out through an earlier WaitEvent, and returns it.
 func (h *NativeHarness) WaitEvent(name string) Event {
-	seen := h.eventsSeen
-	var got Event
-	h.Wait("event "+name, func() bool {
-		evs := h.Events()
-		for i := seen; i < len(evs); i++ {
-			if evs[i].Name == name {
-				got = evs[i]
-				h.eventsSeen = i + 1
-				return true
-			}
-		}
-		return false
-	})
-	return got
+	return waitEvent(h.tb, name, &h.eventsSeen, h.Events, h.Wait)
 }
 
 func (h *NativeHarness) driver() (desktop.NativeDriver, error) {
@@ -705,11 +693,7 @@ func (h *NativeHarness) Notifications() []desktop.Notification {
 
 // WindowIDs lists the battery's live windows, main first.
 func (h *NativeHarness) WindowIDs() []string {
-	var ids []string
-	for _, w := range h.Battery.Windows() {
-		ids = append(ids, w.ID())
-	}
-	return ids
+	return windowIDs(h.Battery)
 }
 
 // Window returns the live window with the given id, or nil when there is none yet (poll with Wait for one that is still opening).
@@ -841,10 +825,10 @@ func (nw *NativeWindow) State() (desktop.WindowState, error) {
 }
 
 func bootEnv() {
-	os.Setenv("GOFASTR_ISOLATION", "off")
-	if os.Getenv(dataDirEnv) == "" {
+	os.Setenv(isolation.EnvIsolation, "off")
+	if os.Getenv(desktop.DataDirEnv) == "" {
 		if dir, err := os.MkdirTemp("", "gofastr-desktop-native-*"); err == nil {
-			os.Setenv(dataDirEnv, dir)
+			os.Setenv(desktop.DataDirEnv, dir)
 		}
 	}
 }

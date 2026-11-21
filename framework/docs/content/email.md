@@ -115,6 +115,12 @@ an apostrophe included) and an error for a control byte, an invisible
 codepoint, an unparsable value or a comma list. Code that hands addresses
 to a `Sender` checks them with it rather than with a rule of its own.
 
+`email.ValidateHeaders(headers)` applies the SMTP sender's checks to an
+`Email.Headers` map. It returns an error wrapping `ErrSendFailed` for
+invalid names or values, duplicate or reserved names, or headers that
+cannot be folded within the line limit. The notify email channel uses
+it to validate rendered headers before calling its sender.
+
 A long header is folded (RFC 5322) so no line passes 998 octets: the
 line breaks in front of a space and a reader joins it back unchanged. A
 `Subject` word too long for one line goes out as encoded words, split
@@ -213,4 +219,4 @@ data, the HTML body in a sandboxed frame (see
 - **Leaving `AllowCleartext` off and pointing at a host that strips STARTTLS.** That is the intended failure: the message does not go out in plaintext. Fix the relay (use a TLS-capable host, or port 465 with `UseTLS`), not the flag.
 - **Letting recipient input reach `Email` unvalidated.** The sender rejects CR/LF/NUL in headers and fails loudly rather than smuggling a `Bcc`, but a malformed address still wastes a send attempt. Validate addresses before they reach `Email.To`.
 - **Using `LogSender` in production by accident.** It never sends; email looks fine in dev and silently does nothing in prod. Build the sender from an env flag instead of hardcoding `NewLogSender()`.
-- **Forgetting `From` / `To` after `Execute`.** `Execute` fills the subject and bodies only; an `Email` with no recipients is a no-op `Send`.
+- **Forgetting `From` / `To` after `Execute`.** `Execute` fills the subject and bodies only; an `Email` with no recipients fails `Send` with `ErrSendFailed` (`SMTPSender`) or logs without sending (`LogSender`).

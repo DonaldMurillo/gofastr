@@ -10,7 +10,7 @@ twins:
     why: framework/file may not import framework/image (crud.uploads's import rule), so the transforms are written twice and pinned by a parity test.
     sites:
       - path: framework/file/strip.go
-        note: applyOrientation and the rotate and mirror helpers, for the strip path's re-encode.
+        note: applyOrientation and orientedCoordinates, for the strip path's re-encode.
       - path: framework/image/geometry.go
         note: Image.AutoOrient over Rotate, Flip and Flop, for the image pipeline.
 invariants:
@@ -36,6 +36,10 @@ invariants:
       - test: framework/file.TestStripOrientationBakeMatchesPipeline
       - test: framework/file.TestStripBakesCMYKOrientation
       - test: framework/file.TestOrientationSevenIsTransverse
+  - id: image-end-markers-required
+    rule: StripMetadata refuses a JPEG without EOI or a PNG without IEND before saving the original.
+    enforced_by:
+      - test: framework/file.TestStripMetadataRefusesMissingEndMarkers
   - id: jpeg-decode-budget
     rule: Before the orientation bake decodes a JPEG it refuses more than 64 scans, scans times pixels over ten frames of the pixel cap, progressive coefficients over 512 MiB, and a header over 64 MP or with a zero dimension.
     enforced_by:
@@ -52,6 +56,10 @@ invariants:
       - test: framework/file.TestStripMetadataDropsTrailers
       - test: framework/file.TestStripMetadataRedPngBombRefused
       - test: framework/file.TestStripPNGReadsPrefixedEXIFOrientation
+  - id: png-orientation-keeps-precision
+    rule: Baking orientation into a 16-bit PNG preserves its channel values, including straight alpha and the colour samples of fully transparent pixels.
+    enforced_by:
+      - test: framework/file.TestStripPNGPreservesOrientedNRGBA64
   - id: apng-spliced
     rule: An animated PNG keeps every non-metadata chunk verbatim, drops text chunks and everything after IEND, and replaces the first eXIf with an orientation-only one when the orientation is 2 to 8.
     enforced_by:

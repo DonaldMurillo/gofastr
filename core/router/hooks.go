@@ -14,7 +14,8 @@ func (r *Router) SetRegisterHook(fn func(method, pattern string)) {
 	r.root.mu.Unlock()
 }
 
-// SetRouteGate sets the tree-wide gate keyed "METHOD /pattern"; false or a panic answers 404 and drops the method from Allow.
+// SetRouteGate sets the tree-wide gate for registered "METHOD /pattern" keys.
+// A false result or a panic hides the route and drops its methods from Allow.
 func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 	r.root.mu.Lock()
 	r.root.routeGate = fn

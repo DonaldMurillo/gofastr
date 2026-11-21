@@ -1,6 +1,10 @@
 package routegroup
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/router"
+)
 
 // TestNormalizePrefix_HardensInput pins the canonical-form contract.
 // A non-canonical prefix permanently aliases every child route under
@@ -41,8 +45,8 @@ func TestNormalizePrefix_HardensInput(t *testing.T) {
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {
-			if got := normalizePrefix(in); got != want {
-				t.Fatalf("normalizePrefix(%q)=%q, want %q", in, got, want)
+			if got := New(router.New(), in).Prefix(); got != want {
+				t.Fatalf("group prefix for %q = %q, want %q", in, got, want)
 			}
 		})
 	}

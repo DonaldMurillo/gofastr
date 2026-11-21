@@ -145,12 +145,8 @@ func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL); err != nil {
 		return err
 	}
-	if p.twoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: oauth2 plugin: %q handles two-factor sign-in, so set OAuth2Config.TwoFactorURL to the page that finishes it: an OAuth sign-in of a 2FA account is pending until /2fa/challenge, and \"/\" would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL, "an OAuth sign-in", "\"/\""); err != nil {
+		return err
 	}
 	if mgr.UserStore() == nil {
 		return nil
@@ -940,12 +936,6 @@ func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonc
 	return string(uidBytes), nonceB64, expiry, true
 }
 
-func (p *OAuth2Plugin) purgeExpiredNonces() {
-	p.noncesMu.Lock()
-	defer p.noncesMu.Unlock()
-	p.purgeExpiredNoncesLocked(time.Now())
-}
-
 func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	for n, exp := range p.usedNonces {
 		if !now.Before(exp) {
@@ -955,21 +945,49 @@ func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	p.lastNonceSweep = now
 }
 
-func randomPassword(n int) string {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("auth: crypto/rand failed: %v", err))
-	}
-	for i := range b {
-		b[i] = chars[int(b[i])%len(chars)]
-	}
-	return string(b)
-}
-
 var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Second})
 
+// oauthProviderMaxBody caps OAuth and OIDC token, discovery and profile responses.
 const oauthProviderMaxBody = 1 << 20
+
+// Keep response structs anonymous to preserve JSON type-error messages.
+type tokenBody = struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+}
+
+func oauthToken(body tokenBody) *OAuth2Token {
+	return &OAuth2Token{
+		AccessToken:  body.AccessToken,
+		RefreshToken: body.RefreshToken,
+		Expiry:       tokenExpiry(body.ExpiresIn),
+	}
+}
+
+func postTokenRequest(ctx context.Context, client *http.Client, endpoint string, form url.Values, body any, prepare func(*http.Request), refuse func(*http.Response) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if prepare != nil {
+		prepare(req)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return refuse(resp)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(body)
+}
+
+func acceptTokenJSON(req *http.Request) {
+	req.Header.Set("Accept", "application/json")
+}
 
 const maxTokenLifetime = 10 * 365 * 24 * time.Hour
 
@@ -1044,38 +1062,14 @@ func (g *GoogleProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 	data.Set("redirect_uri", g.redirectURL)
 	data.Set("grant_type", "authorization_code")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body tokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, nil, func(resp *http.Response) error {
+		return fmt.Errorf("google: token exchange returned %d", resp.StatusCode)
+	})
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google: token exchange returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
-		return nil, err
-	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body), nil
 }
 
 // RefreshToken exchanges a Google refresh token for a fresh access token.
@@ -1086,38 +1080,14 @@ func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	data.Set("client_secret", g.clientSecret)
 	data.Set("grant_type", "refresh_token")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body tokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, nil, func(resp *http.Response) error {
+		return fmt.Errorf("google: token refresh returned %d", resp.StatusCode)
+	})
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google: token refresh returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
-		return nil, err
-	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body), nil
 }
 
 func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error) {
@@ -1151,8 +1121,10 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		return nil, err
 	}
 
-	emailVerified := parseGoogleEmailVerified(body.EmailVerified) ||
-		parseGoogleEmailVerified(body.VerifiedEmail)
+	// Google uses email_verified and verified_email. A true assertion in
+	// either field verifies the email.
+	emailVerified := emailVerifiedValue(body.EmailVerified) ||
+		emailVerifiedValue(body.VerifiedEmail)
 
 	return &OAuth2UserInfo{
 		ID:            body.ID,
@@ -1219,44 +1191,18 @@ func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body githubTokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, acceptTokenJSON, func(resp *http.Response) error {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("github: token exchange returned %d: %s", resp.StatusCode, detail)
+	})
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("github: token exchange returned %d: %s", resp.StatusCode, body)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		Error        string `json:"error"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 	if err := githubTokenRefusal("token exchange", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body.tokenBody), nil
 }
 
 // RefreshToken exchanges a GitHub refresh token for a fresh access token.
@@ -1267,44 +1213,24 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	data.Set("client_secret", g.clientSecret)
 	data.Set("grant_type", "refresh_token")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
+	var body githubTokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, acceptTokenJSON, func(resp *http.Response) error {
+		// Drain a bounded body and keep provider bytes out of caller logs.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		Error        string `json:"error"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
+		return fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := githubTokenRefusal("token refresh", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
+	return oauthToken(body.tokenBody), nil
+}
 
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+type githubTokenBody = struct {
+	tokenBody
+	Error string `json:"error"`
 }
 
 func githubTokenRefusal(what, code, accessToken string) error {
@@ -1411,16 +1337,6 @@ func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (s
 		}
 	}
 	return "", false, nil
-}
-
-func parseGoogleEmailVerified(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case string:
-		return strings.EqualFold(x, "true")
-	}
-	return false
 }
 
 func setPKCEChallenge(q url.Values, challenge string, disabled bool) {

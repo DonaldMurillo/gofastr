@@ -21,8 +21,8 @@ func TestSweepUniqueDBNameIsAShortLowercaseIdentifier(t *testing.T) {
 
 func TestSweepRedactHidesThePassword(t *testing.T) {
 	for _, dsn := range []string{"mysql://admin:s3cret@db/x", "postgres://admin:s3cret@db/x\x7f"} {
-		if _, err := rewriteDBName(dsn, "ftest_x"); err == nil || strings.Contains(err.Error(), "s3cret") {
-			t.Errorf("rewriteDBName(%q) error %v leaks the password or accepts the DSN", dsn, err)
+		if _, err := RewriteDBNameForTest(dsn, "ftest_x"); err == nil || strings.Contains(err.Error(), "s3cret") {
+			t.Errorf("RewriteDBNameForTest(%q) error %v leaks the password or accepts the DSN", dsn, err)
 		}
 	}
 	for _, dsn := range []string{"mysql://admin@db/x?password=q3cret&sslmode=disable", "mysql://admin@db/x?password=q3cret;sslmode=disable", "mysql:/\\x%zz?password=q3cret"} {

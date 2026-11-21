@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// TextEdit replaces the byte range [Start, End) of File, as read during
-// the pass, with New.
+// TextEdit replaces the byte range [Start, End) of File with New.
+// An empty File uses the enclosing diagnostic's file.
 type TextEdit struct {
 	File  string `json:"file"`
 	Start int    `json:"start"`
@@ -32,7 +32,7 @@ type SuggestedFix struct {
 // single JSON object is a complete work item.
 type Diagnostic struct {
 	// RuleID identifies the catalog entry. Analyzers set it; [Run]
-	// overwrites Slug, Capability and Severity from the catalog and config.
+	// fills Slug, Capability and Severity from the catalog and config.
 	RuleID string `json:"rule"`
 	// Slug mirrors Rule.Slug for readability.
 	Slug string `json:"slug,omitempty"`
@@ -62,6 +62,9 @@ type Diagnostic struct {
 	// RedactSnippet stops [Run] from filling Snippet in from the source,
 	// for findings about a secret.
 	RedactSnippet bool `json:"-"`
+	// Unwaivable retains the catalog severity and bypasses waivers, rule
+	// exemptions, and baselines for an emitted finding.
+	Unwaivable bool `json:"-"`
 	// Evidence carries analyzer-specific structured detail; the text
 	// reporter ignores it.
 	Evidence map[string]string `json:"evidence,omitempty"`

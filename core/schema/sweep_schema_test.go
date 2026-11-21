@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 )
@@ -45,5 +46,63 @@ func TestSweepSchemaUUIDPatternMatchesValidator(t *testing.T) {
 	prop := fieldToJSONSchema(Field{Name: "id", Type: UUID})
 	if prop["pattern"] != uuidRe.String() {
 		t.Fatalf("UUID pattern %v, validator %v", prop["pattern"], uuidRe.String())
+	}
+}
+
+func TestSweepSchemaRequiredEmptyAnswersRequired(t *testing.T) {
+	for _, ft := range []struct {
+		name string
+		typ  FieldType
+	}{
+		{"string", String}, {"text", Text}, {"int", Int}, {"float", Float},
+		{"decimal", Decimal}, {"bool", Bool}, {"enum", Enum}, {"uuid", UUID},
+		{"timestamp", Timestamp}, {"date", Date}, {"json", JSON},
+		{"relation", Relation}, {"image", Image}, {"file", File},
+	} {
+		f := Field{Name: "f", Type: ft.typ, Required: true}
+		if ft.typ == Enum {
+			f.Values = []string{"a", "b"}
+		}
+		err := Validate(f, "")
+		if err == nil {
+			t.Errorf("%s: required empty string accepted", ft.name)
+			continue
+		}
+		if got := AsViolation(err).Reason.Code(); got != ReasonRequired.Code() {
+			t.Errorf("%s: required empty string answers %s, want required", ft.name, got)
+		}
+	}
+}
+
+func TestSweepSchemaRequiredEmptyStringerAnswersRequired(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		typ  FieldType
+	}{
+		{"string", String}, {"text", Text}, {"decimal", Decimal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := Field{Name: "f", Type: tc.typ, Required: true}
+			err := Validate(f, json.Number(""))
+			if err == nil {
+				t.Fatal("required empty Stringer accepted")
+			}
+			if got := AsViolation(err).Code(); got != "required" {
+				t.Errorf("required empty Stringer answers %q, want required", got)
+			}
+		})
+	}
+}
+
+func TestSweepSchemaRequiredEmptyUnsupportedType(t *testing.T) {
+	const unsupported = FieldType(999)
+	f := Field{Name: "f", Type: unsupported, Required: true}
+	err := Validate(f, "")
+	if err == nil {
+		t.Fatal("unsupported field type accepted")
+	}
+	v := AsViolation(err)
+	if v.Code() != "unsupported_type" || v.Params["type"] != int(unsupported) {
+		t.Errorf("unsupported field type answers %q with params %v, want unsupported_type with type=%d", v.Code(), v.Params, unsupported)
 	}
 }

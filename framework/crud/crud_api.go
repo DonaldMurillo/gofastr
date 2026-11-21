@@ -17,7 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 // syntheticRequest is the placeholder request an in-process call feeds

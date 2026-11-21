@@ -32,10 +32,8 @@ import (
 // owner's call. A dist/ directory holds the servable artifacts (sdk-go.zip,
 // client.js, client.d.ts, manifest.json) that framework/sdkdocs hosts.
 //
-// SDK output is generator-owned and regenerates IN PLACE: when the docs
-// site warns that the artifacts drifted from the live schema, the fix is
-// re-running this command, so a conflict prompt would only add friction. Point --out somewhere private if
-// you need to keep an old build.
+// SDK output is generator-owned and regenerates in place.
+// Point --out somewhere private to keep an old build.
 
 type SdkOptions struct {
 	OutDir string
@@ -70,6 +68,7 @@ type sdkSpec struct {
 	SDKVersion     string
 	GofastrVersion string
 	Module         string
+	GoDirectory    string
 	BaseURL        string
 	APIPrefix      string    // "" or "/api": baked into docs/examples, not client paths
 	GeneratedAt    time.Time // zero unless --stamp-time; the manifest omits it then
@@ -136,13 +135,7 @@ func sdkMarkdownSafe(value string) string {
 	return strings.ReplaceAll(out, "*/", "* /")
 }
 
-// sdkFenceWord reduces the app name to the bytes that are inert inside
-// the README's ```sh install fence (`go mod edit -replace <module>=./<dir>`),
-// which an operator copies and pastes into a shell: the module-path
-// alphabet only. A newline would become its own shell line, and spaces,
-// pipes, backticks and quotes all change how the pasted line parses, so
-// they are dropped rather than escaped — hostile junk can only mangle the
-// directory hint, never restructure the command.
+// sdkFenceWord keeps the path-component alphabet used in SDK README examples.
 func sdkFenceWord(value string) string {
 	var b strings.Builder
 	b.Grow(len(value))
@@ -189,7 +182,7 @@ func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if err := ApplySDKConfigDefaults(&opts); err != nil {
@@ -312,13 +305,15 @@ func emitSDKFiles(opts SdkOptions, files []GeneratedFile, source string) {
 
 func parseSDKOptions(args []string) (SdkOptions, error) {
 	opts := SdkOptions{set: map[string]bool{}}
+	var flagErr error
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], true
 			}
+			flagErr = cli.NeedsValue(arg)
 			return "", false
 		}
 		value := func(prefix string) (string, bool) {
@@ -360,6 +355,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 				opts.only = splitCommaList(v)
 			} else if v, ok := value("--exclude"); ok {
 				opts.exclude = splitCommaList(v)
+			} else if flagErr != nil {
+				return opts, flagErr
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}
@@ -532,18 +529,38 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 	return nil
 }
 
+// resolvedAbs is p made absolute with the symlinks in its longest existing
+// prefix resolved, so /var/x and /private/var/x on macOS name one path
+// even when x does not exist yet.
+func resolvedAbs(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	rest := ""
+	for dir := abs; ; dir = filepath.Dir(dir) {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest), nil
+		}
+		if filepath.Dir(dir) == dir {
+			return abs, nil
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+	}
+}
+
 // samePath reports whether two project-relative or absolute paths name
 // one directory.
 func samePath(a, b string) bool {
-	absA, errA := filepath.Abs(a)
-	absB, errB := filepath.Abs(b)
+	absA, errA := resolvedAbs(a)
+	absB, errB := resolvedAbs(b)
 	return errA == nil && errB == nil && absA == absB
 }
 
 // pathsOverlap reports whether one directory is the other or holds it.
 func pathsOverlap(a, b string) bool {
-	absA, errA := filepath.Abs(a)
-	absB, errB := filepath.Abs(b)
+	absA, errA := resolvedAbs(a)
+	absB, errB := resolvedAbs(b)
 	if errA != nil || errB != nil {
 		return true
 	}
@@ -557,18 +574,15 @@ func pathsOverlap(a, b string) bool {
 // buildSDKSpec validates selection and derives the renderer input. It
 // mutates opts only to settle defaults (name, out dir, targets).
 func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpec, error) {
-	for _, sel := range [][]string{opts.only, opts.exclude} {
-		for _, name := range sel {
-			if !cliAnyEntityMatches(decls, name) {
-				return sdkSpec{}, fmt.Errorf("--only/--exclude: no entity named %q", name)
-			}
-		}
+	selected, err := selectDeclarations(decls, opts.only, opts.exclude, func(string) string { return "--only/--exclude" })
+	if err != nil {
+		return sdkSpec{}, err
 	}
 	spec, err := settleSDKSpec(opts)
 	if err != nil {
 		return sdkSpec{}, err
 	}
-	return addSDKEntities(spec, decls, opts)
+	return addSDKEntities(spec, selected)
 }
 
 // settleSDKSpec settles the options both SDK sources share (targets, out
@@ -623,16 +637,13 @@ func settleSDKSpec(opts *SdkOptions) (sdkSpec, error) {
 		apiPrefix = "/" + apiPrefix
 	}
 
-	// App is config-provenance (--name / gofastr.settings.yml, the same
-	// provenance the exec gate and sdkCommentSafe treat as hostile) and
-	// lands raw in both READMEs' H1/prose and (as the -sdk directory) in
-	// the install fence. Scrub it once here; renderSDKGoReadme applies
-	// the stricter fence reduction at the fence slot itself.
+	appName := sdkMarkdownSafe(opts.name)
 	spec := sdkSpec{
-		App:            sdkMarkdownSafe(opts.name),
+		App:            appName,
 		SDKVersion:     opts.sdkVersion,
 		GofastrVersion: gofastrVersion,
 		Module:         opts.module,
+		GoDirectory:    sdkFenceWord(appName) + "-sdk",
 		BaseURL:        opts.baseURL,
 		APIPrefix:      apiPrefix,
 	}
@@ -643,24 +654,10 @@ func settleSDKSpec(opts *SdkOptions) (sdkSpec, error) {
 }
 
 // addSDKEntities adds the selected entity declarations to spec.
-func addSDKEntities(spec sdkSpec, decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpec, error) {
-	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
-		for _, name := range names {
-			if cliEntityMatches(decl, name) {
-				return true
-			}
-		}
-		return false
-	}
+func addSDKEntities(spec sdkSpec, selected []framework.EntityDeclaration) (sdkSpec, error) {
 	structOwners := map[string]string{} // derived Go type name → declaring entity
 	propOwners := map[string]string{}   // derived client.js property → declaring entity
-	for _, decl := range decls {
-		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
-			continue
-		}
-		if matchesAny(decl, opts.exclude) {
-			continue
-		}
+	for _, decl := range selected {
 		ent := buildEntityModel(decl, cliVerbs)
 		// `generate sdk` reads the same hand-written entities/*.go the CLI
 		// generator reads (packReadEntities), so it inherits the same trust
@@ -777,10 +774,12 @@ func renderSDKSource(spec sdkSpec, src sdkSource, targets []string, dist bool) (
 	artifacts := map[string]sdk.Artifact{}
 	var distFiles []GeneratedFile
 
-	record := func(key, file, module string, data []byte) {
+	record := func(key string, artifact sdk.Artifact, data []byte) {
 		sum := sha256.Sum256(data)
-		artifacts[key] = sdk.Artifact{File: file, SHA256: fmt.Sprintf("%x", sum), Bytes: int64(len(data)), Module: module}
-		distFiles = append(distFiles, GeneratedFile{Name: "dist/" + file, Content: string(data)})
+		artifact.SHA256 = fmt.Sprintf("%x", sum)
+		artifact.Bytes = int64(len(data))
+		artifacts[key] = artifact
+		distFiles = append(distFiles, GeneratedFile{Name: "dist/" + artifact.File, Content: string(data)})
 	}
 
 	if want["go"] {
@@ -799,11 +798,11 @@ func renderSDKSource(spec sdkSpec, src sdkSource, targets []string, dist bool) (
 			for _, f := range goFiles {
 				zipFiles = append(zipFiles, sdk.File{Path: f.Name, Data: []byte(f.Content)})
 			}
-			raw, err := sdk.PackZip(spec.App+"-sdk", zipFiles)
+			raw, err := sdk.PackZip(spec.GoDirectory, zipFiles)
 			if err != nil {
 				return nil, err
 			}
-			record("go", sdk.GoArtifact, spec.Module, raw)
+			record("go", sdk.Artifact{File: sdk.GoArtifact, Module: spec.Module, Directory: spec.GoDirectory}, raw)
 		}
 	}
 
@@ -819,9 +818,9 @@ func renderSDKSource(spec sdkSpec, src sdkSource, targets []string, dist bool) (
 			}
 			switch f.Name {
 			case sdk.JSArtifact:
-				record("js", sdk.JSArtifact, "", []byte(f.Content))
+				record("js", sdk.Artifact{File: f.Name}, []byte(f.Content))
 			case sdk.JSTypesArtifact:
-				record("js-types", sdk.JSTypesArtifact, "", []byte(f.Content))
+				record("js-types", sdk.Artifact{File: f.Name}, []byte(f.Content))
 			}
 		}
 	}
@@ -892,17 +891,7 @@ func renderSDKGoFiles(spec sdkSpec) ([]GeneratedFile, error) {
 }
 
 func sdkExampleBaseURL(spec sdkSpec) string {
-	return sdkExampleHost(spec) + spec.APIPrefix
-}
-
-// sdkExampleHost is the app origin WITHOUT the API prefix. Docs-site and
-// download URLs mount on the host, only API calls live under the prefix.
-func sdkExampleHost(spec sdkSpec) string {
-	base := spec.BaseURL
-	if base == "" {
-		base = "https://your-app.example.com"
-	}
-	return strings.TrimRight(base, "/")
+	return sdk.ExampleHost(spec.BaseURL) + spec.APIPrefix
 }
 
 func renderSDKGoReadme(spec sdkSpec) string {
@@ -911,10 +900,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "# %s Go SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	fmt.Fprintf(&sb, "A standalone, stdlib-only Go client for the %s HTTP API.\n\n", spec.App)
 	sb.WriteString("## Install\n\nUnzip next to your project (or anywhere), then wire the module locally:\n\n")
-	// sdkFenceWord, not the markdown scrub: this line is pasted into a
-	// shell, so the directory hint is held to the module-path alphabet
-	// (spec.Module itself is already regex-gated by validateSDKModulePath).
-	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s-sdk\ngo get %s\n```\n\n", spec.Module, sdkFenceWord(spec.App), spec.Module)
+	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s\ngo get %s\n```\n\n", spec.Module, spec.GoDirectory, spec.Module)
 	sb.WriteString("## Use\n\n")
 	fmt.Fprintf(&sb, "```go\nimport client %q\n\n", spec.Module)
 	fmt.Fprintf(&sb, "c := client.NewClient(%q, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // Bearer token minted via POST /auth/tokens\n\n", sdkExampleBaseURL(spec))

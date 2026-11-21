@@ -201,11 +201,10 @@ func (c *Registry) Primitive(id string) *Primitive { return c.byID[id] }
 
 // Parent returns the primitive one level up, or nil at the top.
 func (c *Registry) Parent(p *Primitive) *Primitive {
-	i := strings.LastIndex(p.ID, ".")
-	if i < 0 {
-		return nil
+	if id := parentID(p.ID); id != "" {
+		return c.byID[id]
 	}
-	return c.byID[p.ID[:i]]
+	return nil
 }
 
 // Children returns the primitives exactly one level below id; the

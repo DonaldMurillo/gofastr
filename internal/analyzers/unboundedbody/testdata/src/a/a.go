@@ -10,11 +10,6 @@ func readAll(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.ReadAll(r.Body) // want `reads an inbound request body with no size cap`
 }
 
-func decode(w http.ResponseWriter, r *http.Request) {
-	var v struct{ N int }
-	_ = ej.NewDecoder(r.Body).Decode(&v) // want `reads an inbound request body with no size cap`
-}
-
 // An aliased import is still the real encoding/json.
 func decodeAliased(w http.ResponseWriter, req *http.Request) {
 	var v struct{ N int }

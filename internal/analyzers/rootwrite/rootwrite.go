@@ -171,11 +171,6 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// sinkArg is one path argument a call writes: its expression, whether
-// the write only clobbers the leaf (so the Lstat leaf posture maps to
-// it), and the helper the write happens in ("" for a direct os.* call).
-type sinkArg = pathflow.SinkArg
-
 // osSink recognizes the direct os.* write sinks. The destination of
 // Rename/Link/Symlink is the write; the source of a Rename may live
 // anywhere. leaf marks the sinks that clobber a path an Lstat can see;

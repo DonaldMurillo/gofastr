@@ -330,16 +330,21 @@ func TestBulkJobsUnboundRefusals(t *testing.T) {
 // a non-object is an error, never a zero-value run.
 func TestBulkJobPayloadDecodesStrictly(t *testing.T) {
 	j := newJobsEnv(t, 1)
-	j.setRoles("u1", "admin", "editor")
-	for name, payload := range map[string]string{
-		"unknown field": `{"id":"j1","ids":["p000"]}`,
-		"no id":         `{}`,
-		"not an object": `["j1"]`,
+	for _, c := range []struct {
+		payload string
+		reason  string
+	}{
+		{`{"id":"j1","ids":["p000"]}`, handler.ReasonJSONUnknownField.Key()},
+		{`["j1"]`, handler.ReasonInvalidJSON.Key()},
 	} {
-		err := j.env.b.cfg.BulkJobs.run(context.Background(), queue.Job{Type: bulkJobType, Payload: []byte(payload)})
-		if err == nil {
-			t.Errorf("%s: the handler accepted the payload", name)
+		err := j.env.b.cfg.BulkJobs.run(context.Background(), queue.Job{Type: bulkJobType, Payload: []byte(c.payload)})
+		if decodeErr, ok := errors.AsType[*handler.Error](err); !ok || decodeErr.Reason.Key() != c.reason {
+			t.Errorf("payload %s: error = %v, want decoder reason %s", c.payload, err, c.reason)
 		}
+	}
+	err := j.env.b.cfg.BulkJobs.run(context.Background(), queue.Job{Type: bulkJobType, Payload: []byte(`{}`)})
+	if err == nil || err.Error() != "admin: bulk job payload carries no id" {
+		t.Errorf("payload {}: error = %v, want missing ID", err)
 	}
 }
 

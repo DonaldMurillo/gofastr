@@ -57,9 +57,10 @@ app/screens/home.go:42: html.Image: missing required field "Alt" in ImageConfig
     screen readers skip it. Never omit the field.
 ```
 
-It scans every non-test, non-generated `.go` file for core-ui/html
-element configs missing their required accessibility fields, and each
-finding explains the rule. The goal is that the fix teaches WCAG
+Static mode, the default, scans every non-test, non-generated `.go` file
+under the selected root (default `.`) for core-ui/html element configs
+missing their required accessibility fields. Each finding explains the
+rule. The goal is that the fix teaches WCAG
 name/role/value basics rather than just flagging a line. Exit code 1 on findings,
 so it can gate CI directly.
 
@@ -117,8 +118,15 @@ and audits **both color schemes**: contrast, focus order, landmark
 structure, ARIA validity. These are the classes of failure only a
 rendered page exposes. Pages are discovered from the app's `/sitemap.xml`
 (`uihost.WithSitemap`), so a sitemap-configured app gets full-site
-coverage with zero flags; use `--pages /a,/b` to scope. Exit code 1 on
-violations.
+coverage with zero flags. For a sitemap index, the browser reads the
+listed parts in the same session (logged in, when credentials are
+given) and audits the unique page paths they contain; a part that
+cannot be read is a discovery failure. Page locations in URL sets must be HTTP(S)
+URLs with a host or root-relative paths. An origin-only HTTP(S) URL
+counts as `/`. A 404 or 410 from the root sitemap falls back to `/`.
+Discovery failures, including malformed sitemap XML or a sitemap with
+no usable page locations, exit 1. Use `--pages /a,/b` to set the pages
+explicitly. Accessibility violations also exit 1.
 
 For an authenticated app, pass the same credentials a user enters on the
 auth battery's `/login` page:
@@ -192,7 +200,9 @@ target-size pass).
 Every successful `Scan` also records the scanned path into
 `.gofastr/axe-coverage.json` (the axe-coverage manifest,
 `framework/axecov`) under the canonical coverage root:
-`GOFASTR_AXE_COVERAGE_DIR` when set, else the module root. The result
+`GOFASTR_AXE_COVERAGE_DIR` when set, else Go's own root rule (nearest
+`go.work` ancestor, else nearest `go.mod`, else the working directory).
+The result
 is a per-project record of which pages the axe suite actually
 exercised. The manifest is a local build artifact: gitignored, wiped by
 `make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables

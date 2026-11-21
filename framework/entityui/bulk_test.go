@@ -367,7 +367,7 @@ func (b *memBulk) AuditEvent(ctx context.Context, _, op, id string, detail map[s
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	b.audits = append(b.audits, map[string]any{"op": op, "id": id, "detail": detail, "actor": userID(ctx)})
+	b.audits = append(b.audits, map[string]any{"op": op, "id": id, "detail": detail, "actor": access.UserID(ctx)})
 	return nil
 }
 

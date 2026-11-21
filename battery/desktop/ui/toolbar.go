@@ -8,7 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// FloatingToolbar is ui.Toolbar in a thin glass capsule.
+// its labelled group semantics, separators and runtime behavior.
+// This stylesheet restyles only the chrome (surface,
 func FloatingToolbar(cfg ui.ToolbarConfig) render.HTML {
 	inner := Glass(GlassConfig{}, ui.Toolbar(cfg))
 	return floatingToolbarStyle.WrapHTML(render.Tag("div", html.Attrs{

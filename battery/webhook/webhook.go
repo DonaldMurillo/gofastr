@@ -174,6 +174,10 @@ func (m *Manager) Replay(ctx context.Context, id string) error {
 const DefaultMaxResponseBodyBytes int64 = 64 << 10
 
 // Options configures the Manager.
+// caller-supplied client gets a dial-time guard when it uses the default
+// transport or when its transport can be cloned with a guarded dialer.
+// Other transports get a resolved-IP check on the request target before
+// the transport runs.
 type Options struct {
 	MaxAttempts          int             // attempts before a delivery is dead; default 6
 	Backoff              []time.Duration // wait after attempt i at [i-1], the last reused; default 30s to 3h
@@ -756,6 +760,10 @@ func (m *Manager) saveDelivery(d Delivery) {
 	}
 }
 
+// settleTimeout bounds a delivery's state write, a claim release and an
+// inbound envelope's outcome write after the work detaches them from its
+// own context. It equals internal/settle.Timeout; webhook keeps its own
+// copy so it stays unmountable (TestSettleTimeoutMatchesSettle).
 const settleTimeout = 10 * time.Second
 
 func (m *Manager) schedule(d *Delivery) {

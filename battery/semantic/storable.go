@@ -68,8 +68,10 @@ func validateDocumentText(document Document) error {
 			return &InvalidDocumentTextError{Field: field.name}
 		}
 	}
-	if kind, ok := document.Metadata["kind"].(string); ok && !textsafe.Storable(kind) {
-		return &InvalidDocumentTextError{Field: "metadata"}
+	if raw, present := document.Metadata["kind"]; present {
+		if kind, isString := raw.(string); !isString || !textsafe.Storable(kind) {
+			return &InvalidDocumentTextError{Field: "metadata"}
+		}
 	}
 	if len(document.Metadata) == 0 {
 		return nil

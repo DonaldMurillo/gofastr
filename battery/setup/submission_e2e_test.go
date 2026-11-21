@@ -8,19 +8,12 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
 func TestWizardRetryKeepsPublicInput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	browser, ok := browserpath.Find()
-	if !ok {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
+	browser := chromedptest.BrowserPath(t)
 	r := New(Config{DisableToken: true, Complete: func(context.Context) (bool, error) { return false, nil }, Steps: []Step{{
 		Name: "admin", Title: pageContinue, Fields: []Field{
 			{Name: "email", Label: pageContinue},

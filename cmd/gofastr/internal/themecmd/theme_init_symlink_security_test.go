@@ -123,7 +123,7 @@ func TestThemeEditWriteBackRefusesLinkedThemeDir(t *testing.T) {
 func TestThemeEditRefusesLinkedThemeDirAtStartup(t *testing.T) {
 	linkedThemeProject(t)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runThemeEdit([]string{"--no-open", "--force", "--addr=no-port-here"})
 		})

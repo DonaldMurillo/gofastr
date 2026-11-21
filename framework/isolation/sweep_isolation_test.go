@@ -38,7 +38,7 @@ func resolveWith(t *testing.T, yml string) *Runtime {
 }
 
 func TestSettingsEnvKeepsOnlyTemplatedResourceNames(t *testing.T) {
-	t.Setenv(envIsolation, "")
+	t.Setenv(EnvIsolation, "")
 	rt := resolveWith(t, `
 isolation:
   mode: always
@@ -60,7 +60,7 @@ isolation:
 }
 
 func TestEnvNeverOverridesOperatorValue(t *testing.T) {
-	t.Setenv(envIsolation, "")
+	t.Setenv(EnvIsolation, "")
 	rt := resolveWith(t, "isolation:\n  mode: always\n  env:\n    REDIS_URL: redis://localhost:{port}\n")
 	got, _ := envLookup(rt.Env([]string{"REDIS_URL=redis://mine"}), "REDIS_URL")
 	if got != "redis://mine" {
@@ -69,7 +69,7 @@ func TestEnvNeverOverridesOperatorValue(t *testing.T) {
 }
 
 func TestIsolationDisabledSpelling(t *testing.T) {
-	t.Setenv(envIsolation, "disabled")
+	t.Setenv(EnvIsolation, "disabled")
 	if resolveWith(t, "isolation:\n  mode: always\n").Active() {
 		t.Fatal("GOFASTR_ISOLATION=disabled left isolation on")
 	}

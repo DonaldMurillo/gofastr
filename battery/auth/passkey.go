@@ -327,12 +327,8 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
 	}
-	if p.config.TwoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: passkey plugin: %q handles two-factor sign-in, so set PasskeyConfig.TwoFactorURL to the page that finishes it: a passkey sign-in of a 2FA account is pending until /2fa/challenge, and OnSuccessURL would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL, "a passkey sign-in", "OnSuccessURL"); err != nil {
+		return err
 	}
 	if se, ok := p.store.(interface{ EnsureSchema(context.Context) error }); ok {
 		if err := se.EnsureSchema(context.Background()); err != nil {

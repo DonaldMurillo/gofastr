@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 // The nil-fold arm (2026-11, bug 8b19113f in battery/auth). A type switch
@@ -49,7 +52,7 @@ func runNilFold(pass *analysis.Pass) {
 	}
 	var decls []fnDecl
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -178,7 +181,7 @@ func coercerCall(pass *analysis.Pass, e ast.Expr, coercers map[*types.Func]token
 	if !ok {
 		return nil
 	}
-	fn := calleeFunc(pass, call)
+	fn, _ := astx.CalleeFunc(pass, call.Fun)
 	if fn == nil {
 		return nil
 	}
@@ -186,20 +189,6 @@ func coercerCall(pass *analysis.Pass, e ast.Expr, coercers map[*types.Func]token
 		return fn
 	}
 	return nil
-}
-
-func calleeFunc(pass *analysis.Pass, call *ast.CallExpr) *types.Func {
-	var id *ast.Ident
-	switch f := call.Fun.(type) {
-	case *ast.Ident:
-		id = f
-	case *ast.SelectorExpr:
-		id = f.Sel
-	default:
-		return nil
-	}
-	fn, _ := pass.TypesInfo.Uses[id].(*types.Func)
-	return fn
 }
 
 // interfaceParams returns fd's interface-typed parameters.
@@ -335,7 +324,7 @@ func wrapsCoercer(pass *analysis.Pass, fd *ast.FuncDecl, coercers map[*types.Fun
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			fn := calleeFunc(pass, x)
+			fn, _ := astx.CalleeFunc(pass, x.Fun)
 			if fn == nil {
 				return true
 			}

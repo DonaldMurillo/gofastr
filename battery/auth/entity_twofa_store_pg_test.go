@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
+	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -23,10 +25,7 @@ func slowHash(t *testing.T, code string) string {
 	return string(h)
 }
 
-// openPGMultiConn returns a Postgres pool whose EVERY connection is pinned
-// to a fresh throwaway schema (search_path baked into the DSN options), so
-// a genuinely concurrent test can use MaxOpenConns > 1 without racing on
-// the per-connection SET search_path that openPGForBattery relies on.
+// openPGMultiConn returns a Postgres pool scoped to a fresh schema on every connection.
 func openPGMultiConn(t *testing.T) *sql.DB {
 	t.Helper()
 	baseDSN, err := resolveBatteryPG()
@@ -34,52 +33,30 @@ func openPGMultiConn(t *testing.T) *sql.DB {
 		t.Skipf("Postgres unavailable: %v", err)
 	}
 	schema := fmt.Sprintf("battery_auth_mc_%d", time.Now().UnixNano())
+	pinnedDSN, err := pgtest.DSNWithSearchPath(baseDSN, schema)
+	if err != nil {
+		t.Fatalf("battery/auth: invalid TEST_POSTGRES_DSN: %v", err)
+	}
 
 	admin, err := sql.Open("postgres", baseDSN)
 	if err != nil {
 		t.Fatalf("open admin: %v", err)
 	}
-	// Ping-retry: the container connection can be cold/reset on first touch
-	// (same reason openPGForBattery does this before use).
-	for range 25 {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		err = admin.PingContext(ctx)
-		cancel()
-		if err == nil {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if err != nil {
-		// resolveBatteryPG already confirmed PG is up, so an unpingable pool
-		// now is a real breakage, fail loudly rather than silently skip and
-		// quietly drop the CAS coverage from CI (matches openPGForBattery).
-		_ = admin.Close()
+	t.Cleanup(func() { _ = admin.Close() })
+	if err := pgtest.PingRetry(admin, 25, 500*time.Millisecond, 200*time.Millisecond); err != nil {
 		t.Fatalf("Postgres was resolved but the pool is unreachable: %v", err)
 	}
 	if _, err := admin.Exec("CREATE SCHEMA " + schema); err != nil {
-		_ = admin.Close()
 		t.Fatalf("create schema: %v", err)
 	}
-	_ = admin.Close()
+	t.Cleanup(func() { dropBatteryPGSchema(t, admin, schema) })
 
-	u, err := url.Parse(baseDSN)
-	if err != nil {
-		t.Fatalf("parse dsn: %v", err)
-	}
-	q := u.Query()
-	q.Set("options", "-c search_path="+schema)
-	u.RawQuery = q.Encode()
-
-	db, err := sql.Open("postgres", u.String())
+	db, err := sql.Open("postgres", pinnedDSN)
 	if err != nil {
 		t.Fatalf("open pinned pool: %v", err)
 	}
 	db.SetMaxOpenConns(8)
-	t.Cleanup(func() {
-		_, _ = db.Exec("DROP SCHEMA " + schema + " CASCADE")
-		_ = db.Close()
-	})
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -451,5 +428,49 @@ func TestSQLRateLimit_Postgres_BlockAndShare(t *testing.T) {
 	// A different scope for the same raw key is independent.
 	if ok, _, err := s.Allow(ctx, "twofa|1.2.3.4", cfg); err != nil || !ok {
 		t.Fatalf("distinct scope on PG must be unaffected: got %v, %v", ok, err)
+	}
+}
+
+func TestPGMultiConnDropsSchemaAfterPoolCloses(t *testing.T) {
+	base, err := resolveBatteryPG()
+	if err != nil {
+		t.Skipf("Postgres unavailable: %v", err)
+	}
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	var schema string
+	defer func() {
+		if schema != "" {
+			_, _ = admin.Exec("DROP SCHEMA IF EXISTS " + pq.QuoteIdentifier(schema) + " CASCADE")
+		}
+	}()
+	if !t.Run("close scoped pool", func(t *testing.T) {
+		db := openPGMultiConn(t)
+		var current string
+		if err := db.QueryRow("SELECT current_schema()").Scan(&current); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(current, "battery_auth_mc_") {
+			t.Fatalf("expected a disposable auth schema, got %q", current)
+		}
+		schema = current
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}) {
+		return
+	}
+	if schema == "" {
+		t.Fatal("configured Postgres fixture skipped")
+	}
+	var exists bool
+	if err := admin.QueryRow("SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", schema).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Errorf("schema %s survived cleanup after the scoped pool closed", schema)
 	}
 }

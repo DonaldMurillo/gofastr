@@ -51,7 +51,7 @@ func TestRenderScreenE2E_BrandedRecoveryPaints(t *testing.T) {
 	srv := httptest.NewServer(rt)
 	t.Cleanup(srv.Close)
 
-	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 	var heading, readyState string
 	var shot []byte
 	err := chromedp.Run(chCtx,

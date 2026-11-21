@@ -60,15 +60,20 @@ invariants:
     enforced_by:
       - test: framework/embed.TestMiddlewareRefusesToRunAfterAnAuthenticator
   - id: grant-responses-are-private
-    rule: A grant-carrying response adds Vary GrantHeader and Cache-Control "private, no-store".
+    rule: A verified grant response commits Cache-Control "private, no-store" and varies on GrantHeader even when a handler sets its own headers or commits implicitly.
     enforced_by:
       - test: framework/embed.TestGrantResponsesAreNotCacheable
+      - test: framework/embed.TestGrantCachePolicySurvivesDownstreamHeaders
+  - id: reach-uses-the-verified-surface
+    rule: Middleware checks reach with the surface returned by grant verification. A grant for a surface missing at verification answers 401.
+    enforced_by:
+      - test: framework/embed.TestMiddlewareUsesTheSurfaceResolvedDuringVerification
   - id: request-ends-with-the-grant
     rule: Middleware bounds the request context by the grant's expiry.
     enforced_by:
       - test: framework/embed.TestGrantExpiryBoundsTheRequestContext
   - id: subject-comes-from-the-resolvers
-    rule: The request's tenant and user are only what ResolveTenant and Resolve return for the grant's subject, an empty tenant or a typed nil user installs none, and a resolver error answers 403.
+    rule: Host.InstallSubject sets the tenant and user for grant middleware and frame content from ResolveTenant and Resolve, in that order. An empty tenant or typed nil user installs none, and either resolver error answers 403.
     enforced_by:
       - test: framework/embed.TestResolveTenantInstallsTheSubjectsTenant
       - test: framework/embed.TestRequestCannotInfluenceTheResolvedTenant
@@ -78,6 +83,8 @@ invariants:
       - test: framework/embed.TestMiddlewareFailsClosedWhenTheSubjectVanishes
       - test: framework/embed.TestTypedNilSubjectIsNotInstalledAsAUser
       - test: framework/embed.TestSweepEmbedEmptyTenantInstallsNoTenant
+      - test: framework/uihost.TestEmbedContentInstallsTheResolvedTenant
+      - test: framework/uihost.TestEmbedContentDoesNotInstallATypedNilUser
   - id: held-requests-recheck-the-subject
     rule: The principal check Middleware installs repeats both lookups and fails once either errors or the subject stops resolving to a user.
     enforced_by:

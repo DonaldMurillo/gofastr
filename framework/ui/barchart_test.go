@@ -294,10 +294,7 @@ func TestBarChartExtraAttrsOnRoot(t *testing.T) {
 		Bars:       []BarChartBar{{Label: "x", Value: 1}},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("svg root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "svg root")
 }
 
 func TestChartExtraAttrsOnEmptyPlaceholder(t *testing.T) {

@@ -4,12 +4,6 @@
 // answers one syntactic or type question and decides nothing. The
 // analyzers pick their sinks and postures; this package only names
 // callees, strips parentheses of type structure, and splits words.
-//
-// Users today: asciifold, compositekey, controlbytes, discardmutator,
-// divlimit, emitident, hygiene, intwrap, laxenvelope, mapwriter,
-// nonfinite, nostore, recovercallback, recoverlog, reqparamlimit,
-// secretcompare, timestampid, unboundedbody, unboundedresp, unseated,
-// worldreadable.
 // (Parenthesis stripping lives in the standard library's ast.Unparen
 // and is not duplicated here.)
 package astx
@@ -19,6 +13,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"iter"
 	"strings"
 	"unicode"
 
@@ -47,13 +42,13 @@ func AllFuncs(f *ast.File) []ast.Node {
 	return out
 }
 
-// AllBodies yields every function body in the analyzed package:
+// AllBodies yields every function body in the given files:
 // declaration bodies plus function literals (handlers are usually
 // literals returned from factories). It replaces the identical
 // collection loops in discardmutator.run and reqparamlimit.run.
-func AllBodies(pass *analysis.Pass) []*ast.BlockStmt {
+func AllBodies(files ...*ast.File) []*ast.BlockStmt {
 	var bodies []*ast.BlockStmt
-	for _, f := range pass.Files {
+	for _, f := range files {
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch fn := n.(type) {
 			case *ast.FuncDecl:
@@ -82,8 +77,7 @@ func BodyOf(fn ast.Node) *ast.BlockStmt {
 }
 
 // CalleeFunc resolves a callee expression to its *types.Func through
-// the type checker, for a plain identifier or a selector. It replaces
-// calleeFunc in asciifold, compositekey, and emitident.
+// the type checker, for a plain identifier or a selector.
 func CalleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
 	switch f := fun.(type) {
 	case *ast.Ident:
@@ -94,6 +88,76 @@ func CalleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
 		return fn, ok
 	}
 	return nil, false
+}
+
+// FuncDecls indexes package functions and methods with bodies by their objects.
+func FuncDecls(pass *analysis.Pass) map[*types.Func]*ast.FuncDecl {
+	decls := map[*types.Func]*ast.FuncDecl{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
+					decls[fn] = fd
+				}
+			}
+		}
+	}
+	return decls
+}
+
+// DeferredBodies yields bodies reached by defers in the selected files.
+func DeferredBodies(pass *analysis.Pass, includeFile func(*ast.File) bool) iter.Seq[*ast.BlockStmt] {
+	return func(yield func(*ast.BlockStmt) bool) {
+		decls := FuncDecls(pass)
+		for _, f := range pass.Files {
+			if !includeFile(f) {
+				continue
+			}
+			for n := range ast.Preorder(f) {
+				ds, ok := n.(*ast.DeferStmt)
+				if !ok {
+					continue
+				}
+				var body *ast.BlockStmt
+				switch fun := ast.Unparen(ds.Call.Fun).(type) {
+				case *ast.FuncLit:
+					body = fun.Body
+				default:
+					if fn, ok := CalleeFunc(pass, fun); ok {
+						if fd := decls[fn.Origin()]; fd != nil {
+							body = fd.Body
+						}
+					}
+				}
+				if body != nil && !yield(body) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// ReceiverIs reports whether fn has the named receiver type, after dereferencing.
+func ReceiverIs(fn *types.Func, pkg, name string) bool {
+	sig := fn.Signature()
+	return sig.Recv() != nil && IsNamed(Deref(sig.Recv().Type()), pkg, name)
+}
+
+// FirstWord returns the leading camel-case word of name, lowercased.
+func FirstWord(name string) string {
+	rs := []rune(name)
+	for i := 1; i < len(rs); i++ {
+		if unicode.IsUpper(rs[i]) {
+			return strings.ToLower(string(rs[:i]))
+		}
+	}
+	return strings.ToLower(name)
+}
+
+// EqualFoldStringLiteral compares the text of a string literal with want.
+func EqualFoldStringLiteral(e ast.Expr, want string) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.STRING && strings.EqualFold(strings.Trim(lit.Value, "\"'`"), want)
 }
 
 // CalleeName renders a callee's base name (an identifier or a
@@ -150,6 +214,36 @@ func EvenOffsetArgs(call *ast.CallExpr) []ast.Expr {
 	return out
 }
 
+// RecordLocalBindings records paired assignments, the first of two tuple
+// results, and single-name value specs at n.
+func RecordLocalBindings(pass *analysis.Pass, n ast.Node, bound map[types.Object]ast.Expr) {
+	bind := func(lhs ast.Expr, rhs ast.Expr) {
+		if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				bound[obj] = rhs
+			}
+		}
+	}
+	switch st := n.(type) {
+	case *ast.AssignStmt:
+		if st.Tok != token.ASSIGN && st.Tok != token.DEFINE {
+			return
+		}
+		switch {
+		case len(st.Lhs) == len(st.Rhs):
+			for i, lhs := range st.Lhs {
+				bind(lhs, st.Rhs[i])
+			}
+		case len(st.Lhs) == 2 && len(st.Rhs) == 1:
+			bind(st.Lhs[0], st.Rhs[0])
+		}
+	case *ast.ValueSpec:
+		if len(st.Names) == 1 && len(st.Values) == 1 {
+			bind(st.Names[0], st.Values[0])
+		}
+	}
+}
+
 // FlipComparison mirrors a comparison operator so the subject can be
 // treated as the left operand. It replaces flipComparison in divlimit
 // and intwrap.
@@ -167,8 +261,8 @@ func FlipComparison(op token.Token) token.Token {
 	return op
 }
 
-// IsNamed reports whether t is the named type pkgPath.name. It
-// replaces isNamed in controlbytes, recovercallback, and recoverlog.
+// IsNamed reports whether t is the named type pkgPath.name. Callers
+// that accept aliases unwrap them with types.Unalias.
 func IsNamed(t types.Type, pkgPath, name string) bool {
 	n, ok := t.(*types.Named)
 	if !ok {
@@ -176,6 +270,35 @@ func IsNamed(t types.Type, pkgPath, name string) bool {
 	}
 	obj := n.Obj()
 	return obj.Pkg() != nil && obj.Pkg().Path() == pkgPath && obj.Name() == name
+}
+
+// IsRecover reports whether e is the builtin recover() call,
+// parentheses stripped. It replaces isRecoverCallExpr in controlbytes,
+// isRecoverCall in recoverlog, and the inline spellings in
+// recoverwrite and recovercallback.
+func IsRecover(pass *analysis.Pass, e ast.Expr) bool {
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+	if !ok || id.Name != "recover" {
+		return false
+	}
+	_, ok = pass.TypesInfo.ObjectOf(id).(*types.Builtin)
+	return ok
+}
+
+// IsString reports whether t's underlying type is a string, untyped
+// strings included (the types.IsString bit, not Kind() == String). It
+// replaces isString in controlbytes, recovercallback, textbind,
+// listheader and ratelimitkey.
+func IsString(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	b, ok := t.Underlying().(*types.Basic)
+	return ok && b.Info()&types.IsString != 0
 }
 
 // MapUnderlying returns x's underlying *types.Map. It replaces
@@ -190,18 +313,10 @@ func MapUnderlying(pass *analysis.Pass, x ast.Expr) (*types.Map, bool) {
 }
 
 // NamedOf returns the named type behind t, or the named type behind
-// one pointer level (*T), or nil. It replaces namedOf in nostore and
-// unseated.
+// one pointer level (*T), or nil.
 func NamedOf(t types.Type) *types.Named {
-	if named, ok := t.(*types.Named); ok {
-		return named
-	}
-	if p, ok := t.(*types.Pointer); ok {
-		if named, ok := p.Elem().(*types.Named); ok {
-			return named
-		}
-	}
-	return nil
+	n, _ := Deref(t).(*types.Named)
+	return n
 }
 
 // PkgFuncName renders a selector callee as "pkg.Func", resolving the
@@ -225,6 +340,21 @@ func PkgFuncName(pass *analysis.Pass, fun ast.Expr) string {
 		return ""
 	}
 	return pkg.Imported().Name() + "." + sel.Sel.Name
+}
+
+// PkgPathOf renders the imported package path behind a selector's X,
+// "" when X is not a package identifier. It replaces pkgPathOf in
+// controlbytes and recoverlog.
+func PkgPathOf(pass *analysis.Pass, sel *ast.SelectorExpr) string {
+	id, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
+	if !ok {
+		return ""
+	}
+	return pkg.Imported().Path()
 }
 
 // QualifiedCallee renders a call target as "pkg.Func" through the

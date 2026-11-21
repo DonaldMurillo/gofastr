@@ -73,13 +73,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	switch kind {
 
 	case "text":
-		s := propString(props, "value")
-		if s == "" {
-			s = propString(props, "text")
-		}
-		if s == "" {
-			s = propString(props, "content")
-		}
+		s := textContentProp(props)
 		if s == "" && len(children) > 0 {
 			return render.Join(children...)
 		}
@@ -259,12 +253,10 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		}
 		attrs := extraAttrs(props, "id", "class", "method", "action")
 		if _, set := attrs["enctype"]; !set {
-			if propString(props, "enctype") == "" {
-				if attrs == nil {
-					attrs = map[string]string{}
-				}
-				attrs["enctype"] = "application/json"
+			if attrs == nil {
+				attrs = map[string]string{}
 			}
+			attrs["enctype"] = "application/json"
 		}
 		return html.Form(html.FormConfig{
 			Method: method, Action: propString(props, "action"),
@@ -287,13 +279,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		if name == "" {
 			name = "field"
 		}
-		content := propString(props, "value")
-		if content == "" {
-			content = propString(props, "text")
-		}
-		if content == "" {
-			content = propString(props, "content")
-		}
+		content := textContentProp(props)
 		return html.TextArea(html.TextAreaConfig{
 			Name: name, Content: content,
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -371,6 +357,16 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	}
 }
 
+func textContentProp(props map[string]any) string {
+	s := propString(props, "value")
+	if s == "" {
+		s = propString(props, "text")
+	}
+	if s == "" {
+		s = propString(props, "content")
+	}
+	return s
+}
 func textConfig(props map[string]any) html.TextConfig {
 	return html.TextConfig{
 		ID: propString(props, "id"), Class: propString(props, "class"),

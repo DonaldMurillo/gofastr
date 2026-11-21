@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
 // ButtonProps is a button, or an anchor that looks like one.
@@ -52,26 +53,8 @@ func linkLegal(key string) bool {
 }
 
 func actionAttrs(a html.Attrs) html.Attrs {
-	out := html.Attrs{}
-	for k, v := range a {
-		k = strings.ToLower(k)
-		if _, twice := out[k]; twice {
-			panic("headless: Action repeats " + k + " under two spellings")
-		}
+	out := rpcAttrs("Action", "a Button Action", a, func(out html.Attrs, k, v string) {
 		switch k {
-		case "data-cui-rpc":
-			if v == "" {
-				panic("headless: Action carries an empty data-cui-rpc — a request with no endpoint")
-			}
-			checkSameOrigin("a Button Action", "data-cui-rpc", v)
-			out[k] = v
-		case "data-cui-rpc-method":
-			switch v {
-			case "GET", "POST", "PUT", "PATCH", "DELETE":
-			default:
-				panic("headless: Action carries data-cui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
-			}
-			out[k] = v
 		case "data-cui-rpc-body":
 			if !json.Valid([]byte(v)) {
 				panic("headless: Action carries a data-cui-rpc-body that is not JSON — the runtime sends it verbatim and the server refuses it")
@@ -79,12 +62,6 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			out[k] = v
 		case "data-cui-rpc-signal":
 			checkSignalName(v)
-			out[k] = v
-		case "data-cui-rpc-navigate":
-			if v == "" {
-				panic("headless: Action carries an empty data-cui-rpc-navigate — a success with nowhere to go")
-			}
-			checkSameOrigin("a Button Action", "data-cui-rpc-navigate", v)
 			out[k] = v
 		case "data-cui-rpc-open", "data-cui-rpc-after-text", "data-cui-rpc-scroll-to",
 			"data-cui-rpc-refresh", "data-cui-confirm":
@@ -96,12 +73,8 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			out[k] = v
 		case "data-cui-rpc-success-toast":
 			out[k] = v
-		case "data-cui-rpc-success-action":
-			checkToastAction("Action", v)
-			out[k] = v
-		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
-			"data-cui-intercept-close", "data-cui-intercept-page", "data-cui-intercept-swap",
-			"data-cui-intercept-panel":
+		case "data-cui-rpc-after-disable", "data-cui-intercept-close", "data-cui-intercept-page",
+			"data-cui-intercept-swap", "data-cui-intercept-panel":
 			out[k] = v
 		case "data-cui-nav":
 			if v != "off" {
@@ -151,9 +124,6 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			checkNoControlBytes("a Button Action", k, v)
 			out[k] = v
-		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
-			checkConfirmWording("Action", a, k, v)
-			out[k] = v
 		case "data-cui-confirm-part":
 			if v != "accept" && v != "accept-danger" && v != "cancel" {
 				panic("headless: Action carries data-cui-confirm-part " + strconv.Quote(v) + ", and a confirm dialog's buttons are accept, accept-danger and cancel")
@@ -173,7 +143,7 @@ func actionAttrs(a html.Attrs) html.Attrs {
 		default:
 			panic("headless: Action carries " + k + ", which is not a request or wiring attribute")
 		}
-	}
+	})
 	if _, close := out["data-cui-action"]; close {
 		if _, rpc := out["data-cui-rpc"]; rpc {
 			panic("headless: Action carries data-cui-action=\"close\" beside data-cui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-cui-rpc-close")
@@ -280,27 +250,68 @@ func hasFold(a html.Attrs, key string) bool {
 	return false
 }
 
-func checkToastAction(seam, v string) {
-	var a struct {
-		Label string            `json:"label"`
-		Attrs map[string]string `json:"attrs"`
-	}
-	if err := json.Unmarshal([]byte(v), &a); err != nil || a.Label == "" || a.Attrs["data-cui-rpc"] == "" {
-		panic("headless: " + seam + " carries a data-cui-rpc-success-action that is not a label and an RPC to run")
-	}
-	for k := range a.Attrs {
-		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
-			panic("headless: " + seam + "'s success toast action carries " + k + "; a toast's button carries RPC wiring only")
+// rpcAttrs folds a's keys to lower case, refuses one key under two
+// spellings and validates the arms a Button Action and a Form Request
+// share, writing them to out; a key only one seam admits goes through
+// perSeam. seam names the carrier in panics ("Action", "Form Request"),
+// component the owner checkSameOrigin names ("a Button Action",
+// "a Form Request").
+func rpcAttrs(seam, component string, a html.Attrs, perSeam func(out html.Attrs, k, v string)) html.Attrs {
+	out := html.Attrs{}
+	for k, v := range a {
+		k = strings.ToLower(k)
+		if _, twice := out[k]; twice {
+			panic("headless: " + seam + " repeats " + k + " under two spellings")
 		}
+		switch k {
+		case "data-cui-rpc":
+			if v == "" {
+				panic("headless: " + seam + " carries an empty data-cui-rpc — a request with no endpoint")
+			}
+			checkSameOrigin(component, "data-cui-rpc", v)
+			out[k] = v
+		case "data-cui-rpc-method":
+			switch v {
+			case "GET", "POST", "PUT", "PATCH", "DELETE":
+			default:
+				panic("headless: " + seam + " carries data-cui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
+			}
+			out[k] = v
+		case "data-cui-rpc-close", "data-cui-rpc-reset":
+			out[k] = v
+		case "data-cui-rpc-navigate":
+			if v == "" {
+				panic("headless: " + seam + " carries an empty data-cui-rpc-navigate — a success with nowhere to go")
+			}
+			checkSameOrigin(component, "data-cui-rpc-navigate", v)
+			out[k] = v
+		case "data-cui-rpc-success-action":
+			checkToastAction(seam, v)
+			out[k] = v
+		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+			checkConfirmWording(seam, a, k, v)
+			out[k] = v
+		default:
+			perSeam(out, k, v)
+		}
+	}
+	return out
+}
+
+func checkToastAction(seam, v string) {
+	var a uiaction.ToastAction
+	if err := json.Unmarshal([]byte(v), &a); err != nil {
+		panic("headless: " + seam + " carries an invalid data-cui-rpc-success-action")
+	}
+	if err := a.Validate(); err != nil {
+		panic("headless: " + seam + " data-cui-rpc-success-action: " + err.Error())
 	}
 	actionAttrs(html.Attrs(a.Attrs))
 }
 
 func checkToastActionRides(seam string, out html.Attrs) {
-	if _, act := out["data-cui-rpc-success-action"]; act {
-		if _, toast := out["data-cui-rpc-success-toast"]; !toast {
-			panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
-		}
+	if uiaction.MissingSuccessToast(out) {
+		panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
 	}
 }
 

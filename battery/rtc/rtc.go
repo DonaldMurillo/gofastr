@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/internal/mountpath"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -88,7 +89,10 @@ type Config struct {
 	// Authorize decides who joins which room.
 	Authorize func(r *http.Request) (Join, error)
 
-	// Path is the WebSocket endpoint Mount registers.
+	// "/__gofastr/rtc". Validated by the shared mount-path rules
+	// (internal/mountpath, the same as relay.Config.Path): absolute,
+	// no trailing slash, no traversal, no percent-encoding, no
+	// ServeMux metacharacters, no reserved /__gofastr route.
 	Path string
 
 	// MaxPeers caps members per room, local plus remote; default 8.
@@ -258,29 +262,11 @@ func (s *Signaler) Init(app *framework.App) error {
 	return nil
 }
 
+// validatePath enforces the mount contract through the shared
+// internal/mountpath rules, the same ones relay.Config.Path applies.
 func validatePath(p string) error {
-	if !strings.HasPrefix(p, "/") {
-		return fmt.Errorf("rtc: Config.Path %q must be absolute (start with /)", p)
-	}
-	if p == "/" {
-		return fmt.Errorf(`rtc: Config.Path "/" would capture the whole app`)
-	}
-	if strings.HasSuffix(p, "/") {
-		return fmt.Errorf("rtc: Config.Path %q must not end with a slash", p)
-	}
-	for i := range len(p) {
-		c := p[i]
-		if c <= 0x20 || c == 0x7f {
-			return fmt.Errorf("rtc: Config.Path %q contains a control character or space", p)
-		}
-		if c == '%' || c == '#' || c == '?' || c == '\\' {
-			return fmt.Errorf("rtc: Config.Path %q contains %q; percent-encoding and fragments are not valid here", p, string(c))
-		}
-	}
-	for _, seg := range strings.Split(p[1:], "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return fmt.Errorf("rtc: Config.Path %q contains an empty or traversal segment", p)
-		}
+	if err := mountpath.Validate("Config.Path", p); err != nil {
+		return fmt.Errorf("rtc: %w", err)
 	}
 	return nil
 }

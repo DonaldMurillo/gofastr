@@ -219,6 +219,23 @@ screens:
 			want: `unsupported block type "chart"`,
 		},
 		{
+			// noderender has no raw kind (the IR is untrusted; a raw
+			// passthrough would be an XSS sink), so a raw block renders
+			// as an "unknown kind" comment and silently disappears from
+			// the page. The validator names it instead.
+			name: "raw is not a render kind",
+			yml: `
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: raw
+        props:
+          html: "<p>hi</p>"
+`,
+			want: `app spec: screen "home" raw is not a render kind. Use a supported block kind such as paragraph or markdown`,
+		},
+		{
 			name: "bulk only on entity list",
 			yml: `
 screens:

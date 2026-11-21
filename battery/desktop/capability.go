@@ -130,12 +130,6 @@ func (r *registry) isFrozen() bool {
 	return r.frozen
 }
 
-func (r *registry) names() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Sorted(maps.Keys(r.caps))
-}
-
 func (r *registry) build() Manifest {
 	r.mu.Lock()
 	snapshot := make([]registered, 0, len(r.caps))

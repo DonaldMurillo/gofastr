@@ -64,7 +64,7 @@ func Path(u string, rule Rule) string {
 		seg = seg[:i]
 	}
 	if dec, err := url.PathUnescape(seg); err == nil {
-		seg = dec
+		seg, _, _ = strings.Cut(dec, "/")
 	}
 	if seg == "__gofastr" || slices.Contains(rule.Locales, seg) || "/"+seg == rule.Prefix {
 		return u

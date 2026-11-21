@@ -10,6 +10,14 @@ code:
 docs:
   - framework/docs/content/query-dsl.md
   - framework/docs/content/cursor-pagination.md
+twins:
+  - job: Sum the Int values returned by the aggregate's scoped read.
+    why: Postgres sums BIGINT into NUMERIC while SQLite's SQL sum overflows at 64 bits, so SQLite streams into big.Int and TestSumAllWideIntParity enforces agreement.
+    sites:
+      - path: framework/crud/aggregate.go
+        note: SumAll using the Postgres SQL SUM.
+      - path: framework/crud/aggregate.go
+        note: sumIntRows using streamed SQLite values.
 invariants:
   - id: one-strict-query-read
     rule: Every HTTP read parses the wire query once, through readQuery, which refuses an undecodable pair or a repeated single-value key, except a repeated q on an entity whose host reads q itself.
@@ -98,6 +106,10 @@ invariants:
       - test: framework/crud.TestMaskRefusesAggregates
       - test: framework/crud.TestGroupCountDecimalIsString
       - test: framework/crud.TestGroupCountAllNormalizesBool
+  - id: integer-sums-are-exact
+    rule: SumAll returns the exact signed decimal total of scoped Int rows on SQLite and Postgres even when the total exceeds the signed 64-bit range, with zero for all NULL or no rows.
+    enforced_by:
+      - test: framework/crud.TestSumAllWideIntParity
   - id: sort-nulls-order-as-postgres
     rule: A sort on a column that can hold NULL puts the null rows last ascending and first descending on SQLite and Postgres alike, on the offset list, the stream, ListAll, TypedQuery.Order, the DSL's order() and GroupCountAll's groups; crud pins the position only on SQLite and only for such a column, through query.OrderTerm.
     enforced_by:

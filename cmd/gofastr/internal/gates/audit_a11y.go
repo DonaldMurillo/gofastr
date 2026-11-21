@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
@@ -20,17 +19,7 @@ import (
 // BuildA11yGateTo is buildA11yGate writing to the given streams, so
 // `gofastr dev` can also show the report on its hold page.
 func BuildA11yGateTo(root string, stdout, stderr io.Writer) bool {
-	findings, err := AuditA11y(root)
-	if err != nil {
-		cli.Fprintf(stderr, "accessibility lint: %v\n", err)
-		return false
-	}
-	if len(findings) == 0 {
-		return true
-	}
-	// The report names project files: scrubbed, as every CLI print is.
-	cli.Fprintf(stdout, "%s", FormatA11yReport(findings))
-	return false
+	return lintGate(root, stdout, stderr, "accessibility lint", AuditA11y, FormatA11yReport)
 }
 
 // A11yFinding is one violation reported by `gofastr audit a11y`.
@@ -67,7 +56,7 @@ func AuditA11y(root string) ([]A11yFinding, error) {
 			return err
 		}
 		// Generated files are the generator's responsibility, not the
-		// developer's. Same policy as `gofastr audit lint`.
+		// developer's. Same policy as `gofastr verify`.
 		if contracts.IsGeneratedSource(body) {
 			return nil
 		}

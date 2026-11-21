@@ -97,7 +97,7 @@ func RunGenerateClient(args []string) {
 			asJSON = true
 		default:
 			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), usage)
-			cli.OsExit(1)
+			cli.OsExit(2)
 			return
 		}
 	}

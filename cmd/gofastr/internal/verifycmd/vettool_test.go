@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -76,6 +77,39 @@ func greet() { fmt.Printf("%d\n", "not a number") }
 	out, _, ok := runGoVet(dir, true)
 	if ok || !strings.Contains(out, "Printf format %d has arg") {
 		t.Fatalf("vet's printf pass did not run beside the suite (ok=%v):\n%s", ok, out)
+	}
+}
+
+func TestVerifyDisablesDuplicatePassesOnlyInSuiteStage(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
+	dir := writeVetApp(t, "")
+	toolDir := t.TempDir()
+	log := filepath.Join(toolDir, "calls")
+	t.Setenv("GOFASTR_TEST_VET_CALLS", log)
+	t.Setenv("PATH", toolDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.WriteFile(filepath.Join(toolDir, "go"), []byte(`#!/bin/sh
+case "$1" in
+  vet) printf '%s\n' "$*" >> "$GOFASTR_TEST_VET_CALLS" ;;
+  env) printf '%s\n' go1.27.4 ;;
+esac
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, _, ok := runGoVet(dir, true)
+	if !ok {
+		t.Fatalf("vet failed: %s", out)
+	}
+	body, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(calls) != 2 || calls[0] != "vet ./..." ||
+		!strings.Contains(calls[1], "-vettool=") ||
+		!strings.HasSuffix(calls[1], " -hostport=false -waitgroup=false ./...") {
+		t.Errorf("vet commands = %q, want plain vet followed by the suite with the two duplicate passes disabled", calls)
 	}
 }
 

@@ -22,19 +22,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+// for the caller's own account takes access.UserID.
 func adminActorID(ctx context.Context) string {
-	return cmp.Or(callerUserID(ctx), "unknown")
-}
-
-func callerUserID(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return ""
-	}
-	if id, ok := u.(interface{ GetID() string }); ok {
-		return id.GetID()
-	}
-	return ""
+	return cmp.Or(access.UserID(ctx), "unknown")
 }
 
 func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.HTML {
@@ -180,8 +170,11 @@ func permissionInput(ctx context.Context, caps []access.Permission, suffix strin
 const usersPageSize = 50
 
 func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.HTML {
-	r := appui.RequestFromContext(ctx)
-	opts, pageNo := listUsersOpts(r)
+	var query url.Values
+	if r := appui.RequestFromContext(ctx); r != nil {
+		query = r.URL.Query()
+	}
+	opts, pageNo := listUsersOpts(query)
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.AdminUserRoles.Text(ctx),
 		Subtitle: i18nui.AdminUserRolesSub.Text(ctx),
@@ -194,13 +187,11 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		users, total, err = b.cfg.Auth.ListUsers(ctx, opts)
 	}
 	if err != nil {
-		b.logger().Error("admin: list users", "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminUsersLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: list users", i18nui.AdminUsersLoadFailed, err, []render.HTML{header})
 	}
 	page := b.cfg.PathPrefix + "/rbac/users"
-	if r != nil && r.URL.RawQuery != "" {
-		page += "?" + r.URL.Query().Encode()
+	if encoded := query.Encode(); encoded != "" {
+		page += "?" + encoded
 	}
 	var known []string
 	if b.cfg.Policy != nil {
@@ -244,22 +235,8 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			}),
 		}}
 	}
-	var pager *ui.PaginationConfig
-	if pages > 1 {
-		carry := url.Values{}
-		if r != nil {
-			carry = r.URL.Query()
-			carry.Del(usersPageParam)
-		}
-		pager = &ui.PaginationConfig{
-			Page:      pageNo,
-			Pages:     pages,
-			Path:      b.cfg.PathPrefix + "/rbac/users",
-			Query:     carry,
-			PageParam: usersPageParam,
-			Ctx:       ctx,
-		}
-	}
+	query.Del(pageParam)
+	pager := pagePager(ctx, b.cfg.PathPrefix+"/rbac/users", query, pageNo, pages)
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header, resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
@@ -274,6 +251,10 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	)
 }
 
+const selectedRolesField = "selected_roles"
+
+// rolesInput draws literal role checkboxes when roles are known,
+// including undeclared roles the user holds, or a comma-separated text field.
 func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
 	label := i18nui.AdminColRoles.Text(ctx)
 	if len(known) == 0 {
@@ -290,7 +271,7 @@ func rolesInput(ctx context.Context, userID string, direct, known []string) rend
 	for i, r := range all {
 		opts[i] = ui.MultiSelectOption{Value: r, Label: r, Selected: slices.Contains(direct, r)}
 	}
-	return ui.MultiSelect(ui.MultiSelectConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
+	return ui.MultiSelect(ui.MultiSelectConfig{Name: selectedRolesField, Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
 }
 
 func (b *Battery) effectiveRoleLabels(ctx context.Context, userID string, direct []string) (labels []string) {
@@ -330,25 +311,12 @@ func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []stri
 	return labels
 }
 
-const usersPageParam = "p"
-
 const maxUsersPage = 1 << 20
 
-func listUsersOpts(r *http.Request) (auth.ListUsersOptions, int) {
-	opts := auth.ListUsersOptions{Limit: usersPageSize}
-	page := 1
-	if r == nil {
-		return opts, page
-	}
-	q := r.URL.Query()
-	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 && n <= 500 {
-		opts.Limit = n
-	}
-	if n, err := strconv.Atoi(q.Get(usersPageParam)); err == nil && n > 1 {
-		page = min(n, maxUsersPage)
-	}
-	opts.Offset = (page - 1) * opts.Limit
-	return opts, page
+func listUsersOpts(q url.Values) (auth.ListUsersOptions, int) {
+	page, limit := decodePage(q, usersPageSize, 500)
+	page = min(page, maxUsersPage)
+	return auth.ListUsersOptions{Limit: limit, Offset: (page - 1) * limit}, page
 }
 
 func (b *Battery) handleGrant(w http.ResponseWriter, r *http.Request) {
@@ -436,11 +404,14 @@ type grantChange struct {
 	grant bool
 }
 
+// applyGrants checks every change against the caller's own permissions
+// (a Wildcard change needs the Decider's allow, as on assignment), and
+// every grant against GrantStore.CheckGrant, before writing any, then
 func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page string, changes []grantChange) bool {
 	ctx := r.Context()
 	actor := adminActorID(ctx)
 	for _, c := range changes {
-		if !b.callerHoldsPermission(ctx, c.perm) {
+		if assignmentDeciderRefuses(ctx, c.perm) || !b.callerHoldsPermission(ctx, c.perm) {
 			b.appendAudit(ctx, "access", c.op()+"-refused", c.role, actor, map[string]any{"permission": string(c.perm)})
 			b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
 			return false
@@ -529,17 +500,10 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "user_id")
 		return
 	}
-	var roles []string
-	for _, v := range vals["roles"] {
-		if !textsafe.Storable(v) {
-			b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "roles")
-			return
-		}
-		for role := range strings.SplitSeq(v, ",") {
-			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
-				roles = append(roles, role)
-			}
-		}
+	roles, badField := parseRoleAssignment(vals)
+	if badField != "" {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", badField)
+		return
 	}
 	actor := adminActorID(r.Context())
 	target, err := b.cfg.Auth.UserStore().FindByID(r.Context(), userID)
@@ -552,7 +516,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	current := target.GetRoles()
+	current := slices.Clone(target.GetRoles())
 	var changed []string
 	for _, role := range roles {
 		if !slices.Contains(current, role) {
@@ -564,7 +528,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 			changed = append(changed, role)
 		}
 	}
-	if b.cfg.Authorize == nil && userID == callerUserID(r.Context()) &&
+	if b.cfg.Authorize == nil && userID == access.UserID(r.Context()) &&
 		slices.Contains(current, b.adminRole()) && !slices.Contains(roles, b.adminRole()) {
 		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
 			map[string]any{"roles": roles, "refused_role": b.adminRole()})
@@ -577,15 +541,45 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusForbidden, "assign-refused")
 		return
 	}
-	if err := b.cfg.Auth.SetUserRoles(r.Context(), userID, roles); err != nil {
+	swapped, err := b.cfg.Auth.SwapUserRoles(r.Context(), userID, current, roles)
+	if err != nil {
 		b.logger().Error("admin: assign roles", "user", textsafe.ScrubControlBytes(userID), "error", textsafe.ScrubControlBytes(err.Error()))
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		return
+	}
+	if !swapped {
+		b.refuse(w, r, page, http.StatusConflict, "roles-conflict")
 		return
 	}
 	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor, map[string]any{"roles": roles})
 	b.done(w, r, page, "roles-saved")
 }
 
+func parseRoleAssignment(vals url.Values) ([]string, string) {
+	var roles []string
+	for _, role := range vals[selectedRolesField] {
+		if !textsafe.Storable(role) {
+			return nil, selectedRolesField
+		}
+		if role != "" && !slices.Contains(roles, role) {
+			roles = append(roles, role)
+		}
+	}
+	for _, v := range vals["roles"] {
+		if !textsafe.Storable(v) {
+			return nil, "roles"
+		}
+		for role := range strings.SplitSeq(v, ",") {
+			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
+				roles = append(roles, role)
+			}
+		}
+	}
+	return roles, ""
+}
+
+// nonAssignableRole returns the first role whose change the caller's tier
+// or the request's Decider refuses.
 func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) string {
 	held := callerHeldRoles(ctx)
 	callerPerms := map[access.Permission]bool{}
@@ -597,18 +591,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 		}
 	}
 	for _, want := range requested {
-		if slices.Contains(held, want) || callerPerms[access.Wildcard] {
-			continue
+		byName := slices.Contains(held, want) || callerPerms[access.Wildcard]
+		var perms []access.Permission
+		if b.cfg.Policy != nil {
+			perms = b.cfg.Policy.PermissionsOf(want)
 		}
-		if b.cfg.Policy == nil {
-			return want
-		}
-		perms := b.cfg.Policy.PermissionsOf(want)
-		if len(perms) == 0 {
+		if len(perms) == 0 && !byName {
 			return want
 		}
 		for _, p := range perms {
-			if !callerPerms[p] {
+			if assignmentDeciderRefuses(ctx, p) || (!byName && !callerPerms[p]) {
 				return want
 			}
 		}
@@ -616,13 +608,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 	return ""
 }
 
-func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
-	if d := access.GetDecider(ctx); d != nil {
-		if d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny {
-			return false
-		}
+func assignmentDeciderRefuses(ctx context.Context, perm access.Permission) bool {
+	if perm != access.Wildcard {
+		return permissionDenied(ctx, perm)
 	}
-	if b.cfg.Policy == nil {
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, access.GetRoles(ctx), perm, access.Ref{}) != access.DecisionAllow
+}
+
+func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if permissionDenied(ctx, perm) || b.cfg.Policy == nil {
 		return false
 	}
 	for _, role := range callerHeldRoles(ctx) {
@@ -633,6 +628,11 @@ func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permiss
 		}
 	}
 	return false
+}
+
+func permissionDenied(ctx context.Context, perm access.Permission) bool {
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny
 }
 
 func (b *Battery) ownPermissionLost(ctx context.Context, changes []grantChange) (grantChange, bool) {

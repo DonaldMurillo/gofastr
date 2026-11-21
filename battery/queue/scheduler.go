@@ -161,28 +161,36 @@ type ScheduleBuilder struct {
 	userID      string
 }
 
-// Job sets the job type and payload; a payload error is returned by Register.
+// encodeSchedulePayload converts a Job payload argument into the JSON a
+// schedule stores: the byte-like spellings pass through, anything else
+// marshals. label prefixes the error json.Marshal refuses.
+func encodeSchedulePayload(payload any, label string) (json.RawMessage, error) {
+	switch v := payload.(type) {
+	case json.RawMessage:
+		return v, nil
+	case []byte:
+		return json.RawMessage(v), nil
+	case string:
+		return json.RawMessage(v), nil
+	default:
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", label, err)
+		}
+		return data, nil
+	}
+}
+
+// builder remains fluent. A nil payload means no payload: it replaces
+// whatever an earlier Job call set.
 func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 	b.jobType = jobType
 	b.payloadErr = nil
-	if payload != nil {
-		switch v := payload.(type) {
-		case json.RawMessage:
-			b.payload = v
-		case []byte:
-			b.payload = json.RawMessage(v)
-		case string:
-			b.payload = json.RawMessage(v)
-		default:
-			data, err := json.Marshal(payload)
-			if err != nil {
-				b.payload = nil
-				b.payloadErr = fmt.Errorf("queue: marshal schedule payload: %w", err)
-				return b
-			}
-			b.payload = data
-		}
+	if payload == nil {
+		b.payload = nil
+		return b
 	}
+	b.payload, b.payloadErr = encodeSchedulePayload(payload, "queue: marshal schedule payload")
 	return b
 }
 

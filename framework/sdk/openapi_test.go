@@ -10,7 +10,7 @@ import (
 // entity set lists some, and a source the reader does not know is no
 // manifest at all.
 func TestReadManifestSources(t *testing.T) {
-	const art = `"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab"}}`
+	const art = `"artifacts":{"go":{"file":"sdk-go.zip","sha256":"ab","directory":"app-sdk"}}`
 	for name, tc := range map[string]struct {
 		raw string
 		ok  bool

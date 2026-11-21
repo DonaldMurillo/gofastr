@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 	"golang.org/x/mod/modfile"
 )
 
@@ -292,19 +293,16 @@ func RunVerify(args []string) {
 	}
 	// An explicit --baseline must exist; the conventional file is optional,
 	// so a project without one is not nagged.
-	baseline, baselineErr := contracts.ReadBaseline(baselineFile)
+	applied, baselineErr := contractsrun.ReadAndApplyBaseline(report, baselineFile)
 	if baselineErr != nil {
 		failRun(opts.json, "%v", baselineErr)
 		cli.OsExit(2)
 		return
 	}
-	if baseline == nil && opts.baselineSet {
+	if !applied && opts.baselineSet {
 		failRun(opts.json, "baseline %s does not exist: record one with `gofastr verify --baseline-write`", baselineFile)
 		cli.OsExit(2)
 		return
-	}
-	if baseline != nil {
-		report.ApplyBaseline(baseline)
 	}
 
 	// Narrowing happens last, so a finding is only hidden by --changed or
@@ -459,7 +457,7 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	}
 	ok = true
 	if suiteArgs != nil {
-		ok = run(suiteArgs, suiteEnv)
+		ok = run(append(suiteArgs, "-hostport=false", "-waitgroup=false"), suiteEnv)
 	}
 	return strings.TrimSpace(buf.String()), suiteSkipped, ok
 }
@@ -743,9 +741,8 @@ severity unless a gofastr.settings.yml relaxes it, or a
   --json             Machine-readable report (every diagnostic carries its rule)
   --sarif <file>     Write SARIF 2.1.0 for code scanning / IDE integration
   --fix              Apply the mechanical fixes, then re-verify
-  --baseline-write   Record every current finding as accepted debt, so only
-                     NEW findings fail from now on. How an existing codebase
-                     adopts verify without fixing everything first.
+  --baseline-write   Write current gating findings as accepted debt to the
+                     baseline file. Commit the file to share it with the team.
   --baseline <file>  Use a baseline other than .gofastr-contracts-baseline.json
   --changed[=<ref>]  Report only findings in files this change touched.
                      Bare form = uncommitted work; with a ref = everything
@@ -762,7 +759,7 @@ severity unless a gofastr.settings.yml relaxes it, or a
   --root <dir>       Project root (default: .)
   --no-vet           Skip the vet stage (go vet and the GoFastr analyzers)
   --timings          Show per-analyzer wall time
-  --verbose          Show the full explanation under every finding
+  --verbose, -v      Show the full explanation under every finding
   --help             This message
 
 %s:

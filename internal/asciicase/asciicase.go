@@ -16,12 +16,30 @@ func Lower(s string) string {
 		if c := s[i]; 'A' <= c && c <= 'Z' {
 			b := []byte(s)
 			for j := i; j < len(b); j++ {
-				if 'A' <= b[j] && b[j] <= 'Z' {
-					b[j] += 'a' - 'A'
-				}
+				b[j] = lowerByte(b[j])
 			}
 			return string(b)
 		}
 	}
 	return s
+}
+
+// EqualFold reports whether a and b match when folding ASCII letters only.
+func EqualFold[T ~string | ~[]byte](a, b T) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if lowerByte(a[i]) != lowerByte(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func lowerByte(c byte) byte {
+	if 'A' <= c && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
 }

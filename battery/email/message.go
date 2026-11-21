@@ -4,18 +4,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"mime"
 	"mime/quotedprintable"
 	"net/mail"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
-	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 func buildMessage(email Email) ([]byte, error) {
@@ -40,29 +37,8 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
-	for k, v := range email.Headers {
-		if err := assertNoHeaderInjection(k, k); err != nil {
-			return nil, err
-		}
-		if err := assertNoHeaderInjection(k, v); err != nil {
-			return nil, err
-		}
-	}
-	seen := make(map[string]string, len(email.Headers))
-	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		if !isFieldName(k) {
-			return nil, fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
-		}
-		folded := asciicase.Lower(k)
-		if prev, dup := seen[folded]; dup {
-			return nil, fmt.Errorf("%w: Headers keys %q and %q name one field", ErrSendFailed, prev, k)
-		}
-		seen[folded] = k
-	}
-	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Resent-Bcc", "Subject"} {
-		if hasHeader(email.Headers, name) {
-			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
-		}
+	if err := checkCustomHeaders(email.Headers); err != nil {
+		return nil, err
 	}
 	for _, att := range email.Attachments {
 		if err := assertNoHeaderInjection("Attachment.Filename", att.Filename); err != nil {
@@ -103,10 +79,8 @@ func buildMessage(email Email) ([]byte, error) {
 		}
 	}
 
-	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		if err := writeHeader(&buf, scrubHeaderValue(k), scrubHeaderValue(email.Headers[k])); err != nil {
-			return nil, err
-		}
+	if err := writeCustomHeaders(&buf, email.Headers); err != nil {
+		return nil, err
 	}
 
 	hasAttachments := len(email.Attachments) > 0
@@ -391,6 +365,8 @@ const (
 	maxLineOctets = 998
 )
 
+// word, so an encoded word stays whole. A nil buf checks folding without
+// writing the header.
 func writeHeader(buf *strings.Builder, name, value string) error {
 	isWSP := func(c byte) bool { return c == ' ' || c == '\t' }
 	line := name + ": "
@@ -400,7 +376,9 @@ func writeHeader(buf *strings.Builder, name, value string) error {
 			if len(line) > maxLineOctets {
 				return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
 			}
-			buf.WriteString(line + "\r\n")
+			if buf != nil {
+				buf.WriteString(line + "\r\n")
+			}
 			line = ""
 		}
 		line += chunk
@@ -420,7 +398,9 @@ func writeHeader(buf *strings.Builder, name, value string) error {
 	if len(line) > maxLineOctets {
 		return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
 	}
-	buf.WriteString(line + "\r\n")
+	if buf != nil {
+		buf.WriteString(line + "\r\n")
+	}
 	return nil
 }
 
@@ -501,17 +481,15 @@ func scrubHeaderValue(s string) string {
 			return r
 		}, s)
 	}
-	var b strings.Builder
-	b.Grow(len(s))
+	buf := make([]byte, 0, len(s))
 	for i := range len(s) {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "%%%02x", c)
+		if textsafe.IsControlByte(s[i]) {
+			buf = textsafe.AppendPercentByte(buf, s[i])
 			continue
 		}
-		b.WriteByte(c)
+		buf = append(buf, s[i])
 	}
-	return b.String()
+	return string(buf)
 }
 
 func assertNoHeaderInjection(field, value string) error {

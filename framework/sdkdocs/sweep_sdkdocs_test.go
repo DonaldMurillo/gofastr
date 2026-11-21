@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
@@ -19,8 +20,8 @@ func TestSweepExampleFilterFallsBackToTheRealKey(t *testing.T) {
 	cfg := entity.EntityConfig{PrimaryKey: []string{"code"}, Fields: []schema.Field{
 		{Name: "code", Type: schema.String, AutoGenerate: schema.AutoUUID},
 	}}
-	if field, op := exampleFilter(cfg); field != "code" || op != "" {
-		t.Fatalf("exampleFilter = (%q, %q), want the key column code with plain equality", field, op)
+	if sample := exampleFilter(cfg); sample.field != "code" || sample.op != filter.OpEq {
+		t.Fatalf("exampleFilter = %+v, want the key column code with plain equality", sample)
 	}
 }
 
@@ -29,7 +30,7 @@ func TestSweepExampleFilterSkipsHidden(t *testing.T) {
 		{Name: "secret_score", Type: schema.Int, Hidden: true},
 		{Name: "title", Type: schema.String},
 	}}
-	if field, _ := exampleFilter(cfg); field == "secret_score" {
+	if sample := exampleFilter(cfg); sample.field == "secret_score" {
 		t.Fatal("the published example filters on a Hidden field")
 	}
 }
@@ -128,7 +129,7 @@ func TestSweepCRUDOffIsNotDocumented(t *testing.T) {
 
 func TestSweepDrawerMarksNoPage(t *testing.T) {
 	srv := mountedServer(t, Config{Registry: testRegistry(), IncludeGated: true})
-	_, body := get(t, srv, "/core-ui/widget/"+drawerName+"/chrome")
+	_, body := get(t, srv, "/core-ui/widget/"+drawerName("/docs/api")+"/chrome")
 	if !strings.Contains(body, "/entities/posts") {
 		t.Fatalf("setup broken: the drawer lists no entity:\n%s", body)
 	}
@@ -166,11 +167,9 @@ func TestSweepInstallHintsKeepTheModuleAlphabet(t *testing.T) {
 	raw, _ := json.Marshal(m)
 	dist[sdk.ManifestFile] = &fstest.MapFile{Data: raw}
 	s := &site{cfg: Config{Registry: reg, Artifacts: dist}}
-	alphabet := regexp.MustCompile(`^[A-Za-z0-9._~/-]+$`)
-	for name, hint := range map[string]string{"goDirHint": s.goDirHint(), "goModuleHint": s.goModuleHint()} {
-		if !alphabet.MatchString(hint) {
-			t.Errorf("%s = %q, carries bytes outside the module-path alphabet", name, hint)
-		}
+	manifest, _, _ := s.resolved()
+	if got := renderedText(t, s.installTabs(manifest).String()); !strings.Contains(got, "go mod edit -replace local/acmexrm-rf=./testapp-sdk") {
+		t.Error("Go install snippet must scrub the module and keep the recorded directory")
 	}
 }
 

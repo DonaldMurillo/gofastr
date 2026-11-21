@@ -22,7 +22,7 @@ func (q *Queue) Ack(ctx context.Context, job Job) error                { return 
 
 func gateAllows(gate func(string) bool, t string) bool { return gate(t) }
 
-func settleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want settleContext:`detaches\(bounded=true\)`
+func settleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want settleContext:`detaches\[\{0 true\}\]`
 	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
 

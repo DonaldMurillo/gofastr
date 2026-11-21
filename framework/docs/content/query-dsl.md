@@ -240,9 +240,13 @@ Use the DSL when:
 
 Drop down to `core/query` directly when:
 
-- You need joins, subqueries, raw SQL fragments, or window functions.
-- You need `OR` between predicates.
-- You need projections beyond `SELECT * FROM entity_table`.
+- You need joins with simple `ON` conditions.
+- You need `OR` or a SQL expression in a `Where` predicate.
+- You need to select specific columns.
+
+Use a raw SQL statement with bound arguments when you need expressions
+in the projection, table, join, or sort slots, such as a computed column,
+a subquery as a table, or a window function.
 
 `Where` ANDs a condition with everything before it and `OrWhere` ORs
 it, in call order. The builder wraps each condition in parens, and an
@@ -280,6 +284,10 @@ sel, args := del.Matching("slug") // SELECT slug FROM notes WHERE (slug = $1) AN
 
 Raw SQL that names a declared table or column quotes it with
 `query.QuoteFolded`, after `query.SafeIdent` has checked it.
+`query.SafeColumns(cols, label)` validates a column list through that
+check. It wraps the first error as `invalid <label> "<name>": <why>`.
+Relation key predicates pass `"key column"`. Other CRUD and migration
+callers pass `"column"`.
 AutoMigrate writes its DDL with names unquoted, so Postgres stores an
 entity declared as `Widgets` under `widgets`. `QuoteFolded("Widgets")`
 gives `"widgets"`, which finds it; `QuoteIdent("Widgets")` gives
@@ -297,28 +305,32 @@ the index `"x_idx"` on `"main"."events"` it gives
 on Postgres. `query.SQLitePragma("table_info", table)`
 puts the schema on the pragma the same way:
 `PRAGMA "main".table_info("events")`.
-The builders name a table or column bare, the way the DDL does, except
-a keyword (`order`, `group`, `user`, `end`, `desc`, `limit`, …), which
-they quote and fold as the migrator's DDL does: every slot that holds a
-name (`From`, `Join`'s table, `Insert`, `Update`, `Delete` and `Count`'s
-table, `Select`, `Columns`, `Set`, `Returning` and `Matching` columns,
-`Order` and `Cursor`'s column) goes through `query.QuoteKeyword`:
+Pass plain or dotted identifiers to `From`, the table argument of
+`Join` and `LeftJoin`, and the table argument of `Insert`, `Update`,
+`Delete` and `Count`. The column arguments of `Select`, `Columns`,
+`Set`, `Returning`, `Matching`, `Order`, `OrderPinNulls` and `Cursor`
+also take identifiers. `Select()` defaults to `*`. The builder keeps
+non-keyword identifier parts bare and uses `query.QuoteKeyword` to
+quote and fold keyword parts such as `order` and `user`.
 
 ```go
 query.Insert("posts").Columns("order", "title").Values(1, "t").Build()
 // INSERT INTO posts ("order", title) VALUES ($1, $2)
 ```
 
-A slot holding anything but a plain or dotted name (`*`, an expression)
-is left as written. A condition you pass to `Where` or `Join`'s `ON` is
-raw SQL, so a keyword column in it is yours to quote:
+Identifier slots and join `ON` conditions drop ASCII control bytes
+and replace parentheses, semicolons, and the comment delimiters
+`--`, `/*` and `*/` with spaces. Column lists and `Set` column
+names also drop spaces. Order directions accept `ASC` or `DESC`,
+ignoring case and surrounding whitespace.
+
+`Where` and `OrWhere` take SQL predicates with bound arguments and
+renumber their placeholders. Quote keyword identifiers yourself in
+those predicates and in join `ON` conditions.
 `query.QuoteKeyword("order") + " = $1"` gives `"order" = $1`, and
 `query.QuoteKeyword("posts.user")` gives `posts."user"`. On Postgres a
-bare `user` in a condition is not a syntax error: it reads the session
-user, so `user = $1` silently matches nothing. `query.IsKeyword(name)`
-reports whether a name is in the set. A name that is not a keyword comes
-back unchanged, so a query without one builds byte for byte what it did
-before v0.96.0.
+bare `user` in a condition reads the session user. `query.IsKeyword(name)`
+reports whether a name is in the set.
 
 `QuoteIdent` keeps the name as given and is for a name read back from
 the database catalog; the `quoteident` vet check refuses it anywhere

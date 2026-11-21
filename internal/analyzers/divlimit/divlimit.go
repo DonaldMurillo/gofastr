@@ -50,7 +50,6 @@ import (
 	"go/types"
 	"maps"
 	"regexp"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
@@ -72,7 +71,7 @@ var limitName = regexp.MustCompile(`^(?i:limit|perPage|pageSize|size|count|n)$`)
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
