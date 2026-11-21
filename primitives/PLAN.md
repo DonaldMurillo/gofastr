@@ -190,7 +190,7 @@ roster loops, now `localMembersLocked`). One bug was fixed on the way:
 The replay eval after the sweep held every number, moving one cell at most,
 but no replay task reads `core-ui/` (`2026-11-20-replay-coreui-sweep.md`).
 
-`battery/` is swept, 25.6% to 4.5%, its tests 11.4% to 11.1%. All 38 package
+`battery/` is swept, 25.5% to 4.7%, its tests 11.2% to 11.0%. All 38 package
 directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 (before, after; a directory counts its subdirectories):
 
@@ -210,12 +210,12 @@ directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 
 In `fakecgo`, starred, what remains is a one-line doc on each exported
 function and the package. The four groups (desktop; auth; admin, queue,
-semantic and webhook; the thirteen others) added 122 primitives, 836
+semantic and webhook; the thirteen others) added 119 primitives, 837
 invariants (23 judged only) and 133 decisions, plus 214 tests for rules
 that had none. Twelve batteries got their first top-level primitive
 (`desktop`, `log`, `cache`, `email`, `search`, `sitesearch`, `storage`,
 `setup`, `relay`, `print`, `notify`, `telemetry`); the seven that had one
-were extended. They recorded 18 twins and merged two (desktop's two grant
+were extended. They recorded 17 twins and merged two (desktop's two grant
 stores now share `checkDecision`, and `desktoptest` uses
 `desktop.MainWindowID`). Outside new tests the only other code changes are
 two moves that split files by job (`admin.go` into `gate.go` and
