@@ -74,7 +74,10 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		// a 2xx move and a conflict refresh read from their response header
 		// (+113, the header decode and the group's peer walk, paid down by
 		// folding two group lookups into it): 3189 measured + 2.
-		{SortableListBehaviorName, "sortablelist.js", 3191},
+		// A refreshed list is written through the runtime's Trusted Types
+		// policy, which the default CSP requires at every HTML sink
+		// (core-ui/check TestLintTrustedTypesSinks_RepoIsClean): 3200 + 2.
+		{SortableListBehaviorName, "sortablelist.js", 3202},
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
 		// TestIslandToastReturnsFocus: removal recovery measures 3144 + 2.
 		{FeedbackBehaviorName, "feedback.js", 3146},

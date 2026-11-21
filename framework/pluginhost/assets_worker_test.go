@@ -123,7 +123,7 @@ func TestWorkerAssetServesNarrowCSP(t *testing.T) {
 // asset keeps the framed policy.
 func TestHostDocumentUntouchedByWorker(t *testing.T) {
 	const strictCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
-		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; require-trusted-types-for 'script'; trusted-types gofastr"
 	fsys := fstest.MapFS{"editor.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
 	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
 		{Name: "editor.html", ContentType: "text/html; charset=utf-8", Framed: true},

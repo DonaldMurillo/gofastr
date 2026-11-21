@@ -126,7 +126,7 @@ func TestExtraScriptEmittedFullPageOnly(t *testing.T) {
 // framework default) across registration.
 func TestRegisterScriptKeepsDefaultCSP(t *testing.T) {
 	const defaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
-		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; require-trusted-types-for 'script'; trusted-types gofastr"
 
 	get := func(ds *UIHost) string {
 		t.Helper()
