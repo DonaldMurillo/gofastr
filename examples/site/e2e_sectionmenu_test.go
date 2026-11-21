@@ -452,8 +452,8 @@ func TestE2E_HubTOC_PhonePill(t *testing.T) {
 	if opened != "true|On this page" {
 		t.Errorf("sheet open|title = %q", opened)
 	}
-	if entries != "Entities|Auth" {
-		t.Errorf("sheet entries start %q, want Entities|Auth", entries)
+	if entries != "Components|Theming" {
+		t.Errorf("sheet entries start %q, want Components|Theming", entries)
 	}
 	if !closed || jumped > 200 {
 		t.Errorf("after tapping Auth: closed=%v, Auth section %vpx from the top", closed, jumped)
