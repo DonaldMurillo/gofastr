@@ -251,6 +251,8 @@ deployments.
 | `2fa.backup_codes_regenerated` | Backup codes refreshed. |
 | `password.reset_requested` | Forgot-password requested. Fires for **known and unknown** emails (empty `UserID` for unknown), so account probing is visible. `known=true/false`. |
 | `password.reset_completed` | Password successfully reset. |
+| `password.changed` | A signed-in user changed their password (`POST {base}/password`). |
+| `password.change_failed` | A password change was refused: a wrong current password (`reason=bad_credentials`) or a reset that moved the hash first (`reason=credential_changed`). |
 | `oauth.linked` | A NEW `(provider, providerID)` binding was persisted. |
 | `oauth.login` | An already-linked OAuth identity logged in. |
 | `oauth.refused` | OAuth callback refused on email collision (`reason=link_conflict`), the account-takeover defence. |
@@ -269,6 +271,17 @@ deployments.
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login`, `register` or `reauth`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`, `too_new`. A sign-in refused before its signature verifies (`user_handle`, `signature`) carries no user id: anyone holding a credential id can send one. |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`), an emailed sign-in code (`via=email_code`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
+| `register.duplicate` | A register attempt named an address that already has an account; nothing is created and the holder is mailed a notice when `RegisterEmailSender` is set. |
+| `reset_tokens.purged` | A completed reset or a password change spent the user's other outstanding reset links (`count`). |
+| `oauth.unlinked` | A provider link was removed by its owner, by a reset, or by an account claim (`provider`). |
+| `email.verified` | `GET /auth/verify-email` proved the address. |
+| `roles.updated` | `AuthManager.SetUserRoles` replaced a user's roles (`roles`). |
+| `token.created` | An API token was minted through `TokensPlugin`. |
+| `token.revoked` | An API token was revoked, by its owner or by a reset (`count`). |
+| `token.auth_failed` | A request bearing the token brand failed (`reason`: `unknown`, `revoked`, `expired`, `owner_missing`, `owner_disabled`); only the token's display prefix is recorded. |
+
+The vocabulary is closed: a new emission uses one of these kinds, or adds
+its row here in the same change.
 
 OAuth sign-in success events are recorded only after session creation and
 the final provider-link recheck succeed. A fail-closed second-factor check

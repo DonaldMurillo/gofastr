@@ -1,0 +1,56 @@
+primitive: semantic.stores
+summary: The vector stores - the in-memory FlatStore and the durable PgVectorStore with its keyword leg and recorded embedding model.
+code:
+  - battery/semantic/store_flat.go
+  - battery/semantic/store_pgvector.go
+  - battery/semantic/keyword_pgvector.go
+  - battery/semantic/model_pgvector.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: flat-add-is-all-or-nothing
+    rule: FlatStore.Add refuses, storing none of the batch, an empty vector, a vector of another dimension and a non-finite coordinate.
+    enforced_by:
+      - test: battery/semantic.TestEmptyVectorIsRefused
+      - test: battery/semantic.TestFlatAddFailureLeavesStoreUnchanged
+      - test: battery/semantic.TestFlatStoreRejectsNonFiniteVectors
+  - id: flat-store-owns-its-copies
+    rule: FlatStore deep-copies a chunk's vector and metadata at its boundary, so neither the caller nor a hit can change a stored chunk.
+    enforced_by:
+      - test: battery/semantic.TestFlatStoreOwnsVectorsAndMetadata
+      - test: battery/semantic.TestFlatStoreDeepCopiesMetadata
+  - id: pg-table-binds-one-model
+    rule: A PgVectorStore table records the model and dimension it holds, refuses another model's writes while it holds rows, and keys the record by the folded table name.
+    enforced_by:
+      - test: battery/semantic.TestPgVectorRefusesAnotherModel
+      - test: battery/semantic.TestPgVectorRefusesAnotherDim
+      - test: battery/semantic.TestPgVectorModelFoldsTableName
+  - id: pg-case-kept-table-refused
+    rule: NewPgVector refuses a table an older build left under its case-kept name.
+    enforced_by:
+      - test: battery/semantic.TestPgVectorCaseKeptTableRefused
+  - id: pg-filters-are-bound
+    rule: PgVectorStore binds every Filter value (Source, Kind, and each MetaMatch key and value) as a parameter, never interpolating it into SQL.
+    enforced_by:
+      - test: battery/semantic.TestPgVectorFilterNoInjection
+      - test: battery/semantic.TestPgVectorMetaMatchNoInjection
+  - id: pg-replace-locks-each-document
+    rule: PgVectorStore's replace takes a transaction advisory lock per distinct document, so two replicas replacing one document serialize.
+    enforced_by:
+      - test: battery/semantic.TestPgReplaceSerializesReplicas
+decisions:
+  - id: brute-force-cosine
+    date: 2026-11-20
+    status: accepted
+    decision: PgVectorStore ranks by exact cosine distance over a B-tree doc_id index, with no ANN index by default.
+    rejected:
+      - option: Create an ivfflat or hnsw index.
+        why: An approximate index changes results against FlatStore and needs tuning per corpus; an app that needs one adds it.
+  - id: meta-match-is-not-containment
+    date: 2026-11-20
+    status: accepted
+    decision: PgVectorStore applies MetaMatch as meta -> key = value per key.
+    rejected:
+      - option: JSONB containment, meta @> filter.
+        why: An empty array is contained in every array, so it would match where FlatStore does not.
+    upholds: [semantic/meta-match-is-equality-on-every-store]

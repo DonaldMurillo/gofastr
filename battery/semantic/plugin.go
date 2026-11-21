@@ -7,15 +7,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Plugin is the [framework.Plugin] adapter for the semantic-search battery. It
-// owns no state of its own, callers construct an [Index] and hand it
-// to [NewPlugin], which then registers /semantic/* routes on the app's
-// router during framework.App.Init.
-//
-// Mount via:
-//
-//	idx, _ := semantic.Open(semantic.Options{Embedder: e, Path: "~/.gofastr/semantic/myapp"})
-//	app.Plugins.Register(semantic.NewPlugin(idx))
+// Plugin is the framework.Plugin that mounts Handler for an Index under a
+// prefix.
 type Plugin struct {
 	idx       Index
 	prefix    string
@@ -24,7 +17,6 @@ type Plugin struct {
 }
 
 // NewPlugin returns a Plugin that mounts routes under "/semantic".
-// Use [Plugin.WithPrefix] to change the mount point.
 func NewPlugin(idx Index) *Plugin {
 	return &Plugin{idx: idx, prefix: "/semantic"}
 }
@@ -41,19 +33,16 @@ func (p *Plugin) WithPrefix(prefix string) *Plugin {
 	return p
 }
 
-// WithAuthToken requires clients of the mounted routes to present this bearer
-// token ("Authorization: Bearer <token>"), verified in constant time. This is
-// the production auth mode; without it (and without [Plugin.WithInsecureNoAuth])
-// the mounted routes fail closed, every request is rejected.
+// WithAuthToken requires a bearer token on the mounted routes; without it or
+// WithInsecureNoAuth every request is refused.
 func (p *Plugin) WithAuthToken(token string) *Plugin {
 	p.authToken = token
 	p.insecure = false
 	return p
 }
 
-// WithInsecureNoAuth disables authentication on the mounted routes. It is the
-// only way to serve them without a token and is intended for local development
-// only, never in production. Prefer [Plugin.WithAuthToken].
+// WithInsecureNoAuth disables authentication on the mounted routes, for local
+// development only.
 func (p *Plugin) WithInsecureNoAuth() *Plugin {
 	p.insecure = true
 	return p
@@ -62,9 +51,7 @@ func (p *Plugin) WithInsecureNoAuth() *Plugin {
 // Name implements [framework.Plugin].
 func (p *Plugin) Name() string { return "semantic" }
 
-// Init implements [framework.Plugin]. Mounts the stdlib [Handler] under
-// the configured prefix on the app's router; routing semantics match
-// Go 1.22 ServeMux.
+// Init implements framework.Plugin.
 func (p *Plugin) Init(app *framework.App) error {
 	var opts []HandlerOption
 	if p.insecure {
@@ -82,8 +69,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	return nil
 }
 
-// Index returns the underlying [Index] so other plugins or the app
-// can perform direct calls without going through HTTP.
+// Index returns the underlying Index.
 func (p *Plugin) Index() Index { return p.idx }
 
 var _ framework.Plugin = (*Plugin)(nil)

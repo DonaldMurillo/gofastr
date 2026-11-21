@@ -1,0 +1,15 @@
+primitive: email.template
+summary: Email templates with subject, text and HTML bodies, loaded from a directory or fs.FS and executed against data.
+code:
+  - battery/email/template.go
+docs:
+  - framework/docs/content/email.md
+invariants:
+  - id: html-body-through-html-template
+    rule: Execute renders HTMLBody with html/template, so data values are escaped for their context, and the subject and text with text/template.
+    enforced_by:
+      - test: battery/email.TestExecuteEscapesHTMLBodyVars
+  - id: crlf-subject-line-loses-its-cr
+    rule: A leading "Subject:" line read from a CRLF file loses its trailing CR, so the subject passes the header check.
+    enforced_by:
+      - test: battery/email.TestLoadFromFSCRLFSubject

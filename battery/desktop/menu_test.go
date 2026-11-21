@@ -167,6 +167,23 @@ func TestMenuHandlerRunsAsyncAndErrorsAreLoggedWithID(t *testing.T) {
 	t.Fatalf("handler error not logged with the item id; log = %q", cl.joined())
 }
 
+func TestMainMenuDispatchDoesNotWaitForTheHandler(t *testing.T) {
+	b, _ := newTestBattery(t)
+	release := make(chan struct{})
+	defer close(release)
+	b.menu = &Menu{Items: []MenuItem{{ID: "slow", Title: testPhrase("Slow"), Handler: func(ctx context.Context) error {
+		<-release
+		return nil
+	}}}}
+	done := make(chan struct{})
+	go func() { b.dispatchMenu("slow"); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatchMenu waited for the handler: the shell's UI thread would block")
+	}
+}
+
 func TestMenuUnknownIDLoggedWarn(t *testing.T) {
 	cl := &captureLogger{}
 	b, _ := newTestBattery(t)

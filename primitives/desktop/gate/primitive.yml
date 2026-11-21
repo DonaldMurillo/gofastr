@@ -1,0 +1,84 @@
+primitive: desktop.gate
+summary: The boot handshake that lets only the app's own window reach the loopback server, and the local identity it signs that window in as.
+code:
+  - battery/desktop/handshake.go
+  - battery/desktop/localuser.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Neither the boot token nor the session value is ever logged or put into an error string.
+invariants:
+  - id: enter-token-single-use
+    rule: The /enter door compares the token in constant time first and burns the single-use flag second, so a wrong-token probe leaves the door open for the window and two concurrent correct requests let exactly one through.
+    enforced_by:
+      - test: battery/desktop.TestEnterFlow
+      - test: battery/desktop.TestEnterSingleUseUnderConcurrency
+  - id: session-cookie-shape
+    rule: The session cookie /enter sets is HttpOnly, SameSite=Strict, Path=/, a session cookie with no Secure flag, and named sessionCookieName plus the run's session value once Run has armed the gate, so a second instance on another loopback port cannot replace it.
+    enforced_by:
+      - test: battery/desktop.TestEnterFlow
+      - test: battery/desktop.TestRunEndToEndWithFakeShell
+  - id: boot-path-revalidated
+    rule: The /enter redirect goes to the remembered main path only when that stored path still passes validNavigatePath, else to /.
+    enforced_by:
+      - test: battery/desktop.TestTamperedStoredPathIsNotTheBootRedirect
+  - id: unarmed-gate-passes-through
+    rule: Until Run arms it the gate passes every request through and the local identity is installed on none, so an app serving itself with --serve keeps its routes and gives no anonymous browser the local user.
+    enforced_by:
+      - test: battery/desktop.TestGateArmingDecidesWhetherItGates
+      - test: battery/desktop.TestUnarmedGateInstallsNoIdentity
+      - test: battery/desktop.TestLocalUserNotInjectedWhenGateUnarmed
+  - id: armed-gate-pins-host-and-session
+    rule: An armed gate refuses with 403 every request but /enter whose Host is not the pinned listener address, and every request off Config.OpenPrefixes without a session cookie whose value matches in constant time.
+    enforced_by:
+      - test: battery/desktop.TestGateRefusesWrongHost
+      - test: battery/desktop.TestGateRefusesWithoutCookie
+      - test: battery/desktop.TestGateRefusesForgedCookieOfRightLength
+  - id: every-session-cookie-checked
+    rule: requestHasSession tries every cookie of the session name, so a stale duplicate in front of the real one still authenticates.
+    enforced_by:
+      - test: battery/desktop.TestGateAcceptsStaleDuplicateCookieBeforeRealOne
+  - id: open-prefix-keeps-host-pin-and-csrf
+    rule: A path under Config.OpenPrefixes skips only the session check; the Host pin still applies and a forged cross-site write is refused, while a preflighted cross-origin call is left to CORS and the app's auth.
+    enforced_by:
+      - test: battery/desktop.TestDesktopOpenPrefixKeepsHostPin
+      - test: battery/desktop.TestDesktopOpenPrefixRefusesCrossSiteWrite
+  - id: open-prefix-request-is-not-the-local-user
+    rule: A request on an open prefix that carries no window session reaches the app with no user; the local identity goes only on the window's requests.
+    enforced_by:
+      - test: battery/desktop.TestDesktopOpenPrefixPassesAnonymous
+  - id: auth-owns-identity
+    rule: When another battery installed the framework/owner extractor before Init, the desktop battery installs no identity on any request and does not note the app as authenticated, so auth's anonymous decision is never turned into the local admin.
+    enforced_by:
+      - test: battery/desktop.TestAnonDecisionIsNotOverridden
+      - test: battery/desktop.TestSecondBatteryKeepsLocalIdentity
+      - test: battery/desktop.TestArmGateLeavesTheNoteToAuth
+  - id: armed-gate-notes-authenticator
+    rule: Arming the gate notes the app as having an authenticator when the desktop battery owns identity, so the startup banner stops saying nothing signs callers in.
+    enforced_by:
+      - test: battery/desktop.TestArmGateNotesAuthenticator
+decisions:
+  - id: pin-host-not-origin
+    date: 2026-07-24
+    status: accepted
+    decision: The gate pins the Host header to the listener address to close DNS rebinding from a browser tab.
+    rejected:
+      - option: Check the Origin header.
+        why: An Origin check never stops DNS rebinding, because the rebinding page is same-origin with its own name.
+    upholds: [armed-gate-pins-host-and-session]
+  - id: identity-decided-at-init
+    date: 2026-11-20
+    status: accepted
+    decision: Whether the local identity applies is decided once at Init from whether a framework/owner extractor already existed, and never per request.
+    rejected:
+      - option: Install the local user when handler.GetUser reports none.
+        why: auth marks an anonymous request with SetUser(ctx, nil), which GetUser reads back as not set, so a signed-out window became the local admin, and which way it went depended on battery registration order.
+    upholds: [auth-owns-identity]
+  - id: no-secure-flag-on-loopback
+    date: 2026-11-20
+    status: accepted
+    decision: The session cookie carries no Secure flag and no Max-Age.
+    rejected:
+      - option: Mark it Secure.
+        why: The window loads plain http://127.0.0.1, where a Secure cookie is never sent back.
+    upholds: [session-cookie-shape]

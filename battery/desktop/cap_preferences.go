@@ -6,16 +6,6 @@ import (
 	"errors"
 )
 
-// The preferences capability: the page's typed view of the app's
-// declared preferences. Ungated like state and window.setPath (the page
-// is the app), confined by construction: only declared keys can be read
-// or written, and the values live in the battery's own "settings" state
-// entry, which the state capability keeps out of the page's reach.
-// Every successful set broadcasts preferences_changed with {keys} to
-// all windows, the same cross-window sync state_changed gives.
-
-// preferenceInfo is Preference's wire shape (the capability's `get`
-// answer and the manifest-facing description of the declaration).
 type preferenceInfo struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -27,21 +17,15 @@ type preferenceInfo struct {
 	Max     *int     `json:"max,omitempty"`
 }
 
-// preferencesGetOutput is get's result.
 type preferencesGetOutput struct {
 	Values   map[string]any   `json:"values"`
 	Declared []preferenceInfo `json:"declared"`
 }
 
-// preferencesSetOutput is set's result: every declared key with its
-// value after the call.
 type preferencesSetOutput struct {
 	Values map[string]any `json:"values"`
 }
 
-// preferenceErrorFor converts a setRaw failure into the bridge error:
-// a preference validation error is invalid_input naming the key,
-// everything else passes through (unsupported before Run).
 func preferenceErrorFor(err error) error {
 	var pe *preferenceError
 	if errors.As(err, &pe) {
@@ -50,8 +34,6 @@ func preferenceErrorFor(err error) error {
 	return err
 }
 
-// preferencesCapability builds the core "preferences" capability over
-// the battery's declared preference list.
 func (b *Battery) preferencesCapability() Capability {
 	return Capability{
 		Name:        "preferences",

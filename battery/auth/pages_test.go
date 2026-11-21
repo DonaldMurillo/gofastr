@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -115,4 +116,21 @@ func TestPagesRenderHop(t *testing.T) {
 		t.Errorf("Refresh before Pages = %q, want 0;url=%s", got, path)
 	}
 	wantCredentialHeaders(t, pages.headers)
+}
+
+// framework/ui is in the closure through framework/entityui, so this checks the battery's own imports.
+func TestBatteryDoesNotImportTheDesignSystem(t *testing.T) {
+	out, err := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, ".").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	const ui = "github.com/DonaldMurillo/gofastr/framework/ui"
+	if !strings.Contains(string(out), "github.com/DonaldMurillo/gofastr/framework\n") {
+		t.Fatalf("go list named no framework import: the check would pass on anything\n%s", out)
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if line == ui || strings.HasPrefix(line, ui+"/") {
+			t.Errorf("battery/auth imports %s: draw a screen in battery/auth/authui behind AuthConfig.Pages instead", line)
+		}
+	}
 }

@@ -191,7 +191,7 @@ var tasks = []task{
 		Packages: []string{"./cmd/gofastr/internal/appspec/"},
 	},
 	{
-		ID: "dup-column-key", Suite: suiteReplay, Ref: "765ffef4^", Graders: "dup-column-key", Overlay: "uinode",
+		ID: "dup-column-key", Suite: suiteReplay, Ref: "765ffef4^", Graders: "dup-column-key", Overlay: "uinode-dupkey",
 		Prompt: "uinodev1.Validate (core-ui/uinodev1) accepts a data-table whose columns repeat a key. The host renderer then panics in headless.Table, so a module route answers 500 on every hit. " +
 			"Make Validate refuse the repeat." + replayClosing,
 		Packages: []string{"./core-ui/uinodev1/", "./framework/uihost/uinoderender/"},

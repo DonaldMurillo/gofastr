@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"hash/crc32"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -253,6 +255,80 @@ func TestCleanEntryNameRefusesEscapes(t *testing.T) {
 	for _, name := range bad {
 		if _, good := cleanEntryName(name); good {
 			t.Errorf("cleanEntryName(%q) accepted", name)
+		}
+	}
+}
+
+func TestExtractZipRefusesTooManyEntries(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	dir := &zip.FileHeader{Name: "Notes.app/", Method: zip.Store}
+	dir.SetMode(fs.ModeDir | 0o755)
+	if _, err := zw.CreateHeader(dir); err != nil {
+		t.Fatal(err)
+	}
+	for i := range maxZipEntries {
+		if _, err := zw.CreateHeader(&zip.FileHeader{Name: "Notes.app/" + strconv.Itoa(i), Method: zip.Store}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	if _, err := ExtractZip(buf.Bytes(), dest, "Notes.app"); !errors.Is(err, ErrBadArchive) {
+		t.Fatalf("an archive of %d entries: err = %v, want ErrBadArchive", maxZipEntries+1, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "Notes.app")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("an archive over the entry cap was extracted: %v", err)
+	}
+}
+
+func TestExtractZipRefusesEntryDeclaredTooLarge(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	dir := &zip.FileHeader{Name: "Notes.app/", Method: zip.Store}
+	dir.SetMode(fs.ModeDir | 0o755)
+	if _, err := zw.CreateHeader(dir); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("tiny")
+	hdr := &zip.FileHeader{Name: "Notes.app/bomb", Method: zip.Store, CRC32: crc32.ChecksumIEEE(body),
+		CompressedSize64: uint64(len(body)), UncompressedSize64: maxEntrySize + 1}
+	hdr.SetMode(0o644)
+	w, err := zw.CreateRaw(hdr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	if _, err := ExtractZip(buf.Bytes(), dest, "Notes.app"); !errors.Is(err, ErrBadArchive) {
+		t.Fatalf("an entry declaring %d bytes: err = %v, want ErrBadArchive", maxEntrySize+1, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "Notes.app", "bomb")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("an entry declared over the size cap was opened for writing: %v", err)
+	}
+}
+
+func TestExtractZipNeedsTheNamedRootDirectory(t *testing.T) {
+	type entry = struct {
+		content []byte
+		mode    fs.FileMode
+	}
+	for name, entries := range map[string]map[string]entry{
+		"no root directory entry": {"Notes.app/Contents/x": {[]byte("x"), 0o644}},
+		"a file under another root": {
+			"Notes.app/":           {nil, 0o755 | fs.ModeDir},
+			"Other.app/Contents/x": {[]byte("x"), 0o644},
+		},
+	} {
+		if _, err := ExtractZip(buildZip(t, entries), t.TempDir(), "Notes.app"); !errors.Is(err, ErrBadArchive) {
+			t.Errorf("%s: err = %v, want ErrBadArchive", name, err)
 		}
 	}
 }

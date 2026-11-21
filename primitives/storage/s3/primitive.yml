@@ -1,0 +1,33 @@
+primitive: storage.s3
+summary: S3Storage, the backend over a caller-supplied S3Client, with presigned GET and PUT URLs.
+code:
+  - battery/storage/s3.go
+docs:
+  - framework/docs/content/storage.md
+invariants:
+  - id: every-operation-validates-the-key
+    rule: Save, Get, Delete, Exists and both presigned URLs validate the key through checkObjectKey before reaching the client or presigner.
+    enforced_by:
+      - test: battery/storage.TestS3RefusesUnformedKeys
+      - test: battery/storage.TestS3KeyValidationEmptyKey
+      - test: battery/storage.TestS3PresignedKeyValidation
+  - id: presign-expiry-is-positive
+    rule: A presigned URL with a zero or negative expiry is refused.
+    enforced_by:
+      - test: battery/storage.TestS3PresignRefusesNonPositiveExpiry
+decisions:
+  - id: no-aws-sdk
+    date: 2026-11-20
+    status: accepted
+    decision: S3Storage talks to the store through the minimal S3Client and Presigner interfaces the caller implements.
+    rejected:
+      - option: Import the AWS SDK.
+        why: It would pull a large dependency into every app that imports the battery.
+  - id: positive-expiry-only
+    date: 2026-11-20
+    status: accepted
+    decision: The presigned-URL pair refuses an expiry that is not positive.
+    rejected:
+      - option: Pass any expiry to the presigner.
+        why: One SDK clamps a zero expiry to its own longer default and another signs a dead URL.
+    upholds: [presign-expiry-is-positive]

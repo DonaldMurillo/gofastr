@@ -9,17 +9,13 @@ import (
 	"unicode/utf8"
 )
 
-// FixedWindow is a language-agnostic chunker that splits text into
-// fixed-size rune windows with overlap. It does not look at token
-// boundaries, that's the embedder's concern, so chunks are always
-// reproducible from byte offsets alone.
+// FixedWindow splits text into fixed-size rune windows with overlap.
 type FixedWindow struct {
 	Size    int // window size, in runes
 	Overlap int // overlap between consecutive windows, in runes
 }
 
-// NewFixedWindow validates size/overlap and returns a chunker. Overlap
-// is clamped to [0, size-1].
+// NewFixedWindow returns a FixedWindow, clamping overlap to [0, size-1].
 func NewFixedWindow(size, overlap int) *FixedWindow {
 	if size <= 0 {
 		size = 512
@@ -54,11 +50,6 @@ func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
 		step = 1
 	}
 	var chunks []Chunk
-	// Track the byte offset of the current window start incrementally so
-	// the whole chunking pass is O(N): recomputing len(string(runes[:start]))
-	// each iteration re-materialises the growing prefix and is O(N^2).
-	// prevStart/byteStart advance by the byte length of the runes the step
-	// consumed since the last window.
 	prevStart := 0
 	byteStart := 0
 	for start := 0; start < len(runes); start += step {
@@ -79,8 +70,6 @@ func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
 
 func newChunk(doc Document, byteStart, byteEnd int, text string) Chunk {
 	id := chunkID(doc.ID, byteStart, byteEnd)
-	// Shallow-copy metadata so callers can mutate doc.Metadata without
-	// affecting stored chunks.
 	var md map[string]any
 	if len(doc.Metadata) > 0 {
 		md = make(map[string]any, len(doc.Metadata))

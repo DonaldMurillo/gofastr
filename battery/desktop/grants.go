@@ -11,21 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Permission grants. The chokepoint consults the store before every
-// gated call: "allow" proceeds, "deny" is a persisted refusal (so a
-// page cannot re-prompt in a loop), a miss triggers the OS prompt.
-// "Allow once" is deliberately not persisted.
-//
-// A grant is keyed on (capability, permission), not on the permission
-// alone. The OS alert names the capability, the method AND the
-// permission, so the user is answering about a capability; keying on
-// the permission string alone let a SECOND capability that happened to
-// declare the same string inherit that consent with no prompt at all,
-// silently and across app upgrades. The two parts are separate COLUMNS,
-// never a delimiter-joined string (the compositekey posture): a
-// capability name and a permission both come from a plugin.
-
-// Grant decisions. Anything else in the column reads as deny.
 const (
 	grantAllow = "allow"
 	grantDeny  = "deny"
@@ -33,8 +18,7 @@ const (
 
 // GrantStore persists per-permission decisions.
 type GrantStore interface {
-	// Get returns the stored decision ("allow" or "deny") for one
-	// capability's permission. found is false when nothing is stored.
+	// Get returns the stored decision ("allow" or "deny") for one capability's permission.
 	Get(ctx context.Context, capability, permission string) (decision string, found bool, err error)
 	// Set persists a decision, replacing any previous one.
 	Set(ctx context.Context, capability, permission, decision string) error
@@ -42,28 +26,16 @@ type GrantStore interface {
 	Reset(ctx context.Context) error
 }
 
-// sqlGrantStore persists grants in the app's own database
-// (desktop_grants), created in OnStart so the table exists before the
-// listener binds.
 type sqlGrantStore struct {
 	db *sql.DB
 }
 
-// newSQLGrantStore wraps an open DB. The schema is ensured separately
-// (Battery.OnStart) because Init-time entities bind the DB at
-// registration, not at battery Init.
 func newSQLGrantStore(db *sql.DB) *sqlGrantStore {
 	return &sqlGrantStore{db: db}
 }
 
-// grantsTable is the fixed table name; it is a constant, not config,
-// so SafeIdent/QuoteIdent below are belt-and-braces.
 const grantsTable = "desktop_grants"
 
-// ensureSchema creates the grants table. The timestamp type follows the
-// battery/auth apitoken_sql.go dialect split: DATETIME on SQLite,
-// TIMESTAMP on Postgres; both engines accept CREATE TABLE IF NOT
-// EXISTS here.
 func (s *sqlGrantStore) ensureSchema(ctx context.Context) error {
 	tsType := "DATETIME"
 	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
@@ -95,8 +67,8 @@ func (s *sqlGrantStore) Get(ctx context.Context, capability, permission string) 
 }
 
 func (s *sqlGrantStore) Set(ctx context.Context, capability, permission, decision string) error {
-	if decision != grantAllow && decision != grantDeny {
-		return fmt.Errorf("desktop: grant decision must be %q or %q, got %q", grantAllow, grantDeny, decision)
+	if err := checkDecision(decision); err != nil {
+		return err
 	}
 	stmt := fmt.Sprintf(
 		`INSERT INTO %s (capability, permission, decision, granted_at) VALUES ($1, $2, $3, $4) `+
@@ -117,15 +89,11 @@ func (s *sqlGrantStore) Reset(ctx context.Context) error {
 	return nil
 }
 
-// grantKey is the composite key as a STRUCT, never a joined string:
-// a control-character-joined concatenation of two plugin-supplied
-// values is the compositekey shape the repo has an analyzer for.
 type grantKey struct {
 	capability string
 	permission string
 }
 
-// memGrantStore is the no-database fallback.
 type memGrantStore struct {
 	mu  sync.Mutex
 	grs map[grantKey]string
@@ -143,8 +111,8 @@ func (s *memGrantStore) Get(_ context.Context, capability, permission string) (s
 }
 
 func (s *memGrantStore) Set(_ context.Context, capability, permission, decision string) error {
-	if decision != grantAllow && decision != grantDeny {
-		return fmt.Errorf("desktop: grant decision must be %q or %q, got %q", grantAllow, grantDeny, decision)
+	if err := checkDecision(decision); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -156,5 +124,12 @@ func (s *memGrantStore) Reset(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.grs = make(map[grantKey]string)
+	return nil
+}
+
+func checkDecision(decision string) error {
+	if decision != grantAllow && decision != grantDeny {
+		return fmt.Errorf("desktop: grant decision must be %q or %q, got %q", grantAllow, grantDeny, decision)
+	}
 	return nil
 }

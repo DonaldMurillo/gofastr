@@ -148,6 +148,12 @@ func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 			despite:    "reserved Reply-To header override",
 		},
 		{
+			name:       "reserved_sender_override",
+			header:     map[string]string{"sender": "ceo@company.example"},
+			rejectedAs: "reserved Sender header override was accepted. Attack: sender spoofing through rendered Extra.headers.",
+			despite:    "reserved Sender header override",
+		},
+		{
 			name:       "esc_header_value",
 			header:     map[string]string{"X-Trace": "total:\x1b]0;pwned\x07"},
 			rejectedAs: "custom header value with an ESC control byte was accepted. Attack: terminal-title spoofing, the byte pair the SMTP battery's header rule refuses.",

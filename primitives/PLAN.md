@@ -190,8 +190,68 @@ roster loops, now `localMembersLocked`). One bug was fixed on the way:
 The replay eval after the sweep held every number, moving one cell at most,
 but no replay task reads `core-ui/` (`2026-11-20-replay-coreui-sweep.md`).
 
-Next: `battery/`, `cmd/`, `internal/`. The repository as a whole is at
-14.1%.
+`battery/` is swept, 25.5% to 4.7%, its tests 11.2% to 11.0%. All 38 package
+directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
+(before, after; a directory counts its subdirectories):
+
+| Package | Before | After | | Package | Before | After |
+|---|---|---|---|---|---|---|
+| admin | 18.3% | 2.9% | | queue | 32.2% | 4.4% |
+| auth | 30.3% | 4.1% | | relay | 30.9% | 3.0% |
+| auth/authui | 28.0% | 6.3% | | rtc | 29.8% | 4.0% |
+| cache | 33.7% | 5.8% | | search | 27.5% | 5.1% |
+| desktop | 21.0% | 4.9% | | semantic | 23.3% | 3.8% |
+| desktop/internal/fakecgo | 77.4% | 8.6% * | | service | 21.1% | 1.5% |
+| email | 26.6% | 3.2% | | setup | 32.2% | 3.8% |
+| log | 31.3% | 6.3% | | sitesearch | 20.2% | 4.8% |
+| notify | 34.6% | 7.7% | | storage | 24.5% | 7.0% |
+| print | 33.6% | 7.5% | | telemetry | 18.8% | 4.0% |
+| print/chromepdf | 39.3% | 7.8% | | webhook | 30.3% | 6.8% |
+
+In `fakecgo`, starred, what remains is a one-line doc on each exported
+function and the package. The four groups (desktop; auth; admin, queue,
+semantic and webhook; the thirteen others) added 119 primitives, 837
+invariants (23 judged only) and 133 decisions, plus 214 tests for rules
+that had none. Twelve batteries got their first top-level primitive
+(`desktop`, `log`, `cache`, `email`, `search`, `sitesearch`, `storage`,
+`setup`, `relay`, `print`, `notify`, `telemetry`); the seven that had one
+were extended. They recorded 17 twins and merged two (desktop's two grant
+stores now share `checkDecision`, and `desktoptest` uses
+`desktop.MainWindowID`). Outside new tests the only other code changes are
+two moves that split files by job (`admin.go` into `gate.go` and
+`opspost.go`, `email/smtp.go` into `message.go`) and one bug fix: a
+relative `desktop.Config.DataDir` was accepted though its doc said it
+must be absolute, because the helper that checked it was never called
+(breaking: `New` now panics on one, and `Init` creates a missing one
+owner-only). Also fixed on the way: six tests weaker than their rules
+(`TestOAuth2Plugin_StateExpiry` minted a state that failed to parse
+before its expiry was read, `TestOIDCSec_WeakRSAKey` signed with the
+strong key, `TestWebhookMetrics_CountersAndCollector` let an attempt count
+twice, two mail-queue panic tests returned before the worker's fate was
+known, and a search test named for a clause it did not check), and two
+docs that said the opposite of the code (`search.md` on a non-string
+weighted field, webhook's `Options` on a caller's HTTP client). Every
+proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Review
+bots skipped the PR for its size, so four agents that did not write it
+reviewed it adversarially (hard rule 13,
+`docs/reviews/2026-11-21-battery-sweep-adversarial-review.md`): about 220
+mutations of its new invariants, of which about 45 survived, and about 40
+rules from deleted comments that nothing guarded, among them a TOTP code
+that could verify two sessions, the updater's archive checksum and a
+cached response served to an anonymous caller if the code regressed. Each
+got a test watched failing or a judged invariant; the fixes found two more
+real bugs, a temp path in a storage rename error and semantic answers
+without `no-store`. Left
+unproven on Linux: the macOS and Windows desktop rules, whose tests run
+only there, and storage's case-folded keys, whose tests skip on a case-sensitive filesystem. The replay eval after it held
+every number but `form-field-typo`, whose runs swing between one sibling
+path and all five (11 of 30 here, 34 of 60 over three batches), and
+`node-block-entity`, which was back at 22 of 24 on a rerun; no replay
+task reads `battery/` (`2026-11-20-replay-battery-sweep.md`).
+`dup-column-key` reads an entry that names its sibling sites and went
+from 1 of 4 to 4 of 4 (`2026-11-20-dup-column-key-twin.md`).
+
+Next: `cmd/`, `internal/`. The repository as a whole is at 10.4%.
 
 ### 3. Bring the known twins in, and merge them
 

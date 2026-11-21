@@ -22,11 +22,6 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 		return nil
 	}
 
-	// An enqueued occurrence goes only once its job is gone or done. A
-	// failed job is kept for Replay, which makes it pending again, and the
-	// overlap check (commitOccurrences) finds a schedule's active jobs only
-	// through their occurrences: pruning the occurrence of a failed job let
-	// the tick after a Replay enqueue a second run beside the replayed one.
 	//gofastr:allow(iounderlock) only the scheduler's own evaluation loop (and a direct RunOnce) reach this sweep, once per tick; no request path or other worker waits on retentionMu, which exists to keep two RunOnce calls from sweeping at once
 	_, err := s.queue.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s
 		WHERE created_at < $1 AND (
@@ -49,16 +44,11 @@ func (s *DurableScheduler) sweepOccurrences(ctx context.Context, now time.Time) 
 }
 
 func (s *DurableScheduler) ensureHardeningSchema() error {
-	// version: optimistic-concurrency fencing on schedules created
-	// before durable-scheduler plan fencing shipped.
 	if err := s.ensureScheduleColumns([]scheduleColumn{
 		{"version", "BIGINT", "0"},
 	}); err != nil {
 		return err
 	}
-	// lane / priority / max_attempts: per-schedule options. All three
-	// are additive NOT NULL with defaults, so the change is safe on
-	// existing rows.
 	if err := s.ensureScheduleColumns([]scheduleColumn{
 		{"lane", "TEXT", "''"},
 		{"priority", s.queue.intType(), "0"},
@@ -69,18 +59,11 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	if err := s.queue.widenPostgresInts(s.queue.schedulerSchedulesTable(), "priority", "max_attempts"); err != nil {
 		return err
 	}
-	// tz: the IANA location a cron schedule was registered in, so cron
-	// field evaluation happens in the schedule's wall-clock location
-	// instead of UTC. Additive NOT NULL DEFAULT '', so existing rows and
-	// interval schedules (which never consult tz) evaluate as before.
 	if err := s.ensureScheduleColumns([]scheduleColumn{
 		{"tz", "TEXT", "''"},
 	}); err != nil {
 		return err
 	}
-	// user_id: the person a schedule's payload is about, copied onto every
-	// job it fires and matched by App.EraseUserData. Additive NOT NULL
-	// DEFAULT '', so existing schedules name nobody.
 	if err := s.ensureScheduleColumns([]scheduleColumn{
 		{"user_id", "TEXT", "''"},
 	}); err != nil {
@@ -99,19 +82,10 @@ func (s *DurableScheduler) ensureHardeningSchema() error {
 	return nil
 }
 
-// scheduleColumn names one additive column ensureScheduleColumns adds to
-// the schedules table: identifier, SQL type, default literal.
 type scheduleColumn struct {
 	name, typ, dflt string
 }
 
-// ensureScheduleColumns idempotently adds the named columns to the
-// schedules table: Postgres uses ADD COLUMN IF NOT EXISTS; SQLite has no
-// such form, so it scans PRAGMA table_info first and ALTERs only the
-// missing columns, tolerating the duplicate-column race. It replaces the
-// three formerly duplicated column-ensure bodies in this file (the
-// version, lane/priority/max_attempts, and tz migrations), which shared
-// the same strategy and differed only in the column list.
 func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	table := s.queue.schedulerSchedulesTable()
 	if s.queue.dialect == dialectPostgres {
@@ -128,8 +102,6 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 		}
 		return nil
 	}
-	// SQLite has no IF NOT EXISTS for ADD COLUMN: probe PRAGMA once and
-	// ALTER only the missing columns, tolerating the duplicate-column race.
 	rows, err := s.queue.db.Query(query.SQLitePragma("table_info", table))
 	if err != nil {
 		return err
@@ -170,8 +142,6 @@ func (s *DurableScheduler) ensureScheduleColumns(want []scheduleColumn) error {
 	return nil
 }
 
-// indexOn renders "<index> ON <table>" for the scheduler index named by
-// the queue table and suffix, on table (already quoted).
 func (q *DBQueue) indexOn(suffix, table string) string {
 	name, err := query.SafeIdent(q.schedulerName("_" + suffix))
 	if err != nil {

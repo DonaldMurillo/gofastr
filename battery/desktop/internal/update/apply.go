@@ -11,26 +11,17 @@ import (
 	"strings"
 )
 
-// ErrUnsupportedApply is the sentinel the default (non-darwin or
-// unbundled) platform answers with. battery/desktop maps it onto the
-// bridge's unsupported code.
+// ErrUnsupportedApply is the sentinel the default (non-darwin or unbundled) platform answers with.
 var ErrUnsupportedApply = errors.New("auto-update is not supported by this host")
 
-// CommandRunner runs one external command to completion and reports
-// its exit. ExecRunner is the real one over os/exec; tests install a
-// fake to observe the codesign invocation without codesign present.
+// CommandRunner runs one external command to completion and reports its exit.
 type CommandRunner interface {
 	Run(name string, args ...string) error
-	// Output runs the command and returns its standard output. The
-	// macOS signature pin reads the running bundle's designated
-	// requirement this way. A command that ran and exited non-zero
-	// reports an *ExitError; any other error means it did not run.
+	// Output runs the command and returns its standard output.
 	Output(name string, args ...string) ([]byte, error)
 }
 
-// ExecRunner runs commands through os/exec, capturing the combined
-// output for the error detail (the caller logs it server-side; the
-// page never sees it).
+// ExecRunner runs commands through os/exec, capturing the combined output for the error detail (the caller logs it server-side; the page never sees it).
 type ExecRunner struct{}
 
 // Run implements CommandRunner.
@@ -39,8 +30,6 @@ func (ExecRunner) Run(name string, args ...string) error {
 }
 
 // ExitError is a command that ran to completion and exited non-zero.
-// Stderr is what it printed there, for the caller to match on; it can
-// name absolute paths, so Error leaves it out and it is never logged.
 type ExitError struct {
 	Name   string
 	Code   int
@@ -49,8 +38,7 @@ type ExitError struct {
 
 func (e *ExitError) Error() string { return fmt.Sprintf("%s exited %d", e.Name, e.Code) }
 
-// Output implements CommandRunner. Standard error stays out of the
-// error text: codesign prints the bundle's absolute path there.
+// Output implements CommandRunner.
 func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 	out, err := exec.Command(name, args...).Output()
 	if err == nil {
@@ -63,39 +51,25 @@ func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 	return nil, fmt.Errorf("%s could not run", name)
 }
 
-// SignaturePolicy is the macOS code-signing pin an install applies to
-// the downloaded bundle (UpdateConfig.MacOSTeamID and MacOSAllowAdHoc).
-// The zero value pins the update to the running app's own designated
-// requirement and refuses when the running app has no signing identity.
+// SignaturePolicy is the macOS code-signing pin an install applies to the downloaded bundle (UpdateConfig.MacOSTeamID and MacOSAllowAdHoc).
 type SignaturePolicy struct {
 	// TeamID, when set, is the Apple Developer Team ID whose Developer
 	// ID certificate every update must be signed with, instead of the
 	// running app's requirement.
 	TeamID string
-	// AllowAdHoc lets an app with no signing identity (ad-hoc signed or
-	// unsigned) install an update that only carries a valid signature
-	// of any kind. The install then rests on the feed signature alone.
+	// AllowAdHoc lets an app with no signing identity (ad-hoc signed or unsigned) install an update that only carries a valid signature of any kind.
 	AllowAdHoc bool
 }
 
 // Platform is the OS seam of the updater: where the running bundle
 // lives, what version it reports, how its replacement proves its
-// signature, and how the new copy is launched. darwin swaps one .app
-// directory; windows/amd64 swaps the executable and its loader DLL as a
-// set (it also implements FileLayout). Every other host gets
-// DefaultPlatform's unsupported answer.
+// signature, and how the new copy is launched.
 type Platform interface {
-	// Version returns the running app's version (the bundle's
-	// CFBundleShortVersionString on darwin, the executable's
-	// ProductVersion on windows). "" when unbundled, and an empty
-	// version never updates.
+	// Version returns the running app's version (the bundle's CFBundleShortVersionString on darwin, the executable's ProductVersion on windows).
 	Version() string
-	// Identifier returns the running app's CFBundleIdentifier. ""
-	// when unbundled; an update bundle must declare the same one.
+	// Identifier returns the running app's CFBundleIdentifier.
 	Identifier() string
-	// Bundle returns the running bundle's file name ("Notes.app") and
-	// its parent directory. ok is false when the process is not
-	// running from a bundle.
+	// Bundle returns the running bundle's file name ("Notes.app") and its parent directory.
 	Bundle() (name, dir string, ok bool)
 	// VerifySignature checks the extracted bundle's code signature and
 	// refuses a failed check: codesign --verify --deep --strict against
@@ -109,10 +83,6 @@ type Platform interface {
 }
 
 // MoveTree moves src (a directory tree) to dst, which must not exist.
-// The fast path is a rename that refuses an existing dst in the same
-// syscall; when the two are on different volumes (staging under the
-// app-data dir, bundle under /Applications) the rename fails and the
-// tree is copied, every create exclusive, and the source removed.
 func MoveTree(src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return errMoveDestExists
@@ -132,17 +102,12 @@ func MoveTree(src, dst string) error {
 	return os.RemoveAll(src)
 }
 
-// copyTree recursively copies src to dst preserving file modes. Every
-// directory and file is created exclusively: a dst that appeared after
-// MoveTree's absence check stops the copy instead of taking a merge.
 func copyTree(src, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
 	if info.IsDir() {
-		// Owner-only and writable while the children are copied; the
-		// extractor's directory mode (dirPerm) lands after.
 		if err := os.Mkdir(dst, 0o700); err != nil {
 			return err
 		}
@@ -158,9 +123,6 @@ func copyTree(src, dst string) error {
 		return os.Chmod(dst, dirPerm(info.Mode()))
 	}
 	if !info.Mode().IsRegular() {
-		// A symlink or device in a bundle we just extracted and
-		// verified cannot exist (the extractor refuses them); refuse
-		// here too rather than duplicating whatever it is.
 		return errNotRegular
 	}
 	in, err := os.Open(src)
@@ -183,9 +145,6 @@ func copyTree(src, dst string) error {
 	return out.Close()
 }
 
-// runCommand executes name with args, capturing combined output; a
-// non-zero exit reports the exit status and the output tail (the tail
-// is for the server log only; callers keep it out of bridge errors).
 func runCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
@@ -199,12 +158,6 @@ func runCommand(name string, args ...string) error {
 	return nil
 }
 
-// relativeToArgs rewrites every absolute-path argument in a command's
-// output to its base name. codesign and open print the bundle path they
-// were given ("/Users/ann/Library/.../Notes.app: invalid signature"),
-// and the log must not carry the user's home directory, so the line
-// becomes "Notes.app: invalid signature" with nested files left
-// relative to the bundle.
 func relativeToArgs(out string, args []string) string {
 	for _, a := range args {
 		if a == "" || !filepath.IsAbs(a) {
@@ -215,8 +168,6 @@ func relativeToArgs(out string, args []string) string {
 	return out
 }
 
-// Fixed-text errors MoveTree and copyTree return; LogDetail passes
-// their text through because it names no path.
 var (
 	errMoveDestExists = errors.New("MoveTree: destination already exists")
 	errNotRegular     = errors.New("copyTree: a bundle entry is not a regular file")
@@ -225,8 +176,7 @@ var (
 // LogDetail reduces an error from a file-system call to text a log line
 // may carry: the operation and the OS error ("rename: permission
 // denied") of an *fs.PathError, *os.LinkError or *os.SyscallError, never
-// the paths they hold, which name the user's home directory. Any other
-// error collapses to fixed words, since its text may embed a path.
+// the paths they hold, which name the user's home directory.
 func LogDetail(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
@@ -248,9 +198,7 @@ func LogDetail(err error) string {
 	return "not a file-system error"
 }
 
-// Unit is one path an install replaces. Rel names the new copy inside
-// the extracted bundle root ("" is the root itself); Current is the
-// installed path it replaces.
+// Unit is one path an install replaces.
 type Unit struct {
 	Rel     string
 	Current string
@@ -258,14 +206,10 @@ type Unit struct {
 
 // FileLayout is the optional Platform extension for a host whose
 // install replaces files beside the running executable instead of one
-// bundle directory (Windows: the .exe and WebView2Loader.dll). A
-// Platform without it installs the macOS way: the extracted root
-// replaces <dir>/<name>, and its identity comes from Info.plist.
+// bundle directory (Windows: the .exe and WebView2Loader.dll).
 type FileLayout interface {
-	// Units lists the installed paths the swap replaces, in order; the
-	// first is the one Relaunch starts. ok is false when not bundled.
+	// Units lists the installed paths the swap replaces, in order; the first is the one Relaunch starts.
 	Units() (units []Unit, ok bool)
-	// Inspect checks that the extracted root holds exactly the files
-	// Units names and returns the identity it declares.
+	// Inspect checks that the extracted root holds exactly the files Units names and returns the identity it declares.
 	Inspect(extracted string) (BundleInfo, error)
 }

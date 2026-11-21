@@ -379,7 +379,11 @@ nothing, so completed work never becomes deliverable again.
 Nothing but a success replaces a `success` row: a claimant past the
 budget that dead-letters while the worker it outran is still mid-POST
 does not mark that delivery `dead` once it lands. Dead deliveries are not retried; they remain in the store for
-inspection / replay via your own admin tooling.
+inspection and replay: `Manager.DeadDeliveries(ctx, limit)` lists them
+newest first and `Manager.Replay(ctx, id)` returns one to pending, due
+now, with its attempts cleared. Both need a store implementing
+`ReplayableStore` (both shipped stores do); `Replay` of a delivery that
+is not dead does nothing.
 
 If a subscriber is removed while a delivery for it is pending, the
 delivery transitions straight to `dead` with `LastError =
@@ -568,6 +572,10 @@ that copied their row. The owner is read before `WithBridgeRedactor` runs,
 so a redactor that drops it from the payload keeps the tag. The returned
 `cancel` detaches every subscription at once; call it before
 `Manager.Stop` so no Emit lands after the worker exits.
+A payload `json.Marshal` refuses, and a `Publish` that fails (a store
+write), are dropped so one bad event cannot fail the bus for every other
+subscriber; `WithBridgeMarshalError` and `WithBridgePublishError` install
+a callback to log or count them.
 
 With several replicas on one fanout (`framework.WithFanout`), the bridge queues
 an event only on the replica that emitted it and skips the copies other

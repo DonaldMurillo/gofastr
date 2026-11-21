@@ -1,0 +1,42 @@
+primitive: semantic.persist
+summary: On-disk persistence for an index with Options.Path - the FlatStore snapshot, the write-ahead log, its replay, and the writer's directory lock.
+code:
+  - battery/semantic/persist.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: snapshot-matches-its-model
+    rule: LoadSnapshot refuses, as ModelMismatchError and leaving the store untouched, a snapshot of another embedder model or dimension.
+    enforced_by:
+      - test: battery/semantic.TestLoadSnapshotRefusesAnotherModelOfTheSameDim
+      - test: battery/semantic.TestLoadSnapshotRefusesModelMismatch
+  - id: snapshot-is-checked-whole
+    rule: LoadSnapshot refuses a chunk list shorter or longer than its header, a chunk of another dimension and a non-empty snapshot of empty vectors.
+    enforced_by:
+      - test: battery/semantic.TestSnapshotRejectsTruncatedChunkList
+      - test: battery/semantic.TestSnapshotRejectsVectorDimensionMismatch
+      - test: battery/semantic.TestSnapshotOfEmptyVectorsIsRefused
+  - id: wal-is-owner-only
+    rule: Opening the WAL tightens an existing file to owner-only.
+    enforced_by:
+      - test: battery/semantic.TestOpenWALTightensExistingFile
+  - id: persist-dirs-are-owner-only
+    rule: A directory Snapshot or the WAL creates for its file is created owner-only (0700).
+    enforced_by:
+      - test: battery/semantic.TestPersistDirsAreOwnerOnly
+  - id: torn-append-is-cut
+    rule: A failed append truncates its torn bytes and stops the WAL until a snapshot rewrites it.
+    enforced_by:
+      - test: battery/semantic.TestWALFailedAppendCutsAndStops
+  - id: one-writer-per-path
+    rule: A second writer on one Path gets ErrIndexLocked.
+    enforced_by:
+      - test: battery/semantic.TestSecondWriterRefused
+decisions:
+  - id: one-fsync-per-write
+    date: 2026-11-20
+    status: accepted
+    decision: The WAL fsyncs every append.
+    rejected:
+      - option: Batch fsyncs for throughput.
+        why: An acknowledged write must survive a crash, and at 100k chunks the snapshot path dominates throughput anyway.

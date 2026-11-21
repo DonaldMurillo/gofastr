@@ -14,17 +14,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// fsCapability: read/write/stat on paths the dialogs capability (or an
-// in-process AllowPath call) put on the allow-list, and read/stat/list
-// under a picked folder (AllowFolder, cap_fs_folder.go). The allow-list
-// is per-process; whole-disk access is a plugin's call, not the core
-// default.
-
-// fsReadLimit caps a readText call (8 MiB).
 const fsReadLimit = 8 << 20
 
-// errPathNotAllowed is the fixed refusal for off-list paths; it never
-// echoes the path back.
 var errPathNotAllowed = &Error{Code: CodeDenied, Message: "path is not accessible"}
 
 func (b *Battery) fsCapability() Capability {
@@ -140,12 +131,10 @@ func (b *Battery) fsCapability() Capability {
 	}
 }
 
-// fsPathInput is the {path} shape shared by readText and stat.
 type fsPathInput struct {
 	Path string `json:"path"`
 }
 
-// decodeFSPath strictly decodes a {path} input.
 func decodeFSPath(in json.RawMessage) (fsPathInput, *Error) {
 	var req fsPathInput
 	if err := decodeInput(in, &req); err != nil {
@@ -157,9 +146,6 @@ func decodeFSPath(in json.RawMessage) (fsPathInput, *Error) {
 	return req, nil
 }
 
-// fsError maps OS errors onto the closed code set without echoing the
-// path: not-exist → not_found, permission → denied, everything else →
-// internal.
 func fsError(err error) *Error {
 	if errors.Is(err, fs.ErrNotExist) {
 		return &Error{Code: CodeNotFound, Message: "path does not exist"}
@@ -191,17 +177,6 @@ func resolveFS[T any](b *Battery, path string, plain func(string) (T, error), ro
 // AllowPath puts p on the fs allow-list: p must be absolute; the list
 // stores filepath.Clean(p) AND, when the path exists, its
 // filepath.EvalSymlinks resolution (for a missing path, its deepest
-// existing ancestor's, with the tail appended). A later request is
-// accepted only when the path as sent is that clean form AND its live
-// symlink resolution is on the list too, so a symlink ALREADY IN PLACE
-// when the request arrives cannot widen access (the rootwrite posture).
-//
-// It is deliberately not open-then-verify, and the limit of that is
-// worth stating: pathAllowed resolves and the handler then opens, so a
-// process running as the same user could still swap a component in
-// between. That buys an attacker nothing here, a same-uid process can
-// read the file directly, and the page, which is the actual attacker in
-// this threat model, cannot create a symlink through any bridge method.
 // The write replaces the final directory entry, including a symlink.
 func (b *Battery) AllowPath(p string) error {
 	if !filepath.IsAbs(p) {
@@ -216,10 +191,6 @@ func (b *Battery) AllowPath(p string) error {
 		b.allowPaths[resolved] = struct{}{}
 		b.allowMu.Unlock()
 	} else {
-		// p may not exist yet (a save dialog target): resolve the
-		// deepest existing ancestor and append the missing tail, so
-		// the resolution computed AFTER the file is created matches
-		// the one stored now (the /var → /private/var case).
 		if resolved := resolveExistingAncestor(p); resolved != "" && resolved != clean {
 			b.allowMu.Lock()
 			b.allowPaths[resolved] = struct{}{}
@@ -229,9 +200,6 @@ func (b *Battery) AllowPath(p string) error {
 	return nil
 }
 
-// resolveExistingAncestor resolves p through symlinks as far as the
-// filesystem currently allows: existing ancestors are resolved, the
-// not-yet-existing tail is appended verbatim.
 func resolveExistingAncestor(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
@@ -247,17 +215,6 @@ func resolveExistingAncestor(p string) string {
 	return filepath.Join(r, filepath.Base(p))
 }
 
-// pathAllowed reports whether p may be touched: p itself, byte for byte,
-// must be on the list, and so must its live symlink resolution. A
-// missing leaf resolves through its deepest existing ancestor, the form
-// AllowPath stored for it.
-//
-// The lookup takes p as sent, never its cleaned form. Every stored key is
-// clean, so any other spelling of a grant misses: the handlers open the
-// raw string, and the kernel walks "link/.." through the link before it
-// steps up, so a path that only cleans to a grant names another file.
-// Resolving a missing leaf through its ancestors is what catches a
-// parent swapped for a symlink after the grant.
 func (b *Battery) pathAllowed(p string) bool {
 	if !filepath.IsAbs(p) {
 		return false
@@ -268,7 +225,6 @@ func (b *Battery) pathAllowed(p string) bool {
 	if !cleanOK {
 		return false
 	}
-	// An unresolvable path comes back "", which is never on the list.
 	if resolved := resolveExistingAncestor(p); resolved != p {
 		b.allowMu.Lock()
 		_, resolvedOK := b.allowPaths[resolved]

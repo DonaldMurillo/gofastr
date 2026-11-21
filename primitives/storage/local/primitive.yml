@@ -1,0 +1,86 @@
+primitive: storage.local
+summary: LocalStorage, the filesystem backend that resolves every key under a pinned os.Root, writes atomically, refuses folded spellings and keeps the storage layout out of its errors.
+code:
+  - battery/storage/local.go
+docs:
+  - framework/docs/content/storage.md
+twins:
+  - job: Store upload objects on the local filesystem under a pinned os.Root, with symlink containment, atomic staging and folded-key refusal.
+    why: Work not yet done; battery/storage keeps legacy unportable keys readable and supports a temp dir outside the root, and both already share upload.ResolveUnderRoot, RefuseFoldedKey and CommitUnfolded.
+    sites:
+      - path: battery/storage/local.go
+        note: storage.LocalStorage.
+      - path: core/upload/local.go
+        note: upload.LocalStorage.
+invariants:
+  - id: key-is-its-clean-form
+    rule: Every LocalStorage operation refuses an empty key, and with upload.ErrInvalidKey a key that holds "..", is absolute or volume-qualified, or is not its own clean slash-separated form.
+    enforced_by:
+      - test: battery/storage.TestTraversalRejectedOnEveryOperation
+      - test: battery/storage.TestAliasKeysRefused
+  - id: portability-rules-bind-new-writes-only
+    rule: Save refuses a key with a colon, a reserved Windows device name or a component ending in a space or dot, while Get, Exists and Delete still reach an object stored under such a key.
+    enforced_by:
+      - test: battery/storage.TestSaveStillRejectsUnportableKeys
+      - test: battery/storage.TestExistingKeysStayReadableAndDeletable
+  - id: containment-on-the-resolved-chain
+    rule: A key is resolved through upload.ResolveUnderRoot before any syscall, so a symlinked directory or leaf inside BaseDir cannot funnel a read, write or delete outside it.
+    enforced_by:
+      - test: battery/storage.TestLocalStorageSymlinkEscapeRefused
+      - test: battery/storage.TestFreshSymlinkUploadsKeepRoot
+  - id: reads-go-through-the-pinned-root
+    rule: Get, GetRange and Exists open and stat through the pinned os.Root, so a symlink planted after resolution is refused by the kernel.
+    enforced_by:
+      - test: battery/storage.TestLocalStorageRefusesMidResolvePlant
+  - id: writes-go-through-the-pinned-root
+    rule: Save's staging, chmod and rename and Delete's unlink go through the pinned os.Root whenever the base and temp dir sit under it.
+    judge: Does this change make Save or Delete call an absolute-path os function where the pinned os.Root could do the call?
+  - id: folded-spelling-is-refused
+    rule: On a case- or normalization-insensitive filesystem Save, Get, GetRange, Exists and Delete refuse a key that folds onto an object stored under a byte-different spelling, and Save and Delete recheck at the commit under CommitUnfolded's lock.
+    enforced_by:
+      - contract: GOFASTR1410
+      - test: battery/storage.TestCaseFoldKeysStayDistinct
+      - test: battery/storage.TestFoldedReadRefused
+      - test: battery/storage.TestFoldedDeleteRefused
+      - test: battery/storage.TestFoldedKeyRaceRefusedOnBoth
+    judge: Does this change add a LocalStorage operation that touches an object without upload.RefuseFoldedKey or CommitUnfolded?
+  - id: errors-carry-no-absolute-path
+    rule: No LocalStorage error quotes the absolute storage root or a temp file's path; wraps quote the key and pass syscall errors, the rename's *os.LinkError among them, through scrubPathError.
+    enforced_by:
+      - test: battery/storage.TestStorageErrorsHideAbsRoot
+      - test: battery/storage.TestSaveTempDirErrorsHidePaths
+  - id: canceled-save-keeps-the-object
+    rule: Save checks the context after the copy and before the rename, on the root path and the resolve-then-open path alike, so a canceled save leaves the stored object as it was.
+    enforced_by:
+      - test: battery/storage.TestSaveCanceledMidCopyKeepsObject
+  - id: a-directory-is-not-an-object
+    rule: A key naming a directory of other keys is not found by Get and GetRange, reported absent by Exists and left in place by Delete.
+    enforced_by:
+      - test: battery/storage.TestLocalDirectoryKeyIsNotAnObject
+  - id: files-and-dirs-are-owner-only
+    rule: Saved files default to mode 0600 and created directories to 0700, restricted up to the storage root.
+    enforced_by:
+      - test: battery/storage.TestLocalStorage_DefaultFilesAreNotWorldReadable
+      - test: battery/storage.TestLocalStorage_DefaultDirectoriesAreNotWorldTraversable
+  - id: repin-keeps-old-roots-until-close
+    rule: Pinning a new root moves the old one to retiredRoots instead of closing it, and Close closes every pinned and retired root.
+    enforced_by:
+      - test: battery/storage.TestFreshSymlinkUploadsKeepRoot
+      - test: battery/storage.TestCloseClosesThePinnedRoot
+decisions:
+  - id: portability-on-write-only
+    date: 2026-11-20
+    status: accepted
+    decision: The Windows-portability rules live in validateWritableKey, which only Save calls; validateKey, which every operation calls, holds the security rules.
+    rejected:
+      - option: Apply the portability rules on every operation.
+        why: Stores written by earlier releases hold keys with a colon or a device name, legal on Unix, and those objects would become unreadable and undeletable with no migration path.
+    upholds: [portability-rules-bind-new-writes-only]
+  - id: outside-temp-dir-stages-resolve-then-open
+    date: 2026-11-20
+    status: accepted
+    decision: A WithTempDir outside BaseDir, and a base that cannot be opened as a root, stage through saveResolveThenOpen with absolute paths.
+    rejected:
+      - option: Refuse a temp dir outside the root.
+        why: os.Root.Rename cannot cross the root, and a scratch disk elsewhere is a supported configuration.
+    upholds: [writes-go-through-the-pinned-root]

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -346,5 +347,49 @@ func TestGateStaleDuplicateCookieDoesNotLogOut(t *testing.T) {
 	r.AddCookie(c)
 	if rec := serveGate(g, r); rec.Code != http.StatusOK {
 		t.Fatalf("live session behind a stale duplicate answered %d; want 200", rec.Code)
+	}
+}
+
+// No refusal echoes the token or cookie value it was handed.
+func TestGateRefusalsEchoNoSecret(t *testing.T) {
+	const secret = "SECRETVALUE0123456789"
+	g := newTestGate(t, false)
+	cookie := &http.Cookie{Name: g.cookieName(), Value: "v1.9999999999." + secret + ".sig"}
+	reqs := []*http.Request{
+		request(http.MethodPost, gateHost, loginPath, "t="+secret),
+		request(http.MethodGet, gateHost, loginPath+"?t="+secret, ""),
+		request(http.MethodPost, gateHost, loginPath, "t="+secret+strings.Repeat("a", maxLoginBody)),
+		request(http.MethodGet, gateHost, "/", ""),
+		request(http.MethodPost, gateHost, "/", "x=1"),
+	}
+	reqs[3].AddCookie(cookie)
+	reqs[4].AddCookie(cookie)
+	reqs[4].Header.Set("Origin", "https://attacker.example")
+	for _, r := range reqs {
+		rec := serveGate(g, r)
+		if rec.Code < 400 {
+			t.Fatalf("%s %s answered %d; want a refusal", r.Method, r.URL, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), secret) || strings.Contains(fmt.Sprint(rec.Header()), secret) {
+			t.Errorf("%s %s echoed the secret: %v %q", r.Method, r.URL, rec.Header(), rec.Body)
+		}
+	}
+}
+
+// The login door takes the file:// sign-in page's POST (Origin null) and answers 200 with a page, not a redirect that would drop the SameSite=Strict cookie.
+func TestGateLoginAcceptsFilePageAndAnswersWithAPage(t *testing.T) {
+	g := newTestGate(t, false)
+	tok, err := g.mintToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := request(http.MethodPost, gateHost, loginPath, "t="+url.QueryEscape(tok))
+	r.Header.Set("Origin", "null")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := serveGate(g, r)
+	if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" || len(rec.Result().Cookies()) != 1 ||
+		!strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("login from a file:// page answered %d, Location %q, %d cookies, Content-Type %q; want 200, none, 1, text/html",
+			rec.Code, rec.Header().Get("Location"), len(rec.Result().Cookies()), rec.Header().Get("Content-Type"))
 	}
 }

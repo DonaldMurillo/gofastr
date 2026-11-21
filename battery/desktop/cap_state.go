@@ -9,36 +9,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
 )
 
-// The state capability: the app's durable key/value store, served to
-// the page. Ungated like window.setPath (the page is the app; the
-// window id is a claim), but confined: page keys live under "page."
-// only, so the battery's own entries ("windows", "settings") are never
-// reachable from the page. Every successful set and delete broadcasts
-// state_changed to every open window, which is the cross-window sync a
-// settings widget wants: one window changes the theme, every window
-// hears it.
-
-// pageKeyPrefix is the only key namespace the page may touch.
 const pageKeyPrefix = "page."
 
-// stateGetOutput is get's result: the stored value, or JSON null when
-// the key is absent.
 type stateGetOutput struct {
 	Value json.RawMessage `json:"value"`
 }
 
-// stateKeysOutput is keys' result.
 type stateKeysOutput struct {
 	Keys []string `json:"keys"`
 }
 
-// stateKeyMsg is the closed refusal message for a key the store's
-// grammar refuses (the prefix check in pageStateKey runs first, so
-// this is the "page.Bad" family).
 const stateKeyMsg = "key must match ^[a-z][a-z0-9_.-]{0,63}$ (with the page. prefix)"
 
-// stateCapability builds the core "state" capability over the
-// battery's app state store.
 func (b *Battery) stateCapability() Capability {
 	return Capability{
 		Name:        "state",
@@ -155,21 +137,12 @@ func (b *Battery) stateCapability() Capability {
 	}
 }
 
-// stateStore is the battery's app state store (nil before Run).
 func (b *Battery) stateStore() *appstate.Store { return b.state.Load() }
 
-// stateNotOpen is the before-Run refusal. The chokepoint only answers
-// after Run froze the registry and the store opens in the same flow,
-// so a page cannot normally see this; a nil guard is still the honest
-// answer for the in-process callers.
 func (b *Battery) stateNotOpen() *Error {
 	return &Error{Code: CodeUnsupported, Message: "the app state store is not open yet"}
 }
 
-// pageStateKey validates a page-supplied state key: it must live under
-// the page. prefix, which keeps the battery's own keys ("windows",
-// "settings") out of the page's reach. The store's grammar (and its
-// length cap, prefix included) is enforced by Set/Get/Delete.
 func pageStateKey(key string) (string, *Error) {
 	if !strings.HasPrefix(key, pageKeyPrefix) {
 		return "", &Error{Code: CodeInvalidInput,
@@ -178,9 +151,6 @@ func pageStateKey(key string) (string, *Error) {
 	return key, nil
 }
 
-// emitStateChanged announces one page-key change to every open window.
-// Best effort on top of a committed write: Emit already logs a Warn
-// per failed window.
 func (b *Battery) emitStateChanged(key string) {
 	if err := b.Emit("state_changed", map[string]any{"key": key}); err != nil {
 		b.logger.Warn("desktop: announcing a state change failed", "key", key, "error", err.Error())

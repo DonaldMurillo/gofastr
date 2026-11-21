@@ -14,10 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// Menu is the native menu bar (or platform equivalent) declared in Go.
-// Each item is exactly one of: a Navigate path (client-side nav, no
-// reload), a Handler func, or a Role the shell implements natively.
-
 // Menu roles the shell recognizes.
 const (
 	RoleQuit      = "quit"
@@ -32,19 +28,12 @@ type Menu struct {
 	Items []MenuItem
 }
 
-// MenuItem is one menu row. ID is optional; empty IDs are auto-assigned
-// "m<N>" in declaration order when the battery takes a copy at New.
+// MenuItem is one menu row.
 type MenuItem struct {
 	ID string
-	// Title is the displayed label, in the OS language the shell
-	// reads. A separator needs none; a role item gets the OS default
-	// when it is zero.
+	// Title is the displayed label, in the OS language the shell reads.
 	Title i18n.Phrase
-	// Key is an accelerator ("cmd+n", "ctrl+shift+t"): known modifiers
-	// (cmd/command/meta, ctrl/control, alt/option/opt, shift) then one
-	// key, with at least one modifier other than shift. A bare key is
-	// refused: the shell would take that keystroke from the page. The
-	// shell maps it to the platform spelling.
+	// Key is an accelerator such as "cmd+n"; it needs a cmd, ctrl or alt modifier.
 	Key  string
 	Role string
 	// Navigate is a same-origin absolute path; exclusive with Handler.
@@ -54,8 +43,6 @@ type MenuItem struct {
 	Children []MenuItem
 }
 
-// validateMenu checks the whole tree and returns a deep copy with IDs
-// assigned. Called at New: an invalid menu is a construction error.
 func validateMenu(m *Menu) (*Menu, error) {
 	if m == nil {
 		return nil, nil
@@ -100,7 +87,6 @@ func validateMenu(m *Menu) (*Menu, error) {
 	if out.Items, err = assign(m.Items); err != nil {
 		return nil, err
 	}
-	// Assign IDs after validation so error messages can name positions.
 	var n int
 	var walk func(items *[]MenuItem)
 	walk = func(items *[]MenuItem) {
@@ -115,7 +101,6 @@ func validateMenu(m *Menu) (*Menu, error) {
 		}
 	}
 	walk(&out.Items)
-	// Duplicate-ID check on the assigned copy.
 	var check func(items []MenuItem) error
 	check = func(items []MenuItem) error {
 		for _, it := range items {
@@ -135,7 +120,6 @@ func validateMenu(m *Menu) (*Menu, error) {
 	return out, nil
 }
 
-// displayID names an item in errors before IDs are assigned.
 func (it MenuItem) displayID() string {
 	if it.ID != "" {
 		return it.ID
@@ -146,14 +130,6 @@ func (it MenuItem) displayID() string {
 	return "<untitled>"
 }
 
-// validNavigatePath enforces the same-origin absolute path grammar
-// (deviation 4): starts with "/", no scheme, no protocol-relative //,
-// no control characters, no "." or ".." segments. The path part, up
-// to the query or fragment, is also read the way a URL parser reads it:
-// %2e is a dot, so "/a/%2e%2e?x" holds a ".." segment. A decoded
-// segment may not hold a slash, a backslash or a control character
-// either: Go's ServeMux decodes a wildcard, so "/files/..%2f..%2fx"
-// hands PathValue("name") == "../../x" to a GET /files/{name} route.
 func validNavigatePath(p string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -182,20 +158,10 @@ func validNavigatePath(p string) bool {
 	return true
 }
 
-// refusedDecodedRune reports a rune a decoded path segment may not
-// carry: a separator (/ or \) that splits it into more segments for a
-// handler reading the decoded value, or a control character.
 func refusedDecodedRune(r rune) bool {
 	return r == '/' || r == '\\' || r < 0x20 || r == 0x7f || unicode.IsControl(r)
 }
 
-// validMenuKey accepts +-joined ASCII tokens: one or more known
-// modifiers, then exactly one key, with at least one of cmd/ctrl/alt
-// among the modifiers. Every shell matches menu accelerators before the
-// page sees the keystroke (AppKit key equivalents, GTK accel groups,
-// the Windows message loop), so a bare or shift-only key would swallow
-// that character in every text field. An unknown modifier token is not
-// accepted either: the planner would drop it and leave the bare key.
 func validMenuKey(k string) bool {
 	if len(k) > 64 {
 		return false
@@ -229,8 +195,6 @@ func validMenuKey(k string) bool {
 	return command
 }
 
-// menuKeyModifier reports whether tok is a modifier keyEquivalent maps,
-// and whether it is a command modifier (anything but shift).
 func menuKeyModifier(tok string) (command, ok bool) {
 	switch tok {
 	case "cmd", "command", "meta", "ctrl", "control", "alt", "option", "opt":
@@ -241,7 +205,6 @@ func menuKeyModifier(tok string) (command, ok bool) {
 	return false, false
 }
 
-// find returns the item with the given id (searching children).
 func (m *Menu) find(id string) (MenuItem, bool) {
 	if m == nil {
 		return MenuItem{}, false
@@ -265,17 +228,10 @@ func (m *Menu) find(id string) (MenuItem, bool) {
 	return found, ok
 }
 
-// menuHandlerTimeout bounds a menu Handler invocation.
 const menuHandlerTimeout = 30 * time.Second
 
-// dispatchMenu is WindowConfig.OnMenu. Navigate items eval the runtime
-// navigate call in the window; Handler items run on a goroutine with a
-// deadline. Role items never arrive here (the shell handles them); an
-// unknown id is a Warn.
 func (b *Battery) dispatchMenu(id string) { b.dispatchMenuMode(id, true) }
 
-// dispatchTrayMenu keeps Handler completion inside the native tray's bounded
-// callback worker. Main-menu and existing platform dispatch remain asynchronous.
 func (b *Battery) dispatchTrayMenu(id string) { b.dispatchMenuMode(id, false) }
 
 func (b *Battery) dispatchMenuMode(id string, async bool) {
@@ -303,8 +259,6 @@ func (b *Battery) dispatchMenuMode(id string, async bool) {
 	case item.Handler != nil:
 		handlerFn := item.Handler
 		run := func() {
-			// A menu handler is app-supplied code on a bare goroutine:
-			// recover so one panic cannot kill the process.
 			defer func() {
 				if v := recover(); v != nil {
 					b.logger.Error("desktop: menu handler panicked", "id", id, "panic", textsafe.Recovered(v))

@@ -257,6 +257,14 @@ in the path cannot forge log lines or repaint an operator's tail.
   chmod anyway, the sink prints one warning to stderr and keeps
   appending. Windows skips the tighten. Set `FileMode: 0o640` when a
   log shipper reads the file through its group.
+- The sink refuses to open a symlink as the log file (`O_NOFOLLOW` on
+  Unix). Parent directories it creates are `0700`; an existing one keeps
+  its mode.
+- `Console` (`ConsoleAuto` by default) adds a human-readable sink on
+  stderr only when stderr is a terminal and `NO_COLOR` is unset;
+  `ConsoleOn` and `ConsoleOff` force it. Every control, C1 and
+  invisible rune it prints, a malformed entry's included, is written as
+  an escape.
 
 ### `WebhookSink(url, opts)`
 

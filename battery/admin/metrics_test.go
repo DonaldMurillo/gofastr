@@ -184,3 +184,10 @@ func TestMetricsAreOneStrip(t *testing.T) {
 		}
 	}
 }
+
+func TestQueueTakesOneMetricSlot(t *testing.T) {
+	err := (&Battery{cfg: Config{Queue: &fakeQueue{}, Metrics: make([]Metric, maxFigures)}}).checkConfig()
+	if err == nil || !strings.Contains(err.Error(), "at most 5") {
+		t.Errorf("six metrics beside a Queue's Failed jobs figure = %v, want a refusal naming at most 5", err)
+	}
+}

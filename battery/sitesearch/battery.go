@@ -21,24 +21,19 @@ import (
 
 // Config configures the battery.
 type Config struct {
-	// Groups label results by URL prefix ("/docs/" → "Docs"), on whole
-	// path segments ("/doc" never labels "/docs"); the longest matching
-	// prefix wins. A page no prefix matches has no group.
+	// Groups label results by URL prefix ("/docs/" → "Docs"), on whole path
+	// segments ("/doc" never labels "/docs"); the longest matching prefix
+	// wins.
 	Groups []Group
-	// Exclude keeps pages out of the index by path: "/lab" covers
-	// "/lab" and every page under it, never "/labs". It applies to the
-	// expanded paths, so one value of a dynamic route can go
-	// ("/examples/headless/dense"), and to Sources' pages. An excluded
-	// page is never rendered, so one that cannot render is no error.
-	// Pages a static export leaves out are never indexed there either.
+	// Exclude keeps pages out of the index by path: "/lab" covers "/lab" and
+	// every page under it, never "/labs".
 	Exclude []string
 	// Sources add pages no route renders (records from a database, an
-	// external changelog). They run on every build, live and export.
+	// external changelog).
 	Sources []Source
-	// MaxAge is how old the live index may get: a query that finds it
-	// older starts one rebuild in the background and is answered from
-	// the old index meanwhile. Zero never rebuilds; call Refresh after
-	// a change instead. New panics on a negative MaxAge.
+	// MaxAge is how old the live index may get: a query that finds it older
+	// starts one rebuild in the background and is answered from the old index
+	// meanwhile.
 	MaxAge time.Duration
 }
 
@@ -50,56 +45,30 @@ type Group struct {
 // Source returns pages to index beside the rendered routes.
 type Source func(ctx context.Context) ([]Page, error)
 
-// maxQueryBytes and maxLimit bound the query endpoint's parameters.
 const (
 	maxQueryBytes = 256
 	defaultLimit  = 8
 	maxLimit      = 20
 )
 
-// buildRetry is how long a failed build answers with its error before a
-// query may start another one. Each build renders every page, so
-// without it every query to a broken site would render the site again.
 const buildRetry = 30 * time.Second
 
-// Battery serves a full-text index of the app's rendered pages. On a
-// live server it renders every route (the static export's page set,
-// StaticPaths expanded) when the app starts, again in the background
-// once the index is older than Config.MaxAge, and answers queries at
-// Root+"query"; the same index files the static export writes are
-// served under Root. Registered on an app that exports, it writes
-// those files into the export, so the browser client searches a static
-// host with no server.
+// Battery serves a full-text index of the app's rendered pages.
 type Battery struct {
 	cfg Config
 	app atomic.Pointer[framework.App]
 
-	// building serializes builds: one renders the site at a time. It is
-	// a one-slot channel, not a mutex, so a query waiting behind a build
-	// gives up when its request ends (see lockBuild).
-	building chan struct{}
-	// mu guards the index state. It is held to read or swap it, never
-	// across a render, so a query waits only for the first build.
-	mu      sync.Mutex
-	idx     *Index
-	files   map[string][]byte
-	builtAt time.Time
-	// failed and failedAt hold the last failed build: with no index it
-	// is returned, and either way no build retries, until buildRetry
-	// has passed.
-	failed   error
-	failedAt time.Time
-	// rebuilding is set while a background rebuild runs.
+	building   chan struct{}
+	mu         sync.Mutex
+	idx        *Index
+	files      map[string][]byte
+	builtAt    time.Time
+	failed     error
+	failedAt   time.Time
 	rebuilding bool
 
-	// export state: the pages ExportPage saw since ExportStart.
 	exportPages []Page
 
-	// life guards warm, which closes when the build OnStart began has
-	// finished, and the background rebuild in flight: rebuilt closes
-	// when it ends, and stopRebuild ends it. stopped refuses new
-	// rebuilds once OnStop has run. It is apart from mu so OnStop never
-	// waits on a build to read it.
 	life        sync.Mutex
 	warm        chan struct{}
 	rebuilt     chan struct{}
@@ -107,7 +76,7 @@ type Battery struct {
 	stopped     bool
 }
 
-// New returns a site search battery. It panics on a negative MaxAge.
+// New returns a site search battery.
 func New(cfg Config) *Battery {
 	if cfg.MaxAge < 0 {
 		panic("sitesearch: negative Config.MaxAge")
@@ -115,12 +84,7 @@ func New(cfg Config) *Battery {
 	return &Battery{cfg: cfg, building: make(chan struct{}, 1)}
 }
 
-// lockBuild takes the build slot, or returns ctx's error when ctx ends
-// first: a slow Source holds the slot for the whole first build.
 func (b *Battery) lockBuild(ctx context.Context) error {
-	// A free slot is taken even under a done ctx, the way the mutex did:
-	// the build itself honours ctx, and a select over two ready cases
-	// would pick between them at random.
 	select {
 	case b.building <- struct{}{}:
 		return nil
@@ -134,14 +98,13 @@ func (b *Battery) lockBuild(ctx context.Context) error {
 	}
 }
 
-// unlockBuild gives the build slot back.
 func (b *Battery) unlockBuild() { <-b.building }
 
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "sitesearch" }
 
-// Init implements framework.Battery: it registers the query endpoint
-// and the index files. The index builds on the first request.
+// Init implements framework.Battery: it registers the query endpoint and
+// the index files.
 func (b *Battery) Init(app *framework.App) error {
 	b.app.Store(app)
 	r := app.Router()
@@ -152,7 +115,7 @@ func (b *Battery) Init(app *framework.App) error {
 
 // OnStart implements framework.BatteryLifecycle: it builds the index in
 // the background, so the first query does not wait for every page to
-// render. A failed build is logged and retried by the next query.
+// render.
 func (b *Battery) OnStart(ctx context.Context) error {
 	done := make(chan struct{})
 	b.life.Lock()
@@ -174,8 +137,8 @@ func (b *Battery) OnStart(ctx context.Context) error {
 }
 
 // OnStop implements framework.BatteryLifecycle: it waits for the build
-// OnStart began, so shutdown does not close what the build renders
-// with, and ends a background rebuild and waits for it.
+// OnStart began, so shutdown does not close what the build renders with,
+// and ends a background rebuild and waits for it.
 func (b *Battery) OnStop(ctx context.Context) error {
 	b.life.Lock()
 	b.stopped = true
@@ -198,9 +161,7 @@ func (b *Battery) OnStop(ctx context.Context) error {
 }
 
 // Refresh rebuilds the live index from the current pages; a content
-// change that does not restart the server calls it. Queries keep the
-// old index until the new one is built. A failed Refresh keeps the old
-// index and returns the error.
+// change that does not restart the server calls it.
 func (b *Battery) Refresh(ctx context.Context) error {
 	if err := b.lockBuild(ctx); err != nil {
 		return err
@@ -213,16 +174,12 @@ func (b *Battery) Refresh(ctx context.Context) error {
 	return err
 }
 
-// Index returns the live index, building it on first use. A query
-// that finds it older than Config.MaxAge gets it at once and starts a
-// rebuild in the background.
+// Index returns the live index, building it on first use.
 func (b *Battery) Index(ctx context.Context) (*Index, error) {
 	idx, _, err := b.current(ctx)
 	return idx, err
 }
 
-// current returns the live index and its files, building them on first
-// use.
 func (b *Battery) current(ctx context.Context) (*Index, map[string][]byte, error) {
 	b.mu.Lock()
 	if idx, files := b.idx, b.files; idx != nil {
@@ -238,8 +195,6 @@ func (b *Battery) current(ctx context.Context) (*Index, map[string][]byte, error
 		return nil, nil, err
 	}
 	defer b.unlockBuild()
-	// The build this one waited behind may have made the index, or
-	// failed recently enough to answer for this one.
 	b.mu.Lock()
 	idx, files, failed := b.idx, b.files, b.failed
 	retry := failed != nil && time.Since(b.failedAt) < buildRetry
@@ -257,9 +212,6 @@ func (b *Battery) current(ctx context.Context) (*Index, map[string][]byte, error
 	return idx, files, err
 }
 
-// settle records a build's outcome under mu: a built index replaces the
-// live one, and a failure is held for buildRetry. A build its caller
-// cut short did not fail; the next one runs.
 func (b *Battery) settle(ctx context.Context, idx *Index, files map[string][]byte, err error) {
 	if err != nil {
 		if ctx.Err() == nil {
@@ -270,14 +222,11 @@ func (b *Battery) settle(ctx context.Context, idx *Index, files map[string][]byt
 	b.idx, b.files, b.builtAt, b.failed = idx, files, time.Now(), nil
 }
 
-// expired reports, under mu, whether the live index is past MaxAge and
-// no rebuild runs or waits out a failure.
 func (b *Battery) expired() bool {
 	return b.cfg.MaxAge > 0 && time.Since(b.builtAt) >= b.cfg.MaxAge && !b.rebuilding &&
 		(b.failed == nil || time.Since(b.failedAt) >= buildRetry)
 }
 
-// rebuild starts a background rebuild, under mu. OnStop ends it.
 func (b *Battery) rebuild() {
 	b.life.Lock()
 	defer b.life.Unlock()
@@ -300,7 +249,7 @@ func (b *Battery) rebuild() {
 			b.mu.Unlock()
 		}()
 		if b.lockBuild(ctx) != nil {
-			return // OnStop ended it while it waited
+			return
 		}
 		defer b.unlockBuild()
 		idx, files, err := b.render(ctx)
@@ -313,10 +262,6 @@ func (b *Battery) rebuild() {
 	}()
 }
 
-// render renders the pages and builds the index and its files. A page
-// that fails to render is logged and left out: one broken page must
-// not take search down for the whole site. An export, which bakes what
-// it renders, refuses such a page instead.
 func (b *Battery) render(ctx context.Context) (*Index, map[string][]byte, error) {
 	app := b.app.Load()
 	if app == nil {
@@ -352,10 +297,6 @@ func (b *Battery) render(ctx context.Context) (*Index, map[string][]byte, error)
 	return b.build(ctx, pages)
 }
 
-// anonymous returns a context that ends when ctx does but carries none
-// of its values. Every visitor searches the same index, so it is built
-// as no one in particular: the identity of the request or the caller
-// that asked for a build never reaches the pages' policies.
 func anonymous(ctx context.Context) (context.Context, context.CancelFunc) {
 	c, cancel := context.WithCancel(context.Background())
 	stop := context.AfterFunc(ctx, cancel)
@@ -371,7 +312,6 @@ func mountedHost(app *framework.App) *uihost.UIHost {
 	return nil
 }
 
-// extract reads one rendered page and labels its group.
 func (b *Battery) extract(path, page string) (Page, bool, error) {
 	p, ok, err := extractHosted(path, strings.NewReader(page))
 	if err != nil {
@@ -393,7 +333,6 @@ func (b *Battery) group(path string) string {
 	return label
 }
 
-// build adds the Sources' pages and builds the index and its files.
 func (b *Battery) build(ctx context.Context, pages []Page) (*Index, map[string][]byte, error) {
 	for _, src := range b.cfg.Sources {
 		extra, err := src(ctx)
@@ -421,8 +360,8 @@ func (b *Battery) build(ctx context.Context, pages []Page) (*Index, map[string][
 	return idx, files, nil
 }
 
-// ExportStart implements static.Contributor: it drops the pages a
-// build that failed partway collected.
+// ExportStart implements static.Contributor: it drops the pages a build
+// that failed partway collected.
 func (b *Battery) ExportStart(context.Context) error {
 	b.mu.Lock()
 	b.exportPages = nil
@@ -430,8 +369,7 @@ func (b *Battery) ExportStart(context.Context) error {
 	return nil
 }
 
-// ExportPage implements static.Contributor: it indexes one exported
-// page.
+// ExportPage implements static.Contributor: it indexes one exported page.
 func (b *Battery) ExportPage(path, html string) error {
 	if b.excluded(path) {
 		return nil
@@ -466,7 +404,6 @@ func (b *Battery) ExportFiles(ctx context.Context) (map[string][]byte, error) {
 	return out, nil
 }
 
-// excluded applies Config.Exclude to a page's path.
 func (b *Battery) excluded(path string) bool {
 	for _, e := range b.cfg.Exclude {
 		if under(path, e) {
@@ -476,8 +413,6 @@ func (b *Battery) excluded(path string) bool {
 	return false
 }
 
-// under reports whether path is prefix or below it, on whole segments:
-// "/docs/" and "/docs" cover "/docs/x", never "/docsx".
 func under(path, prefix string) bool {
 	prefix = strings.TrimRight(prefix, "/")
 	return path == prefix || strings.HasPrefix(path, prefix+"/")

@@ -1,13 +1,4 @@
-// Package desktoptest is the no-native-code Shell double the desktop
-// battery's own tests and app-level tests run against. It lives in its
-// own package so an example app's test can wire the same fake into a
-// desktop.Config and observe notifications, dialogs, and window evals
-// without touching AppKit.
-//
-// The double is scriptable: each native surface returns a result the
-// test sets beforehand (SetSaveFile, SetPromptDecisions, …) and records
-// everything that crossed it (Notifications, Prompts, ClipboardWrites,
-// the window's NavURLs and Evals) for assertions.
+// Package desktoptest holds the scriptable fake Shell and Window and the harnesses desktop apps test against.
 package desktoptest
 
 import (
@@ -18,9 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 )
 
-// Shell is the fake desktop.Shell. Run records the WindowConfig, calls
-// ready on a goroutine, and blocks until Quit (or the context ends).
-// Safe for concurrent use.
+// Shell is the fake desktop.Shell.
 type Shell struct {
 	mu sync.Mutex
 
@@ -47,16 +36,12 @@ type Shell struct {
 	folderErr      error
 	dialogCalls    int
 
-	// Secondary windows (OpenWindow): recorded calls and per-id state.
 	openWindowCalls []OpenWindowCall
 	openWindows     map[string]*Window
 	nextWindowNum   int
 
-	// Tray: SetTrayTitle's latest value.
-	trayTitle string
-	// settingsFires counts FireOnSettings activations.
+	trayTitle     string
 	settingsFires int
-	// appearance is the value SetReduceTransparency installed.
 	appearance    desktop.Appearance
 	notifications []desktop.Notification
 	notifyErr     error
@@ -67,7 +52,6 @@ func NewShell() *Shell {
 	return &Shell{quitCh: make(chan struct{})}
 }
 
-// Run implements desktop.Shell.
 func (f *Shell) Run(ctx context.Context, w desktop.WindowConfig, ready func(desktop.Window)) error {
 	f.mu.Lock()
 	if f.runCalled {
@@ -79,8 +63,8 @@ func (f *Shell) Run(ctx context.Context, w desktop.WindowConfig, ready func(desk
 	if f.openWindows == nil {
 		f.openWindows = make(map[string]*Window)
 	}
-	win := &Window{shell: f, id: "main", title: w.Title, sidebarWidth: w.SidebarWidth}
-	f.openWindows["main"] = win
+	win := &Window{shell: f, id: desktop.MainWindowID, title: w.Title, sidebarWidth: w.SidebarWidth}
+	f.openWindows[desktop.MainWindowID] = win
 	f.mu.Unlock()
 
 	go ready(win)
@@ -119,9 +103,7 @@ func (f *Shell) SetTrayTitle(title string) error {
 	return nil
 }
 
-// MoveWindow plays the user dragging window id to frame f: the fake
-// window's frame changes and WindowConfig.OnWindowFrame fires, on a
-// goroutine, the way the native window delegate reports a move.
+// MoveWindow plays the user dragging window id to frame f; OnWindowFrame fires on a goroutine.
 func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	f.mu.Lock()
 	w := f.openWindows[id]
@@ -137,17 +119,14 @@ func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	}
 }
 
-// Appearance implements desktop.Shell: the value SetReduceTransparency
-// last installed (the zero value until then).
+// Appearance implements desktop.Shell: the value SetReduceTransparency last installed (the zero value until then).
 func (f *Shell) Appearance() desktop.Appearance {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.appearance
 }
 
-// SetReduceTransparency plays the user flipping the accessibility
-// setting: Appearance() changes and WindowConfig.OnAppearance fires on
-// a goroutine, the way the NSWorkspace observer reports on darwin.
+// SetReduceTransparency plays the user flipping Reduce Transparency; OnAppearance fires on a goroutine.
 func (f *Shell) SetReduceTransparency(on bool) {
 	f.mu.Lock()
 	ap := desktop.Appearance{ReduceTransparency: on}
@@ -160,16 +139,12 @@ func (f *Shell) SetReduceTransparency(on bool) {
 	}
 }
 
-// FocusWindow plays the OS making window id key: the frame changes and
-// WindowConfig.OnWindowFocus fires on a goroutine, the way
-// windowDidBecomeKey: reports.
+// FocusWindow plays the OS making window id key: the frame changes and WindowConfig.OnWindowFocus fires on a goroutine, the way windowDidBecomeKey: reports.
 func (f *Shell) FocusWindow(id string) { f.fireWindowActivity(id, true) }
 
 // BlurWindow plays the window resigning key (windowDidResignKey:).
 func (f *Shell) BlurWindow(id string) { f.fireWindowActivity(id, false) }
 
-// fireWindowActivity snapshots the callback under the lock and fires
-// it on a goroutine; nil ids fire nothing (no such window).
 func (f *Shell) fireWindowActivity(id string, focus bool) {
 	f.mu.Lock()
 	w := f.openWindows[id]
@@ -188,9 +163,7 @@ func (f *Shell) fireWindowActivity(id string, focus bool) {
 	}
 }
 
-// SidebarWidthOf returns the sidebar zone window id carries right now
-// (0 when there is no such window), the fact the darwin WindowState
-// reads off the live zone view.
+// SidebarWidthOf returns the sidebar zone window id carries right now (0 when there is no such window), the fact the darwin WindowState reads off the live zone view.
 func (f *Shell) SidebarWidthOf(id string) int {
 	f.mu.Lock()
 	w := f.openWindows[id]
@@ -201,9 +174,7 @@ func (f *Shell) SidebarWidthOf(id string) int {
 	return w.SidebarWidth()
 }
 
-// FireOnSettings invokes the WindowConfig.OnSettings callback the
-// battery installed (the native shells fire it from the app menu's
-// Settings item and any RoleSettings row).
+// FireOnSettings invokes the WindowConfig.OnSettings callback the battery installed.
 func (f *Shell) FireOnSettings() {
 	f.mu.Lock()
 	onSettings := f.runCfg.OnSettings
@@ -214,7 +185,6 @@ func (f *Shell) FireOnSettings() {
 	}
 }
 
-// Quit implements desktop.Shell.
 func (f *Shell) Quit() { f.quitOnce.Do(func() { close(f.quitCh) }) }
 
 // Main implements desktop.Shell: no UI thread exists, so fn runs inline.
@@ -223,7 +193,6 @@ func (f *Shell) Main(fn func()) error {
 	return nil
 }
 
-// Prompt implements desktop.Shell. With no scripted decisions it denies.
 func (f *Shell) Prompt(ctx context.Context, req desktop.PermissionRequest) (desktop.Decision, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -242,13 +211,10 @@ func (f *Shell) Prompt(ctx context.Context, req desktop.PermissionRequest) (desk
 // Clipboard implements desktop.Shell (the Shell is every surface).
 func (f *Shell) Clipboard() desktop.Clipboard { return f }
 
-// Dialogs implements desktop.Shell.
 func (f *Shell) Dialogs() desktop.Dialogs { return f }
 
-// Notifier implements desktop.Shell.
 func (f *Shell) Notifier() desktop.Notifier { return f }
 
-// ReadText implements desktop.Clipboard.
 func (f *Shell) ReadText(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -256,7 +222,6 @@ func (f *Shell) ReadText(context.Context) (string, error) {
 	return f.clipText, nil
 }
 
-// WriteText implements desktop.Clipboard.
 func (f *Shell) WriteText(_ context.Context, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -264,7 +229,6 @@ func (f *Shell) WriteText(_ context.Context, text string) error {
 	return nil
 }
 
-// OpenFile implements desktop.Dialogs.
 func (f *Shell) OpenFile(_ context.Context, _ desktop.OpenOptions) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -272,7 +236,6 @@ func (f *Shell) OpenFile(_ context.Context, _ desktop.OpenOptions) ([]string, er
 	return f.openFileResult, f.openFileErr
 }
 
-// SaveFile implements desktop.Dialogs.
 func (f *Shell) SaveFile(_ context.Context, _ desktop.SaveOptions) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -280,7 +243,6 @@ func (f *Shell) SaveFile(_ context.Context, _ desktop.SaveOptions) (string, erro
 	return f.saveFileResult, f.saveFileErr
 }
 
-// OpenFolder implements desktop.Dialogs.
 func (f *Shell) OpenFolder(_ context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -288,7 +250,6 @@ func (f *Shell) OpenFolder(_ context.Context) (string, error) {
 	return f.folderResult, f.folderErr
 }
 
-// Show implements desktop.Notifier.
 func (f *Shell) Show(_ context.Context, n desktop.Notification) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -299,7 +260,6 @@ func (f *Shell) Show(_ context.Context, n desktop.Notification) error {
 	return nil
 }
 
-// Compile-time interface checks.
 var (
 	_ desktop.Shell     = (*Shell)(nil)
 	_ desktop.Window    = (*Window)(nil)
@@ -308,10 +268,7 @@ var (
 	_ desktop.Notifier  = (*Shell)(nil)
 )
 
-// ----- scripting -----------------------------------------------------------
-
-// Window returns the fake window with the given id ("main" for the one
-// Run created, else the id OpenWindow received), or nil.
+// Window returns the fake window with the given id ("main" for the one Run created, else the id OpenWindow received), or nil.
 func (f *Shell) Window(id string) *Window {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -394,8 +351,6 @@ func (f *Shell) SetNotifyErr(err error) {
 	defer f.mu.Unlock()
 	f.notifyErr = err
 }
-
-// ----- assertions ----------------------------------------------------------
 
 // Prompts returns every PermissionRequest Prompt saw.
 func (f *Shell) Prompts() []desktop.PermissionRequest {

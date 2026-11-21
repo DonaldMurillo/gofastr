@@ -38,6 +38,12 @@ app.RegisterBattery(admin.New(admin.Config{
 }))
 ```
 
+`Title` names the product in the sidebar and the page titles (default:
+the localized "Admin"), and `Logo` is an image URL drawn beside it; with
+no `Logo` the sidebar draws the title's initial. `Logger` (default
+`slog.Default()`) receives what a handler cannot tell its caller, such
+as an audit row that failed to write after its change committed.
+
 The admin needs a UI host: `Init` fails without one. It also needs
 `Config.UI` (the app's `App.EntityUI`) whenever it exposes an entity,
 because the entity screens are `framework/entityui`'s list and record.
@@ -398,8 +404,10 @@ under the table turns pages through `?p=` and keeps the status. The
 audit page reads
 `AuditTable` (default `audit_log`) and, when the request carries a
 tenant, only that tenant's rows, newest first, `AuditListLimit` to a
-page (default 50). The pager under the table turns pages through `?p=`
-and keeps the filter; a page past the end shows the last one.
+page (default 50); `?limit=` overrides it on either page, up to 1000.
+The pager under the table turns pages through `?p=` and keeps the
+filter; a page past the end shows the last one. Rows written in the
+same instant order by id, so no row repeats or drops out across pages.
 
 **Naming the actor and the record.** With `Auth` set, the audit page
 and the dashboard's recent activity name each actor by its account's

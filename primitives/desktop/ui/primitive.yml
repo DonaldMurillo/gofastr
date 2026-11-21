@@ -1,0 +1,82 @@
+primitive: desktop.ui
+summary: The desktop theme and its components (layouts, glass, source list, inspector, sheet, popover, floating toolbar), shipped as design-system extensions on the one styling surface.
+code:
+  - battery/desktop/ui/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A new CSS knob a desktop component reads is listed in desktop.md's knob table with its default.
+  - Judge the look by screenshots of a desktop window, never by DOM probes.
+invariants:
+  - id: shell-states-are-html-classes
+    rule: Glass goes opaque with no backdrop filter under html.desktop-reduce-transparency and flattens with a dimmed accent under html.desktop-inactive, the two classes the desktop runtime module sets because WebKit has no CSS signal for either state.
+    enforced_by:
+      - test: battery/desktop/ui.TestGlassAccessibilityAndInactiveRules
+  - id: page-transparent-behind-the-frame
+    rule: The desktop layouts make html and body paint nothing, so the native material shows through, and keep main the one opaque region.
+    enforced_by:
+      - test: battery/desktop/ui.TestLayoutCSS
+  - id: traffic-light-zone-measured
+    rule: The sidebar reserves SidebarTopInset, 52 points measured against a native Notes capture, above its first row.
+    enforced_by:
+      - test: battery/desktop/ui.TestSidebarTopInsetMeasured
+  - id: primary-is-aa-under-white
+    rule: "The theme's primary is #0071E3, which clears 4.5:1 under white text, and the macOS system blue #007AFF stays on accent only."
+    enforced_by:
+      - test: battery/desktop/ui.TestPrimaryStaysAAUnderWhite
+      - test: battery/desktop/ui.TestThemeValidates
+  - id: pointer-sized-targets
+    rule: The desktop theme's touch target is 24 points, the WCAG 2.5.8 pointer minimum, not the 44-point touch floor.
+    enforced_by:
+      - test: battery/desktop/ui.TestThemeTouchTargetIsPointerSized
+  - id: labelled-surfaces
+    rule: Inspector panics without a Label and Sheet without a Title, so neither renders as an unnamed region or dialog.
+    enforced_by:
+      - test: battery/desktop/ui.TestInspectorRequiresLabel
+      - test: battery/desktop/ui.TestSheetRequiresTitle
+  - id: source-list-stamps-runtime-class
+    rule: The current SourceList row carries the runtime's active class beside aria-current, so the activelink module can clear it after a client-side navigation.
+    enforced_by:
+      - test: battery/desktop/ui.TestSourceListStampsRuntimeActiveClass
+decisions:
+  - id: no-svg-refraction
+    date: 2026-11-20
+    status: accepted
+    decision: Glass is backdrop blur and saturation, a translucent fill, an inset rim, a hairline edge and a drop shadow.
+    rejected:
+      - option: Refraction through an SVG reference filter inside backdrop-filter.
+        why: WebKit does not implement it (bug 245510) and Firefox refuses it.
+    upholds: [shell-states-are-html-classes]
+  - id: source-list-not-ui-sidebar
+    date: 2026-11-20
+    status: accepted
+    decision: The desktop sidebar is SourceList, not ui.Sidebar.
+    rejected:
+      - option: Restyle ui.Sidebar.
+        why: Its drawer, collapse rail and fixed square-corner look cannot take the translucent selection through its config, and a desktop window never needs the drawer.
+    upholds: [source-list-stamps-runtime-class]
+  - id: desktop-frame-not-content-row
+    date: 2026-11-20
+    status: accepted
+    decision: The desktop layout renders its own frame and keeps the sidebar beside the content at every width.
+    rejected:
+      - option: ui.ContentRow.
+        why: Its narrow-screen stacking would put the source list above the page; a small window uses WindowLayout instead.
+    upholds: [page-transparent-behind-the-frame]
+  - id: sourced-colors-stand-in-for-system-keywords
+    date: 2026-11-20
+    status: accepted
+    decision: The theme uses measured hex values where WebKit offers Canvas, CanvasText and AccentColor.
+    rejected:
+      - option: The CSS system color keywords.
+        why: The design system's color grammar refuses them, pinned by TestColorGrammarRefusesSystemKeywords.
+    revisit_if: The color-token grammar accepts system keywords.
+    upholds: [primary-is-aa-under-white]
+  - id: concentric-radii
+    date: 2026-11-20
+    status: accepted
+    decision: The radius scale is XL 16 and LG 12 measured, MD 8 and SM 4 derived by the concentric rule (parent radius minus padding), and Full the capsule.
+    rejected:
+      - option: style.DefaultTheme's 6, 8, 10 and 14.
+        why: Those do not nest concentrically inside a 16-point sheet.
+    upholds: [shell-states-are-html-classes]

@@ -22,47 +22,25 @@ import (
 )
 
 // Config configures the log plugin.
-//
-// The zero value Config{} is the canonical setup: a per-app file sink
-// resolved under the OS state dir, access logging on, panic recovery on,
-// lifecycle events on, App.Logger swapped to the plugin's logger so
-// framework middleware (Logging, etc.) writes through the same sinks.
 type Config struct {
-	// Level is the minimum slog level emitted. Zero value = LevelInfo.
+	// Level is the minimum slog level emitted.
 	Level slog.Level
 
-	// Sinks receive every log entry. If empty, a DefaultFileSink is used.
-	//
-	// Order matters on shutdown: sinks close in the order they appear
-	// here. Put fast/local sinks (file) LAST so they outlive slow
-	// remote sinks (webhook), operators grep'ing the file during an
-	// in-flight shutdown will see fresh entries longer that way.
+	// Sinks receive every log entry.
 	Sinks []Sink
 
 	// DisableLifecycleEvents skips the "app.start" / "app.stop" entries.
 	DisableLifecycleEvents bool
 
-	// AddSource adds source file:line to every entry. Default false.
+	// AddSource adds source file:line to every entry.
 	AddSource bool
 
 	// TrustForwardedFor opts in to reading the client IP from the
-	// `X-Forwarded-For` / `X-Real-IP` headers in the access log's
-	// `remote` field. Off by default because those headers are
-	// trivially spoofable by direct clients; turn on only when the app
-	// sits behind a trusted proxy that overwrites or appends to them.
-	// The rightmost X-Forwarded-For entry (the hop that proxy wrote) is
-	// logged, never the client-supplied entries to its left.
-	//
-	// Even when off the raw value is still emitted as `forwarded_for`
-	// so operators can correlate without trusting it.
+	// `X-Forwarded-For` / `X-Real-IP` headers in the access log's `remote`
+	// field.
 	TrustForwardedFor bool
 
-	// Console controls an optional human-readable colorized sink on
-	// stderr, intended for local development. The zero value
-	// (ConsoleAuto) attaches the sink only when stderr is a terminal
 	// and NO_COLOR is unset or empty, so Config{} gives a local dev a
-	// colorized feed without leaking ANSI into prod (journald,
-	// containers) where stderr is captured, not shown. Set ConsoleOn
 	// to force attachment regardless of TTY or NO_COLOR, or ConsoleOff
 	// to skip automatic attachment. The attached sink uses the same TTY
 	// and NO_COLOR checks for color in both modes. An explicit ConsoleSink
@@ -70,91 +48,48 @@ type Config struct {
 	Console ConsoleMode
 
 	// EnableMCP installs a RingSink + MCP tools (log_recent, log_filter,
-	// log_metrics, log_set_level) so a connected agent can debug the
-	// running app via the plugin's logger surface. Off by default.
-	// Production apps that expose MCP to untrusted callers should weigh
-	// the disclosure surface before enabling.
-	//
-	// In the dev loop (GOFASTR_DEV set by `gofastr dev`; opt-out via
-	// GOFASTR_DEV_MCP=0) the tools auto-enable regardless of this
-	// field. See Init.
+	// log_metrics, log_set_level) so a connected agent can debug the running
+	// app via the plugin's logger surface.
 	EnableMCP bool
 
-	// MCPRingSize is the ring buffer capacity used when EnableMCP is
-	// true. Zero defaults to 1000 entries.
+	// MCPRingSize is the ring buffer capacity used when EnableMCP is true.
 	MCPRingSize int
 
-	// AllowMCPMutation gates the registration of the mutating
-	// `log_set_level` tool. Off by default because flipping the global
-	// log level remotely is a DoS-via-disk-fill primitive against the
-	// file sink and a verbose-info-disclosure primitive against the
-	// ring + access log. Enable only when /mcp is reachable solely from
-	// trusted callers (localhost, authenticated proxy, etc.).
+	// AllowMCPMutation gates the registration of the mutating `log_set_level`
+	// tool.
 	AllowMCPMutation bool
 
 	// MCPGate replaces the precondition every log MCP tool runs behind,
-	// framework.MCPRequireRole("admin") by default. The tools read every
-	// caller's request paths, remote IPs and request ids, so the default
-	// is the admin role, not a signed-in user. A replacement should refuse
-	// a caller with no identity itself, as MCPRequireRole and auth.MCPRole
-	// do. Tools `gofastr dev` turned on stay ungated; a host that set
-	// EnableMCP itself gets this gate on the read tools in dev too.
+	// framework.MCPRequireRole("admin") by default.
 	MCPGate func(ctx context.Context) error
 
 	// ErrorReporter receives recovered panics (from the plugin's
 	// panic-recovery middleware) and any errors app code forwards via
-	// Plugin.Reporter(). nil (the default) keeps the existing behaviour:
-	// panics are logged as http.panic through the plugin's sinks and nothing
-	// is sent elsewhere. Set it to log.NewHTTPErrorReporter(url, opts) to
-	// additionally POST reports to a generic JSON collector / Slack. A
-	// reporter implementing io.Closer is closed on app shutdown.
+	// Plugin.Reporter().
 	ErrorReporter ErrorReporter
 }
 
-// Plugin is the log plugin. Implements framework.Plugin.
+// Plugin is the log plugin.
 type Plugin struct {
 	cfg    Config
 	logger *slog.Logger
 
-	// handler is the fan-out handler Init builds. It is an atomic
-	// pointer because Metrics and MetricsHandler are callable at any
-	// time, before Init and concurrently with it, and read it then.
 	handler atomic.Pointer[fanoutHandler]
 
-	// ring is the in-memory query backing store when EnableMCP is set.
-	// nil otherwise. Held on the plugin so MCP tool handlers (closures
-	// over *Plugin) can read it.
 	ring *RingSink
 
-	// level holds the current minimum level, a pointer to a slog.LevelVar
-	// so log_set_level can mutate it without re-wiring the handler.
 	level *slog.LevelVar
 
-	// resolvedFilePath is the path of the DefaultFileSink when one was
-	// auto-installed. Populated during Init so the log_filter tool can
-	// tail the file for historical entries beyond the ring window.
 	resolvedFilePath string
 
-	// reporter is the configured ErrorReporter (defaults to a SlogErrorReporter
-	// over the plugin's logger). Exposed via Reporter() so app code can forward
-	// non-panic errors through the same seam the recovery middleware uses.
 	reporter ErrorReporter
 
-	// mutationDevImplied records that log_set_level exists only because
-	// `gofastr dev` turned mutation on, not because the host asked. Those
-	// tools are NOT auth-gated: the dev loop has no auth configured at all,
-	// so a gate would only lock the developer's agent out of its own app.
-	// Dev exposure is bounded on the other axis instead, the listener must
-	// be loopback (framework's guardDevMCPBind).
 	mutationDevImplied bool
 
-	// mcpDevImplied records that the MCP tools exist only because
-	// `gofastr dev` turned EnableMCP on. A host that enabled MCP itself
-	// and set MCPGate gets that gate on the read tools in dev too.
 	mcpDevImplied bool
 }
 
-// New constructs an unregistered plugin. Call App.RegisterPlugin to wire.
+// New constructs an unregistered plugin.
 func New(cfg Config) *Plugin {
 	if cfg.Level == 0 {
 		cfg.Level = slog.LevelInfo
@@ -166,9 +101,7 @@ func New(cfg Config) *Plugin {
 func (p *Plugin) Name() string { return "log" }
 
 // Reporter returns the configured ErrorReporter (the same one the
-// panic-recovery middleware reports to). App code can forward non-panic
-// errors through it so they reach the configured sink (slog, HTTP
-// collector, …) alongside recovered panics. Never nil after Init.
+// panic-recovery middleware reports to).
 func (p *Plugin) Reporter() ErrorReporter {
 	if p.reporter == nil {
 		return noopReporter{}
@@ -176,10 +109,6 @@ func (p *Plugin) Reporter() ErrorReporter {
 	return p.reporter
 }
 
-// closeReporter always runs the fan-out handler's close (drains sinks) and
-// additionally closes the ErrorReporter when it owns a sink (HTTPErrorReporter).
-// The handler close is the primary effect; a reporter close error is ignored
-// so a stuck error collector never blocks app shutdown.
 func (p *Plugin) closeReporter(handlerErr error) error {
 	if c, ok := p.reporter.(interface{ Close() error }); ok {
 		_ = c.Close()
@@ -188,32 +117,27 @@ func (p *Plugin) closeReporter(handlerErr error) error {
 }
 
 // Logger returns the *slog.Logger that fans out to every configured sink.
-// Useful for app code that wants explicit access without relying on
-// slog.Default.
 func (p *Plugin) Logger() *slog.Logger { return p.logger }
 
 // Metrics is a point-in-time snapshot of counters surfaced by the log
-// plugin. Operators can scrape these via /metrics, /readyz, or any
-// other surface, the values are atomic loads, cheap and lock-free.
+// plugin.
 type Metrics struct {
-	// PostStopDrops counts log entries discarded because they arrived
-	// after sinks were closed (worker goroutines or stop hooks logging
-	// during shutdown).
+	// PostStopDrops counts log entries discarded because they arrived after
+	// sinks were closed (worker goroutines or stop hooks logging during
+	// shutdown).
 	PostStopDrops uint64
-	// SinkWriteFailures counts log entries dropped because a sink's
-	// Write returned a non-ErrSinkClosed error (disk full, network).
+	// SinkWriteFailures counts log entries dropped because a sink's Write
+	// returned a non-ErrSinkClosed error (disk full, network).
 	SinkWriteFailures uint64
-	// WebhookDropped is the sum of entries dropped from every webhook
-	// sink's bounded queue (drop-oldest under backpressure).
+	// WebhookDropped is the sum of entries dropped from every webhook sink's
+	// bounded queue (drop-oldest under backpressure).
 	WebhookDropped uint64
-	// WebhookGaveUp is the sum of batches given up by every webhook
-	// sink after exhausting MaxRetries.
+	// WebhookGaveUp is the sum of batches given up by every webhook sink
+	// after exhausting MaxRetries.
 	WebhookGaveUp uint64
 }
 
 // Metrics returns a point-in-time snapshot of the plugin's counters.
-// Safe to call at any time; values are atomic loads. Before Init no
-// sink exists and nothing has been counted, so every counter is zero.
 func (p *Plugin) Metrics() Metrics {
 	handler := p.handler.Load()
 	if handler == nil {
@@ -232,23 +156,10 @@ func (p *Plugin) Metrics() Metrics {
 	return m
 }
 
-// Init implements framework.Plugin. Builds the fan-out handler, swaps
-// the App's logger so framework middleware writes through it, attaches
-// panic recovery + access log middleware, and registers lifecycle hooks
-// for app.start / app.stop entries.
-//
-// Router late-binding means the panic-recovery and access-log middleware
-// installed here wrap routes registered before this plugin was added,
-// not only routes added later. There is no ordering footgun.
+// Init implements framework.Plugin.
 func (p *Plugin) Init(app *framework.App) error {
 	cfg := p.cfg
 
-	// In the dev loop (GOFASTR_DEV, opt-out GOFASTR_DEV_MCP=0) the MCP
-	// debug tools auto-enable, mutation included, the same reasoning
-	// as the framework's dev-implied introspection/control: `gofastr
-	// dev` is a local trusted loop whose primary consumer is the
-	// developer's own agent. Production never sets GOFASTR_DEV, so the
-	// explicit Config fields stay the only path there.
 	if dev.DevMCPEnabled() {
 		p.mcpDevImplied = !cfg.EnableMCP
 		cfg.EnableMCP = true
@@ -256,7 +167,6 @@ func (p *Plugin) Init(app *framework.App) error {
 		cfg.AllowMCPMutation = true
 	}
 
-	// Resolve sinks.
 	sinks := cfg.Sinks
 	if len(sinks) == 0 {
 		dir, err := stateDir(app.Config.Name)
@@ -272,31 +182,21 @@ func (p *Plugin) Init(app *framework.App) error {
 		p.resolvedFilePath = path
 	}
 
-	// Console sink (dev affordance). Auto = TTY-aware, so the zero
-	// value gives local devs colorized stderr without touching prod.
-	// Appended last so it closes last on shutdown (it's local; the
-	// Sinks doc asks fast/local sinks to outlive slow/remote ones).
 	switch cfg.Console {
 	case ConsoleOff:
-		// no console sink
 	case ConsoleOn:
 		sinks = append(sinks, ConsoleSink(ConsoleOpts{}))
-	default: // ConsoleAuto (zero value)
+	default:
 		if shouldColor(os.Stderr) {
 			sinks = append(sinks, ConsoleSink(ConsoleOpts{}))
 		}
 	}
 
-	// If MCP is enabled, install an in-memory ring sink for fast queries.
-	// Inserted at the FRONT of the sink list so the query path doesn't
-	// depend on the file/webhook sinks succeeding.
 	if cfg.EnableMCP {
 		p.ring = NewRingSink(cfg.MCPRingSize)
 		sinks = append([]Sink{p.ring}, sinks...)
 	}
 
-	// LevelVar lets log_set_level mutate the threshold dynamically
-	// without re-wiring the handler.
 	p.level = new(slog.LevelVar)
 	p.level.Set(cfg.Level)
 
@@ -309,31 +209,11 @@ func (p *Plugin) Init(app *framework.App) error {
 	p.logger = slog.New(handler)
 	p.cfg = cfg
 
-	// Swap the App's logger so middleware.LoggingFn(app.Logger) and any
-	// other code calling app.Logger() routes through our sinks. Scoped to
-	// this App, no slog.Default rewiring, no stdlib log side effects.
 	app.SetLogger(p.logger)
-	// Take the metrics handle so the framework-owned collectors (DB pool,
-	// outbox) attach to the single /metrics surface with no extra wiring.
-	// No-op when metrics are disabled (app.Metrics() returns nil). The log
-	// plugin does not itself depend on the handle; this is the universal
-	// battery bridging framework collectors onto the surface for apps that
-	// register no subsystem collector of their own.
 	_ = app.Metrics()
 
-	// Install our own access-log + panic-recovery middleware. Order is
-	// access OUTSIDE recovery so the access log's defer reads the
-	// status that recovery wrote (500) on a panic. With the reverse
-	// ordering the defer would fire mid-unwind and log status=200 even
-	// when the response was a 500. These sit INSIDE the framework's
-	// default Recovery + Logging, log-recovery catches first because
-	// it's the innermost recover.
 	app.Use(router.Middleware(accessMiddleware(p.logger, cfg.TrustForwardedFor)))
 
-	// Resolve the ErrorReporter: an explicit one from Config wins, otherwise
-	// the default SlogErrorReporter preserves the pre-existing http.panic log
-	// line. Held on the plugin so Reporter() can hand it to app code, and
-	// closed on shutdown if it owns a sink (e.g. HTTPErrorReporter).
 	p.reporter = cfg.ErrorReporter
 	if p.reporter == nil {
 		p.reporter = SlogErrorReporter{Logger: p.logger}
@@ -352,10 +232,6 @@ func (p *Plugin) Init(app *framework.App) error {
 			)
 			return nil
 		})
-		// OnStopFirst: prepend so log's close fires LAST under the
-		// reverse-iteration Stop. Any user OnStop registered before
-		// or after RegisterPlugin(log) gets to write its final log
-		// lines through live sinks.
 		app.OnStopFirst(func() error {
 			p.logger.LogAttrs(context.Background(), slog.LevelInfo, "app.stop",
 				slog.String("app", appName),
@@ -377,58 +253,31 @@ func (p *Plugin) Init(app *framework.App) error {
 	return nil
 }
 
-// --- fan-out slog.Handler -------------------------------------------------
-
-// fanoutHandler is a slog.Handler that writes each record as one JSON
-// line (no leading newline) to every configured sink. It owns the sinks'
-// lifecycle.
 type fanoutHandler struct {
 	sinks []Sink
 	opts  *slog.HandlerOptions
-	// steps is the With/WithGroup chain in call order. Handle replays it
-	// onto slog's JSONHandler step by step, so an attr added after a
-	// group lands inside it and nested groups nest, as they do on
-	// slog's own handler. Never mutated: derived handlers copy it.
 	steps []handlerStep
 
-	mu sync.Mutex
-	// metrics is shared across derived handlers so counters on a
-	// WithAttrs/WithGroup chain roll up to the original.
-	metrics *fanoutMetrics
-	// location is the default file sink's path, "" when the host
-	// configured its own sinks. LogLocation hands it to framework, whose
-	// recovered-panic error names where the stack went.
+	mu       sync.Mutex
+	metrics  *fanoutMetrics
 	location string
 }
 
-// LogLocation reports where this handler's records land: the default
-// file sink's path, or "" when the host configured its own sinks.
-// framework's recoveredPanic reads it to say where a recovered boot
-// panic's stack is: that file holds it in full, while a terminal shows
-// at most the console sink's escaped one-line copy.
+// LogLocation reports where this handler's records land: the default file
+// sink's path, or "" when the host configured its own sinks.
 func (h *fanoutHandler) LogLocation() string { return h.location }
 
-// handlerStep is one WithAttrs (attrs set) or WithGroup (group set) call.
 type handlerStep struct {
 	attrs []slog.Attr
 	group string
 }
 
-// fanoutMetrics is shared between the root handler and every derived
-// handler (via WithAttrs/WithGroup) so counters reflect the whole tree.
 type fanoutMetrics struct {
-	closedDrops atomic.Uint64
-	failedSinks atomic.Uint64 // entries dropped because a sink Write errored
-	// lastWriteWarnAt rate-limits stderr emissions for sink-write
-	// failures. Without this a wedged disk would flood stderr (and
-	// any rate-limited stderr collector behind it) with one ~80 KiB
-	// line per failed entry.
-	lastWriteWarnAt atomic.Int64 // unix nano
+	closedDrops     atomic.Uint64
+	failedSinks     atomic.Uint64
+	lastWriteWarnAt atomic.Int64
 }
 
-// stderrWarnInterval bounds how often the fanout reports a sink-write
-// failure to stderr. Reports are counter-aggregated; only ~1 per second
-// per process actually hits stderr.
 const stderrWarnInterval = time.Second
 
 func newFanoutHandler(sinks []Sink, opts *slog.HandlerOptions) *fanoutHandler {
@@ -458,18 +307,9 @@ func (h *fanoutHandler) Enabled(_ context.Context, l slog.Level) bool {
 }
 
 func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
-	// We delegate to a private slog.JSONHandler bound to a buffer so we
-	// get the exact slog JSON encoding (including time format,
-	// AddSource, ReplaceAttr, etc.) without re-implementing it.
 	var buf bytes.Buffer
 	enc := slog.NewJSONHandler(&buf, h.opts)
-	// Replay the With/WithGroup chain in order so attrs and groups nest
-	// the way the caller built them.
 	var attached slog.Handler = enc
-	// A line written inside a traced request names its trace and span,
-	// at the top level whatever groups the caller opened, so a reader
-	// can go from the line to its trace and back. Without a
-	// TracerProvider the span context is invalid and nothing is added.
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		attached = attached.WithAttrs([]slog.Attr{
 			slog.String("trace_id", sc.TraceID().String()),
@@ -486,55 +326,25 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 	if err := attached.Handle(ctx, r); err != nil {
 		return err
 	}
-	// slog.JSONHandler writes one line terminated by '\n'; strip the
-	// newline so sinks can decide their own framing.
 	entry := bytes.TrimRight(buf.Bytes(), "\n")
 	if len(entry) == 0 {
 		return nil
 	}
 
-	// Snapshot sinks under the lock then release it before writing,
-	// each sink has its own synchronization (fileSink.mu, webhookSink's
-	// queue mu), so holding h.mu across a wedged disk write would
-	// serialize EVERY slog call in the process. The slice header is
-	// safe to read after unlock because sinks is never mutated after
-	// construction.
 	h.mu.Lock()
 	sinks := h.sinks
 	h.mu.Unlock()
 
 	var errs []error
 	for _, s := range sinks {
-		// Copy per sink: webhook sink may retain the slice in a batch
-		// buffer beyond this call. File sinks could share, but the
-		// extra alloc per entry is the price of safety here.
 		cp := make([]byte, len(entry))
 		copy(cp, entry)
 		if err := s.Write(cp); err != nil {
-			// slog.Logger.LogAttrs ignores handler errors (stdlib
-			// contract). Fall back to stderr so a wedged sink isn't
-			// silent, operators need at least one path to see that
-			// logging is broken. ErrSinkClosed is expected post-Stop
-			// and gets a quieter shape.
 			if errors.Is(err, ErrSinkClosed) {
-				// Post-Stop drop. Tracked via an atomic counter and
-				// surfaced once on close() so operators chasing
-				// "where did my worker's shutdown log go?" have a
-				// signal without per-line stderr spam.
 				h.metrics.closedDrops.Add(1)
 			} else {
 				h.metrics.failedSinks.Add(1)
-				// Rate-limit stderr emissions to ~1/sec. journald and
-				// similar collectors throttle stderr anyway; flooding
-				// would push out legitimate logs from elsewhere.
 				if allowWarn(&h.metrics.lastWriteWarnAt, stderrWarnInterval) {
-					// Truncate the entry to a short preview so even
-					// the throttled path can't write multi-KB lines,
-					// then scrub it: this is a terminal sink in live
-					// form, and slog's JSON encoder leaves C1/bidi
-					// runes raw (U+009B CSI executes on 8-bit
-					// terminals, U+202E reorders the line) — the same
-					// StripUnsafe the console renderer applies.
 					preview := entry
 					if len(preview) > 256 {
 						preview = preview[:256]
@@ -563,8 +373,6 @@ func (h *fanoutHandler) WithGroup(name string) slog.Handler {
 	return h.with(handlerStep{group: name})
 }
 
-// with derives a handler whose chain ends in st. The chain is copied so
-// siblings derived from one parent never share a backing array.
 func (h *fanoutHandler) with(st handlerStep) *fanoutHandler {
 	steps := make([]handlerStep, 0, len(h.steps)+1)
 	steps = append(steps, h.steps...)
@@ -573,14 +381,11 @@ func (h *fanoutHandler) with(st handlerStep) *fanoutHandler {
 		sinks:    h.sinks,
 		opts:     h.opts,
 		steps:    steps,
-		metrics:  h.metrics, // shared pointer so counters aggregate
+		metrics:  h.metrics,
 		location: h.location,
 	}
 }
 
-// close flushes and closes every sink. Idempotent guard not provided,
-// App.Stop calls it once. Surfaces the post-Stop drop counter so an
-// operator chasing missing shutdown logs has at least one signal.
 func (h *fanoutHandler) close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -598,8 +403,6 @@ func (h *fanoutHandler) close() error {
 	}
 	return errors.Join(errs...)
 }
-
-// --- helpers --------------------------------------------------------------
 
 // stateDir returns the per-app state directory under XDG_STATE_HOME
 // when it is non-empty, or under ~/.local/state otherwise.

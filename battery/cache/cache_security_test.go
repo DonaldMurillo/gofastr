@@ -719,6 +719,10 @@ func TestCacheMiddleware_StoreableStatuses(t *testing.T) {
 			}
 		})
 	}
+	partial := &responseRecorder{header: http.Header{"Content-Range": {"bytes 0-5/20"}}, statusCode: http.StatusOK}
+	if isStoreable(partial, http.Header{}, false, false) {
+		t.Error("isStoreable stored a 200 that carries Content-Range")
+	}
 }
 
 // TestMemoryCache_NegativeTTLNotImmortal pins the negative-TTL
@@ -798,4 +802,32 @@ func TestMemoryCache_NegativeTTLNotImmortal(t *testing.T) {
 func TestCacheSkipsAPIKeyRequests(t *testing.T) {
 	cacheHeaderPair(t, "middleware cached an X-API-Key-authenticated request by default",
 		"X-API-Key", "/me", "ak-alice", "ak-bob", "key=", false, true)
+}
+
+// A credentialed response is never served to an anonymous caller, nor a stored anonymous one to a credentialed caller, whichever field line holds the credential.
+func TestCredentialedAndAnonymousNeverShareAnEntry(t *testing.T) {
+	for _, name := range credentialHeaders {
+		for _, lines := range [][]string{{"alice"}, {"", "alice"}} {
+			handler := CacheMiddleware(NewMemoryCache(), time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, "for:%s", strings.Join(r.Header.Values(name), ","))
+			}))
+			get := func(vals []string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodGet, "/me", nil)
+				for _, v := range vals {
+					req.Header.Add(name, v)
+				}
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				return rec
+			}
+			credBody := "for:" + strings.Join(lines, ",")
+			get(lines)
+			if anon := get(nil); anon.Header().Get("X-Cache") == "HIT" || anon.Body.String() != "for:" {
+				t.Fatalf("%s %q: anonymous follow-up got %q (X-Cache=%q)", name, lines, anon.Body.String(), anon.Header().Get("X-Cache"))
+			}
+			if cred := get(lines); cred.Header().Get("X-Cache") == "HIT" || cred.Body.String() != credBody {
+				t.Fatalf("%s %q: credentialed caller after an anonymous one got %q (X-Cache=%q)", name, lines, cred.Body.String(), cred.Header().Get("X-Cache"))
+			}
+		}
+	}
 }

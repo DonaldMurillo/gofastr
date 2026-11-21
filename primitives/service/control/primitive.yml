@@ -1,0 +1,31 @@
+primitive: service.control
+summary: The control channel between the CLI and the daemon, a Unix socket in the owner-only state directory taking one JSON line per request from the same OS user.
+code:
+  - battery/service/control.go
+  - battery/service/peercred_darwin.go
+  - battery/service/peercred_linux.go
+  - battery/service/peercred_other.go
+  - battery/service/peercred_sid.go
+  - battery/service/peercred_unix.go
+  - battery/service/peercred_windows.go
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: same-user-only
+    rule: A control connection from another OS user is closed unanswered.
+    enforced_by:
+      - test: battery/service.TestControlRefusesForeignPeer
+      - test: battery/service.TestCheckPeerUID
+  - id: requests-are-bounded-and-strict
+    rule: A request is one JSON line under 4 KiB decoded strictly, and a handler panic is recovered.
+    enforced_by:
+      - test: battery/service.TestControlBoundsRequestSize
+      - test: battery/service.TestControlRefusesMalformedRequests
+      - test: battery/service.TestControlRecoversHandlerPanic
+  - id: socket-is-owner-only-and-fits
+    rule: The control socket is chmod 0600, a path past the sun_path limit is refused before install, and a live socket refuses a second instance.
+    enforced_by:
+      - test: battery/service.TestListenControlRestrictsSocket
+      - test: battery/service.TestListenControlRefusesLongPath
+      - test: battery/service.TestInstallRefusesLongSocketPathFirst
+      - test: battery/service.TestListenControlRefusesLiveSocket

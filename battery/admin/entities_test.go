@@ -287,3 +287,9 @@ func TestCountFallsBackToBoundedRead(t *testing.T) {
 		t.Fatalf("a late count did not fall back to the bounded read:\n%s", body)
 	}
 }
+
+func TestCountTextStopsBeingExactAtManyRows(t *testing.T) {
+	if got := countText(context.Background(), manyRows, true); got != "10,000+" {
+		t.Errorf("countText(%d) = %q, want 10,000+", manyRows, got)
+	}
+}

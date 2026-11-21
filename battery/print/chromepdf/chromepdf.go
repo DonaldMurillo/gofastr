@@ -1,20 +1,4 @@
-// Package chromepdf is the headless-Chromium PDF backend for the
-// [github.com/DonaldMurillo/gofastr/battery/print] battery. It is the
-// ONLY package in the print feature that imports chromedp; hosts that
-// don't need PDF never pull it in.
-//
-// Wire it into the battery:
-//
-//	pb := print.New(print.Config{
-//		PDFRenderer: chromepdf.New(chromepdf.Options{}),
-//	})
-//
-// The renderer opens about:blank in a headless Chromium, sets the
-// battery's already-shelled print HTML as the page's content over the
-// DevTools protocol (no temp file, no URL: per-user document bytes never
-// touch disk, and no URL length cap applies), and prints it to PDF,
-// honoring the shell's CSS @page size and margins
-// (WithPreferCSSPageSize).
+// Package chromepdf is the headless-Chromium PDFRenderer for battery/print.
 package chromepdf
 
 import (
@@ -30,45 +14,21 @@ import (
 
 // Options configures the headless-Chromium PDF renderer.
 type Options struct {
-	// ExecPath is the path to the Chromium/Chrome binary. Empty =
-	// chromedp auto-detects.
+	// ExecPath is the path to the Chromium/Chrome binary.
 	ExecPath string
 
-	// Timeout bounds a single render, Chrome's start included: chromedp's
-	// own 20s DevTools-URL wait and 10s websocket dial take it too.
-	// Default 30s.
+	// Timeout bounds one render, Chrome's start included; default 30s.
 	Timeout time.Duration
 
-	// ExtraFlags are extra Chromium command-line flags, each either
-	// "name" (boolean true) or "name=value". A leading "--" is optional.
-	// Common in containers: "no-sandbox".
+	// ExtraFlags are Chromium flags as "name" or "name=value".
 	ExtraFlags []string
 
-	// Scale is the print scale (1 = 100%). Default 1.
+	// Scale is the print scale (1 = 100%).
 	Scale float64
 
-	// AllowedHosts names the hosts the print document may fetch
-	// subresources from. Empty, the default, means NO network at all:
-	// every hostname is resolved to NOTFOUND before Chrome can connect.
-	//
-	// This is the network half of the SSRF gate. The print document is
-	// set as the content of about:blank, which has no response headers,
-	// so the print route's Content-Security-Policy does not reach it (the
-	// shell also emits the policy as an in-document meta). Without a
-	// resolver rule, any network request the document's CSP permits is
-	// fetched by a browser inside the trust boundary, potentially exposing
-	// 169.254.169.254, loopback admin panels, and RFC1918 in the PDF.
-	//
-	// The allow-list does not widen the document's CSP. Through battery/print,
-	// remote images and fonts remain blocked even for an allowed host; only
-	// the BaseURL stylesheet origin is added to the shell's style-src.
-	// A document with inlined assets needs no network. An allowed host's DNS
-	// still decides which IP it reaches, so allow only hosts you control.
-	//
-	// print.Config.BaseURL is one such case: the app.css link it makes
-	// absolute is fetched from BaseURL's host, so name that host here
-	// (AllowedHosts: []string{"app.example.com"}) for the PDF to carry
-	// the app's design tokens.
+	// AllowedHosts names the hosts the print document may fetch subresources
+	// from; empty means no network. It does not widen the document's CSP:
+	// images and fonts stay blocked, only the BaseURL stylesheet is fetched.
 	AllowedHosts []string
 }
 
@@ -88,15 +48,10 @@ func New(o Options) print.PDFRenderer {
 // RenderPDF implements print.PDFRenderer.
 func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConfig, _ string) ([]byte, error) {
 	allocOpts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
-	// Timeout bounds the whole render, Chrome's start included, so
-	// chromedp's own shorter start waits (20s for the DevTools URL, 10s
-	// for the websocket dial) do not fail a slow start first.
 	allocOpts = append(allocOpts, chromedp.WSURLReadTimeout(rd.opts.Timeout))
 	if rd.opts.ExecPath != "" {
 		allocOpts = append(allocOpts, chromedp.ExecPath(rd.opts.ExecPath))
 	}
-	// Network gate, installed BEFORE ExtraFlags so a host can still
-	// override it deliberately if they must.
 	allocOpts = append(allocOpts, chromedp.Flag("host-resolver-rules", hostResolverRules(rd.opts.AllowedHosts)))
 	for _, f := range rd.opts.ExtraFlags {
 		name, val := parseFlag(f)
@@ -115,17 +70,12 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 
 	var pdf []byte
 	err := chromedp.Run(bctx,
-		// The document goes in as content, never as a URL: Chrome caps
-		// URLs at 2 MiB, so a data: URL of the whole document failed
-		// any print HTML past about 1.5 MB with net::ERR_ABORTED.
 		chromedp.Navigate("about:blank"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return setContentAndWaitLoad(ctx, html)
 		}),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var e error
-			// Margins are 0 here: the shell's CSS @page margin is the
-			// single source of truth, so PrintToPDF must not add its own.
 			pdf, _, e = page.PrintToPDF().
 				WithPrintBackground(true).
 				WithPreferCSSPageSize(true).
@@ -146,19 +96,11 @@ func (rd *renderer) RenderPDF(ctx context.Context, html string, p print.PageConf
 	return pdf, nil
 }
 
-// setContentAndWaitLoad replaces the current page's document with html
-// and returns once that document's load event fires, the point a URL
-// navigation waits for: its stylesheets, images and fonts have loaded or
-// failed. document.readyState is no substitute here, since it can still
-// read "complete" from about:blank after the content is set while a
-// stylesheet is in flight. The caller's deadline bounds the wait.
 func setContentAndWaitLoad(ctx context.Context, html string) error {
 	tree, err := page.GetFrameTree().Do(ctx)
 	if err != nil {
 		return err
 	}
-	// Listen before setting the content so the load event cannot slip
-	// past. Navigate already waited out about:blank's own load event.
 	lctx, stop := context.WithCancel(ctx)
 	defer stop()
 	loaded := make(chan struct{})
@@ -179,9 +121,6 @@ func setContentAndWaitLoad(ctx context.Context, html string) error {
 	}
 }
 
-// parseFlag splits an ExtraFlags entry into a chromedp flag name + value.
-// "no-sandbox" -> ("no-sandbox", true); "window-size=1280,720" ->
-// ("window-size", "1280,720"). A leading "--" is stripped.
 func parseFlag(f string) (string, any) {
 	f = strings.TrimPrefix(f, "--")
 	if i := strings.IndexByte(f, '='); i >= 0 {
@@ -190,9 +129,6 @@ func parseFlag(f string) (string, any) {
 	return f, true
 }
 
-// paperInches returns the paper width/height in inches for a PageConfig's
-// named size (used as a fallback; WithPreferCSSPageSize means the shell's
-// @page size normally wins). Custom sizes fall back to A4.
 func paperInches(p print.PageConfig) (float64, float64) {
 	var w, h float64
 	switch p.Size {
@@ -200,7 +136,7 @@ func paperInches(p print.PageConfig) (float64, float64) {
 		w, h = 8.5, 11
 	case print.Legal:
 		w, h = 8.5, 14
-	default: // A4 and Custom
+	default:
 		w, h = 8.27, 11.69
 	}
 	if p.Orientation == print.Landscape {
@@ -209,15 +145,6 @@ func paperInches(p print.PageConfig) (float64, float64) {
 	return w, h
 }
 
-// hostResolverRules builds Chrome's --host-resolver-rules value: map
-// every hostname to NOTFOUND, then EXCLUDE the allow-listed ones so they
-// resolve normally. With an empty allow-list the document cannot open a
-// connection to anything.
-//
-// A resolver rule rather than request interception because it fails
-// closed at the lowest layer: there is no request to intercept if the
-// name never resolves, so no code path, image, stylesheet, font, XHR,
-// navigation, can slip past by taking a different route.
 func hostResolverRules(allowed []string) string {
 	rules := []string{"MAP * ~NOTFOUND"}
 	for _, h := range allowed {

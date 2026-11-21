@@ -1,12 +1,5 @@
 package admin
 
-// The Modules page lists each supervised process module and offers the
-// operator levers: enable, disable, bump generation (the circuit reset)
-// and revoke one capability. Each lever needs the modulesManage
-// permission on the caller's own roles, and each change, or refusal,
-// writes an audit row. Outcomes come from the fixed result names, so
-// the page never prints request text.
-
 import (
 	"context"
 	"errors"
@@ -23,9 +16,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// processModuleController is what the page uses of the supervisor;
-// *framework.ProcessModuleSupervisor satisfies it, and tests pass a fake
-// so no child process is spawned.
+var _ processModuleController = (*framework.ProcessModuleSupervisor)(nil)
+
 type processModuleController interface {
 	List() []framework.ProcessModuleInfo
 	Enable(ctx context.Context, name string) error
@@ -34,14 +26,8 @@ type processModuleController interface {
 	BumpGeneration(ctx context.Context, name string) (uint64, error)
 }
 
-var _ processModuleController = (*framework.ProcessModuleSupervisor)(nil)
-
-// modulesManage is the permission every module lever needs, held through
-// the caller's own roles in Config.Policy (Wildcard counts). Without a
-// policy nothing can be proven held, so every lever is refused.
 const modulesManage access.Permission = "modules:manage"
 
-// The audit entity and operations module changes record.
 const (
 	modulesAuditEnt = "module"
 	opModuleEnable  = "module_enable"
@@ -50,8 +36,6 @@ const (
 	opModuleRevoke  = "module_revoke"
 )
 
-// renderModules draws the Modules page. A caller without modulesManage
-// sees the table without its levers.
 func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render.HTML {
 	modules := b.cfg.ProcessModules.List()
 	manage := b.callerHoldsPermission(ctx, modulesManage)
@@ -101,7 +85,6 @@ func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render
 	)
 }
 
-// moduleNameCell is the name, with the version beside it when set.
 func moduleNameCell(m framework.ProcessModuleInfo) render.HTML {
 	name := html.Code(html.TextConfig{}, render.Text(m.Name))
 	if m.Version == "" {
@@ -110,10 +93,6 @@ func moduleNameCell(m framework.ProcessModuleInfo) render.HTML {
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name, ui.Muted(render.Text(m.Version)))
 }
 
-// moduleStateCell is the state and what the module's routes answer
-// while in it: a disabled module serves 404 (it reads as uninstalled), an
-// enabled one that is not ready serves 503. An open circuit and a failing
-// lease are flagged.
 func moduleStateCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
 	var items []render.HTML
 	switch {
@@ -134,7 +113,6 @@ func moduleStateCell(ctx context.Context, m framework.ProcessModuleInfo) render.
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, items...)
 }
 
-// moduleServes is what a module's routes answer in state.
 func moduleServes(state framework.ProcessState) i18n.Phrase {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent:
@@ -145,8 +123,6 @@ func moduleServes(state framework.ProcessState) i18n.Phrase {
 	return i18nui.AdminServes503
 }
 
-// moduleGenerationCell is desired / observed; a lagging observed
-// generation means convergence is in flight.
 func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
 	observed := i18n.Number(ctx, m.ObservedGeneration)
 	if m.DesiredGeneration == 0 {
@@ -159,7 +135,6 @@ func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) re
 	return render.Text(text)
 }
 
-// moduleLastExitCell is the last exit reason, or a dash.
 func moduleLastExitCell(last string) render.HTML {
 	if strings.TrimSpace(last) == "" {
 		return ui.Muted(render.Text("—"))
@@ -167,8 +142,6 @@ func moduleLastExitCell(last string) render.HTML {
 	return ui.Muted(render.Text(last))
 }
 
-// moduleIsDisabled reports a state in which Enable is the lever that
-// changes something.
 func moduleIsDisabled(state framework.ProcessState) bool {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent, framework.StateFailed:
@@ -177,7 +150,6 @@ func moduleIsDisabled(state framework.ProcessState) bool {
 	return false
 }
 
-// moduleActions are one module's levers.
 func (b *Battery) moduleActions(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
 	page := b.cfg.PathPrefix + "/modules"
 	op := func(action string, label i18n.Phrase, variant ui.ButtonVariant, confirm string) render.HTML {
@@ -208,8 +180,6 @@ func (b *Battery) moduleActions(ctx context.Context, m framework.ProcessModuleIn
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd}, forms...)
 }
 
-// ----- posts --------------------------------------------------------------------
-
 func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {
 	b.moduleOp(w, r, opModuleEnable, "module-enabled", func(ctx context.Context, name, _ string) (map[string]any, error) {
 		return nil, b.cfg.ProcessModules.Enable(ctx, name)
@@ -239,11 +209,8 @@ func (b *Battery) handleModuleRevoke(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// errNoGrant is a revoke that names no capability.
 var errNoGrant = errors.New("admin: revoke names no capability")
 
-// moduleOp is the shared body of the module levers: read the post,
-// require a module and modulesManage, run the call, audit, answer.
 func (b *Battery) moduleOp(w http.ResponseWriter, r *http.Request, op, ok string,
 	call func(ctx context.Context, name, grant string) (map[string]any, error)) {
 	page := b.cfg.PathPrefix + "/modules"

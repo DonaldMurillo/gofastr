@@ -10,17 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
-// The in-memory stores are allowed in production behind AllowInMemoryStores
-// (one node, state lost on restart), and the SQL erasers never reach them:
-// after App.EraseUserData the user's sessions, TOTP seed and backup-code
-// hashes, passkeys and outstanding reset or verification links stayed in
-// process memory until a restart. resolveEraseTables registers one
-// datexport.StoreEraser over whichever of them the manager runs with.
-
 var memoryEraseMu sync.Mutex
 
-// unregisterMemoryStoreEraser drops the manager's in-memory store eraser,
-// if it registered one. AuthManager.OnStop calls it.
 func unregisterMemoryStoreEraser(mgr *AuthManager) {
 	memoryEraseMu.Lock()
 	prev := mgr.unregisterMemoryErase
@@ -31,9 +22,6 @@ func unregisterMemoryStoreEraser(mgr *AuthManager) {
 	}
 }
 
-// registerMemoryStoreEraser (re)registers the manager's in-memory store
-// eraser. A later Init replaces the earlier registration. memoryEraseMu
-// guards the manager's two fields; the unregister func runs outside it.
 func registerMemoryStoreEraser(mgr *AuthManager) {
 	unregisterMemoryStoreEraser(mgr)
 	var (
@@ -108,7 +96,6 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 	memoryEraseMu.Unlock()
 }
 
-// holdsEmailKeyed reports whether a store holds a magic-link or emailed-code token.
 func holdsEmailKeyed(stores []*MemoryMagicLinkTokenStore) bool {
 	for _, ts := range stores {
 		ts.mu.RLock()
@@ -157,7 +144,6 @@ func (m *MemoryPasskeyStore) eraseUser(userID string, dryRun bool) int {
 	return purgeMatching(m.creds, match)
 }
 
-// eraseUser removes the tokens whose payload names userID or email.
 func (m *MemoryMagicLinkTokenStore) eraseUser(userID, email string, dryRun bool) int {
 	var payloads []string
 	for _, p := range userPurposes {

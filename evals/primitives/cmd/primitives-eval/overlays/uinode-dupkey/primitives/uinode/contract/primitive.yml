@@ -1,0 +1,36 @@
+primitive: uinode.contract
+summary: "The ui.node.v1 wire type and its Validate, which decodes a module's JSON tree under whole-tree caps into a typed Tree or rejects all of it."
+code:
+  - core-ui/uinodev1/
+docs:
+  - framework/docs/content/process-modules.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - "A new prop field gets a json tag, a checkStrings entry in its validate method unless it is an enum or number, a term in estimatedTextSize, and an escapeSurfaces or escapeExemptions entry in framework/uihost/uinoderender."
+  - "A changed default in limits.go is user-visible: update the caps quoted in framework/docs/content/process-modules.md, and a lower default is a breaking upgrade note."
+  - "Validate must stay the only constructor of a Tree a host renders; a shortcut that builds a Node without componentDecoders lets the renderer's unchecked Props assertions panic."
+invariants:
+  - id: closed-component-enum
+    rule: "Validate refuses a tree naming any component outside the closed enum, including case variants, padded names and HTML tag names."
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsComponentSpoofing
+  - id: unknown-keys-unrepresentable
+    rule: "Validate refuses a tree with any node or prop key that no shadow or prop struct declares, so data-cui-*, on*, id, class, style and aria keys reject the whole tree."
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsForgedDataFuiProps
+      - test: core-ui/uinodev1.TestValidateRejectsOnHandlerProps
+  - id: no-ambiguous-keys
+    rule: "Validate refuses a JSON object holding the same key twice or two keys equal under ASCII case folding, at any depth."
+    enforced_by:
+      - test: core-ui/uinodev1.TestValidateRejectsDuplicateKeys
+      - test: core-ui/uinodev1.TestValidateRejectsCaseFoldedKeysRed
+  - id: prop-arrays-bounded
+    rule: "Validate refuses a tree whose table columns, rows, cells per row, detail-list items or key-value items exceed Limits.MaxPropItems, and accepts one at exactly the cap."
+    enforced_by:
+      - test: core-ui/uinodev1.TestPropArraysAreBounded
+      - test: core-ui/uinodev1.TestPropArrayLimitUsesOverride
+  - id: url-props-host-relative
+    rule: "link.to and image.src validate only as single-slash same-origin paths with no scheme, backslash, whitespace or control byte."
+    enforced_by:
+      - test: core-ui/uinodev1.TestIsValidHostRelative
+      - test: framework/uihost/uinoderender.TestURLPropsRejectSchemePayloads

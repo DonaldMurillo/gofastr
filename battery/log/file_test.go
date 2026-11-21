@@ -174,3 +174,25 @@ func TestFileSinkWriteAfterClose(t *testing.T) {
 		t.Fatalf("second Close = %v, want nil", err)
 	}
 }
+
+// Each entry reaches the file when Write returns, and rotation runs before a write that would pass MaxSize.
+func TestFileSinkFlushesAndRotatesBeforeWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.log")
+	s, err := FileSink(path, FileOpts{MaxSize: 25, MaxBackups: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for i := range 4 {
+		if err := s.Write([]byte("0123456789")); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := int64(11 * (i%2 + 1)); info.Size() != want {
+			t.Fatalf("after write %d the active file holds %d bytes, want %d", i+1, info.Size(), want)
+		}
+	}
+}

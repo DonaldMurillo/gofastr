@@ -218,3 +218,17 @@ func TestSavedViewsRoundTrip(t *testing.T) {
 		t.Fatalf("no-columns round-trip = %+v, %v", got, err)
 	}
 }
+
+func TestSavedViewsRefuseAUserWithNoID(t *testing.T) {
+	x := newSavedViewsEnv(t)
+	ctx := handler.SetUser(context.Background(), roleUser{id: "", roles: []string{"admin"}})
+	if _, err := x.store.Create(ctx, entityui.SavedView{Entity: "posts", Name: "X"}); err == nil {
+		t.Error("SECURITY: Create ran for a user with no id")
+	}
+}
+
+func TestSavedViewLockKeysDoNotAlias(t *testing.T) {
+	if savedViewLockKey("t", "a:b", "c", "posts") == savedViewLockKey("t", "a", "b:c", "posts") {
+		t.Error("two callers' views share one advisory lock key")
+	}
+}

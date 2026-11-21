@@ -8,8 +8,6 @@ import (
 	"os"
 )
 
-// peerIsSelf checks the connecting process's UID, which the kernel
-// fills in at connect time (peerUID reads it per OS).
 func peerIsSelf(c *net.UnixConn) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
@@ -28,8 +26,6 @@ func peerIsSelf(c *net.UnixConn) error {
 	return checkPeerUID(uid, os.Geteuid())
 }
 
-// checkPeerUID refuses a peer whose uid is not self. root gets no
-// exemption: the daemon serves one user, and root is another.
 func checkPeerUID(peer uint32, self int) error {
 	if self < 0 || uint64(peer) != uint64(self) {
 		return fmt.Errorf("peer uid %d is not the daemon's uid %d", peer, self)

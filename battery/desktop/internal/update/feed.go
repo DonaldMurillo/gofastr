@@ -9,29 +9,19 @@ import (
 	"time"
 )
 
-// The feed format: manifest.json plus a detached manifest.json.sig.
-
-// MaxManifestSize caps the manifest at 64 KiB. The manifest is signed
-// metadata, not content; anything larger is a broken or hostile feed.
+// MaxManifestSize caps the manifest at 64 KiB.
 const MaxManifestSize = 64 << 10
 
-// ErrBadSignature is the sentinel for a feed whose signature does not
-// verify. It is returned before any parsing of the manifest happens.
+// ErrBadSignature is the sentinel for a feed whose signature does not verify.
 var ErrBadSignature = errors.New("update feed signature is invalid")
 
-// ErrBadManifest is the sentinel for a manifest that verifies but does
-// not parse or validate.
+// ErrBadManifest is the sentinel for a manifest that verifies but does not parse or validate.
 var ErrBadManifest = errors.New("update feed manifest is malformed")
 
-// ErrFeedExpired is the sentinel for a manifest that verifies and
-// parses but whose signed expiry has passed. A captured manifest stays
-// validly signed forever, so without an expiry whoever serves the feed
-// could hold a client on an old release by replaying it.
+// ErrFeedExpired is the sentinel for a manifest that verifies and parses but whose signed expiry has passed.
 var ErrFeedExpired = errors.New("update feed manifest has expired")
 
-// The lifetime WriteFeed signs into a manifest: the default when the
-// caller names none, and the longest it accepts. Past the expiry every
-// client refuses the manifest until the publisher signs a new one.
+// The lifetime WriteFeed signs into a manifest: the default when the caller names none, and the longest it accepts.
 const (
 	DefaultFeedLifetime = 30 * 24 * time.Hour
 	MaxFeedLifetime     = 365 * 24 * time.Hour
@@ -44,19 +34,14 @@ type PlatformEntry struct {
 	Size   int64  `json:"size"`
 }
 
-// Release is one selectable version of the feed: the top level, or a
-// channel entry (see Feed.Select).
+// Release is one selectable version of the feed: the top level, or a channel entry (see Feed.Select).
 type Release struct {
 	Version   string                   `json:"version"`
 	Notes     string                   `json:"notes"`
 	Platforms map[string]PlatformEntry `json:"platforms"`
 }
 
-// Feed is the parsed manifest. Channels is optional: a Channel
-// configured on the updater selects feed.channels[channel] when
-// present, and the top level otherwise. Expires is the RFC 3339 time
-// the manifest stops being valid; it covers every channel, and a
-// manifest without one is refused.
+// Feed is the parsed manifest.
 type Feed struct {
 	Version   string                   `json:"version"`
 	Expires   string                   `json:"expires"`
@@ -65,8 +50,7 @@ type Feed struct {
 	Channels  map[string]Release       `json:"channels,omitempty"`
 }
 
-// Select returns the release the updater should follow: the named
-// channel when the feed carries it, the top level otherwise.
+// Select returns the release the updater should follow: the named channel when the feed carries it, the top level otherwise.
 func (f Feed) Select(channel string) Release {
 	if channel != "" {
 		if rel, ok := f.Channels[channel]; ok {
@@ -76,12 +60,10 @@ func (f Feed) Select(channel string) Release {
 	return Release{Version: f.Version, Notes: f.Notes, Platforms: f.Platforms}
 }
 
-// ErrNoPlatformEntry is the sentinel for a release that carries no
-// entry for the running platform.
+// ErrNoPlatformEntry is the sentinel for a release that carries no entry for the running platform.
 var ErrNoPlatformEntry = errors.New("update feed has no entry for this platform")
 
-// Entry returns the release's download entry for one platform key
-// ("darwin-arm64").
+// Entry returns the release's download entry for one platform key ("darwin-arm64").
 func (r Release) Entry(platformKey string) (PlatformEntry, error) {
 	e, ok := r.Platforms[platformKey]
 	if !ok {
@@ -94,7 +76,7 @@ func (r Release) Entry(platformKey string) (PlatformEntry, error) {
 // bytes FIRST (nothing is parsed, not even for the error message, when
 // the signature fails), then parses and shape-checks the manifest, and
 // last refuses one whose expiry is missing, malformed, or not after
-// now. There is no grace period: the publisher chose the lifetime.
+// now.
 func ParseFeed(manifest, sigFile []byte, pub ed25519.PublicKey, now time.Time) (*Feed, error) {
 	if len(manifest) > MaxManifestSize {
 		return nil, fmt.Errorf("%w: manifest exceeds %d bytes", ErrBadManifest, MaxManifestSize)
@@ -130,8 +112,7 @@ func ParseFeed(manifest, sigFile []byte, pub ed25519.PublicKey, now time.Time) (
 	return &f, nil
 }
 
-// VerifyFeedSignature decodes the .sig file (base64 of the raw 64-byte
-// ed25519 signature) and verifies it over the exact manifest bytes.
+// VerifyFeedSignature decodes the .sig file (base64 of the raw 64-byte ed25519 signature) and verifies it over the exact manifest bytes.
 func VerifyFeedSignature(manifest, sigFile []byte, pub ed25519.PublicKey) error {
 	sig, err := base64.StdEncoding.DecodeString(string(sigFile))
 	if err != nil || len(sig) != ed25519.SignatureSize {
@@ -143,9 +124,7 @@ func VerifyFeedSignature(manifest, sigFile []byte, pub ed25519.PublicKey) error 
 	return nil
 }
 
-// SignFeed produces the manifest and signature file contents for one
-// release. The manifest is deterministic (fixed field order via a
-// struct) so the same inputs sign to the same bytes.
+// SignFeed produces the manifest and signature file contents for one release.
 func SignFeed(f Feed, seed ed25519.PrivateKey) (manifest, sigFile []byte, err error) {
 	manifest, err = json.MarshalIndent(f, "", "  ")
 	if err != nil {

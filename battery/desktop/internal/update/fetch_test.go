@@ -60,6 +60,35 @@ func TestFetchRefusesBodyOverCap(t *testing.T) {
 	}
 }
 
+func TestFetchErrorsCarryNoURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL + "/secret-feed/manifest.json"
+	closed.Close()
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, c := range map[string]struct {
+		ctx  context.Context
+		url  string
+		want string
+	}{
+		"status":    {context.Background(), srv.URL + "/secret-feed/manifest.json", "status 404"},
+		"transport": {context.Background(), closedURL, "transport error"},
+		"cancelled": {cancelled, srv.URL + "/secret-feed/manifest.json", "cancelled"},
+	} {
+		_, err := Fetch(c.ctx, srv.Client(), c.url, 10)
+		if !errors.Is(err, ErrFetch) || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want ErrFetch with %q", name, err, c.want)
+		}
+		if err != nil && (strings.Contains(err.Error(), "127.0.0.1") || strings.Contains(err.Error(), "secret-feed")) {
+			t.Errorf("%s: the fetch error carries the URL: %v", name, err)
+		}
+	}
+}
+
 func TestFetchRefusesBadStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusNotFound)

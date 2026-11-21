@@ -1,0 +1,79 @@
+primitive: desktop.window
+summary: The window and windows capabilities, cross-window events and messages, the origin gate on every script sent to a page, and the window frames and path remembered across launches.
+code:
+  - battery/desktop/cap_window.go
+  - battery/desktop/cap_appwindows.go
+  - battery/desktop/cap_appwindows_msg.go
+  - battery/desktop/windowstate.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Every script the battery evaluates in a page goes through inAppJS and every event through dispatchJS, so a new delivery path cannot skip the origin gate.
+invariants:
+  - id: events-are-json-strings
+    rule: dispatchJS hands the event name and payload to _dispatch as jsQuote strings with the payload parsed by JSON.parse, never spliced in as an object literal.
+    enforced_by:
+      - test: battery/desktop.TestEmitPayloadRoundTripsAsJSONString
+      - test: battery/desktop.TestWindowsPostDeliversToTarget
+  - id: page-scripts-gated-by-origin
+    rule: inAppJS wraps every script so it runs only while the page's location.origin is the app's own loopback origin, checked in the page at eval time.
+    enforced_by:
+      - test: battery/desktop.TestEventsReachOnlyTheAppOrigin
+  - id: navigation-stays-on-the-app
+    rule: allowNavigation lets a main frame show only http on the app's own host and about:blank, refuses everything once the battery has no address, and allows any origin only under Config.DangerouslyAllowForeignNavigation.
+    enforced_by:
+      - test: battery/desktop.TestWindowsStayOnTheAppOrigin
+      - test: battery/desktop.TestStoppedBatteryRefusesEmptyHost
+  - id: refused-navigation-logs-host-only
+    rule: NavigationHost returns only the URL's host, control bytes scrubbed, never its path or query.
+    enforced_by:
+      - test: battery/desktop.TestNavigationHostDropsPathAndQuery
+  - id: closing-window-is-not-found
+    rule: An event to a window that closed between the lookup and the eval reports not_found, not the eval error.
+    enforced_by:
+      - test: battery/desktop.TestPostToWindowClosingMidEvalIsNotFound
+  - id: message-payload-bounds
+    rule: A cross-window payload is compacted, capped at 64 KiB of compact JSON, and an absent payload is delivered as null.
+    enforced_by:
+      - test: battery/desktop.TestWindowsPostCapsPayloadSize
+      - test: battery/desktop.TestWindowsBroadcastExcludesCaller
+  - id: page-style-is-bounded
+    rule: windows.open refuses a style whose chrome is unknown, whose x and y are not set together, or whose coordinates fall outside -100000..100000.
+    enforced_by:
+      - test: battery/desktop.TestWindowsOpenRefusesBadStyle
+  - id: window-methods-act-on-the-caller
+    rule: The window capability acts on the calling window, answers unsupported while the main window is not open and not_found for a closed secondary, never falling back to the main window.
+    enforced_by:
+      - test: battery/desktop.TestWindowCapActsOnTheCaller
+      - test: battery/desktop.TestWindowSnapshotBeforeWindowUnsupported
+  - id: windows-close-never-main
+    rule: windows.close refuses the main window and drops a closed secondary's registration under openMu.
+    enforced_by:
+      - test: battery/desktop.TestWindowsCapabilityEdges
+  - id: only-main-path-remembered
+    rule: window.setPath refuses a path off the navigate grammar and stores only the main window's report as the relaunch path.
+    enforced_by:
+      - test: battery/desktop.TestRememberedPathBecomesBootRedirect
+  - id: transient-frames-not-kept
+    rule: Opening the window store drops every remembered frame but main's and settings', and forget never drops those two, so a secondary id minted per open cannot grow the windows entry.
+    enforced_by:
+      - test: battery/desktop.TestRelaunchDropsTransientFrames
+      - test: battery/desktop.TestForgetKeepsTheStableWindowFrames
+      - test: battery/desktop.TestClosedSecondaryWindowFrameIsForgotten
+decisions:
+  - id: pages-message-through-the-bridge
+    date: 2026-11-20
+    status: accepted
+    decision: Pages message each other through windows.post and windows.broadcast on the bridge, never window to window.
+    rejected:
+      - option: A direct channel between web views.
+        why: The bridge is the only transport, so the chokepoint, body limits and logging apply to page messages as to every other call.
+    upholds: [message-payload-bounds]
+  - id: frames-in-the-app-state-store
+    date: 2026-11-20
+    status: accepted
+    decision: Remembered windows are the windows entry of the app state store, which owns the file, the debounced write and the quit flush.
+    rejected:
+      - option: A windows file of their own.
+        why: A second file would need its own atomic write, debounce and flush.
+    upholds: [transient-frames-not-kept]

@@ -23,44 +23,28 @@ import (
 
 // WatchOptions configures a [Watcher].
 type WatchOptions struct {
-	// IncludeExts is the set of file extensions to index, including the
-	// leading dot (".go", ".md"). Empty means all files.
+	// IncludeExts are the file extensions to index, with the dot. Empty means
+	// all.
 	IncludeExts []string
-	// ExcludeDirs is a set of directory names to skip entirely, matched
-	// on the path's base name. Defaults to a sensible set if nil:
-	// {".git", "node_modules", "dist", ".gofastr", "vendor"}.
+	// ExcludeDirs are directory base names to skip. Nil means a default set
+	// (.git, node_modules and others).
 	ExcludeDirs []string
-	// PollInterval is how often the watcher re-scans roots after the
-	// initial walk. 0 means 2 seconds; a negative value disables
-	// polling (initial walk only).
+	// PollInterval is the re-scan interval: 0 means 2 seconds, negative scans once.
 	PollInterval time.Duration
-	// MaxFileSize skips files larger than this. 0 means 1 MiB. Negative
-	// means no limit.
+	// MaxFileSize skips larger files: 0 means 1 MiB, negative no limit.
 	MaxFileSize int64
-	// MetadataFunc derives chunk metadata from the absolute path of a
-	// file being indexed. When nil, a default sets {"kind": "code"} for
-	// .go files and {"kind": "doc"} for .md/.txt; everything else is
-	// untagged.
+	// MetadataFunc derives chunk metadata from a file's absolute path; nil
+	// sets "kind" by extension.
 	MetadataFunc func(absPath string) map[string]any
 }
 
-// Watcher walks one or more filesystem roots, feeds matching files
-// into an [Index] as [Document]s, and (optionally) re-scans on a
-// timer to keep the index in sync with changes.
-//
-// The watcher uses polling rather than OS-level file events so it has
-// no third-party dependency. Cost on small trees (~thousands of
-// files) is negligible; on very large trees, swap for an
-// fsnotify-backed implementation by replacing this file.
+// Watcher feeds matching files under roots into an Index and keeps it in sync.
 type Watcher struct {
 	idx  Index
 	opts WatchOptions
 
-	mu    sync.Mutex
-	known map[string]fileFingerprint // absolute path -> last seen state
-	// reconciled is set once a scan has compared the index against the
-	// tree. known starts empty, so until then the deletion pass cannot
-	// see a file deleted while no watcher ran.
+	mu         sync.Mutex
+	known      map[string]fileFingerprint
 	reconciled bool
 }
 
@@ -70,14 +54,13 @@ type fileFingerprint struct {
 	size    int64
 }
 
-// NewWatcher constructs a Watcher. The Index is fed via [Index.Add]
-// and [Index.Remove] as files appear, change, and disappear.
+// NewWatcher constructs a Watcher over idx.
 func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 	if opts.PollInterval == 0 {
 		opts.PollInterval = 2 * time.Second
 	}
 	if opts.MaxFileSize == 0 {
-		opts.MaxFileSize = 1 << 20 // 1 MiB
+		opts.MaxFileSize = 1 << 20
 	}
 	if len(opts.ExcludeDirs) == 0 {
 		opts.ExcludeDirs = []string{".git", "node_modules", "dist", ".gofastr", "vendor"}
@@ -92,22 +75,9 @@ func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 	}
 }
 
-// Run walks the provided roots once, indexes every matching file, and
-// (unless PollInterval <= 0) loops re-scanning on every tick until
-// ctx is canceled. Returns ctx.Err() on cancellation, or the first
-// indexing error encountered. A file the chunker refuses (invalid UTF-8,
-// a failing fallback) is not an error: it is logged, left out of the
-// index, and retried once it changes.
-// safeMetadata runs the app-supplied metadata callback under a recover
-// guard: it fires on the watcher loop, which has no per-request net, so
-// watcher.
 func (w *Watcher) safeMetadata(absPath string) (m map[string]any) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			// The recovered value can embed metadata-derived text with
-			// raw control/bidi bytes (terminal injection on the watcher
-			// loop, where no HTTP recover net exists), so it goes to the
-			// sink scrubbed like every pinned recover path.
 			slog.Default().Error("semantic: MetadataFunc panicked; indexing without metadata",
 				"path", absPath, "panic", textsafe.Recovered(rec))
 			m = nil
@@ -140,19 +110,12 @@ func (w *Watcher) Run(ctx context.Context, roots ...string) error {
 	}
 }
 
-// ScanOnce walks roots once and applies any diffs against the last
-// known state. Useful for tests and for the `gofastr semantic index`
-// one-shot CLI mode.
+// ScanOnce walks roots once and applies the differences since the last scan.
 func (w *Watcher) ScanOnce(ctx context.Context, roots ...string) error {
 	return w.scan(ctx, roots)
 }
 
 func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
-	// w.idx is a host-supplied Index reached from Run's polling loop,
-	// which has no per-request recover net. A panic in the index (or
-	// anywhere in the walk) degrades to the same attributed error a
-	// failing Add/Remove already produces — Run reports it and stops,
-	// the process survives.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("semantic: watcher scan panicked: %v", v)
@@ -170,10 +133,6 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 			return err
 		}
 	}
-	// Anything previously known that wasn't seen this scan was deleted.
-	// Its fingerprint is dropped only once Remove succeeds: forgotten
-	// first, a failed Remove was never retried, since the reconcile that
-	// would catch it runs once.
 	w.mu.Lock()
 	var gone, deleted []string
 	for path, fp := range w.known {
@@ -188,9 +147,6 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 		if err := w.idx.Remove(ctx, deleted...); err != nil {
 			return fmt.Errorf("semantic: watcher remove: %w", err)
 		}
-		// Dropped even when a concurrent scan re-added the path: Remove
-		// took that document too (its ID is the path's), and the next
-		// scan adds it back.
 		w.mu.Lock()
 		for _, path := range gone {
 			delete(w.known, path)
@@ -211,18 +167,6 @@ func (w *Watcher) scan(ctx context.Context, roots []string) (err error) {
 	return nil
 }
 
-// scanRoot walks one absolute root and upserts every matching regular
-// file. Files are read through an os.Root opened on the root, so a path
-// swapped for a link that leads out of it between the walk and the read
-// is refused by the kernel, never followed. Symlinks, devices, sockets
-// and pipes are skipped at the walk: a link's own Lstat says nothing
-// about its target, which could be ~/.ssh/id_ed25519 or /dev/zero.
-//
-// A root that names a file (ScanOnce(ctx, "README.md")) is confined to
-// its parent directory, since os.OpenRoot opens only a directory; the
-// walk still visits that one file. The directory is opened as one
-// (openDirRoot), so a root swapped for a FIFO after the Lstat fails the
-// open instead of blocking it.
 func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]struct{}) error {
 	dir := abs
 	if fi, lerr := os.Lstat(abs); lerr == nil && !fi.IsDir() {
@@ -235,7 +179,6 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 	defer root.Close()
 	return filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// A directory deleted mid-walk is a racing deletion, as for a file.
 			if path != abs && errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
@@ -256,7 +199,7 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 		}
 		info, ierr := d.Info()
 		if ierr != nil {
-			return nil // racing deletion; skip
+			return nil
 		}
 		if w.opts.MaxFileSize > 0 && info.Size() > w.opts.MaxFileSize {
 			return nil
@@ -270,23 +213,14 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 	})
 }
 
-// readCapped reads rel through root: only a regular file, and at most
-// MaxFileSize bytes even when the file grew since the walk measured it.
-// skip reports a file that is no longer one to index (gone, replaced by
-// something that is not a regular file, or grown past the limit).
-//
-// The open does not wait (openNonblock): a file swapped for a FIFO after
-// the walk would otherwise block the open until a writer appeared, and
-// no context reaches an open(2). The regular-file check on the handle
-// then skips it; a regular file reads the same with the flag set.
 func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool, err error) {
 	f, err := root.OpenFile(rel, os.O_RDONLY|openNonblock, 0)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, true, nil // racing deletion
+			return nil, true, nil
 		}
 		if fi, lerr := root.Lstat(rel); lerr == nil && !fi.Mode().IsRegular() {
-			return nil, true, nil // swapped for a link out of the root
+			return nil, true, nil
 		}
 		return nil, false, err
 	}
@@ -305,11 +239,6 @@ func (w *Watcher) readCapped(root *os.Root, rel string) (data []byte, skip bool,
 	return readLimited(f, w.opts.MaxFileSize)
 }
 
-// readLimited reads at most max+1 bytes of src: max or fewer is the
-// file, one more says it grew past the limit (skip), and the rest of a
-// file that keeps growing is never read. At math.MaxInt64 the +1 would
-// wrap negative and LimitReader would read nothing, so the limit stays
-// put there: no file is longer anyway.
 func readLimited(src io.Reader, max int64) (data []byte, skip bool, err error) {
 	sentinel := max
 	if max < math.MaxInt64 {
@@ -325,15 +254,7 @@ func readLimited(src io.Reader, max int64) (data []byte, skip bool, err error) {
 	return data, false, nil
 }
 
-// reconcile removes the documents the index holds for files under roots
-// that this scan did not see: files deleted while no watcher ran, which
-// a persisted index (or a shared PgVectorStore) still carries. Only a
-// document a watcher makes counts (its ID is the hash of its Source
-// path), so a host's own documents and files under other roots are left
-// alone. An Index that cannot list its documents is not reconciled.
 func (w *Watcher) reconcile(ctx context.Context, absRoots []string, seen map[string]struct{}) (err error) {
-	// Same recover net as scan and upsert: the index is host-supplied
-	// code on the watcher loop.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("semantic: watcher reconcile panicked: %v", v)
@@ -369,8 +290,6 @@ func (w *Watcher) reconcile(ctx context.Context, absRoots []string, seen map[str
 	return nil
 }
 
-// underAnyRoot reports whether path lies inside one of roots, compared
-// lexically: "/a/bc" is not under "/a/b".
 func underAnyRoot(path string, roots []string) bool {
 	for _, root := range roots {
 		rel, err := filepath.Rel(root, path)
@@ -383,8 +302,6 @@ func underAnyRoot(path string, roots []string) bool {
 }
 
 func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, info os.FileInfo) (err error) {
-	// Same recover net as scan: idx.Add is host-supplied code on the
-	// watcher loop.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("semantic: watcher upsert %q panicked: %v", path, v)
@@ -402,10 +319,6 @@ func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, i
 		return fmt.Errorf("semantic: read %q: %w", path, err)
 	}
 	if skip {
-		// No longer a file to index; drop any version indexed before.
-		// The document ID is the path's, so this holds for one an
-		// earlier process indexed too: the walk already marked the path
-		// seen, so reconcile will not remove it.
 		if err := w.idx.Remove(ctx, pathDocID(path)); err != nil {
 			return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
 		}
@@ -427,9 +340,6 @@ func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, i
 		if !errors.As(err, &ce) && !errors.As(err, &invalid) {
 			return fmt.Errorf("semantic: watcher add %q: %w", path, err)
 		}
-		// The file's content is the fault (Latin-1 bytes, say): skip it
-		// so the rest of the tree still indexes, drop any version indexed
-		// before, and retry only once the file changes.
 		message := "semantic: watcher skipped a file it cannot chunk"
 		if invalid != nil {
 			message = "semantic: watcher skipped a file with invalid document text"
@@ -458,8 +368,6 @@ func (w *Watcher) matchExt(name string) bool {
 	return false
 }
 
-// pathDocID hashes the path so doc IDs are stable across runs but
-// short enough to look at. The full path is kept in Document.Source.
 func pathDocID(path string) string {
 	h := sha1.Sum([]byte(path))
 	return "file-" + hex.EncodeToString(h[:8])

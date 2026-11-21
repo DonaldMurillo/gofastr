@@ -116,6 +116,56 @@ func TestLeaseStealFencesWithoutVersionBump(t *testing.T) {
 	assertLeaseStealFencesAlone(t, openDurableSchedulerDB(t))
 }
 
+func TestCommitNeedsTheSameFenceAndAnUnexpiredLease(t *testing.T) {
+	assertCommitRechecksLease(t, openDurableSchedulerDB)
+}
+
+// assertCommitRechecksLease moves the lease row under an in-flight commit
+// that keeps its owner: a bumped fence, then an expires_at already past.
+func assertCommitRechecksLease(t *testing.T, open func(*testing.T) *sql.DB) {
+	t.Helper()
+	base := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	for name, change := range map[string]string{
+		"fence":   "SET fence=fence+1",
+		"expired": "SET expires_at=$1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := newDurableTestQueue(t, open(t))
+			s, err := NewDurableScheduler(q, DurableSchedulerConfig{OwnerID: "recheck", LeaseDuration: 30 * time.Second})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Every("digest", time.Minute).Job("send-digest", nil).RegisterAt(base); err != nil {
+				t.Fatal(err)
+			}
+			moved := false
+			s.beforeOccurrenceCommit = func() {
+				stmt := "UPDATE " + q.schedulerLeaseTable() + " " + change
+				args := []any{}
+				if name == "expired" {
+					args = append(args, base)
+				}
+				if _, err := q.db.Exec(stmt, args...); err != nil {
+					t.Fatalf("move the lease: %v", err)
+				}
+				moved = true
+			}
+			if err := s.RunOnce(context.Background(), base.Add(time.Minute)); err != nil {
+				t.Fatalf("RunOnce: %v", err)
+			}
+			if !moved {
+				t.Fatal("the seam never ran, so this asserts nothing")
+			}
+			if jobs := pendingJobs(t, q); len(jobs) != 0 {
+				t.Errorf("committed %d jobs on a moved lease, want 0", len(jobs))
+			}
+			if got := occurrenceStatuses(t, q); len(got) != 0 {
+				t.Errorf("wrote occurrences %v on a moved lease, want none", got)
+			}
+		})
+	}
+}
+
 func assertLeaseStealFencesAlone(t *testing.T, db *sql.DB) {
 	t.Helper()
 	q1 := newDurableTestQueue(t, db)

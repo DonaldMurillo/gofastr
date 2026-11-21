@@ -99,3 +99,9 @@ func TestTerminalRowsReapedAfterWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestNegativeRetentionIsOff(t *testing.T) {
+	if got := New(NewMemoryStore(), Options{Retention: -time.Hour}).opts.Retention; got != 0 {
+		t.Errorf("a negative Retention became %s, want 0 (off)", got)
+	}
+}

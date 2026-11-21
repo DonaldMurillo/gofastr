@@ -13,20 +13,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// Name grammars. Capability names are the JS namespace and the URL
-// segment; method names are the JS function. Both are validated at
-// Register time so nothing unvetted can reach a URL, the generated
-// bridge, or the manifest.
 var (
 	reCapabilityName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 	reMethodName     = regexp.MustCompile(`^[a-z][A-Za-z0-9_]{0,63}$`)
 	rePermission     = regexp.MustCompile(`^[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*$`)
 )
 
-// reservedCapabilityNames are the runtime's own NS.desktop members that
-// the name grammar admits. The bridge assigns NS.desktop[name], so a
-// capability named "call" would replace the transport every typed
-// method goes through.
 var reservedCapabilityNames = map[string]bool{
 	"available": true,
 	"call":      true,
@@ -35,39 +27,28 @@ var reservedCapabilityNames = map[string]bool{
 	"manifest":  true,
 }
 
-// Capability is one named group of bridge methods ("clipboard",
-// "window", a plugin's own). Registered before Run freezes the
-// registry; duplicate names are refused naming both registrants.
+// Capability is one named group of bridge methods ("clipboard", "window", a plugin's own).
 type Capability struct {
 	Name        string
 	Description string
-	// Version is bumped on any breaking change to a method set or
-	// input/output shape. Must be >= 1.
+	// Version is bumped on any breaking change to a method set or input/output shape.
 	Version int
 	Methods []Method
 }
 
-// Method is one bridge endpoint. Handler receives the strict-decoded
-// request body (a JSON object, possibly empty) and returns a value the
-// chokepoint marshals into {"ok":true,"result":…}.
+// Method is one bridge endpoint.
 type Method struct {
 	Name        string
 	Description string
-	// Input and Output are JSON Schema documents (or nil when the
-	// method takes / returns nothing worth describing). They ship in
-	// the manifest and drive the generated .d.ts.
+	// Input and Output are JSON Schema documents (or nil when the method takes / returns nothing worth describing).
 	Input  json.RawMessage
 	Output json.RawMessage
 	// Permission is "" for ungated methods, else "resource:verb".
-	// The chokepoint consults the grant store and (on a miss) the OS
-	// prompt before the handler runs.
 	Permission string
 	Handler    func(ctx context.Context, in json.RawMessage) (any, error)
 }
 
-// Manifest is the frozen, deterministic description of everything the
-// host serves. Served at /__gofastr/desktop/manifest.json and baked
-// into the generated bridge script.
+// Manifest is the frozen, deterministic description of everything the host serves.
 type Manifest struct {
 	Schema       int              `json:"schema"`
 	Host         HostInfo         `json:"host"`
@@ -99,14 +80,11 @@ type MethodInfo struct {
 	Output      json.RawMessage `json:"output,omitempty"`
 }
 
-// registered records one accepted capability plus where it came from,
-// so a duplicate registration error can name the FIRST site.
 type registered struct {
 	cap    Capability
 	origin string
 }
 
-// registry holds the capabilities until Run freezes it.
 type registry struct {
 	mu     sync.Mutex
 	caps   map[string]registered
@@ -117,8 +95,6 @@ func newRegistry() *registry {
 	return &registry{caps: make(map[string]registered)}
 }
 
-// register validates and records cap. origin names the caller's file
-// and line, recorded for duplicate-name errors.
 func (r *registry) register(cap Capability, origin string) error {
 	if err := validateCapability(cap); err != nil {
 		return err
@@ -135,7 +111,6 @@ func (r *registry) register(cap Capability, origin string) error {
 	return nil
 }
 
-// lookup returns the capability by name.
 func (r *registry) lookup(name string) (Capability, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -143,8 +118,6 @@ func (r *registry) lookup(name string) (Capability, bool) {
 	return rc.cap, ok
 }
 
-// freeze stops further registration and returns the frozen manifest
-// basis.
 func (r *registry) freeze() {
 	r.mu.Lock()
 	r.frozen = true
@@ -157,8 +130,6 @@ func (r *registry) isFrozen() bool {
 	return r.frozen
 }
 
-// build renders the deterministic Manifest. host version comes from
-// the build info when present.
 func (r *registry) build() Manifest {
 	r.mu.Lock()
 	snapshot := make([]registered, 0, len(r.caps))
@@ -199,8 +170,6 @@ func (r *registry) build() Manifest {
 	return m
 }
 
-// validateCapability enforces every grammar rule, naming the field
-// that failed.
 func validateCapability(cap Capability) error {
 	if !reCapabilityName.MatchString(cap.Name) {
 		return fmt.Errorf("desktop: capability name %q must match %s", cap.Name, reCapabilityName.String())
@@ -239,8 +208,6 @@ func validateCapability(cap Capability) error {
 	return nil
 }
 
-// compactJSON normalizes a RawMessage so two registrations of the same
-// schema text always marshal identically in the manifest.
 func compactJSON(in json.RawMessage) json.RawMessage {
 	if len(in) == 0 {
 		return nil
@@ -256,8 +223,6 @@ func compactJSON(in json.RawMessage) json.RawMessage {
 	return out
 }
 
-// moduleVersion returns the module's version string, or "dev" outside
-// a versioned build.
 func moduleVersion() string {
 	if v := buildVersion(); v != "" {
 		return v

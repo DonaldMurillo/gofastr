@@ -13,17 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
-// invokeRecovering runs one handler call under a span and converts a panic
-// into an error, so a poison-message job cannot unwind the worker
-// goroutine and crash the whole process; the panicked job follows the
-// normal retry path. Both backends call it on the handler goroutine their
-// timeout wrapper starts, which is where the recover must sit once the
-// invocation is no longer inline on the worker.
-//
-// The span is a root span named "process <type>": a Job carries no trace
-// context, so the trace that enqueued it does not continue here. It ends
-// when the handler returns, which for a handler that outlives its budget
-// is after the worker has already moved on.
 func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 	jobType := textsafe.ScrubControlBytes(job.Type)
 	ctx, span := otel.Tracer("github.com/DonaldMurillo/gofastr/battery/queue").Start(ctx, "process "+jobType,
@@ -44,8 +33,6 @@ func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 			span.SetAttributes(attribute.String("error.type", tracing.ErrorTypePanic))
 			span.SetStatus(codes.Error, "")
 		} else if err != nil {
-			// The type, not the message: a handler's error routinely
-			// quotes the payload it failed on.
 			span.SetAttributes(attribute.String("error.type", tracing.ErrorType(err)))
 			span.SetStatus(codes.Error, "")
 		}

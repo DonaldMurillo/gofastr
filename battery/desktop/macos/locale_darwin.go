@@ -4,11 +4,6 @@ package macos
 
 import "github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 
-// preferredLanguages is the user's language list from System Settings,
-// best first ([NSLocale preferredLanguages], e.g. "fr-CA", "en-US"). A
-// Finder-launched app has no LANG, so this, not the environment, is
-// what names the menu language. Call it on the main thread after the
-// frameworks load.
 func preferredLanguages() []string {
 	arr := objc.ID(objc.Send(objc.Class("NSLocale"), objc.Sel("preferredLanguages")))
 	if arr == 0 {

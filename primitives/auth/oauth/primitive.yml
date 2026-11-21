@@ -1,0 +1,209 @@
+primitive: auth.oauth
+summary: OAuth2 and OIDC sign-in and account linking, the Google, GitHub and OIDC providers, the provider-link table and the sealed provider-token store.
+code:
+  - battery/auth/oauth2.go
+  - battery/auth/oidc.go
+  - battery/auth/oidc_jwks.go
+  - battery/auth/oauth_token_store.go
+  - battery/auth/entity_oauth_links.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: plugin-config
+    rule: Provider keys are 1-64 ASCII letters, digits, '-' or '_', a StateSecret under 16 bytes is refused, Init refuses a UserStore that is not an OAuthLinker outside DevMode and AllowInMemoryStores, and a missing TwoFactorURL next to a 2FA plugin.
+    enforced_by:
+      - test: battery/auth.TestOAuthProviderKeyShapeIsValidated
+      - test: battery/auth.TestStateSecretTooShortRefused
+      - test: battery/auth.TestOAuth2Plugin_Init_FailsClosedWithoutLinker
+      - test: battery/auth.TestOAuthInitRequiresTwoFactorURLWith2FA
+  - id: state-is-signed-and-single-use
+    rule: The state token is verified by HMAC before any field is trusted, must name the route's provider and be unexpired, and its nonce is accepted once; a callback with no code records no nonce.
+    enforced_by:
+      - test: battery/auth.TestOAuth2Plugin_StateTampered
+      - test: battery/auth.TestOAuth2Plugin_StateWrongProvider
+      - test: battery/auth.TestOAuth2Plugin_StateExpiry
+      - test: battery/auth.TestOAuth2Plugin_StateReplayRejected
+      - test: battery/auth.TestOAuthCallbackWithoutCodeRecordsNoNonce
+  - id: nonce-map-bounded
+    rule: The used-nonce map sweeps expired entries at most every sweep interval and at its hard cap evicts the earliest-expiring entries instead of refusing callbacks.
+    enforced_by:
+      - test: battery/auth.TestOAuth2NonceMapHasHardCap
+      - test: battery/auth.TestOAuth2NonceSweepIsRateLimitedAndReclaimsExpired
+      - test: battery/auth.TestOAuthNonceFloodDoesNotLockOutCallbacks
+  - id: callback-bound-to-the-browser
+    rule: The callback requires the state cookie (__Host- prefixed when secure) set when the flow started and checks it before consuming the nonce.
+    enforced_by:
+      - test: battery/auth.TestOAuthCallbackNeedsBrowserBinding
+      - test: battery/auth.TestOAuthStateCookieHostPrefixed
+  - id: pkce-binds-the-code
+    rule: The plugin sends an S256 challenge derived from the state to PKCE providers and the matching verifier at exchange, so a code from another flow does not redeem.
+    enforced_by:
+      - test: battery/auth.TestOAuthRedirectSendsPKCEChallenge
+      - test: battery/auth.TestOAuthStolenCodeDoesNotRedeemInAnotherFlow
+  - id: links-keyed-by-registry-name
+    rule: Links are keyed on the registry key the state validated, not the provider's own Name().
+    enforced_by:
+      - test: battery/auth.TestOAuthLinksKeyedToRegistryName
+  - id: resolution-table
+    rule: resolveOAuthUser refuses without a linker or when HasPassword fails, refuses an empty address, refuses a verified email that matches an unproven passwordless account, and never binds an unverified email to an existing account.
+    enforced_by:
+      - test: battery/auth.TestResolveOAuth_NoLinker_FailsClosed
+      - test: battery/auth.TestOAuthEmptyEmailNeverMergesAccounts
+      - test: battery/auth.TestResolveOAuth_HasPasswordError_FailsClosed
+      - test: battery/auth.TestOAuthUnverifiedPrecreateNoMerge
+      - test: battery/auth.TestResolveOAuth_UnverifiedEmail_DoesNotMatchPasswordAccount
+  - id: verified-assertion-marks-the-account
+    rule: An IdP's verified assertion for the account's own address marks it verified, at sign-up and on a linked sign-in.
+    enforced_by:
+      - test: battery/auth.TestVerifiedLoginMarksAccount
+  - id: email-bounded
+    rule: The callback refuses a provider address over 254 bytes.
+    enforced_by:
+      - test: battery/auth.TestOAuthOverlongEmailRefused
+  - id: link-flow-guards
+    rule: The authenticated link flow requires the session of the user the state names, refuses an identity bound to another user or a race it lost, stores the provider tokens before it re-checks the session and credential, and takes the link and tokens back when either moved meanwhile.
+    enforced_by:
+      - test: battery/auth.TestLinkClaimAfterRecheckLeavesNoTokens
+      - test: battery/auth.TestOAuth_AuthenticatedLinkRefusesSessionMismatch
+      - test: battery/auth.TestOAuthLinkRefusesBoundIdentity
+      - test: battery/auth.TestLinkFlowLosingBindingRaceIsRefused
+      - test: battery/auth.TestLinkFlowStoresProviderTokens
+      - test: battery/auth.TestLinkCallbackOvertakenByClaim
+  - id: sign-in-rechecks-the-link
+    rule: After the session and the provider tokens are stored the sign-in resolves the link again and drops both when it no longer names the user; a pending session goes to TwoFactorURL.
+    enforced_by:
+      - test: battery/auth.TestOAuthLoginOvertakenByClaim
+      - test: battery/auth.TestOAuthClaimAfterLinkRecheckLeavesNoTokens
+      - test: battery/auth.TestOAuthPendingSignInGoesToTwoFactorURL
+  - id: cross-site-return-hops
+    rule: A sign-in or link callback reached by a cross-site navigation (or one with no Fetch Metadata) answers a same-origin hop page instead of a redirect, and the hop target never leaves the origin.
+    enforced_by:
+      - test: battery/auth.TestOAuthCrossSiteCallbackHopsToLanding
+      - test: battery/auth.TestOAuthLinkSurvivesStrictCookie
+      - test: battery/auth.TestCrossSiteArrivalHopIsNoOpenRedirect
+  - id: provider-fetches
+    rule: Built-in provider fetches use a 10-second client that follows no redirect and decode at most 1 MiB of a response, GitHub's 200 error documents are errors, an unconfirmed GitHub public email is unverified, and a token with no expires_in has no expiry.
+    enforced_by:
+      - test: battery/auth.TestProviderResponseBodiesCapped
+      - test: battery/auth.TestProviderFetchRefusesRedirect
+      - test: battery/auth.TestOAuthProviders_DefaultClientHasTimeout
+      - test: battery/auth.TestGitHubRefusedExchangeIsAnError
+      - test: battery/auth.TestGitHubPublicEmailUnconfirmedIsUnverified
+      - test: battery/auth.TestNonExpiringProviderTokenIsUsable
+  - id: oidc-config
+    rule: NewOIDCProvider requires a ClientSecret and an https Issuer (http only on a literal loopback), and refuses a discovery document whose issuer differs or whose endpoints are not https (http only under a loopback-http issuer) or carry userinfo.
+    enforced_by:
+      - test: battery/auth.TestOIDC_NewProviderValidation
+      - test: battery/auth.TestOIDCHttpIssuerOnlyLiteralLoopback
+      - test: battery/auth.TestOIDCSec_DiscoveryIssuerMismatch
+      - test: battery/auth.TestOIDCSec_EndpointDowngradeRefused
+      - test: battery/auth.TestValidateOIDCEndpoint
+  - id: oidc-exchange
+    rule: The exchange picks the client authentication discovery allows.
+    enforced_by:
+      - test: battery/auth.TestOIDCTokenAuthMethod
+  - id: id-token-verified
+    rule: verifyIDToken accepts only RS256 or ES256 with a key of the same type, then iss, aud (with azp equal to the client when present, and required for several audiences), exp, nbf and iat.
+    enforced_by:
+      - test: battery/auth.TestOIDCSec_AlgHS256
+      - test: battery/auth.TestOIDCSec_AlgLowercase
+      - test: battery/auth.TestOIDCSec_ECKeyForRS256
+      - test: battery/auth.TestOIDCSec_WrongIssuer
+      - test: battery/auth.TestOIDCSec_AudMissingClient
+      - test: battery/auth.TestOIDCSec_SingleAudBadAzp
+      - test: battery/auth.TestOIDCSec_AudArrayNoAzp
+      - test: battery/auth.TestOIDCSec_Expired
+      - test: battery/auth.TestOIDCSec_FutureNbf
+      - test: battery/auth.TestOIDCSec_FutureIat
+  - id: jwks-keys-checked
+    rule: A JWK is used only when its use is sig and its alg matches its type, an RSA modulus is 2048-8192 bits with an odd exponent of at least 3, an EC point lies on P-256, and a header without kid needs a one-key set.
+    enforced_by:
+      - test: battery/auth.TestOIDCSec_EncUseKeyRejected
+      - test: battery/auth.TestOIDCSec_JWKAlgMismatchRejected
+      - test: battery/auth.TestOIDCSec_WeakRSAKey
+      - test: battery/auth.TestOIDCSec_OversizedRSAModulus
+      - test: battery/auth.TestOIDCSec_DegenerateRSAExponent
+      - test: battery/auth.TestOIDCEcPointOffCurveRejected
+      - test: battery/auth.TestOIDCNoKidAmbiguousKeyset
+  - id: jwks-refetch-bounded
+    rule: A failed JWKS refresh with a stale set backs off a minute.
+    enforced_by:
+      - test: battery/auth.TestJWKSRefreshFailureBacksOff
+  - id: oidc-caches-bounded
+    rule: An OIDCProvider caches userinfo claims for at most the 1024 most recent access tokens, dropping the oldest, and the JWKS cache tracks at most 128 unknown kids for forced refetches before it starts the map over.
+    enforced_by:
+      - test: battery/auth.TestOIDCClaimsCacheBounded
+      - test: battery/auth.TestJWKSForcedKidsBounded
+  - id: oidc-email-verified-is-about-email
+    rule: email_verified vouches only for the email claim's own address, a userinfo flag counts only when the id_token carried none and names the same address, and userinfo must name the id_token's subject.
+    enforced_by:
+      - test: battery/auth.TestOIDCRemappedEmailClaimDoesNotInheritVerified
+      - test: battery/auth.TestOIDCUserinfoRemappedEmailClaimDoesNotInheritVerified
+      - test: battery/auth.TestOIDCVerifiedFlagNeedsSameEmail
+      - test: battery/auth.TestOIDCSec_UserinfoSubMismatch
+      - test: battery/auth.TestOIDCSec_UserinfoMissingSub
+  - id: provider-tokens-sealed
+    rule: SQLOAuthTokenStore requires an EncryptionKey, stores access and refresh tokens sealed with AES-GCM, refuses a row sealed under another key, and erasure deletes a user's rows.
+    enforced_by:
+      - test: battery/auth.TestOAuthStore_RequiresKey
+      - test: battery/auth.TestOAuthTokenStore_StoredOpaque
+      - test: battery/auth.TestOAuthTokenWrongKeyFailsToOpen
+      - test: battery/auth.TestEraseRemovesOAuthTokens
+  - id: refresh-spends-once
+    rule: A refresh spends a refresh token once across goroutines and replicas (a lease, and a compare-and-swap on the write that never clobbers a newer grant), keeps the stored refresh token when the provider omits one, stores nothing for a response without an access token, returns a newer record on failure, settles on a context the caller cannot cancel, and reads under the registry key.
+    enforced_by:
+      - test: battery/auth.TestConcurrentRefreshSpendsRefreshTokenOnce
+      - test: battery/auth.TestRefreshWaitsForAnotherReplicasLease
+      - test: battery/auth.TestRefreshDoesNotClobberNewerToken
+      - test: battery/auth.TestRefresh_KeepsRefreshTokenWhenOmitted
+      - test: battery/auth.TestRefreshWithoutAnAccessTokenStoresNothing
+      - test: battery/auth.TestRefreshFailureReturnsNewerRecord
+      - test: battery/auth.TestRefreshStoresRotatedGrantWhenCallerHangsUp
+      - test: battery/auth.TestPluginTokenMethodsUseRegistryKey
+  - id: valid-token-refreshes-near-expiry
+    rule: ValidOAuthToken refreshes a token within a minute of expiry and returns one with no stated expiry as it is.
+    enforced_by:
+      - test: battery/auth.TestValidToken_RefreshesNearExpiry
+      - test: battery/auth.TestNonExpiringProviderTokenIsUsable
+  - id: link-table
+    rule: LinkOAuth keeps an existing binding's owner, RefreshOAuthProfile updates only a link bound to the given user, ListAccounts orders by provider, and UnlinkOAuthGuarded refuses the user's last login method atomically.
+    enforced_by:
+      - test: battery/auth.TestEntityOAuthLinks_LinkDoesNotReassignOwner
+      - test: battery/auth.TestRefreshOAuthProfileUpdatesOnly
+      - test: battery/auth.TestEntityOAuthLinks_MultipleProvidersForOneUser
+      - test: battery/auth.TestEntityStoreGuardedUnlinkRefusesLastMethod
+decisions:
+  - id: no-email-only-fallback
+    date: 2026-11-20
+    status: accepted
+    decision: OAuth sign-in requires an OAuthLinker and matches an existing account by email only for a verified address on a proven passwordless account.
+    rejected:
+      - option: Match by email when the store links nothing.
+        why: An IdP emitting an unverified or attacker-controlled address signed in as an existing local account.
+    upholds: [resolution-table, plugin-config]
+  - id: stateless-state
+    date: 2026-11-20
+    status: accepted
+    decision: The state token carries nonce, provider, expiry and linked user under an HMAC, and only the used-nonce map is kept in memory.
+    rejected:
+      - option: Store each redirect's state server-side.
+        why: A restart mid-flow would break logins and the redirect endpoint would become a memory-growth surface.
+    upholds: [state-is-signed-and-single-use]
+  - id: oidc-confidential-only
+    date: 2026-11-20
+    status: accepted
+    decision: The OIDC provider is a confidential client and sends no nonce.
+    rejected:
+      - option: Support public clients without a secret.
+        why: The flow would rest on PKCE alone, and DisablePKCE would leave it nothing.
+      - option: Send a nonce.
+        why: The code is single-use and exchanged server-to-server with the secret while the HMAC state binds the callback; a nonce matters for the implicit and hybrid flows only.
+    upholds: [oidc-config]
+  - id: one-at-rest-sealer
+    date: 2026-11-20
+    status: accepted
+    decision: Provider tokens and TOTP seeds are sealed by one aeadSealer (AES-GCM under a SHA-256-folded key the operator chooses).
+    rejected:
+      - option: A cipher per store.
+        why: Copies drift apart, and a built-in default key would be obfuscation, not encryption.
+    upholds: [provider-tokens-sealed]

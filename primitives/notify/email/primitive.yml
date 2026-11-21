@@ -1,0 +1,40 @@
+primitive: notify.email
+summary: EmailChannel, the adapter that maps a rendered notification onto a battery/email message after checking its addresses, custom headers and attachments.
+code:
+  - battery/notify/email_channel.go
+docs:
+  - framework/docs/content/notifications.md
+invariants:
+  - id: addresses-pass-the-smtp-rule
+    rule: EmailChannel refuses with ErrUnsafeRecipient, before the sender runs, a recipient or from address that email.ValidateAddress refuses, and accepts every address it takes.
+    enforced_by:
+      - test: battery/notify.TestEmailChannel_RejectsCRLFRecipient
+      - test: battery/notify.TestEmailChannel_RejectsHTMLInAddress
+      - test: battery/notify.TestEmailChannelAcceptsSMTPAddresses
+  - id: rendered-from-is-refused
+    rule: A rendered Extra["from"] is refused with ErrUnsafeHeader; the channel's configured from-address is the only sender.
+    enforced_by:
+      - test: battery/notify.TestEmailChannel_RejectsRenderedFromOverride
+  - id: custom-headers-are-screened
+    rule: An Extra["headers"] entry whose name holds CR, LF, NUL or a colon, whose value holds CR, LF or NUL, or whose name matches a reserved header case-insensitively (To, Cc, Bcc, From, Sender, Reply-To, Subject and the MIME headers) refuses the whole message.
+    enforced_by:
+      - test: battery/notify.TestEmailChannel_RejectsUnsafeRenderedHeaders
+      - test: battery/notify.TestEmailChannelRejectsColonInHeaderName
+      - test: battery/notify.TestEmailChannel_RejectsTransferEncodingOverride
+  - id: mistyped-attachments-refuse-the-message
+    rule: A present Extra["attachments"] that is not []email.Attachment refuses the message with ErrInvalidAttachments, and a typed nil slice is no attachments.
+    enforced_by:
+      - test: battery/notify.TestBadAttachmentsPreventSend
+      - test: battery/notify.TestNilAttachmentSliceIsAccepted
+  - id: html-body-passes-verbatim
+    rule: EmailChannel sends Rendered.HTMLBody as it is, so a custom Templater escapes its own values.
+    judge: Does this change make EmailChannel escape or rewrite HTMLBody, or let a custom Templater assume the channel escapes for it?
+decisions:
+  - id: one-address-rule
+    date: 2026-11-20
+    status: accepted
+    decision: The channel checks addresses with email.ValidateAddress, the SMTP sender's own rule.
+    rejected:
+      - option: A character list of its own.
+        why: It refused o'brien@example.com and a display-named From the sender accepts, and let a comma list of two addresses through.
+    upholds: [addresses-pass-the-smtp-rule]

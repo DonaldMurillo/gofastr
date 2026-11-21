@@ -1,0 +1,75 @@
+primitive: admin.rbac
+summary: The Roles and User roles pages - the permission grid and its save, a role's grant and revoke, a user's direct roles, and the tier checks that bound what a caller may grant or assign.
+code:
+  - battery/admin/rbac_admin.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: grants-stay-within-the-callers-tier
+    rule: A grant or revoke needs the permission on the caller's own roles, read from the user and not the context, after a Decider's deny and with no Policy refusing, and a refusal is audited as <op>-refused before the page answers.
+    enforced_by:
+      - test: battery/admin.TestGrantRevokeRequireCallerTier
+      - test: battery/admin.TestPermissionCheckAsksDecider
+      - test: battery/admin.TestTierIgnoresContextRoles
+  - id: own-last-permission-is-kept
+    rule: A save that would leave the caller's own roles without a permission it revokes is refused, unless the caller still holds Wildcard after the save.
+    enforced_by:
+      - test: battery/admin.TestRevokeRefusesOwnLastPermission
+      - test: battery/admin.TestWildcardHolderMayRevokeAnyPermission
+  - id: grid-save-is-checked-before-any-write
+    rule: A grid save refuses an empty, repeated or out-of-range role, permission or cell and more than maxGridCells boxes, leaves a Wildcard role alone, and checks every grant with GrantStore.CheckGrant before writing any.
+    enforced_by:
+      - test: battery/admin.TestPermissionsSaveRefusesBadInput
+      - test: battery/admin.TestPermissionsSaveAppliesChangedBoxes
+      - test: battery/admin.TestGrantUnderWildcardRevokeIsRefused
+  - id: grant-errors-are-named
+    rule: A grant of an undeclared capability answers 400 unknown-capability and a revoke Wildcard still covers answers 409 revoked-by-wildcard.
+    enforced_by:
+      - test: battery/admin.TestGrantStrictTypoIsRefused
+      - test: battery/admin.TestGrantUnderWildcardRevokeIsRefused
+  - id: assign-checks-what-changes
+    rule: An assign tier-checks every role it adds and every role it takes away against the roles on the caller's user, never the context's, assigns a role the policy grants nothing only to a caller who holds it or Wildcard, and audits a refusal with the role that stopped it.
+    enforced_by:
+      - test: battery/admin.TestTierIgnoresContextRoles
+      - test: battery/admin.TestAssignRefusesStrippingHigherRoles
+      - test: battery/admin.TestAssignRefusesPermissionlessRole
+      - test: battery/admin.TestAssignRequiresCallerTier
+  - id: own-admin-role-is-kept
+    rule: Under the default gate a caller cannot remove the admin role from their own account; another admin may.
+    enforced_by:
+      - test: battery/admin.TestAssignRefusesOwnAdminRemoval
+  - id: user-id-is-a-key
+    rule: An assign uses user_id exactly as posted, never trimmed, and refuses an empty or unstorable one.
+    enforced_by:
+      - test: battery/admin.TestAssignKeepsPaddedUserID
+      - test: battery/admin.TestAssignRefusesUnstorableID
+  - id: actor-label-is-not-a-key
+    rule: An audit row names an id-less admin as "unknown", and no lookup or write for the caller's own account uses that label.
+    enforced_by:
+      - test: battery/admin.TestIDlessAdminIsAuditedAsUnknown
+      - test: battery/admin.TestAccountNameNeedsUserID
+      - test: battery/admin.TestAccountPageNeedsUserID
+    applies:
+      - battery/admin/account.go
+  - id: users-page-is-bounded
+    rule: The User roles page reads a positive ?limit= capped at 500, defaulting to 50, and bounds ?p= by maxUsersPage before it scales by the page size.
+    enforced_by:
+      - test: battery/admin.TestUsersLimitIsBounded
+      - test: battery/admin.TestUsersHugePageOffsetStays
+decisions:
+  - id: tier-is-the-callers-own-roles
+    date: 2026-11-20
+    status: accepted
+    decision: A caller may grant, revoke or assign only within what its own roles hold, and a Decider can veto that but never widen it.
+    rejected:
+      - option: Let any admin the gate admits grant anything.
+        why: An admin with a narrow role could then grant itself, or anyone, Wildcard.
+    upholds: [grants-stay-within-the-callers-tier, assign-checks-what-changes]
+  - id: keep-the-last-holder
+    date: 2026-11-20
+    status: accepted
+    decision: A revoke that leaves the caller without the permission, and a caller removing its own admin role, are refused.
+    rejected:
+      - option: Allow them as any other change.
+        why: The caller could never undo them, and the last holder doing it leaves the deployment unable to grant the permission or the role back.
+    upholds: [own-last-permission-is-kept, own-admin-role-is-kept]

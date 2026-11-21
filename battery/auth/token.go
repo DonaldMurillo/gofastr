@@ -10,13 +10,11 @@ import (
 	"time"
 )
 
-// tokenHeader is the JWT header portion.
 type tokenHeader struct {
 	Alg string `json:"alg"`
 	Typ string `json:"typ"`
 }
 
-// tokenPayload is the JWT payload portion.
 type tokenPayload struct {
 	UserID    string   `json:"sub"`
 	Email     string   `json:"email"`
@@ -24,9 +22,7 @@ type tokenPayload struct {
 	Issuer    string   `json:"iss"`
 	ExpiresAt int64    `json:"exp"`
 	IssuedAt  int64    `json:"iat"`
-	// Cred binds the token to the credential it was issued under (see
-	// credentialTag). Absent on tokens from a JWTAuth with no user store.
-	Cred string `json:"cred,omitempty"`
+	Cred      string   `json:"cred,omitempty"`
 }
 
 func encodeToken(secret, issuer string, claims Claims) (string, error) {
@@ -65,14 +61,12 @@ func decodeToken(secret, issuer string, tokenString string) (Claims, error) {
 		return Claims{}, fmt.Errorf("invalid token format")
 	}
 
-	// Verify signature
 	signingInput := parts[0] + "." + parts[1]
 	expectedSig := signHMAC(secret, signingInput)
 	if !hmac.Equal([]byte(parts[2]), []byte(expectedSig)) {
 		return Claims{}, fmt.Errorf("invalid signature")
 	}
 
-	// Decode header
 	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
 		return Claims{}, fmt.Errorf("decode header: %w", err)
@@ -85,7 +79,6 @@ func decodeToken(secret, issuer string, tokenString string) (Claims, error) {
 		return Claims{}, fmt.Errorf("unexpected token type")
 	}
 
-	// Decode payload
 	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return Claims{}, fmt.Errorf("decode payload: %w", err)

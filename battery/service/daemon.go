@@ -20,30 +20,17 @@ import (
 )
 
 const (
-	// readyTimeout bounds the wait for the App's listener: migrations
-	// and seeds run before the bind.
 	readyTimeout = 60 * time.Second
 )
 
-// stopTimeout bounds a whole stop: the MCP sessions, the drain and the
-// control channel. Windows gives a logoff little time, so this stays
-// well under systemd's TimeoutStopSec. A variable so a test can shrink
-// it.
 var stopTimeout = 10 * time.Second
 
-// serveMode is one way of running the App: the installed daemon or
-// the foreground dev run.
 type serveMode struct {
 	dev         bool
 	port        int
 	openBrowser bool
 }
 
-// serve builds the App, binds it on loopback, opens the control
-// channel, and blocks until a signal, a control "stop", or ctx ends.
-// A graceful stop returns nil, so the process exits 0 and neither
-// launchd (KeepAlive SuccessfulExit=false) nor systemd
-// (Restart=on-failure) restarts it.
 func (b *Battery) serve(ctx context.Context, mode serveMode, build Builder) error {
 	l, err := b.layoutFor(mode.dev)
 	if err != nil {
@@ -57,12 +44,6 @@ func (b *Battery) serve(ctx context.Context, mode serveMode, build Builder) erro
 			return err
 		}
 	}
-	// Take the instance lock and claim the control socket before
-	// building the App: a second instance fails here, before it opens
-	// the database or runs a migration against a file the first one is
-	// using. The lock is held until serve returns. The secret and the
-	// local identity are minted under it, so two first boots never race
-	// to create them.
 	release, err := lockInstance(l.dir)
 	if err == nil {
 		defer release()
@@ -82,8 +63,6 @@ func (b *Battery) serve(ctx context.Context, mode serveMode, build Builder) erro
 	return err
 }
 
-// serveLocked is serve once this process holds the instance lock and
-// the control socket.
 func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder, l layout, secret string, ctl net.Listener) error {
 
 	g, err := newGate(b.cfg.Name+" service open"+devFlag(mode.dev), secret, b.cfg.SessionTTL, b.cfg.InsecureTokenInURL)
@@ -91,9 +70,6 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		return err
 	}
 	g.open = append([]string(nil), b.cfg.OpenPrefixes...)
-	// The signed-in browser is the OS user the service runs as: the
-	// gate puts that local identity on every request it lets through
-	// (unless battery/auth owns identity; see Init).
 	if g.user, err = localapp.LoadOrMint(l.dir); err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
@@ -114,15 +90,11 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	} else if got != b {
 		return errors.New("service: the App has a different service battery registered; register this one, or none and let Run register it")
 	}
-	// The battery owns signals: it must send STOPPING=1 before the
-	// drain and close the control channel with it.
 	app.Config.DisableSignalHandling = true
 	log := app.Logger()
 
 	ready := make(chan string, 1)
 	app.OnReady(func(addr string) {
-		// Pin before Serve accepts the first connection: until then the
-		// gate refuses everything.
 		if _, p, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(p); err == nil {
 				g.pinAt(browserAddr(addr), port, b.extraHosts(port))
@@ -134,14 +106,9 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		}
 	})
 	if !mode.dev {
-		// The installed port is the contract (bookmarks, the
-		// definition's argv); worktree isolation must not remap it.
 		os.Setenv(isolation.EnvIsolation, "off")
 	}
 
-	// The local run record (framework/localrun) tells agents to reach
-	// this daemon through `service mcp`: its HTTP /mcp sits behind the
-	// browser sign-in gate.
 	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: rt.MCPCommand(), Dev: mode.dev})
 
 	listen := net.JoinHostPort(b.bindHost(), strconv.Itoa(mode.port))
@@ -214,21 +181,8 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		runErr = fmt.Errorf("service: server stopped: %w", err)
 	}
 	_ = sdNotify("STOPPING=1")
-	// The whole stop shares one deadline, so a stuck tool call or a
-	// slow drain cannot add up past systemd's TimeoutStopSec, launchd's
-	// exit timeout, or the CLI's stopWait.
 	deadline := time.Now().Add(stopTimeout)
-	// MCP sessions end first: their tool calls run inside the App, so
-	// they must not outlive it. The rest of the control channel closes
-	// after the drain, not before: a stop waiting on it then sees
-	// "gone" only once the App has let go of the port and the database.
 	cs.endMCP(time.Now().Add(mcpStopWait))
-	// A drain that overruns or an OnStop error is logged and does not
-	// change the exit code of a requested stop: under
-	// launchd's KeepAlive SuccessfulExit=false (and systemd's
-	// Restart=on-failure) an exit 1 would restart the daemon that
-	// `service stop` just stopped. Only a server that ended on its own
-	// exits non-zero.
 	b.drainUntil(app, log, deadline)
 	cs.closeUntil(deadline)
 	t := time.NewTimer(time.Until(deadline))
@@ -240,13 +194,10 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	return runErr
 }
 
-// drain shuts the App down with a bounded context.
 func (b *Battery) drain(app *framework.App, log *slog.Logger) {
 	b.drainUntil(app, log, time.Now().Add(stopTimeout))
 }
 
-// drainUntil is drain with a deadline the caller shares. An incomplete
-// drain is logged, not returned: see the stop path in serveLocked.
 func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) {
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
@@ -255,10 +206,7 @@ func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time
 	}
 }
 
-// controlHandler answers the control channel's ops.
 func (b *Battery) controlHandler(g *gate, addr string, dev bool, started time.Time, stop chan<- struct{}) func(string) controlResponse {
-	// Read once, by the daemon itself: a client that sampled the pid
-	// after a stop could read a newer process that got it.
 	self := procalive.Identify(os.Getpid())
 	return func(op string) controlResponse {
 		switch op {
@@ -282,8 +230,6 @@ func (b *Battery) controlHandler(g *gate, addr string, dev bool, started time.Ti
 	}
 }
 
-// buildVersion is the main module's version from the build info, or
-// "(devel)".
 func buildVersion() string {
 	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" {
 		return bi.Main.Version
@@ -298,11 +244,6 @@ func devFlag(dev bool) string {
 	return ""
 }
 
-// sdNotify sends one systemd notification datagram to $NOTIFY_SOCKET.
-// The protocol is a stable, dependency-free contract (sd_notify(3));
-// outside systemd the variable is unset and this does nothing. A
-// leading "@" names an abstract socket, which Go's net package
-// understands as written.
 func sdNotify(state string) error {
 	path := os.Getenv("NOTIFY_SOCKET")
 	if path == "" || (path[0] != '/' && path[0] != '@') {

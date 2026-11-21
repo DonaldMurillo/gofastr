@@ -6,12 +6,6 @@ import (
 	"path/filepath"
 )
 
-// dialogsCapability: the OS file/folder pickers. Ungated on purpose:
-// every dialog is user-mediated (the user picks the path), and every
-// returned path lands on the fs allow-list, which is the actual grant: a
-// file's exact path, or a folder read through an os.Root.
-// A dialog answers with the filepath.Clean form it granted, the only
-// spelling fs accepts back.
 func (b *Battery) dialogsCapability() Capability {
 	return Capability{
 		Name:        "dialogs",

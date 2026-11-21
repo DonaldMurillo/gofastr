@@ -182,3 +182,13 @@ func TestArmGateNotesAuthenticator(t *testing.T) {
 		t.Error("an armed gate installs the local user: the app must be noted")
 	}
 }
+
+func TestArmGateLeavesTheNoteToAuth(t *testing.T) {
+	b, _ := newTestBattery(t)
+	b.app = framework.NewApp()
+	b.authOwnsIdentity = true
+	b.armGate()
+	if b.app.AuthenticatorNoted() {
+		t.Error("auth owns identity: the desktop gate installs no user and must not note the app")
+	}
+}

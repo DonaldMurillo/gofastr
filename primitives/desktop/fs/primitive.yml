@@ -1,0 +1,61 @@
+primitive: desktop.fs
+summary: The fs capability and the file and folder dialogs that grant it, an allow-list of exact picked paths and of picked folders read through an os.Root.
+code:
+  - battery/desktop/cap_fs.go
+  - battery/desktop/cap_fs_folder.go
+  - battery/desktop/cap_dialogs.go
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: exact-path-and-live-resolution
+    rule: pathAllowed accepts a path only when the string as sent is on the allow-list and so is its live symlink resolution, resolving a missing leaf through its deepest existing ancestor, so an unclean spelling or a component swapped for a symlink after the grant is refused.
+    enforced_by:
+      - test: battery/desktop.TestFSWriteStaysInsideTheGrant
+      - test: battery/desktop.TestFSSymlinkSwappedAfterAllowPathRefused
+  - id: allow-path-stores-both-forms
+    rule: AllowPath refuses a relative path and stores the clean path and its symlink resolution, through the deepest existing ancestor for a path that does not exist yet, so a save target under a symlinked directory stays writable.
+    enforced_by:
+      - test: battery/desktop.TestFSAllowPathRequiresAbsolute
+      - test: battery/desktop.TestSaveTargetUnderALinkedDirIsWritable
+  - id: writes-are-atomic-and-owner-only
+    rule: fs.writeText writes a 0600 temp file in the target's directory and renames it over the target.
+    enforced_by:
+      - test: battery/desktop.TestFSWriteCreates0600AndRoundTrips
+  - id: read-and-list-bounded
+    rule: fs.readText refuses a file over 8 MiB and fs.list answers at most 10000 entries with truncated set past that.
+    enforced_by:
+      - test: battery/desktop.TestFSOversizeReadRefused
+      - test: battery/desktop.TestFolderListIsCapped
+  - id: folder-grant-stays-inside
+    rule: A picked folder grants stat, readText and list on clean paths under it through an os.Root opened at the resolution stored at the pick, refuses a symlink or .. that leaves it and a folder swapped for a link since the pick, answers every refusal with the same denial, and never grants writeText.
+    enforced_by:
+      - test: battery/desktop.TestFolderPickGrantsReadUnderIt
+      - test: battery/desktop.TestFolderPickRefusesARelativeLinkOut
+      - test: battery/desktop.TestFSErrorsNeverEchoThePath
+  - id: fs-errors-echo-no-path
+    rule: An fs or folder-grant error reaches the page as fixed words (path does not exist, path is not accessible, or the internal error message), never the OS error text, so no refusal echoes a path.
+    enforced_by:
+      - test: battery/desktop.TestFSErrorsNeverEchoThePath
+  - id: dialogs-grant-what-they-answer
+    rule: openFile and saveFile put each exact returned path on the allow-list, openFolder grants the folder, and each answers the filepath.Clean form it granted.
+    enforced_by:
+      - test: battery/desktop.TestDialogsAnswerTheCleanPath
+      - test: battery/desktop.TestFolderPickGrantsReadUnderIt
+decisions:
+  - id: dialogs-ungated
+    date: 2026-11-20
+    status: accepted
+    decision: The dialogs capability is ungated; the grant is the allow-list entry the user's pick creates.
+    rejected:
+      - option: A permission prompt in front of each dialog.
+        why: Every dialog is already user-mediated, so a prompt would ask the same question twice.
+    upholds: [dialogs-grant-what-they-answer]
+  - id: resolve-then-open
+    date: 2026-11-20
+    status: accepted
+    decision: An exact-path grant resolves symlinks and then the handler opens the path.
+    rejected:
+      - option: Open first, then verify the open file.
+        why: The gap only helps a process running as the same user, which can read the file directly, while the page cannot create a symlink through any bridge method.
+    revisit_if: A bridge method gains a way to create a link or rename a file.
+    upholds: [exact-path-and-live-resolution]

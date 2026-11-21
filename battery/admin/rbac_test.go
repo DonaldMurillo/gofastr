@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
@@ -327,6 +329,28 @@ func TestGrantRevokeRequireCallerTier(t *testing.T) {
 	}
 	if refused != 4 {
 		t.Errorf("audited %d refusals, want 4: %v", refused, r.auditOps("access"))
+	}
+}
+
+func TestTierIgnoresContextRoles(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	inner := r.as(support)
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		inner.ServeHTTP(w, req.WithContext(access.WithRoles(req.Context(), []string{"admin"})))
+	})
+	if c := rpc(h, "/admin/rbac/_grant", map[string]any{"role": "support", "permission": string(access.Wildcard)}).Code; c != http.StatusForbidden {
+		t.Errorf("SECURITY: context roles let support grant Wildcard: %d", c)
+	}
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "ctx@example.com", "$2a$10$hash", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := rpc(h, "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "user,admin"}).Code; c != http.StatusForbidden {
+		t.Errorf("SECURITY: context roles let support assign admin: %d", c)
+	}
+	if slices.Contains(r.policy.PermissionsOf("support"), access.Wildcard) || slices.Contains(r.rolesOf(fresh.GetID()), "admin") {
+		t.Fatal("SECURITY: a refused change was written")
 	}
 }
 
@@ -693,5 +717,21 @@ func TestRBACUnwiredHasNoPages(t *testing.T) {
 		if rr := post(x.as(theAdmin), p, url.Values{"role": {"a"}}); rr.Code == http.StatusSeeOther || rr.Code == http.StatusNoContent {
 			t.Errorf("unwired %s answered %d", p, rr.Code)
 		}
+	}
+}
+
+func TestWildcardHolderMayRevokeAnyPermission(t *testing.T) {
+	p := access.NewRolePolicy()
+	_ = p.Grant("admin", access.Wildcard, "posts:write")
+	b := &Battery{cfg: Config{Policy: p}}
+	ctx := handler.SetUser(context.Background(), theAdmin)
+	if c, lost := b.ownPermissionLost(ctx, []grantChange{{role: "admin", perm: "posts:write"}}); lost {
+		t.Errorf("a caller holding Wildcard was refused revoking %s from its own role", c.perm)
+	}
+}
+
+func TestIDlessAdminIsAuditedAsUnknown(t *testing.T) {
+	if got := adminActorID(handler.SetUser(context.Background(), "a user with no id")); got != "unknown" {
+		t.Errorf("adminActorID for a user with no id = %q, want unknown", got)
 	}
 }

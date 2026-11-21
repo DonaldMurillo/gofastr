@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -85,5 +86,14 @@ func TestUsersPagePagesAccounts(t *testing.T) {
 	}
 	if href := html.UnescapeString(link[1]); !strings.Contains(href, "limit=2") || !strings.Contains(href, "p=3") {
 		t.Errorf("page 3's link %q drops the page size or the page", href)
+	}
+}
+
+func TestUsersLimitIsBounded(t *testing.T) {
+	for raw, want := range map[string]int{"": usersPageSize, "0": usersPageSize, "501": 500, "500": 500, "7": 7} {
+		opts, _ := listUsersOpts(url.Values{"limit": {raw}})
+		if opts.Limit != want {
+			t.Errorf("?limit=%s reads %d, want %d", raw, opts.Limit, want)
+		}
 	}
 }

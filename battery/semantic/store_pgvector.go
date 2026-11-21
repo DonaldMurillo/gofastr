@@ -21,41 +21,17 @@ import (
 	"github.com/lib/pq"
 )
 
-// PgVectorStore is a durable [Store] backed by a Postgres table with a
-// pgvector embedding column. It is the production counterpart to
-// [FlatStore]: instead of a brute-force scan of an in-memory slice, chunks
-// live in the database so multiple app replicas share a single index and
-// survive process restarts with no snapshot/WAL plumbing.
-//
-// Ranking uses pgvector's cosine-distance operator (<=>). Because the
-// embedder contract produces L2-normalized vectors, cosine similarity equals
-// the dot product [FlatStore] scores by, so the two stores produce the same
-// top-K order given identical vectors (see TestPgVectorRankingParity). The
-// distance is computed server-side; [Hit.Score] is set to 1-distance.
-//
-// The store implements the [chunkLister] capability (ChunkIDsForDoc /
-// ChunkByID / AllChunks) so it composes with hybrid/keyword retrieval through
-// [Open], and replaces a document's chunks in one locked transaction
-// (replaceDocs), so a failed write keeps the old version and replicas
-// replacing one document do not interleave. It deliberately does NOT
-// implement [snapshotter]: a Postgres table
-// IS the durable copy, so the gob snapshot path is meaningless, pairing this
-// store with Options.Path fails closed at Open with an actionable error.
-//
-// No third-party pgvector Go driver is required. Vectors are encoded in
-// pgvector's text format ([0.1,0.2,…]) and bound as ordinary string
-// parameters, cast to the vector type in SQL.
+// PgVectorStore is a durable Store over a Postgres table with a pgvector
+// column.
 type PgVectorStore struct {
 	db           *sql.DB
-	table        string // validated configured table name
-	quotedTable  string // validated + quoted table identifier
-	quotedDocIdx string // validated + quoted doc_id index name
-	quotedKwIdx  string // validated + quoted keyword-search GIN index name
+	table        string
+	quotedTable  string
+	quotedDocIdx string
+	quotedKwIdx  string
 	dim          int
 	model        string
 
-	// afterDelete is a test hook run right after a document's chunks are
-	// deleted, before its new chunks are inserted.
 	afterDelete func()
 }
 
@@ -64,29 +40,17 @@ type PgVectorConfig struct {
 	// Table is the destination table. Defaults to "embed_chunks".
 	Table string
 
-	// Dim is the fixed embedding dimension. REQUIRED: a pgvector column
-	// is dimensionally fixed at CREATE TABLE time, so the store must know
-	// the dimension up front. Set it from the embedder:
-	//
-	//	PgVectorConfig{Dim: embedder.Dim()}
-	//
-	// A zero Dim is rejected at construction.
+	// Dim is the fixed embedding dimension. Required.
 	Dim int
 
-	// Model records the embedder model name in [Stats] for diagnostics.
-	// Optional; [Index.Stats] fills it from the embedder when empty.
+	// Model records the embedder model name in Stats. Optional.
 	Model string
 }
 
-// statsTimeout bounds the context-less [PgVectorStore.Stats] and the
-// chunkLister lookups (which also lack a ctx in the interface). It is short
-// on purpose: Stats is a best-effort snapshot, never a load-bearing query.
 const statsTimeout = 3 * time.Second
 
-// NewPgVector constructs a PgVectorStore. The table name is validated with
-// the same core/query.SafeIdent used across the framework, and Dim must be
-// positive. The returned store is usable after [PgVectorStore.EnsureSchema]
-// creates the table; NewPgVector itself performs no I/O.
+// NewPgVector constructs a PgVectorStore; it errors on an unsafe table name or
+// a non-positive Dim.
 func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 	if db == nil {
 		return nil, errors.New("semantic: nil db")
@@ -102,9 +66,6 @@ func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("semantic: invalid pgvector table name %q: %w", table, err)
 	}
-	// App.EraseUserData deletes the erased user's chunks (Document.Owner).
-	// Registered under the table's own name, so two stores in one app do
-	// not replace each other.
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name: safe, Source: "semantic", Table: safe, Column: "owner",
 		Mode: datexport.EraseDelete,
@@ -120,30 +81,16 @@ func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 	}, nil
 }
 
-// docIndexName names the doc_id index, keywordIndexName the keyword
-// search's GIN index: table+"_doc_id_idx" and table+"_kw_fts_idx" as
-// Postgres cuts each at 63 bytes, the name every earlier build created.
-// A 63-byte table name cuts to the table's own name, and CREATE INDEX
-// IF NOT EXISTS then skipped the index, so that one name ends in a hash
-// of the table instead.
 func docIndexName(table string) string     { return indexName(table, "_doc_id_idx") }
 func keywordIndexName(table string) string { return indexName(table, "_kw_fts_idx") }
 
 func indexName(table, suffix string) string {
-	// QuoteIndexName strips a schema qualifier AFTER this runs, so
-	// strip it here first: truncating the qualified spelling could cut
-	// the suffix off and hand two indexes of one table the same
-	// name, which CREATE INDEX IF NOT EXISTS then reads as "already
-	// there" and skips the second index.
 	if i := strings.LastIndexByte(table, '.'); i >= 0 {
 		table = table[i+1:]
 	}
 	if len(table)+len(suffix) <= 63 {
 		return table + suffix
 	}
-	// Preserve earlier truncated names where their distinct suffix bytes
-	// survive. At 62 bytes both suffixes become "_"; retain the full
-	// suffix and shorten the table with a hash instead.
 	if len(table) <= 61 {
 		return (table + suffix)[:63]
 	}
@@ -153,28 +100,17 @@ func indexName(table, suffix string) string {
 	return table[:63-len(tag)] + tag
 }
 
-// EnsureSchema creates the vector extension and chunks table if they do not
-// already exist. Idempotent, safe to call on every boot.
-//
-// The vector extension requires a one-time CREATE EXTENSION, which on managed
-// Postgres (RDS, Cloud SQL, …) is a superuser privilege the app role often
-// lacks. We tolerate a permission failure here (the extension may already be
-// installed by an admin) and let the subsequent CREATE TABLE surface a clear,
-// actionable error if the vector type is genuinely missing.
+// EnsureSchema creates the vector extension, the table and its indexes if
+// missing. Idempotent.
 func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	if err := query.RefuseCaseKeptTables(ctx, s.db, s.table); err != nil {
 		return fmt.Errorf("semantic: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
-		// 42501 = insufficient_privilege: the role can't create the
-		// extension, but it may already be present. Fall through and let
-		// CREATE TABLE decide. Anything else is a real failure.
 		if pqCode(err) != "42501" {
 			return fmt.Errorf("semantic: create vector extension: %w. An admin may need to run: CREATE EXTENSION vector;", err)
 		}
 	}
-	// The embedding column dimension is the only interpolated value here;
-	// it is a validated positive int. The table name is validated + quoted.
 	//gofastr:allow(GOFASTR1415) a chunk table is an embedding index derived from documents the host stores and exports itself, and a restore re-embeds them; NewPgVector registers erasure by Document.Owner
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		id           TEXT PRIMARY KEY NOT NULL,
@@ -189,32 +125,19 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 		owner        TEXT NOT NULL DEFAULT ''
 	)`, s.quotedTable, s.dim)
 	if _, err := s.db.ExecContext(ctx, createTable); err != nil {
-		// 42704 = undefined_object: the "vector" type does not exist,
-		// meaning the extension is not installed in this database.
 		if pqCode(err) == "42704" {
 			return errors.New("semantic: pgvector extension is not installed in this database: an admin must run: CREATE EXTENSION vector;")
 		}
 		return fmt.Errorf("semantic: create pgvector table: %w", err)
 	}
-	// A table an earlier release created has no owner column.
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, s.quotedTable)); err != nil {
 		return fmt.Errorf("semantic: add owner column: %w", err)
 	}
-	// B-tree index on doc_id so RemoveDoc and ChunkIDsForDoc are index
-	// scans, not full table scans. No ANN index by default: brute-force
-	// cosine is correct and matches FlatStore's semantics, and ivfflat
-	// needs data to train while hnsw may be absent on old pgvector. An
-	// operator can add `CREATE INDEX ... USING hnsw (embedding
-	// vector_cosine_ops)` for scale without changing this code.
 	docIdx := "CREATE INDEX IF NOT EXISTS " + s.quotedDocIdx + " ON " + s.quotedTable + " (doc_id)"
 	if _, err := s.db.ExecContext(ctx, docIdx); err != nil {
 		return fmt.Errorf("semantic: create doc_id index: %w", err)
 	}
-	// GIN index over the exact tsvector expression the keyword search
-	// filters on, so hybrid search's keyword leg is an index scan, not a
-	// full table scan that recomputes to_tsvector for every row on every
-	// query.
 	kwIdx := "CREATE INDEX IF NOT EXISTS " + s.quotedKwIdx + " ON " + s.quotedTable +
 		" USING GIN (to_tsvector('simple', text))"
 	if _, err := s.db.ExecContext(ctx, kwIdx); err != nil {
@@ -223,9 +146,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	return s.ensureModelTable(ctx)
 }
 
-// Add inserts (or replaces by id) chunks. Vectors are L2-normalized in place
-// so cosine similarity reduces to a dot product, mirroring [FlatStore.Add].
-// A vector whose length differs from the configured dimension is rejected.
+// Add upserts chunks in one transaction, normalizing their vectors.
 func (s *PgVectorStore) Add(ctx context.Context, chunks []Chunk) error {
 	if len(chunks) == 0 {
 		return nil
@@ -234,8 +155,6 @@ func (s *PgVectorStore) Add(ctx context.Context, chunks []Chunk) error {
 	if err != nil {
 		return err
 	}
-	// The batch is one transaction, so a chunk that fails leaves none of
-	// the batch stored, as FlatStore.Add does.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("semantic: begin add: %w", err)
@@ -250,8 +169,6 @@ func (s *PgVectorStore) Add(ctx context.Context, chunks []Chunk) error {
 	return nil
 }
 
-// prepareChunks checks each chunk's dimension, normalizes its vector in
-// place and marshals its metadata, before any statement runs.
 func (s *PgVectorStore) prepareChunks(chunks []Chunk) ([][]byte, error) {
 	for i := range chunks {
 		if len(chunks[i].Vec) != s.dim {
@@ -272,13 +189,7 @@ func (s *PgVectorStore) prepareChunks(chunks []Chunk) ([][]byte, error) {
 	return metas, nil
 }
 
-// insertChunks upserts chunks inside tx.
 func (s *PgVectorStore) insertChunks(ctx context.Context, tx *sql.Tx, chunks []Chunk, metas [][]byte) error {
-	// UPSERT by id so a direct caller (or a re-EnsureSchema) cannot produce
-	// duplicate-primary-key errors. The index layer replaces by document
-	// through replaceDocs first, so this is defense in depth. The target is
-	// aliased so a table named excluded does not collide with the EXCLUDED
-	// pseudo-row.
 	stmt := fmt.Sprintf(`INSERT INTO %s AS t
 		(id, doc_id, source, kind, text, offset_start, offset_end, meta, embedding, owner)
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector, $10)
@@ -305,23 +216,12 @@ func (s *PgVectorStore) insertChunks(ctx context.Context, tx *sql.Tx, chunks []C
 	return nil
 }
 
-// RemoveDoc deletes every chunk belonging to docID, under the same
-// per-document lock replaceDocs takes.
+// RemoveDoc deletes every chunk of docID, under the per-document lock
+// replaceDocs takes.
 func (s *PgVectorStore) RemoveDoc(ctx context.Context, docID string) error {
 	return s.replaceDocs(ctx, "", []string{docID}, nil)
 }
 
-// replaceDocs deletes every chunk of docIDs and inserts chunks in one
-// transaction, so a failed insert (metadata JSON cannot carry, a byte
-// Postgres refuses) keeps the old version instead of losing both.
-//
-// The transaction first takes a transaction-scoped advisory lock per
-// document. Replicas sharing the table each hold only their own process
-// mutex, and under READ COMMITTED a DELETE cannot see another
-// transaction's uncommitted inserts: without the lock two replaces of one
-// document could run delete, delete, insert, insert and keep chunks of
-// both versions. Keys are taken in ascending order so two batches naming
-// the same documents cannot deadlock each other.
 func (s *PgVectorStore) replaceDocs(ctx context.Context, model string, docIDs []string, chunks []Chunk) error {
 	if len(docIDs) == 0 && len(chunks) == 0 {
 		return nil
@@ -369,19 +269,9 @@ func (s *PgVectorStore) replaceDocs(ctx context.Context, model string, docIDs []
 	return nil
 }
 
-// docLockKeys returns the advisory-lock key of each distinct document,
-// sorted ascending. A key hashes the table's OID and the document ID,
-// each length-prefixed so no pair of names can spell another pair. Two
-// documents that collide share a lock, which only serializes them.
-//
-// The OID, not the configured spelling: embed_chunks and
-// public.embed_chunks name one table, and replicas configured with
-// either must take one lock. It is resolved in the replace's own
-// transaction on every call, since a table dropped and created again
-// gets a new OID.
 func (s *PgVectorStore) docLockKeys(ctx context.Context, tx *sql.Tx, docIDs []string) ([]int64, error) {
 	if len(docIDs) == 0 {
-		return nil, nil // nothing to lock; skips the lookup's round trip
+		return nil, nil
 	}
 	var oid string
 	if err := tx.QueryRowContext(ctx, `SELECT $1::regclass::oid::text`, s.quotedTable).Scan(&oid); err != nil {
@@ -402,12 +292,8 @@ func (s *PgVectorStore) docLockKeys(ctx context.Context, tx *sql.Tx, docIDs []st
 	return slices.Compact(keys), nil
 }
 
-// Candidates returns up to top chunks by cosine similarity to qv, applying
-// filter to the candidate set first. The query vector is normalized so cosine
-// == dot product for already-normalized stored vectors. Ranking is computed
-// server-side with <=> (cosine distance); ties break by chunk id ascending,
-// matching [FlatStore.Candidates]. Returned hits carry Chunk.Vec populated
-// (MMR needs it; [Index.Query] strips it on the way out).
+// Candidates returns up to top chunks by cosine similarity to qv inside
+// filter.
 func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Filter, top int) ([]Hit, error) {
 	if len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
@@ -417,7 +303,7 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	copy(q, qv)
 	normalize(q)
 
-	args := []any{encodeVector(q)} // $1 = query vector
+	args := []any{encodeVector(q)}
 	var where strings.Builder
 	where.WriteString("TRUE")
 	args, err := appendPgFilter(&where, args, filter)
@@ -427,12 +313,6 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	args = append(args, top)
 	limitIdx := len(args)
 
-	// $1::vector is referenced twice (distance projection + ORDER BY);
-	// PostgreSQL permits reusing a positional parameter within a statement.
-	// A zero vector's distance is NaN, which Postgres sorts after every
-	// number: ranked raw, it fell behind negative matches and a LIMIT cut
-	// it. The ORDER BY ranks it at distance 1 (score 0), as the scan below
-	// scores it.
 	stmt := fmt.Sprintf(`SELECT %s,
 		embedding <=> $1::vector AS distance
 	FROM %s
@@ -452,9 +332,6 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 		if err != nil {
 			return nil, err
 		}
-		// A zero vector (text with no tokens) has no direction: pgvector's
-		// cosine distance to it is NaN. Score it 0, as FlatStore's dot over
-		// a normalized query does; a NaN score fails JSON encoding.
 		if math.IsNaN(distance) {
 			distance = 1
 		}
@@ -466,11 +343,8 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	return hits, nil
 }
 
-// Stats returns a snapshot of store state. Docs is the distinct doc_id count;
-// Chunks is the row count. Dim/Model come from config. The counts are read
-// with a background context + short timeout because the [Store] interface
-// gives Stats no ctx, a failed/missing table yields zero counts rather than
-// an error, matching FlatStore's "never error from Stats" behaviour.
+// Stats returns the distinct document and row counts and the configured
+// dimension and model.
 func (s *PgVectorStore) Stats() Stats {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
 	defer cancel()
@@ -481,12 +355,7 @@ func (s *PgVectorStore) Stats() Stats {
 	return Stats{Docs: docs, Chunks: chunks, Dim: s.dim, Model: s.model}
 }
 
-// ChunkIDsForDoc returns the IDs of every chunk belonging to docID. Part of
-// the [chunkLister] capability; used to purge a doc's keyword entries on
-// remove. A database failure is returned, never folded into an empty
-// list: this list drives RemoveDoc's keyword purge, and a short list
-// read as complete would orphan keyword entries pointing at a doc that
-// is gone.
+// ChunkIDsForDoc returns the IDs of every chunk of docID, or an error.
 func (s *PgVectorStore) ChunkIDsForDoc(docID string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
 	defer cancel()
@@ -506,16 +375,13 @@ func (s *PgVectorStore) ChunkIDsForDoc(docID string) ([]string, error) {
 		}
 		ids = append(ids, id)
 	}
-	// A failure part-way through Next stops the loop with no error of its
-	// own; hand it back instead of a partial list.
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("semantic: list chunks for doc %q: %w", docID, err)
 	}
 	return ids, nil
 }
 
-// ChunkByID returns the chunk with the given ID. Part of chunkLister; used to
-// hydrate keyword-only hits into full Hits.
+// ChunkByID returns the chunk with the given ID.
 func (s *PgVectorStore) ChunkByID(id string) (Chunk, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
 	defer cancel()
@@ -526,11 +392,6 @@ func (s *PgVectorStore) ChunkByID(id string) (Chunk, bool) {
 	return c, true
 }
 
-// chunksByIDMatching returns the chunks among ids that pass filter,
-// judged by the SQL predicate Candidates applies, in one query. The
-// hybrid keyword leg hydrates through it: rechecking decoded metadata in
-// Go would compare JSON numbers as float64, where 2^53+1 equals 2^53. A
-// failed query matches nothing, as a missing chunk does.
 func (s *PgVectorStore) chunksByIDMatching(ctx context.Context, ids []string, filter Filter) map[string]Chunk {
 	ctx, cancel := context.WithTimeout(ctx, statsTimeout)
 	defer cancel()
@@ -559,8 +420,6 @@ func (s *PgVectorStore) chunksByIDMatching(ctx context.Context, ids []string, fi
 	return out
 }
 
-// appendPgFilter adds filter's predicates to where and their parameters
-// to args, numbered after the ones already there.
 func appendPgFilter(where *strings.Builder, args []any, filter Filter) ([]any, error) {
 	if filter.Source != "" {
 		args = append(args, filter.Source)
@@ -570,10 +429,6 @@ func appendPgFilter(where *strings.Builder, args []any, filter Filter) ([]any, e
 		args = append(args, filter.Kind)
 		fmt.Fprintf(where, " AND kind = $%d", len(args))
 	}
-	// MetaMatch is per-key equality, as FlatStore applies it. JSONB
-	// containment (meta @> filter) is not: {"tenants": []} is contained in
-	// every array. The key and value are both bound; jsonb = compares
-	// numbers by value, so 5 and 5.0 are equal here too.
 	for _, k := range slices.Sorted(maps.Keys(filter.MetaMatch)) {
 		b, err := json.Marshal(filter.MetaMatch[k])
 		if err != nil {
@@ -585,8 +440,7 @@ func appendPgFilter(where *strings.Builder, args []any, filter Filter) ([]any, e
 	return args, nil
 }
 
-// AllChunks returns every stored chunk ordered by id. Part of chunkLister;
-// used to rebuild the keyword index after a snapshot load.
+// AllChunks returns every stored chunk ordered by id.
 func (s *PgVectorStore) AllChunks() []Chunk {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
 	defer cancel()
@@ -597,9 +451,6 @@ func (s *PgVectorStore) AllChunks() []Chunk {
 	return out
 }
 
-// allChunks is AllChunks with its failure kept. Open's keyword rebuild
-// reads through it with no deadline: a large table outlasts the stats
-// timeout, and an empty answer would pass for an empty store.
 func (s *PgVectorStore) allChunks(ctx context.Context) ([]Chunk, error) {
 	rows, err := s.db.QueryContext(ctx, s.selectAll("ORDER BY id"))
 	if err != nil {
@@ -675,8 +526,6 @@ func scanChunkRow(rows *sql.Rows, distance *float64) (Chunk, error) {
 	return c, nil
 }
 
-// marshalMeta serializes a chunk's metadata to JSONB bytes, emitting "{}" for
-// empty so a MetaMatch key lookup (meta -> key) behaves predictably.
 func marshalMeta(m map[string]any) ([]byte, error) {
 	if len(m) == 0 {
 		return []byte("{}"), nil
@@ -684,7 +533,6 @@ func marshalMeta(m map[string]any) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// unmarshalMeta decodes JSONB bytes into a metadata map; NULL/empty yields nil.
 func unmarshalMeta(b []byte, m *map[string]any) error {
 	*m = nil
 	if len(b) == 0 {
@@ -698,7 +546,6 @@ func unmarshalMeta(b []byte, m *map[string]any) error {
 	return nil
 }
 
-// pqCode extracts the SQLSTATE code from a lib/pq error, or "" otherwise.
 func pqCode(err error) string {
 	if pe, ok := errors.AsType[*pq.Error](err); ok {
 		return string(pe.Code)
@@ -706,9 +553,6 @@ func pqCode(err error) string {
 	return ""
 }
 
-// encodeVector renders a vector in pgvector's text input format: [x,y,z].
-// 'g' with 32-bit width emits the shortest text that round-trips to the same
-// float32, keeping the wire payload compact without precision loss.
 func encodeVector(v []float32) string {
 	var b strings.Builder
 	b.Grow(len(v)*8 + 2)
@@ -723,7 +567,6 @@ func encodeVector(v []float32) string {
 	return b.String()
 }
 
-// parseVector decodes pgvector's text output format ([x,y,z]) into []float32.
 func parseVector(s string) ([]float32, error) {
 	s = strings.TrimSpace(s)
 	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
@@ -745,10 +588,6 @@ func parseVector(s string) ([]float32, error) {
 	return out, nil
 }
 
-// Compile-time assertions that PgVectorStore satisfies the [Store] interface
-// and the [chunkLister] capability (so it composes with hybrid retrieval).
-// It intentionally does NOT satisfy [snapshotter]: pairing it with
-// Options.Path must fail closed at [Open].
 var (
 	_ Store       = (*PgVectorStore)(nil)
 	_ chunkLister = (*PgVectorStore)(nil)

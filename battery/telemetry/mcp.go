@@ -16,7 +16,6 @@ import (
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
-// Most a tool returns in one call, whatever limit asks for.
 const (
 	mcpMaxRequests = 200
 	mcpMaxLogs     = 500
@@ -29,16 +28,8 @@ type mcpTool struct {
 	handler           func(ctx context.Context, params map[string]any) (any, error)
 }
 
-// errTenantCaller refuses a tenant-scoped caller of the default gate.
 var errTenantCaller = errors.New("telemetry: these tools read every tenant's files and are for a caller with no tenant")
 
-// registerMCPTools adds telemetry_stats, telemetry_issues, telemetry_requests,
-// telemetry_request and telemetry_logs to the app's MCP server when Config.EnableMCP is set,
-// or under `gofastr dev`. Each hands out request paths, client
-// addresses and log lines, so each runs behind Config.MCPGate, the
-// admin role by default. Under the dev loop there is no auth to
-// satisfy: the tools are ungated and marked dev-implied, so the
-// framework withdraws them when the listener is not loopback.
 func (p *Plugin) registerMCPTools(app *framework.App) error {
 	devImplied := !p.cfg.EnableMCP && dev.DevMCPEnabled()
 	if !p.cfg.EnableMCP && !devImplied {
@@ -46,9 +37,6 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 	}
 	gate := p.cfg.MCPGate
 	if gate == nil {
-		// An admin with no tenant: the files hold every tenant's lines
-		// together, so an admin scoped to one tenant would read them
-		// all. An app with another rule sets MCPGate.
 		admin := framework.MCPRequireRole("admin")
 		gate = func(ctx context.Context) error {
 			if tenant.GetTenantID(ctx) != "" {
@@ -128,8 +116,6 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 	return nil
 }
 
-// errBadParam is what a tool returns for an argument of the wrong type
-// or shape: a filter that cannot be read is refused, never ignored.
 var errBadParam = errors.New("telemetry: bad argument")
 
 func strArg(params map[string]any, name string) (string, error) {
@@ -168,7 +154,6 @@ func timeArg(params map[string]any, name string) (time.Time, error) {
 	return t, nil
 }
 
-// limitArg reads limit, a whole number of at least 1, capped at most.
 func limitArg(params map[string]any, def, most int) (int, error) {
 	v, ok := params["limit"]
 	if !ok || v == nil {
@@ -276,7 +261,6 @@ func (p *Plugin) toolIssues(_ context.Context, params map[string]any) (any, erro
 	return map[string]any{"issues": out, "count": len(out), "failures_not_listed": leftOut, "alerts_firing": firing}, nil
 }
 
-// statsSteps is the most points telemetry_stats returns as a series.
 const statsSteps = 60
 
 func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error) {
@@ -309,7 +293,6 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 	if !to.After(from) || to.Sub(from) > 366*24*time.Hour {
 		return nil, fmt.Errorf("%w: since_ts must be before until_ts, and within a year of it", errBadParam)
 	}
-	// Whole minutes, and few enough steps to read.
 	step := max((to.Sub(from)/statsSteps + time.Minute - 1).Truncate(time.Minute), time.Minute)
 	got, err := store.Stats(itel.StatsQuery{From: from, To: to, Step: step, Route: route})
 	if err != nil {
@@ -325,8 +308,6 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 		m["route"] = r.Route
 		routes = append(routes, m)
 	}
-	// Background work by name: its "requests" are runs, and "slow" is
-	// always zero, since nobody waits on it.
 	jobs := make([]map[string]any, 0, min(len(got.Jobs), limit))
 	for _, j := range got.Jobs[:min(len(got.Jobs), limit)] {
 		m := count(j.StatsCount)
@@ -340,8 +321,6 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 	for i, pt := range got.Points {
 		series[i] = map[string]any{"time": pt.Time.UTC().Format(time.RFC3339), "requests": pt.N, "failed": pt.Failed, "slow": pt.Slow, "p95_us": pt.P95.Microseconds()}
 	}
-	// The machine as last read, and the most its CPU and memory reached
-	// in the window: nil where the platform does not say.
 	var machine map[string]any
 	if host, err := store.Host(from, to, step); err == nil && !host.Latest.Time.IsZero() {
 		l := host.Latest
@@ -427,8 +406,6 @@ func (p *Plugin) toolLogs(_ context.Context, params map[string]any) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	// A rare word means reading every kept line; an agent gets what ten
-	// seconds found and where the search stopped.
 	lines, stopped, err := store.LogsWithin(q, limit, mcpLogBudget)
 	if err != nil {
 		return nil, errors.New("telemetry: the log files could not be read")
@@ -441,8 +418,6 @@ func (p *Plugin) toolLogs(_ context.Context, params map[string]any) (any, error)
 	return out, nil
 }
 
-// rawLines hands log lines back as the JSON objects they are. A line
-// that is not valid JSON goes as a string, so the answer always encodes.
 func rawLines(lines []itel.LogEntry) []any {
 	out := make([]any, len(lines))
 	for i, l := range lines {

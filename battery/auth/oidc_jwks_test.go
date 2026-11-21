@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -76,5 +77,39 @@ func TestJWKSCache_SameKidRateLimited(t *testing.T) {
 	}
 	if got := hits.Load(); got != 2 {
 		t.Fatalf("jwks hits = %d, want 2 (warmup + one throttled refetch)", got)
+	}
+}
+
+func TestJWKSForcedKidsBounded(t *testing.T) {
+	keyA := mustRSAKey(t, 2048)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]any{rsaJWKMap("kid-a", &keyA.PublicKey)},
+		})
+	}))
+	defer srv.Close()
+	c := &jwksCache{httpClient: srv.Client(), ttl: time.Hour}
+	ctx := context.Background()
+	for i := range 2*maxForcedKids + 1 {
+		_, _ = c.getKey(ctx, srv.URL, fmt.Sprintf("bogus-%d", i))
+	}
+	if n := len(c.forcedByKid); n > maxForcedKids {
+		t.Fatalf("forced-refetch map holds %d kids, want at most %d", n, maxForcedKids)
+	}
+}
+
+func TestOIDCClaimsCacheBounded(t *testing.T) {
+	p, err := NewOIDCProvider(OIDCConfig{Issuer: "https://idp.example", ClientID: "c", ClientSecret: "s", RedirectURL: "https://app.example/cb"}) // not-a-secret: test fixture
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 1025 {
+		p.claims.put(fmt.Sprintf("tok-%d", i), map[string]any{"sub": "u"})
+	}
+	if n := len(p.claims.m); n != 1024 {
+		t.Errorf("claims cache holds %d entries, want 1024", n)
+	}
+	if _, ok := p.claims.get("tok-0"); ok {
+		t.Error("the oldest entry survived past the cap")
 	}
 }

@@ -7,8 +7,6 @@ code:
   - framework/shutdown_streams.go
   - framework/role.go
   - framework/setup.go
-  - battery/setup/setup.go
-  - battery/setup/handler.go
   - framework/seed.go
   - framework/localrun_app.go
   - framework/export.go
@@ -26,6 +24,9 @@ invariants:
     rule: Headless and interactive setup invoke completion and step callbacks without holding Runner.mu.
     enforced_by:
       - test: battery/setup.TestSetupCallbacksReenterRunner
+    applies:
+      - battery/setup/setup.go
+      - battery/setup/handler.go
   - id: run-once
     rule: Run refuses a nil context or Host before boot, an App runs once (a later Run, Start or Serve returns ErrAlreadyStarted), and a run that begins after Shutdown returns nil and starts nothing.
     enforced_by:

@@ -14,18 +14,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// dataDirEnv, when set, replaces os.UserConfigDir() as the base the
-// state directories live under. Tests point it at a temp dir so a
-// suite never touches the developer's real Application Support. The
-// value must be absolute.
 const dataDirEnv = "GOFASTR_SERVICE_DATA_DIR"
 
-// devSuffix names the foreground dev run's state directory: <ID>.dev,
-// a sibling of the installed one, so a dev run never shares a
-// database, secret or control socket with an installed copy.
 const devSuffix = ".dev"
 
-// layout is the on-disk shape of one mode's state directory.
 type layout struct {
 	dir string
 }
@@ -36,17 +28,11 @@ func (l layout) logDir() string     { return filepath.Join(l.dir, "logs") }
 func (l layout) logPath() string    { return filepath.Join(l.logDir(), "service.log") }
 func (l layout) loginDir() string   { return filepath.Join(l.dir, "login") }
 
-// baseDir is the directory the per-app state directories live under:
-// os.UserConfigDir (Application Support, %AppData%, $XDG_CONFIG_HOME),
-// the same base battery/desktop uses, or GOFASTR_SERVICE_DATA_DIR.
 func baseDir() (string, error) {
 	if v := os.Getenv(dataDirEnv); v != "" {
 		if !filepath.IsAbs(v) {
 			return "", fmt.Errorf("service: %s must be absolute, got %q", dataDirEnv, v)
 		}
-		// The base is written into the service definition (a systemd
-		// ExecStart word, a plist string, a task argument); a line break
-		// there could add a directive the user never wrote.
 		if strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 			return "", fmt.Errorf("service: %s must not contain control characters, got %q", dataDirEnv, v)
 		}
@@ -59,11 +45,6 @@ func baseDir() (string, error) {
 	return base, nil
 }
 
-// base is the state base this process uses: the --base-dir the
-// service definition passes the daemon, else baseDir. install writes
-// the CLI's resolved base into the definition, so a daemon started by
-// launchd, systemd or Task Scheduler, none of which see the shell's
-// environment, uses the same directory as the CLI that talks to it.
 func (b *Battery) base() (string, error) {
 	if b.baseOverride != "" {
 		return b.baseOverride, nil
@@ -71,11 +52,6 @@ func (b *Battery) base() (string, error) {
 	return baseDir()
 }
 
-// layoutFor resolves (without creating) the state directory of the
-// installed daemon (dev false) or the foreground dev run (dev true).
-// A dev run inside an isolated worktree gets its own directory,
-// <ID>.dev-<isolation id>, so two worktrees' dev runs of one app keep
-// separate databases and control sockets, as their ports already are.
 func (b *Battery) layoutFor(dev bool) (layout, error) {
 	base, err := b.base()
 	if err != nil {
@@ -91,11 +67,8 @@ func (b *Battery) layoutFor(dev bool) (layout, error) {
 	return layout{dir: filepath.Join(base, name)}, nil
 }
 
-// devIsolationID is isolationID, a variable so tests pin it.
 var devIsolationID = isolationID
 
-// isolationID is the worktree isolation id when isolation is active
-// for the working directory, else "", as a path segment.
 func isolationID() string {
 	rt, err := isolation.Resolve(".")
 	if err != nil || !rt.Active() {
@@ -104,9 +77,6 @@ func isolationID() string {
 	return pathSegment(rt.ID())
 }
 
-// pathSegment returns id when it is a short [A-Za-z0-9_-] word and a
-// 10-hex-digit hash of it otherwise: GOFASTR_ISOLATION_ID is free text,
-// and it becomes part of a directory name.
 func pathSegment(id string) string {
 	plain := id != "" && len(id) <= 32
 	for _, c := range id {
@@ -121,9 +91,6 @@ func pathSegment(id string) string {
 	return hex.EncodeToString(sum[:])[:10]
 }
 
-// ensure creates the state directory owner-only: 0700 on Unix (and
-// tightened to 0700 if it already existed wider), an owner-only DACL
-// on Windows, where mode bits mean nothing.
 func (l layout) ensure() error {
 	if err := ensurePrivateDir(l.dir); err != nil {
 		return err
@@ -131,8 +98,6 @@ func (l layout) ensure() error {
 	return nil
 }
 
-// ensurePrivateDir creates dir and every missing parent 0700 and
-// tightens dir itself.
 func ensurePrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("service: create %s: %w", dir, err)
@@ -147,9 +112,6 @@ func ensurePrivateDir(dir string) error {
 	return nil
 }
 
-// binDir is where install copies the executable. Windows keeps
-// programs out of the roaming profile, under %LOCALAPPDATA%\Programs;
-// elsewhere it is bin/ inside the installed state directory.
 func (b *Battery) binDir() (string, error) {
 	if currentOS == "windows" {
 		local := os.Getenv("LOCALAPPDATA")
@@ -165,7 +127,6 @@ func (b *Battery) binDir() (string, error) {
 	return filepath.Join(l.dir, "bin"), nil
 }
 
-// exeName is the installed executable's file name.
 func (b *Battery) exeName() string {
 	if currentOS == "windows" {
 		return b.cfg.Name + ".exe"
@@ -173,7 +134,6 @@ func (b *Battery) exeName() string {
 	return b.cfg.Name
 }
 
-// installedExe is the absolute path of the installed executable.
 func (b *Battery) installedExe() (string, error) {
 	dir, err := b.binDir()
 	if err != nil {
@@ -182,10 +142,6 @@ func (b *Battery) installedExe() (string, error) {
 	return filepath.Join(dir, b.exeName()), nil
 }
 
-// loadOrMintSecret returns the stored secret, minting one (32 bytes of
-// crypto/rand, base64url) and persisting it 0600 on first run. The
-// O_EXCL create and re-read make two processes racing the first boot
-// converge on one secret.
 func loadOrMintSecret(path string) (string, error) {
 	if b, err := os.ReadFile(path); err == nil {
 		if len(b) < 32 {
@@ -225,7 +181,6 @@ func loadOrMintSecret(path string) (string, error) {
 	return secret, nil
 }
 
-// rotateSecret replaces the stored secret with a fresh one.
 func rotateSecret(path string) error {
 	secret, err := randomToken()
 	if err != nil {
@@ -237,9 +192,6 @@ func rotateSecret(path string) error {
 	return fileperm.Restrict(path, false)
 }
 
-// randomToken returns 32 bytes from crypto/rand, base64url-encoded.
-// Every credential this package mints comes through here; a failing
-// CSPRNG is an error, never a fallback.
 func randomToken() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {

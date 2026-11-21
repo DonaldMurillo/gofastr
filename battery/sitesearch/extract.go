@@ -10,8 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// Page is one searchable document: a rendered route, or an entry a
-// Source adds that no route renders.
+// Page is one searchable document: a rendered route, or an entry a Source
+// adds that no route renders.
 type Page struct {
 	// URL is the root-relative path the result links to ("/docs/forms").
 	URL string
@@ -20,16 +20,14 @@ type Page struct {
 	// Group labels the result's kind ("Docs", "Components"); see
 	// Config.Groups.
 	Group string
-	// Sections are the page's parts in document order. The first is the
-	// opening, before any heading, and has no ID; each later one starts
-	// at an h2 or h3 and links to its ID when the heading has one.
+	// Sections are the page's parts in document order.
 	Sections []Section
 }
 
 // Section is one part of a Page.
 type Section struct {
-	// ID is the heading's fragment id, without the #; empty for the
-	// opening and for a heading without one.
+	// ID is the heading's fragment id, without the #; empty for the opening
+	// and for a heading without one.
 	ID string
 	// Heading is the heading's text; empty for the opening.
 	Heading string
@@ -37,10 +35,6 @@ type Section struct {
 	Text string
 }
 
-// skipTags are elements whose text never reaches the index: the page's
-// chrome (navigation, sidebars, footers; the banner <header> is
-// skipped when there is no <main> to start from), code that is not
-// prose, and controls and overlays that are not page content.
 var skipTags = map[atom.Atom]bool{
 	atom.Nav: true, atom.Aside: true, atom.Footer: true,
 	atom.Script: true, atom.Style: true, atom.Noscript: true, atom.Template: true,
@@ -48,7 +42,6 @@ var skipTags = map[atom.Atom]bool{
 	atom.Textarea: true, atom.Input: true, atom.Object: true, atom.Iframe: true,
 }
 
-// blockTags separate words: their text never runs into a neighbour's.
 var blockTags = map[atom.Atom]bool{
 	atom.P: true, atom.Div: true, atom.Li: true, atom.Ul: true, atom.Ol: true,
 	atom.Dl: true, atom.Dt: true, atom.Dd: true, atom.Pre: true, atom.Blockquote: true,
@@ -61,25 +54,15 @@ var blockTags = map[atom.Atom]bool{
 	atom.Menu: true, atom.Thead: true, atom.Tbody: true, atom.Tfoot: true,
 }
 
-// IgnoreAttr marks an element whose text stays out of the index, the
-// way <nav> and <aside> do: a live demo, a changelog widget, sample
-// output. Set it on any element.
+// IgnoreAttr marks an element whose text stays out of the index, the way
+// <nav> and <aside> do: a live demo, a changelog widget, sample output.
 const IgnoreAttr = "data-search-ignore"
 
-// Extract reads a rendered HTML page into a Page for url. It indexes
-// the page's <main> (the body when there is none), skipping chrome and
-// hidden content, and reports false for a page that opts out with
-// <meta name="robots" content="noindex">.
+// Extract reads a rendered HTML page into a Page for url.
 func Extract(url string, r io.Reader) (Page, bool, error) {
 	return extractPage(url, r, func(*html.Node) bool { return true })
 }
 
-// extractHosted is Extract for a page uihost rendered, where a robots
-// tag counts only when it is the page's own: a ScreenRobots or
-// SEO.Robots tag (marked data-cui-page-meta) or one in the body. An
-// unmarked <head> tag is sitewide (WithRobotsMeta, WithHeadHTML): it
-// steers crawlers off a whole deploy, and honouring it here empties the
-// site's own search on every staging deploy.
 func extractHosted(url string, r io.Reader) (Page, bool, error) {
 	return extractPage(url, r, pageOwnedMeta)
 }
@@ -92,9 +75,6 @@ func extractPage(url string, r io.Reader, counts func(*html.Node) bool) (Page, b
 	if noindex(doc, counts) {
 		return Page{}, false, nil
 	}
-	// A hidden or ignored <main>, or one a hidden or ignored ancestor
-	// holds, is not the page's: the walk starts at the root, so it would
-	// never see that ancestor, and taking it drops the visible <main>.
 	root := find(doc, func(n *html.Node) bool {
 		return (n.DataAtom == atom.Main || attr(n, "role") == "main") && !outOfIndex(n)
 	})
@@ -104,8 +84,6 @@ func extractPage(url string, r io.Reader, counts func(*html.Node) bool) (Page, b
 	if root == nil {
 		return Page{}, false, nil
 	}
-	// Inside <main> a <header> is the page's own (a PageHeader with its
-	// h1); only the body's is the site banner.
 	x := &extractor{page: Page{URL: url}, skipHeader: root.DataAtom == atom.Body}
 	x.page.Sections = []Section{{}}
 	x.walk(root)
@@ -157,14 +135,12 @@ func (x *extractor) walk(n *html.Node) {
 	}
 }
 
-// flush closes the open section's body text.
 func (x *extractor) flush() {
 	last := &x.page.Sections[len(x.page.Sections)-1]
 	last.Text = collapse(last.Text + " " + x.body.String())
 	x.body.Reset()
 }
 
-// skipped reports whether an element's subtree stays out of the index.
 func skipped(n *html.Node) bool {
 	if skipTags[n.DataAtom] {
 		return true
@@ -186,8 +162,6 @@ func skipped(n *html.Node) bool {
 	return false
 }
 
-// outOfIndex reports an element that it or an ancestor keeps out of the
-// index.
 func outOfIndex(n *html.Node) bool {
 	for p := n; p != nil; p = p.Parent {
 		if p.Type == html.ElementNode && skipped(p) {
@@ -197,8 +171,6 @@ func outOfIndex(n *html.Node) bool {
 	return false
 }
 
-// visibleText is n's text without its skipped descendants (a heading's
-// aria-hidden permalink glyph).
 func visibleText(n *html.Node) string {
 	var b strings.Builder
 	var walk func(*html.Node)
@@ -235,8 +207,6 @@ func noindex(doc *html.Node, counts func(*html.Node) bool) bool {
 	}) != nil
 }
 
-// robotsNoindex reports a robots content list holding noindex, or none
-// (noindex plus nofollow). Each comma-separated directive is read whole.
 func robotsNoindex(content string) bool {
 	for d := range strings.SplitSeq(content, ",") {
 		switch asciicase.Lower(strings.TrimSpace(d)) {
@@ -247,8 +217,6 @@ func robotsNoindex(content string) bool {
 	return false
 }
 
-// inIgnored reports a node inside an IgnoreAttr subtree: content the page
-// keeps out of the index (sample markup, a demo) does not steer it either.
 func inIgnored(n *html.Node) bool {
 	for p := n.Parent; p != nil; p = p.Parent {
 		for _, a := range p.Attr {
@@ -260,11 +228,8 @@ func inIgnored(n *html.Node) bool {
 	return false
 }
 
-// pageMetaAttr is the marker uihost sets on every per-screen head tag.
 const pageMetaAttr = "data-cui-page-meta"
 
-// pageOwnedMeta reports a tag the page set itself: marked as a
-// per-screen head tag, or outside <head>.
 func pageOwnedMeta(n *html.Node) bool {
 	for _, a := range n.Attr {
 		if a.Namespace == "" && a.Key == pageMetaAttr {

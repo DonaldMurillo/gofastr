@@ -1,14 +1,14 @@
 package auth
 
-// CSRF posture of the bodyless 2FA routes.
+// CSRF posture of the 2FA routes.
 //
 // /2fa/disable, /2fa/backup-codes and /2fa/enroll read no body, so a
 // cross-site page could auto-submit them with no Content-Type (a
 // CORS-simple request) while the victim's stepped-up session cookie rode
 // along: one hidden form turned the victim's second factor off, burned
 // their backup codes, or parked a pending secret on the account
-// (2026-10-27 A36). /2fa/verify and /2fa/challenge demand a JSON body,
-// which a cross-site page cannot send without a preflight.
+// (2026-10-27 A36). /2fa/challenge also takes a form post, so it refuses
+// a cross-site one too; /2fa/verify demands a JSON body.
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,7 +29,18 @@ func TestTwoFARoutesRejectCrossSite(t *testing.T) {
 	if err != nil || state == nil {
 		t.Fatalf("setup: GetTwoFA = %v, %v", state, err)
 	}
-	body, _ := json.Marshal(map[string]string{"code": GenerateTOTP(state.Secret, uint64(time.Now().Unix())/30)})
+	code := GenerateTOTP(state.Secret, uint64(time.Now().Unix())/30)
+	forged := httptest.NewRequest(http.MethodPost, "/auth/2fa/challenge", strings.NewReader("code="+code))
+	forged.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	forged.Header.Set("Origin", "https://evil.example")
+	forged.Header.Set("Sec-Fetch-Site", "cross-site")
+	forged.AddCookie(&http.Cookie{Name: "session_id", Value: session})
+	fw := httptest.NewRecorder()
+	r.ServeHTTP(fw, forged)
+	if fw.Code != http.StatusForbidden {
+		t.Fatalf("cross-site form POST /auth/2fa/challenge = %d, want 403", fw.Code)
+	}
+	body, _ := json.Marshal(map[string]string{"code": code})
 	req := httptest.NewRequest(http.MethodPost, "/auth/2fa/challenge", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: "session_id", Value: session})

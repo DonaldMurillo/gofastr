@@ -1,0 +1,34 @@
+primitive: admin.emails
+summary: The Emails page, which renders each EmailPreview with sample data, and the sandboxed frame route that serves its HTML body.
+code:
+  - battery/admin/emails.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: preview-names-are-checked
+    rule: Init refuses a preview whose Name is not a lowercase slug of at most 64 characters, is used twice, or has no Render.
+    enforced_by:
+      - test: battery/admin.TestEmailPreviewsConfigRefused
+  - id: frame-is-sandboxed
+    rule: The frame route serves the HTML body under emailFrameCSP, a sandbox with default-src 'none', and answers 404 for an unknown name or a mail with no HTML body.
+    enforced_by:
+      - test: battery/admin.TestEmailFrameIsSandboxed
+      - test: battery/admin.TestEmailFrameUnknownName404
+  - id: render-runs-unelevated
+    rule: Render runs on the caller's context with the admin's elevation removed.
+    enforced_by:
+      - test: battery/admin.TestEmailRenderRunsUnelevated
+  - id: render-failure-stays-generic
+    rule: A Render error or panic draws a generic notice, answers the frame 500, and logs the preview's name with the error's type, never its text.
+    enforced_by:
+      - test: battery/admin.TestEmailRenderErrorStaysGeneric
+      - test: battery/admin.TestEmailRenderFailureLogsTypeNotText
+decisions:
+  - id: frame-the-mail-in-a-sandbox
+    date: 2026-11-20
+    status: accepted
+    decision: The mail's HTML is served from its own route into an iframe under a sandboxed CSP that allows only inline styles and remote or data images and fonts.
+    rejected:
+      - option: Inline the mail's HTML into the admin page.
+        why: The mail is a document the admin did not draw, and inline it would run with the admin's origin.
+    upholds: [frame-is-sandboxed]

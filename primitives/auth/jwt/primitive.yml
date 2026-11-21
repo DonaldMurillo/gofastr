@@ -1,0 +1,64 @@
+primitive: auth.jwt
+summary: HS256 JWTs, RequireAuth and RequireRole, and the bearer-token parsing they share.
+code:
+  - battery/auth/jwt.go
+  - battery/auth/token.go
+  - battery/auth/middleware.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: signed-with-current-verified-with-any
+    rule: GenerateToken signs with Secret only, and ValidateToken accepts a token signed by Secret or any of PreviousSecrets.
+    enforced_by:
+      - test: battery/auth.TestJWTSignsOnlyWithCurrentSecret
+      - test: battery/auth.TestJWT_KeyRotationAcceptsPreviousSecret
+      - test: battery/auth.TestJWT_KeyRotationMultiplePreviousSecrets
+  - id: token-checks
+    rule: ValidateToken refuses a bad signature, an empty subject, an expired token and one issued more than two minutes in the future.
+    enforced_by:
+      - test: battery/auth.TestJWTInvalidSignature
+      - test: battery/auth.TestJWTRejectsEmptySubject
+      - test: battery/auth.TestJWTExpiredTokenRejected
+      - test: battery/auth.TestJWTRejectsFutureIssuedAt
+      - test: battery/auth.TestJWTGenerateAndValidate
+  - id: signatures-compared-in-constant-time
+    rule: A token's signature and its credential tag are compared in constant time, never with == or bytes.Equal.
+    judge: Does this change compare a JWT signature or credential tag with anything but hmac.Equal or subtle.ConstantTimeCompare?
+  - id: owner-from-the-fresh-row
+    rule: With a user store set, RequireAuth takes identity and roles from the owner's fresh row on every request, answers 401 for a missing owner, and ends an open stream when the token or owner lapses.
+    enforced_by:
+      - test: battery/auth.TestJWTFailsClosedAfterUserDelete
+      - test: battery/auth.TestEventStreamClosesOnRevocation
+  - id: token-bound-to-the-credential
+    rule: A store-backed token carries an HMAC of the user id and stored hash (under the signing or a rotation key), and resolves only while that hash, read from the same user's row, is unchanged; a token without the tag resolves nobody, and GenerateToken refuses a user the store lacks.
+    enforced_by:
+      - test: battery/auth.TestJWTDiesWithCredentialChange
+      - test: battery/auth.TestJWTWithoutCredentialTagRefused
+      - test: battery/auth.TestJWTCredentialLookupOtherUserRefused
+      - test: battery/auth.TestJWTCredentialTagSurvivesRotation
+      - test: battery/auth.TestGenerateTokenRefusesUnknownUser
+  - id: require-auth-wiring
+    rule: RequireAuth passes a request without a bearer token only when a verified embed grant or App.InProcessHandler put a user on it, and refuses a grant that resolved no user.
+    enforced_by:
+      - test: battery/auth.TestRequireAuthRefusesASubjectlessGrant
+      - test: battery/auth.TestRequireAuthAcceptsAVerifiedGrant
+      - test: battery/auth.TestInProcessRequireAuth
+  - id: role-gate
+    rule: RequireRole answers 401 with no user, 403 to an embed grant and to a caller the context Decider denies, and admits a scoped caller only for a role it also holds role:<name> scope for.
+    enforced_by:
+      - test: battery/auth.TestRequireRoleRefusesAnEmbedGrant
+      - test: battery/auth.TestRequireRoleHonorsDecider
+      - test: battery/auth.TestRoleGateTokenNeedsRoleScope
+  - id: bearer-scheme
+    rule: extractBearerToken reads only an Authorization header whose scheme is bearer, in any case.
+    enforced_by:
+      - test: battery/auth.TestExtractBearerTokenNeedsBearerScheme
+decisions:
+  - id: re-resolve-every-request
+    date: 2026-11-20
+    status: accepted
+    decision: A manager-built JWTAuth re-reads the token's owner and credential on every request.
+    rejected:
+      - option: Trust the claims until the token expires.
+        why: A deleted user, a role downgrade or a password reset kept working for the whole token lifetime.
+    upholds: [owner-from-the-fresh-row, token-bound-to-the-credential]

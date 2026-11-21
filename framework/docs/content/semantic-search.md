@@ -248,6 +248,10 @@ valid token every one of them is 401.
 | GET  | `/semantic/stats` | — | 200 |
 | DELETE | `/semantic/doc/{id}` | — | 204 |
 
+Every answer the handler writes carries `Cache-Control: no-store`: the
+routes above, their refusals, and the 404 and 405 of a path or method
+it does not serve.
+
 Mount the plugin onto a `framework.App`:
 
 ```go

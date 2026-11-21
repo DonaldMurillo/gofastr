@@ -47,5 +47,6 @@ it, is its registry entry.
 10. Triage every review thread before merging: `./scripts/pr-review-findings.sh <N> --gate`.
 11. Prove a guard: break it, watch its test fail, put it back.
 12. Watch every PR you open (`subscribe_pr_activity`); merge main in on a conflict, never force-push.
+13. Merge only after a reviewer has read the PR: a person, a review bot, or an adversarial review by agents that did not write it.
 
-Rules 10 to 12, and 7 to 9 at length, are in `docs/contributing.md`.
+Rules 10 to 13, and 7 to 9 at length, are in `docs/contributing.md`.

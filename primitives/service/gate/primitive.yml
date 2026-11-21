@@ -1,0 +1,57 @@
+primitive: service.gate
+summary: The loopback gate every request to the service passes, with Host pinning, single-use sign-in tokens, signed session cookies and the cross-site check.
+code:
+  - battery/service/gate.go
+  - battery/service/signin_page.go
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: host-is-pinned
+    rule: Before pin every request is refused, and after it only the bound loopback address, its localhost spelling and the extra allowed hosts pass.
+    enforced_by:
+      - test: battery/service.TestGateRefusesEverythingBeforePin
+      - test: battery/service.TestGateRefusesRebindingHost
+      - test: battery/service.TestOpenPrefixKeepsHostPin
+  - id: tokens-are-single-use-and-bounded
+    rule: A sign-in token works once, expires after loginTokenTTL, a wrong one burns nothing, and at most maxPendingTokens are outstanding.
+    enforced_by:
+      - test: battery/service.TestGateTokenIsSingleUse
+      - test: battery/service.TestGateTokenExpires
+      - test: battery/service.TestGateWrongTokenBurnsNothing
+      - test: battery/service.TestGateCapsPendingTokens
+  - id: login-get-needs-the-hatch
+    rule: The login door takes a token by GET only with InsecureTokenInURL, and reads a POST body through a bounded reader.
+    enforced_by:
+      - test: battery/service.TestGateLoginGETNeedsHatch
+      - test: battery/service.TestGateLoginBodyIsBounded
+  - id: sessions-are-signed-and-expire
+    rule: A session cookie is HttpOnly and SameSite=Strict, passes only with a valid HMAC and an unexpired time, and any valid cookie of the gate's name keeps the session.
+    enforced_by:
+      - test: battery/service.TestGateSessionCookieAttributes
+      - test: battery/service.TestGateRefusesForgedSessions
+      - test: battery/service.TestGateSessionExpires
+      - test: battery/service.TestGateStaleDuplicateCookieDoesNotLogOut
+  - id: no-secret-in-a-refusal-or-log
+    rule: No gate response, error string or log line carries a sign-in token or a session cookie value; only the success response's Set-Cookie holds a session value.
+    enforced_by:
+      - test: battery/service.TestGateRefusalsEchoNoSecret
+    judge: Does this change log a sign-in token or session cookie value, or put one into an error string or a response other than the login door's Set-Cookie?
+  - id: login-door-answers-a-file-page
+    rule: The login path is dispatched before the cross-site check, so the sign-in page's POST from file:// (Origin null) is redeemed, and success answers 200 with a page rather than a redirect, which would arrive at / without the SameSite=Strict cookie.
+    enforced_by:
+      - test: battery/service.TestGateLoginAcceptsFilePageAndAnswersWithAPage
+      - test: battery/service.TestSignInPageLandsSignedIn
+  - id: cross-site-writes-refused
+    rule: A cross-site unsafe request is refused, and on an open path a forged cross-site write is refused.
+    enforced_by:
+      - test: battery/service.TestGateRefusesCrossSiteUnsafeMethod
+      - test: battery/service.TestOpenPrefixKeepsCrossSiteRefusal
+decisions:
+  - id: signin-page-inline-script
+    date: 2026-11-20
+    status: accepted
+    decision: "The sign-in page open writes to disk auto-submits with one inline script, and signin_page.go carries check-csp:ignore-file, because the browser loads it from a file:// URL that no server or Content-Security-Policy covers; a browser that blocks scripts there still gets the Sign in button."
+    rejected:
+      - option: An external script beside the page.
+        why: open writes one file the browser loads once; a second file on disk is more to write and clean up for no CSP gain, since no policy applies to file:// pages.
+    revisit_if: The daemon starts serving the sign-in page itself, where the strict CSP would block the inline script.
