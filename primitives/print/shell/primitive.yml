@@ -1,0 +1,35 @@
+primitive: print.shell
+summary: The standalone print document, with its @page rule, print base stylesheet, inlined component CSS, in-document CSP and external auto-print script.
+code:
+  - battery/print/shell.go
+docs:
+  - framework/docs/content/print.md
+invariants:
+  - id: never-links-runtime
+    rule: The print shell links no runtime.js and runs no inline script; auto-print is the external script under the prefix.
+    enforced_by:
+      - test: battery/print.TestNeverLinksRuntimeJS
+      - test: battery/print.TestAutoPrintUsesExternalScript
+      - test: battery/print.TestSecCSPInlineStyleNotScript
+  - id: csp-lives-in-the-document
+    rule: The shell carries its Content-Security-Policy as an in-document meta, since the PDF path renders it as headerless about:blank content.
+    enforced_by:
+      - test: battery/print.TestPDFCSPAllowsBaseURLStyles
+      - test: battery/print.TestPDFBlocksInternalSubresource
+  - id: head-urls-pass-the-resource-allow-list
+    rule: The app.css href and the auto-print src pass urlsafe.Clean with the Resource allow-list, so a javascript, vbscript, data or protocol-relative value is dropped.
+    enforced_by:
+      - test: battery/print.TestShellAssetsRedSchemeGuarded
+  - id: title-is-escaped
+    rule: The document title is HTML-escaped in the shell.
+    enforced_by:
+      - test: battery/print.TestTitleEscaped
+  - id: used-component-css-is-inlined
+    rule: The scoped stylesheet of every registered component the body references is inlined, and none when the body references none.
+    enforced_by:
+      - test: battery/print.TestComponentCSSInlinedWhenUsed
+      - test: battery/print.TestNoComponentCSSWhenUnused
+  - id: column-width-is-a-token
+    rule: The print base sizes the screen column with var(--ui-print-doc-max-width, 820px).
+    enforced_by:
+      - test: battery/print.TestPrintBaseCSSHasTheColumnKnob

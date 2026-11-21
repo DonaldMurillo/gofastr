@@ -2,6 +2,8 @@ package appspec
 
 import (
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 // Casing converters: the single in-package set. Before this file,
@@ -40,24 +42,12 @@ func ToCamelJSON(value string) string {
 	return strings.ToLower(camel[:1]) + camel[1:]
 }
 
-// WireKey is the JSON key the server puts a column or relation under in
-// its default camel JSONCase (framework/internal/casing.ToCamel, which
-// crud.CrudHandler.WireKey applies): split on "_", keep the first word as
-// written, capitalize the first letter of each later word. It is
-// ToCamelJSON for a name that starts with a lower-case letter, and differs
-// for one that does not: Title stays Title and _note becomes Note, where
-// ToCamelJSON gives title and note, keys the server never reads. Generated
-// code that sends or reads a field's value spells its key with WireKey;
-// ToCamelJSON stays for names that are only identifiers (a method, a
-// parameter, a JS property).
+// WireKey returns the default camel JSON key for a column or relation.
+// It uses the same conversion as crud.CrudHandler.WireKey: Title stays
+// Title, and _note becomes Note. Generated code uses WireKey for field
+// values and ToCamelJSON for lower-camel identifiers.
 func WireKey(name string) string {
-	parts := strings.Split(name, "_")
-	for i := 1; i < len(parts); i++ {
-		if p := parts[i]; p != "" && p[0] >= 'a' && p[0] <= 'z' {
-			parts[i] = string(p[0]-'a'+'A') + p[1:]
-		}
-	}
-	return strings.Join(parts, "")
+	return casing.ToCamel(name)
 }
 
 // ToSnakeCase converts a name to snake_case for generated file names,

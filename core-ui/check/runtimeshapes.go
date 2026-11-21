@@ -103,121 +103,12 @@ func loadJSSources(roots ...string) ([]jsSource, error) {
 		out = append(out, jsSource{
 			Path:       f,
 			Src:        string(raw),
-			Code:       stripJSCommentsKeepStrings(string(raw)),
-			Blank:      stripJSCommentsAndStrings(string(raw)),
+			Code:       stripJS(string(raw), keepJSLiterals),
+			Blank:      stripJS(string(raw), blankJSLiterals),
 			lineStarts: newlineOffsets(string(raw)),
 		})
 	}
 	return out, nil
-}
-
-func blankJSLineComment(out []byte, src string, i int) ([]byte, int) {
-	for i < len(src) && src[i] != '\n' {
-		out = append(out, ' ')
-		i++
-	}
-	return out, i
-}
-
-func blankJSBlockComment(out []byte, src string, i int) ([]byte, int) {
-	out = append(out, ' ', ' ')
-	i += 2
-	for i < len(src) {
-		if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
-			out = append(out, ' ', ' ')
-			return out, i + 2
-		}
-		if src[i] == '\n' {
-			out = append(out, '\n')
-		} else {
-			out = append(out, ' ')
-		}
-		i++
-	}
-	return out, i
-}
-
-func stripJSCommentsKeepStrings(src string) string {
-	out := make([]byte, 0, len(src))
-	i := 0
-	for i < len(src) {
-		c := src[i]
-		if c == '/' && i+1 < len(src) && src[i+1] == '/' {
-			out, i = blankJSLineComment(out, src, i)
-			continue
-		}
-		if c == '/' && i+1 < len(src) && src[i+1] == '*' {
-			out, i = blankJSBlockComment(out, src, i)
-			continue
-		}
-		if c == '/' && regexLiteralStartsAt(out) {
-			out = append(out, c)
-			i++
-			inClass := false
-			for i < len(src) && src[i] != '\n' {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, src[i], src[i+1])
-					}
-					i += 2
-					continue
-				}
-				if src[i] == '[' {
-					inClass = true
-				} else if src[i] == ']' {
-					inClass = false
-				} else if src[i] == '/' && !inClass {
-					out = append(out, c)
-					i++
-					break
-				}
-				out = append(out, src[i])
-				i++
-			}
-			continue
-		}
-		if c == '\'' || c == '"' || c == '`' {
-			quote := c
-			out = append(out, c)
-			i++
-			for i < len(src) {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, src[i], src[i+1])
-					}
-					i += 2
-					continue
-				}
-				if src[i] == quote {
-					out = append(out, c)
-					i++
-					break
-				}
-				if quote == '`' && src[i] == '$' && i+1 < len(src) && src[i+1] == '{' {
-					out = append(out, src[i], src[i+1])
-					i += 2
-					body, end := templateExprEnd(src, i)
-					out = append(out, stripJSCommentsKeepStrings(body)...)
-					i = end
-					if i < len(src) && src[i] == '}' {
-						out = append(out, '}')
-						i++
-					}
-					continue
-				}
-				out = append(out, src[i])
-				i++
-			}
-			continue
-		}
-		out = append(out, c)
-		i++
-	}
-	return string(out)
 }
 
 func matchDelimForward(s string, open int) int {
@@ -369,6 +260,11 @@ func isJSStringLiteral(s string) bool {
 		return false
 	}
 	return (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"')
+}
+
+func isStaticJSStringLiteral(s string) bool {
+	return isJSStringLiteral(s) ||
+		(len(s) >= 2 && s[0] == '`' && s[len(s)-1] == '`' && !strings.Contains(s, "${"))
 }
 
 func isJSNumericLiteral(s string) bool {
@@ -853,7 +749,11 @@ func selectorOperandSafe(op string, safe, numeric func(string) bool) bool {
 }
 
 func isEscapeCall(op string) bool {
-	loc := reEscapeCall.FindStringIndex(op)
+	return isWholeCall(reEscapeCall, op)
+}
+
+func isWholeCall(re *regexp.Regexp, op string) bool {
+	loc := re.FindStringIndex(op)
 	if loc == nil {
 		return false
 	}
@@ -941,7 +841,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if isForInIndex(spans, start, idx) {
 					continue
 				}
-				if registryAccessIsWrite(f.Blank, close) {
+				if _, _, ok := bracketWriteOp(f.Blank, close); ok {
 					continue
 				}
 				if registryAccessIsDelete(f.Blank, start) {
@@ -1098,33 +998,6 @@ func forInSpans(blank string) []forInSpan {
 func isForInIndex(spans []forInSpan, pos int, idx string) bool {
 	for _, s := range spans {
 		if s.idx == idx && pos >= s.start && pos <= s.end {
-			return true
-		}
-	}
-	return false
-}
-
-func registryAccessIsWrite(blank string, close int) bool {
-	i := close + 1
-	for {
-		i = skipSpace(blank, i)
-		if i < len(blank) && blank[i] == '.' { // member chains: REG[x].foo =
-			i++
-			for i < len(blank) && isJSIdentChar(blank[i]) {
-				i++
-			}
-			continue
-		}
-		break
-	}
-	if i >= len(blank) {
-		return false
-	}
-	if blank[i] == '=' {
-		return !(i+1 < len(blank) && (blank[i+1] == '=' || blank[i+1] == '>'))
-	}
-	for _, op := range []string{"+=", "-=", "*=", "/=", "%=", "&&=", "||=", "??=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^="} {
-		if strings.HasPrefix(blank[i:], op) {
 			return true
 		}
 	}
@@ -1534,19 +1407,11 @@ func ifGatesResponse(span string) bool {
 		if !textHasGate(span[open+1 : close]) {
 			continue
 		}
-		b := skipSpace(span, close+1)
-		if b >= len(span) {
+		start, end, ok := branchSpan(span, close+1)
+		if !ok {
 			continue
 		}
-		tEnd := b
-		if span[b] == '{' {
-			if e := matchDelimForward(span, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(span, b); e < len(span) {
-			tEnd = e
-		}
-		branch := span[b:min(tEnd+1, len(span))]
+		branch := span[start : end+1]
 		if reBodyRead.MatchString(branch) || reHTMLMount.MatchString(branch) || branchRejects(branch) {
 			return true
 		}
@@ -2043,10 +1908,6 @@ func regexConstNames(code string) map[string]string {
 var reIfOpen = regexp.MustCompile(`\bif\s*\(`)
 
 func attrPathGated(code, blank, v string, regexConsts map[string]string, pos int) bool {
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
 	ident := `\w+`
 	if isJSIdent(v) {
 		ident = regexp.QuoteMeta(v)
@@ -2084,33 +1945,46 @@ func attrPathGated(code, blank, v string, regexConsts map[string]string, pos int
 		}
 		return false
 	}
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the construction
+	return ifDominates(code, blank, pos, gateIn)
+}
+
+func branchSpan(code string, from int) (start, end int, ok bool) {
+	start = skipSpace(code, from)
+	if start >= len(code) {
+		return 0, 0, false
+	}
+	end = start
+	if code[start] == '{' {
+		if close := matchDelimForward(code, start); close >= 0 {
+			end = close
 		}
+	} else if close := statementEnd(code, start); close < len(code) {
+		end = close
+	}
+	return start, end, true
+}
+
+func ifDominates(code, blank string, pos int, gateIn func(cond string, inBranch bool) bool) bool {
+	start, _ := enclosingFunction(code, pos)
+	body, blankBody := code[start:], blank[start:]
+	pos -= start
+	for _, loc := range reIfOpen.FindAllStringIndex(body[:pos], -1) {
 		open := loc[1] - 1
 		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
+		if close < 0 || close >= pos {
+			continue
+		}
+		branchStart, branchEnd, ok := branchSpan(body, close+1)
+		if !ok {
 			continue
 		}
 		cond := body[open+1 : close]
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
+		if branchStart <= pos && pos <= branchEnd && gateIn(cond, true) {
+			return true
 		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd && gateIn(cond, true) {
-			return true // the branch that builds the URL ran the gate and it held
-		}
-		if tEnd < pos0 && gateIn(cond, false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the gate's failures left; only validated values continue
+		if branchEnd < pos && gateIn(cond, false) &&
+			branchRejects(body[branchStart:branchEnd+1]) && ifStillOpenAt(blankBody, branchEnd+1, pos) {
+			return true
 		}
 	}
 	return false
@@ -2466,12 +2340,7 @@ func cookieOperandSafe(op string, safe func(string) bool) bool {
 var reEncodeCall = regexp.MustCompile(`^(?:\w+\.)*encodeURIComponent\s*\(`)
 
 func isEncodedCall(op string) bool {
-	loc := reEncodeCall.FindStringIndex(op)
-	if loc == nil {
-		return false
-	}
-	close := matchDelimForward(op, loc[1]-1)
-	return close >= 0 && strings.TrimSpace(op[close+1:]) == ""
+	return isWholeCall(reEncodeCall, op)
 }
 
 // LintModuleURLShape fires when a script src (or a dynamic import URL) is built by concatenating or
@@ -2598,52 +2467,15 @@ func regexTestDominates(code, blank, v string, pos int) bool {
 	if !isJSIdent(v) {
 		return false
 	}
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
 	reGate := regexp.MustCompile(`[/\w]\s*\.\s*test\s*\(\s*` + regexp.QuoteMeta(v) + `\s*\)`)
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the build
-		}
-		open := loc[1] - 1
-		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
-			continue
-		}
-		cond := body[open+1 : close]
-		gated := func(positiveOnly bool) bool {
-			for _, m := range reGate.FindAllStringIndex(cond, -1) {
-				if !positiveOnly || !gateNegated(cond, m[0], m[1]) {
-					return true
-				}
+	return ifDominates(code, blank, pos, func(cond string, inBranch bool) bool {
+		for _, m := range reGate.FindAllStringIndex(cond, -1) {
+			if !inBranch || !gateNegated(cond, m[0], m[1]) {
+				return true
 			}
-			return false
 		}
-		if !gated(false) {
-			continue
-		}
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
-		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd && gated(true) {
-			return true // the branch that builds the URL ran the gate and it held
-		}
-		if tEnd < pos0 && gated(false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the gate's failures left; only shape-valid ids continue
-		}
-	}
-	return false
+		return false
+	})
 }
 
 // LintStorageKeyRaw fires when a Web-storage key — the first argument of a
@@ -2875,15 +2707,23 @@ func funcHeadName(blank string, bodyOpen int) string {
 		return ""
 	}
 	if blank[j] == '>' && j >= 1 && blank[j-1] == '=' { // NAME => { or (…) => {
-		k := skipSpaceBack(blank, j-2)
-		if k >= 0 && isJSIdentChar(blank[k]) {
-			return wordBefore(blank, k+1)
+		paramStart := skipSpaceBack(blank, j-2)
+		if paramStart < 0 {
+			return ""
 		}
-		if k >= 0 && blank[k] == ')' { // const NAME = (…) => {
-			p := matchDelimBack(blank, k)
-			if e := skipSpaceBack(blank, p-1); e >= 0 && blank[e] == '=' && !cmpEquals(blank, e) {
-				return wordBefore(blank, e)
-			}
+		if blank[paramStart] == ')' {
+			paramStart = matchDelimBack(blank, paramStart)
+		} else if param := wordBefore(blank, paramStart+1); param != "" {
+			paramStart -= len(param) - 1
+		} else {
+			return ""
+		}
+		e := skipSpaceBack(blank, paramStart-1)
+		if e >= 0 && wordBefore(blank, e+1) == "async" {
+			e = skipSpaceBack(blank, e-len("async"))
+		}
+		if e >= 0 && blank[e] == '=' && !cmpEquals(blank, e) {
+			return wordBefore(blank, e)
 		}
 		return ""
 	}
@@ -3280,42 +3120,9 @@ func mapStore(blank, base string) bool {
 }
 
 func reservedGuardDominates(code, blank, key string, pos int) bool {
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the write
-		}
-		open := loc[1] - 1
-		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
-			continue
-		}
-		if !reservedGuardIn(body[open+1:close], key) {
-			continue
-		}
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
-		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd {
-			return true // the branch that writes ran the guard
-		}
-		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the guard's failures left; only safe keys continue
-		}
-	}
-	return false
+	return ifDominates(code, blank, pos, func(cond string, _ bool) bool {
+		return reservedGuardIn(cond, key)
+	})
 }
 
 func reservedGuardIn(cond, key string) bool {

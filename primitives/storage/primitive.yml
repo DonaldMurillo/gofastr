@@ -1,0 +1,45 @@
+primitive: storage
+summary: The object storage backends for the upload battery behind the upload.Storage interface, with the shared key form, the standalone key validator and the in-memory backend.
+code:
+  - battery/storage/storage.go
+  - battery/storage/doc.go
+  - battery/storage/agents.go
+  - battery/storage/memory.go
+docs:
+  - framework/docs/content/storage.md
+on_change:
+  - A backend change here has a twin in core/upload, which ships its own local backend; make the same change there or say why not.
+invariants:
+  - id: object-key-has-one-spelling
+    rule: checkObjectKey refuses with upload.ErrInvalidKey an empty key, any "..", a control byte or DEL, a leading slash and a key that is not its own path.Clean form, so no object is reachable under a second spelling.
+    enforced_by:
+      - test: battery/storage.TestDefaultKeyValidatorRefusesUnformedKeys
+      - test: battery/storage.TestS3RefusesUnformedKeys
+      - test: battery/storage.TestS3KeyValidationPathTraversal
+  - id: default-validator-refuses-backslash
+    rule: DefaultKeyValidator refuses everything checkObjectKey refuses and a backslash, a separator on Windows.
+    enforced_by:
+      - test: battery/storage.TestDefaultKeyValidatorRefusesBackslash
+  - id: memory-save-is-capped
+    rule: MemoryStorage.Save refuses a body longer than 50 MiB and stores nothing for it.
+    enforced_by:
+      - test: battery/storage.TestMemorySaveRefusesOversizeBody
+  - id: memory-save-checks-cancel-before-commit
+    rule: MemoryStorage.Save checks the context after reading the body and before replacing the object, so a save canceled mid-read leaves the old object.
+    enforced_by:
+      - test: battery/storage.TestMemorySaveCanceledMidCopyKeepsObject
+      - test: battery/storage.TestMemoryStorageCancellationPreservesObjects
+  - id: only-seekable-backends-serve-ranges
+    rule: LocalStorage and MemoryStorage implement RangeGetter and S3Storage does not.
+    enforced_by:
+      - test: battery/storage.TestS3DeclinesRangeGetter
+      - test: battery/storage.TestLocalAndMemoryServeRanges
+decisions:
+  - id: s3-declines-ranges
+    date: 2026-11-20
+    status: accepted
+    decision: S3Storage does not implement RangeGetter; large transfers go through presigned URLs.
+    rejected:
+      - option: Implement Seek over S3 reads.
+        why: A network backend would have to buffer the whole object to satisfy Seek.
+    upholds: [only-seekable-backends-serve-ranges]

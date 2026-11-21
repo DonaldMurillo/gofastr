@@ -6,24 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// VerifyAuthEntitiesPrivate checks the named auth entities in `reg` and
-// emits a WARN log if any are registered with CRUD enabled. The auth
-// tables (users, sessions) hold password hashes and session tokens,
-// exposing them via auto-CRUD is a footgun. The auto-private helpers
-// UserEntityConfig() / SessionEntityConfig() set CRUD=false / MCP=false;
-// hosts that still wire the bare UserEntityFields() / SessionEntityFields()
-// fall back to the dangerous default.
-//
-// Call once at startup after registering entities:
-//
-//	app.Entity("users",    auth.UserEntityConfig())
-//	app.Entity("sessions", auth.SessionEntityConfig())
-//	auth.VerifyAuthEntitiesPrivate(app.Registry, "users", "sessions", nil)
-//
-// usersName / sessionsName are the entity names, pass "" to skip
-// either. logger=nil uses slog.Default. Unknown entity names are
-// silently skipped (the entity may not be registered yet, or a
-// different name was used).
+// VerifyAuthEntitiesPrivate logs a WARN for every version of the named auth entities registered with CRUD or MCP on, and for a name not registered.
 func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName string, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
@@ -32,29 +15,13 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 		if name == "" {
 			continue
 		}
-		// Audit EVERY version registered under this name, not reg.Get(name).
-		// Get returns an ambiguity error once a name is mounted under several
-		// versions with none unversioned, which is what App.GroupEntity
-		// produces, and that error is indistinguishable here from "not
-		// found". The audit would then go quiet on exactly the app that most
-		// needs it and tell the operator to fix a registration order that was
-		// never wrong. Every version shares the one table, so every version's
-		// CRUD/MCP posture can expose the password hashes.
 		versions := versionsNamed(reg, name)
 		if len(versions) == 0 {
-			// Don't silently skip, the host explicitly passed this
-			// name and expects an audit. A missing entity is almost
-			// always "VerifyAuthEntitiesPrivate called before
-			// app.Entity(...)", the wrong order produces false
-			// confidence. Log so the operator sees it.
 			logger.Warn("auth: VerifyAuthEntitiesPrivate called for entity not registered yet: call AFTER app.Entity(...) (or after app.InitPlugins) so the check sees the actual config",
 				"entity", name)
 			continue
 		}
 		for _, ent := range versions {
-			// CRUD=nil means "auto" (defaults to true when DB is set).
-			// CRUD=&true is explicit on.
-			// CRUD=&false is the safe state.
 			crudOn := ent.Config.Exposure.CRUD == nil || (ent.Config.Exposure.CRUD != nil && *ent.Config.Exposure.CRUD)
 			mcpOn := ent.Config.Exposure.MCP
 			if !crudOn && !mcpOn {
@@ -67,8 +34,6 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 				"fix", "app.Entity(\"" + name + "\", auth.UserEntityConfig())",
 			}
 			if ent.Version != "" {
-				// Name the mount, or an operator running several versions
-				// cannot tell which one to change.
 				attrs = append(attrs, "version", ent.Version)
 			}
 			logger.Warn("auth entity exposed via auto-CRUD/MCP: switch to auth.UserEntityConfig() / auth.SessionEntityConfig() to make it private by default",
@@ -77,8 +42,6 @@ func VerifyAuthEntitiesPrivate(reg entity.Registry, usersName, sessionsName stri
 	}
 }
 
-// versionsNamed returns every entity registered under name, across all
-// versions, in the registry's stable order. Empty when the name is unknown.
 func versionsNamed(reg entity.Registry, name string) []*entity.Entity {
 	var out []*entity.Entity
 	for _, ent := range reg.AllSorted() {

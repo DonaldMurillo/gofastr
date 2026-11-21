@@ -32,6 +32,10 @@ invariants:
       - test: core-ui/check.TestLintNumberFill_FiresOnASCIIFill
       - test: core-ui/check.TestLintReplaceFill_FiresOnComputed
       - test: core-ui/check.TestLintRuntimeProseFiresOnLiterals
+  - id: one-js-stripper
+    rule: LintNoVarJS and LintLayerPrefixJS read JavaScript through the one stripJS scanner, which judges a '/' by the previous significant code byte and never as a regex right after a string or regex operand, so a division after a quoted value does not hide a later var.
+    enforced_by:
+      - test: core-ui/check.TestNoVarAfterQuotedDivision
   - id: the-tree-is-clean
     rule: Every one of these lints passes over the live runtime and registered behaviour sources.
     enforced_by:

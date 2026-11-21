@@ -102,7 +102,7 @@ func TestSidebarWidthBounds(t *testing.T) {
 		t.Run(fmt.Sprint(test.points), func(t *testing.T) {
 			err := w.SetSidebarWidth(test.points)
 			if !test.valid {
-				assertDesktopError(t, err, desktop.CodeInvalidInput, "invalid sidebar width")
+				assertDesktopError(t, err, desktop.CodeInvalidInput, fmt.Sprintf("sidebarWidth must be between 0 and %d", desktop.MaxSidebarWidth))
 			} else if err != nil {
 				t.Fatalf("valid sidebar width %d: %v", test.points, err)
 			}

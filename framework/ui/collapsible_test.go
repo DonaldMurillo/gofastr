@@ -143,10 +143,7 @@ func TestCollapsibleExtraAttrsOnRoot(t *testing.T) {
 		Summary:    "S",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("details root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "details root")
 }
 
 // Sections sharing a Name form the native exclusive group: the browser

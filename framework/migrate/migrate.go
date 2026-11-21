@@ -561,7 +561,7 @@ func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]d
 		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
 			return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
 		}
-		safeFKs, err := safeIdents(fks)
+		safeFKs, err := query.SafeColumns(fks, "column")
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid FK: %w", rel.Name, err)
 		}
@@ -569,7 +569,7 @@ func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]d
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		safeTargetKey, err := safeIdents(target.KeyColumns())
+		safeTargetKey, err := query.SafeColumns(target.KeyColumns(), "column")
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target key: %w", rel.Name, err)
 		}
@@ -624,18 +624,6 @@ func typeFamily(t string) string {
 		return "TEXT"
 	}
 	return t
-}
-
-func safeIdents(cols []string) ([]string, error) {
-	out := make([]string, len(cols))
-	for i, c := range cols {
-		s, err := query.SafeIdent(c)
-		if err != nil {
-			return nil, fmt.Errorf("%q: %w", c, err)
-		}
-		out[i] = s
-	}
-	return out, nil
 }
 
 func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []string {

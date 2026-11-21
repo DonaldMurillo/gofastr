@@ -6,6 +6,8 @@ code:
   - framework/contracts/baseline.go
   - framework/contracts/changed.go
   - framework/contracts/glob.go
+  - internal/analyzers/names/
+  - internal/analyzers/allow/
 invariants:
   - id: default-is-strict
     rule: DefaultConfig enforces every rule at its declared severity, fails on error, and demands route, permission and entity coverage with no line-coverage floor.
@@ -43,6 +45,15 @@ invariants:
     enforced_by:
       - test: framework/contracts.TestCapabilityBlockFormsParse
       - test: framework/contracts.TestCapabilityExemptAppliesOnlyToItsCapability
+  - id: disabled-wins-within-a-map
+    rule: "`enabled: false` wins over severity within the same rule or capability map."
+    enforced_by:
+      - test: framework/contracts.TestDisabledSettingWinsOverSeverityInTheSameMap
+  - id: one-allow-marker-parser
+    rule: Contracts, vettool and the source lints parse allow markers through names.ParseMarker, which strips a block comment's closing delimiter and reads a name list through names.SplitRuleList.
+    enforced_by:
+      - test: internal/analyzers/names.TestParseMarker
+      - test: core-ui/check.TestProseMarkerAcceptsMultilineCommentAndSpaceSeparatedNames
   - id: directive-needs-a-reason
     rule: A `//gofastr:allow(<rule>)` or `allow-file` directive with no reason silences nothing and is reported as GOFASTR0001.
     enforced_by:
@@ -72,16 +83,18 @@ invariants:
       - test: framework/contracts/analyzers.TestAbsoluteAttemptsMarkerCoversLiteral
       - test: framework/contracts.TestFileScopedSuppression
   - id: directives-work-in-every-source-kind
-    rule: Directives are read in Go, CSS and JavaScript files alike, a script's trailing comment included.
+    rule: Directives are read in Go, CSS and JavaScript files alike, including trailing script and CSS comments.
     enforced_by:
       - test: framework/contracts/analyzers.TestCSSAllowDirectiveSuppresses
       - test: framework/contracts/analyzers.TestCSSAllowFileDirective
       - test: framework/contracts/analyzers.TestScriptTrailingAllowWaives
+      - test: framework/contracts.TestTrailingCSSSuppressionCoversItsOwnLine
   - id: stale-directive-is-reported
-    rule: A directive that matched nothing is reported as GOFASTR0002 when every rule it names ran, with a fix that deletes only the directive, or no fix when the line no longer holds one.
+    rule: A directive that matched nothing is reported as GOFASTR0002 when every rule it names is active. Its fix deletes the collected comment span and includes surrounding whitespace and line endings only when the directive stands alone.
     enforced_by:
       - test: framework/contracts/analyzers.TestStaleSuppressionIsReported
       - test: framework/contracts.TestSweepEngineNarrowedRunKeepsOtherSuppressionsQuiet
+      - test: framework/contracts.TestSweepEngineCapabilityFiltersRulesAndWaivers
       - test: framework/contracts.TestStaleSuppressionAutofixDeletesOnlyTheDirective
       - test: framework/contracts.TestStaleSuppressionAutofixRefusesToGuess
   - id: stale-directive-is-waivable
@@ -90,14 +103,19 @@ invariants:
       - test: framework/contracts.TestStaleSuppressionIsWaivableLikeAnyFinding
       - test: framework/contracts.TestSweepEngineLineWaiverOfAStaleDirectiveIsNotItselfStale
   - id: baseline-counts-per-rule-and-file
-    rule: A baseline absorbs up to its recorded count of findings per (rule, file), wherever they move in the file, and the next one fails.
+    rule: A baseline absorbs up to its recorded count of waivable findings per (rule, file), wherever they move in the file, and the next one fails.
     enforced_by:
       - test: framework/contracts.TestBaselineAbsorbsExistingFindings
       - test: framework/contracts.TestBaselineDoesNotAbsorbNewFindings
   - id: baseline-records-gating-findings-only
-    rule: NewBaseline records only findings at or above the report's fail-on severity.
+    rule: NewBaseline records only waivable findings at or above the report's fail-on severity.
     enforced_by:
       - test: framework/contracts.TestBaselineRecordsOnlyGatingFindings
+  - id: rejected-custom-media-is-unwaivable
+    rule: When verify checks owned styles, a custom media query the compiler rejects stays an error under GOFASTR1814 through source waivers, config overrides and exemptions, and baselines because the generated initializer would panic at startup. Source hash findings under the same ID follow the ordinary waiver rules.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestOwnedInvalidMediaCannotBeWaived
+      - test: framework/contracts/analyzers.TestOwnedStaleStyleSourceCanBeWaived
   - id: suppressed-finding-keeps-its-baseline-slot
     rule: A suppressed finding, a waived stale directive included, still claims its (rule, file) baseline slot whatever the fail floor, and the claimed slot is reported as over-accepting.
     enforced_by:

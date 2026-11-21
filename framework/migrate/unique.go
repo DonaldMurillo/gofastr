@@ -200,70 +200,15 @@ func liveUniqueColumns(ctx context.Context, q queryer, table string, dialect Dia
 		}
 		return out, rows.Err()
 	}
-
-	pragma, err := sqlitePragma("index_list", table)
+	indexes, err := sqliteIndexColumns(ctx, q, table, func(unique, partial int) bool {
+		return unique == 1 && partial == 0
+	}, false)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.QueryContext(ctx, pragma)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for rows.Next() {
-		var (
-			seq, unique, partial int
-			name, origin         string
-		)
-		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if unique == 1 && partial == 0 {
-			names = append(names, name)
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
-	schemaPrefix := ""
-	if s, _ := splitTable(table); s != "" {
-		schemaPrefix = s + "."
-	}
-	for _, name := range names {
-		pragma, err := sqlitePragma("index_info", schemaPrefix+name)
-		if err != nil {
-			return nil, err
-		}
-		rows, err := q.QueryContext(ctx, pragma)
-		if err != nil {
-			return nil, err
-		}
-		var cols []string
-		for rows.Next() {
-			var (
-				seqno, cid int
-				col        *string
-			)
-			if err := rows.Scan(&seqno, &cid, &col); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if col == nil {
-				cols = append(cols, "")
-			} else {
-				cols = append(cols, *col)
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
-		}
-		if len(cols) == 1 && cols[0] != "" {
-			out[strings.ToLower(cols[0])] = true
+	for _, cols := range indexes {
+		if len(cols) == 1 && cols[0] != nil && *cols[0] != "" {
+			out[strings.ToLower(*cols[0])] = true
 		}
 	}
 	return out, nil

@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+	retirednames "github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
 // cssFile runs the CSS matchers over one stylesheet through the CSS
@@ -118,7 +119,7 @@ func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
 					if reference.ignoreCase {
 						wanted = asciicase.Lower(wanted)
 					}
-					if cssClassMatches(reference.value, wanted) {
+					if retirednames.ClassMatches(reference.value, wanted) {
 						token := toks[reference.index]
 						e.add(n, Hit{File: rel, Line: token.Line, Col: token.Col, Why: "css ." + name})
 					}
@@ -143,7 +144,7 @@ func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
 					value = value[1 : len(value)-1]
 				}
 				flag := nextSignificant(toks, index)
-				ignoreCase := flag >= 0 && attrNameEqual(cssUnescape(toks[flag].Text), "i")
+				ignoreCase := flag >= 0 && asciicase.EqualFold(cssUnescape(toks[flag].Text), "i")
 				for _, name := range strings.FieldsFunc(cssUnescape(value), func(char rune) bool {
 					return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\f'
 				}) {
@@ -163,7 +164,7 @@ func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
 
 func classAttrValue(tokens []ownstyle.Token, start int) int {
 	name := nextSignificant(tokens, start)
-	if name < 0 || tokens[name].Type != ownstyle.TokenIdent || !attrNameEqual(cssUnescape(tokens[name].Text), "class") {
+	if name < 0 || tokens[name].Type != ownstyle.TokenIdent || !asciicase.EqualFold(cssUnescape(tokens[name].Text), "class") {
 		return -1
 	}
 	operator := nextSignificant(tokens, name)
@@ -185,7 +186,7 @@ func classAttrValue(tokens []ownstyle.Token, start int) int {
 	}
 	end := nextSignificant(tokens, value)
 	if end >= 0 && tokens[end].Type == ownstyle.TokenIdent &&
-		(attrNameEqual(cssUnescape(tokens[end].Text), "i") || attrNameEqual(cssUnescape(tokens[end].Text), "s")) {
+		(asciicase.EqualFold(cssUnescape(tokens[end].Text), "i") || asciicase.EqualFold(cssUnescape(tokens[end].Text), "s")) {
 		end = nextSignificant(tokens, end)
 	}
 	if end < 0 || tokens[end].Type != ownstyle.TokenCloseSquare {
@@ -248,15 +249,6 @@ func cssUnescape(raw string) string {
 
 func isHexByte(c byte) bool {
 	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
-}
-
-// cssClassMatches is token equality or a BEM form of the name.
-func cssClassMatches(token, name string) bool {
-	if token == name {
-		return true
-	}
-	rest, ok := strings.CutPrefix(token, name)
-	return ok && (strings.HasPrefix(rest, "--") || strings.HasPrefix(rest, "__"))
 }
 
 // cssProperties matches custom property names: a declaration name (an

@@ -1,0 +1,44 @@
+primitive: desktop.platform.linux.gtk
+summary: The runtime dlopen and dlsym table of every GTK, GLib, GObject, WebKitGTK, cairo, gdk-pixbuf and libnotify entry point the linux shell binds.
+code:
+  - battery/desktop/internal/gtk/
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: import-loads-nothing
+    rule: Importing the package opens no library; Load opens them on first call, from the thread that will run the GTK main loop.
+    enforced_by:
+      - test: battery/desktop/internal/gtk.TestLoadIsLazy
+  - id: table-covers-every-symbol
+    rule: Every Symbols field has an entry in table() or optionalSymbols(), so none stays zero after Load.
+    enforced_by:
+      - test: battery/desktop/internal/gtk.TestTableCoversEverySymbolsField
+  - id: missing-library-names-the-packages
+    rule: A missing required library fails Load with an error wrapping ErrUnavailable that names the distro packages to install, and a missing optional library leaves its symbols zero and Load succeeding.
+    enforced_by:
+      - test: battery/desktop/internal/gtk.TestMissingLibraryNamesThePackages
+decisions:
+  - id: libdl-in-libc
+    date: 2026-11-20
+    status: accepted
+    decision: dlopen, dlsym and dlerror are imported from libc.so.6.
+    rejected:
+      - option: libdl.so.2.
+        why: Since glibc 2.34 it is an empty stub, and libc.so.6 is the same floor fakecgo's pthread imports set.
+    upholds: [import-loads-nothing]
+  - id: open-globally
+    date: 2026-11-20
+    status: accepted
+    decision: Every library opens RTLD_GLOBAL, GLib and GObject first.
+    rejected:
+      - option: Local handles.
+        why: WebKitGTK resolves GObject symbols out of whatever is already global in the process.
+    upholds: [table-covers-every-symbol]
+  - id: gtk3-webkitgtk41
+    date: 2026-11-20
+    status: accepted
+    decision: The targets are GTK 3 and WebKitGTK 4.1.
+    rejected:
+      - option: webkitgtk-6.0 on GTK 4.
+        why: 4.1 is what Ubuntu 22.04 onward and Debian 12 ship; GTK 4 is a later probe.
+    upholds: [missing-library-names-the-packages]

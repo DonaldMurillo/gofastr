@@ -22,8 +22,8 @@ func TestPolicyGatesSectionDrawer(t *testing.T) {
 	})
 	srv := mountedServer(t, Config{Registry: reg, IncludeGated: true, Policy: deny})
 	for _, path := range []string{
-		"/core-ui/widget/" + drawerName + "/chrome",
-		"/core-ui/widget/" + drawerName + "/state",
+		"/core-ui/widget/" + drawerName("/docs/api") + "/chrome",
+		"/core-ui/widget/" + drawerName("/docs/api") + "/state",
 	} {
 		resp, body := get(t, srv, path)
 		if resp.StatusCode != http.StatusForbidden {
@@ -43,7 +43,7 @@ func TestRedirectPolicyRefusesDrawer(t *testing.T) {
 	})
 	srv := mountedServer(t, Config{Registry: testRegistry(), IncludeGated: true, Policy: login})
 	srv.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, body := get(t, srv, "/core-ui/widget/"+drawerName+"/chrome")
+	resp, body := get(t, srv, "/core-ui/widget/"+drawerName("/docs/api")+"/chrome")
 	if resp.StatusCode != http.StatusForbidden || strings.Contains(body, "invoices") {
 		t.Fatalf("status %d; want 403 with no menu:\n%s", resp.StatusCode, body)
 	}
@@ -65,7 +65,7 @@ func TestDrawerListsLateEntities(t *testing.T) {
 	if !strings.Contains(page, "/entities/refunds") {
 		t.Fatalf("setup broken: the screen menu does not list the late entity")
 	}
-	resp, body := get(t, srv, "/core-ui/widget/"+drawerName+"/chrome")
+	resp, body := get(t, srv, "/core-ui/widget/"+drawerName("/docs/api")+"/chrome")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "/entities/refunds") {
 		t.Fatalf("drawer (status %d) misses an entity registered after Mount:\n%s", resp.StatusCode, body)
 	}
@@ -74,7 +74,7 @@ func TestDrawerListsLateEntities(t *testing.T) {
 // Without a Policy the drawer still serves its menu.
 func TestDrawerServesWithoutPolicy(t *testing.T) {
 	srv := mountedServer(t, Config{Registry: testRegistry(), IncludeGated: true})
-	resp, body := get(t, srv, "/core-ui/widget/"+drawerName+"/chrome")
+	resp, body := get(t, srv, "/core-ui/widget/"+drawerName("/docs/api")+"/chrome")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "/entities/invoices") {
 		t.Fatalf("status %d; want 200 with the menu:\n%s", resp.StatusCode, body)
 	}

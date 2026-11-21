@@ -192,3 +192,28 @@ type errReranker struct{ err error }
 func (e errReranker) Rerank(_ context.Context, _ string, _ []Hit) ([]Hit, error) {
 	return nil, e.err
 }
+
+func TestFuseKeepsTheVectorHitAndOrdersTies(t *testing.T) {
+	vec := []Hit{{Chunk: Chunk{ID: "a", Vec: []float32{1, 0}}}}
+	kw := []Hit{{Chunk: Chunk{ID: "a"}}, {Chunk: Chunk{ID: "b"}}}
+	if out := fuseRRF(vec, kw); out[0].Chunk.ID != "a" || out[0].Chunk.Vec == nil {
+		t.Fatalf("the fused hit lost the vector MMR needs: %+v", out[0])
+	}
+	for range 50 {
+		out := fuseRRF([]Hit{{Chunk: Chunk{ID: "b"}}}, []Hit{{Chunk: Chunk{ID: "a"}}})
+		if out[0].Chunk.ID != "a" || out[1].Chunk.ID != "b" {
+			t.Fatalf("hits tied on score fused as %s, %s; want ordered by id", out[0].Chunk.ID, out[1].Chunk.ID)
+		}
+	}
+}
+
+func TestMMRKeepsAKeywordOnlyHitsScore(t *testing.T) {
+	qv := []float32{1, 0}
+	hits := []Hit{
+		{Chunk: Chunk{ID: "kw"}, Score: 0.9},
+		{Chunk: Chunk{ID: "vec", Vec: []float32{0.1, 0.995}}, Score: 0.1},
+	}
+	if out := mmr(qv, hits, 0.1, 2); out[0].Chunk.ID != "kw" {
+		t.Errorf("a keyword-only hit with no vector lost its relevance: first pick %s", out[0].Chunk.ID)
+	}
+}

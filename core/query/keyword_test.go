@@ -27,6 +27,24 @@ func TestQuoteKeyword(t *testing.T) {
 	}
 }
 
+func TestQuoteKeywords(t *testing.T) {
+	in := []string{"title", "order", "posts.Group", "id"}
+	got := QuoteKeywords(in)
+	want := []string{"title", `"order"`, `posts."group"`, "id"}
+	if len(got) != len(want) {
+		t.Fatalf("QuoteKeywords = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("QuoteKeywords[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	// Verify a fresh slice was returned without mutating input.
+	if in[1] != "order" {
+		t.Errorf("QuoteKeywords mutated input slice: %v", in)
+	}
+}
+
 // Every slot a builder fills with a name quotes a keyword the way the
 // migrator's DDL does (QuoteFolded), so a column named order, group or user
 // is the column the DDL created.

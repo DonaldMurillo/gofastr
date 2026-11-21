@@ -10,23 +10,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
-
-// The command palette and its scriptless twin, the search page: jump to
-// a page or an entity, create one, or open a record found by title.
 
 const (
-	// maxPaletteBody caps a palette search post: it carries one query.
-	maxPaletteBody int64 = 4 << 10
-	// maxPaletteQuery caps the query a search reads.
-	maxPaletteQuery = 200
-	// paletteRecords is how many records one entity contributes.
-	paletteRecords = 5
-	// paletteCap caps one answer.
-	paletteCap = 20
+	maxPaletteBody  int64 = 4 << 10
+	maxPaletteQuery       = 200
+	paletteRecords        = 5
+	paletteCap            = 20
 )
 
-// handlePalette answers a palette search with option rows.
 func (b *Battery) handlePalette(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxPaletteBody)
 	if err := r.ParseForm(); err != nil {
@@ -40,14 +33,12 @@ func (b *Battery) handlePalette(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(ui.PaletteResults(ctx, paletteName, cmds, i18nui.AdminPaletteEmpty.Text(ctx))))
 }
 
-// renderSearch is the search page: the palette's results for ?q= as
-// links, for a reader without script.
 func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.HTML {
 	q := ""
 	dropped := false
 	if r := appui.RequestFromContext(ctx); r != nil {
 		q = r.URL.Query().Get("q")
-		dropped = droppedNarrowing(r, "q")
+		dropped = listfilter.DroppedNarrowing(r.URL.RawQuery, func(name string) bool { return name == "q" })
 	}
 	label := i18nui.AdminSearch.Text(ctx)
 	parts := []render.HTML{
@@ -60,7 +51,7 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 		}),
 	}
 	if dropped {
-		parts = append(parts, filterNotApplied(ctx))
+		parts = append(parts, listfilter.Warning(ctx))
 	}
 	cmds := b.paletteCommands(ctx, q)
 	if len(cmds) == 0 {
@@ -76,10 +67,6 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 }
 
-// paletteCommands are the destinations matching q, at most paletteCap:
-// pages, entity lists, create links and the app's commands whose label
-// holds q, then records whose title matches it. An empty q lists every
-// destination and no record.
 func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCommand {
 	q = strings.TrimSpace(q)
 	if r := []rune(q); len(r) > maxPaletteQuery {
@@ -119,8 +106,6 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 	if q == "" || !b.authorized(ctx) {
 		return out
 	}
-	// The admin's own read, elevated past each entity's Access check;
-	// scope, the Decider and each row's gate still bind.
 	rctx := b.elevate(ctx)
 	for _, e := range b.ents {
 		for _, m := range b.ui.SearchRecords(rctx, e.GetName(), q, paletteRecords) {

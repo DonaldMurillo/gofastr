@@ -84,10 +84,8 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	if componentCompiler.frozen {
-		panic("style: RegisterComponentOptionsCompiler called after a theme was hashed or emitted: " +
-			"a package-level ref.Class() or ThemeHash call, or theme CSS emission, in a package that does " +
-			"not import framework/ui runs before the compiler's init and freezes the hook with none " +
-			"registered; register the compiler earlier or hash later")
+		panic("style: RegisterComponentOptionsCompiler called after theme CSS emission: " +
+			"register the compiler before calling CSSCustomProperties or ThemeOverrideCSS")
 	}
 	if componentCompiler.fn != nil {
 		panic("style: a component-options compiler is already registered: one per process (framework/ui registers it from its init)")

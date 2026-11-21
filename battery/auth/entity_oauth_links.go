@@ -10,29 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// ─── OAuth provider-link store (EntityUserStore extension) ───────────────────
-//
-// A user may link more than one OAuth provider (Google + GitHub + a corporate
-// OIDC), so links live in their own table keyed by (provider, provider_id)
-// rather than as columns on the users table. The table name is derived from
-// the configured user table via the "<table>_oauth_links" convention, hosts
-// that pick a custom users table get a matching links table for free, and no
-// two EntityUserStore instances on the same DB collide on the link table.
-//
-// All four methods here are the durable implementations of the optional
-// interfaces declared in accounts.go (OAuthLinker, OAuthEnrichedLinker,
-// AccountLister, AccountUnlinker). EntityUserStore is now a linker by
-// default, production OAuth login requires it (see OAuth2Plugin.Init).
-
-// oauthLinksTable returns the link-table name derived from the user table.
 func (s *EntityUserStore) oauthLinksTable() string {
 	return s.table + "_oauth_links"
 }
 
-// EnsureOAuthLinksSchema creates the (provider, provider_id) → user_id link
-// table if it does not already exist. Called from EnsureSchema so hosts never
-// hand-roll the DDL. Idempotent. Timestamp type is chosen per dialect so the
-// same battery boots on SQLite and Postgres.
+// EnsureOAuthLinksSchema creates the provider-link table and its user_id index.
 func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.oauthLinksTable()); err != nil {
 		return err
@@ -58,8 +40,6 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
-	// user_id index powers ListAccounts / UnlinkOAuth, without it both
-	// degenerate to full scans of a table that grows with the user count.
 	idx := fmt.Sprintf(
 		"CREATE INDEX IF NOT EXISTS %s (%s)",
 		query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite,
@@ -72,13 +52,7 @@ func (s *EntityUserStore) EnsureOAuthLinksSchema(ctx context.Context) error {
 	return nil
 }
 
-// FindByOAuth returns the locally-linked user for a (provider, providerID)
-// pair, or ErrUserNotFound when no link exists. Implements OAuthLinker.
-//
-// The lookup is two-step, read the user_id from the link table, then read
-// the user, so the link table stays narrow and the user row stays the single
-// source of truth for profile/roles. A link pointing at a since-deleted user
-// resolves to ErrUserNotFound (FindByID's sentinel).
+// FindByOAuth returns the user linked to (provider, providerID), or ErrUserNotFound. Implements OAuthLinker.
 func (s *EntityUserStore) FindByOAuth(ctx context.Context, provider, providerID string) (User, error) {
 	if provider == "" || providerID == "" {
 		return nil, ErrUserNotFound
@@ -97,23 +71,12 @@ func (s *EntityUserStore) FindByOAuth(ctx context.Context, provider, providerID 
 	return s.FindByID(ctx, userID)
 }
 
-// LinkOAuth binds a (provider, providerID) pair to a user. Idempotent and
-// race-safe via INSERT ... ON CONFLICT (provider, provider_id) DO UPDATE on
-// the profile columns ONLY: the PRIMARY KEY is the serialization point, so
-// two concurrent first-logins for the same external identity cannot create
-// conflicting rows. The user_id of an existing binding is immutable from
-// this path, rebinding an identity to a different local account is an admin
-// operation, not an OAuth callback. Implements OAuthLinker.
+// LinkOAuth binds (provider, providerID) to userID; an existing binding keeps its owner. Implements OAuthLinker.
 func (s *EntityUserStore) LinkOAuth(ctx context.Context, userID, provider, providerID string) error {
 	return s.linkOAuth(ctx, userID, provider, providerID, OAuthAccountProfile{})
 }
 
 // LinkOAuthEnriched is LinkOAuth plus the profile snapshot at link time.
-// Implements OAuthEnrichedLinker. The profile fields are informational, the
-// authoritative identity is still the (provider, provider_id) pair. On a
-// pre-existing link the profile is refreshed in place (the email a user sees
-// in /auth/accounts should match what the IdP says now, not what it said at
-// the first link).
 func (s *EntityUserStore) LinkOAuthEnriched(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error {
 	return s.linkOAuth(ctx, userID, provider, providerID, profile)
 }
@@ -134,10 +97,7 @@ func (s *EntityUserStore) linkOAuth(ctx context.Context, userID, provider, provi
 	return err
 }
 
-// RefreshOAuthProfile updates the profile columns of the link binding
-// (provider, providerID) to userID. A link that is gone, or bound to a
-// different user, is left as it is: the statement is an UPDATE, never an
-// insert. Implements OAuthProfileRefresher.
+// RefreshOAuthProfile updates the profile of a link bound to userID and never inserts one. Implements OAuthProfileRefresher.
 func (s *EntityUserStore) RefreshOAuthProfile(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error {
 	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		"UPDATE %s SET email = $1, name = $2, avatar_url = $3 "+
@@ -147,9 +107,7 @@ func (s *EntityUserStore) RefreshOAuthProfile(ctx context.Context, userID, provi
 	return err
 }
 
-// ListAccounts returns every OAuth identity linked to userID, ordered
-// deterministically by provider so the /auth/accounts UI is stable across
-// calls. Implements AccountLister.
+// ListAccounts returns userID's linked identities ordered by provider. Implements AccountLister.
 func (s *EntityUserStore) ListAccounts(ctx context.Context, userID string) ([]Account, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		"SELECT provider, provider_id, email, name, avatar_url, created_at FROM %s "+
@@ -184,10 +142,7 @@ func (s *EntityUserStore) ListAccounts(ctx context.Context, userID string) ([]Ac
 	return out, rows.Err()
 }
 
-// UnlinkOAuth removes every link for (userID, provider). Deleting an absent
-// link is not an error, the caller (AccountsPlugin) has already verified
-// the link exists and that removing it leaves the user with a login method.
-// Implements AccountUnlinker.
+// UnlinkOAuth removes userID's links for provider; an absent link is not an error. Implements AccountUnlinker.
 func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider string) error {
 	_, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		"DELETE FROM %s WHERE user_id = $1 AND provider = $2",
@@ -196,20 +151,7 @@ func (s *EntityUserStore) UnlinkOAuth(ctx context.Context, userID, provider stri
 	return err
 }
 
-// UnlinkOAuthGuarded removes the provider link unless that would leave the
-// user with no login method, deciding and deleting in one atomic operation
-// so the refuse-the-last invariant holds under concurrent unlinks.
-// Implements AtomicUnlinker.
-//
-// On PostgreSQL the count, the password check, and the delete run in one
-// transaction whose first statement locks the user's link rows (SELECT …
-// FOR UPDATE): a concurrent unlink of the sibling provider blocks there,
-// then re-reads the post-commit state and refuses. On SQLite (and any
-// other dialect) the whole decision is one conditional DELETE — a single
-// statement is atomic in SQLite, and the writers-serialize lock model
-// makes the subquery and the delete one indivisible step — followed by a
-// read-back that only distinguishes NotLinked from RefusedLast for the
-// response code; the guard itself never depends on it.
+// UnlinkOAuthGuarded removes the link unless it is the user's last login method, atomically. Implements AtomicUnlinker.
 func (s *EntityUserStore) UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error) {
 	links := query.QuoteFolded(s.oauthLinksTable())
 	users := query.QuoteFolded(s.table)
@@ -280,9 +222,6 @@ func (s *EntityUserStore) unlinkGuardedPostgres(ctx context.Context, userID, pro
 }
 
 func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, userID, provider, links, users string) (UnlinkOutcome, error) {
-	// The guard rides inside the DELETE: the row is removed only when
-	// another link for the user remains, or the user's row reports a
-	// real password. RowsAffected decides.
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		"DELETE FROM %s WHERE user_id = $1 AND provider = $2 AND (EXISTS (SELECT 1 FROM %s l WHERE l.user_id = $1 AND l.provider <> $2) OR EXISTS (SELECT 1 FROM %s u WHERE u.%s = $1 AND u.%s = 1))",
 		links, links, users,
@@ -295,9 +234,6 @@ func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, user
 	if n, _ := res.RowsAffected(); n > 0 {
 		return UnlinkRemoved, nil
 	}
-	// Zero rows: either the link was never there (404) or the guard
-	// refused it (409). Read-back is for the status code only — the
-	// guard above is already decided and atomic.
 	var linked bool
 	err = s.db.QueryRowContext(ctx, fmt.Sprintf(
 		"SELECT EXISTS (SELECT 1 FROM %s WHERE user_id = $1 AND provider = $2)", links,
@@ -311,12 +247,10 @@ func (s *EntityUserStore) unlinkGuardedSingleStatement(ctx context.Context, user
 	return UnlinkNotLinked, nil
 }
 
-// txHasPassword reads the password_set flag on the given transaction so
-// the PG guarded unlink decides on the same locked state it deletes in.
 func (s *EntityUserStore) txHasPassword(ctx context.Context, tx *sql.Tx, users, userID string) (bool, error) {
 	var hasPW bool
 	err := tx.QueryRowContext(ctx, fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s = $1",
+		"SELECT COALESCE(%s, FALSE) FROM %s WHERE %s = $1",
 		query.QuoteFolded(s.fieldMap.PasswordSet), users,
 		query.QuoteFolded(s.fieldMap.ID),
 	), userID).Scan(&hasPW)
@@ -326,9 +260,6 @@ func (s *EntityUserStore) txHasPassword(ctx context.Context, tx *sql.Tx, users, 
 	return hasPW, err
 }
 
-// nullable wraps a string for SQL NULL semantics: empty → NULL, else the
-// string. Keeps the table free of empty-string profile columns and lets
-// ListAccounts distinguish "no avatar" from "empty avatar".
 func nullable(s string) any {
 	if s == "" {
 		return nil
@@ -336,9 +267,6 @@ func nullable(s string) any {
 	return s
 }
 
-// countLinksForProvider is a test-accessible row count for a (provider,
-// provider_id) pair, used to pin the race-safety invariant: two concurrent
-// LinkOAuth calls for the same pair yield exactly one row.
 func (s *EntityUserStore) countLinksForProvider(ctx context.Context, provider, providerID string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, fmt.Sprintf(
@@ -348,9 +276,6 @@ func (s *EntityUserStore) countLinksForProvider(ctx context.Context, provider, p
 	return n, err
 }
 
-// Compile-time assertions that EntityUserStore satisfies the optional
-// interfaces it now claims. These catch a method-signature drift at build
-// time rather than at the first OAuth callback in production.
 var (
 	_ OAuthLinker         = (*EntityUserStore)(nil)
 	_ OAuthEnrichedLinker = (*EntityUserStore)(nil)

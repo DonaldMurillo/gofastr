@@ -290,6 +290,35 @@ func TestSweepConstraintsPartialOrExpressionUniqueCoversNothing(t *testing.T) {
 	}
 }
 
+func TestSweepConstraintsQuotedIndexNames(t *testing.T) {
+	db := sweepMemDB(t,
+		`ATTACH DATABASE ':memory:' AS aux`,
+		`CREATE TABLE aux.ix (id INTEGER PRIMARY KEY, label TEXT, note TEXT)`,
+		`CREATE INDEX aux."note's.index" ON ix (note)`,
+		`CREATE UNIQUE INDEX aux."label-name" ON ix (label)`,
+		`CREATE UNIQUE INDEX aux."label.expression" ON ix (lower(label))`,
+	)
+	ctx := context.Background()
+	ent := rawEnt("ix", "aux.ix", []schema.Field{
+		{Name: "id", Type: schema.Int},
+		{Name: "label", Type: schema.String},
+	}, nil, "id")
+	changes, err := DiffSchema(ctx, db, testReg{"ix": ent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].sqliteRebuildOf != "ix" || !strings.Contains(changes[0].SQL, "DROP COLUMN aux.ix.note by table rebuild") {
+		t.Fatalf("expected a rebuild to drop the indexed column, got %+v", changes)
+	}
+	unique, err := liveUniqueColumns(ctx, db, "aux.ix", DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unique) != 1 || !unique["label"] {
+		t.Fatalf("expected only label to be covered by unique indexes, got %v", unique)
+	}
+}
+
 func TestSweepConstraintsStaleUniqueSkipsDeclaredAlone(t *testing.T) {
 	ent := sweepEnt("su", entity.EntityConfig{
 		Fields: []schema.Field{

@@ -257,11 +257,7 @@ func (m *Manager) haltPresenceHeartbeat() {
 	m.presenceWG.Wait()
 }
 
-func localRosterLocked(m *Manager, topic string) []PresenceMember {
-	return buildSortedMembers(localMembersLocked(m, topic))
-}
-
-func localMembersLocked(m *Manager, topic string) map[string]string {
+func localSeenLocked(m *Manager, topic string) map[string]string {
 	seen := make(map[string]string)
 	for _, c := range m.presenceConns {
 		if c.identity.UserID == "" || !c.hasTopic(topic) {
@@ -272,6 +268,10 @@ func localMembersLocked(m *Manager, topic string) map[string]string {
 		}
 	}
 	return seen
+}
+
+func localRosterLocked(m *Manager, topic string) []PresenceMember {
+	return buildSortedMembers(localSeenLocked(m, topic))
 }
 
 func localTopicsLocked(m *Manager) []string {
@@ -294,7 +294,7 @@ func shownRosterLocked(m *Manager, topic string) []PresenceMember {
 }
 
 func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMember {
-	seen := localMembersLocked(m, topic)
+	seen := localSeenLocked(m, topic)
 	if reps, ok := m.remoteRosters[topic]; ok {
 		for _, entry := range reps {
 			if !now.IsZero() && now.After(entry.expiresAt) {

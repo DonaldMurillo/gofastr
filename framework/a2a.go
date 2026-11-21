@@ -152,10 +152,6 @@ type entitySkillSet struct {
 	tools  map[string]mcp.Tool
 }
 
-func (a *App) entitySkillSets() []entitySkillSet {
-	return a.entitySkillSetsFrom(a.MCP.ListTools())
-}
-
 func (a *App) entitySkillSetsFrom(tools []mcp.Tool) []entitySkillSet {
 	entities := a.Registry.All()
 	byKey := map[string]*entitySkillSet{}

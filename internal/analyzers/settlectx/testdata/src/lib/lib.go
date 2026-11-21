@@ -24,12 +24,17 @@ func Lookup(ctx context.Context, fn func() error) error {
 type key struct{}
 
 // SettleContext is the outbox settleContext spelling.
-func SettleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want SettleContext:`detaches\(bounded=true\)`
+func SettleContext(ctx context.Context) (context.Context, context.CancelFunc) { // want SettleContext:`detaches\[\{0 true\}\]`
 	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
 
+func BoundedSecond(ctx context.Context) (context.CancelFunc, context.Context) { // want BoundedSecond:`detaches\[\{1 true\}\]`
+	bounded, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	return cancel, bounded
+}
+
 // Detach drops the cancel but sets no bound: an unbounded detaches fact.
-func Detach(ctx context.Context) context.Context { // want Detach:`detaches\(bounded=false\)`
+func Detach(ctx context.Context) context.Context { // want Detach:`detaches\[\{0 false\}\]`
 	return context.WithoutCancel(ctx)
 }
 

@@ -1,0 +1,35 @@
+primitive: log
+summary: The server-log plugin, a slog handler that fans JSON lines out to sinks, with the ring buffer, JSON sink, metrics handler and error reporters.
+code:
+  - battery/log/log.go
+  - battery/log/doc.go
+  - battery/log/agents.go
+  - battery/log/sink.go
+  - battery/log/json.go
+  - battery/log/ring.go
+  - battery/log/metrics_handler.go
+  - battery/log/error_reporter.go
+docs:
+  - framework/docs/content/log.md
+on_change:
+  - A new Config field, sink option or MCP tool goes in log.md.
+invariants:
+  - id: sink-failure-is-reported
+    rule: A sink's write error is counted and reported to stderr at most about once a second with a scrubbed preview.
+    enforced_by:
+      - test: battery/log.TestFanoutStderrFallbackOnSinkError
+      - test: battery/log.TestFanoutRedStderrPreviewScrubbed
+  - id: groups-nest-like-slog
+    rule: WithAttrs and WithGroup replay onto slog's JSON encoding in call order, so the output matches slog.JSONHandler's.
+    enforced_by:
+      - test: battery/log.TestHandlerNestsGroupsLikeSlog
+      - test: battery/log.TestFanoutWithAttrsAndGroups
+  - id: reports-are-scrubbed
+    rule: The error reporters write a recovered panic's value and route without control bytes.
+    enforced_by:
+      - test: battery/log.TestRecoveryReportScrubbedOfCtrlBytes
+      - test: battery/log.TestSlogReporterScrubbedOfCtrlBytes
+  - id: metrics-handler-is-no-store
+    rule: MetricsHandler answers in Prometheus text format with Cache-Control no-store.
+    enforced_by:
+      - test: battery/log.TestMetricsHandlerCarriesNoStore

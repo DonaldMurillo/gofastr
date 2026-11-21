@@ -1,0 +1,31 @@
+primitive: auth.csrf
+summary: The auth battery's double-submit CSRF middleware and helpers, and WithBFFPosture's cookie-only browser preset.
+code:
+  - battery/auth/csrf.go
+  - battery/auth/bff.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: csrf-skips
+    rule: CSRF skips bearer-authenticated, embed and in-process requests, and WithCSRFSkipPaths adds its paths to the skips already set.
+    enforced_by:
+      - test: battery/auth.TestCSRF_SkipsBearerAuth
+      - test: battery/auth.TestCSRFExemptsEmbedEndpoints
+      - test: battery/auth.TestCSRF_WithCSRFSkipPaths_PinsPerRouteExemption
+  - id: token-source-order
+    rule: CSRFToken reads the context token first, then the __Host- cookie before the bare name.
+    enforced_by:
+      - test: battery/auth.TestCSRFInputFromCtx_MatchesRequestVariant
+      - test: battery/auth.TestCSRFTokenPrefersHostPrefixedCookie
+  - id: tokens-masked-per-render
+    rule: CSRFToken and CSRFTokenFromCtx return the token masked with a fresh pad on every call, from the context and from a cookie alike, never the raw token.
+    enforced_by:
+      - test: battery/auth.TestCSRFTokensAreMaskedPerRender
+  - id: bff-guard
+    rule: WithBFFPosture refuses an invalid token brand, answers 403 to an Origin outside the exact allowlist and to a bearer JWT under the API prefix (the whole app without one, matched by segment), and lets the form-post OAuth callback through.
+    enforced_by:
+      - test: battery/auth.TestBFFRejectsInvalidTokenBrand
+      - test: battery/auth.TestBFFPostureRejectsUntrustedOriginsAndJWTs
+      - test: battery/auth.TestBFFBearerRejectedEverySpelling
+      - test: battery/auth.TestBFFGuardPrefixIsSegmentScoped
+      - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough

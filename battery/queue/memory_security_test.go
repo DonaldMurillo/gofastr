@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,22 +16,21 @@ import (
 // re-enqueue fails — the enqueue-first/remove-second ordering that
 // RedisQueue.Replay documents as the lossless rule ("a failure between
 // the two ops leaves the job on the dead list (recoverable) rather than
-// dropping it"). Surface: MemoryQueue.Replay, which inverts it — it
-// deletes from q.dead BEFORE calling Enqueue, so a cancelled context
-// (battery/admin passes r.Context(), a client disconnect or request
-// deadline fires it) or a Replay racing Close loses the record
-// permanently: the visible error invites a retry that is then the
-// documented idempotent no-op against a vanished job.
+// dropping it"). Surface: MemoryQueue.Replay, which enqueues BEFORE
+// removing the dead record, so a cancelled context (battery/admin passes
+// r.Context(), a client disconnect or request deadline fires it) or a
+// Replay racing Close leaves the job on the dead list, where a retried
+// Replay can pick it up again.
 //
-// (The companion memory-surface finding from the same recon pass — the
-// worker pool dropping unregistered-type jobs without a trace — is
-// already pinned, RED, by TestUnknownTypeJobDropIsObservable/memory in
-// queue_security_test.go; not duplicated here.)
+// (The companion memory-surface property — the worker pool retaining
+// unregistered-type jobs — is pinned by TestUnknownTypeJobDropIsObservable/
+// memory in queue_security_test.go; not duplicated here.)
 // ============================================================================
 
 // TestReplayKeepsJobWhenEnqueueFails: a failed re-enqueue must leave the
 // job retrievable from ListJobs("failed") so the visible error can be
-// retried. Today the record is consumed first and the loss is permanent.
+// retried; Replay enqueues before removing the dead record, so the job
+// stays recoverable.
 func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 	assertRetained := func(t *testing.T, q *MemoryQueue, id string, replayErr error) {
 		t.Helper()
@@ -39,7 +39,7 @@ func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 			t.Fatalf("list failed jobs: %v", err)
 		}
 		if len(dead) != 1 || dead[0].ID != id {
-			t.Fatalf("Replay consumed the terminal record before the re-enqueue succeeded (replay err=%v, failed jobs=%v): the visible error invites a retry that is now the documented idempotent no-op against a vanished job — permanent loss", replayErr, dead)
+			t.Fatalf("Replay removed the terminal record although the re-enqueue failed (replay err=%v, failed jobs=%v): the visible error invites a retry that would now be the documented idempotent no-op against a vanished job — permanent loss", replayErr, dead)
 		}
 	}
 
@@ -196,5 +196,23 @@ func TestMemoryNackKeepsJobWhenEnqueueFails(t *testing.T) {
 			"(nack err=%v): the job is in no store — not pending, not dead, not in-flight — and a retried Nack is "+
 			"the documented no-op; the same lossless ordering Replay, RedisQueue.Nack, and processJob's own retry "+
 			"path already implement was skipped here", nackErr)
+	}
+}
+
+func TestMemoryDeadLetterListIsBounded(t *testing.T) {
+	q := NewMemoryQueue(0)
+	t.Cleanup(func() { q.Close() })
+	for i := range maxDeadJobs + 1 {
+		q.retainDead(Job{ID: "j" + strconv.Itoa(i), Type: "t"})
+	}
+	dead, err := q.ListJobs(context.Background(), "failed", 2*maxDeadJobs, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maxDeadJobs != 1000 || len(dead) != maxDeadJobs {
+		t.Fatalf("kept %d dead jobs under cap %d, want 1000", len(dead), maxDeadJobs)
+	}
+	if dead[0].ID != "j1000" || dead[len(dead)-1].ID != "j1" {
+		t.Errorf("kept %s..%s, want j1000..j1 with the oldest evicted", dead[0].ID, dead[len(dead)-1].ID)
 	}
 }

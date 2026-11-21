@@ -1,0 +1,17 @@
+primitive: service.backends
+summary: The OS service managers, systemd user units, launchd agents and Task Scheduler tasks, each writing a definition the OS runs the daemon from.
+code:
+  - battery/service/manager.go
+  - battery/service/systemd.go
+  - battery/service/launchd.go
+  - battery/service/schtasks.go
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: definitions-escape-their-values
+    rule: Each backend escapes the values it writes into its definition (systemd quoting of backslash, quote, % and $, XML escaping in the plist and task XML, Windows argument quoting).
+    enforced_by:
+      - test: battery/service.TestQuoteSystemd
+      - test: battery/service.TestLaunchdPlistEscapes
+      - test: battery/service.TestTaskXML
+      - test: battery/service.TestQuoteWindowsArgRoundTrips

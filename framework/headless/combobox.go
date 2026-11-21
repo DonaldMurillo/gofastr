@@ -130,15 +130,7 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	listboxID := p.ID + "-listbox"
 
 	p.Options = slices.Clone(p.Options)
-	ids := make([]string, 0, len(p.Options))
-	for i := range p.Options {
-		if p.Options[i].ID == "" {
-			p.Options[i].ID = listboxID + "-opt-" + strconv.Itoa(i)
-		}
-		checkFragmentID("Combobox option", "ID", p.Options[i].ID)
-		ids = append(ids, p.Options[i].ID)
-	}
-	checkNoDuplicateIDs("Combobox", ids)
+	checkNoDuplicateIDs("Combobox", deriveOptionIDs(listboxID, p.Options))
 
 	b := p.Parts.Box(s)
 	inputAttrs := Attrs(map[string]string{
@@ -273,18 +265,28 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 // the listbox listboxID, ids "<listboxID>-opt-<n>" unless set.
 func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTML {
 	b := Parts{}.Box(s)
+	opts = slices.Clone(opts)
 	rows := make([]render.HTML, 0, len(opts))
-	ids := make([]string, 0, len(opts))
-	for i, o := range opts {
-		if o.ID == "" {
-			o.ID = listboxID + "-opt-" + strconv.Itoa(i)
-		}
-		checkFragmentID("Combobox option", "ID", o.ID)
-		ids = append(ids, o.ID)
+	checkNoDuplicateIDs("ComboboxRows", deriveOptionIDs(listboxID, opts))
+	for _, o := range opts {
 		rows = append(rows, comboboxOptionEl(b, o, true, true))
 	}
-	checkNoDuplicateIDs("ComboboxRows", ids)
 	return render.Join(rows...)
+}
+
+// deriveOptionIDs fills each option's empty ID as "<listboxID>-opt-<i>",
+// refuses a broken ID and returns the ids in order; Combobox and its
+// island answer derive them the same way or the rows stop matching.
+func deriveOptionIDs(listboxID string, opts []ComboboxOption) []string {
+	ids := make([]string, 0, len(opts))
+	for i := range opts {
+		if opts[i].ID == "" {
+			opts[i].ID = listboxID + "-opt-" + strconv.Itoa(i)
+		}
+		checkFragmentID("Combobox option", "ID", opts[i].ID)
+		ids = append(ids, opts[i].ID)
+	}
+	return ids
 }
 
 func comboboxOptionEl(b Box, o ComboboxOption, labelled, root bool) render.HTML {

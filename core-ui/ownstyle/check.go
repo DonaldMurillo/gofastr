@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
@@ -38,6 +39,8 @@ const (
 	RuleImportant = "GOFASTR1811"
 	// RuleRawMediaWidth is GOFASTR1812.
 	RuleRawMediaWidth = "GOFASTR1812"
+	// RuleInvalidMedia marks a source query the owned-style compiler rejects.
+	RuleInvalidMedia = "invalid-media"
 	// RuleAnimationWithoutReducedMotion is GOFASTR1813 (warn).
 	RuleAnimationWithoutReducedMotion = "GOFASTR1813"
 	// RuleAppSheetSelector is GOFASTR1819.
@@ -150,7 +153,7 @@ func breakpointsFromTokens(tokens map[string]string) []breakpoint {
 func buildValueIndex(tokens map[string]string) map[string][]string {
 	out := map[string][]string{}
 	for k, v := range tokens {
-		if strings.Contains(k, ".") || bareKeyword(v) {
+		if strings.Contains(k, ".") || style.BareKeyword(v) {
 			continue
 		}
 		lv := normalizeNumber(strings.ToLower(v))
@@ -178,21 +181,6 @@ func normalizeNumber(v string) string {
 	}
 	return strconv.FormatFloat(n, 'f', -1, 64) + m[3]
 }
-
-func bareKeyword(v string) bool {
-	if v == "" {
-		return true
-	}
-	for _, r := range v {
-		switch {
-		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
-			return false
-		}
-	}
-	return true
-}
-
-func tokenCategory(key string) string { return style.TokenCategory(key) }
 
 // PropTokenCategories maps a CSS property to the theme-token categories whose
 // value can legally replace that property's through var().
@@ -298,6 +286,10 @@ func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	}
 	switch {
 	case r.At && r.Name == "media":
+		expander := compiler{breakpoints: c.breakpoints}
+		if _, _, err := expander.expandMediaQuery(r.Prel); err != nil {
+			c.report(Diagnostic{Rule: RuleInvalidMedia, Severity: SeverityError, Line: r.Pos.Line, Col: r.Pos.Col, Message: err.Error()})
+		}
 		c.checkMediaWidths(r)
 	case r.At && !r.Block && r.Name != "layer":
 		c.report(Diagnostic{
@@ -328,7 +320,8 @@ func (c *checker) checkMediaWidths(r *Rule) {
 		if t.Type != TokenIdent {
 			continue
 		}
-		switch t.Text {
+		feature := strings.ToLower(t.Text)
+		switch feature {
 		case "min-width", "max-width", "width":
 		default:
 			continue
@@ -344,19 +337,29 @@ func (c *checker) checkMediaWidths(r *Rule) {
 					Severity: SeverityError,
 					Line:     v.Line,
 					Col:      v.Col,
-					Message:  c.rawWidthMessage(v.Text),
+					Message:  c.rawWidthMessage(v.Text, widthComparison(prel[k+1:i], true)),
 				})
 			}
 		}
 		j := i + 1
+		var comparison string
 		if j < len(prel) && prel[j].Type == TokenColon {
 			j++
+			switch feature {
+			case "min-width":
+				comparison = ">="
+			case "max-width":
+				comparison = "<="
+			default:
+				comparison = "="
+			}
 		} else {
 			for j < len(prel) && isComparisonDelim(prel[j]) {
 				j++
 			}
+			comparison = widthComparison(prel[i+1:j], false)
 		}
-		if j >= len(prel) {
+		if j >= len(prel) || comparison == "" {
 			continue
 		}
 		v := prel[j]
@@ -368,9 +371,24 @@ func (c *checker) checkMediaWidths(r *Rule) {
 			Severity: SeverityError,
 			Line:     v.Line,
 			Col:      v.Col,
-			Message:  c.rawWidthMessage(v.Text),
+			Message:  c.rawWidthMessage(v.Text, comparison),
 		})
 	}
+}
+
+func widthComparison(tokens []Token, reversed bool) string {
+	var op strings.Builder
+	for _, t := range tokens {
+		switch {
+		case reversed && t.Text == "<":
+			op.WriteByte('>')
+		case reversed && t.Text == ">":
+			op.WriteByte('<')
+		default:
+			op.WriteString(t.Text)
+		}
+	}
+	return op.String()
 }
 
 func isComparisonDelim(t Token) bool {
@@ -395,36 +413,61 @@ func widthToPx(raw string) (float64, string, bool) {
 	return n, m[2], true
 }
 
-func (c *checker) rawWidthMessage(raw string) string {
+func (c *checker) rawWidthMessage(raw, comparison string) string {
+	if comparison == "=" {
+		return fmt.Sprintf("%s is a raw width; no custom medium expresses equality", raw)
+	}
 	px, unit, ok := widthToPx(raw)
 	msg := fmt.Sprintf("%s is not a theme breakpoint", raw)
 	if !ok || len(c.breakpoints) == 0 {
 		return msg
 	}
+	upper := strings.HasPrefix(comparison, "<")
 	var exact *breakpoint
 	var below, above *breakpoint
 	for i := range c.breakpoints {
-		bp := c.breakpoints[i]
+		bp := &c.breakpoints[i]
+		if upper && px == bp.px-belowBreakpointOffset {
+			msg := fmt.Sprintf("%s is the upper limit of (--below-%s); use (--below-%s)", raw, bp.name, bp.name)
+			if comparison == "<" {
+				msg += " if you mean at or below that limit"
+			}
+			return msg
+		}
 		switch {
 		case bp.px == px:
-			exact = &c.breakpoints[i]
+			exact = bp
 		case bp.px < px:
-			below = &c.breakpoints[i]
+			below = bp
 		case bp.px > px && above == nil:
-			above = &c.breakpoints[i]
+			above = bp
 		}
 	}
 	suggest := func(bp breakpoint) string {
+		if upper {
+			return fmt.Sprintf("(--below-%s) (max-width: %gpx)", bp.name, bp.px-belowBreakpointOffset)
+		}
 		return fmt.Sprintf("(--above-%s) %gpx", bp.name, bp.px)
 	}
 	switch {
 	case exact != nil:
 		if unit == "px" {
-			msg = fmt.Sprintf("%s is the %s breakpoint; use (--above-%s) so the theme can move it",
-				raw, exact.name, exact.name)
+			msg = fmt.Sprintf("%s is the %s breakpoint", raw, exact.name)
 		} else {
-			msg = fmt.Sprintf("%s is %gpx, the %s breakpoint; use (--above-%s)",
-				raw, px, exact.name, exact.name)
+			msg = fmt.Sprintf("%s is %gpx, the %s breakpoint", raw, px, exact.name)
+		}
+		switch comparison {
+		case "<=":
+			msg += fmt.Sprintf("; use (--below-%s) if you mean below the breakpoint (max-width: %gpx)", exact.name, px-belowBreakpointOffset)
+		case "<":
+			msg += "; use " + suggest(*exact)
+		case ">":
+			msg += fmt.Sprintf("; use (--above-%s) if you mean at or above the breakpoint", exact.name)
+		case ">=":
+			msg += fmt.Sprintf("; use (--above-%s)", exact.name)
+			if unit == "px" {
+				msg += " so the theme can move it"
+			}
 		}
 	case below != nil && above != nil:
 		msg += "; use " + suggest(*below) + " or " + suggest(*above)
@@ -691,7 +734,7 @@ func runtimeOwnedVarPrefix(name string) bool {
 }
 
 func (c *checker) checkFallbackDrift(d *Decl, varTok Token, name, fallback string) {
-	if !driftCategories[tokenCategory(name)] {
+	if !driftCategories[style.TokenCategory(name)] {
 		return
 	}
 	declared, ok := c.lightTokenValue(name)
@@ -729,7 +772,7 @@ func (c *checker) checkHardcodedValue(d *Decl) {
 	}
 	var toks []string
 	for _, k := range c.valueIndex[normalizeNumber(strings.ToLower(val))] {
-		if allowed[tokenCategory(k)] {
+		if allowed[style.TokenCategory(k)] {
 			toks = append(toks, k)
 		}
 	}
@@ -797,30 +840,7 @@ func closestToken(name string, names []string) (string, bool) {
 }
 
 func editDistance(a, b string, cutoff int) int {
-	ra, rb := []rune(a), []rune(b)
-	if len(ra) == 0 {
-		return min(len(rb), cutoff+1)
-	}
-	if len(rb) == 0 {
-		return min(len(ra), cutoff+1)
-	}
-	prev := make([]int, len(rb)+1)
-	cur := make([]int, len(rb)+1)
-	for j := range len(rb) {
-		prev[j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		cur[0] = i
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			cur[j] = min(min(cur[j-1]+1, prev[j]+1), prev[j-1]+cost)
-		}
-		prev, cur = cur, prev
-	}
-	return min(prev[len(rb)], cutoff+1)
+	return min(fuzzy.LevenshteinRunes(a, b), cutoff+1)
 }
 
 func significantTokens(toks []Token) []Token {

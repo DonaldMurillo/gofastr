@@ -28,37 +28,18 @@ import (
 // key passed. The expectation has to be stated independently or it is not
 // an expectation.
 var (
-	// Refused because raw emission genuinely breaks the round trip, in at
-	// least one of the two reachable contexts (a seed row, which is a map
-	// inside a list item, and entity properties, which is a nested map).
-	mustRefuseBreaking = []string{
-		"", "a\nb", "a\rb", "a[b", "a]b", "a{b", "a}b", "- a", "a\tb",
-		" a", "a ", `"status`, "'status", `"quoted"`, "'quoted'",
-		// Leading '#' is the load-bearing one: the comment eats the line
-		// and the entry is SILENTLY DROPPED — the row re-parses as {}.
-		// pack.go contemplates relaxing '#' to a position-exact check;
-		// that relaxation must not be allowed to accept these.
-		"#a", "a #b",
-		"{a", "[a",
-		// A colon followed by a space is still a mapping separator.
-		"a: b",
-		// Comment family, mirroring the #a/a #b pair already listed.
-		"#", "a #", " #a",
+	mustRefuseKeys = []string{
+		"", "a\nb", "a\rb", "a\tb", " a", "a ", " #a",
+		"a[b", "a]b", "a{b", "a}b", "{a", "[a",
 	}
-	// Refused conservatively: these would in fact survive raw emission
-	// today, but the guard rejects them anyway because the predicate is
-	// simpler than the parser's real rule. Listed separately so the
-	// comment above stays true of the list above it.
-	mustRefuseConservatively = []string{"a#b", "a:b", ":", ":a", "a:",
-		// Quote family: core/yaml reads a quote inside a plain scalar as
-		// text, so the comment scanner stays in step and raw emission
-		// survives. Pack still refuses them.
-		"it's", `a"b`, "a'b",
+	// These keys need quotes in at least one writer context.
+	mustQuoteKeys = []string{
+		"- a", `"status`, "'status", `"quoted"`, "'quoted'",
+		"#a", "a #b", "a: b", "#", "a #", "&a", "*a", "!a",
 	}
-
-	// Must survive untouched. Refusing any of these breaks real packs,
-	// which is the failure mode that matters more than the injection.
+	// These keys also round-trip when emitted bare.
 	mustRoundTripKeys = []string{
+		"a#b", "a:b", ":", ":a", "a:", "it's", `a"b`, "a'b",
 		"name", "created_at", "data-label", "primary-fg", "text-muted",
 		"icon", "-a", "a-b", "a.b", "a b", "Title", "id", "C", "x1",
 		"a/b", "a|b", "a?b", "a!b", "a@b", "a%b", "a&b", "a*b", "a+b",
@@ -71,7 +52,7 @@ var (
 
 func TestPackNeverEmitsAnUnreadableFile(t *testing.T) {
 	t.Run("refused", func(t *testing.T) {
-		for _, key := range append(append([]string{}, mustRefuseBreaking...), mustRefuseConservatively...) {
+		for _, key := range mustRefuseKeys {
 			for _, val := range hostileValues {
 				if _, err := encodeKeyValue(key, val); err == nil {
 					t.Errorf("key %q (value %q) was accepted; it must be refused", key, val)
@@ -81,7 +62,7 @@ func TestPackNeverEmitsAnUnreadableFile(t *testing.T) {
 	})
 
 	t.Run("round-trips", func(t *testing.T) {
-		for _, key := range mustRoundTripKeys {
+		for _, key := range append(append([]string{}, mustQuoteKeys...), mustRoundTripKeys...) {
 			for _, val := range hostileValues {
 				out, err := encodeKeyValue(key, val)
 				if err != nil {
@@ -147,46 +128,26 @@ func encodeKeyValue(key, val string) (string, error) {
 	})
 }
 
-// The two refused lists differ only in WHY, and until now that why was a
-// comment. It was wrong once: a"b sat under "would survive raw emission"
-// while in fact breaking in every context, so this file blessed a claim
-// about the parser that the guard's own comment contradicted.
-//
-// This checks the classification instead of asserting it in prose: a
-// breaking key must actually break raw emission for at least one value, and
-// a conservative key must actually survive for all of them. Bypasses the
-// guard by building the row line the writer would emit.
-func TestRefusedKeyClassificationIsAccurate(t *testing.T) {
-	t.Run("breaking keys really break", func(t *testing.T) {
-		for _, key := range mustRefuseBreaking {
-			if key == "" {
-				continue // the empty key has no raw line to build
-			}
-			broke := false
-			for _, val := range hostileValues {
-				if rawRowRoundTrips(key, val) != nil {
-					broke = true
-					break
-				}
-			}
-			if !broke {
-				t.Errorf("key %q is listed as breaking, but raw emission round-trips "+
-					"for every hostile value — it belongs in mustRefuseConservatively", key)
+func TestPackKeyQuotingPreservesMappingStructure(t *testing.T) {
+	for _, key := range mustQuoteKeys {
+		broke := false
+		for _, val := range hostileValues {
+			if rawRowRoundTrips(key, val) != nil {
+				broke = true
+				break
 			}
 		}
-	})
-
-	t.Run("conservative keys really survive", func(t *testing.T) {
-		for _, key := range mustRefuseConservatively {
-			for _, val := range hostileValues {
-				if err := rawRowRoundTrips(key, val); err != nil {
-					t.Errorf("key %q is listed as refused-conservatively, but raw emission "+
-						"breaks with value %q (%v) — it belongs in mustRefuseBreaking",
-						key, val, err)
-				}
+		if !broke {
+			t.Errorf("bare key %q unexpectedly preserved its mapping in both contexts", key)
+		}
+	}
+	for _, key := range mustRoundTripKeys {
+		for _, val := range hostileValues {
+			if err := rawRowRoundTrips(key, val); err != nil {
+				t.Errorf("bare key %q with value %q changed the mapping: %v", key, val, err)
 			}
 		}
-	})
+	}
 }
 
 // rawRowRoundTrips reports whether the raw (guard-bypassed) emission of
@@ -259,7 +220,7 @@ func cellMatches(m map[string]*coreyaml.Node, key, val string) error {
 // OPENED a quoted region that swallowed the separator: [60', 90'] re-parsed
 // as ONE member "60', 90'", and a lone [60'] failed to parse at all (#323).
 //
-// Values, unlike keys, CAN be quoted, so the fix quotes rather than refuses.
+// Values with quotes round-trip as one flow-list item when escaped.
 // The oracle is the input list itself — stated here, not derived from
 // needsQuote, for the same reason as the key lists above.
 var mustRoundTripEnumValues = []string{

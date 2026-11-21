@@ -231,7 +231,6 @@ func TestDeepCopyRefusesUncopyablePointers(t *testing.T) {
 		"nil_map_ptr": nilMap,
 		"struct_ptr":  ptrStruct,
 		"nil_iface":   nil,
-		"iface_slice": []any{nil, map[string]any{"k": "v"}},
 		"ptr_slice":   []*opaque{nil, ptrStruct},
 	}
 	cp := Map(row)
@@ -245,12 +244,9 @@ func TestDeepCopyRefusesUncopyablePointers(t *testing.T) {
 	if cp["nil_iface"] != nil {
 		t.Error("a nil interface value was not passed through")
 	}
-	// The container around them is still rebuilt, which is the point.
-	inner := cp["iface_slice"].([]any)[1].(map[string]any)
-	inner["k"] = "mutated"
-	if row["iface_slice"].([]any)[1].(map[string]any)["k"] != "v" {
-		t.Error("mutating the copy reached the original through an interface element")
-	}
+	// The slice-element copy the old fixture asserted is covered by
+	// TestDeepCopyReflectCoversArraysAndNilElements; this test keeps
+	// only the pointer refusals.
 	if got := cp["ptr_slice"].([]*opaque); got[0] != nil || got[1] != ptrStruct {
 		t.Error("a []*struct element was not passed through untouched")
 	}
@@ -279,6 +275,9 @@ func TestDeepCopyWalksArrayAndMapElements(t *testing.T) {
 	if inner["k"] != "v" {
 		t.Error("mutating the copied array element reached the original map")
 	}
+	if s, ok := cp["nil_slice"].([]any); !ok || s != nil {
+		t.Errorf("the nil slice fixture became %#v; want nil preserved", cp["nil_slice"])
+	}
 
 	m := cp["ptr_map"].(map[string]*map[string]any)
 	if m["a"] != nil {
@@ -303,5 +302,65 @@ func TestDeepCopyPassesThroughOpaqueKinds(t *testing.T) {
 	}
 	if cp["func"] == nil {
 		t.Error("a func was dropped rather than passed through")
+	}
+}
+
+// The typed fast paths must preserve nilness the way the reflective
+// fallback does: a payload's JSON null reaches response hooks and the
+// event record as null, not as an empty object or array, and an empty
+// non-nil byte slice does not collapse to nil. Map keeps its own
+// top-level contract: a nil ROW copies to an empty map.
+func TestValuePreservesNilnessOnTypedPaths(t *testing.T) {
+	var nilMap map[string]any
+	if m, ok := Value(nilMap).(map[string]any); !ok || m != nil {
+		t.Errorf("Value(nil map) = %#v; want the nil map back", Value(nilMap))
+	}
+	var nilRows []map[string]any
+	if s, ok := Value(nilRows).([]map[string]any); !ok || s != nil {
+		t.Errorf("Value(nil []map) = %#v; want the nil slice back", Value(nilRows))
+	}
+	var nilAny []any
+	if s, ok := Value(nilAny).([]any); !ok || s != nil {
+		t.Errorf("Value(nil []any) = %#v; want the nil slice back", Value(nilAny))
+	}
+	if b, ok := Value([]byte{}).([]byte); !ok || b == nil {
+		t.Error("Value(empty []byte) collapsed the empty slice to nil")
+	}
+
+	row := map[string]any{
+		"obj":   map[string]any(nil),
+		"rows":  []map[string]any(nil),
+		"items": []any(nil),
+	}
+	cp := Map(row)
+	if m, ok := cp["obj"].(map[string]any); !ok || m != nil {
+		t.Errorf("nested nil map became %#v; want null preserved", cp["obj"])
+	}
+	if s, ok := cp["rows"].([]map[string]any); !ok || s != nil {
+		t.Errorf("nested nil []map became %#v; want null preserved", cp["rows"])
+	}
+	if s, ok := cp["items"].([]any); !ok || s != nil {
+		t.Errorf("nested nil []any became %#v; want null preserved", cp["items"])
+	}
+
+	if got := Map(nil); got == nil || len(got) != 0 {
+		t.Errorf("Map(nil) = %#v; want the documented empty map", got)
+	}
+}
+
+func TestValuePreservesNilMapSliceSlots(t *testing.T) {
+	src := []map[string]any{nil, {}, {"nested": map[string]any{"value": "original"}}}
+	cp := Value(src).([]map[string]any)
+	if cp[0] != nil {
+		t.Errorf("nil slot became %#v", cp[0])
+	}
+	if cp[1] == nil || len(cp[1]) != 0 {
+		t.Fatalf("empty slot became %#v", cp[1])
+	}
+	cp[0] = map[string]any{"added": true}
+	cp[1]["added"] = true
+	cp[2]["nested"].(map[string]any)["value"] = "changed"
+	if src[0] != nil || len(src[1]) != 0 || src[2]["nested"].(map[string]any)["value"] != "original" {
+		t.Fatalf("copy writes reached the source: %#v", src)
 	}
 }

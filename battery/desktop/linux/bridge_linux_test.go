@@ -32,7 +32,7 @@ func TestNativeGoFastrBridge(t *testing.T) {
 	if os.Getenv("GOFASTR_LINUX_NATIVE") != "1" {
 		t.Skip("set GOFASTR_LINUX_NATIVE=1 in a graphical session")
 	}
-	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
+	t.Setenv(desktop.DataDirEnv, t.TempDir())
 	t.Setenv("GOFASTR_ISOLATION", "off")
 	site := appui.NewApp("Linux bridge")
 	layout := appui.NewLayout("main", appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {

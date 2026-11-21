@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"iter"
@@ -674,7 +675,7 @@ func acceptsProblemJSON(r *http.Request) bool {
 	return readAcceptPreferences(r).prefersProblemJSON(false)
 }
 
-func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request) {
+func (ds *UIHost) writeAgentLinkHeaders(ctx context.Context, w http.ResponseWriter, req *http.Request) {
 	if ds.agentReady == nil || !ds.agentReady.linkHeaders {
 		return
 	}
@@ -695,7 +696,7 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	if ds.agentReady.openAPI != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service-desc"; type="application/json"`, base, ds.agentReady.openAPI))
 	}
-	if ds.pageDocsOn() {
+	if ds.pageDocsOn() && !routeMetaOff(ctx) {
 		if scr, _, ok := ds.App.Router.Resolve(routePath(req)); ok && !scr.NoLLMMD {
 			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.EscapedPath())))
 		}
@@ -765,17 +766,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 			status = http.StatusInternalServerError
 		}
 	}
-	md := res.MD
-	if res.Allowed {
-		title := res.Title
-		if title == "" {
-			title = screen.Title
-		}
-		seo := ds.localizeSEO(ctx, routePath(r), resolveScreenSEOFor(ctx, screen, res.Component))
-		if fm := screenSEOFrontMatter(title, seo); fm != "" {
-			md = fm + "\n" + md
-		}
-	}
+	md := ds.LLMMDWithSEO(ctx, routePath(r), screen, res)
 	w.Header().Add("Vary", "Accept")
 	setPageMarkdownHeaders(w)
 	if status != 0 {

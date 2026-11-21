@@ -32,22 +32,14 @@ func parsedTextareaValue(t *testing.T, markup string) string {
 	return got
 }
 
-// Textarea wrote the Value straight after the start tag, so a value
-// that begins with a newline (a markdown body opening on a blank line,
-// a code block) lost it every time the form was rendered and saved.
+// Textarea must preserve leading LF and CR through HTML parsing.
+// The full newline case table lives in core-ui/html.
 func TestTextareaKeepsLeadingNewline(t *testing.T) {
-	for _, tc := range []struct{ value, want string }{
-		{"\nfirst line after a blank one", "\nfirst line after a blank one"},
-		{"\n\ntwo blank lines", "\n\ntwo blank lines"},
-		// The tokenizer folds CRLF and a lone CR to LF before the drop.
-		{"\r\nwindows", "\nwindows"},
-		{"\rold mac", "\nold mac"},
-		{"no newline", "no newline"},
-		{"", ""},
-	} {
-		markup := string(Textarea(TextareaProps{Name: "body", Value: tc.value}, nil))
-		if got := parsedTextareaValue(t, markup); got != tc.want {
-			t.Errorf("value %q: the browser's textarea holds %q, want %q (markup %q)", tc.value, got, tc.want, markup)
+	const want = "\nfirst line after a blank one"
+	for _, value := range []string{want, "\r" + want[1:]} {
+		markup := string(Textarea(TextareaProps{Name: "body", Value: value}, nil))
+		if got := parsedTextareaValue(t, markup); got != want {
+			t.Errorf("value %q: the browser's textarea holds %q, want %q (markup %q)", value, got, want, markup)
 		}
 	}
 }

@@ -34,8 +34,9 @@ family unchanged. Sibling controls with the same field name therefore
 keep their own labels and descriptions when rendered with a page scope.
 
 Radio and checkbox groups claim their group, description and indexed
-leaf IDs as one scoped family. Leaf identity is the option index, never
-the value's lossy slug. Standalone radio, checkbox and switch configs
+leaf IDs as one scoped family. Each group exposes its own Go option type,
+and both feed the same internal renderer. Leaf identity is the option index,
+never the value's lossy slug. Standalone radio, checkbox and switch configs
 carry `Ctx` too; a Switch allocates its control ID once and reuses it for
 its message, even when another switch has the same submitted name.
 
@@ -93,8 +94,9 @@ The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
 queue, keeping those markers inside the existing level-6 byte budget.
-Its level-1 ceiling tightens to 18,465 bytes so the overflow fixture still
-proves the compression-cliff guard.
+Its level-1 ceiling (`coreCongestionWindowGZ` in `budget_test.go`) stays
+tight enough that the overflow fixture still proves the compression-cliff
+guard.
 
 Tree Enter follows the row's own link on branches as well as leaves;
 Space toggles branches, and Enter toggles only branches without a link.
@@ -417,15 +419,15 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-confirm-title="<text>"` / `data-cui-confirm-accept="<label>"` / `data-cui-confirm-tone="danger"` | Beside `data-cui-confirm`, on the element that carries it: the dialog's heading, its accept button's label, and the danger tone, which shows the template's danger accept button in place of the primary one. Absent, the template's own defaults stand. `interactive.Action.WithConfirmDialog` writes all four. |
 | `<template data-cui-confirm-dialog>` / `data-cui-confirm-part="title\|message\|accept\|accept-danger\|cancel\|label"` | The kit's confirm dialog, rendered once per page by the host from the template a kit registers (`preset.ConfirmTemplate`; `framework/ui` registers one). The `confirm` module clones the template's `<dialog>`, writes the gated element's text into the `title` and `message` parts (and `label`, the accept button's text node, when one is marked), drops the accept button the tone does not pick, loads the sheets the clone names (`data-cui-comp` and `data-cui-scope` on its root and inside it) and waits for those alone, not for unrelated prewarms (the host prefetched them at first paint, so this is normally a cache hit; each wait is bounded at 3 seconds), opens it with `showModal()`, focuses `cancel`, and resolves true on the accept button and false on cancel, Escape or a backdrop click. The clone is removed on close and focus returns to the trigger. Asked from inside a modal widget, the dialog owns the keyboard while it is open: the widget's Tab trap and Escape handler stand down for a modal `<dialog>` that is not inside the top widget, so Tab reaches the accept button and Escape closes only the dialog. One question at a time: an ask made while another waits on its sheets or stands open resolves false at once, so a double click opens one dialog and sends at most one request. The module names no class. |
 | `data-cui-rpc-trigger="input"` | On a `data-cui-rpc` carrier (a `<form>` or any element — the combobox uses a `<div>` so a host form survives HTML parsing), dispatch the RPC on every `input` event from any control inside, after a debounce window. A non-form carrier's named, enabled controls are serialized into the body exactly like a form's. |
-| `data-cui-rpc-debounce-ms="<ms>"` | Debounce window for `data-cui-rpc-trigger="input"`. Default 250. Any other dispatch of the same node inside the window (a submit) cancels the pending request, so the form is sent once, and a node that left the page before its window ends sends nothing. |
+| `data-cui-rpc-debounce-ms="<ms>"` | Debounce window in milliseconds for `data-cui-rpc-trigger="input"`. The runtime defaults to 250 ms when the attribute is absent. `interactive.LiveSearch` and the default headless combobox also use 250 ms when their debounce argument is zero. Any other dispatch of the same node inside the window (a submit) cancels the pending request, so the form is sent once, and a node that left the page before its window ends sends nothing. |
 | `data-cui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-cui-rpc-after-done`. |
 | `data-cui-rpc-after-disable` | On 2xx RPC, mark the trigger as `aria-disabled="true"` and (for `<button>`/`<input>`) set `disabled=true` permanently. Use with `after-text` for "Saved ✓" / "Revealed ✓" feedback. |
 | `data-cui-rpc-scroll-to="<selector>"` | On 2xx RPC, smooth-scroll the matching element into view. Use to direct the user's eye at newly-inserted content. |
 | `data-cui-rpc-error-toast="<title>"` | On a non-form RPC trigger: a non-2xx answer shows an error toast (`_toastOrFallback`, so the kernel fallback region catches it when the feedback module cannot load) titled `<title>`, with the response's JSON `error` string, clipped to 300 characters, as the body; a network failure toasts the same title with a network-error body. An empty value titles it `Request failed (<status>)`. Without it a refused button RPC stays silent; a form source's refusal ignores it, since `formerrors` already reports one. A form whose fetch never answers (offline, a dropped connection; not a 2xx whose body fails to parse) always toasts, titled with this value or `Request failed`, and reports `gofastr:formresult` `{ok: false}`, so the leave guard keeps the edits unsaved. Set from Go with `interactive.Action.OnErrorToast`. |
 | `data-cui-rpc-success-toast="<title>"` | On a 2xx RPC answer (button or form), a success toast titled `<title>` fires through `_toastOrFallback` BEFORE the trigger's `data-cui-rpc-navigate` runs: the toast stack lives outside the swapped region, so the toast survives the SPA navigation its own RPC triggered — a save that lands the reader back on the record page still says "Saved". An empty value titles it `Done`. Set from Go with `interactive.Action.OnSuccessToast`. |
 | `data-cui-rpc-success-action='{"label":"<label>","attrs":{…}}'` | Puts one button on the toast `data-cui-rpc-success-toast` shows on a 2xx answer; without that toast it shows nothing. The button is labelled `<label>` and carries `attrs`, so pressing it fires that RPC through the toast stack's own widget dispatch, and closes the toast. `headless-feedback` copies only `data-cui-rpc` and `data-cui-rpc-*` keys onto the button and leaves the button out when the label or `data-cui-rpc` is missing; JSON that does not parse shows the toast without it. `rpc.js` passes the JSON through as the toast's `action`, which `__gofastr.toast(cfg)` also takes as an object; a toast that keeps its button stays up at least 10 s, paused while hovered or focused. The kernel's fallback region draws no button. Set from Go with `interactive.Action.OnSuccessToastAction`; `headless.Button` and `headless.Form` refuse one that is not a label and an RPC, whose wiring fails a button's own checks, or that has no success toast to ride. |
-| `data-cui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-cui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
-| `data-cui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-cui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
+| `data-cui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/__gofastr/comp/<name>.css` once per session via a `<link data-cui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
+| `data-cui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-cui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. `interactive.Reveal` also uses the scope marker to load `cui-reveal` alongside an existing component sheet. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-internal` | Marks kit component markup that holds none of the caller's content: a label or title built from a string field, a control's input, a dismiss button, an icon the component draws. Every compiled owned style's `@scope` lower bound stops at it, so an owner styles the content it passes into a component and never the component's insides. Components set it through `headless.Internal`, and a component that builds markup and hands it to another as slot content marks it with `headless.Own`, which also marks the element holding that slot. Never on a component's root (an owner may place the root), never on an element that holds a slot or on an ancestor of one; a mark inside a marked subtree is allowed and inert. `TestKitMarksInternalSubtrees` (framework/ui) renders every kit component with every slot filled and every slot empty and fails on unmarked internal markup, a marked root, or caller content under a mark. The server writes it; the runtime never reads it. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle, a `<link>` or, when the page inlines its first-paint head, a `<style>`, to list the components it covers. The runtime reads it from either element at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-cui-bundle-href="<url>"` | Set beside `data-cui-bundle` on an inline `<style>` that carries only the rules the page's markup can match (see "First-paint inlining"). The value is the URL a linked head would name for the same sheets. The `fullbundle` behaviour, a registered module `framework/uihost` ships, links that URL right after the `<style>` at boot and removes the attribute. It reads the attribute in `<head>` only, links nothing for a URL other than a component-sheet route (`/__gofastr/comp-bundle.css?…`, `/__gofastr/comp/<name>.css?…`), and joins the link to the kernel's stylesheet wait. |
@@ -494,7 +496,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-dropdown-open` | Runtime-written marker on a `data-cui-dropdown-wrap` while its dropdown is open. CSS keys the open state off it; the runtime uses it to find and close open dropdowns. |
 | `data-cui-animate-signal="<name>"` | On an element wired by the `animate` runtime module: names the signal to watch. When the signal becomes truthy the runtime adds `data-cui-animate-class`; falsy removes it. Initial state is applied on wire. |
 | `data-cui-animate-class="<class>"` | The CSS class the `animate` module toggles on the element as its `data-cui-animate-signal` value flips between truthy and falsy. |
-| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. The module loads after first paint, so an element already on screen at its first scan has been painted visible: it is marked `cui-revealed` and never hidden (hiding it to fade it back was a blink on every load). Content scanned later (a navigation, an island swap) is hidden before it paints and keeps the entrance. |
+| `data-cui-reveal="<type>"` | Marks an element for the `reveal` runtime module's scroll-into-view animation. The element gets `cui-hidden` immediately; when it enters the viewport the runtime swaps in `cui-revealed` + `cui-reveal-<type>` (e.g. `data-cui-reveal="fade-up"` → `cui-reveal-fade-up`). One-shot. The module loads after first paint, so an element already on screen at its first scan has been painted visible: it is marked `cui-revealed` and never hidden (hiding it to fade it back was a blink on every load). Content scanned later (a navigation, an island swap) is hidden before it paints and keeps the entrance. `interactive.Reveal` loads the registered `cui-reveal` sheet through `data-cui-comp`, or through `data-cui-scope` when the element already has a component marker. If both markers are occupied, it animates a surrounding `div`. |
 | `data-fui-dropzone-preview` | On a `<input type="file">` inside a `framework/ui.FileDropzone`: opt the input into image-preview rendering. After each `change`, the `filedropzone` module (framework/ui's own) FileReader-reads each selected image and renders `<img>` tags into the sibling `[data-fui-dropzone-preview-for="<input-id>"]` container; the drop itself, the chosen-names list and the pick announcement are the headless module's `data-hui-drop` hooks. |
 | `data-fui-dropzone-preview-for="<input-id>"` | On the previews strip element: links it to the input it should display previews for. |
 | `data-hui-back-to-top-visible` | Runtime-written BackToTop visibility marker (`headless-navigation` owns it; no component renders it). CSS uses it to reveal the control once the threshold is crossed. |
@@ -604,7 +606,8 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-fui-plugin-fallback` | Wraps the server-rendered pre-hydration node inside the plugin mount marker (`MountConfig.Fallback`). The broker shows it while the frame loads, hides it — never removes it — on the frame's `ready`, and swaps back to it on `bootError` (a dead frame degrades to the static node, not an empty box). |
 | `data-search` / `data-search-loading` / `data-search-empty` / `data-search-all="<path>"` / `data-search-all-label` | On the listbox of a `ui.CommandPalette` with `Search`. The marker loads `battery/sitesearch`'s `sitesearch` module, which adds result rows (`data-search-result`) as the reader types, a disabled row in the loading or empty words while there are none, and, with `data-search-all` (`CommandPaletteConfig.SearchPage`), a last row opening that search page for the query, worded by `data-search-all-label` with `{{q}}` filled. Tests: `battery/sitesearch/parity_chromium_test.go`. |
 | `data-search-page="<path>"` / `-query` / `-count` / `-one` / `-none` / `-more` / `-limit` / `-input` / `-status` / `-list` / `-pager` | On the `<section>` `ui.SearchResults` renders and its parts. The root names the page's path and the query the server rendered, the status words (`{{n}}`, `{{q}}`) and the page size; the parts mark the input, the status line, the result list and the pager. The marker loads `battery/sitesearch`'s `sitesearch-page` module. As the reader types it fetches the page's own render for the new query with the router's partial headers and swaps in the status, list and pager, never the input; the address follows with `_pushURL(url, {replace: true})`, and a submit runs at once instead of reloading. On a static export (`data-cui-static`) it ranks with `sitesearch-static`, draws the rows with DOM calls, runs a `?q=` from the address on load, and pages with a "more" button worded by `-more`. A current-query failure clears the list and pager and announces the translated `sitesearch.unavailable` phrase in the existing status line; an older failure cannot erase newer results. Without the runtime the form GETs the page and the pager links page it. Tests: `battery/sitesearch/page_chromium_test.go`, `battery/sitesearch/page_failure_chromium_test.go`. |
-| `data-cui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
+| `data-cui-drag-handle="true"` | On the visible handle bar of a drag-dismiss widget. The widget stylesheet shows a `grab` cursor at rest and `grabbing` while an ancestor widget carries `data-cui-dragging`. Pointer handling is delegated from the widget root. |
+| `data-cui-dragging="true"` | Set by the `dragdismiss` runtime module on the widget root while a drag gesture is active, and removed when it ends. The widget stylesheet keys off it to suppress the entrance animation and transitions and to show the handle's `grabbing` cursor. The server never writes it. |
 | `data-fui-zoomed` | Written by the lightbox module onto the viewer's `[data-fui-lightbox-image]` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back, on Prev/Next and on lightbox close. |
 | `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
 | `data-widget="<id>"` | Widget root marker. Names the widget for hydration, chrome lookup, and `X-FUI-Widget` on scoped RPCs. |
@@ -1142,6 +1145,12 @@ non-empty) names the prefix — the sidebar emits its `MatchPath` there
 (see the attribute table): `/docs` lights up on `/docs` and
 `/docs/getting-started`, never on `/docs-old`.
 
+SectionMenu depends on `activelink` so its navigation listener reads the
+mark after the active-link pass. A retained menu's phone pill uses the
+link marked current by that pass, including its URL normalization.
+Initial or freshly rendered menus can also use the server's current-page
+mark.
+
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 
 ```
@@ -1299,6 +1308,13 @@ pane closed, then opens and fills it after hydration.
 Screen-group prefixes compose parent-relative, even when a subgroup prefix
 starts with `/`. Empty subgroup prefixes retain the parent prefix; joining
 normalizes repeated and trailing slashes before relative screens are registered.
+
+Screen registration stores `app.CanonicalRoutePattern(path)`: brace
+parameters and catch-alls become the router's colon form
+(`/docs/{path...}` is `/docs/:path*`), and a dynamic route loses its
+trailing slash. Code that emits or compares screen routes, such as the app
+generator's mounts, calls the same function, so a route it writes is the
+route the router registered.
 
 ### Intercepting routes (`app.InterceptFrom`)
 
@@ -2291,8 +2307,8 @@ completeness test: when it can't, you found the gap.
   generic, not by being tiny in source (the runtime is ~7,400 lines of
   vanilla JS: a core `runtime.js` plus per-feature split modules under
   `core-ui/runtime/src/`), but by being carved and budgeted: a page
-  loads `core.js` (≤13,695 B gzipped, enforced by
-  `core-ui/runtime/budget_test.go`) plus only the demand modules its
+  loads `core.js` (at most `coreGoalGZ`, 16,944 B gzipped at level 6,
+  enforced by `core-ui/runtime/budget_test.go`) plus only the demand modules its
   components actually use (≤3 KB gzipped each; `widgets` carries a
   tracked 5 KB override). A second gate pins the *typical-page* payload
   (core + widgets, since any page mounting a widget loads both) at
@@ -2302,8 +2318,8 @@ completeness test: when it can't, you found the gap.
 
   The budget policy: the core should sit under TCP's initial congestion
   window (~14 KB ≈ 10 packets), so it arrives in the first round trip on
-  a cold connection. Since 2026-10 the level-1 size is 15,779 B, 1,443 B
-  past that line, and each byte over it is a measured, named entry in
+  a cold connection. The level-1 gate, `coreCongestionWindowGZ`, is
+  19,588 B, 5,252 B past that line, and each byte over it is a measured, named entry in
   `budget_test.go`. That cliff is what the number protects; smaller
   buys nothing, bigger costs an RTT. When a budget trips, **carve a
   feature into a demand module, never raise the line.** Carving
@@ -2478,8 +2494,10 @@ The framework's design tokens live in `core-ui/style.Theme`, a
 `Spacing`, `Radii`, `Strokes`, `Leading`, `Tracking`, `Opacities`,
 `Fonts`, `Breakpoints`, `Shadows`, `ZIndex`, `Durations`, `Easings`,
 `Typography`, `FontWeights`, `Layout`, `Code`, plus the `Knobs` map.
-`Strokes`, `Leading`, `Tracking`, `Opacities` and `Code` are optional:
-an unset slot emits the default theme's value. Every token carries a `Name` (the CSS
+Unset slots in `Strokes`, `Leading`, `Tracking`, and `Opacities`
+emit their values from the default theme. `Code` is optional. An
+unset code slot emits no custom property, and code blocks use the
+built-in palette as a fallback. Every token carries a `Name` (the CSS
 custom property identifier) and a `Value` (the concrete value):
 
 ```go
@@ -2573,17 +2591,15 @@ family asks about its own drawing. It is not a token — the reflection
 token walk ignores it (it is a map, like `DarkColors`) — and
 core-ui/style can only store, validate, hash and copy it. Turning it
 into CSS is the job of the one **component-options compiler**
-registered per process (`style.RegisterComponentOptionsCompiler`);
-`framework/ui` registers its compiler from its package `init`, and a
-registration after a theme was hashed or theme CSS was emitted panics,
-because the host freezes `app.css`, the component catalog and the
-manifest at first use and a late compiler would be missing from all
-three. Registration never hashes — `ThemeRef` computes its hash on
-first use — so the package-level `var Dark =
-style.RegisterThemeOverride(…)` pattern is safe in a package that does
-not import `framework/ui`; only a package-level `Class()`/`ThemeHash`
-call can hash before the styled layer's init, and the panic names that
-cause.
+registered per process with `style.RegisterComponentOptionsCompiler`.
+`framework/ui` registers its compiler from its package `init`. The
+first call to `Theme.CSSCustomProperties` or `style.ThemeOverrideCSS`
+freezes compiler registration, even if no compiler has been registered.
+Register before either emitter runs so the host's cached `app.css`,
+component catalog, and manifest include the option declarations.
+`style.RegisterThemeOverride` snapshots the theme. `ThemeRef.Hash`
+and `ThemeRef.Class` compute its content address on first use and can
+run before compiler registration.
 
 The cascade rule, which is the whole design:
 
@@ -2680,8 +2696,10 @@ Served CSS is minified outside dev: app.css, component sheets, the
 bundle, widget sheets and the static export all pass through
 `minify.ServedCSS`, gated like the runtime JS (`GOFASTR_DEV`,
 `RUNTIME_NOMINIFY`; see `framework/docs/content/runtime-minification.md`).
-`AppCSS()` and `Entry.CSSFor` stay the readable source and the version
-hash is taken over it; `Entry.ServedCSSFor` is what goes on the wire.
+`AppCSS()` and `Entry.CSSFor` stay the readable source;
+`Entry.ServedCSSFor` is what goes on the wire, and the version hash is
+taken over those served bytes (component sheets also fold in the theme
+hash), so a minifier change busts the URL too.
 A custom property reads back through `getComputedStyle` in the served
 spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
@@ -2702,6 +2720,11 @@ linking them (see "First-paint inlining" below); that is the host's
 choice, never a component's or an app's. There is no
 "unscoped component CSS"; global rules (resets, typography, theme
 tokens) live in `theme.css` / `WithCustomCSS`.
+
+`registry.AppendAttributes` uses the same root-tag scanner as the
+component marker injector. It appends attributes in sorted order with
+`render.Attr` escaping, skips leading comments, and inserts before a
+self-closing slash. A fragment with no usable root stays unchanged.
 
 ### One styling surface (who ships CSS, and who must not)
 
@@ -3140,7 +3163,7 @@ var Style = registry.RegisterStyle("modal", modalCSS)
 
 func modalCSS(t style.Theme) string {
     return style.NewComponentSheet("modal", t).
-        Rule(".header").Set("font-weight", "{fonts.weight.bold}").End().
+        Rule(".header").Set("font-weight", "{font-weight.bold}").End().
         Rule(".body").  Set("padding",     "{spacing.lg}").End().
         MustBuild()
 }
@@ -3378,12 +3401,13 @@ The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
 escapes return 400 rather than selecting a different widget set.
 
-Gallery hosts call `gallery.MountDemoWidgets` and
-`gallery.MountDemoFormRoute` before mounting their UIHost.
-The docs site and theme editor share these mounts so demo triggers always
-resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets,
-and every demo form posts to the one gallery route, which answers 303
-back to the demo.
+The docs site and theme editor call
+`gallery.MountDemoWidgets(router, gallery.DemoWidgetPages{…})` and
+`gallery.MountDemoFormRoute` before mounting their UIHost. The site scopes
+each overlay to its showcase pages. The editor scopes them all to
+`/preview`. The shared form route answers 303 for stateless demos.
+The site's StepWizard uses its own `POST /forms/wizard` for transitions,
+and the editor shows an inert preview of the form.
 
 `component.Widget.RenderCtx` forwards the request context to its child and
 prefers `RenderCtx` over `Render`. Context-free widget and composition
@@ -3480,12 +3504,6 @@ core-ui/
   di/          : dependency injection container (used by app)
   html/        : semantic HTML primitives, 1:1 with HTML tags
                  (Div, Button, Heading, Form, Table…)
-  patterns/    : composed UI patterns (not 1:1 with HTML):
-                 accordion, breadcrumbs, combobox, disclosure,
-                 infinitescroll, multiselect, nestedlist, progress,
-                 scrollspy, skeleton, sortablelist, tabs, tree
-                 (the pagination pattern is retired; the pager is
-                 framework/ui.Pagination over headless.Pagination)
   component/   : Component / InteractiveComponent interfaces (the contract
                  every renderable satisfies)
   interactive/ : declarative data-cui-* attribute builders (RPC, signal
@@ -3513,10 +3531,11 @@ core-ui/
   runtime/     : runtime.js (client) + Go embed wrapper
   runtime/src/ : code-split runtime modules (loaded on demand):
                  action, actionloader, activelink, animate, compute,
-                 computed, desktop, dragdismiss, dropdown, envelope,
-                 formerrors, intercept, loading, parts, poll, popover,
-                 preload, reveal, rpc, rtc, sse, textarea, transition,
-                 widgetfocus, widgethelpers, widgetlinks, widgets, ws.
+                 computed, confirm, desktop, dragdismiss, dropdown,
+                 envelope, formerrors, intercept, loading, navguard,
+                 parts, poll, popover, preload, reveal, rpc, rtc, sse,
+                 textarea, transition, widgetfocus, widgethelpers,
+                 widgetlinks, widgets, ws.
                  Component behaviour that binds a kit class is not
                  here: framework/headless and framework/ui register
                  theirs (headless-*, filedropzone, searchinput,
@@ -3573,7 +3592,7 @@ framework/
 7. **Always** prefer composing existing widget/preset shortcuts over building a new island from scratch.
 8. **Modals + drawers can deep-link.** Toasts and dropdowns intentionally cannot. If you find yourself wanting a `?toast=…` URL, stop: toasts are ephemeral by definition.
 9. **Animation durations and easings live on the theme** (`Theme.Durations`, `Theme.Easings`). Never hard-code `transition: transform 0.3s ease` in component CSS; read `var(--duration-…)` / `var(--easing-…)` so a single theme tweak retunes every surface.
-9b. **One styling surface: apps and generators ship ZERO CSS.** All styling lives in the design system (component CSS via `registry.RegisterStyle`, layouts via `core-ui/app`, tokens via `core-ui/style`). A surface needing styling the components don't provide is a gap to fix *upstream*, never an inline rule, a `*BaseCSS` string, an invented `.mrd-`/`.gofastr-` class, or a property where a `var(--*)` token belongs. See "Failure 4" + "One styling surface". Survey `framework/ui`/`core-ui` for an existing primitive before hand-rolling.
+9b. **One styling surface.** The design system owns shared styling through `registry.RegisterStyle`, layouts in `core-ui/app`, and tokens in `core-ui/style`. Apps may style their own markup in a scoped, token-based `<name>.style.css` owned sheet; generators and apps ship no other CSS. A gap in kit styling belongs in the design system, never in an inline rule, a `*BaseCSS` string, an invented `.mrd-`/`.gofastr-` class, or a property where a `var(--*)` token belongs. See "Failure 4" + "One styling surface". Survey `framework/ui`/`core-ui` for an existing primitive before hand-rolling.
 10. **State-changing fetches from runtime modules must forward the page's CSRF token.** Read `document.querySelector('meta[name="csrf-token"]')` once per fetch and set `X-CSRF-Token` on the request. `OptimisticAction`'s runtime is the canonical example. Apps verify the token server-side. The runtime doesn't enforce; it just makes the value reachable so each call site doesn't re-implement the lookup.
 11. **Async runtime modules mark the trigger `aria-busy="true"` during in-flight RPCs and ignore re-entry.** Without it, keyboard Enter/Space fires duplicate submits and screen readers don't announce the state change. Clear it on commit / idle. Do not reach for `disabled` to get the re-entry guard: disabling a focused button drops keyboard focus to the body, and `disabled` has other owners (a hidden conditional region disables its controls) whose decision a settlement must not undo; the kernel's `action` primitive is the reference (a click while `pending` is a no-op, `disabled` untouched).
 12. **Per-instance state lives in a `WeakMap` keyed by the wrapper element**: never module-globals. Multiple instances of the same widget on one page (or two banners, two scrollspies) is a normal scenario; assuming "one per page" is a bug that lands a code review later. Track active instances in a sibling `Set` so SPA-nav teardown can disconnect observers / clear timers without leaking.
@@ -3634,7 +3653,7 @@ your need:
 | Page-width wrapper | `framework/ui.Container` | Max-width page wrapper with breakpoint-aware padding. Narrow / default / wide / full variants. |
 | Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). `Cluster` wraps by default; `ClusterConfig.NoWrap` is the explicit compact-chrome opt-out. `BoxConfig.Bounded` caps a Box's height (`--ui-box-bounded-size`) and scrolls the rest. Replace hand-rolled `display:flex` divs. |
 | Labelled content surface | `framework/ui.Card` | Header / body / footer regions, elevated / outlined / flat variants, optional interactive (whole surface is an `<a>`) form. |
-| Toolbar of action buttons | `framework/ui.Toolbar` | `role="toolbar"` wrapper with optional named groups. Horizontal strip of buttons/links with visual separators. |
+| Toolbar of action buttons | `framework/ui.Toolbar` | Labelled `role="group"` around a horizontal strip of controls with visual separators and optional named subgroups. |
 | Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
 | Table of contents | `framework/ui.TableOfContents` | Server-rendered from explicit `Items` (required — the no-script contract is the rendered list). `headless-toc` marks the active entry through the observer `headless-rail` owns. |
 | In-page rail | `framework/ui.AnchoredRail` | Sticky `<aside>` of fragment links with optional eyebrow/count chips; `headless-rail` marks the entry whose section is in view (`aria-current` + class). Both initial selection and scroll updates skip targets not rendered by the browser, including hidden sections and closed-details content (which can still report rectangles). With no rendered targets at bootstrap, every link stays unmarked. |
@@ -3672,7 +3691,7 @@ your need:
 | Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
 | Dismissible banner | `framework/ui.Banner` | Full-width banner with optional session-persisted dismiss (`data-hui-system-dismiss`). |
 | Pill: filter chip / applied filter / selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
-| Active filter chip toolbar | `framework/ui.FilterChipBar` | Toolbar of removable filter chips. Optional "Clear all" action. Island-driven, signal-swapped. |
+| Active filters | `framework/ui.FilterChipBar` | Labelled `role="group"` of removable filter chips and an optional "Clear all" action. Both actions default their RPC target to the bar's bound signal when set. |
 | Copy-to-clipboard button | `framework/ui.CopyButton` | Targets any element by id (`data-hui-copy-target`); no clipboard mutation without script. |
 
 ### Visual primitives

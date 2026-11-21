@@ -1,0 +1,29 @@
+primitive: desktop.platform.linux
+summary: The linux shell on GTK 3 and WebKitGTK 4.1, CGO-free windows, menus, tray, clipboard, dialogs, notifications and persistent profiles, plus the frame placement it restores windows with.
+code:
+  - battery/desktop/linux/
+  - battery/desktop/internal/placement/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Many of its tests need a display, D-Bus or the GTK stack and skip without them; run them under the Linux desktop CI job before merging.
+twins:
+  - job: Decide whether a remembered window frame still meets a screen, and centre a default frame when it does not.
+    why: Each platform measures in its own space (GTK logical pixels, Win32 physical pixels scaled per monitor DPI, AppKit points flipped from bottom-left), and nothing yet shares the overlap rule across those units.
+    sites:
+      - path: battery/desktop/internal/placement/restore.go
+        note: Restore, the linux shell's placement.
+      - path: battery/desktop/internal/win32/monitors.go
+        note: the monitor frame restore, thresholds scaled by DPI.
+      - path: battery/desktop/macos/shell_darwin.go
+        note: frameVisibleOnScreens and minVisibleFrameW/H.
+invariants:
+  - id: frame-needs-real-overlap
+    rule: placement.Restore keeps a remembered frame only when it overlaps a screen by at least 100 by 50, and otherwise centres a default frame no larger than the first usable screen.
+    enforced_by:
+      - test: battery/desktop/internal/placement.TestRestoreDropsInvisibleFrames
+      - test: battery/desktop/internal/placement.TestRestoreFitsSmallWorkArea
+  - id: navigation-policy-every-action
+    rule: refuseNavigation asks AllowNavigation for every navigation action except about:srcdoc, every new-window action, and a response only for the main resource.
+    enforced_by:
+      - test: battery/desktop/linux.TestRefuseNavigationChecksEveryAction

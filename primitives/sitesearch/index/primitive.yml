@@ -1,0 +1,38 @@
+primitive: sitesearch.index
+summary: The integer-scored index, its tokenizer and the ranker, which the browser's static client reproduces exactly.
+code:
+  - battery/sitesearch/index.go
+  - battery/sitesearch/search.go
+  - battery/sitesearch/tokenize.go
+docs:
+  - framework/docs/content/site-search.md
+twins:
+  - job: Rank a query against the index, from tokenizing to the title bonus and section scores.
+    why: The export runs with no server, so the browser ranks in sitesearch-static.js; every number is an integer so both give one order, and TestStaticSearchMatchesGo runs the same queries through both.
+    sites:
+      - path: battery/sitesearch/search.go
+        note: Index.SearchPage and sectionScores.
+      - path: battery/sitesearch/sitesearch-static.js
+        note: The static ranker the exported client loads.
+invariants:
+  - id: go-and-static-ranker-agree
+    rule: The static JS ranker returns the same pages in the same order with the same sections as Index.Search for every query the parity corpus runs.
+    enforced_by:
+      - test: battery/sitesearch.TestStaticSearchMatchesGo
+  - id: only-site-paths-indexed
+    rule: Build drops a page whose URL is not root-relative or holds "//" at its start, a backslash or a control byte, and a second page with a URL already indexed.
+    enforced_by:
+      - test: battery/sitesearch.TestBuildDropsOffSiteURLs
+      - test: battery/sitesearch.TestBuildDropsDuplicatePages
+  - id: repeated-term-is-capped
+    rule: A word's count in one field adds at most tfCap (3) to its score.
+    enforced_by:
+      - test: battery/sitesearch.TestRepeatedBodyTermIsCapped
+  - id: title-names-the-answer
+    rule: A page whose title holds every query term ranks above every page whose title does not.
+    enforced_by:
+      - test: battery/sitesearch.TestSearchTitleNamesTheAnswer
+  - id: terms-are-two-runes
+    rule: Terms shorter than two runes are neither indexed nor searched.
+    enforced_by:
+      - test: battery/sitesearch.TestIndexTermsSplitCamelCase

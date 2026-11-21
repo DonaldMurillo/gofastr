@@ -141,6 +141,22 @@ func TestMemoryCacheConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	// The storm must leave a working cache behind: a final round-trip
+	// and a deterministic end state.
+	if err := c.Set(ctx, "final", "v", 0); err != nil {
+		t.Fatalf("Set after the storm: %v", err)
+	}
+	var got string
+	if err := c.Get(ctx, "final", &got); err != nil || got != "v" {
+		t.Errorf("Get after the storm = (%q, %v), want v", got, err)
+	}
+	if err := c.Delete(ctx, "final"); err != nil {
+		t.Fatalf("Delete after the storm: %v", err)
+	}
+	if err := c.Get(ctx, "final", &got); err != ErrCacheMiss {
+		t.Errorf("Get after Delete = %v, want ErrCacheMiss", err)
+	}
 }
 
 func TestMemoryCacheMissReturnsError(t *testing.T) {

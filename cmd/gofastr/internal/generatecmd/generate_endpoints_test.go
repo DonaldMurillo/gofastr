@@ -223,7 +223,7 @@ func endpointsApp(t *testing.T) string {
 	}
 	clitest.WriteSettings(t, dir, clitest.EndpointsSettings)
 	var code int
-	out := clitest.CovT_capStdout(t, func() { code = clitest.CovT_capExit(t, func() { appgen.GenerateProject(nil) }) })
+	out := clitest.CovT_capOutput(t, func() { code = clitest.CovT_capExit(t, func() { appgen.GenerateProject(nil) }) })
 	if code != -1 {
 		t.Fatalf("generate exited %d:\n%s", code, out)
 	}

@@ -7,8 +7,6 @@ import (
 
 const clipboardTextLimit = 1 << 20
 
-// clipboardCapability: the OS clipboard, gated clipboard:read /
-// clipboard:write.
 func (b *Battery) clipboardCapability() Capability {
 	return Capability{
 		Name:        "clipboard",

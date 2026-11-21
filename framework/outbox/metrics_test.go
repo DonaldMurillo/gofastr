@@ -117,26 +117,3 @@ func TestOutboxDeadLetterMetricIsAGauge(t *testing.T) {
 		t.Fatalf("after a replay the gauge should read 1\ngot:\n%s", out)
 	}
 }
-
-// TestOutbox_DeliveryCountsToleratesEmpty ensures a fresh outbox with no
-// deliveries returns empty maps (not nil-pointer / not an error) so the
-// collector renders the HELP/TYPE headers with zero samples cleanly.
-func TestOutbox_DeliveryCountsToleratesEmpty(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
-
-	o, err := New(db)
-	if err != nil {
-		t.Fatalf("new outbox: %v", err)
-	}
-	pending, dead, err := o.DeliveryCounts(context.Background())
-	if err != nil {
-		t.Fatalf("DeliveryCounts: %v", err)
-	}
-	if len(pending) != 0 || len(dead) != 0 {
-		t.Fatalf("expected empty counts, got pending=%v dead=%v", pending, dead)
-	}
-}

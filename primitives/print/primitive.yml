@@ -1,0 +1,79 @@
+primitive: print
+summary: The print battery, which declares named print documents and mounts each as a chrome-free HTML route and a sibling PDF route under one reserved prefix.
+code:
+  - battery/print/print.go
+  - battery/print/document.go
+  - battery/print/doc.go
+  - battery/print/phrases.go
+  - battery/print/agents.go
+docs:
+  - framework/docs/content/print.md
+on_change:
+  - A new Config or Document field goes in print.md, with its default.
+invariants:
+  - id: prefix-is-below-the-root
+    rule: RegisterRoutes fails for a PathPrefix that does not start with a slash after trailing slashes are trimmed, so the routes always sit under the prefix ReservedEmbedPrefixes reports.
+    enforced_by:
+      - test: battery/print.TestPrintRefusesRootPrefix
+  - id: register-routes-is-idempotent
+    rule: A second RegisterRoutes or Init mounts nothing and returns nil.
+    enforced_by:
+      - test: battery/print.TestRegisterRoutesIdempotent
+  - id: documents-are-fixed-once-mounted
+    rule: Document panics after the routes are mounted, on a duplicate name or path, on a path that is not rooted, on the shared auto-print path and on a nil Build.
+    enforced_by:
+      - test: battery/print.TestDocumentAfterInitPanics
+      - test: battery/print.TestDocumentPathCollisionPanics
+  - id: build-failure-is-a-clean-status
+    rule: A Build that returns ErrNotFound answers 404, ErrForbidden 403 and any other error or a panic 500, and a body whose render panics answers 500, never the panic text with a 200.
+    enforced_by:
+      - test: battery/print.TestBuildErrorIsCleanStatus
+      - test: battery/print.TestBuildErrorForbidden403
+      - test: battery/print.TestBuildErrorGeneric500
+      - test: battery/print.TestBuildPanicIsClean500
+      - test: battery/print.TestRenderPanicIsClean500
+  - id: html-route-is-no-store
+    rule: The HTML route answers with Cache-Control no-store.
+    enforced_by:
+      - test: battery/print.TestSecNoStoreOnPerUserDoc
+  - id: auto-print-on-html-only
+    rule: A document with AutoPrint links the external auto-print script on its HTML route and never on its PDF render.
+    enforced_by:
+      - test: battery/print.TestAutoPrintWiredOnHTMLNotPDF
+      - test: battery/print.TestAutoPrintRouteServesScript
+  - id: pdf-app-css-from-base-url
+    rule: On the PDF path app.css is made absolute against Config.BaseURL and never against the request's Host, and with no BaseURL it stays relative.
+    enforced_by:
+      - test: battery/print.TestPDFAppCSSUsesBaseURLNotHost
+      - test: battery/print.TestPDFAppCSSRelativeWhenNoBaseURL
+  - id: csp-origin-is-a-clean-origin
+    rule: The PDF document's style-src gains BaseURL's origin only when BaseURL is an http or https URL with no userinfo whose host holds only letters, digits, dots and dashes and whose port is all digits; anything else keeps printCSP.
+    enforced_by:
+      - test: battery/print.TestPDFCSPRefusesUncleanBaseURL
+      - test: battery/print.TestCSPOriginKeepsSchemeHostPort
+      - test: battery/print.TestPDFCSPAllowsBaseURLStyles
+  - id: page-lengths-are-allow-listed
+    rule: A page length reaches the @page rule only when it is a number with mm, cm, in, px or pt, or auto; anything else falls back to the default.
+    enforced_by:
+      - test: battery/print.TestCustomLengthRejected
+  - id: page-inherits-unset-fields
+    rule: A document's Page inherits each unset size, orientation, custom length and margin side from Config.DefaultPage.
+    enforced_by:
+      - test: battery/print.TestEffectivePageInherits
+decisions:
+  - id: base-url-not-host
+    date: 2026-11-20
+    status: accepted
+    decision: The PDF path builds the absolute app.css URL from the configured Config.BaseURL.
+    rejected:
+      - option: Derive the origin from the request Host header.
+        why: Host is client-controlled, so a spoofed Host would point the renderer's server-side fetch at an arbitrary or internal address.
+    upholds: [pdf-app-css-from-base-url]
+  - id: refuse-unclean-origin
+    date: 2026-11-20
+    status: accepted
+    decision: cspOrigin refuses a host with any byte outside letters, digits, dots and dashes.
+    rejected:
+      - option: Escape the origin before splicing it into the CSP.
+        why: A refused origin only leaves the stylesheet blocked, while a mis-escaped one would widen the policy.
+    upholds: [csp-origin-is-a-clean-origin]

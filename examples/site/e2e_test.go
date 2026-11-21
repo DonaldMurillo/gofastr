@@ -12,7 +12,6 @@ package main
 import (
 	"context"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +21,8 @@ import (
 	"github.com/chromedp/cdproto/page"
 	cdruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 func siteE2EServer(t *testing.T) string {
@@ -32,97 +33,27 @@ func siteE2EServer(t *testing.T) string {
 	return srv.URL
 }
 
-// The e2e suite shares ONE headless Chrome across all tests; each test
-// gets a fresh tab. Per-test Chrome launches (the old pattern) flake on
-// CI runners: chromedp's websocket-URL deadline is a fixed 20s, and with
-// 60+ sequential cold launches per run one of them intermittently
-// exceeds it ("websocket url timeout reached") even in a serialized job.
-// A new tab is milliseconds and cannot hit that path. Isolation stays
-// sound: DOM/JS state is per-tab, and cookies/localStorage are
-// per-origin while every test boots its own httptest server on a unique
-// port.
-var (
-	siteBrowserOnce   sync.Once
-	siteBrowserRoot   context.Context
-	siteBrowserErr    error
-	siteBrowserKill   context.CancelFunc
-	siteAllocatorKill context.CancelFunc
-)
-
+// The e2e suite runs on the test binary's pooled headless Chrome
+// (internal/chromedptest): one Chrome per option set, so no test pays a
+// cold launch inside its own deadline — the flake that once came from
+// 60+ sequential per-test launches — and each test gets its own
+// BrowserContext, so cookies, storage and the HTTP cache start cold
+// (#278's cross-test cache leak cannot recur) without a
+// ClearBrowserCache dance. DOM/JS state is per-window, and every test
+// boots its own httptest server on a unique port.
 func siteBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
-	siteBrowserOnce.Do(func() {
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", true),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
-			chromedp.Flag("force-prefers-no-reduced-motion", true),
-			// CI runners intermittently take >20s (the chromedp default)
-			// to cold-start Chrome; a generous websocket-URL deadline turns
-			// that from a flaky suite failure into a few slow seconds.
-			chromedp.WSURLReadTimeout(90*time.Second),
-			chromedp.WindowSize(1280, 800),
-		)
-		allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-		// Materialize the browser now so no test pays the process launch
-		// inside its own deadline.
-		if err := chromedp.Run(browserCtx); err != nil {
-			siteBrowserErr = err
-			browserCancel()
-			allocCancel()
-			return
-		}
-		siteBrowserRoot = browserCtx
-		siteBrowserKill = browserCancel
-		siteAllocatorKill = allocCancel
-	})
-	if siteBrowserErr != nil {
-		t.Fatalf("shared browser failed to start: %v", siteBrowserErr)
-	}
-	tabCtx, tabCancel := chromedp.NewContext(siteBrowserRoot)
-	t.Cleanup(tabCancel) // closes the tab, not the browser
-	ctx, cancel := context.WithTimeout(tabCtx, 45*time.Second)
-	t.Cleanup(cancel)
-	// Materialize the tab and bring it to the foreground. The browser's
-	// initial about:blank tab otherwise keeps focus, and Chrome throttles
-	// background tabs' rAF / IntersectionObserver / smooth scrolling,
-	// which silently breaks every scroll- and animation-driven assertion
-	// in the suite.
+	ctx := chromedptest.Context(t,
+		chromedptest.WindowSize(1280, 800),
+		chromedptest.Timeout(45*time.Second),
+	)
+	// Bring the window to the foreground: Chrome throttles background
+	// tabs' rAF / IntersectionObserver / smooth scrolling, which silently
+	// breaks every scroll- and animation-driven assertion in the suite.
 	if err := chromedp.Run(ctx, page.BringToFront()); err != nil {
 		t.Fatalf("bring tab to front: %v", err)
 	}
-	// #278: the shared browser's HTTP cache belongs to the PROFILE, not
-	// the tab, and split runtime modules are served
-	// `Cache-Control: public, max-age=31536000, immutable`. httptest
-	// ports are ephemeral and the kernel does reuse recently closed
-	// ones, so when a later test's server lands on a port an earlier
-	// test used, its module URLs — same origin, same content hash —
-	// resolve to the earlier run's cached 200s without touching the
-	// network. A test injecting a 500 (the toast-fallback e2e) then
-	// watches its module "load" from cache and the injection never
-	// fires. The unique-port isolation claim only holds if no cache
-	// state survives across tests, so hand every tab a cold cache.
-	if err := chromedp.Run(ctx,
-		network.Enable(),
-		network.ClearBrowserCache(),
-	); err != nil {
-		t.Fatalf("clear browser cache: %v", err)
-	}
 	return ctx
-}
-
-// TestMain tears the shared browser down after the run so `go test`
-// never leaves an orphaned Chrome behind.
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if siteBrowserKill != nil {
-		siteBrowserKill()
-	}
-	if siteAllocatorKill != nil {
-		siteAllocatorKill()
-	}
-	os.Exit(code)
 }
 
 // runtime401Sink records any /__gofastr/* response that came back 401,

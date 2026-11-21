@@ -4,10 +4,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 	"sync"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 // numberText reports the call that turns e into Go's digits:
@@ -96,7 +98,7 @@ func phraseSink(pass *analysis.Pass, call *ast.CallExpr) bool {
 		}
 		return false
 	}
-	fn := calleeFunc(pass, call)
+	fn, _ := astx.CalleeFunc(pass, ast.Unparen(call.Fun))
 	if fn == nil {
 		return false
 	}
@@ -162,28 +164,14 @@ func takesParams(sig *types.Signature) bool {
 	return false
 }
 
-// calleeFunc is the function or method a call names statically, or nil.
-func calleeFunc(pass *analysis.Pass, call *ast.CallExpr) *types.Func {
-	var id *ast.Ident
-	switch fun := ast.Unparen(call.Fun).(type) {
-	case *ast.SelectorExpr:
-		id = fun.Sel
-	case *ast.Ident:
-		id = fun
-	default:
-		return nil
-	}
-	fn, _ := pass.TypesInfo.Uses[id].(*types.Func)
-	return fn
-}
-
 // checkPhraseParams reports a stringified number in a params map
 // literal handed straight to a phrase sink, in any argument of a
 // helper that forwards to one, or in a map hoisted into a local first.
 func checkPhraseParams(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
 	forwarded := false
 	if !phraseSink(pass, call) {
-		if forwarded = ui.forwarders[calleeFunc(pass, call)]; !forwarded {
+		fn, _ := astx.CalleeFunc(pass, ast.Unparen(call.Fun))
+		if forwarded = ui.forwarders[fn]; !forwarded {
 			return
 		}
 	}
@@ -284,7 +272,7 @@ func localParams(pass *analysis.Pass) map[*types.Var]*ast.CompositeLit {
 		}
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {

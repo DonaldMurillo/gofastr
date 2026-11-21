@@ -159,6 +159,10 @@ invariants:
     enforced_by:
       - test: framework/headless.TestColorAcceptsShortHexAndExpandsItForThePicker
       - test: framework/headless.TestSweepFormsColorUnpickableValueIsKeptAndMarked
+  - id: color-validates-the-submitted-text
+    rule: ColorProps.Required sets required on the submitted text input.
+    enforced_by:
+      - test: framework/ui.TestColorFieldCarriesTheFieldsWiring
   - id: choice-refuses-what-cannot-submit
     rule: Choice panics without Label or Name, with a Type other than checkbox or radio, or as a radio without Value; Switch panics without Label or Name.
     enforced_by:

@@ -1,0 +1,26 @@
+primitive: queue.memory
+summary: MemoryQueue, the in-process queue - its priority-ordered pending store, worker pool with lanes and gates, retries and the bounded dead-letter list.
+code:
+  - battery/queue/memory.go
+docs:
+  - framework/docs/content/queue.md
+invariants:
+  - id: memory-follows-the-retry-policy
+    rule: A failing job on MemoryQueue dead-letters at once on ErrPermanent, waits a RetryAfterError's delay, and dead-letters past CreatedAt+MaxAge on the worker and Nack paths alike.
+    enforced_by:
+      - test: battery/queue.TestMemoryPermanentDeadLettersAtOnce
+      - test: battery/queue.TestMemoryRetryAfterWaits
+      - test: battery/queue.TestMemoryMaxAgeGivesUp
+      - test: battery/queue.TestMemoryNackMaxAgeGivesUp
+  - id: memory-gate-panic-fails-closed
+    rule: A panicking gate on MemoryQueue is recovered through gateAllows and defers the job instead of killing the process.
+    enforced_by:
+      - test: battery/queue.TestMemoryQueueGatePanicIsolated
+  - id: dead-letter-list-is-bounded
+    rule: MemoryQueue keeps at most 1000 dead-letter jobs and evicts the oldest on overflow.
+    enforced_by:
+      - test: battery/queue.TestMemoryDeadLetterListIsBounded
+  - id: memory-refuses-sequence-keys
+    rule: MemoryQueue refuses a job with a SequenceKey with ErrSequenceUnsupported.
+    enforced_by:
+      - test: battery/queue.TestSequenceKeyRefusedUnsupported

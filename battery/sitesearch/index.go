@@ -10,10 +10,6 @@ import (
 	"unicode/utf8"
 )
 
-// Field weights: a word in the title outranks one in a heading, which
-// outranks one in body text. A word's count in one field stops adding
-// after tfCap, so a page that repeats a term is not a better match for
-// it.
 const (
 	weightTitle   = 20
 	weightHeading = 6
@@ -21,57 +17,28 @@ const (
 	tfCap         = 3
 )
 
-// titleBonus lifts a page whose title holds every query term above
-// every page whose title does not, so a page named for the query is
-// its answer however often other pages repeat the words. A title is a
-// row of slots, one per camelCase part (a plain word is one slot), and
-// the bonus is the share of two points a slot the query earns: a term
-// that names a word whole fills all its slots with two, one that names
-// a part fills that slot with two, and one that only begins a word
-// puts one in its first slot. Each slot keeps its best, so two terms
-// never earn one word twice. "table" finds DataTable (2 of 4) before
-// TableOfContents (2 of 6), "datatable" finds DataTable (4 of 4)
-// before Datatables (1 of 2), and "form format" finds Form Format
-// Options (4 of 6) before Formatter (1 of 2). Scores stay far below
-// 2^53, so the browser adds them exactly.
 const titleBonus = 1_000_000
 
-// excerptRunes caps the section text an index keeps for excerpts. The
-// static fragments ship the same capped text, so the browser excerpts
-// what the server would.
 const excerptRunes = 2000
 
-// Index is a built search index over a set of pages. Every number in
-// it is an integer fixed at build time, so a search run in Go and the
-// same search run by the browser client over the static files rank
-// identically.
+// Index is a built search index over a set of pages.
 type Index struct {
-	pages  []Page // section text capped at excerptRunes
-	titleN []int  // each page's count of title slots (titleBonus)
+	pages  []Page
+	titleN []int
 	terms  map[string]termEntry
-	keys   []string // sorted terms, for prefix scans
+	keys   []string
 }
 
-// termEntry is one term's inverse document frequency (scaled by 100)
-// and its postings.
 type termEntry struct {
 	idf      int64
 	postings []posting
 }
 
-// posting is one section that holds a term and the term's weighted
-// count there. On a page's first section it also says which title
-// slots the term names: tLen slots from tFrom, none when tLen is 0.
 type posting struct {
 	page, section, score int
 	tFrom, tLen          int
 }
 
-// titleSlots lays a title out as slots (titleBonus): each distinct
-// word takes one slot per camelCase part, or one when it has none, and
-// names them all whole; each part names its own slot. A term the title
-// holds twice keeps its widest span. It returns the spans by term and
-// the slot count.
 func titleSlots(title string) (map[string][2]int, int) {
 	spans := map[string][2]int{}
 	keep := func(t string, from, n int) {
@@ -105,19 +72,12 @@ func titleSlots(title string) (map[string][2]int, int) {
 	return spans, n
 }
 
-// sitePath reports whether u is a root-relative path on this site. A
-// URL parser drops tab, LF and CR anywhere, so "/\t/host" reads as
-// "//host": every control byte is refused, and the backslash too.
 func sitePath(u string) bool {
 	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
 		!strings.ContainsFunc(u, func(r rune) bool { return r == '\\' || r < ' ' || r == 0x7f })
 }
 
-// Build indexes pages. A page whose URL is not a site path ("/docs",
-// never "//host", a scheme, a backslash or a control byte) is dropped: every result
-// surface links the base path plus the URL. So is one whose URL, or
-// whose title and text, an earlier page already has: a route rendered
-// under two paths, or a demo shown in five themes, is one result.
+// Build indexes pages.
 func Build(pages []Page) *Index {
 	idx := &Index{terms: map[string]termEntry{}}
 	df := map[string]int{}
@@ -132,9 +92,6 @@ func Build(pages []Page) *Index {
 			continue
 		}
 		seenURL[p.URL], seenBody[body] = true, true
-		// The title is indexed with the lead section, and search reads
-		// Sections[0]; a page built with none gets an empty lead, as
-		// extraction always gives one.
 		if len(p.Sections) == 0 {
 			p.Sections = []Section{{}}
 		}
@@ -183,8 +140,6 @@ func Build(pages []Page) *Index {
 // Len reports how many pages the index holds.
 func (idx *Index) Len() int { return len(idx.pages) }
 
-// addField adds text's terms to scores at weight w, each word's count
-// capped at tfCap.
 func addField(scores map[string]int, text string, w int) {
 	if text == "" {
 		return
@@ -200,8 +155,6 @@ func addField(scores map[string]int, text string, w int) {
 	}
 }
 
-// bodyHash identifies a page by its title and section text, length
-// prefixed so no two different pages join to the same bytes.
 func bodyHash(p Page) [32]byte {
 	h := sha256.New()
 	write := func(s string) {
@@ -225,9 +178,6 @@ func capRunes(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	// Cut on the last space that leaves room for the ellipsis, so the
-	// text ends on a whole word; a single word longer than that is cut
-	// inside it.
 	rs := []rune(s)[:n-1]
 	if i := lastIndexRune(rs, ' '); i > 0 {
 		rs = rs[:i]
@@ -235,9 +185,6 @@ func capRunes(s string, n int) string {
 	return string(rs) + "…"
 }
 
-// matching returns the index terms a query term matches: every term q
-// prefixes (q itself among them), every term its stem prefixes when it
-// has one, and its gerund when the index holds it.
 func (idx *Index) matching(q, stem, gerund string) []string {
 	if utf8.RuneCountInString(q) < minPrefixRunes {
 		if _, ok := idx.terms[q]; ok {

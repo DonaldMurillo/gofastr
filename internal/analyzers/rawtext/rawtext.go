@@ -140,6 +140,9 @@ import (
 	"sync"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -183,10 +186,10 @@ func run(pass *analysis.Pass) (any, error) {
 	forwarders := phraseForwarders(pass)
 	texts := textParams(pass)
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		bodies := funcBodies(f)
+		bodies := astx.AllBodies(f)
 		ui := uiReporter{pass: pass, specs: specLiterals(pass, f), forwarders: forwarders, textParams: texts}
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
@@ -219,24 +222,6 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	return nil, nil
-}
-
-// funcBodies collects f's function bodies, literals included: an
-// i18n.Define inside one runs at call time, not at package init.
-func funcBodies(f *ast.File) []*ast.BlockStmt {
-	var out []*ast.BlockStmt
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.FuncDecl:
-			if n.Body != nil {
-				out = append(out, n.Body)
-			}
-		case *ast.FuncLit:
-			out = append(out, n.Body)
-		}
-		return true
-	})
-	return out
 }
 
 func inBody(bodies []*ast.BlockStmt, n ast.Node) bool {
@@ -542,10 +527,15 @@ func checkLabelIndex(pass *analysis.Pass, as *ast.AssignStmt, ui uiReporter) {
 			continue
 		}
 		k := pass.TypesInfo.Types[lhs.(*ast.IndexExpr).Index]
-		if s, ok := uiProse(pass, as.Rhs[i]); ok {
-			ui.reportf(as.Rhs[i], "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", constant.StringVal(k.Value), s)
-		}
+		checkLabelValue(pass, constant.StringVal(k.Value), as.Rhs[i], ui)
 	}
+}
+
+func checkLabelValue(pass *analysis.Pass, key string, value ast.Expr, ui uiReporter) {
+	if s, ok := uiProse(pass, value); ok {
+		ui.reportf(value, "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", key, s)
+	}
+	reportNumberText(pass, value, ui, "a number into "+key)
 }
 
 // checkUIAssign reports a reader-facing string field of a framework
@@ -622,7 +612,7 @@ func packageProse(pass *analysis.Pass) map[*types.Var]string {
 	}
 	out := map[*types.Var]string{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -715,7 +705,7 @@ func localVars(pass *analysis.Pass, cache *sync.Map, every bool, classify func(a
 		}
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -842,10 +832,7 @@ func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit, ui uiReporter) {
 		}
 		k := constant.StringVal(key.Value)
 		if labelAttrs[k] {
-			if s, ok := uiProse(pass, kv.Value); ok {
-				ui.reportf(kv.Value, "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", k, s)
-			}
-			reportNumberText(pass, kv.Value, ui, "a number into "+k)
+			checkLabelValue(pass, k, kv.Value, ui)
 			continue
 		}
 		if k != "error" && k != "message" {

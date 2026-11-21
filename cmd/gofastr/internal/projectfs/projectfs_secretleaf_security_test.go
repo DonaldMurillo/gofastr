@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // Owner decision (2026-11): a file the CLI writes a generated secret
@@ -96,10 +98,13 @@ func TestOwnerOnlyWriterRefusesALinkAtTheLeaf(t *testing.T) {
 			}
 		}
 		for _, p := range []string{"new.env", "old.env", "real/.env"} {
-			fi, err := os.Lstat(filepath.Join(proj, p))
-			if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm() != 0o600 {
-				t.Errorf("%s: %v, %v; want a regular 0600 file", p, fi, err)
+			name := filepath.Join(proj, p)
+			fi, err := os.Lstat(name)
+			if err != nil || !fi.Mode().IsRegular() {
+				t.Errorf("%s: %v, %v; want a regular file", p, fi, err)
+				continue
 			}
+			filepermtest.AssertOwnerOnly(t, name, 0o600)
 		}
 	})
 }

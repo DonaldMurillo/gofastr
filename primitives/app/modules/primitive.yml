@@ -68,6 +68,14 @@ invariants:
     rule: A process module whose coordinator cannot toggle it reads as disabled in Enabled and List, and Enable on it errors.
     enforced_by:
       - test: framework.TestSweepModulesProcessModuleWithoutTogglerIsClosed
+  - id: coordinator-reads-outside-manager-lock
+    rule: Enabled and List snapshot the process coordinator under ModuleManager.mu and invoke its methods after releasing that mutex.
+    enforced_by:
+      - test: framework.TestModuleCoordinatorReadsReenterManager
+  - id: process-module-listing-reads-local-state
+    rule: ModuleManager.List and app_modules read no supervisor desired state, since neither returns a desired generation; they report each process module's local slot snapshot and do not wait on a hanging store.
+    enforced_by:
+      - test: framework.TestModuleListingsMakeNoStoreRead
   - id: toggle-respects-dependencies
     rule: Enable refuses a module whose DependsOn names an unregistered or disabled module, and Disable refuses a module an enabled module depends on, without cascading.
     enforced_by:

@@ -2,9 +2,12 @@ package file
 
 import (
 	"bytes"
+	"context"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -65,6 +68,73 @@ func TestStripPNGReadsPrefixedEXIFOrientation(t *testing.T) {
 	cfg, err := png.DecodeConfig(bytes.NewReader(out))
 	if err != nil || cfg.Width != 1 || cfg.Height != 3 {
 		t.Fatalf("stripped PNG is %dx%d (err %v), want 1x3 after orientation 6", cfg.Width, cfg.Height, err)
+	}
+}
+
+func TestStripPNGPreservesOrientedNRGBA64(t *testing.T) {
+	src := image.NewNRGBA64(image.Rect(0, 0, 3, 2))
+	src.SetNRGBA64(0, 0, color.NRGBA64{R: 0x1234, G: 0x5678, B: 0x9abc, A: 0xdef0})
+	src.SetNRGBA64(2, 0, color.NRGBA64{R: 0xa1b2, G: 0xc3d4, B: 0xe5f6, A: 0xffff})
+	src.SetNRGBA64(1, 1, color.NRGBA64{R: 0x1357, G: 0x2468, B: 0x9ace, A: 0})
+	var enc bytes.Buffer
+	if err := png.Encode(&enc, src); err != nil {
+		t.Fatal(err)
+	}
+	const ihdrEnd = 8 + 12 + 13
+	raw := enc.Bytes()
+	data := appendPNGChunk(bytes.Clone(raw[:ihdrEnd]), "eXIf", minimalOrientationTIFF(6))
+	data = append(data, raw[ihdrEnd:]...)
+	out, err := stripPNG(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := decoded.(*image.NRGBA64)
+	if !ok {
+		t.Fatalf("oriented PNG decoded as %T, want *image.NRGBA64", decoded)
+	}
+	if want := image.Rect(0, 0, 2, 3); got.Bounds() != want {
+		t.Fatalf("bounds = %v, want %v", got.Bounds(), want)
+	}
+	for y := range 2 {
+		for x := range 3 {
+			if p, want := got.NRGBA64At(1-y, x), src.NRGBA64At(x, y); p != want {
+				t.Errorf("oriented pixel for (%d, %d) = %#v, want %#v", x, y, p, want)
+			}
+		}
+	}
+}
+
+func TestStripMetadataRefusesMissingEndMarkers(t *testing.T) {
+	img := image.NewGray(image.Rect(0, 0, 4, 4))
+	var jpg, pngFile bytes.Buffer
+	if err := jpeg.Encode(&jpg, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(&pngFile, img); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want string
+	}{
+		{"truncated.jpg", bytes.TrimSuffix(jpg.Bytes(), []byte{0xff, 0xd9}), "missing EOI"},
+		{"truncated.png", bytes.TrimSuffix(pngFile.Bytes(), appendPNGChunk(nil, "IEND", nil)), "missing IEND"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMemStore()
+			_, err := ProcessFileField(context.Background(), store, bytes.NewReader(tc.body), tc.name, "posts", "photo", StripMetadata())
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ProcessFileField error = %v, want %q", err, tc.want)
+			}
+			if len(store.saved) != 0 {
+				t.Errorf("stored %d object(s), want 0", len(store.saved))
+			}
+		})
 	}
 }
 

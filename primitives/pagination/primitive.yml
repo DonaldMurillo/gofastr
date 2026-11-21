@@ -21,19 +21,25 @@ invariants:
       - battery/admin/
       - battery/sitesearch/
   - id: limit-clamped
-    rule: ParsePagination and ParseCursorPagination read a limit below 1 or unparseable as DefaultPageSize and one over MaxPageSize as MaxPageSize.
+    rule: Standalone, CRUD and entity UI use ParsePositiveInt and ClampLimit for positive integers and page-size caps. Standalone defaults to 25, CRUD to 20, and entity UI applies its own size menu.
     enforced_by:
       - test: framework/pagination.TestParsePaginationClampsLimit
+      - test: framework/crud.TestCursorUsesListDefault
+      - test: framework/crud.TestParsePagination_PerPageAlias
+      - test: framework/entityui.TestListFooterRangeAndPerPage
+      - test: framework/entityui.TestSweepListPageSizeCappedByMaxListLimit
   - id: direction-is-a-static-label
     rule: ParseCursorPagination returns "forward" or "backward" and nothing else.
     enforced_by:
       - test: framework/pagination.TestParseCursorPagination_InvalidDirectionDefaultsForward
   - id: cursor-names-stripped-values-verbatim
-    rule: A decoded cursor's field names lose C0 controls, DEL and zero-width and bidi codepoints, and its values round-trip byte for byte.
+    rule: A decoded cursor's field names lose C0 controls, DEL and every rune matched by textsafe.IsInvisible. C1 controls and line separators are preserved, and values round-trip byte for byte.
     enforced_by:
       - test: framework/pagination.TestDecodeCursor_StripsNewlinesFromFieldName
       - test: framework/pagination.TestDecodeMultiCursor_StripsNewlinesFromFieldNames
       - test: framework/pagination.TestDecodeCursor_StripsInvisibles
+      - test: framework/pagination.TestDecodeMultiCursor_StripsInvisibles
+      - test: framework/pagination.TestDecodeCursor_PreservesC1AndLineSeparatorsInField
       - test: framework/pagination.TestCursorValueRoundTripIsLossless
       - test: framework/pagination.TestDecodeCursor_ValueIsBoundDataNotSanitized
   - id: cursor-decodes-strictly
@@ -61,9 +67,10 @@ invariants:
     enforced_by:
       - test: framework/pagination.TestKeysetStringLogsEncodeFailure
   - id: total-pages-round-up
-    rule: NewOffsetPage rounds TotalPages up and makes 0 pages for a page size of 0.
+    rule: Standalone, buffered CRUD, streaming CRUD and entity UI use TotalPages for overflow-safe rounding. TotalPages returns 0 for a nonpositive page size, and entity UI keeps a minimum of one page.
     enforced_by:
       - test: framework/pagination.TestOffsetPageRoundsTotalPagesUp
+      - test: framework/entityui.TestPagesForLargeCount
 decisions:
   - id: values-not-scrubbed
     date: 2026-11-17

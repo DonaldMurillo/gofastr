@@ -257,7 +257,7 @@ func TestApp_UntrustedModuleServesThroughAppSandbox(t *testing.T) {
 	if err := sup.Enable(context.Background(), desc.Name); err != nil {
 		t.Fatalf("Enable: %v", err)
 	}
-	waitForState(t, sup, desc.Name, StateReady, 20*time.Second)
+	waitForStateTB(t, sup, desc.Name, StateReady, 20*time.Second)
 
 	if backend.probes != len(allProbes) || backend.spawns < 1 {
 		t.Fatalf("backend wrapped %d probes and %d module spawns, want %d probes and the module", backend.probes, backend.spawns, len(allProbes))

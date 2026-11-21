@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
@@ -204,9 +205,8 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			if d.Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
-				seo := ds.localizeSEO(ctx, base, resolveScreenSEO(ctx, sc))
-				fm := screenSEOFrontMatter(sc.Title, seo)
-				md = app.ScreenLLMMDWithMeta(ctx, sc, fm)
+				prefix := ds.llmMDSEOPrefix(ctx, base, sc, sc.Title, nil)
+				md = app.ScreenLLMMDWithMeta(ctx, sc, prefix)
 			}
 			w.Write([]byte(md))
 		})
@@ -283,10 +283,16 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
-					if rs, ok := f.(io.ReadSeeker); ok && wantsVersion(r) {
+					if rs, seekable := f.(io.ReadSeeker); seekable && wantsVersion(r) {
 						if info, err := f.Stat(); err == nil && !info.IsDir() {
 							ds.markVersionedStatic(w, r, assetKey{fromFS: true, rel: cleanPath}, f)
 							http.ServeContent(w, r, path, info.ModTime(), rs)
+							_ = f.Close()
+							return
+						}
+					} else if !seekable && !strings.HasSuffix(path, "/index.html") {
+						if info, err := f.Stat(); err == nil && info.Mode().IsRegular() {
+							serveStaticStream(w, r, cleanPath, f, info.Size(), info.ModTime())
 							_ = f.Close()
 							return
 						}
@@ -351,19 +357,21 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 // LLMMDWithSEO returns res's markdown behind the screen's SEO front matter, the
 // llm.md the host serves and the static export writes for base.
 func (ds *UIHost) LLMMDWithSEO(ctx context.Context, base string, scr *app.Screen, res app.ScreenLLMMDResult) string {
-	md := res.MD
 	if !res.Allowed {
-		return md
+		return res.MD
 	}
-	title := res.Title
+	if prefix := ds.llmMDSEOPrefix(ctx, base, scr, res.Title, res.Component); prefix != "" {
+		return prefix + "\n" + res.MD
+	}
+	return res.MD
+}
+
+func (ds *UIHost) llmMDSEOPrefix(ctx context.Context, base string, scr *app.Screen, title string, comp component.Component) string {
 	if title == "" {
 		title = scr.Title
 	}
-	seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, res.Component))
-	if fm := screenSEOFrontMatter(title, seo); fm != "" {
-		md = fm + "\n" + md
-	}
-	return md
+	seo := ds.localizeSEO(ctx, base, resolveScreenSEOFor(ctx, scr, comp))
+	return screenSEOFrontMatter(title, seo)
 }
 
 // PageHandler renders the screen at path with full chrome, for a framework
@@ -382,9 +390,13 @@ func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 	}
 }
 
+func isDynamicSegment(seg string) bool {
+	return strings.HasPrefix(seg, ":") || (len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}')
+}
+
 func isDynamicScreenPath(path string) bool {
 	for _, seg := range strings.Split(path, "/") {
-		if strings.HasPrefix(seg, ":") || (len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}') {
+		if isDynamicSegment(seg) {
 			return true
 		}
 	}

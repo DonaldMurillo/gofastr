@@ -1,0 +1,50 @@
+primitive: print.chromepdf
+summary: The headless-Chromium PDFRenderer, in its own module so only apps that render PDFs pull in chromedp.
+code:
+  - battery/print/chromepdf/
+docs:
+  - framework/docs/content/print.md
+invariants:
+  - id: no-network-by-default
+    rule: Every hostname resolves to NOTFOUND in the renderer's Chromium except the exact AllowedHosts, so with none the document opens no connection.
+    enforced_by:
+      - test: battery/print/chromepdf.TestPDFRendererRefusesNetworkByDefault
+      - test: battery/print/chromepdf.TestPDFRendererAllowListIsExact
+      - test: battery/print/chromepdf.TestRenderPDFInstallsNetworkGate
+  - id: extra-flags-follow-the-gate
+    rule: RenderPDF appends the host-resolver-rules gate before ExtraFlags, so a host-resolver-rules entry in ExtraFlags replaces the gate.
+    enforced_by:
+      - test: battery/print/chromepdf.TestRenderPDFInstallsNetworkGate
+  - id: document-goes-in-as-content
+    rule: The HTML is set as about:blank's content over DevTools, never passed as a URL, so a document past Chrome's 2 MiB URL cap still renders.
+    enforced_by:
+      - test: battery/print/chromepdf.TestRenderPDFLargeDocument
+  - id: print-waits-for-the-load-event
+    rule: RenderPDF prints only after the set document's load event, so its stylesheets have loaded or failed.
+    enforced_by:
+      - test: battery/print/chromepdf.TestRenderPDFWaitsForStylesheet
+  - id: timeout-covers-chrome-start
+    rule: Options.Timeout also bounds chromedp's DevTools-URL wait and websocket dial, so a slow Chrome start within it does not fail.
+    enforced_by:
+      - test: battery/print/chromepdf.TestSlowStartWithinTimeout
+  - id: allowed-hosts-doc-names-the-csp
+    rule: The AllowedHosts doc says the allow-list does not widen the CSP, that images and fonts stay blocked and that only the BaseURL stylesheet is fetched.
+    enforced_by:
+      - test: battery/print/chromepdf.TestAllowedHostsRespectsCSPDocs
+decisions:
+  - id: resolver-rule-gate
+    date: 2026-11-20
+    status: accepted
+    decision: The network gate is a --host-resolver-rules flag that maps every name to NOTFOUND and excludes the allow-list.
+    rejected:
+      - option: Intercept requests over DevTools.
+        why: A name that never resolves fails closed at the lowest layer, while interception can be missed by a request taking another route.
+    upholds: [no-network-by-default]
+  - id: document-as-content-not-url
+    date: 2026-11-20
+    status: accepted
+    decision: The renderer navigates to about:blank and sets the document content.
+    rejected:
+      - option: Navigate to a data URL of the document.
+        why: Chrome caps URLs at 2 MiB, so any document past about 1.5 MB failed with net::ERR_ABORTED.
+    upholds: [document-goes-in-as-content]

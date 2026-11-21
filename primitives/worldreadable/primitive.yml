@@ -1,0 +1,9 @@
+primitive: worldreadable
+summary: The analyzer that checks permissions on state files and directories.
+code:
+  - internal/analyzers/worldreadable/
+invariants:
+  - id: handle-tightening-follows-the-open-into-its-function-literal
+    rule: An owner-only OpenFile site can receive credit for tightening its own handle inside a function literal that encloses the open. An unrelated function literal cannot supply the tighten.
+    enforced_by:
+      - test: internal/analyzers/worldreadable.TestWorldReadableFiresOnStateSites

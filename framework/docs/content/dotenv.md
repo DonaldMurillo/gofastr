@@ -9,29 +9,39 @@
 3. `.env.<APP_ENV>` (only when `APP_ENV` is set, e.g. `.env.production`)
 4. `.env` (committed shared defaults)
 
-Missing files are skipped. Calling `dotenv.LoadAndApply` directly fails fast on a malformed file (returning file name and line number without printing the line's text so secrets don't leak); note that `framework.NewApp()` discards the `LoadAndApply` error, so call `dotenv.LoadAndApply` explicitly and check the error if you want malformed dotfiles to abort startup.
+`NewApp` skips missing files. If loading fails (for example on a malformed assignment), `NewApp` **panics** before applying any file values or running app options; the error names the file and line number without printing the line's text so secrets don't leak.
 
 ## File format and `${VAR}` expansion
 
 ```dotenv
 # comments and blank lines are allowed
 FOO=bar
-QUOTED="hello world"          # double-quoted: \n \t \" \\ and ${VAR} expanded
-LITERAL='hello\nworld'        # single-quoted: verbatim, no escapes or expansion
-# optional export prefix (keep comments off unquoted lines)
+# Double quotes interpret \n, \t, \" and \\.
+QUOTED="hello world"
+# Single quotes keep the value verbatim.
+LITERAL='hello\nworld'
+# The export prefix is optional.
 export PORT=8080
-DSN="postgres://${DB_HOST}/app"
-ESCAPED="\${not expanded}"    # \$ prevents expansion
+# Double quotes expand ${VAR}.
+PATH_TPL="${HOME}/bin"
+# \$ blocks expansion at that position.
+ESCAPED="\${not expanded}"
 ```
 
 Rules:
 - Keys match `[A-Za-z_][A-Za-z0-9_]*`. Multi-line values are not supported (use `\n` in double quotes).
 - Inline `#` comments after **unquoted** values become part of the value — quote values when appending comments, or put comments on their own line.
-- Only bracketed `${VAR}` inside double quotes expands (bare `$VAR` is left literal). Lookup checks `os.Environ`, earlier files in the precedence chain, then earlier keys in the same file, without re-expanding substituted values (no cycles or double-expansion).
+- Only bracketed `${VAR}` inside double quotes expands (bare `$VAR` is left literal). Lookup checks `os.Environ`, earlier files in the precedence chain, then earlier keys in the same file, without re-expanding substituted values (no cycles or double-expansion):
+
+```dotenv
+PW='a${b}c'
+# Expands to postgres://u:a${b}c@h/db.
+DSN="postgres://u:${PW}@h/db"
+```
 
 ## Reading env vars before `NewApp`
 
-If `main.go` opens a database before calling `framework.NewApp` (or wants fail-fast validation on malformed `.env` files), load the exact same file list first using `framework.DefaultDotEnvPaths()` and check the error:
+If `main.go` opens a database before calling `framework.NewApp`, load the exact same file list first using `framework.DefaultDotEnvPaths()` and check the error:
 
 ```go
 if err := dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...); err != nil {

@@ -1,0 +1,27 @@
+primitive: cache.redis
+summary: RedisCache, the cache over a caller-supplied RedisClient, with an injective key prefix and a prefix-scoped Clear.
+code:
+  - battery/cache/redis.go
+docs:
+  - framework/docs/content/cache.md
+invariants:
+  - id: backend-error-is-not-a-miss
+    rule: Get reports ErrCacheMiss only for the client's no-such-key signal; any other client error is returned as an error, so GetOrSet does not run the loader through an outage.
+    enforced_by:
+      - test: battery/cache.TestRedisCache_BackendErrorNotMiss
+      - test: battery/cache.TestGetOrSet_BackendOutageNotMiss
+  - id: negative-ttl-deletes
+    rule: Set with a negative effective TTL deletes the key and never passes the TTL to the client.
+    enforced_by:
+      - test: battery/cache.TestRedisCache_NegativeTTLNotImmortal
+  - id: prefix-is-injective
+    rule: A prefix is written with % and colon percent-encoded, so two prefix and key pairs never produce one Redis key.
+    enforced_by:
+      - test: battery/cache.TestRedisPrefixEscapeIsInjective
+      - test: battery/cache.TestRedisCache_PrefixNoKeyCollision
+  - id: clear-deletes-only-owned-keys
+    rule: Clear on a prefixed cache scans with the glob-escaped prefix and deletes only listed keys that start with it; only an unprefixed cache flushes the database.
+    enforced_by:
+      - test: battery/cache.TestRedisClearGlobPrefix
+      - test: battery/cache.TestRedisClearDeletesOnlyOwnedKeys
+      - test: battery/cache.TestRedisCache_ClearScopedToPrefix

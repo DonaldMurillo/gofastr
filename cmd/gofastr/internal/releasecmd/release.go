@@ -287,7 +287,7 @@ func RunRelease(args []string) {
 	opts, err := parseOptions(args)
 	if err != nil {
 		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	wd, err := os.Getwd()

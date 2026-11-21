@@ -1,0 +1,26 @@
+primitive: semantic.chunkers
+summary: The chunkers - FixedWindow's rune windows and LangAware's split of Go declarations and Markdown sections, capped at MaxRunes.
+code:
+  - battery/semantic/chunker.go
+  - battery/semantic/chunker_lang.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: fixed-window-refuses-bad-input
+    rule: FixedWindow refuses text that is not valid UTF-8 and a non-positive window size.
+    enforced_by:
+      - test: battery/semantic.TestFixedWindowRejectsInvalidUTF8Offsets
+      - test: battery/semantic.TestFixedWindowInvalidConfigReturnsError
+  - id: chunking-is-linear
+    rule: FixedWindow tracks the window's byte offset incrementally, so chunking runs in time linear in the text.
+    enforced_by:
+      - test: battery/semantic.TestChunkLinearTime
+  - id: max-runes-is-a-hard-cap
+    rule: LangAware re-chunks a structural chunk, and caps a fallback chunk, longer than MaxRunes.
+    enforced_by:
+      - test: battery/semantic.TestLangAwareReChunksOverlongStructuralChunks
+      - test: battery/semantic.TestFallbackPathHonorsMaxRunes
+  - id: defaults-never-touch-the-shared-chunker
+    rule: LangAware.Chunk fills its defaults on a copy, so concurrent calls on one chunker do not race.
+    enforced_by:
+      - test: battery/semantic.TestLangAwareDefaultConfigurationConcurrent

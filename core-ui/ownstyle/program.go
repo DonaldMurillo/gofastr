@@ -6,56 +6,60 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
 // RuleRepeatedLiteral is GOFASTR1822 (warn).
 const RuleRepeatedLiteral = "GOFASTR1822"
 
-var allowMarker = regexp.MustCompile(`^/\*\s*gofastr:allow\(([^)]*)\)\s*(.*?)\s*\*/$`)
-
-// Suppressed reports whether a gofastr:allow(<rule>) <reason> comment in src
-// waives d, the way `gofastr verify` reads the marker.
+// Suppressed reports whether a gofastr:allow or gofastr:allow-file comment in src waives d, the
+// way `gofastr verify` reads the marker.
 func Suppressed(src string, d Diagnostic) bool {
-	toks := Tokenize(src)
-	for i, t := range toks {
+	if !strings.Contains(src, "gofastr:allow") {
+		return false
+	}
+	bomLen := len(src) - len(stripBOM(src))
+	for _, t := range Tokenize(src) {
 		if t.Type != TokenComment {
 			continue
 		}
-		m := allowMarker.FindStringSubmatch(t.Text)
-		if m == nil || m[2] == "" {
+		m, ok := names.ParseMarker(t.Text)
+		if !ok || m.Reason == "" || slices.Contains(m.Rules, "*") ||
+			slices.ContainsFunc(m.Rules, func(r string) bool { return strings.EqualFold(r, "all") }) {
 			continue
 		}
-		named := false
-		for _, r := range strings.Split(m[1], ",") {
-			if strings.EqualFold(strings.TrimSpace(r), d.Rule) {
-				named = true
-			}
+		if !slices.ContainsFunc(m.Rules, func(r string) bool { return strings.EqualFold(r, d.Rule) }) {
+			continue
 		}
-		if named && markerScope(toks, i) == d.Line {
+		if m.File || (d.Line >= t.Line && d.Line <= CSSWaiverScopeEnd(src, t.Start+bomLen, t.End+bomLen, t.Line)) {
 			return true
 		}
 	}
 	return false
 }
 
-func markerScope(toks []Token, i int) int {
-	c := toks[i]
-	end := c.Line + strings.Count(c.Text, "\n")
-	for j := i - 1; j >= 0 && toks[j].Line == c.Line; j-- {
-		if significant(toks[j]) {
-			return c.Line
+// CSSWaiverScopeEnd returns the last line a CSS waiver comment covers; start and end are byte
+// offsets into src, BOM included.
+func CSSWaiverScopeEnd(src string, start, end, line int) int {
+	lineStart := strings.LastIndexByte(src[:start], '\n') + 1
+	before := src[lineStart:start]
+	if lineStart == 0 {
+		before = stripBOM(before)
+	}
+	if strings.TrimSpace(before) != "" {
+		return line
+	}
+	for _, t := range tokenize(src[end:]) {
+		if significant(t) {
+			if t.Line == 1 {
+				return line
+			}
+			return line + strings.Count(src[start:end], "\n") + t.Line - 1
 		}
 	}
-	for j := i + 1; j < len(toks); j++ {
-		if !significant(toks[j]) {
-			continue
-		}
-		if toks[j].Line == end {
-			return end
-		}
-		return toks[j].Line
-	}
-	return end
+	return line
 }
 
 // SheetSource is one owned sheet's path and bytes, for the program-wide
@@ -114,10 +118,10 @@ func RepeatedLiteralsIn(sheets []SheetSource, tokens map[string]string) []Repeat
 					}
 					v := strings.TrimSpace(d.ValueSrc)
 					lv := strings.ToLower(v)
-					if v == "" || bareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
+					if v == "" || style.BareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
 						continue
 					}
-					if tokenValueFor(valueIndex[lv], cats) {
+					if tokenValueFor(valueIndex[normalizeNumber(lv)], cats) {
 						continue
 					}
 					k := key{cats[0], lv}
@@ -178,7 +182,7 @@ func structuralLiteral(prop, lv string) bool {
 
 func tokenValueFor(holders []string, cats []string) bool {
 	for _, h := range holders {
-		if slices.Contains(cats, tokenCategory(h)) {
+		if slices.Contains(cats, style.TokenCategory(h)) {
 			return true
 		}
 	}

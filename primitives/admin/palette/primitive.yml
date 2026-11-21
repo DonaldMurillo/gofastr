@@ -1,0 +1,21 @@
+primitive: admin.palette
+summary: The command palette and its scriptless twin, the search page - jump to a page or an entity, create one, or open a record found by title.
+code:
+  - battery/admin/palette.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: palette-reads-are-bounded
+    rule: A palette post is read through a 4 KiB body cap and answered 400 past it, the search reads the first 200 runes of q, and one answer holds at most paletteCap rows.
+    enforced_by:
+      - test: battery/admin.TestPaletteCapsTheQueryAndBody
+      - test: battery/admin.TestPaletteAnswerIsCapped
+  - id: records-need-the-gate
+    rule: The palette searches records only for a caller the gate admits, through the admin's elevation, so scope, the Decider and each row's gate still bind but the entity's Access check does not.
+    enforced_by:
+      - test: battery/admin.TestPaletteRecordsNeedTheGate
+      - test: battery/admin.TestPaletteRecordSearchIsElevated
+  - id: palette-hides-refused-pages
+    rule: The palette lists an app page only when the page's Access admits the caller.
+    enforced_by:
+      - test: battery/admin.TestPaletteHidesRefusedPages

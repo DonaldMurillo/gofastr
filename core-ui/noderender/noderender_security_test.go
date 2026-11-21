@@ -1,8 +1,11 @@
 package noderender
 
 import (
+	"maps"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/node"
 )
 
 // TestIRDropsScriptAndURLGadgets pins the attribute policy for the node
@@ -33,14 +36,23 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		{"data-cui-signal-set", map[string]any{"data-cui-signal-set": "__proto__:x"}, "data-cui-signal-set"},
 		{"style", map[string]any{"style": "background:url(x)"}, "style"},
 		{"srcdoc", map[string]any{"srcdoc": "<script>alert(1)</script>"}, "srcdoc"},
+		{"lowercase handler", map[string]any{"onclick": "alert(1)"}, "onclick"},
 		{"case-folded handler", map[string]any{"OnClick": "alert(1)"}, "alert(1)"},
 		{"uppercase handler", map[string]any{"ONMOUSEOVER": "alert(1)"}, "alert(1)"},
 	}
 	for _, g := range gadgets {
 		t.Run(g.name, func(t *testing.T) {
-			got := string(RenderKind("div", g.props, nil))
-			if strings.Contains(got, g.bad) {
-				t.Errorf("SECURITY: [xss] untrusted IR emitted %s. Rendered: %s", g.bad, got)
+			g.props["data-testid"] = "sentinel"
+			for entry, got := range map[string]string{
+				"RenderKind": string(RenderKind("div", maps.Clone(g.props), nil)),
+				"RenderNode": string(RenderNode(node.Node{Kind: "div", Props: g.props})),
+			} {
+				if !strings.Contains(got, `data-testid="sentinel"`) {
+					t.Errorf("%s dropped the test sentinel. Rendered: %s", entry, got)
+				}
+				if strings.Contains(strings.ToLower(got), g.bad) {
+					t.Errorf("SECURITY: [xss] %s emitted %s. Rendered: %s", entry, g.bad, got)
+				}
 			}
 		})
 	}
@@ -113,12 +125,21 @@ func TestIRCannotFireActions(t *testing.T) {
 		"data-action-click",  // per-event variant
 		"data-action-submit", // per-event variant
 		"data-param-id",      // argument smuggling into the same trigger
+		"data-param-entity",  // argument smuggling into the same trigger
 	}
 	for _, attr := range privileged {
 		t.Run(attr, func(t *testing.T) {
-			got := string(RenderKind("div", map[string]any{attr: "deleteAllRecords"}, nil))
-			if strings.Contains(got, attr) {
-				t.Errorf("SECURITY: untrusted IR emitted runtime-privileged %s — the runtime acts on it. Rendered: %s", attr, got)
+			props := map[string]any{attr: "deleteAllRecords", "data-testid": "sentinel"}
+			for entry, got := range map[string]string{
+				"RenderKind": string(RenderKind("div", maps.Clone(props), nil)),
+				"RenderNode": string(RenderNode(node.Node{Kind: "div", Props: props})),
+			} {
+				if !strings.Contains(got, `data-testid="sentinel"`) {
+					t.Errorf("%s dropped the test sentinel. Rendered: %s", entry, got)
+				}
+				if strings.Contains(strings.ToLower(got), attr) {
+					t.Errorf("SECURITY: %s emitted runtime-privileged %s. Rendered: %s", entry, attr, got)
+				}
 			}
 		})
 	}
@@ -132,12 +153,23 @@ func TestTrustedIRKeepsActions(t *testing.T) {
 	props := map[string]any{
 		"data-action":       "refresh",
 		"data-action-type":  "submit",
+		"data-action-click": "open",
+		"data-action-mount": "hydrate",
+		"data-param-id":     "42",
 		"data-param-entity": "posts",
 	}
-	got := string(RenderTrustedKind("button", props, nil))
-	for _, want := range []string{`data-action="refresh"`, `data-action-type="submit"`, `data-param-entity="posts"`} {
-		if !strings.Contains(got, want) {
-			t.Errorf("trusted IR dropped %s. Rendered: %s", want, got)
+	for entry, got := range map[string]string{
+		"RenderTrustedKind": string(RenderTrustedKind("button", maps.Clone(props), nil)),
+		"RenderTrustedNode": string(RenderTrustedNode(node.Node{Kind: "div", Props: props})),
+	} {
+		for _, want := range []string{
+			`data-action="refresh"`, `data-action-type="submit"`,
+			`data-action-click="open"`, `data-action-mount="hydrate"`,
+			`data-param-id="42"`, `data-param-entity="posts"`,
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s dropped %s. Rendered: %s", entry, want, got)
+			}
 		}
 	}
 }

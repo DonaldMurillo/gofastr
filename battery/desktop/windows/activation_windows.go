@@ -269,12 +269,12 @@ func (s *winShell) receiveDeepLink(hwnd, lparam uintptr) uintptr {
 	if !owned || scheme == "" || callback == nil {
 		return 0
 	}
-	message := (*copyDataMessage)(unsafe.Pointer(lparam))
+	message := (*copyDataMessage)(win32.NativePtr(lparam))
 	if message.Tag != copyDataDeepLink || message.Data == 0 || message.Bytes < 2 ||
 		message.Bytes > maxCopyDataBytes || message.Bytes%2 != 0 {
 		return 0
 	}
-	units := unsafe.Slice((*uint16)(unsafe.Pointer(message.Data)), int(message.Bytes/2))
+	units := unsafe.Slice((*uint16)(win32.NativePtr(message.Data)), int(message.Bytes/2))
 	if units[len(units)-1] != 0 {
 		return 0
 	}

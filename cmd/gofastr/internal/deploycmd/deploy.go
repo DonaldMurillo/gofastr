@@ -5,8 +5,8 @@
 // /opt/<name>/releases/<time>/, a "current" link that names the
 // release running, a systemd unit that runs it as its own user and
 // brings it back after a crash, and a health check that decides
-// whether a new release stays. A release that fails its check is
-// replaced by the one before it, in the same run.
+// whether a new release stays. If activation or the check fails, the
+// command tries to restore the previous release.
 //
 // Nothing is installed on the server but the app: no agent, no
 // container runtime. The server needs sshd, systemd and bash, and the
@@ -16,10 +16,10 @@ package deploycmd
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"os/exec"
@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/sdlisten"
 )
@@ -40,12 +41,12 @@ const usage = `
   gofastr deploy status <user@host>      what is running
 
   Flags:
-      --name <name>       service name, user and directory (default: this
-                          directory's name)
+      --name <name>       service name, user and directory (default: the
+                          lowercased name of this directory)
       --pkg <path>        main package to build (default ".")
       --bin <file>        deploy this Linux binary instead of building one
-      --env-file <file>   settings and secrets, as KEY=value lines; stored at
-                          /etc/<name>/env, readable by root and the app only
+      --env-file <file>   settings and secrets, as KEY=value lines; kept
+                          with the release, readable by root and the app only
       --port <n>          port the app listens on, for the health check
                           (default 8080)
       --health <path>     path that answers 2xx when the app is up
@@ -59,6 +60,9 @@ const usage = `
   The server needs sshd, systemd and bash. The SSH user needs to be root or
   to have passwordless sudo. See "gofastr docs deploy".
 
+  Use --name if the default is invalid. Names start with a lower-case letter
+  and have up to 31 characters (lower-case letters, digits and hyphens).
+
 `
 
 // errUsage marks a mistake in the command line.
@@ -70,14 +74,16 @@ func RunDeploy(args []string) {
 	if err == nil {
 		return
 	}
-	if !errors.Is(err, flag.ErrHelp) {
-		cli.Fail("%s", textsafe.ScrubTerminal(err.Error()))
-	}
-	if errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
-		fmt.Print(usage)
-	}
 	if errors.Is(err, flag.ErrHelp) {
+		fmt.Print(usage)
 		cli.OsExit(0)
+		return
+	}
+	cli.Fail("%s", err.Error())
+	if errors.Is(err, errUsage) {
+		fmt.Fprint(os.Stderr, usage)
+		cli.OsExit(2)
+		return
 	}
 	cli.OsExit(1)
 }
@@ -169,19 +175,12 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	fs.IntVar(&o.sshPort, "ssh-port", 0, "")
 	fs.StringVar(&o.identity, "i", "", "")
 	// The server may come before or after the flags.
-	var positional []string
-	for len(args) > 0 {
-		if err := fs.Parse(args); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return flag.ErrHelp
-			}
-			return fmt.Errorf("%w: %v", errUsage, err)
+	positional, err := cli.ParsePositionals(fs, args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return flag.ErrHelp
 		}
-		args = fs.Args()
-		if len(args) > 0 {
-			positional = append(positional, args[0])
-			args = args[1:]
-		}
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if len(positional) != 1 {
 		return fmt.Errorf("%w: name one server", errUsage)
@@ -244,7 +243,7 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if !uploadRe.MatchString(p.upload) {
 		return fmt.Errorf("the server named an upload directory this will not use: %q", p.upload)
 	}
-	p.release = now.UTC().Format("20060102T150405Z")
+	p.release = fmt.Sprintf("%s-%09d-%s", now.UTC().Format("20060102T150405Z"), now.Nanosecond(), rand.Text())
 
 	bin := o.bin
 	if bin == "" {
@@ -332,33 +331,34 @@ func send(ctx context.Context, o *options, r runner, local, path string) error {
 
 // report turns a script's last line and exit code into what happened.
 func report(w io.Writer, o *options, out string, code int) error {
-	out = textsafe.ScrubTerminal(strings.TrimRight(out, "\n"))
+	out = strings.TrimRight(out, "\n")
 	body, last := out, ""
 	if i := strings.LastIndexByte(out, '\n'); i >= 0 {
 		body, last = out[:i], out[i+1:]
 	} else {
 		body, last = "", out
 	}
-	word, release, _ := strings.Cut(last, " ")
+	word, result, _ := strings.Cut(last, " ")
+	release, reason, _ := strings.Cut(result, " ")
 	switch {
 	case code == 0 && word == "DEPLOYED":
-		fmt.Fprintf(w, "  %s is running release %s and answers its health check\n", o.name, release)
+		fmt.Fprintf(w, "  %s is running release %s and answers its health check\n", o.name, textsafe.ScrubTerminal(release))
 		return nil
 	case code == exitRolledBack && word == "ROLLED-BACK":
 		if body != "" {
-			fmt.Fprintln(w, body)
+			fmt.Fprintln(w, textsafe.ScrubTerminal(body))
 		}
-		return fmt.Errorf("the release did not pass its health check on port %d%s within %d seconds; %s is back on release %s", o.port, o.health, o.wait, o.name, release)
+		return fmt.Errorf("%s; %s is back on release %s", reason, o.name, release)
 	case code == exitDown && word == "DOWN":
 		if body != "" {
-			fmt.Fprintln(w, body)
+			fmt.Fprintln(w, textsafe.ScrubTerminal(body))
 		}
-		return fmt.Errorf("the release did not pass its health check on port %d%s within %d seconds, and no earlier release came up in its place: %s is not serving (release %s is the one in place)", o.port, o.health, o.wait, o.name, release)
+		return fmt.Errorf("%s, and no earlier release came up in its place: %s is not serving (release %s is the one in place)", reason, o.name, release)
 	case code == exitNoPrevious:
 		return fmt.Errorf("%s has no earlier release kept on %s", o.name, o.target)
 	}
 	if out != "" {
-		fmt.Fprintln(w, out)
+		fmt.Fprintln(w, textsafe.ScrubTerminal(out))
 	}
 	return fmt.Errorf("the server stopped part way (exit %d). If it says sudo needs a password, give %s passwordless sudo or deploy as root", code, o.target)
 }
@@ -390,7 +390,7 @@ func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.
 		return out.String(), 0, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 255:
 		// 255 is ssh's own failure, not the remote command's.
-		return "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(textsafe.ScrubTerminal(out.String())))
+		return "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(out.String()))
 	case errors.As(err, &exit):
 		return out.String(), exit.ExitCode(), nil
 	}

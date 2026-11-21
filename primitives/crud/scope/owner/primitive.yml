@@ -36,7 +36,7 @@ decisions:
   - id: extractor-is-a-seam
     date: 2026-11-17
     status: accepted
-    decision: CRUD reads the owner through an extractor a battery installs, and with none installed OwnerField stays inert.
+    decision: CRUD reads the owner through an extractor a battery installs; with none installed the lookup answers absent, and auto-CRUD keeps the owner requirement, refusing an OwnerField entity's requests with 401 until an extractor is registered.
     rejected:
       - option: Import the auth battery into the framework.
         why: The framework core stays free of any authentication dependency.

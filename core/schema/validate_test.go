@@ -2,13 +2,9 @@ package schema
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 )
-
-// helper to create a float64 pointer
-//
-//go:fix inline
-func fPtr(v float64) *float64 { return new(v) }
 
 // assertWithinBounds checks a Min/Max-bounded field: a value below the
 // min rejects, a value above the max rejects, and one between passes.
@@ -90,6 +86,14 @@ func TestValidateString_Pattern(t *testing.T) {
 	if err := Validate(f, "ABC"); err != nil {
 		t.Fatalf("expected valid, got %v", err)
 	}
+	exact := Field{Name: "code", Type: String, Pattern: "^a$", Min: new(float64(1)), Max: new(float64(1))}
+	if err := Validate(exact, "a"); err != nil {
+		t.Fatalf("expected a match at both length bounds, got %v", err)
+	}
+	bad := Field{Name: "code", Type: String, Pattern: "("}
+	if err := Validate(bad, "x"); err == nil {
+		t.Fatal("expected error for an invalid pattern regex")
+	}
 }
 
 // ---------- Text ----------
@@ -156,14 +160,31 @@ func TestValidateFloat_Valid(t *testing.T) {
 
 func TestValidateFloat_WrongType(t *testing.T) {
 	f := Field{Name: "price", Type: Float}
-	if err := Validate(f, true); err == nil {
-		t.Fatal("expected error for bool")
+	for _, v := range []any{true, "x"} {
+		if err := Validate(f, v); err == nil {
+			t.Fatalf("expected error for %T", v)
+		}
 	}
 }
 
 func TestValidateFloat_MinMax(t *testing.T) {
 	f := Field{Name: "price", Type: Float, Min: new(float64(0)), Max: new(float64(100))}
 	assertWithinBounds(t, f, -0.1, 100.1, 50.0)
+	if err := Validate(Field{Type: Float, Min: new(float64(1))}, 0.5); err == nil {
+		t.Fatal("expected error below a standalone minimum")
+	}
+	if err := Validate(Field{Type: Float, Max: new(float64(1))}, 1.5); err == nil {
+		t.Fatal("expected error above a standalone maximum")
+	}
+}
+
+func TestValidateFloat_NonFinite(t *testing.T) {
+	f := Field{Name: "price", Type: Float}
+	for _, v := range []any{math.Inf(1), math.Inf(-1), math.NaN()} {
+		if err := Validate(f, v); err == nil {
+			t.Fatalf("expected error for non-finite float %v", v)
+		}
+	}
 }
 
 // ---------- Decimal ----------
@@ -177,8 +198,10 @@ func TestValidateDecimal_Valid(t *testing.T) {
 
 func TestValidateDecimal_InvalidString(t *testing.T) {
 	f := Field{Name: "amount", Type: Decimal}
-	if err := Validate(f, "notanumber"); err == nil {
-		t.Fatal("expected error for non-numeric string")
+	for _, s := range []string{"notanumber", "1_000", "1e999"} {
+		if err := Validate(f, s); err == nil {
+			t.Fatalf("expected error for invalid decimal %q", s)
+		}
 	}
 }
 
@@ -201,11 +224,43 @@ func TestValidateDecimal_RequiredEmpty(t *testing.T) {
 	}
 }
 
+func TestValidateDecimal_OptionalEmpty(t *testing.T) {
+	f := Field{Name: "amount", Type: Decimal}
+	if err := Validate(f, ""); err != nil {
+		t.Fatalf("expected empty optional decimal to pass, got %v", err)
+	}
+}
+
+func TestValidateDecimal_NonFiniteLiterals(t *testing.T) {
+	f := Field{Name: "amount", Type: Decimal, Max: new(float64(1))}
+	// The regex (not the parser) is what fails non-finite literals closed;
+	// ParseFloat/big.Rat would otherwise accept them and let them slip
+	// past the Min/Max bounds.
+	for _, s := range []string{"NaN", "nan", "Inf", "inf", "Infinity", "+Inf", "0x1p4"} {
+		if err := Validate(f, s); err == nil {
+			t.Fatalf("expected error for non-finite decimal %q", s)
+		}
+	}
+}
+
+func TestValidateDecimal_NaNBoundsFailClosed(t *testing.T) {
+	// A NaN bound makes decimalBound return nil, and the comparison
+	// refuses the value rather than skip the bound.
+	for _, f := range []Field{
+		{Name: "amount", Type: Decimal, Min: new(math.NaN())},
+		{Name: "amount", Type: Decimal, Max: new(math.NaN())},
+	} {
+		if err := Validate(f, "5"); err == nil {
+			t.Fatal("a NaN bound accepted a value")
+		}
+	}
+}
+
 // ---------- Bool ----------
 
 func TestValidateBool_Valid(t *testing.T) {
 	f := Field{Name: "active", Type: Bool}
-	cases := []any{true, false, 1, 0, "true", "false", "1", "0"}
+	cases := []any{true, false, 1, 0, "true", "false", "FALSE", "1", "0", 0.0, 1.0}
 	for _, v := range cases {
 		if err := Validate(f, v); err != nil {
 			t.Fatalf("expected valid for %v, got %v", v, err)
@@ -215,7 +270,7 @@ func TestValidateBool_Valid(t *testing.T) {
 
 func TestValidateBool_Invalid(t *testing.T) {
 	f := Field{Name: "active", Type: Bool}
-	cases := []any{2, "yes", "no", 1.5}
+	cases := []any{2, 2.0, "yes", "maybe", "no", 1.5, []byte("x")}
 	for _, v := range cases {
 		if err := Validate(f, v); err == nil {
 			t.Fatalf("expected error for %v", v)
@@ -332,12 +387,18 @@ func TestValidateJSON_Valid(t *testing.T) {
 	if err := Validate(f, []any{1, 2}); err != nil {
 		t.Fatalf("expected valid slice, got %v", err)
 	}
+	if err := Validate(f, 42); err != nil {
+		t.Fatalf("expected valid Go number, got %v", err)
+	}
 }
 
 func TestValidateJSON_Invalid(t *testing.T) {
 	f := Field{Name: "meta", Type: JSON}
 	if err := Validate(f, `{invalid`); err == nil {
 		t.Fatal("expected error for invalid JSON string")
+	}
+	if err := Validate(f, make(chan int)); err == nil {
+		t.Fatal("expected error for a value json cannot marshal")
 	}
 }
 

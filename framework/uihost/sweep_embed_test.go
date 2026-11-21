@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -410,8 +412,35 @@ func TestSweepEmbedExchangeBodyIsCapped(t *testing.T) {
 	f := newEmbedFixture(t)
 	body, _ := json.Marshal(map[string]string{"token": strings.Repeat("x", 16<<10), "origin": embedTestOrigin})
 	rec := f.do(t, http.MethodPost, "/__gofastr/embed-exchange", string(body))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("a 16 KiB exchange body answered %d, want 413 from the body cap", rec.Code)
+	}
+}
+
+// A malformed exchange body answers the invalid-JSON-body phrase every
+// other uihost JSON endpoint answers, not the bare "bad request".
+func TestSweepEmbedExchangeMalformedBodyIsInvalidJSON(t *testing.T) {
+	f := newEmbedFixture(t)
+	rec := f.do(t, http.MethodPost, "/__gofastr/embed-exchange", `{"token":`)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("a 16 KiB exchange body answered %d, want 400 from the body cap", rec.Code)
+		t.Fatalf("a malformed exchange body answered %d, want 400", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "invalid JSON body" {
+		t.Fatalf("body %q, want the invalid_json_body phrase", got)
+	}
+}
+
+func TestSweepEmbedExchangeReadFailureIsUnreadable(t *testing.T) {
+	f := newEmbedFixture(t)
+	req := httptest.NewRequest(http.MethodPost, "/__gofastr/embed-exchange", iotest.ErrReader(errors.New("connection reset")))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	f.host.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a failed exchange read answered %d, want 400", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "failed to read request body" {
+		t.Fatalf("body %q, want the body_unreadable phrase", got)
 	}
 }
 

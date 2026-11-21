@@ -31,6 +31,15 @@ const numberFillFixture = `(() => {
 })();
 `
 
+func TestLintNumberFillStaticTemplate(t *testing.T) {
+	dir := writeRuntimeFixture(t, "static.js", "label.replace('{{n}}', `42`);\nlabel.replace('{{n}}', `${count}`);\n")
+	res, err := LintNumberFill(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{2})
+}
+
 func TestLintNumberFill_FiresOnASCIIFill(t *testing.T) {
 	dir := writeRuntimeFixture(t, "fill.js", numberFillFixture)
 	res, err := LintNumberFill(dir)

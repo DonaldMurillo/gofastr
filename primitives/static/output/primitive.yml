@@ -11,6 +11,9 @@ invariants:
     rule: Every file the export writes or removes goes through an os.Root opened on OutDir, so the write stays inside OutDir and a symlink in it that points outside fails the write instead of redirecting it.
     enforced_by:
       - test: framework/static.TestExportRefusesSymlinkInOutDir
+  - id: relative-outdir-paths-checked-at-output
+    rule: relUnder checks lexical OutDir containment for both writeUnder and removeUnder before either opens the root.
+    judge: Does this change add a second lexical containment check or bypass relUnder when writing or removing through OutDir?
   - id: case-twins-refused
     rule: Build fails when two files it wrote, or two directories on their paths, differ only in case.
     enforced_by:

@@ -262,9 +262,14 @@ func TestParseProbeOutput_Contract(t *testing.T) {
 		// shadow it: stdout and stderr share one buffer.
 		{"sandbox-exec: warning: compilation options changed\nPASS uid isolated", false, ProbeStatusPass},
 	} {
-		got := parseProbeOutput(ProbeNoInheritedSecret, tc.in, tc.timedOut, tc.in).Status
-		if got != tc.want {
-			t.Errorf("parseProbeOutput(%q, timedOut=%v) = %s, want %s", tc.in, tc.timedOut, got, tc.want)
+		for _, p := range allProbes {
+			if p == ProbeResourceLimits {
+				continue
+			}
+			got := parseProbeOutput(p, tc.in, tc.timedOut, tc.in).Status
+			if got != tc.want {
+				t.Errorf("parseProbeOutput(%s, %q, timedOut=%v) = %s, want %s", p, tc.in, tc.timedOut, got, tc.want)
+			}
 		}
 	}
 	// P6 is the one probe where no output can mean the limit fired, so

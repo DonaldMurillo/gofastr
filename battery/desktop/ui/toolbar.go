@@ -8,19 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// FloatingToolbar is the macOS floating toolbar group: ui.Toolbar
-// wrapped in the thin glass surface with a capsule radius.
-//
-// It composes the framework component instead of forking it, the
-// wrapper-variant shape the desktop plan settled on: ui.Toolbar keeps
-// its semantics (role=toolbar, labelled groups, separators) and its
-// runtime behavior; this stylesheet restyles only the chrome (surface,
-// border, radius) inside the wrapper's scope, at higher specificity
-// than ui-toolbar's own rules.
-//
-// The capsule radius is the concentric rule's capsule case (half the
-// container height) expressed through --radii-full. The wrapper floats
-// (sticky, top, centered, fit-content) at the theme's sticky z tier.
+// its labelled group semantics, separators and runtime behavior.
+// This stylesheet restyles only the chrome (surface,
 func FloatingToolbar(cfg ui.ToolbarConfig) render.HTML {
 	inner := Glass(GlassConfig{}, ui.Toolbar(cfg))
 	return floatingToolbarStyle.WrapHTML(render.Tag("div", html.Attrs{

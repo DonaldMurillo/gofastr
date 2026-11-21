@@ -1,9 +1,6 @@
 package uinodev1
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 func truncateErrInput(s string) string {
 	if len(s) <= maxErrInputLen {
@@ -117,14 +114,4 @@ func errDecode(underlying error) error {
 		return &validationErr{op: "decode", reason: msg}
 	}
 	return &validationErr{op: "decode", reason: truncateErrInput(msg)}
-}
-
-func asJSONError(err error) (je *json.UnmarshalTypeError, ok bool) {
-	if err == nil {
-		return nil, false
-	}
-	if ue, uok := err.(*json.UnmarshalTypeError); uok {
-		return ue, true
-	}
-	return nil, false
 }

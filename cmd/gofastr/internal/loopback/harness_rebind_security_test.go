@@ -1,6 +1,7 @@
 package loopback
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -49,6 +50,41 @@ func TestLoopbackGuardsExplicitBind(t *testing.T) {
 	for _, bad := range []string{"localhost:8080", "127.0.0.1:8080", "attacker.example:8080"} {
 		if HostAllowed(bad, hosts) {
 			t.Errorf("Host %q must not be allowed for an explicit LAN bind: %v", bad, hosts)
+		}
+	}
+}
+
+// A bind to a less-usual loopback address (127.0.0.2, which Linux and
+// an aliased macOS serve) must accept the exact authority the listener
+// reports — the URL the tool prints and opens — alongside the standard
+// spellings, while neighbouring loopback IPs stay out.
+func TestLoopbackGuardsKeepTheBoundLoopbackAuthority(t *testing.T) {
+	hosts, origins := LoopbackGuards("127.0.0.2:41234")
+	if !HostAllowed("127.0.0.2:41234", hosts) {
+		t.Fatalf("the bound loopback authority is refused by its own guard: %v", hosts)
+	}
+	if !slices.Contains(origins, "http://127.0.0.2:41234") {
+		t.Errorf("the bound loopback Origin is refused by its own guard: %v", origins)
+	}
+	for _, want := range []string{"127.0.0.1:41234", "localhost:41234"} {
+		if !HostAllowed(want, hosts) {
+			t.Errorf("standard spelling %q refused: %v", want, hosts)
+		}
+	}
+	for _, bad := range []string{"127.0.0.3:41234", "127.0.0.2:9999", "attacker.example:41234"} {
+		if HostAllowed(bad, hosts) {
+			t.Errorf("Host %q must be rejected: %v", bad, hosts)
+		}
+	}
+}
+
+func TestLoopbackGuardsWildcardBindsKeepStandardAliases(t *testing.T) {
+	wantHosts := []string{"127.0.0.1:41234", "localhost:41234", "[::1]:41234"}
+	wantOrigins := []string{"http://127.0.0.1:41234", "http://localhost:41234", "http://[::1]:41234"}
+	for _, addr := range []string{":41234", "0.0.0.0:41234", "[::]:41234"} {
+		hosts, origins := LoopbackGuards(addr)
+		if !slices.Equal(hosts, wantHosts) || !slices.Equal(origins, wantOrigins) {
+			t.Errorf("LoopbackGuards(%q) = %v, %v; want %v, %v", addr, hosts, origins, wantHosts, wantOrigins)
 		}
 	}
 }

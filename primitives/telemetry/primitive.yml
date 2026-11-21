@@ -1,0 +1,34 @@
+primitive: telemetry
+summary: The telemetry plugin, which keeps an app's logs and traces in capped day files on its own machine, installs the TracerProvider and log sink that feed them, and surfaces the alert rules declared once in internal/telemetry.
+code:
+  - battery/telemetry/telemetry.go
+  - battery/telemetry/agents.go
+  - internal/telemetry/
+docs:
+  - framework/docs/content/telemetry.md
+on_change:
+  - A new Config field or Stats counter goes in telemetry.md with its default.
+invariants:
+  - id: alert-kinds-declared-once
+    rule: AlertKind and its failed, slow and disk values are declared in internal/telemetry; battery/telemetry aliases them (type AlertKind = itel.AlertKind) and never re-declares the type, the values or the disk-resolve rule.
+    enforced_by:
+      - test: battery/telemetry.TestDefaultAlertNotifiesOnceEachWay
+      - test: battery/telemetry.TestAlertRulesOfTheAppsOwnAndNone
+  - id: init-runs-once
+    rule: A second Init returns an error and leaves the first one's files and tools as they were.
+    enforced_by:
+      - test: battery/telemetry.TestSecondInitIsRefused
+  - id: external-provider-left-alone
+    rule: With ExternalTracerProvider set, Init does not replace the global TracerProvider.
+    enforced_by:
+      - test: battery/telemetry.TestExternalTracerProviderIsLeftAlone
+      - test: battery/telemetry.TestInitInstallsATracerProvider
+decisions:
+  - id: battery-aliases-internal-alert-kinds
+    date: 2026-11-19
+    status: accepted
+    decision: battery/telemetry's second AlertKind declaration became an alias of internal/telemetry's, so the values and the disk-resolve rule (diskSlack) are stated in one place.
+    rejected:
+      - option: keep two declarations, equal by convention
+        why: The battery's doc comment restated internal's resolve rule, which silently goes wrong when internal tunes diskSlack.
+    upholds: [alert-kinds-declared-once]

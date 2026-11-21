@@ -1,6 +1,8 @@
 package query
 
 import (
+	"context"
+	"strings"
 	"testing"
 )
 
@@ -161,5 +163,40 @@ func TestSanitizeCleanIdentNoAlloc(t *testing.T) {
 	})
 	if allocs != 0 {
 		t.Fatalf("clean identifier allocated %v times, want 0", allocs)
+	}
+}
+
+func TestSafeColumns(t *testing.T) {
+	got, err := SafeColumns([]string{"id", "posts.title", "created_at"}, "column")
+	if err != nil {
+		t.Fatalf("SafeColumns valid: unexpected error: %v", err)
+	}
+	want := []string{"id", "posts.title", "created_at"}
+	if len(got) != len(want) {
+		t.Fatalf("SafeColumns valid: got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("SafeColumns[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	_, err = SafeColumns([]string{"id", "bad; DROP TABLE users"}, "select column")
+	if err == nil {
+		t.Fatal("SafeColumns invalid: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), `invalid select column "bad; DROP TABLE users"`) {
+		t.Errorf("SafeColumns invalid: error = %q, want wrapped label and name", err)
+	}
+}
+
+func TestRefuseCaseKeptTables_FastPaths(t *testing.T) {
+	// Dotless lowercase names need no database round-trip (kept == folded).
+	if err := RefuseCaseKeptTables(context.Background(), nil, "users", "posts"); err != nil {
+		t.Fatalf("lowercase tables: unexpected error: %v", err)
+	}
+	// Invalid identifiers fail before touching the database.
+	if err := RefuseCaseKeptTables(context.Background(), nil, "users; DROP TABLE users"); err == nil {
+		t.Fatal("invalid table: expected error, got nil")
 	}
 }

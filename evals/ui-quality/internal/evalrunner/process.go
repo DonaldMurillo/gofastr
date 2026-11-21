@@ -7,23 +7,21 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 func runCommand(ctx context.Context, dir, logPath string, env []string, program string, args ...string) error {
-	cmd := exec.CommandContext(ctx, program, args...)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(program, args...)
 	cmd.Dir = dir
 	if env != nil {
 		cmd.Env = append([]string(nil), env...)
@@ -31,7 +29,7 @@ func runCommand(ctx context.Context, dir, logPath string, env []string, program 
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	err := runOwnedCommand(cmd)
+	err := proctree.Run(ctx, cmd)
 	if logPath != "" {
 		if mkErr := os.MkdirAll(filepath.Dir(logPath), 0o700); mkErr != nil {
 			return mkErr
@@ -66,9 +64,9 @@ func candidateEnvironment(home string, overrides ...string) []string {
 	}
 	// go derives GOMODCACHE from $HOME/go/pkg/mod when unset. The isolated
 	// home would relocate it to an empty directory, forcing every gate to
-	// re-download the dependency graph `go mod tidy` just resolved into the
-	// real cache, and failing outright without network access. Pin the
-	// runner's resolved cache; the module cache is safe to share.
+	// re-download the dependency graph `go mod tidy` just resolved, and
+	// failing outright without network access. Pin the runner's resolved
+	// cache; the module cache is safe to share.
 	if modCache := resolvedGoModCache(); modCache != "" {
 		homeOverrides = append(homeOverrides, "GOMODCACHE="+modCache)
 	}
@@ -127,62 +125,17 @@ func environmentWithOverrides(base []string, overrides ...string) []string {
 	return env
 }
 
-func startOwnedCommand(cmd *exec.Cmd) (func(), error) {
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	cleanup, err := attachCommandProcessTree(cmd.Process)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-		return nil, fmt.Errorf("attach process tree for pid %d: %w", cmd.Process.Pid, err)
-	}
-	return cleanup, nil
-}
-
-func runOwnedCommand(cmd *exec.Cmd) error {
-	cleanup, err := startOwnedCommand(cmd)
-	if err != nil {
-		return err
-	}
-	err = cmd.Wait()
-	cleanup()
-	return err
-}
-
-func executableName(base string) string {
-	if runtime.GOOS == "windows" {
-		return base + ".exe"
-	}
-	return base
-}
-
-func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
-}
-
-func waitForHealth(ctx context.Context, url string) error {
-	return waitForOwnedHealth(ctx, url, nil, nil)
-}
-
-func waitForOwnedHealth(ctx context.Context, url string, exited <-chan struct{}, exitErr func() error) error {
+func waitForOwnedHealth(ctx context.Context, url string, command *proctree.Command) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	var last string
 	var consecutiveHealthy int
 	for {
-		if exited != nil {
-			select {
-			case <-exited:
-				return fmt.Errorf("candidate process exited before stable health: %v", exitErr())
-			default:
-			}
+		select {
+		case <-command.Done():
+			return fmt.Errorf("candidate process exited before stable health: %v", command.Wait())
+		default:
 		}
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		resp, err := client.Do(req)
@@ -203,8 +156,8 @@ func waitForOwnedHealth(ctx context.Context, url string, exited <-chan struct{},
 			last = err.Error()
 		}
 		select {
-		case <-exited:
-			return fmt.Errorf("candidate process exited before stable health: %v", exitErr())
+		case <-command.Done():
+			return fmt.Errorf("candidate process exited before stable health: %v", command.Wait())
 		case <-ctx.Done():
 			return fmt.Errorf("health check %s failed: %s: %w", url, last, ctx.Err())
 		case <-ticker.C:

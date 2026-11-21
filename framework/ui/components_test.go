@@ -660,10 +660,7 @@ func TestInitialsHelper(t *testing.T) {
 
 func TestPageHeaderExtraAttrsOnRoot(t *testing.T) {
 	h := PageHeader(PageHeaderConfig{Title: "x", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("PageHeader root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "PageHeader root")
 }
 
 func TestSectionExtraAttrsOnEveryRootShape(t *testing.T) {
@@ -721,26 +718,17 @@ func TestFormSectionLegendCarriesTheSheetHeadingClass(t *testing.T) {
 
 func TestStatusBadgeExtraAttrsOnRoot(t *testing.T) {
 	h := StatusBadge(StatusBadgeConfig{Label: "ok", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("StatusBadge root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "StatusBadge root")
 }
 
 func TestEmptyStateExtraAttrsOnRoot(t *testing.T) {
 	h := EmptyState(EmptyStateConfig{Title: "No items", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("EmptyState root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "EmptyState root")
 }
 
 func TestStatCardExtraAttrsOnRoot(t *testing.T) {
 	h := StatCard(StatCardConfig{Label: "l", Value: "1", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("StatCard root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "StatCard root")
 }
 func TestCalloutExtraAttrsOnEveryRootShape(t *testing.T) {
 	extra := map[string]string{"data-test": "hook"}

@@ -5,10 +5,13 @@ package localentity
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/localdb"
@@ -18,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 
 	_ "embed"
 )
@@ -146,6 +150,10 @@ var typeNames = map[schema.FieldType]string{
 	schema.Timestamp: "timestamp",
 }
 
+// maxSafeInteger is the bound of JavaScript's Number.isSafeInteger,
+// the whole-number rule the browser's save path applies to an Int.
+const maxSafeInteger = float64(1<<53 - 1)
+
 // Define declares a local entity and its store in db; refusals panic.
 func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) *Entity {
 	if db == nil {
@@ -188,9 +196,13 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 		if f.Type == schema.Enum && len(f.Values) == 0 {
 			panic(fmt.Sprintf("localentity: %s: enum field %q lists no Values", name, f.Name))
 		}
+		def, err := validDefault(f)
+		if err != nil {
+			panic(fmt.Sprintf("localentity: %s: field %q: %v", name, f.Name, err))
+		}
 		spec.Fields = append(spec.Fields, fieldSpec{
 			Name: f.Name, Type: t, Required: f.Required, Min: f.Min, Max: f.Max,
-			Pattern: f.Pattern, Values: f.Values, Default: f.Default,
+			Pattern: f.Pattern, Values: f.Values, Default: def,
 		})
 	}
 
@@ -408,6 +420,102 @@ func checkPattern(p string) error {
 }
 
 var quantifier = regexp.MustCompile(`^\{\d+(,\d*)?\}`)
+
+var timestampDefaultSyntax = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$`)
+
+// validDefault checks a Default the way the form checks a submitted
+// value, and returns it as the browser stores it.
+func validDefault(f schema.Field) (any, error) {
+	if f.Default == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(f.Default)
+	if err != nil {
+		return nil, fmt.Errorf("field defaults must be JSON values: %w", err)
+	}
+	var v any
+	if err := jsonexact.Unmarshal(b, &v); err != nil {
+		return nil, fmt.Errorf("field defaults must be JSON values: %w", err)
+	}
+	if v == nil {
+		return nil, nil
+	}
+	switch f.Type {
+	case schema.Bool:
+		if _, ok := v.(bool); !ok {
+			return nil, badDefault(v, "a Bool")
+		}
+	case schema.Int, schema.Float:
+		n, ok := v.(float64)
+		if wide, isWide := v.(json.Number); isWide {
+			if f.Type == schema.Int {
+				return nil, badDefault(v, "a safe integer")
+			}
+			n, err = wide.Float64()
+			ok = err == nil
+		}
+		if !ok {
+			return nil, badDefault(v, "a number")
+		}
+		if f.Type == schema.Int && (n != math.Trunc(n) || math.Abs(n) > maxSafeInteger) {
+			return nil, badDefault(v, "a whole number")
+		}
+		if (f.Min != nil && n < *f.Min) || (f.Max != nil && n > *f.Max) {
+			return nil, fmt.Errorf("default %v is outside Min and Max", v)
+		}
+		return n, nil
+	case schema.Date:
+		s, ok := v.(string)
+		if !ok {
+			return nil, badDefault(v, "a YYYY-MM-DD date")
+		}
+		if d, err := time.Parse("2006-01-02", s); err != nil || d.Format("2006-01-02") != s {
+			return nil, fmt.Errorf("default %q is not a real calendar date", s)
+		}
+	case schema.Timestamp:
+		s, ok := v.(string)
+		if !ok {
+			return nil, badDefault(v, "an RFC 3339 timestamp")
+		}
+		if !timestampDefaultSyntax.MatchString(s) {
+			return nil, fmt.Errorf("default %q must use RFC 3339 syntax with a time zone", s)
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return nil, fmt.Errorf("default %q is not an RFC 3339 timestamp", s)
+		}
+		utc := t.UTC()
+		if utc.Year() < 0 || utc.Year() > 9999 {
+			return nil, fmt.Errorf("default %q must normalize to a four-digit UTC year", s)
+		}
+		return utc.Format("2006-01-02T15:04:05.000Z"), nil
+	default:
+		s, ok := v.(string)
+		if !ok {
+			return nil, badDefault(v, "a string")
+		}
+		if f.Required && s == "" {
+			return nil, fmt.Errorf("required field cannot have an empty default")
+		}
+		if f.Type == schema.Enum && !slices.Contains(f.Values, s) {
+			return nil, badDefault(v, "one of the field's Values")
+		}
+		n := utf8.RuneCountInString(s)
+		if (f.Min != nil && float64(n) < *f.Min) || (f.Max != nil && float64(n) > *f.Max) {
+			return nil, fmt.Errorf("default %q is outside Min and Max lengths", s)
+		}
+		if f.Pattern != "" {
+			if ok, err := regexp.MatchString(f.Pattern, s); err != nil || !ok {
+				return nil, fmt.Errorf("default %q does not match the field's Pattern", s)
+			}
+		}
+	}
+	return v, nil
+}
+
+func badDefault(v any, want string) error {
+	return fmt.Errorf("default %v is not %s the form can save", v, want)
+}
 
 var generalCategory = map[string]bool{
 	"L": true, "Lu": true, "Ll": true, "Lt": true, "Lm": true, "Lo": true,

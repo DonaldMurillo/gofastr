@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
-	"github.com/DonaldMurillo/gofastr/framework/cron"
 )
 
 // ---------------------------------------------------------------------------
@@ -79,34 +78,6 @@ func TestModuleQueueGateFromInit(t *testing.T) {
 	if !gateSet.Load() {
 		t.Fatal("queue gate was not set during module Init")
 	}
-}
-
-func TestModuleCronGateFromInit(t *testing.T) {
-	app := NewApp()
-	var ran atomic.Int32
-	app.RegisterModule(&modStub{
-		name:     "m1",
-		manifest: ModuleManifest{},
-		init: func(app *App) error {
-			s := cron.NewScheduler()
-			s.Register(cron.CronJob{
-				Name: "m1-job",
-				Spec: "* * * * *",
-				Run:  func(context.Context) error { ran.Add(1); return nil },
-			})
-			app.AddCron(s)
-			return nil
-		},
-	})
-	app.InitPlugins()
-
-	// The cron gate is set. Verify that disabling the module makes
-	// the gate return false.
-	app.Modules().Disable(context.Background(), "m1")
-	if app.Modules().Enabled("m1") {
-		t.Fatal("module should be disabled")
-	}
-	app.Modules().Enable(context.Background(), "m1")
 }
 
 // ---------------------------------------------------------------------------

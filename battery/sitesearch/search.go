@@ -12,11 +12,10 @@ type Result struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
 	Group string `json:"group,omitempty"`
-	// Excerpt is the page's opening around its first hit. It is empty
-	// when the hits are all in Sections, whose rows show them.
+	// Excerpt is the page's opening around its first hit.
 	Excerpt []Segment `json:"excerpt,omitempty"`
-	// Sections are the page's best-matching headed sections, most
-	// relevant first, at most maxSectionHits.
+	// Sections are the page's best-matching headed sections, most relevant
+	// first, at most maxSectionHits.
 	Sections []SectionHit `json:"sections,omitempty"`
 	Score    int64        `json:"score"`
 }
@@ -29,48 +28,37 @@ type SectionHit struct {
 }
 
 // Segment is one run of excerpt text; Hit marks a run that matched a
-// query term. Clients render runs as text nodes, never as markup.
+// query term.
 type Segment struct {
 	Text string `json:"t"`
 	Hit  bool   `json:"h,omitempty"`
 }
 
-// maxSectionHits caps the section rows under one result.
 const maxSectionHits = 3
 
-// Search runs q against the index and returns at most limit pages,
-// best first. Every query term must match a page (the terms are
-// ANDed); a term matches an index term it equals or, from three runes
-// on, prefixes, an exact match weighing twice a prefix one, and a
-// plural term ("forms") also matches what its singular prefixes. Ties
-// break by index order.
+// Search runs q against the index and returns at most limit pages, best
+// first.
 func (idx *Index) Search(q string, limit int) []Result {
 	out, _ := idx.SearchPage(q, 0, limit)
 	return out
 }
 
 // SearchPage is Search from the offset-th result on: at most limit
-// results past the first offset, and how many pages matched in all, so
-// a results page can count them and page through. A negative offset
-// counts from the first result.
+// results past the first offset, and how many pages matched in all, so a
+// results page can count them and page through.
 func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 	terms := queryTerms(q)
 	if len(terms) == 0 || limit <= 0 {
 		return nil, 0
 	}
 	offset = max(offset, 0)
-	// Per page scratch is dense and reset through the pages each pass
-	// touched, so a query over a large site allocates per page, not per
-	// posting.
 	n := len(idx.pages)
 	pageScore := make([]int64, n)
-	matched := make([]int, n) // query terms the page matched
-	inTitle := make([]int, n) // query terms its title holds
+	matched := make([]int, n)
+	inTitle := make([]int, n)
 	perPage := make([]int64, n)
 	sums, best := make([]int64, n), make([]int64, n)
 	titled := make([]bool, n)
-	// The points each title slot earned (titleBonus), for the few
-	// pages whose titles hold a term.
 	slots := map[int]map[int]int64{}
 	matches := make([][]string, len(terms))
 	var qPages, tPages []int
@@ -81,13 +69,7 @@ func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 		for _, t := range matches[qi] {
 			e := idx.terms[t]
 			mult := multiplier(t, qt, ger)
-			// A title term the query names whole, as the singular of
-			// its plural or in its -ing form, fills its slots; one it
-			// only begins earns its first slot one point.
 			whole := t == qt || t == st || t == ger
-			// A page scores its best section in full and a quarter of
-			// the rest, so a long page that mentions a term in every
-			// section does not outrank the page about it.
 			tPages = tPages[:0]
 			for _, p := range e.postings {
 				if matched[p.page] != qi {
@@ -162,8 +144,6 @@ func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 	for _, pg := range order {
 		p := idx.pages[pg]
 		r := Result{URL: p.URL, Title: p.Title, Group: p.Group, Score: pageScore[pg]}
-		// A section is a row only when it can be linked to: a heading
-		// without an id still counts toward its page.
 		var hits []int
 		for si, s := range p.Sections {
 			if si > 0 && s.ID != "" && secScore[sectionKey{pg, si}] > 0 {
@@ -180,9 +160,6 @@ func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 			s := p.Sections[si]
 			r.Sections = append(r.Sections, SectionHit{ID: s.ID, Heading: s.Heading, Excerpt: excerpt(s.Text, terms)})
 		}
-		// The page's own row shows its opening; when only headed
-		// sections matched, their rows carry the hits and the page row
-		// shows none rather than repeat the first.
 		if secScore[sectionKey{pg, 0}] > 0 || len(hits) == 0 {
 			r.Excerpt = excerpt(p.Sections[0].Text, terms)
 		}
@@ -194,11 +171,8 @@ func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 	return out, total
 }
 
-// sectionKey names one section of one page.
 type sectionKey struct{ page, section int }
 
-// multiplier weighs an index term's match to query term qt: twice for
-// the term itself or its -ing form, once for a word it begins.
 func multiplier(t, qt, ger string) int64 {
 	if t == qt || t == ger {
 		return 2
@@ -206,10 +180,6 @@ func multiplier(t, qt, ger string) int64 {
 	return 1
 }
 
-// sectionScores scores the sections of the pages a search returns, as
-// the ranking scored their pages: per query term each section takes
-// its best matching term, and the terms add up. Postings are in page
-// order, so each page's are found by binary search.
 func (idx *Index) sectionScores(pages []int, terms []string, matches [][]string) map[sectionKey]int64 {
 	out := map[sectionKey]int64{}
 	for qi, qt := range terms {
@@ -234,9 +204,6 @@ func (idx *Index) sectionScores(pages []int, terms []string, matches [][]string)
 	return out
 }
 
-// stem is the singular a plural query term also matches as a prefix:
-// the term less a final s, for terms of four or more runes not ending
-// in ss. Empty when there is none.
 func stem(q string) string {
 	rs := []rune(q)
 	if len(rs) < 4 || rs[len(rs)-1] != 's' || rs[len(rs)-2] == 's' {
@@ -245,10 +212,6 @@ func stem(q string) string {
 	return string(rs[:len(rs)-1])
 }
 
-// gerund is the -ing form a query term also matches as a whole word,
-// so "theme" finds Theming and "cache" caching: the term with a final
-// lone e dropped, plus ing, for terms of four or more runes that are
-// neither plural nor -ing already. Empty when there is none.
 func gerund(q string) string {
 	rs := []rune(q)
 	if len(rs) < 4 || stem(q) != "" || strings.HasSuffix(q, "ing") {
@@ -260,20 +223,11 @@ func gerund(q string) string {
 	return q + "ing"
 }
 
-// Excerpt window, in runes: the window opens up to excerptLead runes
-// before the first hit and spans excerptWidth.
 const (
 	excerptLead  = 40
 	excerptWidth = 160
 )
 
-// excerpt cuts the window of text around the first word a query term
-// names whole (or, failing that, the first it begins) and splits it
-// into plain and hit runs; a plural term also marks its singular, and
-// a term its -ing form. The
-// window's edges snap to spaces so no word is cut: with no space in
-// the lead-in (a long URL), it opens on the hit. An ellipsis marks a
-// cut end.
 func excerpt(text string, terms []string) []Segment {
 	rs := []rune(text)
 	var hits []token
@@ -366,6 +320,4 @@ func lastIndexRune(rs []rune, r rune) int {
 	return -1
 }
 
-// prefixes reports whether a query term also matches the words it
-// begins (minPrefixRunes).
 func prefixes(q string) bool { return utf8.RuneCountInString(q) >= minPrefixRunes }

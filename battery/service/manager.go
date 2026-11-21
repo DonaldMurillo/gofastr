@@ -13,27 +13,16 @@ import (
 	"time"
 )
 
-// currentOS is runtime.GOOS, a variable so tests can drive every
-// backend's argv and templates from one machine.
 var currentOS = runtime.GOOS
 
-// manager is one OS service manager's per-user backend. Every method
-// is idempotent where the verb allows it: install over an existing
-// install replaces the definition and restarts, uninstall of something
-// not installed succeeds.
 type manager interface {
-	// kind names the manager in CLI output.
 	kind() string
-	// install writes the definition for exe and registers and starts it.
 	install(b *Battery, exe string, port int) error
-	// uninstall stops, unregisters and removes the definition.
 	uninstall(b *Battery) error
 	start(b *Battery) error
 	stop(b *Battery) error
 	restart(b *Battery) error
-	// installed reports whether a definition is registered.
 	installed(b *Battery) (bool, error)
-	// logs prints the last n lines and, with follow, keeps printing.
 	logs(b *Battery, n int, follow bool) error
 }
 
@@ -49,7 +38,6 @@ func managerFor(goos string) manager {
 	return unsupported{goos: goos}
 }
 
-// unsupported answers every verb with the same named refusal.
 type unsupported struct{ goos string }
 
 func (u unsupported) kind() string { return "none" }
@@ -64,20 +52,11 @@ func (u unsupported) restart(*Battery) error              { return u.err() }
 func (u unsupported) installed(*Battery) (bool, error)    { return false, nil }
 func (u unsupported) logs(*Battery, int, bool) error      { return u.err() }
 
-// toolRunner runs the service manager's CLI tools. Every external
-// command goes through it, so tests assert the exact argv without
-// launchctl, systemctl or schtasks being real.
 type toolRunner interface {
-	// output runs name with args and returns combined output.
 	output(name string, args ...string) ([]byte, error)
-	// stream runs name with args, copying its output to w until it
-	// exits (journalctl -f).
 	stream(w io.Writer, name string, args ...string) error
 }
 
-// toolTimeout bounds one manager call. launchctl bootstrap and
-// systemctl enable return in well under a second; a call that hangs is
-// a wedged manager, not a slow one.
 const toolTimeout = 30 * time.Second
 
 type execTools struct{}
@@ -103,9 +82,6 @@ func (execTools) stream(w io.Writer, name string, args ...string) error {
 	return cmd.Run()
 }
 
-// run is output with the tool's own words folded into the error, so a
-// refusal from launchctl or systemctl reaches the user verbatim
-// (control bytes stripped: the text goes to a terminal).
 func (b *Battery) run(name string, args ...string) error {
 	out, err := b.tool.output(name, args...)
 	if err != nil {
@@ -122,8 +98,6 @@ func toolError(name string, args []string, out []byte, err error) error {
 	return fmt.Errorf("service: %s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 }
 
-// exitCode returns the tool's exit status, or -1 when err is not an
-// exit (the tool did not run at all).
 func exitCode(err error) int {
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {

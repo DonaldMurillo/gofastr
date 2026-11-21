@@ -1,0 +1,13 @@
+primitive: service.daemon
+summary: The daemon that builds the App on loopback behind the gate, serves the control channel and bridges MCP sessions, and its ordered shutdown.
+code:
+  - battery/service/daemon.go
+  - battery/service/mcpbridge.go
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: mcp-ends-before-the-drain
+    rule: On stop, MCP sessions end before the App drains, since their tool calls run inside it.
+    enforced_by:
+      - test: battery/service.TestMCPSessionEndsBeforeDrain
+      - test: battery/service.TestMCPSessionEndsOnStop

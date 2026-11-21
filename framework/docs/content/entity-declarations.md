@@ -132,7 +132,20 @@ What `OwnerField` enforces automatically:
 | `Exposure.Access` set | `401` (or `403` for missing permission) | Checked per verb (`Read`, `Create`, `Update`, `Delete`) |
 | `Exposure.Public: true` | Allowed on every CRUD verb | Allowed on every CRUD verb |
 
-Combine `Scope.OwnerField` with `Exposure.Access` when you need both per-user isolation and role/permission gates (for example, allowing admins to override or restricting `Delete`). See [Access control](access-control.md) for `Bypass` roles and per-row `Decider` hooks, and [Multi-tenancy](multi-tenant.md) for `Scope.MultiTenant`.
+Combine `Scope.OwnerField` with `Exposure.Access` when you need both per-user isolation and role/permission gates, or set `Scope.CrossOwnerRead` (`cross_owner_read:` in YAML) to let staff/admin roles read across owners while keeping writes owner-scoped:
+
+```yaml
+# gofastr.yml
+entities:
+  - name: tickets
+    owner_field: user_id
+    cross_owner_read: tickets:read:all
+    fields:
+      - name: subject
+        type: string
+```
+
+See [Access control](access-control.md) for `RolePolicy` grants and per-row `Decider` hooks, and [Multi-tenancy](multi-tenant.md) for `Scope.MultiTenant`.
 
 Set `Scope.SoftDelete: true` to mark deletions with `deleted_at` instead of removing rows, hiding deleted rows from normal queries and enabling restore endpoints.
 
@@ -156,7 +169,19 @@ Offset pagination is bounded to prevent deep-scan DoS: requests whose `?offset=`
 - `Views`: named filter/sort presets rendered as tabs above the list
 - `PageSizes`, `NoDuplicate`, `NoBulk`: page-size choices and row/bulk action toggles
 
-(`SearchFields` sits directly on `EntityConfig`, not on `Display`.)
+(`SearchFields` sits directly on `EntityConfig`, not on `Display`:)
+
+```yaml
+# gofastr.yml
+entities:
+  - name: articles
+    search_fields: [title, body]
+    fields:
+      - name: title
+        type: string
+      - name: body
+        type: text
+```
 
 See [Entity screens (entityui)](entityui.md) for how `Display` renders into list, create, and record pages, [Generated screen files](app-spec.md#generated-screen-files) for how `gofastr generate app` lays out screens, [Additive generation](app-spec.md#additive-generation---add) for adding new entities later, and [Quick scaffolds](app-spec.md#quick-scaffolds-generate-entityscreen) for single-entity scaffolding.
 

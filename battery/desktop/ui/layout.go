@@ -16,63 +16,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// LayoutName is the desktop layout's name. It lands in the wrapper's
-// class (layout-desktop) and its data-cui-layout attribute, so it is
-// part of the CSS contract, not a private string.
+// LayoutName is the desktop layout's name.
 const LayoutName = "desktop"
 
-// WindowLayoutName is the sidebar-less desktop layout's name
-// (class layout-desktop-window).
+// WindowLayoutName is the sidebar-less desktop layout's name (class layout-desktop-window).
 const WindowLayoutName = "desktop-window"
 
-// WidgetLayoutName is the floating-widget layout's name (class
-// layout-desktop-widget).
+// WidgetLayoutName is the floating-widget layout's name (class layout-desktop-widget).
 const WidgetLayoutName = "desktop-widget"
 
-// SidebarTopInset is the top padding the sidebar column reserves for
-// the traffic-light zone, in points. MEASURED against the native
-// Notes capture (scratchpad focus-shots-13/light-active-notes.png,
-// 2026-09-09): the traffic lights occupy 19 to 32.5 pt from the
-// window's top edge and the first sidebar row's box top sits 51.5 pt
-// below it, so 52 pt of empty sidebar precedes the first row. The
-// number comes from the capture, not from a source. A shell that
-// moves the lights further down overrides --desktop-sidebar-top-inset
-// to match.
+// SidebarTopInset is the top padding the sidebar column reserves for the traffic-light zone, in points.
 const SidebarTopInset = 52
 
-// DefaultSidebarWidth is the sidebar zone's default width in points
-// (measured against Finder/Notes sidebars, unverified). A host whose
-// Config declares a different width overrides --desktop-sidebar-width
-// with it; the knob lives here because the canonical style.Theme
-// cannot carry non-canonical tokens (the same reasoning as the admin
-// battery's --admin-rail).
+// DefaultSidebarWidth is the sidebar zone's default width in points.
 const DefaultSidebarWidth = 220
 
-// Layout returns the desktop layout: the sidebar zone at the declared
-// width with the measured traffic-light zone reserved at its top,
-// transparent html/body so the native material shows through, and an
-// opaque content column. The sidebar is usually a SourceList:
-//
-//	layout := desktopui.Layout(
-//		app.NewStaticComponent(desktopui.SourceList(cfg)))
-//	site.Register("/", screen, layout)
-//
-// The frame is the desktop's own, not ui.ContentRow: a desktop window
-// never stacks its sidebar above the content (a narrow window keeps
-// the row; a small secondary window uses WindowLayout), and the
-// sidebar column paints nothing so the native sidebar material is its
-// surface.
-//
-// The transparent page is safe in every mode: when the shell leaves
-// the webview background on, the webview's own background paints
-// behind the transparent page (the material-none case); when the shell
-// turns it off, the native material shows. In a plain browser
-// (--serve) the page falls back to the UA background.
-//
-// The traffic-light reservation assumes the sidebar zone holds the
-// lights (ChromeHiddenTitle / hiddenInset). A nil sidebar renders the
-// content column alone; a host that runs headerless without a sidebar
-// uses WindowLayout, which reserves the zone above the content.
+// Layout returns the desktop layout: a sidebar zone beside an opaque content column on a transparent page.
 func Layout(sidebar component.Component) *appui.Layout {
 	return appui.NewLayout(LayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
 		var parts []render.HTML
@@ -85,46 +44,21 @@ func Layout(sidebar component.Component) *appui.Layout {
 	})
 }
 
-// WindowLayout returns the desktop layout for a window with no sidebar:
-// a settings window, an about panel, any small secondary window. html,
-// body, and the content column all paint nothing, so a whole-window
-// material (MaterialWindow, MaterialGlass) is the surface, and the
-// content column reserves the measured traffic-light zone at its top
-// for a unified or hidden-title window.
-//
-// A screen shown both in the main window and in a small window needs
-// two registrations (or one window only): a 220-point sidebar in a
-// 480-point window leaves the form a strip.
+// WindowLayout returns the desktop layout for a window with no sidebar.
 func WindowLayout() *appui.Layout {
 	return appui.NewLayout(WindowLayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
 		return html.Div(html.DivConfig{Class: "desktopui-frame desktopui-frame--window"}, l.Primary())
 	})
 }
 
-// WidgetLayout returns the chrome-less, transparent layout a floating
-// desktop widget renders under.
-//
-// A widget is a small borderless window (desktop.Widget): no title
-// bar, a transparent window background, often pinned above other
-// apps. Inside it an app layout is wrong three times over: a header
-// and footer have nowhere to go, a padded content column eats a
-// 320-point window, and the page's own background paints an opaque
-// rectangle behind whatever the screen draws, so the "transparent"
-// window shows a white slab with the theme's corners cut off. Caught
-// in a screenshot of the first widget; invisible to any DOM assertion.
-//
-// So the widget layout has no chrome, only the <main> landmark; the
-// page is transparent behind it and has no viewport-height floor, so
-// the screen's own surface (a ui.Card, say) is the whole visible
-// window. --desktop-widget-padding is the gap between the window edge
-// and that surface (default 8px).
+// WidgetLayout returns the chrome-less, transparent layout a floating desktop widget renders under.
 func WidgetLayout() *appui.Layout {
 	return appui.NewLayout(WidgetLayoutName, appui.LayoutSpec{}, func(ctx context.Context, l *appui.LayoutTree) render.HTML {
 		return html.Div(html.DivConfig{Class: "desktopui-frame desktopui-frame--widget"}, l.Primary())
 	})
 }
 
-var layoutStyle = registry.RegisterStyle("desktopui-layout", layoutCSS,
+var _ = registry.RegisterStyle("desktopui-layout", layoutCSS,
 	registry.WithLoad(registry.LoadAlways))
 
 func layoutCSS(_ style.Theme) string {

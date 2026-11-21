@@ -147,5 +147,6 @@ func inSchema(ddl, schema string) string {
 	if loc == nil {
 		return ddl
 	}
-	return ddl[:loc[1]] + quoteIdent(schema) + "." + ddl[loc[1]:]
+	//gofastr:allow(quoteident) schema is split from the SQLite table name being rebuilt and keeps its supplied spelling for the attached schema
+	return ddl[:loc[1]] + query.QuoteIdent(schema) + "." + ddl[loc[1]:]
 }

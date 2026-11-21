@@ -17,15 +17,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
-
-// The shell is the one frame every admin page draws in: a collapsible
-// sidebar (a drawer on phones), a toolbar with breadcrumbs, the command
-// palette, the theme toggle and the account menu, and the page itself.
-// Every piece is a kit component; the battery adds no CSS.
 
 const (
 	navDrawer   = "admin-nav"
@@ -33,8 +29,6 @@ const (
 	keysName    = "admin-keys"
 )
 
-// mount registers the shell's screens on the UI host and the admin's
-// routes on the app router, all behind the gate.
 func (b *Battery) mount() {
 	b.app.Use(b.headers)
 	r := b.routes()
@@ -44,24 +38,7 @@ func (b *Battery) mount() {
 	b.screen(group, "/search", i18nui.AdminSearch, true, b.renderSearch)
 	b.screen(group, "/shortcuts", i18nui.ShortcutSheetTitle, false, b.renderShortcuts)
 	b.screen(group, "/account", i18nui.AdminAccountSettings, false, b.renderAccount)
-	if b.cfg.Queue != nil {
-		b.screen(group, "/queue", i18nui.AdminQueue, false, b.renderQueue).WithPolicy(platformPolicy())
-	}
-	if b.db != nil {
-		b.screen(group, "/audit", i18nui.AdminAudit, false, b.renderAudit)
-	}
-	if b.cfg.Policy != nil {
-		b.screen(group, "/rbac/roles", i18nui.AdminRoles, false, b.renderRoles).WithPolicy(platformPolicy())
-	}
-	if b.cfg.Auth != nil {
-		b.screen(group, "/rbac/users", i18nui.AdminUserRoles, false, b.renderUsers).WithPolicy(platformPolicy())
-	}
-	if b.cfg.ProcessModules != nil {
-		b.screen(group, "/modules", i18nui.AdminModules, false, b.renderModules).WithPolicy(platformPolicy())
-	}
-	if len(b.cfg.EmailPreviews) > 0 {
-		b.screen(group, "/emails", i18nui.AdminEmails, false, b.renderEmails)
-	}
+	b.mountOpsPages(group)
 	b.mountEntities(group, r)
 	b.mountPages(group)
 	b.host.App.Router.ScreenGroup(group)
@@ -70,11 +47,6 @@ func (b *Battery) mount() {
 	b.mountEmails(r)
 	r.Post(b.cfg.PathPrefix+"/_palette", http.HandlerFunc(b.handlePalette))
 
-	// The drawer and the palette are widgets: each registers its own
-	// routes, so both mount on the gated group, and each is offered only
-	// on admin pages.
-	// The catalog lists them only to a caller the admin admits: a signed-in
-	// non-admin on an admin path would otherwise read their names.
 	mounter := adminMounter{r: r, under: b.underPrefix, listed: b.offered}
 	ui.MountSidebarFunc(mounter, b.sidebar)
 	palette := ui.CommandPaletteFunc(b.paletteConfig)
@@ -83,17 +55,39 @@ func (b *Battery) mount() {
 	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix).ListedFor(b.offered))
 }
 
-// offered reports whether the admin's widgets are listed to r's caller:
-// the admin gate admits them.
+type opsPage struct {
+	path, icon string
+	title      i18n.Phrase
+	draw       func(context.Context, map[string]string) render.HTML
+	platform   bool
+}
+
+func (b *Battery) mountOpsPages(group *appui.ScreenGroup) {
+	b.ops = nil
+	mount := func(enabled bool, p opsPage) {
+		if !enabled {
+			return
+		}
+		s := b.screen(group, p.path, p.title, false, p.draw)
+		if p.platform {
+			s.WithPolicy(platformPolicy())
+		}
+		b.ops = append(b.ops, p)
+	}
+	mount(b.cfg.Queue != nil, opsPage{"/queue", "layers", i18nui.AdminQueue, b.renderQueue, true})
+	mount(b.db != nil, opsPage{"/audit", "activity", i18nui.AdminAudit, b.renderAudit, false})
+	mount(b.cfg.Policy != nil, opsPage{"/rbac/roles", "shield", i18nui.AdminRoles, b.renderRoles, true})
+	mount(b.cfg.Auth != nil, opsPage{"/rbac/users", "users", i18nui.AdminUserRoles, b.renderUsers, true})
+	mount(b.cfg.ProcessModules != nil, opsPage{"/modules", "cpu", i18nui.AdminModules, b.renderModules, true})
+	mount(len(b.cfg.EmailPreviews) > 0, opsPage{"/emails", "mail", i18nui.AdminEmails, b.renderEmails, false})
+}
+
 func (b *Battery) offered(r *http.Request) bool { return b.authorized(r.Context()) }
 
-// underPrefix reports a path inside the admin.
 func (b *Battery) underPrefix(path string) bool {
 	return path == b.cfg.PathPrefix || strings.HasPrefix(path, b.cfg.PathPrefix+"/")
 }
 
-// adminMounter mounts a widget on the gated router, offered only on
-// admin pages.
 type adminMounter struct {
 	r      *router.Router
 	under  func(string) bool
@@ -106,9 +100,6 @@ func (m adminMounter) MountWidget(def *widget.Definition) {
 	widget.Mount(m.r, def)
 }
 
-// gatePolicy is the gate for screens: the host's render pipeline refuses
-// an unauthorized caller before anything loads. A signed-out caller goes
-// to LoginPath when one is set.
 func (b *Battery) gatePolicy() appui.Policy {
 	return appui.PolicyFunc(func(ctx context.Context) appui.Decision {
 		if b.authorized(ctx) {
@@ -127,16 +118,11 @@ func (b *Battery) gatePolicy() appui.Policy {
 	})
 }
 
-// screen registers one admin page. elevate lifts the entity read
-// gates for the admin's own reads (crud.WithElevation); app pages never
-// get it.
 func (b *Battery) screen(group *appui.ScreenGroup, path string, title i18n.Phrase, elevate bool,
 	draw func(ctx context.Context, p map[string]string) render.HTML) *appui.Screen {
 	return b.screenNamed(group, path, title, nil, elevate, draw)
 }
 
-// screenNamed is screen with the browser-tab title computed per
-// request; a nil name is the page's title.
 func (b *Battery) screenNamed(group *appui.ScreenGroup, path string, title i18n.Phrase, name func(ctx context.Context, p map[string]string) string, elevate bool,
 	draw func(ctx context.Context, p map[string]string) render.HTML) *appui.Screen {
 	if name == nil {
@@ -152,8 +138,6 @@ func (b *Battery) screenNamed(group *appui.ScreenGroup, path string, title i18n.
 	return s
 }
 
-// adminScreen is one admin page as a screen component. The host copies
-// it per request, sets the route params, calls Load, then renders.
 type adminScreen struct {
 	component.ContextOnly
 	b       *Battery
@@ -166,7 +150,7 @@ type adminScreen struct {
 
 func (s *adminScreen) SetParams(p map[string]string) { s.params = p }
 
-// Load resolves the page title in the caller's locale, for <title>.
+// Load resolves the page title in the caller's locale.
 func (s *adminScreen) Load(ctx context.Context) error {
 	if s.b.authorized(ctx) {
 		s.loaded = s.title(s.ctx(ctx), s.params)
@@ -176,10 +160,6 @@ func (s *adminScreen) Load(ctx context.Context) error {
 
 func (s *adminScreen) ScreenTitle(ctx context.Context) string { return s.loaded }
 
-// ctx is the context the page reads with: elevated for the admin's own
-// pages, and only once the caller passed the gate. The screen policy has
-// already refused everyone else; this check keeps the elevation from
-// ever depending on that alone.
 func (s *adminScreen) ctx(ctx context.Context) context.Context {
 	if s.elevate && s.b.authorized(ctx) {
 		return s.b.elevate(ctx)
@@ -194,16 +174,8 @@ func (s *adminScreen) RenderCtx(ctx context.Context) render.HTML {
 	return s.draw(s.ctx(ctx), s.params)
 }
 
-// ----- layout ----------------------------------------------------------------
-
-// layout is the shell: the sidebar beside a toolbar and the page.
 func (b *Battery) layout() *appui.Layout {
-	// The trail swaps in one frame: its root ("Meridian") is the same on
-	// every page, and any fade would blink it.
 	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "crumbs", Transition: appui.Instant()}}}
-	// Each entity row's count is an inline route area: the sidebar
-	// stays put across client navigations, and the count re-renders
-	// with every one, so a create shows in it on the next click.
 	for _, e := range b.ents {
 		if countsInNav(e) {
 			spec.Areas = append(spec.Areas, appui.AreaSpec{Name: navCountArea(e), Transition: appui.Instant(), Inline: true})
@@ -241,8 +213,6 @@ func (b *Battery) layout() *appui.Layout {
 	})
 }
 
-// paletteConfig is the command palette: ⌘K, record search at
-// <prefix>/_palette, and the search page as the scriptless path.
 func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 	return ui.CommandPaletteConfig{
 		Name:         paletteName,
@@ -254,8 +224,6 @@ func (b *Battery) paletteConfig(ctx context.Context) ui.CommandPaletteConfig {
 	}
 }
 
-// themePicker offers Config.Themes on the account page; none draws
-// nothing.
 func (b *Battery) themePicker(ctx context.Context, fill bool) render.HTML {
 	if len(b.cfg.Themes) == 0 {
 		return ""
@@ -263,8 +231,6 @@ func (b *Battery) themePicker(ctx context.Context, fill bool) render.HTML {
 	return ui.ThemePicker(ui.ThemePickerConfig{Themes: b.cfg.Themes, Fill: fill, Ctx: ctx})
 }
 
-// keysConfig is the keyboard help sheet, opened by "?", with the
-// shortcuts page as the scriptless path.
 func (b *Battery) keysConfig(ctx context.Context) ui.ShortcutSheetConfig {
 	return ui.ShortcutSheetConfig{
 		Name:         keysName,
@@ -274,7 +240,6 @@ func (b *Battery) keysConfig(ctx context.Context) ui.ShortcutSheetConfig {
 	}
 }
 
-// shortcuts are the admin's keys, in the order a reader meets them.
 func (b *Battery) shortcuts(ctx context.Context) []ui.ShortcutItem {
 	return []ui.ShortcutItem{
 		{Chord: "Meta+K", Label: i18nui.AdminKeyPalette.Text(ctx)},
@@ -285,14 +250,12 @@ func (b *Battery) shortcuts(ctx context.Context) []ui.ShortcutItem {
 	}
 }
 
-// renderShortcuts is the shortcuts page, the help sheet's scriptless twin.
 func (b *Battery) renderShortcuts(ctx context.Context, _ map[string]string) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.ShortcutSheetTitle.Text(ctx)}),
 		ui.ShortcutList(ctx, b.shortcuts(ctx)))
 }
 
-// title is the product name: Config.Title or the localized "Admin".
 func (b *Battery) title(ctx context.Context) string {
 	if b.cfg.Title != "" {
 		return b.cfg.Title
@@ -300,11 +263,8 @@ func (b *Battery) title(ctx context.Context) string {
 	return i18nui.AdminTitle.Text(ctx)
 }
 
-// ----- sidebar ---------------------------------------------------------------
-
-// navItem is one sidebar link before it is grouped.
 type navItem struct {
-	group string // nav group key; "" is the default group
+	group string
 	order int
 	label string
 	href  string
@@ -312,18 +272,10 @@ type navItem struct {
 	count render.HTML
 }
 
-// sidebar builds the phone drawer's sidebar for the request in ctx: the
-// inline column's, without counts. The drawer is a widget outside the
-// layout, so a count there would keep the figure of the page it loaded
-// with; it draws none rather than a stale one.
 func (b *Battery) sidebar(ctx context.Context) ui.SidebarConfig {
 	return b.sidebarWith(ctx, nil)
 }
 
-// sidebarWith builds the sidebar for the request in ctx, the count of
-// each counted entity row from count (nil draws none). The drawer and
-// the inline column both build through it, so the two never differ in
-// anything else.
 func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) render.HTML) ui.SidebarConfig {
 	path := ""
 	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
@@ -353,11 +305,6 @@ func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) re
 	}
 }
 
-// navGroups are the entity, page and link entries under their nav
-// groups. Groups keep the order they first appear in (entities in the
-// order the admin exposes them, then pages, then links); entries sort by
-// Order, then label. An entity row carries count's figure when the
-// entity is counted and count is non-nil.
 func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) render.HTML) []ui.SidebarItem {
 	var all []navItem
 	for _, e := range b.ents {
@@ -411,27 +358,18 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 	return out
 }
 
-// opsItems are the System group's links, one per page the admin
-// has what it needs to draw.
 func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 	var out []ui.SidebarItem
-	add := func(ok bool, key i18n.Phrase, path, icon string) {
-		if ok {
-			href := b.cfg.PathPrefix + path
-			out = append(out, ui.SidebarItem{Label: key.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(icon)})
+	platform := platformCaller(ctx)
+	for _, p := range b.ops {
+		if !p.platform || platform {
+			href := b.cfg.PathPrefix + p.path
+			out = append(out, ui.SidebarItem{Label: p.title.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(p.icon)})
 		}
 	}
-	platform := platformCaller(ctx)
-	add(platform && b.cfg.Queue != nil, i18nui.AdminQueue, "/queue", "layers")
-	add(b.db != nil, i18nui.AdminAudit, "/audit", "activity")
-	add(platform && b.cfg.Policy != nil, i18nui.AdminRoles, "/rbac/roles", "shield")
-	add(platform && b.cfg.Auth != nil, i18nui.AdminUserRoles, "/rbac/users", "users")
-	add(platform && b.cfg.ProcessModules != nil, i18nui.AdminModules, "/modules", "cpu")
-	add(len(b.cfg.EmailPreviews) > 0, i18nui.AdminEmails, "/emails", "mail")
 	return out
 }
 
-// navIcon draws a nav icon, or nothing for an empty name.
 func navIcon(name string) render.HTML {
 	if name == "" {
 		return ""
@@ -439,20 +377,13 @@ func navIcon(name string) render.HTML {
 	return ui.Icon(name, ui.IconConfig{})
 }
 
-// navOf returns an entity's nav placement, or nil.
-// countsInNav reports whether the entity's nav row shows a count: it is
-// in the nav and its Nav does not set HideCount.
 func countsInNav(e *entity.Entity) bool {
 	n := navOf(e)
 	return n == nil || (!n.Hide && !n.HideCount)
 }
 
-// navCountArea names the layout area holding the entity's nav count.
 func navCountArea(e *entity.Entity) string { return "count-" + e.GetName() }
 
-// navCount is the entity row's count: the records the caller can read,
-// under the same elevated read the entity's list draws with. A refused
-// or failed count draws nothing.
 func (b *Battery) navCount(ctx context.Context, e *entity.Entity) render.HTML {
 	if !b.authorized(ctx) {
 		return ""
@@ -471,8 +402,6 @@ func navOf(e *entity.Entity) *entity.EntityNav {
 	return e.Config.Display.Nav
 }
 
-// brand is the sidebar's head: the logo (or the title's initial), the
-// title and the "Back office" line.
 type brand struct {
 	component.ContextOnly
 	b *Battery
@@ -486,18 +415,9 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 	})
 }
 
-// ----- toolbar -----------------------------------------------------------------
-
-// accountMenu is the avatar's panel, as the prototype draws it: who is
-// signed in (name, then email and roles), the colour scheme and, with
-// Config.Themes, the look, then the account page and Sign out. It is a
-// dropdown, not a menu: a role=menu panel holds only menu rows, and
-// this one holds the theme switches too.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	name := b.displayName(ctx)
 	if name == "" {
-		// No one is signed in, as when the host checks the chrome at
-		// boot: there is no account to show.
 		return ""
 	}
 	var who []string
@@ -548,24 +468,18 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	})
 }
 
-// displayName names the signed-in user: their name, else their email,
-// else their id.
 func (b *Battery) displayName(ctx context.Context) string {
 	if handlerUser(ctx) == nil {
 		return ""
 	}
-	return cmp.Or(b.userName(ctx), userEmail(ctx), callerUserID(ctx))
+	return cmp.Or(b.userName(ctx), userEmail(ctx), access.UserID(ctx))
 }
 
-// handlerUser is the signed-in user the auth middleware set, or nil.
 func handlerUser(ctx context.Context) any {
 	u, _ := handler.GetUser(ctx)
 	return u
 }
 
-// crumbs draws the breadcrumbs for the page m matched: the product, then
-// where the page sits. A record's crumb is its title, read behind its
-// own gate.
 func (b *Battery) crumbs(ctx context.Context, m appui.Match) render.HTML {
 	items := []ui.Crumb{{Text: b.title(ctx), Href: b.cfg.PathPrefix}}
 	items = append(items, b.trail(ctx, m)...)
@@ -574,7 +488,6 @@ func (b *Battery) crumbs(ctx context.Context, m appui.Match) render.HTML {
 	return ui.Breadcrumbs(ui.BreadcrumbsConfig{CompactMobile: true, Ctx: ctx}, items...)
 }
 
-// trail is the crumbs after the product for one admin page.
 func (b *Battery) trail(ctx context.Context, m appui.Match) []ui.Crumb {
 	rest := strings.TrimPrefix(m.Path(), b.cfg.PathPrefix)
 	switch rest {
@@ -584,18 +497,11 @@ func (b *Battery) trail(ctx context.Context, m appui.Match) []ui.Crumb {
 		return []ui.Crumb{{Text: i18nui.AdminSearch.Text(ctx)}}
 	case "/account":
 		return []ui.Crumb{{Text: i18nui.AdminAccountSettings.Text(ctx)}}
-	case "/queue":
-		return []ui.Crumb{{Text: i18nui.AdminQueue.Text(ctx)}}
-	case "/audit":
-		return []ui.Crumb{{Text: i18nui.AdminAudit.Text(ctx)}}
-	case "/rbac/roles":
-		return []ui.Crumb{{Text: i18nui.AdminRoles.Text(ctx)}}
-	case "/rbac/users":
-		return []ui.Crumb{{Text: i18nui.AdminUserRoles.Text(ctx)}}
-	case "/modules":
-		return []ui.Crumb{{Text: i18nui.AdminModules.Text(ctx)}}
-	case "/emails":
-		return []ui.Crumb{{Text: i18nui.AdminEmails.Text(ctx)}}
+	}
+	for _, p := range b.ops {
+		if rest == p.path {
+			return []ui.Crumb{{Text: p.title.Text(ctx)}}
+		}
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {

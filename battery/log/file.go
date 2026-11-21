@@ -16,31 +16,14 @@ import (
 
 // FileOpts configures a file sink.
 type FileOpts struct {
-	// MaxSize is the maximum file size in bytes before rotation. Default 100MB.
+	// MaxSize is the maximum file size in bytes before rotation.
 	MaxSize int64
-	// MaxBackups is the number of rotated files kept. Older files are
-	// removed. Default 5.
+	// MaxBackups is the number of rotated files kept.
 	MaxBackups int
-	// FileMode is the permission for the log file. Default 0o600,
-	// server logs typically contain request paths, request IDs, and
-	// panic stacks; world-readable defaults aren't appropriate on a
-	// multi-user host. Override only if you need broader access. An
-	// existing file this process owns is tightened to FileMode when the
-	// sink opens it (bits FileMode lacks are cleared; none are added).
-	// A file another user owns keeps its mode, and a tighten the OS
-	// refuses is one warning on stderr, never a failed open. Windows
-	// skips the tighten.
+	// FileMode is the permission for the log file.
 	FileMode os.FileMode
 }
 
-// fileSink is the concrete Sink for path-on-disk output. Writes are
-// buffered and serialized with a mutex; rotation is triggered when the
-// in-flight size crosses MaxSize.
-//
-// After Close, Write and Close are no-ops returning ErrSinkClosed,
-// derived loggers held by long-lived goroutines past shutdown don't
-// crash, they just stop persisting. Callers that care can check for
-// ErrSinkClosed.
 type fileSink struct {
 	path string
 	opts FileOpts
@@ -51,14 +34,11 @@ type fileSink struct {
 	size   int64
 	closed bool
 
-	// tightenWarn keeps a failed tighten to one warning per sink, not
-	// one per rotation reopen.
 	tightenWarn sync.Once
 }
 
 // FileSink opens (creating if needed) the file at path and returns a
-// rotating sink. Missing parent directories are created owner-only
-// (0o700); an existing one keeps its mode.
+// rotating sink.
 func FileSink(path string, opts FileOpts) (Sink, error) {
 	if opts.MaxSize <= 0 {
 		opts.MaxSize = 100 << 20
@@ -70,9 +50,6 @@ func FileSink(path string, opts FileOpts) (Sink, error) {
 		opts.FileMode = 0o600
 	}
 	parent := filepath.Dir(path)
-	// Directories FileSink creates are owner-only (server logs carry
-	// request IDs, paths, panic stacks); an existing one, /var/log
-	// included, keeps its mode. The log file itself is FileMode.
 	if err := fileperm.MkdirPrivate(parent); err != nil {
 		return nil, fmt.Errorf("log: mkdir %s: %w", parent, err)
 	}
@@ -87,8 +64,7 @@ func FileSink(path string, opts FileOpts) (Sink, error) {
 	return s, nil
 }
 
-// MustFileSink is FileSink that panics on error. Useful in Config struct
-// literals where error handling would be awkward.
+// MustFileSink is FileSink that panics on error.
 func MustFileSink(path string, opts FileOpts) Sink {
 	s, err := FileSink(path, opts)
 	if err != nil {
@@ -97,13 +73,8 @@ func MustFileSink(path string, opts FileOpts) Sink {
 	return s
 }
 
-// DefaultFileSink resolves a per-app file under the OS state dir.
-// On linux this honors $XDG_STATE_HOME; otherwise ~/.local/state/<app>/server.log.
-//
-// appName must be non-empty. Two apps that both pass an empty name
-// would otherwise silently share one log file ("gofastr/server.log")
-// and clobber each other, a real footgun when the same binary runs
-// for multiple App instances in tests or subcommands.
+// DefaultFileSink resolves $XDG_STATE_HOME/<app>/server.log when the
+// variable is non-empty, or ~/.local/state/<app>/server.log otherwise.
 func DefaultFileSink(appName string, opts FileOpts) (Sink, error) {
 	if appName == "" {
 		return nil, fmt.Errorf("log: DefaultFileSink requires a non-empty app name (set framework.AppConfig.Name or pass a custom Sink)")
@@ -116,10 +87,6 @@ func DefaultFileSink(appName string, opts FileOpts) (Sink, error) {
 }
 
 func (s *fileSink) open() error {
-	// O_NOFOLLOW: if the path is a symlink, fail. A malicious user with
-	// write access to the parent directory could otherwise plant a
-	// symlink at the log path before the app starts and redirect logs
-	// into a file they read.
 	flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY | unixNoFollow
 	f, err := os.OpenFile(s.path, flags, s.opts.FileMode)
 	if err != nil {
@@ -130,9 +97,6 @@ func (s *fileSink) open() error {
 		_ = f.Close()
 		return fmt.Errorf("log: stat %s: %w", s.path, err)
 	}
-	// The mode argument above applies only at create: an existing file
-	// keeps its own, so a server.log an earlier build left 0644 stayed
-	// world-readable while every file this sink rotates in is FileMode.
 	s.tightenLocked(f, info)
 	s.f = f
 	s.bw = bufio.NewWriterSize(f, 16<<10)
@@ -141,10 +105,6 @@ func (s *fileSink) open() error {
 }
 
 // Write appends a single JSON-encoded entry plus a trailing '\n'.
-// Rotation runs if the post-write size would cross MaxSize.
-//
-// Returns ErrSinkClosed if Close has already run, no panic from a
-// derived logger that outlives the App's shutdown.
 func (s *fileSink) Write(entry []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,18 +112,10 @@ func (s *fileSink) Write(entry []byte) error {
 		return ErrSinkClosed
 	}
 	if s.f == nil {
-		// A previous rotation reopen failed (most likely a planted
-		// symlink at s.path or a missing parent dir). Attempt one
-		// re-open per Write so the sink self-heals once the issue is
-		// fixed; surface ErrSinkWedged if the reopen still fails so
-		// the fallback emits a useful message.
 		if err := s.open(); err != nil {
 			return ErrSinkWedged
 		}
 	}
-	// Rotate BEFORE writing if the entry would push us past MaxSize and
-	// the current file already has content. (An entry larger than
-	// MaxSize alone still gets written to a fresh file; we don't split.)
 	if s.size > 0 && s.size+int64(len(entry))+1 > s.opts.MaxSize {
 		if err := s.rotateLocked(); err != nil {
 			return err
@@ -177,9 +129,6 @@ func (s *fileSink) Write(entry []byte) error {
 		return err
 	}
 	s.size += int64(n) + 1
-	// Flush after every entry. Buffering exists only to coalesce when
-	// the kernel is busy, not to delay durability, server logs are
-	// time-critical for debugging.
 	return s.bw.Flush()
 }
 
@@ -198,19 +147,12 @@ func (s *fileSink) Close() error {
 		s.f = nil
 		return err
 	}
-	// fsync before close: bw.Flush only pushes bytes into the kernel
-	// write cache. On SIGKILL / OOM / kernel panic mid-Close, anything
-	// still in cache is lost, exactly the data you most want to keep
-	// at incident time. Sync is one syscall on shutdown; negligible.
 	_ = s.f.Sync()
 	err := s.f.Close()
 	s.f = nil
 	return err
 }
 
-// rotateLocked renames the active file to "<path>.1", shifts existing
-// backups up by one, drops anything past MaxBackups, then reopens.
-// Caller holds s.mu.
 func (s *fileSink) rotateLocked() error {
 	if err := s.bw.Flush(); err != nil {
 		return err
@@ -220,7 +162,6 @@ func (s *fileSink) rotateLocked() error {
 	}
 	s.f = nil
 
-	// Walk backups newest→oldest. ".5" -> remove, ".4" -> ".5", … ".1" -> ".2", "" -> ".1".
 	dir := filepath.Dir(s.path)
 	base := filepath.Base(s.path)
 	entries, err := os.ReadDir(dir)
@@ -243,10 +184,6 @@ func (s *fileSink) rotateLocked() error {
 		}
 		suffix := name[len(prefix):]
 		n, err := strconv.Atoi(suffix)
-		// The suffix must be n's canonical spelling: "01" parses to 1
-		// but is a different file another tool (logrotate's zero-padded
-		// series) owns. Shifting it onto our ".2" would overwrite a
-		// backup, so it is left alone.
 		if err != nil || n < 1 || strconv.Itoa(n) != suffix {
 			continue
 		}
@@ -256,7 +193,6 @@ func (s *fileSink) rotateLocked() error {
 
 	for _, r := range existing {
 		if r.n >= s.opts.MaxBackups {
-			// drop oldest
 			_ = os.Remove(r.path)
 			continue
 		}
@@ -272,15 +208,6 @@ func (s *fileSink) rotateLocked() error {
 	return s.open()
 }
 
-// tightenLocked clears the bits FileMode lacks from an existing log
-// file (never adds any), on the handle so a rename racing the open
-// cannot redirect it. It rewrites only a file this process owns: a
-// provisioned /var/log/app/server.log at 0664 root:app that the app
-// appends to as a member of group app is the operator's arrangement, and
-// rewriting a mode somebody else owns is the tightenshared rule's
-// refusal. A chmod that still fails (a read-only bind mount, an LSM) is
-// a one-time warning, never a failed open: the sink appended to that
-// file before it learned to tighten, and must keep doing so.
 func (s *fileSink) tightenLocked(f *os.File, info os.FileInfo) {
 	perm := info.Mode().Perm()
 	if perm&^s.opts.FileMode == 0 {
@@ -298,8 +225,6 @@ func (s *fileSink) tightenLocked(f *os.File, info os.FileInfo) {
 	}
 }
 
-// Seams for the tighten decision: the container the tests run in is
-// root, where chmod never fails and every file is ours.
 var (
 	fileOwnerUID             = ownerUID
 	processEUID              = os.Geteuid

@@ -33,7 +33,7 @@ func runGenerateWatch(args []string) {
 	options, err := appgen.ParseGenerateOptions(args)
 	if err != nil {
 		appgen.ReportGenerateFailure(args, err)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	asJSON := slices.Contains(args, "--json")

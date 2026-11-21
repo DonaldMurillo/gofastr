@@ -6,30 +6,18 @@ import (
 	"unicode/utf8"
 )
 
-// minTermRunes is the shortest term the index keeps and the shortest
-// query term the search honors: one character matches nearly every
-// page, and the static shards are keyed by a term's first two runes.
-// minPrefixRunes is the shortest query term that also matches as a
-// prefix: a two-letter prefix matches a large share of a site's words,
-// costs a static export hundreds of kilobytes to fetch and ranks
-// nothing useful, so ui finds the word ui and pal finds palette.
 const (
 	minTermRunes   = 2
 	minPrefixRunes = 3
 )
 
-// token is one word run in a text, with its rune offsets.
 type token struct {
-	word       string // lowercased
-	start, end int    // rune offsets into the source text
+	word       string
+	start, end int
 }
 
-// isWordRune reports whether r belongs to a word: a Unicode letter or
-// digit. The browser client splits on the same classes (\p{L}\p{Nd}).
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-// scan splits text into lowercased word runs, keeping each run's rune
-// offsets so an excerpt can mark it.
 func scan(text string) []token {
 	var out []token
 	pos, start := 0, -1
@@ -56,8 +44,6 @@ func scan(text string) []token {
 	return out
 }
 
-// queryTerms tokenizes a query: lowercased word runs of at least
-// minTermRunes, duplicates dropped, in first-seen order.
 func queryTerms(q string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -71,10 +57,6 @@ func queryTerms(q string) []string {
 	return out
 }
 
-// indexTerms returns the terms one source word contributes to the
-// index: the lowercased word, plus the parts of a camelCase or
-// PascalCase identifier (CommandPalette also indexes command and
-// palette, so a query for "palette" finds ui.CommandPalette).
 func indexTerms(word string) []string {
 	lower := strings.ToLower(word)
 	parts := camelParts(word)
@@ -94,9 +76,6 @@ func indexTerms(word string) []string {
 	return out
 }
 
-// camelParts splits an identifier at lower-to-upper and letter/digit
-// boundaries, and before the last capital of an acronym run
-// (HTMLParser: HTML, Parser).
 func camelParts(word string) []string {
 	rs := []rune(word)
 	var parts []string
@@ -120,8 +99,6 @@ func camelParts(word string) []string {
 	return append(parts, string(rs[start:]))
 }
 
-// sourceWords splits text into its word runs with their original case,
-// the input indexTerms needs to find camelCase boundaries.
 func sourceWords(text string) []string {
 	return strings.FieldsFunc(text, func(r rune) bool { return !isWordRune(r) })
 }

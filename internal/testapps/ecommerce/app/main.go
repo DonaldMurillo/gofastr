@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=39863d3fa93f82bb
+//gofastr:generated generator=app kind=scaffold version=dev sum=c4b12928233f2d65
 
 package main
 
@@ -129,7 +129,8 @@ func main() {
 		}
 		return nil
 	})
-	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithDescription("ShopFront: manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
+	// Add app styles in owned .style.css sheets with gofastr gen styles.
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS), uihost.WithDescription("ShopFront: manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)

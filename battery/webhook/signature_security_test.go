@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,8 +18,12 @@ func TestVerify_RejectsDuplicateFields(t *testing.T) {
 	valid := SignWithTimestamp(secret, now, "", "", body)
 
 	cases := map[string]string{
-		"duplicate-t":  "t=1," + valid,
-		"duplicate-v1": valid + ",v1=deadbeef",
+		"duplicate-t":              "t=1," + valid,
+		"duplicate-v1":             valid + ",v1=deadbeef",
+		"repeat-after-extra-field": valid + ",kid=key-2,v1=deadbeef",
+		"whitespace-t":             valid + ", t=1",
+		"whitespace-v1":            valid + ",\tv1=deadbeef",
+		"interleaved-repeat":       strings.Replace(valid, ",v1=", ", t=1,kid=key-2,v1=", 1),
 	}
 	for name, header := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -28,13 +33,20 @@ func TestVerify_RejectsDuplicateFields(t *testing.T) {
 		})
 	}
 
-	// Sanity: an unknown forward-compat field must still verify.
-	t.Run("tolerates-unknown-field", func(t *testing.T) {
-		header := valid + ",kid=key-2"
-		if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
-			t.Fatalf("VerifyTimestamped rejected header with benign extra field %q", header)
-		}
-	})
+	timestamp, mac, _ := strings.Cut(valid, ",")
+	for name, header := range map[string]string{
+		"trailing-field":    valid + ",kid=key-2",
+		"interleaved-field": timestamp + ",kid=key-2," + mac,
+		"leading-field":     "kid=key-2, " + valid,
+		"reordered-fields":  mac + "," + timestamp,
+		"decorated-time":    strings.Replace(valid, "t=", "t=+0", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
+				t.Fatalf("VerifyTimestamped rejected compatible header %q", header)
+			}
+		})
+	}
 }
 
 // TestSignature_ValidSignatureAccepted verifies that a correctly signed
@@ -72,6 +84,17 @@ func TestSignature_ExpiredTimestampRejected(t *testing.T) {
 	if VerifyTimestamped(secret, oldSig, "", "", body, 5*time.Minute) {
 		t.Errorf("SECURITY: [signature] VerifyTimestamped accepted expired timestamp (10min old, tolerance=5min). Attack: webhook replay.")
 	}
+	t.Run("one-minute-and-one-hour-windows", func(t *testing.T) {
+		secret := "topsecret"
+		body := []byte(`{"k":1}`)
+		header := SignWithTimestamp(secret, time.Now().Add(-10*time.Minute).Unix(), "", "", body)
+		if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
+			t.Error("VerifyTimestamped rejected a 10-minute-old signature inside a 1-hour tolerance")
+		}
+		if VerifyTimestamped(secret, header, "", "", body, time.Minute) {
+			t.Error("VerifyTimestamped accepted a 10-minute-old signature outside a 1-minute tolerance")
+		}
+	})
 }
 
 // TestSignature_TamperedBodyRejected verifies that modifying the body
@@ -126,5 +149,31 @@ func TestSignatureRejectsWrongMAC(t *testing.T) {
 		if VerifyTimestamped("wrong-key", signature, "created", "delivery-1", body, time.Minute) {
 			t.Fatal("signature under a different key was accepted")
 		}
+	}
+}
+
+func TestVerifyRefusesANewlineInEventOrID(t *testing.T) {
+	ts := time.Now().Unix()
+	body := []byte(`{}`)
+	for _, c := range [][2]string{{"a\nb", "d1"}, {"a", "d\n1"}} {
+		h := SignWithTimestamp("s3cret", ts, c[0], c[1], body)
+		if VerifyTimestamped("s3cret", h, c[0], c[1], body, time.Minute) {
+			t.Errorf("event %q, id %q verified though a newline makes the signed parts ambiguous", c[0], c[1])
+		}
+	}
+}
+
+func TestSSRFRefusesInternalSuffixHosts(t *testing.T) {
+	if err := validateSubscriberURL("https://billing.internal/hook", false); err == nil {
+		t.Error("a .internal host was accepted")
+	}
+}
+
+func TestVerifyRefusesARepeatedV1EvenWhenBothMatch(t *testing.T) {
+	ts := time.Now().Unix()
+	h := SignWithTimestamp("s3cret", ts, "e", "d1", []byte(`{}`))
+	_, sig, _ := strings.Cut(h, "v1=")
+	if VerifyTimestamped("s3cret", h+",v1="+sig, "e", "d1", []byte(`{}`), time.Minute) {
+		t.Error("a header carrying v1= twice verified")
 	}
 }

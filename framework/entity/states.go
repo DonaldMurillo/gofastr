@@ -1,8 +1,6 @@
 package entity
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -53,9 +51,7 @@ type Transition struct {
 func (s *StatesConfig) UnmarshalJSON(data []byte) error {
 	type plain StatesConfig
 	var p plain
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := decodeStrictJSON(data, &p); err != nil {
 		return err
 	}
 	*s = StatesConfig(p)

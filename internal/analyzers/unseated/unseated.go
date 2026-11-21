@@ -551,7 +551,7 @@ func isOpenSite(pass *analysis.Pass, call *ast.CallExpr, familyName string) bool
 	}
 	switch sel.Sel.Name {
 	case "Set", "Add":
-		if len(call.Args) >= 2 && headerValueIs(call.Args[0], "content-type") && litContains(pass, call.Args[1], "text/event-stream") {
+		if len(call.Args) >= 2 && astx.EqualFoldStringLiteral(call.Args[0], "content-type") && litContains(pass, call.Args[1], "text/event-stream") {
 			return true
 		}
 	case "Upgrade":
@@ -563,14 +563,6 @@ func isOpenSite(pass *analysis.Pass, call *ast.CallExpr, familyName string) bool
 		return familyName != "Hijack" && familyName != "Upgrade"
 	}
 	return false
-}
-
-func headerValueIs(e ast.Expr, want string) bool {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return false
-	}
-	return strings.EqualFold(strings.Trim(lit.Value, "\"'`"), want)
 }
 
 // litContains: e's constant string value (a literal or a named

@@ -3,10 +3,12 @@ package admin
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -130,6 +132,19 @@ func TestGateRefusesAnEmbedGrant(t *testing.T) {
 	}
 }
 
+func TestAuthorizeCannotLiftAScopelessToken(t *testing.T) {
+	open := &Battery{cfg: Config{Authorize: func(context.Context) bool { return true }}}
+	for _, scopes := range [][]string{{"customers:read"}, {}} {
+		ctx := auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), scopes)
+		if open.authorized(ctx) {
+			t.Errorf("Authorize lifted the refusal of a %v token", scopes)
+		}
+	}
+	if !open.authorized(auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), []string{AdminScope})) {
+		t.Error("Authorize refused a token holding AdminScope")
+	}
+}
+
 func TestGateHonorsADeciderDeny(t *testing.T) {
 	deny := func(context.Context, []string, access.Permission, access.Ref) access.Decision {
 		return access.DecisionDeny
@@ -190,5 +205,46 @@ func TestGateRefusesCrossSitePosts(t *testing.T) {
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusOK {
 		t.Errorf("same-origin palette = %d, want 200", rr.Code)
+	}
+}
+
+func TestGateRefusesEveryForgeableCrossSiteShape(t *testing.T) {
+	x := gatedEnv(t, Config{})
+	plain := httptest.NewRequest(http.MethodPost, "/admin/_palette", strings.NewReader("q=a"))
+	plain.Header.Set("Content-Type", "text/plain")
+	plain.Header.Set("Sec-Fetch-Site", "cross-site")
+	bodyless := httptest.NewRequest(http.MethodPost, "/admin/queue/_replay/j1", nil)
+	bodyless.Header.Set("Sec-Fetch-Site", "cross-site")
+	sibling := newPost("/admin/_palette", url.Values{"q": {"a"}})
+	sibling.Header.Set("Sec-Fetch-Site", "same-site")
+	sibling.Header.Set("Origin", "https://other.example.com")
+	shapes := map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling}
+	for _, m := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(m, "/admin/api/posts/1", strings.NewReader("title=x"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		shapes[m] = req
+	}
+	for name, req := range shapes {
+		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "cross-site") {
+			t.Errorf("a %s cross-site request = %d %q, want the cross-site 403", name, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestAdmitJobPutsThePolicyOnABareContext(t *testing.T) {
+	p, held := access.NewRolePolicy(), access.NewRolePolicy()
+	b := &Battery{cfg: Config{Policy: p}}
+	if got := access.PolicyFromContext(b.admitJob(context.Background())); got != p {
+		t.Error("a queued run's rebuilt context did not get Config.Policy")
+	}
+	if got := access.PolicyFromContext(b.admitJob(access.WithPolicy(context.Background(), held))); got != held {
+		t.Error("admitJob replaced the policy the context already held")
+	}
+}
+
+func TestGateRefusesASeededNilUser(t *testing.T) {
+	if (&Battery{}).authorized(handler.SetUser(context.Background(), nil)) {
+		t.Error("a request carrying a nil user reached the back office")
 	}
 }

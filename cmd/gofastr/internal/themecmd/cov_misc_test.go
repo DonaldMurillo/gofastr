@@ -12,12 +12,8 @@ import (
 
 // ── theme.go ──────────────────────────────────────────────────────────
 
-func TestRunThemeDispatch(t *testing.T) {
-	out := clitest.CovT_capStdout(t, func() { RunTheme(nil) })
-	if !strings.Contains(out, "Usage: gofastr theme") {
-		t.Fatalf("help: %s", out)
-	}
-	out = clitest.CovT_capStdout(t, func() { RunTheme([]string{"help"}) })
+func TestRunThemeHelpSubcommand(t *testing.T) {
+	out := clitest.CovT_capStdout(t, func() { RunTheme([]string{"help"}) })
 	if !strings.Contains(out, "Subcommands") {
 		t.Fatalf("help subcommand: %s", out)
 	}
@@ -27,8 +23,8 @@ func TestRunThemeUnknownExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunTheme([]string{"frob"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 

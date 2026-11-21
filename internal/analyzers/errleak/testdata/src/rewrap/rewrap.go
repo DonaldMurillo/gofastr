@@ -136,3 +136,71 @@ func ownLiteral(name string) error {
 	}
 	return nil
 }
+
+func testsDifferentError(err, other error) *RPCError {
+	if typed, ok := errors.AsType[*RPCError](other); ok {
+		return typed
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func discardsTypedError(err error) *RPCError {
+	_, _ = err.(*RPCError)
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func testsInsideSibling(err error, enabled bool) *RPCError {
+	if enabled {
+		if typed, ok := errors.AsType[*RPCError](err); ok {
+			return typed
+		}
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func testsReassignedVerdict(err error, enabled bool) *RPCError {
+	typed, ok := errors.AsType[*RPCError](err)
+	ok = ok && enabled
+	if ok {
+		return typed
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func rebuildsMatchingTypedError(err error) *RPCError {
+	if typed, ok := err.(*RPCError); ok {
+		return &RPCError{Message: typed.Error()}
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func withTypeSwitchDefault(err error) *RPCError {
+	switch typed := err.(type) {
+	case *RPCError:
+		return typed
+	case *preferenceError:
+		return &RPCError{Message: err.Error()}
+	default:
+		return &RPCError{Message: err.Error()}
+	}
+}
+
+func typeSwitchOnDifferentError(err, other error) *RPCError {
+	switch typed := other.(type) {
+	case *RPCError:
+		return typed
+	default:
+		return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+	}
+}
+
+func earlierTypeSwitchInterface(err error) *RPCError {
+	switch typed := err.(type) {
+	case error:
+		return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+	case *RPCError:
+		return typed
+	default:
+		return nil
+	}
+}

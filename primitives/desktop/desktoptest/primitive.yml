@@ -1,0 +1,33 @@
+primitive: desktop.desktoptest
+summary: The test doubles for desktop apps, a scriptable fake Shell and Window, the in-process harness that boots an app through the real handshake, and the native harness that drives the real app shell.
+code:
+  - battery/desktop/desktoptest/
+  - battery/desktop/internal/windowtest/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - The fake Shell changes with the desktop.Shell contract, so every behavior a real shell has (an unscripted prompt denies, Focus shows a hidden window) is mirrored here.
+twins:
+  - job: Name the boot session cookie the gate checks.
+    why: The harness cannot import the battery's unexported sessionCookieName and keeps its own copy of the prefix; every harness test fails at the handshake when the two drift.
+    sites:
+      - path: battery/desktop/handshake.go
+        note: sessionCookieName, the prefix of the per-run cookie.
+      - path: battery/desktop/desktoptest/harness.go
+        note: sessionCookieName, the prefix the harness looks for after /enter.
+invariants:
+  - id: harness-never-touches-a-real-profile
+    rule: Run points GOFASTR_DESKTOP_DATA_DIR at a test temp dir when it is unset, so a suite never writes under the user's config dir.
+    enforced_by:
+      - test: battery/desktop/desktoptest.TestRunPointsTheDataDirAtATempDir
+  - id: unscripted-prompt-denies
+    rule: The fake Shell's Prompt answers deny when no decision was scripted, as a dismissed alert does.
+    enforced_by:
+      - test: battery/desktop.TestNotificationGateAsThePageSeesIt
+  - id: focus-shows-a-hidden-window
+    rule: The fake Window's Focus makes a hidden main window visible again, as the native shells do.
+    enforced_by:
+      - test: battery/desktop/desktoptest.TestFocusShowsAHiddenMainWindow
+  - id: native-harness-waits-for-the-bridge
+    rule: NativeMain and NativePhase run Battery.Run on the main goroutine and start the tests only once the main window's page reports the frozen manifest, with a watchdog of GOFASTR_NATIVE_TIMEOUT (10 minutes by default) that quits a run that never gets there.
+    judge: Does this change start the native tests before the page reports its manifest, run Battery.Run off the main goroutine, or drop the watchdog?

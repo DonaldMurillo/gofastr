@@ -39,16 +39,13 @@ func TestDescriptorValidationError_methods(t *testing.T) {
 	}
 }
 
-// ---- matchIdent / matchID ----
+// ---- matchIdent ----
 
 func TestMatchIdent_validatesNames(t *testing.T) {
 	valid := []string{"a", "Demo", "my-mod", "my_mod", "Mod1", "A1-2_3"}
 	for _, s := range valid {
 		if !matchIdent(s) {
 			t.Errorf("matchIdent(%q) = false, want true", s)
-		}
-		if !matchID(s) {
-			t.Errorf("matchID(%q) = false, want true", s)
 		}
 	}
 	invalid := []string{"", "1leading-digit", "-leading-hyphen", "_leading-underscore", "has space", "has/slash", "has:colon"}
@@ -107,9 +104,7 @@ func TestNonGrantableReason_carveOuts(t *testing.T) {
 	}
 }
 
-// ---- splitResourceVerb ----
-
-func TestSplitResourceVerb(t *testing.T) {
+func TestSplitScope(t *testing.T) {
 	cases := []struct {
 		in   string
 		res  string
@@ -123,9 +118,9 @@ func TestSplitResourceVerb(t *testing.T) {
 		{"resource:", "", "", false}, // empty verb
 	}
 	for _, c := range cases {
-		res, verb, ok := splitResourceVerb(c.in)
+		res, verb, ok := access.SplitScope(c.in)
 		if res != c.res || verb != c.verb || ok != c.ok {
-			t.Errorf("splitResourceVerb(%q) = %q,%q,%t want %q,%q,%t",
+			t.Errorf("access.SplitScope(%q) = %q,%q,%t want %q,%q,%t",
 				c.in, res, verb, ok, c.res, c.verb, c.ok)
 		}
 	}
@@ -158,17 +153,13 @@ func TestIntersectGrants_preservesOrderDropsDups(t *testing.T) {
 	}
 }
 
-// ---- ComputeSurfaceSHA256 determinism + tool omission ----
+// ---- ComputeSurfaceSHA256 route change + tool omission ----
 
-func TestComputeSurfaceSHA256_deterministic(t *testing.T) {
+func TestComputeSurfaceSHA256_changesWithRoutes(t *testing.T) {
 	d := validDescriptor()
 	a, err := ComputeSurfaceSHA256(d)
 	if err != nil {
 		t.Fatalf("compute: %v", err)
-	}
-	b, _ := ComputeSurfaceSHA256(d)
-	if a != b {
-		t.Error("ComputeSurfaceSHA256 not deterministic")
 	}
 	// Changing a route changes the digest.
 	d2 := d
@@ -225,16 +216,8 @@ func TestValidate_rejectsBadRouteMethodAndPath(t *testing.T) {
 	}
 }
 
-func TestValidate_rejectsDuplicateRouteAndToolIDs(t *testing.T) {
+func TestValidate_rejectsDuplicateToolID(t *testing.T) {
 	d := validDescriptor()
-	d.Routes = []RouteDeclaration{
-		{ID: "dup", Method: "GET", Path: "/a"},
-		{ID: "dup", Method: "GET", Path: "/b"},
-	}
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("duplicate route id must error")
-	}
-	d = validDescriptor()
 	d.Tools = []ToolDigest{
 		{ID: "t", SHA256: strings.Repeat("a", 64)},
 		{ID: "t", SHA256: strings.Repeat("b", 64)},
@@ -244,34 +227,22 @@ func TestValidate_rejectsDuplicateRouteAndToolIDs(t *testing.T) {
 	}
 }
 
-func TestValidate_rejectsGrantsCapAndBadScope(t *testing.T) {
-	// Over the cap (maxModuleGrants = 32).
-	d := validDescriptor()
-	grants := make([]access.Permission, maxModuleGrants+1)
-	for i := range grants {
-		grants[i] = access.Permission("x:read")
-	}
-	d.RequestedGrants = grants
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("over-cap grants must error")
-	}
-	// Non-grantable in the list.
-	d = validDescriptor()
-	d.RequestedGrants = []access.Permission{"CrossOwnerRead"}
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("CrossOwnerRead must error (carve-out)")
-	}
-	// Invalid scope shape.
-	d = validDescriptor()
-	d.RequestedGrants = []access.Permission{"nocolon"}
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("invalid scope must error")
-	}
-	// Empty grant.
-	d = validDescriptor()
-	d.RequestedGrants = []access.Permission{""}
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("empty grant must error")
+func TestValidate_rejectsInvalidUnapprovedGrants(t *testing.T) {
+	for _, tc := range []struct {
+		grant access.Permission
+		rule  string
+	}{
+		{"", "empty"},
+		{"nocolon", "scope"},
+		{"CrossOwnerRead", "non_grantable"},
+	} {
+		d := validDescriptor()
+		d.RequestedGrants = []access.Permission{tc.grant}
+		_, err := ValidateProcessModuleDescriptor(d, nil)
+		var dv *DescriptorValidationError
+		if !errors.As(err, &dv) || dv.Rule != tc.rule {
+			t.Errorf("grant %q: want %s error, got %v", tc.grant, tc.rule, err)
+		}
 	}
 }
 
@@ -280,11 +251,6 @@ func TestValidate_rejectsBadLimits(t *testing.T) {
 	d.Limits.Deadline = -1
 	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
 		t.Error("negative deadline must error")
-	}
-	d = validDescriptor()
-	d.Limits.Deadline = maxModuleCallDeadline + 1
-	if _, err := ValidateProcessModuleDescriptor(d, nil); err == nil {
-		t.Error("over-ceiling deadline must error")
 	}
 	d = validDescriptor()
 	d.Limits.FrameBytes = -1

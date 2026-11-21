@@ -224,7 +224,7 @@ func (s *store) submissions(ctx context.Context, author string) (int, error) {
 
 func first[T any](v *T, err error) (*T, error) {
 	if err != nil {
-		if crud.IsNotFound(err) || errors.Is(err, sql.ErrNoRows) {
+		if crud.IsNotFound(err) {
 			return nil, errNotFound
 		}
 		return nil, err

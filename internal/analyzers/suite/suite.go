@@ -7,14 +7,13 @@
 //
 // Two kinds of analyzer ship here. The gofastr* ones encode invariants
 // this codebase learned the hard way, each traceable to fixes that had to
-// be made more than once. The rest are stock x/tools passes that `go vet`
-// does not enable by default; x/tools is already a direct dependency, so
-// they cost no new module and satisfy the Go-team-only tooling rule.
+// be made more than once. The rest are stock x/tools passes. Verify leaves
+// hostport and waitgroup to plain vet. Standalone vettool runs both.
 //
 // Two binaries serve the set. cmd/vettool runs it over this repo via
 // `make analyze`, the pre-commit hook, and CI's vet step:
 //
-//	go build -o dist/vettool ./cmd/vettool
+//	go build -buildvcs=false -o dist/vettool ./cmd/vettool
 //	go vet -vettool=dist/vettool ./...
 //
 // The gofastr CLI carries it too, so `gofastr verify` in an app (a tree
@@ -264,8 +263,7 @@ var repoAnalyzers = []*analysis.Analyzer{
 	// keeping: the day either backlog is cleared, the analyzer is
 	// ready to register rather than rewrite.
 
-	// Stock x/tools passes outside the default `go vet` set. x/tools
-	// is already a direct dependency, so these cost no new module.
+	// Stock x/tools passes supplement the repo analyzers.
 	//
 	// nilness, sqlrowserr and scannererr arrived with findings rather
 	// than clean, and clearing them was the point: a partial-read bug

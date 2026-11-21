@@ -16,23 +16,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/deepcopy"
 )
 
-// FlatStore is the default in-memory [Store]: a slice of chunks scored
-// by brute-force cosine similarity. It targets up to ~100k chunks; for
-// 384-dim float32 vectors that's roughly 150MB plus chunk text, with
-// query latency under ~30ms on a modern CPU.
 type FlatStore struct {
 	mu     sync.RWMutex
 	dim    int
 	model  string
 	chunks []Chunk
-	// byDoc indexes chunk positions by DocID for O(removed) deletes.
-	byDoc map[string][]int
+	byDoc  map[string][]int
 }
 
-// NewFlatStore returns an empty store sized for vectors of dimension
-// dim produced by the named model. dim and model are recorded so
-// future persistence (M2) can refuse to load a snapshot embedded with
-// a different model.
+// NewFlatStore returns an empty store sized for vectors of dimension dim.
+// It records dim and model to validate snapshots on load.
 func NewFlatStore(dim int, model string) *FlatStore {
 	return &FlatStore{
 		dim:   dim,
@@ -41,11 +34,7 @@ func NewFlatStore(dim int, model string) *FlatStore {
 	}
 }
 
-// Add appends validated chunks, keeping its own vectors and metadata map.
-// Vectors are L2-normalized so query-time
-// scoring is a plain dot product. When the store was constructed with
-// dim=0 (embedder dim unknown at boot time), the first non-empty vec
-// fixes the dimension for the lifetime of the store.
+// Add stores copies of validated chunks with normalized vectors, all or none.
 func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 	if len(chunks) == 0 {
 		return nil
@@ -56,9 +45,6 @@ func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 	if dim == 0 && len(chunks[0].Vec) > 0 {
 		dim = len(chunks[0].Vec)
 	}
-	// An empty vector has no dimension: kept, it would sit beside the
-	// vectors of the dimension the next Add fixes, and dot would read
-	// past its end on every query.
 	if dim == 0 {
 		return errEmptyVector
 	}
@@ -81,10 +67,7 @@ func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 	return nil
 }
 
-// RemoveDoc deletes every chunk belonging to docID. It performs a
-// stable, in-place compaction so retained chunks keep their relative
-// order, useful when persistence writes the underlying slice in
-// insertion order.
+// RemoveDoc deletes every chunk of docID, keeping the others' order.
 func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,7 +80,6 @@ func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 	for _, p := range positions {
 		doomed[p] = struct{}{}
 	}
-	// Rebuild chunks and byDoc in a single pass.
 	kept := s.chunks[:0]
 	newByDoc := make(map[string][]int, len(s.byDoc))
 	for old, c := range s.chunks {
@@ -114,8 +96,8 @@ func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 	return nil
 }
 
-// Candidates returns up to top chunks by cosine similarity to qv,
-// applying filter to the candidate set first.
+// Candidates returns up to top chunks by cosine similarity to qv inside
+// filter.
 func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter, top int) ([]Hit, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -125,17 +107,11 @@ func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter,
 	if s.dim != 0 && len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
 	}
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	q := make([]float32, len(qv))
 	copy(q, qv)
 	normalize(q)
 
-	// We can never return more candidates than chunks exist, so bound the
-	// capacity hint by the corpus size. This stops a pathological caller
-	// top (e.g. derived from an attacker-supplied K) from pre-allocating
-	// gigabytes against a tiny store.
 	capHint := top * 2
 	if capHint > len(s.chunks) || capHint < 0 {
 		capHint = len(s.chunks)
@@ -164,15 +140,9 @@ func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter,
 	if len(hits) > top {
 		hits = hits[:top]
 	}
-	// Copy only the survivors, still under the read lock: the caller
-	// owns them, and copying every filtered chunk first would cost
-	// corpus size times dimension per query.
 	for i := range hits {
 		hits[i].Chunk = cloneChunk(hits[i].Chunk)
 	}
-	// Vectors are intentionally retained here, downstream retrieval
-	// stages (MMR diversity, reranking) need them. The Index strips
-	// vectors right before returning to the caller.
 	return hits, nil
 }
 
@@ -188,10 +158,7 @@ func (s *FlatStore) Stats() Stats {
 	}
 }
 
-// ChunkIDsForDoc returns the IDs of every chunk belonging to docID. Part of
-// the [chunkLister] capability the hybrid/keyword index uses to purge a
-// doc's keyword entries when the doc is removed. The in-memory map cannot
-// fail, so the error is always nil.
+// ChunkIDsForDoc returns the IDs of every chunk of docID.
 func (s *FlatStore) ChunkIDsForDoc(docID string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -203,8 +170,7 @@ func (s *FlatStore) ChunkIDsForDoc(docID string) ([]string, error) {
 	return out, nil
 }
 
-// ChunkByID returns the chunk with the given ID. Part of chunkLister; used to
-// hydrate keyword-only hits (which carry just a chunk ID) into full Hits.
+// ChunkByID returns the chunk with the given ID.
 func (s *FlatStore) ChunkByID(id string) (Chunk, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -216,9 +182,7 @@ func (s *FlatStore) ChunkByID(id string) (Chunk, bool) {
 	return Chunk{}, false
 }
 
-// AllChunks returns a copy of every stored chunk. Part of chunkLister; used to
-// rebuild the keyword index after a snapshot load (snapshots don't persist
-// keyword state).
+// AllChunks returns a copy of every stored chunk.
 func (s *FlatStore) AllChunks() []Chunk {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -229,8 +193,6 @@ func (s *FlatStore) AllChunks() []Chunk {
 	return out
 }
 
-// filterMatcher is a Filter with its MetaMatch values read as JSON once,
-// so matching a chunk never re-encodes or re-parses the filter side.
 type filterMatcher struct {
 	source, kind string
 	wants        []metaWant
@@ -239,7 +201,7 @@ type filterMatcher struct {
 type metaWant struct {
 	key  string
 	raw  any
-	json any // raw as a JSON value, numbers as canonNumber
+	json any
 	ok   bool
 }
 
@@ -275,8 +237,6 @@ func (m *filterMatcher) matches(c *Chunk) bool {
 	return true
 }
 
-// equals is MetaMatch equality: the two values as JSON values, the way
-// PgVectorStore's JSONB comparison sees them (5 equals 5.0).
 func (w *metaWant) equals(got any) bool {
 	if reflect.DeepEqual(got, w.raw) {
 		return true
@@ -291,7 +251,6 @@ func (w *metaWant) equals(got any) bool {
 	return ok && jsonValueEqual(g, w.json)
 }
 
-// asJSONValue re-reads v's JSON encoding with numbers kept as json.Number.
 func asJSONValue(v any) (any, bool) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -303,8 +262,6 @@ func asJSONValue(v any) (any, bool) {
 	return out, dec.Decode(&out) == nil
 }
 
-// canonNumber is a JSON number as sign, significant digits and power of
-// ten: two literals are one value exactly when their canonNumbers are equal.
 type canonNumber struct {
 	neg    bool
 	digits string
@@ -312,8 +269,6 @@ type canonNumber struct {
 	ok     bool
 }
 
-// canonOf reads a JSON number literal in time linear in its length; a
-// big.Rat of 1e999999 computes the power instead.
 func canonOf(literal json.Number) canonNumber {
 	s := string(literal)
 	neg := strings.HasPrefix(s, "-")
@@ -332,13 +287,11 @@ func canonOf(literal json.Number) canonNumber {
 	trimmed := strings.TrimRight(digits, "0")
 	exp += int64(len(digits) - len(trimmed))
 	if trimmed == "" {
-		return canonNumber{ok: true} // zero, whatever its sign or exponent
+		return canonNumber{ok: true}
 	}
 	return canonNumber{neg: neg, digits: trimmed, exp: exp, ok: true}
 }
 
-// canonJSON replaces every json.Number in a decoded JSON value with its
-// canonNumber.
 func canonJSON(v any) any {
 	switch x := v.(type) {
 	case json.Number:
@@ -359,8 +312,6 @@ func canonJSON(v any) any {
 	return v
 }
 
-// jsonValueEqual compares a decoded JSON value with a canonJSON one,
-// numbers by exact value.
 func jsonValueEqual(a, b any) bool {
 	switch av := a.(type) {
 	case json.Number:
@@ -393,8 +344,6 @@ func jsonValueEqual(a, b any) bool {
 	return a == b
 }
 
-// plainScalar reports a value whose JSON form has one Go spelling: two of
-// them are equal exactly when reflect.DeepEqual says so.
 func plainScalar(v any) bool {
 	switch v.(type) {
 	case nil, string, bool:
@@ -435,18 +384,8 @@ func (e *dimError) Error() string {
 	return "semantic: vector dimension mismatch (want " + strconv.Itoa(e.want) + ", got " + strconv.Itoa(e.got) + ")"
 }
 
-// compile-time assertion that FlatStore implements Store.
 var _ Store = (*FlatStore)(nil)
 
-// errEmptyStore is returned by future persistence code when a snapshot
-// header is present but the chunk list is empty. Reserved for M2.
-var errEmptyStore = errors.New("semantic: store snapshot has no chunks")
-
-var _ = errEmptyStore
-
-// cloneChunk isolates vectors and metadata at the store boundary. The
-// metadata copy is deep: a nested map or slice shared with the caller or
-// a hit let either rewrite what the store filters and snapshots on.
 func cloneChunk(c Chunk) Chunk {
 	c.Vec = slices.Clone(c.Vec)
 	if c.Metadata != nil {
@@ -455,7 +394,6 @@ func cloneChunk(c Chunk) Chunk {
 	return c
 }
 
-// errEmptyVector refuses a chunk whose vector has no coordinates.
 var errEmptyVector = errors.New("semantic: vector is empty")
 
 func finiteVector(v []float32) error {

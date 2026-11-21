@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -251,8 +252,7 @@ func ctxKeys(st *types.Struct, depth int) []string {
 }
 
 func isContext(t types.Type) bool {
-	named, ok := types.Unalias(t).(*types.Named)
-	return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "context" && named.Obj().Name() == "Context"
+	return astx.IsNamed(types.Unalias(t), "context", "Context")
 }
 
 func isRequest(t types.Type) bool {

@@ -9,20 +9,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/winversion"
 )
 
-// WebView2LoaderName is the loader DLL a Windows desktop build ships
-// beside its executable.
+// WebView2LoaderName is the loader DLL a Windows desktop build ships beside its executable.
 const WebView2LoaderName = "WebView2Loader.dll"
 
-// WindowsBundleFiles names the files a Windows update archive's root
-// directory holds, in swap order: the executable first.
+// WindowsBundleFiles names the files a Windows update archive's root directory holds, in swap order: the executable first.
 func WindowsBundleFiles(name string) []string {
 	return []string{name + ".exe", WebView2LoaderName}
 }
 
-// CheckWindowsBundle refuses an extracted Windows bundle root that
-// holds anything other than exactly WindowsBundleFiles(name) as
-// regular files. The set is closed: a stray file would land beside
-// the executable with no swap or cleanup that knows about it.
+// CheckWindowsBundle refuses an extracted Windows bundle root that holds anything other than exactly WindowsBundleFiles(name) as regular files.
 func CheckWindowsBundle(dir, name string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -62,7 +62,11 @@ func TestListsServeFirstAndLastPage(t *testing.T) {
 	}{
 		{"/", 10}, {"/news", 10}, {"/newest", 12}, {"/ask", 2}, {"/show", 2}, {"/jobs", 1},
 	} {
-		for _, page := range []int{1, tc.pages} {
+		pages := []int{1}
+		if tc.pages > 1 { // /jobs has one page: its last page is the first
+			pages = append(pages, tc.pages)
+		}
+		for _, page := range pages {
 			url := tc.path
 			if page > 1 {
 				url += "?page=" + itoa(page)
@@ -89,6 +93,20 @@ func TestPagerLinksAreRealAnchors(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("page 2 has no %s anchor", want)
 		}
+	}
+}
+
+// The top link's href is "/" and the runtime's active-link module
+// matches exactly, so a /news pager that links /news again clears the
+// Top mark after a client navigation within /news. The pager links the
+// canonical top path instead.
+func TestNewsPagerLinksTheCanonicalTopPath(t *testing.T) {
+	_, body := get(t, "/news")
+	if !strings.Contains(body, `href="/?page=2"`) {
+		t.Error("the /news pager does not link the canonical top path /?page=2")
+	}
+	if strings.Contains(body, `href="/news?page=`) {
+		t.Error("the /news pager links /news again, where the Top link's exact-match mark is lost after a client navigation")
 	}
 }
 

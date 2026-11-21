@@ -19,15 +19,17 @@ invariants:
       - test: core-ui/ownstyle.TestTokenizeUnterminatedCommentAndStringEOF
       - test: core-ui/ownstyle.TestParsePositions
   - id: parse-refuses-what-the-cascade-would-reorder
-    rule: Parse reads rules, at-rules, nested blocks, declarations and doc comments with positions, and reports a declaration after a nested rule and every malformed construct as a diagnostic.
+    rule: Parse reads rules, at-rules, nested blocks, declarations and doc comments with positions, keeps raw slices aligned past a leading BOM, accepts trivia before a declaration's colon and inside !important, and reports a declaration after a nested rule and every malformed construct as a diagnostic.
     enforced_by:
+      - test: core-ui/ownstyle.TestParseBOMSourceSlices
+      - test: core-ui/ownstyle.TestParseDeclarationTrivia
       - test: core-ui/ownstyle.TestParseStyleRuleDecls
       - test: core-ui/ownstyle.TestParseNestedAtRules
       - test: core-ui/ownstyle.TestParseDeclAfterNestedRuleIsError
       - test: core-ui/ownstyle.TestParseErrors
       - test: core-ui/ownstyle.TestParseDocComments
   - id: compile-scopes-and-expands
-    rule: Compile wraps an owner's rules in its scope (an app sheet's in :root), expands custom media against the running theme's breakpoints and refuses an unknown one or any in @container, renames each @keyframes to <owner>-<name> and rewrites its references, splits --dark rules into a prefers-color-scheme block and the forced-scheme selectors, never drops a non-empty rule and never changes the parsed sheet.
+    rule: Compile wraps an owner's rules in its scope (an app sheet's in :root), expands custom media against the running theme's breakpoints and refuses an unknown one or any in @container, renames each @keyframes to <owner>-<name> and rewrites its references in any property-name case, splits --dark rules into a prefers-color-scheme block and the forced-scheme selectors with a nested media rule's own declarations and a folded query's width kept, never drops a non-empty rule and never changes the parsed sheet.
     enforced_by:
       - test: core-ui/ownstyle.TestCompileGoldens
       - test: core-ui/ownstyle.TestCompileAppWrap
@@ -39,8 +41,11 @@ invariants:
       - test: core-ui/ownstyle.TestCompileNonEmptyRulesNeverVanish
       - test: core-ui/ownstyle.TestCompileDoesNotMutateSheet
       - test: core-ui/ownstyle.TestDarkChainMatchesInBrowser
+      - test: core-ui/ownstyle.TestCompileDarkNestedMediaDeclarations
+      - test: core-ui/ownstyle.TestCompileCaseVariantAnimationProperties
+      - test: core-ui/ownstyle.TestCompileCustomMediaInteriorTrivia
   - id: checks-report-each-rule
-    rule: Check reports an unknown theme token (GOFASTR1806), a hard-coded token value (1807), a drifted var() fallback (1808), a kit class or attribute selector however it is spelled or hidden (1810), a raw media width, an animation without a reduced-motion guard, an app-sheet selector off its subject, !important, a token custom property, a statement at-rule and every parse error, each at the line and column of its cause.
+    rule: Check reports an unknown theme token (GOFASTR1806), a hard-coded token value (1807), a drifted var() fallback (1808), a kit class or attribute selector however it is spelled or hidden (1810), a raw media width with advice in the query's comparison direction, a custom medium or breakpoint the compiler would refuse (invalid-media, an error no waiver, override or baseline lowers), an animation without a reduced-motion guard, an app-sheet selector off its subject, !important, a token custom property, a statement at-rule and every parse error, each at the line and column of its cause.
     enforced_by:
       - test: core-ui/ownstyle.TestCheckUnknownTokens
       - test: core-ui/ownstyle.TestCheckHardcodedTokenValues
@@ -54,22 +59,30 @@ invariants:
       - test: core-ui/ownstyle.TestCheckStatementAtRule
       - test: core-ui/ownstyle.TestCheckInboxExample
       - test: core-ui/ownstyle.TestCheckParseErrorsSurface
+      - test: core-ui/ownstyle.TestCheckRawMediaWidthDirections
+      - test: core-ui/ownstyle.TestTokenSuggestionsKeepRuneDistanceAndCutoff
+      - test: framework/contracts/analyzers.TestOwnedInvalidMediaCannotBeWaived
   - id: same-scale-value-is-one-function
     rule: SameScaleValue compares two lengths or times ASCII case-insensitively, reading rem as 16px and s as 1000ms, and both GOFASTR1808 checks call it.
     enforced_by:
       - test: core-ui/ownstyle.TestSameScaleValueFoldsASCIIOnly
       - test: core-ui/ownstyle.TestCheckFallbackDrift
   - id: suppression-names-rule-and-line
-    rule: A gofastr:allow comment suppresses a diagnostic only when it names the diagnostic's rule, carries a reason and sits on the diagnostic's line or the one above.
+    rule: A gofastr:allow comment, read with the names.ParseMarker grammar, suppresses a diagnostic only when it names the diagnostic's rule and carries a reason, and covers its own line when it trails code or, standing alone, the next line holding code past any comment-only lines; gofastr:allow-file covers the sheet, and generation and verify share CSSWaiverScopeEnd.
     enforced_by:
       - test: core-ui/ownstyle.TestSuppressedHonoursMarkers
+      - test: core-ui/ownstyle.TestSuppressedUsesSharedMarkerGrammarAndScope
+      - test: core-ui/ownstyle.TestStandaloneWaiverSkipsCSSComments
   - id: model-and-generator-are-unambiguous
-    rule: Model refuses a class that is both a base and a variant and variant groups whose values disagree, skips kit and element parts, and the generator refuses a class that would shadow a method of the embedded Sheet or collide with another method.
+    rule: Model refuses a class that is both a base and a variant and variant groups whose values disagree, keeps a group value on every base that uses it, gives a :scope compound's every variant to the root and folds each compound inside a :has() argument as a selector of its own, skips kit and element parts, and the generator refuses a class that would shadow a method of the embedded Sheet or collide with another method.
     enforced_by:
       - test: core-ui/ownstyle.TestModelClassBothBaseAndVariantIsError
       - test: core-ui/ownstyle.TestModelGroupValueMismatchIsError
       - test: core-ui/ownstyle.TestModelSkipsEveryKitPrefix
       - test: core-ui/ownstyle.TestGenRefusesEverySheetMethodName
+      - test: core-ui/ownstyle.TestModelSharesGroupValuesAcrossBases
+      - test: core-ui/ownstyle.TestModelAllVariantsOnScope
+      - test: core-ui/ownstyle.TestModelHasDescendantCompounds
       - test: core-ui/ownstyle.TestCompileGoldens
   - id: kit-roots-only-take-placement
     rule: An owned sheet may style a kit component's root only with placement properties (grid-column, grid-row, margin, inset and min- or max- sizes), and only as a rule's subject.
@@ -92,11 +105,12 @@ invariants:
       - test: core-ui/ownstyle.TestScopePanicsOnDifferentOwner
       - test: core-ui/ownstyle.TestScopePanicsOnAppAndMalformed
   - id: app-tokens-are-distinct
-    rule: An app .tokens.css file declares tokens the generator turns into Go, and two app tokens, or an app token and a builtin, with the same value are reported.
+    rule: An app .tokens.css file declares tokens the generator turns into Go, refuses a second dark block or a rule nested in the dark root, and two app tokens, or an app token and a builtin, with the same value are reported.
     enforced_by:
       - test: core-ui/ownstyle.TestGenerateTokensFile
       - test: core-ui/ownstyle.TestDuplicateTokenValues
       - test: core-ui/ownstyle.TestCheckTokenFiles
+      - test: core-ui/ownstyle.TestParseTokensRefusesInvalidDarkBlockShape
 decisions:
   - id: raw-token-text
     date: 2026-11-20

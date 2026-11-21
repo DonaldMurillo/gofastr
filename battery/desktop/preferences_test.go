@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -333,5 +335,43 @@ func TestPreferencesSurviveASecondBatteryOnTheSameDataDir(t *testing.T) {
 	second := build()
 	if got := second.Preferences().Int("work_minutes"); got != 50 {
 		t.Fatalf("work_minutes on relaunch = %d, want 50", got)
+	}
+}
+
+func TestForgetKeepsTheStableWindowFrames(t *testing.T) {
+	s := newWindowStore(appstate.Open(filepath.Join(t.TempDir(), "state.json"), testLogger(t)), testLogger(t))
+	for _, id := range []string{MainWindowID, "settings"} {
+		s.setFrame(id, Frame{X: 1, Y: 2, Width: 300, Height: 200})
+		s.forget(id)
+		if s.frameFor(id) == nil {
+			t.Fatalf("closing %s forgot its frame; only transient ids are forgotten", id)
+		}
+	}
+}
+
+func TestPreferencesScreenPathRefusesOffGrammar(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("PreferencesScreenPath accepted //evil.example")
+		}
+	}()
+	PreferencesScreen(New(Config{ID: "prefpath.example.app", Shell: newFakeShell()}), PreferencesScreenPath("//evil.example"))
+}
+
+func TestPreferencesFormRouteRefusals(t *testing.T) {
+	b := New(Config{ID: "prefroute.example.app", Shell: newFakeShell(), Logger: testLogger(t)})
+	post := func(contentType string) int {
+		req := httptest.NewRequest(http.MethodPost, preferencesFormPath, strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", contentType)
+		rec := httptest.NewRecorder()
+		b.handlePreferencesForm()(rec, req)
+		return rec.Code
+	}
+	if got := post("application/json"); got != http.StatusServiceUnavailable {
+		t.Fatalf("a save before Run opened the store = %d, want 503", got)
+	}
+	b.state.Store(appstate.Open(filepath.Join(t.TempDir(), "state.json"), testLogger(t)))
+	if got := post("text/plain"); got != http.StatusUnsupportedMediaType {
+		t.Fatalf("a text/plain save = %d, want 415", got)
 	}
 }

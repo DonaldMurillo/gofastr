@@ -11,11 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 )
 
-// Memory is an in-memory search backend suitable for tests and small examples.
-//
-// It registers a datexport store eraser, so App.EraseUserData deletes every
-// document indexed with the erased user as its Owner. The registration
-// keeps the index reachable until [Memory.Close] removes it.
+// Memory is an in-memory search backend suitable for tests and small
+// examples.
 type Memory struct {
 	mu   sync.RWMutex
 	docs map[string]Document
@@ -37,21 +34,18 @@ func NewMemory() *Memory {
 }
 
 // Close unregisters the index's store eraser, so an erasure no longer
-// reaches it. The documents stay searchable. Safe to call more than once.
+// reaches it.
 func (m *Memory) Close() error {
 	m.closeOnce.Do(m.unregisterErase)
 	return nil
 }
 
-// eraseOwner deletes every document whose Owner is owner and returns how
-// many it removed; with dryRun it removes nothing and returns how many it
-// would.
 func (m *Memory) eraseOwner(ctx context.Context, owner string, dryRun bool) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 	if owner == "" {
-		return 0, nil // an empty owner names no user
+		return 0, nil
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -73,6 +67,9 @@ func (m *Memory) Index(ctx context.Context, doc Document) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if _, err := marshalFields(doc.Fields); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	doc.Fields = maps.Clone(doc.Fields)
@@ -91,19 +88,17 @@ func (m *Memory) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// maxQueryTerms bounds how many distinct terms a single query may contribute
-// to scoring. Without a cap, an attacker-controlled query string of many
-// tokens forces O(terms x corpus x doclen) word scans per request. Distinct
-// terms beyond this cap add negligible selectivity.
 const maxQueryTerms = 64
 
 // Search returns documents whose text or string fields hold every query
-// term as a word, the last term as the start of a word: the terms and
-// the words split the way the SQL backends split them (queryTerms), with
-// no stemming. Empty text matches every document; text whose terms all
-// sanitize away (pure punctuation) matches none.
+// term as a word, the last term as the start of a word: the terms and the
+// words split the way the SQL backends split them (queryTerms), with no
+// stemming.
 func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := validateFieldEquals(query.FieldEquals); err != nil {
 		return nil, err
 	}
 	m.mu.RLock()
@@ -136,23 +131,16 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 		}
 		return results[i].Score > results[j].Score
 	})
-	// Clamp pagination bounds before slicing. Query is a public type whose
-	// Offset/Limit fields may carry any int (e.g. a host mapping raw ?offset=
-	// /?limit= params), so guard against negatives and integer overflow.
 	offset := max(query.Offset, 0)
 	if offset >= len(results) {
 		return nil, nil
 	}
 	end := len(results)
 	if query.Limit > 0 {
-		// offset+query.Limit can overflow to a negative; the `>= offset`
-		// check rejects the overflowed case so we never slice past the cap.
 		if sum := offset + query.Limit; sum >= offset && sum < end {
 			end = sum
 		}
 	}
-	// Copy Fields for the returned page only, still under the read
-	// lock: the caller owns them, the rest never leave.
 	page := append([]Result(nil), results[offset:end]...)
 	for i := range page {
 		page[i].Document.Fields = maps.Clone(page[i].Document.Fields)
@@ -160,9 +148,6 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 	return page, nil
 }
 
-// docWords splits text into the words queryTerms reads from a query, in
-// order with repeats. A word joined by - or _ also yields its parts, as
-// the SQL backends' tokenizers index them, so foo matches foo-bar.
 func docWords(text string) []string {
 	var words []string
 	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return !termRune(r) }) {
@@ -177,9 +162,6 @@ func docWords(text string) []string {
 	return words
 }
 
-// scoreTerms counts, per term, the words it matches: the whole word, or
-// for the last term any word it starts. A term matching no word scores
-// the document 0.
 func scoreTerms(words, terms []string) float64 {
 	if len(terms) == 0 {
 		return 1
@@ -206,8 +188,6 @@ func fieldsText(fields map[string]any) string {
 		return ""
 	}
 	var sb strings.Builder
-	// Sorted so the searchable blob is stable: an unordered concat makes
-	// cross-field phrase matches come and go between calls.
 	for _, k := range slices.Sorted(maps.Keys(fields)) {
 		if s, ok := fields[k].(string); ok {
 			sb.WriteByte(' ')
@@ -217,9 +197,6 @@ func fieldsText(fields map[string]any) string {
 	return sb.String()
 }
 
-// matchesFields reports whether fields contains every key in want with a
-// string value equal to the wanted value. See Query.FieldEquals for the
-// string-only matching rule shared with the Postgres backend.
 func matchesFields(fields map[string]any, want map[string]string) bool {
 	for k, v := range want {
 		got, ok := fields[k].(string)

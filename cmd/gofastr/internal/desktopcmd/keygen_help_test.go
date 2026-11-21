@@ -26,7 +26,7 @@ func TestKeygenHelpShortCircuitsLaterArguments(t *testing.T) {
 func TestKeygenHelpPreservesEarlierFlagErrors(t *testing.T) {
 	for _, args := range [][]string{{"--bogus", "--help"}, {"-o", "--help"}} {
 		_, code := verbOutput(t, func() { parseDesktopKeygenFlags(args) })
-		if code != 1 {
+		if code != 2 {
 			t.Errorf("keygen %v exited %d, want refusal before help", args, code)
 		}
 	}

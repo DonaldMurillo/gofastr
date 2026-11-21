@@ -4,19 +4,10 @@ code:
   - core-ui/html/
 docs:
   - framework/docs/content/accessibility.md
-twins:
-  - job: Add one newline after <textarea> when its content opens on a line break, so the parser's dropped newline is the added one.
-    why: framework/headless is outside the core-ui sweep; the merge is an exported core-ui/html helper that headless, which already imports core-ui/html, calls.
-    sites:
-      - path: core-ui/html/interactive.go
-        note: TextArea.
-      - path: framework/headless/control.go
-        note: Textarea.
 invariants:
   - id: accessible-name-required
     rule: Button panics without a Label, AriaLabel or ExtraAttrs aria-label, and Section, Nav and Aside panic without a Label or LabelledBy; AriaLabel wins over Label as the button's aria-label.
     enforced_by:
-      - test: core-ui/html.TestButtonRequiresLabelOrAriaLabel
       - test: core-ui/html.TestButton
       - test: core-ui/html.TestSection
   - id: url-attrs-are-checked
@@ -46,7 +37,7 @@ invariants:
       - test: core-ui/html.TestHeadingAutoIDDeterministic
       - test: core-ui/html.TestHeadingAutoIDIsCappedAndUnescaped
   - id: textarea-keeps-content
-    rule: TextArea escapes its content and adds one newline before content that opens on a CR or LF.
+    rule: TextArea escapes its content and adds one newline before content that opens on a CR or LF, through TextAreaContent, which framework/headless.Textarea calls too.
     enforced_by:
       - test: core-ui/html.TestTextAreaContent
       - test: core-ui/html.TestTextAreaKeepsLeadingNewline

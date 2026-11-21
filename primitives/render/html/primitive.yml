@@ -20,7 +20,7 @@ twins:
       - path: core/render/html.go
         note: isSafeAttrKey, behind Attr, Tag and VoidTag.
       - path: core-ui/registry/inject.go
-        note: attrNameOK, behind InjectAttribute and the component marker splice.
+        note: attrNameOK, behind InjectAttribute and Attribute.
 invariants:
   - id: escape-five-ampersand-first
     rule: Escape turns &, <, >, double quote and single quote into &amp;, &lt;, &gt;, &quot; and &#39;, replacing the ampersand first so no entity it writes is escaped twice, and Text and every attribute value go through it.

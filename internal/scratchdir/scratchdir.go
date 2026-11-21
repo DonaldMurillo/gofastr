@@ -35,6 +35,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/ancestor"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -52,18 +53,20 @@ func ModuleRoot(t testing.TB) string {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			t.Fatalf("stat %s: %v", filepath.Join(dir, "go.mod"), err)
+	root, found, err := ancestor.Find(dir, func(dir string) (bool, error) {
+		_, err := os.Stat(filepath.Join(dir, "go.mod"))
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no go.mod at or above the working directory")
-		}
-		dir = parent
+		return err == nil, err
+	})
+	if err != nil {
+		t.Fatalf("stat %s: %v", filepath.Join(root, "go.mod"), err)
 	}
+	if !found {
+		t.Fatalf("no go.mod at or above the working directory")
+	}
+	return root
 }
 
 // Package clears the scratch package Root/name, creates it, and returns its

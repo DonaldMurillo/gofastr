@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -21,13 +20,7 @@ import (
 // navigation a hosted log viewer's link makes. Before the hop this ended
 // on the 403 "setup token required" text with the token spent.
 func TestSetupLinkClickedOnAnotherSite(t *testing.T) {
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	browser, ok := browserpath.Find()
-	if !ok {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
+	browser := chromedptest.BrowserPath(t)
 	done := false
 	r := buildTestRunner(t, false, &done)
 	app := httptest.NewServer(r.Handler(func() {}, nil, nil))

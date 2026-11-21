@@ -358,6 +358,22 @@ func TestCSRFAuthRoutesLetsFormPostCallbackThrough(t *testing.T) {
 			t.Fatalf("%s without a token: %d, want 403", path, w.Code)
 		}
 	}
+	victim, err := mgr.SessionStore().Create(context.Background(), "u-victim", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	forged.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	forged.Header.Set("Sec-Fetch-Site", "cross-site")
+	forged.AddCookie(&http.Cookie{Name: mgr.Config().SessionCookie, Value: victim.Token})
+	fw := httptest.NewRecorder()
+	app.Router().ServeHTTP(fw, forged)
+	if fw.Code != http.StatusForbidden {
+		t.Fatalf("cross-site logout under the exemption: %d, want 403", fw.Code)
+	}
+	if _, err := mgr.SessionStore().Get(context.Background(), victim.Token); err != nil {
+		t.Fatalf("SECURITY: a cross-site form POST /auth/logout ended the victim's session: %v", err)
+	}
 	app.Router().Delete("/auth/logout", ok)
 	del := httptest.NewRequest(http.MethodDelete, "/auth/logout", nil)
 	dw := httptest.NewRecorder()

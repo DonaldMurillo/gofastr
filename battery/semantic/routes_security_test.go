@@ -286,3 +286,50 @@ func TestHTTPDelete_UnstorableIDNeverReachesIndex(t *testing.T) {
 		t.Errorf("the index was asked to remove %q; an id that is not storable text must not reach it", idx.removed)
 	}
 }
+
+func TestHandler_EmptyBearerWithNoTokenRefused(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	req.Header.Set("Authorization", "Bearer ")
+	rec := httptest.NewRecorder()
+	Handler(errIndex{}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("an empty bearer matched the unset token: %d, want 401", rec.Code)
+	}
+}
+
+func TestHTTPIndex_RejectsOversizedChunkedBody(t *testing.T) {
+	huge := `{"documents":[{"id":"a","text":"` + strings.Repeat("A", 2<<20) + `"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/index", bytes.NewBufferString(huge))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	Handler(errIndex{}, WithInsecureDisabledAuth()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("an oversized body of unknown length = %d, want 413", rec.Code)
+	}
+}
+
+func TestHandlerAnswersAreNoStore(t *testing.T) {
+	idx, _ := Open(Options{Embedder: NewStubEmbedder(16)})
+	open := Handler(idx, WithInsecureDisabledAuth())
+	for _, c := range []struct {
+		h            http.Handler
+		method, path string
+		want         int
+	}{
+		{open, http.MethodGet, "/stats", http.StatusOK},
+		{open, http.MethodDelete, "/doc/gone", http.StatusNoContent},
+		{open, http.MethodGet, "/nowhere", http.StatusNotFound},
+		{open, http.MethodPut, "/stats", http.StatusMethodNotAllowed},
+		{Handler(idx), http.MethodGet, "/stats", http.StatusUnauthorized},
+	} {
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
+		if rec.Code != c.want {
+			t.Errorf("%s %s = %d, want %d", c.method, c.path, rec.Code, c.want)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s %s Cache-Control = %q, want no-store", c.method, c.path, got)
+		}
+	}
+}

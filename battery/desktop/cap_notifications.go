@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 )
 
-// notificationsCapability: OS user notifications, gated
-// notifications:show.
 func (b *Battery) notificationsCapability() Capability {
 	return Capability{
 		Name:        "notifications",

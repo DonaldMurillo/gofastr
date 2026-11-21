@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// decodeInput strictly decodes a bridge method input (refusing
-// duplicate and case-folded keys); a decode failure is invalid_input.
 func decodeInput(in json.RawMessage, dst any) *Error {
 	if len(in) == 0 {
 		in = json.RawMessage(`{}`)
@@ -20,8 +19,6 @@ func decodeInput(in json.RawMessage, dst any) *Error {
 	return nil
 }
 
-// windowCapability: read and drive the window the page lives in.
-// Ungated, the page already lives in that window.
 func (b *Battery) windowCapability() Capability {
 	return Capability{
 		Name:        "window",
@@ -79,12 +76,8 @@ func (b *Battery) windowCapability() Capability {
 						return nil, err
 					}
 					if !validNavigatePath(req.Path) {
-						return nil, &Error{Code: CodeInvalidInput, Message: "path must be a same-origin absolute path (leading /, no scheme, no //, no .. segments)"}
+						return nil, &Error{Code: CodeInvalidInput, Message: "path " + windowPathRequirements}
 					}
-					// Only the main window's report is stored: the
-					// window id is the page's own claim
-					// (callerWindowID), and the relaunch redirect
-					// concerns the main window only.
 					if s := b.winStore.Load(); s != nil && callerWindowID(ctx) == MainWindowID {
 						s.setMainPath(req.Path)
 					}
@@ -94,7 +87,7 @@ func (b *Battery) windowCapability() Capability {
 			{
 				Name:        "setChrome",
 				Description: "Reports the sidebar zone's width in points as the page measured it (a ResizeObserver on the sidebar element). Ungated like setPath: a claim, applied to the calling window only.",
-				Input:       json.RawMessage(`{"type":"object","properties":{"sidebarWidth":{"type":"integer","minimum":0,"maximum":4096}},"required":["sidebarWidth"]}`),
+				Input:       json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"sidebarWidth":{"type":"integer","minimum":0,"maximum":%d}},"required":["sidebarWidth"]}`, MaxSidebarWidth)),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 					var req struct {
 						SidebarWidth int `json:"sidebarWidth"`
@@ -102,8 +95,8 @@ func (b *Battery) windowCapability() Capability {
 					if err := decodeInput(in, &req); err != nil {
 						return nil, err
 					}
-					if req.SidebarWidth < 0 || req.SidebarWidth > MaxSidebarWidth {
-						return nil, &Error{Code: CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+					if err := ValidateSidebarWidth(req.SidebarWidth); err != nil {
+						return nil, err
 					}
 					w, ok := b.windowByID(callerWindowID(ctx))
 					if !ok {
@@ -135,10 +128,6 @@ func (b *Battery) windowCapability() Capability {
 	}
 }
 
-// callerWindow resolves the window the request came from
-// (callerWindowID). The main window not open yet is unsupported, the
-// way it always answered; a secondary window that has closed is
-// not_found and never falls back to the main window.
 func (b *Battery) callerWindow(ctx context.Context) (Window, *Error) {
 	id := callerWindowID(ctx)
 	if w, ok := b.windowByID(id); ok {

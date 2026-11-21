@@ -116,3 +116,43 @@ var litConv = func(box any) int64 {
 	}
 	return 0
 }
+
+func int32LiteralBound(box any) int32 {
+	if u, ok := box.(uint32); ok {
+		if u > 2147483646 {
+			return 0
+		}
+		return int32(u)
+	}
+	return 0
+}
+
+type floatLimit struct{ Cap *float64 }
+
+func inclusiveFloatLimit(f floatLimit) int64 {
+	if f.Cap != nil && *f.Cap <= 1<<63 {
+		return int64(*f.Cap) // want `conversion of float bound .* to int64 without an upper-bound check`
+	}
+	return 0
+}
+
+func strictFloatLimit(f floatLimit) int64 {
+	if f.Cap != nil && 1<<63 > *f.Cap {
+		return int64(*f.Cap)
+	}
+	return 0
+}
+
+func afterFloatLimit(f floatLimit) int64 {
+	if f.Cap == nil || *f.Cap >= 1<<63 {
+		return 0
+	}
+	return int64(*f.Cap)
+}
+
+func roundedMathLimit(f floatLimit) int64 {
+	if f.Cap != nil && *f.Cap <= math.MaxInt64 {
+		return int64(*f.Cap) // want `conversion of float bound .* to int64 without an upper-bound check`
+	}
+	return 0
+}

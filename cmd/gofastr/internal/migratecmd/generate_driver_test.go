@@ -23,10 +23,10 @@ func TestMigrateGenerateRefusesUnknownDriver(t *testing.T) {
 	}
 	for _, flag := range []string{"--db=mysql", "--driver=postgress", "--db=oracle"} {
 		code := clitest.CovT_capExit(t, func() {
-			clitest.CovT_capStdout(t, func() { RunMigrate([]string{"generate", "init", "--from=" + spec, flag}) })
+			clitest.CovT_capOutput(t, func() { RunMigrate([]string{"generate", "init", "--from=" + spec, flag}) })
 		})
-		if code != 1 {
-			t.Errorf("migrate generate %s exited %d, want 1", flag, code)
+		if code != 2 {
+			t.Errorf("migrate generate %s exited %d, want 2", flag, code)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "migrations")); !os.IsNotExist(err) {
 			t.Fatalf("migrate generate %s wrote migrations/ before refusing", flag)

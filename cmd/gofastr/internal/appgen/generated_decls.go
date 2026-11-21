@@ -8,6 +8,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // refuseDuplicateDecls fails generation when two declared names meet in
@@ -56,7 +58,7 @@ func topLevelNames(f *ast.File) []string {
 				}
 				continue
 			}
-			out = append(out, RecvTypeName(d.Recv.List[0].Type)+"."+d.Name.Name)
+			out = append(out, astbase.RecvBaseName(d)+"."+d.Name.Name)
 		case *ast.GenDecl:
 			for _, s := range d.Specs {
 				switch s := s.(type) {

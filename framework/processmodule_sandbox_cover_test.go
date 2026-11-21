@@ -2,7 +2,6 @@ package framework
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"testing"
 
@@ -27,24 +26,22 @@ func TestSandboxRunner_NilAccessors(t *testing.T) {
 	if rep.Available || rep.Backend != "none" {
 		t.Errorf("nil Report() = %+v, want unavailable none", rep)
 	}
-	if got := r.allowlist(); len(got) == 0 {
-		t.Error("nil allowlist() must fall back to default, not empty")
-	}
 }
 
-// ---- allowlist falls back to default when empty ----
-
-func TestSandboxRunner_AllowlistFallsBack(t *testing.T) {
-	r := &SandboxRunner{} // EnvAllowlist empty
-	got := r.allowlist()
-	if len(got) == 0 {
-		t.Error("empty EnvAllowlist must fall back to default, not empty")
-	}
-	// A custom allowlist is returned as-is.
-	r.EnvAllowlist = []string{"CUSTOM"}
-	got = r.allowlist()
-	if len(got) != 1 || got[0] != "CUSTOM" {
-		t.Errorf("custom allowlist = %+v", got)
+func TestSandboxRunnerAndTrustedRunner_validateBeforeNilReceiverAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		runner Runner
+	}{
+		{"trusted", (*TrustedProcessRunner)(nil)},
+		{"sandbox", (*SandboxRunner)(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			child, err := tc.runner.Start(context.Background(), ChildSpec{})
+			if child != nil || err == nil || err.Error() != "processmodule: runner: descriptor artifact path/sha256 required" {
+				t.Fatalf("Start with missing artifact = %v, %v", child, err)
+			}
+		})
 	}
 }
 
@@ -100,15 +97,6 @@ func TestSandboxRunner_StartSHAErrorBeforeWrap(t *testing.T) {
 	}
 	if backend.wrapped != 0 {
 		t.Errorf("backend.Wrap called %d times; SHA check must run BEFORE Wrap", backend.wrapped)
-	}
-}
-
-// ---- ExecutableSHAMismatchError satisfies the integrity-fault shape ----
-
-func TestExecutableSHAMismatchError_isIntegrity(t *testing.T) {
-	e := &ExecutableSHAMismatchError{Path: "x", Expected: "a", Actual: "b"}
-	if _, ok := errors.AsType[*ExecutableSHAMismatchError](e); !ok {
-		t.Error("errors.As must match *ExecutableSHAMismatchError")
 	}
 }
 

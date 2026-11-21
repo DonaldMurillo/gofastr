@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
@@ -103,7 +104,7 @@ func TestStampRefusesChangedArtifact(t *testing.T) {
 // migratingChild is the echo child declaring a migration group.
 func migratingChild(t *testing.T) ProcessModuleDescriptor {
 	t.Helper()
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	d.MigrationGroup = "demo"
 	surface, err := ComputeSurfaceSHA256(d)
 	if err != nil {
@@ -118,13 +119,13 @@ func migratingChild(t *testing.T) ProcessModuleDescriptor {
 // child. It only relabelled the slot InstalledDisabled and left the
 // child serving.
 func TestPendingMigrationsDrainReadyChild(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	ctx := context.Background()
 	store := newTestStore(t)
 	d := migratingChild(t)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	if _, err := sup.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestPendingMigrationsDrainReadyChild(t *testing.T) {
 	if err := sup.Enable(ctx, d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	if err := store.SetMigrationsAppliedAt(ctx, d.Name, nil); err != nil {
 		t.Fatalf("clear: %v", err)
@@ -144,7 +145,7 @@ func TestPendingMigrationsDrainReadyChild(t *testing.T) {
 	if _, err := store.BumpGeneration(ctx, d.Name); err != nil {
 		t.Fatalf("bump: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateInstalledDisabled, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateInstalledDisabled, 8*time.Second)
 	deadline := time.Now().Add(3 * time.Second)
 	for redLeaseSlotPID(sup, d.Name) > 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
@@ -157,13 +158,13 @@ func TestPendingMigrationsDrainReadyChild(t *testing.T) {
 // TestUpgradeDrainWaitsForMigrations: an upgrade drain that ends after
 // the stamp cleared does not respawn the module.
 func TestUpgradeDrainWaitsForMigrations(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	ctx := context.Background()
 	store := newTestStore(t)
 	d := migratingChild(t)
-	sup := newTestSupervisor(t, store, childModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	if _, err := sup.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}

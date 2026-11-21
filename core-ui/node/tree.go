@@ -3,7 +3,6 @@ package node
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"maps"
 )
 
@@ -23,9 +22,7 @@ func AssignNodeIDs(n *Node, idGen func() string) {
 // NewElementID returns a fresh element ID, "el_" and 12 hex characters.
 func NewElementID() string {
 	var buf [6]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return fmt.Sprintf("el_fallback_%x", &buf)
-	}
+	rand.Read(buf[:]) // never returns an error since Go 1.24
 	return "el_" + hex.EncodeToString(buf[:])
 }
 

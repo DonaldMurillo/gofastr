@@ -1,6 +1,14 @@
 package search
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+)
 
 // Document is one searchable record.
 type Document struct {
@@ -8,10 +16,8 @@ type Document struct {
 	Type   string         `json:"type"`
 	Text   string         `json:"text"`
 	Fields map[string]any `json:"fields,omitempty"`
-	// Owner is the user id the document belongs to, or empty for a
-	// document that names nobody. App.EraseUserData deletes every
-	// document indexed for the erased user; it is a storage tag, not a
-	// search filter (scope searches through Fields and FieldEquals).
+	// Owner is the user id the document belongs to, or empty for a document
+	// that names nobody.
 	Owner string `json:"owner,omitempty"`
 }
 
@@ -28,17 +34,7 @@ type Query struct {
 	Limit  int
 	Offset int
 	// FieldEquals restricts results to documents whose Fields contain every
-	// given key with exactly the given value. This is the scope hook,
-	// callers put tenant/owner/permission columns in Document.Fields at index
-	// time and filter here, in-query, instead of post-filtering.
-	//
-	// Matching is string-only and identical across backends: a document
-	// matches iff for every key/value pair, Fields[key] is present AND its
-	// value is a string equal to value. A field whose value is not a string
-	// (a number, a slice, a struct) never satisfies a FieldEquals pair, even
-	// if its fmt.Sprint form would match. The Postgres backend encodes this as
-	// JSONB containment (fields @> '{"tenant":"acme"}'), whose type-strict
-	// containment is the natural mirror of the string-equality rule.
+	// given key with exactly the given value.
 	FieldEquals map[string]string
 }
 
@@ -47,4 +43,27 @@ type Backend interface {
 	Index(ctx context.Context, doc Document) error
 	Delete(ctx context.Context, id string) error
 	Search(ctx context.Context, query Query) ([]Result, error)
+}
+
+func marshalFields(fields map[string]any) ([]byte, error) {
+	if len(fields) == 0 {
+		return []byte("{}"), nil
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("search: marshal fields: %w", err)
+	}
+	if err := schema.Validate(schema.Field{Type: schema.JSON}, encoded); err != nil {
+		return nil, fmt.Errorf("search: invalid document fields: %w", err)
+	}
+	return encoded, nil
+}
+
+func validateFieldEquals(fields map[string]string) error {
+	for key, value := range fields {
+		if !textsafe.Storable(key) || !textsafe.Storable(value) {
+			return errors.New("search: FieldEquals keys and values must be valid UTF-8 without NUL bytes")
+		}
+	}
+	return nil
 }

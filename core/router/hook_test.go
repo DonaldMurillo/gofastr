@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -105,6 +106,37 @@ func TestRouteGateNilIsNoop(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if !called {
 		t.Fatal("handler not called when gate is nil")
+	}
+}
+
+func TestRouteGateOnlySeesRegisteredKeysOnFallback(t *testing.T) {
+	r := New()
+	var keys []string
+	r.SetRouteGate(func(key string) bool {
+		keys = append(keys, key)
+		return key == "GET /api/notes"
+	})
+	r.Group("/api").Get("/notes", status(http.StatusOK))
+	r.MethodNotAllowed(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Fallback", "method")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	r.NotFound(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Fallback", "path")
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	method := fallbackServe(r, http.MethodPost, "", "/api/notes")
+	if method.Code != http.StatusMethodNotAllowed || method.Header().Get("Allow") != "GET, HEAD" ||
+		method.Header().Get("X-Fallback") != "method" {
+		t.Errorf("method miss = %d %v, want custom 405 with GET and HEAD allowed", method.Code, method.Header())
+	}
+	missing := fallbackServe(r, http.MethodGet, "", "/missing")
+	if missing.Code != http.StatusNotFound || missing.Header().Get("X-Fallback") != "path" {
+		t.Errorf("path miss = %d %v, want custom 404", missing.Code, missing.Header())
+	}
+	if want := []string{"GET /api/notes", "GET /api/notes"}; !slices.Equal(keys, want) {
+		t.Errorf("gate keys = %q, want %q", keys, want)
 	}
 }
 

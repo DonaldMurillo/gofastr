@@ -1,11 +1,15 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 
 	"github.com/DonaldMurillo/gofastr/battery/email"
 )
@@ -181,5 +185,38 @@ func TestEmailPreviewsConfigRefused(t *testing.T) {
 func TestEmailsPathReservedForPages(t *testing.T) {
 	if !reservedPagePath("/emails") {
 		t.Error("an app page could take /emails")
+	}
+}
+
+func TestEmailRenderRunsUnelevated(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()}, Config{Entities: []string{"posts"}}, nil)
+	ch, err := x.app.CrudHandler("posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := access.NewRolePolicy()
+	_ = p.Grant("admin", "unrelated:thing")
+	ctx := x.b.elevate(access.WithRoles(access.WithPolicy(context.Background(), p), []string{"admin"}))
+	if !ch.CanReadScoped(ctx) {
+		t.Fatal("setup: the elevated context cannot read posts; the test proves nothing")
+	}
+	sawElevated := true
+	_, _ = x.b.renderEmail(ctx, EmailPreview{Name: "probe", Render: func(ctx context.Context) (email.Email, error) {
+		sawElevated = ch.CanReadScoped(ctx)
+		return email.Email{Subject: "s"}, nil
+	}})
+	if sawElevated {
+		t.Error("SECURITY: an email preview's Render ran with the admin's elevation")
+	}
+}
+
+func TestEmailRenderFailureLogsTypeNotText(t *testing.T) {
+	var buf bytes.Buffer
+	x := setup(t, nil, Config{Logger: capturingLogger(&buf)}, nil)
+	_, _ = x.b.renderEmail(context.Background(), EmailPreview{Name: "broken", Render: func(context.Context) (email.Email, error) {
+		return email.Email{}, errors.New("db password is hunter2")
+	}})
+	if log := buf.String(); strings.Contains(log, "hunter2") || !strings.Contains(log, "broken") {
+		t.Errorf("the failure log must name the preview and not the error's text: %s", log)
 	}
 }

@@ -1,0 +1,139 @@
+primitive: desktop
+summary: The desktop host that runs a GoFastr app inside the OS's own WebView on loopback, with a typed bridge to native capabilities and one native package per platform.
+code:
+  - battery/desktop/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A new Config field is validated in New, where a wiring error panics, and documented in desktop.md.
+invariants:
+  - id: app-id-grammar
+    rule: An app id is [A-Za-z0-9.-]+ with at least one dot, at most 253 characters, and not made only of dots and dashes, so it can only name a directory under the data dir base; New panics and DataDir and AppOptions error on any other.
+    enforced_by:
+      - test: battery/desktop.TestAppIDRejectsDotSegments
+      - test: battery/desktop.TestDataDirStaysUnderItsBase
+      - test: battery/desktop.TestDataDirRejectsBadID
+      - test: battery/desktop.TestNewRefusesConfigEdges
+  - id: new-panics-on-bad-config
+    rule: New panics on a Material outside the closed set, a negative TrafficLightInset, a SidebarWidth outside 0..MaxSidebarWidth on the main window, a widget or the settings window, a Settings.Path off the navigate grammar, and a DeepLink scheme unlike the one gofastr desktop build embedded.
+    enforced_by:
+      - test: battery/desktop.TestNewRefusesBadChrome
+      - test: battery/desktop.TestOpenWindowRefusesBadStyle
+      - test: battery/desktop.TestNewRefusesConfigEdges
+  - id: open-prefixes-copied
+    rule: New keeps its own copy of Config.OpenPrefixes, so a caller editing its slice afterwards does not change what the gate opens.
+    enforced_by:
+      - test: battery/desktop.TestDesktopNewCopiesOpenPrefixes
+  - id: init-once-with-a-uihost
+    rule: Init errors when called a second time, and Run refuses a battery that is not the one registered on the App.
+    enforced_by:
+      - test: battery/desktop.TestInitTwiceIsRefused
+      - test: battery/desktop.TestRunRefusesAnUnregisteredBattery
+  - id: secondary-windows-capped
+    rule: OpenWindow refuses with denied once maxSecondaryWindows secondary windows are open, for the bridge and the Go API alike, because windows.open is ungated and every query string is a distinct path.
+    enforced_by:
+      - test: battery/desktop.TestSecondaryWindowsAreCapped
+      - test: battery/desktop.TestCappedOpenRefusesTyped
+  - id: open-window-per-path
+    rule: OpenWindow on a path whose window is open focuses and returns it, on a path whose registered window has closed opens a fresh one, and names a new window settings for the Settings path, else w2, w3 and on.
+    enforced_by:
+      - test: battery/desktop.TestOpenWindowDedupesByPathAndFocuses
+      - test: battery/desktop.TestOpenWindowReplacesAClosedRegistration
+      - test: battery/desktop.TestOpenSettings
+      - test: battery/desktop.TestWindowsCapabilityEdges
+  - id: close-callback-keeps-a-reopened-window
+    rule: A close callback for an id whose current window reports itself open leaves the registration alone, and a close that removes a registration also forgets the window's remembered frame.
+    enforced_by:
+      - test: battery/desktop.TestHandleWindowClosedKeepsRegistrationForOpenWindow
+      - test: battery/desktop.TestClosedSecondaryWindowFrameIsForgotten
+  - id: emit-reaches-every-window
+    rule: Emit refuses an event name off the capability grammar, evaluates the event in every open window main first, keeps going past a window whose eval fails, and returns the first error.
+    enforced_by:
+      - test: battery/desktop.TestEmitInvalidNameRejected
+      - test: battery/desktop.TestEmitKeepsGoingPastAFailedWindow
+  - id: early-focus-reports-dropped
+    rule: A focus, blur or appearance report from the shell before any window is registered is dropped without a log line.
+    enforced_by:
+      - test: battery/desktop.TestFocusBeforeAnyWindowIsDroppedQuietly
+  - id: stop-forgets-windows
+    rule: OnStop drops every window reference, so an Emit after it fails instead of reaching a dead view.
+    enforced_by:
+      - test: battery/desktop.TestEmitAfterStopFails
+  - id: manifest-mode-runs-plugins
+    rule: With GOFASTR_DESKTOP_MANIFEST=1 Run initializes the plugins, freezes the registry and prints the manifest, so a capability a plugin registers from Init is in it, and never starts the App or the shell.
+    enforced_by:
+      - test: battery/desktop.TestManifestModeIncludesPluginCapabilities
+  - id: launch-forwarding-owns-cleanup
+    rule: When a packaged app's shell reports the launch handled by a running instance Run returns nil without starting the App, and otherwise defers the shell's ReleaseLaunch so it runs on every later return.
+    enforced_by:
+      - test: battery/desktop.TestLaunchSecondaryOwnsItsCleanup
+      - test: battery/desktop.TestLaunchCleanupOnStartupFailure
+      - test: battery/desktop.TestLaunchCleanupAfterShellReturn
+  - id: run-arms-gate-before-listening
+    rule: Run arms the boot gate with a per-run cookie name before app.Start opens the listener, and freezes the registry before the window opens.
+    enforced_by:
+      - test: battery/desktop.TestRunEndToEndWithFakeShell
+  - id: run-turns-isolation-off
+    rule: Run sets GOFASTR_ISOLATION=off in the process environment before app.Start unless Config.KeepIsolation is set.
+    enforced_by:
+      - test: battery/desktop.TestRunTurnsWorktreeIsolationOff
+  - id: run-loopback-only
+    rule: Run quits and shuts the app down when the address the app reports ready on is not 127.0.0.1.
+    judge: Does this change let Run open the window on an app that bound anything but 127.0.0.1?
+  - id: server-stop-closes-the-window
+    rule: When app.Start returns while the window is open Run quits the shell and logs the error, and the stop Run makes itself after the window closes is not logged.
+    enforced_by:
+      - test: battery/desktop.TestRunQuitsWhenServerStops
+      - test: battery/desktop.TestRunQuitLogsNoServerStop
+  - id: shell-quit-panic-contained
+    rule: The server-stop watcher recovers a panic from the shell's Quit on its bare goroutine.
+    judge: Does this change call into the host shell from a bare goroutine without a recover?
+  - id: deep-links-flush-on-ready
+    rule: The ready callback navigates the main window to the boot URL and then delivers the deep links queued before it, then opens Config.Widgets in order.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinksQueueUntilWindow
+  - id: state-flushed-on-exit
+    rule: Run flushes the app state store after the shell returns and before the app shuts down.
+    enforced_by:
+      - test: battery/desktop.TestStateSurvivesSecondBattery
+      - test: battery/desktop.TestRememberedPathBecomesBootRedirect
+  - id: data-dir-env-absolute
+    rule: GOFASTR_DESKTOP_DATA_DIR replaces the OS user config dir as the data dir base only when it is absolute, and DataDir errors otherwise.
+    enforced_by:
+      - test: battery/desktop.TestDataDirEnvMustBeAbsolute
+  - id: config-data-dir-absolute-and-private
+    rule: New panics on a relative Config.DataDir, and Init creates a missing override directory owner-only, as it does the default one.
+    enforced_by:
+      - test: battery/desktop.TestConfigDataDirMustBeAbsolute
+      - test: battery/desktop.TestConfigDataDirIsCreatedPrivate
+  - id: persistent-profile-explicit
+    rule: Config.PersistentProfile on a shell without profile support makes Run return ErrUnsupported before the App starts, and with support Run prepares the profile under the resolved data dir, commits the bound address and releases the profile on every return.
+    enforced_by:
+      - test: battery/desktop.TestProfileUnsupportedExplicit
+      - test: battery/desktop.TestProfileResolvedIdentity
+      - test: battery/desktop.TestProfileStartupCleanup
+decisions:
+  - id: new-panics
+    date: 2026-11-20
+    status: accepted
+    decision: New panics on a bad Config with a desktop-prefixed message.
+    rejected:
+      - option: Return an error from New.
+        why: A bad Config is a wiring error the developer wants at construction, as framework.NewApp's registration panics are, not at first window.
+    upholds: [new-panics-on-bad-config]
+  - id: window-cap-in-open-window
+    date: 2026-11-20
+    status: accepted
+    decision: The secondary-window cap lives in OpenWindow, not in the windows.open handler.
+    rejected:
+      - option: Cap in the capability handler.
+        why: OpenWindow is also the Go API that menu handlers and OpenSettings call, and a bound held at one of two callers drifts.
+    upholds: [secondary-windows-capped]
+  - id: isolation-off-is-process-wide
+    date: 2026-11-20
+    status: accepted
+    decision: Run turns worktree isolation off in the process environment, with Config.KeepIsolation as the opt-out.
+    rejected:
+      - option: Leave isolation on.
+        why: A desktop app never runs from a linked git worktree, and the isolation remap would move the loopback port the window is about to load.
+    upholds: [run-turns-isolation-off]

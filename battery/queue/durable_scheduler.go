@@ -21,16 +21,10 @@ import (
 
 const durableSchedulerLeaseName = "scheduler"
 
-// schedulerJobSweepEraser names the second delete on the jobs table. Erasers
-// run in name order, and it must sort after "queue_scheduler_schedules".
 const schedulerJobSweepEraser = "queue_scheduler_swept_jobs"
 
-// DurableSchedulerConfig identifies one scheduler replica and controls how
-// quickly another replica may reclaim its leadership lease after a heartbeat
-// stops. OwnerID defaults to a random process-local ID. LeaseDuration defaults
-// to 30 seconds. OccurrenceRetention defaults to 30 days; a negative value
-// disables occurrence pruning. MaxCatchUpOccurrences defaults to 1000 and
-// bounds the history rows materialized after downtime.
+// DurableSchedulerConfig identifies one scheduler replica and how soon another
+// may take its lease.
 type DurableSchedulerConfig struct {
 	OwnerID               string
 	LeaseDuration         time.Duration
@@ -38,33 +32,22 @@ type DurableSchedulerConfig struct {
 	MaxCatchUpOccurrences int
 }
 
-// DurableScheduler persists schedule watermarks and occurrences in the same
-// SQL database as a DBQueue. A heartbeat-expiry lease avoids redundant
-// evaluation, while unique occurrences and transactionally enqueued jobs are
-// the deduplication authority.
+// DurableScheduler persists schedules, watermarks and occurrences beside a
+// DBQueue, safe across replicas and restarts.
 type DurableScheduler struct {
 	queue         *DBQueue
 	ownerID       string
 	leaseDuration time.Duration
 	wake          chan struct{}
 
-	occurrenceRetention   time.Duration
-	maxCatchUpOccurrences int
-	retentionMu           sync.Mutex
-	nextRetentionSweep    time.Time
-	// beforeOccurrenceCommit is a deterministic partition hook for package
-	// tests. Production code leaves it nil.
+	occurrenceRetention    time.Duration
+	maxCatchUpOccurrences  int
+	retentionMu            sync.Mutex
+	nextRetentionSweep     time.Time
 	beforeOccurrenceCommit func()
-	// passDone is a deterministic seam for package tests: Start calls it
-	// after each pass with the pass's time and the wait it chose before
-	// the next one, so a test reads the loop's cadence without timing
-	// it. Production code leaves it nil.
-	passDone func(now time.Time, delay time.Duration)
+	passDone               func(now time.Time, delay time.Duration)
 }
 
-// hookBeforeOccurrenceCommit runs the hook under a recover guard: it
-// fires on the scheduler loop, which has no per-request net, and a
-// panicking hook must not take the scheduler (or the process) with it.
 func (s *DurableScheduler) hookBeforeOccurrenceCommit() {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -105,8 +88,8 @@ type durableSchedule struct {
 	version     int64
 }
 
-// NewDurableScheduler creates a replica-safe scheduler backed by q's SQL
-// database. It creates the schedule, occurrence, and lease tables when absent.
+// NewDurableScheduler creates a replica-safe scheduler over q's database,
+// creating its tables when absent.
 func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableScheduler, error) {
 	if q == nil || q.db == nil {
 		return nil, errors.New("queue: durable scheduler requires a DBQueue")
@@ -134,9 +117,6 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 	if err := s.ensureTables(); err != nil {
 		return nil, fmt.Errorf("queue: ensure durable scheduler tables: %w", err)
 	}
-	// App.EraseUserData deletes the schedules a user owns: a schedule keeps
-	// its payload and fires it again on every tick. The jobs it fired carry
-	// the same user_id, which the queue_jobs eraser matches.
 	table := q.schedulerName("_scheduler_schedules")
 	datexport.Register(datexport.DataExporter{
 		Name:       datexport.ScopedName("queue_scheduler_schedules", table),
@@ -155,8 +135,6 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 		Column: "user_id",
 		Mode:   datexport.EraseDelete,
 	})
-	// The jobs go a second time once the schedules are gone: a tick that
-	// commits while the erasure runs writes its job after the first delete.
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name:   datexport.ScopedName(schedulerJobSweepEraser, q.table),
 		Source: "queue",
@@ -167,22 +145,18 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 	return s, nil
 }
 
-// Every defines a durable fixed-interval schedule. id is the stable identity
-// used to preserve its watermark across restarts and replica registration.
-// Register refuses an interval below one millisecond.
+// Every defines a durable fixed-interval schedule under the stable id.
 func (s *DurableScheduler) Every(id string, interval time.Duration) *DurableScheduleBuilder {
 	return &DurableScheduleBuilder{scheduler: s, id: id, interval: interval}
 }
 
-// Cron defines a durable cron schedule. id is the stable identity used to
-// preserve its watermark across restarts and replica registration.
+// Cron defines a durable cron schedule under the stable id.
 func (s *DurableScheduler) Cron(id, spec string) *DurableScheduleBuilder {
 	return &DurableScheduleBuilder{scheduler: s, id: id, cronSpec: spec}
 }
 
-// Job sets the queue job type and JSON payload for a durable schedule.
-// Payload encoding errors are returned by Register or RegisterAt so the
-// builder remains fluent.
+// Job sets the job type and JSON payload; a payload error is returned by
+// Register.
 func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableScheduleBuilder {
 	b.jobType = jobType
 	b.payloadErr = nil
@@ -190,33 +164,10 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 		b.payload = json.RawMessage("null")
 		return b
 	}
-	switch v := payload.(type) {
-	case json.RawMessage:
-		b.payload = v
-	case []byte:
-		b.payload = json.RawMessage(v)
-	case string:
-		b.payload = json.RawMessage(v)
-	default:
-		data, err := json.Marshal(payload)
-		if err != nil {
-			b.payload = nil
-			b.payloadErr = fmt.Errorf("queue: marshal durable schedule payload: %w", err)
-			return b
-		}
-		b.payload = data
+	b.payload, b.payloadErr = encodeSchedulePayload(payload, "queue: marshal durable schedule payload")
+	if b.payloadErr != nil {
+		return b
 	}
-	// An EMPTY payload is "no payload", not malformed JSON, a nil or empty
-	// []byte / json.RawMessage / "" is what the common conditional-marshal
-	// shape produces:
-	//
-	//	var body []byte
-	//	if opts != nil { body, _ = json.Marshal(opts) }
-	//	sched.Job("email", body)
-	//
-	// It means exactly what Job(jobType, nil) means, so it stores as JSON
-	// null. Validating it as JSON would reject a schedule that registered
-	// fine before, which is a behaviour break rather than a hardening.
 	if len(b.payload) == 0 {
 		b.payload = json.RawMessage("null")
 		return b
@@ -228,48 +179,33 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 	return b
 }
 
-// Lane routes every Job fired by this schedule to the given capacity-
-// reservation lane (see DBQueue.WithDBLaneWorkers). Empty (the default)
-// lands the job on the shared/default lane. The value persists alongside
-// the schedule definition; re-registering the same schedule ID updates it.
+// Lane routes every job this schedule fires to the given lane.
 func (b *DurableScheduleBuilder) Lane(name string) *DurableScheduleBuilder {
 	b.lane = name
 	return b
 }
 
-// Priority sets the priority carried into every Job fired by this schedule.
-// Higher integers are dequeued first. Defaults to 0. The value persists
-// alongside the schedule definition; re-registering the same schedule ID
-// updates it.
+// Priority sets the priority of every job this schedule fires.
 func (b *DurableScheduleBuilder) Priority(p int) *DurableScheduleBuilder {
 	b.priority = p
 	return b
 }
 
-// MaxAttempts bounds the retry ceiling carried into every Job fired by this
-// schedule. Zero (the default) lets Enqueue resolve it to 3, matching the
-// pre-options behaviour. The value persists alongside the schedule
-// definition; re-registering the same schedule ID updates it.
+// MaxAttempts sets the retry ceiling of every job this schedule fires; zero
+// means 3.
 func (b *DurableScheduleBuilder) MaxAttempts(n int) *DurableScheduleBuilder {
 	b.maxAttempts = n
 	return b
 }
 
-// UserID names the person the schedule's payload is about. It persists
-// with the schedule, and every Job the schedule fires carries it as
-// Job.UserID. App.EraseUserData deletes the user's schedules and the jobs
-// they fired. Leave it empty for a schedule that names nobody (a sweep, a
-// cache warm). Re-registering the same schedule ID updates it.
+// UserID names the person the schedule's payload is about; erasing them
+// deletes the schedule.
 func (b *DurableScheduleBuilder) UserID(id string) *DurableScheduleBuilder {
 	b.userID = id
 	return b
 }
 
-// Register persists the schedule definition without resetting an existing
-// watermark. The anchor is UTC, so cron field evaluation keeps the
-// historical "0 2 * * *" = 02:00 UTC semantics regardless of the server's
-// local zone; register with RegisterAt and a time in a named IANA zone to
-// evaluate a cron spec in that zone's wall-clock time.
+// Register persists the schedule without resetting an existing watermark.
 func (b *DurableScheduleBuilder) Register() error {
 	return b.RegisterAt(time.Now().UTC())
 }
@@ -288,10 +224,6 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.payloadErr != nil {
 		return b.payloadErr
 	}
-	// The zone that persists, read back the way every later run reads it:
-	// one tzName cannot store (a fixed offset, Local) evaluates in UTC, so
-	// the first watermark is taken in UTC too, or the catch-up would read
-	// a watermark that is no firing and skip to the next one.
 	tz := tzName(base.Location())
 	var next time.Time
 	if b.cronSpec != "" {
@@ -299,10 +231,6 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 		if err != nil {
 			return err
 		}
-		// DST-aware next-fire: a spec naming a wall-clock minute that the
-		// location's next spring-forward will skip lands at the transition
-		// instant (vixie/cronie parity), not silently a day later. See
-		// durable_scheduler_dst.go.
 		next = nextFire(sc, durableSchedule{tz: tz}.location(), base)
 		if next.IsZero() {
 			return fmt.Errorf("queue: cron spec %q never fires", b.cronSpec)
@@ -347,8 +275,8 @@ func (b *DurableScheduleBuilder) RegisterAt(base time.Time) error {
 	return err
 }
 
-// RunOnce evaluates every due schedule at now. A replica that does not own
-// the current fenced lease returns nil without side effects.
+// RunOnce evaluates every due schedule at now; a replica without the lease
+// does nothing.
 func (s *DurableScheduler) RunOnce(ctx context.Context, now time.Time) error {
 	_, err := s.runOnce(ctx, now)
 	return err
@@ -367,19 +295,11 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 	for _, schedule := range due {
 		ticks, nextRun, err := schedule.dueTicks(now, s.maxCatchUpOccurrences)
 		if err != nil {
-			// A single corrupted schedule (genuine data corruption, since
-			// tz and cadence-change mismatches are handled inside dueTicks)
-			// must not abort evaluation of the remaining due schedules.
-			// Surface it via the logger so operators notice, then continue.
 			slog.Default().Error("queue: durable scheduler skipping schedule",
 				"schedule_id", schedule.id, "err", err.Error())
 			continue
 		}
 		if len(ticks) == 0 {
-			// Even with no ticks due, the cursor may need advancing, the
-			// cadence-change path returns a corrected nextRun strictly after
-			// the stored watermark. Persist it so the schedule stops waking
-			// the loop every heartbeat and resumes firing on the new cadence.
 			if !nextRun.IsZero() && !nextRun.Equal(schedule.nextRun) {
 				if err := s.commitOccurrences(ctx, schedule, nil, nextRun, fence, now); err != nil {
 					return true, err
@@ -400,16 +320,7 @@ func (s *DurableScheduler) runOnce(ctx context.Context, now time.Time) (bool, er
 	return true, nil
 }
 
-// Start runs durable evaluation until ctx is cancelled. Registration wakes the
-// loop immediately. The lease heartbeat is the maximum sleep; the earliest
-// persisted next-run timestamp wakes it sooner.
-//
-// An evaluation error no longer ends the loop: one poisoned schedule row or a
-// transient DB blip returning from runOnce/nextWakeDelay is logged and the
-// loop retries at the next heartbeat, so every healthy schedule on the replica
-// keeps firing (the same skip-and-continue rule runOnce applies per row).
-// Returning here permanently stopped all durable scheduling until process
-// restart, silently once the boot log scrolled past.
+// Start runs durable evaluation until ctx is cancelled.
 func (s *DurableScheduler) Start(ctx context.Context) error {
 	heartbeat := s.leaseDuration / 3
 	if heartbeat <= 0 {
@@ -453,13 +364,6 @@ func (s *DurableScheduler) Start(ctx context.Context) error {
 	}
 }
 
-// nextWakeDelay is how long Start sleeps after the pass it ran at now: until
-// the earliest next_run after now, at most maximum. A schedule still due
-// at now is one that pass skipped (a corrupted row, a stored interval under
-// the floor, a spec that no longer parses) and left where it was; waking
-// for it floored the wait at 10ms, so Start re-ran the pass, wrote the
-// lease row and logged the skip a hundred times a second. It is retried
-// at the heartbeat instead.
 func (s *DurableScheduler) nextWakeDelay(ctx context.Context, now time.Time, maximum time.Duration) (time.Duration, error) {
 	var nextRaw any
 	err := s.queue.db.QueryRowContext(ctx,
@@ -503,8 +407,6 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 		return 1, true, nil
 	}
 
-	// An expired lease always issues a new monotonically increasing fence,
-	// including when the previous owner happens to use the same owner ID.
 	res, err = s.queue.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET owner_id=$1, fence=fence+1, expires_at=$2, heartbeat_at=$3
@@ -515,7 +417,6 @@ func (s *DurableScheduler) acquireLease(ctx context.Context, now time.Time) (int
 		return 0, false, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// The current owner may heartbeat without issuing a new fence.
 		res, err = s.queue.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s
 				SET expires_at=$1, heartbeat_at=$2
@@ -560,12 +461,6 @@ func (s *DurableScheduler) loadDue(ctx context.Context, now time.Time) ([]durabl
 		var payload string
 		var intervalNS int64
 		var nextRun, updatedAt any
-		// Decoding is per row, never fatal to the pass: a single corrupted
-		// row (a partially-written next_run, a driver-skew artifact, a
-		// manual repair gone wrong) must not abort evaluation of the
-		// remaining due schedules — the same rule runOnce already applies
-		// one layer down for dueTicks errors. Surface it via the logger so
-		// operators notice, then continue.
 		if err := rows.Scan(&row.id, &row.jobType, &payload, &intervalNS,
 			&row.cronSpec, &row.tz, &row.lane, &row.priority, &row.maxAttempts, &row.userID,
 			&nextRun, &updatedAt, &row.version); err != nil {
@@ -612,8 +507,6 @@ func (s *DurableScheduler) commitOccurrences(
 	}
 	defer tx.Rollback()
 
-	// This conditional write is both the ownership re-check and the lock that
-	// prevents a lease handoff from racing the occurrence/job transaction.
 	res, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET heartbeat_at=heartbeat_at
 			WHERE name=$1 AND owner_id=$2 AND fence=$3 AND expires_at > $4`,
@@ -690,17 +583,7 @@ func (s *DurableScheduler) commitOccurrences(
 			MaxAttempts:  schedule.maxAttempts,
 			UserID:       schedule.userID,
 			CreatedAt:    now,
-			// A cron-fired job is the execution of an already-due event, so it
-			// must be dequeue-eligible the moment it is committed. `tick` is the
-			// audit instant (preserved in the occurrence's scheduled_tick
-			// column) but the job's scheduled_at is the worker readiness gate:
-			// binding it to a future tick (which only happens when RunOnce is
-			// driven with a future test clock; in production tick ≤ wall clock)
-			// would stall the job until that tick and break test drains that
-			// cycle the queue via Dequeue. Use the earlier of tick or the
-			// process wall clock so overdue production ticks are preserved
-			// while future test-time ticks become immediately ready.
-			ScheduledAt: earliestTime(tick, s.queue.now()),
+			ScheduledAt:  earliestTime(tick, s.queue.now()),
 		}); err != nil {
 			return err
 		}
@@ -733,10 +616,6 @@ func (q *DBQueue) schedulerTable(suffix string) string {
 	return query.QuoteFolded(name)
 }
 
-// schedulerSuffixes are the relations the durable scheduler creates beside
-// the queue table: three tables and the occurrence table's two indexes.
-// Postgres keeps tables and indexes in one namespace, so they are checked
-// as one set.
 var schedulerSuffixes = []string{
 	"_scheduler_schedules",
 	"_scheduler_occurrences",
@@ -745,26 +624,12 @@ var schedulerSuffixes = []string{
 	"_scheduler_occurrences_created_at_idx",
 }
 
-// schedulerName names one of the scheduler's relations: the queue table's
-// name and suffix. Postgres cuts a name past maxIdentLen, and the cut of a
-// long table name can be the queue table itself or another scheduler
-// relation, which CREATE ... IF NOT EXISTS then skips. A cut that collides
-// with nothing keeps the name Postgres gave it, the one earlier releases
-// created; a colliding one takes indexName's hashed form, which keeps its
-// whole suffix and so differs from every other relation's. A table yields
-// only to the queue table or another table: those never worked. An index
-// yields to anything, so a table whose cut an index shared (the index was
-// skipped) keeps its rows under the name it has. SQLite has no cap and
-// keeps the full name.
 func (q *DBQueue) schedulerName(suffix string) string {
 	name := q.table + suffix
 	if q.dialect != dialectPostgres || len(name) <= maxIdentLen {
 		return name
 	}
 	cut := pgCut(name)
-	// A cut can be the queue table's own name only when that name is at
-	// the cap, and then every scheduler name cuts to it, so the loop below
-	// sees the collision without a separate check.
 	index := strings.HasSuffix(suffix, "_idx")
 	for _, other := range schedulerSuffixes {
 		if other == suffix || pgCut(q.table+other) != cut {
@@ -777,7 +642,6 @@ func (q *DBQueue) schedulerName(suffix string) string {
 	return cut
 }
 
-// pgCut is the name Postgres keeps of an ASCII identifier.
 func pgCut(name string) string {
 	if len(name) > maxIdentLen {
 		return name[:maxIdentLen]
@@ -800,13 +664,13 @@ func (s *DurableScheduler) ensureTables() error {
 			cron_spec TEXT NOT NULL DEFAULT '',
 			tz TEXT NOT NULL DEFAULT '',
 			lane TEXT NOT NULL DEFAULT '',
-			priority INTEGER NOT NULL DEFAULT 0,
-			max_attempts INTEGER NOT NULL DEFAULT 0,
+			priority %s NOT NULL DEFAULT 0,
+			max_attempts %s NOT NULL DEFAULT 0,
 			user_id TEXT NOT NULL DEFAULT '',
 			next_run %s NOT NULL,
 			updated_at %s NOT NULL,
 			version BIGINT NOT NULL DEFAULT 0
-		)`, s.queue.schedulerSchedulesTable(), tsType, tsType),
+		)`, s.queue.schedulerSchedulesTable(), s.queue.intType(), s.queue.intType(), tsType, tsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			occurrence_id TEXT PRIMARY KEY NOT NULL,
 			schedule_id TEXT NOT NULL,
@@ -836,11 +700,6 @@ func (s *DurableScheduler) ensureTables() error {
 	if err := s.ensureHardeningSchema(); err != nil {
 		return err
 	}
-	// With the scheduler tables freshly ensured (or pre-existing), canonicalize
-	// their legacy timestamps too. NewDBQueue already ran this pass, but it may
-	// have run before these tables existed (a host that constructs DBQueue
-	// first, then DurableScheduler). The pass is idempotent and existence-
-	// checked, so re-running on already-canonical rows is a cheap no-op.
 	if err := s.queue.normalizeLegacyTimestamps(context.Background()); err != nil {
 		return fmt.Errorf("normalize scheduler legacy timestamps: %w", err)
 	}
@@ -852,33 +711,26 @@ type contextExecer interface {
 }
 
 func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) error {
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	now := q.now().UTC()
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = now
-	} else {
-		job.CreatedAt = job.CreatedAt.UTC()
-	}
-	if job.ScheduledAt.IsZero() {
-		job.ScheduledAt = now
-	} else {
-		job.ScheduledAt = job.ScheduledAt.UTC()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	var now time.Time
+	if err := normalizeJob(&job, func(job *Job) {
+		now = q.now().UTC()
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		} else {
+			job.CreatedAt = job.CreatedAt.UTC()
+		}
+		if job.ScheduledAt.IsZero() {
+			job.ScheduledAt = now
+		} else {
+			job.ScheduledAt = job.ScheduledAt.UTC()
+		}
+	}); err != nil {
+		return err
 	}
 	payload := string(job.Payload)
 	if payload == "" {
 		payload = "null"
 	}
-	// A keyed job skips the insert when a live job holds its key. DO
-	// NOTHING rather than a constraint error: on Postgres an error aborts
-	// the caller's transaction, and the scheduler enqueues inside one.
 	onConflict := ""
 	if job.UniqueKey != "" {
 		onConflict = " ON CONFLICT (type, unique_key) WHERE " + liveUniqueKey + " DO NOTHING"

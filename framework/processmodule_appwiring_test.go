@@ -134,7 +134,7 @@ func TestApp_RegisterProcessModuleAfterInitPanics(t *testing.T) {
 type recordingCoordinator struct{ reconciled []string }
 
 func (c *recordingCoordinator) Reconcile(name string) { c.reconciled = append(c.reconciled, name) }
-func (c *recordingCoordinator) Info(string) (ProcessModuleInfo, bool) {
+func (c *recordingCoordinator) LocalInfo(string) (ProcessModuleInfo, bool) {
 	return ProcessModuleInfo{}, false
 }
 

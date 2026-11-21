@@ -4,12 +4,18 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"iter"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 // The decode and rewrap arms (2026-11 bug bashes). Both ask where an
@@ -24,8 +30,8 @@ import (
 // (*json.Decoder).Decode, directly, wrapped by fmt.Errorf("%w") or
 // errors.Join, or returned by a function that returns one (an exported
 // rawJSONErr fact, so readRequestBody-style helpers in another package
-// count), fires when its text reaches a client response at ANY status:
-// a call carrying a 4xx/5xx status constant, a call carrying a JSON-RPC
+// count), fires when its text reaches a call carrying a 4xx/5xx
+// HTTP status constant, a call carrying a JSON-RPC
 // error-code constant (an Err*/Code* integer constant: ErrParse,
 // ErrInvalidParams), or a struct literal with Code and Message fields
 // (an *RPCError). The fix spelling is handler.JSONErrorDetail(err): the
@@ -264,7 +270,7 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 			if len(call.Args) == 0 {
 				return 0
 			}
-			format, ok := constString(f.pass, call.Args[0])
+			format, ok := astx.StringConstant(f.pass, call.Args[0])
 			if !ok || !strings.Contains(format, "%w") {
 				return 0
 			}
@@ -382,15 +388,6 @@ func isErrorType(t types.Type) bool {
 	return t != nil && types.Implements(t, errorInterface)
 }
 
-func constString(pass *analysis.Pass, e ast.Expr) (string, bool) {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil {
-		return "", false
-	}
-	s, err := strconv.Unquote(tv.Value.ExactString())
-	return s, err == nil
-}
-
 // summarize computes the rawJSONErr and foreignErr summaries of every
 // declaration in the package to a fixed point and exports them.
 func summarize(pass *analysis.Pass, decls []*ast.FuncDecl) *originCtx {
@@ -441,53 +438,63 @@ func isStdlib(pass *analysis.Pass) bool {
 	return false
 }
 
-// errorTexts returns every error expression whose text e builds in
-// place: x.Error() receivers, and the error operands of fmt.Sprint /
-// Sprintln / Sprintf with a text verb.
-func errorTexts(pass *analysis.Pass, e ast.Node) []ast.Expr {
-	var out []ast.Expr
-	ast.Inspect(e, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if sel.Sel.Name == "Error" && len(call.Args) == 0 {
-			if tv, ok := pass.TypesInfo.Types[sel.X]; ok && isErrorType(tv.Type) {
-				out = append(out, sel.X)
+// errorTexts yields each call that renders error text and the corresponding error operand.
+func errorTexts(pass *analysis.Pass, e ast.Node) iter.Seq2[*ast.CallExpr, ast.Expr] {
+	return func(yield func(*ast.CallExpr, ast.Expr) bool) {
+		for n := range ast.Preorder(e) {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				continue
 			}
-			return true
-		}
-		if xid, ok := sel.X.(*ast.Ident); ok {
-			if pkg, ok := pass.TypesInfo.Uses[xid].(*types.PkgName); ok && pkg.Imported().Path() == "fmt" {
-				args := call.Args
-				switch sel.Sel.Name {
-				case "Sprint", "Sprintln":
-				case "Sprintf":
-					if len(args) < 2 {
-						return true
-					}
-					s, ok := constString(pass, args[0])
-					if !ok {
-						return true
-					}
-					args = formattedTextArgs(s, args[1:])
-				default:
-					return true
+			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			if sel.Sel.Name == "Error" && len(call.Args) == 0 && isErrorType(pass.TypesInfo.TypeOf(sel.X)) {
+				if !yield(call, sel.X) {
+					return
 				}
-				for _, a := range args {
-					if tv, ok := pass.TypesInfo.Types[a]; ok && isErrorType(tv.Type) {
-						out = append(out, a)
-					}
+				continue
+			}
+			args := call.Args
+			switch pathflow.QualifiedFunc(pass, sel) {
+			case "fmt.Sprint", "fmt.Sprintln":
+			case "fmt.Sprintf":
+				if len(args) < 2 {
+					continue
+				}
+				format, ok := astx.StringConstant(pass, args[0])
+				if !ok {
+					continue
+				}
+				args = formattedTextArgs(format, args[1:])
+			default:
+				continue
+			}
+			for _, arg := range args {
+				if isErrorType(pass.TypesInfo.TypeOf(arg)) && !yield(call, arg) {
+					return
 				}
 			}
 		}
-		return true
-	})
-	return out
+	}
+}
+
+func formattedTextArgs(format string, args []ast.Expr) []ast.Expr {
+	var text []ast.Expr
+	next := 0
+	reordered := false
+	for d := range astx.FormatDirectives(format, len(args)) {
+		next = d.NextArg
+		reordered = reordered || d.Indexed
+		if !d.Invalid && d.Arg < len(args) && strings.ContainsRune("vsq", d.Verb) {
+			text = append(text, args[d.Arg])
+		}
+	}
+	if !reordered {
+		text = append(text, args[next:]...)
+	}
+	return text
 }
 
 // rpcCodeName: a JSON-RPC error-code constant (ErrParse,
@@ -634,6 +641,7 @@ func carriedErrorType(t types.Type) *types.Named {
 // checkRewrap is the rewrap arm over one declaration.
 func checkRewrap(pass *analysis.Pass, c *originCtx, fd *ast.FuncDecl) {
 	f := c.forFunc(fd)
+	parents := dominance.Parents(fd.Body)
 	report := func(t *types.Named, args []ast.Expr) {
 		for _, a := range args {
 			for _, x := range errorTexts(pass, a) {
@@ -644,7 +652,7 @@ func checkRewrap(pass *analysis.Pass, c *originCtx, fd *ast.FuncDecl) {
 				if f.of(x, x.Pos())&(fromForeign|fromParam) == 0 {
 					continue
 				}
-				if testsFor(pass, fd.Body, t, x.Pos()) {
+				if f.preservesTypedError(t, x, parents) {
 					continue
 				}
 				pass.Reportf(x.Pos(), "rebuilds a *%s from an error's text: an error that already is a *%s loses its code and fields (a gate's own refusal answered -32602); pass it through first: if e, ok := errors.AsType[*%s](err); ok { return e }",
@@ -685,47 +693,221 @@ func checkRewrap(pass *analysis.Pass, c *originCtx, fd *ast.FuncDecl) {
 	})
 }
 
-// testsFor reports whether body tests some error for *T before pos:
-// errors.As with a *T target, errors.AsType[*T], a .(*T) assertion, or
-// a type switch with a *T case.
-func testsFor(pass *analysis.Pass, body ast.Node, t *types.Named, pos token.Pos) bool {
+// preservesTypedError checks the successful type test on the path to the rebuild.
+func (f *fnOrigins) preservesTypedError(t *types.Named, err ast.Expr, parents map[ast.Node]ast.Node) bool {
+	pass := f.pass
+	body := f.fd.Body
 	ptr := types.NewPointer(t)
+	object := func(e ast.Expr) types.Object {
+		if id, ok := ast.Unparen(e).(*ast.Ident); ok && id.Name != "_" {
+			return pass.TypesInfo.ObjectOf(id)
+		}
+		return nil
+	}
+	sameError := func(tested ast.Expr) bool {
+		obj := object(tested)
+		if obj == nil || obj != object(err) {
+			return false
+		}
+		for _, d := range f.defs[obj] {
+			if tested.Pos() < d.pos && d.pos < err.Pos() {
+				return false
+			}
+		}
+		return true
+	}
 	isT := func(e ast.Expr) bool {
 		tt := pass.TypesInfo.TypeOf(e)
-		return tt != nil && (types.Identical(tt, ptr) || types.Identical(tt, t))
+		return types.Identical(tt, ptr) || types.Identical(tt, t)
 	}
-	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		if found || n == nil || n.Pos() >= pos {
-			return !found
+	switchInput := func(sw *ast.TypeSwitchStmt) ast.Expr {
+		var guard ast.Expr
+		switch bind := sw.Assign.(type) {
+		case *ast.ExprStmt:
+			guard = bind.X
+		case *ast.AssignStmt:
+			guard = bind.Rhs[0]
 		}
-		switch x := n.(type) {
-		case *ast.TypeAssertExpr:
-			if x.Type != nil && isT(x.Type) {
-				found = true
+		if assertion, ok := ast.Unparen(guard).(*ast.TypeAssertExpr); ok && sameError(assertion.X) {
+			return assertion.X
+		}
+		return nil
+	}
+	asCall := func(e ast.Expr, name string) (*ast.CallExpr, bool) {
+		call, ok := ast.Unparen(e).(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 || !sameError(call.Args[0]) {
+			return nil, false
+		}
+		fn := typeutil.StaticCallee(pass.TypesInfo, call)
+		return call, fn != nil && fn.Pkg() != nil && fn.Pkg().Path() == "errors" && fn.Name() == name
+	}
+	typedOnSuccess := func(iff *ast.IfStmt) (types.Object, bool) {
+		cond := ast.Unparen(iff.Cond)
+		wantTrue := true
+		for {
+			not, ok := cond.(*ast.UnaryExpr)
+			if !ok || not.Op != token.NOT {
+				break
+			}
+			cond = ast.Unparen(not.X)
+			wantTrue = !wantTrue
+		}
+		if call, ok := asCall(cond, "As"); ok && len(call.Args) == 2 {
+			if addr, ok := ast.Unparen(call.Args[1]).(*ast.UnaryExpr); ok && addr.Op == token.AND && isT(addr.X) {
+				return object(addr.X), wantTrue
+			}
+		}
+		verdict := object(cond)
+		if verdict == nil {
+			return nil, false
+		}
+		var lookup ast.Expr
+		var result types.Object
+		for i := len(f.defs[verdict]) - 1; i >= 0; i-- {
+			d := f.defs[verdict][i]
+			if d.pos >= cond.Pos() {
+				continue
+			}
+			as, ok := parents[d.rhs].(*ast.AssignStmt)
+			if !ok || len(as.Rhs) != 1 || len(as.Lhs) != 2 || object(as.Lhs[1]) != verdict {
+				return nil, false
+			}
+			if as == iff.Init || statementPrecedes(as, iff, body, parents) {
+				lookup, result = as.Rhs[0], object(as.Lhs[0])
+			}
+			break
+		}
+		if result == nil {
+			return nil, false
+		}
+		if assertion, ok := ast.Unparen(lookup).(*ast.TypeAssertExpr); ok && assertion.Type != nil && isT(assertion.Type) && sameError(assertion.X) {
+			return result, wantTrue
+		}
+		if call, ok := asCall(lookup, "AsType"); ok {
+			if tuple, ok := pass.TypesInfo.TypeOf(call).(*types.Tuple); ok && (types.Identical(tuple.At(0).Type(), ptr) || types.Identical(tuple.At(0).Type(), t)) {
+				return result, wantTrue
+			}
+		}
+		return nil, false
+	}
+
+	for _, stmts := range dominance.Prefix(err, parents, body) {
+		for _, st := range stmts {
+			if iff := dominance.IfStmtOf(st); iff != nil {
+				result, success := typedOnSuccess(iff)
+				arm := iff.Else
+				if success {
+					arm = iff.Body
+				}
+				if preservesOnReturn(pass, arm, result) {
+					return true
+				}
+			}
+			sw, ok := st.(*ast.TypeSwitchStmt)
+			if !ok {
+				continue
+			}
+			input := switchInput(sw)
+			if input == nil {
+				continue
+			}
+			for _, stmt := range sw.Body.List {
+				cc := stmt.(*ast.CaseClause)
+				result := pass.TypesInfo.Implicits[cc]
+				if result == nil {
+					result = object(input)
+				}
+				if slices.ContainsFunc(cc.List, isT) && preservesOnReturn(pass, &ast.BlockStmt{List: cc.Body}, result) {
+					return true
+				}
+			}
+		}
+	}
+	for child, parent := ast.Node(err), parents[err]; parent != nil; child, parent = parent, parents[parent] {
+		switch arm := parent.(type) {
+		case *ast.IfStmt:
+			if child == arm.Body || child == arm.Else {
+				result, success := typedOnSuccess(arm)
+				if result != nil && success != (child == arm.Body) {
+					return true
+				}
 			}
 		case *ast.CaseClause:
-			for _, e := range x.List {
-				if isT(e) {
-					found = true
-				}
+			sw, ok := parents[parents[arm]].(*ast.TypeSwitchStmt)
+			if !ok {
+				continue
 			}
-		case *ast.CallExpr:
-			fun := ast.Unparen(x.Fun)
-			if ix, ok := fun.(*ast.IndexExpr); ok { // errors.AsType[*T]
-				if sel, ok := ix.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "AsType" && isT(ix.Index) {
-					found = true
-				}
+			input := switchInput(sw)
+			if input == nil {
+				continue
 			}
-			if sel, ok := fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "As" && len(x.Args) == 2 {
-				if tt := pass.TypesInfo.TypeOf(x.Args[1]); tt != nil {
-					if p, ok := tt.(*types.Pointer); ok && (types.Identical(p.Elem(), ptr) || types.Identical(p.Elem(), t)) {
-						found = true
-					}
-				}
+			inputType := pass.TypesInfo.TypeOf(input)
+			excludes := func(candidate types.Type) bool {
+				return !types.AssignableTo(candidate, inputType) || typeSwitchArm(pass, sw, candidate) != arm
+			}
+			if excludes(ptr) && excludes(t) {
+				return true
 			}
 		}
-		return !found
-	})
-	return found
+	}
+	return false
+}
+
+// typeSwitchArm finds the first matching case for a dynamic type, or the default.
+func typeSwitchArm(pass *analysis.Pass, sw *ast.TypeSwitchStmt, dynamic types.Type) *ast.CaseClause {
+	var fallback *ast.CaseClause
+	for _, stmt := range sw.Body.List {
+		arm := stmt.(*ast.CaseClause)
+		if len(arm.List) == 0 {
+			fallback = arm
+		}
+		for _, expr := range arm.List {
+			if types.AssignableTo(dynamic, pass.TypesInfo.TypeOf(expr)) {
+				return arm
+			}
+		}
+	}
+	return fallback
+}
+
+func statementPrecedes(want ast.Stmt, use ast.Node, body *ast.BlockStmt, parents map[ast.Node]ast.Node) bool {
+	for _, stmts := range dominance.Prefix(use, parents, body) {
+		if slices.Contains(stmts, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func preservesOnReturn(pass *analysis.Pass, st ast.Stmt, result types.Object) bool {
+	if result == nil || st == nil {
+		return false
+	}
+	switch st := st.(type) {
+	case *ast.ReturnStmt:
+		var carries func(ast.Expr) bool
+		carries = func(expr ast.Expr) bool {
+			switch ex := ast.Unparen(expr).(type) {
+			case *ast.Ident:
+				return pass.TypesInfo.Uses[ex] == result
+			case *ast.CompositeLit:
+				return slices.ContainsFunc(ex.Elts, carries)
+			case *ast.KeyValueExpr:
+				return carries(ex.Value)
+			case *ast.UnaryExpr:
+				return ex.Op == token.AND && carries(ex.X)
+			}
+			return false
+		}
+		return slices.ContainsFunc(st.Results, carries)
+	case *ast.BlockStmt:
+		for _, stmt := range st.List {
+			if dominance.Diverges(stmt) {
+				return preservesOnReturn(pass, stmt, result)
+			}
+		}
+	case *ast.IfStmt:
+		return preservesOnReturn(pass, st.Body, result) && preservesOnReturn(pass, st.Else, result)
+	}
+	return false
 }

@@ -79,7 +79,6 @@ func TestCron_Matches(t *testing.T) {
 		{"0 9 * * *", false},   // minute 0 != 30
 		{"30 9 * * 1", false},  // Monday only
 		{"*/15 * * * *", true}, // 0,15,30,45
-		{"*/15 * * * *", true},
 	}
 	for _, c := range cases {
 		e, err := ParseCron(c.spec)

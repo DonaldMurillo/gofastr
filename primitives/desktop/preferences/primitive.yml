@@ -1,0 +1,81 @@
+primitive: desktop.preferences
+summary: The app's declared typed settings, their validation at New, the typed reader and all-or-nothing writer over the settings state entry, the preferences capability and the generated settings screen with its form route.
+code:
+  - battery/desktop/preferences.go
+  - battery/desktop/preferences_screen.go
+  - battery/desktop/cap_preferences.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - The settings screen is built from framework/ui components only, with no CSS and no hand-written structural markup.
+invariants:
+  - id: declarations-validated
+    rule: New panics on a preference key off ^[a-z][a-z0-9_]{0,63}$ or duplicated, a missing Label, Min or Max off an Int, Choices off a Choice, a Default of the wrong type, Min above Max, an Int Default outside its range, a string Default with CR or LF, and a Choice Default not in Choices.
+    enforced_by:
+      - test: battery/desktop.TestNewRejectsBadPreferenceDeclarations
+      - test: battery/desktop.TestStringDefaultsRefuseLineBreaks
+  - id: declarations-copied
+    rule: newPreferences keeps its own copy of every declaration, Choices, Min and Max included.
+    enforced_by:
+      - test: battery/desktop.TestNewTakesACopyOfDeclarations
+  - id: reads-fall-back-to-defaults
+    rule: A read answers the declared default before Run opens the store and when the stored value fails its declaration, and the typed readers panic on an undeclared key or the wrong kind.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesBeforeRunAnswerDeclaredDefaults
+      - test: battery/desktop.TestStoredValueFailingItsKindFallsBackWithDefault
+      - test: battery/desktop.TestPreferencesReadersPanicOnWrongUse
+  - id: coercion-rules
+    rule: A value is accepted as its kind's JSON type or, for bool and int, the form serializer's string spelling, checked against range and choices, and JSON null is refused for every kind.
+    enforced_by:
+      - test: battery/desktop.TestPrefNullRefused
+      - test: battery/desktop.TestPreferencesSetCoercesAndRefuses
+      - test: battery/desktop.TestPreferencesFormSavesThroughTheRoute
+  - id: writes-all-or-nothing
+    rule: A write refuses the whole call on its first undeclared key, invalid value, string with CR or LF, or merged entry past appstate.MaxValueBytes, then stores the merged entry and emits preferences_changed with the applied keys.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesSetRefusesWholeCall
+      - test: battery/desktop.TestSetRawIsAllOrNothing
+      - test: battery/desktop.TestStringWritesRefuseLineBreaks
+      - test: battery/desktop.TestPreferenceEncodedSizeLimit
+      - test: battery/desktop.TestPreferenceSizeBatchIsAtomic
+      - test: battery/desktop.TestPreferencesSetAppliesAndEmits
+  - id: legacy-line-breaks-repaired-once
+    rule: A form save of a stored string that holds line breaks is accepted only as that string with the breaks removed, and refused otherwise.
+    enforced_by:
+      - test: battery/desktop.TestLegacyStringFormSave
+  - id: capability-errors-are-invalid-input
+    rule: The preferences capability answers a refused value as invalid_input naming the key.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesSetRefusesWholeCall
+  - id: form-route-contract
+    rule: The form route answers 503 before the store is open, 415 off application/json, skips the CSRF field and a blank int, refuses an undeclared field in the validation envelope, and saves through the same all-or-nothing writer.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesFormRouteRefusals
+      - test: battery/desktop.TestPreferencesFormSavesThroughTheRoute
+      - test: battery/desktop.TestPreferencesFormBlankIntKeepsTheStoredValue
+      - test: battery/desktop.TestPreferencesFormBadIntAnswersTheEnvelope
+  - id: bool-is-a-hidden-and-checkbox-pair
+    rule: A bool field renders a hidden false input before the checkbox carrying true, the pair the runtime's form serializer collapses to one scalar, so an unchecked box still submits.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesScreenRendersEveryDeclaredField
+  - id: screen-path-grammar
+    rule: PreferencesScreenPath panics on a path off the navigate grammar.
+    enforced_by:
+      - test: battery/desktop.TestPreferencesScreenPathRefusesOffGrammar
+decisions:
+  - id: keys-without-dots
+    date: 2026-11-20
+    status: accepted
+    decision: Preference keys may not hold dots.
+    rejected:
+      - option: Allow the app state key grammar, dots included.
+        why: Dots are the app state's namespace separators.
+    upholds: [declarations-validated]
+  - id: settings-entry-not-page-reachable
+    date: 2026-11-20
+    status: accepted
+    decision: Every preference lives in the one settings state entry, outside the page. prefix the state capability confines the page to.
+    rejected:
+      - option: One state key per preference under page.
+        why: The page could then write a preference past its declaration's checks.
+    upholds: [writes-all-or-nothing]

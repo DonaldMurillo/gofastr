@@ -1,0 +1,28 @@
+primitive: semantic.watcher
+summary: The Watcher that walks filesystem roots, feeds matching files into an Index, and keeps it in sync as files change and disappear.
+code:
+  - battery/semantic/watcher.go
+  - battery/semantic/watcher_open_unix.go
+  - battery/semantic/watcher_open_other.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: reads-only-regular-files-in-the-root
+    rule: The watcher reads a file through an os.Root opened without blocking, and skips anything that is not a regular file, a FIFO swapped in after the walk included.
+    enforced_by:
+      - test: battery/semantic.TestReadCappedSkipsSwappedFIFO
+  - id: reads-stop-at-the-cap
+    rule: A file past MaxFileSize, or grown past it since the walk, is skipped, and a cap of math.MaxInt64 reads the file without overflowing.
+    enforced_by:
+      - test: battery/semantic.TestReadLimitedStopsPastTheCap
+      - test: battery/semantic.TestWatcherDropsFileGrownPastMax
+      - test: battery/semantic.TestReadLimitedAtMaxInt64ReadsTheFile
+  - id: first-scan-reconciles
+    rule: The first scan removes the documents the index holds for files under the roots that no longer exist, comparing paths lexically so a sibling prefix is not under a root.
+    enforced_by:
+      - test: battery/semantic.TestWatcherRestartDropsDeletedFiles
+      - test: battery/semantic.TestUnderRootRefusesSiblingPrefix
+  - id: failed-remove-is-retried
+    rule: A deleted file's fingerprint is forgotten only after its Remove succeeds, so a failed Remove is retried on the next scan.
+    enforced_by:
+      - test: battery/semantic.TestWatcherRetriesFailedRemove

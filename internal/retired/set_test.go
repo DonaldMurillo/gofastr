@@ -20,6 +20,8 @@ func fixtureEntries() []names.Entry {
 		{Kind: "attr", Name: "data-fui-toggle-", Note: button},
 		{Kind: "class", Name: "ui-hero", Note: button},
 		{Kind: "class", Name: "ui-form", Note: form},
+		{Kind: "class", Name: "ui-button__icon", Note: form},
+		{Kind: "class", Name: "ui-button--wide", Note: form},
 		{Kind: "class", Name: "ui-button", Note: form}, // a later mention keeps the first note
 		{Kind: "class", Name: "card", Note: generic},
 		{Kind: "class", Name: "ui-form-old", Note: generic},
@@ -82,8 +84,11 @@ func TestSetClassMatching(t *testing.T) {
 	}{
 		{"ui-button", "the ui-button class is gone"},
 		{"ui-button--lg", "the ui-button class is gone"},
-		{"ui-button__icon", "the ui-button class is gone"},
-		{"ui-button__icon--active", "the ui-button class is gone"},
+		{"ui-button__icon", "the ui-form family is renamed"},
+		{"ui-button__icon--active", "the ui-form family is renamed"},
+		{"ui-button__icon__dot", "the ui-form family is renamed"},
+		{"ui-button--wide--active", "the ui-form family is renamed"},
+		{"ui-button--wide__dot", "the ui-form family is renamed"},
 		{"fui-button", ""},
 		{"xui-button", ""},
 		{"ui-buttonx", ""},
@@ -144,6 +149,27 @@ func TestSetCheck(t *testing.T) {
 	}
 }
 
+func TestSetCheckFoldsOnlyASCIIAttributeCase(t *testing.T) {
+	note := &names.Note{Version: "v9.0.0", Change: "the old stack marker is gone"}
+	set := New([]names.Entry{{Kind: "attr", Name: "data-fui-toast-stack", Note: note}})
+	for _, tc := range []struct {
+		html string
+		want string
+	}{
+		{`<i data-fui-toast-stacK>`, ""},
+		{`<i data-fui-toast-stacK DATA-FUI-TOAST-STACK>`, "DATA-FUI-TOAST-STACK"},
+	} {
+		got := set.Check([]byte(tc.html))
+		if tc.want == "" {
+			if len(got) != 0 {
+				t.Errorf("%s: got %v, want no findings", tc.html, got)
+			}
+		} else if len(got) != 1 || got[0].Name != tc.want {
+			t.Errorf("%s: got %v, want only %s", tc.html, got, tc.want)
+		}
+	}
+}
+
 // The same retired spelling on many elements is one finding per
 // response; a different BEM spelling is its own finding (it is its own
 // rename).
@@ -162,6 +188,13 @@ func TestSetCheckEmpty(t *testing.T) {
 	var set Set
 	if got := set.Check([]byte(`<div class="anything" data-fui-whatever>`)); got != nil {
 		t.Fatalf("empty set found %v", got)
+	}
+}
+
+func TestSetCheckNil(t *testing.T) {
+	var set *Set
+	if got := set.Check([]byte(`<div class="ui-button">`)); got != nil {
+		t.Fatalf("nil set found %v", got)
 	}
 }
 

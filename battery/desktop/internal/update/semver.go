@@ -7,28 +7,18 @@ import (
 	"strings"
 )
 
-// Semver: major.minor.patch with an optional pre-release, per semver
-// 2.0.0 restricted to what a feed can carry. Build metadata (+...) is
-// refused rather than ignored: two versions differing only in build
-// metadata are EQUAL under semver, and a silent equal would make the
-// updater download the same version forever.
-
 // ErrBadVersion is the sentinel for a string that is not semver.
 var ErrBadVersion = errors.New("not a semantic version")
 
 // Version is one parsed semver value.
 type Version struct {
 	Major, Minor, Patch uint64
-	// Pre is the dot-separated pre-release identifiers; nil means a
-	// release (which sorts ABOVE every pre-release of the same triple).
+	// Pre is the dot-separated pre-release identifiers; nil means a release (which sorts ABOVE every pre-release of the same triple).
 	Pre []string
 }
 
-// ParseVersion parses "1.2.3", "1.2.3-beta.1", "1.2.3-rc". It refuses
-// leading zeros in numeric components, empty identifiers, build
-// metadata, and anything else outside the grammar.
+// ParseVersion parses "1.2.3", "1.2.3-beta.1", "1.2.3-rc".
 func ParseVersion(s string) (Version, error) {
-	// Split off a pre-release; keep the core strictly numeric.
 	core, pre, hasPre := strings.Cut(s, "-")
 	if hasPre && pre == "" {
 		return Version{}, fmt.Errorf("%w: %q has an empty pre-release", ErrBadVersion, s)
@@ -60,8 +50,6 @@ func ParseVersion(s string) (Version, error) {
 	return v, nil
 }
 
-// parseNumeric parses one numeric component: digits only, no leading
-// zero unless the value is zero.
 func parseNumeric(s string) (uint64, error) {
 	if s == "" {
 		return 0, errors.New("empty")
@@ -81,8 +69,6 @@ func parseNumeric(s string) (uint64, error) {
 	return n, nil
 }
 
-// validPreIdentifier accepts one pre-release identifier: [0-9A-Za-z-]+,
-// numeric identifiers without a leading zero.
 func validPreIdentifier(id string) bool {
 	if id == "" {
 		return false
@@ -118,7 +104,6 @@ func Compare(a, b Version) int {
 	if c := cmpU64(a.Patch, b.Patch); c != 0 {
 		return c
 	}
-	// A release sorts above any pre-release.
 	if len(a.Pre) == 0 || len(b.Pre) == 0 {
 		switch {
 		case len(a.Pre) == len(b.Pre):
@@ -137,7 +122,6 @@ func Compare(a, b Version) int {
 	return cmpInt(len(a.Pre), len(b.Pre))
 }
 
-// comparePreID orders two pre-release identifiers.
 func comparePreID(a, b string) int {
 	isNumeric := func(s string) bool {
 		for i := range len(s) {
@@ -163,8 +147,7 @@ func comparePreID(a, b string) int {
 	}
 }
 
-// IsNewer reports whether candidate sorts above running. An empty
-// running version is never updated: the caller treats it as unbundled.
+// IsNewer reports whether candidate sorts above running.
 func IsNewer(candidate, running string) (bool, error) {
 	if running == "" {
 		return false, nil

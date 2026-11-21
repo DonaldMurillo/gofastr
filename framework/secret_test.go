@@ -48,23 +48,23 @@ func TestDeriveKeySeparatesPurposes(t *testing.T) {
 }
 
 func TestSessionKeySingleReplicaNoSecret(t *testing.T) {
-	key, err := sessionKeyForMount(nil, false)
-	if err != nil || key != nil {
-		t.Fatalf("= %v, %v; want nil, nil (host self-mints)", key, err)
+	key, previous, err := sessionKeysForMount(nil, nil, false)
+	if err != nil || key != nil || previous != nil {
+		t.Fatalf("= %v, %v, %v; want nil, nil, nil (host self-mints)", key, previous, err)
 	}
 }
 
 func TestSessionKeyFanoutNoSecretFails(t *testing.T) {
-	if _, err := sessionKeyForMount(nil, true); err == nil {
+	if _, _, err := sessionKeysForMount(nil, nil, true); err == nil {
 		t.Fatal("fanout without secret did not fail closed")
 	}
 }
 
 func TestSessionKeyDerivedWhenSecretSet(t *testing.T) {
 	secret := []byte(strings.Repeat("s", 32))
-	key, err := sessionKeyForMount(secret, true)
-	if err != nil || len(key) != 32 {
-		t.Fatalf("= %v, %v; want 32-byte key, nil", key, err)
+	key, previous, err := sessionKeysForMount(secret, nil, true)
+	if err != nil || len(key) != 32 || previous != nil {
+		t.Fatalf("= %v, %v, %v; want 32-byte key, nil, nil", key, previous, err)
 	}
 	if bytes.Equal(key, secret[:32]) {
 		t.Fatal("session key is the raw secret — must be derived")
@@ -204,9 +204,9 @@ func TestEmbedKeysRequireASecret(t *testing.T) {
 	}
 	// The two must differ from each other and from the session key, or a
 	// credential minted for one purpose verifies for another.
-	sessionKey, err := sessionKeyForMount(secret, false)
+	sessionKey, _, err := sessionKeysForMount(secret, nil, false)
 	if err != nil {
-		t.Fatalf("sessionKeyForMount: %v", err)
+		t.Fatalf("sessionKeysForMount: %v", err)
 	}
 	keys := map[string]string{
 		"nonce":   string(nonceKey),

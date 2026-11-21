@@ -1,17 +1,14 @@
 package appgen
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/fs"
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -58,20 +55,9 @@ type endpointParam struct {
 // carry it as a JSON body.
 func endpointQueryMethods(method string) bool { return method == "GET" || method == "DELETE" }
 
-// ReadAppEndpoints reads the endpoints section of dir's settings file and
-// resolves each against the entities package under dir. It reads only the
-// settings file in dir itself, the way the cli and sdk entries are read:
-// a parent directory's file belongs to another project. nil when there is
-// no file or no endpoints section.
+// ReadAppEndpoints resolves dir's settings declarations against its entities package.
 func ReadAppEndpoints(dir string, decls []framework.EntityDeclaration) ([]AppEndpoint, error) {
-	f, err := settings.Load(filepath.Join(dir, settings.FileName))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	entries, err := f.Endpoints()
+	entries, settingsPath, err := ExistingEndpoints(dir)
 	if err != nil || len(entries) == 0 {
 		return nil, err
 	}
@@ -79,7 +65,7 @@ func ReadAppEndpoints(dir string, decls []framework.EntityDeclaration) ([]AppEnd
 	if err != nil {
 		return nil, err
 	}
-	return src.resolveAll(f.Path, entries, decls)
+	return src.resolveAll(settingsPath, entries, decls)
 }
 
 // resolveAll resolves every entry against the source. at names where the

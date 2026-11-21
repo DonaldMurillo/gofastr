@@ -95,6 +95,14 @@ func TestBridgeRefusesNULInBody(t *testing.T) {
 	}
 }
 
+func TestBridgeRefusesNULInNestedKey(t *testing.T) {
+	_, r := bridgeInputRouter(t)
+	code, body := postBridge(t, r, "dialogs", "openFile", `{"filters":[{"name":"n","a\u0000b":1}]}`)
+	if code != http.StatusBadRequest || !strings.Contains(body, "NUL") {
+		t.Fatalf("a NUL in a nested object key was not refused at the chokepoint: %d %s", code, strings.TrimSpace(body))
+	}
+}
+
 // TestBridgeKeepsNormalBodies is the anti-vacuity half: the NUL check
 // must not refuse ordinary input (astral runes, quotes, newlines).
 func TestBridgeKeepsNormalBodies(t *testing.T) {

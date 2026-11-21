@@ -6,12 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// ShellContext is ctx carrying the locale a shell's own words speak:
-// the menus it adds, role items' default titles, the About box. It is
-// the first of preferred (the OS's preferred languages, best first)
-// the app's catalog has, else the one the environment names
-// (i18n.EnvLocale), with the app's translator (i18n.Default) attached.
-// A shell calls it once in Run and plans its menus under the result.
+// ShellContext returns ctx carrying the locale and translator a shell's own words speak.
 func ShellContext(ctx context.Context, preferred []string) context.Context {
 	tr := i18n.Default()
 	loc, ok := i18n.Match(tr, preferred...)
@@ -27,23 +22,19 @@ func ShellContext(ctx context.Context, preferred []string) context.Context {
 
 // PromptWords is the permission prompt's text in one locale.
 type PromptWords struct {
-	// Message names the call and the permission it wants: the alert's
-	// message on macOS.
+	// Message names the call and the permission it wants: the alert's message on macOS.
 	Message string
 	// Title is the dialog's window title on Windows.
 	Title string
-	// Use asks to use the capability, the Windows instruction when the
-	// method has no Description.
+	// Use asks to use the capability, the Windows instruction when the method has no Description.
 	Use string
-	// Choose explains the three buttons; YesNo explains the Yes / No /
-	// Cancel mapping of the Windows message-box fallback.
+	// Choose explains the three buttons; YesNo the Windows message-box fallback's mapping.
 	Choose, YesNo string
 	// The three buttons, in Allow, Allow once, Deny order.
 	Allow, AllowOnce, Deny string
 }
 
-// PromptText is req's permission prompt in ctx's locale. Prompt's ctx
-// is the bridge request's, so the prompt speaks the page's language.
+// PromptText is req's permission prompt in ctx's locale.
 func PromptText(ctx context.Context, req PermissionRequest) PromptWords {
 	return PromptWords{
 		Message: permissionAsks.Text(ctx, map[string]any{
@@ -59,14 +50,12 @@ func PromptText(ctx context.Context, req PermissionRequest) PromptWords {
 	}
 }
 
-// AboutText is the About box's title and body, for a shell that draws
-// its own (Windows); macOS shows the system panel.
+// AboutText is the About box's title and body, for a shell that draws its own.
 func AboutText(ctx context.Context) (title, body string) {
 	return aboutTitle.Text(ctx), aboutBody.Text(ctx)
 }
 
-// AcceleratorNames are the modifier names a shell that spells
-// accelerators out in menu rows (Windows) writes: Ctrl, Alt, Shift.
+// AcceleratorNames are the Ctrl, Alt and Shift names a shell writes in menu rows.
 func AcceleratorNames(ctx context.Context) (ctrl, alt, shift string) {
 	return acceleratorCtrl.Text(ctx), acceleratorAlt.Text(ctx), acceleratorShift.Text(ctx)
 }

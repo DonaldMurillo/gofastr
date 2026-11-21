@@ -2,8 +2,11 @@ package sdkdocs
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -14,13 +17,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/framework/openapi"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 	"github.com/DonaldMurillo/gofastr/framework/sdkdocs/internal/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
-const drawerName = "sdkdocs-section-menu"
+func drawerName(basePath string) string {
+	return "sdkdocs-section-menu-" + hex.EncodeToString([]byte(basePath))
+}
 
 func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 	guide := []interactive.SectionItem{
@@ -28,12 +34,7 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 		{Label: "Errors", Href: s.cfg.BasePath + "/errors", Active: active == "errors"},
 	}
 	var ents []interactive.SectionItem
-	seenTable := map[string]bool{}
-	for _, e := range s.includedEntities() {
-		if seenTable[e.Config.Table] {
-			continue
-		}
-		seenTable[e.Config.Table] = true
+	for _, e := range s.firstIncludedEntityPerTable() {
 		ents = append(ents, interactive.SectionItem{
 			Label:  e.Config.Name,
 			Href:   s.cfg.BasePath + "/entities/" + e.Config.Table,
@@ -47,7 +48,7 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 	return interactive.SectionMenuConfig{
 		AriaLabel:    "SDK documentation",
 		TriggerLabel: "SDK docs",
-		DrawerName:   drawerName,
+		DrawerName:   drawerName(s.cfg.BasePath),
 		Lead:         &interactive.SectionItem{Label: "Overview", Href: s.cfg.BasePath, Active: active == "overview"},
 		Groups:       groups,
 	}
@@ -86,7 +87,7 @@ func (s *site) driftBanner() render.HTML {
 		return ui.Banner(ui.BannerConfig{
 			Variant: ui.BannerInfo,
 			Title:   "SDK downloads have unknown provenance",
-			Body:    "The artifact manifest is missing or from a different gofastr version, so freshness can't be verified.",
+			Body:    "The artifact manifest is missing, unreadable or uses a different manifest schema version, so freshness can't be verified.",
 		})
 	default:
 		return ""
@@ -94,30 +95,22 @@ func (s *site) driftBanner() render.HTML {
 }
 
 func (s *site) exampleOrigin() string {
-	base := s.cfg.BaseURL
-	if base == "" {
-		base = "https://your-app.example.com"
+	return sdk.ExampleHost(s.cfg.BaseURL) + s.cfg.APIPrefix
+}
+
+func (s *site) entityPrefix(e *entity.Entity) string {
+	if e.Version != "" {
+		return strings.TrimRight(e.Version, "/")
 	}
-	return strings.TrimRight(base, "/") + s.cfg.APIPrefix
+	return s.cfg.APIPrefix
 }
 
 func (s *site) entityBase(e *entity.Entity) string {
-	if e.Version != "" {
-		return strings.TrimRight(e.Version, "/") + "/" + e.Config.Table
-	}
-	return s.cfg.APIPrefix + "/" + e.Config.Table
+	return s.entityPrefix(e) + "/" + e.Config.Table
 }
 
 func (s *site) entityOrigin(e *entity.Entity) string {
-	base := s.cfg.BaseURL
-	if base == "" {
-		base = "https://your-app.example.com"
-	}
-	base = strings.TrimRight(base, "/")
-	if e.Version != "" {
-		return base + strings.TrimRight(e.Version, "/")
-	}
-	return base + s.cfg.APIPrefix
+	return sdk.ExampleHost(s.cfg.BaseURL) + s.entityPrefix(e)
 }
 
 func text(t string) render.HTML { return render.Text(t) }
@@ -157,7 +150,7 @@ func (sc *indexScreen) Render() render.HTML {
 	body = append(body, s.downloads(m)...)
 	body = append(body,
 		heading(2, "Install"),
-		s.installTabs(),
+		s.installTabs(m),
 	)
 	if ents := s.includedEntities(); len(ents) > 0 && (m == nil || m.Source != sdk.SourceOpenAPI) {
 		body = append(body,
@@ -225,12 +218,18 @@ func humanBytes(n int64) string {
 	}
 }
 
-func (s *site) installTabs() render.HTML {
-	docsBase := s.exampleHost() + s.cfg.BasePath
-	goInstall := fmt.Sprintf(`curl -LO %s/sdk/go.zip
+func (s *site) installTabs(m *sdk.Manifest) render.HTML {
+	docsBase := sdk.ExampleHost(s.cfg.BaseURL) + s.cfg.BasePath
+	goInstall := "# Generate the Go SDK with: gofastr generate sdk --target=go"
+	if m != nil {
+		a := m.Artifacts["go"]
+		if module := fenceWord(a.Module); module != "" {
+			goInstall = fmt.Sprintf(`curl -LO %s/sdk/go.zip
 unzip go.zip
 go mod edit -replace %s=./%s
-go mod tidy`, docsBase, s.goModuleHint(), s.goDirHint())
+go mod tidy`, docsBase, module, a.Directory)
+		}
+	}
 	jsInstall := fmt.Sprintf(`# Two plain files: download them, or import straight from this app:
 curl -LO %s/sdk/client.js
 curl -LO %s/sdk/client.d.ts
@@ -246,21 +245,6 @@ curl -H "%s" %s/<entity>`, s.tokenHeaderLine("$API_TOKEN"), s.exampleOrigin())
 		ui.CodeSample{Label: "JS / TS", Language: "shell", Code: jsInstall},
 		ui.CodeSample{Label: "curl", Language: "shell", Code: curl},
 	)
-}
-
-func (s *site) goModuleHint() string {
-	if m, _, _ := s.resolved(); m != nil {
-		if a, ok := m.Artifacts["go"]; ok && a.Module != "" {
-			return fenceWord(a.Module)
-		}
-	}
-	return "local/<app>-sdk"
-}
-func (s *site) goDirHint() string {
-	if m, _, _ := s.resolved(); m != nil && m.App != "" {
-		return fenceWord(m.App) + "-sdk"
-	}
-	return "<app>-sdk"
 }
 
 func (s *site) quickstartTabs(e *entity.Entity) render.HTML {
@@ -320,7 +304,7 @@ func (sc *authScreen) Render() render.HTML {
 				ui.CodeSample{Label: "curl", Language: "shell", Code: fmt.Sprintf(`curl -X POST %s%s/tokens \
   -H "Content-Type: application/json" \
   --cookie "$SESSION_COOKIE" \
-  -d '{"name": "ci", "scopes": ["read"], "ttl_seconds": 2592000}'`, strings.TrimRight(s.exampleHost(), "/"), s.cfg.AuthBasePath)},
+  -d '{"name": "ci", "scopes": ["read"], "ttl_seconds": 2592000}'`, sdk.ExampleHost(s.cfg.BaseURL), s.cfg.AuthBasePath)},
 			),
 		)
 	}
@@ -337,14 +321,6 @@ c.Token = os.Getenv("API_TOKEN")`},
 	return s.page("auth", "Authentication", body...)
 }
 
-func (s *site) exampleHost() string {
-	base := s.cfg.BaseURL
-	if base == "" {
-		base = "https://your-app.example.com"
-	}
-	return strings.TrimRight(base, "/")
-}
-
 type errorsScreen struct{ site *site }
 
 func (sc *errorsScreen) ScreenTitle(ctx context.Context) string { return "API errors" }
@@ -355,7 +331,7 @@ func (sc *errorsScreen) ScreenDescription(ctx context.Context) string {
 func (sc *errorsScreen) Render() render.HTML {
 	s := sc.site
 	rows := []ui.Row{
-		errRow("400", "Validation failed or malformed request: the envelope carries a fields map."),
+		errRow("400", "Validation failed or the request was malformed."),
 		errRow("401", "No session or bearer token."),
 		errRow("403", "Authenticated but not permitted (RBAC / token scopes)."),
 		errRow("404", "No such record or route."),
@@ -369,10 +345,10 @@ func (sc *errorsScreen) Render() render.HTML {
 		para(text("Every non-2xx JSON response uses one envelope: the CRUD routes, an endpoint the app declares beside them and that endpoint's gate (401 without a session, 403 for a cross-site form post) alike. "),
 			code("error"), text(" is the message in the request's locale, "), code("reason"),
 			text(" its stable code (branch on this, not the text), "), code("code"), text(" the HTTP status, and "),
-			code("success"), text(" is always false. Validation errors key the "),
-			code("fields"), text(" map by the "), html.Strong(html.TextConfig{}, text("snake_case column name")),
-			text(": not the camelCase response casing; "), code("field_reasons"),
-			text(" holds each message's code in the same order. Both SDKs surface the envelope (Go: "),
+			code("success"), text(" is always false. For field-level refusals, "), code("fields"),
+			text(" and "), code("field_reasons"), text(" use response wire keys (camelCase by default, with the configured response casing and any explicit "),
+			code("WireName"), text(" overrides applied). Each message in "), code("fields"),
+			text(" has a matching code in "), code("field_reasons"), text(" in the same order. Both SDKs surface the envelope (Go: "),
 			code("*APIError"), text("; JS: "), code("ApiError"), text(").")),
 		ui.CodeBlock(ui.CodeBlockConfig{
 			Language: "json",
@@ -382,8 +358,8 @@ func (sc *errorsScreen) Render() render.HTML {
   "reason": "validation_failed",
   "success": false,
   "code": 400,
-  "fields": { "author_name": ["is required"] },
-  "field_reasons": { "author_name": ["required"] }
+  "fields": { "authorName": ["is required"] },
+  "field_reasons": { "authorName": ["required"] }
 }`, "json"),
 		}),
 		heading(2, "Status codes"),
@@ -418,13 +394,8 @@ type entityScreen struct {
 func (sc *entityScreen) SetParams(params map[string]string) { sc.params = params }
 
 func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
-	seen := map[string]bool{}
 	var out []map[string]string
-	for _, e := range sc.site.includedEntities() {
-		if seen[e.Config.Table] {
-			continue
-		}
-		seen[e.Config.Table] = true
+	for _, e := range sc.site.firstIncludedEntityPerTable() {
 		out = append(out, map[string]string{"name": e.Config.Table})
 	}
 	return out
@@ -569,7 +540,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML 
 	cfg := e.Config
 	base := sc.site.entityBase(e)
 	keys := e.KeyColumns()
-	record := base + "/{" + strings.Join(keys, "}/{") + "}"
+	record := base + crud.KeyPath(keys)
 	type op struct{ method, path, desc string }
 	ops := []op{
 		{"GET", base, "List (offset or cursor pagination)"},
@@ -598,10 +569,11 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML 
 		}
 	}
 	for _, ep := range cfg.Endpoints {
-		path := ep.Path
-		if !strings.HasPrefix(path, "/") {
-			path = base + "/" + path
+		method := openapi.EntityEndpointMethod(ep.Method)
+		if ep.Handler == nil || method == "" {
+			continue
 		}
+		path := openapi.EntityEndpointRoutePath(e, ep.Path, sc.site.cfg.APIPrefix)
 		desc := ep.Description
 		if desc == "" {
 			desc = "Custom endpoint" + map[bool]string{true: " (" + ep.Name + ")", false: ""}[ep.Name != ""]
@@ -611,7 +583,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML 
 		} else {
 			desc += ": use the SDK's Do escape hatch"
 		}
-		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc})
+		ops = append(ops, op{method, path, desc})
 	}
 	var rows []ui.Row
 	for _, o := range ops {
@@ -669,12 +641,6 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	origin := s.entityOrigin(e)
 	structName := upperFirst(casing.ToCamel(cfg.Name))
 	prop := casing.ToCamel(cfg.Table)
-	filterField, filterOp := exampleFilter(cfg)
-	op := filter.OpEq
-	if filterOp == "_gte" {
-		op = filter.OpGte
-	}
-	filterKey := filter.SpellerFor(cfg.Fields).Key(filterField, op)
 	tabsName := "sdk-ent-" + cfg.Table
 	if e.Version != "" {
 		tabsName += "-" + versionSlug(e)
@@ -685,26 +651,43 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 		goCreate = fmt.Sprintf("created, err := c.Create%s(ctx, client.%sInput{ /* … */ })\n", structName, structName)
 		tsCreate = fmt.Sprintf("const created = await api.%s.create({ /* … */ });\n", prop)
 	}
-	goCode := fmt.Sprintf(`params := url.Values{}
-params.Set(%q, "10")
-params.Set("sort", "-%s")
-page, err := c.List%s(ctx, params)
+	goParams, goArg, tsArgs, query := "", "nil", "", ""
+	sample := exampleFilter(cfg)
+	jsValue, err := json.Marshal(sample.value)
+	if sample.field != "" && err == nil {
+		speller := filter.SpellerFor(cfg.Fields)
+		filterKey := speller.Key(sample.field, sample.op)
+		if slices.Contains(filter.ListControlParams(), filterKey) {
+			filterKey = filter.BracketKey(sample.field, sample.op)
+		}
+		raw := fmt.Sprint(sample.value)
+		params := url.Values{filterKey: {raw}}
+		goParams = fmt.Sprintf("params := url.Values{}\nparams.Set(%q, %q)\n", filterKey, raw)
+		goArg = "params"
+		tsSort := ""
+		if !speller.Named("sort") {
+			sortBy := "-" + sample.field
+			params.Set("sort", sortBy)
+			goParams += fmt.Sprintf("params.Set(\"sort\", %q)\n", sortBy)
+			tsSort = fmt.Sprintf("  sort: %q,\n", sortBy)
+		}
+		tsArgs = fmt.Sprintf("{\n%s  filters: { %q: %s },\n}", tsSort, filterKey, jsValue)
+		query = "?" + params.Encode()
+	}
+	goCode := fmt.Sprintf(`%spage, err := c.List%s(ctx, %s)
 
 %s_ = c.Watch%s(ctx, func(event string, data []byte) error {
 	fmt.Println(event)
 	return nil
-})`, filterKey, filterField, structName, goCreate, structName)
+})`, goParams, structName, goArg, goCreate, structName)
 
-	tsCode := fmt.Sprintf(`const page = await api.%s.list({
-  sort: "-%s",
-  filters: { %q: 10 },
-});
+	tsCode := fmt.Sprintf(`const page = await api.%s.list(%s);
 
 %sawait api.%s.watch((event) => console.log(event), { signal });`,
-		prop, filterField, filterKey, tsCreate, prop)
+		prop, tsArgs, tsCreate, prop)
 
 	curlCode := fmt.Sprintf(`curl -H "%s" \
-  "%s/%s?%s=10&sort=-%s"`, s.tokenHeaderLine("$API_TOKEN"), origin, cfg.Table, url.QueryEscape(filterKey), filterField)
+  "%s/%s%s"`, s.tokenHeaderLine("$API_TOKEN"), origin, cfg.Table, query)
 
 	if s.openAPIManifest() {
 		// The downloads are the OpenAPI document's SDKs, which have no
@@ -720,39 +703,82 @@ page, err := c.List%s(ctx, params)
 	)
 }
 
-func exampleFilter(cfg entity.EntityConfig) (field, op string) {
-	first, anyGte := "", ""
+type filterExample struct {
+	field string
+	op    filter.FilterOp
+	value any
+}
+
+func exampleFilter(cfg entity.EntityConfig) filterExample {
+	key := "id"
+	if len(cfg.PrimaryKey) > 0 {
+		key = cfg.PrimaryKey[0]
+	}
+	var firstEqual, firstRange, createdAt, primary filterExample
 	for _, f := range cfg.Fields {
-		if f.Hidden || f.NoQuery || f.AutoGenerate != schema.AutoNone || f.Type == schema.Relation {
+		if f.Hidden || f.NoQuery || !filter.OpSuitsType(filter.OpEq, f.Type) {
 			continue
 		}
-		switch f.Type {
-		case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
-			return f.Name, "_gte"
-		default:
+		value := exampleFilterValue(f)
+		if value == nil {
+			continue
 		}
-		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
-			anyGte = f.Name
+		sample := filterExample{f.Name, filter.OpEq, value}
+		if f.Name == "created_at" {
+			createdAt = sample
 		}
-		if first == "" && filter.OpSuitsType(filter.OpEq, f.Type) {
-			first = f.Name
+		if f.Name == key {
+			primary = sample
+		}
+		if f.AutoGenerate != schema.AutoNone {
+			continue
+		}
+		if filter.OpSuitsType(filter.OpGte, f.Type) {
+			sample.op = filter.OpGte
+			switch f.Type {
+			case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
+				return sample
+			default:
+				if firstRange.field == "" {
+					firstRange = sample
+				}
+			}
+		} else if firstEqual.field == "" {
+			firstEqual = sample
 		}
 	}
-	if anyGte != "" {
-		return anyGte, "_gte"
-	}
-	if first != "" {
-		return first, ""
-	}
-	for _, f := range cfg.Fields {
-		if f.Name == "created_at" && !f.Hidden && !f.NoQuery {
-			return "created_at", ""
+	for _, sample := range []filterExample{firstRange, firstEqual, createdAt, primary} {
+		if sample.field != "" {
+			return sample
 		}
 	}
-	if len(cfg.PrimaryKey) > 0 {
-		return cfg.PrimaryKey[0], ""
+	return filterExample{}
+}
+
+func exampleFilterValue(f schema.Field) any {
+	switch f.Type {
+	case schema.String, schema.Text, schema.Image, schema.File:
+		return "example"
+	case schema.Int, schema.Float, schema.Decimal:
+		return 10
+	case schema.Bool:
+		return true
+	case schema.Enum:
+		for _, value := range f.Values {
+			if _, err := filter.CoerceValue(f.Name, f.Type, value); err == nil {
+				return value
+			}
+		}
+		return nil
+	case schema.UUID:
+		return "00000000-0000-4000-8000-000000000001"
+	case schema.Timestamp:
+		return "2026-01-01T00:00:00Z"
+	case schema.Date:
+		return "2026-01-01"
+	default:
+		return nil
 	}
-	return "id", ""
 }
 
 func upperFirst(s string) string {

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -129,5 +130,32 @@ func TestLinkCallbackStillLinks(t *testing.T) {
 	}
 	if !c.linked(uid, "corp") {
 		t.Fatal("the link did not land")
+	}
+}
+
+// The link twin of TestOAuthClaimAfterLinkRecheckLeavesNoTokens: a claim
+// that lands after the re-check read its row must still find the tokens.
+func TestLinkClaimAfterRecheckLeavesNoTokens(t *testing.T) {
+	var hooked *hookedUsers
+	c := newClaimRig(t, func(s *EntityUserStore) UserStore {
+		hooked = &hookedUsers{EntityUserStore: s}
+		return hooked
+	})
+	tokens := newSQLOAuthTokenStore(t)
+	withClaimTokenStore(t, c, tokens)
+	uid, finish := squatterLink(t, c, "corp")
+	fired := false
+	hooked.arm(2, func() {
+		fired = true
+		if got := c.magicLink("victim@example.com"); got != uid {
+			t.Errorf("setup: magic link signed into %s, want %s", got, uid)
+		}
+	})
+	finish()
+	if !fired {
+		t.Fatal("setup: the re-check's credential lookup never ran the claim")
+	}
+	if _, err := tokens.Get(context.Background(), uid, "corp"); !errors.Is(err, ErrOAuthTokenNotFound) {
+		t.Errorf("SECURITY: the claimed account still holds the squatter's linked provider tokens (err=%v)", err)
 	}
 }

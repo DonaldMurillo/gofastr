@@ -1,0 +1,108 @@
+primitive: auth.session
+summary: Cookie sessions, the memory store, SessionMiddleware and RequireSession, the same-site hop, MintSession and the credential fences around lasting credentials.
+code:
+  - battery/auth/session.go
+  - battery/auth/session_middleware.go
+  - battery/auth/session_hop.go
+  - battery/auth/request_session.go
+  - battery/auth/mint.go
+  - battery/auth/credential_revoke.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: memory-store-lifetimes
+    rule: MemorySessionStore.Create refuses a negative ttl and defaults a zero one to seven days, sweeps expired sessions at most every 15 minutes on create, and Get answers ErrSessionNotFound for an expired session.
+    enforced_by:
+      - test: battery/auth.TestMemorySessionStoreRefusesNegativeTTL
+      - test: battery/auth.TestMemorySessionStoreCreateSweepsExpiredSessions
+      - test: battery/auth.TestMemorySessionExpiredIsNotFound
+  - id: memory-store-hands-out-copies
+    rule: MemorySessionStore returns copies of its sessions, so callers never share the pointer the markers mutate under the lock.
+    enforced_by:
+      - test: battery/auth.TestMemSession_GetVsMarkersNoRace
+  - id: markers-and-purgers
+    rule: MarkTwoFactorVerified sets TwoFactorVerified and clears PendingTwoFactor, DeletePendingByUser deletes only pending sessions, and DeleteByUser deletes all of the user's sessions.
+    enforced_by:
+      - test: battery/auth.TestPendingTwoFA_Me_AllowedAfterChallenge
+      - test: battery/auth.TestTwoFADisableDropsPendingSessions
+      - test: battery/auth.TestPasswordReset_RevokesExistingSessions
+  - id: anonymous-clears-outer-user
+    rule: A request SessionMiddleware cannot resolve proceeds with no context user and no assurance, clearing any an outer middleware set, except a verified embed grant or a call App.InProcessHandler admitted, which keep their user.
+    enforced_by:
+      - test: battery/auth.TestSessionMiddleware_ClearsUserOnAnonymousFallthrough
+      - test: battery/auth.TestSessionMiddleware_ClearsUserOnStoreError
+      - test: battery/auth.TestGrantScopesGateLikeTokenScopes
+      - test: battery/auth.TestInProcessRequireSessionTrustsContextUser
+  - id: every-cookie-candidate
+    rule: Session reads try every distinct same-name cookie in the order sent, at most eight, and a pending-2FA session never loads a user.
+    enforced_by:
+      - test: battery/auth.TestSessionReadsTryEveryCookieCandidate
+      - test: battery/auth.TestSessionCookieFanoutBounded
+      - test: battery/auth.TestSessionCookieCandidatesKeepOrder
+      - test: battery/auth.TestSessionMiddlewareLoadsNoPendingUser
+  - id: assurance-is-the-principals
+    rule: The resolved user's 2FA assurance counts only that user's live, non-pending sessions on the request, and is bound to the lookup tenant unless the stores are global.
+    enforced_by:
+      - test: battery/auth.TestInProcessTwoFAAssuranceRecheckCandidates
+      - test: battery/auth.TestInProcessTwoFAAssuranceTenantBinding
+      - test: battery/auth.TestInProcessTwoFAAssuranceCustomStoreDefaultTenantBinding
+  - id: open-requests-recheck
+    rule: SessionMiddleware installs a principal check that re-resolves the request's cookies under the original lookup tenant, so a revoked session or deleted user ends an open event stream.
+    enforced_by:
+      - test: battery/auth.TestEventStreamClosesOnRevocation
+      - test: battery/auth.TestSessionRecheckPreservesLookupTenant
+  - id: store-errors-are-loud
+    rule: A session-store failure logs a WARN and degrades to anonymous, a not-found logs at DEBUG, and SessionMiddleware panics at wiring on a nil manager or one with no UserStore.
+    enforced_by:
+      - test: battery/auth.TestSessionMiddleware_LogsStoreError
+      - test: battery/auth.TestSessionMiddleware_NotFoundIsNotLouder
+      - test: battery/auth.TestSessionMiddleware_PanicsOnNilUserStore
+  - id: require-session-is-session-only
+    rule: RequireSession refuses an API-token caller with 401, redirects a refused HTML request to WithRedirectOnFail's path with 303 and a noted session refusal, and answers 401 otherwise.
+    enforced_by:
+      - test: battery/auth.TestRequireSessionRedRefusesBearer
+      - test: battery/auth.TestRequireSession_RedirectOnlyForHTML
+      - test: battery/auth.TestCrossSiteArrivalAtGuardedPageHops
+  - id: request-session-bound-to-principal
+    rule: requestSession considers only sessions of the context principal when there is one, and prefers the pending or the non-pending kind as asked.
+    enforced_by:
+      - test: battery/auth.TestTwoFADisableBoundToPrincipal
+      - test: battery/auth.TestRequireTwoFAJWTPlusOtherCookie
+      - test: battery/auth.TestRequestSessionPrefersRequestedKind
+  - id: mint-fails-closed
+    rule: MintSession deletes the session and returns ErrTwoFactorEnforcement when a TwoFactorChecker errors, the store cannot mark pending, or the mark fails.
+    enforced_by:
+      - test: battery/auth.TestMintSessionRollbackOn2FAFailure
+      - test: battery/auth.TestTwoFAFailClosed_CheckerError
+      - test: battery/auth.TestTwoFAFailClosed_NoPendingMarker
+      - analyzer: siblingresult
+  - id: lasting-credentials-fenced
+    rule: A request minting a lasting credential (an API token, a passkey) snapshots the password hash before reading its body and undoes its write, on a context its client cannot cancel, when the hash moved or could not be re-read.
+    enforced_by:
+      - test: battery/auth.TestTokenCreateOvertakenByReset
+      - test: battery/auth.TestPasskeyRegisterOvertakenByReset
+      - test: battery/auth.TestTokenCreateAfterResetBeforeSnapshot
+      - test: battery/auth.TestPasskeyUndoSurvivesClientHangup
+      - test: battery/auth.TestTokenUndoSurvivesClientHangup
+  - id: reset-revokes-api-tokens
+    rule: revokeUserAPITokens revokes every live token of the user through the TokensPlugin's store, and a revoke failure is returned.
+    enforced_by:
+      - test: battery/auth.TestPasswordResetRevokesAPITokens
+      - test: battery/auth.TestPasswordResetFailsIfTokensStay
+decisions:
+  - id: mint-on-the-manager
+    date: 2026-11-20
+    status: accepted
+    decision: The pending second-factor mark is applied by AuthManager.MintSession, which every sign-in path calls.
+    rejected:
+      - option: Mark pending in the password login handler.
+        why: The magic-link and OAuth callbacks created sessions the mark never saw, fully privileged sessions that could disable the factor.
+    upholds: [mint-fails-closed]
+twins:
+  - job: Store cookie sessions with expiry, markers and per-user purges.
+    why: MemorySessionStore keeps structs in a map and EntitySessionStore keeps digests in a SQL table; the stores cannot share the round trip, only the SessionStore contract.
+    sites:
+      - path: battery/auth/session.go
+        note: MemorySessionStore.
+      - path: battery/auth/entity_store.go
+        note: EntitySessionStore.

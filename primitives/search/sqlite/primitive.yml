@@ -1,0 +1,18 @@
+primitive: search.sqlite
+summary: The SQLite FTS5 backend over a stemmed main table and an unstemmed contentless prefix companion sharing its rowids.
+code:
+  - battery/search/sqlite.go
+docs:
+  - framework/docs/content/search.md
+invariants:
+  - id: terms-are-quoted-phrases
+    rule: buildFts5Query double-quotes every sanitized term, so FTS5 operators, column filters and parentheses in a query are literal phrase content.
+    enforced_by:
+      - test: battery/search.TestBuildFts5Query
+      - test: battery/search.TestSQLiteAdversarialQuery
+  - id: field-equals-binds-and-types
+    rule: A FieldEquals key and value are bound parameters, and only a JSON string member with that key and value matches, never an array or object whose JSON text equals the value.
+    enforced_by:
+      - test: battery/search.TestSQLiteFieldEqualsSkipsJSONText
+      - test: battery/search.TestSQLiteFieldEqualsKeyIsBound
+      - test: battery/search.TestSQLiteFieldEqualsStringOnly

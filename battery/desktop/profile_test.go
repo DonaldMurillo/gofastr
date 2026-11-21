@@ -41,7 +41,7 @@ func TestProfileUnsupportedExplicit(t *testing.T) {
 }
 func TestProfileResolvedIdentity(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv(dataDirEnv, base)
+	t.Setenv(DataDirEnv, base)
 	s := &profileRecordingShell{Shell: NewUnsupportedShell()}
 	b := New(Config{ID: "dev.gofastr.profile", Title: "not an identity", PersistentProfile: true, Shell: s})
 	addr, p, err := b.prepareProfile()

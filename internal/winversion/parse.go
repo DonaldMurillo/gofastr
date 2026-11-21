@@ -247,14 +247,17 @@ func parseNode(data []byte, off, limit, depth int) (node, error) {
 		if valueType == 1 {
 			size = valueLength * 2 // text values count WORDs
 		}
-		if p > end {
+		if p > end || p+size > end {
 			return bad("value out of range")
 		}
 		if valueType == 1 {
-			text, _, _ := readUTF16Z(data, p, min(p+size, end))
+			text, _, ok := readUTF16Z(data, p, p+size)
+			if !ok {
+				return bad("unterminated text value")
+			}
 			n.text = text
 		}
-		p = alignUp(min(p+size, end))
+		p = alignUp(p + size)
 	}
 	for p+6 <= end {
 		child, err := parseNode(data, p, end, depth+1)

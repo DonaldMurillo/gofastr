@@ -1,0 +1,66 @@
+primitive: desktop.deeplink
+summary: Links on the app's own URL scheme, from a cold launch or a running app, validated, mapped to an app path, queued until the window is up and delivered in order, and the launch arguments a packaged build bakes in.
+code:
+  - battery/desktop/deeplink.go
+  - battery/desktop/deeplink_build.go
+  - battery/desktop/launchargs.go
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: link-validation
+    rule: A link longer than 2048 bytes, unparseable, on another scheme, carrying userinfo, arriving with deep links off, or mapping to a path off the navigate grammar is dropped with a Warn whose URL is cut to 200 bytes and has every byte below 0x20 and DEL replaced by a question mark.
+    enforced_by:
+      - test: battery/desktop.TestScrubDeepLinkCutsAndMasks
+      - test: battery/desktop.TestDeepLinkRefusesOffSchemeUserinfoLength
+      - test: battery/desktop.TestDeepLinkRefusesTraversal
+      - test: battery/desktop.TestDeepLinkRefusesEncodedDots
+      - test: battery/desktop.TestDeepLinkRefusesEncodedSeparators
+      - test: battery/desktop.TestWarmDeepLinkOverflowLogIsScrubbed
+  - id: scheme-grammar
+    rule: A DeepLink scheme is ^[a-z][a-z0-9+.-]*$ and at most 32 characters, checked at New and again for every link.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinkSchemeBounds
+  - id: default-mapping-keeps-escapes
+    rule: With no OnDeepLink override scheme://host/path?q maps to /host/path?q with the path left escaped and the fragment dropped, and the override is run once per link, never again at the flush.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinkKeepsEscapedPath
+      - test: battery/desktop.TestColdLinkMapsOnce
+  - id: queues-bounded-oldest-dropped
+    rule: The pre-window queue and the delivery line each hold at most 16 links and drop the oldest past that.
+    enforced_by:
+      - test: battery/desktop.TestColdDeepLinkQueueIsBounded
+      - test: battery/desktop.TestWarmDeepLinkQueueBoundAndReplay
+  - id: links-keep-arrival-order
+    rule: A link goes on the delivery line only once the flush has moved the pre-window queue onto it, under the same lock, so no link strands in the queue or overtakes one queued before it.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinkBeforeFlushKeepsArrivalOrder
+      - test: battery/desktop.TestDeepLinksQueueUntilWindow
+  - id: delivery-waits-for-the-runtime
+    rule: Delivery waits, up to deepLinkPageWait, until a window that can evaluate scripts reports the runtime's navigate before it evaluates the navigation.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinkWaitsForThePageRuntime
+  - id: delivery-panic-contained
+    rule: A panic during one delivery on the drain goroutine is recovered and logged, and the drain carries on.
+    enforced_by:
+      - test: battery/desktop.TestDeepLinkDeliveryPanicIsContained
+  - id: launch-args-baked-in
+    rule: LaunchArgs puts the build's baked arguments in front when the process got none, only a -psn_ serial, or only links on the build's deep-link or launch scheme, and returns any other arguments unchanged.
+    enforced_by:
+      - test: battery/desktop.TestLaunchArgs
+      - test: battery/desktop.TestLaunchArgsKnowTheLaunchOnlyScheme
+  - id: build-stamps-by-name
+    rule: gofastr desktop build sets builtDeepLinkScheme, builtLaunchArgs and builtLaunchScheme through -ldflags -X by their full package path, so those three variables keep their names and stay package-level strings.
+    judge: Does this change rename, retype or move builtDeepLinkScheme, builtLaunchArgs or builtLaunchScheme without changing the -X flags the desktop build command writes?
+    applies:
+      - cmd/gofastr/internal/desktopcmd/desktop_build_windows.go
+      - cmd/gofastr/internal/desktopcmd/desktop_linux_bundle.go
+      - cmd/gofastr/internal/desktopcmd/desktop_linkflags.go
+decisions:
+  - id: deliver-off-the-shell-thread
+    date: 2026-11-20
+    status: accepted
+    decision: Links are delivered by one drain goroutine in arrival order.
+    rejected:
+      - option: Deliver on the shell's deep-link callback.
+        why: Delivery waits for the page's runtime through the page evaluator, whose answer arrives on the shell's own thread, so it would deadlock.
+    upholds: [links-keep-arrival-order, delivery-waits-for-the-runtime]

@@ -28,6 +28,16 @@ func lintFixture(t *testing.T, name, content string) *Result {
 	return result
 }
 
+// requireCleanLint lints a temp .ui.go file holding content and fails
+// the test unless it reports no violations.
+func requireCleanLint(t *testing.T, name, content string) {
+	t.Helper()
+	result := lintFixture(t, name, content)
+	if result.HasErrors() {
+		t.Errorf("expected no violations, got:\n%s", result.Error())
+	}
+}
+
 // requireViolation fails unless result reports a violation whose message
 // is exactly want.
 func requireViolation(t *testing.T, result *Result, want string) {
@@ -53,20 +63,11 @@ func requireViolationContaining(t *testing.T, result *Result, want string) {
 }
 
 func TestLintValidFile(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "valid.ui.go", `package test
 import "fmt"
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Render() string { return fmt.Sprintf("hello") }
-`
-	path := writeTempGoFile(t, dir, "valid.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintGoroutine(t *testing.T) {
@@ -133,8 +134,7 @@ func Bad() { reflect.TypeOf(42) }
 }
 
 func TestLintAllowedImports(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "allowed.ui.go", `package test
 import (
 	"fmt"
 	"strings"
@@ -147,55 +147,28 @@ func Ok() {
 	_ = strconv.Itoa(42)
 	_ = template.HTMLEscapeString("<b>")
 }
-`
-	path := writeTempGoFile(t, dir, "allowed.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for allowed imports, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintFrameworkImports(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "framework.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 import "github.com/DonaldMurillo/gofastr/core-ui/component"
 func Ok() { _ = html.Div() }
-`
-	path := writeTempGoFile(t, dir, "framework.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for framework imports, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintForLoop(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "forloop.ui.go", `package test
 func Ok() {
 	for i := 0; i < 10; i++ { _ = i }
 	for _, v := range []string{"a", "b"} { _ = v }
 }
-`
-	path := writeTempGoFile(t, dir, "forloop.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for for loops, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintIfElse(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "ifelse.ui.go", `package test
 func Ok(x int) {
 	if x > 0 {
 		_ = x
@@ -203,15 +176,7 @@ func Ok(x int) {
 		_ = -x
 	}
 }
-`
-	path := writeTempGoFile(t, dir, "ifelse.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for if/else, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintMakeChan(t *testing.T) {
@@ -322,21 +287,12 @@ func Bad() {
 }
 
 func TestLintNavWithLabel(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "nav_with_label.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Nav(html.NavConfig{Label: "Main"})
 }
-`
-	path := writeTempGoFile(t, dir, "nav_with_label.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Nav with Label, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintSectionMissingLabel(t *testing.T) {
@@ -358,21 +314,12 @@ func Bad() {
 }
 
 func TestLintSectionWithLabelledBy(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "section_labelledby.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Section(html.SectionConfig{LabelledBy: "heading-1"})
 }
-`
-	path := writeTempGoFile(t, dir, "section_labelledby.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Section with LabelledBy, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintHeadingMissingLevel(t *testing.T) {
@@ -394,21 +341,12 @@ func Bad() {
 }
 
 func TestLintHeadingWithLevel(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "heading_with_level.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Heading(html.HeadingConfig{Level: 2})
 }
-`
-	path := writeTempGoFile(t, dir, "heading_with_level.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Heading with Level, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintButtonMissingLabel(t *testing.T) {
@@ -441,21 +379,12 @@ func Bad() {
 }
 
 func TestLintLinkComplete(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "link_complete.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Link(html.LinkConfig{Href: "/about", Text: "About"})
 }
-`
-	path := writeTempGoFile(t, dir, "link_complete.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Link with Href+Text, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintImageMissingSrc(t *testing.T) {
@@ -477,21 +406,12 @@ func Bad() {
 }
 
 func TestLintImageComplete(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "image_complete.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Image(html.ImageConfig{Src: "/img.jpg", Alt: "Photo"})
 }
-`
-	path := writeTempGoFile(t, dir, "image_complete.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Image with Src+Alt, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintInputMissingFields(t *testing.T) {
@@ -547,56 +467,29 @@ func Bad() {
 }
 
 func TestLintGroupWithRole(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "group_with_role.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Group(html.GroupConfig{Role: "status"})
 }
-`
-	path := writeTempGoFile(t, dir, "group_with_role.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Group with Role, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintDivNoRequiredFields(t *testing.T) {
-	dir := t.TempDir()
-	content := `package test
+	requireCleanLint(t, "div_empty.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok() {
 	html.Div(html.DivConfig{})
 }
-`
-	path := writeTempGoFile(t, dir, "div_empty.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations for Div with empty config, got:\n%s", result.Error())
-	}
+`)
 }
 
 func TestLintConfigPassedAsVariable(t *testing.T) {
-	dir := t.TempDir()
 	// When config is a variable (not a struct literal), linter can't check it
-	content := `package test
+	requireCleanLint(t, "var_config.ui.go", `package test
 import "github.com/DonaldMurillo/gofastr/core-ui/html"
 func Ok(cfg html.NavConfig) {
 	html.Nav(cfg)
 }
-`
-	path := writeTempGoFile(t, dir, "var_config.ui.go", content)
-	result, err := LintFile(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.HasErrors() {
-		t.Errorf("expected no violations when config is a variable, got:\n%s", result.Error())
-	}
+`)
 }

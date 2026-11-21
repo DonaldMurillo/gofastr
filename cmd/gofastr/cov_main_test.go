@@ -57,8 +57,8 @@ func TestDispatchUnknownCmdExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		out = clitest.CovT_capStdout(t, func() { dispatch([]string{"qq"}) })
 	})
-	if code != 1 {
-		t.Fatalf("expected exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
 	}
 	_ = out
 }

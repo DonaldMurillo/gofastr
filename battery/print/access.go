@@ -9,40 +9,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
-// ErrNotFound is the sentinel a Document.Build returns when the requested
-// resource doesn't exist (or the caller may not see it). It renders a
-// clean 404 instead of a 500.
+// ErrNotFound makes a Build answer 404.
 var ErrNotFound = errors.New("print: document not found")
 
-// ErrForbidden is the sentinel a Document.Build returns to render a clean
-// 403. Prefer an Access policy for authz; this is for cases only Build
-// can decide.
+// ErrForbidden makes a Build answer 403.
 var ErrForbidden = errors.New("print: forbidden")
 
-// Scope is the API-token scope that reaches print documents through the
-// built-in gates ("print:*", "*:read" and "*:*" cover it). A token carries
-// its owner's user, so without it a token an admin minted for
-// "customers:read" would print every document its owner can. RequireAuth
-// and RequireOwner refuse a scope-restricted caller (an API token or embed
-// grant, access.WithHeldScopes) that does not hold it; sessions and JWTs
-// carry no scopes and are unaffected. It is the scope
-// auth.RequireAPIScopes derives for a GET under a root-mounted /print.
+// Scope is the API-token scope the built-in policies require of a scoped caller.
 const Scope = "print:read"
 
-// AccessPolicy gates a print document. It runs with the request and
-// returns the HTTP status to short-circuit with, plus the refusal's
-// phrase (zero means the status's generic one), translated per request.
-// A zero status means "allow". Policies run BEFORE Document.Build, so
-// an unauthorized caller never triggers a data load.
+// AccessPolicy returns the status to refuse with, or zero to allow.
 type AccessPolicy func(r *http.Request) (status int, reason i18n.Phrase)
 
-// RequireAuth allows the request only when an authenticated user is
-// present in context (set by the framework's auth chain). It is the
-// default policy, so per-user documents are never world-readable unless
-// a Document explicitly opts into Public.
-//
-// A scope-restricted caller (an API token or embed grant) must also hold
-// Scope: 403 otherwise.
+// RequireAuth allows an authenticated caller holding Scope.
 func RequireAuth(r *http.Request) (int, i18n.Phrase) {
 	if _, ok := handler.GetUser(r.Context()); !ok {
 		return http.StatusUnauthorized, i18n.Phrase{}
@@ -53,17 +32,10 @@ func RequireAuth(r *http.Request) (int, i18n.Phrase) {
 	return 0, i18n.Phrase{}
 }
 
-// Public allows every request, authenticated or not. Use only for
-// documents that contain no per-user data.
+// Public allows every request, authenticated or not.
 func Public(_ *http.Request) (int, i18n.Phrase) { return 0, i18n.Phrase{} }
 
-// RequireOwner allows the request only when a user is authenticated AND
-// the owns callback returns true for that user. The user is passed as the
-// opaque value the auth chain stored (handler.GetUser); the host asserts
-// its own concrete user type. The framework cannot know an app's
-// ownership model, so this delegates it. Like RequireAuth, a
-// scope-restricted caller must also hold Scope; owns is not asked for one
-// that does not.
+// RequireOwner allows an authenticated caller holding Scope for whom owns is true.
 func RequireOwner(owns func(r *http.Request, user any) bool) AccessPolicy {
 	return func(r *http.Request) (int, i18n.Phrase) {
 		user, ok := handler.GetUser(r.Context())

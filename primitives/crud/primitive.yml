@@ -3,6 +3,11 @@ summary: The generated HTTP, MCP and in-process CRUD surface for a declared enti
 code:
   - framework/crud/
 docs:
+  - framework/docs/content/query-dsl.md
+  - framework/docs/content/includes.md
+  - framework/docs/content/cursor-pagination.md
+  - framework/docs/content/batch-endpoints.md
+  - framework/docs/content/hooks-and-transactions.md
   - framework/docs/content/endpoints.md
 
 on_change:

@@ -1,0 +1,37 @@
+primitive: queue.scheduler
+summary: The schedulers that feed the queues - the in-process Scheduler and the replica-safe DurableScheduler with its lease, occurrences, cron walks across DST, and retention.
+code:
+  - battery/queue/scheduler.go
+  - battery/queue/durable_scheduler.go
+  - battery/queue/durable_scheduler_catchup.go
+  - battery/queue/durable_scheduler_dst.go
+  - battery/queue/durable_scheduler_retention.go
+docs:
+  - framework/docs/content/cron.md
+  - framework/docs/content/queue.md
+invariants:
+  - id: interval-has-a-millisecond-floor
+    rule: Both schedulers refuse a negative interval and a positive one below one millisecond.
+    enforced_by:
+      - test: battery/queue.TestSchedulerRefusesSubMillisecondInterval
+      - test: battery/queue.TestDurableIntervalFloor
+  - id: commit-rechecks-the-lease
+    rule: A DurableScheduler commits a schedule's occurrences only while the lease row still names its owner, under the fence it acquired, and unexpired at its own clock, so a replica that lost the lease writes no job and no occurrence.
+    enforced_by:
+      - test: battery/queue.TestCommitNeedsTheSameFenceAndAnUnexpiredLease
+      - test: battery/queue.TestPG_CommitNeedsTheSameFenceAndAnUnexpiredLease
+      - test: battery/queue.TestLeaseStealFencesWithoutVersionBump
+      - test: battery/queue.TestPGLeaseSkewStillFencesOldOwner
+  - id: only-loadable-zones-persist
+    rule: A durable cron schedule persists its zone only as a loadable IANA name; UTC, Local and a fixed offset persist as "" and evaluate in UTC.
+    enforced_by:
+      - test: battery/queue.TestTZNamePersistsOnlyLoadableZones
+decisions:
+  - id: local-zone-not-persisted
+    date: 2026-11-20
+    status: accepted
+    decision: A schedule registered in time.Local or a fixed offset persists the UTC default.
+    rejected:
+      - option: Persist "Local" or the fixed zone's name.
+        why: Local resolves to whatever zone the reading replica runs in, and a fixed zone's name does not load back.
+    upholds: [only-loadable-zones-persist]

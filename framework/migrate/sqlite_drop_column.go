@@ -53,67 +53,92 @@ func sqliteRebuildDropNote(qtable, qcol string) string {
 		ddlIdent(qtable), ddlIdent(qcol))
 }
 
-// readSQLiteIndexedColumnsQ returns, per table, the lower-cased columns
-// its indexes cover, automatic ones included.
-func readSQLiteIndexedColumnsQ(ctx context.Context, q queryer, tables []string) (map[string]map[string]bool, error) {
-	out := make(map[string]map[string]bool, len(tables))
-	for _, table := range tables {
-		pragma, err := sqlitePragma("index_list", table)
-		if err != nil {
+// sqliteIndexColumns walks PRAGMA index_list and then index_info for each
+// index of table that keep accepts (index_list's unique and partial
+// flags), returning each index's columns in order, nil for an expression
+// column.
+func sqliteIndexColumns(ctx context.Context, q queryer, table string, keep func(unique, partial int) bool, wrapQueryErrors bool) ([][]*string, error) {
+	pragma, err := sqlitePragma("index_list", table)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.QueryContext(ctx, pragma)
+	if err != nil {
+		if wrapQueryErrors {
+			err = fmt.Errorf("read indexes of %s: %w", table, err)
+		}
+		return nil, err
+	}
+	var names []string
+	for rows.Next() {
+		var (
+			seq, unique, partial int
+			name, origin         string
+		)
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			rows.Close()
 			return nil, err
 		}
+		if keep(unique, partial) {
+			names = append(names, name)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	schemaPrefix := ""
+	if s, _ := splitTable(table); s != "" {
+		schemaPrefix = ddlIdent(s) + "."
+	}
+	var out [][]*string
+	for _, name := range names {
+		pragma := "PRAGMA " + schemaPrefix + "index_info(" + quoteSQLLiteral(name) + ")"
 		rows, err := q.QueryContext(ctx, pragma)
 		if err != nil {
-			return nil, fmt.Errorf("read indexes of %s: %w", table, err)
+			if wrapQueryErrors {
+				err = fmt.Errorf("read index %s of %s: %w", name, table, err)
+			}
+			return nil, err
 		}
-		var names []string
+		var cols []*string
 		for rows.Next() {
 			var (
-				seq, unique, partial int
-				name, origin         string
+				seqno, cid int
+				col        *string
 			)
-			if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			if err := rows.Scan(&seqno, &cid, &col); err != nil {
 				rows.Close()
 				return nil, err
 			}
-			names = append(names, name)
+			cols = append(cols, col)
 		}
 		err = rows.Err()
 		rows.Close()
 		if err != nil {
 			return nil, err
 		}
-		schemaPrefix := ""
-		if s, _ := splitTable(table); s != "" {
-			schemaPrefix = s + "."
+		out = append(out, cols)
+	}
+	return out, nil
+}
+
+// readSQLiteIndexedColumnsQ returns, per table, the lower-cased columns
+// its indexes cover, automatic ones included.
+func readSQLiteIndexedColumnsQ(ctx context.Context, q queryer, tables []string) (map[string]map[string]bool, error) {
+	out := make(map[string]map[string]bool, len(tables))
+	for _, table := range tables {
+		indexes, err := sqliteIndexColumns(ctx, q, table, func(unique, partial int) bool { return true }, true)
+		if err != nil {
+			return nil, err
 		}
 		cols := map[string]bool{}
-		for _, name := range names {
-			pragma, err := sqlitePragma("index_info", schemaPrefix+name)
-			if err != nil {
-				continue
-			}
-			rows, err := q.QueryContext(ctx, pragma)
-			if err != nil {
-				return nil, fmt.Errorf("read index %s of %s: %w", name, table, err)
-			}
-			for rows.Next() {
-				var (
-					seqno, cid int
-					col        *string
-				)
-				if err := rows.Scan(&seqno, &cid, &col); err != nil {
-					rows.Close()
-					return nil, err
+		for _, idxCols := range indexes {
+			for _, c := range idxCols {
+				if c != nil {
+					cols[strings.ToLower(*c)] = true
 				}
-				if col != nil {
-					cols[strings.ToLower(*col)] = true
-				}
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return nil, err
 			}
 		}
 		if len(cols) > 0 {

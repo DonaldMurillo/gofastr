@@ -80,10 +80,10 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 	} else {
 		thumb = "/__gofastr/blank.png"
 	}
-	href := safeGalleryHref(it.Src)
+	href := safeHref(it.Src)
 	if p.HrefFn != nil {
 		if h := p.HrefFn(i, it); h != "" {
-			href = safeGalleryHref(h)
+			href = safeHref(h)
 		}
 	}
 	w, h := it.Width, it.Height
@@ -135,14 +135,6 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 // deeplinkEscape encodes a deeplink key or value for the runtime's split on & and = and its decodeURIComponent.
 func deeplinkEscape(s string) string {
 	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
-}
-
-// safeGalleryHref degrades an unsafe href to "#".
-func safeGalleryHref(href string) string {
-	if h := cleanTabHref(href); h != "" {
-		return h
-	}
-	return "#"
 }
 
 func init() {

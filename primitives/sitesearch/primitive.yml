@@ -1,0 +1,46 @@
+primitive: sitesearch
+summary: The site search battery, which renders every page a static export would write into a full-text index, serves it live and exports it as static files with a browser client.
+code:
+  - battery/sitesearch/battery.go
+  - battery/sitesearch/client.go
+  - battery/sitesearch/doc.go
+  - battery/sitesearch/phrases.go
+  - battery/sitesearch/agents.go
+  - battery/sitesearch/files.go
+docs:
+  - framework/docs/content/site-search.md
+on_change:
+  - A change to ranking, tokenizing or the static file layout lands in search.go, tokenize.go or files.go and in sitesearch-static.js together; run the chromium suite.
+invariants:
+  - id: index-built-as-no-one
+    rule: A build renders under a context that ends with the caller's but carries none of its values, so the index never holds one visitor's view.
+    enforced_by:
+      - test: battery/sitesearch.TestIndexIgnoresCallerIdentity
+      - test: battery/sitesearch.TestCancelledBuildIsNotCached
+  - id: failed-build-waits-to-retry
+    rule: A failed build answers with its error until buildRetry has passed, so queries to a broken site do not each re-render it.
+    enforced_by:
+      - test: battery/sitesearch.TestFailedBuildWaitsToRetry
+  - id: prefixes-match-whole-segments
+    rule: Groups and Exclude match a prefix only on whole path segments, and Exclude also drops Source pages.
+    enforced_by:
+      - test: battery/sitesearch.TestGroupsMatchWholeSegments
+      - test: battery/sitesearch.TestExcludeMatchesPaths
+      - test: battery/sitesearch.TestExcludeCoversSources
+  - id: query-params-bounded
+    rule: The query endpoint refuses q over 256 bytes with 414 and a limit below 1 with 400.
+    enforced_by:
+      - test: battery/sitesearch.TestLiveQueryBoundsParams
+  - id: negative-max-age-panics
+    rule: New panics on a negative MaxAge.
+    enforced_by:
+      - test: battery/sitesearch.TestNegativeMaxAgePanics
+decisions:
+  - id: build-slot-is-a-channel
+    date: 2026-11-20
+    status: accepted
+    decision: Builds are serialized by a one-slot channel, so a query waiting behind a build gives up when its request ends.
+    rejected:
+      - option: A mutex around the build.
+        why: A waiter on a mutex cannot leave when its request ends, and a slow Source holds the build for the whole first render.
+    upholds: [index-built-as-no-one]

@@ -8,8 +8,7 @@ import (
 // DeleteBuilder builds a DELETE query with parameterized placeholders.
 type DeleteBuilder struct {
 	table     string
-	wheres    []whereClause
-	args      []any
+	wheres    whereClauses
 	returning []string
 }
 
@@ -20,12 +19,7 @@ func Delete(table string) *DeleteBuilder {
 
 // Where appends a WHERE condition (ANDed with previous conditions).
 func (db *DeleteBuilder) Where(condition string, args ...any) *DeleteBuilder {
-	db.wheres = append(db.wheres, whereClause{
-		connector: "AND",
-		condition: condition,
-		args:      args,
-	})
-	db.args = append(db.args, args...)
+	db.wheres.add("AND", condition, args...)
 	return db
 }
 
@@ -37,12 +31,12 @@ func (db *DeleteBuilder) Returning(cols ...string) *DeleteBuilder {
 
 // Matching builds the SELECT of cols from the rows this DELETE would remove.
 func (db *DeleteBuilder) Matching(cols ...string) (string, []any) {
-	return buildFiltered(selectVerb(cols), db.table, db.wheres, db.args)
+	return buildFiltered(selectVerb(cols), db.table, db.wheres)
 }
 
 // Build produces the final parameterized SQL and argument slice.
 func (db *DeleteBuilder) Build() (string, []any) {
-	sqlStr, args := buildFiltered("DELETE FROM ", db.table, db.wheres, db.args)
+	sqlStr, args := buildFiltered("DELETE FROM ", db.table, db.wheres)
 	if len(db.returning) == 0 {
 		return sqlStr, args
 	}

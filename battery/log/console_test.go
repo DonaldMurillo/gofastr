@@ -177,3 +177,59 @@ func TestShouldColorRespectsNoColorEnv(t *testing.T) {
 func termIsTTY() bool {
 	return term.IsTerminal(int(os.Stderr.Fd()))
 }
+
+// TestEscapersPinPreMergeOutputs pins escapeUnsafe and quoteTerminalSafe
+// to the byte outputs of the two loop bodies they were merged from,
+// captured at HEAD before the merge. Inputs and wants are built from
+// \xNN escapes and rune slices so every control byte is visible.
+func TestEscapersPinPreMergeOutputs(t *testing.T) {
+	var (
+		bs    = "\x5c" // one backslash
+		dq    = "\x22" // one double quote
+		fffd  = string([]rune{0xfffd})
+		c1    = string([]rune{0x80, 0x85, 0x9b, 0x9f})
+		bidi  = string([]rune{0x200e, 0x202e, 0x2066, 0x2069, 0x2060, 0xfeff})
+		flag  = "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f"
+		mixed = "q=" + dq + "x" + dq + bs + "n" + bs + bs + " " + string([]rune{0x202e}) + " \x9b"
+	)
+	u := func(hex string) string { return bs + "u" + hex }
+	escapedFlag := "\U0001f3f4" + u("e0067") + u("e0062") + u("e0077") + u("e006c") + u("e0073") + u("e007f")
+	cases := []struct {
+		name       string
+		in         string
+		wantPlain  string
+		wantQuoted string
+	}{
+		{"plain", "hello", "hello", dq + "hello" + dq},
+		{"spaces", "two words", "two words", dq + "two words" + dq},
+		{"equals", "key=value", "key=value", dq + "key=value" + dq},
+		{"quotes", "say " + dq + "hi" + dq, "say " + dq + "hi" + dq,
+			dq + "say " + bs + dq + "hi" + bs + dq + dq},
+		{"backslash", "a" + bs + "b", "a" + bs + "b", dq + "a" + bs + bs + "b" + dq},
+		{"short escapes", "a b\x0ac\x0dd\x09e", "a b" + bs + "nc" + bs + "rd" + bs + "te",
+			dq + "a b" + bs + "nc" + bs + "rd" + bs + "te" + dq},
+		{"c0", "\x00\x01\x02\x1b\x1f", u("0000") + u("0001") + u("0002") + u("001b") + u("001f"),
+			dq + u("0000") + u("0001") + u("0002") + u("001b") + u("001f") + dq},
+		{"del", "\x7f", u("007f"), dq + u("007f") + dq},
+		{"c1 controls", c1, u("0080") + u("0085") + u("009b") + u("009f"),
+			dq + u("0080") + u("0085") + u("009b") + u("009f") + dq},
+		{"bidi and zero width", bidi,
+			u("200e") + u("202e") + u("2066") + u("2069") + u("2060") + u("feff"),
+			dq + u("200e") + u("202e") + u("2066") + u("2069") + u("2060") + u("feff") + dq},
+		{"invalid utf8", "bad\xff\xfe bytes\x80", "bad\xff\xfe bytes\x80",
+			dq + "bad" + fffd + fffd + " bytes" + fffd + dq},
+		{"subdivision flag", flag, flag, dq + escapedFlag + dq},
+		{"subdivision flag and tab", flag + "\t", escapedFlag + bs + "t", dq + escapedFlag + bs + "t" + dq},
+		{"mixed quotes backslash bidi c1", mixed,
+			"q=" + dq + "x" + dq + bs + "n" + bs + bs + " " + u("202e") + " " + fffd,
+			dq + "q=" + bs + dq + "x" + bs + dq + bs + bs + "n" + bs + bs + bs + bs + " " + u("202e") + " " + fffd + dq},
+	}
+	for _, tc := range cases {
+		if got := escapeUnsafe(tc.in); got != tc.wantPlain {
+			t.Errorf("%s: escapeUnsafe = %q, want %q", tc.name, got, tc.wantPlain)
+		}
+		if got := quoteTerminalSafe(tc.in); got != tc.wantQuoted {
+			t.Errorf("%s: quoteTerminalSafe = %q, want %q", tc.name, got, tc.wantQuoted)
+		}
+	}
+}

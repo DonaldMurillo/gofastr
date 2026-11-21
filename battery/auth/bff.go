@@ -11,8 +11,6 @@ import (
 )
 
 // BFFPostureConfig configures the explicit browser-backend security preset.
-// AllowedOrigins must contain exact http(s) origins such as
-// "https://app.example.com"; wildcards and opaque origins are rejected.
 type BFFPostureConfig struct {
 	AllowedOrigins []string
 	CSRFOptions    []CSRFOption
@@ -20,17 +18,6 @@ type BFFPostureConfig struct {
 }
 
 // WithBFFPosture configures cookie-only browser authentication in one option:
-// JSON login responses omit JWTs, session identity is hydrated globally, CSRF
-// protects cookie-authenticated mutations, and requests carrying an Origin to
-// the API prefix must match the exact allowlist. API tokens with TokenPrefix
-// (default gfsk_) remain available for automation; bearer JWTs are rejected
-// on the BFF API surface. When no WithAPIPrefix is configured, entity CRUD
-// mounts at the bare root, so the guard covers the entire app, list the
-// app's own origin in AllowedOrigins in that case, or set an API prefix.
-//
-// This option lives in battery/auth (rather than framework) because it needs an
-// AuthManager and importing the auth battery from framework would create a Go
-// import cycle.
 func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption {
 	if mgr == nil {
 		panic("auth: WithBFFPosture requires AuthManager")
@@ -61,9 +48,6 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 
 		app.Use(
 			bffOriginGuard(func() string {
-				// Resolve lazily so WithAPIPrefix and WithBFFPosture compose
-				// in either option order. There is one API prefix, owned by
-				// framework.AppConfig, rather than a duplicated security knob.
 				return normalizeBFFPrefix(app.Config.APIPrefix)
 			}, origins, cfg.TokenPrefix, mgr.Config().BasePath),
 			CSRF(csrfOpts...),
@@ -72,13 +56,7 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 	}
 }
 
-// WithCSRFAuthRoutes exempts the two auth routes that carry their own
-// cross-site check from a hand-mounted auth.CSRF, as WithBFFPosture
-// does: POST {BasePath}/logout, and the form-POST OAuth callback
-// POST {BasePath}/oauth/{provider}/callback that Sign in with Apple
-// answers on. Nothing else under BasePath is exempt.
-//
-//	app.Use(auth.CSRF(auth.WithCSRFAuthRoutes(mgr)))
+// WithCSRFAuthRoutes exempts POST {BasePath}/logout and the form-post OAuth callback from a hand-mounted CSRF, as WithBFFPosture does.
 func WithCSRFAuthRoutes(mgr *AuthManager) CSRFOption {
 	if mgr == nil {
 		panic("auth: WithCSRFAuthRoutes requires AuthManager")
@@ -119,11 +97,6 @@ func validateBFFOrigins(values []string) map[string]struct{} {
 }
 
 func normalizeBFFPrefix(prefix string) string {
-	// No APIPrefix means entity CRUD mounts at the bare root, there is
-	// no delimited API surface, so the guard covers the WHOLE app.
-	// Fail-closed: requests without an Origin (top-level navigations)
-	// still pass, but any Origin-carrying or bearer-JWT request answers
-	// to the BFF rules everywhere.
 	return "/" + strings.Trim(prefix, "/")
 }
 
@@ -135,7 +108,6 @@ func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPref
 				return
 			}
 			apiPrefix := prefix()
-			// "/" (no APIPrefix configured) guards every path.
 			if apiPrefix != "/" &&
 				r.URL.Path != apiPrefix && !strings.HasPrefix(r.URL.Path, apiPrefix+"/") {
 				next.ServeHTTP(w, r)
@@ -156,8 +128,6 @@ func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPref
 				i18n.HTTPError(w, r, http.StatusUnauthorized, reasonBearerDisabled)
 				return
 			}
-			// Only consume real CORS preflights. Application-owned OPTIONS
-			// requests without Origin + Access-Control-Request-Method continue.
 			if r.Method == http.MethodOptions && origin != "" &&
 				r.Header.Get("Access-Control-Request-Method") != "" {
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")

@@ -1,0 +1,14 @@
+primitive: desktop.platform.windows
+summary: The windows/amd64 shell on Win32 and WebView2, with native menus, dialogs, clipboard, tray notifications, secondary windows, snapshots and DWM materials, and the Win32 bindings and monitor math under it.
+code:
+  - battery/desktop/windows/
+  - battery/desktop/internal/win32/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Its shell tests run on windows only; run them on a Windows host before merging a change here.
+invariants:
+  - id: overlap-scales-with-dpi
+    rule: A remembered frame is kept only when it overlaps a monitor's work area by 100 by 50 logical pixels, scaled to physical pixels by that monitor's DPI.
+    enforced_by:
+      - test: battery/desktop/internal/win32.TestRestoreMonitorFramePhysicalOverlapThreshold

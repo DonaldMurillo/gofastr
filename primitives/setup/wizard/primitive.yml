@@ -1,0 +1,113 @@
+primitive: setup.wizard
+summary: The interactive setup surface that answers every request before the swap, with the one-time token exchange, the setup cookie, the step form and the completion check across replicas.
+code:
+  - battery/setup/handler.go
+  - battery/setup/render.go
+  - battery/setup/token.go
+docs:
+  - framework/docs/content/first-run.md
+invariants:
+  - id: token-is-single-use
+    rule: The first valid token exchange clears the token, so a second exchange of it answers 403 while the issued cookie keeps working.
+    enforced_by:
+      - test: battery/setup.TestToken_SingleUse_SecondExchangeForbidden
+      - test: battery/setup.TestToken_SingleUse_CookieSurvives
+      - test: battery/setup.TestToken_WrongTokenReturns403
+  - id: cookie-secret-is-not-the-token
+    rule: The setup cookie carries a secret minted at exchange, never the URL token, and with no secret minted yet no cookie, an empty one included, authenticates.
+    enforced_by:
+      - test: battery/setup.TestSetupTokenNotReplayableAsCookie
+      - test: battery/setup.TestEmptyCookieBeforeExchangeIsRefused
+  - id: token-compare-is-constant-time
+    rule: Tokens and cookie secrets are compared with subtle.ConstantTimeCompare.
+    enforced_by:
+      - analyzer: secretcompare
+  - id: cookie-flags
+    rule: The setup cookie is HttpOnly and SameSite=Strict, and Secure exactly when the request came over TLS or with X-Forwarded-Proto https.
+    enforced_by:
+      - test: battery/setup.TestToken_ValidTokenSetsCookie
+      - test: battery/setup.TestCookie_SecureFlagFromRequest
+  - id: cross-site-form-is-refused
+    rule: A forgeable POST to the wizard that handler.IsCrossSiteRequest calls cross-site, same-site included, answers 403.
+    enforced_by:
+      - test: battery/setup.TestCrossSite_RejectedOnPost
+      - test: battery/setup.TestCrossSite_DifferentOriginRejected
+      - test: battery/setup.TestSetupRedSameSiteOriginRefused
+  - id: form-body-capped
+    rule: A wizard form body is read through a 1 MiB MaxBytesReader before it is parsed.
+    enforced_by:
+      - test: battery/setup.TestSetupFormCapsBody
+  - id: plain-fields-trimmed-secrets-verbatim
+    rule: A submitted plain field loses its surrounding spaces, and a Secret reaches Validate and Run exactly as typed.
+    enforced_by:
+      - test: battery/setup.TestWizardTrimsPlainFields
+      - test: battery/setup.TestWizardStoresSecretAsTyped
+      - test: battery/setup.TestWizardValidatesSecretAsTyped
+  - id: secrets-never-echoed
+    rule: The step form never fills a Secret field, from the environment or a rejected submission, and a rejected plain value, even an empty one, wins over the environment.
+    enforced_by:
+      - test: battery/setup.TestSecretNeverPrefilled
+      - test: battery/setup.TestRejectedStepKeepsPublicValues
+  - id: step-runs-once
+    rule: A step runs at most once at a time and is claimed and advanced under the mutex but run outside it, and the claim is released when the step returns or panics.
+    enforced_by:
+      - test: battery/setup.TestConcurrentStepExecution_OneRun
+      - test: battery/setup.TestConcurrentStepExecution_IntermediateStep
+      - test: battery/setup.TestWizardRunsStepsAfterComplete
+      - analyzer: callbackunderlock
+  - id: probe-error-fails-closed
+    rule: A Complete error refuses to run the step.
+    enforced_by:
+      - test: battery/setup.TestSetupProbeErrorFailsClosed
+      - test: battery/setup.TestSwap_CompleteErrorRecovers
+  - id: force-reruns-completed-steps
+    rule: Under GOFASTR_SETUP=force the wizard runs a step on a completed install, and stays up until its last step has run.
+    enforced_by:
+      - test: battery/setup.TestSetupForceReRunsCompletedSteps
+      - test: battery/setup.TestForceKeepsWizardUntilStepsRun
+  - id: no-swap-mid-wizard
+    rule: The wizard swaps to the app only when Complete is true and either every step ran here or none ran or is running and force is off.
+    enforced_by:
+      - test: battery/setup.TestNoSwapWhileFirstStepRuns
+      - test: battery/setup.TestWizardDoneWhenCompleteAtEntry
+  - id: completion-elsewhere-is-noticed
+    rule: A request without the setup cookie probes Complete at most once per second across callers, and when setup finished elsewhere an app path answers 307 to itself and /setup shows the done page.
+    enforced_by:
+      - test: battery/setup.TestRecheckOnePerInterval
+      - test: battery/setup.TestCompletedElsewhereSwapsOnAnyPath
+  - id: other-paths-503-health-passes
+    rule: Before the swap /healthz and /readyz reach their handlers and every other non-setup path answers 503 with Retry-After 60.
+    enforced_by:
+      - test: battery/setup.TestSwap_HealthzReturns200
+      - test: battery/setup.TestSwap_PreSetupReturns503
+      - test: battery/setup.TestSetupUnavailableUsesLocale
+  - id: completion-page-is-honest
+    rule: The completion page renders only when Complete confirms it; steps run with Complete still false render the incomplete page.
+    enforced_by:
+      - test: battery/setup.TestSwap_CompleteStuckFalseIsHonest
+  - id: pages-refuse-framing
+    rule: Every wizard page sends X-Frame-Options DENY and frame-ancestors 'none'.
+    enforced_by:
+      - test: battery/setup.TestSetupPagesRefuseFraming
+  - id: hop-page-sends-no-referrer
+    rule: The cross-site hop page, whose link carries the token, is sent with Referrer-Policy no-referrer and kept out of caches.
+    enforced_by:
+      - test: battery/setup.TestCrossSiteArrivalKeepsToken
+      - test: battery/setup.TestSetupLinkClickedOnAnotherSite
+decisions:
+  - id: run-steps-outside-the-lock
+    date: 2026-11-20
+    status: accepted
+    decision: runStepSerialized claims a step with stepInFlight under the mutex and runs it outside.
+    rejected:
+      - option: Run the step while holding the mutex.
+        why: Steps are app code, and a blocking or panicking one wedged every other setup request on the lock.
+    upholds: [step-runs-once]
+  - id: fresh-cookie-secret
+    date: 2026-11-20
+    status: accepted
+    decision: The exchange mints an independent cookie secret.
+    rejected:
+      - option: Use the URL token as the cookie value.
+        why: Anyone who saw the URL in a proxy or access log could replay it as the cookie for the life of the process.
+    upholds: [cookie-secret-is-not-the-token]

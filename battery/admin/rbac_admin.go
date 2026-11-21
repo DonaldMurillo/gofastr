@@ -24,33 +24,11 @@ import (
 
 // adminActorID names the signed-in admin in an audit row: their user
 // id, else "unknown". It is a label, never a key: a lookup or a write
-// for the caller's own account takes callerUserID.
+// for the caller's own account takes access.UserID.
 func adminActorID(ctx context.Context) string {
-	return cmp.Or(callerUserID(ctx), "unknown")
+	return cmp.Or(access.UserID(ctx), "unknown")
 }
 
-// callerUserID is the signed-in user's id, or "" when there is no user
-// or the user type carries none. The gate admits a caller by roles, so
-// an id-less admin reaches the account routes.
-func callerUserID(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return ""
-	}
-	if id, ok := u.(interface{ GetID() string }); ok {
-		return id.GetID()
-	}
-	return ""
-}
-
-// ----- roles ------------------------------------------------------------------
-
-// renderRoles draws the Roles page: a grid with a row per permission
-// and a column per role, a checkbox where the role holds it. A role
-// holding Wildcard shows every box checked and locked. With a
-// GrantStore the grid is one form whose Save grants and revokes the
-// boxes that changed, and a form below adds a role; without one the
-// boxes are read-only.
 func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.HTML {
 	p := b.cfg.Policy
 	caps := p.Capabilities()
@@ -66,8 +44,6 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	for i, role := range roles {
 		cols = append(cols, ui.Column{Key: "role-" + strconv.Itoa(i), Header: role, Align: "center", Fit: true})
 	}
-	// Only the roles a save may change are posted; their index in the
-	// posted list is what a checked box names.
 	var posted []string
 	col := make([]int, len(roles))
 	for i, role := range roles {
@@ -118,11 +94,9 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		Rows:          rows,
 		Caption:       i18nui.AdminRoles.Text(ctx),
 		CaptionHidden: true,
-		// On a phone each permission is a card of role boxes, so no
-		// role hides past the scroll edge.
-		Responsive: ui.ResponsiveCards,
-		Ctx:        ctx,
-		Empty:      empty,
+		Responsive:    ui.ResponsiveCards,
+		Ctx:           ctx,
+		Empty:         empty,
 	})
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
@@ -162,8 +136,6 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 }
 
-// permissionRows is the grid's rows: every declared capability and
-// every permission a role holds, Wildcard aside, sorted.
 func permissionRows(p *access.RolePolicy, roles []string, caps []access.Permission) []access.Permission {
 	perms := slices.Clone(caps)
 	for _, role := range roles {
@@ -177,14 +149,10 @@ func permissionRows(p *access.RolePolicy, roles []string, caps []access.Permissi
 	return perms
 }
 
-// holdsWildcard reports whether role holds every permission.
 func holdsWildcard(p *access.RolePolicy, role string) bool {
 	return slices.Contains(p.PermissionsOf(role), access.Wildcard)
 }
 
-// permissionInput is the permission a grant names: a choice of the
-// declared capabilities when the app declares them, else free text.
-// suffix keeps each row's field id unique.
 func permissionInput(ctx context.Context, caps []access.Permission, suffix string) render.HTML {
 	label := i18nui.AdminPermission.Text(ctx)
 	id := "admin-perm"
@@ -201,18 +169,14 @@ func permissionInput(ctx context.Context, caps []access.Permission, suffix strin
 	return ui.Select(ui.SelectConfig{Ctx: ctx, Name: "permission", Label: label, ID: id, Options: opts, Required: true})
 }
 
-// ----- user roles ---------------------------------------------------------------
-
-// usersPageSize is the User roles page's default page of users.
 const usersPageSize = 50
 
-// renderUsers draws the User roles page: each user and the roles they
-// hold (with their origin when EffectiveRoles resolves more), and at
-// the row's end an Edit roles dropdown whose form sets their direct
-// roles. The roles show once; the form lives behind the row's action.
 func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.HTML {
-	r := appui.RequestFromContext(ctx)
-	opts, pageNo := listUsersOpts(r)
+	var query url.Values
+	if r := appui.RequestFromContext(ctx); r != nil {
+		query = r.URL.Query()
+	}
+	opts, pageNo := listUsersOpts(query)
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.AdminUserRoles.Text(ctx),
 		Subtitle: i18nui.AdminUserRolesSub.Text(ctx),
@@ -220,19 +184,16 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	users, total, err := b.cfg.Auth.ListUsers(ctx, opts)
 	pages := pageCount(total, opts.Limit)
 	if err == nil && pageNo > pages {
-		// A page past the end shows the last one.
 		pageNo = pages
 		opts.Offset = (pageNo - 1) * opts.Limit
 		users, total, err = b.cfg.Auth.ListUsers(ctx, opts)
 	}
 	if err != nil {
-		b.logger().Error("admin: list users", "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminUsersLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: list users", i18nui.AdminUsersLoadFailed, err, []render.HTML{header})
 	}
 	page := b.cfg.PathPrefix + "/rbac/users"
-	if r != nil && r.URL.RawQuery != "" {
-		page += "?" + r.URL.Query().Encode()
+	if encoded := query.Encode(); encoded != "" {
+		page += "?" + encoded
 	}
 	var known []string
 	if b.cfg.Policy != nil {
@@ -276,22 +237,8 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			}),
 		}}
 	}
-	var pager *ui.PaginationConfig
-	if pages > 1 {
-		carry := url.Values{}
-		if r != nil {
-			carry = r.URL.Query()
-			carry.Del(usersPageParam)
-		}
-		pager = &ui.PaginationConfig{
-			Page:      pageNo,
-			Pages:     pages,
-			Path:      b.cfg.PathPrefix + "/rbac/users",
-			Query:     carry,
-			PageParam: usersPageParam,
-			Ctx:       ctx,
-		}
-	}
+	query.Del(pageParam)
+	pager := pagePager(ctx, b.cfg.PathPrefix+"/rbac/users", query, pageNo, pages)
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header, resultNotice(ctx),
 		ui.DataTable(ui.DataTableConfig{
 			Columns:       cols,
@@ -306,9 +253,10 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 	)
 }
 
-// rolesInput is a user's direct roles as a form field: a checkbox per
-// role with a policy (the user's undeclared roles included, so a save
-// never drops one unseen), comma-separated text without one.
+const selectedRolesField = "selected_roles"
+
+// rolesInput draws literal role checkboxes when roles are known,
+// including undeclared roles the user holds, or a comma-separated text field.
 func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
 	label := i18nui.AdminColRoles.Text(ctx)
 	if len(known) == 0 {
@@ -325,12 +273,9 @@ func rolesInput(ctx context.Context, userID string, direct, known []string) rend
 	for i, r := range all {
 		opts[i] = ui.MultiSelectOption{Value: r, Label: r, Selected: slices.Contains(direct, r)}
 	}
-	return ui.MultiSelect(ui.MultiSelectConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
+	return ui.MultiSelect(ui.MultiSelectConfig{Name: selectedRolesField, Label: label, ID: "admin-roles-" + userID, Options: opts, Ctx: ctx})
 }
 
-// effectiveRoleLabels labels a user's roles with their origins through
-// EffectiveRoles. A resolver that panics leaves the direct roles as they
-// are; the log names the callback and the panic's type.
 func (b *Battery) effectiveRoleLabels(ctx context.Context, userID string, direct []string) (labels []string) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -341,8 +286,6 @@ func (b *Battery) effectiveRoleLabels(ctx context.Context, userID string, direct
 	return roleOriginLabels(direct, b.cfg.EffectiveRoles(ctx, userID))
 }
 
-// roleOriginLabels joins a user's direct roles with resolved ones as
-// "role (origin)", sorted and deduplicated.
 func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []string {
 	roles := make([]access.RoleWithOrigin, 0, len(direct)+len(effective))
 	for _, role := range direct {
@@ -370,37 +313,14 @@ func roleOriginLabels(direct []string, effective []access.RoleWithOrigin) []stri
 	return labels
 }
 
-// usersPageParam is the User roles page's page number in its query.
-const usersPageParam = "p"
-
-// maxUsersPage bounds ?p= before it scales by the page size, so a huge
-// value cannot overflow the offset; past the end shows the last page.
 const maxUsersPage = 1 << 20
 
-// listUsersOpts reads ?limit= (1–500, default 50) and ?p=, the 1-based
-// page, into the store's window and the page number.
-func listUsersOpts(r *http.Request) (auth.ListUsersOptions, int) {
-	opts := auth.ListUsersOptions{Limit: usersPageSize}
-	page := 1
-	if r == nil {
-		return opts, page
-	}
-	q := r.URL.Query()
-	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 && n <= 500 {
-		opts.Limit = n
-	}
-	if n, err := strconv.Atoi(q.Get(usersPageParam)); err == nil && n > 1 {
-		page = min(n, maxUsersPage)
-	}
-	opts.Offset = (page - 1) * opts.Limit
-	return opts, page
+func listUsersOpts(q url.Values) (auth.ListUsersOptions, int) {
+	page, limit := decodePage(q, usersPageSize, 500)
+	page = min(page, maxUsersPage)
+	return auth.ListUsersOptions{Limit: limit, Offset: (page - 1) * limit}, page
 }
 
-// ----- posts --------------------------------------------------------------------
-
-// handleGrant grants a permission to a role through the GrantStore. A
-// caller may grant only a permission its own roles hold; a refusal is
-// audited too.
 func (b *Battery) handleGrant(w http.ResponseWriter, r *http.Request) {
 	b.grantOrRevoke(w, r, "grant", "granted", b.cfg.GrantStore.Grant)
 }
@@ -431,14 +351,8 @@ func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok s
 	}
 }
 
-// maxGridCells bounds the roles × permissions a grid save may name.
 const maxGridCells = 10_000
 
-// handlePermissions saves the Roles grid. role and permission list the
-// columns and rows the form showed; each grant value "i:j" is a checked
-// box, role i holding permission j. A shown box that differs from the
-// policy is granted or revoked; anything the form did not show, and any
-// role holding Wildcard, is left alone.
 func (b *Battery) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/rbac/roles"
 	vals, read := b.readOps(w, r, page)
@@ -486,23 +400,20 @@ func (b *Battery) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// grantChange is one box a save flips: grant (or revoke) perm on role.
 type grantChange struct {
 	role  string
 	perm  access.Permission
 	grant bool
 }
 
-// applyGrants checks every change against the caller's own permissions,
-// and every grant against GrantStore.CheckGrant, before writing any, then
-// grants and revokes through the GrantStore,
-// auditing each. A refusal is audited with the permission that stopped
-// it and answered; it reports whether the caller should answer success.
+// applyGrants checks every change against the caller's own permissions
+// (a Wildcard change needs the Decider's allow, as on assignment), and
+// every grant against GrantStore.CheckGrant, before writing any, then
 func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page string, changes []grantChange) bool {
 	ctx := r.Context()
 	actor := adminActorID(ctx)
 	for _, c := range changes {
-		if !b.callerHoldsPermission(ctx, c.perm) {
+		if assignmentDeciderRefuses(ctx, c.perm) || !b.callerHoldsPermission(ctx, c.perm) {
 			b.appendAudit(ctx, "access", c.op()+"-refused", c.role, actor, map[string]any{"permission": string(c.perm)})
 			b.refuse(w, r, page, http.StatusForbidden, "grant-refused")
 			return false
@@ -531,9 +442,6 @@ func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page strin
 	return true
 }
 
-// grantAccepted answers a grant or revoke error, as a refusal the page
-// names when the caller asked for something the store refuses, and
-// reports whether there was none.
 func (b *Battery) grantAccepted(w http.ResponseWriter, r *http.Request, page string, c grantChange, err error) bool {
 	if err == nil {
 		return true
@@ -558,8 +466,6 @@ func (c grantChange) op() string {
 	return "revoke"
 }
 
-// distinctTrimmed trims each value and refuses an empty or repeated one:
-// a grid index must name one column or row.
 func distinctTrimmed(vals []string) ([]string, bool) {
 	out := make([]string, 0, len(vals))
 	for _, v := range vals {
@@ -572,7 +478,6 @@ func distinctTrimmed(vals []string) ([]string, bool) {
 	return out, true
 }
 
-// gridCell parses a grant value "i:j" against the grid's size.
 func gridCell(v string, roles, perms int) (int, int, bool) {
 	a, c, ok := strings.Cut(v, ":")
 	if !ok {
@@ -586,37 +491,21 @@ func gridCell(v string, roles, perms int) (int, int, bool) {
 	return i, j, true
 }
 
-// handleAssign replaces a user's direct roles. A caller may assign only
-// roles its own tier covers (see nonAssignableRole). The check runs over
-// what changes, the roles added and the roles the new set takes away:
-// a tier that could not grant a role cannot strip it either, and a role
-// the account keeps is no change. A refusal is audited with the role
-// that stopped it. Under the default gate (no Config.Authorize) a
-// caller never removes their own admin role.
 func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/rbac/users"
 	vals, read := b.readOps(w, r, page)
 	if !read {
 		return
 	}
-	// The id is a key, used exactly: trimming " u1 " would edit "u1".
 	userID := vals.Get("user_id")
 	if strings.TrimSpace(userID) == "" || !textsafe.Storable(userID) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "user_id")
 		return
 	}
-	// One value per checkbox, or one comma-separated text field.
-	var roles []string
-	for _, v := range vals["roles"] {
-		if !textsafe.Storable(v) {
-			b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "roles")
-			return
-		}
-		for role := range strings.SplitSeq(v, ",") {
-			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
-				roles = append(roles, role)
-			}
-		}
+	roles, badField := parseRoleAssignment(vals)
+	if badField != "" {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", badField)
+		return
 	}
 	actor := adminActorID(r.Context())
 	target, err := b.cfg.Auth.UserStore().FindByID(r.Context(), userID)
@@ -629,7 +518,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	current := target.GetRoles()
+	current := slices.Clone(target.GetRoles())
 	var changed []string
 	for _, role := range roles {
 		if !slices.Contains(current, role) {
@@ -641,12 +530,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 			changed = append(changed, role)
 		}
 	}
-	// The caller's own admin role is not theirs to remove: the default
-	// gate admits only holders of it, so the last admin dropping it
-	// leaves the deployment with none, and nonAssignableRole then
-	// refuses granting it back from the tier that remains. Another admin
-	// may still remove it. A custom Authorize gates on something else.
-	if b.cfg.Authorize == nil && userID == callerUserID(r.Context()) &&
+	if b.cfg.Authorize == nil && userID == access.UserID(r.Context()) &&
 		slices.Contains(current, b.adminRole()) && !slices.Contains(roles, b.adminRole()) {
 		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
 			map[string]any{"roles": roles, "refused_role": b.adminRole()})
@@ -659,24 +543,45 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusForbidden, "assign-refused")
 		return
 	}
-	if err := b.cfg.Auth.SetUserRoles(r.Context(), userID, roles); err != nil {
+	swapped, err := b.cfg.Auth.SwapUserRoles(r.Context(), userID, current, roles)
+	if err != nil {
 		b.logger().Error("admin: assign roles", "user", textsafe.ScrubControlBytes(userID), "error", textsafe.ScrubControlBytes(err.Error()))
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		return
+	}
+	if !swapped {
+		b.refuse(w, r, page, http.StatusConflict, "roles-conflict")
 		return
 	}
 	b.appendAudit(r.Context(), "access", "assign-roles", userID, actor, map[string]any{"roles": roles})
 	b.done(w, r, page, "roles-saved")
 }
 
-// ----- tiers --------------------------------------------------------------------
+func parseRoleAssignment(vals url.Values) ([]string, string) {
+	var roles []string
+	for _, role := range vals[selectedRolesField] {
+		if !textsafe.Storable(role) {
+			return nil, selectedRolesField
+		}
+		if role != "" && !slices.Contains(roles, role) {
+			roles = append(roles, role)
+		}
+	}
+	for _, v := range vals["roles"] {
+		if !textsafe.Storable(v) {
+			return nil, "roles"
+		}
+		for role := range strings.SplitSeq(v, ",") {
+			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
+				roles = append(roles, role)
+			}
+		}
+	}
+	return roles, ""
+}
 
-// nonAssignableRole returns the first requested role the caller may not
-// write onto an account, or "" when all are assignable. A role is
-// assignable when the caller holds it, or when the caller's own
-// permissions cover every permission the policy grants it (Wildcard
-// covers everything). A role the policy grants nothing, or does not
-// know, is checked by name (auth.RequireRole), so only holding it or
-// Wildcard covers it. With no policy only held roles are assignable.
+// nonAssignableRole returns the first role whose change the caller's tier
+// or the request's Decider refuses.
 func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) string {
 	held := callerHeldRoles(ctx)
 	callerPerms := map[access.Permission]bool{}
@@ -688,18 +593,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 		}
 	}
 	for _, want := range requested {
-		if slices.Contains(held, want) || callerPerms[access.Wildcard] {
-			continue
+		byName := slices.Contains(held, want) || callerPerms[access.Wildcard]
+		var perms []access.Permission
+		if b.cfg.Policy != nil {
+			perms = b.cfg.Policy.PermissionsOf(want)
 		}
-		if b.cfg.Policy == nil {
-			return want
-		}
-		perms := b.cfg.Policy.PermissionsOf(want)
-		if len(perms) == 0 {
+		if len(perms) == 0 && !byName {
 			return want
 		}
 		for _, p := range perms {
-			if !callerPerms[p] {
+			if assignmentDeciderRefuses(ctx, p) || (!byName && !callerPerms[p]) {
 				return want
 			}
 		}
@@ -707,18 +610,16 @@ func (b *Battery) nonAssignableRole(ctx context.Context, requested []string) str
 	return ""
 }
 
-// callerHoldsPermission reports whether the caller's own roles grant
-// perm or Wildcard. A Decider's deny of perm wins first, as it does on
-// every other gate; as with the admin gate, its allow admits nothing
-// the policy does not. With no policy nothing can be proven held, so it
-// refuses.
-func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
-	if d := access.GetDecider(ctx); d != nil {
-		if d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny {
-			return false
-		}
+func assignmentDeciderRefuses(ctx context.Context, perm access.Permission) bool {
+	if perm != access.Wildcard {
+		return permissionDenied(ctx, perm)
 	}
-	if b.cfg.Policy == nil {
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, access.GetRoles(ctx), perm, access.Ref{}) != access.DecisionAllow
+}
+
+func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permission) bool {
+	if permissionDenied(ctx, perm) || b.cfg.Policy == nil {
 		return false
 	}
 	for _, role := range callerHeldRoles(ctx) {
@@ -731,13 +632,11 @@ func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permiss
 	return false
 }
 
-// ownPermissionLost returns the first revoke in changes that would leave
-// the caller without the permission it takes away: after every change in
-// the save lands, none of the caller's own roles grants it or Wildcard.
-// callerHoldsPermission gates every later grant on exactly that set, so
-// such a revoke is one the caller can never undo, and the last holder of
-// it leaves the deployment unable to grant it back. A caller holding a
-// second role that keeps the permission (or Wildcard) may still revoke it.
+func permissionDenied(ctx context.Context, perm access.Permission) bool {
+	d := access.GetDecider(ctx)
+	return d != nil && d(ctx, access.GetRoles(ctx), perm, access.Ref{}) == access.DecisionDeny
+}
+
 func (b *Battery) ownPermissionLost(ctx context.Context, changes []grantChange) (grantChange, bool) {
 	if b.cfg.Policy == nil {
 		return grantChange{}, false
@@ -771,8 +670,6 @@ func (b *Battery) ownPermissionLost(ctx context.Context, changes []grantChange) 
 	return grantChange{}, false
 }
 
-// callerHeldRoles is the signed-in user's own roles, read from the user
-// (GetRoles), never from the context.
 func callerHeldRoles(ctx context.Context) []string {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {

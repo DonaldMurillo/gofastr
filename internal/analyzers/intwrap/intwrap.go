@@ -106,6 +106,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -118,7 +119,7 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (any, error) {
 	idx := newPkgIndex(pass)
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, fi := range funcInfos(pass, f) {
@@ -457,17 +458,6 @@ const (
 	boundFloatMax = "floatmax"
 )
 
-// fitsInt reports whether e is a numeric constant no larger than
-// tgtMax, so `x <= e` keeps a float x inside the target's range.
-func fitsInt(pass *analysis.Pass, e ast.Expr, tgtMax int64) bool {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil {
-		return false
-	}
-	f, ok := constant.Float64Val(constant.ToFloat(tv.Value))
-	return ok && f <= float64(tgtMax) && !math.IsInf(f, 0) && !math.IsNaN(f)
-}
-
 // dominatingBound reports whether node is dominated by a comparison of
 // the subject against a bound no larger than tgtMax (review 6 made the
 // guard branch-aware; the 2026-11-03 round made it width-aware and
@@ -603,26 +593,49 @@ func comparisonBounds(pass *analysis.Pass, bin *ast.BinaryExpr, subj subject, fa
 	default:
 		return false
 	}
-	if family == boundFloatMax {
-		// Shape C: any constant upper bound that fits the target
-		// proves the conversion (a VARCHAR cap of 65535 is as good as
-		// MaxInt32).
-		if !isMathBound(pass, other, boundMax, tgtMax) && !fitsInt(pass, other, tgtMax) {
-			return false
-		}
-		family = boundMax
-	} else if !isMathBound(pass, other, family, tgtMax) && !isBoundLiteral(pass, other, family, tgtMax) {
-		return false
-	}
 	op := bin.Op
 	if !subjectOnLeft {
 		op = astx.FlipComparison(op)
+	}
+	if family == boundFloatMax {
+		return floatComparisonBounds(pass, op, other, tgtMax, holds)
+	}
+	if !isMathBound(pass, other, family, tgtMax) && !isBoundLiteral(pass, other, family, tgtMax) {
+		return false
 	}
 	whenTrue, whenFalse := boundSide(pass, op, other, family)
 	if holds {
 		return whenTrue
 	}
 	return whenFalse
+}
+
+// floatComparisonBounds compares against MaxInt+1 without rounding MaxInt.
+func floatComparisonBounds(pass *analysis.Pass, op token.Token, bound ast.Expr, tgtMax int64, holds bool) bool {
+	v := pass.TypesInfo.Types[bound].Value
+	if v == nil || (v.Kind() != constant.Int && v.Kind() != constant.Float) {
+		return false
+	}
+	limit := constant.BinaryOp(constant.MakeInt64(tgtMax), token.ADD, constant.MakeInt64(1))
+	if !holds {
+		switch op {
+		case token.GEQ:
+			op = token.LSS
+		case token.GTR:
+			op = token.LEQ
+		case token.NEQ:
+			op = token.EQL
+		default:
+			return false
+		}
+	}
+	switch op {
+	case token.LSS:
+		return constant.Compare(v, token.LEQ, limit)
+	case token.LEQ, token.EQL:
+		return constant.Compare(v, token.LSS, limit)
+	}
+	return false
 }
 
 // boundSide reports for `subj op bound` (subject on the left, op
@@ -704,9 +717,8 @@ func isMathBound(pass *analysis.Pass, e ast.Expr, family string, tgtMax int64) b
 	return false
 }
 
-// isBoundLiteral accepts an integer literal of bound size and no
-// larger than the target's max: at least MaxInt32 and at most tgtMax
-// for upper bounds, at most MinInt32 for lower ones.
+// isBoundLiteral accepts a nonnegative integer up to the target max,
+// or a lower bound at or below MinInt32.
 func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string, tgtMax int64) bool {
 	tv, ok := pass.TypesInfo.Types[e]
 	if !ok || tv.Value == nil {
@@ -724,7 +736,7 @@ func isBoundLiteral(pass *analysis.Pass, e ast.Expr, family string, tgtMax int64
 		return false
 	}
 	if family == boundMax {
-		return i >= 1<<31 && i <= tgtMax
+		return i >= 0 && i <= tgtMax
 	}
 	return i <= -(1 << 31)
 }
@@ -776,11 +788,6 @@ func isComparison(op token.Token) bool {
 		return true
 	}
 	return false
-}
-
-func isIdentObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
-	id, ok := e.(*ast.Ident)
-	return ok && pass.TypesInfo.ObjectOf(id) == obj
 }
 
 // unboundedSources collects the objects of the genuinely unbounded

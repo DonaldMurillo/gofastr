@@ -16,86 +16,43 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 )
 
-// Auto-update: a signed JSON feed names the newest version per
-// platform; the battery checks it on a schedule, downloads and verifies
-// the archive, swaps the bundle, and relaunches. The engine lives in
-// internal/update (feed verification, semver, capped downloads, zip
-// extraction, the platform seam); this file is the battery surface:
-// UpdateConfig, CheckForUpdates, InstallUpdate, the scheduled loop,
-// and the `gofastr desktop feed` writer re-export.
-
-// UpdateConfig enables the auto-updater. Zero value: none.
+// UpdateConfig enables the auto-updater.
 type UpdateConfig struct {
-	// FeedURL is the manifest's own URL ("https://example.com/notes/
-	// manifest.json"); the detached signature is fetched from
-	// FeedURL + ".sig". https only; plain http is accepted for
-	// 127.0.0.1 so tests can serve the feed locally.
+	// FeedURL is the manifest's https URL; the signature is fetched from FeedURL + ".sig".
 	FeedURL string
 
-	// PublicKey is the feed's ed25519 public key as 64 hex chars
-	// (32 bytes). `gofastr desktop keygen` mints the pair.
+	// PublicKey is the feed's ed25519 public key as 64 hex chars (32 bytes).
 	PublicKey string
 
-	// Interval is the scheduled check period. Zero means the default
-	// (6 h); negative means never check automatically (manual
-	// CheckForUpdates and updates.install still work).
+	// Interval is the scheduled check period: zero means 6 h, negative never.
 	Interval time.Duration
 
-	// Channel optionally selects feed.channels[channel] when the feed
-	// carries it; the feed's top level otherwise.
+	// Channel optionally selects feed.channels[channel] when the feed carries it; the feed's top level otherwise.
 	Channel string
 
-	// MacOSTeamID is the Apple Developer Team ID (ten letters and
-	// digits, "ABCDE12345") every update must be signed by. Empty means
-	// the update must satisfy the running app's own designated
-	// requirement: for a Developer ID signature, the same bundle
-	// identifier and the same team's Developer ID certificate, so a
-	// renewed certificate needs nothing. With the field set, the update
-	// must carry that team's Developer ID certificate instead. Set it
-	// only when the team is about to change, one release ahead, and
-	// clear it afterwards.
-	// macOS only; Windows holds an update to the running executable's
-	// Authenticode publisher on its own.
+	// MacOSTeamID pins updates to this Apple Developer Team's Developer ID certificate.
 	MacOSTeamID string
 
-	// MacOSAllowAdHoc lets an app with no signing identity update. An
-	// ad-hoc signed bundle (what `gofastr desktop build` writes without
-	// --sign) or an unsigned one has no identity to hold an update to,
-	// and its updates are refused unless this is set. With it, any
-	// bundle carrying a valid signature installs, so the feed's ed25519
-	// signature is the only proof of who published it; the log warns at
-	// start and at each install. It cannot be combined with MacOSTeamID.
+	// MacOSAllowAdHoc lets an app with no signing identity update.
 	MacOSAllowAdHoc bool
 }
 
-// Update is the outcome of one check. Version and Notes describe the
-// release the feed names, whether or not it is newer.
+// Update is the outcome of one check.
 type Update struct {
 	Available bool
 	Version   string
 	Notes     string
 }
 
-// Update tuning knobs.
 const (
-	// defaultUpdateInterval is UpdateConfig.Interval's default.
 	defaultUpdateInterval = 6 * time.Hour
-	// firstUpdateCheckDelay keeps the scheduled first check off the
-	// boot path.
 	firstUpdateCheckDelay = 30 * time.Second
-	// updateFeedTimeout bounds one manifest fetch.
-	updateFeedTimeout = 30 * time.Second
-	// updateDownloadTimeout bounds one archive download.
+	updateFeedTimeout     = 30 * time.Second
 	updateDownloadTimeout = 10 * time.Minute
-	// updateQuitDelay lets the bridge flush the install response
-	// before the shell quits the process.
-	updateQuitDelay = 250 * time.Millisecond
-	// updateNotesLimit bounds the notes string handed to the page.
-	updateNotesLimit = 8 << 10
+	updateQuitDelay       = 250 * time.Millisecond
+	updateNotesLimit      = 8 << 10
 )
 
-// The updater's fixed bridge errors. None carries a path or URL; the
-// real error is logged server-side at the failure site.
 var (
 	errUpdateNotConfigured = &Error{Code: CodeUnsupported, Message: "auto-update is not configured"}
 	errUpdateNeedsBundle   = &Error{Code: CodeUnsupported, Message: "updates need an app bundle; run from gofastr desktop build output"}
@@ -109,14 +66,9 @@ var (
 	errUpdateInProgress    = &Error{Code: CodeInvalidInput, Message: "an update install is already running"}
 	errUpdateInstalled     = &Error{Code: CodeInvalidInput, Message: "the update is installed; the app is restarting"}
 
-	// errUpdateRunningVersion is Unsupported, not Internal: no feed can
-	// fix a bundle built with a version the updater cannot compare, so
-	// the scheduled loop stops instead of failing every interval.
 	errUpdateRunningVersion = &Error{Code: CodeUnsupported, Message: "this app's version is not major.minor.patch; rebuild it with a semantic --version"}
 )
 
-// validateUpdateConfig is Config.Update's construction-time check New
-// runs: a wiring error belongs at construction, like a bad menu.
 func validateUpdateConfig(cfg *UpdateConfig) error {
 	if !update.AllowedURL(cfg.FeedURL) {
 		return errors.New("desktop: Config.Update.FeedURL must be the manifest's https URL (plain http only to 127.0.0.1)")
@@ -144,9 +96,6 @@ func validateUpdateConfig(cfg *UpdateConfig) error {
 	return nil
 }
 
-// validTeamID reports whether id has the shape of an Apple Developer
-// Team ID. The value is spliced into a codesign requirement, so the
-// grammar is also what keeps a quote or a space out of it.
 func validTeamID(id string) bool {
 	if len(id) != 10 {
 		return false
@@ -160,24 +109,15 @@ func validTeamID(id string) bool {
 	return true
 }
 
-// updater is one battery's update state (Battery.updater).
 type updater struct {
-	b    *Battery
-	pub  ed25519.PublicKey
-	http *http.Client
-	// platform is the test seam: set before the first check to
-	// observe the apply step. nil selects the OS default.
+	b        *Battery
+	pub      ed25519.PublicKey
+	http     *http.Client
 	platform update.Platform
-	// rename is the swap's rename, a test seam for failing the second
-	// rename and its rollback. nil selects os.Rename.
-	rename func(oldpath, newpath string) error
+	rename   func(oldpath, newpath string) error
 
-	// platformKey is the feed entry key, a test seam; "" selects this
-	// host's GOOS-GOARCH.
 	platformKey string
 
-	// defaultOnce builds the OS platform once: the Windows one reads the
-	// running executable's version resource, which does not change.
 	defaultOnce     sync.Once
 	defaultPlatform update.Platform
 
@@ -185,20 +125,10 @@ type updater struct {
 	notified  string // last version successfully delivered to every open page
 	notifying bool   // an event delivery is in flight, guarded by mu
 
-	// installMu single-flights install: two runs would share
-	// <Name>.app.new and .old, and the second's RemoveAll(old) could
-	// delete the first's only copy of the running bundle between its
-	// renames. A second call while one runs is refused, never queued.
 	installMu sync.Mutex
-	// installed is set once a swap succeeds: the process is quitting
-	// and the running version is still the old one, so a later call
-	// would reinstall over the new bundle. Guarded by installMu.
 	installed bool
 }
 
-// updaterFor returns (creating once) the battery's updater. The public
-// key was validated at New, so a decode failure here leaves pub nil
-// and every check refuses with the not-configured error.
 func (b *Battery) updaterFor() *updater {
 	b.updaterOnce.Do(func() {
 		u := &updater{b: b, http: &http.Client{}}
@@ -212,10 +142,6 @@ func (b *Battery) updaterFor() *updater {
 	return b.updater
 }
 
-// platformOrNil returns the test-injected platform, or nil.
-func (u *updater) platformOverride() update.Platform { return u.platform }
-
-// renameFile is the swap's rename: the injected one, or os.Rename.
 func (u *updater) renameFile(oldpath, newpath string) error {
 	if u.rename != nil {
 		return u.rename(oldpath, newpath)
@@ -223,9 +149,6 @@ func (u *updater) renameFile(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
-// platformOrDefault returns the injected platform or the OS default
-// (NSBundle-backed on darwin through objc.Main, the executable's version
-// resource on Windows, refusing elsewhere).
 func (u *updater) platformOrDefault() update.Platform {
 	if u.platform != nil {
 		return u.platform
@@ -238,9 +161,6 @@ func (u *updater) platformOrDefault() update.Platform {
 	return u.defaultPlatform
 }
 
-// configurePlatform hands the OS platform what it takes from the
-// battery: the logger for its warnings, and on macOS the signing pin
-// from UpdateConfig.
 func (u *updater) configurePlatform(p update.Platform) {
 	if w, ok := p.(interface{ SetWarn(func(string)) }); ok {
 		w.SetWarn(func(msg string) { u.b.logger.Warn("desktop: " + msg) })
@@ -254,8 +174,6 @@ func (u *updater) configurePlatform(p update.Platform) {
 }
 
 // CheckForUpdates runs one check against the configured feed now.
-// It reports ErrUnsupported when auto-update is not configured or the
-// app is not running from a bundle (an unbundled run never updates).
 func (b *Battery) CheckForUpdates(ctx context.Context) (Update, error) {
 	if b.cfg.Update == nil {
 		return Update{}, errUpdateNotConfigured
@@ -263,14 +181,9 @@ func (b *Battery) CheckForUpdates(ctx context.Context) (Update, error) {
 	if err := ctx.Err(); err != nil {
 		return Update{}, ErrCancelled
 	}
-	r, err := b.updaterFor().resolve(ctx)
-	if err != nil {
-		return Update{}, err
-	}
-	return Update{Available: r.newer, Version: r.release.Version, Notes: clipNotes(r.release.Notes)}, nil
+	return b.updaterFor().check(ctx)
 }
 
-// clipNotes bounds the feed's notes before they reach the page.
 func clipNotes(notes string) string {
 	if len(notes) <= updateNotesLimit {
 		return notes
@@ -278,21 +191,23 @@ func clipNotes(notes string) string {
 	return notes[:updateNotesLimit]
 }
 
-// resolved is one verified look at the feed.
 type resolved struct {
 	release update.Release
 	entry   update.PlatformEntry
 	newer   bool
 }
 
-// resolve fetches and verifies the feed, selects the configured
-// channel, compares against the running version, and (when newer)
-// resolves this platform's entry. Nothing it returns or logs carries
-// the feed URL: the sentinel errors' text is fixed words, by design
-// (the controlbytes posture applied at the source).
-func (u *updater) resolve(ctx context.Context) (resolved, error) {
+func (u *updater) resolve(ctx context.Context, platform update.Platform) (resolved, error) {
 	if u.pub == nil {
 		return resolved{}, errUpdateNotConfigured
+	}
+	running := platform.Version()
+	if running == "" {
+		return resolved{}, errUpdateNeedsBundle
+	}
+	if _, err := update.ParseVersion(running); err != nil {
+		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
+		return resolved{}, errUpdateRunningVersion
 	}
 	cfg := u.b.cfg.Update
 	fctx, cancel := context.WithTimeout(ctx, updateFeedTimeout)
@@ -309,8 +224,6 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 	}
 	feed, err := update.ParseFeed(manifest, sig, u.pub, time.Now())
 	if errors.Is(err, update.ErrFeedExpired) {
-		// Either the publisher has not signed the feed again in time, or
-		// something between the app and the feed is replaying an old one.
 		u.b.logger.Warn("desktop: update feed has expired; the publisher signs it again with gofastr desktop feed")
 		return resolved{}, errUpdateFeedExpired
 	}
@@ -319,19 +232,6 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 		return resolved{}, errUpdateFeedBad
 	}
 	rel := feed.Select(cfg.Channel)
-	running := u.platformOrDefault().Version()
-	if running == "" {
-		// An unbundled run has no version to compare and never
-		// updates.
-		return resolved{}, errUpdateNeedsBundle
-	}
-	// A running version the updater cannot parse is the bundle's fault,
-	// never the feed's: report it as such instead of "the feed is
-	// invalid" on every check.
-	if _, err := update.ParseVersion(running); err != nil {
-		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
-		return resolved{}, errUpdateRunningVersion
-	}
 	newer, err := update.IsNewer(rel.Version, running)
 	if err != nil {
 		u.b.logger.Warn("desktop: update feed version comparison failed", "error", err.Error())
@@ -355,13 +255,7 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 	return r, nil
 }
 
-// InstallUpdate downloads the newest version from the configured feed,
-// verifies it (ed25519 feed signature and expiry, sha256, size,
-// single-bundle zip, then codesign against the pinned signing identity
-// on macOS or Authenticode on Windows), swaps it in
-// place of the running bundle, relaunches
-// it, and quits the current process. ErrUnsupported when unbundled or
-// on a host without an apply step.
+// InstallUpdate downloads, verifies and swaps in the newest version, relaunches it and quits; unsupported when unbundled.
 func (b *Battery) InstallUpdate(ctx context.Context) error {
 	if b.cfg.Update == nil {
 		return errUpdateNotConfigured
@@ -372,9 +266,6 @@ func (b *Battery) InstallUpdate(ctx context.Context) error {
 	return b.updaterFor().install(ctx)
 }
 
-// install is InstallUpdate's body. One install runs at a time per
-// battery; a concurrent call gets errUpdateInProgress, and every call
-// after a successful swap gets errUpdateInstalled.
 func (u *updater) install(ctx context.Context) error {
 	if !u.installMu.TryLock() {
 		return errUpdateInProgress
@@ -388,7 +279,7 @@ func (u *updater) install(ctx context.Context) error {
 	if !ok {
 		return errUpdateNeedsBundle
 	}
-	r, err := u.resolve(ctx)
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return err
 	}
@@ -396,9 +287,6 @@ func (u *updater) install(ctx context.Context) error {
 		return errUpdateNotAvailable
 	}
 
-	// Everything lands under a 0700 staging directory in the app's
-	// data dir and is removed on ANY exit path (success moves the
-	// bundle out first; failure leaves nothing behind).
 	stage, err := u.stageDir()
 	if err != nil {
 		u.b.logger.Error("desktop: update staging directory failed", "error", update.LogDetail(err))
@@ -422,11 +310,6 @@ func (u *updater) install(ctx context.Context) error {
 		u.b.logger.Warn("desktop: update archive extraction refused", "error", err.Error())
 		return errUpdateArchive
 	}
-	// The bundle must be the release the signed feed names, for this
-	// app: a 0.1.0 build labelled 1.2.0 would reinstall on every check,
-	// an old archive under a new label is a silent downgrade, and
-	// another app's bundle must never replace this one. The identity
-	// values stay out of the log (they come from the download).
 	units, inspect := installLayout(platform, name, bundleDir)
 	info, err := inspect(newApp)
 	if err != nil {
@@ -449,27 +332,17 @@ func (u *updater) install(ctx context.Context) error {
 	if !u.swap(newApp, units) {
 		return errUpdateApply
 	}
-	// The new bundle is in place: from here a second install would
-	// swap over it, relaunched or not.
 	u.installed = true
-	// Relaunch errors are runner output, which update.ExecRunner has
-	// already rewritten to name the bundle, not its path.
 	if err := platform.Relaunch(units[0].Current); err != nil {
 		u.b.logger.Error("desktop: relaunching the updated bundle failed", "error", err.Error())
 		return errUpdateApply
 	}
-	// Give the bridge response a moment to flush, then quit; the new
-	// instance is already running.
 	time.AfterFunc(updateQuitDelay, u.b.shell.Quit)
 	u.b.logger.Info("desktop: update installed, relaunching",
 		"version", r.release.Version) // semver-validated: no control bytes
 	return nil
 }
 
-// installLayout returns the paths an install replaces and the reader
-// for the extracted bundle's identity. A FileLayout platform (Windows)
-// names its own files; every other platform swaps the one bundle
-// directory, <dir>/<name>, and reads its Info.plist.
 func installLayout(platform update.Platform, name, bundleDir string) ([]update.Unit, func(string) (update.BundleInfo, error)) {
 	if fl, ok := platform.(update.FileLayout); ok {
 		if units, ok := fl.Units(); ok && len(units) > 0 {
@@ -479,19 +352,7 @@ func installLayout(platform update.Platform, name, bundleDir string) ([]update.U
 	return []update.Unit{{Current: filepath.Join(bundleDir, name)}}, update.ReadBundleInfo
 }
 
-// swap moves the extracted bundle's units into place. Each unit's new
-// copy goes beside its installed path first (<path>.new, same volume),
-// then two renames per unit: installed to <path>.old, new into place.
-// A failed rename moves every unit already swapped back. A crash
-// between the two renames of a unit leaves no installed copy of it,
-// only <path>.old and <path>.new beside it: the app cannot start to
-// repair that, so the user renames one back. After a completed swap
-// the next launch's startUpdater removes the .old copies. It reports
-// whether the swap completed; every failure is logged here.
 func (u *updater) swap(newApp string, units []update.Unit) bool {
-	// A rollback that failed leaves <path>.old as the only copy of the
-	// app. The RemoveAll(old) below would delete it, so a swap with a
-	// missing installed path refuses before touching anything.
 	for _, unit := range units {
 		if _, err := os.Lstat(unit.Current); err != nil {
 			u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the .old copy beside it back", "error", update.LogDetail(err))
@@ -535,8 +396,6 @@ func (u *updater) swap(newApp string, units []update.Unit) bool {
 	return true
 }
 
-// rollback undoes completed unit swaps, last first: the new copy goes
-// back to <path>.new and <path>.old returns to the installed path.
 func (u *updater) rollback(done []update.Unit) {
 	for i := len(done) - 1; i >= 0; i-- {
 		cur := done[i].Current
@@ -551,8 +410,6 @@ func (u *updater) rollback(done []update.Unit) {
 	}
 }
 
-// stageDir creates the 0700 staging directory under the battery's data
-// dir.
 func (u *updater) stageDir() (string, error) {
 	dir := u.b.dataDir
 	if dir == "" {
@@ -565,9 +422,6 @@ func (u *updater) stageDir() (string, error) {
 	return os.MkdirTemp(dir, "update-") // 0700
 }
 
-// startUpdater runs from Run once the app is listening; the context
-// ends when Run returns. It clears a previous update's leftover .old
-// bundle, then schedules checks (never when Interval is negative).
 func (b *Battery) startUpdater(ctx context.Context) {
 	if b.cfg.Update == nil {
 		return
@@ -587,9 +441,6 @@ func (b *Battery) startUpdater(ctx context.Context) {
 	go u.loop(ctx, interval)
 }
 
-// removeStaleOld deletes the copies a previous update left beside the
-// running app as <path>.old (the old process could not remove itself
-// while running).
 func (u *updater) removeStaleOld() {
 	platform := u.platformOrDefault()
 	name, dir, ok := platform.Bundle()
@@ -614,12 +465,7 @@ func (u *updater) removeStaleOld() {
 	}
 }
 
-// loop runs the scheduled checks: first after firstUpdateCheckDelay,
-// then every interval, until the Run context ends. An unsupported host
-// (unbundled dev run, non-darwin) stops the loop after one look so the
-// log is not spammed; every other failure is a Warn and retries next
-// interval. The check body is recover-guarded: a panic in a scheduled
-// goroutine must never take the app down (the recovercallback shape).
+// stops the loop after one look so the
 func (u *updater) loop(ctx context.Context, interval time.Duration) {
 	timer := time.NewTimer(firstUpdateCheckDelay)
 	defer timer.Stop()
@@ -636,8 +482,6 @@ func (u *updater) loop(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// checkAndNotify runs one scheduled check. It reports whether the loop
-// should stop.
 func (u *updater) checkAndNotify(ctx context.Context) (stop bool) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -655,8 +499,6 @@ func (u *updater) checkAndNotify(ctx context.Context) (stop bool) {
 		return false
 	}
 	if !res.Available {
-		// The version is grammar-validated semver: no control bytes
-		// reach the log.
 		u.b.logger.Info("desktop: app is up to date", "feed_version", res.Version)
 		return false
 	}
@@ -664,18 +506,18 @@ func (u *updater) checkAndNotify(ctx context.Context) (stop bool) {
 	return false
 }
 
-// check is CheckForUpdates without the nil-config guard (the loop only
-// runs with a config).
 func (u *updater) check(ctx context.Context) (Update, error) {
-	r, err := u.resolve(ctx)
+	platform := u.platformOrDefault()
+	if _, _, ok := platform.Bundle(); !ok {
+		return Update{}, errUpdateNeedsBundle
+	}
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return Update{}, err
 	}
 	return Update{Available: r.newer, Version: r.release.Version, Notes: clipNotes(r.release.Notes)}, nil
 }
 
-// notifyOnce emits update_available to the page, once per version (a
-// still-uninstalled update does not re-toast every interval).
 func (u *updater) notifyOnce(res Update) {
 	u.mu.Lock()
 	if u.notified == res.Version || u.notifying {
@@ -685,9 +527,6 @@ func (u *updater) notifyOnce(res Update) {
 	u.notifying = true
 	u.mu.Unlock()
 
-	// Eval invokes the native window outside the state lock. Only a
-	// successful delivery consumes the version; a closed or unready
-	// window must get another chance on the next scheduled check.
 	defer func() {
 		u.mu.Lock()
 		u.notifying = false
@@ -703,17 +542,7 @@ func (u *updater) notifyOnce(res Update) {
 	u.b.logger.Info("desktop: update available", "version", res.Version)
 }
 
-// SignUpdateFeed builds the signed feed pair the updater verifies:
-// manifest.json plus manifest.json.sig for one platform archive, with
-// the sha256 and size computed from the archive file. It is the
-// `gofastr desktop feed` verb's engine, exported so the CLI and app
-// tests share the exact format with the verifier.
-//
-// validFor is how long the manifest stays valid: zero means
-// DefaultFeedLifetime (30 days), and a negative one or one past
-// MaxFeedLifetime (365 days) is refused. A client refuses an expired
-// manifest, so a feed is signed again before it runs out, by calling
-// this again with the same arguments. The two files are written 0644.
+// SignUpdateFeed writes the signed manifest.json and manifest.json.sig for one platform archive.
 func SignUpdateFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string, validFor time.Duration) error {
 	return update.WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL, validFor)
 }
@@ -724,12 +553,7 @@ const (
 	MaxFeedLifetime     = update.MaxFeedLifetime
 )
 
-// ValidateAppVersion reports whether version is one the updater can
-// compare: semver major.minor.patch with an optional pre-release, no
-// build metadata, no leading zeros. `gofastr desktop build` refuses a
-// macOS --version that fails it, since the bundle's
-// CFBundleShortVersionString is the running version every update check
-// compares against the feed.
+// ValidateAppVersion reports whether version is semver major.minor.patch[-pre] the updater can compare.
 func ValidateAppVersion(version string) error {
 	_, err := update.ParseVersion(version)
 	return err

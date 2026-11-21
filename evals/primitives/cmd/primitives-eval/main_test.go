@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 func TestStripRegistry(t *testing.T) {
@@ -376,6 +378,10 @@ func TestWorkDirectoryInsideTheRepositoryIsRefused(t *testing.T) {
 // stubCell builds a one-package repository and a stand-in for the CLI,
 // and returns the config to run a cell against them.
 func stubCell(t *testing.T, script string) (config, task) {
+	return stubCellTimeout(t, script, 500*time.Millisecond)
+}
+
+func stubCellTimeout(t *testing.T, script string, timeout time.Duration) (config, task) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in CLI is a shell script")
@@ -403,7 +409,7 @@ func stubCell(t *testing.T, script string) (config, task) {
 	if err := os.WriteFile(cli, []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config{repo: repo, base: "HEAD", head: "HEAD", claude: cli, model: "none", work: t.TempDir(), out: t.TempDir(), timeout: 500 * time.Millisecond, cellBudget: 1}
+	cfg := config{repo: repo, base: "HEAD", head: "HEAD", claude: cli, model: "none", work: t.TempDir(), out: t.TempDir(), timeout: timeout, cellBudget: 1}
 	return cfg, task{ID: "stub", Packages: []string{"./a/"}, Tests: "TestA"}
 }
 
@@ -420,7 +426,9 @@ func TestACellWhoseAgentRanOutOfTimeIsGradedWithANote(t *testing.T) {
 }
 
 func TestACellWhoseAgentNeverRanIsAnError(t *testing.T) {
-	cfg, stub := stubCell(t, "exit 3")
+	// The deadline only matters to the RanOutOfTime test; a tight one
+	// here races machine load and misclassifies the agent as timed out.
+	cfg, stub := stubCellTimeout(t, "exit 3", time.Minute)
 	c := &cell{Task: stub.ID, Condition: conditionRegistry, Run: 1, task: stub}
 	runCell(cfg, c)
 	if c.Outcome != outcomeError {
@@ -721,7 +729,7 @@ func TestStopCellProcessesEndsWhatTheAgentLeftRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = outside.Process.Kill(); _ = outside.Wait() })
-	stopCellProcesses(dir)
+	proctree.KillUnder(dir, stopGrace)
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -765,7 +773,7 @@ func TestStopCellProcessesFollowsASymlinkedCellPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := startInCell(t, real, "sleep 60")
-	stopCellProcesses(link)
+	proctree.KillUnder(link, stopGrace)
 	waitStopped(t, done, "a process in a cell reached through a symlink survived")
 }
 
@@ -789,7 +797,7 @@ func TestStopCellProcessesLetsGitCleanUpBeforeKilling(t *testing.T) {
 			t.Fatal("the stand-in git never started")
 		}
 	}
-	stopCellProcesses(dir)
+	proctree.KillUnder(dir, stopGrace)
 	waitStopped(t, done, "the stand-in git survived")
 	if _, err := os.Stat(cleaned); err != nil {
 		t.Error("the process was killed before it could run its SIGTERM cleanup")
@@ -816,7 +824,7 @@ func TestStopCellProcessesNeverRemovesALockItself(t *testing.T) {
 	}
 	done := startInCell(t, dir, `trap '' TERM; while :; do sleep 0.05; done`)
 	time.Sleep(100 * time.Millisecond)
-	stopCellProcesses(dir)
+	proctree.KillUnder(dir, stopGrace)
 	waitStopped(t, done, "a writer that ignores SIGTERM survived")
 	if _, err := os.Stat(lock); err != nil {
 		t.Error("the harness removed index.lock; it cannot prove no writer outside the cell still holds it")
@@ -847,7 +855,7 @@ func TestStopCellProcessesKeepsALockAWriterOutsideTheCellHolds(t *testing.T) {
 	}
 	inCell := startInCell(t, dir, `trap '' TERM; while :; do sleep 0.05; done`)
 	time.Sleep(100 * time.Millisecond)
-	stopCellProcesses(dir)
+	proctree.KillUnder(dir, stopGrace)
 	waitStopped(t, inCell, "a process inside the cell that ignores SIGTERM survived")
 	select {
 	case <-writer:

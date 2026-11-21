@@ -130,6 +130,80 @@ func TestFormCarriesTheSpec(t *testing.T) {
 	}
 }
 
+// A Default reaches the spec as the browser stores a submitted value:
+// a Timestamp default is RFC 3339 in UTC with the milliseconds
+// toISOString() writes, so a record the default fills sorts with the
+// ones the form saved.
+func TestDefineNormalizesTimestampDefault(t *testing.T) {
+	e := Define(freshDB(), "t", []schema.Field{
+		{Name: "at", Type: schema.Timestamp, Default: "2024-05-01T16:30:45.123+02:00"},
+		{Name: "early", Type: schema.Timestamp, Default: "0050-01-01T00:00:00Z"},
+		{Name: "first", Type: schema.Timestamp, Default: "0000-01-01T01:00:00+01:00"},
+		{Name: "last", Type: schema.Timestamp, Default: "9999-12-31T22:59:59.999999999-01:00"},
+	})
+	h := e.Form("f", render.HTML("<form></form>"))
+	var spec struct {
+		Fields []struct {
+			Name string `json:"name"`
+			Def  any    `json:"def"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(attr(t, h, "data-fui-local-schema")), &spec); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"at":    "2024-05-01T14:30:45.123Z",
+		"early": "0050-01-01T00:00:00.000Z",
+		"first": "0000-01-01T00:00:00.000Z",
+		"last":  "9999-12-31T23:59:59.999Z",
+	}
+	if len(spec.Fields) != len(want) {
+		t.Fatalf("got %d fields, want %d", len(spec.Fields), len(want))
+	}
+	for _, f := range spec.Fields {
+		if got, _ := f.Def.(string); got != want[f.Name] {
+			t.Errorf("%s default = %v, want %q", f.Name, f.Def, want[f.Name])
+		}
+	}
+}
+
+func TestDefineRefusesUnreadableTimestampDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+	}{
+		{"comma fraction", "2024-05-01T14:30:45,123Z"},
+		{"single-digit hour", "2024-05-01T4:30:45Z"},
+		{"offset hour overflow", "2024-05-01T14:30:45+24:00"},
+		{"offset minute overflow", "2024-05-01T14:30:45+00:60"},
+		{"UTC before year 0000", "0000-01-01T00:00:00+01:00"},
+		{"UTC after year 9999", "9999-12-31T23:00:00-01:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustPanic(t, `field "at": default `+fmt.Sprintf("%q", tc.value), func() {
+				Define(freshDB(), "t", []schema.Field{{Name: "at", Type: schema.Timestamp, Default: tc.value}})
+			})
+		})
+	}
+}
+
+func TestDefineKeepsLargeFloatDefault(t *testing.T) {
+	e := Define(freshDB(), "t", []schema.Field{
+		{Name: "reading", Type: schema.Float, Default: 1e100},
+	})
+	h := e.Form("f", render.HTML("<form></form>"))
+	var spec struct {
+		Fields []struct {
+			Default float64 `json:"def"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal([]byte(attr(t, h, "data-fui-local-schema")), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Fields) != 1 || spec.Fields[0].Default != 1e100 {
+		t.Fatalf("fields = %+v, want a Float default of 1e100", spec.Fields)
+	}
+}
+
 func TestListRowAndCount(t *testing.T) {
 	l := members.List(ListConfig{OrderBy: "level", Desc: true, Limit: 6})
 	row := l.Row(func(r Row) render.HTML {
@@ -190,6 +264,36 @@ func TestRefusals(t *testing.T) {
 	mustPanic(t, "snake_case", func() { Define(db, "x", []schema.Field{{Name: "prototype", Type: schema.String}}) })
 	mustPanic(t, "must not be negative", func() { Define(db, "x", str, MaxRecords(-1)) })
 	mustPanic(t, "JSON values", func() { Define(db, "y", []schema.Field{{Name: "name", Type: schema.String, Default: func() {}}}) })
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "level", Type: schema.Int, Default: true}})
+	})
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "level", Type: schema.Int, Min: f64(1), Default: 0}})
+	})
+	mustPanic(t, "9007199254740993", func() {
+		Define(db, "x", []schema.Field{{Name: "level", Type: schema.Int, Default: json.Number("9007199254740993")}})
+	})
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "kind", Type: schema.Enum, Values: []string{"a", "b"}, Default: "c"}})
+	})
+	mustPanic(t, "outside Min and Max lengths", func() {
+		Define(db, "x", []schema.Field{{Name: "kind", Type: schema.Enum, Values: []string{"abcd"}, Max: f64(3), Default: "abcd"}})
+	})
+	mustPanic(t, "does not match the field's Pattern", func() {
+		Define(db, "x", []schema.Field{{Name: "kind", Type: schema.Enum, Values: []string{"b"}, Pattern: "^a$", Default: "b"}})
+	})
+	mustPanic(t, "required field cannot have an empty default", func() {
+		Define(db, "x", []schema.Field{{Name: "name", Type: schema.String, Required: true, Default: ""}})
+	})
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "name", Type: schema.String, Max: f64(3), Default: "abcd"}})
+	})
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "at", Type: schema.Timestamp, Default: "yesterday"}})
+	})
+	mustPanic(t, "default", func() {
+		Define(db, "x", []schema.Field{{Name: "due", Type: schema.Date, Default: "2024-02-31"}})
+	})
 
 	mustPanic(t, "needs an index", func() { members.List(ListConfig{OrderBy: "nickname"}) })
 	mustPanic(t, "needs an index", func() { members.List(ListConfig{OrderBy: "missing"}) })

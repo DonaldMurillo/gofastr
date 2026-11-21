@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -88,12 +89,14 @@ func TestPaletteHidesRefusedPages(t *testing.T) {
 	}
 }
 
-// An ops post past 1 MiB is refused before it is read.
+// An ops post past 1 MiB is refused before it is read, through the ops
+// envelope: a plain post is redirected back with ?result=body-too-large
+// and a form RPC gets the 413 the runtime toasts.
 func TestOpsPostBodyIsCapped(t *testing.T) {
 	r := newRBACEnv(t, Config{})
 	big := url.Values{"role": {"editor"}, "permission": {strings.Repeat("x", 2<<20)}}
-	if rr := post(r.as(theAdmin), "/admin/rbac/_grant", big); rr.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("a 2 MiB grant = %d, want 413", rr.Code)
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_grant", big)); got != "body-too-large" {
+		t.Fatalf("a 2 MiB grant redirected with result=%q, want body-too-large", got)
 	}
 	rr := rpc(r.as(theAdmin), "/admin/rbac/_grant", map[string]any{"role": "editor", "permission": strings.Repeat("x", 2<<20)})
 	if rr.Code != http.StatusRequestEntityTooLarge {
@@ -101,5 +104,25 @@ func TestOpsPostBodyIsCapped(t *testing.T) {
 	}
 	if len(r.auditOps("access")) != 0 {
 		t.Fatal("a refused body was audited")
+	}
+}
+
+func TestPaletteAnswerIsCapped(t *testing.T) {
+	var cmds []ui.PaletteCommand
+	for i := range paletteCap + 5 {
+		cmds = append(cmds, ui.PaletteCommand{Label: "zz command " + strconv.Itoa(i), Href: "/docs"})
+	}
+	x := paletteEnv(t, Config{Commands: cmds})
+	if got := x.b.paletteCommands(handler.SetUser(context.Background(), theAdmin), "zz"); len(got) != paletteCap {
+		t.Errorf("the palette answered %d rows, want its cap %d", len(got), paletteCap)
+	}
+}
+
+func TestPaletteRecordSearchIsElevated(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()}, Config{Entities: []string{"posts"}}, nil)
+	x.insert("posts", map[string]any{"id": "p1", "title": "Locked report", "status": "draft"})
+	body := post(withPolicy(x.as(theAdmin)), "/admin/_palette", url.Values{"q": {"locked"}}).Body.String()
+	if !strings.Contains(body, "/admin/entities/posts/p1") {
+		t.Fatalf("the palette did not find a record the admin reads only through its elevation:\n%s", body)
 	}
 }

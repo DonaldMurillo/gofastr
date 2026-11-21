@@ -210,17 +210,19 @@ func TestE2E_RuntimeToastAction(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
 		`window.__gofastr.toast({variant:'success', title:'Plain'});`+
+			`window.__gofastr.toast({variant:'success', title:'Empty', action:{label:'Broken', attrs:{'data-cui-rpc':''}}});`+
 			`window.__gofastr.toast({variant:'success', title:'Deleted', action:{label:'Undo', attrs:{`+
-			`'data-cui-rpc':'/undo', 'data-cui-rpc-method':'POST', 'onclick':'window.__bad=1', 'data-cui-signal-set':'x', 'class':'evil'}}})`, nil)); err != nil {
+			`'data-cui-rpc':'/undo', 'data-cui-rpc-method':'POST', 'data-cui-rpc-signal':'result', 'onclick':'window.__bad=1', 'data-cui-signal-set':'x', 'class':'evil'}}})`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if !pollTrue(ctx, `(function(){var rows=document.querySelectorAll('[data-hui-toast-stack] [data-hui-toast-id]');`+
-		`if(rows.length!==2) return false;`+
+		`if(rows.length!==3) return false;`+
 		`if(rows[0].querySelector('[data-hui-toast-action]')!==null) return false;`+
-		`var a=rows[1].querySelector('[data-hui-toast-action]');`+
+		`if(rows[1].querySelector('[data-hui-toast-action]')!==null) return false;`+
+		`var a=rows[2].querySelector('[data-hui-toast-action]');`+
 		`return !!a && a.tagName==='BUTTON' && a.type==='button' && a.textContent==='Undo' && a.className==='act' && !a.hidden`+
 		` && a.getAttribute('data-cui-rpc')==='/undo' && a.getAttribute('data-cui-rpc-method')==='POST'`+
-		` && !a.hasAttribute('onclick') && !a.hasAttribute('data-cui-signal-set');})()`) {
+		` && a.getAttribute('data-cui-rpc-signal')==='result' && !a.hasAttribute('onclick') && !a.hasAttribute('data-cui-signal-set');})()`) {
 		var stack string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(document.querySelector('[data-hui-toast-stack]')||{}).outerHTML || ''`, &stack))
 		t.Fatalf("the action toast did not draw one labelled button with only its rpc wiring; the stack holds:\n%s", stack)
@@ -229,7 +231,7 @@ func TestE2E_RuntimeToastAction(t *testing.T) {
 		`document.querySelector('[data-hui-toast-action]').click()`, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-toast-stack] [data-hui-toast-id]').length===1`) {
+	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-toast-stack] [data-hui-toast-id]').length===2`) {
 		t.Fatal("pressing the action did not close its row")
 	}
 }

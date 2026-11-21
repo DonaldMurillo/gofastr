@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -157,7 +158,7 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	if rerr != nil || raw == nil {
 		return m.notFound(ctx), nil
 	}
-	masked := maskedFields(m, raw, row)
+	masked := changedFields(m, raw, row, func(f schema.Field) bool { return m.system(f) || m.locked(f) })
 
 	if m.ext.Record != nil {
 		header := b.header(ctx, m, row, base, false)
@@ -474,7 +475,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	}
 	if b.activity && b.ui.host.Audit() != nil {
 		tabs = append(tabs, tab{key: "activity", label: i18nui.EntityTabActivity.Text(ctx), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
-			masked := rewrittenFields(m, raw, row)
+			masked := changedFields(m, raw, row, nil)
 			maps.Copy(masked, hookMaskedFields(ctx, m, b.id, raw))
 			return b.activityTab(ctx, m, masked), nil
 		}})

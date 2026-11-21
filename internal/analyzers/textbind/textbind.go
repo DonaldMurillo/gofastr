@@ -168,7 +168,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/allow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -334,7 +336,7 @@ func (c *checker) fieldHolds(field *types.Var) bool {
 func (c *checker) scanFills() {
 	info := c.pass.TypesInfo
 	for _, f := range c.pass.Files {
-		if strings.HasSuffix(c.pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(c.pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -423,7 +425,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	var order []*types.Func
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -759,7 +761,7 @@ func (st *fnState) callSinks(call *ast.CallExpr) {
 				st.sink(a, "")
 			}
 			return
-		case whereNames[name] && sig.Variadic() && sig.Params().Len() == 2 && isString(sig.Params().At(0).Type()):
+		case whereNames[name] && sig.Variadic() && sig.Params().Len() == 2 && astx.IsString(sig.Params().At(0).Type()):
 			for _, a := range call.Args[1:] {
 				st.sink(a, "")
 			}
@@ -797,7 +799,7 @@ func (st *fnState) callSinks(call *ast.CallExpr) {
 func calleeLabel(fn *types.Func, sig *types.Signature, i int) string {
 	name := fn.Name()
 	if recv := sig.Recv(); recv != nil {
-		if n := namedOf(recv.Type()); n != nil {
+		if n, ok := types.Unalias(astx.Deref(recv.Type())).(*types.Named); ok {
 			name = n.Obj().Name() + "." + name
 		}
 	} else if fn.Pkg() != nil {
@@ -813,7 +815,7 @@ func calleeLabel(fn *types.Func, sig *types.Signature, i int) string {
 // before it is the query string.
 func queryThenArgs(sig *types.Signature) bool {
 	n := sig.Params().Len()
-	if n < 2 || !isString(sig.Params().At(n-2).Type()) {
+	if n < 2 || !astx.IsString(sig.Params().At(n-2).Type()) {
 		return false
 	}
 	sl, ok := sig.Params().At(n - 1).Type().(*types.Slice)
@@ -857,7 +859,7 @@ func sqlArgsStruct(s *types.Struct) bool {
 		f := s.Field(i)
 		switch f.Name() {
 		case "SQL":
-			sqlField = isString(f.Type())
+			sqlField = astx.IsString(f.Type())
 		case "Args":
 			sl, ok := f.Type().(*types.Slice)
 			argsField = ok && isEmptyInterface(sl.Elem())
@@ -1436,7 +1438,7 @@ func isBuilder(t types.Type) bool {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
-	return isNamed(t, "strings", "Builder")
+	return astx.IsNamed(types.Unalias(t), "strings", "Builder")
 }
 
 // hostCallbackTaint is the taint of a call through a func-typed struct
@@ -1617,7 +1619,7 @@ func (st *fnState) sourceCall(sel *ast.SelectorExpr) (taint, bool) {
 		case "FormValue", "PostFormValue", "PathValue", "Referer", "UserAgent", "Cookie", "Cookies":
 			return taint{src: true}, true
 		}
-	case isNamed(recv, "net/url", "URL") || isPtrNamed(recv, "net/url", "URL"):
+	case astx.IsNamed(types.Unalias(recv), "net/url", "URL") || isPtrNamed(recv, "net/url", "URL"):
 		if sel.Sel.Name == "Query" {
 			if inner, ok := ast.Unparen(sel.X).(*ast.SelectorExpr); ok && isRequest(typeOf(pass, inner.X)) {
 				return taint{src: true}, true
@@ -1689,7 +1691,7 @@ func (st *fnState) cookieFromRequest(e ast.Expr) bool {
 
 // isCookie: *http.Cookie (or an http.Cookie value).
 func isCookie(t types.Type) bool {
-	return isPtrNamed(t, "net/http", "Cookie") || isNamed(t, "net/http", "Cookie")
+	return isPtrNamed(t, "net/http", "Cookie") || astx.IsNamed(types.Unalias(t), "net/http", "Cookie")
 }
 
 // vetted reports whether a storable check or an allow-list test of v
@@ -1703,10 +1705,7 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 		if st.checksIn(cond, v) || allowListed(st.c.pass, cond, v, true) {
 			return true
 		}
-		// if p, ok := providers[v]; ok { … }
-		if iff, ok := st.parents[cond].(*ast.IfStmt); ok && st.commaOKLookup(iff.Init, v) != nil {
-			return true
-		}
+
 	}
 	// A switch on v whose constant case holds the use.
 	for c, p := ast.Node(use), st.parents[use]; p != nil && p != body; c, p = p, st.parents[p] {
@@ -1719,27 +1718,90 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 		}
 	}
 	prefix := dominance.Prefix(use, st.parents, body)
+	if st.membershipVetted(v, use, after, prefix) {
+		return true
+	}
 	for _, stmts := range prefix {
-		var okVars []types.Object // comma-ok lookups of v in a map
 		for _, s := range stmts {
 			if s.Pos() < after {
 				continue
-			}
-			if ok := st.commaOKLookup(s, v); ok != nil {
-				okVars = append(okVars, ok)
 			}
 			if iff := dominance.IfStmtOf(s); iff != nil && iff.Cond != nil && dominance.Diverges(iff.Body) {
 				if st.checksIn(iff.Cond, v) || allowListed(st.c.pass, iff.Cond, v, false) {
 					return true
 				}
-				// _, ok := allowed[v]; if !ok { return }, in one
-				// statement or two.
-				if st.commaOKLookup(iff.Init, v) != nil || mentionsAny(st.c.pass, iff.Cond, okVars) {
-					return true
-				}
+
 			}
 			if verdicts := st.keptCheckIn(s, v); len(verdicts) > 0 && st.verdictGates(verdicts, s, prefix, use) {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+func (st *fnState) membershipVetted(v *types.Var, use ast.Node, after token.Pos, prefix [][]ast.Stmt) bool {
+	proves := func(iff *ast.IfStmt, holds bool) bool {
+		check := func(lookup ast.Stmt) bool {
+			verdict := st.commaOKLookup(lookup, v)
+			if verdict == nil || lookup.Pos() < after {
+				return false
+			}
+			for _, d := range st.defs[verdict] {
+				if lookup.Pos() < d.pos && d.pos < iff.Cond.Pos() {
+					return false
+				}
+			}
+			return provesMembership(st.c.pass, iff.Cond, verdict, holds)
+		}
+		if check(iff.Init) {
+			return true
+		}
+		for _, stmts := range dominance.Prefix(iff, st.parents, st.fd.Body) {
+			for _, s := range stmts {
+				if check(s) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for child, parent := use, st.parents[use]; parent != nil; child, parent = parent, st.parents[parent] {
+		if iff, ok := parent.(*ast.IfStmt); ok && (child == iff.Body || child == iff.Else) && proves(iff, child == iff.Body) {
+			return true
+		}
+	}
+	for _, stmts := range prefix {
+		for _, stmt := range stmts {
+			if iff := dominance.IfStmtOf(stmt); iff != nil && dominance.Diverges(iff.Body) && proves(iff, false) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func provesMembership(pass *analysis.Pass, cond ast.Expr, verdict types.Object, holds bool) bool {
+	switch e := ast.Unparen(cond).(type) {
+	case *ast.Ident:
+		return holds && pass.TypesInfo.Uses[e] == verdict
+	case *ast.UnaryExpr:
+		return e.Op == token.NOT && provesMembership(pass, e.X, verdict, !holds)
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.LAND, token.LOR:
+			x := provesMembership(pass, e.X, verdict, holds)
+			y := provesMembership(pass, e.Y, verdict, holds)
+			if holds == (e.Op == token.LAND) {
+				return x || y
+			}
+			return x && y
+		case token.EQL, token.NEQ:
+			for _, operands := range [][2]ast.Expr{{e.X, e.Y}, {e.Y, e.X}} {
+				if value := pass.TypesInfo.Types[operands[1]].Value; value != nil && value.Kind() == constant.Bool {
+					want := holds == (e.Op == token.EQL)
+					return provesMembership(pass, operands[0], verdict, want == constant.BoolVal(value))
+				}
 			}
 		}
 	}
@@ -2194,11 +2256,6 @@ func stringish(t types.Type) bool {
 	return false
 }
 
-func isString(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Info()&types.IsString != 0
-}
-
 func isEmptyInterface(t types.Type) bool {
 	i, ok := t.Underlying().(*types.Interface)
 	return ok && i.Empty()
@@ -2213,20 +2270,7 @@ func isPtrNamed(t types.Type, pkg, name string) bool {
 		return false
 	}
 	p, ok := t.(*types.Pointer)
-	return ok && isNamed(p.Elem(), pkg, name)
-}
-
-func isNamed(t types.Type, pkg, name string) bool {
-	n, ok := types.Unalias(t).(*types.Named)
-	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == pkg && n.Obj().Name() == name
-}
-
-func namedOf(t types.Type) *types.Named {
-	if p, ok := t.(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	n, _ := types.Unalias(t).(*types.Named)
-	return n
+	return ok && astx.IsNamed(types.Unalias(p.Elem()), pkg, name)
 }
 
 // fieldWrite records a write of rhs into field: request text marks the

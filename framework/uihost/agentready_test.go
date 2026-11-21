@@ -387,7 +387,7 @@ func TestWriteAgentLinkHeaders(t *testing.T) {
 	)
 	req := httptest.NewRequest(http.MethodGet, "/any", nil)
 	rec := httptest.NewRecorder()
-	ds.writeAgentLinkHeaders(rec, req)
+	ds.writeAgentLinkHeaders(req.Context(), rec, req)
 	link := rec.Header().Get("Link")
 	for _, want := range []string{
 		`rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`, `rel="service"`, `rel="service-desc"`,

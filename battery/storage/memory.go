@@ -18,7 +18,6 @@ type FileMeta struct {
 }
 
 // MemoryStorage implements Storage backed by an in-memory map.
-// It is safe for concurrent use via sync.RWMutex.
 type MemoryStorage struct {
 	mu       sync.RWMutex
 	files    map[string][]byte
@@ -33,17 +32,15 @@ func NewMemoryStorage() *MemoryStorage {
 	}
 }
 
-// maxMemoryFileSize is the default upper bound for MemoryStorage.Save.
-const maxMemoryFileSize int64 = 50 << 20 // 50 MB
+const maxMemoryFileSize int64 = 50 << 20
 
 // Save stores the contents of r under the given key.
-// Reads at most maxMemoryFileSize bytes to prevent unbounded memory allocation.
 func (ms *MemoryStorage) Save(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if key == "" {
-		return fmt.Errorf("storage: empty key")
+		return fmt.Errorf("%w: empty key", upload.ErrInvalidKey)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(r, maxMemoryFileSize+1))
@@ -68,7 +65,7 @@ func (ms *MemoryStorage) Save(ctx context.Context, key string, r io.Reader) erro
 	return nil
 }
 
-// Delete removes the file identified by key. It is not an error if the key does not exist.
+// Delete removes the file identified by key.
 func (ms *MemoryStorage) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -97,9 +94,7 @@ func (ms *MemoryStorage) Get(ctx context.Context, key string) (io.ReadCloser, er
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-// GetRange implements [upload.RangeGetter]. The bytes are already in memory,
-// so a *bytes.Reader satisfies Seek for free, the wrapper only supplies the
-// no-op Close.
+// GetRange implements [upload.RangeGetter].
 func (ms *MemoryStorage) GetRange(ctx context.Context, key string) (io.ReadSeekCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -115,8 +110,6 @@ func (ms *MemoryStorage) GetRange(ctx context.Context, key string) (io.ReadSeekC
 	return nopSeekCloser{bytes.NewReader(data)}, nil
 }
 
-// nopSeekCloser adds a no-op Close to a *bytes.Reader, the in-memory analogue
-// of [io.NopCloser] for a seekable source.
 type nopSeekCloser struct{ *bytes.Reader }
 
 func (nopSeekCloser) Close() error { return nil }

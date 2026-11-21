@@ -16,7 +16,8 @@ import (
 // flag (`--addr --no-a11y` took "--no-a11y" as the address and dropped
 // the a11y skip). A value that starts with a dash is written
 // --name=<value>; a lone "-" (codesign's ad-hoc identity) is a value.
-func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool) (map[string]bool, error) {
+// Each validator checks every supplied value before the parser stores it.
+func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool, validators ...func(name, value string) error) (map[string]bool, error) {
 	seen := map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		name, value, hasValue := strings.Cut(args[i], "=")
@@ -41,6 +42,11 @@ func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool)
 			}
 			i++
 			value = args[i]
+		}
+		for _, validate := range validators {
+			if err := validate(name, value); err != nil {
+				return seen, err
+			}
 		}
 		*dst = value
 		seen[name] = true

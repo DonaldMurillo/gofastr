@@ -264,8 +264,8 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 		t.Error("generic error is not an integrity fault")
 	}
 	hs := &moduleproto.HandshakeMismatchError{Field: "x", Want: "a", Got: "b"}
-	if !isIntegrityFault(hs) {
-		t.Error("HandshakeMismatchError is an integrity fault")
+	if !isIntegrityFault(hs) || !isIntegrityFault(fmt.Errorf("handshake: %w", hs)) {
+		t.Error("HandshakeMismatchError is an integrity fault with or without wrapping")
 	}
 	if !isIntegrityFault(moduleproto.ErrNegotiation) {
 		t.Error("ErrNegotiation is an integrity fault")
@@ -302,38 +302,21 @@ func TestIsIntegrityFault_classifies(t *testing.T) {
 // deadline), not a verdict the child answered.
 func TestIsIntegrityFault_HandshakeTransportFailureIsACrash(t *testing.T) {
 	causes := map[string]error{
-		"peer closed": moduleproto.ErrClosed,
-		"eof":         io.EOF,
-		"epipe":       &fs.PathError{Op: "write", Path: "|1", Err: syscall.EPIPE},
-		"deadline":    context.DeadlineExceeded,
+		"peer closed":    moduleproto.ErrClosed,
+		"eof":            io.EOF,
+		"unexpected eof": io.ErrUnexpectedEOF,
+		"epipe":          syscall.EPIPE,
+		"write path":     &fs.PathError{Op: "write", Path: "|1", Err: syscall.EPIPE},
+		"file closed":    os.ErrClosed,
+		"deadline":       context.DeadlineExceeded,
 	}
 	for name, cause := range causes {
-		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", fmt.Errorf("moduleproto: write: %w", cause)))
-		if isIntegrityFault(err) {
-			t.Errorf("%s: a handshake transport failure classified as integrity (terminal): %v", name, err)
+		for _, callErr := range []error{cause, fmt.Errorf("moduleproto: write: %w", cause)} {
+			err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", callErr))
+			if isIntegrityFault(err) {
+				t.Errorf("%s: a handshake transport failure classified as integrity (terminal): %v", name, err)
+			}
 		}
-	}
-}
-
-// Main's twin of the test above (PR #477 fixed the same classifier in
-// parallel): each transport cause wrapped the way the handshake wraps
-// it, and a wrapped mismatch that must stay terminal.
-func TestPeerGoneMidHandshakeIsCrash(t *testing.T) {
-	for _, cause := range []error{
-		moduleproto.ErrClosed,
-		io.EOF,
-		io.ErrUnexpectedEOF,
-		syscall.EPIPE,
-		os.ErrClosed,
-	} {
-		err := fmt.Errorf("handshake: %w", fmt.Errorf("moduleproto: handshake call: %w", cause))
-		if isIntegrityFault(err) {
-			t.Errorf("%v classed as an integrity fault", err)
-		}
-	}
-	mismatch := fmt.Errorf("handshake: %w", &moduleproto.HandshakeMismatchError{Field: "x", Want: "a", Got: "b"})
-	if !isIntegrityFault(mismatch) {
-		t.Error("a wrapped handshake mismatch must stay terminal")
 	}
 }
 

@@ -106,9 +106,10 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestSweepAgentLinkHeaderAppends
   - id: link-alternate-only-for-served-docs
-    rule: A page's markdown alternate link is emitted only while page docs are served and the screen has not set NoLLMMD, and it uses the escaped request path with control bytes stripped.
+    rule: A page's markdown alternate link is emitted only while page docs are served, the screen has not set NoLLMMD and the answer carries route meta (not a not-found or error page), and it uses the escaped request path with control bytes stripped.
     enforced_by:
       - test: framework/uihost.TestLinkAlternateSkipsNoLLMMD
+      - test: framework/uihost.TestNotFoundLinkHeaderHasNoMarkdownAlternate
       - test: framework/uihost.TestLinkAlternatePathControlBytes
       - test: framework/uihost.TestSweepAgentMarkdownAlternateStripsControls
   - id: accept-q-zero-refuses

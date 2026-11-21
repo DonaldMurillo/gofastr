@@ -10,7 +10,8 @@ func printAgentsUsage() {
 Generate or refresh AGENTS.md and the per-battery detail files in dir
 (default: the current directory).
 
-  init    write a fresh AGENTS.md (errors if it exists; use 'sync' to refresh)
-  sync    regenerate the battery inventory section in an existing AGENTS.md
-  skill   emit a host-skill snippet for an agent that edits this project`)
+  init             write a fresh AGENTS.md (errors if it exists; use 'sync' to refresh)
+  sync             regenerate the battery inventory section in an existing AGENTS.md
+  skill [--force]  emit a host-skill snippet for an agent that edits this project;
+                   --force replaces a hand-written SKILL.md`)
 }

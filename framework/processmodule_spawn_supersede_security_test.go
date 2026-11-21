@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // firstHeldRunner holds its FIRST Start until gate closes; every later
@@ -59,7 +60,7 @@ func (r *firstHeldRunner) Start(ctx context.Context, spec ChildSpec) (RunningChi
 // serving reverse calls under the revoked grant set while the
 // replacement ran orphaned.
 func TestSupersededSpawnNeverInstalls(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	t.Run("runner honors cancel", func(t *testing.T) { supersededSpawnCase(t, false) })
@@ -69,9 +70,9 @@ func TestSupersededSpawnNeverInstalls(t *testing.T) {
 func supersededSpawnCase(t *testing.T, ignoreCancel bool) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	runner := &firstHeldRunner{
-		inner:        &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
+		inner:        &envRunner{inner: &TrustedProcessRunner{}, env: pmtestkit.Env(pmtestkit.ModeEcho, nil)},
 		entered:      make(chan struct{}),
 		gate:         make(chan struct{}),
 		firstDone:    make(chan struct{}),
@@ -99,7 +100,7 @@ func supersededSpawnCase(t *testing.T, ignoreCancel bool) {
 	if _, err := sup.RevokeGrants(ctx, d.Name, []access.Permission{"articles:read"}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 10*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 10*time.Second)
 	runner.mu.Lock()
 	if len(runner.instances) < 2 {
 		runner.mu.Unlock()

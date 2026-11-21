@@ -2,6 +2,7 @@ package renderdiag
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,24 +24,66 @@ func (r *recordingFlusher) Write(b []byte) (int, error) { r.wrote = true; return
 func (r *recordingFlusher) WriteHeader(int)             {}
 func (r *recordingFlusher) Flush()                      { r.flushes++ }
 
-// TestResponseDelegatesFlushAndUnwrap pins the wrapper's passthrough
-// behaviour: http.NewResponseController must reach the underlying
-// writer's Flush through Unwrap (and the wrapper's own Flush method),
-// and Unwrap must return that writer. Before these existed, a flush on
-// a page path silently no-op'd only in test binaries.
 func TestResponseDelegatesFlushAndUnwrap(t *testing.T) {
 	under := newRecordingFlusher()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w, _ := TestResponse(under, req)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		t.Error("wrapped writer hides http.Flusher")
+	} else {
+		flusher.Flush()
+	}
 	rc := http.NewResponseController(w)
 	if err := rc.Flush(); err != nil {
 		t.Fatalf("ResponseController.Flush through the wrapper: %v", err)
 	}
-	if under.flushes == 0 {
-		t.Fatal("Flush did not reach the underlying writer")
+	if under.flushes != 2 {
+		t.Fatalf("underlying writer flushed %d times, want 2", under.flushes)
 	}
 	if got := w.(interface{ Unwrap() http.ResponseWriter }).Unwrap(); got != http.ResponseWriter(under) {
 		t.Fatalf("Unwrap returned %T, want the underlying writer", got)
+	}
+}
+
+type failingFlusher struct {
+	*recordingFlusher
+	err error
+}
+
+func (w failingFlusher) FlushError() error { return w.err }
+
+func TestResponsePropagatesFlushError(t *testing.T) {
+	want := errors.New("flush failed")
+	under := failingFlusher{recordingFlusher: newRecordingFlusher(), err: want}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w, _ := TestResponse(under, req)
+	if _, ok := w.(interface{ FlushError() error }); !ok {
+		t.Error("flush-capable wrapper lacks FlushError")
+	}
+	if err := http.NewResponseController(w).Flush(); !errors.Is(err, want) {
+		t.Fatalf("ResponseController.Flush = %v, want %v", err, want)
+	}
+}
+
+type plainWriter struct{ header http.Header }
+
+func (p *plainWriter) Header() http.Header         { return p.header }
+func (p *plainWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (p *plainWriter) WriteHeader(int)             {}
+
+// A controller over the wrapper must not report a flush that never
+// happened: the wrapper answered Flusher even over a writer that cannot
+// flush, so rc.Flush() returned nil and hid the failure from the caller.
+func TestResponseFlushAnswersFailureWhenTheWriterCannotFlush(t *testing.T) {
+	under := &plainWriter{header: http.Header{}}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w, _ := TestResponse(under, req)
+	if _, ok := w.(http.Flusher); ok {
+		t.Error("wrapped writer advertises unsupported http.Flusher")
+	}
+	if err := http.NewResponseController(w).Flush(); !errors.Is(err, http.ErrNotSupported) {
+		t.Fatalf("ResponseController.Flush = %v, want ErrNotSupported", err)
 	}
 }
 

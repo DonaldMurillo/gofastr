@@ -49,7 +49,7 @@ func TestSessionCookieFanoutBounded(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Cookie", manyCookies(2999, distinct))
 		h.ServeHTTP(httptest.NewRecorder(), req)
-		want := int64(maxSessionCookieCandidates)
+		want := int64(8)
 		if !distinct {
 			want = 1
 		}

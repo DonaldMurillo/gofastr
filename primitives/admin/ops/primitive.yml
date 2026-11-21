@@ -1,0 +1,77 @@
+primitive: admin.ops
+summary: The operations pages and their posts - how an ops post is read and answered, the Jobs page with its replay levers, and the Modules page with its supervisor levers.
+code:
+  - battery/admin/opspost.go
+  - battery/admin/queue.go
+  - battery/admin/process_modules.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new ops post reads its fields through readOps and answers through done or refuse with a name in results, so a page never prints request text.
+invariants:
+  - id: ops-posts-read-strictly
+    rule: readOps caps a body at 1 MiB and answers 413 past it, refuses a form RPC body with a repeated or case-folded key, and refuses any JSON value but a string or an array of strings.
+    enforced_by:
+      - test: battery/admin.TestOpsPostBodyIsCapped
+      - test: battery/admin.TestOpsRPCRefusesAmbiguousKeys
+      - test: battery/admin.TestGrantRefusesBadInput
+  - id: result-names-only
+    rule: A plain post's outcome comes back as ?result=<name> and the page draws only a name in results, so an unknown value draws nothing and no request text is printed.
+    enforced_by:
+      - test: battery/admin.TestResultNoticeIgnoresUnknownNames
+  - id: status-is-a-known-state
+    rule: The Jobs page passes ListJobs only pending, claimed, failed, done or "" for ?status=, and lists an unknown value as All with the filter warning.
+    enforced_by:
+      - test: battery/admin.TestQueueStatusIsOneOfTheKnownSet
+      - test: battery/admin.TestUnknownFilterValueWarns
+  - id: stats-error-draws-no-counts
+    rule: When Stats errors the Jobs page shows no counts and no pager, even when Stats filled some counts beside the error.
+    enforced_by:
+      - test: battery/admin.TestQueueStatsErrorDropsCounts
+  - id: jobs-page-is-clamped
+    rule: The Jobs page clamps ?p= to the last page before it scales by the page size.
+    enforced_by:
+      - test: battery/admin.TestQueuePagesOlderJobs
+  - id: queue-errors-stay-in-the-log
+    rule: A ListJobs failure draws a generic danger callout and the driver's text goes only to the log.
+    enforced_by:
+      - test: battery/admin.TestQueueLoadFailureHidesDriverText
+  - id: replay-id-is-storable
+    rule: A replay whose id is empty or not storable text is answered 400 bad-input before the queue or the audit log sees it.
+    enforced_by:
+      - test: battery/admin.TestQueueReplayRefusesUnstorableID
+  - id: held-key-replay-is-a-conflict
+    rule: A single replay the queue refuses with ErrDuplicateJob answers 409 replay-duplicate, and Replay all skips such a job, goes on and answers replayed-some.
+    enforced_by:
+      - test: battery/admin.TestReplayHeldKeyIsConflict
+      - test: battery/admin.TestReplayAllSkipsHeldKey
+  - id: replay-all-is-bounded
+    rule: Replay all reads the failed ids a page at a time before replaying any, stops at maxReplayAll ids or at a page that adds no new id, and audits only the jobs the queue says it queued.
+    enforced_by:
+      - test: battery/admin.TestQueueReplayAllIsBounded
+      - test: battery/admin.TestQueueReplayAllStopsOnARepeat
+      - test: battery/admin.TestReplayAllAuditsOnlyWhatItQueued
+  - id: plain-replay-reads-as-queued
+    rule: A queue without queue.ReplayReporter replays through Replay, and its nil reads as a replay that happened.
+    enforced_by:
+      - test: battery/admin.TestQueueReplayAuditsTheActor
+      - test: battery/admin.TestQueueReplayAllAuditsEachJob
+  - id: module-levers-need-manage
+    rule: Every module lever needs modules:manage on the caller's own roles in Config.Policy (Wildcard counts), refuses with no Policy, and audits a refusal as <op>_refused.
+    enforced_by:
+      - test: battery/admin.TestModulesLeversNeedManage
+      - test: battery/admin.TestModulesLeversRefusedWithoutPolicy
+  - id: module-lever-input-and-errors
+    rule: A module lever with no module, or a revoke with no capability, answers 400 bad-input, and a supervisor error answers 409 module-failed with its text only in the log.
+    enforced_by:
+      - test: battery/admin.TestModulesLeverRefusesBadInput
+      - test: battery/admin.TestModulesLeverErrorHidesItsText
+decisions:
+  - id: replay-all-reads-then-replays
+    date: 2026-11-20
+    status: accepted
+    decision: Replay all collects every failed id first and replays afterwards.
+    rejected:
+      - option: Replay each page as it is read.
+        why: Each replay moves a job out of the failed list, so the next page's offset skips jobs.
+    upholds: [replay-all-is-bounded]

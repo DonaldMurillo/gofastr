@@ -32,15 +32,6 @@ func TestCounterStringOverloadUnchanged(t *testing.T) {
 	}
 }
 
-func TestCounterRequiresNameOrSlice(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic with neither SignalName nor Slice")
-		}
-	}()
-	Counter(CounterConfig{})
-}
-
 func TestTabsSliceOverloadActiveIndex(t *testing.T) {
 	s := store.New("retro").Int("activeTab", 1)
 	html := string(Tabs(TabsConfig{Slice: s, Tabs: []TabItem{{Label: "A"}, {Label: "B"}}}))

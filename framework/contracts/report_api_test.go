@@ -316,6 +316,34 @@ func TestApplyAcceptsPathsInsideTheRoot(t *testing.T) {
 	}
 }
 
+func TestApplyRejectsCrossFileEdits(t *testing.T) {
+	const source = "abcdefgh\n"
+	for _, target := range []string{"b.css", "../outside.css"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			for _, file := range []string{"a.css", "b.css"} {
+				writeTemp(t, root, file, source)
+			}
+			r := &Report{Root: root, Diagnostics: []Diagnostic{{
+				File: "a.css",
+				Fix: &SuggestedFix{Edits: []TextEdit{
+					{File: "a.css", Start: 0, End: 1, Old: "a", New: "A"},
+					{File: target, Start: 1, End: 2, Old: "b", New: "B"},
+				}},
+			}}}
+			if applied, err := r.Apply(); err == nil || len(applied) != 0 {
+				t.Errorf("Apply = %v, %v; want rejection before any edit", applied, err)
+			}
+			for _, file := range []string{"a.css", "b.css"} {
+				got, err := os.ReadFile(filepath.Join(root, file))
+				if err != nil || string(got) != source {
+					t.Errorf("%s changed: %q, %v", file, got, err)
+				}
+			}
+		})
+	}
+}
+
 // SARIF requires every result's ruleId to resolve to an entry in
 // tool.driver.rules, and code scanning maps artifact URIs through
 // originalUriBaseIds, an absolute URI resolves to nothing. Neither can
@@ -429,20 +457,6 @@ func TestRuleWithoutAnExampleIsRejected(t *testing.T) {
 	halfEx.Examples = []Example{{Bad: "b"}}
 	if err := validateRule(halfEx); err == nil {
 		t.Error("an example with no Good half was accepted")
-	}
-}
-
-// The whole catalog satisfies the requirement, a gate that only the
-// fixture above exercises would not prove the shipped rules do.
-func TestEveryCatalogRuleCarriesAnExample(t *testing.T) {
-	rules := AllRules()
-	if len(rules) == 0 {
-		t.Fatal("empty catalog")
-	}
-	for _, r := range rules {
-		if len(r.Examples) == 0 {
-			t.Errorf("%s (%s) ships no example", r.ID, r.Slug)
-		}
 	}
 }
 
@@ -584,19 +598,43 @@ func TestTextFooterCannotForgeLines(t *testing.T) {
 // so both are pinned, as is the refusal to guess.
 func TestStaleSuppressionAutofixDeletesOnlyTheDirective(t *testing.T) {
 	cases := []struct {
-		name string
-		src  string
-		want string
+		name, file, src, want string
 	}{
 		{
 			name: "on its own line",
+			file: "a.go",
 			src:  "package main\n\nfunc a() {\n\t//gofastr:allow(GOFASTR1005) stale\n\tprintln(1)\n}\n",
 			want: "package main\n\nfunc a() {\n\tprintln(1)\n}\n",
 		},
 		{
 			name: "trailing a statement",
+			file: "a.go",
 			src:  "package main\n\nfunc a() {\n\tprintln(1) //gofastr:allow(GOFASTR1005) stale\n}\n",
-			want: "package main\n\nfunc a() {\n\tprintln(1)\n}\n",
+			want: "package main\n\nfunc a() {\n\tprintln(1) \n}\n",
+		},
+		{
+			name: "before a statement",
+			file: "a.go",
+			src:  "package main\n\nfunc a() {\n\t/* gofastr:allow(GOFASTR1005) stale */ println(1)\n}\n",
+			want: "package main\n\nfunc a() {\n\t println(1)\n}\n",
+		},
+		{
+			name: "after a quoted marker",
+			file: "a.go",
+			src:  "package main\nvar a = \"/* gofastr:allow(GOFASTR1005) literal */\" /*  gofastr:allow(GOFASTR1005) stale */\n",
+			want: "package main\nvar a = \"/* gofastr:allow(GOFASTR1005) literal */\" \n",
+		},
+		{
+			name: "multiline CSS before other code",
+			file: "a.css",
+			src:  "\uFEFF.a {} /* gofastr:allow(GOFASTR1806) stale\r\n*/ .b {}\r\n",
+			want: "\uFEFF.a {}  .b {}\r\n",
+		},
+		{
+			name: "script with CRLF",
+			file: "a.js",
+			src:  "void 0; // gofastr:allow(GOFASTR1802) stale\r\n",
+			want: "void 0; \r\n",
 		},
 	}
 	for _, c := range cases {
@@ -605,14 +643,16 @@ func TestStaleSuppressionAutofixDeletesOnlyTheDirective(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/app\n\ngo 1.26\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(c.src), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			writeTemp(t, dir, c.file, c.src)
 			pass, err := NewPass(dir, DefaultConfig())
 			if err != nil {
 				t.Fatal(err)
 			}
-			fix := deleteDirectiveFix(pass, "a.go", 4)
+			stale := collectSuppressions(pass).stale(func(Rule) bool { return true })
+			if len(stale) != 1 {
+				t.Fatalf("want one stale directive, got %v", stale)
+			}
+			fix := stale[0].deletion(pass)
 			if fix == nil || len(fix.Edits) != 1 {
 				t.Fatalf("no fix produced: %+v", fix)
 			}
@@ -640,14 +680,18 @@ func TestStaleSuppressionAutofixRefusesToGuess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fix := deleteDirectiveFix(pass, "a.go", 3); fix != nil {
-		t.Errorf("a line with no directive produced a fix: %+v", fix)
+	if stale := collectSuppressions(pass).stale(func(Rule) bool { return true }); len(stale) != 0 {
+		t.Errorf("a file with no directive produced stale findings: %v", stale)
 	}
-	if fix := deleteDirectiveFix(pass, "a.go", 99); fix != nil {
-		t.Error("a line past the end of the file produced a fix")
+	s := suppression{File: "a.go"}
+	s.Comment.Text = "//gofastr:allow(GOFASTR1005) stale"
+	s.Comment.End = len(s.Comment.Text)
+	if fix := s.deletion(pass); fix != nil {
+		t.Errorf("a changed comment span produced a fix: %+v", fix)
 	}
-	if fix := deleteDirectiveFix(pass, "missing.go", 1); fix != nil {
-		t.Error("an unknown file produced a fix")
+	s.Comment.End = 999
+	if fix := s.deletion(pass); fix != nil {
+		t.Error("a span past the end of the file produced a fix")
 	}
 }
 

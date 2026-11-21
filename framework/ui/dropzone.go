@@ -34,7 +34,8 @@ type FileDropzoneConfig struct {
 	// MaxSizeMB is announced in the help text; the server enforces it.
 	MaxSizeMB int
 	Help      string
-	// Error replaces Help and marks the input invalid.
+	// Error shows below Help (which stays visible), marks the input
+	// invalid, and leads its aria-describedby: "<id>-error <id>-help".
 	Error string
 	ID    string
 	Class string
@@ -97,9 +98,16 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		inputAttrs["aria-invalid"] = "true"
-		inputAttrs["aria-describedby"] = id + "-error"
-	} else if help := dropzoneHelp(cfg, ctx); help != "" {
-		inputAttrs["aria-describedby"] = id + "-help"
+	}
+	var described []string
+	if cfg.Error != "" {
+		described = append(described, id+"-error")
+	}
+	if dropzoneHelp(cfg, ctx) != "" {
+		described = append(described, id+"-help")
+	}
+	if len(described) > 0 {
+		inputAttrs["aria-describedby"] = strings.Join(described, " ")
 	}
 
 	zoneChildren := []render.HTML{

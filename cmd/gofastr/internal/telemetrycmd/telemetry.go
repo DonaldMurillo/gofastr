@@ -22,6 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/battery/telemetry"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
@@ -41,7 +42,7 @@ or the app with --app to read its default one
       --grep <text>    only lines holding every word of text, in any case
   requests             kept requests (traces), newest first
       --failed         only requests that failed
-      --slow <dur>     only requests that took at least this long (500ms)
+      --slow <dur>     only requests that took at least this long (e.g. 500ms)
       --route <route>  only this route, e.g. "GET /orders/{id}"
       --issue <id>     only the failures of one issue, from "issues"
   issues               failed requests grouped by what went wrong: how many
@@ -65,14 +66,16 @@ func RunTelemetry(args []string) {
 	if err == nil {
 		return
 	}
-	if !errors.Is(err, flag.ErrHelp) {
-		cli.Fail("%s", textsafe.ScrubTerminal(err.Error()))
-	}
-	if errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
-		fmt.Print(usage)
-	}
 	if errors.Is(err, flag.ErrHelp) {
+		fmt.Print(usage)
 		cli.OsExit(0)
+		return
+	}
+	cli.Fail("%s", textsafe.ScrubTerminal(err.Error()))
+	if errors.Is(err, errUsage) {
+		fmt.Fprint(os.Stderr, usage)
+		cli.OsExit(2)
+		return
 	}
 	cli.OsExit(1)
 }
@@ -122,19 +125,12 @@ func Run(w io.Writer, args []string, now time.Time) error {
 		return fmt.Errorf("%w: unknown subcommand %q", errUsage, sub)
 	}
 	// A trace ID may come before or after the flags.
-	var positional []string
-	for len(rest) > 0 {
-		if err := fs.Parse(rest); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return flag.ErrHelp
-			}
-			return fmt.Errorf("%w: %v", errUsage, err)
+	positional, err := cli.ParsePositionals(fs, rest)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return flag.ErrHelp
 		}
-		rest = fs.Args()
-		if len(rest) > 0 {
-			positional = append(positional, rest[0])
-			rest = rest[1:]
-		}
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if o.since < 0 || o.slow < 0 {
 		return fmt.Errorf("%w: --since and --slow take a duration of zero or more", errUsage)
@@ -204,14 +200,7 @@ func (o options) directory() (string, error) {
 	case o.app != filepath.Base(o.app) || o.app == "." || o.app == "..":
 		return "", fmt.Errorf("%w: --app takes an app name, not a path", errUsage)
 	}
-	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
-		return filepath.Join(x, o.app, "telemetry"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".local", "state", o.app, "telemetry"), nil
+	return telemetry.DefaultDir(o.app)
 }
 
 // clean makes text from a file safe to print: a log message is whatever
@@ -334,10 +323,7 @@ func (o options) requests(w io.Writer, store *itel.Store, from time.Time) error 
 	if o.asJSON {
 		enc := json.NewEncoder(w)
 		for _, s := range sums {
-			if err := enc.Encode(map[string]any{
-				"time": s.Time.UTC().Format(time.RFC3339Nano), "trace_id": s.TraceID, "route": s.Route, "path": s.Path,
-				"status": s.Status, "dur_us": s.Dur.Microseconds(), "error": s.Error, "failed_steps": s.FailedSteps,
-			}); err != nil {
+			if err := enc.Encode(itel.RequestRow(s)); err != nil {
 				return err
 			}
 		}
@@ -370,10 +356,7 @@ func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
 	if o.asJSON {
 		enc := json.NewEncoder(w)
 		for _, is := range issues {
-			if err := enc.Encode(map[string]any{
-				"id": is.ID, "route": is.Route, "status": is.Status, "error": is.Err, "example": is.Example, "count": is.Count,
-				"first": is.First.UTC().Format(time.RFC3339Nano), "last": is.Last.UTC().Format(time.RFC3339Nano), "last_trace_id": is.LastTraceID,
-			}); err != nil {
+			if err := enc.Encode(itel.IssueRow(is)); err != nil {
 				return err
 			}
 		}
@@ -399,7 +382,7 @@ func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
 		return err
 	}
 	if leftOut > 0 {
-		fmt.Fprintf(w, "%d more failures fit none of the first 2000 issues and are not listed.\n", leftOut)
+		fmt.Fprintf(w, "%d more failures fit none of the first %d issues and are not listed.\n", leftOut, itel.MaxIssues)
 	}
 	return nil
 }
@@ -510,14 +493,14 @@ func (o options) jobs(w io.Writer, jobs []itel.RouteStats, pct func(n, of int64)
 	return nil
 }
 
-// size writes a byte count: whole megabytes under a gigabyte, gigabytes
-// to one decimal over it.
+// size writes a byte count the way itel.ByteSize rounds it: whole
+// megabytes under a gigabyte, gigabytes to one decimal over it.
 func size(n int64) string {
-	const mb, gb = 1 << 20, 1 << 30
-	if n < gb {
-		return strconv.FormatInt((n+mb/2)/mb, 10) + " MB"
+	v, unit := itel.ByteSize(n)
+	if unit == "GB" {
+		return strconv.FormatFloat(v, 'f', 1, 64) + " GB"
 	}
-	return strconv.FormatFloat(float64(n)/gb, 'f', 1, 64) + " GB"
+	return strconv.FormatFloat(v, 'f', 0, 64) + " MB"
 }
 
 // machineLine says the machine's latest reading in a sentence, leaving
@@ -536,10 +519,7 @@ func machineLine(r itel.HostReading) string {
 	if p := r.DiskPercent(); p >= 0 {
 		parts = append(parts, fmt.Sprintf("disk %s of %s (%d%%)", size(r.DiskUsed), size(r.DiskTotal), p))
 	}
-	held := r.RSSBytes
-	if held == 0 {
-		held = r.HeapBytes
-	}
+	held := r.HeldBytes()
 	parts = append(parts, fmt.Sprintf("this app holds %s in %d goroutines", size(held), r.Goroutines))
 	return "Machine at " + stamp(r.Time) + ": " + strings.Join(parts, ", ") + "."
 }
@@ -558,11 +538,7 @@ func span(d time.Duration) string {
 // duration buckets it is read from can say, and marks one at the
 // ceiling: the request took that long or longer.
 func within(d time.Duration) string {
-	unit := time.Duration(1)
-	for d/unit >= 100 {
-		unit *= 10
-	}
-	d = (d + unit/2) / unit * unit
+	d = itel.RoundDuration(d)
 	var s string
 	switch {
 	case d < time.Millisecond:
@@ -604,7 +580,8 @@ func (o options) request(w io.Writer, store *itel.Store, id string) error {
 	if err != nil {
 		return err
 	}
-	logs, err := store.LogsForTrace(id, tr.Time.Add(-tr.Dur-time.Second), tr.Time.Add(time.Second))
+	from, to := tr.LogWindow()
+	logs, err := store.LogsForTrace(id, from, to)
 	if err != nil {
 		return err
 	}
@@ -669,44 +646,17 @@ type step struct {
 	failed     bool
 }
 
-// steps orders a trace's spans as a tree, each under its parent and
-// siblings by start. A span whose parent is missing hangs from the top.
+// steps orders a trace's spans as a tree (itel.Steps) and names each
+// by its detail: what was run, or what was called.
 func steps(tr itel.Trace) []step {
-	known := map[string]bool{}
-	for _, sp := range tr.Spans {
-		known[sp.SpanID] = true
-	}
-	children := map[string][]int{}
-	var roots []int
-	for i, sp := range tr.Spans {
-		if sp.ParentID != "" && sp.ParentID != sp.SpanID && known[sp.ParentID] {
-			children[sp.ParentID] = append(children[sp.ParentID], i)
-		} else {
-			roots = append(roots, i)
+	sts := itel.Steps(tr)
+	out := make([]step, 0, len(sts))
+	for _, s := range sts {
+		name := s.Name
+		if s.HasDetail {
+			name += "  " + s.Detail
 		}
+		out = append(out, step{name: name, start: s.Offset, dur: s.Dur, depth: s.Depth, failed: s.Error})
 	}
-	out := make([]step, 0, len(tr.Spans))
-	seen := make([]bool, len(tr.Spans))
-	var walk func(idx []int, depth int)
-	walk = func(idx []int, depth int) {
-		slices.SortStableFunc(idx, func(a, b int) int { return int(tr.Spans[a].Offset - tr.Spans[b].Offset) })
-		for _, i := range idx {
-			if seen[i] {
-				continue
-			}
-			seen[i] = true
-			sp := tr.Spans[i]
-			name := sp.Name
-			for _, key := range []string{"db.query.text", "http.url", "url.full"} {
-				if j := slices.IndexFunc(sp.Attrs, func(a itel.Attr) bool { return a.Key == key }); j >= 0 {
-					name += "  " + sp.Attrs[j].Value
-					break
-				}
-			}
-			out = append(out, step{name: name, start: sp.Offset, dur: sp.Dur, depth: depth, failed: sp.Error})
-			walk(children[sp.SpanID], depth+1)
-		}
-	}
-	walk(roots, 0)
 	return out
 }

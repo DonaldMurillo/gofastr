@@ -1,0 +1,55 @@
+primitive: cache
+summary: The cache battery's Cache interface, options and lifecycle adapter, with GetOrSet, which collapses concurrent misses on a key into one detached fill.
+code:
+  - battery/cache/cache.go
+  - battery/cache/battery.go
+  - battery/cache/doc.go
+  - battery/cache/agents.go
+docs:
+  - framework/docs/content/cache.md
+on_change:
+  - A change to what Set does with a TTL lands in MemoryCache and RedisCache together, and in cache.md's interface section.
+twins:
+  - job: Apply the Cache contract's TTL rules, zero meaning the default and negative meaning already expired, on Set.
+    why: Work not yet done; each backend resolves the effective TTL in its own Set, and the parity is held by a negative-TTL test per backend.
+    sites:
+      - path: battery/cache/memory.go
+        note: MemoryCache.Set.
+      - path: battery/cache/redis.go
+        note: RedisCache.Set.
+invariants:
+  - id: fill-is-detached-from-the-leader
+    rule: GetOrSet's shared fill runs under the first caller's context values without its cancellation, so one caller leaving does not fail the fill for the others.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetRedWaiterKeepsOwnCtx
+  - id: last-waiter-cancels-the-fill
+    rule: A caller whose context ends leaves at once with ctx.Err(); when the last waiter leaves, the flight is unhooked and its fill cancelled, and a fill nobody waits for stores nothing.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetAbandonedFillStoresNothing
+      - test: battery/cache.TestGetOrSetValueCacheStalledLoader
+      - test: battery/cache.TestGetOrSetCallerLeavesAtDeadline
+  - id: loader-panic-is-an-error
+    rule: A loader panic in the fill goroutine reaches every waiter as an error.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetLoaderPanicIsAnError
+  - id: loaded-value-survives-eviction
+    rule: A value the fill loaded and stored but cannot read back reaches dest through the same JSON round trip, unless the TTL is negative.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetReturnsLoadedValueWhenEntryIsGone
+  - id: value-caches-fill-alone
+    rule: A Cache that is not pointer-backed never joins another instance's fill.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetDoesNotJoinSeparateValueCacheInstances
+  - id: loader-error-is-not-cached
+    rule: A loader error is returned and nothing is stored.
+    enforced_by:
+      - test: battery/cache.TestGetOrSetLoaderErrorNotCached
+decisions:
+  - id: detach-the-fill
+    date: 2026-11-20
+    status: accepted
+    decision: The shared fill runs under context.WithoutCancel of the first caller's context, cancelled only when the last waiter leaves.
+    rejected:
+      - option: Run the fill under the leader's own context.
+        why: One caller disconnecting mid-load handed context.Canceled to every waiter joined behind it.
+    upholds: [fill-is-detached-from-the-leader]

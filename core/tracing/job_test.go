@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -102,5 +103,45 @@ func TestJobWithNoTracerIsACall(t *testing.T) {
 	ran := false
 	if err := Job(context.Background(), "cron x", func(context.Context) error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("ran=%v, %v", ran, err)
+	}
+}
+
+type jobLedgerError struct{}
+
+func (jobLedgerError) Error() string { return "ledger closed" }
+
+// A failed job carries error.type like every other failing span: the
+// type under fmt's %w wrappers for a returned error, ErrorTypePanic for a panic.
+func TestJobSpanCarriesErrorType(t *testing.T) {
+	errorType := func(sp sdktrace.ReadOnlySpan) string {
+		for _, kv := range sp.Attributes() {
+			if kv.Key == "error.type" {
+				return kv.Value.AsString()
+			}
+		}
+		return ""
+	}
+
+	sr := recordSpans(t)
+	_ = Job(context.Background(), "cron close", func(context.Context) error {
+		return fmt.Errorf("close: %w", jobLedgerError{})
+	})
+	if got := errorType(sr.Ended()[0]); got != "tracing.jobLedgerError" {
+		t.Errorf("a failed job's error.type = %q, want %q", got, "tracing.jobLedgerError")
+	}
+
+	sr = recordSpans(t)
+	func() {
+		defer func() { _ = recover() }()
+		_ = Job(context.Background(), "cron export", jobThatPanics)
+	}()
+	if got := errorType(sr.Ended()[0]); got != ErrorTypePanic {
+		t.Errorf("a panicked job's error.type = %q, want %q", got, ErrorTypePanic)
+	}
+
+	sr = recordSpans(t)
+	_ = Job(context.Background(), "cron ok", func(context.Context) error { return nil })
+	if got := errorType(sr.Ended()[0]); got != "" {
+		t.Errorf("a job that succeeded has error.type %q", got)
 	}
 }

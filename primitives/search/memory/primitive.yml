@@ -1,0 +1,27 @@
+primitive: search.memory
+summary: The in-memory search backend for tests and small apps, which matches whole words and erases by owner.
+code:
+  - battery/search/memory.go
+docs:
+  - framework/docs/content/search.md
+invariants:
+  - id: whole-words-last-term-prefix
+    rule: Memory matches a document only when every query term equals one of its words, the last term also matching any word it starts.
+    enforced_by:
+      - test: battery/search.TestMemoryMatchesWholeWords
+      - test: battery/search.TestMemorySearchRequiresAllTerms
+  - id: pagination-is-clamped
+    rule: A negative Offset counts as zero, a non-positive Limit as no limit, and an Offset plus Limit that overflows never slices past the results.
+    enforced_by:
+      - test: battery/search.TestSearchPaginationBoundsClamped
+  - id: fields-are-owned
+    rule: Memory copies Document.Fields on Index and copies them again for each returned result only, so neither the caller's map nor a result aliases the index.
+    enforced_by:
+      - test: battery/search.TestMemoryOwnsDocumentFields
+      - test: battery/search.TestSearchCopiesOnlyReturnedFields
+  - id: erasure-by-owner
+    rule: The store eraser deletes every document whose Owner is the erased user, counts without deleting on a dry run, touches nothing for an empty owner, and stops reaching the index once Close runs.
+    enforced_by:
+      - test: battery/search.TestEraseRemovesMemoryDocuments
+      - test: battery/search.TestMemoryEraseSkipsEmptyOwnerAndDryRun
+      - test: battery/search.TestBatteryStopClosesMemory

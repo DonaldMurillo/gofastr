@@ -3,10 +3,10 @@ package headless
 import (
 	"context"
 	"strconv"
-	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // Layout parts.
@@ -309,30 +309,7 @@ func headingTag(level int) string {
 
 // slugID derives an id from a title, prefixed by the component's own name.
 func slugID(prefix, s string) string {
-	out := make([]rune, 0, len(s))
-	prevDash := false
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			out = append(out, r)
-			prevDash = false
-		case r >= 'A' && r <= 'Z':
-			out = append(out, r+32)
-			prevDash = false
-		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
-			out = append(out, unicode.ToLower(r))
-			prevDash = false
-		default:
-			if !prevDash && len(out) > 0 {
-				out = append(out, '-')
-				prevDash = true
-			}
-		}
-	}
-	for len(out) > 0 && out[len(out)-1] == '-' {
-		out = out[:len(out)-1]
-	}
-	return prefix + "-" + string(out)
+	return prefix + "-" + idslug.Make(s)
 }
 
 // DividerProps is a line between things.

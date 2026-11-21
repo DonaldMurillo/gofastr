@@ -29,10 +29,21 @@ func TestSemanticEncodeFailureExits(t *testing.T) {
 }
 
 func TestSemanticFailuresAreJSON(t *testing.T) {
-	for _, args := range [][]string{{"query", "x", "-k", "abc"}, {"query", "x", "--mmr", "invalid"}, {"query"}, {"query", "x"}, {"stats"}} {
+	// A mistake in the command line is bad usage, exit 2; a failing
+	// index or remote is an operational error, exit 1.
+	for _, tc := range []struct {
+		args     []string
+		wantCode int
+	}{
+		{[]string{"query", "x", "-k", "abc"}, 2},
+		{[]string{"query", "x", "--mmr", "invalid"}, 2},
+		{[]string{"query"}, 2},
+		{[]string{"query", "x"}, 1},
+		{[]string{"stats"}, 1},
+	} {
 		t.Run("local", func(t *testing.T) {
 			covT_unwritableHome(t)
-			assertSemanticJSONError(t, args)
+			assertSemanticJSONError(t, tc.args, tc.wantCode)
 		})
 	}
 	for _, status := range []int{http.StatusBadGateway, http.StatusOK} {
@@ -44,20 +55,20 @@ func TestSemanticFailuresAreJSON(t *testing.T) {
 			defer srv.Close()
 			t.Setenv("GOFASTR_URL", srv.URL)
 			for _, args := range [][]string{{"query", "x"}, {"stats"}} {
-				assertSemanticJSONError(t, args)
+				assertSemanticJSONError(t, args, 1)
 			}
 		})
 	}
 }
 
-func assertSemanticJSONError(t *testing.T, args []string) {
+func assertSemanticJSONError(t *testing.T, args []string, wantCode int) {
 	t.Helper()
 	code := 0
 	output := clitest.CovT_capStdout(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunSemantic(args) })
 	})
 	var document struct{ Error string }
-	if err := json.Unmarshal([]byte(output), &document); err != nil || document.Error == "" || code != 1 {
-		t.Errorf("args=%v exit=%d error=%v stdout=%s", args, code, err, output)
+	if err := json.Unmarshal([]byte(output), &document); err != nil || document.Error == "" || code != wantCode {
+		t.Errorf("args=%v exit=%d want=%d error=%v stdout=%s", args, code, wantCode, err, output)
 	}
 }

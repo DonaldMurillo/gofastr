@@ -46,6 +46,11 @@ invariants:
       - test: framework/contracts.TestReportApplyRejectsChangedContent
       - test: framework/contracts.TestReportApplyRejectsOverlap
       - test: framework/contracts.TestReportApplyRefusesAnEditThatBreaksParsing
+  - id: apply-refuses-cross-file-edits
+    rule: Apply validates each suggested edit's target and accepts only edits in the diagnostic's file. An empty target inherits that file.
+    enforced_by:
+      - test: framework/contracts.TestApplyRejectsCrossFileEdits
+      - test: framework/contracts.TestApplyAcceptsPathsInsideTheRoot
   - id: apply-formats-go-and-keeps-crlf
     rule: Apply gofmts an edited Go file and keeps its CRLF line endings.
     enforced_by:

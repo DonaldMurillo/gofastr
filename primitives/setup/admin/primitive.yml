@@ -1,0 +1,18 @@
+primitive: setup.admin
+summary: The built-in AdminStep, which creates the first admin through the auth battery, and HealthStep, which runs the app's readiness checks.
+code:
+  - battery/setup/steps.go
+docs:
+  - framework/docs/content/first-run.md
+invariants:
+  - id: admin-email-is-canonical
+    rule: AdminStep stores the address the host's CanonicalizeEmail, or auth.CanonicalEmail, makes of the input, and refuses one that canonicalizes to nothing.
+    enforced_by:
+      - test: battery/setup.TestAdminStepCanonicalizesEmail
+      - test: battery/setup.TestAdminRefusesUnstorableEmail
+      - test: battery/setup.TestMixedCaseAdminStepDone
+  - id: admin-password-meets-policy
+    rule: AdminStep refuses a password auth.ValidatePasswordStrength refuses and creates the user with the admin role.
+    enforced_by:
+      - test: battery/setup.TestAdminStep_WeakPasswordFails
+      - test: battery/setup.TestAdminStep_CreatesAdminWithRole

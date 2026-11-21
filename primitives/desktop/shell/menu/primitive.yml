@@ -1,0 +1,58 @@
+primitive: desktop.shell.menu
+summary: The native menu and tray menu model, its validation at New, the dispatch of a chosen item and the platform-neutral plan every shell renders.
+code:
+  - battery/desktop/menu.go
+  - battery/desktop/menu_plan.go
+docs:
+  - framework/docs/content/desktop.md
+invariants:
+  - id: menu-item-is-one-kind
+    rule: validateMenu refuses an item with both Navigate and Handler, a Navigate path off the navigate grammar, an unknown role, a separator that navigates or runs a handler, and a duplicate id across the main and tray menus, and assigns m<N> to empty ids in declaration order.
+    enforced_by:
+      - test: battery/desktop.TestMenuValidationCases
+      - test: battery/desktop.TestPlanTrayMenuSharesActionIDTable
+  - id: menu-key-needs-a-command-modifier
+    rule: A menu Key is known modifiers then one key with at least one of cmd, ctrl or alt, because every shell takes an accelerator's keystroke before the page sees it.
+    enforced_by:
+      - test: battery/desktop.TestMenuKeyNeedsCommandModifier
+  - id: navigate-path-grammar
+    rule: validNavigatePath accepts only a path starting with one / with no backslash or control character and no . or .. segment, read both raw and percent-decoded up to the query, and no decoded segment holding a slash, a backslash or a control character.
+    enforced_by:
+      - test: battery/desktop.TestNavigatePathRefusesDotSpellings
+      - test: battery/desktop.TestDeepLinkRefusesEncodedSeparators
+      - test: battery/desktop.TestDeepLinkRefusesEncodedDots
+      - test: battery/desktop.TestOpenWindowValidatesPath
+  - id: main-menu-handler-off-the-ui-thread
+    rule: A main-menu Handler runs on its own goroutine so dispatchMenu returns at once, a tray Handler runs to completion inside dispatchTrayMenu, and both get a 30 second context and a recover that logs a panic.
+    enforced_by:
+      - test: battery/desktop.TestMainMenuDispatchDoesNotWaitForTheHandler
+      - test: battery/desktop.TestTrayMenuHandlerCompletionIsSynchronous
+      - test: battery/desktop.TestTrayMenuHandlerPanicIsContained
+  - id: plan-has-app-and-edit-menus
+    rule: PlanMenuBar always yields the app menu first, with Settings only when configured, then the caller's menus, then the Edit menu, dropping a top-level separator and turning a childless top-level item into its own one-row menu.
+    enforced_by:
+      - test: battery/desktop.TestPlanMenuBarSynthesizesAppAndEditMenus
+      - test: battery/desktop.TestPlanMenuBarSettingsRowOnlyWhenConfigured
+      - test: battery/desktop.TestPlanMenuBarDropsTopLevelSeparator
+      - test: battery/desktop.TestPlanMenuBarChildlessTopLevelActionStaysReachable
+  - id: plan-carries-english
+    rule: Every planned menu and row carries its English title, rendered under a translator whose locale is en, whatever the process default translator falls back to.
+    enforced_by:
+      - test: battery/desktop.TestPlanEnglishIgnoresDefault
+decisions:
+  - id: plan-is-pure-go
+    date: 2026-11-20
+    status: accepted
+    decision: Menu planning (key splitting, modifier masks, role resolution, action tags) is a pure pass in this package that each shell renders with its own toolkit.
+    rejected:
+      - option: Plan inside each platform package.
+        why: The mapping could then only be tested on its own GOOS, and three copies would drift.
+    upholds: [plan-has-app-and-edit-menus]
+  - id: nil-menu-still-gets-a-bar
+    date: 2026-11-20
+    status: accepted
+    decision: A nil Menu still plans the app and Edit menus.
+    rejected:
+      - option: No menu bar when the app declares none.
+        why: A macOS app with no menu bar has no keyboard way to quit and no copy and paste in the page.
+    upholds: [plan-has-app-and-edit-menus]

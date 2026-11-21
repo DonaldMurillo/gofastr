@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // init read its flags only after the name and only in the --flag=value
@@ -106,5 +108,36 @@ func TestInitModuleFlagMissingValue(t *testing.T) {
 	}
 	if _, err := os.Stat("app"); err == nil {
 		t.Error("init with a valueless --module created the project")
+	}
+}
+
+// An unknown flag is named and refused (exit 2) even when the project
+// name is missing: `gofastr init --forc` used to be diagnosed as a
+// missing name, hiding the typo the user actually made.
+func TestInitUnknownFlagRefusedBeforeMissingName(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	var code int
+	var errOut string
+	clitest.CovT_capStdout(t, func() {
+		errOut = clitest.CovT_capStderr(t, func() {
+			code = clitest.CovT_capExit(t, func() { RunInit([]string{"--zzz-unknown-flag=1"}) })
+		})
+	})
+	if code != 2 {
+		t.Fatalf("init --zzz-unknown-flag=1: exit %d, want 2", code)
+	}
+	if !strings.Contains(errOut, `Unknown flag "--zzz-unknown-flag=1"`) {
+		t.Fatalf("init did not name the unknown flag:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "Project name is required") {
+		t.Fatalf("init reported the missing name instead of the flag:\n%s", errOut)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		t.Errorf("init with an unknown flag wrote %s", filepath.Join(dir, e.Name()))
 	}
 }

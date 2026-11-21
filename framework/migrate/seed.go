@@ -37,14 +37,10 @@ func seedLoggerFromCtx(ctx context.Context) *slog.Logger {
 
 func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	safe := query.MustIdent(seedLedgerTable)
-	now := "CURRENT_TIMESTAMP"
-	if dialect == coremig.DialectPostgres {
-		now = "NOW()"
-	}
 	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		entity_name TEXT NOT NULL PRIMARY KEY,
 		seeded_at TIMESTAMP NOT NULL DEFAULT %s
-	)`, query.QuoteFolded(safe), now)
+	)`, query.QuoteFolded(safe), nowSQL(dialect))
 	_, err := db.ExecContext(ctx, ddl)
 	return err
 }
@@ -70,13 +66,9 @@ func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error)
 
 func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string) error {
 	safe := query.MustIdent(seedLedgerTable)
-	placeholder := "?"
-	if dialect == coremig.DialectPostgres {
-		placeholder = "$1"
-	}
 	q := fmt.Sprintf(
 		"INSERT INTO %s (entity_name) VALUES (%s) ON CONFLICT (entity_name) DO NOTHING",
-		query.QuoteFolded(safe), placeholder,
+		query.QuoteFolded(safe), placeholder(dialect, 1),
 	)
 	_, err := db.ExecContext(ctx, q, name)
 	return err

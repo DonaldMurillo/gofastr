@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // A key that is not in its clean form names the file of the key that is:
@@ -18,7 +19,7 @@ import (
 // deleted that user's file. Every operation refuses such a key.
 func TestLocalAliasKeysRefused(t *testing.T) {
 	t.Parallel()
-	ls := newTestLocalStorage(t, t.TempDir())
+	ls := teststorage.New(t, t.TempDir())
 	ctx := context.Background()
 	if err := ls.Save(ctx, "a/b.png", strings.NewReader("owner")); err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func TestLocalAliasKeysRefused(t *testing.T) {
 func TestLocalFoldedDeleteRefused(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
-	ls := newTestLocalStorage(t, base)
+	ls := teststorage.New(t, base)
 	ctx := context.Background()
 	if err := ls.Save(ctx, "a/b.png", strings.NewReader("owner")); err != nil {
 		t.Fatal(err)

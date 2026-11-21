@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -219,6 +220,53 @@ func TestView_ORMReadOnly(t *testing.T) {
 			t.Fatalf("write to a read-only view should be rejected, got %d", resp.Status())
 		}
 	})
+}
+
+func TestView_ReadRoutesRunHooks(t *testing.T) {
+	db := openSQLiteMem(t)
+	t.Cleanup(func() { db.Close() })
+	app := NewApp(WithDB(db))
+	users, err := usersWithActive().Get("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Registry.Register(users); err != nil {
+		t.Fatal(err)
+	}
+	view := activeUsersView()
+	app.View(view)
+	OnBeforeList(app, view.Name, func(_ context.Context, p *hook.ListPayload) error {
+		p.AddWhere("name = $1", "alice")
+		return nil
+	})
+	OnBeforeGet(app, view.Name, func(_ context.Context, p *hook.GetPayload) error {
+		p.AddWhere("name = $1", "alice")
+		return nil
+	})
+	if err := migrate.AutoMigratePlanContext(t.Context(), db, app.MigrationPlan()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO users (id, name, active) VALUES ('u1', 'alice', true), ('u2', 'bob', true)"); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req = req.WithContext(handler.SetUser(req.Context(), map[string]string{"id": "u1"}))
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := get("/active_users"); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), "alice") || strings.Contains(rec.Body.String(), "bob") {
+		t.Errorf("BeforeList should return only alice: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := get("/active_users/u1"); rec.Code != http.StatusOK {
+		t.Errorf("BeforeGet should allow alice: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := get("/active_users/u2"); rec.Code != http.StatusNotFound {
+		t.Errorf("BeforeGet should hide bob: %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 // TestView_LLMMDMatchesReadOnlyMount pins #358 end to end through App.View:

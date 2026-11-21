@@ -98,7 +98,8 @@ func DecodeBytesWithConfig(data []byte, cfg Config) (*Image, error) {
 	return decodeBytes(data, cfg)
 }
 
-// Open reads an image from a path, refusing a ".." segment.
+// Open reads an image from a path, refusing ".." segments that remain after filepath.Clean.
+// Use OpenFS with os.Root.FS for containment within a directory.
 func Open(path string) (*Image, error) {
 	if pathTraverses(path) {
 		return nil, fmt.Errorf("image: open %q: path contains traversal (..)", path)

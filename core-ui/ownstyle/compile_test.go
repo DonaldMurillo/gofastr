@@ -24,6 +24,61 @@ var goldenCases = []goldenCase{
 	{"nested.style.css", "nested", KindScoped},
 }
 
+func TestCompileDarkNestedMediaDeclarations(t *testing.T) {
+	for _, tc := range []struct {
+		name, query string
+	}{
+		{"non-dark query", "(--above-md)"},
+		{"second dark query with width", "(--dark) and (--above-md)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sheet, diags := Parse(".a { @media (--dark) { @media " + tc.query + " { color: inherit; } } }")
+			if len(diags) != 0 {
+				t.Fatal(diags)
+			}
+			got, err := Compile(sheet, "card", KindScoped, defaultTokens(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			const want = ".a{@media (min-width: 768px){color:inherit}}"
+			if strings.Count(got, want) != 2 || strings.Count(got, "color:inherit") != 2 {
+				t.Errorf("want the width-gated declaration once in each dark branch, got %q", got)
+			}
+		})
+	}
+}
+
+func TestCompileCaseVariantAnimationProperties(t *testing.T) {
+	sheet, diags := Parse(`@keyframes spin { to { opacity: 0; } }
+.a { Animation-Name: spin; ANIMATION: 1s spin; }`)
+	if len(diags) != 0 {
+		t.Fatal(diags)
+	}
+	got, err := Compile(sheet, "card", KindScoped, defaultTokens(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"@keyframes card-spin", "Animation-Name:card-spin", "ANIMATION:1s card-spin"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestCompileCustomMediaInteriorTrivia(t *testing.T) {
+	sheet, diags := Parse("@media ( /* breakpoint */ --above-md ) and (orientation: landscape) { .a { color: inherit; } }")
+	if len(diags) != 0 {
+		t.Fatal(diags)
+	}
+	got, err := Compile(sheet, "card", KindScoped, defaultTokens(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "@media (min-width: 768px) and (orientation: landscape)") {
+		t.Errorf("want breakpoint and raw media query in %q", got)
+	}
+}
+
 func TestCompileCommentsDoNotSupplyMathWhitespace(t *testing.T) {
 	for _, expression := range []string{
 		"1px/*c*/+ 2px", "1px +/*c*/2px", "1px/*c*/- 2px", "1px -/*c*/2px",

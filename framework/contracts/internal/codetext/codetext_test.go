@@ -42,8 +42,13 @@ func TestStripCommentsInsideLiterals(t *testing.T) {
 }
 
 func TestCommentsCarryStartLine(t *testing.T) {
-	src := "x = '//not'; // one\n/* two\nlines */ y // three"
-	want := []Comment{{1, "// one"}, {2, "/* two\nlines */"}, {3, "// three"}}
+	src := "x = '//not'; // one\n/* two\nlines */ y // three\r\n/* open"
+	want := []Comment{
+		{Line: 1, Text: "// one", Start: 13, End: 19},
+		{Line: 2, Text: "/* two\nlines */", Start: 20, End: 35},
+		{Line: 3, Text: "// three", Start: 38, End: 46},
+		{Line: 4, Text: "/* open", Start: 48, End: 55},
+	}
 	if got := Comments(src, true); !reflect.DeepEqual(got, want) {
 		t.Errorf("Comments = %#v, want %#v", got, want)
 	}

@@ -13,35 +13,17 @@ import (
 )
 
 // Pages renders the two screens the auth battery answers with itself:
-// the magic-link confirmation and the same-site hop. Set it on
-// AuthConfig.Pages. battery/auth/authui renders both through a UIHost
-// with framework/ui, so they carry the app's chrome and theme; the
-// battery does not import the design system itself, because API-only
-// apps use auth too and should not pay for it. nil keeps the plain
-// built-in documents, which ship no CSS and no script.
-//
-// The battery sets Cache-Control: no-store and Referrer-Policy:
-// no-referrer before it calls either method, because both URLs carry a
-// credential. An implementation writes the status and the body.
 type Pages interface {
-	// MagicLinkConfirm writes the confirmation screen. Its form MUST
-	// POST d.Token back to d.Action in a field named "token", and embed
-	// d.CSRFField. See ConfirmPageData.
+	// MagicLinkConfirm writes the confirmation screen; its form must POST d.Token to d.Action as "token" and embed d.CSRFField.
 	MagicLinkConfirm(w http.ResponseWriter, r *http.Request, d ConfirmPageData)
-	// Hop writes the page a cross-site arrival sees for a moment. The
-	// battery has already set a Refresh header that loads d.Target
-	// from this origin, so the page only needs a link for a
-	// browser that does not follow it. See HopPageData.
+	// Hop writes the page a cross-site arrival sees while the Refresh header loads d.Target.
 	Hop(w http.ResponseWriter, r *http.Request, d HopPageData)
 }
 
-// ConfirmWords are the confirmation screen's words, in the caller's
-// locale.
+// ConfirmWords are the confirmation screen's words in the caller's locale.
 type ConfirmWords struct {
 	Title string
-	// Ask names the account, emphasised: "Continue to sign in as
-	// <strong>a@b.c</strong>?". It is escaped already, the address
-	// included.
+	// Ask is the escaped question naming the account, the address emphasised.
 	Ask     template.HTML
 	Warning string
 	Submit  string
@@ -49,24 +31,14 @@ type ConfirmWords struct {
 
 // HopPageData is what Pages.Hop renders.
 type HopPageData struct {
-	// Target is a same-origin URL to load: this request's own path and
-	// query, carrying its credential (an authorization code and state,
-	// or a verification token), or the page a finished OAuth sign-in
-	// lands on.
+	// Target is the same-origin URL the hop loads.
 	Target string
-	// Title is the heading and Continue the link's text, in the
-	// caller's locale.
+	// Title is the heading and Continue the link's text.
 	Title    string
 	Continue string
 }
 
-// confirmWords resolves the confirmation screen's words for ctx.
 func confirmWords(ctx context.Context, email string) ConfirmWords {
-	// The address is what lets a user notice a link meant for someone
-	// else, so it stays emphasised wherever the translation puts it: the
-	// sentence is escaped whole, then the escaped address inside it is
-	// wrapped. Both pieces are escaped, so the wrap adds no markup the
-	// requester controls.
 	who := confirmThisAccount.Text(ctx)
 	if email != "" {
 		who = email
@@ -84,15 +56,11 @@ func confirmWords(ctx context.Context, email string) ConfirmWords {
 	}
 }
 
-// setCredentialPageHeaders keeps a page whose URL or form carries a
-// credential out of every cache and every referrer.
 func setCredentialPageHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 }
 
-// writeConfirmPage answers the magic-link GET through pages, or the
-// plain document when pages is nil.
 func writeConfirmPage(w http.ResponseWriter, r *http.Request, pages Pages, d ConfirmPageData) {
 	setCredentialPageHeaders(w)
 	if pages != nil {
@@ -104,17 +72,7 @@ func writeConfirmPage(w http.ResponseWriter, r *http.Request, pages Pages, d Con
 	_, _ = w.Write(defaultConfirmPage(r.Context(), d))
 }
 
-// defaultConfirmPage is the plain confirmation document. It ships no CSS
-// and no class names; Pages renders a styled one. Its words are phrases
-// in the caller's locale, and the document declares that language and
-// its direction.
 func defaultConfirmPage(ctx context.Context, d ConfirmPageData) []byte {
-	// action is a URL attribute: HTML escaping is scheme-blind, so the
-	// value goes through the one scheme allow-list (urlsafe.CleanAnchor,
-	// the menu.go Href spelling) BEFORE the escape. The plugin builds
-	// Action itself (basePath + "/magic-link/verify"); an Action that
-	// somehow fails the allow-list renders an empty action, which posts
-	// to the current URL and is refused by the verify handler.
 	action := urlsafe.CleanAnchor(d.Action)
 	lang := i18n.DocLang(ctx)
 	title := html.EscapeString(d.Words.Title)
@@ -142,16 +100,10 @@ func defaultConfirmPage(ctx context.Context, d ConfirmPageData) []byte {
 </html>`)
 }
 
-// writeSameSiteHop answers a cross-site arrival with a page that loads
-// target again from this origin, through pages or the plain document.
-// target is a same-origin path from sameOriginTarget.
 func writeSameSiteHop(w http.ResponseWriter, r *http.Request, pages Pages, target string, heading i18n.Phrase) {
 	ctx := r.Context()
 	d := HopPageData{Target: target, Title: heading.Text(ctx), Continue: oauthHopContinue.Text(ctx)}
 	setCredentialPageHeaders(w)
-	// The header, not a meta tag, carries the reload: a page drawn
-	// through a UIHost cannot say a meta refresh (its head scrub drops
-	// one), and browsers process this header the same way.
 	w.Header().Set("Refresh", "0;url="+urlsafe.CleanAnchor(target))
 	if pages != nil {
 		pages.Hop(w, r, d)
@@ -162,9 +114,6 @@ func writeSameSiteHop(w http.ResponseWriter, r *http.Request, pages Pages, targe
 	_, _ = io.WriteString(w, defaultHopPage(ctx, d))
 }
 
-// defaultHopPage is the plain hop document: a meta refresh to the
-// target, plus a link for a browser that does not follow it. Like the
-// plain confirmation page it ships no CSS and no script.
 func defaultHopPage(ctx context.Context, d HopPageData) string {
 	lang := i18n.DocLang(ctx)
 	href := html.EscapeString(urlsafe.CleanAnchor(d.Target))

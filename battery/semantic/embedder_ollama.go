@@ -14,67 +14,32 @@ import (
 	"time"
 )
 
-// OllamaEmbedder is an [Embedder] that calls a locally running Ollama
-// (or any compatible) server's /api/embed endpoint. Ollama itself,
-// LM Studio, and llama.cpp's server all expose this contract.
-//
-// This is the recommended swap from [StubEmbedder] for production use:
-//
-//	idx, _ := semantic.Open(semantic.Options{
-//	    Embedder: semantic.NewOllamaEmbedder(semantic.OllamaConfig{
-//	        Model: "nomic-embed-text",
-//	    }),
-//	})
-//
-// Pre-flight: run `ollama serve` (it auto-starts on most installs) and
-// `ollama pull nomic-embed-text`. The default model is 768-dim and is
-// the standard recommendation for local semantic search.
-//
-// Failure modes:
-//
-//   - Server unreachable → [Embed] returns the underlying network
-//     error. Callers should not blindly retry, a missing daemon is a
-//     configuration problem, not a transient one.
-//   - Model not pulled → Ollama responds 404 with a clear message; we
-//     surface it verbatim so users see "pull <model> first".
-//   - Dim mismatch with the configured [FlatStore] is detected later
-//     at [Store.Add] time via [errVecDim].
+// OllamaEmbedder is an Embedder over an Ollama-compatible /api/embed endpoint.
 type OllamaEmbedder struct {
 	baseURL string
 	model   string
-	// dim is the embedding dimension, lazily cached on the first successful
-	// Embed when not set at construction. Atomic because Embed (writer) and
-	// Dim (reader) may run on different goroutines concurrently.
-	dim    atomic.Int64
-	client *http.Client
+	dim     atomic.Int64
+	client  *http.Client
 }
 
 // OllamaConfig configures an [OllamaEmbedder].
 type OllamaConfig struct {
-	// BaseURL is the Ollama server root. Defaults to
-	// "http://localhost:11434". Trailing slashes are trimmed.
+	// BaseURL is the server root. Defaults to "http://localhost:11434".
 	BaseURL string
-	// Model is the embedding model name (e.g. "nomic-embed-text",
-	// "mxbai-embed-large", "all-minilm"). Defaults to
-	// "nomic-embed-text". Whatever you pick must be a model the server
-	// has pulled.
+	// Model is the embedding model name. Defaults to "nomic-embed-text".
 	Model string
-	// Dim is the embedding dimension. If 0, it is detected on the
-	// first call by inspecting the response. Setting it explicitly
-	// skips a probe at construction time and lets [FlatStore] pre-size.
+	// Dim sets the embedding dimension so [FlatStore] can size itself on open.
+	// If zero, the first successful [Embed] response determines the dimension.
 	Dim int
 	// Timeout is the per-request HTTP timeout. Defaults to 30s.
 	Timeout time.Duration
-	// Client is an optional pre-configured http.Client (for tests or
-	// custom transport). When nil, a fresh client with the timeout is
-	// constructed.
+	// Client is an optional pre-configured http.Client; nil builds one with
+	// Timeout.
 	Client *http.Client
 }
 
-// NewOllamaEmbedder constructs an Ollama-backed embedder. It does not
-// make any network calls until [Embed] is invoked, failures during
-// boot are deferred to first use so misconfigurations can be retried
-// without restarting the app.
+// NewOllamaEmbedder constructs an Ollama-backed embedder; it makes no network
+// call until Embed.
 func NewOllamaEmbedder(cfg OllamaConfig) *OllamaEmbedder {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "http://localhost:11434"
@@ -98,15 +63,10 @@ func NewOllamaEmbedder(cfg OllamaConfig) *OllamaEmbedder {
 	return e
 }
 
-// Name returns "ollama:<model>", the snapshot fingerprint baked into
-// persisted indexes uses this string, so changing models triggers a
-// loud [ModelMismatchError] on reload.
+// Name returns "ollama:<model>", the fingerprint persisted indexes check.
 func (e *OllamaEmbedder) Name() string { return "ollama:" + e.model }
 
-// Dim returns the embedding dimension. If the dimension was not set
-// in the config and no embedding has been produced yet, Dim returns
-// 0; [Open] should be passed a config with Dim set when the store is
-// initialised separately.
+// Dim returns the embedding dimension, or 0 before it is known.
 func (e *OllamaEmbedder) Dim() int { return int(e.dim.Load()) }
 
 type ollamaRequest struct {
@@ -121,9 +81,8 @@ type ollamaResponse struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-// Embed calls /api/embed with the entire batch. Ollama performs the
-// batching server-side, so we hand the slice over whole instead of
-// looping client-side.
+// Embed calls /api/embed with the whole batch, falling back to the
+// single-prompt API of older servers.
 func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
@@ -144,7 +103,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, (10<<20)+1)) // 10 MB max
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (10<<20)+1))
 	if err != nil {
 		return nil, fmt.Errorf("semantic: read ollama response: %w", err)
 	}
@@ -164,9 +123,6 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	}
 
 	embeddings := out.Embeddings
-	// Older Ollama servers return /api/embeddings shape (single
-	// embedding per request). If we batched into a server that does
-	// not understand the batch API, fall back gracefully.
 	if len(embeddings) == 0 && len(out.Embedding) > 0 && len(texts) == 1 {
 		embeddings = [][]float32{out.Embedding}
 	}
@@ -197,9 +153,8 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	return embeddings, nil
 }
 
-// Probe makes a tiny embedding call to detect Dim and confirm the
-// server is reachable. Useful at app boot so dim-mismatch errors
-// surface before the first user query rather than after.
+// Probe makes a tiny embedding call to detect Dim and confirm the server is
+// reachable.
 func (e *OllamaEmbedder) Probe(ctx context.Context) error {
 	vecs, err := e.Embed(ctx, []string{"probe"})
 	if err != nil {
@@ -208,7 +163,6 @@ func (e *OllamaEmbedder) Probe(ctx context.Context) error {
 	if len(vecs) != 1 || len(vecs[0]) == 0 {
 		return errors.New("semantic: ollama probe returned no embedding")
 	}
-	// Sanity check normalisation worked.
 	var sumsq float64
 	for _, x := range vecs[0] {
 		sumsq += float64(x) * float64(x)

@@ -157,8 +157,8 @@ func gateSafeLogf(tb testing.TB) func(string, ...any) {
 	}
 }
 
-// waitForStateTB is the testing.TB analog of waitForState (which takes
-// *testing.T). Shared by the gate helpers so they work under both T and B.
+// waitForStateTB polls the supervisor's Info for name until state == want
+// or the timeout elapses. Fatal on timeout.
 func waitForStateTB(tb testing.TB, sup *framework.ProcessModuleSupervisor, name string, want framework.ProcessState, timeout time.Duration) {
 	tb.Helper()
 	deadline := time.Now().Add(timeout)
@@ -292,7 +292,7 @@ func TestGate_NotReadyAndDisabledGates(t *testing.T) {
 		t.Fatal("never observed the enabled-but-not-Ready 503 window")
 	}
 	// Once Ready, the same route serves 200.
-	waitForState(t, sup, d.Name, framework.StateReady, 6*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateReady, 6*time.Second)
 	if rec := proxyGet(t, sup, d.Name, "tree", ""); rec.Code != http.StatusOK {
 		t.Errorf("ready /tree: status = %d, want 200", rec.Code)
 	}
@@ -370,7 +370,7 @@ func TestGate_DDLIsolation_ReadyGate(t *testing.T) {
 		t.Fatalf("bump generation: %v", err)
 	}
 	// Now it spawns to Ready and the proxy serves 200.
-	waitForState(t, sup, d.Name, framework.StateReady, 6*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateReady, 6*time.Second)
 	if rec := proxyGet(t, sup, d.Name, "tree", ""); rec.Code != http.StatusOK {
 		t.Errorf("post-migration /tree: status = %d, want 200", rec.Code)
 	}
@@ -630,7 +630,7 @@ func TestGate_RevokeDeniesReverseCall(t *testing.T) {
 	if _, err := sup.RevokeGrants(context.Background(), d.Name, []access.Permission{"articles:read"}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	waitForState(t, sup, d.Name, framework.StateReady, 6*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateReady, 6*time.Second)
 
 	// Post-revoke: the same reverse query is now denied at the broker's
 	// module-grant gate (the child no longer holds articles:read).
@@ -668,8 +668,8 @@ func TestGate_GenerationBumpResetsCircuit(t *testing.T) {
 	// Crash the child repeatedly (DEMO_CRASH_ON=tree) until the circuit
 	// opens (5 crashes within the 10s window). Once the circuit trips the
 	// child can NEVER return to Ready, so the loop must poll for
-	// Ready-OR-circuit-open rather than block on Ready (a plain waitForState
-	// would fatal-timeout the instant the circuit opens mid-loop).
+	// Ready-OR-circuit-open rather than block on Ready (a waitForStateTB
+	// call would fatal-timeout the instant the circuit opens mid-loop).
 	circuitOpen := false
 	overall := time.Now().Add(30 * time.Second)
 	for time.Now().Before(overall) {
@@ -712,7 +712,7 @@ func TestGate_GenerationBumpResetsCircuit(t *testing.T) {
 	if _, err := sup.BumpGeneration(context.Background(), d.Name); err != nil {
 		t.Fatalf("bump generation: %v", err)
 	}
-	waitForState(t, sup, d.Name, framework.StateReady, 6*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateReady, 6*time.Second)
 	after, _ := sup.Info(d.Name)
 	if after.CircuitOpen {
 		t.Errorf("circuit still open after generation bump (want reset)")

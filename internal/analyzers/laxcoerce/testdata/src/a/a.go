@@ -79,3 +79,38 @@ func assertOnNonMap(v any) (string, error) {
 	}
 	return s, nil
 }
+
+func sometimesRefuses(opts map[string]any, detail bool) (int, error) {
+	n, ok := opts["retries"].(int) // want `type assertion on opts treated as absence`
+	if !ok {
+		if detail {
+			return 0, fmt.Errorf("retries: want int")
+		}
+		return 0, nil
+	}
+	return n, nil
+}
+
+func sometimesSwallows(opts map[string]any, detail bool) (int, error) {
+	n, ok := opts["retries"].(int) // want `type assertion on opts treated as absence`
+	if !ok {
+		if !detail {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("retries: want int")
+	}
+	return n, nil
+}
+
+func switchSometimesLax(opts map[string]any, detail bool) (int, error) {
+	n, ok := opts["retries"].(int) // want `type assertion on opts treated as absence`
+	if !ok {
+		switch detail {
+		case true:
+			return 0, fmt.Errorf("retries: want int")
+		default:
+			return 0, nil
+		}
+	}
+	return n, nil
+}

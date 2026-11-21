@@ -2,13 +2,16 @@ package crud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 // pageOverflowHandler: plain offset-paginated entity.
@@ -59,6 +62,12 @@ func TestListRefusesOverflowingPage(t *testing.T) {
 			}
 		}
 	}
+	req := withTestUser(httptest.NewRequest("GET", "/items?offset=99999999999999999999999", nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.ServeStreamingList(req.Context(), rec, req, ch.visibleFields(), nil, nil, nil, 1, 20, nil)
+	if rec.Code != http.StatusBadRequest || !contains(rec.Body.String(), "offset_too_large") {
+		t.Errorf("direct streaming list = %d %s, want 400 offset_too_large", rec.Code, rec.Body.String())
+	}
 	// Within the cap still pages, past the last row included.
 	for _, q := range []string{"page=2&limit=4", "page=5000&limit=20", "offset=4&limit=4"} {
 		rec := httptest.NewRecorder()
@@ -85,6 +94,35 @@ func TestExplicitOffsetBeyondCapRejected(t *testing.T) {
 	if rec.Code == http.StatusOK {
 		t.Errorf("SECURITY: [offset-bound] ?offset=9223372036854775807 was accepted with %d (limit is clamped to MaxPageSize, offset is not): a client can force a per-request full-table skip scan (requireBoundedOffset)", rec.Code)
 	}
+}
+
+func TestCursorListIgnoresOffsetBounds(t *testing.T) {
+	ch := pageOverflowHandler(t)
+	list := func(t *testing.T, query, wantID string) pagination.CursorPage {
+		t.Helper()
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/items?"+query, nil), "u1")
+		rec := httptest.NewRecorder()
+		ch.List()(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("?%s = %d %s, want 200", query, rec.Code, rec.Body.String())
+		}
+		var page pagination.CursorPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Data) != 1 || page.Data[0]["id"] != wantID || !page.HasMore || page.Cursor == "" {
+			t.Fatalf("?%s = %+v, want one row (%s) and a continuation cursor", query, page, wantID)
+		}
+		return page
+	}
+
+	t.Run("deep page", func(t *testing.T) {
+		list(t, "cursor=&limit=1&page=99999999999999999999999", "i-1")
+	})
+	t.Run("deep offset", func(t *testing.T) {
+		first := list(t, "cursor=&limit=1", "i-1")
+		list(t, "cursor="+url.QueryEscape(first.Cursor)+"&limit=1&offset=99999999999999999999999&stream=true", "i-2")
+	})
 }
 
 func contains(s, sub string) bool {

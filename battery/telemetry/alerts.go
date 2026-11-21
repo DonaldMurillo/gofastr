@@ -16,33 +16,31 @@ import (
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
-// AlertKind is what an alert rule counts.
-type AlertKind string
+// AlertKind is what an alert rule counts; one declaration, in
+// internal/telemetry.
+type AlertKind = itel.AlertKind
 
 const (
-	// AlertFailed counts requests that failed: a 5xx, a panic, a job
-	// that returned an error.
-	AlertFailed AlertKind = "failed"
+	// AlertFailed counts requests that failed: a 5xx, a panic, a job that
+	// returned an error.
+	AlertFailed = itel.AlertFailed
 	// AlertSlow counts requests at or over Config.SlowThreshold.
-	AlertSlow AlertKind = "slow"
+	AlertSlow = itel.AlertSlow
 	// AlertDisk watches how full the disk holding the telemetry
 	// directory is. Its rule's AtLeast is a percentage from 1 to 100,
-	// and it takes no Within and no Route. It resolves five points
-	// below its line.
-	AlertDisk AlertKind = "disk"
+	// and it takes no Within and no Route.
+	AlertDisk = itel.AlertDisk
 )
 
 // AlertRule fires when at least AtLeast requests of its Kind finished
-// within the last Within. It resolves when the count has fallen to
-// half of AtLeast or less.
+// within the last Within.
 type AlertRule struct {
-	// Name identifies the rule in a notification. Required, unique.
+	// Name identifies the rule in a notification.
 	Name string
 	Kind AlertKind
-	// AtLeast is the count that fires the rule. At least 1.
+	// AtLeast is the count that fires the rule.
 	AtLeast int
 	// Within is the window counted, from one minute to one hour.
-	// Zero means five minutes.
 	Within time.Duration
 	// Route, when set, counts only that route ("POST /checkout").
 	Route string
@@ -51,8 +49,7 @@ type AlertRule struct {
 // Alert is a rule starting to fire, or resolving.
 type Alert struct {
 	Rule AlertRule
-	// Firing is true when the rule started firing and false when it
-	// resolved.
+	// Firing is true when the rule started firing and false when it resolved.
 	Firing bool
 	// Count is the requests counted in the window at that moment.
 	Count int
@@ -87,28 +84,20 @@ func (a Alert) Text() string {
 	return fmt.Sprintf("Alert: %s. %d %s%s in the last %s (the rule fires at %d).", a.Rule.Name, a.Count, what, scope, within, a.Rule.AtLeast)
 }
 
-// defaultAlerts is what an app gets with no rules of its own: told when
-// requests are failing in numbers and when the disk is nearly full, and
-// nothing else.
 var defaultAlerts = []AlertRule{
 	{Name: "failed requests", Kind: AlertFailed, AtLeast: 10, Within: 5 * time.Minute},
-	// The files this plugin writes are capped, but nothing else on the
-	// machine is: a database, an upload directory, the system's logs.
 	{Name: "disk nearly full", Kind: AlertDisk, AtLeast: 90},
 }
 
-// alertEvery is how often the rules are checked.
 const alertEvery = 15 * time.Second
 
 func fromEvent(e itel.AlertEvent) Alert {
 	return Alert{
-		Rule:   AlertRule{Name: e.Rule.Name, Kind: AlertKind(e.Rule.Kind), AtLeast: e.Rule.AtLeast, Within: e.Rule.Within, Route: e.Rule.Route},
+		Rule:   AlertRule{Name: e.Rule.Name, Kind: e.Rule.Kind, AtLeast: e.Rule.AtLeast, Within: e.Rule.Within, Route: e.Rule.Route},
 		Firing: e.Firing, Count: e.Count, At: e.At, Since: e.Since,
 	}
 }
 
-// newAlerts builds the counter for the configured rules, or the default
-// one, or nil when alerts are off.
 func (p *Plugin) newAlerts() (*itel.Alerts, error) {
 	if p.cfg.NoAlerts {
 		return nil, nil
@@ -119,15 +108,11 @@ func (p *Plugin) newAlerts() (*itel.Alerts, error) {
 	}
 	internal := make([]itel.AlertRule, len(rules))
 	for i, r := range rules {
-		internal[i] = itel.AlertRule{Name: r.Name, Kind: itel.AlertKind(r.Kind), AtLeast: r.AtLeast, Within: r.Within, Route: r.Route}
+		internal[i] = itel.AlertRule{Name: r.Name, Kind: r.Kind, AtLeast: r.AtLeast, Within: r.Within, Route: r.Route}
 	}
 	return itel.NewAlerts(internal)
 }
 
-// watch runs every alertEvery until stop is closed: it writes the
-// request counts of the minutes that have ended, and checks the alert
-// rules when there are any. Each change of a rule is a log line, and
-// goes to Config.Notify when there is one.
 func (p *Plugin) watch(app *framework.App, w *itel.Writer, counts *itel.Rollup, alerts *itel.Alerts, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	tick := time.NewTicker(alertEvery)
@@ -142,13 +127,8 @@ func (p *Plugin) watch(app *framework.App, w *itel.Writer, counts *itel.Rollup, 
 	}
 }
 
-// tick is one round of watch.
 func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, alerts *itel.Alerts, now time.Time) {
-	// A failed write is counted by the writer, and the minutes it held
-	// are gone: counts are not queued.
 	_ = w.FlushStats(counts, false)
-	// Once a minute, in the round that first sees the minute: a
-	// reading of the machine, and the heartbeat.
 	minute := now.Unix() / 60
 	fresh := minute != p.hostMinute
 	if fresh {
@@ -164,15 +144,11 @@ func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, a
 	if alerts != nil {
 		p.checkAlerts(app, alerts, now)
 	}
-	// Last: a monitor that is slow to answer holds up nothing else.
 	if fresh {
 		p.beat(app)
 	}
 }
 
-// readMachine takes one reading, with a net under it: this runs on the
-// watch goroutine, where a panic would end the app over a number for a
-// chart.
 func (p *Plugin) readMachine(app *framework.App, now time.Time) (r itel.HostReading, ok bool) {
 	read := p.readHost
 	if read == nil {
@@ -180,7 +156,6 @@ func (p *Plugin) readMachine(app *framework.App, now time.Time) (r itel.HostRead
 	}
 	defer func() {
 		if v := recover(); v != nil {
-			// The results are still their zero values: no reading.
 			app.Logger().Error("telemetry: reading the machine panicked", "panic", textsafe.Recovered(v))
 		}
 	}()
@@ -202,12 +177,6 @@ func (p *Plugin) checkAlerts(app *framework.App, alerts *itel.Alerts, now time.T
 	}
 }
 
-// notify calls the app's notifier with a deadline, on a goroutine of
-// its own. One that returns in time is waited for. One that hangs is
-// left behind at the deadline, or when the app stops: the watcher goes
-// on to the next check, and stopping does not wait for it. A notifier
-// that ignores its context keeps its goroutine; that is the notifier's
-// to fix, and the log says so.
 func (p *Plugin) notify(app *framework.App, a Alert) {
 	limit := p.notifyTimeout
 	if limit <= 0 {
@@ -231,7 +200,7 @@ func (p *Plugin) notify(app *framework.App, a Alert) {
 	case <-done:
 	case <-ctx.Done():
 		select {
-		case <-done: // it returned as its context ended
+		case <-done:
 		case <-time.After(time.Second):
 			app.Logger().Error("telemetry: the alert notifier did not return when its context ended; it is left running", "rule", a.Rule.Name)
 		}
@@ -251,18 +220,7 @@ func (p *Plugin) Firing() []Alert {
 	return out
 }
 
-// webhookClient posts alerts: a deadline, and no following a redirect
-// to wherever a response points.
-var webhookClient = &http.Client{
-	Timeout:       10 * time.Second,
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-}
-
-// WebhookNotifier returns a Config.Notify that posts each alert to
-// target as JSON: {"text": ..., "content": ..., "alert": {...}}. Slack,
-// Mattermost and Teams incoming webhooks read "text" and Discord reads
-// "content", so one URL of any of them works as it is. A target that
-// cannot be posted to is the notifier's error each time it is called.
+// WebhookNotifier returns a Config.Notify that posts each alert to target as JSON.
 func WebhookNotifier(target string) func(context.Context, Alert) error {
 	u, perr := url.Parse(target)
 	return func(ctx context.Context, a Alert) error {
@@ -285,10 +243,8 @@ func WebhookNotifier(target string) func(context.Context, Alert) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := webhookClient.Do(req)
+		resp, err := outboundClient.Do(req)
 		if err != nil {
-			// The URL of a chat webhook is its secret: say which host
-			// refused, not the whole of it.
 			return fmt.Errorf("telemetry: alert webhook to %s failed", u.Host)
 		}
 		defer resp.Body.Close()

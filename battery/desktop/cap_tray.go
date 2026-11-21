@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 )
 
-// trayCapability: drive the configured tray item. Ungated, the title
-// is the app's own menu-bar label, not user data.
 func (b *Battery) trayCapability() Capability {
 	return Capability{
 		Name:        "tray",

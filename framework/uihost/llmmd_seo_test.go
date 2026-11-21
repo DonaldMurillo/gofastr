@@ -2,11 +2,14 @@ package uihost
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -83,6 +86,41 @@ func TestScreenLLMMD_InheritsSEOFrontMatter(t *testing.T) {
 		if !strings.Contains(htmlBody, want) {
 			t.Errorf("HTML head missing %q", want)
 		}
+	}
+}
+
+type patternLLMMDRenderKey struct{}
+
+type patternLLMMDSEOComp struct{ component.ContextOnly }
+
+func (*patternLLMMDSEOComp) SetParams(map[string]string) {}
+
+func (patternLLMMDSEOComp) RenderCtx(ctx context.Context) render.HTML {
+	*ctx.Value(patternLLMMDRenderKey{}).(*bool) = true
+	return html.Paragraph(html.TextConfig{}, render.Text("Pattern content"))
+}
+
+func (patternLLMMDSEOComp) ScreenSEO(ctx context.Context) SEO {
+	rendered := *ctx.Value(patternLLMMDRenderKey{}).(*bool)
+	return SEO{Description: fmt.Sprintf("rendered=%t", rendered)}
+}
+
+func TestPatternLLMMDResolvesSEOBeforeRender(t *testing.T) {
+	a := app.NewApp("seo-order")
+	a.Register("/p/:id", &patternLLMMDSEOComp{}, nil)
+	ds := New(a, WithPublicLLMMD())
+	req := httptest.NewRequest(http.MethodGet, "/p/:id/llm.md", nil)
+	rendered := false
+	req = req.WithContext(context.WithValue(req.Context(), patternLLMMDRenderKey{}, &rendered))
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+
+	md := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(md, "Pattern content") {
+		t.Fatalf("pattern doc returned %d with body:\n%s", rec.Code, md)
+	}
+	if !strings.Contains(md, "\ndescription: \"rendered=false\"\n") {
+		t.Errorf("pattern doc SEO must observe state before render; got:\n%s", md)
 	}
 }
 

@@ -17,12 +17,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
-// queueStatuses are the states the Jobs page filters by: DBQueue's
-// pending, claimed (running), failed (terminal) and done (kept under
-// queue.WithDoneRetention). Any other ?status= reads as All, so request
-// text never reaches ListJobs.
 var queueStatuses = []struct {
 	value   string
 	label   i18n.Phrase
@@ -34,13 +31,8 @@ var queueStatuses = []struct {
 	{"done", i18nui.AdminQueueDone, ui.StatusSuccess},
 }
 
-// queueStatus reads ?status= as one of queueStatuses, or "". unknown
-// reports a value that names none, which the page lists as All and warns of.
-func queueStatus(r *http.Request) (status string, unknown bool) {
-	if r == nil {
-		return "", false
-	}
-	s := r.URL.Query().Get("status")
+func queueStatus(q url.Values) (status string, unknown bool) {
+	s := q.Get("status")
 	for _, st := range queueStatuses {
 		if st.value == s {
 			return s, false
@@ -49,43 +41,28 @@ func queueStatus(r *http.Request) (status string, unknown bool) {
 	return "", s != ""
 }
 
-// replayable returns the queue's replay capability, if it has one.
 func (b *Battery) replayable() (queue.Replayable, bool) {
 	rq, ok := b.cfg.Queue.(queue.Replayable)
 	return rq, ok
 }
 
-// replayNothing tells a Replay click that the job was not failed any more.
-var replayNothing = i18n.Define("admin.replay_nothing", "That job is no longer failed. Nothing was queued.")
-
-// queuePageParam is the Jobs page's page number in its query.
-const queuePageParam = "p"
-
-// maxReplayAll bounds the jobs one Replay all click re-queues, so the
-// request's work has an end however many jobs have failed.
 const maxReplayAll = 10_000
 
-// renderQueue draws the Jobs page: the status filter, then a page of
-// jobs, newest first, with a pager when they run past one page. The
-// failed view of a replayable queue replays one job or every failed job.
 func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.HTML {
-	r := appui.RequestFromContext(ctx)
-	status, unknownStatus := queueStatus(r)
-	limit := b.cfg.QueueListLimit
-	pageNo := 1
+	dropped := false
+	var query url.Values
+	if r := appui.RequestFromContext(ctx); r != nil {
+		query = r.URL.Query()
+		dropped = listfilter.DroppedNarrowing(r.URL.RawQuery, func(name string) bool { return name == "status" })
+	}
+	status, unknownStatus := queueStatus(query)
+	pageNo, limit := decodePage(query, b.cfg.QueueListLimit, opsMaxLimit)
 	carry := url.Values{}
 	if status != "" {
 		carry.Set("status", status)
 	}
-	if r != nil {
-		q := r.URL.Query()
-		limit = parseLimit(q.Get("limit"), b.cfg.QueueListLimit)
-		if q.Has("limit") {
-			carry.Set("limit", strconv.Itoa(limit))
-		}
-		if n, err := strconv.Atoi(q.Get(queuePageParam)); err == nil && n > 1 {
-			pageNo = n
-		}
+	if query.Has("limit") {
+		carry.Set("limit", strconv.Itoa(limit))
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.AdminQueue.Text(ctx),
@@ -93,9 +70,6 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	})
 	stats, err := b.cfg.Queue.Stats(ctx)
 	if err != nil {
-		// Stats can come back partly filled beside the error; those
-		// counts are not trustworthy, so the chips show none and the
-		// page draws no pager.
 		b.logger().Warn("admin: queue stats", "error", err)
 		stats = nil
 	}
@@ -103,15 +77,13 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	if stats != nil {
 		pages = pageCount(queueTotal(stats, status), limit)
 	}
-	// The page is clamped before it scales by the page size, so a huge
-	// ?p= cannot wrap the offset.
 	pageNo = min(pageNo, pages)
 	q := url.Values{}
 	for k, v := range carry {
 		q[k] = v
 	}
 	if pageNo > 1 {
-		q.Set(queuePageParam, strconv.Itoa(pageNo))
+		q.Set(pageParam, strconv.Itoa(pageNo))
 	}
 	page := b.cfg.PathPrefix + "/queue"
 	if len(q) > 0 {
@@ -119,10 +91,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	}
 	jobs, err := b.cfg.Queue.ListJobs(ctx, status, limit, (pageNo-1)*limit)
 	if err != nil {
-		// Driver text can carry DSNs and hosts: it goes to the log only.
-		b.logger().Error("admin: list jobs", "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: list jobs", i18nui.AdminQueueLoadFailed, err, []render.HTML{header})
 	}
 	_, canReplay := b.replayable()
 	if failed := stats["failed"]; canReplay && failed > 0 {
@@ -137,32 +106,20 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			}),
 		})
 	}
-	var pager *ui.PaginationConfig
-	if pages > 1 {
-		pager = &ui.PaginationConfig{
-			Page:      pageNo,
-			Pages:     pages,
-			Path:      b.cfg.PathPrefix + "/queue",
-			Query:     carry,
-			PageParam: queuePageParam,
-			Ctx:       ctx,
-		}
-	}
-	var dropped render.HTML
-	if unknownStatus || droppedNarrowing(r, "status") {
-		dropped = filterNotApplied(ctx)
+	pager := pagePager(ctx, b.cfg.PathPrefix+"/queue", carry, pageNo, pages)
+	var warning render.HTML
+	if unknownStatus || dropped {
+		warning = listfilter.Warning(ctx)
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
-		dropped,
+		warning,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
 	)
 }
 
-// queueTotal is how many jobs the status view lists: that status's
-// count, or every count for All.
 func queueTotal(stats queue.JobStats, status string) int {
 	if status != "" {
 		return stats[status]
@@ -174,12 +131,7 @@ func queueTotal(stats queue.JobStats, status string) int {
 	return total
 }
 
-// queueFilter is the status filter: a GET form that navigates to
-// ?status=<value>, with each status's count beside it and the sum beside
-// All. A nil stats shows no counts.
 func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.JobStats) render.HTML {
-	// Each status is a link that keeps the page size and starts again at
-	// the first page; a count the queue could not give is left off.
 	href := func(status string) string {
 		q := url.Values{}
 		if status != "" {
@@ -206,8 +158,6 @@ func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.J
 	return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.AdminQueueStatus.Text(ctx), Items: items, Ctx: ctx})
 }
 
-// jobStatusBadge names a job's state; a status the page does not know
-// (another backend's) reads as itself.
 func jobStatusBadge(ctx context.Context, status string) render.HTML {
 	for _, st := range queueStatuses {
 		if st.value == status {
@@ -220,11 +170,6 @@ func jobStatusBadge(ctx context.Context, status string) render.HTML {
 	return ui.StatusBadge(ui.StatusBadgeConfig{Label: status, Variant: ui.StatusNeutral})
 }
 
-// jobsTable draws jobs, with pager under them when it is set: the job,
-// its type, status, attempts, when it last changed and the error its
-// last failed attempt returned. listed is the status the jobs were
-// listed under ("" for All). With replay, each failed row replays its
-// job and the answer returns to page.
 func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig, flush bool) render.HTML {
 	cols := []ui.Column{
 		{Key: "id", Header: i18nui.AdminColJob.Text(ctx), Phone: ui.PhoneSubtitle},
@@ -284,7 +229,6 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page 
 	})
 }
 
-// handleReplay re-queues one failed job and audits who did it.
 func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/queue?status=failed"
 	if _, ok := b.readOps(w, r, page); !ok {
@@ -296,9 +240,6 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	// The id arrives percent-decoded. One that is not storable text
-	// (invalid UTF-8 or a NUL) names no job, and Postgres refuses it in
-	// the queue's and the audit log's text binds (22021, a 500).
 	if id == "" || !textsafe.Storable(id) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
@@ -321,12 +262,6 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 	b.done(w, r, page, "replayed")
 }
 
-// handleReplayAll re-queues every failed job, up to maxReplayAll,
-// auditing each one. It reads the failed jobs a page at a time first,
-// then replays them, so the replays do not move the pages it is still
-// reading. A job whose unique key a newer job holds stays failed and the
-// run goes on. Any other failure stops the run; the jobs replayed before
-// it stay replayed and audited.
 func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/queue?status=failed"
 	if _, ok := b.readOps(w, r, page); !ok {
@@ -345,6 +280,7 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := adminActorID(r.Context())
 	skipped := false
+	queued := 0
 	for _, id := range ids {
 		replayed, err := replayJob(r.Context(), rq, id)
 		if err != nil {
@@ -356,10 +292,14 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 			b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 			return
 		}
-		// A job someone else replayed since the list was read is not this run's.
 		if replayed {
+			queued++
 			b.appendAudit(r.Context(), "queue", "replay", id, actor, nil)
 		}
+	}
+	if queued == 0 {
+		b.refuse(w, r, page, http.StatusConflict, "replay-all-nothing")
+		return
 	}
 	if skipped {
 		b.done(w, r, page, "replayed-some")
@@ -368,9 +308,6 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	b.done(w, r, page, "replayed-all")
 }
 
-// failedJobIDs reads the failed jobs' ids a page of QueueListLimit at a
-// time, newest first, up to maxReplayAll. A page that adds no new id
-// ends the read, so a backend that repeats a page cannot keep it going.
 func (b *Battery) failedJobIDs(ctx context.Context) ([]string, error) {
 	limit := b.cfg.QueueListLimit
 	seen := map[string]bool{}
@@ -395,8 +332,6 @@ func (b *Battery) failedJobIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// replayJob replays id and reports whether the queue queued it again. A
-// queue without queue.ReplayReporter cannot say: its nil reads as replayed.
 func replayJob(ctx context.Context, rq queue.Replayable, id string) (bool, error) {
 	if rr, ok := rq.(queue.ReplayReporter); ok {
 		return rr.ReplayJob(ctx, id)
@@ -404,8 +339,6 @@ func replayJob(ctx context.Context, rq queue.Replayable, id string) (bool, error
 	return true, rq.Replay(ctx, id)
 }
 
-// opSpec is one ops action drawn as a form: a form RPC with the runtime
-// (the answer's toast, then page re-fetched), a plain POST without it.
 type opSpec struct {
 	path, page string
 	label      string
@@ -413,18 +346,15 @@ type opSpec struct {
 	variant    ui.ButtonVariant
 	small      bool
 	confirm    string
-	fields     map[string]string // hidden fields, sorted by name
-	body       []render.HTML     // visible fields before the button
-	stacked    bool              // fields over the button, for a panel
-	wide       bool              // full width, the button in the form's own actions row
+	fields     map[string]string
+	body       []render.HTML
+	stacked    bool
+	wide       bool
 }
 
-// opForm draws an opSpec.
 func (b *Battery) opForm(ctx context.Context, op opSpec) render.HTML {
 	rpc := interactive.Post(op.path)
 	if op.confirm != "" {
-		// The dialog's accept button is the operation's own label and
-		// takes its variant's danger, so a disable asks in red.
 		rpc = rpc.WithConfirmDialog(interactive.Confirm{
 			Message: op.confirm,
 			Accept:  op.label,

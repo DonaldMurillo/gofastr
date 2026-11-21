@@ -52,7 +52,7 @@ func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 // ExecuteHooks runs the hooks for hookType in order and returns the first error, a panic as *PanicError.
 func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, data any) error {
 	hr.mu.RLock()
-	fns := append([]HookFunc(nil), hr.hooks[hookType]...)
+	fns := hr.copyHooksLocked(hookType)
 	label := hr.label
 	hr.mu.RUnlock()
 	if len(fns) == 0 {
@@ -93,11 +93,17 @@ func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
 	return fn(ctx, data)
 }
 
-// HooksFor returns a copy of the hooks registered for hookType.
+// HooksFor returns a copy of the hooks registered for hookType, or a non-nil empty slice.
 func (hr *HookRegistry) HooksFor(hookType HookType) []HookFunc {
 	hr.mu.RLock()
 	defer hr.mu.RUnlock()
-	out := make([]HookFunc, len(hr.hooks[hookType]))
-	copy(out, hr.hooks[hookType])
-	return out
+	return hr.copyHooksLocked(hookType)
+}
+
+// copyHooksLocked copies the hook list for hookType; the caller holds the read lock.
+func (hr *HookRegistry) copyHooksLocked(hookType HookType) []HookFunc {
+	registered := hr.hooks[hookType]
+	hooks := make([]HookFunc, len(registered))
+	copy(hooks, registered)
+	return hooks
 }

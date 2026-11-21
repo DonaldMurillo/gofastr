@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -71,8 +72,14 @@ func installBundleZip(t *testing.T, id, version string) []byte {
 // archive, and returns a battery running 1.0.0 from a temp bundle dir.
 func installFixture(t *testing.T, feedVersion string, archive []byte) (*Battery, *fakeUpdatePlatform, string) {
 	t.Helper()
+	return installFixtureServing(t, feedVersion, archive, archive)
+}
+
+// installFixtureServing signs the sha256 and size of signed into the feed but serves archive.
+func installFixtureServing(t *testing.T, feedVersion string, signed, archive []byte) (*Battery, *fakeUpdatePlatform, string) {
+	t.Helper()
 	pub, priv, _ := ed25519.GenerateKey(nil)
-	sum := sha256.Sum256(archive)
+	sum := sha256.Sum256(signed)
 	var manifest, sig []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -92,7 +99,7 @@ func installFixture(t *testing.T, feedVersion string, archive []byte) (*Battery,
 		Expires: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		Version: feedVersion,
 		Platforms: map[string]update.PlatformEntry{
-			update.PlatformKey(): {URL: srv.URL + "/Notes.zip", SHA256: hex.EncodeToString(sum[:]), Size: int64(len(archive))},
+			update.PlatformKey(): {URL: srv.URL + "/Notes.zip", SHA256: hex.EncodeToString(sum[:]), Size: int64(len(signed))},
 		},
 	}, priv)
 	if err != nil {
@@ -150,6 +157,7 @@ func TestInstallRefusesConcurrentInstall(t *testing.T) {
 	if got := runningExe(t, bundleDir); got != "#!new 1.2.0" {
 		t.Fatalf("installed executable = %q", got)
 	}
+	assertNoStaging(t, b)
 	// After the swap the process is quitting: a third call must not
 	// swap over the new bundle.
 	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateInstalled) {
@@ -190,4 +198,88 @@ func TestInstallRefusesWithoutRunningIdentifier(t *testing.T) {
 	if got := runningExe(t, bundleDir); got != "#!old 1.0.0" {
 		t.Fatalf("the running bundle was replaced: %q", got)
 	}
+
+	// An empty identifier on both sides is still no identity.
+	lb, lp, dir := layoutFixture(t, windowsLayoutZip(t, "1.2.0"))
+	lp.identifier = ""
+	lb.updaterFor().platform = &blankIDLayout{lp}
+	if err := lb.InstallUpdate(context.Background()); !errors.Is(err, errUpdateArchive) {
+		t.Fatalf("install with an empty identifier on both sides = %v", err)
+	}
+	if got := readIn(t, dir, "Notes.exe"); got != "exe 1.0.0" {
+		t.Fatalf("the running executable was replaced: %q", got)
+	}
+}
+
+// blankIDLayout inspects an extracted bundle as carrying no identifier.
+type blankIDLayout struct{ *layoutPlatform }
+
+func (p *blankIDLayout) Inspect(extracted string) (update.BundleInfo, error) {
+	info, err := p.layoutPlatform.Inspect(extracted)
+	info.Identifier = ""
+	return info, err
+}
+
+// assertNoStaging fails when an update- staging directory survived in the data dir.
+func assertNoStaging(t *testing.T, b *Battery) {
+	t.Helper()
+	entries, err := os.ReadDir(b.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "update-") {
+			t.Fatalf("staging directory %s survived the install", e.Name())
+		}
+	}
+}
+
+// assertNothingInstalled checks the running bundle is untouched, nothing relaunched and no staging is left.
+func assertNothingInstalled(t *testing.T, b *Battery, fp *fakeUpdatePlatform, bundleDir string) {
+	t.Helper()
+	assertNoStaging(t, b)
+	if got := runningExe(t, bundleDir); got != "#!old 1.0.0" {
+		t.Fatalf("the running bundle was replaced: %q", got)
+	}
+	if len(fp.relaunched) != 0 {
+		t.Fatalf("relaunched %v", fp.relaunched)
+	}
+	if _, err := os.Lstat(filepath.Join(bundleDir, "Notes.app.old")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the running bundle was moved aside: %v", err)
+	}
+}
+
+func TestInstallRefusesArchiveOffTheFeed(t *testing.T) {
+	served := installBundleZip(t, installTestID, "1.2.0")
+	signed := bytes.Clone(served)
+	signed[len(signed)-1] ^= 0xff
+	b, fp, bundleDir := installFixtureServing(t, "1.2.0", signed, served)
+	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateArchive) {
+		t.Fatalf("install of an archive whose sha256 is not the feed's = %v, want %v", err, errUpdateArchive)
+	}
+	if len(fp.verified) != 0 {
+		t.Fatalf("the signature check ran on an unverified archive: %v", fp.verified)
+	}
+	assertNothingInstalled(t, b, fp, bundleDir)
+}
+
+func TestInstallRefusesFailedSignatureCheck(t *testing.T) {
+	b, fp, bundleDir := installFixture(t, "1.2.0", installBundleZip(t, installTestID, "1.2.0"))
+	fp.verifyErr = errors.New("codesign: a sealed resource is missing or invalid")
+	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateArchive) {
+		t.Fatalf("install after a failed signature check = %v, want %v", err, errUpdateArchive)
+	}
+	if len(fp.verified) != 1 {
+		t.Fatalf("signature checks = %v, want one", fp.verified)
+	}
+	assertNothingInstalled(t, b, fp, bundleDir)
+}
+
+func TestInstallRefusesDowngrade(t *testing.T) {
+	b, fp, bundleDir := installFixture(t, "1.2.0", installBundleZip(t, installTestID, "1.2.0"))
+	fp.version = "2.0.0"
+	if err := b.InstallUpdate(context.Background()); !errors.Is(err, errUpdateNotAvailable) {
+		t.Fatalf("install of feed 1.2.0 over running 2.0.0 = %v, want %v", err, errUpdateNotAvailable)
+	}
+	assertNothingInstalled(t, b, fp, bundleDir)
 }

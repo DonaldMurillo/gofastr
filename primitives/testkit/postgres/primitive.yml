@@ -15,6 +15,8 @@ invariants:
   - id: carved-dsn-names-only-the-carved-db
     rule: The carved DSN replaces the admin DSN's path with the carved name and drops every dbname and database query parameter, keeping credentials, host and other options, and a DSN that does not parse as a postgres URL is an error, never the admin DSN unchanged.
     enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestE2ETemplatePostgresProvisionsDB
+      - test: framework/testkit.TestNewIsolatedDBDSNCarvesAndDrops
       - test: framework/testkit.TestCarvedDSNDropsDatabaseOverrides
       - test: framework/testkit.TestRewriteDBNamePreservesUserHostQuery
       - test: framework/testkit.TestRewriteDBNameRejectsParseFailures
@@ -23,10 +25,16 @@ invariants:
     enforced_by:
       - test: framework/testkit.TestSweepUniqueDBNameIsAShortLowercaseIdentifier
   - id: carved-db-dropped-at-cleanup
-    rule: NewIsolatedDB terminates the carved database's backends and drops it at cleanup, and on every early-error path after CREATE DATABASE, reporting a failed drop with t.Errorf as a leaked database.
+    rule: The shared database provisioner terminates the carved database's backends and drops it at cleanup, and on every early-error path after CREATE DATABASE, reporting a failed drop with t.Errorf as a leaked database.
     enforced_by:
       - test: framework/testkit.TestNewIsolatedDBCarvesAndDrops
+      - test: framework/testkit.TestNewIsolatedDBDSNCarvesAndDrops
     judge: Does this change add a path after CREATE DATABASE that returns or fails without dropping the carved database, or swallow a failed DROP?
+  - id: optional-subprocess-database-can-skip
+    rule: The generated suite delegates Postgres provisioning to NewIsolatedDBDSN, which skips if an admin database is unavailable or cannot create a database.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestE2ETemplatePostgresProvisionsDB
+      - test: framework/testkit.TestNewIsolatedDBDSNSkipsWithoutAdminDSN
 decisions:
   - id: fail-never-skip
     date: 2026-11-17

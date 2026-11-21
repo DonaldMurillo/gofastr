@@ -88,35 +88,48 @@ app:
 
 ## Entities and composite keys
 
-`entities:` mirrors `framework.EntityConfig` in [Entity declarations](entity-declarations.md):
+`entities:` mirrors `framework.EntityConfig` in [Entity declarations](entity-declarations.md), including `search_fields`, `states`, and `display`:
 
 ```yaml
 entities:
-  - name: posts
+  - name: invoices
     crud: true
-    mcp: true
-    scope:
-      owner_field: user_id
-      soft_delete: true
-    pagination:
-      cursor_fields: [created_at, id]
-      max_list_limit: 100
+    search_fields: [number]
     fields:
-      - name: title
+      - name: number
         type: string
+        required: true
+      - name: amount
+        type: decimal
         required: true
       - name: status
         type: enum
-        values: [draft, published]
+        values: [draft, open, paid, void]
         default: draft
-      - name: author_id
-        type: relation
-        to: users
-    search_fields: [title]
+      - name: paid_on
+        type: date
+    states:
+      field: status
+      initial: [draft]
+      transitions:
+        - key: mark_paid
+          label: Mark paid
+          from: [open]
+          to: paid
+          stamp: paid_on
+          variant: primary
     display:
-      title_fields: [title]
-      columns: [title, status, created_at]
+      singular: Invoice
+      plural: Invoices
+      title_fields: [number]
+      columns: [number, amount, status]
       facets: [status]
+      form:
+        main:
+          - row: [number, amount]
+          - section: dates
+            items: [paid_on]
+        side: [status]
 ```
 
 ### Composite keys (`primary_key:`)
@@ -126,16 +139,36 @@ Set `primary_key:` to a YAML list—one column name for a custom single key (suc
 ```yaml
 entities:
   - name: enrollments
+    crud: true
     primary_key: [student_id, course_id]
     fields:
       - name: student_id
-        type: relation
-        to: students
+        type: string
         required: true
       - name: course_id
-        type: relation
-        to: courses
+        type: string
         required: true
+      - name: grade
+        type: string
+```
+
+A relation to a composite-keyed entity names one foreign-key column per key column, in key order:
+
+```yaml
+  - name: lines
+    crud: true
+    fields:
+      - name: order_store
+        type: string
+      - name: order_no
+        type: int
+      - name: sku
+        type: string
+    relations:
+      - type: belongs_to
+        name: order
+        entity: orders
+        foreign_key: [order_store, order_no]
 ```
 
 Single-column and composite keys follow the rules in [Record ids](entity-declarations.md#record-ids) and [Relations and composite keys](entity-declarations.md#relations-and-composite-keys).
@@ -158,6 +191,42 @@ screens:
         fields: [title, status]
         limit: 20
         create: true
+```
+
+Common catalog blocks include plain links, pricing tiers, and data-bound dashboard widgets:
+
+```yaml
+- type: link
+  href: /docs
+```
+
+```yaml
+- kind: pricing
+  props:
+    plans:
+      - name: Starter
+        price: "29"
+        period: month
+        description: For small teams
+        features: [Shared workspace, Email support]
+        cta_text: Start
+        cta_href: /signup
+        featured: true
+```
+
+```yaml
+- kind: stat_card
+  props:
+    label: Monthly revenue
+    source:
+      entity: customers
+      agg: sum
+      field: mrr
+- kind: bar_chart
+  props:
+    source:
+      entity: customers
+      group_by: status
 ```
 
 Block rules enforced at generation time:

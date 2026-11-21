@@ -27,6 +27,9 @@ var invisibleCodepoints = []struct {
 	{"rlo", 0x202E},
 	{"lri", 0x2066},
 	{"bom", 0xFEFF},
+	{"word joiner", 0x2060},
+	{"Hangul filler", 0x3164},
+	{"tag", 0xE0061},
 }
 
 func TestDecodeCursor_StripsInvisibles(t *testing.T) {
@@ -58,6 +61,14 @@ func TestDecodeCursor_StripsInvisibles(t *testing.T) {
 		})
 	}
 }
+func TestDecodeCursor_PreservesC1AndLineSeparatorsInField(t *testing.T) {
+	want := "a\u0085\u2028\u2029b"
+	got, _, err := DecodeCursor(EncodeCursor(want, "value"))
+	if err != nil || got != want {
+		t.Fatalf("DecodeCursor field = %q, %v, want %q", got, err, want)
+	}
+}
+
 func TestDecodeMultiCursor_StripsInvisibles(t *testing.T) {
 	for _, tc := range invisibleCodepoints {
 		t.Run(tc.name, func(t *testing.T) {

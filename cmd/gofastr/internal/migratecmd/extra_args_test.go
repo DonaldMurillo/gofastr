@@ -25,7 +25,7 @@ func TestMigrateRefusesExtraPositionalArgs(t *testing.T) {
 		{"repair", "x", "--from=gofastr.yml", dbURL},
 	} {
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() { RunMigrate(args) })
 		})
 		if code != 2 {

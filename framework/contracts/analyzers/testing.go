@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -54,8 +53,12 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	hooks := Hooks(p)
 	subs := EventSubs(p)
 	roles := Roles(p)
+	var permissions map[string]permUse
+	if cfg.Permissions {
+		permissions = declaredPermissions(p, entities)
+	}
 	if !table.Registered && len(entities) == 0 && len(hooks) == 0 &&
-		len(subs) == 0 && len(roles) == 0 {
+		len(subs) == 0 && len(roles) == 0 && len(permissions) == 0 {
 		return nil
 	}
 
@@ -120,7 +123,7 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 		}
 	}
 	if cfg.Permissions {
-		out = append(out, uncoveredPermissions(p, manifest)...)
+		out = append(out, uncoveredPermissions(p, manifest, permissions)...)
 		for _, r := range roles {
 			if manifest.CoveredRole(r.Role) {
 				continue
@@ -134,8 +137,7 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-func uncoveredPermissions(p *contracts.Pass, manifest *semcov.Manifest) []contracts.Diagnostic {
-	declared := declaredPermissions(p)
+func uncoveredPermissions(p *contracts.Pass, manifest *semcov.Manifest, declared map[string]permUse) []contracts.Diagnostic {
 	names := make([]string, 0, len(declared))
 	for name := range declared {
 		names = append(names, name)
@@ -156,44 +158,20 @@ func uncoveredPermissions(p *contracts.Pass, manifest *semcov.Manifest) []contra
 	return out
 }
 
-type permSite struct {
-	File string
-	Pos  token.Pos
-}
-
-func declaredPermissions(p *contracts.Pass) map[string]permSite {
-	out := map[string]permSite{}
-	for _, f := range p.AppFiles() {
-		file, ok := p.AST(f.Rel)
-		if !ok {
-			continue
+func declaredPermissions(p *contracts.Pass, entities []EntityInfo) map[string]permUse {
+	out := map[string]permUse{}
+	names := permissionNames(p)
+	for _, uses := range [][]permUse{names.Checks, names.CoverageOnly} {
+		for _, use := range uses {
+			if _, seen := out[use.Name]; !seen && looksLikePermission(use.Name) {
+				out[use.Name] = use
+			}
 		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			_, method, call, isCall := selectorCall(n)
-			if !isCall {
-				return true
-			}
-			switch method {
-			case "Require", "RequirePermission", "Can", "HasScope", "RequireAPIScopes":
-			default:
-				return true
-			}
-			for _, arg := range call.Args {
-				s, litOK := stringLit(arg)
-				if !litOK || !looksLikePermission(s) {
-					continue
-				}
-				if _, seen := out[s]; !seen {
-					out[s] = permSite{File: f.Rel, Pos: call.Pos()}
-				}
-			}
-			return true
-		})
 	}
-	for _, e := range Entities(p) {
+	for _, e := range entities {
 		for _, perm := range e.AccessPermissions {
 			if _, seen := out[perm]; !seen {
-				out[perm] = permSite{File: e.File, Pos: e.Pos}
+				out[perm] = permUse{Name: perm, File: e.File, Pos: e.Pos}
 			}
 		}
 	}
@@ -231,70 +209,65 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 		if !ok {
 			continue
 		}
-		lines := p.Lines(f.Rel)
-		ast.Inspect(file, func(n ast.Node) bool {
-			recv, method, args, isCall := selectorCall(n)
-			if !isCall {
-				return true
-			}
-			if method != "Skip" && method != "Skipf" && method != "SkipNow" {
-				return true
-			}
-			if id, isIdent := recv.(*ast.Ident); !isIdent || (id.Name != "t" && id.Name != "b") {
-				return true
-			}
-			pos := p.Position(n.Pos())
-			if hasLegacyAnnotation(lines, pos.Line, "allow-skip:") {
-				return true
-			}
-			var messages []string
-			for _, argument := range args.Args {
-				ast.Inspect(argument, func(node ast.Node) bool {
-					if expression, ok := node.(ast.Expr); ok {
-						if message, ok := stringLit(expression); ok {
-							messages = append(messages, message)
-							return false
-						}
-					}
-					return true
-				})
-			}
-			line := strings.ToLower(strings.Join(messages, " "))
-			for _, phrase := range laneBoundaryPhrases {
-				if strings.Contains(line, phrase) {
-					return true
-				}
-			}
-			if guardedByShort(lines, pos.Line) {
-				return true
-			}
-			isDebt := false
-			for _, phrase := range debtPhrases {
-				if strings.Contains(line, phrase) {
-					isDebt = true
-					break
-				}
-			}
-			if !isDebt {
-				return true
-			}
-			out = append(out, diag(p, contracts.RuleDisabledTest, f.Rel, n.Pos(),
-				"this skip defers work rather than marking a lane boundary: the suite reports it as a pass"))
-			return true
-		})
+		body, _ := p.Source(f.Rel)
+		out = append(out, ruleDisabledTests(newLintSource(f.Rel, string(body), p.FileSet(), file))...)
 	}
 	return out
 }
 
-func callSpan(p *contracts.Pass, rel string, n ast.Node) string {
-	start := p.Position(n.Pos()).Line
-	end := p.Position(n.End()).Line
-	var b strings.Builder
-	for ln := start; ln <= end; ln++ {
-		b.WriteString(p.Line(rel, ln))
-		b.WriteString("\n")
-	}
-	return b.String()
+func ruleDisabledTests(src lintSource) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	ast.Inspect(src.file, func(n ast.Node) bool {
+		recv, method, args, isCall := selectorCall(n)
+		if !isCall {
+			return true
+		}
+		if method != "Skip" && method != "Skipf" && method != "SkipNow" {
+			return true
+		}
+		if id, isIdent := recv.(*ast.Ident); !isIdent || (id.Name != "t" && id.Name != "b") {
+			return true
+		}
+		pos := src.fset.Position(n.Pos())
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "allow-skip:") {
+			return true
+		}
+		var messages []string
+		for _, argument := range args.Args {
+			ast.Inspect(argument, func(node ast.Node) bool {
+				if expression, ok := node.(ast.Expr); ok {
+					if message, ok := stringLit(expression); ok {
+						messages = append(messages, message)
+						return false
+					}
+				}
+				return true
+			})
+		}
+		line := strings.ToLower(strings.Join(messages, " "))
+		for _, phrase := range laneBoundaryPhrases {
+			if strings.Contains(line, phrase) {
+				return true
+			}
+		}
+		if guardedByShort(src.lines, pos.Line) {
+			return true
+		}
+		isDebt := false
+		for _, phrase := range debtPhrases {
+			if strings.Contains(line, phrase) {
+				isDebt = true
+				break
+			}
+		}
+		if !isDebt {
+			return true
+		}
+		out = append(out, src.diagnostic(contracts.RuleDisabledTest, n.Pos(),
+			"this skip defers work rather than marking a lane boundary: the suite reports it as a pass"))
+		return true
+	})
+	return out
 }
 
 func guardedByShort(lines []string, lineNo int) bool {

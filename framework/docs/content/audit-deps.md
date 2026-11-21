@@ -1,58 +1,54 @@
-# Auditing init-time global registrations
+# Auditing global registration call sites
 
-`gofastr audit deps` scans your project (and its modules) for packages
-whose `init()` mutates framework-wide state. The output is a flat list
-of every call site, grouped by Go import path, sorted alphabetically.
+`gofastr audit deps [root]` scans Go source in the selected directory
+tree, defaulting to the current directory. It reports candidate calls
+to framework-wide registration APIs and groups them by package label.
+Each label uses the selected root's module path joined with the
+directory's path relative to that root. Without a module path, labels
+use relative paths. A nested module still uses the selected root's prefix.
 
 The scan follows linked package directories and symlinked roots while
 visiting each resolved directory once, so cycles cannot repeat findings.
-Findings retain the linked package's path under the selected root. Build
-outputs, dependencies, and hidden/underscore descendants are excluded;
-an explicitly selected root is scanned regardless of its directory name.
+Findings retain the linked package's path under the selected root.
+The scan skips build outputs and hidden/underscore descendants.
+Imported modules in the Go module cache are outside the scan unless
+you select or link their source tree.
 
 ## Why this exists
 
-A malicious dependency that lands in your `go.mod` can run arbitrary Go
-code at process start. That's the same trust model as importing any Go
-package: `os.Exec`, `net.Dial`, file writes, and route hijacks are all
-available to it. The audit doesn't change that attack surface; it just
-makes the *most invisible* part of it visible: things that happen
-before `main()` runs.
+Imports can run Go code at process startup, including calls that
+mutate global registries. Use the audit to locate registration calls
+for review. It matches import paths and call syntax anywhere in a
+file, including ordinary functions. Inspect each call site to
+determine when or whether it runs.
 
-In particular, the audit flags packages that contribute to GoFastr's
-global registries:
+The audit looks for these registration APIs.
 
 | Kind                       | What it does                                                   |
 |----------------------------|----------------------------------------------------------------|
-| `style.Contribute`         | Adds a CSS fragment to the host's theme stylesheet at boot     |
+| `style.Contribute`         | Adds a CSS fragment to the host's theme stylesheet             |
 | `registry.RegisterStyle`   | Registers a named, lazy-loaded per-component CSS sheet         |
 | `render.RegisterComponent` | Replaces / extends a named render component                    |
 | `render.RegisterLayout`    | Replaces / extends a named layout                              |
 | `render.RegisterFunc`      | Adds or replaces a named template function                            |
 
-If you didn't expect a particular dependency to appear in this list,
-that's the signal to investigate it.
-
 ## Usage
 
 ```sh
-# audit the current module
+# audit from the current directory
 gofastr audit deps
 
-# audit a specific directory
+# audit the selected project source tree
 gofastr audit deps /path/to/project
+
+# audit an explicitly selected dependency checkout
+gofastr audit deps /path/to/checkouts/gofastr
 ```
 
-Sample output:
+Example output for the dependency checkout:
 
 ```
-Init-time global registrations
-(packages whose init() can mutate framework-wide state)
-
-example.com/myapp/screens
-  style.Contribute ×2
-    screens/home.go:14
-    screens/about.go:9
+Candidate global registration call sites
 
 github.com/DonaldMurillo/gofastr/framework/ui
   registry.RegisterStyle ×38
@@ -76,7 +72,7 @@ audit output before each major upgrade) is the defence.
 
 ## What's NOT in the audit (yet)
 
-The scanner only follows aliased imports of the framework's tracked
+The scanner matches calls through imports of the framework's tracked
 packages. It skips descendant `vendor/`, `node_modules/`, `dist/`, `bin/`,
 `build/`, `tmp/`, and hidden/underscore directories, plus `_test.go` files.
 An explicitly selected root is scanned even if its name is normally excluded.
@@ -92,17 +88,16 @@ pass, not a substitute for review.
 
 ## Exit status
 
-`gofastr audit deps` always exits 0 unless the walk itself fails (bad
-path, unreadable file). Findings do not cause a non-zero exit, which
-keeps the command composable in dev workflows. For CI failure on new
-registrations, diff the output against a checked-in baseline.
+`gofastr audit deps` exits 1 on scan I/O failures, including an unreadable
+root or source file, or if the unmounted-package settings cannot be read
+or parsed. The scan skips Go files with syntax errors. Findings alone
+leave the exit status at 0. To flag new registrations in CI, compare
+the output with a checked-in baseline.
 
 ## Common mistakes
 
-- **Expecting a non-zero exit on findings.** `gofastr audit deps`
-  exits 0 whenever the walk succeeds. Findings alone never fail it.
-  A CI gate that just runs the command passes forever; diff the output
-  against a checked-in baseline instead.
+- **Expecting a non-zero exit on findings.** Add an output comparison
+  against a checked-in baseline to your CI gate.
 - **Assuming `vendor/` and test files are covered.** The walker skips
   descendant `vendor/`, `node_modules/`, `dist/`, `bin/`, `build/`, `tmp/`,
   hidden/underscore directories, and every `_test.go` file.

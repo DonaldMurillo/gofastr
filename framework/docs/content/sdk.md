@@ -38,6 +38,29 @@ codegen:
 
 For an OpenAPI-driven SDK, set `from_openapi: openapi.json` in the generator config (a local file in the repo, never a remote URL during builds).
 
+### Drift detection
+
+Both the generator and the hosted SDK docs site compute `framework/sdk.SchemaHash` over the covered entities. When the manifest hash disagrees with the live registry, the site logs a warning and shows a drift banner while keeping downloads working. The site caches the first check per mount — regenerate with `gofastr generate sdk` and redeploy or remount the site to check the new artifacts.
+
+Artifacts with a missing or unreadable manifest, or a different manifest `schemaVersion`, show an "unknown provenance" banner (`gofastrVersion` records the generator version for display).
+
+### Static export
+
+SDK docs pages export through `App.ExportStatic` like any screen. Because the live download route serves the Go archive as `go.zip` while the generator writes `sdk-go.zip` in `dist/`, stage the files under their public names first:
+
+```sh
+mkdir -p gen/sdk/export
+cp gen/sdk/dist/sdk-go.zip gen/sdk/export/go.zip
+cp gen/sdk/dist/client.js gen/sdk/dist/client.d.ts gen/sdk/dist/manifest.json gen/sdk/export/
+```
+
+Then mount the staged directory on the static builder:
+
+```go
+b := &static.Builder{Host: host, OutDir: out,
+	ExtraDirs: map[string]fs.FS{"/docs/api/sdk": os.DirFS("gen/sdk/export")}}
+```
+
 ## Authentication
 
 Generated clients authenticate with `Authorization: Bearer <token>` (matching `auth.TokenMiddleware` and scoped API tokens from `auth.NewTokensPlugin`) or custom headers configured on the client. The Go SDK and OpenAPI-generated JS/TS SDK refuse redirects by default (`redirect: "manual"`) so bearer tokens are never forwarded to another host; note that the entity-generated JS client uses Fetch's default redirect mode, so avoid serving untrusted 3xx redirects on entity API endpoints.

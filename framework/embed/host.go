@@ -400,11 +400,7 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 	}
 
 	deadline := time.Unix(now.Add(h.grantMaxAge).Unix(), 0)
-	expires := time.Unix(now.Add(h.grantTTL).Unix(), 0)
-	if expires.After(deadline) {
-		expires = deadline
-	}
-	grant, err := MintGrant(h.grantKey, n, h.grantTTL, deadline, now)
+	grant, expires, err := mintGrant(h.grantKey, n, h.grantTTL, deadline, now)
 	if err != nil {
 		return ExchangeResult{}, err
 	}
@@ -434,26 +430,31 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 
 // VerifyGrant checks a grant against current config, dropping scopes no longer declared.
 func (h *Host) VerifyGrant(ctx context.Context, token string) (Grant, error) {
+	g, _, err := h.verifyConfiguredGrant(ctx, token)
+	return g, err
+}
+
+func (h *Host) verifyConfiguredGrant(ctx context.Context, token string) (Grant, *ResolvedSurface, error) {
 	if !h.Ready() {
-		return Grant{}, errors.New("embed: no signing key")
+		return Grant{}, nil, errors.New("embed: no signing key")
 	}
 	g, err := h.verifyGrant(token, time.Now())
 	if err != nil {
-		return Grant{}, err
+		return Grant{}, nil, err
 	}
 	s, ok := h.surfaces[g.Surface]
 	if !ok {
-		return Grant{}, fmt.Errorf("embed: unknown surface %q", g.Surface)
+		return Grant{}, nil, fmt.Errorf("embed: unknown surface %q", g.Surface)
 	}
 	allowedOrigin, err := h.originAllowed(ctx, s, g.Surface, g.Origin)
 	if err != nil {
-		return Grant{}, err
+		return Grant{}, nil, err
 	}
 	if !allowedOrigin {
-		return Grant{}, fmt.Errorf("embed: origin %q is no longer allowed to frame surface %q", g.Origin, g.Surface)
+		return Grant{}, nil, fmt.Errorf("embed: origin %q is no longer allowed to frame surface %q", g.Origin, g.Surface)
 	}
 	g.Scopes = intersectScopes(g.Scopes, s.scopes)
-	return g, nil
+	return g, s, nil
 }
 
 func intersectScopes(granted []string, declared map[string]struct{}) []string {
@@ -488,7 +489,7 @@ func (h *Host) Refresh(ctx context.Context, token string) (RefreshedGrant, error
 	if !now.Before(g.Deadline) {
 		return RefreshedGrant{}, ErrGrantExhausted
 	}
-	next, err := MintGrant(h.grantKey, Nonce{
+	next, expires, err := mintGrant(h.grantKey, Nonce{
 		Surface: g.Surface,
 		Subject: g.Subject,
 		Scopes:  g.Scopes,
@@ -496,10 +497,6 @@ func (h *Host) Refresh(ctx context.Context, token string) (RefreshedGrant, error
 	}, h.grantTTL, g.Deadline, now)
 	if err != nil {
 		return RefreshedGrant{}, err
-	}
-	expires := time.Unix(now.Add(h.grantTTL).Unix(), 0)
-	if expires.After(g.Deadline) {
-		expires = g.Deadline
 	}
 	return RefreshedGrant{Token: next, Expires: expires}, nil
 }

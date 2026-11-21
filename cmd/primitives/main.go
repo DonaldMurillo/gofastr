@@ -2,8 +2,8 @@
 // primitives/README.md).
 //
 //	primitives                  list the top-level primitives
-//	primitives for <path>...    what governs these files: owner chain, invariants, decisions
-//	primitives show <id>        one primitive in full, with its children
+//	primitives for <path>...    what governs these files: owner chain, twins, applied rules
+//	primitives show <id>        one primitive's details and its children
 //	primitives lint             check every reference in the registry against the tree
 //	primitives gen [--check]    write the generated files, or fail when they are stale
 //	primitives hook             a Claude Code PostToolUse hook: tells the agent, once per
@@ -234,10 +234,7 @@ func stop(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Re
 	if reason == "" {
 		return 0
 	}
-	if err := json.NewEncoder(stdout).Encode(map[string]string{"decision": "block", "reason": reason}); err != nil {
-		return 2
-	}
-	return 0
+	return writeStopBlock(stdout, reason)
 }
 
 // stopUnreadable answers the Stop hook when the registry could not be
@@ -248,6 +245,10 @@ func stopUnreadable(loadErr error, stdin io.Reader, stdout io.Writer) int {
 		return 0
 	}
 	reason := stopBlock([]string{fmt.Sprintf("the primitives registry cannot be read: %v", loadErr)})
+	return writeStopBlock(stdout, reason)
+}
+
+func writeStopBlock(stdout io.Writer, reason string) int {
 	if err := json.NewEncoder(stdout).Encode(map[string]string{"decision": "block", "reason": reason}); err != nil {
 		return 2
 	}
@@ -300,7 +301,9 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 	for _, f := range append(loadFindings, c.Lint()...) {
 		problems = append(problems, f.String())
 	}
-	if stale, err := c.Stale(); err == nil {
+	if stale, err := c.Stale(); err != nil {
+		problems = append(problems, fmt.Sprintf("generated files could not be checked: %v", err))
+	} else {
 		for _, rel := range slices.Sorted(maps.Keys(stale)) {
 			problems = append(problems, fmt.Sprintf("%s is %s: run `go run ./cmd/primitives gen`", rel, stale[rel]))
 		}
@@ -403,12 +406,6 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 	appliedFiles := map[string][]string{}
 	appliedRules := map[string]primitives.Invariant{}
 	for _, file := range changed {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
-		// A rule held elsewhere governs any file it names, CSS and
-		// JavaScript included. Below, a non-Go file brings only its
-		// owners' on_change lines; the docs notice is for Go code.
 		for _, a := range c.AppliedTo(file) {
 			key := a.Primitive.ID + "/" + a.Invariant.ID
 			if slices.Contains(told, key) {
@@ -422,6 +419,9 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 			appliedFiles[key] = []string{file}
 			out = append(out, docsNotice{primitive: key})
 			appliedRules[key] = a.Invariant
+		}
+		if strings.HasSuffix(file, "_test.go") {
+			continue
 		}
 		goFile := strings.HasSuffix(file, ".go")
 		for _, p := range c.Chain(file) {

@@ -193,8 +193,6 @@ func enforceComponentRules(comp Component, props Props, actionRef string, childr
 	return nil
 }
 
-func defaultCapForChildren(Props) int { return DefaultMaxChildrenPerNode }
-
 func hasTrailingBytes(trimmed []byte, consumed int) bool {
 	if consumed <= 0 || consumed >= len(trimmed) {
 		return false

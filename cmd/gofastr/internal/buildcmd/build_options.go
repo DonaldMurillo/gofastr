@@ -1,8 +1,10 @@
 package buildcmd
 
 import (
-	"errors"
+	"fmt"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
 type buildOptions struct {
@@ -11,8 +13,9 @@ type buildOptions struct {
 	noGenerate   bool
 	noA11y       bool
 	noEmbedCheck bool
-	// noContracts skips the contract analyzers. The gate only fails on
-	// error-severity findings, so this exists for a build that must ship
+	// noContracts skips the contract analyzers. The gate fails on findings
+	// at or above the configured severity floor (error by default) and on a
+	// run that cannot finish, so this exists for a build that must ship
 	// while a rule is being addressed, not as a routine flag.
 	noContracts bool
 	// allowUnverifiedEmbeds downgrades check-embed's unresolved notes from
@@ -25,42 +28,33 @@ type buildOptions struct {
 
 func parseBuildOptions(args []string) (buildOptions, error) {
 	opts := buildOptions{output: "bin/server", pkg: "."}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--no-generate":
-			opts.noGenerate = true
-		case arg == "--no-a11y":
-			opts.noA11y = true
-		case arg == "--no-embed-check":
-			opts.noEmbedCheck = true
-		case arg == "--no-contracts":
-			opts.noContracts = true
-		case arg == "--allow-unverified-embeds":
-			opts.allowUnverifiedEmbeds = true
-		case arg == "--pkg":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-				return buildOptions{}, errors.New("build: --pkg requires a package path")
-			}
-			i++
-			opts.pkg = args[i]
-			if strings.HasPrefix(opts.pkg, "-") {
-				return buildOptions{}, errors.New("build: --pkg requires a package path, not a Go option")
-			}
-		case strings.HasPrefix(arg, "--pkg="):
-			opts.pkg = strings.TrimPrefix(arg, "--pkg=")
-			if opts.pkg == "" || strings.HasPrefix(opts.pkg, "-") {
-				return buildOptions{}, errors.New("build: --pkg requires a package path")
-			}
-		case strings.HasPrefix(arg, "-o="):
-			opts.output = strings.TrimPrefix(arg, "-o=")
-		case strings.HasPrefix(arg, "--output="):
-			opts.output = strings.TrimPrefix(arg, "--output=")
-		case strings.HasPrefix(arg, "-"):
-			return buildOptions{}, errors.New("build: unknown option " + arg)
-		default:
-			return buildOptions{}, errors.New("build: unexpected argument " + arg)
-		}
+	_, err := cli.ParseFlags(args, map[string]*string{
+		"--pkg":    &opts.pkg,
+		"--output": &opts.output,
+		"-o":       &opts.output,
+	}, map[string]*bool{
+		"--no-generate":             &opts.noGenerate,
+		"--no-a11y":                 &opts.noA11y,
+		"--no-embed-check":          &opts.noEmbedCheck,
+		"--no-contracts":            &opts.noContracts,
+		"--allow-unverified-embeds": &opts.allowUnverifiedEmbeds,
+	}, validateBuildValue)
+	if err != nil {
+		return buildOptions{}, fmt.Errorf("build: %w", err)
 	}
 	return opts, nil
+}
+
+func validateBuildValue(flag, value string) error {
+	switch flag {
+	case "--pkg":
+		if value == "" || strings.HasPrefix(value, "-") {
+			return fmt.Errorf("%s requires a package path", flag)
+		}
+	case "--output", "-o":
+		if value == "" {
+			return fmt.Errorf("%s requires an output path", flag)
+		}
+	}
+	return nil
 }

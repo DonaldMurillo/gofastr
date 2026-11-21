@@ -67,7 +67,7 @@ func TestEntitySessionSweepFailureRetriesLater(t *testing.T) {
 	}
 	staleRows := func() int {
 		var n int
-		if err := db.QueryRow(store.qTable("SELECT COUNT(*) FROM %s WHERE expires_at < $1"), time.Now()).Scan(&n); err != nil {
+		if err := db.QueryRow(store.qTable("SELECT COUNT(*) FROM %s WHERE expires_at < $1"), time.Now().UTC()).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n

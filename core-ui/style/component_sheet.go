@@ -86,10 +86,11 @@ func (cs *ComponentSheet) End() *ComponentSheet {
 // [data-cui-comp="<name>"].
 func (cs *ComponentSheet) Build() (string, error) {
 	prefix := `[data-cui-comp="` + cs.name + `"]`
-	if err := scopeRules(cs.inner.rules, prefix); err != nil {
+	rules, err := scopedRules(cs.inner.rules, prefix)
+	if err != nil {
 		return "", err
 	}
-	return cs.inner.CSS(), nil
+	return (&StyleSheet{rules: rules}).CSS(), nil
 }
 
 // MustBuild is Build but panics with a useful message on error.
@@ -104,9 +105,10 @@ func (cs *ComponentSheet) MustBuild() string {
 	return css
 }
 
-func scopeRules(rules []cssRule, prefix string) error {
-	for i := range rules {
-		r := &rules[i]
+func scopedRules(rules []cssRule, prefix string) ([]cssRule, error) {
+	out := slices.Clone(rules)
+	for i := range out {
+		r := &out[i]
 		if slices.ContainsFunc(r.parents, func(parent string) bool {
 			return strings.HasPrefix(parent, "@keyframes")
 		}) {
@@ -115,15 +117,17 @@ func scopeRules(rules []cssRule, prefix string) error {
 		if r.selector != "" {
 			scoped, err := scopeSelector(r.selector, prefix)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			r.selector = scoped
 		}
-		if err := scopeRules(r.children, prefix); err != nil {
-			return err
+		children, err := scopedRules(r.children, prefix)
+		if err != nil {
+			return nil, err
 		}
+		r.children = children
 	}
-	return nil
+	return out, nil
 }
 
 func scopeSelector(selector, prefix string) (string, error) {
@@ -181,12 +185,21 @@ func splitTopLevelCommas(s string) []string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
+		case c == '\\' && i+1 < len(s):
+			i++
 		case inQuote != 0:
 			if c == inQuote {
 				inQuote = 0
 			}
 		case c == '"' || c == '\'':
 			inQuote = c
+		case c == '/' && strings.HasPrefix(s[i:], "/*"):
+			end := strings.Index(s[i+2:], "*/")
+			if end < 0 {
+				i = len(s)
+			} else {
+				i += end + 3
+			}
 		case c == '(' || c == '[':
 			depth++
 		case c == ')' || c == ']':

@@ -16,8 +16,6 @@
 package projectfs
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -152,14 +151,19 @@ func Read(root *os.Root, name string) ([]byte, error) {
 // root.
 func Lstat(root *os.Root, name string) (fs.FileInfo, error) {
 	dir, base := path.Split(filepath.ToSlash(name))
-	resolved := "."
-	if dir != "" {
-		var err error
-		if resolved, err = Resolve(root, dir); err != nil {
-			return nil, err
-		}
+	p, err := resolveParent(root, dir, base)
+	if err != nil {
+		return nil, err
 	}
-	return root.Lstat(filepath.FromSlash(path.Join(resolved, base)))
+	return root.Lstat(filepath.FromSlash(p))
+}
+
+func resolveParent(root *os.Root, dir, base string) (string, error) {
+	resolved, err := Resolve(root, dir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(resolved, base), nil
 }
 
 // Replace replaces name under root with data through a temporary file
@@ -175,8 +179,15 @@ func Replace(root *os.Root, name string, data []byte, perm fs.FileMode) error {
 		if existing == nil {
 			return perm, nil
 		}
-		mode := existing.Mode().Perm()
-		return 0o600, func(f *os.File) error { return f.Chmod(mode) }
+		return 0o600, atomicfile.Mode(existing.Mode().Perm())
+	})
+}
+
+// ReplaceFixedMode replaces a planned file at name inside root, refusing a
+// leaf symlink and setting mode explicitly before writing.
+func ReplaceFixedMode(root *os.Root, name string, data []byte, mode fs.FileMode) error {
+	return replaceAt(root, name, data, true, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
+		return 0o600, atomicfile.Mode(mode)
 	})
 }
 
@@ -199,7 +210,7 @@ func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return replaceAt(root, resolved, data, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
+	return replaceAt(root, resolved, data, false, func(fs.FileInfo) (fs.FileMode, func(*os.File) error) {
 		return 0o600, fileperm.RestrictOpenFile
 	})
 }
@@ -210,18 +221,14 @@ func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
 // symlink at name is refused whatever it points at, as is a directory or
 // any other kind of file.
 func RegularLeaf(root *os.Root, name string) (string, error) {
-	dir, base := path.Split(path.Clean(filepath.ToSlash(name)))
+	dir, base := path.Split(strings.TrimRight(filepath.ToSlash(name), "/"))
 	if base == "" || base == "." || base == ".." {
 		return "", fmt.Errorf("%q names no file", name)
 	}
-	resolved := "."
-	if dir != "" {
-		var err error
-		if resolved, err = Resolve(root, dir); err != nil {
-			return "", err
-		}
+	p, err := resolveParent(root, dir, base)
+	if err != nil {
+		return "", err
 	}
-	p := path.Join(resolved, base)
 	fi, err := root.Lstat(filepath.FromSlash(p))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -254,14 +261,18 @@ func replace(root *os.Root, name string, data []byte, modeFor func(existing fs.F
 	if err != nil {
 		return err
 	}
-	return replaceAt(root, name, data, modeFor)
+	return replaceAt(root, name, data, false, modeFor)
 }
 
 // replaceAt is replace on a name already resolved inside root.
-func replaceAt(root *os.Root, name string, data []byte, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) (err error) {
+func replaceAt(root *os.Root, name string, data []byte, refuseLeafLink bool, modeFor func(existing fs.FileInfo) (fs.FileMode, func(*os.File) error)) error {
 	var existing fs.FileInfo
 	if fi, serr := root.Lstat(filepath.FromSlash(name)); serr == nil {
-		if fi.Mode()&fs.ModeSymlink == 0 && fi.Mode().Perm()&0o200 == 0 {
+		isLink := fi.Mode()&fs.ModeSymlink != 0
+		if isLink && refuseLeafLink {
+			return fmt.Errorf("%q is a symlink; the planned file must be a regular file", name)
+		}
+		if !isLink && fi.Mode().Perm()&0o200 == 0 {
 			return &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 		}
 		if fi.Mode().IsRegular() {
@@ -269,38 +280,7 @@ func replaceAt(root *os.Root, name string, data []byte, modeFor func(existing fs
 		}
 	}
 	createMode, prepare := modeFor(existing)
-	var nonce [8]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return err
-	}
-	tmp := filepath.FromSlash(path.Join(path.Dir(name), "."+path.Base(name)+".tmp-"+hex.EncodeToString(nonce[:])))
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, createMode)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = root.Remove(tmp)
-		}
-	}()
-	if prepare != nil {
-		if err = prepare(f); err != nil {
-			_ = f.Close()
-			return err
-		}
-	}
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return root.Rename(tmp, filepath.FromSlash(name))
+	return atomicfile.WriteFileAt(root, name, data, createMode, prepare)
 }
 
 // ReadFile reads name (slash-separated, relative to dir) through an

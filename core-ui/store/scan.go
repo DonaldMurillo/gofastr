@@ -84,14 +84,17 @@ func settleSeed(ctx context.Context, v any) any {
 	return v
 }
 
-// SeedFor resolves the seed for a full page: referenced, global and, when due, route slices.
-func SeedFor(ctx context.Context, html string) map[string]any {
-	names := ScanReferenced(html)
-	names = append(names, GlobalNames()...)
+func referencedNames(ctx context.Context, html string) []string {
+	names := append(ScanReferenced(html), GlobalNames()...)
 	if routeSeedDue(ctx, html) {
 		names = append(names, RouteNames()...)
 	}
-	return ResolveSeed(ctx, names)
+	return names
+}
+
+// SeedFor resolves the seed for a full page: referenced, global and, when due, route slices.
+func SeedFor(ctx context.Context, html string) map[string]any {
+	return ResolveSeed(ctx, referencedNames(ctx, html))
 }
 
 func routeSeedDue(ctx context.Context, html string) bool {
@@ -129,11 +132,7 @@ func ScopeOf(name string) Scope {
 
 // SeedSplit is SeedFor for a partial render, split into page and global values.
 func SeedSplit(ctx context.Context, html string) (page, global map[string]any) {
-	names := append(ScanReferenced(html), GlobalNames()...)
-	if routeSeedDue(ctx, html) {
-		names = append(names, RouteNames()...)
-	}
-	all := ResolveSeed(ctx, names)
+	all := ResolveSeed(ctx, referencedNames(ctx, html))
 	page = map[string]any{}
 	global = map[string]any{}
 	for n, v := range all {

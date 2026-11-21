@@ -14,22 +14,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
-// taskScheduler is the Windows backend: a Task Scheduler task with a
-// logon trigger for the current user, running at least privilege in
-// the user's own session. A Windows service would run in session 0
-// (no UI, no mapped drives, a different account) and needs an admin to
-// install, so it is not the per-user mechanism.
-//
-// Task Scheduler sends no stop signal a console-less process can
-// catch, so `stop` asks the daemon to drain over the control channel
-// and only falls back to `schtasks /End` (a hard kill) when nothing
-// answers.
 type taskScheduler struct{}
 
 func (taskScheduler) kind() string { return "Task Scheduler" }
 
-// taskXML renders the task definition. schtasks /XML expects UTF-16
-// with a byte-order mark; the caller encodes.
 func (taskScheduler) taskXML(b *Battery, args []string, account string) string {
 	esc := func(s string) string {
 		var buf bytes.Buffer
@@ -85,7 +73,6 @@ func (taskScheduler) taskXML(b *Battery, args []string, account string) string {
 `
 }
 
-// encodeUTF16 returns s as UTF-16LE with a byte-order mark.
 func encodeUTF16(s string) []byte {
 	u := utf16.Encode([]rune(s))
 	out := make([]byte, 2, 2+2*len(u))
@@ -96,8 +83,6 @@ func encodeUTF16(s string) []byte {
 	return out
 }
 
-// quoteWindowsArg quotes one argument for the CommandLineToArgvW
-// rules: backslashes are literal unless they precede a double quote.
 func quoteWindowsArg(s string) string {
 	if s != "" && !strings.ContainsAny(s, " \t\"") {
 		return s
@@ -111,8 +96,6 @@ func quoteWindowsArg(s string) string {
 		case '\\':
 			slashes++
 		case '"':
-			// The run's backslashes are already written: double them
-			// and escape the quote.
 			sb.WriteString(strings.Repeat(`\`, slashes+1))
 			slashes = 0
 		default:
@@ -125,9 +108,6 @@ func quoteWindowsArg(s string) string {
 	return sb.String()
 }
 
-// currentAccount is the logged-on account's name (for the task's
-// principal and logon trigger) and SID (for its name); a variable so
-// tests pin both.
 var currentAccount = func() (name, sid string, err error) {
 	u, err := user.Current()
 	if err != nil {
@@ -136,9 +116,6 @@ var currentAccount = func() (name, sid string, err error) {
 	return u.Username, u.Uid, nil
 }
 
-// taskName is the task's name: the app id plus the account's SID.
-// Task names are machine-wide, so a bare id would let one account's
-// install block another's, or an elevated one replace it.
 func (taskScheduler) taskName(b *Battery) (string, error) {
 	_, sid, err := currentAccount()
 	if err != nil {
@@ -179,8 +156,6 @@ func (t taskScheduler) install(b *Battery, exe string, port int) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("service: write task definition: %w", err)
 	}
-	// A running instance holds the old binary; stop it so /Run starts
-	// the new one (MultipleInstancesPolicy IgnoreNew would skip it).
 	if err := t.stop(b); err != nil {
 		return err
 	}
@@ -213,12 +188,6 @@ func (t taskScheduler) start(b *Battery) error {
 	return b.run("schtasks", "/Run", "/TN", name)
 }
 
-// stop asks the daemon to drain over the control channel and waits for
-// the process to exit: until it does, Task Scheduler counts the task
-// as running (a /Run then is dropped under IgnoreNew) and Windows
-// holds the executable locked. A drain that overruns, or a task stuck
-// before its control channel opened, gets `schtasks /End`, a hard
-// kill.
 func (t taskScheduler) stop(b *Battery) error {
 	name, err := t.taskName(b)
 	if err != nil {
@@ -229,21 +198,14 @@ func (t taskScheduler) stop(b *Battery) error {
 		return err
 	}
 	resp, err := callControl(inst.socketPath(), "stop")
-	// A starting daemon has bound its socket and answers once its app is
-	// ready, so silence is not yet a wedge: keep asking for up to
-	// startingWait before a hard kill lands in the middle of a migration.
 	for deadline := time.Now().Add(startingWait); errors.Is(err, os.ErrDeadlineExceeded) && time.Now().Before(deadline); {
 		resp, err = callControl(inst.socketPath(), "stop")
 	}
 	switch {
 	case errors.Is(err, errNotRunning):
-		// "Not running" is not an error from /End either.
 		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
 		return nil
 	case err != nil:
-		// A daemon that accepts but never answers is wedged: end it,
-		// then wait for its control channel to go away (no pid to
-		// watch without a reply).
 		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
 		return b.waitExit(procalive.Identity{})
 	}

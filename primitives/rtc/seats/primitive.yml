@@ -1,0 +1,12 @@
+primitive: rtc.seats
+summary: The per-principal socket cap on the signaling surface, a FIFO that displaces a principal's oldest socket at MaxSocketsPerUser.
+code:
+  - battery/rtc/seats.go
+docs:
+  - framework/docs/content/rtc.md
+invariants:
+  - id: oldest-seat-is-displaced
+    rule: A principal's join past MaxSocketsPerUser displaces its oldest socket, and an anonymous AnonymousPerSocket join takes no seat.
+    enforced_by:
+      - test: battery/rtc.TestSeatFloodRedCapsSocketsPerUser
+      - test: battery/rtc.TestAnonymousPerSocketNoEviction

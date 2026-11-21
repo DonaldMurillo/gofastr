@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
-	_ "github.com/lib/pq"
 )
 
 var (
@@ -48,24 +47,37 @@ var (
 	logged     atomic.Bool
 )
 
-// errNoPostgres is what every caller sees when TEST_POSTGRES_DSN is unset. It
+// DSNEnv names the environment variable that supplies a Postgres test DSN.
+const DSNEnv = "TEST_POSTGRES_DSN"
+
+// ErrNoPostgres is what every caller sees when TEST_POSTGRES_DSN is unset. It
 // names the two ways to supply one rather than reporting a bare absence.
-var errNoPostgres = errors.New(
+var ErrNoPostgres = errors.New(
 	"TEST_POSTGRES_DSN is not set — start one with `make postgres-up` (docker compose) " +
 		"or point at an existing server, e.g. " +
 		"TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/pgtest?sslmode=disable'")
 
-// resolve returns a base DSN to a working Postgres, or an error describing why
-// one isn't reachable. Memoised across the whole test process.
-func resolve() (string, error) {
+// ResolveEnv returns the trimmed TEST_POSTGRES_DSN and "env" as its
+// source, or an error naming how to supply one. Memoised across the
+// whole test process — the one shared read for every Postgres test
+// harness in the module (this package, framework/internal/testdb and
+// the battery/auth fixtures). It resolves a string only: whether a
+// server answers is each entry point's ping to establish.
+func ResolveEnv() (dsn string, source string, err error) {
 	once.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
+		if dsn := strings.TrimSpace(os.Getenv(DSNEnv)); dsn != "" {
 			baseDSN, using = dsn, "env"
 			return
 		}
-		resolveErr = errNoPostgres
+		resolveErr = ErrNoPostgres
 	})
-	return baseDSN, resolveErr
+	return baseDSN, using, resolveErr
+}
+
+// resolve returns the resolved base DSN, or an error saying none was supplied.
+func resolve() (string, error) {
+	dsn, _, err := ResolveEnv()
+	return dsn, err
 }
 
 // required reports whether a reachable Postgres is mandatory for this run.
@@ -81,11 +93,16 @@ func required() bool {
 	return os.Getenv("GITHUB_ACTIONS") == "true"
 }
 
-// BaseDSN returns the resolved base DSN (the maintenance/default database).
-// When Postgres is unreachable it skips locally but fails the test under CI
-// (see required); this is the single choke point every pgtest entry point
-// (DB, FreshDatabaseDSN, UnusedDSN) flows through. Use BaseDSN directly for
+// BaseDSN returns the resolved base DSN (the maintenance/default
+// database), skipping the test when TEST_POSTGRES_DSN is unset and
+// failing it under required mode (see required); this is the single
+// choke point every pgtest entry point (DB, FreshDatabaseDSN,
+// UnusedDSN) flows through. Use BaseDSN directly for
 // EnsureDatabase / CLI round-trips that need a raw connection string.
+// It resolves the string only and never connects: a set-but-unreachable
+// server surfaces at the caller's ping — fatal in DB and
+// FreshDatabaseDSN, invisible to UnusedDSN, which connects only in its
+// returned cleanup.
 func BaseDSN(t *testing.T) string {
 	t.Helper()
 	dsn, err := resolve()
@@ -101,10 +118,33 @@ func BaseDSN(t *testing.T) string {
 	return dsn
 }
 
-// skipOrFail is the same fail-closed rule BaseDSN applies, extended to the
-// URL-shape checks that run after it: skip locally, fail under required
-// mode. Without it, a non-URL TEST_POSTGRES_DSN — the override
-// CONTRIBUTING.md advertises — turns the CI canary into a silent skip.
+// RewriteDBName returns dsn pointed at database name, dropping any
+// dbname/database query selector first: lib/pq takes the database from
+// the URL path and then adds the query options independently, so a
+// retained selector keeps selecting the original database. This is the
+// one rewrite every database-carving test path shares (this package's
+// FreshDatabaseDSN/UnusedDSN and framework/testkit).
+func RewriteDBName(dsn, name string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
+		return "", fmt.Errorf("pgtest.RewriteDBName: parse: %w", err)
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return "", fmt.Errorf("pgtest.RewriteDBName: expected postgres scheme, got %q", u.Scheme)
+	}
+	u.Path = "/" + name
+	q := u.Query()
+	q.Del("dbname")
+	q.Del("database")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// skipOrFail gives the URL-only database-carving helpers BaseDSN's skip policy.
 func skipOrFail(t *testing.T, format string, args ...any) {
 	t.Helper()
 	if required() {
@@ -114,27 +154,22 @@ func skipOrFail(t *testing.T, format string, args ...any) {
 }
 
 // DB returns a *sql.DB scoped to a fresh, uniquely-named schema (via
-// search_path) on the shared Postgres, or skips if Postgres is unreachable.
-// The schema and connection are dropped/closed on t.Cleanup.
+// search_path) on the shared Postgres. An unset TEST_POSTGRES_DSN follows
+// BaseDSN's skip policy. An invalid DSN or unreachable server fails the test.
 func DB(t *testing.T) *sql.DB {
 	t.Helper()
 	base := BaseDSN(t)
 	schema := fmt.Sprintf("pgt_%d_%d", os.Getpid(), schemaSeq.Add(1))
-	// Set search_path via the connection-string `options` so it applies to
-	// EVERY pooled connection — including ones the pool opens after a
-	// ctx-cancel poisons the pinned conn. A session-level `SET search_path`
-	// would be lost on that recycle, silently moving later queries to the
-	// default schema.
-	dsn, err := dsnWithSearchPath(base, schema)
+	dsn, err := DSNWithSearchPath(base, schema)
 	if err != nil {
-		skipOrFail(t, "pgtest.DB needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
+		t.Fatalf("pgtest: invalid TEST_POSTGRES_DSN: %v", err)
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("open pg: %v", err)
 	}
 	db.SetMaxOpenConns(1) // advisory-lock correctness on one session
-	if err := ping(db); err != nil {
+	if err := PingRetry(db, 30, 2*time.Second, 200*time.Millisecond); err != nil {
 		db.Close()
 		t.Fatalf("ping pg: %v", err)
 	}
@@ -177,7 +212,7 @@ func Replica(t *testing.T, db *sql.DB) *sql.DB {
 	if err := db.QueryRow(`SELECT current_schema()`).Scan(&schema); err != nil {
 		t.Fatal(err)
 	}
-	dsn, err := dsnWithSearchPath(BaseDSN(t), schema)
+	dsn, err := DSNWithSearchPath(BaseDSN(t), schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,37 +224,24 @@ func Replica(t *testing.T, db *sql.DB) *sql.DB {
 	return other
 }
 
-func dsnWithSearchPath(base, schema string) (string, error) {
-	u, err := url.Parse(base)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme == "" {
-		return "", fmt.Errorf("not URL-form")
-	}
-	q := u.Query()
-	q.Set("options", "-c search_path="+schema)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
-}
-
-// FreshDatabaseDSN creates a uniquely-named database on the shared Postgres
-// and returns a URL DSN pointing at it, dropped on t.Cleanup. Use for CLI /
-// tooling tests that connect by URL string and expect to own the database
-// (vs DB(t), which schema-scopes a shared one). Skips if Postgres is
-// unreachable, or if the base DSN isn't URL-form.
+// FreshDatabaseDSN creates a uniquely-named database on the shared
+// Postgres and returns a URL DSN pointing at it, dropped on t.Cleanup.
+// Use for CLI / tooling tests that connect by URL string and expect to
+// own the database (vs DB(t), which schema-scopes a shared one). It
+// skips when TEST_POSTGRES_DSN is unset or not URL-form (failing
+// instead under required mode) and fails the test on the admin ping or
+// CREATE DATABASE when the server is set but unreachable.
 func FreshDatabaseDSN(t *testing.T) string {
 	t.Helper()
 	base := BaseDSN(t)
-	u, err := url.Parse(base)
-	if err != nil || u.Scheme == "" {
+	if u, err := url.Parse(base); err != nil || u.Scheme == "" {
 		skipOrFail(t, "pgtest.FreshDatabaseDSN needs a URL-form base DSN, got %q", RedactDSN(base))
 	}
 	admin, err := sql.Open("postgres", base)
 	if err != nil {
 		t.Fatalf("open admin: %v", err)
 	}
-	if err := ping(admin); err != nil {
+	if err := PingRetry(admin, 30, 2*time.Second, 200*time.Millisecond); err != nil {
 		admin.Close()
 		t.Fatalf("ping admin: %v", err)
 	}
@@ -233,23 +255,31 @@ func FreshDatabaseDSN(t *testing.T) string {
 		_, _ = admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)")
 		admin.Close()
 	})
-	u.Path = "/" + name
-	return u.String()
+	dsn, err := RewriteDBName(base, name)
+	if err != nil {
+		skipOrFail(t, "pgtest.FreshDatabaseDSN needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
+	}
+	return dsn
 }
 
-// UnusedDSN returns a URL DSN pointing at a uniquely-named database that does
-// NOT yet exist, plus a cleanup that drops it if something created it. Use to
-// test database-creation paths (EnsureDatabase / migrate up --create-db).
-// Skips if Postgres is unreachable or the base DSN isn't URL-form.
+// UnusedDSN returns a URL DSN pointing at a uniquely-named database that
+// does NOT yet exist, plus a cleanup that drops it if something created
+// it. Use to test database-creation paths (EnsureDatabase / migrate up
+// --create-db). It skips when TEST_POSTGRES_DSN is unset or not
+// URL-form (failing instead under required mode) and never connects
+// before the test body runs: an unreachable server surfaces in the
+// caller, and only the returned cleanup opens a connection.
 func UnusedDSN(t *testing.T) (string, func()) {
 	t.Helper()
 	base := BaseDSN(t)
-	u, err := url.Parse(base)
-	if err != nil || u.Scheme == "" {
+	if u, err := url.Parse(base); err != nil || u.Scheme == "" {
 		skipOrFail(t, "pgtest.UnusedDSN needs a URL-form base DSN, got %q", RedactDSN(base))
 	}
 	name := fmt.Sprintf("created_%d_%d", os.Getpid(), schemaSeq.Add(1))
-	u.Path = "/" + name
+	dsn, err := RewriteDBName(base, name)
+	if err != nil {
+		skipOrFail(t, "pgtest.UnusedDSN needs a URL-form base DSN, got %q (%v)", RedactDSN(base), err)
+	}
 	drop := func() {
 		admin, err := sql.Open("postgres", base)
 		if err != nil {
@@ -259,7 +289,7 @@ func UnusedDSN(t *testing.T) (string, func()) {
 		// best-effort: returned cleanup cannot report after its caller exits.
 		_, _ = admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)")
 	}
-	return u.String(), drop
+	return dsn, drop
 }
 
 // RedactDSN masks credentials in a DSN for safe logging. Delegates to
@@ -270,16 +300,29 @@ func RedactDSN(dsn string) string {
 	return dsnredact.Redact(dsn)
 }
 
-func ping(db *sql.DB) error {
+// PingRetry pings db up to attempts times, with a timeout per ping and an
+// interval between attempts, returning the last error until a ping succeeds.
+func PingRetry(db *sql.DB, attempts int, timeout, interval time.Duration) error {
+	return pingRetry(db, timeout, interval, func(attempt int) bool { return attempt < attempts })
+}
+
+// PingRetryFor starts pings for budget, with a timeout per ping and an
+// interval between attempts. A ping in progress keeps its own timeout.
+func PingRetryFor(db *sql.DB, budget, timeout, interval time.Duration) error {
+	deadline := time.Now().Add(budget)
+	return pingRetry(db, timeout, interval, func(int) bool { return time.Now().Before(deadline) })
+}
+
+func pingRetry(db *sql.DB, timeout, interval time.Duration, canTry func(int) bool) error {
 	var err error
-	for range 30 {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	for attempt := 0; canTry(attempt); attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		err = db.PingContext(ctx)
 		cancel()
 		if err == nil {
 			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(interval)
 	}
 	return err
 }

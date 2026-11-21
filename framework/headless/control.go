@@ -114,11 +114,7 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Invalid {
 		attrs["aria-invalid"] = "true"
 	}
-	value := p.Value
-	if strings.HasPrefix(value, "\n") || strings.HasPrefix(value, "\r") {
-		value = "\n" + value
-	}
-	return El("textarea", s, PartRoot, attrs, render.Text(value))
+	return El("textarea", s, PartRoot, attrs, render.Text(html.TextAreaContent(p.Value)))
 }
 
 // Option is one entry in a Select's list.
@@ -251,6 +247,7 @@ type ColorProps struct {
 	Value    string
 	Disabled bool
 	Invalid  bool
+	Required bool
 
 	// ID and Extra land on the hex text input.
 	ID          string
@@ -298,6 +295,7 @@ func Color(p ColorProps, s Classes) render.HTML {
 	attrsSet(hex, "id", p.ID)
 	attrsSet(hex, "aria-describedby", p.DescribedBy)
 	Flag(hex, "disabled", p.Disabled)
+	Flag(hex, "required", p.Required)
 	if p.Invalid {
 		hex["aria-invalid"] = "true"
 	}

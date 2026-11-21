@@ -101,12 +101,11 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		if trimmed == "" {
 			return nil, fmt.Errorf("migrate.RoutinesFS: %q: up file is empty (whitespace only)", name)
 		}
-		existing, collision := ups[routineName]
+		_, collision := ups[routineName]
 		if collision {
 			return nil, fmt.Errorf("migrate.RoutinesFS: routine %q has multiple up definitions (declare exactly one of plain/%s%s/%s%s)",
 				routineName, dialectPostgres, sqlExt, dialectSQLite, sqlExt)
 		}
-		_ = existing
 		ups[routineName] = routineFile{body: trimmed, dialect: dialect}
 	}
 

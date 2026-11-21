@@ -1,0 +1,61 @@
+primitive: desktop.platform.macos
+summary: The darwin shell, AppKit and WKWebView windows, menus, tray, dialogs, notifications, deep links and the native chrome, driven through the pure-Go Objective-C bridge; the unsupported shell on every other platform.
+code:
+  - battery/desktop/macos/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - Its tests run on darwin only, except the source scans, and CI does not run them; run them on a Mac before merging a change here.
+invariants:
+  - id: modals-wait-for-the-person
+    rule: Every runModal (the permission alert and the open, save and folder panels) runs inside onMainWithTimeout(modalTimeout, ...), never onMain's ten-second default, so a person's slow answer still reaches the bridge.
+    enforced_by:
+      - test: battery/desktop/macos.TestModalsWaitForThePerson
+  - id: shell-construction-is-lazy
+    rule: New loads no framework; AppKit and WebKit load on the main thread when Run starts, so the CLI's blank import of the battery never touches AppKit.
+    enforced_by:
+      - test: battery/desktop/macos.TestShellConstructsLazy
+  - id: delegates-never-wait-on-go
+    rule: A delegate or action callback on the UI thread hands its report to a channel or goroutine and returns at once, so the UI thread never waits on Go code that may itself hop back to the main thread.
+    judge: Does this change make an AppKit or WebKit callback on the main thread wait on a Go channel, lock or Main hop?
+  - id: main-hop-runs-inline-on-the-ui-thread
+    rule: onMain and onMainWithTimeout run fn inline when the caller is already on the main thread and hop through objc.MainWithTimeout otherwise, because dispatching and waiting from the thread that drains the queue deadlocks, and the ready callback navigates on the UI thread before the run loop starts.
+    judge: Does this change make onMain, onMainWithTimeout or Main dispatch and wait when the caller is already on the main thread?
+  - id: unified-toolbar-before-title-visibility
+    rule: applyWindowStyle attaches the toolbar before it sets titleVisibility to NSWindowTitleHidden (1), so an AppKit release that resets the visibility when a toolbar is attached cannot bring the title back.
+    judge: Does this change set titleVisibility before setToolbar in applyWindowStyle, or change the NSWindowTitleHidden value from 1?
+  - id: frames-flip-on-the-primary-screen
+    rule: Frames convert between the Frame contract's top-left coordinates and AppKit's bottom-left ones against the primary screen, never the main screen, and a remembered frame that no longer meets any screen by the minimum overlap is dropped.
+    enforced_by:
+      - test: battery/desktop/macos.TestFrameFlipUsesPrimaryNotMainScreen
+      - test: battery/desktop/macos.TestFrameFlipRoundTrips
+      - test: battery/desktop/macos.TestFrameVisibleOnScreens
+  - id: closed-window-refuses-mutations
+    rule: Every error-returning Window method on a closed window answers ErrWindowClosed and Close stays idempotent.
+    enforced_by:
+      - test: battery/desktop/macos.TestClosedWindowRefusesMutations
+  - id: prompt-honours-cancellation
+    rule: A permission prompt whose context is cancelled returns without leaving an alert behind.
+    enforced_by:
+      - test: battery/desktop/macos.TestShellPromptCancelledContext
+  - id: deep-links-keep-arrival-order
+    rule: GetURL Apple Events are queued raw and delivered to the battery by one drain in arrival order, never blocking the event handler, with a recover around the host callback.
+    enforced_by:
+      - test: battery/desktop/macos.TestDeepLinkLineKeepsArrivalOrder
+decisions:
+  - id: one-package-per-platform
+    date: 2026-11-20
+    status: accepted
+    decision: The darwin shell is its own package that compiles on every GOOS, answering the unsupported shell off darwin.
+    rejected:
+      - option: Build-tagged files inside battery/desktop.
+        why: A host would need build tags of its own to cross-compile, and the contract package would link AppKit glue everywhere.
+    upholds: [shell-construction-is-lazy]
+  - id: modal-timeout-is-the-callers
+    date: 2026-11-20
+    status: accepted
+    decision: A modal runs under modalTimeout, ten minutes, chosen by the caller.
+    rejected:
+      - option: Main's ten-second default.
+        why: It gave up while the alert or panel was still open, so the bridge answered internal, persisted no decision and lost the user's pick.
+    upholds: [modals-wait-for-the-person]

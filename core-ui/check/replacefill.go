@@ -40,11 +40,5 @@ var reReplaceCall = regexp.MustCompile(`\.\s*replace(?:All)?\s*\(`)
 var reFuncArg = regexp.MustCompile(`^(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)`)
 
 func replacementSafe(arg string) bool {
-	if isJSStringLiteral(arg) || isJSNumericLiteral(arg) {
-		return true
-	}
-	if len(arg) >= 2 && arg[0] == '`' && arg[len(arg)-1] == '`' && !strings.Contains(arg, "${") {
-		return true
-	}
-	return reFuncArg.MatchString(arg)
+	return isStaticJSStringLiteral(arg) || isJSNumericLiteral(arg) || reFuncArg.MatchString(arg)
 }

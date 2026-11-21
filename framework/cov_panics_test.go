@@ -95,8 +95,7 @@ func dupToolEndpointsConfig(tool string) entity.EntityConfig {
 	}
 }
 
-// registerEntityEndpoints surfaces the MCP RegisterTool error (line 801) when
-// two endpoints declare the same tool Name.
+// Entity refuses two endpoints that declare the same MCP tool name.
 func TestCovEntityEndpointDuplicateToolPanics(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	defer func() {
@@ -107,7 +106,7 @@ func TestCovEntityEndpointDuplicateToolPanics(t *testing.T) {
 	app.Entity("posts", dupToolEndpointsConfig("dup_tool"))
 }
 
-// registerGroupEndpoints surfaces the MCP RegisterTool error (line 442).
+// GroupEntity refuses two endpoints that declare the same namespaced tool name.
 func TestCovGroupEndpointDuplicateToolPanics(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	g := app.Group("/api", routegroup.WithMCPNamespace("ns"))

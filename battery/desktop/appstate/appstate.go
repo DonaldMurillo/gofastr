@@ -1,14 +1,11 @@
-// Package appstate is the desktop battery's durable key/value store:
-// one JSON file, 0600, debounced writes, a flush on quit, and a change
-// hook. Values are stored as raw JSON, so a value written through one
-// type reads back through another without ever being re-encoded
-// through any. Keys are namespaced by their leading dotted segments;
-// the battery owns "windows" and "settings", the page owns "page.".
+// Package appstate is the desktop battery's durable key and value store:
+// one 0600 JSON file with debounced writes, a quit flush and change watchers.
 //
 // EXPERIMENTAL: part of battery/desktop.
 package appstate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,42 +25,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// MaxValueBytes caps one value, measured on its encoded JSON.
+// MaxValueBytes caps one value, measured on compact JSON without HTML escaping.
 const MaxValueBytes = 64 << 10
 
 // ErrKey is returned for a key off the grammar.
 var ErrKey = errors.New("appstate: key must match ^[a-z][a-z0-9_.-]{0,63}$")
 
-// ErrTooLarge is returned for a value whose encoded JSON exceeds
-// MaxValueBytes.
+// ErrTooLarge is returned for a value whose encoded JSON exceeds MaxValueBytes.
 var ErrTooLarge = fmt.Errorf("appstate: value exceeds %d bytes of encoded JSON", MaxValueBytes)
 
-// reKey is the key grammar: a lowercase letter, then up to 63 lowercase
-// letters, digits, dots, underscores, or dashes. Dots are namespaces
-// (windows, settings, page.theme).
 var reKey = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 
-// writeDelay is the debounce window: every write reschedules, so one
-// write lands this long after the last change. The tests override it
-// (same package) to keep the suite fast.
 var writeDelay = 500 * time.Millisecond
 
-// stateFile is the on-disk shape. The encoder sorts the keys; the file
-// is always written whole.
 type stateFile struct {
 	Entries map[string]json.RawMessage `json:"entries"`
 }
 
-// Store is a durable key/value store backed by one JSON file. Open
-// reads the file (a missing file is an empty store; the parent
-// directory must exist; the file is created on the first write, 0600).
-// Safe for concurrent use.
+// Store is a durable key/value store backed by one JSON file.
 type Store struct {
 	logger *slog.Logger
 	path   string
 
-	// mu guards entries, dirty, timer, and watchers. The timer's write
-	// and Flush take it too, so a flush always sees the latest state.
 	mu        sync.Mutex
 	entries   map[string]json.RawMessage
 	dirty     bool
@@ -71,17 +54,10 @@ type Store struct {
 	watchers  map[int]func(key string)
 	nextWatch int
 
-	// writeMu serializes the whole write: the snapshot for a persist
-	// and the file write itself both happen under it, so a debounced
-	// write racing the quit flush can neither interleave partial files
-	// nor land a stale snapshot after a newer flush.
 	writeMu sync.Mutex
 }
 
-// Open reads path into a Store. A missing file is an empty store; a
-// corrupt or unreadable one is a Warn and an empty store (a truncated
-// quit-time write must not brick the next launch); the next write
-// replaces it. A nil logger means slog.Default().
+// Open reads path into a Store.
 func Open(path string, logger *slog.Logger) *Store {
 	if logger == nil {
 		logger = slog.Default()
@@ -109,9 +85,7 @@ func Open(path string, logger *slog.Logger) *Store {
 	return s
 }
 
-// Get decodes the value stored under key into out. It answers (false,
-// nil) when the key is absent and an error when the key is off the
-// grammar or the stored value does not decode into out.
+// Get decodes the value stored under key into out.
 func (s *Store) Get(key string, out any) (bool, error) {
 	if !reKey.MatchString(key) {
 		return false, fmt.Errorf("%w: %q", ErrKey, key)
@@ -120,7 +94,6 @@ func (s *Store) Get(key string, out any) (bool, error) {
 	raw, ok := s.entries[key]
 	var data []byte
 	if ok {
-		// Copy under the lock: the caller owns the bytes it decodes.
 		data = make([]byte, len(raw))
 		copy(data, raw)
 	}
@@ -142,13 +115,11 @@ func Get[T any](s *Store, key string) (T, bool, error) {
 }
 
 // Set stores v under key as JSON and schedules the debounced write.
-// It answers ErrKey for a key off the grammar and ErrTooLarge when
-// the encoded value exceeds MaxValueBytes.
 func (s *Store) Set(key string, v any) error {
 	if !reKey.MatchString(key) {
 		return fmt.Errorf("%w: %q", ErrKey, key)
 	}
-	data, err := json.Marshal(v)
+	data, err := encodeJSON(v, "")
 	if err != nil {
 		return fmt.Errorf("appstate: encode %q: %w", key, err)
 	}
@@ -163,8 +134,7 @@ func (s *Store) Set(key string, v any) error {
 	return nil
 }
 
-// Delete removes key. Deleting an absent key succeeds, marks nothing
-// dirty, and still notifies (every Set and Delete announces itself).
+// Delete removes key.
 func (s *Store) Delete(key string) error {
 	if !reKey.MatchString(key) {
 		return fmt.Errorf("%w: %q", ErrKey, key)
@@ -193,9 +163,7 @@ func (s *Store) Keys(prefix string) []string {
 	return keys
 }
 
-// Watch calls fn with the key of every Set and Delete, on fn's own
-// goroutine, never under the store's lock. The returned stop removes
-// the watcher; calling it twice is a no-op.
+// Watch calls fn with the key of every Set and Delete, on fn's own goroutine, never under the store's lock.
 func (s *Store) Watch(fn func(key string)) (stop func()) {
 	s.mu.Lock()
 	if s.watchers == nil {
@@ -215,11 +183,7 @@ func (s *Store) Watch(fn func(key string)) (stop func()) {
 	}
 }
 
-// Flush persists any pending change now and waits for any in-flight
-// write to finish (the quit path): when it returns, no persist is
-// pending and the file on disk holds every change that completed
-// before the call. A store with nothing dirty and nothing in flight
-// is a no-op.
+// Flush persists any pending change and waits for an in-flight write to finish.
 func (s *Store) Flush() error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -234,10 +198,6 @@ func (s *Store) Flush() error {
 	entries := s.snapshotLocked()
 	s.mu.Unlock()
 	if err := s.persist(entries); err != nil {
-		// The snapshot never reached disk: mark the store dirty again
-		// so the next debounced write or the quit flush retries it and
-		// reports the error. A Set during the write already set dirty;
-		// setting it again is the same answer.
 		s.mu.Lock()
 		s.dirty = true
 		s.mu.Unlock()
@@ -249,7 +209,6 @@ func (s *Store) Flush() error {
 // Path is the file the store persists to.
 func (s *Store) Path() string { return s.path }
 
-// scheduleLocked arms the debounced write; the caller holds mu.
 func (s *Store) scheduleLocked() {
 	s.dirty = true
 	if s.timer != nil {
@@ -258,16 +217,8 @@ func (s *Store) scheduleLocked() {
 	s.timer = time.AfterFunc(writeDelay, s.write)
 }
 
-// write is the debounce timer's callback: a flush that swallows its
-// own error (the next write or the quit flush reports it). Sharing
-// Flush's path is the point: one debounce/flush ordering, so a fired
-// timer's write and a quit flush serialize on writeMu, the snapshot
-// is taken under the same lock as the persist, and neither can land a
-// stale file after the other.
 func (s *Store) write() { _ = s.Flush() }
 
-// snapshotLocked copies the entries for a write and clears dirty; the
-// caller holds mu (and, on every path that persists, writeMu).
 func (s *Store) snapshotLocked() map[string]json.RawMessage {
 	out := make(map[string]json.RawMessage, len(s.entries))
 	maps.Copy(out, s.entries)
@@ -275,60 +226,45 @@ func (s *Store) snapshotLocked() map[string]json.RawMessage {
 	return out
 }
 
-// persist writes the entries whole through a fresh temp file in the
-// same directory renamed onto the store's path: the rename is the
-// atomic swap (a reader at any instant sees the previous whole file
-// or the new one, never a torn one) and it replaces the path's
-// directory entry, so a symlink planted at the path is swapped out,
-// never followed. The temp file is 0600 and the rename keeps that
-// mode. The caller holds writeMu. A failed write is a Warn and an
-// error, never a panic: the state stays in memory and the next write
-// retries.
 func (s *Store) persist(entries map[string]json.RawMessage) error {
-	data, err := json.MarshalIndent(stateFile{Entries: entries}, "", "  ")
+	data, err := encodeJSON(stateFile{Entries: entries}, "  ")
 	if err != nil {
 		s.logger.Warn("appstate: encoding the state file failed", "error", err.Error())
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".state-*.tmp")
-	if err != nil {
-		s.logger.Warn("appstate: creating the temp state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
+	stage, err := atomicfile.WriteFileNoFollow(s.path, data, fileperm.RestrictOpenFile)
+	if err == nil || stage == atomicfile.WritePrepareTemp {
 		return err
 	}
-	name := tmp.Name()
-	if err := fileperm.RestrictOpenFile(tmp); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		return err
+	var action string
+	switch stage {
+	case atomicfile.WriteCreateTemp:
+		action = "creating the temp"
+	case atomicfile.WriteData:
+		action = "writing the"
+	case atomicfile.WriteCloseTemp:
+		action = "closing the"
+	case atomicfile.WriteReplace:
+		action = "replacing the"
+	default:
+		action = "persisting the"
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(name)
-		s.logger.Warn("appstate: writing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		s.logger.Warn("appstate: closing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
-	}
-	if err := atomicfile.Replace(name, s.path); err != nil {
-		os.Remove(name)
-		s.logger.Warn("appstate: replacing the state file failed",
-			"file", filepath.Base(s.path), "error", err.Error())
-		return err
-	}
-	return nil
+	s.logger.Warn("appstate: "+action+" state file failed",
+		"file", filepath.Base(s.path), "error", err.Error())
+	return err
 }
 
-// notify hands one change to every watcher on its own goroutine. The
-// callbacks are snapshotted under the lock and invoked after it, so a
-// watcher can call back into the store. Each launch carries a recover:
-// a panicking watcher drops that one notification instead of the
-// process (the desktop shell's deliverDeepLink spelling).
+func encodeJSON(v any, indent string) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", indent)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
 func (s *Store) notify(key string) {
 	s.mu.Lock()
 	fns := make([]func(string), 0, len(s.watchers))
@@ -341,7 +277,6 @@ func (s *Store) notify(key string) {
 	}
 }
 
-// deliver runs one watcher on its own goroutine with a recover.
 func deliver(logger *slog.Logger, fn func(string), key string) {
 	go func() {
 		defer func() {

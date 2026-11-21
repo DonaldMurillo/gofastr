@@ -46,3 +46,12 @@ invariants:
     enforced_by:
       - test: core-ui/style.TestClassNameRedSelectorBreakout
       - test: core-ui/style.TestUtilityCSSEmitsVarRefs
+  - id: component-build-is-repeatable
+    rule: ComponentSheet.Build scopes a copy of the rule tree, so the builder stays editable and a second Build returns the same CSS.
+    enforced_by:
+      - test: core-ui/style.TestComponentSheetBuildCanBeRepeated
+  - id: selector-lists-split-at-top-level
+    rule: Pseudo, Child and ComponentSheet scoping split a selector list only at commas outside functions, brackets, strings, comments and CSS escapes.
+    enforced_by:
+      - test: core-ui/style.TestStyleSheetNestedSelectorLists
+      - test: core-ui/style.TestSplitTopLevelCommas

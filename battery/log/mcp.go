@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,21 +13,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// registerMCPTools wires the four log query/control tools onto the
-// App's MCP server. Called from Init when Config.EnableMCP is set.
-//
-// Tool names use a `log_` prefix to namespace cleanly alongside other
-// plugins that may register their own MCP surface.
 func (p *Plugin) registerMCPTools(app *framework.App) error {
 	tools := []struct {
 		name        string
 		description string
 		schema      map[string]any
 		handler     func(ctx context.Context, params map[string]any) (any, error)
-		// gate, when set, is a per-caller precondition. It also decides
-		// whether the tool is visible in tools/list, so a caller who cannot
-		// invoke it does not learn it exists.
-		gate func(ctx context.Context) error
+		gate        func(ctx context.Context) error
 	}{
 		{
 			name:        "log_recent",
@@ -86,12 +79,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 				},
 			},
 			handler: p.toolSetLevel,
-			// This tool mutates the running app's observability: an
-			// unauthenticated caller could flip the app to DEBUG (log
-			// volume, and whatever DEBUG lines carry) or to ERROR to go
-			// quiet before doing something else. It registers directly on
-			// the MCP server, so no route middleware ever runs for it.
-			gate: p.setLevelGate(),
+			gate:    p.setLevelGate(),
 		})
 	}
 	for _, t := range tools {
@@ -104,14 +92,6 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		if t.gate != nil {
 			opts = append(opts, mcp.WithToolGate(t.gate))
 		}
-		// Under the dev implication these tools exist only because
-		// GOFASTR_DEV turned them on, and their gates are nil — there
-		// is no auth to satisfy in the dev loop. That is only safe on a
-		// loopback listener: mark the mutating tool (log_set_level)
-		// and the two disclosing read tools (log_recent / log_filter
-		// hand out every caller's request paths, remote IPs, and
-		// request IDs) so the framework's bind guard withdraws them on
-		// an exposed bind. log_metrics is counters only and stays.
 		if p.mutationDevImplied {
 			switch t.name {
 			case "log_recent", "log_filter", "log_set_level":
@@ -125,14 +105,11 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 	return nil
 }
 
-// ---- tool handlers -------------------------------------------------------
-
 func (p *Plugin) toolRecent(_ context.Context, params map[string]any) (any, error) {
 	limit := p.clampLimit(intParam(params, "limit", 50))
 	minLevel, hasLevel := levelParam(params, "level")
 
 	all := p.ring.SnapshotDecoded()
-	// Walk newest→oldest so the limit cap takes the most recent.
 	out := make([]map[string]any, 0, limit)
 	for i := len(all) - 1; i >= 0 && len(out) < limit; i-- {
 		e := all[i]
@@ -141,10 +118,7 @@ func (p *Plugin) toolRecent(_ context.Context, params map[string]any) (any, erro
 		}
 		out = append(out, e)
 	}
-	// Reverse so the response is chronological (oldest first).
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return map[string]any{
 		"entries": out,
 		"count":   len(out),
@@ -173,12 +147,6 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 
 	pool := p.ring.SnapshotDecoded()
 	if historical && p.resolvedFilePath != "" {
-		// Tail the file for older entries beyond the ring window. Dedup
-		// against the ring on (time, msg, request_id) so the steady-state
-		// case (file overlaps ring) doesn't double-count. A read that
-		// fails is surfaced, not swallowed: an agent asking for history
-		// must not get an empty answer with no sign the file was
-		// unreadable.
 		extra, err := tailFile(p.resolvedFilePath, limit*4)
 		if err != nil {
 			return nil, fmt.Errorf("historical read: %w", err)
@@ -204,8 +172,6 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 		}
 	}
 
-	// Walk newest→oldest so the limit cap takes the most recent matches.
-	// Matches log_recent's chronology contract.
 	out := make([]map[string]any, 0, limit)
 	for i := len(pool) - 1; i >= 0 && len(out) < limit; i-- {
 		e := pool[i]
@@ -248,10 +214,7 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 		}
 		out = append(out, e)
 	}
-	// Reverse for chronological response.
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return map[string]any{
 		"entries": out,
 		"count":   len(out),
@@ -281,9 +244,6 @@ func (p *Plugin) toolSetLevel(_ context.Context, params map[string]any) (any, er
 	}, nil
 }
 
-// clampLimit caps `n` at the ring's capacity so an adversarial or typo'd
-// `limit: 10_000_000` can't allocate a multi-million-slot slice. The
-// ring is the source of truth for "how much history is available."
 func (p *Plugin) clampLimit(n int) int {
 	max := p.ring.Cap()
 	if n > max {
@@ -292,16 +252,9 @@ func (p *Plugin) clampLimit(n int) int {
 	return n
 }
 
-// ---- param helpers -------------------------------------------------------
-
 func intParam(params map[string]any, name string, def int) int {
 	switch v := params[name].(type) {
 	case float64:
-		// Bound before converting: int(1e308) saturates on arm64 but
-		// wraps negative on amd64, and clampLimit only caps from above,
-		// so an unbounded conversion reached make(..., limit) with a
-		// negative cap (probe TestMCPArgsAdversarialNoPanic, red on
-		// amd64 only). Anything past MaxInt32 is "as many as allowed".
 		if v > math.MaxInt32 {
 			return math.MaxInt32
 		}
@@ -330,11 +283,6 @@ func boolParam(params map[string]any, name string, def bool) bool {
 	return def
 }
 
-// timeParam parses an RFC3339 (with or without sub-second precision)
-// timestamp from `params[name]`. Returns hasValue=false when the field
-// is absent. Returns an error on a present-but-malformed value so the
-// caller surfaces it back to the agent instead of silently filtering
-// nothing.
 func timeParam(params map[string]any, name string) (time.Time, bool, error) {
 	v, present := params[name]
 	if !present {
@@ -342,11 +290,6 @@ func timeParam(params map[string]any, name string) (time.Time, bool, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		// The tool schema declares this field an RFC3339 string; a
-		// present value of another JSON type (e.g. a numeric Unix
-		// timestamp) is malformed, not absent. Treating it as absent
-		// makes the agent believe it narrowed the window while the
-		// response quietly contains everything.
 		return time.Time{}, false, fmt.Errorf("%s: want RFC3339 timestamp string, got %T", name, v)
 	}
 	if s == "" {
@@ -380,8 +323,6 @@ func levelParam(params map[string]any, name string) (slog.Level, bool) {
 	return 0, false
 }
 
-// levelAtLeast returns true if the entry's `level` field is at or above
-// min. Defensive against malformed entries (missing/non-string level).
 func levelAtLeast(entry map[string]any, min slog.Level) bool {
 	s, ok := entry["level"].(string)
 	if !ok {
@@ -403,16 +344,6 @@ func levelAtLeast(entry map[string]any, min slog.Level) bool {
 	return lv >= min
 }
 
-// readGate guards the log READ tools. They hand out every caller's
-// request paths, remote IPs, and request IDs, straight off /mcp with no
-// route middleware in the way, so an unauthenticated MCP client was
-// reading the app's whole access log. The inputSchema is disclosure too:
-// a gated tool also vanishes from tools/list, so an anonymous caller
-// does not even learn the surface exists.
-//
-// It follows the same dev-mode escape the mutating tool uses, so a local
-// `gofastr dev` loop is unchanged, except that a host which enabled MCP
-// itself and set MCPGate keeps that gate in dev.
 func (p *Plugin) readGate() func(ctx context.Context) error {
 	if p.cfg.MCPGate != nil && !p.mcpDevImplied {
 		return p.cfg.MCPGate
@@ -420,17 +351,6 @@ func (p *Plugin) readGate() func(ctx context.Context) error {
 	return p.setLevelGate()
 }
 
-// setLevelGate returns the precondition log_set_level runs behind, or nil
-// when the tool is dev-implied.
-//
-// The tool mutates the running app's observability: an unauthenticated caller
-// could flip it to DEBUG (log volume, and whatever DEBUG lines carry) or to
-// ERROR to go quiet before doing something else. It registers directly on the
-// MCP server, so no route middleware ever runs for it.
-//
-// Under `gofastr dev` there is no auth to satisfy, so a gate would only lock
-// the developer's own agent out, the same call framework's control tools
-// make. Dev exposure is bounded by the loopback bind instead.
 func (p *Plugin) setLevelGate() func(ctx context.Context) error {
 	if p.mutationDevImplied {
 		return nil

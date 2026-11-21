@@ -20,6 +20,13 @@ docs:
 on_change:
   - "A change to start or shutdown order is a change to what every battery sees at boot: run the battery start and stop tests, not only this package's."
 invariants:
+  - id: setup-callbacks-outside-runner-lock
+    rule: Headless and interactive setup invoke completion and step callbacks without holding Runner.mu.
+    enforced_by:
+      - test: battery/setup.TestSetupCallbacksReenterRunner
+    applies:
+      - battery/setup/setup.go
+      - battery/setup/handler.go
   - id: run-once
     rule: Run refuses a nil context or Host before boot, an App runs once (a later Run, Start or Serve returns ErrAlreadyStarted), and a run that begins after Shutdown returns nil and starts nothing.
     enforced_by:

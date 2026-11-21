@@ -42,3 +42,8 @@ const leakFmt = "failed: %v"
 func sprintfConst(w http.ResponseWriter, err error) {
 	http.Error(w, fmt.Sprintf(leakFmt, err), http.StatusInternalServerError) // want `internal error`
 }
+
+func parenthesizedCalls(w http.ResponseWriter, err error) {
+	http.Error(w, (err.Error)(), 500)            // want `internal error`
+	http.Error(w, (fmt.Sprintf)("%v", err), 500) // want `internal error`
+}

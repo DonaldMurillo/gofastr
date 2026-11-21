@@ -73,7 +73,7 @@ type RunningChild interface {
 // TrustedProcessRunner launches trusted modules: digest pin, allowlisted env, own
 // process group and scratch dir, but no confinement.
 type TrustedProcessRunner struct {
-	// EnvAllowlist names the host variables the child gets; nil uses
+	// EnvAllowlist names the host variables the child gets. An empty list uses
 	// [DefaultChildEnvAllowlist].
 	EnvAllowlist []string
 
@@ -91,9 +91,22 @@ func DefaultChildEnvAllowlist() []string {
 	return allow
 }
 
+// envAllowlistOrDefault is the runner allowlist rule: an empty list means the
+// default child env, a custom list is used as-is.
+func envAllowlistOrDefault(list []string) []string {
+	if len(list) == 0 {
+		return DefaultChildEnvAllowlist()
+	}
+	return list
+}
+
 // Start implements [Runner].
 func (r *TrustedProcessRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
-	prep, err := prepareChildForSpawn(spec, r.allowlist())
+	var allowlist []string
+	if r != nil {
+		allowlist = r.EnvAllowlist
+	}
+	prep, err := prepareChildForSpawn(spec, envAllowlistOrDefault(allowlist))
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +154,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 	scratch := spec.ScratchDir
 	if scratch == "" {
 		scratch = filepath.Join(os.TempDir(),
-			fmt.Sprintf("gofastr-module-%s-%s", safeDirName(d.Name), shortID(spec.InstanceID)))
+			fmt.Sprintf("gofastr-module-%s-%s", safeDirName(d.Name), shortHash(spec.InstanceID)))
 	}
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
 		_ = artifact.Close()
@@ -300,13 +313,6 @@ func execName(cmd *exec.Cmd) string {
 	return cmd.Path
 }
 
-func (r *TrustedProcessRunner) allowlist() []string {
-	if r == nil || len(r.EnvAllowlist) == 0 {
-		return DefaultChildEnvAllowlist()
-	}
-	return r.EnvAllowlist
-}
-
 type spawnedChild struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
@@ -453,13 +459,6 @@ func safeDirName(name string) string {
 		return "module"
 	}
 	return b.String()
-}
-
-func shortID(id string) string {
-	if len(id) <= 12 {
-		return id
-	}
-	return id[:12]
 }
 
 func childPgid(cmd *exec.Cmd) int {

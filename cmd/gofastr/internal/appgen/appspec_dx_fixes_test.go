@@ -127,23 +127,14 @@ func keysOf(m map[string]string) []string {
 // server's env, every route that suite covers reports as unreached by
 // `gofastr verify`, a thorough e2e suite scoring zero.
 func TestGeneratedE2ESetsSemanticCoverageEnv(t *testing.T) {
-	stubFontFetcher(t, func(family string) ([]byte, error) { return []byte("x"), nil })
-	bp := appspec.AppSpec{
-		App: appspec.AppSpecApp{Name: "Cov", Module: "example.com/cov"},
-		Screens: []appspec.AppSpecScreen{{
-			Name: "home", Route: "/", Body: []appspec.AppSpecBlock{{Kind: "hero", Props: map[string]any{"title": "Hi"}}},
-		}},
-	}
-	e2e := filesByName(mustRenderAppSpecFiles(t, bp))["e2e_test.go"]
-	if e2e == "" {
-		t.Fatal("no e2e_test.go emitted")
-	}
-	if !strings.Contains(e2e, `"GOFASTR_SEMANTIC_COVERAGE=1"`) {
-		t.Fatalf("generated e2e test does not enable semantic coverage on the server:\n%s", e2e)
-	}
-	// It must sit on the SAME env the server subprocess gets, not on the
-	// test process. The recording happens server-side.
-	if !strings.Contains(e2e, `srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1"`) {
-		t.Fatalf("the variable is not on the server subprocess env:\n%s", e2e)
+	for _, driver := range []string{"sqlite", "postgres"} {
+		t.Run(driver, func(t *testing.T) {
+			e2e := e2eTestGo(t, driver)
+			common := strings.Index(e2e, `srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1")`)
+			database := strings.Index(e2e, `srv.Env = append(srv.Env, "DATABASE_URL`)
+			if common < 0 || database < common {
+				t.Error("semantic coverage must be set before appending the driver-specific environment")
+			}
+		})
 	}
 }

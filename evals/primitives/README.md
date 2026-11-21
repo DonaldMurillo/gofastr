@@ -60,8 +60,12 @@ given the pre-fix code and the format, and not told what the bugs were.
 Since 2026-11-20 `form-field-typo` reads its own copy of those entries
 (`overlays/appspec-form`) with one twin added after the fix, naming the
 sibling sites; its blind baseline is 2 of 10 other paths
-(`results/2026-11-20-replay-v097.md`). `dup-column-key` is the blind
-twin task left.
+(`results/2026-11-20-replay-v097.md`). Since the same day
+`dup-column-key` reads `overlays/uinode-dupkey`, the blind uinode entries
+plus one twin naming the validator, the renderer and the two design-system
+tables that panic on an empty or repeated column key; its blind baseline
+is 1 of 4 other paths (`results/2026-11-20-replay-v097.md`,
+`results/2026-11-20-replay-coreui-sweep.md`).
 
 Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and

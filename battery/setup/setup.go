@@ -1,15 +1,5 @@
 // Package setup provides a first-run setup flow for self-hosted GoFastr
-// apps. An operator deploying a binary against an empty database gets a
-// guided bootstrap: create the initial admin, verify adapter health, and
-// any other step the app declares, either headlessly (all values in env)
-// or through an SSR wizard.
-//
-// The package exports Config, Field, Step, and constructors for shipped
-// steps (AdminStep, HealthStep). A Config becomes a Runner via New; the
-// Runner implements framework.SetupRunner and is wired onto an App via
-// framework.WithSetup.
-//
-// See the operator runbook: framework/docs/content/first-run.md.
+// apps.
 package setup
 
 import (
@@ -27,29 +17,20 @@ import (
 
 // Field describes one input the operator provides during setup.
 type Field struct {
-	// Name is the form field name AND the default env-var suffix
-	// (prefixed with GOFASTR_). e.g. "ADMIN_EMAIL" → form name
-	// "ADMIN_EMAIL", env GOFASTR_ADMIN_EMAIL.
+	// Name is the form field name AND the default env-var suffix (prefixed
+	// with GOFASTR_).
 	Name string
-	// Label is the field's label in the wizard, in the reader's
-	// language. The zero Phrase shows Name.
+	// Label is the field's label in the wizard, in the reader's language.
 	Label i18n.Phrase
 	// EnvVar is the full environment variable name (e.g.
-	// "GOFASTR_ADMIN_EMAIL"). Empty means the field cannot be resolved
-	// from env, it can only come through the wizard.
+	// "GOFASTR_ADMIN_EMAIL").
 	EnvVar string
-	// Secret renders as a password input. Secret values are never
-	// pre-filled from env (the wizard shows an empty password field even
-	// when GOFASTR_ADMIN_PASSWORD is set) and never logged.
+	// Secret renders as a password input.
 	Secret bool
 	// Validate optionally checks the value before the step's Run fires.
-	// Returning an error aborts the step and re-renders the field with
-	// the message: an [i18n.NewError] renders in the reader's language,
-	// any other error as its own text.
 	Validate func(value string) error
 }
 
-// label is f's label in ctx's language.
 func (f Field) label(ctx context.Context) string {
 	if f.Label.IsZero() {
 		return f.Name
@@ -61,17 +42,14 @@ func (f Field) label(ctx context.Context) string {
 type Step struct {
 	// Name identifies the step in logs and headless errors.
 	Name string
-	// Title is the step's heading and progress label in the wizard, in
-	// the reader's language. The zero Phrase shows Name.
+	// Title is the step's heading and progress label in the wizard, in the
+	// reader's language.
 	Title  i18n.Phrase
 	Fields []Field
-	// Run executes the step with the resolved field values. Called once
-	// per step in order. An error aborts the flow (headless) or
-	// re-renders the step (interactive).
+	// Run executes the step with the resolved field values.
 	Run func(ctx context.Context, values map[string]string) error
 }
 
-// title is s's heading in ctx's language.
 func (s Step) title(ctx context.Context) string {
 	if s.Title.IsZero() {
 		return s.Name
@@ -83,32 +61,24 @@ func (s Step) title(ctx context.Context) string {
 type Config struct {
 	Steps []Step
 
-	// Complete reports whether setup has already finished (e.g. "at
-	// least one user exists"). This is a DERIVED check, never a marker
-	// file, so a crash mid-setup re-enters setup on next boot. Required.
+	// Complete reports whether setup has already finished (e.g. "at least one
+	// user exists").
 	Complete func(ctx context.Context) (bool, error)
 
-	// DisableToken opts out of the one-time setup token. Use only on
-	// trusted networks where the first operator to reach /setup is
-	// guaranteed to be authorised.
+	// DisableToken opts out of the one-time setup token.
 	DisableToken bool
 
-	// Title overrides the wizard page title. The zero Phrase is
-	// setup.title, "Setup".
+	// Title overrides the wizard page title.
 	Title i18n.Phrase
 
 	// HostName overrides the host in the setup URL printed at boot.
-	// Defaults to the bound listen address.
 	HostName string
 
-	// Theme supplies the shared design tokens (--color-* / --font-*)
-	// the wizard renders from. When zero, the framework DefaultTheme
-	// is used. Pass the same theme the app uses for a coherent look.
+	// Theme supplies the shared design tokens (--color-* / --font-*) the
+	// wizard renders from.
 	Theme style.Theme
 }
 
-// theme returns the configured theme or the framework default when the
-// host didn't supply one.
 func (c Config) theme() style.Theme {
 	if c.Theme.Colors.Background.Value != "" {
 		return c.Theme
@@ -116,47 +86,29 @@ func (c Config) theme() style.Theme {
 	return style.DefaultTheme()
 }
 
-// Runner implements framework.SetupRunner. Construct via New.
+// Runner implements framework.SetupRunner.
 type Runner struct {
 	cfg Config
 
-	// wizard state, protected by mu
 	mu          sync.Mutex
 	currentStep int
-	// stepInFlight is set while a step runs OUTSIDE the mutex (see
-	// runStepSerialized): it preserves exactly-once step execution
-	// across the lock release.
-	stepInFlight bool
+	// stepInFlight is closed when the current setup claim is released.
+	stepInFlight chan struct{}
 
-	// token is the one-time URL token; zeroed after the first
-	// successful exchange so it can't be replayed from access logs.
-	token string
-	// cookieSecret is the stable secret backing the setup cookie. It
-	// survives the token's single-use invalidation so the already-
-	// issued cookie remains valid for the rest of the session.
+	token        string
 	cookieSecret string
 	tokenEnabled bool
 
-	// swap is stored from Handler() so the wizard can call it when
-	// the final step completes.
 	swap func()
 
-	// preResolved caches whether all fields resolved from env at boot.
-	// Computed once in CanRunHeadless.
 	preResolved bool
 	preChecked  bool
 
-	// lastRecheck is the clock reading (UnixNano) of the last
-	// rate-limited Complete probe (recheckElsewhere). Zero means never.
 	lastRecheck atomic.Int64
-	// now is the clock recheckElsewhere reads; nil means time.Now.
-	// Tests set it.
-	now func() time.Time
+	now         func() time.Time
 }
 
-// New constructs a Runner from cfg. Panics if cfg.Complete is nil,
-// without a Complete predicate the framework can't tell whether setup
-// is done, and a derived check (not a marker file) is the contract.
+// New constructs a Runner from cfg.
 func New(cfg Config) *Runner {
 	if cfg.Complete == nil {
 		panic("setup: Config.Complete is required")
@@ -177,8 +129,7 @@ func (r *Runner) Incomplete(ctx context.Context) (bool, error) {
 }
 
 // CanRunHeadless reports whether every field across all steps resolves
-// from the environment. A field resolves when its EnvVar is non-empty AND
-// the variable is actually set.
+// from the environment.
 func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -191,25 +142,11 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 }
 
 // RunSteps resolves all fields from env and runs every step in order.
-// An error names the step that failed.
-//
-// It refuses to run anything on an install the Complete predicate says
-// is already configured. The interactive skin has enforced that since
-// runStepSerialized was written; the headless skin did not, and
-// GOFASTR_SETUP=force used to reach this path on a completed install
-// with no decision made, where a bootstrap step typically INSERTs an
-// admin-role user — a redeploy with force still set and rotated env
-// credentials silently minted a second admin, or aborted boot on a
-// duplicate email. Force is now the explicit opt-in on BOTH skins: with
-// it set, a completed install re-runs its steps (the operator asked,
-// per first-run.md); without it the refusal stands.
-//
-// A probe ERROR is "unknown", not "not done", and is refused for the
-// same reason it is there: a setup step that did not run is
-// recoverable, one that ran twice is not.
 func (r *Runner) RunSteps(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	if err := r.claimSteps(ctx); err != nil {
+		return err
+	}
+	defer r.releaseStepClaim()
 
 	if r.cfg.Complete != nil {
 		done, err := r.cfg.Complete(ctx)
@@ -233,24 +170,48 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runner) claimSteps(ctx context.Context) error {
+	r.mu.Lock()
+	for r.stepInFlight != nil {
+		inFlight := r.stepInFlight
+		r.mu.Unlock()
+		select {
+		case <-inFlight:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		r.mu.Lock()
+	}
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.stepInFlight = make(chan struct{})
+	return nil
+}
+
+func (r *Runner) releaseStepClaim() {
+	r.mu.Lock()
+	close(r.stepInFlight)
+	r.stepInFlight = nil
+	r.mu.Unlock()
+}
+
 // SetupURL returns the operator-facing setup URL for the startup banner.
-// scheme is the one the app serves ("https" under TLS), so the token
-// never rides a link that sends it in the clear.
 func (r *Runner) SetupURL(scheme, addr string) string {
 	host := r.cfg.HostName
 	if host == "" {
 		host = addr
 	}
-	if !r.tokenEnabled || r.token == "" {
+	r.mu.Lock()
+	token := r.token
+	r.mu.Unlock()
+	if !r.tokenEnabled || token == "" {
 		return scheme + "://" + host + "/setup"
 	}
-	return scheme + "://" + host + "/setup?token=" + r.token
+	return scheme + "://" + host + "/setup?token=" + token
 }
 
-// ─── env resolution helpers ─────────────────────────────────────────
-
-// allFieldsFromEnv reports whether every field across all steps has a
-// non-empty EnvVar that is set in the environment.
 func allFieldsFromEnv(steps []Step) bool {
 	for _, step := range steps {
 		for _, f := range step.Fields {
@@ -265,7 +226,6 @@ func allFieldsFromEnv(steps []Step) bool {
 	return true
 }
 
-// resolveFromEnv builds a values map for a step's fields from env.
 func resolveFromEnv(fields []Field) map[string]string {
 	values := make(map[string]string, len(fields))
 	for _, f := range fields {
@@ -276,7 +236,6 @@ func resolveFromEnv(fields []Field) map[string]string {
 	return values
 }
 
-// runValidations fires each field's Validate function in declaration order.
 func runValidations(step Step, values map[string]string) error {
 	for _, f := range step.Fields {
 		if f.Validate == nil {
@@ -290,8 +249,6 @@ func runValidations(step Step, values map[string]string) error {
 	return nil
 }
 
-// isForceMode reports whether GOFASTR_SETUP=force is set, rescue mode
-// where the wizard re-runs even when Complete returns true.
 func isForceMode() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("GOFASTR_SETUP")), "force")
 }

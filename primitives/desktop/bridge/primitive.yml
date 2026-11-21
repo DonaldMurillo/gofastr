@@ -1,0 +1,112 @@
+primitive: desktop.bridge
+summary: The page-to-native bridge, one permission-gated POST chokepoint per call, the capability registry it dispatches through, and the generated bridge script and manifest.
+code:
+  - battery/desktop/bridge.go
+  - battery/desktop/bridgejs.go
+  - battery/desktop/capability.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A new capability method states its Permission, or is ungated on purpose; the chokepoint is the only place a grant is checked.
+invariants:
+  - id: call-route-dark-until-run
+    rule: Before Run freezes the registry the call route answers every capability, registered or not, with the same uniform 404, so --serve mode exposes no native dispatch and no plugin inventory.
+    enforced_by:
+      - test: battery/desktop.TestCallRefusedBeforeRun
+      - test: battery/desktop.TestCapsNotEnumerableBeforeRun
+  - id: chokepoint-order
+    rule: handleCall checks in order the frozen registry (404), the application/json content type (415), the strict cross-site predicate that also refuses an opaque Origin null (403), the 1 MiB body cap (400), the capability and method lookup (404), the body shape and NUL scan (400), then the permission gate, then the handler.
+    enforced_by:
+      - test: battery/desktop.TestChokepointMethodAndContentTypeChecks
+      - test: battery/desktop.TestChokepointCrossSiteByOrigin
+      - test: battery/desktop.TestChokepointOversizeBody
+      - test: battery/desktop.TestNULRefusalBeatsThePermissionGate
+  - id: uniform-not-found
+    rule: A missing capability and a missing method answer byte-identical 404 bodies.
+    enforced_by:
+      - test: battery/desktop.TestChokepointUnknownCapabilityAndMethodIdenticalBodies
+  - id: body-is-an-object
+    rule: A non-empty call body must strict-decode as a JSON object, so null, an array or a duplicated or case-folded top-level key is refused with invalid_input before the handler runs.
+    enforced_by:
+      - test: battery/desktop.TestBridgeRefusesNullBody
+      - test: battery/desktop.TestChokepointNonObjectBody
+  - id: no-nul-in-any-decoded-string
+    rule: A call body whose decoded strings or object keys, at any depth, carry a NUL is refused with invalid_input at the chokepoint, before the permission gate, for every capability a plugin's included.
+    enforced_by:
+      - test: battery/desktop.TestBridgeRefusesNULInBody
+      - test: battery/desktop.TestBridgeRefusesNULInNestedKey
+      - test: battery/desktop.TestNULRefusalBeatsThePermissionGate
+  - id: call-budget-lifts-write-deadline
+    rule: A bridge call lifts the server's write deadline to callBudget before the permission gate, so a call that waits on a person, a picker or an alert still answers.
+    enforced_by:
+      - test: battery/desktop.TestSlowBridgeCallStillAnswers
+  - id: internal-errors-stay-server-side
+    rule: A handler error that is not a *Error or a context cancellation reaches the page as code internal with the fixed internal error message, and the real error is only logged.
+    enforced_by:
+      - test: battery/desktop.TestChokepointErrorMapping
+  - id: caller-window-is-a-claim
+    rule: The X-Gofastr-Window header only selects which window counts as the caller, and a value absent or off the grammar ^[a-z][a-z0-9]{0,15}$ reads as main.
+    enforced_by:
+      - test: battery/desktop.TestWindowsSelfAnswersCallersWindow
+  - id: inactive-script-before-freeze
+    rule: Before the freeze bridge.js answers 200 with inert JavaScript and manifest.json answers 503 with Retry-After, so a --serve page loads with no script error.
+    enforced_by:
+      - test: battery/desktop.TestBridgeScriptAndManifestBeforeFreeze503
+  - id: names-reach-js-quoted
+    rule: Every capability and method name reaches the emitted bridge script only through jsQuote as a bracket string key, and the manifest only as a quoted string handed to JSON.parse.
+    enforced_by:
+      - test: battery/desktop.TestBridgeJSBracketStringAccessOnly
+  - id: jsquote-is-json
+    rule: jsQuote renders a string through encoding/json, never Go quoting, so an astral rune and U+2028 or U+2029 come out as escapes JavaScript parses.
+    enforced_by:
+      - test: battery/desktop.TestJSStringsNeverUseGoUnicodeEscapes
+  - id: scripts-top-frame-only
+    rule: The bridge script and the BootstrapJS host marker act only when window is window.top, so a child frame never receives the marker or the typed namespaces.
+    enforced_by:
+      - test: battery/desktop.TestBridgeScriptsIgnoreChildFrames
+  - id: registry-grammar
+    rule: register refuses a capability whose name is off ^[a-z][a-z0-9_]{0,63}$ or one of the runtime's own members (available, call, on, off, manifest), whose Version is below 1, with no methods, a duplicate or off-grammar method name, a permission off resource:verb, a nil Handler or a schema that is not valid JSON.
+    enforced_by:
+      - test: battery/desktop.TestRegistryValidationRules
+      - test: battery/desktop.TestCapabilityRefusesRuntimeNames
+  - id: duplicate-names-first-site
+    rule: A second registration of a capability name is refused with an error naming the file and line of the first registration.
+    enforced_by:
+      - test: battery/desktop.TestDuplicateNamesFirstRegistrantSite
+  - id: register-closed-after-freeze
+    rule: Register after Run froze the registry returns an error.
+    enforced_by:
+      - test: battery/desktop.TestRegisterAfterFreezeFails
+  - id: manifest-deterministic
+    rule: The manifest lists capabilities and their methods sorted by name and carries each schema compacted through jsonexact, so its bytes do not depend on registration order and an integer past 2^53 keeps its digits.
+    enforced_by:
+      - test: battery/desktop.TestManifestDeterministicAcrossRegistrationOrders
+      - test: battery/desktop.TestManifestShape
+      - test: battery/desktop.TestManifestKeepsBigIntegers
+decisions:
+  - id: one-chokepoint
+    date: 2026-11-20
+    status: accepted
+    decision: Every native capability call funnels through the one POST route /__gofastr/desktop/call/{cap}/{method}, so the permission check has one place and the transport is the same on every OS.
+    rejected:
+      - option: A route or a WebView message handler per capability.
+        why: Each would carry its own permission and input checks, and a plugin capability could skip them.
+    upholds: [chokepoint-order, no-nul-in-any-decoded-string]
+  - id: nul-refused-at-the-chokepoint
+    date: 2026-11-20
+    status: accepted
+    decision: NUL is refused once at the chokepoint, scanning the decoded values rather than the raw bytes, because the attack arrives as the escape \u0000 and a NUL cannot cross into an Objective-C string inside an ffi trampoline where a Go panic is fatal.
+    rejected:
+      - option: Refuse NUL in each capability handler.
+        why: A plugin's capability would not inherit it.
+      - option: Scan the raw request bytes.
+        why: A literal 0x00 is not legal in a JSON string, so the bytes are always NUL-free.
+    upholds: [no-nul-in-any-decoded-string]
+  - id: bridge-script-no-store-nonce
+    date: 2026-11-20
+    status: accepted
+    decision: The bridge script is built lazily from the frozen registry and served no-store at a URL carrying a per-process nonce minted at New.
+    rejected:
+      - option: A content-hash immutable URL.
+        why: The hash needs the bytes at Init, before plugins have registered, and RegisterExternalScript refuses a late registration.
+    upholds: [inactive-script-before-freeze]

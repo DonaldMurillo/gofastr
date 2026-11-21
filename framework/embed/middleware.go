@@ -1,8 +1,11 @@
 package embed
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"path"
 	"reflect"
@@ -44,17 +47,17 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				i18n.HTTPError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable))
 				return
 			}
-			g, err := h.VerifyGrant(r.Context(), token)
+			g, surface, err := h.verifyConfiguredGrant(r.Context(), token)
 			if err != nil {
 				i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 				return
 			}
 
-			surface, known := h.Lookup(g.Surface)
-			if !known || surface == nil {
-				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
-				return
-			}
+			grantWriter := &grantResponseWriter{ResponseWriter: w}
+			grantWriter.setCachePolicy()
+			defer grantWriter.setCachePolicy()
+			w = grantWriter
+
 			routed, routable := RoutedPath(r.URL)
 			if !routable {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonPathNotCanonical)
@@ -91,13 +94,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			w.Header().Add("Vary", GrantHeader)
-			w.Header().Set("Cache-Control", "private, no-store")
-
 			ctx := WithGrant(r.Context(), g)
-			ctx = handler.SetUser(ctx, nil)
-			ctx = handler.SetTenant(ctx, nil)
-			ctx = tenant.SetTenantID(ctx, "")
 
 			if !g.Expires.IsZero() {
 				var cancel context.CancelFunc
@@ -105,7 +102,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				defer cancel()
 			}
 
-			ctx, hasUser, err := h.installSubject(ctx, g.Subject)
+			ctx, hasUser, _, err := h.InstallSubject(ctx, g.Subject)
 			if err != nil {
 				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
@@ -113,7 +110,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			if g.Subject != "" && (h.resolve != nil || h.resolveTenant != nil) {
 				subject := g.Subject
 				ctx = handler.WithPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
-					fresh, stillUser, err := h.installSubject(c, subject)
+					fresh, stillUser, _, err := h.InstallSubject(c, subject)
 					return fresh, err == nil && stillUser == hasUser
 				})
 			}
@@ -121,6 +118,75 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+type grantResponseWriter struct {
+	http.ResponseWriter
+	committed bool
+}
+
+func (w *grantResponseWriter) setCachePolicy() {
+	if w.committed {
+		return
+	}
+	h := w.Header()
+	h.Set("Cache-Control", "private, no-store")
+	for _, value := range h.Values("Vary") {
+		for field := range strings.SplitSeq(value, ",") {
+			field = strings.TrimSpace(field)
+			if strings.EqualFold(field, GrantHeader) || field == "*" {
+				return
+			}
+		}
+	}
+	h.Add("Vary", GrantHeader)
+}
+
+func (w *grantResponseWriter) WriteHeader(status int) {
+	w.setCachePolicy()
+	w.ResponseWriter.WriteHeader(status)
+	if status >= 200 || status == http.StatusSwitchingProtocols {
+		w.committed = true
+	}
+}
+
+func (w *grantResponseWriter) Write(p []byte) (int, error) {
+	w.setCachePolicy()
+	w.committed = true
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *grantResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.setCachePolicy()
+	n, err := io.Copy(w.ResponseWriter, src)
+	if n > 0 {
+		w.committed = true
+	}
+	return n, err
+}
+
+func (w *grantResponseWriter) FlushError() error {
+	w.setCachePolicy()
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if err == nil {
+		w.committed = true
+	}
+	return err
+}
+
+func (w *grantResponseWriter) Flush() { _ = w.FlushError() }
+
+func (w *grantResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+func (w *grantResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+func (w *grantResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // RequireScope refuses an embed request whose grant lacks scope, and a grant
 // header Middleware did not verify. Requests without a grant pass through.
@@ -145,17 +211,19 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 	}
 }
 
-func (h *Host) installSubject(ctx context.Context, subject string) (context.Context, bool, error) {
+// InstallSubject replaces the request identity with the grant subject's tenant and user.
+// It reports whether a user was installed and names the failed lookup on error.
+func (h *Host) InstallSubject(ctx context.Context, subject string) (resolved context.Context, hasUser bool, reason string, err error) {
 	ctx = handler.SetUser(ctx, nil)
 	ctx = handler.SetTenant(ctx, nil)
 	ctx = tenant.SetTenantID(ctx, "")
 	if subject == "" {
-		return ctx, false, nil
+		return ctx, false, "", nil
 	}
 	if h.resolveTenant != nil {
 		tid, err := h.resolveTenant(ctx, subject)
 		if err != nil {
-			return ctx, false, err
+			return ctx, false, "tenant did not resolve", err
 		}
 		if tid != "" {
 			ctx = handler.SetTenant(ctx, tid)
@@ -163,16 +231,16 @@ func (h *Host) installSubject(ctx context.Context, subject string) (context.Cont
 		}
 	}
 	if h.resolve == nil {
-		return ctx, false, nil
+		return ctx, false, "", nil
 	}
 	user, err := h.resolve(ctx, subject)
 	if err != nil {
-		return ctx, false, err
+		return ctx, false, "subject did not resolve", err
 	}
 	if IsNilValue(user) {
-		return ctx, false, nil
+		return ctx, false, "", nil
 	}
-	return handler.SetUser(ctx, user), true, nil
+	return handler.SetUser(ctx, user), true, "", nil
 }
 
 func misordered(w http.ResponseWriter, r *http.Request, what string) {

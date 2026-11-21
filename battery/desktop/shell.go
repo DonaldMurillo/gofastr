@@ -8,9 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// Error codes for the bridge's closed set. A handler returning *Error
-// maps to its code verbatim; the chokepoint maps every other error to
-// internal with a fixed message, logging the real error server-side.
+// Error codes for the bridge's closed set.
 const (
 	CodeDenied       = "denied"
 	CodeUnsupported  = "unsupported"
@@ -21,9 +19,7 @@ const (
 	InternalErrorMsg = "internal error"
 )
 
-// Error is the typed error the bridge round-trips to the page. Code is
-// one of the Code* constants above; Message is safe to show in the
-// page (it never carries an internal error chain).
+// Error is the typed error the bridge round-trips to the page.
 type Error struct {
 	Code    string
 	Message string
@@ -33,34 +29,28 @@ func (e *Error) Error() string {
 	return "desktop: " + e.Code + ": " + e.Message
 }
 
-// ErrUnsupported is returned by Shell implementations (and capabilities
-// built on them) when the host OS has no native layer for the operation.
+// ErrUnsupported is returned when the host OS has no native layer for the operation.
 var ErrUnsupported = &Error{Code: CodeUnsupported, Message: "operation is not supported by this desktop host"}
 
-// ErrCancelled is returned when the user cancelled a native dialog (or
-// the request context ended before the operation did).
+// ErrCancelled is returned when the user cancelled a native dialog or the request ended first.
 var ErrCancelled = &Error{Code: CodeCancelled, Message: "operation was cancelled"}
 
 // ErrWindowClosed is returned when a native operation targets a closed window.
-// Close is idempotent and returns nil when the window has already closed.
 var ErrWindowClosed = &Error{Code: CodeNotFound, Message: "window is closed"}
 
 // Decision is the user's answer to a PermissionRequest.
 type Decision int
 
 const (
-	// DecisionDeny refuses the call and persists the refusal, so a page
-	// cannot re-prompt in a loop.
+	// DecisionDeny refuses the call and persists the refusal, so a page cannot re-prompt in a loop.
 	DecisionDeny Decision = iota
-	// DecisionAllowOnce permits this single call without persisting a
-	// grant.
+	// DecisionAllowOnce permits this single call without persisting a grant.
 	DecisionAllowOnce
 	// DecisionAllow permits the call and persists the grant.
 	DecisionAllow
 )
 
-// PermissionRequest describes one permission the chokepoint is about to
-// enforce. The Shell renders it as an OS-native alert.
+// PermissionRequest describes one permission the chokepoint is about to enforce.
 type PermissionRequest struct {
 	Capability  string
 	Method      string
@@ -92,17 +82,13 @@ type SaveOptions struct {
 	DefaultName string
 }
 
-// Clipboard is the OS clipboard. Implementations must be safe for use
-// from any goroutine; the bridge hops to the UI thread internally where
-// the platform demands it.
+// Clipboard is the OS clipboard.
 type Clipboard interface {
 	ReadText(ctx context.Context) (string, error)
 	WriteText(ctx context.Context, text string) error
 }
 
-// Dialogs is the OS file/folder picker family. A cancelled dialog
-// returns ("", nil-with-ErrCancelled) or (nil, ErrCancelled): the
-// caller maps that to the bridge's cancelled code.
+// Dialogs is the OS file/folder picker family.
 type Dialogs interface {
 	OpenFile(ctx context.Context, opts OpenOptions) ([]string, error)
 	SaveFile(ctx context.Context, opts SaveOptions) (string, error)
@@ -114,12 +100,7 @@ type Notifier interface {
 	Show(ctx context.Context, n Notification) error
 }
 
-// WindowMaterial selects the native effect under a window's page. The
-// zero value is the opaque default; the shell picks the mechanism per
-// platform (glass on macOS 26, an NSVisualEffectView below it, DWM Mica
-// on Windows 11, none on Linux). A material only shows where the page
-// paints transparent (html and body); the doc section spells the page
-// contract.
+// WindowMaterial selects the native effect under a window's page.
 type WindowMaterial string
 
 const (
@@ -131,7 +112,6 @@ const (
 	// MaterialWindow puts the effect under the whole window.
 	MaterialWindow WindowMaterial = "window"
 	// MaterialGlass asks for macOS 26 glass or Windows Desktop Acrylic.
-	// On older macOS it degrades to MaterialWindow (logged by the shell).
 	MaterialGlass WindowMaterial = "glass"
 )
 
@@ -147,33 +127,31 @@ const (
 	// ChromeHiddenTitle keeps the host's caption controls and lets the
 	// page paint under the title bar where the platform supports it.
 	ChromeHiddenTitle
-	// ChromeNone is borderless: no title bar, no traffic lights, no
-	// resize box. The page drags the window through
-	// data-cui-window-drag.
+	// ChromeNone is borderless: no title bar, no traffic lights, no resize box.
 	ChromeNone
 	// ChromeUnified is the Notes and Finder shape: a transparent title
-	// bar with a hidden title and unified page content. macOS attaches an
-	// empty NSToolbar so toolbarStyle takes effect; Windows extends the
-	// WebView under DWM's native caption controls.
+	// bar with a hidden title and unified page content.
 	ChromeUnified
 )
 
-// MaxSidebarWidth bounds a sidebar zone in screen points on both sides
-// of the contract (Config, WindowSpec, window.setChrome).
+// MaxSidebarWidth bounds a sidebar zone in screen points.
 const MaxSidebarWidth = 4096
 
-// WindowStyle describes the native chrome of a window beyond its
-// content. The zero value is the plain titled window. Hosts without a
-// native layer ignore it.
+// ValidateSidebarWidth checks the sidebar zone width in screen points.
+func ValidateSidebarWidth(points int) *Error {
+	if points < 0 || points > MaxSidebarWidth {
+		return &Error{Code: CodeInvalidInput, Message: fmt.Sprintf("sidebarWidth must be between 0 and %d", MaxSidebarWidth)}
+	}
+	return nil
+}
+
+// WindowStyle describes the native chrome of a window beyond its content.
 type WindowStyle struct {
-	// Chrome selects the title-bar treatment (ChromeDefault keeps the
-	// host's standard window).
+	// Chrome selects the title-bar treatment (ChromeDefault keeps the host's standard window).
 	Chrome WindowChrome
-	// Float keeps the window above normal windows (NSFloatingWindowLevel
-	// on darwin).
+	// Float keeps the window above normal windows (NSFloatingWindowLevel on darwin).
 	Float bool
-	// Panel makes the window a non-activating panel: clicking it does
-	// not steal focus from the frontmost app. Implies Float.
+	// Panel makes the window a non-activating panel: clicking it does not steal focus from the frontmost app.
 	Panel bool
 	// Transparent clears the window background: the page paints its own
 	// surface (a ui.Card, say) and the corners are see-through.
@@ -182,88 +160,56 @@ type WindowStyle struct {
 	Resizable *bool
 	// AllSpaces shows the window on every Space / desktop.
 	AllSpaces bool
-	// X and Y are the initial origin in screen points, measured from
-	// the primary screen's top-left. Both must be set together; nil
-	// means the host centers the window.
+	// X and Y are the initial origin in screen points, measured from the primary screen's top-left.
 	X, Y *int
-	// Material selects the native effect under the page (the
-	// WindowMaterial constants). MaterialNone (the zero value) is the
-	// opaque default.
+	// Material selects the native effect under the page (the WindowMaterial constants).
 	Material WindowMaterial
-	// TrafficLightInset moves the three window buttons (close,
-	// minimize, zoom) from the system position on darwin; nil keeps
-	// it. Both values must be >= 0. The page reserves space for the
-	// buttons (the theme's spacing token), and the shell re-applies
-	// the geometry whenever AppKit re-lays the title bar out.
+	// TrafficLightInset moves the darwin window buttons from the system position; nil keeps it.
 	TrafficLightInset *Inset
 }
 
-// Frame is a window's position and size in screen points. X and Y
-// locate the top-left corner in the global top-left coordinate space
-// (the WindowStyle.X/Y convention); Width and Height size the window.
+// Frame is a window's position and size in screen points.
 type Frame struct {
 	X, Y, Width, Height int
 }
 
-// WindowSpec describes a secondary window showing one of the app's own
-// screens. Path is a same-origin absolute path (validated like a menu
-// Navigate path); Title, Width, and Height default per host when zero.
-// Style is the optional window chrome (WindowStyle's zero value is the
-// host's standard window).
+// WindowSpec describes a secondary window showing one of the app's own screens.
 type WindowSpec struct {
 	Path   string
 	Title  string
 	Width  int
 	Height int
 	Style  WindowStyle
-	// Frame is the window's initial frame; nil uses the host default
-	// (centered). A Frame from the window store replaces a nil one, so
-	// a remembered window reopens where the user left it.
+	// Frame is the window's initial frame; nil uses the host default (centered).
 	Frame *Frame
-	// SidebarWidth is this window's initial sidebar zone in screen
-	// points (0 means no zone); the page updates it through
-	// window.setChrome as its layout changes.
+	// SidebarWidth is this window's initial sidebar zone in points; 0 means none.
 	SidebarWidth int
 }
 
-// WindowConfig describes the main window the desktop host opens and
-
-// Tray puts the app in the menu bar (a status item on macOS). The
-// menu uses the same MenuItem model as Config.Menu: Navigate |
-// Handler | Role, validated together with the main menu so item ids
-// stay unique across both.
+// Tray puts the app in the menu bar (a status item on macOS).
 type Tray struct {
-	// Title is the text in the menu bar (may be empty when Icon is
-	// set).
+	// Title is the text in the menu bar (may be empty when Icon is set).
 	Title string
-	// Tooltip is the hover help on the tray item, in the OS language
-	// the shell reads.
+	// Tooltip is the hover help on the tray item, in the OS language the shell reads.
 	Tooltip i18n.Phrase
-	// Icon is a PNG. macOS renders an 18x18-point template; Linux sends
-	// full-color pixels to the status host (at most 1 MiB and 256x256).
+	// Icon is a PNG.
 	Icon []byte
 	// Menu is the tray menu; same model as Config.Menu.
 	Menu *Menu
-	// CloseHidesWindow makes the main window's close button hide the
-	// window instead of quitting; the app stays alive in the menu bar
-	// and RoleShow (or the tray icon's own click) brings it back. Linux
-	// hides only while a registered status host provides recovery.
+	// CloseHidesWindow makes the main window's close button hide it instead of quitting.
 	CloseHidesWindow bool
 	// HideDock removes the macOS Dock icon (activation policy Accessory).
-	// It does not hide a Linux taskbar entry.
 	HideDock bool
 }
 
-// the shell-level extras that hang off it.
+// WindowConfig describes the main window and the callbacks the shell reports through.
 type WindowConfig struct {
-	// AppID is the stable application identity used for per-app embedded
-	// browser data. Empty preserves the shell's title-based fallback.
+	// AppID is the stable application identity used for per-app embedded browser data.
 	AppID  string
 	Title  string
 	Width  int
 	Height int
-	// Style is the main window's chrome; the zero value is the host's
-	// standard window.
+	// Style is the main window's chrome; the zero value is the host's standard window.
 	Style WindowStyle
 	// Menu is the validated menu tree (IDs assigned); may be nil.
 	Menu *Menu
@@ -273,79 +219,62 @@ type WindowConfig struct {
 	// item (cmd+, on darwin) and route it to OnSettings.
 	Settings *WindowSpec
 	// OnSettings is called by the shell (on a goroutine) when the
-	// app-menu Settings item or a RoleSettings menu item fires. ctx
-	// carries the locale the shell's own words speak ([ShellContext]),
-	// so the window it opens is titled in the same language.
+	// app-menu Settings item or a RoleSettings menu item fires.
 	OnSettings func(ctx context.Context)
-	// OnMenu is called by the shell when the user activates a menu item
-	// carrying a Navigate path or a Handler. Role items ("quit",
-	// "about", "settings", "show", "separator") are handled by the
-	// shell itself and are never dispatched through OnMenu.
+	// OnMenu is called by the shell when the user activates a menu item carrying a Navigate path or a Handler.
 	OnMenu func(id string)
-	// OnTrayMenu is optional synchronous tray dispatch. A shell with a bounded
-	// callback worker uses it instead of OnMenu, and must not call it on its UI
-	// thread. Return means the Handler completed; a handler ignoring its context
-	// may block that one worker. Main-menu dispatch is unchanged.
+	// OnTrayMenu is optional synchronous tray dispatch.
 	OnTrayMenu func(id string)
 	// AllowNavigation is asked, on the UI thread, before any window's
-	// main frame navigates to url; false cancels the navigation. The
-	// battery allows only the app's own origin and the blank page a web
-	// view starts on, unless Config.DangerouslyAllowForeignNavigation is
-	// set. A nil func allows every navigation. It must not block. A
-	// shell whose engine does not say which frame a navigation is for
-	// (WebKitGTK) asks it for every frame and every new-window request,
-	// before the request leaves the web view; it passes about:srcdoc,
-	// which sends no request, without asking.
+	// main frame navigates to url; false cancels the navigation.
 	AllowNavigation func(url string) bool
 	// OnWindowClosed is called by the shell (on a goroutine) when a
 	// secondary window the user closed goes away, with the id OpenWindow
-	// assigned. The main window never reports through it.
+	// assigned.
 	OnWindowClosed func(id string)
-	// Frame is the main window's initial frame; nil uses the host
-	// default (centered).
+	// Frame is the main window's initial frame; nil uses the host default (centered).
 	Frame *Frame
-	// OnWindowFrame is called by the shell (on a goroutine) whenever
-	// the user moves or resizes the main or a secondary window,
-	// unthrottled: the host debounces.
+	// OnWindowFrame is called on a goroutine, unthrottled, when the user moves or resizes the main or a secondary window.
 	OnWindowFrame func(id string, f Frame)
-	// SidebarWidth is the main window's initial sidebar zone in screen
-	// points (0 means no zone); the battery fills it from
-	// Config.SidebarWidth and the page updates it through
-	// window.setChrome.
-	SidebarWidth int
-	// OnWindowFocus is called by the shell (on a goroutine) when a
-	// window becomes key (windowDidBecomeKey: on darwin).
+	// OnWindowFrameFrom identifies the exact window through its comparable handle.
+	// Shells should use WindowFrameReporter to support both callback forms.
+	OnWindowFrameFrom func(w Window, f Frame)
+	SidebarWidth      int
+	// OnWindowFocus is called by the shell (on a goroutine) when a window becomes key (windowDidBecomeKey: on darwin).
 	OnWindowFocus func(id string)
-	// OnWindowBlur is called by the shell (on a goroutine) when a
-	// window resigns key (windowDidResignKey: on darwin).
+	// OnWindowBlur is called by the shell (on a goroutine) when a window resigns key (windowDidResignKey: on darwin).
 	OnWindowBlur func(id string)
 	// OnAppearance is called by the shell (on a goroutine, any thread)
 	// when an appearance setting the page cannot see through CSS
-	// changes. It fires on change only; the boot marker carries the
-	// initial value.
+	// changes.
 	OnAppearance func(a Appearance)
 	// OnDeepLink is called by the shell (on a goroutine) with the raw
-	// URL the OS asked the app to open (a custom URL scheme). It may be
-	// called before ready fired; the battery queues until the window is
-	// up.
+	// URL the OS asked the app to open (a custom URL scheme).
 	OnDeepLink func(rawURL string)
 }
 
-// Appearance is the accessibility and appearance state the page cannot
-// read through CSS: WebKit implements no prefers-reduced-transparency
-// query, so the shell reads NSWorkspace on darwin and pushes changes
-// through the OnAppearance callback and the boot marker.
+// WindowFrameReporter returns the configured frame callback, or nil if neither
+// callback is set. Shells call it off the UI thread with the reporting window.
+func (cfg WindowConfig) WindowFrameReporter() func(Window, Frame) {
+	if cfg.OnWindowFrameFrom != nil {
+		return cfg.OnWindowFrameFrom
+	}
+	cb := cfg.OnWindowFrame
+	if cb == nil {
+		return nil
+	}
+	return func(w Window, f Frame) { cb(w.ID(), f) }
+}
+
+// Appearance is the appearance state the page cannot read through CSS.
 type Appearance struct {
 	// ReduceTransparency is the user's Reduce Transparency setting.
 	ReduceTransparency bool
 }
 
-// Window is the native window + web view. Every method may be called
-// from any goroutine; a platform implementation hops to the UI thread
-// internally and must not block it.
+// Window is the native window + web view.
 type Window interface {
-	// ID is "main" for the first window, then the id the battery
-	// assigned the secondary window ("settings", "w2", ...).
+	// ID is "main" for the first window, then the id the battery assigned the secondary window ("settings", "w2", ...).
 	ID() string
 	// Navigate loads a URL in the web view.
 	Navigate(url string) error
@@ -359,61 +288,31 @@ type Window interface {
 	SetTitle(title string) error
 	// Focus brings the window to front and activates the app.
 	Focus() error
-	// Native returns the raw native web view handle (WKWebView*,
-	// ICoreWebView2*, WebKitWebView*). It is the documented escape
-	// hatch; treat it as opaque unless you know your platform.
+	// Native returns the raw native web view handle (WKWebView*, ICoreWebView2*, WebKitWebView*).
 	Native() uintptr
 	// Frame reads the window's current frame (top-left screen points).
 	Frame() (Frame, error)
 	// SetFrame moves and sizes the window.
 	SetFrame(f Frame) error
 	// SetSidebarWidth resizes the window's sidebar zone (the effect
-	// area under MaterialSidebar) to points; 0 removes the zone. The
-	// page's setChrome capability is the usual caller.
+	// area under MaterialSidebar) to points; 0 removes the zone.
 	SetSidebarWidth(points int) error
-	// Close closes the window. Closing an already-closed window returns nil.
+	// Close closes the window.
 	Close() error
 }
 
-// Shell is the OS abstraction the whole battery is written against.
-// One implementation per platform arrives behind build tags; tests run
-// against a fake with no native code at all.
-//
-// Threading contract for implementers:
-//
-//   - Run owns the process's UI thread: it blocks until the window
-//     closes or Quit is called, and calls ready exactly once, on the
-//     UI thread, once the window (and its web view) exist.
-//   - Main runs fn on the UI thread and waits for it to finish. It must
-//     enforce a deadline internally so a hung call cannot freeze the
-//     window forever; a timed-out Main returns an error.
-//   - All other methods (Prompt, Clipboard, Dialogs, Notifier, and the
-//     Window methods) are called from HTTP goroutines and must be safe
-//     for concurrent use; they hop to the UI thread via Main
-//     internally.
-//   - Methods receiving a context should honour its cancellation where
-//     the platform allows: a cancelled dialog resolves to
-//     ErrCancelled, not to a hang.
+// Shell is the OS layer: Run owns the UI thread, every other method is safe from any goroutine.
 type Shell interface {
 	// Run brings up the window described by w and blocks in the OS
-	// event loop until the window closes or Quit is called. ready is
-	// invoked exactly once, on the UI thread, with the live Window; the
-	// battery navigates it to the boot URL from there.
+	// event loop until the window closes or Quit is called.
 	Run(ctx context.Context, w WindowConfig, ready func(Window)) error
-	// OpenWindow opens a secondary window with the given id and spec,
-	// navigated to url, sharing the main window's cookie store (the
-	// same web view configuration), and returns it. Called after Run's
-	// ready callback fired.
+	// OpenWindow opens a secondary window on url that shares the main window's cookie store.
 	OpenWindow(id string, spec WindowSpec, url string) (Window, error)
-	// Quit ends the event loop Run is blocked in. It must be safe to
-	// call before Run starts and after it returns.
+	// Quit ends the event loop Run is blocked in.
 	Quit()
-	// SetTrayTitle changes the tray item's title. ErrUnsupported when
-	// this host has no tray.
+	// SetTrayTitle changes the tray item's title.
 	SetTrayTitle(title string) error
-	// Prompt shows the OS permission alert and returns the user's
-	// decision. ctx cancellation should dismiss the dialog and return
-	// an error.
+	// Prompt shows the OS permission alert and returns the user's decision.
 	Prompt(ctx context.Context, req PermissionRequest) (Decision, error)
 	// Clipboard returns the clipboard surface.
 	Clipboard() Clipboard
@@ -421,64 +320,36 @@ type Shell interface {
 	Dialogs() Dialogs
 	// Notifier returns the notification surface.
 	Notifier() Notifier
-	// Appearance returns the current appearance state (the settings
-	// the page cannot read through CSS). Callable at any time,
-	// including before Run: a shell without a native layer answers the
-	// zero value.
+	// Appearance returns the current appearance state (the settings the page cannot read through CSS).
 	Appearance() Appearance
 }
 
-// PageEvaluator is implemented by a Window that can run a script in its
-// page and hand back the result. body is the body of an async JavaScript
-// function (it may use await and must `return` its result); the result
-// is the JSON encoding of the returned value ("null" for undefined). A
-// thrown error or a rejected promise is returned as an *Error with
-// CodeInternal whose Message is the error's message. The darwin window
-// implements it through WKWebView's callAsyncJavaScript, which awaits
-// promises natively.
+// PageEvaluator is implemented by a Window that can run a script in its page and hand back the result.
 type PageEvaluator interface {
 	EvalAsync(ctx context.Context, body string) (json.RawMessage, error)
 }
 
-// NativeDriver is the optional test surface a real shell exposes: the
-// user's hands on the native UI and eyes on the native state. The fake
-// shell exposes the same operations through desktoptest; a shell that
-// cannot perform one returns ErrUnsupported.
+// NativeDriver is the optional test surface a real shell exposes to drive and read its native UI.
 type NativeDriver interface {
-	// ActivateMenu fires a main-menu item by its title path; a role
-	// item matches its role name when untitled.
+	// ActivateMenu fires a main-menu item by its title path; a role item matches its role name when untitled.
 	ActivateMenu(titles ...string) error
-	// ActivateTray fires a tray menu row by title (role name when
-	// untitled).
+	// ActivateTray fires a tray menu row by title (role name when untitled).
 	ActivateTray(title string) error
-	// OpenSettingsItem fires the app menu's own Settings item, the
-	// one the shell synthesizes for Config.Settings.
+	// OpenSettingsItem fires the app menu's own Settings item, the one the shell synthesizes for Config.Settings.
 	OpenSettingsItem() error
-	// ScriptPrompts answers the next permission alerts without
-	// showing them, consuming the decisions in order; an empty queue
-	// means the real alert shows.
+	// ScriptPrompts answers the next permission alerts in order without showing them.
 	ScriptPrompts(ds ...Decision)
-	// ClickPrompt clicks a button on the modal alert that is up (the
-	// real alert path), waiting for it to appear.
+	// ClickPrompt clicks a button on the modal alert that is up (the real alert path), waiting for it to appear.
 	ClickPrompt(button string) error
-	// PostDeepLink delivers a URL the way the OS does (the GetURL
-	// Apple Event on darwin).
+	// PostDeepLink delivers a URL the way the OS does (the GetURL Apple Event on darwin).
 	PostDeepLink(rawURL string) error
-	// CloseWindowNative is the red button on that window:
-	// performClose, or the windowShouldClose path when the window has
-	// no close box.
+	// CloseWindowNative closes the window the way its close button does.
 	CloseWindowNative(id string) error
 	// WindowState reads what the OS knows about a window.
 	WindowState(id string) (WindowState, error)
-	// MakeKey makes the window with this id the key window
-	// (makeKeyAndOrderFront: on darwin), the user's window-click
-	// shape: the previous key window resigns and this one becomes
-	// key, firing the focus callbacks, with no app activation
-	// involved (a process that is not the frontmost app cannot rely
-	// on one).
+	// MakeKey makes the window the key window, firing the focus callbacks, without activating the app.
 	MakeKey(id string) error
-	// NotificationLog is every Notification Show received, bundled or
-	// not, in order.
+	// NotificationLog is every Notification Show received, bundled or not, in order.
 	NotificationLog() []Notification
 }
 
@@ -492,19 +363,13 @@ type WindowState struct {
 	Class     string // "NSWindow", "NSPanel"
 	// ContentClass is the window's content view class ("WKWebView"
 	// when the page is actually in the window; "" when the window has
-	// no content view). Window.Snapshot renders the web view on its
-	// own, so this is the fact that says the page is on screen.
+	// no content view).
 	ContentClass string
-	// X and Y are the window's top-left corner in screen points
-	// (top-left based), the Frame contract's coordinates.
+	// X and Y are the window's top-left corner in screen points (top-left based), the Frame contract's coordinates.
 	X, Y   int
 	Width  int
 	Height int
-	// Material is the effect the shell applied under the page. macOS
-	// reports "vibrancy-sidebar", "vibrancy-window", or "glass";
-	// Windows reports "mica", "mica-alt", or "acrylic" when DWM accepts
-	// the request. Other cases report "none". Effects may degrade on
-	// older OS versions, such as glass to vibrancy-window on macOS.
+	// Material is the effect the shell applied under the page.
 	Material string
 	// TitlebarTransparent reports the titlebarAppearsTransparent fact.
 	TitlebarTransparent bool
@@ -513,29 +378,18 @@ type WindowState struct {
 	ToolbarStyle string
 	// TitleVisibility reports the effective title visibility
 	// ("visible" or "hidden"; "" when the platform does not expose
-	// it). ChromeUnified and ChromeHiddenTitle ask for hidden; Windows
-	// may retain the title when a native menu needs the standard caption
-	// band.
+	// it).
 	TitleVisibility string
 	// SidebarWidth is the sidebar zone's width in screen points as the
 	// live zone view is sized; 0 when the window has no zone.
 	SidebarWidth int
-	// CGWindowID is the window's CoreGraphics id (NSWindow's
-	// windowNumber on darwin), the id screencapture -l and the window
-	// services speak. 0 when the platform has none.
+	// CGWindowID is the window's CoreGraphics window number; 0 where the platform has none.
 	CGWindowID int64
 }
 
-// MainWindowID is the id the main window carries; the battery assigns
-// "settings" and "w2", "w3", ... to the secondaries it opens, and
-// windows.close refuses this one. A platform shell labels the window
-// its Run opens with it (the Window.ID contract); it is exported so
-// the platform packages (battery/desktop/macos, ...) share one source
-// of truth with the battery and the test double instead of pinning the
-// literal again per package.
+// MainWindowID is the id of the main window, which windows.close refuses.
 const MainWindowID = "main"
 
-// unsupportedErrorf builds an *Error naming the platform.
 func unsupportedErrorf(goos, goarch string) *Error {
 	return &Error{
 		Code:    CodeUnsupported,
@@ -543,11 +397,7 @@ func unsupportedErrorf(goos, goarch string) *Error {
 	}
 }
 
-// Widget builds the WindowSpec of a floating widget: a borderless,
-// non-activating, transparent panel of w x h points showing one of the
-// app's own screens, dragged by whatever the page marks
-// data-cui-window-drag. Panel implies Float, so the widget stays above
-// the app's normal windows.
+// Widget builds the WindowSpec of a borderless, non-activating, transparent floating panel of w x h points.
 func Widget(path string, w, h int) WindowSpec {
 	return WindowSpec{
 		Path:   path,

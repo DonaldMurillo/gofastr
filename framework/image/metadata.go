@@ -1,7 +1,5 @@
 package image
 
-import stdimage "image"
-
 // Metadata summarises an image's identifying attributes.
 type Metadata struct {
 	Width    int
@@ -28,36 +26,14 @@ func (i *Image) Metadata() Metadata {
 }
 
 func hasAlpha(i *Image) bool {
-	switch m := i.img.(type) {
-	case *stdimage.NRGBA:
-		return scanAlphaRect(m.Pix, m.Stride, m.Rect.Dx(), m.Rect.Dy())
-	case *stdimage.RGBA:
-		return scanAlphaRect(m.Pix, m.Stride, m.Rect.Dx(), m.Rect.Dy())
-	}
-	if i.img.ColorModel() == nil {
-		return false
+	if m, ok := i.img.(interface{ Opaque() bool }); ok {
+		return !m.Opaque()
 	}
 	b := i.img.Bounds()
-	sx := []int{b.Min.X, b.Max.X - 1, b.Min.X + b.Dx()/2}
-	sy := []int{b.Min.Y, b.Max.Y - 1, b.Min.Y + b.Dy()/2}
-	for _, y := range sy {
-		for _, x := range sx {
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
 			_, _, _, a := i.img.At(x, y).RGBA()
 			if a != 0xFFFF {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func scanAlphaRect(pix []byte, stride, w, h int) bool {
-	rowBytes := w * 4
-	for y := 0; y < h; y++ {
-		base := y * stride
-		end := base + rowBytes
-		for i := base + 3; i < end; i += 4 {
-			if pix[i] != 0xFF {
 				return true
 			}
 		}

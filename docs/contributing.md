@@ -112,9 +112,10 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
 
   Every registration is wrapped in `allow.Guard`
   (`internal/analyzers/allow`): a site that is the shape ON PURPOSE
-  carries `//gofastr:allow(<analyzer>) <why>` on its line or the line
-  above, the same marker spelling the contracts pipeline uses; the
-  reason is mandatory and a bare marker silences nothing. That is the
+  carries `//gofastr:allow(<analyzer>) <why>` on the diagnostic line or
+  alone on the line immediately above it. The contracts pipeline uses
+  the same marker spelling. The reason is mandatory: a bare marker
+  silences nothing. That is the
   only exception mechanism — never add a per-site silent posture to a
   rule for one caller.
   An analyzer package that is written but not registered must say why
@@ -134,13 +135,15 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
   re-baseline with `scripts/dupl.sh --rebaseline` and commit the baseline
   with the change that moved the number.
 - **Run the FULL repo suite (build + vet + test, no cache, generous timeout)**: `./scripts/test-all.sh`. Use this before/after large refactors: it covers the slow chromedp suite (`examples/site`) and `kiln/integration`. `RACE=1`, `SHORT=1`, and a trailing package path are all supported.
-- **Test the site end-to-end (chromedp)**: `go test ./examples/site/ -run TestE2E`.
+- **Test the site end-to-end (chromedp)** with `go test ./examples/site/ -run TestE2E`.
+  Set `GOFASTR_BROWSER_PATH` to a Chrome, Chromium, or Edge executable
+  to use it before the search of PATH and standard install locations.
 - **Clean build artifacts**: `make clean` (wipes `dist/`, `bin/`, `gen/`, `.gofastr/`).
 - **Audit no-binaries-committed**: `find . -maxdepth 3 -type f -size +500k ! -path "./.git/*" ! -path "./dist/*" ! -name "*.go" ! -name "*.md"`. Anything in the result is a stray binary in the source tree; either move it to `dist/` or remove it before commit.
 
 ## Pull requests and proving guards
 
-These are the guide's Hard rules 10 to 12 in full.
+These are the guide's Hard rules 10 to 13 in full.
 
 10. **Read the PR's line-level review comments before merging.** After
     opening a PR and after every push to it, run
@@ -180,6 +183,17 @@ These are the guide's Hard rules 10 to 12 in full.
     handle them as they come. Never end with "want me to watch the PR?":
     the answer is always yes. Resolve a merge conflict with main as soon
     as it shows up (merge main in, no force-push).
+
+13. **Always a reviewer.** A PR merges only after a reviewer has read the
+    diff and its findings are triaged (rule 10). The author's own review
+    and green CI are not a review. A reviewer is a person, a review bot,
+    or an adversarial review: agents that did not write the change, each
+    told to break it rather than confirm it, with every finding checked
+    against the code. A bot that skips a PR for its size (CodeRabbit stops
+    at 100 files, Bugbot at a line count) has not reviewed it, and Greptile
+    reviews one PR an hour, so splitting a large PR for the bots alone
+    trades one wait for several: review it adversarially instead, and
+    record the review and its triage in `docs/reviews/`.
 
 **Stacked PRs.** A series of PRs that build on each other lands as one
 GitHub stack, merged all or nothing. Base each PR on the one below it,

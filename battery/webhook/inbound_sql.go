@@ -14,36 +14,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/db/sqlbusy"
 )
 
-// SQLInboundStore is a SQL-backed InboundStore. It mirrors SQLStore's
-// conventions: dialect detected at construction (sqlite vs postgres),
-// table created on first use, headers persisted as a JSON TEXT column.
-//
-// Schema:
-//
-//	webhook_inbound(
-//	    id          TEXT PRIMARY KEY NOT NULL,
-//	    source      TEXT NOT NULL,
-//	    dedupe_key  TEXT NOT NULL DEFAULT '',  -- '' means no dedupe
-//	    headers     TEXT NOT NULL DEFAULT '{}', -- JSON object, allowlisted subset
-//	    payload     BLOB NOT NULL,       -- BYTEA on postgres
-//	    status      TEXT NOT NULL,
-//	    attempts    INTEGER NOT NULL DEFAULT 0,
-//	    last_error  TEXT NOT NULL DEFAULT '',
-//	    received_at TIMESTAMPTZ NOT NULL,
-//	    updated_at  TIMESTAMPTZ NOT NULL
-//	)
-//
-// Dedupe constraint: there is intentionally NO unique constraint on
-// (source, dedupe_key). A portable partial index (Postgres) vs the
-// NULL-coalescing trick (SQLite) can't be expressed in one DDL, and a
-// plain unique index would forbid two legitimately-undedupe'd requests
-// (empty key) from coexisting. Dedupe is enforced application-side via
-// SeenDedupeKey; the (source, dedupe_key) index makes that lookup cheap.
-// The check-then-insert race window is documented in SeenDedupeKey.
+// SQLInboundStore is a SQL-backed InboundStore over one table, on SQLite or
+// Postgres.
 type SQLInboundStore struct {
 	db      *sql.DB
 	table   string
-	dialect string // "sqlite" (default) | "postgres"
+	dialect string
 }
 
 // InboundSQLOption configures SQLInboundStore.
@@ -54,9 +30,8 @@ func WithInboundTable(name string) InboundSQLOption {
 	return func(s *SQLInboundStore) { s.table = name }
 }
 
-// NewSQLInboundStore constructs a SQL-backed InboundStore and ensures the
-// table exists. Dialect is detected exactly like NewSQLStore: a Postgres
-// version() string flips the dialect; everything else defaults to sqlite.
+// NewSQLInboundStore constructs a SQLInboundStore and ensures its table
+// exists.
 func NewSQLInboundStore(db *sql.DB, opts ...InboundSQLOption) (*SQLInboundStore, error) {
 	if db == nil {
 		return nil, errors.New("webhook: nil DB")
@@ -85,7 +60,6 @@ func NewSQLInboundStore(db *sql.DB, opts ...InboundSQLOption) (*SQLInboundStore,
 func (s *SQLInboundStore) ensureTable() error {
 	ts, blob := "DATETIME", "BLOB"
 	if s.dialect == "postgres" {
-		// See SQLStore.ensureTables: Postgres spells a byte array BYTEA.
 		ts, blob = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmts := []string{
@@ -102,7 +76,6 @@ func (s *SQLInboundStore) ensureTable() error {
 			updated_at  %s NOT NULL,
 			owner       TEXT NOT NULL DEFAULT ''
 		)`, s.table, blob, ts, ts),
-		// Lookup indexes, no unique constraint (see type doc).
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (source, dedupe_key)",
 			query.IndexOn(s.dialect == "sqlite", s.table+"_dedupe_idx", s.table)),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s (status)",
@@ -113,13 +86,15 @@ func (s *SQLInboundStore) ensureTable() error {
 			return err
 		}
 	}
-	return addColumn(s.db, s.dialect, s.table, "owner TEXT NOT NULL DEFAULT ''")
+	if err := addColumn(s.db, s.dialect, s.table, "owner TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if s.dialect == "postgres" {
+		return nil
+	}
+	return normalizeSQLiteTimes(s.db, s.table, "received_at", "updated_at")
 }
 
-// registerData declares the envelope table to App.ExportData and
-// App.EraseUserData under its configured name. Erasure deletes the
-// envelopes IngestConfig.Owner mapped to the erased user; an envelope
-// it mapped to nobody waits for ReapTerminalBefore.
 func (s *SQLInboundStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("webhook_inbound", s.table), Source: "webhook", Table: s.table, PrimaryKey: "id",
@@ -131,9 +106,7 @@ func (s *SQLInboundStore) registerData() {
 	})
 }
 
-// ----- store methods --------------------------------------------------------
-
-// AddEnvelope inserts e. Headers are JSON-encoded into the headers column.
+// AddEnvelope inserts e.
 func (s *SQLInboundStore) AddEnvelope(ctx context.Context, e InboundEnvelope) error {
 	headers, err := encodeHeaders(e.Headers)
 	if err != nil {
@@ -161,13 +134,8 @@ func (s *SQLInboundStore) GetEnvelope(ctx context.Context, id string) (*InboundE
 	return &e, nil
 }
 
-// UpdateEnvelope overwrites the mutable columns (status, last_error,
-// headers, updated_at) for e.ID. Source/payload/received_at are immutable,
-// and so is attempts: the counter is owned by the processing transition
-// ([SQLInboundStore.MarkEnvelopeProcessing] increments it in the store), so
-// e.Attempts is ignored here. Persisting a caller snapshot absolutely let
-// two overlapping processing passes both write the same snapshot+1 and
-// record two invocations as one.
+// UpdateEnvelope writes e's status, error and headers, never its attempts, and
+// never regresses a processed envelope.
 func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope) error {
 	headers, err := encodeHeaders(e.Headers)
 	if err != nil {
@@ -176,17 +144,6 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 	q := s.update()
 	args := []any{e.DedupeKey, headers, e.Status, e.LastError, e.UpdatedAt.UTC(), e.ID}
 	if e.Status != InboundStatusProcessed {
-		// Fence, mirroring the outbound UpdateDelivery fence: a late
-		// settle must not overwrite a terminal row
-		// (isTerminalInboundStatus) — a runner that overran the
-		// queue's lease had the envelope's job re-run under it, and
-		// its failure write must not regress the recovery runner's
-		// processed record into a failed one that escapes retention
-		// forever. Only a processed settle lands on a terminal row
-		// (a runner that really did succeed). The WHERE clause
-		// matches no row and Exec reports nil: the stale write is a
-		// no-op, not a failure, the same fenced no-op the queue's
-		// completions report.
 		q += ` AND status <> ` + s.placeholder(7)
 		args = append(args, InboundStatusProcessed)
 	}
@@ -196,8 +153,8 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 	})
 }
 
-// RegisterDedupeKey sets the envelope's dedupe key and nothing else, at any
-// status (see dedupeKeyRegistrar). A missing id matches no row.
+// RegisterDedupeKey sets the envelope's dedupe key and nothing else; a missing
+// id matches no row.
 func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string) error {
 	q := fmt.Sprintf("UPDATE %s SET dedupe_key = %s WHERE id = %s", s.table, s.placeholder(1), s.placeholder(2))
 	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
@@ -206,24 +163,13 @@ func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string)
 	})
 }
 
-// MarkEnvelopeProcessing transitions an envelope to "processing" and
-// consumes one attempt, incrementing the counter IN THE STORE
-// (attempts = attempts + 1) rather than persisting a Go-side snapshot:
-// the queue's lease expiry can re-run the same envelope's job while a
-// slow first handler is still running, and two absolute snapshot writes
-// would under-count the invocations the attempts column exists to bound.
-// It reports false when no row matched: a missing id, or an envelope
-// already processed, so ProcessInbound does not run the handler again.
+// MarkEnvelopeProcessing marks an envelope processing and consumes one attempt
+// in SQL; false for a missing or processed one.
 func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string) (bool, error) {
 	q := fmt.Sprintf(
 		"UPDATE %s SET status = %s, attempts = attempts + 1, last_error = '', updated_at = %s WHERE id = %s",
 		s.table, s.placeholder(1), s.placeholder(2), s.placeholder(3))
 	args := []any{InboundStatusProcessing, time.Now().UTC(), id}
-	// Terminal fence, the same predicate UpdateEnvelope settles with: a
-	// stale runner marking an already-settled envelope processing would
-	// regress the row AND consume an attempt against it. Non-terminal
-	// rows (received, processing, and failed: a failed attempt's queue
-	// retry lands here) match; a missing id matches nothing.
 	q += " AND status <> " + s.placeholder(4)
 	args = append(args, InboundStatusProcessed)
 	var n int64
@@ -238,8 +184,8 @@ func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string)
 	return n == 1, err
 }
 
-// ListEnvelopes returns envelopes filtered by status (empty = all),
-// newest-received first, capped at limit (0 = no cap).
+// ListEnvelopes returns envelopes with status (empty for all), newest first,
+// at most limit (0 for no cap).
 func (s *SQLInboundStore) ListEnvelopes(ctx context.Context, status string, limit int) ([]InboundEnvelope, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "SELECT %s FROM %s", inboundColumns, s.table)
@@ -275,16 +221,7 @@ func (s *SQLInboundStore) ListEnvelopes(ctx context.Context, status string, limi
 	return out, rows.Err()
 }
 
-// SeenDedupeKey reports whether a (source, key) pair already exists. Empty
-// key returns (false, nil) without hitting the DB.
-//
-// As noted on the type, there is no unique constraint, so two concurrent
-// requests with the same key can both pass this check before either
-// inserts, the same check-then-insert race as the memory store. A unique
-// index would close it but can't be expressed portably across sqlite and
-// postgres without dialect branches; callers that need strict exactly-once
-// should serialize at the source or accept the duplicate-suppression done
-// downstream (idempotent ProcessInbound handlers).
+// SeenDedupeKey reports whether a (source, key) pair already exists.
 func (s *SQLInboundStore) SeenDedupeKey(ctx context.Context, source, key string) (bool, error) {
 	if key == "" {
 		return false, nil
@@ -302,11 +239,7 @@ func (s *SQLInboundStore) SeenDedupeKey(ctx context.Context, source, key string)
 	return true, nil
 }
 
-// ReapTerminalBefore implements [RetentionSweeper]: it deletes processed
-// envelopes whose updated_at is older than cutoff. Failed envelopes are
-// deliberately retained as forensic records (the sender's retry and your
-// post-mortem both want the payload), so only unambiguous terminal
-// success is reaped.
+// ReapTerminalBefore deletes processed envelopes older than cutoff.
 func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	return reapTerminalSQL(ctx, s.db, fmt.Sprintf(
 		`DELETE FROM %s WHERE status = %s AND updated_at < %s`,
@@ -314,18 +247,10 @@ func (s *SQLInboundStore) ReapTerminalBefore(ctx context.Context, cutoff time.Ti
 		string(InboundStatusProcessed), cutoff)
 }
 
-// ----- statements -----------------------------------------------------------
-
-// columns lists the persisted column order, shared by insert/select so the
-// two never drift out of sync.
 const inboundColumns = "id, source, dedupe_key, headers, payload, status, attempts, last_error, received_at, updated_at, owner"
 
 func (s *SQLInboundStore) insert() string {
-	ph := make([]string, 11)
-	for i := 1; i <= 11; i++ {
-		ph[i-1] = s.placeholder(i)
-	}
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.table, inboundColumns, strings.Join(ph, ", "))
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", s.table, inboundColumns, placeholderList(11, s.placeholder))
 }
 
 func (s *SQLInboundStore) selectOne() string {
@@ -333,13 +258,6 @@ func (s *SQLInboundStore) selectOne() string {
 }
 
 func (s *SQLInboundStore) update() string {
-	// dedupe_key is updatable, but an empty value keeps the stored key: on
-	// the queue path the ingest handler registers the key only AFTER a
-	// successful enqueue (RegisterDedupeKey), so a worker's settle carries
-	// the keyless snapshot it loaded first and must not erase it. attempts is
-	// deliberately absent: the processing transition owns the counter
-	// (MarkEnvelopeProcessing), and an absolute settle write is the
-	// lost-update that under-counted overlapping processing passes.
 	return fmt.Sprintf(`UPDATE %s SET
 		dedupe_key = COALESCE(NULLIF(CAST(%s AS TEXT), ''), dedupe_key), headers = %s, status = %s, last_error = %s, updated_at = %s
 		WHERE id = %s`,
@@ -355,10 +273,6 @@ func (s *SQLInboundStore) placeholder(n int) string {
 	return "?"
 }
 
-// ----- header codec ---------------------------------------------------------
-
-// encodeHeaders marshals a header map to the JSON TEXT column value. A nil
-// map is encoded as "{}" (not "null") so the column always holds an object.
 func encodeHeaders(h map[string]string) (string, error) {
 	if len(h) == 0 {
 		return "{}", nil
@@ -370,7 +284,6 @@ func encodeHeaders(h map[string]string) (string, error) {
 	return string(b), nil
 }
 
-// decodeHeaders is the inverse of encodeHeaders; "{}"/"null"/empty yield nil.
 func decodeHeaders(s string) map[string]string {
 	if s == "" || s == "{}" || s == "null" {
 		return nil
@@ -385,5 +298,4 @@ func decodeHeaders(s string) map[string]string {
 	return m
 }
 
-// Compile-time interface satisfaction.
 var _ InboundStore = (*SQLInboundStore)(nil)

@@ -51,7 +51,7 @@ func (windowsE2ETwo) Render() render.HTML {
 }
 
 func buildWindowsE2EApp() (*framework.App, *desktop.Battery, error) {
-	dataDir := os.Getenv("GOFASTR_DESKTOP_DATA_DIR")
+	dataDir := os.Getenv(desktop.DataDirEnv)
 	if dataDir == "" {
 		dataDir = filepath.Join(os.TempDir(), "gofastr-windows-e2e")
 	}

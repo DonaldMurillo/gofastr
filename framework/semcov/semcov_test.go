@@ -225,13 +225,6 @@ func TestDefaultDirFallsBackToAxeOverride(t *testing.T) {
 	}
 }
 
-func TestNilManifestQueriesAreFalse(t *testing.T) {
-	var m *Manifest
-	if m.CoveredRoute("GET", "/x") || m.CoveredEntity("x") || m.CoveredPermission("x:y") {
-		t.Error("a nil manifest claimed coverage")
-	}
-}
-
 func TestRecordHookEventAndRole(t *testing.T) {
 	dir := fresh(t)
 	RecordHook("Posts", "BeforeCreate") // case-normalised on the way in

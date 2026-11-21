@@ -1,6 +1,7 @@
 package exportcmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -70,11 +71,10 @@ func RunExport(args []string) {
 	}
 	opts, err := parseExportOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.UsageFail("%v", err)
 		return
 	}
-	if err := project.ValidateBuildTarget(opts.pkg); err != nil {
+	if err := project.ValidateBuildTarget(context.Background(), opts.pkg); err != nil {
 		cli.Fail("Export target %q is invalid: %v", opts.pkg, err)
 		cli.OsExit(1)
 		return

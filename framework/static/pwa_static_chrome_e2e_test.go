@@ -28,7 +28,7 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots Chrome")
 	}
-	execPath := browserExecutable(t)
+	execPath := chromedptest.BrowserPath(t)
 
 	a := coreapp.NewApp("Static App")
 	a.Register("/", &homeScreen{}, nil)

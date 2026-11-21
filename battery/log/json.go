@@ -6,19 +6,12 @@ import (
 	"sync"
 )
 
-// JSONOpts configures a JSON sink. The zero value is ready to use:
-// writes to os.Stdout.
+// JSONOpts configures a JSON sink.
 type JSONOpts struct {
-	// Writer is the destination. Nil defaults to os.Stdout, the
-	// 12-factor container pattern where the platform (Docker json-file,
-	// Kubernetes, Cloud Run, …) captures stdout and ships it.
+	// Writer is the destination.
 	Writer io.Writer
 }
 
-// jsonSink is the concrete Sink for line-oriented JSON streams.
-// Entries pass through byte-for-byte: the fanout handler already
-// serialized them with slog's JSON encoder, so there is nothing to
-// re-encode, and re-encoding would only reorder keys.
 type jsonSink struct {
 	mu     sync.Mutex
 	w      io.Writer
@@ -27,21 +20,6 @@ type jsonSink struct {
 
 // JSONSink returns a Sink that writes each entry as one JSON object per
 // line to opts.Writer (os.Stdout when nil).
-//
-// The output is the fanout's encoding untouched (see the Sink.Write
-// contract): standard slog JSON with `time`, `level`, `msg`, and the
-// entry's attrs, one object per line, '\n'-terminated. Pass it to
-// anything that reads JSON-lines, Docker's json-file driver, Fluentd,
-// Vector, Loki's promtail, `kubectl logs`.
-//
-// Each entry is written with a single Write call, so a log collector
-// draining the stream never observes a torn line even under load.
-//
-// Concurrency: safe for concurrent use. Write serializes on a mutex so
-// concurrent entries don't interleave, consistent with the other
-// sinks. After Close, Write returns ErrSinkClosed; Close never closes
-// the underlying writer (the sink doesn't own os.Stdout) and is
-// idempotent.
 func JSONSink(opts JSONOpts) Sink {
 	w := opts.Writer
 	if w == nil {
@@ -50,9 +28,7 @@ func JSONSink(opts JSONOpts) Sink {
 	return &jsonSink{w: w}
 }
 
-// Write emits one '\n'-terminated JSON line. The entry bytes are
-// copied into the line buffer rather than appended in place, callers
-// that reuse their slice keep their backing array intact.
+// Write emits one '\n'-terminated JSON line.
 func (s *jsonSink) Write(entry []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -66,8 +42,7 @@ func (s *jsonSink) Write(entry []byte) error {
 	return err
 }
 
-// Close marks the sink closed. It does not close the underlying
-// writer, os.Stdout is process-owned.
+// Close marks the sink closed.
 func (s *jsonSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

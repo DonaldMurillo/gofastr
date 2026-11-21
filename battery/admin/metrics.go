@@ -19,16 +19,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Metric is one figure in the strip at the top of the dashboard: a
-// count or a sum over an exposed entity, computed by the database in the
-// admin's read, the way the entity cards count.
+// Metric is one figure in the dashboard's strip: a count or a sum over an
+// exposed entity.
 type Metric struct {
-	// Label names the figure, in the request's language. A Detail's
-	// follows its value ("3 trialing").
+	// Label names the figure; a Detail's follows its value ("3 trialing").
 	Label i18n.Phrase
 
-	// Entity is an exposed entity's name. A Detail's defaults to its
-	// parent's.
+	// Entity is an exposed entity's name. A Detail's defaults to its parent's.
 	Entity string
 
 	// Agg is "count" (or "") or "sum".
@@ -37,36 +34,30 @@ type Metric struct {
 	// Field is the Int, Float or Decimal field a sum totals.
 	Field string
 
-	// Where narrows the rows, in the list's query DSL:
-	// `status = "active"`. Empty takes every row.
+	// Where narrows the rows in the list's query DSL. Empty takes every row.
 	Where string
 
 	// Format "money" prints a sum as currency.
 	Format string
 
-	// View is a key of the entity's Display.Views: the figure links to
-	// that list view. Empty links to the whole list.
+	// View is a key of the entity's Display.Views the figure links to. Empty
+	// links to the whole list.
 	View string
 
 	// Icon is a registered kit icon name, or "".
 	Icon string
 
-	// Detail is a second, smaller figure under the value, its Label after
-	// the number: "$1,240.00 outstanding" beside a count of past-due
-	// invoices. A Detail takes no View, Icon or Detail of its own.
+	// Detail is a second, smaller figure under the value; it takes no View,
+	// Icon or Detail of its own.
 	Detail *Metric
 
-	// Tone colours a Detail's line: ui.TrendUp good news, ui.TrendDown
-	// bad, empty or ui.TrendFlat muted. Only a Detail takes one.
+	// Tone colours a Detail's line: ui.TrendUp good, ui.TrendDown bad, empty
+	// or ui.TrendFlat muted.
 	Tone ui.TrendDirection
 }
 
-// maxFigures is the most figures the strip holds, the built-in Failed
-// jobs one included.
 const maxFigures = 6
 
-// checkMetric refuses a metric that could only ever draw "—". parent is
-// the entity a Detail inherits; "" for a top-level metric.
 func (b *Battery) checkMetric(m Metric, parent string) error {
 	if m.Label.IsZero() {
 		return errors.New("a metric needs a Label")
@@ -106,7 +97,6 @@ func (b *Battery) checkMetric(m Metric, parent string) error {
 	return nil
 }
 
-// listViews is the entity's declared list views.
 func listViews(e *entity.Entity) []entity.ListView {
 	if d := e.Config.Display; d != nil {
 		return d.Views
@@ -114,16 +104,13 @@ func listViews(e *entity.Entity) []entity.ListView {
 	return nil
 }
 
-// metricStrip is the strip: each figure inside the element that polls
-// it, in one ui.StatStrip, and with a Queue the Failed jobs figure last,
-// for the platform operator only (platformCaller).
 func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	cells := make([]render.HTML, 0, len(b.cfg.Metrics)+1)
 	for i, m := range b.cfg.Metrics {
-		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/"+strconv.Itoa(i), b.metricStat(ctx, m)))
+		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/"+strconv.Itoa(i), countPoll, b.metricStat(ctx, m)))
 	}
 	if b.cfg.Queue != nil && platformCaller(ctx) {
-		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/jobs", b.jobsFigure(ctx)))
+		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/jobs", countPoll, b.jobsFigure(ctx)))
 	}
 	if len(cells) == 0 {
 		return ""
@@ -131,15 +118,14 @@ func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	return ui.StatStrip(ui.StatStripConfig{Label: i18nui.AdminMetrics.Text(ctx), Cells: cells})
 }
 
-// polled is a figure inside the element that re-reads it from src.
-func polled(src string, figure render.HTML) render.HTML {
+// polled wraps content in the element that re-reads it from src.
+func polled(src, interval string, body render.HTML) render.HTML {
 	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-		"data-cui-poll":     countPoll,
+		"data-cui-poll":     interval,
 		"data-cui-poll-src": src,
-	}}, figure)
+	}}, body)
 }
 
-// metricStat is one figure, read under countDeadline.
 func (b *Battery) metricStat(ctx context.Context, m Metric) render.HTML {
 	cctx, cancel := context.WithTimeout(ctx, countDeadline)
 	defer cancel()
@@ -170,9 +156,6 @@ func (b *Battery) metricStat(ctx context.Context, m Metric) render.HTML {
 	})
 }
 
-// jobsFigure is the Failed jobs figure: the count, linking to the
-// failed filter, and while any wait, that they need a replay. A count
-// the queue could not give reads "—".
 func (b *Battery) jobsFigure(ctx context.Context) render.HTML {
 	value, trend := "—", ""
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
@@ -193,8 +176,6 @@ func (b *Battery) jobsFigure(ctx context.Context) render.HTML {
 	})
 }
 
-// mountMetrics mounts GET <prefix>/_metric/<index>, the fragment a
-// metric polls, read in the admin's scope like the entity counts.
 func (b *Battery) mountMetrics(r *router.Router) {
 	r.Get(b.cfg.PathPrefix+"/_metric/{i}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := appui.WithRequest(b.elevate(r.Context()), r)

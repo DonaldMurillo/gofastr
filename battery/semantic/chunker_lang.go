@@ -9,19 +9,14 @@ import (
 	"unicode/utf8"
 )
 
-// LangAware is a structure-aware chunker that splits Go source on
-// top-level declarations and Markdown on headings, falling back to a
-// [FixedWindow] for anything it can't parse or for chunks that exceed
-// MaxRunes.
-//
-// Routing key is Document.Metadata["kind"] when present; otherwise the
-// Source extension drives the choice (.go → go, .md/.markdown → md).
+// LangAware splits Go source on top-level declarations and Markdown on
+// headings, falling back to a FixedWindow.
 type LangAware struct {
-	// MaxRunes caps a single produced chunk in runes. Chunks above this
-	// are re-chunked with FixedWindow. Defaults to 1024.
+	// MaxRunes caps one chunk in runes; a longer one is re-chunked by
+	// Fallback. Defaults to 1024.
 	MaxRunes int
-	// Fallback is used for unknown kinds and for over-large structural
-	// chunks. Defaults to NewFixedWindow(512, 64).
+	// Fallback chunks unknown kinds and over-large chunks. Defaults to
+	// NewFixedWindow(512, 64).
 	Fallback Chunker
 }
 
@@ -33,11 +28,7 @@ func NewLangAware() *LangAware {
 	}
 }
 
-// Chunk implements [Chunker]. The Fallback call runs under a recover
-// net: a Fallback chunker is host-supplied pluggable code, and Chunk is
-// reached from Index.Add and the watcher loop, which have no
-// per-request recover — a panic becomes an attributed error instead of
-// killing the process.
+// Chunk implements Chunker.
 func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 	config := *l
 	l = &config
@@ -64,8 +55,6 @@ func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 	return l.bound(cs)
 }
 
-// bound splits any chunk over MaxRunes into MaxRunes windows, keeping
-// offsets in the same frame as the input.
 func (l *LangAware) bound(in []Chunk) ([]Chunk, error) {
 	var out []Chunk
 	for _, c := range in {
@@ -77,20 +66,21 @@ func (l *LangAware) bound(in []Chunk) ([]Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		for j := range parts {
-			parts[j].Offset[0] += c.Offset[0]
-			parts[j].Offset[1] += c.Offset[0]
-			parts[j].ID = chunkID(parts[j].DocID, parts[j].Offset[0], parts[j].Offset[1])
-		}
+		rebaseChunks(parts, c.Offset[0])
 		out = append(out, parts...)
 	}
 	return out, nil
 }
 
-// chunkSafely invokes one host-supplied Chunker under a recover net:
-// chunkers are pluggable (Options.Chunker, LangAware.Fallback) and run
-// on dispatch paths with no per-request recover, so a panicking chunker
-// surfaces as an attributed error rather than a process kill.
+func rebaseChunks(parts []Chunk, delta int) {
+	for i := range parts {
+		part := &parts[i]
+		part.Offset[0] += delta
+		part.Offset[1] += delta
+		part.ID = chunkID(part.DocID, part.Offset[0], part.Offset[1])
+	}
+}
+
 func chunkSafely(c Chunker, doc Document) (chunks []Chunk, err error) {
 	defer func() {
 		if v := recover(); v != nil {
@@ -126,9 +116,6 @@ func (l *LangAware) detectKind(doc Document) string {
 	return ""
 }
 
-// chunkGo parses a Go file and emits one chunk per top-level
-// declaration. If parsing fails, ok=false signals the caller to fall
-// back to FixedWindow.
 func (l *LangAware) chunkGo(doc Document) ([]Chunk, bool) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, doc.Source, doc.Text, parser.ParseComments)
@@ -139,8 +126,6 @@ func (l *LangAware) chunkGo(doc Document) ([]Chunk, bool) {
 	for _, decl := range f.Decls {
 		startPos := fset.Position(decl.Pos())
 		endPos := fset.Position(decl.End())
-		// Include any leading line of doc comments by widening to the
-		// start of the decl's line.
 		start := startPos.Offset
 		switch node := decl.(type) {
 		case *ast.FuncDecl:
@@ -165,9 +150,6 @@ func (l *LangAware) chunkGo(doc Document) ([]Chunk, bool) {
 	return out, true
 }
 
-// chunkMarkdown splits on ATX-style headings (#, ##, ###). Each
-// section becomes one chunk; preamble before the first heading is
-// emitted as its own chunk.
 func (l *LangAware) chunkMarkdown(doc Document) ([]Chunk, bool) {
 	lines := strings.SplitAfter(doc.Text, "\n")
 	if len(lines) == 0 {
@@ -227,9 +209,6 @@ func (l *LangAware) chunkMarkdown(doc Document) ([]Chunk, bool) {
 	return out, true
 }
 
-// flatten sub-chunks any structural chunk longer than MaxRunes via the
-// fallback chunker so we never ship a chunk that overflows the
-// embedder's context.
 func (l *LangAware) flatten(in []Chunk) ([]Chunk, error) {
 	out := make([]Chunk, 0, len(in))
 	for _, c := range in {
@@ -246,16 +225,10 @@ func (l *LangAware) flatten(in []Chunk) ([]Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		// No chunks back means the fallback chose to drop the section.
 		if sub, err = l.bound(sub); err != nil {
 			return nil, err
 		}
-		// Re-base sub-chunk offsets against the parent chunk's start.
-		for i := range sub {
-			sub[i].Offset[0] += c.Offset[0]
-			sub[i].Offset[1] += c.Offset[0]
-			sub[i].ID = chunkID(sub[i].DocID, sub[i].Offset[0], sub[i].Offset[1])
-		}
+		rebaseChunks(sub, c.Offset[0])
 		out = append(out, sub...)
 	}
 	return out, nil

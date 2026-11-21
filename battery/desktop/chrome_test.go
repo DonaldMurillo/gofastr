@@ -1,12 +1,57 @@
 package desktop_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
 )
+
+func TestConfiguredWindowPathsUseOpenWindowGrammar(t *testing.T) {
+	for _, path := range []string{"", "relative", "//other.test", "/two/../settings", "/two\n"} {
+		for _, field := range []string{"Config.Settings.Path", "Config.Widgets[1].Path"} {
+			t.Run(field+"/"+path, func(t *testing.T) {
+				spec := desktop.WindowSpec{Path: path}
+				cfg := desktop.Config{ID: "bad.path.test"}
+				if field == "Config.Settings.Path" {
+					cfg.Settings = &spec
+				} else {
+					cfg.Widgets = []desktop.WindowSpec{{Path: "/one"}, spec}
+				}
+				defer func() {
+					panicText, _ := recover().(string)
+					if !strings.Contains(panicText, field) {
+						t.Fatalf("New panic = %q, want a message naming %s", panicText, field)
+					}
+				}()
+				desktop.New(cfg)
+			})
+		}
+	}
+}
+
+func TestSidebarWidthUsesOneRangeDiagnostic(t *testing.T) {
+	width := desktop.MaxSidebarWidth + 1
+	want := fmt.Sprintf("sidebarWidth must be between 0 and %d", desktop.MaxSidebarWidth)
+	h, d := chromeApp(t, desktop.Config{Title: "Chrome"})
+	if got := h.Call("window", "setChrome", map[string]int{"sidebarWidth": width}).
+		AssertCode(t, desktop.CodeInvalidInput).Message; got != want {
+		t.Errorf("setChrome = %q, want %q", got, want)
+	}
+	_, err := d.OpenWindow(desktop.WindowSpec{Path: "/two", SidebarWidth: width})
+	if de, ok := err.(*desktop.Error); !ok || de.Code != desktop.CodeInvalidInput || de.Message != want {
+		t.Errorf("OpenWindow = %v, want invalid_input with %q", err, want)
+	}
+	defer func() {
+		panicText, _ := recover().(string)
+		if !strings.Contains(panicText, "Config.SidebarWidth") || !strings.Contains(panicText, want) {
+			t.Fatalf("New panic = %q, want Config.SidebarWidth and %q", panicText, want)
+		}
+	}()
+	desktop.New(desktop.Config{ID: "bad.width.test", SidebarWidth: width})
+}
 
 // The phase 13 chrome contract against the fake shell through the real
 // Run flow: the new WindowStyle/Config fields round-trip to the shell,

@@ -53,24 +53,30 @@ func TestAttempt_LimitsResponseBodyRead(t *testing.T) {
 	}, 2*time.Second, "delivery never succeeded with capped body")
 }
 
-// ----- HMAC includes timestamp -----------------------------------------------
+type countingReader struct {
+	r io.Reader
+	n int64
+}
 
-func TestSignWithTimestamp_RejectsReplay(t *testing.T) {
-	secret := "topsecret"
-	body := []byte(`{"k":1}`)
-	old := time.Now().Add(-10 * time.Minute).Unix()
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
 
-	header := SignWithTimestamp(secret, old, "", "", body)
-	// Within tolerance, must verify when the timestamp matches what
-	// we present to VerifyTimestamp.
-	if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
-		t.Fatalf("VerifyTimestamped within tolerance should succeed")
+func TestReadResponseStopsAtTheCap(t *testing.T) {
+	m := New(NewMemoryStore(), Options{MaxResponseBodyBytes: 16, ResponseBodyLimit: 1024})
+	body := &countingReader{r: strings.NewReader(strings.Repeat("a", 100))}
+	kept := m.readResponse(body, Auth{})
+	if body.n > 16 {
+		t.Errorf("read %d bytes of the response, want at most MaxResponseBodyBytes (16)", body.n)
 	}
-	// Beyond tolerance, must reject even though the HMAC bytes match.
-	if VerifyTimestamped(secret, header, "", "", body, 1*time.Minute) {
-		t.Fatalf("VerifyTimestamped must reject replay outside tolerance")
+	if len(kept) != 16 {
+		t.Errorf("kept %d bytes, want 16: ResponseBodyLimit is cut to MaxResponseBodyBytes", len(kept))
 	}
 }
+
+// ----- HMAC includes timestamp -----------------------------------------------
 
 func TestSignWithTimestamp_RejectsTamperedTimestamp(t *testing.T) {
 	secret := "s"

@@ -52,5 +52,23 @@ func TestDeadNeverOverwritesSuccess(t *testing.T) {
 		if list, err := s.ListDeliveries(ctx, "s2", 10); err != nil || len(list) != 1 || list[0].Status != StatusSuccess {
 			t.Errorf("late delivery over a dead row = %v, %v; want success", list, err)
 		}
+		d.SubscriberID = "s3"
+		d.ID, d.Status = "d3", StatusPending
+		if err := s.AddDelivery(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		d.Status, d.LastError = StatusDead, "attempt budget exhausted"
+		if err := s.UpdateDelivery(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		for _, late := range []DeliveryStatus{StatusPending, StatusFailed} {
+			d.Status, d.LastError = late, "stale retry"
+			if err := s.UpdateDelivery(ctx, d); err != nil {
+				t.Fatal(err)
+			}
+			if list, err := s.ListDeliveries(ctx, "s3", 10); err != nil || len(list) != 1 || list[0].Status != StatusDead {
+				t.Errorf("late %s settle over a dead row = %v, %v; want dead kept", late, list, err)
+			}
+		}
 	})
 }

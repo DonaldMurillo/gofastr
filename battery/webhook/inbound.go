@@ -20,8 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Inbound lifecycle status values for an InboundEnvelope. Prefix avoids
-// colliding with the outbound DeliveryStatus constants (StatusFailed etc.).
+// Inbound lifecycle status values for an InboundEnvelope.
 const (
 	InboundStatusReceived   = "received"
 	InboundStatusProcessing = "processing"
@@ -29,37 +28,22 @@ const (
 	InboundStatusFailed     = "failed"
 )
 
-// isTerminalInboundStatus reports whether s is a terminal envelope state.
-// The inbound twin of isTerminalStatus: a processed row is settled, so only
-// a processed settle (a runner that really did succeed) may land on one. A
-// stale runner that overran the queue's lease had the envelope's job re-run
-// under it; its late failure settle must not regress the recovery runner's
-// processed record into a failed one that escapes retention permanently
-// (ReapTerminalBefore only deletes processed rows).
-//
-// Failed is not terminal: ProcessInbound returns the handler's error, so
-// the queue retries the job, and that retry must mark the row processing,
-// consume an attempt and record its own error. Fencing failed rows dropped
-// all three.
 func isTerminalInboundStatus(s string) bool {
 	return s == InboundStatusProcessed
 }
 
 // defaultInboundMaxBody is the cap applied when IngestConfig.MaxBodyBytes
-// is unset. Matches MaxPayloadBytes (1 MiB) so an inbound envelope is never
-// larger than what the outbound side would send.
-const defaultInboundMaxBody int64 = 1 << 20
+// is unset: MaxPayloadBytes, so an inbound envelope is never larger than
+// what the outbound side would send.
+const defaultInboundMaxBody int64 = MaxPayloadBytes
 
-// InboundEnvelope is a single persisted inbound webhook request.
-//
-// Status walks received → processing → processed (or → failed). Payload is
-// the raw verified request body; Headers is ONLY the allowlisted subset
-// (see IngestConfig.KeepHeaders), never the full request header set.
+// InboundEnvelope is one persisted inbound request, walking received,
+// processing, then processed or failed.
 type InboundEnvelope struct {
 	ID         string
-	Source     string            // config-supplied source label, e.g. "github"
-	DedupeKey  string            // empty = no dedupe for this request
-	Headers    map[string]string // allowlisted subset only
+	Source     string            // Source is the config-supplied source label, e.g. "github".
+	DedupeKey  string            // DedupeKey is empty for no dedupe.
+	Headers    map[string]string // Headers holds the allowlisted subset only.
 	Payload    []byte
 	Status     string
 	Attempts   int
@@ -67,70 +51,41 @@ type InboundEnvelope struct {
 	ReceivedAt time.Time
 	UpdatedAt  time.Time
 	// Owner is the local user IngestConfig.Owner mapped the event to, or
-	// empty. App.EraseUserData deletes an erased user's envelopes from a
-	// SQLInboundStore.
+	// empty.
 	Owner string
 }
 
-// InboundStore persists inbound envelopes. Implementations return (nil, nil)
-// from GetEnvelope for an unknown ID, matching the outbound Store.GetSubscriber
-// convention so callers can branch on a nil pointer without inspecting an error.
+// InboundStore persists inbound envelopes. GetEnvelope returns (nil, nil) for
+// an unknown ID.
 type InboundStore interface {
 	AddEnvelope(ctx context.Context, e InboundEnvelope) error
 	GetEnvelope(ctx context.Context, id string) (*InboundEnvelope, error)
 	UpdateEnvelope(ctx context.Context, e InboundEnvelope) error
 	ListEnvelopes(ctx context.Context, status string, limit int) ([]InboundEnvelope, error)
-	// SeenDedupeKey reports whether a key was already persisted for this
-	// source. Empty key must return (false, nil).
+	// SeenDedupeKey reports whether key was already persisted for source; an
+	// empty key returns false.
 	SeenDedupeKey(ctx context.Context, source, key string) (bool, error)
 }
 
-// envelopeProcessingClaimer is the optional InboundStore capability that
-// marks an envelope "processing" while consuming one attempt IN THE STORE
-// (a relative counter bump). ProcessInbound probes for it exactly like the
-// outbound Manager probes LeasedStore: stores that implement it get
-// monotonic attempt counting under overlapping runners (the queue's lease
-// expiry re-runs an envelope's job while a slow first handler may still be
-// running); stores that don't keep the legacy caller-side bump.
 type envelopeProcessingClaimer interface {
-	// MarkEnvelopeProcessing transitions the envelope to "processing",
-	// increments its attempts counter store-side, and clears LastError.
-	// It reports false, writing nothing, for a missing id or an envelope
-	// already processed.
 	MarkEnvelopeProcessing(ctx context.Context, id string) (bool, error)
 }
 
-// dedupeKeyRegistrar is the optional InboundStore capability IngestHandler
-// registers a dedupe key through after the enqueue. The job is already
-// queued by then, so a worker may hold the envelope: registering through
-// UpdateEnvelope wrote the handler's received-status snapshot over the
-// worker's processing row, and on a processed row the terminal fence
-// dropped the key. Both shipped stores implement it; host stores without
-// it keep the UpdateEnvelope registration.
 type dedupeKeyRegistrar interface {
-	// RegisterDedupeKey sets the envelope's dedupe key and nothing else,
-	// whatever its status. A missing id is a no-op.
 	RegisterDedupeKey(ctx context.Context, id, key string) error
 }
 
-// InboundVerifier verifies an inbound request's authenticity. The shipped
-// TimestampedVerifier and HMACSHA256Verifier use hmac.Equal.
+// InboundVerifier verifies an inbound request's authenticity.
 type InboundVerifier func(r *http.Request, body []byte) error
 
-// errVerifyFailed is the single error the handler surfaces; it deliberately
-// carries no detail so a generic 401 body never leaks which check failed.
 var errVerifyFailed = i18n.NewError(reasonVerifyFailed)
 
 var reasonVerifyFailed = i18n.Define("webhook.verify_failed", "signature verification failed")
 
 var reasonUnstorableText = i18n.Define("webhook.unstorable_text", "dedupe key or owner holds bytes the store cannot save")
 
-// TimestampedVerifier wraps VerifyTimestamped over the X-GoFastr-Signature
-// header (SignatureHeader), with the event and delivery id read from
-// EventHeader and DeliveryIDHeader. The timestamp, event and id are all in
-// the signed material, so a captured request cannot replay past `tolerance`
-// nor be re-sent under another event or id. Prefer this over
-// HMACSHA256Verifier whenever the sender supports it.
+// TimestampedVerifier verifies the X-GoFastr-Signature header with
+// VerifyTimestamped.
 func TimestampedVerifier(secret string, tolerance time.Duration) InboundVerifier {
 	return func(r *http.Request, body []byte) error {
 		if !VerifyTimestamped(secret, r.Header.Get(SignatureHeader), r.Header.Get(EventHeader), r.Header.Get(DeliveryIDHeader), body, tolerance) {
@@ -140,18 +95,9 @@ func TimestampedVerifier(secret string, tolerance time.Duration) InboundVerifier
 	}
 }
 
-// HMACSHA256Verifier authenticates GitHub-style requests: the header carries
-// "<prefix><hex-hmac-sha256-of-body>" (e.g. header "X-Hub-Signature-256",
-// prefix "sha256="). Comparison is hmac.Equal.
-//
-// NOTE: the body alone is signed, there is no timestamp binding, so this
-// offers no replay defense. Use TimestampedVerifier when the sender supports
-// it. A missing header also rejects (returns errVerifyFailed).
-//
-// An empty or whitespace-only secret rejects every request, as
-// VerifyTimestamped does: an HMAC keyed with "" (or " ") is a signature
-// anyone can compute, so a receiver wired from an unset or mis-quoted
-// environment variable fails closed instead of accepting forgeries.
+// HMACSHA256Verifier verifies "<prefix><hex HMAC-SHA256 of the body>" in
+// header, as GitHub signs; it binds no timestamp, so pair it with a dedupe
+// key.
 func HMACSHA256Verifier(header, prefix, secret string) InboundVerifier {
 	return func(r *http.Request, body []byte) error {
 		if strings.TrimSpace(secret) == "" {
@@ -171,46 +117,28 @@ func HMACSHA256Verifier(header, prefix, secret string) InboundVerifier {
 	}
 }
 
-// IngestConfig configures IngestHandler. Source, Verifier, and Store are
-// required; JobType is required when Queue is non-nil.
+// IngestConfig configures IngestHandler. Source, Verifier and Store are
+// required; JobType is required with a Queue.
 type IngestConfig struct {
-	Source       string          // required, non-empty
-	Verifier     InboundVerifier // required
-	Store        InboundStore    // required
-	Queue        queue.Queue     // optional; nil = persist only
-	JobType      string          // required if Queue != nil, e.g. "webhook.inbound"
-	MaxBodyBytes int64           // default 1 MiB
-	KeepHeaders  []string        // header allowlist to persist; default none
-	// DedupeKeyFunc extracts a provider idempotency key (e.g.
-	// X-GitHub-Delivery). Empty return = no dedupe for that request.
+	Source       string
+	Verifier     InboundVerifier
+	Store        InboundStore
+	Queue        queue.Queue // nil persists only
+	JobType      string      // required with a Queue
+	MaxBodyBytes int64       // default 1 MiB
+	KeepHeaders  []string    // header allowlist to persist; default none
+	// DedupeKeyFunc extracts a provider idempotency key; an empty return means
+	// no dedupe.
 	DedupeKeyFunc func(r *http.Request, body []byte) string
-	// Owner maps a verified event to the local user it concerns (a
-	// provider account id looked up in the app's own table, say). The
-	// envelope records it, so erasing that user deletes the payload.
-	// Nil or an empty return names nobody.
+	// Owner maps a verified event to the local user it concerns; erasing that
+	// user deletes the envelope.
 	Owner func(r *http.Request, body []byte) string
-	// Logger receives operational warnings the response can't carry (e.g. a
-	// best-effort store update failing after an enqueue error). Default:
-	// log.Printf. Set to a no-op func to silence.
+	// Logger receives warnings the response cannot carry. Default log.Printf.
 	Logger func(format string, args ...any)
 }
 
-// IngestHandler builds the inbound ingestion HTTP handler.
-//
-// Flow: non-POST → 405; oversize body → 413; verification failure → 401 with
-// a generic body (the unverified payload is NEVER persisted); a seen dedupe
-// key → 200 (idempotent redelivery ack); otherwise the verified envelope is
-// persisted as "received", optionally enqueued, and the request is acked with
-// 202 + {"id": "<envelope id>"}.
-//
-// With a Queue wired, the dedupe key is registered on the envelope only
-// AFTER the enqueue succeeds: a never-enqueued envelope therefore can never
-// dedupe-ack a redelivery, no matter which cleanup step fails. On enqueue
-// failure the handler responds 500 (the sender will retry) and best-effort
-// marks the just-persisted envelope "failed" with LastError as a forensic
-// record; the retry re-persists and re-enqueues a fresh copy. Without a
-// Queue, persistence alone is durable acceptance, so the key is stored with
-// the envelope up front.
+// IngestHandler builds the inbound handler: verify, dedupe, persist, then
+// enqueue when a Queue is wired.
 func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 	if cfg.Source == "" {
 		return nil, errors.New("webhook: IngestConfig.Source required")
@@ -235,15 +163,12 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
-		// The ack names an envelope IngestConfig.Owner may attribute to a
-		// user, so no cache keeps it.
 		w.Header().Set("Cache-Control", "no-store")
 
-		// Cap the body before reading so an oversize payload can't exhaust
-		// memory. MaxBytesReader surfaces *http.MaxBytesError on overflow.
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -255,23 +180,15 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			return
 		}
 
-		// Verify BEFORE persisting: an unverified payload must never reach
-		// the store. The body returned to the caller is generic on purpose.
 		if verr := cfg.Verifier(r, body); verr != nil {
 			i18n.HTTPError(w, r, http.StatusUnauthorized, reasonVerifyFailed)
 			return
 		}
 
-		// Dedupe: if the sender supplied an idempotency key we've already
-		// seen for this source, ack 200 without re-persisting or enqueuing.
-		// This makes redelivery idempotent from the sender's perspective.
 		var dedupeKey string
 		if cfg.DedupeKeyFunc != nil {
 			dedupeKey = cfg.DedupeKeyFunc(r, body)
 		}
-		// A dedupe key or owner the SQL store cannot bind (a NUL byte,
-		// invalid UTF-8 — Postgres answers 22021) is refused before
-		// anything persists: it could never dedupe or attribute anyway.
 		if dedupeKey != "" && !textsafe.Storable(dedupeKey) {
 			i18n.HTTPError(w, r, http.StatusBadRequest, reasonUnstorableText)
 			return
@@ -288,12 +205,6 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			}
 		}
 
-		// Persist the verified envelope (allowlisted headers only). With a
-		// queue wired the dedupe key is deliberately NOT stored yet: it is
-		// registered only after the enqueue succeeds, so an envelope that
-		// never reached the queue can never dedupe-ack the sender's retry,
-		// even if every cleanup step below fails. Without a queue,
-		// persistence IS durable acceptance, so the key is stored up front.
 		env := InboundEnvelope{
 			ID:         newID(),
 			Source:     cfg.Source,
@@ -319,7 +230,6 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			return
 		}
 
-		// Enqueue for async processing when a queue is wired.
 		if cfg.Queue != nil {
 			payload, _ := json.Marshal(map[string]string{
 				"envelope_id": env.ID,
@@ -329,10 +239,6 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 				Type:    cfg.JobType,
 				Payload: payload,
 			}); qerr != nil {
-				// The enqueue failed; the sender will retry on the 500. The
-				// envelope carries no dedupe key (see above), so the retry
-				// re-persists and re-enqueues a fresh copy regardless of
-				// whether this best-effort forensic marking lands.
 				env.Status = InboundStatusFailed
 				env.LastError = "enqueue failed: " + qerr.Error()
 				env.UpdatedAt = time.Now().UTC()
@@ -342,10 +248,6 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 				i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
-			// The event is durably queued, register the dedupe key so the
-			// sender's redeliveries are acked from here on. If this update
-			// fails, a retry re-ingests a duplicate (at-least-once, same as
-			// the documented check-then-insert race), benign, but log it.
 			if dedupeKey != "" {
 				var uerr error
 				if reg, ok := cfg.Store.(dedupeKeyRegistrar); ok {
@@ -361,16 +263,12 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			}
 		}
 
-		// Ack with the envelope id so the caller can correlate.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": env.ID})
 	}), nil
 }
 
-// allowlistedHeaders returns only the headers named in keep, keyed by their
-// canonical form (Go already canonicalizes Header keys on read). Absent or
-// empty headers are omitted; nil keep yields nil so nothing is persisted.
 func allowlistedHeaders(r *http.Request, keep []string) map[string]string {
 	if len(keep) == 0 {
 		return nil
@@ -388,29 +286,13 @@ func allowlistedHeaders(r *http.Request, keep []string) map[string]string {
 	return out
 }
 
-// inboundJobPayload is the envelope reference carried by a queued job.
 type inboundJobPayload struct {
 	EnvelopeID string `json:"envelope_id"`
 	Source     string `json:"source"`
 }
 
-// ProcessInbound adapts a business handler into a queue.Handler that loads
-// the envelope referenced by the job payload and drives its lifecycle:
-//
-//   - received → processing (the store consumes one attempt), then the handler runs
-//   - success  → processed
-//   - failure  → failed (LastError set), and fn's error is returned so the
-//     queue's retry/backoff machinery can reschedule it
-//
-// A job whose payload won't decode or whose envelope is missing returns an
-// error (non-retryable data corruption, the queue will retry per its own
-// dead-letter policy).
-//
-// The optional ProcessInboundOption lets you inject a logger for warnings
-// the handler can't surface to the caller, chiefly a failed-state
-// UpdateEnvelope after the business handler already errored. The handler's
-// error is still returned so the queue retries; the lost state write is
-// logged so it can't vanish silently. See WithProcessInboundLogger.
+// ProcessInbound adapts fn into a queue.Handler that loads the job's envelope
+// and drives its lifecycle.
 func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEnvelope) error, opts ...ProcessInboundOption) queue.Handler {
 	o := processInboundOpts{logger: log.Printf}
 	for _, opt := range opts {
@@ -432,23 +314,10 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		if env == nil {
 			return fmt.Errorf("webhook: envelope %q not found", p.EnvelopeID)
 		}
-		// A redelivered job (a crash before the queue's ack, or its lease
-		// expiry under a slow first runner) for an envelope another run
-		// already settled is acked without running the handler again.
 		if env.Status == InboundStatusProcessed {
 			return nil
 		}
 
-		// Transition to processing and record the attempt before invoking
-		// the business handler, so a crash mid-handler leaves the envelope
-		// visibly in-flight. The attempts counter is consumed by the STORE
-		// when it implements envelopeProcessingClaimer (both shipped stores
-		// do, via a relative `attempts = attempts + 1` write): the queue's
-		// lease expiry can re-run this envelope's job while a slow first
-		// handler is still running, and two Go-side snapshot bumps would
-		// both write the same value and count two invocations as one. The
-		// legacy path keeps the caller-side bump for host stores that
-		// predate the capability.
 		env.Status = InboundStatusProcessing
 		env.LastError = ""
 		env.UpdatedAt = time.Now().UTC()
@@ -457,7 +326,6 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 			if err != nil {
 				return fmt.Errorf("webhook: mark envelope processing: %w", err)
 			}
-			// Settled (or deleted) after the load above.
 			if !admitted {
 				return nil
 			}
@@ -469,10 +337,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		}
 
 		err = fn(ctx, *env)
-		// The outcome is written on a detached, bounded context: a
-		// shutdown that lands as fn finishes must not leave the envelope
-		// "processing" for work that already happened.
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboundSettleTimeout)
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 		defer cancel()
 		if err != nil {
 			failed := *env
@@ -480,16 +345,11 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 			failed.LastError = err.Error()
 			failed.UpdatedAt = time.Now().UTC()
 			if uerr := store.UpdateEnvelope(settleCtx, failed); uerr != nil {
-				// The business handler already failed; the queue retries because
-				// we return err below. But if THIS write is lost the envelope is
-				// stranded "processing" with no LastError and a stale attempt
-				// count, invisible without a log line. Don't swallow it.
 				logf("webhook: envelope %s: mark failed after handler error lost (state left stale; queue retries): %v", env.ID, uerr)
 			}
 			return err
 		}
 
-		// Success.
 		done := *env
 		done.Status = InboundStatusProcessed
 		done.UpdatedAt = time.Now().UTC()
@@ -500,11 +360,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 	}
 }
 
-// inboundSettleTimeout bounds the envelope's outcome write after the
-// business handler returns.
-const inboundSettleTimeout = 10 * time.Second
-
-// ProcessInboundOption configures ProcessInbound's operational logging.
+// ProcessInboundOption configures ProcessInbound.
 type ProcessInboundOption func(*processInboundOpts)
 
 type processInboundOpts struct {
@@ -512,10 +368,7 @@ type processInboundOpts struct {
 }
 
 // WithProcessInboundLogger installs the logger for warnings ProcessInbound
-// can't surface to the caller (a failed-state UpdateEnvelope). Default
-// log.Printf. Mirrors Options.Logger on the Manager and InboundConfig.Logger
-// on IngestHandler, so a host wiring all three can point them at the same
-// sink.
+// cannot return. Default log.Printf.
 func WithProcessInboundLogger(fn func(format string, args ...any)) ProcessInboundOption {
 	return func(o *processInboundOpts) {
 		if fn != nil {

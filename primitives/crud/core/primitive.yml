@@ -183,11 +183,12 @@ invariants:
       - test: framework/crud.TestParsePagination_PerPageAlias
       - test: framework/crud.TestStreamCapHonorsThreshold
   - id: skip-is-bounded-exactly
-    rule: A list skip, ?offset= or page-derived, past maxListOffset is a 400, reckoned exactly at any size, and an honoured ?offset= sets the envelope's page.
+    rule: An offset-mode list skip, ?offset= or page-derived, past maxListOffset is a 400, reckoned exactly at any size, and an honoured ?offset= sets the envelope's page. A cursor query key selects keyset mode before the bound is applied.
     enforced_by:
       - test: framework/crud.TestListRefusesOverflowingPage
       - test: framework/crud.TestExplicitOffsetBeyondCapRejected
       - test: framework/crud.TestListEnvelopePageFollowsOffset
+      - test: framework/crud.TestCursorListIgnoresOffsetBounds
   - id: trashed-needs-a-user
     rule: ?trashed=true shows soft-deleted rows only to an authenticated request.
     enforced_by:

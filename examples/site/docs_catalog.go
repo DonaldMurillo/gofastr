@@ -172,7 +172,7 @@ var docIntents = []docIntent{
 			{"web-bot-auth", "Web Bot Auth", "Publish signing JWKS and verify RFC 9421 bot signatures."},
 			{"generative-ui", "Generative UI", "Why agents compose design-system primitives instead of emitting raw CSS."},
 			{"semantic-search", "Semantic search", "Local hybrid vector + keyword retrieval with no external API key."},
-			{"audit-deps", "Audit deps", "Detect dependencies that mutate global state at init() time."},
+			{"audit-deps", "Audit deps", "Find candidate global registration calls in a source tree."},
 			{"local-runs", "Local run registry", "Machine-local registry of running GoFastr apps and their MCP URLs."},
 		},
 	},

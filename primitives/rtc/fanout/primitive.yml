@@ -1,0 +1,28 @@
+primitive: rtc.fanout
+summary: The cross-replica lane, roster heartbeats and event mirrors over a core/fanout topic, that merge each room's remote members into the local view.
+code:
+  - battery/rtc/fanout.go
+docs:
+  - framework/docs/content/rtc.md
+invariants:
+  - id: remote-entries-are-bounded
+    rule: A remote roster entry is applied only when its id, role, user, display name and status pass the same bounds a local Join and status do.
+    enforced_by:
+      - test: battery/rtc.TestRemotePeerEntryIsBounded
+  - id: remote-roster-respects-the-cap
+    rule: A remote join past MaxPeers is dropped before it displaces anyone.
+    enforced_by:
+      - test: battery/rtc.TestRemoteJoinRespectsCap
+  - id: empty-rosters-on-close
+    rule: Close publishes an empty roster for every room after the heartbeat and queue stop, so peers converge without waiting out the TTL.
+    enforced_by:
+      - test: battery/rtc.TestClosePublishesEmptyRosters
+      - test: battery/rtc.TestDetachEmptyRosterLandsLast
+  - id: expired-replica-is-swept
+    rule: A replica that stops beating is dropped after its TTL and its members announced as leaves, unless another replica still holds them.
+    enforced_by:
+      - test: battery/rtc.TestRemotePeerExpiresAfterTTL
+      - test: battery/rtc.TestExpiredSeatKeepsLivePeer
+  - id: remote-signal-cap
+    rule: A remote signal over MaxSignalBytes is dropped.
+    judge: Does this change deliver a lane signal to a local socket without checking it against MaxSignalBytes?

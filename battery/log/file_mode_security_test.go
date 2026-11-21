@@ -28,6 +28,7 @@ func TestFileSinkTightensExistingLooseFile(t *testing.T) {
 		{"default tightens 0644", 0o644, 0, 0o600},
 		{"explicit 0640 tightens 0666", 0o666, 0o640, 0o640},
 		{"never loosens", 0o600, 0o644, 0o600},
+		{"keeps only bits both allow", 0o604, 0o640, 0o600},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

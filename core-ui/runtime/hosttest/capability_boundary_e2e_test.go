@@ -37,7 +37,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
@@ -48,13 +47,7 @@ import (
 // BrowserContext.
 func boundaryBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	execPath, ok := browserpath.Find()
-	if !ok {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
+	execPath := chromedptest.BrowserPath(t)
 	return chromedptest.Context(t,
 		chromedptest.Timeout(120*time.Second),
 		chromedptest.AllocatorOptions(

@@ -15,7 +15,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
@@ -276,6 +278,13 @@ func TestUpdatesMethodsUnconfiguredRefuse(t *testing.T) {
 	if err := b.InstallUpdate(context.Background()); err != errUpdateNotConfigured {
 		t.Fatalf("InstallUpdate err = %v", err)
 	}
+	// A configured updater holding no usable key refuses instead of verifying against it.
+	feed := newUpdateFeedServer(t, "1.2.0")
+	kb, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	kb.updaterFor().pub = nil
+	if _, err := kb.CheckForUpdates(context.Background()); err != errUpdateNotConfigured {
+		t.Fatalf("CheckForUpdates with no key err = %v, want %v", err, errUpdateNotConfigured)
+	}
 }
 
 func TestCheckUnbundledRefuses(t *testing.T) {
@@ -314,6 +323,43 @@ func TestCheckFeedFailureIsClosedCodeWithoutURL(t *testing.T) {
 	}
 }
 
+func TestUpdateChecksRefuseLocalIneligibilityBeforeFetching(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	pub, _, _ := ed25519.GenerateKey(nil)
+	for _, tc := range []struct {
+		name, version, bundle string
+		want                  error
+	}{
+		{"unsupported", "", "", errUpdateNeedsBundle},
+		{"unbundled with version", "1.0.0", "", errUpdateNeedsBundle},
+		{"bundle without version", "", "Notes.app", errUpdateNeedsBundle},
+		{"invalid running version", "bad", "Notes.app", errUpdateRunningVersion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests.Store(0)
+			ctx := context.Background()
+			b, _ := updateTestBattery(t, srv.URL+"/manifest.json", hex.EncodeToString(pub), tc.version, tc.bundle, t.TempDir())
+			if _, err := b.CheckForUpdates(ctx); err != tc.want {
+				t.Errorf("check err = %v, want %v", err, tc.want)
+			}
+			if err := b.InstallUpdate(ctx); err != tc.want {
+				t.Errorf("install err = %v, want %v", err, tc.want)
+			}
+			if !b.updaterFor().checkAndNotify(ctx) {
+				t.Error("scheduled check should stop")
+			}
+			if got := requests.Load(); got != 0 {
+				t.Errorf("ineligible host made %d feed requests", got)
+			}
+		})
+	}
+}
+
 func TestCheckComparesAgainstRunningVersion(t *testing.T) {
 	feed := newUpdateFeedServer(t, "1.2.0")
 	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
@@ -329,6 +375,11 @@ func TestCheckComparesAgainstRunningVersion(t *testing.T) {
 	res2, err := b2.CheckForUpdates(context.Background())
 	if err != nil || res2.Available {
 		t.Fatalf("same-version check = %+v, %v; want not available", res2, err)
+	}
+	b3, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "2.0.0", "Notes.app", t.TempDir())
+	res3, err := b3.CheckForUpdates(context.Background())
+	if err != nil || res3.Available {
+		t.Fatalf("older-feed check = %+v, %v; want not available", res3, err)
 	}
 }
 
@@ -402,8 +453,8 @@ func TestScheduledCheckStopsOnUnsupported(t *testing.T) {
 
 func TestScheduledCheckRecoversFromPanic(t *testing.T) {
 	feed := newUpdateFeedServer(t, "1.2.0")
-	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
-	b.updaterFor().platform = &panickyPlatform{}
+	b, fp := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	b.updaterFor().platform = &panickyPlatform{fakeUpdatePlatform: fakeUpdatePlatform{name: fp.name, dir: fp.dir}}
 	// Must return (false), not take the process down.
 	if stop := b.updaterFor().checkAndNotify(context.Background()); stop {
 		t.Fatal("a panicked check should retry next interval, not stop")
@@ -432,19 +483,29 @@ func TestStartUpdaterRemovesStaleOldBundle(t *testing.T) {
 }
 
 func TestStartUpdaterNegativeIntervalStartsNoLoop(t *testing.T) {
-	feed := newUpdateFeedServer(t, "1.2.0")
 	pub, _, _ := ed25519.GenerateKey(nil)
-	b := New(Config{
-		ID:     "update.test.app",
-		Shell:  newFakeShell(),
-		Logger: testLogger(t),
-		Update: &UpdateConfig{FeedURL: feed.srv.URL + "/manifest.json", PublicKey: hex.EncodeToString(pub), Interval: -1},
-	})
-	b.updaterFor().platform = &fakeUpdatePlatform{version: "1.0.0", name: "Notes.app", dir: t.TempDir()}
-	b.startUpdater(context.Background())
-	// Nothing to observe directly without waiting 30 s for the first
-	// check; the guard is that startUpdater returns immediately (the
-	// test's runtime proves no synchronous check ran).
+	for _, interval := range []time.Duration{-1, 0, time.Hour} {
+		t.Run(interval.String(), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var log bytes.Buffer
+				b := New(Config{
+					ID:     "update.test.app",
+					Shell:  newFakeShell(),
+					Logger: slog.New(slog.NewTextHandler(&log, nil)),
+					Update: &UpdateConfig{FeedURL: "https://example.com/manifest.json", PublicKey: hex.EncodeToString(pub), Interval: interval},
+				})
+				b.updaterFor().platform = &fakeUpdatePlatform{}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				b.startUpdater(ctx)
+				time.Sleep(firstUpdateCheckDelay + time.Second)
+				synctest.Wait()
+				if checked := strings.Contains(log.String(), "scheduled checks stopped"); checked != (interval >= 0) {
+					t.Fatalf("interval %s: scheduled check ran = %t, log = %s", interval, checked, &log)
+				}
+			})
+		})
+	}
 }
 
 // The opt-out is announced once at start, so it is not left on by

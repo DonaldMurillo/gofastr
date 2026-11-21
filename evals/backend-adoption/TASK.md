@@ -6,11 +6,20 @@ web framework. The app must run without external services or API keys.
 
 ## Startup contract
 
-The evaluator starts the app with:
+The evaluator builds the app from the candidate workspace and saves the binary
+in the evaluator's results directory. It starts the binary with the candidate
+workspace as its working directory:
 
 ```sh
-PORT=127.0.0.1:<ephemeral-port> DATABASE_PATH=<absolute-sqlite-path> go run .
+results_dir=/path/to/eval-results
+go build -o "$results_dir/candidate-app" .
+PORT=127.0.0.1:8080 DATABASE_PATH="$results_dir/support-desk.db" "$results_dir/candidate-app"
 ```
+
+The evaluator chooses a free loopback port at runtime. On Windows the binary
+is named `candidate-app.exe`. Working-directory-relative paths resolve in the
+workspace, and executable-relative paths resolve beside the binary in the
+results directory.
 
 Honor both environment variables. Create or migrate the SQLite database
 automatically. Data must survive a process restart.
