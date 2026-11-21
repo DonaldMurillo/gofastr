@@ -26,6 +26,8 @@ const (
 	AlertFailed = itel.AlertFailed
 	// AlertSlow counts requests at or over Config.SlowThreshold.
 	AlertSlow = itel.AlertSlow
+	// AlertDisk watches how full the disk holding the telemetry
+	// directory is. Its rule's AtLeast is a percentage from 1 to 100,
 	// and it takes no Within and no Route.
 	AlertDisk = itel.AlertDisk
 )

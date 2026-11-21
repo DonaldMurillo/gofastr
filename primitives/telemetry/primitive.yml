@@ -1,8 +1,13 @@
 primitive: telemetry
-summary: The alert rules that watch request counts and disk use, declared once in internal/telemetry and surfaced by the battery's plugin.
+summary: The telemetry plugin, which keeps an app's logs and traces in capped day files on its own machine, installs the TracerProvider and log sink that feed them, and surfaces the alert rules declared once in internal/telemetry.
 code:
+  - battery/telemetry/telemetry.go
+  - battery/telemetry/agents.go
   - internal/telemetry/
-  - battery/telemetry/alerts.go
+docs:
+  - framework/docs/content/telemetry.md
+on_change:
+  - A new Config field or Stats counter goes in telemetry.md with its default.
 invariants:
   - id: alert-kinds-declared-once
     rule: AlertKind and its failed, slow and disk values are declared in internal/telemetry; battery/telemetry aliases them (type AlertKind = itel.AlertKind) and never re-declares the type, the values or the disk-resolve rule.

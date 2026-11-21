@@ -22,6 +22,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+// adminActorID names the signed-in admin in an audit row: their user
+// id, else "unknown". It is a label, never a key: a lookup or a write
 // for the caller's own account takes access.UserID.
 func adminActorID(ctx context.Context) string {
 	return cmp.Or(access.UserID(ctx), "unknown")

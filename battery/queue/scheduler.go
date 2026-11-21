@@ -181,6 +181,8 @@ func encodeSchedulePayload(payload any, label string) (json.RawMessage, error) {
 	}
 }
 
+// Job sets the job type and payload for the scheduled job. A payload
+// json.Marshal refuses is returned by Register or RegisterAt, so the
 // builder remains fluent. A nil payload means no payload: it replaces
 // whatever an earlier Job call set.
 func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {

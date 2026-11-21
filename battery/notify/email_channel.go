@@ -95,8 +95,7 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (er
 	return c.sender.Send(ctx, msg)
 }
 
-// name or value that email.ValidateHeaders refuses, or when it tries to
-// override Sender or Reply-To.
+// ErrUnsafeHeader reports a rendered header email.ValidateHeaders refuses, or a Sender or Reply-To override.
 var ErrUnsafeHeader = errors.New("notify: unsafe header")
 
 func validateCustomHeaders(h map[string]string) error {

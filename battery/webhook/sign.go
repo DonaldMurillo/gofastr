@@ -16,8 +16,8 @@ const (
 	DeliveryIDHeader = "X-GoFastr-Delivery-ID"
 )
 
-// specific instant. It is the Sign of the default [SignatureFormat], so
-// the format engine and this helper cannot drift.
+// SignWithTimestamp returns the default format's `t=<unix>,v1=<hex>` header, whose HMAC covers
+// the timestamp, event, delivery id and body joined by newlines.
 func SignWithTimestamp(secret string, unixTimestamp int64, event, deliveryID string, body []byte) string {
 	return defaultSignatureFormat.Sign(secret, unixTimestamp, event, deliveryID, body)
 }
@@ -26,9 +26,8 @@ func SignWithTimestamp(secret string, unixTimestamp int64, event, deliveryID str
 // VerifyTimestamped.
 const DefaultTimestampTolerance = 5 * time.Minute
 
-// The signature can carry additional comma-separated fields such as
-// `kid=…`. Verification ignores those fields and refuses repeated
-// `t=` or `v1=` fields.
+// VerifyTimestamped reports whether header is a valid SignWithTimestamp signature of body for
+// event and deliveryID, signed within tolerance of now.
 func VerifyTimestamped(secret, header, event, deliveryID string, body []byte, tolerance time.Duration) bool {
 	// The signed material joins on newlines, which a header value cannot
 	// carry; an event or id holding one can never match a real delivery.

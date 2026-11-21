@@ -28,6 +28,8 @@ const (
 	ConsoleOff
 )
 
+// ConsoleOpts configures a console sink. The zero value is ready to use:
+// writes to os.Stderr, color auto-detected from the writer being a TTY
 // and NO_COLOR being unset or empty.
 type ConsoleOpts struct {
 	// Writer is the destination.

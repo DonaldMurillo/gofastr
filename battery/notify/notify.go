@@ -115,8 +115,8 @@ func New(opts ...Option) *Notifier {
 	return n
 }
 
-// A channel without a templater or a pre-rendered payload returns ErrNoTemplater.
-// A present pre-rendered payload must have type Rendered.
+// Send renders msg per routed channel and sends concurrently, returning the first error: ErrNoChannels
+// when none is routed, ErrNoTemplater for a channel with no templater or Rendered payload.
 func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	n.mu.RLock()
 	chanNames := append([]string(nil), n.chanOrder...)

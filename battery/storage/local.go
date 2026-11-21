@@ -193,8 +193,7 @@ func lexicallyUnder(path, root string) bool {
 	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
 }
 
-// Save writes the contents of r to a file under BaseDir identified by
-// key.
+// Save writes r to the file under BaseDir that key names.
 func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -285,9 +284,6 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 	return ls.saveResolveThenOpen(ctx, key, dstPath, tempDir, root, r)
 }
 
-// commitTail is the shared commit sequence of both save paths: refuse a
-// canceled context, rename the staged temp over the destination inside
-// CommitUnfolded, then restrict the destination's permissions.
 func (ls *LocalStorage) commitTail(ctx context.Context, key, root, dstPath string, rt *os.Root, rename func() error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -383,8 +379,7 @@ func (ls *LocalStorage) Delete(ctx context.Context, key string) error {
 	})
 }
 
-// Get opens the file identified by key and returns a ReadCloser for its
-// contents.
+// Get opens the file key names.
 func (ls *LocalStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return ls.open(ctx, key)
 }

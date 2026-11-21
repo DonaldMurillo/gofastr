@@ -1,9 +1,11 @@
 primitive: search
-summary: Keyword search documents and exact field filters across memory, SQLite and Postgres.
+summary: Keyword search documents and exact field filters across memory, SQLite and Postgres, with the Backend interface, its lifecycle adapter, owner erasure and the query sanitizing every backend shares.
 code:
   - battery/search/
 docs:
   - framework/docs/content/search.md
+on_change:
+  - A matching rule changed in one backend changes in the other two, or search.md says where they differ.
 invariants:
   - id: reject-nul-in-fields-and-filters
     rule: The built-in search backends refuse NUL bytes in encoded document field keys and string values and in exact field filter keys and values before indexing or searching.

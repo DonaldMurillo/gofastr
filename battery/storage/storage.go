@@ -24,8 +24,7 @@ var (
 	_ RangeGetter = (*MemoryStorage)(nil)
 )
 
-// KeyValidator validates storage keys to prevent path traversal and other
-// attacks.
+// KeyValidator validates storage keys.
 type KeyValidator interface {
 	ValidateKey(key string) error
 }
@@ -44,12 +43,6 @@ func (DefaultKeyValidator) ValidateKey(key string) error {
 	return nil
 }
 
-// the backends always refused), a control byte (checkControlBytes), an
-// absolute key, and a key that is not its own clean form (a//b, ./a,
-// a/./b, a trailing slash, "."). Each of those names an object under a
-// second spelling, so a row naming one could erase or serve an object
-// its key never named. Refusals wrap [upload.ErrInvalidKey]; keys the
-// framework mints are already clean.
 func checkObjectKey(key string) error {
 	switch {
 	case key == "":
@@ -69,8 +62,6 @@ func checkObjectKey(key string) error {
 	return nil
 }
 
-// checkControlBytes refuses a key holding a control byte: NUL truncates a
-// path in C-backed tooling, CR/LF splits a log or header line.
 func checkControlBytes(key string) error {
 	if strings.IndexFunc(key, func(r rune) bool { return r < 0x20 || r == 0x7F }) >= 0 {
 		return fmt.Errorf("%w: key %q contains a control byte", upload.ErrInvalidKey, key)
@@ -78,8 +69,7 @@ func checkControlBytes(key string) error {
 	return nil
 }
 
-// ReadCloser wraps an io.Reader to implement io.ReadCloser with a no-op
-// Close.
+// ReadCloser wraps an io.Reader as an io.ReadCloser with a no-op Close.
 type ReadCloser struct {
 	io.Reader
 }

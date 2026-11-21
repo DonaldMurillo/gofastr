@@ -387,6 +387,7 @@ func (q *DBQueue) addColumn(column, def string) error {
 	return err
 }
 
+// intType is the dialect's 64-bit integer column type: Postgres INTEGER
 // is 32 bits, too narrow for a Go int on 64-bit hosts or a nanosecond duration.
 func (q *DBQueue) intType() string {
 	if q.dialect == dialectPostgres {
@@ -1209,6 +1210,7 @@ func (q *DBQueue) noteClaimOK() {
 	}
 }
 
+// settleTimeout bounds one ack or nack write after a handler returns.
 // It equals internal/settle.Timeout; queue keeps its own copy so it stays
 // unmountable (TestSettleTimeoutMatchesSettle).
 const settleTimeout = 10 * time.Second

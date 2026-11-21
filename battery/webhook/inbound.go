@@ -32,6 +32,7 @@ func isTerminalInboundStatus(s string) bool {
 	return s == InboundStatusProcessed
 }
 
+// defaultInboundMaxBody is the cap applied when IngestConfig.MaxBodyBytes
 // is unset: MaxPayloadBytes, so an inbound envelope is never larger than
 // what the outbound side would send.
 const defaultInboundMaxBody int64 = MaxPayloadBytes
