@@ -7,15 +7,15 @@
 WebRTC browsers exchange SDP offers/answers and ICE candidates over a WebSocket endpoint registered by `battery/rtc` (default `GET /__gofastr/rtc`):
 
 ```go
-rooms, err := rtc.New(rtc.Config{
+rooms := rtc.New(rtc.Config{
 	Path:     "/__gofastr/rtc", // default
 	MaxPeers: 8,                // default mesh cap
 	Authorize: func(r *http.Request) (rtc.Join, error) {
 		user := auth.GetCurrentUser(r.Context())
 		if user == nil {
-			return rtc.Join{}, rtc.ErrForbidden
+			return rtc.Join{}, errors.New("authentication required")
 		}
-		return rtc.Join{Room: r.URL.Query().Get("room"), Peer: user.GetID()}, nil
+		return rtc.Join{Room: r.URL.Query().Get("room"), User: user.GetID()}, nil
 	},
 })
 ```
@@ -27,7 +27,7 @@ rooms, err := rtc.New(rtc.Config{
 ## Security rules
 
 - **Room authorization:** verify the authenticated user is allowed in the requested room inside `Config.Authorize` — never trust a client-supplied room ID alone.
-- **Peer identity from session:** derive `rtc.Join.Peer` from the authenticated user/session on the server so one participant cannot spoof another peer's SDP offers.
+- **Peer identity from session:** derive `rtc.Join.User` / `PeerID` from the authenticated user/session on the server so one participant cannot spoof another peer's SDP offers.
 - **Size and peer bounds:** `MaxPeers` defaults to `8` (409 on overflow) and `MaxSignalBytes` defaults to `48 KiB` (oversized frames are dropped and the peer closed).
 
 ## Common mistakes

@@ -22,8 +22,8 @@ _, err = mgr.Subscribe(ctx, webhook.Subscriber{
 	Events: []string{"order.created", "order.paid"},
 })
 
-// Start background delivery workers (stop on shutdown):
-go mgr.Start(ctx)
+// Start background delivery workers (call mgr.Stop(ctx) on shutdown):
+mgr.Start()
 
 // Emit an event (persisted and delivered asynchronously; use PublishFor when scoped to a user):
 _, err = mgr.Publish(ctx, "order.paid", []byte(`{"order_id":"ord_123"}`))
