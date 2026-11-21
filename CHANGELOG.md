@@ -36,6 +36,10 @@ few lines, and link the PR or the docs page for the rest.
   panic that reaches the tracing middleware sets it to `"panic"`, the new
   `tracing.ErrorTypePanic` constant that queue job spans use too. See
   [Observability](framework/docs/content/observability.md).
+- **`tracing.Job` spans carry `error.type`** like SQL, HTTP client and
+  queue job spans: the error's Go type under `%w` wrappers, or
+  `tracing.ErrorTypePanic` for a panic. The status still holds the
+  error's text.
 
 ## [0.97.0] - 2026-11-19
 
