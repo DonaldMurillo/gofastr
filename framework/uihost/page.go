@@ -219,7 +219,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
 	}
 
-	ds.writeAgentLinkHeaders(w, r)
+	ds.writeAgentLinkHeaders(ctx, w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if status != 0 && status != http.StatusOK {
 		w.WriteHeader(status)

@@ -224,8 +224,11 @@ each bot gets its own `Disallow: /` group.
 HTML page advertising the configured artifacts: `rel="sitemap"`,
 `rel="llms-txt"`, `rel="agent-card"`, `rel="service"` (the MCP endpoint),
 `rel="service-desc"` (the OpenAPI spec, when `OpenAPIEndpoint` is set), and
-`rel="alternate"` type `text/markdown` (the page's `/llm.md`). Absolute URLs
-use the resolved base URL (see below).
+`rel="alternate"` type `text/markdown` (the page's `/llm.md`). A not-found
+answer (`ServeNotFound`, a policy's `decide.NotFound()`, a `Load` or resolver
+answering `app.ErrNotFound`) and an error page leave the markdown alternate
+out, as a URL no route matches does. Absolute URLs use the resolved base URL
+(see below).
 
 ### Markdown content negotiation
 

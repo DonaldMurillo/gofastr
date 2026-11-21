@@ -36,6 +36,12 @@ few lines, and link the PR or the docs page for the rest.
   panic that reaches the tracing middleware sets it to `"panic"`, the new
   `tracing.ErrorTypePanic` constant that queue job spans use too. See
   [Observability](framework/docs/content/observability.md).
+- **A not-found page no longer advertises the route's markdown doc.**
+  `ServeNotFound`, `decide.NotFound()` and a `Load` or resolver answering
+  `app.ErrNotFound` now send the same `Link` header as a URL no route
+  matches, with no `rel="alternate"` `/llm.md` entry, so a hidden route no
+  longer shows up in its headers (#844). See
+  [Agent-ready](framework/docs/content/agent-ready.md).
 
 ## [0.97.0] - 2026-11-19
 
