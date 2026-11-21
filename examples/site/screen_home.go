@@ -30,6 +30,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -39,10 +41,10 @@ type HomeScreen struct{}
 // ScreenTitle returns the bare page name; core-ui/app appends " — GoFastr"
 // (the app name) to form the <title>, so it must NOT be repeated here.
 func (s *HomeScreen) ScreenTitle(ctx context.Context) string {
-	return "Full-stack Go that doesn't get in your way"
+	return "Go from idea to a full-stack app, fastr"
 }
 func (s *HomeScreen) ScreenDescription(ctx context.Context) string {
-	return "An early (v0.x) full-stack Go framework that stays out of your way. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, migrations, and a typed query builder. It stays plain Go that you and your agents can read, edit, and own."
+	return "GoFastr is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router and HTML helper, or turn on server-rendered UI, auth, SQLite or Postgres, and MCP—in one binary of plain Go you own."
 }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -88,7 +90,9 @@ func heroSection() render.HTML {
 	agents := html.Paragraph(html.TextConfig{},
 		render.Text("During development, "),
 		ui.InlineCode("gofastr dev"),
-		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
+		render.Text(" gives Claude Code or Codex your app's routes, config, and logs over MCP; in production, user agents call "),
+		ui.InlineCode("/mcp"),
+		render.Text(" under the same permissions."),
 	)
 
 	// Keep the primary path before the deeper agent story: the actions
@@ -96,12 +100,12 @@ func heroSection() render.HTML {
 	// viewport; the install line and the agent note follow.
 	return ui.Hero(ui.HeroConfig{
 		Eyebrow: "early · " + versionLabel(),
-		Title:   "Full-stack Go that doesn't get in the way of you or your agents.",
+		Title:   "Go from idea to a full-stack app, fastr.",
 		Lede: render.Join(
-			html.Strong(html.TextConfig{}, render.Text("GoFastr")),
-			render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
-			html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
-			render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
+			html.Strong(html.TextConfig{}, render.Text("Simple for humans to understand. Optimized for agents and the agentic ecosystem.")),
+			render.Text(" Stay as barebones as a stdlib router, or turn on "),
+			html.Strong(html.TextConfig{}, render.Text("server-rendered UI")),
+			render.Text(", auth, SQLite or Postgres, and MCP—in one binary of plain Go you own."),
 		),
 		Actions: []render.HTML{
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
@@ -113,8 +117,8 @@ func heroSection() render.HTML {
 	})
 }
 
-// The three hero programs: core-only (stdlib primitives), framework +
-// one entity, and the fuller "Donald's Way" (screens + SEO + MCP + auth).
+// The three hero programs: core-only (stdlib primitives), framework (UI +
+// typed route + MCP), and full-stack (screens + SEO + llm.md + MCP + auth).
 // All three are byte-identical to the README Quickstart programs, which
 // CI extracts, compiles, boots, and curls
 // (cmd/gofastr/readme_quickstart_test.go), so the homepage never teaches
@@ -154,28 +158,50 @@ func main() {
 var heroFrameworkSrc = `package main
 
 import (
-	"database/sql"
+	"context"
 	"log"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
+type HomeScreen struct{}
+
+func (s *HomeScreen) ScreenTitle(context.Context) string { return "Hello" }
+func (s *HomeScreen) Render() render.HTML {
+	return ui.Card(ui.CardConfig{Heading: "Ship faster"},
+		html.Paragraph(html.TextConfig{}, render.Text("Server-rendered HTML in Go, zero JS build step.")),
+	)
+}
+
+type Greeting struct {
+	Message string ` + "`json:\"message\"`" + `
+}
+
 func main() {
-	db, _ := sql.Open("sqlite3", "app.db")
-	app := framework.NewApp(framework.WithDB(db), framework.WithMCP()) // WithMCP serves the tools at /mcp
+	pages := app.NewApp("Demo")
+	pages.Register("/", &HomeScreen{}, nil)
 
-	// CRUD is auto-on when a DB is set (CRUD *bool: nil = auto).
-	app.Entity("posts", framework.EntityConfig{
-		Exposure: &framework.ExposureConfig{
-			Public: true, // anonymous read AND write; omit it and CRUD requires a session (secure by default)
-			MCP:    true, // emit posts_list/get/create/update/delete MCP tools
-		},
-		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
-	})
+	fw := framework.NewUIHostApp(uihost.New(pages),
+		framework.WithMCP(),
+		framework.WithMCPTools(func(s *mcp.Server) error {
+			return s.RegisterTool("greet", "Return a greeting", nil, func(ctx context.Context, _ map[string]any) (any, error) {
+				return Greeting{Message: "hello from mcp"}, nil
+			})
+		}),
+	)
 
-	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP: all live
+	fw.Router().Get("/api/hello", handler.HandlerAdapter(func(ctx context.Context, _ struct{}) (Greeting, error) {
+		return Greeting{Message: "hello from go"}, nil
+	}))
+
+	log.Fatal(fw.Start(":8080")) // HTML at /, JSON at /api/hello, MCP at /mcp
 }`
 
 var heroDonaldSrc = `package main
@@ -206,12 +232,13 @@ func (s *HomeScreen) Render() render.HTML {
 func main() {
 	db, _ := sql.Open("sqlite3", "notes.db")
 
-	// Server-rendered screens. Each also serves an auto llm.md.
+	// Server-rendered screens.
 	ui := app.NewApp("Notes")
 	ui.Register("/", &HomeScreen{}, nil)
 
-	// SEO for those pages.
+	// SEO and per-screen llm.md for those pages.
 	host := uihost.New(ui,
+		uihost.WithPublicLLMMD(),
 		uihost.WithDescription("A tiny notes app."),
 		uihost.WithOpenGraph(uihost.OG{Title: "Notes", Type: "website"}),
 		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://notes.example"}),
@@ -247,12 +274,25 @@ func main() {
 }`
 
 func heroCodeTabs() render.HTML {
-	return ui.CodeTabs(
+	tabs := ui.CodeTabs(
 		ui.CodeTabsConfig{Name: "hero-examples", Label: "Example apps", LineNumbers: true},
 		ui.CodeSample{Label: "core only", Language: "go", Filename: "main.go", Code: heroCoreSrc},
 		ui.CodeSample{Label: "framework", Language: "go", Filename: "main.go", Code: heroFrameworkSrc},
 		ui.CodeSample{Label: "full-stack app", Language: "go", Filename: "main.go", Code: heroDonaldSrc},
 	)
+	caption := html.Paragraph(html.TextConfig{}, ui.Muted(render.Join(
+		render.Text("Three tiers, one repo: "),
+		ui.InlineCode("core/"),
+		render.Text(" alone → "),
+		ui.InlineCode("framework"),
+		render.Text(" + UI + MCP → "),
+		ui.InlineCode("gofastr init"),
+		render.Text(" with "),
+		ui.InlineCode("battery/"),
+		render.Text(". Mix them in one app — "),
+		html.Link(html.LinkConfig{Href: "/docs/overview", Text: "see the overview →"}),
+	)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapSM, TrimMargins: true}, tabs, caption)
 }
 
 // -----------------------------------------------------------------------------
@@ -314,6 +354,12 @@ var embeddedDocCount = sync.OnceValue(func() string {
 	return strconv.Itoa(n)
 })
 
+// contractRuleCount counts the registered contract rules checked by
+// `gofastr verify`, measured live from the catalog this binary links.
+var contractRuleCount = sync.OnceValue(func() string {
+	return strconv.Itoa(len(contracts.AllRules()))
+})
+
 // numberClaim is one countable claim: the value, what it counts, and how a
 // reader can check it.
 type numberClaim struct{ value, label, check string }
@@ -322,12 +368,12 @@ func numberClaims() []numberClaim {
 	return []numberClaim{
 		{measuredRuntimeGz(), "of client JavaScript, gzipped",
 			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."},
-		{embeddedDocCount(), "docs embedded in every binary",
-			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."},
-		{"5", "MCP tools per entity",
-			"list, get, create, update, delete. Each dispatches through the app router, so the caller's login and permissions apply."},
+		{embeddedDocCount(), "docs embedded in the CLI and docs site",
+			"gofastr docs reads them offline. This site serves raw Markdown at /docs/<name>.md indexed by /llms.txt; agents query them over MCP."},
+		{contractRuleCount(), "contract rules in gofastr verify",
+			"Static and semantic checks covering routing, permissions, security, rendering, and accessibility—built to catch human and agent mistakes early."},
 		{"2", "databases",
-			"SQLite and Postgres. No MySQL, no Mongo."},
+			"SQLite (pure Go, CGO_ENABLED=0) and Postgres. No MySQL, no Mongo."},
 		{"1", "binary to deploy",
 			"go build emits it. No Node, no platform, no telemetry."},
 		{"0", "npm packages",
@@ -350,7 +396,7 @@ func numbersSection() render.HTML {
 	}
 	bands := ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		band("Measured by this binary", claims[:2]),
-		band("Agents and databases", claims[2:4]),
+		band("Guardrails and databases", claims[2:4]),
 		band("Deploy and dependencies", claims[4:]),
 	)
 
@@ -467,22 +513,22 @@ func exploreSection() render.HTML {
 	code := ui.InlineCode
 	grid := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
 		routeCard("/primitives", "core · core-ui", "The primitives",
-			render.Join(render.Text("Router, query builder, schema, "), code("render"), render.Text(", the MCP server, HTML primitives, and signals. These are stdlib-first Go packages you can use on their own.")), false,
+			render.Join(render.Text("Router, typed handlers, "), code("render"), render.Text(", query builder, MCP server, and signals. Stdlib-first Go packages you can use standalone.")), false,
 		),
 		routeCard("/framework", "framework · framework/ui", "Framework",
-			render.Text("The opinionated layer: entities and CRUD, auth, access control, migrations, framework/ui components, and theming."), false,
+			render.Text("Turn on the full stack when you want speed: themed UI components, auth, access control, migrations, and optional entities."), false,
 		),
-		routeCard("/agents", "mcp · llm.md · well-known", "Agent-ready",
-			render.Join(render.Text("Per-entity MCP tools, auto "), code("llm.md"), render.Text(", tools that read the running app, and the agent-discovery endpoints your app serves.")), false,
+		routeCard("/agents", "mcp · llm.md · verify", "Agent-ready",
+			render.Join(render.Text("Dev MCP and contract checks while you build; "), code("/mcp"), render.Text(" tools, "), code("llm.md"), render.Text(", and discovery endpoints once you ship.")), false,
 		),
 		routeCard("/interactivity", "ssr · islands · signals", "Interactivity",
-			render.Text("The server-driven model: full SSR, island RPC, optimistic UI, and signals + SSE. There is no client framework to ship."), false,
+			render.Text("Server-rendered HTML with client signals, island RPCs, polling, and SSE push—no React, Vue, or JS build pipeline."), false,
 		),
-		routeCard("/generator", "generate", "The code generator",
-			render.Text("Scaffold a Go app from a declaration when you want a head start. It writes plain Go you own and edit."), false,
+		routeCard("/generator", "init · generate · sdk", "Generators & SDKs",
+			render.Text("Scaffold an entire app, Go/TS client SDKs, or a branded customer CLI as plain Go you own and edit."), false,
 		),
 		routeCard("/examples", "examples/", "The example apps",
-			render.Text(fmt.Sprintf("%d runnable reference apps, including a blog, a SaaS console, a storefront, an API tour, an entity admin, a process-isolated module, a WebMCP support console, and this site. Each starts with one command.", len(exRowItems()))), false,
+			render.Text(fmt.Sprintf("%d runnable reference apps—Meridian (a full SaaS console) and this docs site—plus interactive demos. Each starts in one command.", len(exRowItems()))), false,
 		),
 	)
 

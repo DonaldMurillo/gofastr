@@ -1,171 +1,82 @@
 # UI capability map
 
-Start here when the question is about a product shape rather than a Go
-package: "Can I build a live dashboard?", "Where should optimistic state
-live?", or "Does this need a client framework?" The component catalog answers
-what symbols exist. This guide maps jobs to primitives, state ownership,
-delivery and scaling semantics, runnable proof, and the detailed API docs.
+Start here when your question is about a UI shape rather than a Go package—"Can I build a live dashboard?", "Where should optimistic state live?", or "Do I need a client framework?" This map pairs each product job with its components, state ownership, delivery tier, runnable example, and reference docs.
 
 ## The state boundary
 
-Use this as the default architecture:
+Default architecture across GoFastr UI:
 
 ```text
-database/server = durable business truth
-signals/store    = immediate UI projection
+database/server  = durable business truth
+signals/store    = immediate client UI projection
 RPC              = mutation and reconciliation
 polling          = passive freshness without a held connection
-SSE              = push delivery when the connection is part of the truth
+SSE              = push delivery when the connection itself matters
 HTML/data result = authoritative response
 ```
 
-That boundary is more important than the individual component choice. A local
-signal can make a control feel immediate, but it does not become business
-truth. An optimistic projection can move first, but the RPC response commits
-or rolls it back. SSE tells connected views that server state changed; it does
-not confirm the user's own mutation.
+A local signal makes a control feel instant, never durable. An optimistic update moves first, and the RPC response commits or rolls it back. SSE notifies connected views about background or other-user changes—it never confirms the user's own click.
 
 ## What kind of UI are you building?
 
-Every row distinguishes a capability from a packaged convenience. "Proof"
-names a route in the runnable `examples/site` gallery (start it with
-`go run ./examples/site`) or a complete example program. "Primary docs" points
-to the public contract rather than repeating it here.
+Run `go run ./examples/site` to interact with every linked gallery route live.
 
-| Job to be done | Compose | State, delivery, and scaling semantics | Runnable proof | Primary docs |
+| Job to be done | Compose | State, delivery, and scaling | Runnable proof | Primary docs |
 |---|---|---|---|---|
-| CRUD/admin or form-heavy screens | `ui.DataTable`, `ui.Form`, `ui.FormField`, entity CRUD, `battery/admin` | The database is truth. Filters, validation, pagination, and writes run on the server. RPC or normal form responses return authoritative HTML/data. CRUD requests are stateless and replica-safe; sessions and live invalidation still need the shared backends described in scaling. | [`/components/form`](../../../examples/site/components.go) and [`examples/meridian`](../../../examples/meridian/main.go) | [DataTable wiring notes](/components/datatable), [Forms](form-module.md), [Admin](admin.md), [Interactive patterns](interactive-patterns.md) |
-| Optimistic mutations | `ui.OptimisticAction`, `ui.ToggleAction`, versioned `sortablelist` | A signal/DOM change is a temporary projection. The RPC owns validation and commit. Non-2xx rolls back; a versioned 409 refetches authoritative server HTML. Do not wait for SSE to confirm the initiating action. | [`/components/optimisticaction`](../../../examples/site/components.go), [`/components/toggleaction`](../../../examples/site/components.go) | [Optimistic UI](optimistic-ui.md), [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
-| Live dashboards and streamed status | SSR charts/status components, `store.Slice`, island signals, `data-cui-poll`, SSE | SSR supplies the first complete view. The server owns metrics; signals project the latest value. Polling (`data-cui-poll`) is the recommended tier for passive metric refresh: any replica answers, no fanout, no held connection. SSE is best-effort push delivery for sub-second updates and may drop old frames for slow consumers; it needs `WithFanout` across replicas. Use an outbox/queue for lossless work. | [`/examples/live-dashboard`](../../../examples/site/screen_livedash.go), [`/components/rpc-signal`](../../../examples/site/components.go), [`/components/linechart`](../../../examples/site/components.go), [`/components/recordsummary`](../../../examples/site/components.go) | [Live dashboards](live-dashboards.md), [Reactivity model](reactivity.md), [Signal store](signal-store.md), [Events and SSE](events.md), [Scaling](scaling.md) |
-| Master/detail workspaces | `ui.PaneHost`, server-rendered detail fragments, routes for durable/deep-linkable identity | The route identifies the selected durable record. Opening/swapping a pane is in-page projection; RPC can return its detail HTML. `PaneHost` owns pane behavior, not data fetching. Reconstructable handlers are stateless; process-held pane/widget objects require affinity. | [`/examples/workspace`](../../../examples/site/screen_workspace.go), [`/components/panehost`](../../../examples/site/components.go) | [Pane host](pane-host.md), [UI composition recipes](ui-composition-recipes.md) |
-| Sortable lists and Kanban | `framework/ui.SortableList`, stable keys, optional group/container/version | The browser previews a reorder. RPC persists it. Non-2xx restores the prior DOM; versioned 409 responses refetch server-rendered column state for reconciliation. Durable order belongs in the database. | [`/components/sortablelist`](../../../examples/site/components.go) | [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
-| Notifications, progress, and activity feeds | `ui.NotificationBell`, toast presets, `progress`, `ui.Timeline`, signals/SSE | A toast is ephemeral projection; durable notification/read state belongs in the database. Progress can be an RPC result for user work or an SSE update for background work. An activity feed that must not lose entries comes from durable rows/outbox, not the lossy SSE buffer. | [`/components/progress`](../../../examples/site/components.go), [`/components/timeline`](../../../examples/site/components.go) | [NotificationBell wiring notes](/components/notificationbell), [Widgets](widgets.md), [Events and SSE](events.md), [Notifications](notifications.md) |
-| Server-authoritative reactive SaaS | SSR screen + typed store + RPC signal/fragment swaps + SSE invalidation | The store is a typed client projection seeded from SSR. User mutations use RPC and receive authoritative HTML/data. Background/other-user changes arrive through SSE and trigger a signal update or refetch. Shared fanout makes the push lane replica-aware; durable side effects stay on outbox/queue consumers. | [`/components/signal-store`](../../../examples/site/components.go), [`/components/rpc-form-signal`](../../../examples/site/components.go) | [Signal store](signal-store.md), [Interactive patterns](interactive-patterns.md), [Events and SSE](events.md) |
-| Presence and collaborative awareness | `island.Manager` presence topics + `ui.AvatarGroup` | Identity is derived by the server. Rosters are live, lossy, self-healing state, not an audit record. With fanout they merge across replicas; without it they are local to one process. | [`/examples/presence`](../../../examples/site/screen_presence.go), [`/components/avatargroup`](../../../examples/site/components.go) | [Presence](presence.md), [Scaling](scaling.md) |
-| Static/exportable UI | SSR screens + `App.ExportStatic`; client-only signals/theme/copy where useful | The export is build-time truth: HTML and assets run without a Go server. Server RPC, SSE, and server-backed widgets are deliberately disabled and must not be presented as live. | none in the repo | [Static export](static-export.md), [Runtime contract](runtime-contract.md) |
-| SPA integration by deliberate choice | GoFastr HTTP/OpenAPI/MCP backend + Vue, React, Svelte, or another client | The client framework owns browser state and rendering. GoFastr still owns durable data, authorization, validation, and API responses. This is a separate architecture, not a way to mix a second renderer into a GoFastr-managed screen. | none in the repo | [Entity declarations](entity-declarations.md), [Security](security.md), [SDKs](sdk.md) |
+| CRUD/admin or form-heavy screens | `ui.DataTable`, `ui.Form`, `ui.FormField`, entity CRUD, `battery/admin` | Server owns truth, validation, filtering, and pagination. Stateless and replica-safe. | [`/components/datatable`](../../../examples/site/components.go), [`/components/form`](../../../examples/site/components.go), [`examples/meridian`](../../../examples/meridian/main.go) | [Forms](form-module.md), [Admin](admin.md), [Interactive patterns](interactive-patterns.md) |
+| Optimistic mutations | `ui.OptimisticAction`, `ui.ToggleAction`, versioned `sortablelist` | Immediate client projection; RPC validates and commits, rolling back on error or refetching on `409`. | [`/components/optimisticaction`](../../../examples/site/components.go), [`/components/toggleaction`](../../../examples/site/components.go) | [Optimistic UI](optimistic-ui.md), [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
+| Live dashboards and streamed status | SSR charts/metrics, `store.Slice`, island signals, `data-cui-poll`, SSE | SSR renders first paint. Prefer polling (`data-cui-poll`) for passive freshness (stateless, any replica). Use SSE (`WithFanout` across replicas) for sub-second push; queue/outbox for lossless work. | [`/examples/live-dashboard`](../../../examples/site/screen_livedash.go), [`/components/rpc-signal`](../../../examples/site/components.go), [`/components/linechart`](../../../examples/site/components.go), [`/components/recordsummary`](../../../examples/site/components.go) | [Live dashboards](live-dashboards.md), [Reactivity model](reactivity.md), [Signal store](signal-store.md), [Events and SSE](events.md), [Scaling](scaling.md) |
+| Master/detail workspaces | `ui.PaneHost`, server-rendered detail fragments, durable routes | URL identifies the selected record; `PaneHost` manages in-page pane behavior while RPC swaps fragments. | [`/examples/workspace`](../../../examples/site/screen_workspace.go), [`/components/panehost`](../../../examples/site/components.go) | [Pane host](pane-host.md), [UI composition recipes](ui-composition-recipes.md) |
+| Sortable lists and Kanban | `framework/ui.SortableList` with stable keys and version | Browser previews drag reorder; RPC persists durable order and restores/refetches on error or `409`. | [`/components/sortablelist`](../../../examples/site/components.go) | [Interactive patterns](interactive-patterns.md), [Runtime contract](runtime-contract.md) |
+| Notifications, progress, and activity feeds | `ui.NotificationBell`, toast presets, `progress`, `ui.Timeline`, signals/SSE | Toasts are ephemeral; durable read state and lossless feeds live in the DB/outbox, not the lossy SSE buffer. | [`/components/notificationbell`](../../../examples/site/components.go), [`/components/progress`](../../../examples/site/components.go), [`/components/timeline`](../../../examples/site/components.go) | [Widgets](widgets.md), [Events and SSE](events.md), [Notifications](notifications.md) |
+| Server-authoritative reactive SaaS | SSR screen + typed store + RPC fragment swaps + SSE invalidation | SSR seeds the typed store; user writes go through RPC; background updates arrive via SSE (`WithFanout` for multi-replica). | [`/components/signal-store`](../../../examples/site/components.go), [`/components/rpc-form-signal`](../../../examples/site/components.go) | [Signal store](signal-store.md), [Interactive patterns](interactive-patterns.md), [Events and SSE](events.md) |
+| Presence and collaborative awareness | `island.Manager` presence topics + `ui.AvatarGroup` | Server-derived identity; live, self-healing rosters merge across replicas when `WithFanout` is enabled. | [`/examples/presence`](../../../examples/site/screen_presence.go), [`/components/avatargroup`](../../../examples/site/components.go) | [Presence](presence.md), [Scaling](scaling.md) |
+| Static/exportable UI | SSR screens + `App.ExportStatic` + client-only signals | Build-time HTML/assets with no Go server; server RPC/SSE actions disable cleanly. | none in the repo | [Static export](static-export.md), [Runtime contract](runtime-contract.md) |
+| SPA integration by deliberate choice | GoFastr HTTP/OpenAPI/MCP backend + React, Vue, or Svelte client | Client framework owns rendering; GoFastr owns data, auth, validation, and APIs. Keep the two renderers separate. | none in the repo | [Entity declarations](entity-declarations.md), [Security](security.md), [SDKs](sdk.md) |
 
 ## Decide where state lives
 
-| Decision | Prefer the first option when | Prefer the second option when |
+| Decision | Prefer the first when | Prefer the second when |
 |---|---|---|
-| Local signal vs typed store | The value has one small producer/consumer scope and can reset with the page. | Many consumers share it, it needs SSR seeding, or app-global lifetime must be explicit. Use `core-ui/store`. |
-| Computed signal vs server recomputation | The derivation is cheap, synchronous, presentation-only, and can be expressed by a CSP-safe registered reducer. | The result depends on authorization, durable data, pagination/filter rules, expensive work, or business invariants. Return it from the server. |
-| RPC signal vs fragment swap | The authoritative response is one text/value/attribute shared by bound consumers. | The authoritative response is structured UI. Let Go render HTML and replace the island region. |
-| Optimistic update vs pending-only action | The action is reversible, the prior projection is known, and failure/409 reconciliation is designed. | The effect is destructive, expensive, security-sensitive, or cannot be undone honestly. Show pending state, then commit from the response. |
-| SSE latest-state/drop vs durable queue/outbox | A future update heals a missed one: badge counts, status, invalidation, presence, dashboard refresh. | Every event/side effect matters: billing, email, workflow transitions, audit, or ordered processing. Use `battery/queue` or the transactional outbox. |
-| Process-local island vs reconstructable state | You deploy one process or deliberately configure affinity, and losing ephemeral state on restart is acceptable. | You need stateless load balancing or restart survival. Reconstruct from URL/session/database on every RPC and use fanout only for push delivery. |
-| GoFastr UI vs Vue/React/Svelte | SSR-first screens, server-owned rules, small generic JS, and HTML fragment reconciliation fit the product. | The product fundamentally needs a client-owned render graph or an ecosystem-specific client library. Keep GoFastr as the API/backend boundary. |
+| Local signal vs typed store | One small producer/consumer scope that can reset with the page. | Shared across components, needs SSR seeding, or app-global lifetime (`core-ui/store`). |
+| Computed signal vs server recomputation | Cheap, synchronous, presentation-only derivation with a registered reducer. | Depends on auth, DB data, pagination/filtering, or business rules. |
+| RPC signal vs fragment swap | Response is one scalar/attribute shared by bound nodes. | Response is structured UI—let Go render HTML and swap the island. |
+| Optimistic update vs pending-only action | Reversible, low-risk, with clean rollback/reconciliation. | Destructive, expensive, or security-sensitive—wait for the server response. |
+| SSE push vs durable queue/outbox | A newer update heals a missed one (counts, status, presence, dashboard refresh). | Every event must run (billing, email, workflows, audit)—use `battery/queue` or outbox. |
+| GoFastr UI vs React/Vue/Svelte | SSR-first screens, server-owned rules, and tiny JS fit the product. | The product centers on a client-owned render graph or heavy JS ecosystem widget. |
 
 ## Stateless and affinity-bound islands
 
-These terms describe server ownership, not visual appearance.
-
-- A **reconstructable island** reads route/query/session/database state for each
-  request and renders the next authoritative fragment. Any replica can handle
-  its RPC. This is the preferred shape.
-- An **affinity-bound island** holds mutable widget/island objects in one
-  process. `WithFanout` can deliver an update to the replica holding an SSE
-  connection, but it cannot recreate that object on another replica.
-  Redesign the handler around reconstructable state, reading from
-  URL/session/database on every request, so any replica can serve any
-  RPC. Sticky routing is not part of the contract; a portable session
-  token (see [Reactivity model](reactivity.md)) makes it unnecessary.
-- A client-only signal is neither durable nor affinity-bound server state. It
-  is a projection and may reset unless declared app-global and reseeded.
-
-Read [Horizontal scaling](scaling.md) before adding the second replica.
+- **Reconstructable islands (preferred):** each RPC reads route, query, session, and DB state to render the next fragment. Any replica can serve any request—no sticky routing needed.
+- **Affinity-bound islands:** mutable widget objects kept in one process's RAM. `WithFanout` bridges SSE pushes, not in-memory objects. Redesign around reconstructable state before adding a second replica (see [Horizontal scaling](scaling.md)).
+- **Client-only signals:** pure browser UI projections, reset on reload unless declared app-global and reseeded.
 
 ## Delivery guarantees
 
 | Lane | Guarantee | Use it for | Do not use it for |
 |---|---|---|---|
-| RPC response | One request receives one status and authoritative HTML/data response | Mutations, validation, reconciliation, fragment swaps | Broadcast to other sessions |
-| Polling | The browser re-fetches a region on a Go-duration interval; any replica answers from the DB | Passive freshness for counters, statuses, and dashboards without a held connection | Surfaces that need push under a second, or that must reflect the connection itself (presence) |
-| SSE/event bus | Best effort; default slow-client mode drops the oldest queued frames | Latest status, invalidation, presence, live dashboard updates | Billing, audit, exactly-once workflows |
-| Fanout | Best-effort broadcast between replicas; handlers run on every replica | Making SSE/island push visible wherever the browser connected | Single-execution side effects |
-| Queue/outbox | Durable, at-least-once processing; consumers must be idempotent | Workflows, email, webhooks, audit-adjacent side effects | Immediate browser confirmation |
+| RPC response | One request → one authoritative status + HTML/data body | Mutations, validation, fragment swaps, reconciliation | Broadcasting to other sessions |
+| Polling | Interval GET; any replica answers from DB | Passive freshness (dashboards, counters, statuses) | Sub-second push or connection-presence |
+| SSE / event bus | Best-effort; slow consumers drop old frames | Live status, invalidation, presence, realtime updates | Billing, audit, lossless workflows |
+| Fanout | Best-effort cross-replica broadcast | Delivering SSE/island push to whichever replica holds the socket | Single-execution side effects |
+| Queue / outbox | Durable, at-least-once delivery (idempotent consumers) | Workflows, email, webhooks, durable side effects | Immediate browser confirmation |
 
-Performance claims are bounded by what is measured. [Benchmarks](benchmarks.md)
-includes island RPC, SSE delivery/drop metrics, and full UI-host SSR. It does
-not measure browser hydration or promise that lossy delivery became durable.
-
-## Capability, convenience, and non-goals
-
-- **Capability** means the public primitives compose the architecture and a
-  runnable example proves the path.
-- **Packaged convenience** means GoFastr provides the product-shaped component
-  or battery directly, such as `DataTable`, `PaneHost`, `OptimisticAction`, or
-  `battery/admin`. A capability may exist without a one-call convenience.
-- **Proven performance** means a named benchmark exercises that exact lane.
-  Treat unmeasured browser/network behavior as unmeasured.
-- **Explicit non-goals:** GoFastr does not specialize in canvas/media editors,
-  timeline/video authoring, offline-first CRDT workspaces, or a client-owned
-  virtual DOM. Use a purpose-built client library and integrate it through the
-  API/plugin boundary when those are the center of the product.
+**Explicit non-goals:** GoFastr does not specialize in canvas/media editors, timeline/video authoring, offline-first CRDT workspaces, or a client-owned virtual DOM. Use a dedicated client library via the API or plugin boundary when those are the core of your product.
 
 ## Search vocabulary
 
-`gofastr docs --grep` is substring search over the same embedded corpus exposed
-by the framework docs MCP tools. A term needs at least three characters (a
-shorter one exits with an error), and the command prints up to 50 hits, the
-most relevant topics first, saying so when there were more. A `#` line inside
-a code block is code, not a heading. Useful ecosystem terms for this guide
-include:
+Find this map offline with `gofastr docs --grep`:
 
 ```text
-reactive state
-client state
-optimistic UI
-rollback
-reconciliation
-live updates
-realtime
-event stream
-live dashboard
-mutation
-derived state
-cache invalidation
-server-driven UI
+reactive state · client state · optimistic UI · rollback · reconciliation
+live updates · realtime · event stream · live dashboard · mutation
+derived state · cache invalidation · server-driven UI
 ```
-
-Examples:
-
-```bash
-gofastr docs ui-capability-map
-gofastr docs --grep "live dashboard"
-gofastr docs --grep reconciliation
-gofastr docs --grep "reactive state"
-```
-
-## See also
-
-- [UI composition recipes](ui-composition-recipes.md) for product-shaped page
-  grammar after the architecture is chosen.
-- [UI components index](ui-new-components.md) for constructors and gallery routes.
-- [Interactive patterns](interactive-patterns.md) for RPC, optimistic, signal,
-  rollback, and reconciliation wiring.
-- [Optimistic UI](optimistic-ui.md) for the mutation lifecycle contract and
-  the seven composed recipes (toggle, inline edit, create, delete, kanban,
-  group mutex, slow/failure).
-- [Signal store](signal-store.md) for typed client projection and derived state.
-- [Runtime contract](runtime-contract.md) for the SSR/hydration/island/SSE
-  boundary.
-- [Events and SSE](events.md), [Presence](presence.md), and
-  [Scaling](scaling.md) for delivery and replica semantics.
 
 ## Common mistakes
 
-- **Starting from a component name.** State the job, truth owner, mutation
-  path, and delivery guarantee first; then choose components.
-- **Calling a signal durable state.** It is a UI projection. Persist business
-  truth on the server.
-- **Using SSE as mutation acknowledgment.** The initiating RPC response is the
-  acknowledgment and reconciliation channel.
-- **Assuming fanout makes process-held widget state stateless.** It only bridges
-  the push lane; reconstruct state or configure affinity.
-- **Promising durable realtime from the default event stream.** Default SSE is
-  latest-state delivery and can drop frames. Use queue/outbox for durable work.
-- **Choosing a client framework by reflex.** Use one when the product needs a
-  client-owned renderer, not to recreate an island or fragment swap already
-  covered by the runtime.
+- **Starting from a component name.** Decide truth ownership, mutation path, and delivery tier first; then pick components.
+- **Treating a signal as durable state.** Signals are UI projections; persist real data on the server.
+- **Using SSE to confirm the user's own click.** The initiating RPC response owns confirmation and rollback.
+- **Expecting `WithFanout` to make process-local state stateless.** Fanout bridges push frames, not in-memory structs.
+- **Reaching for React/Vue by habit.** Use a client SPA when the product genuinely needs a client-owned render graph, not for forms, tables, or island swaps the runtime already handles.

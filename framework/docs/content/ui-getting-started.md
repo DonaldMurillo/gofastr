@@ -1,153 +1,75 @@
 # UI getting started
 
-Running `gofastr init` scaffolds a themed, product-specific app built from framework primitives. This doc walks through the setup steps in order; you'll have a working app after each one.
-
-The module is published; `go mod tidy` resolves it from the Go module proxy. Pin a tagged release rather than tracking `main` (`go get github.com/DonaldMurillo/gofastr@latest` resolves the newest).
+GoFastr renders HTML on the server in plain Go and hydrates it in place with a small JS runtime—no React, Vue, or bundler required. This guide walks through scaffolding an app, building screens, customizing the theme, and composing real pages.
 
 ---
 
-## 1. Scaffold
+## 1. Scaffold and run
 
 ```bash
 gofastr init myapp
 cd myapp
-
-go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
-gofastr dev   # dev server with hot reload; edit a screen, the browser refreshes
+go mod tidy
+gofastr dev
 ```
 
-`gofastr dev` is the development loop: it watches `.go/.js/.css/.html/.md`,
-rebuilds, and auto-refreshes the browser. Plain `go run .` also works but
-never reloads; use it for one-shot checks, not iteration.
+`gofastr dev` watches your Go, CSS, JS, and HTML files, rebuilds on save, reloads the browser, and exposes dev MCP tools to your coding agent. (Plain `go run .` works for one-shot runs, but does not hot-reload.)
 
-Only add a `replace` directive pointing at a local checkout if you are
-hacking on the framework itself and want your app to pick up unreleased
-changes.
+Open <http://localhost:8080> to see the scaffolded home screen from `screens.go`. If you kept the default full-stack scaffold, `/api/posts` returns `401` until you create an account at `/register` and sign in at `/login` (pass `--no-entity` to `gofastr init` to skip the entity, auth screens, and database wiring).
 
-Visit <http://localhost:8080>; you should see a placeholder home page served by `screens.go`. The sample `posts` entity serves JSON at `/api/posts` and answers 401 until you sign in: create an account at `/register`, then sign in at `/login`. Registering does not sign you in, because `battery/auth` answers a new and an already-registered address with the same redirect.
+What `gofastr init` writes:
 
-Scaffold layout:
-
-```
+```text
 myapp/
-  main.go            # wires entities + battery/auth + adaptive framework theme + UI host
-  screens.go         # the home page you'll edit
-  screens_auth.go    # /login and /register over battery/auth's form endpoints
-  DESIGN.md          # product intent, hierarchy, composition, and mobile direction
-  entities/entities.go # Go-declared CRUD entities (served under /api)
-  migrations/.gitkeep # placeholder for versioned SQL migrations
-  static/.gitkeep    # placeholder for files you serve as-is
-  gofastr.settings.yml # enables worktree isolation and sets its port defaults
-  go.mod             # sets Go requirements and pins GoFastr to the CLI version when available
-  .env               # DATABASE_URL, JWT_SECRET, PORT=localhost:8080 (0600, gitignored)
-  .gitignore
-  CLAUDE.md          # AI-agent entry point (links to AGENTS.md + skill)
-  AGENTS.md          # Framework feature TOC with trigger phrases
-  .agents/           # Per-battery detail files linked from AGENTS.md
-  .claude/skills/gofastr-host/SKILL.md # Claude Code skill for framework conventions
+├── main.go              # app wiring, theme, UI host, Start()
+├── screens.go           # home screen
+├── screens_auth.go      # /login and /register (skipped with --no-entity)
+├── entities/entities.go # sample entity (skipped with --no-entity)
+├── migrations/
+├── DESIGN.md            # product hierarchy and layout notes
+├── gofastr.settings.yml
+├── .env
+└── AGENTS.md, CLAUDE.md, .agents/   # coding-agent onboarding
 ```
 
-`gofastr docs` lists every framework reference doc embedded in the
-binary; `gofastr docs --grep <term>` searches them. No internet needed.
-`gofastr docs ui-new-components` is the component catalog. For a
-component's exact config fields or a token's constants, ask `go doc`
-from the app directory; it reads the pinned module, so the answer
-matches the version you build against:
+Tip: browse every component offline with `gofastr docs ui-new-components`, or inspect exact struct fields directly from your pinned module with `go doc`:
 
 ```bash
-go doc github.com/DonaldMurillo/gofastr/framework/ui StatStripConfig
-go doc -all github.com/DonaldMurillo/gofastr/framework/ui Gap   # GapXS … Gap2XL
+go doc github.com/DonaldMurillo/gofastr/framework/ui CardConfig
+go doc -all github.com/DonaldMurillo/gofastr/framework/ui Gap
 ```
-
-In Go tests, serving the UI host through `httptest.NewServer(app.Router())`
-returns HTTP 500 when rendering recovers a component or layout panic.
-Full pages, navigation partials, fills envelopes, and deferred parts keep
-their existing fallback body, but cannot pass a status-200 assertion.
-Production and `gofastr dev` keep their existing status and log the panic.
-`framework.TestHarness` additionally reports the panic directly to its test;
-generated browser tests check the child server's logs.
 
 ---
 
-## 2. Customize the theme
+## 2. Build a screen
 
-A fresh scaffold already mounts the canonical adaptive theme:
+A screen is a Go struct with a `Render()` method returning `render.HTML`, plus optional metadata methods (`ScreenTitle`, `ScreenDescription`, `ScreenType`).
 
-```go
-import uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
-
-site := app.NewApp("myapp").WithTheme(uitheme.Default())
-```
-
-That default includes complete light and dark semantic palettes, so
-`ui.ThemeToggle` and the OS preference work without more setup. For small brand
-changes, pass `uitheme.Overrides` to `Default`.
-Set `Overrides.Dark` alongside any brand color that should also change in
-dark mode — the same typed colour fields, under `Dark: &uitheme.Overrides{…}`;
-light values are not copied automatically because their contrast may
-not be safe on dark surfaces.
-
-An app whose own styling assumes light tokens can stay light-only while it
-audits dark mode:
-
-```go
-t := uitheme.Default()
-t.DarkColors = nil // opt out of the adaptive dark palette
-site := app.NewApp("myapp").WithTheme(t)
-```
-
-When the app needs to own the whole palette, run:
-
-```bash
-gofastr theme init
-```
-
-This writes `theme/theme.go`, a typed `style.Theme` literal with the
-framework's complete light and dark defaults inline. **You own this file
-forever**; the framework never regenerates it.
-
-Then replace the canonical theme in `main.go`:
-
-```go
-import "myapp/theme"
-
-site := app.NewApp("myapp").WithTheme(theme.App)
-```
-
-`app.WithTheme` auto-derives token names from struct paths (`Colors.PrimaryFg`
-→ `--color-primary-fg`) and validates that every required token has a value.
-Keep the generated `DarkColors` complete when changing brand colors; rendering
-`ui.ThemeToggle` with a light-only custom theme produces an incomplete scheme.
-Booting with a half-populated typed theme panics at startup with a field path
-naming the missing piece.
-
-With `gofastr dev` running, visit <http://localhost:8080/__gofastr/app.css> to confirm your tokens are emitted as `:root` custom properties; token edits hot-reload like any other change.
-
----
-
-## 3. Add a second screen
-
-A screen is just a Go type implementing `component.Component`. Add `screens/about.go`:
+Prefer the typed `core-ui/html` builders (`html.Div`, `html.Heading`, `html.Paragraph`) and `framework/ui` components over raw `render.Tag`—typos become compile errors instead of broken markup:
 
 <!-- gofastr:compile
 -->
 ```go
-package screens
+package main
 
 import (
-    "context"
+	"context"
 
-    "github.com/DonaldMurillo/gofastr/core-ui/app"
-    "github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type AboutScreen struct{}
 
 func (a *AboutScreen) Render() render.HTML {
-    return render.Tag("div", nil,
-        render.Tag("h1", nil, render.Text("About")),
-        render.Tag("p", nil, render.Text("Built with GoFastr.")),
-    )
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
+		ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text("About")),
+			html.Paragraph(html.TextConfig{}, render.Text("Built with GoFastr.")),
+		),
+	)
 }
 
 func (a *AboutScreen) ScreenTitle(ctx context.Context) string       { return "About" }
@@ -155,608 +77,201 @@ func (a *AboutScreen) ScreenDescription(ctx context.Context) string { return "" 
 func (a *AboutScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 ```
 
-> **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**
-> `render.Tag` works, but it's the escape hatch; the typed vocabulary in
-> [`core-ui/html`](../../../core-ui/html) (`html.Div`, `html.Heading`,
-> `html.Paragraph`, …) gives you a config struct per tag with named fields
-> for the common attributes, so editors autocomplete them and typos surface
-> as compile errors. Use `render.Tag` only for cases the typed vocab doesn't
-> cover.
->
-> Before (raw):
->
-> ```go
-> render.Tag("h1", map[string]string{"class": "title"}, render.Text("About"))
-> ```
->
-> After (typed):
->
-> ```go
-> html.Heading(html.HeadingConfig{Level: 1, Class: "title"}, render.Text("About"))
-> ```
->
-> Composition intent (a card, a hero, a data table, a form field) lives one
-> layer up in [`framework/ui`](../../../framework/ui); see
-> [ui-composition-recipes](ui-composition-recipes.md).
-
-`html.IFrame` is sandboxed unless told otherwise. `Src` and `Title` are
-required, and the constructor panics without them. An empty `Sandbox`
-renders `sandbox=""`, which applies every restriction (no scripts, no
-forms, a unique origin); name the tokens to lift, such as
-`Sandbox: "allow-scripts"`, or set `Unsandboxed` for a frame of the
-app's own trusted pages. `Src` goes through the resource URL policy, so
-a `javascript:` or other refused URL renders the frame with no `src`.
-`ExtraAttrs` cannot set `src`, `srcdoc`, `sandbox` or `title`.
-
-```go
-html.IFrame(html.IFrameConfig{Src: "/admin/_email/welcome", Title: "Welcome email"})
-```
-
 Register it in `main.go`:
 
 ```go
-site.Register("/about", &screens.AboutScreen{}, nil)
+site.Register("/about", &AboutScreen{}, nil)
 ```
 
-The `ScreenTitle/Description/Type` triple is the optional `ScreenSpec` interface; `app.Register` reads metadata from it. Cross-page nav is client-side by default (no hard reload) once `runtime.js` is on the page.
+Cross-page links navigate client-side automatically with no full page reload once `runtime.js` is loaded.
 
-### Reaching the request context from `Render`
+### Reading the request context and database
 
-If a screen needs the live request context (typical case: auth-aware
-chrome that branches on `auth.SessionFrom(ctx)`), implement
-`RenderCtx(ctx)` and embed `component.ContextOnly` so the type still
-satisfies the `Component` interface:
+When a screen needs the current user (`auth.SessionFrom(ctx)`) or database (`framework.DBFromContext(ctx)`), embed `component.ContextOnly` and implement `RenderCtx(ctx)` (and optionally `Load(ctx)` for data fetching):
 
 ```go
-import (
-    "context"
-    "github.com/DonaldMurillo/gofastr/core-ui/component"
-    "github.com/DonaldMurillo/gofastr/battery/auth"
-)
-
-type AboutScreen struct {
-    component.ContextOnly  // provides a stub Render() so Component is satisfied
+type DashboardScreen struct {
+	component.ContextOnly
+	items []string
 }
 
-func (a *AboutScreen) RenderCtx(ctx context.Context) render.HTML {
-    sess, _ := auth.SessionFrom(ctx)
-    return Chrome(sess, ...)
+func (s *DashboardScreen) Load(ctx context.Context) error {
+	db, ok := framework.DBFromContext(ctx)
+	if !ok {
+		return errors.New("no DB on context")
+	}
+	// query db using ctx...
+	return nil
+}
+
+func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
+	sess, _ := auth.SessionFrom(ctx)
+	return renderDashboard(sess, s.items)
 }
 ```
 
-The framework prefers `RenderCtx` whenever it's defined and never
-calls the stub `Render` provided by `ContextOnly`. Existing
-`Render()`-only screens keep working unchanged; `ContextOnly` is just
-a convenience for the ctx-aware pattern.
+When the app has a DB configured, `App.DBContextMiddleware()` attaches `*sql.DB` to every request automatically (`framework.WithDBContext` injects it in tests).
 
-### Path space: avoid colliding with entity CRUD
+---
 
-Every entity you register automatically claims its own URL space for
-REST CRUD: an entity named `foods` mounts `GET/POST /foods`, `GET/PUT/PATCH/DELETE
-/foods/:id`, plus `/foods/llm.md`. If you also register a screen at `/foods`,
-the two routes collide and registration fails with a message naming the
-entity, the screen route it collides with, and the ways out: a different
-page path, a renamed table, or `framework.WithAPIPrefix`.
+## 3. Customize the theme
 
-The cleanest convention is to give screens their own noun space, even when
-the screen *describes* an entity:
-
-| Entity (auto CRUD)     | Matching UI screens                          |
-|------------------------|----------------------------------------------|
-| `foods`                | `/library`, `/library/:slug`                 |
-| `triggers`             | `/my-triggers`, `/my-triggers/:id`           |
-| `journal_entries`      | `/journal`, `/journal/:date`                 |
-
-Or scope all of CRUD under an API prefix (e.g. `/api/foods`) and reserve the
-unprefixed namespace for UI: set `framework.AppConfig{APIPrefix: "/api"}` (or
-the `framework.WithAPIPrefix("/api")` option); see
-[entity-declarations](entity-declarations.md) → "Mounting under a prefix".
-
-### Dynamic routes and parameters
-
-A route segment written as `:name` or `{name}` is dynamic: it matches any
-single path segment and arrives in the screen through `SetParams`:
+Every scaffold starts with the adaptive light + dark default theme:
 
 ```go
-site.Register("/products/:slug", &ProductScreen{}, nil)
+import uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+
+site := app.NewApp("myapp").WithTheme(uitheme.Default())
+```
+
+For quick brand tweaks, pass `uitheme.Overrides` (include `Dark` overrides for any brand color that should also adapt in dark mode):
+
+```go
+t := uitheme.Default(uitheme.Overrides{
+	Primary: "oklch(0.55 0.18 250)",
+	Dark:    &uitheme.Overrides{Primary: "oklch(0.75 0.15 250)"},
+})
+site := app.NewApp("myapp").WithTheme(t)
+```
+
+To own the entire token palette in plain Go, run:
+
+```bash
+gofastr theme init
+```
+
+This writes `theme/theme.go` with every light and dark token populated. **You own this file**—swap `uitheme.Default()` for `theme.App` in `main.go`, or run `gofastr theme edit` to tweak tokens live in your browser. Visit <http://localhost:8080/__gofastr/app.css> while `gofastr dev` is running to inspect the generated `:root` CSS variables.
+
+---
+
+## 4. Compose pages and navigation
+
+Build screens from `framework/ui` primitives instead of writing custom CSS. For full desktop/mobile patterns, see [UI composition recipes](ui-composition-recipes.md).
+
+```go
+func (s *OverviewScreen) Render() render.HTML {
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide},
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+			ui.RecordSummary(ui.RecordSummaryConfig{
+				Eyebrow:     "Operations · East hub",
+				Title:       "12 shipments need a decision",
+				Description: "Resolve today's exceptions before the carrier cutoff.",
+				Highlight: ui.Callout(
+					ui.CalloutConfig{Title: "Next decision · 15:20"},
+					render.Text("Approve the alternate carrier for ORD-1842."),
+				),
+				Metrics: ui.MetricBand(ui.MetricBandConfig{Items: []ui.MetricBandItem{
+					{Label: "Ready", Value: "184", Hint: "up 12 today"},
+					{Label: "At risk", Value: "12", Hint: "carrier cutoff"},
+					{Label: "Blocked", Value: "3", Hint: "owner assigned"},
+				}}),
+				Actions: ui.LinkButton(ui.LinkButtonConfig{
+					Label: "Review next exception", Href: "/exceptions/ord-1842",
+				}),
+				Tone: ui.RecordSummaryToneWarning,
+			}),
+			ui.Section(ui.SectionConfig{
+				Heading:     "Exceptions requiring attention",
+				Description: "Prioritized by promised ship time.",
+			}, exceptionTable()),
+		),
+	)
+}
+```
+
+For navigation shells:
+
+- **Top bar (marketing / docs / app header):** run `gofastr generate package siteheader` to copy the canonical responsive header (brand, nav, CTA, theme toggle, accessible mobile drawer) into your repo as owned code.
+- **App sidebar:** pair `ui.Sidebar` for desktop with `ui.MountSidebar` for the mobile drawer.
+
+---
+
+## Reference: routing & path space
+
+### Path space
+
+If you use auto-CRUD entities, each entity claims its own URL prefix (e.g. `foods` mounts `/foods`, `/foods/:id`, and `/foods/llm.md`). Registering a UI screen on the same path fails loudly at boot.
+
+Either put CRUD behind an API prefix (`framework.WithAPIPrefix("/api")`—the `gofastr init` default) or give screens distinct paths (`/library` for the `foods` entity).
+
+### Dynamic routes, catch-alls, and constraints
+
+Parameters use `:name` or `{name}` and arrive decoded in `SetParams` (omitting `SetParams` on a dynamic screen panics at startup):
+
+```go
+site.Register("/products/{slug}", &ProductScreen{}, nil)
+site.Register("/orders/{id:int}", &OrderScreen{}, nil)      // :int, :uuid, :alpha, :alnum
+site.Register("/docs/{path...}", &DocScreen{}, nil)         // trailing catch-all (≥1 segment)
 
 type ProductScreen struct{ slug string }
-
 func (s *ProductScreen) SetParams(p map[string]string) { s.slug = p["slug"] }
 ```
 
-The value arrives decoded, and the router splits the escaped path, so a
-segment may hold `/`: `/products/a%2Fb` gives `slug` the value `a/b`.
-`app.RoutePath` turns an escaped path into the form `Router.Resolve`
-matches (decoded, with a segment's `/` and `%` still `%2F` and `%25`),
-and `app.EscapeRoutePath` turns it back.
+Dynamic routes match in registration order (first match wins). For optional segments, register the same component on both routes (`/{locale}/pricing` and `/pricing`).
 
-Both `:slug` and `{slug}` are the same route; the framework normalizes the
-brace form to the colon form at registration. A trailing slash on a dynamic
-pattern is dropped there too, so `/products/:slug/` is `/products/:slug`
-everywhere a pattern is compared: `ScreenByPattern`, intercept origins and
-the route manifest. If a dynamic route's screen
-does **not** implement `SetParams`, the app panics at startup; the
-parameters would otherwise be silently dropped. The contract is enforced at
-boot, never at request time.
+### Redirects
 
-**Catch-all segments.** A trailing `{path...}` (or `:path*`) matches one or
-more remaining segments, joined with `/`:
+Declare permanent (`308`) redirects with `Redirect` or `RedirectPattern`:
 
 ```go
-site.Register("/docs/{path...}", &DocScreen{}, nil)
-// /docs/a       -> path = "a"
-// /docs/a/b/c   -> path = "a/b/c"
-// /docs         -> no match (a catch-all needs at least one segment)
+site.Redirect("/old-pricing", "/pricing")
+site.RedirectPattern("/legacy/{id}", "/orders/{id}")
 ```
 
-A catch-all must be the final segment; anything else panics at registration.
-A root catch-all such as `/{path...}` does not match `/`: its remainder
-must also be nonempty. Redirect patterns follow the same rule.
-Among dynamic routes, registration order decides which one wins (first match
-wins); there is no specificity ranking, so register the more specific
-pattern first.
+Query strings are preserved, chains collapse to one hop, and targets must be relative same-app paths (open-redirect guard).
 
-**Typed constraints.** Append `:int`, `:uuid`, `:alpha`, or `:alnum` to a
-segment to restrict what it matches. A value that fails the constraint makes
-the route not match, so it falls through to the next route (and 404s if
-nothing matches):
+Because redirects are consulted **before** screen resolution, a redirect whose `from` overlaps a registered screen, dynamic or exact, panics at registration (and vice versa). Param names are irrelevant, so `/users/{n:int}` overlaps `/users/{id}`, while disjoint constraints (`{n:int}` vs `{h:alpha}`) coexist. A pattern redirect overlaps an exact screen the same way: `/old/{x}` covers the literal path `/old/special`, so registering both panics in either order. An exact redirect may still shadow one concrete path of a dynamic screen.
 
-```go
-site.Register("/orders/{id:int}", &OrderScreen{}, nil)   // ASCII digits
-site.Register("/u/{id:uuid}", &UserScreen{}, nil)        // canonical UUID
-site.Register("/u/{handle:alnum}", &ProfileScreen{}, nil) // letters + digits
-```
+### Intercepting routes (drawers & sheets)
 
-`alpha` is ASCII letters only; `alnum` adds digits, useful for handles and
-slugs so a segment with punctuation (`avatar.png`) falls through instead of
-reaching the screen. There is deliberately no `string` constraint: every
-param is a string already, so it would be an unconstrained no-op under a
-misleading name.
-
-A constraint tests the percent-decoded segment, so `/orders/%31` matches
-`{id:int}`; a segment that is not valid percent-encoding is tested as
-written. The client router looks a link up with the same tests on the same
-decoded value, so a click resolves to the route the server will serve.
-
-The constraint suffix is stripped from the parameter name: `SetParams`
-receives `id`, not `id:int`. A constraint on a catch-all segment, or an
-unknown constraint name, panics at registration.
-
-**Optional segments: register twice.** There is no optional-segment syntax.
-To serve both `/{locale}/pricing` and `/pricing` from one component, register
-it on both routes:
-
-```go
-site.Register("/{locale}/pricing", &PricingScreen{}, nil)
-site.Register("/pricing", &PricingScreen{}, nil)
-```
-
-The component is shared; on the bare `/pricing` route `SetParams` simply will
-not receive a `locale` key, so handle the missing key inside `SetParams`.
-
-**Redirects.** `Redirect` and `RedirectPattern` declare permanent (308)
-redirects at registration:
-
-```go
-site.Redirect("/old-pricing", "/pricing")            // exact path
-site.RedirectPattern("/legacy/{id}", "/orders/{id}") // param passthrough
-```
-
-A hard GET of the `from` path is 308-redirected to the resolved `to` path;
-on client-side navigation the runtime follows the redirect. The
-request's query string rides along (`/old-pricing?plan=pro` →
-`/pricing?plan=pro`); a key the target sets itself wins. Chains
-(`/a → /b → /c`) collapse to one hop; a cycle fails closed to a 404. The
-target must be a relative same-app path (an absolute URL panics;
-open-redirect guard), and every parameter referenced in `to` must be
-declared in `from`. The `from` pattern obeys the same grammar as a route
-(constraints, trailing catch-all). A one-segment parameter holding `/`
-or `%` is written back as `%2F` or `%25`, so it stays one segment of
-the target. A catch-all passthrough preserves the source's segment
-boundaries too: `/docs/red%2Foak/leaves` redirected through
-`/docs/{rest...}` to `/help/{rest...}` becomes
-`/help/red%2Foak/leaves`, not `/help/red/oak/leaves`. Literal percent
-signs remain encoded exactly once. Matching still decodes segments for
-literal and constraint checks, so a resolved target holding a C0 control
-byte or DEL (tab, CR and LF
-included) is no redirect: the request falls through to the router, which
-answers 404 when no screen matches. A browser deletes tab, CR and LF from
-a `Location` before parsing it, so `/old/%09/evil.example` substituted
-into `/{rest...}` would otherwise read as `//evil.example`. A registered
-target holding a control byte panics, and every `Location` the host
-writes percent-encodes any control byte that reaches it.
-
-Because redirects are consulted **before** screen resolution, a redirect
-whose `from` **overlaps** a registered screen, dynamic or exact, panics
-at registration (and vice versa). Param names are irrelevant, so
-`/users/{n:int}` overlaps `/users/{id}`, while genuinely disjoint
-constraints (`{n:int}` vs `{h:alpha}`) coexist. A *pattern* redirect
-overlaps an exact screen the same way: `/old/{x}` covers the literal
-path `/old/special`, so registering `/old/special` as a screen after a
-`/old/{x}` redirect panics too, in either registration order;
-`ResolveRedirect` runs before screen resolution and would 308 the screen
-away forever with no diagnostic. An *exact* redirect may still shadow
-one concrete path of a dynamic screen, per the router's normal exact-first
-rule. Redirect entries appear in `Routes()` with a non-empty
-`RedirectTo`; they render no page, so static export, sitemap, and llm.md
-skip them.
-
-**Intercepting routes: a detail that opens over its list.** Clicking a row
-should slide the detail over the list; the detail URL should still be a real
-page you can share, index, and refresh. `InterceptFrom` gives you both from
-one registration:
+Use `app.InterceptFrom` when a detail route should slide over its list as a drawer during in-app navigation, while staying a full shareable SSR page on direct load or refresh:
 
 ```go
 site.Register("/products", &ProductList{}, nil)
 site.Register("/products/{id}", &ProductScreen{}, nil,
-    app.InterceptFrom("/products", app.ScreenDrawer))   // or ScreenSheet
+	app.InterceptFrom("/products", app.ScreenDrawer)) // or app.ScreenSheet
 ```
 
-Both `InterceptFrom` and the `Screen.Intercept` field accept brace or colon
-parameters in `From` and `AlsoFrom`, including typed parameters and catch-alls.
-All registration paths, including screen groups, normalize those origins.
-An empty or relative origin, or a presentation other than `ScreenDrawer` or
-`ScreenSheet`, panics at registration. At mount, every origin must name a
-registered screen pattern; a missing origin panics rather than silently
-falling back to a full page.
-
-`/products/42` stays an ordinary page. A hard load, a refresh, an external
-link, or a soft navigation from anywhere else renders it in full; the deep
-link remains the canonical render, and SSR-first is untouched. Only a
-soft navigation that **started on `/products`** presents it as a drawer over
-the list, which stays mounted underneath. Back, Escape, and the backdrop all
-close it through one history entry, so returning to the list costs no
-refetch and keeps its scroll position.
-
-An open native modal dialog takes Escape and Tab before its surrounding drawer.
-When the browser does not support the `:modal` selector, the drawer still
-handles Escape and traps both forward and reverse Tab instead of throwing.
-
-One `RenderCtx` serves both presentations; the overlay is the same render
-with drawer scaffolding around it, so there is no second code path to keep in
-sync. Put `data-cui-intercept-close` on a button inside the screen and it
-closes the drawer when the render is an overlay, and does nothing on the
-standalone page.
-
-The **server decides**. The runtime asks for the overlay and reports where it
-navigated from; the framework re-resolves that origin against the route table
-and only agrees when the screen actually declared it. A forged header changes
-the wrapper element and nothing else, because policy, params, `Load`, and
-content are identical on both paths. The origin is compared by resolved
-screen, so `/products?page=2&sort=name` still counts as the list.
-
-Related records stack. An intercepted link clicked inside an open
-drawer opens its target as a new drawer over the current one — declare
-it the same way, with the screen below as the origin:
-
-```go
-site.Register("/customers/{id}", &CustomerScreen{}, nil,
-    app.InterceptFrom("/invoices/{id}", app.ScreenDrawer))
-```
-
-At most four drawers sit on top of each other, each a step narrower
-than the one under it so the lower ones show as a dimmed strip; a fifth
-open is refused with a toast and changes nothing. Lower drawers keep
-their DOM — unsaved edits survive — and go inert; Back,
-Escape and the close button close only the top one and hand focus back
-to the control that opened it. A link that changes only the drawer's
-own query (`?sort=…&page=…`) re-renders inside the drawer instead of
-navigating the page under it.
-
-A screen can open over more than one page. Patterns after the
-presentation are more origins (`Intercept.AlsoFrom`); a create form that
-opens over its list and over the customer whose Related tab adds to it:
-
-```go
-site.Register("/invoices/create", &CreateInvoice{}, nil,
-    app.InterceptFrom("/invoices", app.ScreenDrawer, "/customers/{id}"))
-```
-
-Origin patterns accept brace or colon parameters and are normalized like
-screen paths. Every origin must name a registered screen; the UI host
-refuses unknown origins at mount, after all screens are registered.
-Standalone hosts call `Router.ValidateIntercepts` before serving requests.
-
-Inside an overlay render, `app.OverlayOriginFromContext(ctx)` returns
-the path of the page the drawer opened over ("" on the full page). Make
-it the form's success navigation and the save returns there: the drawer
-closes, the page under it re-renders with the new row, and Back walks
-history as it was before the drawer opened. A save whose navigation
-names the drawer's own path keeps the drawer and refreshes it. Any other
-destination navigates as usual.
-
-`app.OverlayOriginQueryFromContext(ctx)` returns that page's query, as
-`url.Values` (nil on the full page or when there is none): the list's
-sort and filter a drawer opened over. The client names it, so treat it
-as the list treats its own URL, never as trusted input.
-
-```go
-dest := "/invoices"
-if o := app.OverlayOriginFromContext(ctx); o != "" {
-    dest = o
-}
-attrs := interactive.Post("/api/invoices").OnSuccess(interactive.Navigate(dest)).Attrs()
-```
-
-Put `data-hui-leave-guard` on a form whose unsaved edits should ask
-before the user leaves them (the record form is the usual case): while
-the form is changed, following a link away from it, going Back past
-it, closing its drawer with Escape, and reloading the page all ask
-first. Opening a related record in a drawer over it does not ask: the
-form stays where it was, edits included. The form cleans itself on
-a successful submit or a reset. The question opens in the kit's
-confirm dialog: Cancel keeps the edits, Discard drops them and makes
-the move. `data-hui-leave-guard-message` carries its words (the
-default is the translated `headless.leave_guard` phrase,
-"You have unsaved changes." in English), and
-`data-hui-leave-guard-title` and `data-hui-leave-guard-accept` its
-title and accept label (`ui.FormConfig.LeaveGuard`, `LeaveGuardTitle`
-and `LeaveGuardAccept` write all three). A page without the kit's
-dialog asks with the browser's own prompt.
-
-Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
-only when some route declares an intercept), and the runtime module loads
-only when the route manifest contains one; an app with no intercepting
-routes carries neither.
-
-Reach for this only when the detail deserves its own page. When the overlay
-is the *only* way to see that content and the URL should stay on the list,
-you want a widget deep link instead (`?modal=user-edit&user_id=42`; see
-[Interactive patterns](interactive-patterns.md)); when a region of the page
-should survive a refresh, you want
-[pane-host deep-linking](pane-host.md#deep-linking-a-pane-pane). Working
-example: `examples/site/screen_catalog.go`.
-
-### Accessing the database from a screen
-
-A screen's `Render(ctx)` / `Load(ctx)` needs a way to reach the same `*sql.DB`
-the framework already holds. The current idiom is a **package-level handle
-captured at `main()` time**:
-
-<!-- gofastr:compile
-import "database/sql"
--->
-```go
-// in package screens (or wherever your screens live)
-var dbHandle *sql.DB
-
-func Init(db *sql.DB) { dbHandle = db }
-```
-
-```go
-// main.go
-db := openDB()
-site := app.NewApp("myapp")
-site.WithDB(db)               // framework also holds it for auto-CRUD
-screens.Init(db)              // hand the same handle to your screens
-```
-
-```go
-// screens/library.go
-func (s *LibraryScreen) Load(ctx context.Context) error {
-    rows, err := dbHandle.QueryContext(ctx, "SELECT id, name FROM foods")
-    ...
-}
-```
-
-This is deliberately simple: a single shared handle, no DI container, no
-reflection. It's fine for one app, but it couples screens to that package-level
-handle, which is awkward for shared screens.
-
-**Preferred: pull the DB from the request context.** When the app has a DB
-configured, the framework auto-installs `App.DBContextMiddleware()` into the
-default chain, so any screen can reach the same `*sql.DB` without a global:
-
-```go
-// screens/library.go
-func (s *LibraryScreen) Load(ctx context.Context) error {
-    db, ok := framework.DBFromContext(ctx) // the app's *sql.DB, no global handle
-    if !ok {
-        return errors.New("no DB on context")
-    }
-    rows, err := db.QueryContext(ctx, "SELECT id, name FROM foods")
-    ...
-}
-```
-
-This keeps screens package-portable. (`framework.WithDBContext(ctx, db)` is the
-manual injector behind the middleware, useful in tests.) The package-level
-handle above still works and remains the simplest path for a single app.
+One `RenderCtx` serves both views. Inside an overlay, `app.OverlayOriginFromContext(ctx)` returns the page underneath so a form save can navigate back and refresh it. Up to four drawers can stack, and setting `LeaveGuard: "You have unsaved changes."` on `ui.FormConfig` warns before discarding unsaved edits.
 
 ---
 
-## 4. Compose a product-specific screen
+## Reference: core primitives & `ExtraAttrs`
 
-Open `DESIGN.md` before selecting components. Name the primary user and task,
-the dominant element on each route, the intended density and hierarchy, and
-what mobile keeps, condenses, or moves. Then choose the closest composition
-built from framework components:
+Small primitives in `framework/ui` cover everyday layout and controls (each loads its own CSS on demand):
 
-```bash
-gofastr docs ui-composition-recipes
-```
+- **Layout:** `Stack`, `Cluster`, `Grid`, `Center`, `Spacer`, `Box`
+- **Surfaces & media:** `Card`, `Divider`, `OptimizedImage` (`Width` + `Height` required to prevent layout shift)
+- **Controls & feedback:** `Checkbox`, `Radio`, `Switch`, `FileUpload`, `Tag`, `Tooltip`, `Spinner`
+- **Sandboxed embeds:** `html.IFrame` requires `Src` and `Title` and defaults to `sandbox=""` (pass `Sandbox` tokens or `Unsandboxed: true` for trusted same-app pages)
 
-For example, a focused operational page can lead with one compact decision
-summary and a flat signal band, then continue into the primary work region
-without host-owned CSS:
+### Attribute pass-through (`ExtraAttrs`)
 
-```go
-func (s *OverviewScreen) Render() render.HTML {
-    return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide},
-        ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-            ui.RecordSummary(ui.RecordSummaryConfig{
-                Eyebrow:     "Operations · East hub",
-                Title:       "12 shipments need a decision",
-                Description: "Resolve today's exceptions before the carrier cutoff.",
-                Highlight: ui.Callout(
-                    ui.CalloutConfig{Title: "Next decision · 15:20"},
-                    render.Text("Approve the alternate carrier for ORD-1842."),
-                ),
-                Metrics: ui.MetricBand(ui.MetricBandConfig{Items: []ui.MetricBandItem{
-                    {Label: "Ready", Value: "184", Hint: "up 12 today"},
-                    {Label: "At risk", Value: "12", Hint: "carrier cutoff"},
-                    {Label: "Blocked", Value: "3", Hint: "owner assigned"},
-                }}),
-                Aside: ui.Muted(render.Text("East hub · Mina leads")),
-                Actions: ui.LinkButton(ui.LinkButtonConfig{
-                    Label: "Review next exception", Href: "/exceptions/ord-1842",
-                }),
-                Tone: ui.RecordSummaryToneWarning,
-            }),
-            ui.Section(ui.SectionConfig{
-                Heading:     "Exceptions requiring attention",
-                Description: "Prioritized by promised ship time.",
-            }, exceptionTable()),
-        ),
-    )
-}
-```
-
-The optional `Aside` becomes a bounded support rail on wide screens. The
-natural-width `Actions` slot lives in that lead region and precedes the compact
-aside context on phones, keeping the primary path early. Keep the opening
-description to one or two sentences, keep the highlight to one decision plus
-one short condition, and move the full narrative below the summary.
-
-Use realistic content while composing; placeholder repetition hides hierarchy
-and density problems. Render the page at desktop and mobile widths, inspect the
-pixels, and revise `DESIGN.md` or the composition if the primary task is not
-obvious. If the framework lacks a reusable primitive, layout, token, or variant,
-add it upstream to `framework/ui` or `core-ui`; a GoFastr host app does not add a
-local stylesheet or hand-roll structural markup.
-
----
-
-## 5. Add responsive navigation
-
-Choose the navigation primitive that matches the product shell:
-
-- A site's top bar is its own package: `gofastr generate package
-  siteheader` copies the canonical one into the app (brand, nav, call
-  to action, theme toggle, and a `headless.Disclosure` phone menu that
-  traps focus and closes on Escape, on a link tap and on navigation)
-  and it is yours to change. Its owned sheet reads tokens for every
-  dimension. See the marketing-site recipe in
-  [UI composition recipes](ui-composition-recipes.md).
-- `ui.Sidebar` provides the desktop rail; pair the same `SidebarConfig` with
-  `ui.MountSidebar` for the framework-owned mobile drawer.
-- `ui.Responsive` is for cases where mobile needs a genuinely different
-  priority or order, not merely narrower columns.
-
-See [UI wiring](ui-wiring.md) for the complete mount pattern and
-[UI components](ui-new-components.md) for the navigation configs. Do not
-hand-roll a `<details>` menu with its own script: `headless.Disclosure`
-already carries the focus, Escape and close-on-navigation contract.
-
----
-
-## Next
-
-- Section-level theme overrides (`framework/ui.Themed`), dark mode, and the token catalog: see [theming](theming.md)
-- Islands (in-page state changes without a route change): the cookbook is [interactive-patterns](interactive-patterns.md) (incl. "Writing a hand-written island, end to end"); the underlying model is [runtime-contract](runtime-contract.md) "The four scenarios"
-- The full `data-cui-*` primitive table is in [runtime-contract](runtime-contract.md)
-- Component catalog (Layout, Card, Tooltip, Toggle, Spinner, …) is in [ui-new-components](ui-new-components.md)
-
-For a complete worked example, read `examples/site/main.go` (route registration + widget mounts) and `examples/site/components.go` (every framework/ui component demonstrated).
-
-## Primitives reference
-
-The `framework/ui` package ships ten small primitives that cover the
-boring decisions every UI makes. Each emits one stylesheet, loads
-on first appearance, and is dogfooded under `/components/<slug>` on
-the example website:
-
-- `Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`: six
-  spatial wrappers covering vertical stacking, horizontal flow, CSS
-  grid, centring, flex filler, and padded surface. `Cluster` wraps by default;
-  set `ClusterConfig.NoWrap` only for compact chrome guaranteed to fit.
-  `ClusterConfig.Shrink` lets a no-wrap row narrow below its content,
-  its last child taking the squeeze (a breadcrumb trail beside a menu
-  button).
-- `Card`: labelled `<section>` with header / body / footer slots
-  and elevated / outlined / flat / interactive variants.
-- `OptimizedImage`: responsive `<picture>` with `srcset`, lazy
-  loading, and mandatory `Width`+`Height` (no silent CLS).
-- `Checkbox` / `Radio` / `Switch`: labelled, FieldErrors-aware
-  native inputs.
-- `Tooltip`: CSS-only hover/focus reveal with auto-wired
-  `aria-describedby`.
-- `Tag`: interactive pill (filter-link or × dismiss), status-coded.
-- `Spinner`: inline `role="status"` indicator with ring / dots
-  variants and reduced-motion fallback.
-- `Divider`: native `<hr>` for plain horizontal; `role="separator"`
-  for vertical / labelled (e.g. "OR" between options).
-- `FileUpload`: drag-drop zone over a native `<input type="file">`,
-  bound by the headless module's `data-hui-drop` hooks.
-
-The matching widget preset is `preset.Popover`, a click-triggered
-anchored surface without backdrop dim or focus trap. Closes on ESC
-and click-outside.
-
-## Attribute pass-through (`ExtraAttrs`)
-
-Every component `Config` carries an `ExtraAttrs html.Attrs` field that
-forwards additional attributes to the component's root element — the
-one that carries `data-cui-comp`. Use it for `data-*` test hooks,
-analytics markers, and ARIA overrides:
+Every component config includes `ExtraAttrs html.Attrs` for forwarding `data-*` hooks, analytics markers, or ARIA attributes to the component's root element:
 
 ```go
 ui.Card(ui.CardConfig{
-    Heading:    "Revenue",
-    ExtraAttrs: html.Attrs{"data-test": "revenue-card"},
+	Heading:    "Revenue",
+	ExtraAttrs: html.Attrs{"data-test": "revenue-card"},
 })
 ```
 
-Keys the component owns are dropped, case-insensitively: `class` and
-`id` (use the `Class` / `ID` config fields), every `data-cui-*` key
-(reserved for runtime wiring), and behavior-critical attributes the
-component derives from its config (`href` on linked roots, `type` /
-`name` on form controls). When the root shape varies by config — a
-linked Card renders `<a>` instead of `<section>` — the attributes
-follow whichever root is emitted.
+Attributes owned by the component (`class`, `id`, behavior attributes like `href`/`type`/`name`, and reserved `data-cui-*` keys) are stripped automatically. Two deliberate carriers allow wiring attributes through: `LinkConfig` keeps `data-cui-*` (except `data-cui-comp`) for action links, and `ButtonConfig` accepts the typed `interactive.Action.Attrs()` keys for click RPCs.
 
-Two documented exceptions forward more than the contract's default.
-`FormConfig` forwards raw: its ExtraAttrs may override the form's own
-attributes, which the app generator's `data-entity-form` +
-RPC-wiring pattern relies on. `LinkConfig` is a *wiring carrier*: it
-drops its owned keys like any component but keeps `data-cui-*` — except
-`data-cui-comp`, the style-scope marker, which drops case-insensitively
-— so an ActionRef link ships an href fallback plus a `data-cui-rpc`
-upgrade. `ButtonConfig` admits only the typed Action vocabulary: the
-`data-cui-*` keys `interactive.Action.Attrs()`, `OpenOnClick` and
-friends produce, listed under **button** in
-[UI components index](ui-new-components.md). Attaching those to a button's
-ExtraAttrs is the documented way to wire a click RPC (the resource UI
-and the admin battery both do it); any other `data-cui-*` key,
-`data-cui-comp` included, panics at render naming the key.
+---
 
-Component authors: sanitize with `html.SafeExtraAttrs(cfg.ExtraAttrs,
-protected...)` before forwarding — or `html.SafeCarrierAttrs` for a
-component that emits no `data-cui-*` wiring of its own and is meant to
-carry the interactive package's attrs. Two gates in
-`framework/ui/extraattrs_contract_test.go` enforce the contract: one
-fails on any component Config without the field, the other fails on
-any new raw forwarding outside the legacy list.
+## Where to go next
+
+- [UI capability map](ui-capability-map.md): pick the right pattern for dashboards, optimistic UI, workspaces, and forms.
+- [Reactivity model](reactivity.md) and [Interactive patterns](interactive-patterns.md): client signals, island RPCs, polling, and SSE.
+- [Theming](theming.md) and [UI components index](ui-new-components.md): full token catalog and every built-in component.
+- [UI wiring](ui-wiring.md): mounting the UI host onto a plain `framework.App` by hand.
+
+---
 
 ## Common mistakes
 
-- **Registering a screen at an entity's CRUD path.** An entity named
-  `foods` already owns `/foods` (+ `/foods/:id`, `/foods/llm.md`); a
-  screen at the same path is a route-conflict panic at startup. Set
-  `framework.WithAPIPrefix("/api")` so data routes move aside, or give
-  screens their own noun space (`/library`, not `/foods`).
-- **Unscoped selectors in a `ComponentSheet`.** `body`, `:root`,
-  `::backdrop` and friends can't be scoped to
-  `[data-cui-comp="…"]`; `Build()` returns `style.ErrUnscopable` and
-  `MustBuild` panics at startup. Component CSS styles the component;
-  page-level rules belong in the host stylesheet or
-  `style.Contribute`.
-- **Booting with a half-populated theme.** `WithTheme` validates every
-  required token and panics naming the missing field path. Start from
-  `gofastr theme init` (which writes the complete default literal) and
-  edit values, rather than building a `style.Theme` from scratch.
-- **Adding a `replace` directive out of habit.** The module resolves
-  from the proxy; pin a tagged version. A local `replace` is only for
-  hacking on the framework itself; left in, it breaks everyone else's
-  build of your app.
+- **Registering a screen at an entity's CRUD path.** Use `framework.WithAPIPrefix("/api")` or give screens their own path prefix so they don't collide at boot.
+- **Forgetting `SetParams` on a dynamic route.** Any route with `:param` or `{param}` panics at startup if its screen does not implement `SetParams`.
+- **Booting with a partial custom theme.** `WithTheme` validates every required token at startup; run `gofastr theme init` to start from a complete theme literal instead of constructing `style.Theme` from scratch.
+- **Adding a local `replace` directive in `go.mod` out of habit.** Pin a tagged GoFastr release; only use `replace` when hacking on the framework repo itself.

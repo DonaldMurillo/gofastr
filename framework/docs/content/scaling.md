@@ -1,231 +1,57 @@
 # Horizontal scaling
 
-One replica of a GoFastr app is self-contained: sessions, rate limits,
-cron, queues, and live UI updates all work with no extra setup because
-their default state lives **in the process**. The moment you run a second
-replica behind a load balancer, every one of those defaults needs a
-shared backend or a deliberate single-runner strategy. This page lists
-what breaks, why, and the replica-safe alternative for each one.
+A single GoFastr replica works out of the box with zero external services because defaults live in process memory. The moment you run **two or more replicas**, any in-memory default must move to a shared store (Postgres/Redis/S3) or run on one designated worker process.
 
-## Summary
+## Process-local defaults → replica-safe fixes
 
-The database is the only state the replicas share. Anything that
-defaults to process memory must either move into the DB (or another
-shared store) or run on exactly one replica.
+| Subsystem | Single-node default | Replica-safe replacement |
+| --- | --- | --- |
+| Auth sessions | `MemorySessionStore` | `auth.NewEntitySessionStore(db, "sessions")` |
+| 2FA enrollment | `MemoryTwoFAStore` | `auth.NewEntityTwoFAStore(db, "auth_twofa", ...)` |
+| Magic-link / reset / verify tokens | In-memory token store | `auth.NewSQLMagicLinkTokenStore(db)` |
+| Rate limits | In-process `RateLimiter` | `auth.NewSQLRateLimitStore(db, "auth_rate_limits")` |
+| Cron scheduler | Ticks on every replica | `GOFASTR_ROLE=worker`, `WithLeaderElection`, or `queue.DurableScheduler` ([Cron](cron.md)) |
+| Job queue | `MemoryQueue` | `queue.DBQueue` (`FOR UPDATE SKIP LOCKED`) |
+| SSE / island push / presence | In-process `EventBus` | `framework.WithFanout(fanout.NewPostgres(dsn, db))` or `core/fanout.NewRedis`, OR poll with `data-cui-poll` |
+| Cache | `MemoryCache` | `cache.NewRedisCache(client)` (or accept per-replica cache for derived data) |
+| File uploads | `storage.NewLocalStorage` | `storage.NewS3Storage(...)` or shared volume |
+| Runtime RBAC grants | In-memory `RolePolicy` | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` |
+| Idempotency keys | `NewMemoryIdempotencyStore` | `middleware.NewSQLIdempotencyStore(db, middleware.WithSQLIdempotencyInFlightTTL(45*time.Second))` ([Idempotency](idempotency.md)) |
 
-## What is process-local by default
+In production (`DevMode: false`), `battery/auth` refuses to boot with in-memory session/2FA/token stores unless you explicitly acknowledge a single-node deploy with `AuthConfig.AllowInMemoryStores: true`.
 
-| Subsystem | Default | Two-replica symptom | Replica-safe fix |
-|---|---|---|---|
-| Auth sessions | in-memory `MemorySessionStore` | login on A, logged-out on B; all sessions lost on restart | `auth.NewEntitySessionStore(db, "sessions")` |
-| 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | `auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{EncryptionKey: key})` (it returns an error too; see [auth](auth.md)); the plugin creates the table itself |
-| Magic-link, password-reset and email-verification tokens | in-memory `MemoryMagicLinkTokenStore`, one per plugin | link emailed from A is "invalid or expired" on B; a restart drops every pending link | `auth.NewSQLMagicLinkTokenStore(db)` as each plugin's `TokenStore` |
-| Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | set `RateLimiterConfig.Store: auth.NewSQLRateLimitStore(db, "auth_rate_limits")`; one budget across replicas, blocks propagate |
-| `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |
-| `battery/queue` in-memory queue + Scheduler | per-process | duplicate jobs, lost jobs on restart | `queue.DBQueue`: `FOR UPDATE SKIP LOCKED` makes competing workers safe |
-| Live events / SSE / island push | in-process `EventBus` + `island.Manager` | an event emitted on A never reaches a browser connected to B | `fanout.NewPostgres(dsn, db)` (returns an error; check it) then `framework.WithFanout(f)`; see "SSE across replicas" below |
-| `battery/cache` memory backend | per-process | stale reads after another replica writes | `cache.NewRedisCache(client)`, or accept per-replica caching for derived-only data |
-| File uploads on local storage | per-replica disk (`storage.NewLocalStorage`, `upload.NewLocalStorage`) | upload lands on A, download from B 404s | S3-compatible backend (`battery/storage`'s S3 client), or a shared volume mounted on every replica |
-| Runtime RBAC grants (`access.GrantStore`) | in-memory `RolePolicy` cache per process | editor granted on A still denied on B until B restarts; a revoked code-seeded grant re-appears on peers and on restart | `framework.WithGrantStore(store)` + `framework.WithFanout(...)`; grant/revoke publishes a refresh-signal on the `gofastr.access` lane; every replica re-reads the role's grants from `access_grants`. A revoke also writes a revocation tombstone to `access_grants_revoked`, so revokes propagate to peers AND survive replica restarts even for grants declared in code; re-granting via `GrantStore.Grant` lifts the tombstone. A refresh that fails (database down) is retried every 5 seconds until it lands, and never holds up shutdown |
+Already replica-safe out of the box: migrations (advisory lock), startup seeds (separate advisory lock + `_gofastr_seeded` ledger — keep Postgres `MaxOpenConns > 1`), `queue.DBQueue`, `webhook.LeasedStore`, and stateless CRUD/API traffic.
 
-Auth enforces the first three at boot in production mode (`DevMode:
-false`): the in-memory session store, the in-memory 2FA store and a link
-plugin with no `TokenStore` **refuse to boot**; a warn-only start lets a
-broken multi-replica deployment go unnoticed. Setting
-`AuthConfig.AllowInMemoryStores: true` acknowledges a deliberate
-single-node deployment: the stores then boot, and the 2FA store still
-leaves a WARN trace.
+## Process roles (`GOFASTR_ROLE`)
 
-## What is already replica-safe
+Run the exact same binary in dedicated roles:
 
-- **Migrations**: auto-migrate takes a Postgres advisory lock, so N
-  replicas booting simultaneously run the migration once. On SQLite the
-  same serialization comes from a leased lock row (`_gofastr_migrate_lock`),
-  the twin of the seed lease below; the versioned runner additionally
-  re-checks the tracking table before applying each migration, so a
-  replica whose read raced a peer converges instead of failing its boot.
-- **Startup seeds**: `RunSeeds` and `WithSeed` hooks acquire a
-  DISTINCT Postgres advisory lock (separate from migrations) so N
-  booting replicas never race a seed func. Combined with the
-  `_gofastr_seeded` ledger, an entity's `Seed` runs once globally; the
-  other replicas see the ledger row on their locked turn and skip. A
-  crashed lock holder's session-level lock is released by Postgres
-  automatically; no permanent block. (`WithSeed` hooks have no
-  ledger, so they serialize-per-boot but still run on every replica;
-  keep them idempotent.) **Exception:** a Postgres pool capped at
-  `MaxOpenConns(1)` cannot hold the advisory lock (it would deadlock the
-  seed body), so it skips the lock with a WARN and N such replicas are
-  NOT coordinated; keep the pool above 1 connection for multi-replica
-  seed serialization.
-- **`queue.DBQueue`**: claims jobs with `FOR UPDATE SKIP LOCKED`;
-  competing workers on every replica are the *intended* topology.
-- **Webhook delivery (`LeasedStore`)**: leases deliveries so two
-  replicas don't double-send.
-- **Plain CRUD/API traffic**: stateless per request; scale freely.
-
-## Serve/worker roles
-
-The first scaling step for a self-hosted app is one web process + one
-worker process, same binary, before replicas and before Redis. The role
-is picked at deploy time:
+```bash
+GOFASTR_ROLE=serve  ./myapp   # full HTTP router; no cron, queue workers, or outbox relay
+GOFASTR_ROLE=worker ./myapp   # cron, queue workers, outbox relay; /healthz + /readyz only
+GOFASTR_ROLE=agent  ./myapp   # /mcp + /a2a + /healthz + /readyz only
+./myapp                       # all (default)
+```
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
 var app = framework.NewApp()
 -->
 ```go
-app.Start(":8080") // role from GOFASTR_ROLE: all | serve | worker | agent
+app.Start(":8080") // role from GOFASTR_ROLE or framework.WithRole(...)
 ```
 
-```sh
-GOFASTR_ROLE=serve  ./myapp   # full router; no cron/queue/outbox-relay
-GOFASTR_ROLE=worker ./myapp   # cron/queue/outbox-relay; /healthz + /readyz only
-GOFASTR_ROLE=agent  ./myapp   # /mcp + /a2a (if WithA2A) + health; no entity routes
-./myapp                       # combined (default); today's behavior
-```
-
-`GOFASTR_ROLE=agent` (or `framework.WithRole(framework.RoleAgent)`) is the
-agent surface split: it serves the `/mcp` mount, the A2A exchange
-(`/a2a`, when [WithA2A](a2a.md) is configured), and health endpoints and
-nothing else — no entity CRUD, no OpenAPI, no browser pages. `/mcp` and
-`/a2a`
-requests forward to the app router, so session/bearer auth and owner
-scoping behave exactly as on a serve process (see
-[MCP](mcp.md) and [Auth](auth.md)). Use it when agent traffic arrives
-through a dedicated tunnel or allow-listed listener and you don't want
-that listener to reach the rest of the app. The full contract for what
-the agent surface serves — including the MCP Apps widget traffic that
-rides it — is in [agent host](agent-host.md).
-
-`framework.WithRole(framework.RoleServe)` overrides the env var; an
-invalid value in either fails at construction. The worker's health
-endpoints are the same handlers the full router serves, so LB and
-orchestrator probes work unchanged. Everything else runs in both
-roles: auto-migrate, seeds, plugins, batteries (migrations hold a lock,
-so either process type may boot first). Plain `OnStart` hooks are
-role-agnostic; gate custom background work on `app.Role()`.
-
-## Recommended shapes
-
-**Two web replicas + one worker.** Point sessions at
-`EntitySessionStore`, run the web replicas with `GOFASTR_ROLE=serve`,
-and one `GOFASTR_ROLE=worker` process that owns the cron scheduler,
-the `DBQueue` workers, and the outbox relay. This is the smallest
-shape with no shared-state caveats. Add `WithFanout` if the web
-replicas use SSE push.
-
-**Everything everywhere, DB-backed.** All replicas run `DBQueue`
-workers (safe by design). For *scheduled* work, have the schedule
-enqueue a `DBQueue` job instead of doing the work inline; then it
-doesn't matter that every replica's scheduler fires, as long as the
-job is idempotent or keyed for dedup. Neither scheduler ships a
-distributed lock; the queue's claim semantics are the sanctioned
-coordination point.
-
-**Single node, on purpose.** Vertical scaling is underrated. Set
-`AuthConfig.AllowInMemoryStores: true` to let the in-memory stores boot
-and skip this whole page until you add a replica. A restart still logs
-everyone out and wipes in-memory 2FA enrollment; use the entity-backed
-stores anyway if either matters.
+**Recommended starter topology:** 2+ `GOFASTR_ROLE=serve` web replicas + 1 `GOFASTR_ROLE=worker` process sharing Postgres, with `GOFASTR_SECRET` set identically across all replicas so signed uihost session tokens verify on every node without sticky sessions (`WithFanout` fails boot if `GOFASTR_SECRET` / `WithSecret` is unset).
 
 ## SSE across replicas
 
-Server-pushed events flow over an SSE connection to the replica the
-browser happened to reach. A write handled by a different replica emits
-on *its* bus and pushes to *its* island manager, not the one holding
-the connection. Two answers, in order of preference:
-
-1. **Shared fan-out**: `framework.WithFanout` bridges the real-time
-   lane across replicas. `framework/fanout.NewPostgres(dsn, db)` uses
-   Postgres LISTEN/NOTIFY (no new infrastructure); `core/fanout.NewRedis`
-   adapts a Redis client you bring. Entity `_events` SSE streams and
-   island push then work from any replica. Read the "Cross-replica
-   fan-out" section of the events doc first: with a fanout attached,
-   `On`/`Subscribe` handlers fire on **every** replica, so side-effect
-   work must move to outbox consumers and derived emits must gate on
-   `event.IsRemote(ctx)`.
-2. **Poll instead.** For passive freshness such as a dashboard, a
-   counter, or a status pill, `data-cui-poll` re-fetches on an interval from any
-   replica and needs no fanout at all. Reserve SSE push for semantics
-   that need the connection: presence, collaborative editing,
-   sub-second updates. See [Reactivity model](reactivity.md) for the
-   full ladder.
-
-## Sessions
-
-The uihost session is an HMAC-signed token, not a server-side record.
-A token issued by one replica verifies on any other replica that
-shares the signing secret, so any replica can serve any request.
-
-- **Set the secret in production**: `framework.WithSecret(secret)` in
-  code, or the `GOFASTR_SECRET` environment variable. Either lands the
-  same key on every replica.
-- **One replica, no secret configured.** The framework mints an
-  ephemeral boot secret at startup. Sessions work, but they roll over
-  on every restart because the next boot mints a new one. Fine for
-  single-node; wrong the moment a second replica is on the table.
-- **Fanout without a secret fails at boot.** A multi-replica deploy
-  that wired `WithFanout` but forgot `GOFASTR_SECRET` (or `WithSecret`)
-  refuses to start, with an error naming both. This is deliberate:
-  silent token mismatch in production is worse than a loud boot
-  failure.
-
-Sticky sessions are not part of the contract. A token is portable;
-route the request to whichever replica the load balancer picks.
-
-## Checklist before adding the second replica
-
-- [ ] Sessions on `EntitySessionStore` (or another shared `SessionStore`).
-- [ ] 2FA store durable (if the 2FA plugin is enabled).
-- [ ] Cron scheduler runs on exactly one process (`GOFASTR_ROLE=worker`), or jobs moved to `DBQueue`.
-- [ ] Queue is `DBQueue`, not the in-memory variant.
-- [ ] Rate limits on a shared store (`RateLimiterConfig.Store:
-      auth.NewSQLRateLimitStore(db, "auth_rate_limits")`), or enforced at
-      the ingress.
-- [ ] SSE push crosses replicas: `WithFanout` attached (and side-effect
-      handlers moved to outbox consumers), or use `data-cui-poll` for
-      passive freshness that needs no fanout.
-- [ ] `GOFASTR_SECRET` set (or `framework.WithSecret` in code) so the
-      HMAC-signed uihost session token verifies on every replica.
-      Required with `WithFanout`; the app refuses to boot otherwise.
-- [ ] Runtime RBAC grants propagate: `WithGrantStore` attached when
-      `access.GrantStore` is in use, so grant/revoke reaches every
-      replica's `RolePolicy` without a restart. A revoke persists a
-      revocation tombstone (`access_grants_revoked`), so it propagates to
-      peers and survives replica restarts even for grants declared in
-      code; re-granting lifts the tombstone.
-- [ ] Cache backend shared (Redis) if cached data must be coherent across replicas.
-- [ ] `AuthConfig.AllowInMemoryStores` **removed**; the boot warning is
-      your regression test for the first two items.
-
-## See also
-
-- [UI capability map](ui-capability-map.md) contrasts reconstructable and affinity-bound islands by product job.
-- [Events and SSE](events.md) defines cross-replica fanout semantics.
-- [Presence](presence.md) documents lossy, self-healing roster aggregation.
+1. **Prefer polling (`data-cui-poll`)** for passive freshness (dashboards, badges) — any replica answers `GET` with zero fanout needed (see [Reactivity](reactivity.md)).
+2. **Attach `framework.WithFanout`** (`fanout.NewPostgres` using Postgres `LISTEN/NOTIFY`, or `core/fanout.NewRedis`) when you genuinely need live push across replicas (presence, collaborative views, `_events`). Gate derived emits with `event.IsRemote(ctx)` so replicas don't echo loops.
 
 ## Common mistakes
 
-- **Scaling to two replicas with default sessions.** Users get randomly
-  logged out depending on which replica the LB picks. The boot WARN
-  about the in-memory session store is telling you this will happen;
-  don't silence it with `AllowInMemoryStores` while running N > 1.
-- **Setting `AllowInMemoryStores: true` "to clean up the logs"** and
-  then scaling later. The flag is an assertion about your topology, not
-  a log filter; remove it the moment a second replica is on the table.
-- **Running `framework/cron` on every replica** because each job
-  "checks if it already ran" against the DB. That check is a race, not
-  a lock. Move the work to `DBQueue` or pin the scheduler to one process.
-- **Relying on SSE push without fanout.** Everything appears to work
-  in staging (one replica) and half of live updates silently vanish in
-  production. Wire `WithFanout` and set `GOFASTR_SECRET` before adding
-  the second replica, or pick polling for surfaces that don't need
-  push.
-- **Treating the in-process login rate limit as a security boundary at
-  N replicas.** Without a shared store the budget multiplies by replica
-  count and blocks don't propagate. Set `RateLimiterConfig.Store` (one
-  `SQLRateLimitStore` can back every auth limiter; keys are namespaced
-  per limiter scope) or enforce hard limits at the ingress.
-
-See [Deployment](deploy.md) for the single-replica production checklist
-and [Job queue](queue.md) for `DBQueue` worker sizing.
+- **Leaving `AllowInMemoryStores: true` on after scaling to 2 replicas:** users randomly log out across requests. Remove it before scaling out.
+- **Forgetting `GOFASTR_SECRET` across replicas:** ephemeral boot secrets invalidate uihost sessions on other replicas.
+- **Running `framework.Scheduler` on every replica without leader election or a worker role:** executes every cron job N times.
+- **Using SSE push without `WithFanout` across replicas:** half your live updates silently miss browsers connected to peer nodes.
+- **Keeping `LocalStorage` uploads on local container disks:** uploads on replica A return `404` on replica B.

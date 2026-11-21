@@ -1,41 +1,12 @@
 # Screens, layouts, outlets, and the layout chain
 
-A screen is one route's content. A layout is the chrome around it — the
-app shell with the sidebar and header, the marketing site's header and
-footer, the docs page's nav column and table of contents. This page
-covers the layout primitive (`app.NewLayout`, outlets, fills, route
-areas), the route tree that nests layouts (`ScreenGroup`), what the
-server renders for each level, and how the client swaps only the part of
-the page that changes on navigation.
+A **screen** is one route's content. A **layout** is the shared chrome around it—the app shell with a sidebar, header and footer, breadcrumbs, and a docs table of contents. GoFastr has one layout primitive—`core-ui/app.NewLayout`—with outlets, fills, route areas, and nested `ScreenGroup` layers composed from standard `framework/ui` building blocks (`ui.Stack`, `ui.ContentRow`, `ui.Sidebar`, `ui.Container`). On client-side navigation, GoFastr diffs the layout chain and swaps only the layers and slots that changed.
 
-A layout is an ordinary component tree with three kinds of area:
+See [UI composition recipes](ui-composition-recipes.md) for complete page shapes.
 
-- **static** — built once per render, never changes while the layout
-  stays on screen (the header, the footer, the sidebar column);
-- **route area** — stays in place, re-rendered by the server on every
-  navigation the layout survives (breadcrumbs, a help-nav's
-  current-article mark);
-- **outlet** — a named slot a screen or screen group fills with its own
-  content (the toolbar actions, the right-hand context panel, the docs
-  page's table of contents).
+## The primitive: `app.NewLayout`
 
-There is no layout constructor in `framework/ui`. Layouts are declared
-in `core-ui/app` with the primitive below, composed from the `framework/ui`
-components (Sidebar, ContentRow, Container, Breadcrumbs) and the app's
-own packages for its header, footer and docs page; the ready-made page
-shapes live as examples, not exports. See
-[UI composition recipes](ui-composition-recipes.md) for the four shapes
-built end to end.
-
-## The primitive: NewLayout
-
-**Use it when** any page shares chrome with other pages — a sidebar app,
-a site with a header and footer, a section with its own sub-navigation.
-`NewLayout(name, spec, build)` takes a build function that receives
-the request context and a `*LayoutTree` addressing the placement points,
-and returns ordinary component HTML. Everything in the returned tree is
-static chrome except the `l.Primary()`, `l.Place(...)`, and
-`l.RouteArea(...)` cells.
+`NewLayout(name, spec, build)` renders static chrome around three kinds of dynamic cell: `l.Primary()` (the screen), `l.Place(outlet)` (screen/group-filled slot), and `l.RouteArea(name, fn)` (URL-derived chrome refreshed on every navigation):
 
 <!-- gofastr:compile
 import "context"
@@ -56,87 +27,23 @@ site.SetDefaultLayout(shell)
 site.RegisterScreen(app.NewScreen("/", &HomeScreen{}).WithTitle("Home"), nil)
 ```
 
-The build function's `_ context.Context` parameter is the live request
-context (auth-aware chrome reads it); the layout keeps its name, layer
-key, and landmark duty. A screen's route content renders where the
-build calls `l.Primary()` — layer 0's primary is the page's single
-`<main id="main-content">`; an inner layer's primary is the swap target
-inside its parent.
+Layer 0's `l.Primary()` renders the page's single `<main id="main-content">`; inner group layers render swap targets inside their parent.
 
-**The mistake it prevents:** hand-rolling a shell `<div>` per screen and
-copying the header into every page. The layout is declared once; every
-screen under it inherits the chrome, and navigation between siblings
-never re-renders it.
+| Need | Tool | Re-renders when |
+|---|---|---|
+| Route's main content | `l.Primary()` | Every navigation |
+| Per-route slot (toolbar actions, context aside, TOC) | `l.Place(outlet)` + `Screen.Fill` / `ScreenGroup.Fill` | Every navigation |
+| URL-derived chrome (breadcrumbs, current counts) | `l.RouteArea(name, fn)` | Every navigation |
+| Static chrome (header, footer, sidebar) | Plain components in `build` | Only when the layer changes |
+| Persistent pane across sibling routes (list/detail) | `ScreenGroup` with its own layout | Only when the group prefix changes |
 
-The real shape of a build function, from `examples/site/tracker/main.go`
-(`buildShell`): static header and sidebar, a crumbs route area, a
-toolbar outlet, the primary, an aside outlet:
+Do not read route params or query state in static chrome outside a `RouteArea` closure—the `layoutfunc` analyzer flags stale reads at verify/vet time.
 
-```go
-func buildShell(ctx context.Context, l *app.LayoutTree) render.HTML {
-	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-		html.Header(html.HeaderConfig{Banner: true}, topBar),
-		ui.ContentRow(ui.ContentRowConfig{
-			Viewport: true,
-			Sidebar:  nav,
-			Toolbar: ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween},
-				l.RouteArea("crumbs", crumbsArea), l.Place(toolbar)),
-			Aside: l.Place(aside), AsideLabel: "Context",
-		}, l.Primary()))
-}
-```
+## Outlets, fills & route areas
 
-Read route state only inside a `RouteArea` closure (it receives the
-match); the rest of the build is static chrome a partial never
-refreshes, and the `layoutfunc` lint flags a `MatchFromContext` read
-outside an area (see [Validation and the lint](#validation-containment-and-the-layoutfunc-lint)
-below).
+### Outlets (`app.NewOutlet`)
 
-## Which slot to use
-
-A build function places four kinds of cell, and a pane that must
-survive navigation takes a fifth tool. Pick by who chooses the content:
-
-| You want | Use | Who chooses the content | Re-rendered | Tracker example |
-|---|---|---|---|---|
-| The page's main content | `l.Primary()` | the screen | every navigation | the issue |
-| A region each route may fill differently | an outlet: `l.Place(o)`, filled by `Screen.Fill`, `ScreenGroup.Fill`, or the outlet's `Default` | the screen, else its groups, else the outlet | every navigation | toolbar, activity aside |
-| A region derived from the URL, the same code for every route | `l.RouteArea(name, fn)` | the layout, from the match | every navigation | breadcrumbs |
-| Chrome that stays put | plain components in the build | the layout | never, while the layer is kept | top bar, sidebar |
-| A pane that keeps its DOM and scroll across sibling routes | a group layer: `ScreenGroup` with its own layout | the group's layout | when the group's resolved prefix changes | the project's issue pane |
-
-The tracker's toolbar row shows the outlet and the route area side by
-side. The crumbs are the same function on every page, so they are a
-route area. The buttons belong to the page: `/inbox` fills the toolbar
-with `InboxToolbar`, every project page gets `ProjectToolbar` from
-`group.Fill`, and an issue page overrides it with `IssueToolbar`. If one
-function could compute the buttons from the URL alone, a route area
-would do. Because each route picks its own component, the toolbar is an
-outlet.
-
-A kept group layer follows the same rule. The tracker's project layer
-keeps its issue pane (and the pane's scroll) across one project's
-issues, but the list inside it reads `?filter=`, so the list is the
-layer's `issues` route area: drawn by the layer itself, it kept the old
-filter when Reset or the sidebar moved the URL to the bare project. The
-`layoutfunc` lint flags this shape: a layout build that reads, outside a
-`RouteArea` closure, a resolver key whose resolver (declared in the same
-package with `Key.From`) reads `app.QueryFromContext` or
-`app.RequestFromContext`.
-
-## Outlets and fills
-
-Back-cache snapshots of live outlets and areas remove transient RPC
-loading, disabled and busy marks, just like primary content. An RPC that
-settles after navigation cannot leave its replayed control disabled.
-
-**Use an outlet when** a region of the shell belongs to the route, not
-the shell — the page's own action buttons, a per-page context panel,
-the docs article's table of contents. One URL can fill several outlets;
-a child declares which ones.
-
-Declare typed handles with `NewOutlet` and pass them to the layout's
-spec; a screen or group fills one by value:
+Declare typed outlet handles on `LayoutSpec.Outlets`, place them with `l.Place(o)`, and fill them from screens or groups:
 
 <!-- gofastr:compile
 import "context"
@@ -154,7 +61,7 @@ var build func(ctx context.Context, l *app.LayoutTree) render.HTML
 ```go
 toolbar := app.NewOutlet("toolbar")
 aside := app.NewOutlet("aside", app.OutletOptions{
-	Default: &HelpPanel{}, // renders when nothing fills the outlet
+	Default: &HelpPanel{},
 })
 
 shell := app.NewLayout("shell", app.LayoutSpec{
@@ -166,45 +73,9 @@ site.RegisterScreen(app.NewScreen("/inbox", &InboxScreen{}).
 	Fill(toolbar, &InboxToolbar{}), nil)
 ```
 
-The handle is typed: a mistyped outlet (`shell.Tolbar`) does not
-compile, and a fill whose outlet belongs to a layout outside the
-screen's chain panics at render, naming the layout and the outlet.
-Outlet names are letters, digits, `-`, `_` (the name is a wire
-address).
-
-Resolution per outlet, first candidate that loads wins:
-
-1. the screen's own `Fill`,
-2. group fills, innermost group to outermost,
-3. the outlet's `Default`,
-4. the fallback: `FallbackNothing` (the zero value) renders nothing;
-   `FallbackNotFound` makes the request answer 404 (below).
-
-A fill component is instantiated and loaded per request exactly like a
-screen component: fresh instance, route params via `SetParams`, DI,
-`Load`. **Declining:** a fill whose `Load` returns
-`app.ErrNoFill` declines and the next candidate is tried — the docs
-TOC fill of an article without headings declines and the column
-collapses. Every other `Load` error is contained to the outlet (see
-below), never the page.
-
-A docs page's owned sheet observes an empty toc outlet with
-`:has(> :empty)` (acme's `helpdocs`). The right column disappears when a
-navigation clears that cell and returns when another article fills it;
-the kept layout needs no script.
-
-`ScreenGroup.Fill(o, c)` declares the fill for every screen of the
-group (and its sub-groups) that does not fill the outlet itself — the
-project layer's default toolbar.
-
-**The mistake it prevents:** making per-page chrome into separate
-screens or layouts. One shell, many fills: sibling navigation swaps the
-primary and re-applies every fill, without re-rendering the shell.
-
-### The 404 outlet
-
-`FallbackNotFound` is for a route that must not exist when a value is
-missing — `/issues/{n}` where the store has no issue 9999:
+- **Resolution order:** screen `Fill` → innermost-to-outermost `ScreenGroup.Fill` → outlet `Default` → fallback (`FallbackNothing` or `FallbackNotFound`).
+- **Declining & containment:** A fill whose `Load` returns `app.ErrNoFill` falls through to the next candidate. Other errors or panics in a fill are logged and contained to that outlet (falling back to `component.ErrorBoundary`, `Default`, or empty) without breaking the page.
+- **404 outlet:** Use `FallbackNotFound` (mutually exclusive with `Default`) when an unfilled outlet should turn the request into a 404:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -214,21 +85,9 @@ stmt: _ = issue
 issue := app.NewOutlet("issue", app.OutletOptions{Fallback: app.FallbackNotFound})
 ```
 
-The route registers, but a request where no candidate renders (every
-candidate declined with `ErrNoFill`) answers 404 through the app's
-not-found page: the primary becomes the not-found body, every other
-outlet renders its `Default` or nothing. `NewLayout` refuses
-`FallbackNotFound` beside a `Default` — the two disagree about what an
-unfilled outlet is. A contained fill failure never triggers the 404; it
-degrades the outlet instead.
+### Route areas (`l.RouteArea`)
 
-## Route areas
-
-**Use a route area when** a region of kept chrome must follow the route
-— breadcrumbs, a docs nav marking the current article. `l.RouteArea`
-runs its function on every render the layer is part of, kept or not:
-on a partial the kept layer's area fn still runs and its HTML travels
-with the response as a fill.
+Use a route area for chrome computed uniformly from the current `app.Match` (such as breadcrumbs or sidebar record counts; set `AreaSpec{Inline: true}` for a `<span>` wrapper):
 
 <!-- gofastr:compile
 import "context"
@@ -244,35 +103,12 @@ stmt: _ = shell
 shell := app.NewLayout("shell", app.LayoutSpec{
 	Areas: []app.AreaSpec{{Name: "crumbs"}},
 }, build)
-// in the build: l.RouteArea("crumbs", crumbsArea)
+// inside build: l.RouteArea("crumbs", crumbsArea)
 ```
 
-The fn receives the resolved `app.Match` (`m.Path()`, `m.Param("id")`,
-`m.ScreenID()`); this is the one place inside a build where route state
-is readable. Areas are not filled by screens: nothing targets them, and
-every build runs on every render.
+### Client route signals (`app.Route`)
 
-An area's cell is a `div`. `AreaSpec{Inline: true}` makes it a `span`,
-so the area fits inside phrasing content: the admin gives each sidebar
-link's record count its own inline area (`ui.SidebarItem.Count`), and
-the count follows every navigation while the sidebar stays put.
-
-**The mistake it prevents:** reading the match once in the static chrome
-— the first navigation leaves stale breadcrumbs and a stale
-current-article mark forever.
-
-Chrome that must follow the route *without* a server round-trip (a
-highlight that repaints instantly, derived values) uses the route
-signals instead — next section.
-
-## Route signals: `route.*` in the browser
-
-A static region can bind to the route through the store's reserved
-`route.` slices (`app.Route`): `route.path`, `route.pattern`,
-`route.title`, `route.params.<name>`, `route.query.<key>`. The server
-stamps the first paint from the resolved route; after a navigation the
-runtime merges the new values as ordinary seeds, so a binding in a kept
-layer repaints with no request.
+Static chrome can react to route changes client-side with zero server round-trip via reserved `route.*` text signals (`route.path`, `route.pattern`, `route.title`, `route.params.<name>`, `route.query.<key>`):
 
 <!-- gofastr:compile
 import "context"
@@ -280,31 +116,15 @@ import "github.com/DonaldMurillo/gofastr/core-ui/app"
 var ctx context.Context
 -->
 ```go
-app.Route.Title.Bind(ctx, "span", nil) // text follows route.title
+app.Route.Title.Bind(ctx, "span", nil)
 app.Route.Param("id").BindAttr(ctx, "div", "data-issue", nil)
 ```
 
-Every route value is text (paths and titles carry user-influenced
-characters): `Bind` and `BindAttr` are the offered modes and `BindHTML`
-panics on the family. Values derived from the route (breadcrumbs) are
-ordinary store state computed server-side on first paint, or a route
-area (above) — never a rebuild of the static chrome. App slices cannot
-use the `route.` prefix; it is reserved.
+Note: active nav links need neither route areas nor signals—the runtime automatically sets `aria-current="page"` on matching `nav a` links (with `data-cui-match-prefix` for prefix matches) and opens parent `<details>` groups.
 
-**Highlighting the current nav item needs none of this.** The runtime's
-active-link sweep marks `aria-current="page"` on every `nav a` whose
-href matches the path (exact match; `data-cui-match-prefix` opts a link
-into segment-boundary prefix matching, which `ui.Sidebar` emits for
-`MatchPath` items), and opens the closest sidebar group or `<details>`
-ancestor of the current link. A static sidebar therefore keeps its
-scroll, its open groups, and its fresh highlight across navigations —
-write the nav once as static chrome and let the sweep own the mark.
+## Nesting layouts with `ScreenGroup`
 
-## The route tree: ScreenGroup
-
-`ScreenGroup` is the nesting API: a URL prefix plus a layout that wraps
-every screen under it. Groups nest inside each other; the whole group
-nests under the app default layout.
+`ScreenGroup` nests a layout under a URL prefix (inside the app's default layout unless `.Standalone()` is set):
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -325,44 +145,7 @@ guides.Screen(app.NewScreen("/docs/guides/deploy", &DeployScreen{}), nil)
 application.Router.ScreenGroup(docs)
 ```
 
-Subgroup prefixes are relative to their parent, including prefixes with a
-leading slash. Repeated or trailing slashes are normalized, and an empty
-subgroup prefix reuses the parent's prefix.
-
-`/docs/guides/deploy` renders inside three layers: the app default
-(outermost, owns the single `<main>`), the docs layer, the guides
-layer. Rules that shape the chain:
-
-- A relative screen path is appended to the group's prefix. An absolute
-  path must be the group root or begin with its prefix at a segment
-  boundary; registration panics otherwise. Brace and colon parameter
-  spellings compare identically. Subgroup prefixes are relative to the parent.
-
-- A group's screens inherit the group layout; `group.Screen(s, other)`
-  replaces it for that one screen. The group boundary is kept, but its
-  layer compares as different, so navigating to it re-renders that
-  shell. A screen whose layout is overridden leaves the group's
-  layout — the group's fills fail validation for it.
-- `SubGroup(prefix, nil)` inherits the parent's layout. The level still
-  exists as an addressable marker; it adds no duplicate chrome.
-- `Standalone()` on a group suppresses the app default layout for
-  everything under it (a back-office shipping its own full shell).
-- Drawer/sheet/dialog screens and layout-less pages have no chain.
-- Group policies gate every screen under the prefix:
-  `app.NewScreenGroup("/dashboard", layout, auth.SessionPolicy())`.
-
-### Param group prefixes: one layer per entity
-
-A group prefix may carry route params. `/projects/{project}` serves
-every project with ONE group, and the layer key embeds the resolved
-value — `g:/projects/billing/:project` — so navigating between one
-project's pages keeps the layer (the issue list, its filter state) and
-switching projects re-renders it:
-
-The key uses the captured parameter value, not its URL encoding. A URL segment
-`a%2Fb` contributes `a/b` to the layer key, `%25` contributes `%`, and an encoded
-literal such as `a%252Fb` contributes `a%2Fb`. Deferred outlet addresses use the
-same resolved layer key followed by `#<outlet-name>` on both client and server.
+- **Parameterized prefixes (master/detail):** Prefix params become part of the layer key so sibling routes inside one project keep the outer list pane and scroll position, while switching projects re-renders it:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -378,33 +161,14 @@ group.Screen(app.NewScreen("/projects/{project}/issues/{n}", &IssueScreen{}), ni
 site.Router.ScreenGroup(group)
 ```
 
-This is the "list on the left, detail on the right" shape: the project
-layer is the list pane, kept across issue pages; each issue page is the
-primary. Both `:param` and `{param}` spellings register identically.
+- Pass `nil` layout to `SubGroup` to inherit the parent layout, attach group-wide policies as extra args to `NewScreenGroup`, and use `Layout.WithKey(...)` when one layout shape needs a distinct cache identity per context (e.g., per locale).
+- **Document-lifetime scripts:** Switching between pages whose `uihost.RegisterDocumentScript` sets differ triggers a real document navigation rather than a partial swap so removed scripts don't linger.
 
-### Keying a layer independently of its name
+## Shared resolvers & region guards
 
-`WithKey` decouples the layer's identity from its name. Use it when one
-layout shape must re-render per context while its styling stays the
-same: the multilingual shell (same name `docs`, keys `docs-en` /
-`docs-es`; the language switch becomes an ordinary cross-chain
-navigation) — see [internationalization](i18n.md).
+### Resolvers (`app.NewKey[T]`)
 
-Reach for a distinct name when the shape genuinely differs; reach for
-`WithKey` when only the content or context varies. A region that only
-some pages show is neither: it is an outlet that only those pages fill.
-The site's docs layer has a `rail` outlet that only the docs index
-fills (see [Outlets and fills](#outlets-and-fills)).
-
-## Resolvers: shared values from the route
-
-**Use a resolver when** more than one region needs the same looked-up
-value — the screen and the aside both read the project. A typed key
-names the resolver and the type it returns; a screen or group
-declares the resolver with `key.From`, and guards, `Load`, fills, and
-layout builds read it with `key.Get`. One cell per key per request:
-the first reader runs it, concurrent readers wait, the value or error
-is kept.
+When a screen, its fills, and its guards all need the same looked-up record, declare a typed resolver once per request:
 
 <!-- gofastr:compile
 import "context"
@@ -418,7 +182,7 @@ stmt: _ = p
 stmt: _ = err
 -->
 ```go
-var ProjectKey = app.NewKey[Project]("project") // a package var
+var ProjectKey = app.NewKey[Project]("project")
 
 group.Resolve(ProjectKey.From(func(ctx context.Context) (Project, error) {
 	m, _ := app.MatchFromContext(ctx)
@@ -428,62 +192,16 @@ group.Resolve(ProjectKey.From(func(ctx context.Context) (Project, error) {
 	}
 	return p, nil
 }))
-group.Requires(ProjectKey) // eager: runs in the policy phase, before any Load
+group.Requires(ProjectKey) // runs eagerly before Load; ErrNotFound -> 404 page
 
 p, err := ProjectKey.Get(ctx)
 ```
 
-Keys compare by identity, not by name: two packages that both call a
-key "project" never share a value. Declare each key once, as a package
-var, and share the var. The name only appears in errors.
+Errors read during policies, `Requires`, or screen `Load` become whole-page outcomes (`app.ErrNotFound` → 404, other errors → 500 via `uihost.WithErrorScreen`); errors read only inside a fill or area stay contained to that region.
 
-Resolvers must be reads. Where an error lands depends on the phase that
-first read it: a guard, the screen's `Load`, or an eager `Requires` →
-a whole-page outcome (`app.ErrNotFound` renders the not-found page with
-status 404, anything else the error page with status 500, no error text
-in the body). First read inside a fill, area, or build → contained to
-that region and logged. `uihost.WithErrorScreen(&ErrorScreen{})` gives
-the 500 page a product surface through the app's layout, like
-`examples/site/tracker`'s.
+### Region guards
 
-A `Requires` key with no visible declaration (the resolver sits on a
-sibling group, or was never declared) panics at mount
-(`Router.ValidateRequires`, called by `uihost.Mount` beside the fill
-check) and at the first render of a screen registered later, naming
-the group and the screen: the eager check it was meant to add would
-otherwise be silently dropped. Declare the resolver on the group
-when only some member screens read the value; the others still run it
-eagerly (typically resolving to an inert value).
-
-**The mistake it prevents:** each region re-fetching the same record
-(the screen, the aside, the toolbar each running the query), or a
-missing entity rendering half a page.
-
-## Region guards
-
-A `Policy` can attach to one region instead of the whole screen:
-`OutletOptions.Policy`, `AreaSpec.Policy`, or `app.FillPolicy(p)` on one
-fill declaration. Every region guard runs in the policy phase, before
-any `Load`. The first `Redirect` moves the whole page, and so does
-`decide.NotFound()`, which makes the page the not-found page; `RenderAlt`
-and `Block` are recorded and applied to their region alone. On the
-not-found and error pages themselves, a guard's `NotFound` blocks its
-region. Every surface
-that answers for the page runs them: the render, deferred part
-requests, server actions (a redirect refuses the action with 403), the
-sitemap and the llm.md documents. `(*App).PagePolicy(ctx, path)` is
-that policy phase for one URL; `(*App).PatternPolicy(ctx, screen)` is
-the answer for a route pattern, which withholds a dynamic pattern whose
-layout carries any region guard or whose group `Requires` a resolver.
-A server action that names no page of its screen gets the pattern's
-answer, so an action on such a screen must name one.
-
-The policy phase runs in one order on every surface: the eager
-resolvers, the screen chain, then the region guards (skipped when the
-chain answered `Redirect` or `Block`). A whole-page resolver failure
-read anywhere in that phase, a guard's own read included, wins over
-every decision: the page answers its error (404 for a missing row)
-before `Load` runs, and a deferred part request resets.
+Attach a policy to a single outlet (`OutletOptions.Policy`), area (`AreaSpec.Policy`), or fill (`app.FillPolicy`):
 
 <!-- gofastr:compile
 import "context"
@@ -504,16 +222,13 @@ var activity component.Component
 issue.Fill(aside, activity, app.FillPolicy(app.PolicyFunc(archivedGuard)))
 ```
 
-**The mistake it prevents:** a condition that belongs to one region
-(the archived project's read-only aside) blocking or replacing the
-whole screen.
+`RenderAlt` and `Block` apply to that region alone; `Redirect` and `decide.NotFound()` apply to the whole page.
 
-## Deferred outlets: parallel part requests
+## Deferred outlets, loading states, transitions & owned styles
 
-**Use `Deferred` when** an outlet's fill is slow but the page should
-paint — an activity feed, a suggestions panel. Deferral belongs to the
-outlet, never to one fill (a candidate can decline at request time, so
-a per-fill flag cannot tell the manifest in advance):
+### Deferred outlets
+
+Slow, read-only fills (activity feeds, recommendations) can stream in parallel after the main page paints on client navigations (first loads and static exports still render inline):
 
 <!-- gofastr:compile
 import "time"
@@ -531,41 +246,9 @@ aside := app.NewOutlet("aside", app.OutletOptions{
 })
 ```
 
-On a client navigation the page request skips the outlet's loaders and
-ships its loading content in place; the fill arrives as its own request
-(one per deferred outlet, visible in DevTools with its own body and
-timing) and lands when ready. First loads and static export ignore
-deferral and render the fill inline — nothing depends on JavaScript.
-If the envelope runtime chunk cannot load at boot, that inline content
-remains usable; the parts handoff consumes the failed load rather than
-raising an unhandled promise rejection.
-A deferred loader must be a read: the part request starts before the
-page answer says whether the page redirects. When the two disagree
-(session expired, a guard redirected), the part answers 409 and the
-runtime reloads the URL as a whole document, once.
-Parts also send the live runtime's `X-Gofastr-Markup` generation. A
-browser fetch with a stale or missing generation gets the same bodyless
-409 reset before any fill renders, even if the page came from cache.
-Requests without Fetch Metadata keep the ordinary part response.
+### Loading placeholders
 
-A part request that fails in transport (a proxy's 502, 503 or 429, a
-dropped connection) is sent once more after a short pause. When the
-retry fails too, the region stops showing its loading content: the
-runtime writes its `runtime.part_failed` phrase ("This section could
-not load.") in its place and marks the region
-`data-cui-loadstate="error"`, so the region's own registered style can
-key on the state. A loader that returns an error is a different case:
-the server renders that outlet's fallback into the part, which lands
-like any other fill.
-
-## Loading content
-
-**Use `Loading` when** a navigation is slow enough that the old content
-lying in place reads wrong. Declare what a region shows while a
-navigation that will change it is in flight — per outlet
-(`OutletOptions.Loading`), per route area (`AreaSpec.Loading`), and per
-screen for the primary slot (`Screen.WithLoading`, with
-`ScreenGroup.WithLoading` as the group default):
+Show a skeleton during slow navigations on a screen (`Screen.WithLoading`), group (`ScreenGroup.WithLoading`), outlet, or route area. Use `app.NewContextComponent` when the placeholder needs the reader's locale:
 
 <!-- gofastr:compile
 import "context"
@@ -580,54 +263,16 @@ var reports *app.Screen
 ```go
 reports.WithLoading(&app.Loading{
 	Show: app.NewContextComponent(func(ctx context.Context) render.HTML {
-		return ui.SkeletonCard(ui.SkeletonCardConfig{Ctx: ctx}) // "Loading…" in the reader's language
+		return ui.SkeletonCard(ui.SkeletonCardConfig{Ctx: ctx})
 	}),
-	After: 150 * time.Millisecond, // shown only past this wait
-	Min:   300 * time.Millisecond, // held at least this long once shown
+	After: 150 * time.Millisecond,
+	Min:   300 * time.Millisecond,
 })
 ```
 
-Loading content renders in the reader's locale. An outlet's or area's
-template renders under the page's request context; the primary slot's
-rides the route graph in `manifest.js`, which the host builds once per
-catalog locale, each body with its own `?v=` hash, and a page links the
-body of its own locale (a static export inlines the same graph into
-each locale tree). Give `Show` a context component, as above, when the
-content says words: the kit's skeletons and spinner read their default
-label from `Ctx`. `app.LoadingComponent(markup)` takes markup that was
-rendered when you declared it, so a skeleton built there without `Ctx`
-says the default language's "Loading…" on every page.
+### View transitions
 
-The server renders `Show` into an inert `<template>` beside the
-region, so the browser holds the bytes before the fetch starts. Past
-`After` the runtime parks the region's old nodes and clones the
-template in; a response faster than `After` paints nothing extra, and a
-failed navigation puts the parked nodes back as they were. So does a
-navigation a second click replaced: the newer one keeps the parked
-nodes, and a region its answer does not fill gets them back. Superseding
-an exit animation still completes the older navigation's cleanup within
-the exit timeout, even when its region no longer animates. Loading
-content is presentational: no `Load`, no DI, no params. A slow screen
-`Load` is the swap slot's loading case; a slow outlet fill is the
-outlet's (or a deferred part).
-
-## Transitions
-
-Cached navigations retain the page answer's keyed transition, including on
-pages with outlets; revisiting a cached page uses the same transition pick
-as its fetched answer. Picks are recorded even when reduced motion is
-enabled or the browser cannot animate view transitions, so a later cache
-replay still has the destination's pick if animation becomes available.
-
-If a navigation's DOM update throws inside a view transition, the runtime
-uses the normal navigation failure path: it shows a failure toast, restores
-the prior URL, and clears loading state. Earlier DOM updates may already
-have applied; URL restoration does not roll them back. Skipping an animation
-alone remains silent; it does not report a failed navigation.
-
-**Use a transition when** a swap should read as motion — the
-master-detail slide, a crossfade that avoids a flash of identical
-chrome. Typed values on the spec; the framework generates the CSS:
+Declare typed transitions on `Primary` or outlets (`app.Slide(app.Right, d)`, `app.Crossfade(d)`, `app.FadeThrough(d)`, `app.Instant()`, or root `app.ViewTransitionPresetCSS("fade")`). Animations respect `prefers-reduced-motion` and are skipped gracefully if unsupported:
 
 <!-- gofastr:compile
 import "context"
@@ -648,37 +293,12 @@ layout := app.NewLayout("shell", app.LayoutSpec{
 	},
 }, build)
 site.SetDefaultLayout(layout)
-fwApp.Mount(uihost.New(site)) // the host ships the layout's transition CSS
+fwApp.Mount(uihost.New(site))
 ```
 
-Presets: `app.Slide(app.Right, d)` is the master-detail move (the
-back direction mirrors automatically), `app.Crossfade(d)` fades both
-legs, `app.FadeThrough(d)` runs the legs sequentially — for regions
-whose two states carry text that must not ghost over itself.
-`app.Instant()` swaps the region in one frame while the page
-transitions around it: the fit for a breadcrumb trail, whose root is
-the same on every page and would blink under any fade. Nor does it dim while a slow navigation is in flight, as other busy regions do; it keeps `aria-busy` for screen readers. `Transition{Name: "..."}` assigns a snapshot name without
-generating keyframes; use a framework preset when the region needs a move.
-`NewLayout` registers the layout's generated `Layout.TransitionCSS()`
-as a component sheet of its own (`Layout.TransitionSheet()`), and the
-layer's root names it, so only pages that render the layer load it,
-before the swap that brings the layer in; there is nothing to wire. A
-host lists its component sheets once, at first render, so register
-screens and groups before serving: a layout with transitions that
-arrives later logs a warning naming it, and client navigations into it
-run without its transitions. Root-wide
-presets by name come from `app.ViewTransitionPresetCSS("fade")`. The
-runtime wraps the swap in the View Transitions API with the direction
-type (`forward`/`back`/`reload`), never animates under
-prefers-reduced-motion, and a document declaring none swaps directly as
-before.
+### Owned styles (`*.style.css`)
 
-## Owned styles
-
-**Use one when** a layout, a screen or the whole app needs a look the
-kit components don't give it. Write the CSS in a `<name>.style.css`
-file beside the Go, run `gofastr generate styles` (see the
-[CLI](cli.md)), and hand the generated handle to its owner:
+Attach generated CSS handles from `gofastr gen styles` to a layout, screen, or the whole app:
 
 <!-- gofastr:compile
 import "context"
@@ -691,439 +311,38 @@ var site *app.App
 var ShellStyle, BoardStyle, AppStyle app.OwnedStyle
 -->
 ```go
-shell := app.NewLayout("shell", app.LayoutSpec{Style: ShellStyle}, build) // shell.style.css
+shell := app.NewLayout("shell", app.LayoutSpec{Style: ShellStyle}, build)
 site.SetDefaultLayout(shell)
-site.RegisterScreen(app.NewScreen("/board", &BoardScreen{}).WithStyle(BoardStyle), nil) // board.style.css
-site.WithStyle(AppStyle) // app.style.css
+site.RegisterScreen(app.NewScreen("/board", &BoardScreen{}).WithStyle(BoardStyle), nil)
+site.WithStyle(AppStyle)
 ```
 
-- `LayoutSpec.Style` scopes the sheet to the layout. The layout root
-  carries `data-cui-scope="<name>"`, and the rules reach everything the
-  build renders: the chrome, the screens in its primary, the fills in
-  its outlets.
-- `Screen.WithStyle` scopes the sheet to one screen's content. The
-  content is wrapped once, in its `<article>` for an article screen and
-  in one plain `<div>` otherwise. The primary cell is never the root,
-  because it stays in place while screens swap inside it, and the
-  screen's fills render outside the wrapper.
-- `App.WithStyle` declares `app.style.css`, the one sheet that covers
-  every page and loads on every page. A scoped sheet passed here
-  panics, and so does the app sheet passed to a layout or a screen.
+Scoped sheets stop at nested owners and load automatically when their owner renders.
 
-A scope stops at a nested owner's content (a styled screen inside a
-styled layout, a scoped component) and at markup the framework marks
-internal; the nested owner's root element is still in the outer reach.
-Inside its reach an owned rule beats a kit rule of equal specificity
-whatever order the two sheets loaded in, because a scoped rule wins on
-proximity. A scoped sheet loads when its owner's marker renders: in the
-first paint's head, and on insertion after a client navigation.
+## Sidebar, header & shell building blocks (`ui.Stack`, `ui.ContentRow`, phone sheets)
 
-## Validation, containment, and the layoutfunc lint
+Compose page frames from `framework/ui` structural components:
 
-Rules the code enforces, each failing loudly instead of silently:
+- **`ui.Stack{Screen: true, StickyHeader: true}`:** Makes the page at least viewport-tall, pins its `<header>` child, publishes `--ui-sticky-top` so sticky rails/toolbars/TOCs sit below it, and adds focus scroll margins (WCAG 2.4.11). Put the header *inside* the `Screen: true` stack as its first child.
+- **`ui.ContentRow`:** Combines `Sidebar`, `Toolbar`, `Aside`, and `l.Primary()`. Pick one scroll model (mutually exclusive):
+  - `Viewport: true` — desktop panes scroll independently (good for full-screen workspaces and `ui.ListDetail`).
+  - `Sticky: true` — window stays the scroller while sidebar and toolbar stick below `--ui-sticky-top` (good for docs and admin consoles).
+  - `Dense: true` — applies compact density (36px controls) on fine pointers (mouse/trackpad) while keeping 44px touch targets on phones.
+  - `PhoneNavFlush: true` / `PhoneAsideFlush: true` — removes mobile column separators when navigation/TOC uses a floating `PhoneSheet` or header drawer trigger (`ui.SidebarDrawerTrigger`).
+- **Mobile navigation & TOC sheets:** `interactive.SectionMenu` (`FillColumn: true`, `Filter: true`, `SwapAt: interactive.SwapMD`/`SwapLG`, paired with `SectionMenuDrawer`/`SectionMenuDrawerFunc`) and `ui.TableOfContents` / `ui.AnchoredRail` (`PhoneSheet: true`, or `PhoneSheetTop: true` when a page already has a bottom pill) fold smoothly into native mobile sheets.
 
-- **Mount validation** (`NewLayout` panics): layout, outlet and area names
-  outside ASCII letters, digits, `-` and `_` (empty names included);
-  duplicate area or outlet name
-  in one layout; a handle bound to two layouts; `FallbackNotFound`
-  beside a `Default`; an invalid view-transition name; both the static
-  `Transition` and the per-request `Transitions` set. A mistyped outlet
-  is a compile error before any of this.
-- **Fill validation** (render-time panic): every `Fill` must name an
-  outlet whose owning layout is in the screen's resolved chain,
-  compared by pointer identity. A group's fills fail for a member
-  screen whose layout the group overrides.
-- **Inventory per render**: each build must place its primary and every
-  outlet it owns exactly once, name each route area once, and emit no
-  `<main>` of its own. The count is taken on the markers in the output,
-  so markup copied into two places is caught. A mismatch is a render
-  error naming the layout.
-- **Containment**: a panicking build renders an empty layer; a failing
-  fill (any non-`ErrNoFill` `Load` error, a render panic) is logged
-  once, scrubbed, and contained to its outlet — the region renders the
-  failing fill's `component.ErrorBoundary` fallback, else the outlet's
-  `Default`, else nothing. The page keeps the screen's status; no error
-  text reaches the HTML. Fills load concurrently (bounded), so sibling
-  fills never serialize; a fill must not depend on another fill's side
-  effects.
-- **The `layoutfunc` lint** (a type-aware analyzer in the repo's vet
-  tool and `gofastr verify`): it flags `app.MatchFromContext`,
-  `Match.Param`, `Match.Path`, `route.From`, `app.RequestFromContext`
-  and `app.QueryFromContext` read lexically inside a `LayoutFunc` body
-  and outside a `RouteArea` closure, and a `Key.Get` there whose
-  resolver (declared in the same package with `Key.From`) reads the
-  query or the request — the build's markup is static
-  chrome a partial never refreshes, so request-derived chrome goes
-  stale after the first navigation. **The fix:** move the read into the
-  `RouteArea` closure (it receives the match), bind a `route.*` signal
-  for browser-side updates, or make the region an outlet a screen
-  fills. Everything outside a build body (a resolver, a screen `Load`,
-  a helper) is silent: the lint is about where the read lives.
+## Prefetch, scroll & history
 
-## What the server renders
-
-Every layer wraps in a div carrying `data-cui-layout="<name>"` and
-`data-cui-layout-key="<key>"` (the layer's identity: `l:<identity>` for
-a plain layout, `g:<prefix>:<identity>` for a group layer, with
-resolved param values substituted into `<prefix>`). The primary cell
-carries `data-cui-layout-slot="<key>"` — `<main id="main-content">` at
-the root, a div below it. Other outlets render
-`data-cui-outlet="<key>#<name>"`, areas `data-cui-area="<key>~<name>"`;
-those addresses are derived from the chain, never written by hand.
-
-The route manifest carries each route's chain as the `layouts` array of
-those keys, outermost first. On navigation the client finds the deepest
-layer shared with the DOM, sends `X-Gofastr-From`, and the server
-renders only the layers below it, naming the boundary in
-`X-Gofastr-Swap`; the response also carries every non-primary outlet
-and route area of the kept layers as fills, so one navigation response
-updates every region that follows the route.
-
-## What the client swaps
-
-- Sibling inside a group → only the innermost content cell changes.
-  The sidebar keeps its DOM nodes, scroll, and open disclosures.
-- Different branch under a shared root → the shared chrome stays; the
-  diverging layers re-render.
-- Nothing shared → full page fetch, whole shell replaced. Still no
-  hard reload.
-
-One difference between routes always overrides the chain comparison:
-document-lifetime scripts. A script registered with
-`uihost.RegisterDocumentScript(src, scope)` ships only on pages the
-scope accepts, tagged `data-cui-doc`; the runtime compares the
-destination's set against the live document's tags at every soft-nav
-entry, and a difference is a real navigation, never a partial swap,
-because removing a script tag does not uninstall what the script
-installed (WebMCP tools are the case that made this a boundary).
-Back/Forward across an edge loads the destination document fresh.
-
-## Opt-in, and what each opt-in costs
-
-Everything above the plain tree layout is opt-in; the zero value of
-every option does nothing:
-
-- **No outlets, no areas** → navigation is the plain partial swap it
-  always was; the page ships the core runtime only. The site's main
-  layout (`examples/site`, `mainLayout`) declares none of the machinery.
-- **Outlets/areas present** → the client sends the fills header and the
-  response is an envelope; the envelope module loads on demand. Costs
-  the fill DOM: outlet content belongs to one route and is re-applied
-  on every navigation; content that must survive sibling navigation
-  (a list pane, its scroll) belongs in a group layer, not an outlet.
-- **Loading content** (`Loading.Show` set) → an inert template per
-  region; the loading module loads on demand.
-- **Deferred outlets** → one extra request per deferred outlet per
-  navigation, capped in flight; loaders must be reads.
-- **Transitions** → generated CSS at the root and a demand module; the
-  plain swap is the default.
-
-`route.*` values are seeded only when the render read a route slice or
-the chain has a route area.
-
-## Porting from v0.85's fixed-template layouts
-
-The previous release's layout was a fixed template (a header, sidebar,
-footer, and content slots declared through builder methods); those
-builders are gone. Port by moving the header/sidebar/footer components
-into the build function's static chrome and the screen cell to
-`l.Primary()`; `ui.Sidebar` is unchanged, the header and footer are
-the app's own packages (`ui.SiteHeader`, `ui.SiteFooter` and
-`ui.DocLayout` are gone; see [What changed in
-v0.86.0](release-0-86.md#layouts-one-primitive-no-preset-frames)), and
-the frame is composed from the structural pieces (the page-tall
-`ui.Stack`, `ui.ContentRow` for the sidebar row, `ui.Container` for the
-centered column):
-
-```go
-layout := app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
-	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-		ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
-})
-site.SetDefaultLayout(layout)
-```
-
-`Screen: true` makes the stack the page column: at least one viewport
-tall, with its last child pushed to the bottom (a footer on a short
-page). Put the header inside it as the first child, as `buildShell`
-above does. A screen-tall stack placed *below* a header is a viewport
-plus the header tall, so every page scrolls and a header-height dead
-band opens above the last child. Inside a layout that already provides
-the page column, use a plain `ui.Stack` for the screen's content.
-
-`StickyHeader: true` pins the stack's `<header>` child (the banner
-landmark) while the page scrolls, and says where it ends: the stack
-publishes the header's height, `--size-header-height`, as
-`--ui-sticky-top`, and every sticky part inside the page reads it. A
-`Sticky` content row's nav column and toolbar, a `ui.StepRail`, an
-`interactive.SectionMenu` rail, a `ui.TableOfContents`, a
-`ui.AnchoredRail`, a `ui.GlobalSearch`, a `ui.NetworkRetryBanner`, a
-top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
-`ui.Section` all stop under the header instead of sliding behind it, at
-any layer depth, with no flag of their own. A region that scrolls on
-its own (a bounded `ui.Box`, the pinned nav column, a `ui.ListDetail`
-list, the PaneHost drawer) resets the offset to 0, so a sticky part
-inside it pins to that region's top. Children
-above the header (an announcement strip) scroll away. The header's own
-style sheet leaves positioning to the stack, and its bar is that token
-tall. An owned sheet that pins something of its own (a docs rail)
-offsets it by `var(--ui-sticky-top, 0px)`.
-
-Keyboard focus clears the bars too (WCAG 2.4.11). Inside a
-`StickyHeader` stack, and in a `Sticky` content row's workspace, a
-focused control carries a scroll margin of `--ui-sticky-top` plus a
-phone sheet's bar and room for the focus ring. The browser counts a
-control behind the header or toolbar as in view and would leave it
-there; with the margin, Tab and Shift+Tab scroll it out from under
-them.
-
-### Context columns and list/detail panes
-
-`ui.ContentRowConfig.Aside` adds a labelled context column after main.
-`AsideLabel` defaults to "Context". The column has a fixed wide-screen
-width and stacks below main on phones. An empty outlet in `Aside` takes
-no space; a later navigation can fill it again.
-
-`ContentRowConfig.Toolbar` places an existing `ui.Toolbar` above main
-beside the sidebar. It does not create another toolbar component. The
-row is a `<section>` landmark named by `ToolbarLabel` ("Toolbar" by
-default), so controls placed there sit inside a landmark.
-`Viewport: true` confines desktop scrolling to main, sidebar and aside.
-The aside is then a tab stop (`tabindex="0"`), so a keyboard can scroll
-it even when it holds nothing focusable, such as an activity feed.
-Below the breakpoint it returns to document flow, without hiding either
-pane — and it reads the header band's height from
-`--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
-`ui.Stack{Screen: true}` and an app bar whose height is that token.
-`Sticky: true` keeps the window as the scroller: the nav column sticks
-at one viewport tall and scrolls its own overflow, and the `Toolbar`
-row sticks at every width, painted over the content beneath it. Both
-stick at `--ui-sticky-top`: the window's top in a shell with no header
-band (the admin's), under the header when the page stack sets
-`StickyHeader` (the column is then the rest of the viewport tall). The
-workspace under the toolbar publishes `--ui-sticky-top` grown by the
-toolbar's height, so sticky parts in main clear the toolbar too. The client router's scroll restore and fragment
-jumps keep working because the window stays the scroller. Sticky and
-Viewport are two scroll models; setting both panics.
-Under a sticky site header the row needs nothing extra: the page
-layout's stack sets `StickyHeader`, this inner layer's row sets
-`Sticky`, and a long menu scrolls on its own under the header while the
-page scrolls beside it. The footer stays where the page layout puts it,
-full width below the row:
-
-```go
-layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
-	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true}, l.Primary())
-})
-```
-
-An `interactive.SectionMenu` in that column sets `FillColumn: true`:
-its rail drops its own sticky offset and viewport cap, fills the pinned
-column to the bottom of the screen and scrolls there. The column has no
-padding of its own, so the filled rail insets its links from the
-column's edges. In the rail each group's header pins to the top while
-its links scroll under it, the current page carries an accent dot, and
-the group holding it takes the accent. `Filter: true` adds a filter box
-above the list: typing hides the links that don't match, marks the
-match, shows "matches/total" in each group header, and Escape clears
-it. Composition Escape (`isComposing` or keyCode 229) leaves the filter
-and its enclosing sheet alone. `FilterPlaceholder` and `FilterEmpty`
-set its text.
-Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
-pill at 900px by default, while the row stacks at 48rem
-(`interactive.SwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
-at 64rem (`interactive.SwapLG`). A mismatch leaves the column
-holding a lone pill beside the content, or a full rail stacked above
-it. An unknown value panics.
-The pill floats at the bottom of the screen, names the current page and
-its group (kept current across client navigations), and opens
-`interactive.SectionMenuDrawer` as a bottom sheet with the current
-page's group open. The page ends a pill's height lower, so the pill
-never covers its last line. Mount that drawer once in the layout, under the same
-`DrawerName`. `SectionMenuDrawer(cfg)` renders the items it was given
-at mount; when the menu changes after startup (a registry that grows,
-items that depend on the request), mount
-`interactive.SectionMenuDrawerFunc(build)` instead: `build(ctx)` runs on
-every render of the sheet with the request's context, so the sheet lists
-what the rail lists on that request. The `DrawerName` from the first
-call, made at mount with `context.Background()`, is kept. `InlineTrigger: true` keeps the pill in flow instead, for
-a menu shown inside a card or a demo. The knobs are
-`--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
-`--ui-section-menu-inset` (the link inset), `--ui-section-menu-dot`
-(the current page's dot) and `--ui-section-menu-chevron-opacity` (0.7,
-the sheet's group chevrons). The pill is `interactive.SheetPill` and the
-sheet's title row is shared with `interactive.PhoneSheet` (below), so
-their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
-pill's gap above the screen edge; set it on `:root`, where the page's
-end padding reads it too), `--ui-sheet-close-size` (the close
-button) and `--ui-sheet-head-inset` (the gap before the sheet's title:
-0 in a `PhoneSheet`, the link inset in a SectionMenu's sheet).
-`PhoneNavFlush: true` drops the nav column's phone separator below the
-breakpoint. Set it when the sidebar's phone navigation lives outside
-the column: a SectionMenu, whose pill floats over the page, or a
-`NativeMobile` sidebar whose drawer trigger, `ui.SidebarDrawerTrigger`,
-the app bar hosts. The column then renders empty and draws no rule.
-
-The aside's contents list folds the same way. `ui.TableOfContents` with
-`PhoneSheet: true` renders as it always does at and above its
-`Breakpoint` (md by default; match the row's). Below it the list moves
-into a bottom sheet and the same floating pill opens it, naming the
-section in view: the pill follows the entry the `Target` observer
-marks, so set `Target` as well. The sheet is a native popover rendered
-with the page, so it holds that page's own entries, opens with no
-script, and closes on Escape, a tap outside it, its close button, or a
-followed link. Opening it moves focus to the current entry (or the
-close button), and closing it returns focus to the pill. Set
-`PhoneAsideFlush: true` on the row: the stacked aside then holds
-nothing on a phone and draws no rule. The pill floats at the bottom of
-the screen, so a page carries one floating pill. On a page whose
-SectionMenu already floats its own, set `PhoneSheetTop`: the contents
-pill becomes a full-width "On this page: <section>" bar pinned under
-the sticky header (`--ui-sticky-top`), and the list hangs from the
-bar's bottom edge instead of rising: the header and the bar stay above
-the dim, the bar's chevron turns, and a second tap on the bar closes
-it. Before the page scrolls to the bar it sits in flow, and the list
-hangs from where it is drawn. In a ContentRow aside the row needs no
-`PhoneAsideFlush` for a top bar: on a phone the aside moves above the
-main column and sticks under the header itself. Below the swap the page publishes the
-bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
-the rail's in-view band start below it; a theme that sets
-`--ui-section-scroll-margin` adds it itself
-(`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
-Knobs: `--ui-sheet-max-height` (75vh, how far the sheet rises),
-`--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
-offset reads it) and `--ui-sheet-bar-bleed`
-(0; set it to a padded column's gutter so the bar runs edge to edge
-and the list hanging from it lines up with the bar's text).
-A page carries one `PhoneSheet`; two overlap. The sheet's id is the list's `ID` plus
-`-sheet` (`fui-toc-sheet` without one). `ui.AnchoredRail` takes the
-same `PhoneSheet` option, with `SwapAt` (900px by default, or
-`interactive.SwapMD`/`SwapLG`) in place of `Breakpoint`: the pill names
-the section in view by the link's text without the parts marked
-`interactive.SheetChipClass` (the rail marks its number and count
-chips; formatting in the label stays), and the sheet's title is the
-rail's `Label`.
-
-```go
-ui.ContentRow(ui.ContentRowConfig{
-	Aside: ui.TableOfContents(ui.TOCConfig{
-		Items: items, Target: "main", Sticky: true, PhoneSheet: true,
-	}),
-	AsideLabel:      "On this page",
-	PhoneAsideFlush: true,
-}, l.Primary())
-```
-
-`interactive.PhoneSheet` is that sheet on its own, for any list that
-marks its current entry `aria-current`: body in flow at and above
-`SwapAt`, a pill and sheet below it. A sticky part in an outlet that
-fills the aside sticks to the whole column, since the outlet is as tall
-as the column.
-`Dense: true` gives the page the compact density on a fine pointer (a
-mouse or trackpad), declared on the document root so the drawers,
-dialogs and menus mounted outside the row follow: buttons, fields, the toolbar's controls and table
-rows take the 36px control height (44px table rows), the smaller gap,
-and the small step as the `--ui-control-padding-y` inset. The root also
-gets `--spacing-touch-target` at 36px, so search fields, checkboxes,
-menus and icon buttons sized from that token follow. A touch
-screen keeps the theme's density, so a phone holds its 44px targets.
-It is for operator consoles (the admin sets it); a `ui.Themed` scope
-inside the row redeclares its own density.
-List/detail panes (`ui.ListDetail`) fill whatever column the row's
-build gives them, so the frame decides their width. A sidebar and an
-aside are two fixed columns beside that content: with both present the
-detail pane gets roughly 300px at 1280px. Give list/detail pages the
-whole column. In an app frame, leave `Aside` unfilled on screens that
-don't need it: an empty aside outlet releases its column. `Viewport:
-true` makes the panes scroll on their own instead of the page:
-
-```go
-return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Viewport: true}, l.Primary())
-```
-
-`PaneHost` is different: it manages openable panes and mobile drawers,
-not detail routes.
-
-## Prefetch
-
-A route can declare that the client may fetch its content before the
-user clicks:
-
-```go
-application.Register("/pricing", &PricingScreen{}, nil, app.Preload(app.PreloadHover))
-```
-
-`PreloadHover` fetches on link hover or keyboard focus, `PreloadVisible`
-when a link to the route scrolls into view, `PreloadEager` at idle
-after page load. A hover or visible prefetch fetches the link's full
-URL, query included, so a link to `/orders?page=2` prefetches page 2.
-The prefetched response lives in a small 30-second
-cache the router checks before fetching; `ui.InvalidateScreens`
-selectors evict it like the screen cache. Prefetch requests carry
-`X-Gofastr-Prefetch: 1`, skip session side effects, and are never used
-for routes that would open as overlays. An entry also ends with the
-session it was rendered for: the answer carries
-`X-Gofastr-Session-Expires-In`, the whole seconds the session has
-left, and a click after that fetches the page instead of painting one
-whose islands and actions would answer 401. A prefetch with no live
-session gets a 204 and caches nothing. Declare it on cheap,
-frequently-next routes; a prefetched page with deferred outlets
-fetches the page only.
-
-## Scroll and history
-
-The runtime restores scroll position per history entry: Back and
-Forward land where the user left, kept panes keep their scroll, and a
-reload keeps its position. That includes Back across an in-page
-`#anchor` jump, which moves within one page. On a page with outlets the
-restore is anchor-first (the element at the top of the viewport keeps
-its offset when content above it changed height), but only for the
-history entry that recorded the anchor: an earlier visit to the same
-path lands on its own position. A history move whose only URL change is
-in-page state (a pane or widget deep-link parameter) closes or reopens
-that state without refetching the screen. Search and pagination
-parameters are screen identity and refetch as before.
-
-Modules that write in-page state into the URL must go through
-`__gofastr._pushURL(url)`. A raw `history.pushState` leaves the router
-unaware of the change and breaks both behaviors above. Query-only
-changes (`history.replaceState` by a filter island) do not activate a
-route and do not move `route.query.*`; a filter that wants a routed
-query navigates.
+- **Prefetch:** Pass `app.Preload(app.PreloadHover | app.PreloadVisible | app.PreloadEager)` to `Register` for cheap, frequently visited read routes (30s cache, evicted by `ui.InvalidateScreens`, expires with the session).
+- **Scroll & history:** Back/Forward restores scroll per history entry (anchor-first on pages with outlets) and replays in-page pane/widget deep links without refetching. Custom JS that pushes URLs must call `__gofastr._pushURL(url)` instead of raw `history.pushState`.
 
 ## Common mistakes
 
-- **Hand-rolling the shell in every screen.** Declare one
-  `NewLayout`, `SetDefaultLayout`, and register screens under it.
-  A screen with its own layout renders in that layout alone; only
-  `ScreenGroup` screens nest under the default.
-- **Reading the match in the build's static chrome.** The markup is
-  built once and never refreshed by a partial; the `layoutfunc` lint
-  flags it. Use a route area, a `route.*` binding, or an outlet.
-- **Putting per-route state in an outlet and expecting it to survive
-  navigation.** Outlet fills are re-applied on every navigation;
-  persistent panes belong in a group layer (the param group prefix is
-  the tool).
-- **Filling an outlet from a layout that is not in the screen's
-  chain.** It panics at render, naming both; move the screen into the
-  group or fill from the right layer.
-- **A screen layout override inside a group that the group fills.** The
-  override leaves the group's layer, so the group's fills are invalid
-  for that screen; fill from the screen or drop the override.
-- **`FallbackNotFound` beside a `Default`.** Refused at
-  `NewLayout`: an unfilled outlet is either the Default's content
-  or the route's 404, never both.
-- **A deferred loader that writes.** The part request races the page's
-  outcome; deferral is for reads.
-- **Prefetching mutating or per-user-expensive routes.** Prefetch is a
-  real render on the server for a page the user may never open.
-- **Reusing one layout name for two different shapes.** Layer keys
-  embed the name; two distinct `*Layout` values named `"docs"` at the
-  same depth compare as the same layer, and navigation between them
-  keeps the wrong shell. Distinct shape → distinct name; same shape
-  varying by context → same name plus `WithKey`.
-- **Writing `history.pushState` directly in custom client code.** Use
-  `__gofastr._pushURL(url)`; a raw push leaves `currentPath` stale and
-  breaks scroll restoration for the entry.
+- **Hand-rolling page shells in every screen.** Declare one `NewLayout` + `SetDefaultLayout` so sibling navigations never re-render shared chrome.
+- **Reading route state in static chrome.** The `layoutfunc` lint flags it because partials don't re-run static chrome; use `RouteArea`, `app.Route.*`, or an outlet.
+- **Putting persistent panes in an outlet.** Outlets re-render every navigation; persistent panes (like a kept project list) belong in a `ScreenGroup` layer.
+- **Filling an outlet outside the screen's layout chain, or overriding a group's layout on a screen that relies on group fills.** Both fail validation at render time.
+- **Setting both `FallbackNotFound` and `Default` on an outlet.** Refused by `NewLayout`.
+- **Running mutations in a deferred outlet loader or prefetching expensive/mutating routes.** Both are for read-only loads.
+- **Reusing one layout name for two distinct shapes.** Layer keys embed the name—use distinct names for distinct shapes, or `WithKey` for context variants of the same shape.
+- **Calling raw `history.pushState`.** Always use `__gofastr._pushURL(url)` so scroll restoration and router state stay in sync.

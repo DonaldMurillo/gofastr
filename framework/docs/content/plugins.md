@@ -1,150 +1,36 @@
-# Plugins
+# Plugins and batteries
 
-A plugin is a small Go value that bundles related additions to an `App`:
-routes, middleware, hooks, MCP tools, logger swap, anything an App can
-host. It registers them in **one** call. Plugins exist so a feature
-can be shipped as a single package and dropped into any GoFastr app
-without touching `main`.
+A **Plugin** bundles related additions to a `framework.App` — routes, middleware, hooks, MCP tools, or a logger swap — behind one `Init(app *framework.App) error` method so features stay modular and drop cleanly into any app.
 
 ## Minimum plugin
 
 ```go
 type MyPlugin struct{}
 
-func (MyPlugin) Name() string                  { return "my-plugin" }
-func (MyPlugin) Init(app *framework.App) error { return nil }
+func (MyPlugin) Name() string { return "my-plugin" }
+func (MyPlugin) Init(app *framework.App) error {
+	app.Router().Get("/hello", helloHandler)
+	app.Use(myMiddleware)
+	app.MCP.RegisterTool("my_tool", "Does the thing", schema, handler,
+		mcp.WithToolGate(auth.MCPRole("admin")))
+	app.HookRegistry("users").RegisterHook(framework.AfterCreate, sendWelcomeEmail)
+	return nil
+}
 
 app.RegisterPlugin(MyPlugin{})
 ```
 
-The `Init` method runs at `App.Start` (or `App.InitPlugins`) and is the
-plugin's single integration point. From inside `Init` a plugin does
-everything it needs by calling into the `App`:
+Key behaviors:
+- **Late-bound middleware:** middleware registered in `Init` wraps routes registered earlier (no ordering footgun).
+- **MCP tool gating:** directly registered MCP tools do not pass through HTTP route middleware — gate them with `mcp.WithToolGate(...)` (which also hides the tool from `tools/list` for unauthorized callers). Entity CRUD tools already inherit HTTP auth, owner scoping, and RBAC automatically.
+- **Panic isolation:** `Init`, `OnStart`, `OnReady`, `WithSeed`, and battery hooks recover panics into attributed errors rather than crashing the process (scrubbing panic values from user-facing errors and logging stacks).
 
-```go
-func (MyPlugin) Init(app *framework.App) error {
-    app.Router().Get("/hello", helloHandler)
-    app.Use(myMiddleware)
-    app.MCP.RegisterTool("my_tool", "Does the thing", schema, handler)
-    app.HookRegistry("users").RegisterHook(framework.AfterCreate, sendWelcomeEmail)
-    return nil
-}
-```
+## Lifecycle hooks and seeding
 
-There are no optional interfaces: no `HasRoutes`, `HasMiddleware`,
-`HasHooks`, `HasTools`. The router resolves its middleware chain
-late-bound per request, so middleware added from `Init` wraps routes
-registered earlier (e.g. by `Mount`). There is no ordering footgun to
-dodge. A screen registered from `Init` gets its server actions
-compiled at `Start`, after every `Init` has run.
-
-Directly registered MCP tools do NOT pass through route middleware;
-the handler runs as-is for any caller who can reach `/mcp`. To
-auth-gate one, register it with `mcp.WithToolGate` and a precondition;
-battery/auth ships ready-made gates that read the identity the app's
-global session/JWT middleware resolved onto the request context:
-
-```go
-app.MCP.RegisterTool("reports_rebuild", "Rebuild the reports cache", schema,
-    rebuildHandler, mcp.WithToolGate(auth.MCPRole("admin")))
-// auth.MCPUser() = any signed-in caller; auth.MCPRole("a", "b") = any of the roles.
-```
-
-`WithToolGate` also **hides the tool from `tools/list`** for callers who
-cannot invoke it: the `inputSchema` is a disclosure in its own right. The
-older `mcp.Gated(gate, handler)` wrapper still works but only reaches
-`tools/call`, so the schema stayed visible to everyone; prefer the option.
-
-(Entity CRUD tools don't need this; they re-dispatch through the
-router and inherit HTTP auth, owner scoping, and RBAC wholesale, and the
-framework gates their listing on the entity's `Access` permission.)
-
-## Init lifecycle
-
-- `RegisterPlugin` queues the plugin; it does NOT init.
-- `InitPlugins` runs every queued plugin's `Init` in registration
-  order, then every battery's `Init` in dependency-resolved order.
-- `App.Start` calls `InitPlugins` then binds the HTTP listener.
-  `Start`, `Serve` and `App.Run(ctx, host)` share one lifecycle
-  engine, so the order below is the same under every host; see
-  [Application hosts](application-hosts.md).
-- `App.Serve(ln net.Listener)` runs the same lifecycle (migrate, seed,
-  `InitPlugins`, `OnStart`, the full handler chain, `OnReady`, graceful
-  `Shutdown`) on a listener the host supplies instead of binding a TCP
-  address. It is the seam for a host that owns the transport, such as
-  an in-process listener feeding a mobile WebView, where no socket may
-  be opened. Worktree isolation never remaps it, `OnReady` receives
-  `ln.Addr().String()`, and every return closes `ln` exactly once,
-  including a start phase that fails before the server exists. A
-  listener whose `Addr().Network()` is `"memory"` or `"pipe"` counts as
-  in-process and local-only, so `Shutdown` skips the production
-  readiness drain the way a loopback bind does, and the dev MCP and
-  livereload stay on. A TCP listener is judged by its host, as
-  `Start`'s is: loopback is local, and a wildcard or routable address
-  keeps the drain and counts as exposed. Every other network, a unix
-  socket included, keeps the drain and counts as exposed, even when its
-  path reads like `127.0.0.1:8080`. For a listener that is not TCP the
-  startup banner prints paths instead of URLs. A host that hands every request
-  its one user's identity calls `NoteAuthenticator`, so the banner
-  stops saying no auth is wired.
-- Tests can call `InitPlugins` manually before driving the router
-  in-memory; the call is idempotent. `framework.TestHarness(t, app)`
-  invokes it automatically.
-- Only a successful `InitPlugins` call latches initialization. Every error,
-  including MCP registration errors, leaves it retryable; a retry must
-  complete initialization rather than silently allowing `Start` to proceed.
-  Registrars that already changed the MCP server before an error must handle
-  those existing registrations when retried.
-
-`RegisterPlugin` after `InitPlugins` panics: the new plugin would
-never get to run, which would silently break the caller's expectations.
-
-A plugin's `Init` panic (or an error return) is caught and attributed
-to the plugin by name in the resulting error. A panic's value stays out
-of the error (it may hold a secret); its stack goes to the App's logger,
-and the error says where when the logger's handler has a
-`LogLocation() string` method: the `battery/log` fan-out handler answers
-with its default file's `server.log` path. Already-initialised
-plugins are skipped on retry so a partial-init-then-fix retry doesn't
-double-register routes / middleware.
-
-## Lifecycle hooks
-
-Plugins that need to run code at App start / stop call the App's hook
-APIs from `Init`:
-
-```go
-func (MyPlugin) Init(app *framework.App) error {
-    app.OnStart(func(ctx context.Context) error {
-        // ... start a background worker ...
-        return nil
-    })
-    app.OnStop(func() error {
-        // ... stop the worker ...
-        return nil
-    })
-    return nil
-}
-```
-
-Every app-level lifecycle phase — `OnStart`, `OnReady`, `WithSeed`, and
-battery `OnStart`/`OnStop` — runs host-supplied callback code under the
-same panic isolation `Init` gets: a hook that panics aborts that phase
-with an attributed error (`Start` returns it and runs its teardown;
-`Shutdown` keeps stopping the remaining batteries and joins the errors)
-instead of crashing the process.
-
-For shutdown hooks that must run AFTER every other plugin's OnStop,
-e.g. the logging plugin's "close every sink" hook, use `OnStopFirst`:
-it prepends to the hook list, so the reverse-order Shutdown iteration
-runs it last. `battery/log` uses this so log sinks are still open while
-other shutdown code emits its final entries.
-
-`OnStart` runs *before* the port binds. To run code only once the HTTP
-listener is actually up, e.g. a startup banner or a "register with service
-discovery" call, use `App.OnReady`. To wait for the App's services
-whatever the host, with or without a listener, wait on
-`App.ServicesReady()`, which closes once every boot phase has succeeded:
+- `app.OnStart(fn)` — runs before the listener binds.
+- `app.OnReady(func(addr string))` — runs only after boot succeeds and the HTTP listener binds (for banners or service registration; wait on `app.ServicesReady()` on listener-less hosts like `ServicesHost`).
+- `app.OnStop(fn)` / `app.OnStopFirst(fn)` — graceful shutdown hooks (`OnStopFirst` runs last so log sinks stay open until other shutdown hooks finish).
+- `app.WithSeed(fn)` — runs after auto-migrate and per-entity `EntityConfig.Seed` under a Postgres advisory lock (keep hooks idempotent).
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -153,123 +39,24 @@ import "fmt"
 -->
 ```go
 app.OnReady(func(addr string) {
-    fmt.Printf("listening on http://%s\n", addr)
+	fmt.Printf("listening on http://%s\n", addr)
 })
 ```
 
-`OnReady` hooks fire after every Start phase (auto-migrate, seeds,
-plugin init, OnStart hooks) AND the bind itself succeeded, just before
-the server accepts its first connection. The `addr` argument is the
-listener's resolved address; starting on `":0"` delivers the real
-port. Hooks run in registration order, take no error return, and must
-not block. If any Start phase fails, `OnReady` never fires, so a
-banner printed here can't lie about a server that never came up.
-Generated apps and `gofastr init` scaffolds print their
-startup banner this way. The framework's own `server ready` banner follows
-the same bind boundary and includes `Listening: http://<resolved-address>`;
-a bind failure emits no readiness banner.
+## Plugin vs. Battery vs. Module
 
-A host with no HTTP listener (`framework.ServicesHost()`, or a native
-host) cannot give an `OnReady` hook an address, so `App.Run` refuses an
-App that registered one. Register the hook only on the path that calls
-`Start` or `Serve`, and wait on `ServicesReady` on the other.
+- **Plugin:** lightweight, runs in registration order. Use by default.
+- **Battery:** adds dependency-ordered `Init` (`app.RegisterBattery(b, "cache")`) and `BatteryLifecycle` (`OnStart`/`OnStop`). Auth/identity batteries call `app.NoteAuthenticator()` so startup banners know auth is wired.
+- **Module:** a Battery with live runtime enable/disable gating (see [Modules](modules.md)).
 
-## Post-migrate seeding: `App.WithSeed`
+## Typed lookups
 
-`App.Start` runs auto-migration as one of its first phases, so a
-`db.Exec("INSERT …")` written in `main()` *before* `Start()` fails with
-`no such table`: the table doesn't exist yet. `App.WithSeed` registers
-seed logic to run at the right moment instead:
+Prefer generic `framework.PluginGetAs` / `framework.GetAs` over manual type assertions:
 
 ```go
-site := framework.NewApp(framework.WithDB(db))
-site.Entity("foods", foodsConfig)
-
-site.WithSeed(func(ctx context.Context) error {
-    _, err := db.ExecContext(ctx,
-        "INSERT INTO foods (id, name) VALUES ('1', 'apple') ON CONFLICT DO NOTHING")
-    return err
-})
-
-site.Start(":8080")
+logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
+searcher, err := framework.GetAs[search.Backend](app.Batteries, "search")
 ```
-
-Seed funcs run during `Start` **after** auto-migration (every table
-exists) and the per-entity `EntityConfig.Seed` phase, and **before**
-plugins/batteries init and the listener binds. Multiple `WithSeed`
-calls run in registration order; the first non-nil error aborts `Start`
-(the partial-startup teardown drains anything an earlier phase spawned).
-The context is the app's lifecycle context, so a long-running seed
-respects shutdown.
-
-Across replicas, `WithSeed` hooks acquire the SAME seed advisory lock as
-the per-entity phase (distinct from the migration lock), so two replicas
-booting at once cannot run a hook concurrently. `WithSeed` hooks have no
-ledger: they serialize-per-boot but still run on every replica, so keep
-them idempotent (`INSERT … ON CONFLICT DO NOTHING`). (Exception: a
-`MaxOpenConns(1)` Postgres pool skips the lock with a WARN and is not
-coordinated across replicas; keep the pool above 1 connection.)
-
-Use `WithSeed` for app-level or cross-entity seed logic; use
-`EntityConfig.Seed` (idempotent, ledger-tracked) for per-entity fixtures.
-
-## Plugin vs Battery
-
-`Plugin` and `Battery` share the same single-Init contract. The
-difference:
-
-- `Battery` accepts dependency declarations at registration time
-  (`app.RegisterBattery(b, "needs-this")`) and runs in dependency-resolved
-  order. Use Battery when one battery must initialise before another.
-- `Battery` can also implement `BatteryLifecycle` (OnStart / OnStop)
-  for structured per-battery start/stop, separate from the App-wide
-  `OnStart` / `OnStop` hooks.
-- A battery or middleware that signs callers in calls
-  `App.NoteAuthenticator()` when it wires itself. `battery/auth` does
-  once `AuthManager.Init` has run and a middleware that resolves callers
-  exists (`SessionMiddleware(mgr)`, `mgr.Middleware()`, or
-  `RequireAuth(mgr.JWT())`, in either order), since `Init` alone mounts
-  the routes but signs nobody in. An app on `TokenMiddleware` alone calls
-  it itself. `battery/desktop` calls it when its window identity takes
-  effect. Until something does and an entity requires
-  auth, the startup banner prints one line naming the fix: wire
-  `battery/auth`, or set `Exposure.Public`. `App.AuthenticatorNoted()`
-  reads it back.
-- **Module**: a Battery that also needs runtime enable/disable. See
-  [Modules](modules.md) for the Module tier.
-
-For everything else, prefer `Plugin`.
-
-## Full example
-
-```go
-type Webhooks struct {
-    deliveries chan webhook
-}
-
-func (w *Webhooks) Name() string { return "webhooks" }
-
-func (w *Webhooks) Init(app *framework.App) error {
-    w.deliveries = make(chan webhook, 128)
-    app.OnStart(w.start)
-    app.OnStop(w.stop)
-
-    app.Router().Post("/__webhooks/test", w.testHandler)
-
-    for name := range app.Registry.All() {
-        app.HookRegistry(name).RegisterHook(framework.AfterCreate, w.fanOut)
-    }
-    return nil
-}
-
-// In main:
-app := framework.NewApp(framework.WithDB(db))
-app.Entity("posts", entityConfig)
-app.RegisterPlugin(&Webhooks{})
-log.Fatal(app.Start(":8080"))
-```
-
-## Lookups
 
 <!-- gofastr:compile
 stmt: _ = p
@@ -281,47 +68,13 @@ stmt: _ = names
 -->
 ```go
 p, err := app.Plugins.Get("webhooks")
-all := app.Plugins.All()      // []Plugin, registration order
-names := app.Plugins.Names()  // []string, registration order
+all := app.Plugins.All()
+names := app.Plugins.Names()
 ```
-
-`Get` returns an error rather than nil when the name is unknown so
-callers can distinguish "not yet wired" from "wired but disabled".
-
-### Typed lookups: `PluginGetAs` / `GetAs`
-
-`Get` returns the bare `Plugin` (or `Battery`) interface; you'd then
-hand-write a type assertion and an error path. The generic helpers do
-both in one call and return a typed error when the assertion fails:
-
-```go
-// Plugin by concrete type or an optional interface it satisfies:
-logp, err := framework.PluginGetAs[*logplugin.Plugin](app.Plugins, "log")
-
-// Battery equivalent:
-searcher, err := framework.GetAs[search.Backend](app.Batteries, "search")
-```
-
-Both return an error (never a usable zero value) when the name is
-unknown OR the registered module doesn't implement the requested type
-`T`, so a wrong-type lookup can't silently hand you a nil you'd
-dereference. Prefer these over `Get(...)` + a manual assert.
 
 ## Common mistakes
 
-- **Registering after `InitPlugins`**. The plugin queue is frozen at
-  init time. The framework panics with an explicit message; register
-  plugins before `Start` or before any manual `InitPlugins` call.
-- **Returning early from `Init` after partial side effects**. Side
-  effects (already-registered routes) don't roll back, but per-module
-  init tracking ensures a retry won't re-run a successful plugin.
-  Either return the error early before any side effects, or finish
-  the wiring before returning.
-- **Calling `app.Use` from `OnStart`**. The router IS race-safe for
-  concurrent Use+ServeHTTP, but middleware added there only wraps
-  requests that arrive AFTER the Use returns, which is operationally
-  surprising. Stay in `Init` for chain composition.
-- **Naming a plugin with an empty or whitespace-only name, control
-  chars, or a very long string**. `RegisterPlugin` rejects these with a
-  clear error (interior spaces are accepted); pick
-  a stable, human-readable name (`"auth"`, `"telemetry"`, `"log"`).
+- **Calling `RegisterPlugin` after `InitPlugins` / `Start`:** panics because init has already run.
+- **Registering direct MCP tools without `mcp.WithToolGate`:** leaves tools open to anyone who can reach `/mcp`.
+- **Adding `app.Use` inside `OnStart` instead of `Init`:** keep middleware composition inside `Init`.
+- **Running `db.Exec("INSERT ...")` in `main()` before `App.Start`:** tables don't exist until auto-migrate runs; use `app.WithSeed`.

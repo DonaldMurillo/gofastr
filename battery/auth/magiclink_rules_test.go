@@ -45,7 +45,7 @@ func TestMagicLinkVerifyCapsBody(t *testing.T) {
 	mgr, _, _ := newMagicLinkManager(t, &mockEmailSender{})
 	r := mountMagicLinkRoutes(mgr)
 	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/verify",
-		strings.NewReader("token="+strings.Repeat("A", oversizedFieldBytes)))
+		strings.NewReader("token="+strings.Repeat("A", oversizedFieldBytes))) // not-a-secret: synthetic oversized form field in test
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

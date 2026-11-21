@@ -189,7 +189,7 @@ func setupServer() *framework.App {
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
 		uihost.WithAppIcon(brand.IconPNG()),
-		uihost.WithDescription("The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, MCP tools, an OpenAPI spec, SQL migrations, and a typed query builder, plain Go you own. Early (v0.x)."),
+		uihost.WithDescription("Go from idea to a full-stack app, fastr. Simple for humans to understand. Optimized for agents and the agentic ecosystem. Stay barebones or turn on SSR UI, auth, SQLite or Postgres, and MCP in one Go binary."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   siteOrigin,
@@ -209,7 +209,7 @@ func setupServer() *framework.App {
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
 			Title:   "GoFastr",
-			Summary: "The full-stack Go framework that doesn't get in the way of you or your agents. Declare your domain in Go and get server-rendered screens, REST endpoints, an OpenAPI spec, SQL migrations, a typed query builder, and MCP tools an agent can call with the same login and permissions your users have. Docs and tools at /mcp. Early (v0.x).",
+			Summary: "Go from idea to a full-stack app, fastr. Simple for humans to understand. Optimized for agents and the agentic ecosystem. Stay as barebones as a stdlib router or turn on server-rendered UI, auth, SQLite or Postgres, and MCP in one binary of plain Go you own. Docs and tools at /mcp.",
 			// Tiered docs index (llmstxt.org): every embedded framework
 			// doc as a raw-markdown link, grouped by the /docs/ reading
 			// intents; /llms-full.txt is the whole corpus in one file.

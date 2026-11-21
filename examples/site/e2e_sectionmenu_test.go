@@ -452,8 +452,8 @@ func TestE2E_HubTOC_PhonePill(t *testing.T) {
 	if opened != "true|On this page" {
 		t.Errorf("sheet open|title = %q", opened)
 	}
-	if entries != "Entities|Auth" {
-		t.Errorf("sheet entries start %q, want Entities|Auth", entries)
+	if entries != "Components|Theming" {
+		t.Errorf("sheet entries start %q, want Components|Theming", entries)
 	}
 	if !closed || jumped > 200 {
 		t.Errorf("after tapping Auth: closed=%v, Auth section %vpx from the top", closed, jumped)
@@ -488,7 +488,7 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 		chromedp.Evaluate(`document.getElementById('serving').scrollIntoView()`, nil),
 		waitFor(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
 			const top=b.getBoundingClientRect().top;
-			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()==='true|On this page: Serving HTTP'`),
+			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()==='true|On this page: Auth, HTTP & batteries'`),
 		chromedp.Evaluate(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
 			const top=b.getBoundingClientRect().top;
 			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()`, &pinned),
@@ -497,10 +497,10 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom))==='true|On this page|0'&&`+phoneSheetSettled),
 		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
 			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom)`, &opened),
-		chromedp.Click(`.cui-phone-sheet__sheet a[href="#persist"]`, chromedp.ByQuery),
-		waitFor(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
-			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()==='false|true|Persisting & migrating'`),
-		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
+		chromedp.Click(`.cui-phone-sheet__sheet a[href="#data"]`, chromedp.ByQuery),
+		waitFor(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('data').getBoundingClientRect();
+			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()==='false|true|Data & entities'`),
+		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('data').getBoundingClientRect();
 			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()`, &landed),
 	); err != nil {
 		t.Fatalf("docs index bar: %v", err)
@@ -508,13 +508,13 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 	if layout != "floating=1 docs pill=true rail boxes=0" {
 		t.Errorf("phone layout: %s", layout)
 	}
-	if pinned != "true|On this page: Serving HTTP" {
+	if pinned != "true|On this page: Auth, HTTP & batteries" {
 		t.Errorf("bar pinned under the header|text = %q", pinned)
 	}
 	if opened != "true|On this page|0" {
 		t.Errorf("sheet open|title|top below the bar's bottom = %q", opened)
 	}
-	if landed != "false|true|Persisting & migrating" {
-		t.Errorf("after tapping Persisting: open|below bar|label = %q", landed)
+	if landed != "false|true|Data & entities" {
+		t.Errorf("after tapping Data & entities: open|below bar|label = %q", landed)
 	}
 }

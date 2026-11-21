@@ -1,135 +1,45 @@
-# Rate limiting
+# Rate limiting (`framework/ratelimit`)
 
-`framework/ratelimit` is the general-purpose HTTP rate limiter. It enforces a
-per-key **sliding window with lockout**: up to `MaxAttempts` requests are
-admitted inside `Window`; the next request trips a hard block lasting
-`BlockDuration` during which every request for that key gets `429` with a
-`Retry-After` header. This is the "at most N per period, then lock out" shape.
+GoFastr ships two limiters for two distinct jobs:
 
-Use it for brute-force surfaces, write-heavy endpoints, and any route where a
-steady refill rate is the wrong model. For steady API throughput
-("1 req/s, burst 60") use the token-bucket middleware instead; see
-[Two limiters, two jobs](#two-limiters-two-jobs).
+| Need | Use |
+| --- | --- |
+| "At most N attempts per window, then hard lockout" (login, checkout, password reset) | `framework/ratelimit` (this page; emits `429` + `Retry-After` only) |
+| "Sustained API rate with burst" (e.g. 1 req/s, burst 60, with `RateLimit-*` budget headers) | `core/middleware.RateLimit` (token bucket) |
 
-## Quickstart: throttle one route
+`battery/auth` already applies `framework/ratelimit` across login, registration, 2FA, magic links, and password resets automatically.
+
+## Quickstart
 
 ```go
 import (
-    "net/http"
-    "time"
+	"time"
 
-    "github.com/DonaldMurillo/gofastr/core/router"
-    "github.com/DonaldMurillo/gofastr/framework/ratelimit"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
-// At most 20 checkouts per IP per minute; the 21st trips a 5-minute lockout.
 checkoutLimit := ratelimit.NewLimiter(ratelimit.Config{
-    MaxAttempts:   20,
-    Window:        time.Minute,
-    BlockDuration: 5 * time.Minute,
+	MaxAttempts:   20,
+	Window:        time.Minute,
+	BlockDuration: 5 * time.Minute,
 })
 
-mux := router.New()
-mux.Handle(http.MethodPost, "/api/checkout", checkoutLimit.Middleware()(checkoutHandler))
+mux.Handle("POST /api/checkout", checkoutLimit.Middleware()(checkoutHandler))
 ```
 
-`Middleware()` keys on the client IP by default. Over-limit responses are
-`429 Too Many Requests` with a `Retry-After` header (whole seconds,
-rounded **up**, so a block with under a second left still answers
-`Retry-After: 1`, never `0`); the body is a plain `rate limit exceeded`.
-The auth battery's limiters (login, magic-link, password reset, 2FA)
-format the header the same way.
-
-## Throttle by something other than IP
-
-`MiddlewareByKey` takes a function that derives the bucket identity from the
-request: API key, authenticated user id, route param, anything. This is the
-escape hatch when per-IP is too coarse.
+Throttle by a custom key (API key, user ID, or `framework.AgentRateLimitKey` for Web Bot Auth) with `MiddlewareByKey`:
 
 ```go
-// Per API key, not per IP.
-byKey := ratelimit.NewLimiter(ratelimit.Config{
-    MaxAttempts:   100,
-    Window:        time.Hour,
-    BlockDuration: time.Hour,
-})
-
 mux.Use(byKey.MiddlewareByKey(func(r *http.Request) string {
-    return r.Header.Get("X-Api-Key")
+	return r.Header.Get("X-Api-Key")
 }))
 ```
 
-A `nil` key func falls back to the client IP, so `Middleware()` is just
-`MiddlewareByKey` with the default extractor.
+Key methods: `NewLimiter`, `Allow`, `AllowContext`, `Admit` (distinguishes store error from spent budget), `Middleware`, `MiddlewareByKey`, `ClientIP`, `ClientKey` (collapses IPv6 addresses to `/64` so one subscriber can't evade limits by rotating host addresses), and `IPKey`.
 
-For agent traffic verified with [Web Bot Auth](web-bot-auth.md),
-`framework.AgentRateLimitKey(trustXFF)` keys by the verified agent's
-identity and by client IP otherwise, so a signed crawler has its own
-budget instead of sharing its egress address's.
+## Shared store for multiple replicas
 
-## Key functions
-
-| Symbol | What it does |
-|---|---|
-| `ratelimit.NewLimiter(cfg Config) *Limiter` | Construct a limiter; zero fields default to MaxAttempts=10, Window=15m, BlockDuration=30m. |
-| `(*Limiter).Allow(key string) (bool, time.Duration)` | Record one attempt for `key`; returns allowed + retry-after. Use the context form on HTTP paths. |
-| `(*Limiter).AllowContext(ctx, key)` | Same, observing request cancellation when a shared `Store` is set. |
-| `(*Limiter).Admit(ctx, key) (bool, time.Duration, error)` | `AllowContext` plus the shared store's error. A store error still denies; use it when a spent budget triggers an action (ending a session) that an outage must not. |
-| `(*Limiter).Middleware()` | `func(http.Handler) http.Handler`, keyed by client IP. |
-| `(*Limiter).MiddlewareByKey(keyFunc)` | Same, keyed by a custom extractor. |
-| `ratelimit.ClientIP(r, trustXFF)` | IP extractor for a single proxy tier; honours `X-Forwarded-For` (its rightmost entry) only when `trustXFF` is true. |
-| `(*Limiter).ClientIP(r)` | The limiter's own extractor: `TrustForwardedFor` plus `TrustedProxies`.  |
-| `(*Limiter).ClientKey(r)` | The per-client key `Middleware()` and the auth battery's per-IP limiters use: `ClientIP` with an IPv6 address collapsed to its `/64` (`ratelimit.IPKey`). |
-| `ratelimit.IPKey(addr)` | An IPv4 address (IPv4-mapped included) as itself, an IPv6 address as its `/64` prefix. |
-
-`Config` fields: `MaxAttempts`, `Window`, `BlockDuration`, `TrustForwardedFor`,
-`TrustedProxies`, `Store`, `Scope`, `DevMode`.
-
-## Two limiters, two jobs
-
-GoFastr ships two limiters with deliberately different semantics. Pick by the
-question you are answering:
-
-| Question | Use |
-|---|---|
-| "At most N per period, then block" (login, checkout, password reset) | `framework/ratelimit` (this package) |
-| "Sustained rate with a burst" (public API throughput, "1 req/s, burst 60") | `core/middleware.RateLimit` (token bucket) |
-
-The token-bucket middleware also emits the IETF-draft `RateLimit-Limit` /
-`RateLimit-Remaining` / `RateLimit-Reset` budget headers so well-behaved API
-clients can self-pace. This package emits **only** `Retry-After`: a live
-remaining-attempt count on a lockout-style limiter would hand an attacker exact
-brute-force pacing information on security-sensitive routes, and adds nothing
-useful elsewhere.
-
-## The auth battery already uses it
-
-`battery/auth` builds every built-in brute-force limiter on top of this
-limiter: login (per-IP and per-account), register, 2FA challenge,
-magic-link send, password-reset, email-verification. Those limiters are configured
-through `AuthConfig` (`LoginRateLimit`, `RegisterRateLimit`, …) and apply
-automatically when you mount the auth battery; you do not wire them by hand.
-See [security.md](security.md) → "Rate limiting" for the auth-specific posture,
-and the auth source for the per-endpoint scopes.
-
-For your own non-auth routes, use this package directly as shown in the
-quickstart above.
-
-## Per-replica vs. shared budget
-
-With a nil `Config.Store` the window lives in **process memory**, so the budget
-is **per replica**: N replicas each admit `MaxAttempts`. That is the right
-default for a single instance and for routes where per-replica throttling is
-acceptable.
-
-For a replica-wide (or fleet-wide) budget, so a coordinated burst across
-replicas can't multiply the limit by N, supply a `Store`.
-`battery/auth.SQLRateLimitStore` is the reference implementation (SQLite or
-PostgreSQL); one store instance backs many limiters, with keys namespaced by
-`Config.Scope` so a login limiter and a checkout limiter sharing one store never
-collide. A key longer than 256 bytes, or one that is not valid UTF-8 or holds a
-NUL byte (a client-sent `X-Api-Key` can be either), reaches the store as
-`sha256:<hex>`, so one odd header cannot read as a store outage:
+Without `Config.Store`, limits live in process memory (per replica). Share one budget across replicas using `auth.NewSQLRateLimitStore` (or any custom `ratelimit.Store` backed by Redis/Postgres), namespaced by `Config.Scope`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/battery/auth"
@@ -142,88 +52,27 @@ stmt: _ = checkoutLimit
 -->
 ```go
 shared := auth.NewSQLRateLimitStore(db, "rate_limits")
-// One store, two independent budgets:
 loginLimit := ratelimit.NewLimiter(ratelimit.Config{
-    MaxAttempts: 10, Window: time.Minute, BlockDuration: 15 * time.Minute,
-    Store: shared, Scope: "login_ip",
+	MaxAttempts: 10, Window: time.Minute, BlockDuration: 15 * time.Minute,
+	Store: shared, Scope: "login_ip",
 })
 checkoutLimit := ratelimit.NewLimiter(ratelimit.Config{
-    MaxAttempts: 20, Window: time.Minute, BlockDuration: 5 * time.Minute,
-    Store: shared, Scope: "checkout",
+	MaxAttempts: 20, Window: time.Minute, BlockDuration: 5 * time.Minute,
+	Store: shared, Scope: "checkout",
 })
 ```
 
-On a store error the limiter **fails closed** (denies); degrading the backend
-must never lift the limit. A custom Redis/etcd backend only needs to satisfy the
-`ratelimit.Store` interface.
+Store errors **fail closed** (deny). Custom stores must record the attempt before counting (or use an atomic counter) so concurrent bursts cannot slip past `MaxAttempts`.
 
-The budget holds under concurrency. `SQLRateLimitStore` records each attempt
-before it counts, so a burst on one key admits at most `MaxAttempts` callers
-across every replica; when the whole burst lands at once it can admit fewer,
-and the key blocks either way. A custom `Store` must keep the same property: a
-count followed by a separate insert lets every caller in a burst read the same
-pre-insert count. Record first and count second, or use an atomic counter.
+## Proxies and `X-Forwarded-For`
 
-## IPv6 clients share a /64
+`X-Forwarded-For` is ignored unless `TrustForwardedFor: true` (enable only behind a reverse proxy you control). Reading goes **right-to-left**: with one proxy tier, `TrustForwardedFor: true` picks the rightmost entry; with multiple tiers (CDN → LB), list every proxy CIDR in `TrustedProxies`.
 
-A subscriber is routinely handed a whole IPv6 `/64`, 2^64 addresses, so
-keying on the full address let one client send each request from a fresh
-source address and never meet a per-IP limit. `Middleware()` and the auth
-battery's per-IP limiters key IPv6 by its `/64` instead
-(`(*Limiter).ClientKey`), and so do `core/middleware.RateLimit`'s default
-and proxy-aware keys and `webbotauth.RateLimitKey(nil)`. Several people on one IPv6 LAN share a budget
-then, the way people behind one IPv4 NAT already do. `ClientIP` still
-returns the full address, for logs and audit rows.
-
-## X-Forwarded-For and proxies
-
-`ClientIP` (and therefore the default `Middleware()`) ignores
-`X-Forwarded-For` unless `Config.TrustForwardedFor` is true. A client talking
-directly to the origin can put any value in that header; trusting it
-unconditionally would let one `curl` with a rotating `X-Forwarded-For` bypass
-every per-IP limit. Enable `TrustForwardedFor` **only** behind a reverse proxy
-you control.
-
-The header is read from the right. A proxy that appends (nginx
-`$proxy_add_x_forwarded_for`, Go's `httputil.ReverseProxy`, most CDNs) keeps
-whatever the client sent on the left and writes the address it saw on the
-right, so the leftmost entry is client-chosen and never picks the bucket.
-
-- One proxy tier: `TrustForwardedFor: true` is enough. The rightmost entry is
-  the client.
-- More than one tier (a CDN in front of a load balancer, say): also list every
-  tier in `TrustedProxies` (IPs or CIDRs). Only a request whose TCP peer is in
-  the list may speak for the header, listed hops are skipped, and the key is
-  the first hop no tier vouches past. Leave a tier out and the key lands on
-  that tier's address, so all its clients share one bucket.
-
-`core/middleware.RateLimit` (`TrustProxyHeaders` + `TrustedProxies`) and the
-`battery/log` access log's `remote` field read the header the same way.
-
-## DevMode
-
-`Config.DevMode: true` makes `AllowContext` admit every attempt without touching
-either backend: a relief valve for local screenshot / verification tooling that
-hammers an endpoint from localhost. Production must never set it; the default
-keeps the limiter fail-closed.
+`Config.DevMode: true` bypasses checks for local tooling only — never set it in production.
 
 ## Common mistakes
 
-- **Reaching for the token bucket when you mean "N then lock out".**
-  `core/middleware.RateLimit` refills continuously, so a brute-force attacker
-  never gets a hard block: they just slow to the refill rate. Use this package
-  for lockout semantics.
-- **Trusting `X-Forwarded-For` without a stripping proxy.** A rotating XFF
-  header gives the attacker a fresh bucket per request. Leave
-  `TrustForwardedFor` false unless you sit behind a proxy you control.
-- **Counting on a fleet-wide budget with the in-memory store.** With no `Store`,
-  each replica admits the full `MaxAttempts` independently. Plug in a shared
-  `Store` when the budget must hold across replicas.
-- **Keying a public limiter on attacker-chosen input without a cap.** The
-  in-memory limiter reclaims idle keys and, at capacity, evicts unblocked
-  keys first. If it needs more room, it evicts the active blocks with the
-  latest expiry first, breaking ties by newest creation. For custom keys,
-  prefer stable identities such as user IDs or hashed API keys.
-- **Expecting budget headers.** This limiter emits only `Retry-After` by design
-  (see [Two limiters, two jobs](#two-limiters-two-jobs)). If a client needs
-  `RateLimit-Remaining` to self-pace, that route wants the token bucket.
+- **Using the token bucket for brute-force protection:** continuous refill never imposes a hard lockout; use `framework/ratelimit`.
+- **Enabling `TrustForwardedFor` without a stripping proxy:** lets attackers rotate fake `X-Forwarded-For` headers to bypass IP limits.
+- **Expecting a fleet-wide cap without `Config.Store`:** in-memory limits multiply by replica count.
+- **Keying directly on arbitrary unbounded user input:** prefer stable identities (IP `/64`, user ID, hashed API key).

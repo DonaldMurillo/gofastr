@@ -1,302 +1,81 @@
 # Contracts: `gofastr verify`
 
-`go build` answers "does this compile". `go vet` answers "is anything
-obviously wrong". Neither answers the question you actually have before
-merging:
+`go build` checks syntax and types; `go vet` checks Go footguns. `gofastr verify` checks whether your app still holds to GoFastr's architectural, security, UI, and testing contracts—attaching the reason, a bad/good example, and the fix to every finding.
 
-> Is this still a good GoFastr application?
-
-`gofastr verify` answers that one. It discovers your route table, entity
-declarations, permission strings, and rendering surface, then reports
-where they no longer hold to the framework's contract, with the reason
-and the fix attached to every finding.
-
-```
+```bash
 gofastr verify
 ```
 
-## What it checks
+## Capabilities & CLI flags
 
-Source discovery follows a symlinked analysis root and linked package
-directories, visiting each resolved directory once to stop cycles. Build
-outputs (`dist`, `bin`, `build`, `tmp`), dependencies, and hidden/underscore
-subtrees are skipped; explicitly selecting a root with one of those names
-still scans that root.
+Run all rules, or pass one or more capabilities (or short aliases like `a11y`, `sec`, `perf`, `arch`, `test`, `perms`, `entity`, `route`, `ui`, `db`, `guidance`):
 
-An unreadable source file or directory causes a discovery error.
-Discovery still visits readable siblings. A Go syntax error counts
-toward the report's `unparsed` total and fails verification, even when
-the suppression scan is the first to parse the file. A run with no
-readable Go, CSS, or JavaScript source files also fails discovery.
-`contracts.NewPass` permits an empty pass for inspection.
+```bash
+gofastr verify routing security
+gofastr verify --list                     # list every rule in the catalog
+gofastr verify --explain GOFASTR1002      # print why, fix, and examples for one rule
+gofastr verify --changed                  # report only uncommitted + untracked files
+gofastr verify --changed=main             # report changes since branch fork point
+gofastr verify --rule GOFASTR1005 --fix   # apply safe autofixes for one rule
+gofastr verify --json                     # machine-readable report for CI/agents
+gofastr verify --sarif verify.sarif       # SARIF 2.1.0 for GitHub code scanning
+```
 
-Rules are grouped into capabilities, and each capability is also a filter:
-`gofastr verify routing security` runs two of them. Each also answers to a
-short name, case-insensitively: `a11y`, `sec`, `perf`, `arch`, `test` or
-`coverage`, `perms` or `authz`, `entity`, `route`, `render` or `ui`, `db`,
-and `guidance` for `ai`.
-
-The filter uses each finding's rule, even when one analyzer covers
-several capabilities. Suppression diagnostics still appear. A waiver
-counts as stale only when all the contract rules it waives were in scope.
-
-| Capability | Catches |
+| Capability | What it catches |
 |---|---|
-| `routing` | duplicate routes, `:id` where ServeMux wants `{id}`, lowercase methods, in-page state modelled as navigation, routes no test mentions, path prefixes matched without a segment boundary |
-| `permissions` | auto-exposed entities with PII-shaped fields and no owner field, tenant scope, or read permission, mutating routes outside any guarded group, auth configured but never mounted |
-| `security` | SQL built by concatenation, POST forms with no CSRF input, `render.HTML` on a concatenation, cookies missing HttpOnly/Secure/SameSite, committed credentials, `X-Forwarded-Proto` spliced into a URL without an http/https check, request bodies decoded with `encoding/json` outside `core/handler`'s strict binder |
-| `data` | writes whose result and error are both discarded (`_, _ = db.Exec(…)`, or a bare `db.Exec(…)` statement) |
-| `entities` | MCP tools on an entity with CRUD disabled, entities opted into anonymous access, a CRUD entity exposed with no auth wired (every operation 401s) |
-| `architecture` | imports that point up the layer stack, explicitly forbidden edges |
-| `rendering` | CSS outside the design system, stylesheets with no owner, `location.href` used as navigation, bespoke `EventSource`, inline `style=`, `<script>` with an inline body, `var(--…)` in project CSS naming a token the theme does not emit, design-system CSS hardcoding a literal a theme token already declares, the owned-style (`*.style.css`) checks |
-| `accessibility` | the static WCAG floor: missing alt text, unnamed controls and landmarks, incomplete form controls, implicit heading levels, elements missing required metadata |
-| `performance` | regexps compiled per call, N+1 queries, reflection on the request path |
-| `testing` | routes, permissions, roles, entity operations, lifecycle hooks, and event subscribers no test exercised; disabled tests; a line-coverage floor; an unreadable coverage manifest |
-| `ai` | hand-rolled CRUD for a declared entity, subsystems a battery already provides, raw SQL bypassing entity scoping |
+| `routing` | Duplicate routes, `:id` instead of ServeMux `{id}`, lowercase HTTP methods, in-page state modeled as navigation, untested routes, unsafe prefix checks |
+| `permissions` | Per-user entities missing `OwnerField`, mutating routes outside guarded groups, auth configured but unmounted |
+| `security` | SQL string concatenation, POST forms missing CSRF, raw `render.HTML` concatenation, insecure cookies, committed secrets, raw `encoding/json` bypassing `core/handler` strict decode |
+| `data` | Discarded DB write errors (`db.Exec(...)`) |
+| `entities` | MCP tools on non-CRUD entities, public anonymous entities, exposed CRUD with no auth wired |
+| `architecture` | Upward layer imports and forbidden package edges |
+| `rendering` | Ownerless CSS files (`GOFASTR1809`), stale `*.style.css` / `*_style.gen.go` pairs (`GOFASTR1814`), unknown or duplicated theme tokens (`GOFASTR1806`–`1825`), `location.href` hard navigation (`GOFASTR1802`), bespoke `EventSource` (`GOFASTR1803`), inline `style=` / `<script>`, physical CSS directions in kit code (`GOFASTR1824`) |
+| `accessibility` | Static WCAG floor: missing alt text, unnamed controls/landmarks, broken form wiring, skipped heading levels |
+| `performance` | Per-call `regexp.Compile`, N+1 queries, reflection on the request path |
+| `testing` | Routes, permissions, roles, entity ops, hooks, and event subscribers unexercised by tests; coverage floor |
+| `ai` | Hand-rolled CRUD for declared entities, reimplementing built-in batteries, raw SQL bypassing entity scoping |
 
-`gofastr verify --list` prints the whole catalog. `gofastr verify
---explain GOFASTR1002` prints one rule in full.
+`gofastr build` also runs contracts and fails on error-severity findings (`--no-contracts` skips it).
 
-## Strict by default, relaxed on purpose
+### The `vet` stage
 
-Every rule in the catalog is enforced at its declared severity. There is
-no opt-in, because a rule you have to switch on is a rule nobody switches
-on. There are exactly two ways to say no, and both leave a written trace.
+Before running contract analyzers, `gofastr verify` runs `go vet` followed by GoFastr's type-aware vettool analyzers (unbounded body reads, `==` secret compares, world-readable secret files, HTTP clients without timeouts, `discardeddecode`, `textbind`, required JSON arrays, plus extra `x/tools` checks). Use `--no-vet` to skip both passes.
 
-Configuration moves severity in either direction: nothing is quieter than
-declared unless you write it down, but a team that wants
-`routing/untested-route` to be an *error* rather than a warning is making
-a real choice and can. Either way it appears in the report footer.
-
-**One instance**, at the site:
+To waive an intentional vettool finding, add a reasoned directive on the line or directly above it:
 
 ```go
-//gofastr:allow(GOFASTR1902) public webhook receiver; signature is verified in the handler
+//gofastr:allow(clienttimeout) health probe against a local port, bounded by ctx
+resp, err := http.Get(probeURL)
+```
+
+## Suppressions, config & baselines
+
+Every rule runs at its declared severity by default. Relaxations must leave a written trace:
+
+### Per-site suppression
+
+```go
+//gofastr:allow(GOFASTR1902) public webhook receiver; signature verified in handler
 r.Handle("POST", "/hooks/stripe", stripeWebhook)
 ```
 
-The reason is required: a directive without one is itself a finding
-(`GOFASTR0001`). So is a directive naming a rule that does not exist
-(`GOFASTR0003`), or one that stops matching anything (`GOFASTR0002`), so
-suppressions cannot quietly accumulate. `//gofastr:allow(all)` is
-rejected outright: it would absorb every rule added afterwards.
+- A real reason is mandatory (`GOFASTR0001` flags missing reasons, `GOFASTR0003` unknown rules, `GOFASTR0002` stale suppressions that match nothing—clean dead ones with `gofastr verify --rule GOFASTR0002 --fix`).
+- `//gofastr:allow-file(RULE) reason` covers a whole file. `//gofastr:allow(all)` is rejected.
+- In CSS files (`*.style.css` or `.css`), use `/* gofastr:allow(GOFASTR1809) reason */` (must precede the first rule for `GOFASTR1809`). In JS files, use `// gofastr:allow(GOFASTR1802) reason`.
 
-Put the directive at the end of the offending line, or on its own line
-directly above it. `//gofastr:allow-file(RULE) reason` covers a whole
-file. A directive on its own line above a multi-line string literal
-covers the whole literal. A standalone CSS waiver covers the next line
-of CSS code across blank lines and other comments. A directive counts
-only at the start of its comment. Quoting it in prose or in a string
-literal has no effect.
+### Project config (`gofastr.settings.yml`)
 
-Put `// safe-sql: <reason>` directly above the statement or at the end
-of one of its lines to waive the SQL concatenation check. A waiver on an
-`if`, `switch`, or `for` header can cover SQL in the header, including
-the expression after `range`. Statements in the body need their own
-waivers. Legacy markers such as `safe-html:` and `best-effort` are
-recognized in Go comments.
-
-`GOFASTR1809` checks `.css` files discovered under the verification
-root outside the styling-owner paths, including embedded stylesheets and
-static assets: a stylesheet that is not a `<name>.style.css` has no
-owner. (This was `GOFASTR1801`'s stylesheet check; a stylesheet file is
-now reported under 1809 only, never under both, and 1801 keeps covering
-CSS in Go strings.) Sheets whose declarations only assign custom
-properties (`--name: value`) stay quiet, as token assignments do in Go
-strings. Files under a `testdata/` directory, `*.style.css` and
-`*.tokens.css` files are skipped. It does not need to trace `WithCustomCSS` or a file-server
-call. Existing path exemptions and discovery exclusions still apply.
-Each offending stylesheet gets one finding at its first non-comment
-line. The fix is to give the CSS an owner: rename the file to
-`<name>.style.css` beside the layout, screen or component it styles
-(`app.style.css` for page-wide classes) and run `gofastr gen styles`. A
-frontend that does not use framework UI can declare that exception in a
-leading CSS comment:
-
-```css
-/* gofastr:allow(GOFASTR1809) vendor stylesheet kept unchanged */
-.vendor-control { display: flex; }
-```
-
-The comment must precede the first rule. `rendering/ownerless-stylesheet`
-can replace the ID, and `allow-file` also works. A missing reason does
-not suppress the finding.
-
-`GOFASTR1802` (hard navigation) and `GOFASTR1803` (bespoke
-`EventSource`) also read the app's own `.js`, `.mjs` and `.cjs` files,
-such as `static/app.js`, not only scripts emitted from Go strings.
-Assigning `location.href`, `location.search`, `location.pathname` or
-`window.location` counts whatever the right-hand side is, and so does the
-same assignment through a chain of frames such as
-`window.top.location.href`. Minified
-scripts (`.min.js`, or a line over 1000 bytes), generated files and the
-kit's own runtime (`core-ui/runtime`, `framework/headless`, which
-implement navigation and the SSE bus) are skipped. In a script, a
-trailing `// gofastr:allow(GOFASTR1802) reason` waives its own line.
-
-`GOFASTR1814` checks the owned-styles pair: every `*.style.css` must
-carry its generated sibling `<name>_style.gen.go` (every `*.tokens.css`
-its `<name>_tokens.gen.go`), and the sibling's
-`// Source hash:` line must match the CSS bytes. The generated file is
-the only link between the hand-written sheet and the typed class
-vocabulary the app calls; edit one without regenerating the other and
-the Go silently serves the old CSS. `testdata/` trees are skipped.
-Regenerate with `gofastr gen styles` (see the [CLI](cli.md)).
-
-Verify also reports custom media queries that the owned-style compiler
-rejects under GOFASTR1814, even when the generated source hash matches.
-Fix the query at the reported position and rerun `gofastr gen styles`.
-These errors stay visible through CSS waivers, config exemptions and
-severity overrides, and baselines.
-
-`gofastr gen styles` and `gofastr verify` share the owned-style checks and
-group sheets by program and target platform. Each group sees the built-in
-theme plus the app tokens declared by its own `*.tokens.css` files
-([theming](theming.md#app-tokens-in-css-nametokenscss)). A sheet shared by
-multiple programs must satisfy each program's token set.
-
-`gofastr gen styles` reports parse and model diagnostics before writing Go.
-`gofastr verify` reports the shared diagnostics with GOFASTR rule IDs and
-also checks for upstream candidates, kit-root styling, and handle leaks.
-Findings point at the CSS line and column. `testdata/` trees are
-skipped here too. Inside a `.css` file, a
-`/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule on
-its own line when code precedes it, otherwise on the next line with
-code.
-
-| Rule | Severity | Fires on |
-|---|---|---|
-| `GOFASTR1806` | error | `var(--name)` naming a token neither the theme nor a `*.tokens.css` declares (in a `*.style.css`, reported once, by the owned-style check; a `var()` fallback does not waive it there) |
-| `GOFASTR1807` | error | a value that is exactly a theme or app token's value: `font-size: 0.75rem` where `--text-xs` is `0.75rem`, `font-weight: 600` where `--font-weight-semibold` is `600`, `max-width: 66rem` where `--size-page-width` is `66rem`, `outline-offset: 2px` where `--stroke-focus-offset` is `2px` |
-| `GOFASTR1808` | error | a `var()` fallback that restates a spacing, radius, stroke, text or duration token at a value the theme does not declare. Colour fallbacks in an owned style follow the app's theme and are not judged; in design-system Go code they are (`gofastr verify --explain GOFASTR1808`). Both checks compare with one function, `ownstyle.SameScaleValue`: ASCII case-insensitive, `rem` read as 16px and `s` as 1000ms, so `1rem` is a right fallback for a `16px` token |
-| `GOFASTR1810` | error | a selector naming a kit class (`.cui-*`, `.hui-*`, `.fui-*`, escapes decoded, so `.\66 ui-card` counts), a `[class…]` match on one (`[class~="fui-card"]`, `[class^="fui-"]`, `[class\|="hui"]`, `[class*="ui-"]`), or a `[data-cui-*]` attribute |
-| `GOFASTR1811` | error | `!important` |
-| `GOFASTR1812` | error | a raw width in `@media` (`min-width: 768px`); write `(--above-md)` or `(--below-lg)`. Raw widths stay legal in `@container` |
-| `GOFASTR1813` | warn | `animation` with no `@media (--reduced-motion)` block for the same selector |
-| `GOFASTR1815` | info | every owned sheet, listed with its owner name and class count as a candidate for `framework/ui` |
-| `GOFASTR1816` | error | two `*.style.css` files with the same name (file stem) that one program links; the second `ownstyle.Must` would panic at init |
-| `GOFASTR1817` | error | a rule on a kit component's root that sets anything but a placement property |
-| `GOFASTR1818` | error | a screen's or layout's style handle used outside its own package and the one that attaches it |
-| `GOFASTR1819` | error | in `app.style.css`: a selector whose subject is not a class, or a custom property declaration |
-| `GOFASTR1820` | error | any owned sheet declaring a custom property named like a theme token (`--color-primary`) |
-| `GOFASTR1821` | error | an app token (`*.tokens.css`) whose value is another token's value of the same type: `--color-brand: #18181B` where `--color-primary` is `#18181B` |
-| `GOFASTR1822` | warn | the same literal written in two or more owned sheets of one program for the same token type; declare it once as a token |
-| `GOFASTR1825` | error | a statement at-rule other than `@layer` (`@import`, `@charset`, `@namespace`): it counts only at the top of a stylesheet, and an owned sheet compiles after the kit's rules, so the browser drops it. Load fonts with `style.FontFaceCSS` |
-
-`GOFASTR1823` (error) guards the kit itself, the design-system trees
-(`core-ui/`, `framework/ui/`, `framework/uihost/`, `battery/` and the
-rest GOFASTR1807 reads there). GOFASTR1807 judges a value whole, so
-`border: 1px solid var(--color-border)` passes it, and a `padding: 6px`
-matches no token at all. GOFASTR1823 reads inside every declaration, in
-stylesheet strings and in builder `Set` pairs, and refuses a look value
-written as a literal:
-
-| Property | Reads |
-|---|---|
-| border, outline and inset-ring widths, outline offset | `--stroke-*` |
-| border radius (px or rem) | `--radii-*` |
-| transition duration or delay, or animation duration, up to 500ms | `--duration-*` |
-| `ease`, `ease-in`, `ease-out`, `ease-in-out` or `cubic-bezier()` in a transition or animation | `--easing-*` |
-| z-index above 10 | `--z-*` |
-| padding, margin, gap, `grid-gap`, scroll margin and padding | `--spacing-*`; an off-step value is `calc(var(--spacing-sm, 4px) * n)` |
-| top, right, bottom, left, inset | `--spacing-*` or a `--ui-<component>-<part>` knob |
-| width, height, inline-size, block-size, their min/max, flex-basis | a `--ui-<component>-<part>` knob or a `--size-*` token |
-| font size | `--text-*` |
-| font weight (a number, `bold` or `normal`) | `--font-weight-*`; an off-step weight is `calc(var(--font-weight-semibold, 600) + 50)` |
-| the `font` shorthand's size, `/line-height` and weight | `--text-*`, `--leading-*`, `--font-weight-*` |
-| line height (a number other than 0 and 1, or a length) | `--leading-*` |
-| letter spacing | `--tracking-*` |
-| opacity between 0 and 1 | `--opacity-*` or a knob |
-| box shadow with a colour or a length over 1px | `--shadow-*` or a knob |
-| colour, background, border, fill, stroke, text-shadow with hex, `rgb()`, `hsl()`, `oklch()`, `white` or `black` | `--color-*` or a knob |
-
-Write the token or knob with today's value as the fallback,
-`var(--stroke-thin, 1px) solid` or `width: var(--ui-checkbox-box-size,
-18px)`, so the kit still draws with no theme loaded. A literal inside a
-`var()` fallback or inside a `calc()` that reads a token
-(`calc(var(--radii-md, 8px) - 2px)`) passes, as do zero, 1px hairlines
-and visually hidden boxes, `em`, `%`, `ch` and viewport lengths,
-`line-height` 0 and 1, `opacity` 0 and 1, `linear` and `steps()`
-timing, local stacking orders, loop periods over 500ms and
-`animation-delay` (a loop's stagger). `@media` conditions are never
-read (`var()` is invalid there). Dev tooling under `framework/dev/` is
-held to the width, radius, motion and layer rows only: its chrome is not
-an app theme's.
-
-`GOFASTR1824` (error) holds the same trees to the reading direction. A
-page in Arabic, Hebrew or Persian renders `<html dir="rtl">`, and a
-physical side stays where it was: the sidebar border, the list indent
-and the select chevron all stay on the left-to-right side. The rule
-reads CSS declarations in stylesheets and Go strings, plus property/value
-arguments to the style builder. It refuses `left`/`right` offsets,
-`margin-`, `padding-`, `scroll-margin-`,
-`scroll-padding-` and `border-left`/`-right` (with their `-width`,
-`-style` and `-color`), the four corner radii, `text-align`, `float` and
-`clear` set to `left` or `right`, a background position on a side with
-no `:dir(rtl)` mirror in the same file, and a four-value margin,
-padding, inset or border shorthand whose left and right differ. Write
-the logical property: `inset-inline-start`, `margin-inline-end`,
-`border-inline-end`, `border-start-start-radius`, `text-align: start`,
-`float: inline-start`, or `padding-block` plus `padding-inline`. A value
-with no logical spelling (a background position, a `translateX` travel)
-gets a `:dir(rtl)` override beside it. `left: 50%` and `right: 50%`
-(centring with a translate), `auto`, and the declarations of a
-`:dir()` override block pass. Every selector in a comma-separated list
-needs a top-level `:dir()` in both CSS text and the style builder.
-A CSS background mirror needs `:dir(rtl)` on every selector.
-A comment that mentions `:dir(rtl)` counts as no mirror. Dev tooling
-is exempt.
-
-`GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
-a handle method is called inside the `Class` field of a `framework/ui`
-config literal, `ui.Card(ui.CardConfig{Class: board.Style.Column()})`,
-or through its `With` form, `board.Style.ColumnWith(…)`. A sheet whose
-owner root is a kit root, `Style.Scope(ui.Card(…))`, has its `:scope`
-rules checked the same way. On those subjects only placement properties
-pass: `grid-area`, `grid-column*`, `grid-row*`, `margin*`, `align-self`,
-`justify-self`, `place-self`, `order`, `flex`, `flex-grow`,
-`flex-shrink`, `flex-basis`, `width`, `height`, `inline-size`,
-`block-size` and their `min-`/`max-` forms, `display`, `position`,
-`inset*`, `top`, `right`, `bottom`, `left`, `z-index`, `visibility`.
-Anything else, custom properties included, restyles the component.
-
-```css
-/* board.style.css */
-.column {
-  grid-column: span 2;             /* placement: fine */
-  padding: var(--spacing-md);      /* GOFASTR1817: pass Padding in ui.CardConfig instead */
-}
-```
-
-`GOFASTR1818` finds the handles attached with `LayoutSpec{Style: h}` or
-`Screen.WithStyle(h)` and reports any use of them (`h.Column()`,
-`h.Scope(…)`) in a package that is neither the handle's own (where its
-`.style.css` sits) nor the one that attaches it, so `main` may call
-`.WithStyle(board.Style)` while package `board` renders with the
-classes. A layout's or screen's classes
-only apply inside that owner's root; markup another package renders is
-a component and gets its own `<name>.style.css`.
-
-Both Go-side rules resolve a handle the way it is normally written:
-`Style` or `<Owner>Style` in the package that holds the generated file,
-or `pkg.Style` through an import. A handle first copied into a local
-variable is not traced.
-
-**A whole surface**, in the `contracts:` section of
-[`gofastr.settings.yml`](settings.md):
+Tune severities, exemptions, or coverage thresholds in the `contracts:` block of [`gofastr.settings.yml`](settings.md):
 
 ```yaml
 contracts:
   exempt:
     - "**/testdata/**"
-
-  performance: warn          # a capability, downgraded
-
+  performance: warn
   rules:
-    GOFASTR1003:             # a single rule
+    GOFASTR1003:
       severity: warn
       exempt: ["cmd/**"]
-
   coverage:
     minimum: 90
     routes: true
@@ -304,666 +83,43 @@ contracts:
     entities: true
 ```
 
-Path globs are slash-separated (`cmd/**`, `**/testdata/**`); a backslash
-is accepted as a separator too, so a path typed on Windows works rather
-than silently matching nothing. `**` matches its own root as well:
-`core/**` exempts `core` itself.
+Every active relaxation is printed in the report footer so silent downgrades can't hide.
 
-A capability takes a severity (`performance: warn`), `false` to switch it
-off, or a map of `enabled`, `severity` and `exempt`. Within a rule or
-capability map, `enabled: false` overrides that map's `severity`.
-A rule's own entry under `rules:` wins over its capability's.
+### Adopting on an existing codebase (baselines)
 
-A leading `/` anchors a glob at the analyzed root: `/gen/**` exempts
-the root's generated subtree, not a nested `pkg/gen/` subtree. Coverage
-minimums must be finite percentages between 0 and 100; NaN and infinity
-are rejected, including quoted spellings.
+Record existing debt once so CI fails only on *new* findings:
 
-The app spec (`gofastr.yml`) is not read for this. Every relaxation is
-printed in the report footer: a run that passes because half of it was
-switched off says so.
-
-Footer explanations and analyzer errors are sanitized for terminal
-control characters, just like diagnostic messages and source snippets.
-
-The recursive CSP lints recognize `// check-csp:ignore-file` only as an
-actual standalone Go line comment. Directive-shaped text in a raw string
-or inside a block comment never suppresses inline-style or script findings.
-
-The response-mount lint follows `.then(this.render)` to the method in the
-enclosing JavaScript class. Same-named methods in unrelated classes never
-supply a mount or an OK gate for that chain.
-
-The `discardeddecode` vet analyzer checks dropped errors from
-`json.Marshal`, `json.MarshalIndent` and `Encoder.Encode` when a value can
-fail to encode, including non-envelope replies. Check errors on values
-holding interfaces, floating-point numbers, raw JSON or unsupported JSON
-types. Marshal an HTTP response before committing its status so a failure
-can answer 500; return or log errors on other output paths.
-
-The `textbind` vet analyzer follows request text through struct fields,
-receiver-field return values, host callbacks and local `strings.Builder`
-output. Check UTF-8 validity and reject NUL before storing or binding text.
-Builder resets clear provenance only when they run on every path to the
-read; writes through byte/rune methods and standard formatting helpers
-retain the source's provenance.
-
-The required-JSON-array analyzer credits `append(value.Field, more...)`
-only when the base field is proven non-nil before the append. Merely
-marking the field `//gofastr:required-array` does not initialize it; a
-conditional initializer or a later possibly-nil write is not a proof.
-
-## Adopting it on an existing codebase
-
-Strict-by-default and adoption pull against each other. Switch `verify` on
-in a mature app and you get hundreds of findings at once; nobody fixes
-hundreds of findings at once, so the realistic outcomes are "turn the tool
-off" or "downgrade every rule to warn". Both end with nothing enforced.
-
-A baseline is the third option. Accept what is there, fail on what is
-added:
-
-```
+```bash
 gofastr verify --strict --baseline-write
 ```
 
-Baseline writes replace the file atomically after syncing the new contents.
-A concurrent verify, build or dev reader sees a complete old or new baseline.
+This atomically writes `.gofastr-contracts-baseline.json` (keyed by `(rule, file)`, not line numbers, so formatting edits don't churn it). Commit it to the repo—`gofastr verify`, `gofastr build`, `gofastr dev`, and MCP `contracts_verify` all read that conventional path. When you fix baselined debt, verify nudges you to re-record so the ratchet tightens. (`--baseline-write` refuses `--sarif` or filtered runs so you never accidentally drop accepted debt.)
 
-This writes the current gating findings to
-`.gofastr-contracts-baseline.json`. Commit that file to share the baseline.
-Combining `--baseline-write` with `--sarif` fails before analysis,
-fixes, or either artifact is written.
-With `--json`, the baseline result also includes the run's `notices`,
-including degraded changed-file checks and unmounted-package warnings.
-It also refuses to run
-with `--rule` or a capability filter: a baseline recorded from a
-narrowed run would erase every other rule's accepted debt, and the next
-full `verify` or `build` would fail on findings the team had already
-signed off. From then on the same
-`gofastr verify --strict` passes on the debt it recorded and fails on
-anything new. The file lives in the repository, not under `.gofastr/`:
-unlike the coverage manifest this is a reviewed decision about what debt
-is accepted, and it belongs in the diff where a reader can watch it
-shrink.
+## Owned-style rules (`*.style.css`)
 
-The conventional path is the contract. The build gate, the dev loop, and
-MCP `contracts_verify` all read `.gofastr-contracts-baseline.json` from
-the analysed root, and none of them can be pointed elsewhere.
-`verify --baseline <file>` overrides the path for that one invocation,
-useful for trying a candidate baseline before adopting it, but a
-baseline only `verify` can see is one every other gate will ignore, so
-the recorded file belongs at the conventional path.
+`gofastr verify` shares `core-ui/ownstyle` with `gofastr gen styles` so CSS checks never disagree with code generation:
+- **`GOFASTR1809`:** Non-owned `.css` files outside `*.style.css` / `*.tokens.css` (excluding pure custom-property sheets).
+- **`GOFASTR1814`:** Missing or out-of-date `<name>_style.gen.go` / `<name>_tokens.gen.go` (run `gofastr gen styles`).
+- **`GOFASTR1806`–`1825`:** Unknown `var(--...)` tokens, hardcoded values that match a theme/app token, kit class overrides (`.fui-*`/`.cui-*`/`.hui-*`), `!important`, raw `@media` widths (use `(--above-md)`), missing `@media (--reduced-motion)`, non-placement CSS on kit component roots (`GOFASTR1817`), cross-package style handle leaks (`GOFASTR1818`), and disallowed top-level at-rules (`@import`).
 
-Counts are keyed by **(rule, file)**, not by line. Line numbers churn on
-every edit, and a baseline that goes stale on a reformat is a baseline
-people delete. Moving a finding within a file keeps it accepted; adding
-one more of the same rule to that file does not.
+## Dev loop & MCP integration
 
-As you pay debt down, the report says so:
-
-```
-· 12 pre-existing findings absorbed by the baseline
-· 3 baseline entries are now over-accepting — re-record with gofastr verify --baseline-write
-```
-
-That nudge matters. A fixed finding keeps its allowance until someone
-re-records, and that slack is exactly where a new finding could hide.
-Re-recording is what makes the baseline a ratchet rather than a mute
-button.
-
-Suppressing a baselined finding with `//gofastr:allow` does not free its
-slot: the finding still exists, so it keeps occupying its allowance, and
-a new finding of the same rule in that file still fails. The entry shows
-up in the over-accepting nudge instead. A re-recorded baseline, which
-also runs after suppressions are consumed, would no longer include it.
-
-Only **gating** findings are recorded. Anything below the run's fail-on
-severity is left out on purpose: a baseline exists to unblock a gate, and
-an entry for a finding that cannot fail the run would absorb it on every
-later run and silence an informational signal you deliberately kept
-visible.
-
-That interacts with the semantic-coverage rules specifically. They record
-*which tests ran*, which differs by environment: a CI job that excludes
-some packages, or a machine with Docker down, produces different findings
-for the same commit. Gating a shared CI on a recorded baseline of those is
-flaky by construction: a baseline recorded in one lane fails in the
-other. The usual answer is to downgrade them to `info` in the config, so
-they stay visible on every run and never gate; the filter above is what
-stops `--baseline-write` from then silencing them anyway. This repository
-does exactly that. See its `gofastr.settings.yml`.
-
-A baseline is not a substitute for the config. Use `gofastr.settings.yml`
-when a rule's premise genuinely does not hold for a surface: that is
-permanent and explained. Use a baseline for debt you intend to pay.
-
-## Checking only what you changed
-
-`gofastr verify` reports the whole tree, which is the wrong shape for the
-three moments you most want it: a pre-commit hook, a dev-loop rebuild, and
-a PR review. All three ask the narrower question, *what did this change
-break*, and answering it by reading a 200-line whole-repo report is
-answering a different one.
-
-```
-gofastr verify --changed           # uncommitted work, including new files
-gofastr verify --changed=main      # everything since this branch forked
-```
-
-The **analysis still runs over the whole tree**, and must: the route
-table, the entity list, and the coverage manifest are only meaningful
-whole. Only the reporting narrows. A duplicate route introduced by editing
-one file is still found, because the other half of the pair was analysed
-too.
-
-`--changed=<ref>` compares against the **fork point** with that ref, not
-its tip. Otherwise a long-lived branch would report every finding in
-everyone else's commits as something it changed. Untracked files count as
-changed; a brand-new file full of findings is exactly what a pre-commit
-check should catch, and `git diff` alone never lists it.
-
-This includes untracked files with `--changed=<ref>`. Paths retain their
-exact spelling, including Unicode, whitespace, tabs, and newlines.
-
-A narrowed run says what it withheld:
-
-```
-· 41 findings outside the changed files — run without --changed for the full picture
-```
-
-Outside a git repository the flag warns and reports everything, rather
-than silently reporting nothing.
-
-`--changed` narrows the **fixes** too, not just the report. `gofastr
-verify --changed --fix` in a pre-commit hook rewrites only the files the
-change touched. Editing an unrelated file there would land an unreviewed
-edit in someone's commit, and the narrowed report they were reading would
-never mention it. Without `--changed`, `--fix` still applies everywhere.
-
-## In the dev loop
-
-`gofastr dev` reports contract findings after each reload, scoped to the
-files you changed. Saves while analysis is running coalesce into one
-trailing pass, so the last save in a burst is checked without stacking
-concurrent analyses:
-
-```
-✓ Reloaded!
-
-⚠ contracts — findings in what you changed:
-    GOFASTR1002  main.go:14:2  route DELETE /wipe/:id uses `:id` — ServeMux matches that literally…
-    GOFASTR1902  main.go:14:2  DELETE /wipe/:id is registered outside any group…
-    explain any of these: gofastr verify --explain <rule>
-```
-
-Three deliberate properties:
-
-- **After the reload, never before it.** Analysis takes about a second on
-  a large tree, and a second added to every save is the difference between
-  a loop people use and one they turn off. The server restarts first; this
-  runs behind it and prints when ready.
-- **Compact.** Rule ID, location, one line. The reasoning, the example,
-  and the fix are what `gofastr verify --explain` is for. Repeating them
-  on every save would bury the loop. Long reports are capped, and say how
-  many they hid.
-- **Quiet when nothing changed.** An unchanged report is not reprinted;
-  fixing the last finding prints `contracts: clean` once. A loop that
-  repeats itself is a loop you stop reading.
-
-The baseline applies here too, so an existing project sees only what it
-is adding. And failures of the analysis itself are said out loud, once:
-a config that will not parse, a tree that cannot be scanned, a corrupt
-baseline. In a loop, silence reads as "clean", so nothing is allowed to
-fail silently: even a changed-set that cannot be computed (a repository
-with no commits yet, say) falls back to whole-tree reporting *and says
-so* rather than silently widening.
+- **`gofastr dev`:** Runs changed-file contract analysis *after* each reload (coalescing rapid saves) and prints a compact summary only when findings change.
+- **MCP tools:** With `framework.WithMCPIntrospection()`, agents can query `contracts_list`, `contracts_explain`, and `contracts_capabilities`. Under `gofastr dev`, `contracts_verify` (honors the baseline; skips `go vet` since the dev loop compiles) and `contracts_fix` (one rule at a time) let agents check and fix without shelling out.
+- **`--json` output:** Emits a single schema-versioned JSON object (`schema`, `passed`, `vet`, `counts`, `diagnostics` with embedded `ruleDoc`, `baselined`, `outsideChange`, `unparsed`, `relaxations`). Gate CI on `passed`.
 
 ## Semantic coverage
 
-Line coverage answers "did this statement run". It cannot answer:
+Line coverage doesn't prove a route was reached through your real router and middleware, or that a hook or event subscriber actually fired. `framework/semcov` records six runtime dimensions into `.gofastr/semantic-coverage.json` (routes `GOFASTR1101`, permissions `GOFASTR1102`, entity ops `GOFASTR1103`, registered hooks `GOFASTR1107`, event subscribers `GOFASTR1108`, roles `GOFASTR1109`):
 
-- Did a request ever reach this route through the real router, the real
-  middleware chain, and the real auth check?
-- Was this permission ever evaluated?
-- Did anything ever call this entity's delete endpoint?
-- Did this `OnBeforeCreate` hook ever actually fire?
-- Did anything ever publish the event this handler subscribes to?
-- Has a request ever arrived holding this role?
+- `framework.TestHarness` records automatically; for custom in-process tests call `framework.RecordSemanticCoverage(t, app)`.
+- For subprocess E2E tests, pass `GOFASTR_SEMANTIC_COVERAGE=1` in the server's environment.
+- Disable with `GOFASTR_NO_SEMANTIC_COVERAGE=1`; override directory with `GOFASTR_SEMANTIC_COVERAGE_DIR`.
+- Missing manifest on a fresh clone reports `info` only; an existing manifest missing a route fails.
 
-A handler can sit at 100% line coverage because a unit test called the
-function directly, while no request has ever reached it through the
-router. `framework/semcov` records what a test run genuinely exercised
-into `.gofastr/semantic-coverage.json`, and the `testing` rules diff that
-against the discovered surface. Every test binary merges into the same
-file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
-that finish together keep each other's records.
+## Writing your own rules
 
-The manifest sits under the project root, or under the Go workspace
-root when a `go.work` sits above the module. The tests, the server, and
-`gofastr verify` use `GOFASTR_SEMANTIC_COVERAGE_DIR` when set, then
-`GOFASTR_AXE_COVERAGE_DIR` if set. Give all three the same environment
-so verify reads the manifest the tests wrote.
-
-Six dimensions are recorded, each through a hook the runtime packages
-expose rather than by importing the recorder (the router's
-`SetServeHook` method,
-`access.SetObserver`, `hook.SetObserver`, `event.SetObserver`), so
-`core/router`, `framework/access`, `framework/hook`, and `framework/event`
-stay dependency-free leaves and a production binary pays one atomic load
-per check. A panicking observer is recovered and logged where it runs
-(the hook firing, the event emission): coverage tooling must not be able
-to take down the operation it observes.
-The observers and router serve hook share `textsafe.LogPanic`: a panic
-produces one error-level slog record with the scrubbed value and stack,
-while the permission verdict, hook execution, event emission, or route
-handler continues unchanged.
-
-| Dimension | Recorded when | Rule |
-|---|---|---|
-| Routes | a request matches a registered pattern, after the route gate and before the middleware chain | `GOFASTR1101` |
-| Permissions | `access.Can` / `CanResource` / `CanResourceExact` / `RequirePermission` evaluates one, **whatever the verdict** | `GOFASTR1102` |
-| Entity operations | a CRUD route for a declared entity is served | `GOFASTR1103` |
-| Lifecycle hooks | a *registered* hook body actually runs | `GOFASTR1107` |
-| Event subscribers | the type a handler subscribes to is published | `GOFASTR1108` |
-| Roles | a caller holds the role during a permission check | `GOFASTR1109` |
-
-`GOFASTR1102` discovers permission uses through framework access checks,
-including names declared as constants. Permission uses count even when
-the app has no role policy registration. The check also includes entity
-access declarations and permission-shaped arguments to `Require`,
-`HasScope`, and `RequireAPIScopes`.
-
-Two of those distinctions carry the weight. A permission **denial** is
-recorded as coverage, because a test asserting a rejection proves the
-boundary exists at least as well as one asserting a grant; the failure
-worth catching is a check that is never reached at all. And a hook firing
-is only recorded when something is registered for that lifecycle point;
-`ExecuteHooks` runs on every CRUD operation regardless, so crediting the
-call would hand every entity full hook coverage on its first request.
-
-The role check inverts the usual worry. A role granting too *little*
-surfaces as a broken feature someone reports; a role granting too *much*
-surfaces as nothing at all, until it is used. Recording which roles a
-suite actually authenticated as is how the second kind becomes visible.
-
-Hooks and event subscribers are the two surfaces with no callers to
-follow. Nothing in the codebase invokes them by name, so a rename on the
-emitting side, `order.placed` becoming `order.completed`, leaves the
-subscriber compiling, the tests green, and the notification never sent.
-
-`framework.TestHarness` records automatically, so a suite already using it
-gets coverage without changing a line. Drive the app in-process some other
-way and call it directly:
-
-```go
-func TestCheckout(t *testing.T) {
-    framework.RecordSemanticCoverage(t, app)
-    // …
-}
-```
-
-A test that builds the binary and drives it over real HTTP is a different
-case: the requests happen in a **subprocess** that never touched the
-harness, so nothing records and a thorough e2e suite scores zero. Set
-`GOFASTR_SEMANTIC_COVERAGE=1` on the *server's* environment and it records
-what it serves:
-
-```go
-srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1")
-```
-
-The e2e test `gofastr generate` emits already does this. The manifest is
-written from the request path rather than at shutdown, because a harness
-usually SIGKILLs the server. Flushing costs one write per newly-seen
-route, not one per request.
-
-Set `GOFASTR_NO_SEMANTIC_COVERAGE` to turn in-process recording off for a
-suite.
-
-Absence and drift are treated differently, on purpose. **No manifest at
-all**, as in a fresh clone whose tests have never run, reports at info level
-and does not fail: walling the first `verify` behind a full test run
-teaches people to skip `verify`. **A manifest that exists but misses a
-route** is real drift and fails. Run `go test ./...` once and the manifest
-exists from then on. The file lives under `.gofastr/` (gitignored, wiped
-by `make clean`), so it never ships.
-
-## What this deliberately does not check
-
-Three things are absent on purpose rather than pending.
-
-**Generated files.** Analyzers skip anything carrying the full
-`// Code generated … DO NOT EDIT.` line (either half alone exempts
-nothing: the header is repo content, and a bare `DO NOT EDIT` comment
-must not buy a whole-tree exemption): the developer cannot fix a finding there, only the
-generator can, and a finding nobody can act on trains people to stop
-reading. This is why `cmd/check-csp` still exists alongside the
-rendering rules. It scans generated output at `make build` time, where
-the generator's product is exactly what needs checking. The two are a
-division of labour, not a duplication: contracts polices what you write,
-check-csp polices what the build emits.
-
-**Middleware execution.** Recording which middleware ran needs a wrapper
-around every registered middleware, permanently, on the request path, and
-the rule it would enable ("you registered middleware that never ran")
-almost never fires, because `app.Use` middleware runs on *every* request
-by definition. Group-scoped middleware is the interesting case, and route
-coverage already tells you whether those routes were reached. A permanent
-per-request cost for a rule that cannot realistically fire is the wrong
-trade.
-
-**API versions.** `framework/experimental/apiversions` is an experimental
-surface, explicitly outside the stability contract
-(`framework/ARCHITECTURE.md`). Rules that pin an experimental API's shape
-would make it harder to change, which is the opposite of what
-"experimental" is for.
-
-If either becomes worth having, the analyzer surface is the place to add
-it: `framework/contracts/analyzers`, one file per capability.
-
-## Output for agents
-
-`--json` emits every diagnostic with its complete rule attached: the
-reason, the fix, the bad/good example pair, the doc topic. One finding is
-a complete work item, so an agent acting on it needs no second call:
-
-```
-gofastr verify --json | jq '.diagnostics[] | select(.severity=="error")'
-```
-
-### The `--json` shape
-
-`schema` is the first field so a reader can branch on it before parsing
-anything else. It is bumped when the shape changes in a way a consumer
-must notice.
-
-```json
-{
-  "schema": 1,
-  "tool": "gofastr verify",
-  "root": "/abs/path",
-  "config": "gofastr.settings.yml",
-  "passed": false,
-  "failOn": "error",
-  "vet":   { "ran": true, "passed": true },
-  "counts": { "errors": 1, "warnings": 3, "infos": 1, "total": 5 },
-  "summary": [ { "capability": "routing", "errors": 1, "warnings": 2, "infos": 0 } ],
-  "diagnostics": [ … ],
-  "suppressed": 2,
-  "baselined": 65,
-  "baselineFixed": 3,
-  "unparsed": 1,
-  "outsideChange": 41,
-  "relaxations": [ "rule GOFASTR1101 → info" ],
-  "analyzerErrors": [],
-  "timings": [ { "name": "rendering", "ms": 656.3, "diagnostics": 180 } ],
-  "durationMs": 705.3
-}
-```
-
-With `--json`, stdout is exactly one JSON document on failures too,
-including invalid flags and unknown `--explain` rules. Operational errors
-carry an `error` string; all prose, warnings, progress and error details go
-to stderr. `--help` under `--json` writes usage to stderr with no document.
-The generation watch stream is a separate contract; see [Codegen](codegen.md).
-Report `root` is the absolute analysed directory even when vet stops
-the run before contracts execute.
-
-`capabilities` appears when the run was scoped (`gofastr verify routing`),
-`config` when a config file was found, and `baselined`,
-`baselineFixed`, `outsideChange`, `analyzerErrors` and `timings` are
-omitted when empty, so absence means zero, never unknown. A skipped vet
-stage omits `passed` entirely: a stage that never ran has no verdict,
-and serialising `false` there would read "did not check" as "failed".
-
-`unparsed` counts files the parser rejected. They produced no findings
-from any analyzer, so without the count a tree mid-edit reads as clean for
-exactly the files nobody could read. A tree that does not parse is normal
-in the dev loop and reported rather than fatal. `go vet` runs first and
-is where a genuine syntax error stops the run.
-
-`passed` is the field to gate on; it already accounts for a failed vet
-stage and for analyzer errors, either of which means "could not look"
-rather than "nothing found". `baselined`, `baselineFixed`, and
-`outsideChange` report what the run did NOT show: without them a narrowed
-or baselined run is indistinguishable from a clean whole-tree one.
-
-Each diagnostic carries its complete rule under `ruleDoc`, so one finding
-is a self-contained work item:
-
-```json
-{
-  "rule": "GOFASTR1003",
-  "slug": "routing/untested-route",
-  "capability": "routing",
-  "severity": "warn",
-  "file": "app.go",
-  "line": 294,
-  "column": 2,
-  "message": "no test file mentions /api/tables/customers",
-  "snippet": "fwApp.Router().HandleFunc(\"GET\", \"/api/tables/customers\", …)",
-  "suggestion": "add a test that requests /api/tables/customers — …",
-  "evidence": { "method": "GET", "pattern": "/api/tables/customers" },
-  "ruleDoc": { "id": …, "title": …, "summary": …, "why": …, "fix": …,
-               "examples": [ { "bad": …, "good": … } ],
-               "doc": "routing", "severity": …, "autofix": false }
-}
-```
-
-`file` is relative to `root`. `snippet` is omitted for a redacted finding.
-The hardcoded-secret rule never echoes what it matched, over any
-output. `evidence` is per-rule structured detail; treat unknown keys as
-additive.
-
-`--sarif verify.sarif` writes SARIF 2.1.0 for GitHub code scanning and
-IDE inline diagnostics. Artifact URIs are relative to the analysed root,
-and the run declares that root in `originalUriBaseIds`, so annotations
-map correctly whether you ran verify from the repository root or pointed
-it at a subdirectory.
-
-Every report carries the `vet` stage that ran before the analyzers:
-
-```json
-"vet": { "ran": true, "passed": true }
-```
-
-`go vet` is a precondition, not a check: half the analyzers cannot read
-what they need from a tree the compiler rejects, so a failing vet stops
-the run and the document says so (`passed: false`, no diagnostics, and
-vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
-"--no-vet"}` rather than omitting the field, because "we did not check"
-must never read as "it was fine".
-
-### The vet stage runs GoFastr's analyzers too
-
-A framework-tree vettool build failure includes the compiler/linker output
-in the failed vet stage, rather than only reporting that the build failed.
-
-The vet stage is two passes. Plain `go vet` runs first, then the
-type-aware analyzers the framework's own CI runs over its code: an
-unbounded request or response body read, a credential compared with
-`==`, a secret file written world-readable, an HTTP client with no
-timeout, a recovered panic logged raw, and about thirty more, plus stock
-`x/tools` passes such as nilness and sqlrowserr. Plain vet covers
-`hostport` and `waitgroup` for verify. Standalone vettool runs both.
-The gofastr binary serves as the vettool (`go vet -vettool=<gofastr>`),
-so the analyzers match the CLI you run and there is nothing else to
-install. Both passes must pass. A tree that fails plain `go vet` stops
-there, so its type errors print once.
-
-The analyzers' type checker is the one compiled into the gofastr binary,
-and it cannot read a newer toolchain's export data. When the module
-builds with a newer Go minor than the binary (say go1.28 against a
-gofastr built with go1.27), verify skips the analyzer pass, says so, and
-keeps plain `go vet`; a gofastr built with that Go runs them again. The
-`--json` report carries the reason in `vet.suiteSkipped`, so a passing
-vet stage that ran no analyzers does not read as a full check.
-Verify on the GoFastr repository itself builds its `cmd/vettool`
-instead, with the repository's toolchain, and fails if that tool does
-not build. An app's own `cmd/vettool` directory changes nothing.
-
-Apps that passed verify before this pass existed can fail it on upgrade:
-an `http.Get` with no timeout, a `0644` secret file. Fix the finding, or
-mark it when it is the shape on purpose. `--no-vet` skips both passes.
-
-A finding that is the shape on purpose takes the same marker the
-contracts use, with a reason, on its line or the line above:
-
-```go
-//gofastr:allow(clienttimeout) health probe against a local port, bounded by ctx
-resp, err := http.Get(probeURL)
-```
-
-The reason is mandatory; a bare marker silences nothing, and neither
-does one whose only "reason" is separator punctuation (`--`, `— :`).
-
-A running app built with `framework.WithMCPIntrospection()` also serves
-the catalog over MCP through `contracts_list`, `contracts_explain`,
-and `contracts_capabilities`, so an agent can read what the framework expects
-*before* writing code rather than after a build rejects it.
-
-In development, a built-in MCP tool whose name is occupied by a dev-implied
-entity tool is skipped with a warning; other built-in tools still register.
-This applies even with explicit introspection or control enabled. Explicit
-host-tool and explicit entity-MCP collisions remain initialization errors.
-
-Under `gofastr dev`, two more tools turn the catalog from reference into
-a working loop: `contracts_verify` runs the analyzers over the app's own
-source tree and returns the findings as structured diagnostics, and
-`contracts_fix` applies a single rule's autofixes and reports which files
-changed. An agent can then verify → explain → fix without shelling out.
-
-`contracts_verify` honours the project's baseline, so an agent's view of
-the tree agrees with `gofastr verify`, `gofastr build`, and the dev
-watcher, and reports the count it absorbed, so a clean result never
-hides accepted debt. It also admits what it could not check: `unparsed`
-counts files the parser rejected, and `analyzerErrors` lists checks that
-errored instead of completing, so `passed: false` with zero findings
-always comes with its reason. The one deliberate difference from
-`gofastr verify` is the missing `go vet` stage: the dev loop's rebuild
-already reports compile errors, and running vet again on every tool call
-would only add latency. `contracts_fix` deliberately does not honour the
-baseline: it records debt the team agreed to carry, and paying it down
-is the point.
-
-Both read local source, and `contracts_fix` writes it, so neither is
-registered outside the dev loop: a deployed `/mcp` does not gate them,
-it does not have them. `contracts_fix` takes one rule at a time on
-purpose: a single rule's edits are reviewable in a way a whole-tree
-rewrite is not. Rules with no autofix are refused with the reason,
-rather than silently doing nothing.
-
-A refused argument (an unknown rule, with its "did you mean"
-suggestion; an unknown capability; a rule with no autofix) answers as
-JSON-RPC invalid params carrying that message. A `contracts_fix` that
-stops part way answers with an `isError` tool result naming the files it
-had already rewritten, so the agent knows its last read of the tree is
-out of date.
-
-## Fixing
-
-`gofastr verify --fix` applies the mechanical fixes and re-verifies.
-Only unambiguous rewrites carry one; anything needing a judgment call is
-left to you with the fix written out in prose. An edited Go file is run
-through gofmt, and a file with CRLF line endings keeps them. Today that is `GOFASTR1005`
-(uppercase a lowercase method), `GOFASTR1404` (add the missing cookie
-attributes), and `GOFASTR0002` (delete a suppression that matches nothing).
-
-The last is the one worth running regularly: suppression debt accumulates
-quietly, and a directive left on a moved line silently covers whatever
-code slid into its place. `gofastr verify --rule GOFASTR0002 --fix` clears
-stale directives. A standalone directive is removed with its line.
-When the directive shares a line with code, the edit removes its comment
-span and preserves the surrounding source.
-
-`--rule <id>` narrows a run to one rule (or several, comma-separated, as
-IDs or slugs). Paired with `--fix` it applies exactly that rule's edits
-and leaves everything else alone, which keeps a fix commit reviewable:
-
-```
-gofastr verify --rule GOFASTR1005 --fix
-```
-
-An unrecognised rule name is an error rather than an empty run, so a typo
-cannot read as a clean bill of health.
-
-Applied Go fixes are gofmt-ed. Each fix edits only its diagnostic's file,
-and overlapping edits are refused. Every edit records the text it expects to
-replace: a file edited since analysis is caught by content, not just by
-offsets that happen to still be in range. A corrupted source file is a
-far worse outcome than "run verify again".
-
-`GOFASTR1002` deliberately has **no** autofix even though the rewrite is
-obvious. Changing `/users/:id` to `/users/{id}` on its own turns a loud
-404 into a route whose handler still reads the parameter the old way and
-fails quietly; the handler has to change in the same edit, and only you
-know what it should read.
-
-`gofastr build` runs the analyzers too, and fails on findings at or above
-the configured severity floor — error by default, so a build that fails on
-"this route has no test" is a build people learn to bypass.
-`contracts: {strict: true}` lowers the floor to warnings. An analyzer error
-or an unparsed file also fails the contract gate. Build runs `go vet` as a
-separate, earlier stage. `--no-contracts` skips the contract gate and leaves
-`go vet` enabled.
-
-The build gate reads the same baseline `verify` does. Recording one has
-to fix both, or adopting a baseline leaves `build` permanently red and
-the only exit a user finds is `--no-contracts`, which skips the contract
-checks. New findings the baseline never recorded still stop the build.
-
-Every rule carries at least one bad/good example pair, required rather
-encouraged: `RegisterRules` rejects a rule without one at init, the same
-place a malformed or duplicate rule already fails. A rule the reader
-cannot see is a rule they will not apply.
-
-The catalog is checked against the analyzers, not just against itself: no
-rule may fire on its own documented *good* example, and a rule's *bad*
-example has to produce it. A rule and its documentation cannot drift apart
-without a test failing. Twenty-one rules whose examples need context one file
-cannot express, such as a coverage manifest, a multi-package layout, or a `_test.go`,
-are listed with the reason, and that list is guarded too: if such an
-example starts firing, the entry is stale and the test says so.
-
-## Adding a rule
-
-Rules live in `framework/contracts/catalog.go` as data; the detectors live
-in `framework/contracts/analyzers/`. That split is deliberate: the catalog
-has to be readable and serveable without a Go parser, and a detector has to
-be replaceable without touching the documentation contract it satisfies.
-
-`Why` and `Fix` are mandatory and validated at init. If you cannot write
-the fix, the finding is an opinion and does not belong in the catalog.
-
-A built-in rule goes in its capability's function (`routingRules()`,
-`securityRules()`, ...), which sets `Capability` for every rule it
-returns, so the literal leaves it out. Write a single bad/good pair as
-`example(bad, good)` or `captioned(caption, bad, good)`. A new rule, or an
-edit to a rule's text, changes what `gofastr verify --list` and
-`--explain` print, so regenerate the pinned output with `GOFASTR_UPDATE_GOLDEN=1 go test ./cmd/gofastr/internal/verifycmd/`
-and read the diff.
-
-## Your own rules
-
-The pipeline is a library, and the catalog is open to registration: a
-project can add rules the framework could never know about, say "order
-writes go through the audit trail" or "handlers in `internal/api` never
-import `internal/billing` directly", and they ride everything the
-built-ins ride: config severity, `off`, exemptions, `//gofastr:allow`
-with a mandatory reason, the baseline ratchet, the JSON/SARIF output,
-and `contracts_list`/`contracts_explain` over MCP in any app process
-that imports them.
-
-A custom rule picks its **own uppercase ID prefix** (`ACME101`, not
-`GOFASTR9901`); the `GOFASTR` namespace and its per-capability number
-blocks belong to the built-in catalog, which is what keeps a suppression
-written today from colliding with a future release. The slug's prefix
-must name one of the existing capabilities, which decide where the rule
-appears in reports.
-
-Register the rule and its detector from an `init` (or before the first
-run), then drive the pipeline from a small command of your own:
+`framework/contracts` is an importable library. Register custom org rules under your own uppercase prefix (e.g., `ACME101`, never `GOFASTR*`) and run them from a tiny `cmd/contracts-verify` binary—they inherit config severities, exemptions, `//gofastr:allow`, baselines, JSON/SARIF output, and MCP exposure:
 
 ```go
 package main
@@ -973,17 +129,16 @@ import (
 	"os"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
-	// The built-in analyzers register themselves on import.
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
 
 func init() {
 	contracts.RegisterRules(contracts.Rule{
 		ID: "ACME101", Slug: "data/orders-are-audited",
-		Title:      "Order writes bypass the audit trail",
+		Title: "Order writes bypass the audit trail",
 		Capability: contracts.CapData, Severity: contracts.SeverityError,
 		Summary: "A write to orders does not go through audit.Record.",
-		Why:     "Regulated flows must leave a trail; a silent write is an audit failure.",
+		Why:     "Regulated flows must leave a trail.",
 		Fix:     "Wrap the write in audit.Record(...).",
 		Doc:     "entity-declarations",
 		Examples: []contracts.Example{{
@@ -995,55 +150,24 @@ func init() {
 		Name: "acme-audit", Doc: "audit-trail discipline for order writes",
 		Rules: []string{"ACME101"},
 		Run: func(p *contracts.Pass) ([]contracts.Diagnostic, error) {
-			// p.Files, p.AST, p.Lines: the same pass the built-ins read.
 			return nil, nil
 		},
 	})
 }
 
 func main() {
-	cfg, err := contracts.LoadConfig(".", "")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	pass, err := contracts.NewPass(".", cfg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	report, err := contracts.Run(pass, contracts.RunOptions{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
+	cfg, _ := contracts.LoadConfig(".", "")
+	pass, _ := contracts.NewPass(".", cfg)
+	report, _ := contracts.Run(pass, contracts.RunOptions{})
 	fmt.Print(contracts.FormatText(report, contracts.TextOptions{}))
 	os.Exit(report.ExitCode())
 }
 ```
 
-`go run ./cmd/contracts-verify` is then your project's gate: wire it
-into the same pre-commit hook or CI step you would wire `gofastr verify`
-into. The stock `gofastr` binary only ever knows the built-in catalog:
-custom rules live in your module, so they run through your command,
-where the compiler can see them.
-
 ## Common mistakes
 
-- **Suppressing instead of fixing.** `--explain` exists because most
-  findings have a one-line remedy. Reach for `//gofastr:allow` when the
-  rule's premise genuinely does not hold here, not when the fix is
-  inconvenient, and write the reason for a reader, not for the linter.
-- **Expecting `:id` to work in an API route.** It works in *screens*,
-  which core-ui routes itself, and silently 404s in `Router().Handle`,
-  which goes to ServeMux. GOFASTR1002 only fires on the second.
-- **Reading a clean `testing` report as proof.** With no manifest, those
-  checks did not run; that is what the `GOFASTR1106` info line is telling
-  you. Run the tests first.
-- **Configuring a coverage floor with no profile.** `coverage.minimum`
-  needs `go test -coverprofile=coverage.out` to have produced something to
-  read; verify reports the missing profile rather than quietly passing.
-- **Putting an architecture layering in the config and expecting the
-  order not to matter.** Layers are ordered top-first, and a package may
-  import its own layer and anything *below* it. Reversing the list inverts
-  every rule.
+- **Suppressing instead of fixing.** Run `--explain <rule>` first; reserve `//gofastr:allow` for cases where the rule's premise genuinely doesn't apply.
+- **Using `:id` in API routes.** Core-UI screens accept `:id`, while `app.Router()` uses Go `ServeMux`'s `{id}` syntax (`GOFASTR1002` intentionally has no autofix because your handler must update its param lookup too).
+- **Treating a clean `testing` pass with no manifest as proof.** Run `go test ./...` first so `.gofastr/semantic-coverage.json` exists.
+- **Setting `coverage.minimum` without a coverage profile.** Run `go test -coverprofile=coverage.out` before verifying line coverage.
+- **Reversing `architecture` layer order in `gofastr.settings.yml`.** Layers are ordered top-first (a layer may import itself and layers below it).

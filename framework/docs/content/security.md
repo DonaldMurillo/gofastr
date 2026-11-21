@@ -1,16 +1,10 @@
 # Security defaults
 
-`core/middleware` provides the defensive HTTP primitives the framework
-composes by default. Most apps should accept the defaults and override
-specific knobs rather than rebuild the chain.
+`core/middleware` provides the defensive HTTP stack that `framework.NewApp` wires by default. Keep the defaults and tune individual knobs rather than rebuilding the chain from scratch.
 
 ## The default stack
 
-`framework.NewApp` installs this middleware chain on `app.Router` unless
-you pass `WithoutDefaultMiddleware()`. (`app.Use(...)` appends your
-middleware to the chain. It does not replace or disable the defaults;
-use `WithoutDefaultMiddleware()` when you want to build the chain
-yourself.)
+`framework.NewApp` installs this middleware chain on `app.Router()` unless you pass `WithoutDefaultMiddleware()`. Calling `app.Use(...)` appends to this chain—it does not replace or disable the defaults.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/middleware"
@@ -19,38 +13,22 @@ import "time"
 ```go
 middleware.Recovery()
 middleware.RequestID()
-middleware.Compress()          // only with AppConfig.Compression
+middleware.Compress()          // only when AppConfig.Compression is true
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
 
-(`WithI18n` inserts its middleware between `RequestID` and
-`SecurityHeaders` when configured. `WithIdempotency` is not in this
-chain: it mounts innermost with `router.UseInner`, after the app's own
-auth and tenant middleware.)
+When enabled, `WithI18n` sits between `RequestID` and `SecurityHeaders`, and `WithIdempotency` mounts innermost via `router.UseInner` (after your auth and tenant middleware).
 
-`Recovery` is outermost so a panic anywhere below it produces a clean
-`500`. That `500` drops the representation headers the handler had set
-(`Content-Type`, `Content-Encoding`, `Content-Length`, `ETag`,
-`Last-Modified`, `Content-Range`, `Accept-Ranges`,
-`Content-Disposition`) and is sent `Cache-Control: no-store`, so a
-panicking asset handler's error page is never cached as the asset;
-cookies and the other headers stay. A panic after the response started
-(a status sent, a flush, body bytes, a hijack) cannot become a `500`:
-`Recovery` logs it and cuts the connection, so the client sees a
-truncated response rather than error text after a `200` body. A panic
-in a handler `Timeout` runs on its own goroutine is logged with that
-goroutine's stack, so the log names the code that panicked. `RequestID` runs next so every later log line carries the trace
-ID. `Compress`, when `AppConfig.Compression` is set, gzips text
-responses for clients that send `Accept-Encoding: gzip`; it sits outside
-everything that writes the body, so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
-cancels the request context if the handler hangs.
+- **`Recovery`** catches panics and responds with `500` (`Cache-Control: no-store`, stripping handler representation headers like `ETag` or `Content-Type` so a panicking asset handler is never cached as the asset). If a panic occurs after headers/bytes were already sent, it logs the stack and closes the connection so error text is never appended to a `200` body.
+- **`RequestID`** generates or echoes `X-Request-ID` so downstream logs share a trace ID.
+- **`Timeout`** enforces a 30s request deadline (override app-wide with `AppConfig.RequestTimeout` or per route with `SetRouteTimeout`).
+- **Listener-wide gates:** Router middleware only covers router-handled paths. To guard every request on the listener (including setup wizards or worker muxes), call `app.WrapServer(func(http.Handler) http.Handler)` before `Start`.
+- **Access logging:** Deliberately omitted from the default chain so `battery/log` doesn't double-log; for basic request logs without `battery/log`, add `middleware.LoggingFn(app.Logger)`.
 
 ### Compression
 
-The default chain does not compress: most deployments put a reverse
-proxy or CDN in front of the app, and it compresses there. Set
-`AppConfig.Compression` when the app faces clients directly:
+Compression is off by default because most deployments terminate it at a CDN or reverse proxy. Enable it when the app serves clients directly:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -62,58 +40,9 @@ app := framework.NewApp(framework.WithConfig(framework.AppConfig{
 _ = app
 ```
 
-`Compress` encodes HTML, CSS, JavaScript, JSON, XML, SVG and plain text
-of 1 KB or more for clients whose `Accept-Encoding` admits gzip (a
-named `gzip;q=0` refuses it even beside a `*` wildcard), and adds `Vary: Accept-Encoding` to every response it
-could have compressed. It leaves alone `HEAD` requests, `Range` requests,
-`text/event-stream`, bodies that already carry a `Content-Encoding`,
-`204`/`206`/`304` answers and hijacked connections. An `ETag` gains a
-`-gzip` suffix on the compressed variant, and a conditional request
-carrying that suffix still revalidates to `304`; an `If-Match` carrying
-it is mapped back too, so an optimistic-concurrency write that echoes
-the tag the client was handed is not refused with `412`. A compressed response
-drops `Accept-Ranges`, since a range request is served uncompressed.
-Responses marked `immutable` (hashed static assets, `runtime.js`,
-`manifest.js`) are compressed at the best level and cached in memory by
-content hash from the second time the same bytes are served. A one-off
-body is not kept, so a client that mints immutable URLs has to request
-each one twice to displace a cached entry, and the cache's byte bound
-holds either way. A body under a strong `ETag` is held until the
-handler returns and compressed in one pass, so the tag names one
-encoding; if its handler flushes, it streams and the tag turns weak.
-Everything else streams at the default level. A handler that panics
-after the response started cannot get a `500`: the connection is cut,
-so the client sees a truncated response. The encoding is gzip only:
-the standard library has no Brotli.
-An empty file copy or a source error before its first byte does not commit
-response headers, so the handler can still choose an error status.
-Source errors returned alongside the first bytes are preserved, including
-at the content-sniffing boundary.
-Identity responses preserve the underlying writer's direct file-copy
-path after reading the first byte and any required content sniffing. Compressed responses still
-use the same streaming or held-body encoding rules for file copies.
+`Compress` gzips HTML, CSS, JS, JSON, XML, SVG, and plain text responses ≥1 KB when `Accept-Encoding` allows gzip, and adds `Vary: Accept-Encoding`. It skips `HEAD`, `Range`, `text/event-stream`, pre-encoded bodies, `204`/`206`/`304`, and hijacked connections. Strong `ETag` values gain a `-gzip` suffix and still revalidate cleanly (`If-None-Match` and `If-Match`). Responses marked `immutable` (hashed static assets, `runtime.js`, `manifest.js`) are compressed at best level and cached by content hash after their second request.
 
-A compressed page that reflects attacker input next to a secret leaks
-the secret through response sizes (BREACH), whether the app or a proxy
-in front of it compresses. The framework's own secret in pages is the
-CSRF token, and it never appears raw; see
-[masked tokens](#masked-tokens) below. A secret the app renders itself
-(an API key, an invite link) next to reflected input is the app's to
-mask or move out of the page.
-
-Router middleware runs only for requests the router answers. A gate
-that must hold for every byte the listener serves, the interactive
-setup wizard and the worker and agent roles' reduced muxes included,
-goes in `app.WrapServer(func(http.Handler) http.Handler)` instead. The
-first wrapper registered is the outermost; call it before `Start` (a
-battery's `Init` is in time), since a call once the server has been built,
-even after `Shutdown`, panics. `battery/service` installs its loopback
-gate this way.
-
-Access logging is deliberately not in the chain: `battery/log` owns
-structured access logging when registered, and an app that just wants a
-basic line can add `middleware.LoggingFn(app.Logger)` itself; running
-both would double-log every request.
+**BREACH note:** Compressing a page that reflects attacker input next to a secret leaks the secret via response size. GoFastr masks CSRF tokens automatically (see [Masked tokens](#masked-tokens)); avoid rendering raw app secrets (API keys, invite tokens) beside reflected input.
 
 ## SecurityHeaders
 
@@ -129,107 +58,26 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 })
 ```
 
-| Header                    | Default                                                                          |
-|---------------------------|----------------------------------------------------------------------------------|
+| Header | Default |
+|---|---|
 | `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
-| `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
-| `Referrer-Policy`         | `no-referrer`                                                                    |
-| `X-Frame-Options`         | `DENY`                                                                           |
-| `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
+| `X-Content-Type-Options` | `nosniff` (always on, not configurable) |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Frame-Options` | `DENY` |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
+| `Cross-Origin-Opener-Policy` | `same-origin` (can isolate OAuth popups; override if your flow uses `window.opener`) |
+| `Cross-Origin-Resource-Policy` | `same-origin` (blocks cross-origin `<img>`/asset embeds; set `cross-origin` on public asset routes if needed) |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
 
-A `ContentSecurityPolicy` you set replaces the default whole. Keep
-`worker-src 'self'` and `base-uri 'none'` in it: without `worker-src`,
-workers follow `script-src`, so a CDN added there could also serve
-workers.
+If you supply a custom `ContentSecurityPolicy`, it replaces the default whole. Keep `object-src 'none'`, `form-action 'self'`, `worker-src 'self'`, and `base-uri 'none'`—`default-src` does not cover `form-action` or `object-src`.
 
-`object-src` and `form-action` are named explicitly because `default-src`
-does not cover them: CSP never let `form-action` fall back, and
-`object-src`'s fallback was removed in CSP3. A policy of just
-`default-src 'self'` therefore leaves an injected `<form>` free to post
-the page's data anywhere, and `<object>`/`<embed>` free to execute, so
-a custom `ContentSecurityPolicy` should keep both directives.
+**HSTS** is emitted automatically on direct TLS and proxy-terminated HTTPS (`X-Forwarded-Proto: https`), never on plain-HTTP local dev. Set `HSTSMaxAge: -1` to disable, or set `HSTSIncludeSub` / `HSTSPreload`.
 
-### Static exports
-
-A static export (the app binary's `--export <dir>` flag) writes the
-policy into every page as an in-document
-`<meta http-equiv="Content-Security-Policy">` and emits a `_headers`
-file for hosts that read one (Netlify, Cloudflare Pages). Response
-headers are a server's job, and a static export has no server; without
-this the export would be the one deployment target shipping the runtime
-with no CSP at all.
-
-**The meta does not carry the clickjacking guard.** Per CSP Level 3
-§3.1, a `<meta>`-delivered policy ignores `frame-ancestors` (alongside
-`report-uri` and `sandbox`), so the meta enforces the fetch directives
-but not `frame-ancestors 'none'`. That directive reaches the browser
-only through the `_headers` file, and the export emits no
-`X-Frame-Options` header either, so a host that ignores `_headers` (S3,
-GitHub Pages) serves the pages with no clickjacking guard at all. On
-those hosts, configure the CDN to send `Content-Security-Policy` (or
-`X-Frame-Options: DENY`) as a real response header.
-
-**HSTS is on by default.** `Strict-Transport-Security` is emitted with a
-one-year `max-age` whenever the request is HTTPS: direct TLS, or a
-TLS-terminating proxy that sets `X-Forwarded-Proto: https` (the app
-sees plain HTTP there). Plain-HTTP local dev never receives it. Set
-`HSTSMaxAge: -1` to disable, a positive value to change the age, or
-`HSTSIncludeSub` / `HSTSPreload` to extend it.
-`Secure: true` forces HSTS even on plain HTTP. Its default, false, keeps
-TLS and proxy auto-detection; it is not an off switch.
-
-The CSP default works with the built-in UI runtime because its CSS and
-scripts are served from `/__gofastr/*`, with one exception the host
-allows by hash. A first-load page whose head resources fit 16 KiB
-compressed carries the color-scheme bootstrap, the component bundle (or
-the part of it the page's markup can match) and app.css inline, so it paints from the first response, and the UI host
-adds each block's `'sha256-…'` hash to the response's
-`Content-Security-Policy` (and any Report-Only policy). The hashes go
-into the governing `style-src-elem`/`style-src` and
-`script-src-elem`/`script-src` lists, or into a new `style-src` /
-`script-src` copied from `default-src`. A policy that refuses the kind
-outright (`'none'`) keeps the page on links and is left untouched; a
-list that already allows `'unsafe-inline'` with no nonce or hash is left
-alone.
-
-The host can only patch a policy that is on the response when the page
-renders: the default chain's, or one your own middleware set. If the
-policy is written somewhere else (a reverse proxy, a CDN rule, a
-`<meta>` tag in a custom layout), the hashes never reach it and the
-browser would refuse the inlined blocks. Pass
-`uihost.WithNoInlineFirstPaint()` there to keep every head resource an
-external link. Static exports always link.
-
-If you embed third-party scripts, fonts, or frames you must override
-`ContentSecurityPolicy` explicitly; do not relax it with
-`'unsafe-inline'` globally.
-
-**Why hashes, not nonces or `'strict-dynamic'`.** The default allows
-scripts from your own origin plus the hashed inline blocks above, and
-no other host. Browser guidance pairs hashes with `'strict-dynamic'`
-to close bypasses through allowlisted third-party hosts, and the
-default allows none. Adding `'strict-dynamic'` would make CSP3
-browsers ignore `'self'`, so `<script src="/__gofastr/runtime.js">`
-would stop loading. A per-response nonce would make every page body
-unique. Leave both out unless your override adds third-party script
-hosts. In that case, `'strict-dynamic'` with nonces or hashes is the
-way to keep those hosts from becoming a bypass. Every script written
-into the HTML then needs its own nonce or hash, `runtime.js` included:
-a hash for an inline block authorizes nothing else, and a hash for an
-external script also needs a matching `integrity` attribute. A script
-an authorized script inserts as an element (`createElement`) needs
-neither; one it writes with `document.write` counts as written into the
-HTML and does. Static exports can't use nonces.
+**First-paint inline hashes:** To paint on the first response, `uihost` inlines small (≤16 KiB compressed) head resources (color-scheme bootstrap, matched component CSS, `app.css`) and appends their `'sha256-...'` hashes to the response CSP header. If a reverse proxy or CDN overwrites CSP outside Go, pass `uihost.WithNoInlineFirstPaint()` so all head assets stay external links. Avoid adding `'strict-dynamic'` unless you also allow third-party script hosts—`'strict-dynamic'` causes CSP3 browsers to ignore `'self'`, blocking `/__gofastr/runtime.js` unless you hash or nonce every script tag.
 
 ### Configuring the default chain's headers
 
-The example above constructs the middleware by hand. The default chain
-installed by `NewApp` is configurable through `AppConfig.SecurityHeaders`
-(or the `framework.WithSecurityHeaders(cfg)` option), so you can relax a
-single directive, e.g. allow `style-src 'unsafe-inline'` for a
-third-party CSS dependency, without shadowing the whole chain with your
-own `SecurityHeaders` middleware:
+Override individual headers on `NewApp` without duplicating the middleware:
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -242,12 +90,17 @@ app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeaders
 }))
 ```
 
-Unset fields keep their built-in defaults (the strict CSP, `Referrer-Policy:
-no-referrer`, `X-Frame-Options: DENY`, …), so a partial override never
-silently drops a defensive header. The zero value reproduces the original
-strict defaults exactly.
+Unset fields keep their strict defaults.
+
+### Static exports
+
+A static export (the app binary's `--export <dir>` flag) embeds the CSP into each page via `<meta http-equiv="Content-Security-Policy">` and writes a `_headers` file for hosts like Netlify or Cloudflare Pages.
+
+**The `<meta>` tag cannot enforce clickjacking protection.** Per CSP Level 3, browsers ignore `frame-ancestors` inside `<meta>` policies (and static exports emit no `X-Frame-Options` header). Hosts that ignore `_headers` (S3, GitHub Pages) serve exported pages with no clickjacking guard unless you configure your CDN to send `Content-Security-Policy` (or `X-Frame-Options: DENY`) as a real HTTP response header.
 
 ## CORS
+
+CORS is **not** in the default chain. Mount it globally (`app.Use`) or on a route group (`Group("/api", middleware.CORS(cfg))`) when browser clients call your API from another origin:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/middleware"
@@ -261,23 +114,7 @@ middleware.CORS(middleware.CORSConfig{
 })
 ```
 
-CORS is **not** in the default chain. Add it explicitly if your API
-serves browser clients on another origin. It works on the whole router
-(`Use`) or on one group (`Group("/api", middleware.CORS(cfg))`): a
-preflight for a path with no `OPTIONS` route runs the middleware of the
-group that holds the path's routes.
-
-A browser client that sends headers you do not list one by one
-(`X-Request-Tag`, tracing headers) fails its preflight. Set
-`AllowAnyHeader: true` to answer an allowed origin's preflight with the
-headers it asked for (`Access-Control-Request-Headers`), and
-`AllowAnyMethod: true` to do the same for the method. Only well-formed
-names are echoed, at most 64 of them. While either option is on, every
-answer to an allowed origin adds `Vary: Access-Control-Request-Headers`
-or `Vary: Access-Control-Request-Method`. A rejected origin still gets no `Access-Control-Allow-*`
-header and a 403 preflight. An `OPTIONS` request with no `Origin` or no
-`Access-Control-Request-Method` is not a preflight and reaches your
-router.
+Preflights (`OPTIONS` with both `Origin` and `Access-Control-Request-Method`) return `204` for allowed origins and `403` for rejected ones; non-preflight `OPTIONS` requests reach your router. Set `AllowAnyHeader: true` or `AllowAnyMethod: true` to reflect requested header/method names (capped at 64 well-formed names, with the appropriate `Vary` header).
 
 ## CSRF
 
@@ -291,143 +128,20 @@ middleware.CSRF(middleware.CSRFConfig{
 })
 ```
 
-Issues a cookie on safe requests; requires the matching header on
-mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
-`SkipBearerAuth()` is the shipped helper that bypasses CSRF on
-requests with `Authorization: Bearer …` or `X-API-Key`, appropriate for
-pure API deployments where the browser is not involved. Other
-`Authorization` schemes (Basic, Negotiate) are not skipped: the browser
-attaches them by itself. A verified mutating request carries its token on
-the context (`TokenFromContext`), so a re-rendered form can embed it.
-
-**Always set `SecretKey` explicitly in production.** The middleware
-will autogenerate one if omitted, but that key rotates every process
-restart, and the auditable signing seam moves into the binary
-instead of into your secret store. Source it from your config /
-secret manager the same way you'd source `SessionSecret`.
-
-On a secure request (`CookieSecure`, TLS, or `X-Forwarded-Proto:
-https`) the cookie is named `__Host-` plus `CookieName`, so the example
-above sets `__Host-fui_csrf`. The browser refuses a `__Host-` cookie
-from a sibling subdomain. That matters because the token is not tied
-to a session: a sibling such as `evil.example.com` could otherwise fetch
-a valid token, plant it as a `Domain=example.com` cookie, and post it
-with the victim's credentials. `NoHostPrefix: true` keeps the name as
-given; `CSRF` refuses a `CookiePath` other than `/` without it, since a
-`__Host-` cookie must have `Path=/`.
-
-On the next safe-method request (GET / HEAD / OPTIONS) the middleware
-**self-heals** stale or tampered cookies: it verifies any incoming
-cookie against `SecretKey` + `AdditionalKeys` and silently re-mints
-one if the signature doesn't validate. This means a process restart
-(which rotates an auto-generated key) or a key rotation that drops
-the previous secret no longer leaves browsers stranded with a cookie
-that's guaranteed to 403 the next POST. To carry tokens across a
-planned rotation without bouncing in-flight forms, list the previous
-secret(s) in `AdditionalKeys`; drain once the old tokens have
-expired.
-
-Client-side navigation refreshes the live CSRF meta token only when a network
-response supplies one. Page-owned metadata cleanup and cached back/forward
-navigation retain that live token, including after signing-key rotation.
+- Sets a signed cookie on safe requests and requires a matching header (`X-CSRF-Token`) or form field on mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+- `SkipBearerAuth()` skips CSRF for `Authorization: Bearer ...` and `X-API-Key` (never for Basic/Negotiate, which browsers auto-attach).
+- **Always set `SecretKey` in production.** Rotate keys without breaking in-flight forms by listing retiring keys in `AdditionalKeys`. Safe-method requests automatically self-heal stale or invalid CSRF cookies.
+- Over HTTPS, cookies get the `__Host-` prefix (blocking sibling-subdomain cookie tossing) unless `NoHostPrefix: true`.
 
 ### Masked tokens
 
-Render `middleware.MaskCSRFToken(token)` into a page, never the raw
-cookie value. The masked form is `m1.` plus a fresh one-time pad and the
-token XORed with it, so its bytes differ on every render and a compressed
-response gives a BREACH-style attacker nothing to converge on. `CSRF`
-unmasks a submitted value before comparing it, and still accepts the raw
-token from scripts that read the cookie. `ui.Form`'s hidden field and
-the auth battery's `CSRFToken` / `CSRFTokenFromCtx` already return masked
-tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
-runtime forwards as `X-CSRF-Token`) is masked too.
-Client-side navigation refreshes this meta token when the fetched document
-or partial head carrier supplies it, including after a signing-key rotation.
-An omitted token does not clear the current one.
-`middleware.TokenFromContext` stays raw: never render it.
+Render `middleware.MaskCSRFToken(token)` into HTML—never the raw cookie value (`middleware.TokenFromContext` returns the raw token). Masking XORs the token with a fresh per-render pad (`m1....`) to prevent BREACH attacks; the middleware unmasks automatically on submit. `ui.Form` and `battery/auth`'s `CSRFToken` / `CSRFTokenFromCtx` already return masked tokens.
 
-### Re-dispatched writes
-
-An entity's MCP write tools (and the A2A skills built on them) send the
-call through the router again as an internal request carrying the
-caller's cookies, so the same middleware decides it. With `CSRF` on
-that route the internal request needs the token as well. `CSRF`
-records the token an unsafe request passed with, and
-`middleware.VerifiedCSRFSubmission(ctx)` returns it with the header
-name it was checked under. The entity tools present it on the internal
-request, whose own check compares it with the cookie again, so nothing
-is exempted. A request the check skipped (a bearer token, an embed
-endpoint) has no token to present. The token is the raw cookie value:
-never render it.
+Entity MCP write tools and A2A skills re-dispatch writes through your router with the caller's cookies and forward `middleware.VerifiedCSRFSubmission(ctx)` so nothing bypasses CSRF.
 
 ## Cross-site form guard (Fetch Metadata)
 
-```go
-if handler.IsCrossSiteRequest(r) {
-    http.Error(w, "cross-site form", http.StatusForbidden)
-}
-```
-
-`handler.IsCrossSiteRequest` is the one shared predicate for refusing
-a cross-site form post: `Sec-Fetch-Site: cross-site` decides when the
-browser sends Fetch Metadata, and an Origin-header host compare
-against the request's own host is the fallback for clients (older
-browsers, tests, native apps) that send neither. `Sec-Fetch-Site:
-same-site` also goes to the host compare, since a sibling subdomain is
-same-site, and there an absent or `null` Origin is refused: a page on
-the same origin says `same-origin`, so only a sibling sending
-`Referrer-Policy: no-referrer` arrives that way. `IsForgeableRequest`
-answers whether the request's content type is one a plain HTML form
-can produce, for guards that only need to worry form-shaped posts.
-`IsCrossSiteRequestStrict` is for surfaces only ever called by
-`fetch()`: there an opaque `Origin: null` with no Fetch Metadata to
-vouch for it is the sandboxed-iframe shape, not a legitimate caller,
-and is refused. The auth battery's cross-site guards, setup tokens,
-the admin console, and kiln all route through these helpers; writing
-a fourth copy of the check is what `GOFASTR1411` fires on.
-
-### Same-site hop pages
-
-A navigation that began on another site keeps a `SameSite=Strict`
-cookie off itself and off every redirect that continues it. A handler
-that sets or needs one on such an arrival (the setup token exchange,
-the OAuth callback, the email-verify link) answers first with a page
-from this origin that loads the URL again. `handler.NeedsSameSiteHop`
-decides when: a cross-site request (`IsCrossSiteRequest`), and a
-request with no `Sec-Fetch-Site` at all. A browser sends Fetch Metadata
-only to a potentially trustworthy origin, so a link to
-`http://192.168.1.5:8080` clicked on a chat page arrives with neither
-`Sec-Fetch-Site` nor `Origin`, the same as curl. Deciding on
-`IsCrossSiteRequest` alone spent the setup token on that click.
-A hop whose page loads the same guarded URL again (the setup token
-exchange, the OAuth link flow, the email-verify link) builds that URL
-with `handler.SameSiteHopTarget`. When the arrival had no Fetch
-Metadata, the reload won't have any either, so the target gets
-`gofastr_hop=1` (`handler.SameSiteHopParam`), and `NeedsSameSiteHop`
-lets the marked reload through. A hop that leaves the guarded URL needs
-no marker: the OAuth sign-in hop loads the landing page, which never
-hops. The marker grants nothing: a link that carries it gets the plain
-answer every request got before the hop existed. A client that sends no
-Fetch Metadata, such as curl or a script, gets the hop page first: it
-follows the page's `Refresh` header or its link, or sends
-`Sec-Fetch-Site: none` to skip the hop.
-
-`auth.SessionMiddleware` uses the same page for a guarded page reached
-from another site, on a narrower test: only an explicit
-`Sec-Fetch-Site: cross-site` top-level `GET` or `HEAD` with no session
-cookie, and only when the answer would be a `401` or a redirect a gate
-marked with `handler.NoteSessionRefusal`. A request with no Fetch
-Metadata is not hopped there, so curl and API clients keep the `401`.
-See [auth](auth.md#a-link-from-another-site-into-a-guarded-page).
-
-### Routes you mount yourself
-
-Entity endpoints and CRUD routes refuse a forged cross-site write
-before their handler runs. A route you mount with
-`app.Router().HandleFunc` gets no such check, and the CSRF middleware
-needs a token in every form. Wrap a plain server-rendered form route in
-`handler.RefuseCrossSite`:
+CRUD and declared entity endpoints refuse forged cross-site writes automatically, but routes you mount directly with `app.Router().HandleFunc` get **no** automatic CSRF check. Wrap hand-mounted mutating routes with `handler.RefuseCrossSite` (or mount `middleware.CSRF`):
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/handler"
@@ -439,59 +153,26 @@ var mux = http.NewServeMux()
 mux.Handle("POST /profile", handler.RefuseCrossSite(saveProfile))
 ```
 
-It answers 403 to any method but GET, HEAD and OPTIONS (a CORS
-preflight passes) that has a content type a plain HTML form can send (`IsForgeableRequest`) and comes from another
-site (`IsCrossSiteRequest`); `handler.IsForgedCrossSiteWrite` is the
-same test as a predicate. Your own pages, non-browser clients and
-preflighted requests (`application/json`) pass. Leave unwrapped a route
-that must take a cross-site POST, such as an OAuth `form_post`
-callback.
+It returns `403` for non-GET/HEAD/OPTIONS requests with a form-forgeable content type (`handler.IsForgeableRequest`) coming from another site (`handler.IsCrossSiteRequest`: checks `Sec-Fetch-Site` with an `Origin`-vs-`Host` fallback, including sibling-subdomain checks). For `fetch()`-only endpoints where `Origin: null` (sandboxed iframes) should also be refused, use `handler.IsCrossSiteRequestStrict`. Leave routes that legitimately receive cross-site POSTs (such as Apple's OAuth `form_post` callback) unwrapped.
+
+**Same-site hop pages:** Because session cookies are `SameSite=Strict`, top-level links arriving from another site (email, chat) omit the cookie. Handlers that need the cookie on arrival (OAuth callbacks, email verification, guarded pages under `auth.SessionMiddleware`) return a tiny same-origin hop page (`Refresh: 0;url=...` + Continue link) using `handler.NeedsSameSiteHop` / `handler.SameSiteHopTarget` so the browser reloads same-site with the cookie attached. See [auth.md](auth.md#a-link-from-another-site-into-a-guarded-page).
 
 ## Secret rotation
 
-Two app secrets can be rotated without a mass logout: the uihost session
-signing key (`GOFASTR_SECRET`) and the auth battery's JWT signing key
-(`AuthConfig.JWTSecret`). Both follow the same shape as the CSRF
-`AdditionalKeys` idiom above: **sign with the current secret, verify
-against the current OR any listed previous secret**, then drop the previous
-secret once the drain window (one session/token TTL) has elapsed.
-
-### GOFASTR_SECRET (uihost session tokens)
-
-Set the new secret as the current and move the old one into the previous
-list. New session tokens are signed with the current secret; tokens signed
-by a previous secret still verify until the window closes.
+Both `GOFASTR_SECRET` (uihost session tokens) and `AuthConfig.JWTSecret` (auth JWTs) rotate without mass logouts: sign with the new key, verify against new **or** previous keys for one TTL, then remove the old key. Every secret passed to `GOFASTR_SECRET` or `WithSecretRotation` must be at least 32 characters (`WithSecretRotation` panics on shorter values).
 
 ```go
-app := framework.NewApp(
-    framework.WithSecretRotation(newSecret, oldSecret),
-    // ...rest unchanged
-)
-```
+// uihost sessions (or env: GOFASTR_SECRET + GOFASTR_SECRET_PREVIOUS)
+app := framework.NewApp(framework.WithSecretRotation(newSecret, oldSecret))
 
-Equivalent zero-code path via the environment (comma-separated; each entry
-must independently meet the 32-char floor):
-
-```sh
-GOFASTR_SECRET=new-secret-...
-GOFASTR_SECRET_PREVIOUS=old-secret-...
-```
-
-An explicit `WithSecretRotation` option wins over `GOFASTR_SECRET_PREVIOUS`.
-`WithSecret(secret)`, the no-rotation shorthand, stays unchanged.
-
-### AuthConfig.JWTSecret (auth battery JWTs)
-
-```go
+// battery/auth JWTs
 mgr := auth.New(auth.AuthConfig{
-    JWTSecret:          newSecret,            // signs new tokens
-    JWTPreviousSecrets: []string{oldSecret},  // verify-only during the drain
-    // ...rest unchanged
+    JWTSecret:          newSecret,
+    JWTPreviousSecrets: []string{oldSecret},
 })
 ```
 
-See [auth](auth.md) for the full procedure. Production mode still requires
-a non-empty `JWTSecret`; a previous-only configuration is rejected at Init.
+Production mode still requires a non-empty current `JWTSecret`.
 
 ## Rate limiting
 
@@ -508,479 +189,79 @@ middleware.RateLimit(middleware.RateLimitConfig{
 })
 ```
 
-Token-bucket per key. `KeyFunc` defaults to `RemoteAddr` (X-Forwarded-For
-is ignored unless `TrustProxyHeaders` + `TrustedProxies` are set, and is
-then read from the right: the key is the first hop not in
-`TrustedProxies`, so client-supplied entries an appending proxy keeps on
-the left never pick the bucket). Tune
-`Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
-middlewares in different `middleware.Chain` calls. A full bucket earns
-nothing while it waits: its refill clock restarts at the first request
-that spends from it, so a quiet client gets one `Capacity` burst, not
-two back to back.
+- Token-bucket per key, defaulting to `RemoteAddr`. `X-Forwarded-For` is ignored unless both `TrustProxyHeaders` and `TrustedProxies` are configured (parsed right-to-left to ignore client-spoofed left hops).
+- Caps memory at `MaxKeys` (shedding nearly-full buckets first under IPv6 floods).
+- Emits IETF `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` headers (disable with `OmitBudgetHeaders: true`), plus `Retry-After` on 429.
+- For sliding-window lockouts (e.g., login throttling, where leaking remaining attempts helps brute-forcers) or multi-replica shared stores, use `framework/ratelimit` (see [rate-limit.md](rate-limit.md)).
 
-The in-memory bucket store caps its resident entry count at `MaxKeys`
-(default 100_000, the `framework/ratelimit` convention): an IPv6 peer
-rotates source addresses without limit, and the reap only drops buckets
-that have refilled to capacity, which a flood's fresh keys have not. Past
-the cap the store sheds down to a low-water mark, most tokens left first
-(counting the refill ticks that have landed), then nearest to full: a
-flood's buckets have each spent one token, so they go before a key that
-spent more of its budget, also under the default `RefillBy` (equal to
-`Capacity`), where one tick refills either. A bucket that still owes tokens is never
-reaped for being quiet, only shed past the cap. At `Capacity: 1` a
-flood's single token is its whole budget too, so a flood of `MaxKeys`
-new keys can shed an exhausted key (the one nearest refill goes first)
-and hand it a fresh token early. A limit that must hold through a flood
-of that size raises `MaxKeys`, or uses `framework/ratelimit` with a
-shared `Store` (see `gofastr docs rate-limit`).
+## Cache policy for per-user responses
 
-On every response that passes through it (both allowed and 429) the
-middleware also emits the IETF-draft budget headers so well-behaved API
-clients can self-pace: `RateLimit-Limit` (the configured `Capacity`),
-`RateLimit-Remaining` (tokens left after this request), and
-`RateLimit-Reset` (whole seconds, rounded up, until the bucket is back at
-full capacity). Set `OmitBudgetHeaders: true` to suppress them when the
-per-response header cost matters at scale or an upstream cache would shard
-by remaining budget; `Retry-After` on the 429 path is unaffected. The auth
-battery's own limiter (`battery/auth`) intentionally exposes **only**
-`Retry-After` and never the budget headers; a live remaining-attempt count
-on login / password-reset endpoints would hand an attacker exact brute-force
-pacing information. That limiter is the general-purpose sliding-window limiter
-now in `framework/ratelimit`, the same package to reach for when you want "at
-most N per period, then lock out" on your own routes. See
-[rate-limit.md](rate-limit.md) for the quickstart and the token-bucket-vs-
-sliding-window choice.
+RFC 9111 restricts shared caching for `Authorization` headers, **not** cookie-authenticated responses. GoFastr therefore stamps `Cache-Control: no-store` (plus `Vary: Cookie` on pages) on authenticated CRUD responses, `uihost` pages and guarded recovery screens (`uihost.UIHost.RenderScreen`), auth listings, and A2A responses unless a handler explicitly sets its own `Cache-Control`.
 
-## Recovery screens and cache policy
+For guarded recovery screens:
+- Never cache per-user failure screens in shared proxies.
+- Return the same status/screen for expired and missing sessions so callers can't probe session existence.
+- Keep status codes truthful (`401`/`403` for auth failures, `410`/`404` for missing resources, plain `404` for unmatched paths).
 
-When middleware refuses a guarded screen route, it answers with
-`uihost.UIHost.RenderScreen` (see [ui-wiring](ui-wiring.md) → "Guards
-on dynamic screens"). Its full-page arm always answers
-`Cache-Control: no-store` with `Vary: Cookie` and verifies or mints the
-anonymous stream session like every page load; its
-client-side-navigation arm defaults to `Cache-Control: private,
-no-store` and mints nothing. Three rules keep the failure surfaces
-safe:
+## Local control planes & DNS rebinding
 
-- **A recovery page is per-user.** It was rendered for one caller's
-  auth state; a shared cache replaying it to a second visitor leaks
-  that state and can pin a stale grant. Don't override the default
-  `CacheControl` without a reason you can write down.
-- **Don't reveal existence.** Answer an expired session and a missing
-  session with the same screen and status, so an unauthorized caller
-  can't probe whether a given id is live.
-- **Keep statuses truthful.** 401/403 for an authentication failure on
-  a route that exists, 410 (or a 404 via the screen's
-  `ScreenStatusCode`) for a route that resolved but whose resource is
-  gone, and a plain 404 — never a recovery screen — for a path nothing
-  matches.
+Loopback-bound control surfaces verify `Host` (not just `Origin`) to block DNS rebinding attacks:
 
-The partial-navigation arm matters as much as the full page: the
-runtime keeps the response out of the screen cache on a non-2xx, but
-any proxy between client and server obeys the headers, which is what
-`no-store` is for.
+- **`/mcp`:** `core/mcp.Server` checks same-origin `Origin`; use `SetAllowedHosts` or `SetRequireLoopbackHost(true)` on local transports (`gofastr dev` pins loopback automatically). Allow tunnels via `SetAllowedOrigins`.
+- **`gofastr harness`**, **`kiln serve`**, and **`battery/service`**: all pin `Host` to their loopback address when bound locally. `kiln` also refuses request-supplied agent commands unless started with `--allow-custom-agent`.
 
-The same posture holds wherever a response is per-caller: RFC 9111's
-storage restriction covers requests with an `Authorization` header,
-NOT cookie-authenticated ones — this framework's default session
-auth — so every authenticated 2xx body suppresses storage itself.
-CRUD responses, the auth battery's token and account listings, A2A
-POST responses, uihost pages (`no-store` plus `Vary: Cookie`), kiln's
-JSON GETs, and the harness REST
-surface all stamp `Cache-Control: no-store` unless the handler set
-its own Cache-Control. The `nostore` analyzer holds the family: a
-handler that resolves a principal and writes a 2xx body with no
-Cache-Control on the path fires it.
+Binding publicly (`--addr 0.0.0.0:...`) skips loopback pinning and logs an unauthenticated warning on startup.
 
-## OpenAPI coverage for auth endpoints
+## Entity, CRUD & widget security
 
-Auth endpoints registered by `AuthManager.RegisterRoutes` (login,
-register, logout, /auth/me, /auth/password, /auth/2fa/*, /auth/oauth/*, magic-link,
-verify-email, forgot-password, reset-password, /auth/accounts,
-/auth/unlink/{provider}) are **not** currently part of the
-auto-generated OpenAPI spec.
+### Default CRUD authentication
 
-`framework/openapi.EntityOpenAPI` walks the entity registry to emit
-schemas for entity CRUD routes; the app passes its route predicate so
-the served spec never documents CRUD paths registration did not mount
-(no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
-documented either way). `EntityOpenAPIWithBulk` takes a second
-predicate and also documents the `_bulk`, `_export.csv` and `_pick` routes
-`App.EntityUI` mounts; the served spec passes it. `EntityOpenAPIFor`
-takes all of that as an `openapi.Options` struct, plus `JSONCase`: the
-served spec passes the app's `AppConfig.JSONCase`, so a snake_case app
-documents each field under its column name, the key its routes send
-(`author_id`, not `authorId`). A spec built by `EntityOpenAPI` or
-`EntityOpenAPIWithBulk` names fields in camelCase. `Options` also takes
-`ReadOnlyMounted`, which keeps a read-only mount (`App.View`) to its
-List, Get and `_events` operations. `App.OpenAPISpec(title)` returns the
-served document itself, built with all of the app's settings (route
-predicates, read-only mounts, `APIPrefix`, `JSONCase`): a host that
-mounts the entity routes without `App.Start`, as kiln's live studio
-does, serves that one. Plugin-registered HTTP handlers go
-through `router.Post / router.Get / …` directly and don't carry
-schema metadata that the spec generator can consume. There is no
-plugin → OpenAPI extension hook today.
+Auto-CRUD is **secure by default**: any entity declaring none of `OwnerField`, `Access`, or `Public: true` requires an authenticated session (`core/handler.GetUser`) on every REST, MCP, and `/{table}/llm.md` route.
 
-Until that hook lands, the auth routes are documented through this
-file, the plugin source comments, and integration tests. If your
-deployment needs an OpenAPI document that includes the auth routes,
-hand-write them into a sibling spec and merge with the generated one
-in the gateway / docs pipeline.
+Opt-outs in precedence order:
+1. **`Scope.OwnerField`:** Enforces per-user ownership on every read and write (anonymous requests get `401`). Set `Scope.CrossOwnerRead` to an RBAC permission to widen **reads only** for staff/admin roles (fail-closed; multi-tenant boundaries still hold).
+2. **`Exposure.Access`:** RBAC controls each operation (`Read`, `Create`, `Update`, `Delete`). Once any field is set, a blank `Read` is public, while a blank write (`Create`/`Update`/`Delete`) is denied to everyone—including wildcards. Use `framework.Anyone` to deliberately open a write (e.g., a public contact form).
+3. **`Exposure.Public: true`:** Opens every read and write to anonymous callers (`gofastr generate` prints a warning for every public entity).
 
-## The full inventory
+Pair with `Exposure.ReadScope` to filter *which rows* a caller sees (e.g., anonymous visitors see `status=published`, signed-in or `Unrestricted` roles see drafts). `BeforeGet` read scopes also bind `PUT`/`PATCH`/`DELETE`/transitions/`_batch` so callers get `404` on rows they cannot read.
 
-`core/middleware` exports:
+### Masked fields (`NoQuery`) & FK scope checks
 
-- `RequestID()`: generates or echoes `X-Request-ID`.
-- `Recovery()`: turns panics into `500` with structured log line (a
-  `no-store` `500` without the handler's representation headers), or
-  cuts the connection when the response had already started.
-- `Logging()` / `LoggingFn(getLogger)` / `LoggingWithWriter(io.Writer)`:
-  structured request log. `LoggingFn` reads the logger per-request so
-  plugins can swap it after the chain is wired.
-- `SampledLogging(sampleN, slowThreshold)`: logs 1-in-N requests but
-  always logs errors (status ≥ 400) and slow ones (duration >
-  `slowThreshold`). Preferred for production paths where the unsampled
-  `Logging()` cost dominates the middleware chain.
-- `DiscardLogging()`: request-timing wrapper that emits no log lines;
-  for high-throughput paths where structured logging is handled by
-  an upstream proxy or APM agent.
-- `SecurityHeaders(SecurityHeadersConfig)`: defensive headers above.
-- `CORS(CORSConfig)`: cross-origin headers + preflight. A preflight is
-  `OPTIONS` carrying both `Origin` and `Access-Control-Request-Method`;
-  it answers `204` for an allowed origin and `403` otherwise. Any other
-  `OPTIONS` reaches your handler. Under an origin allow-list every
-  response carries `Vary: Origin`, matched or not.
-- `CSRF(CSRFConfig)`: double-submit cookie pattern.
-- `MaskCSRFToken(token)`: per-render masked form of a CSRF token for
-  page bodies.
-- `VerifiedCSRFSubmission(ctx)`: the header name and raw token an
-  unsafe request passed CSRF with, for a server-side re-dispatch.
-- `Compress()`: gzip for text responses (see [Compression](#compression)).
-- `RateLimit(RateLimitConfig)`: token-bucket per key.
-- `Timeout(d)`: per-request deadline; cancels context on expiry. A
-  hijack that fails leaves the response buffered and the deadline armed.
-- `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler`: RED metrics.
-- `Tracing()`: OpenTelemetry span around each request.
+Redacting a field in `AfterGet`/`AfterList` does not stop callers from extracting the stored value character-by-character via `?field_like=...` or `?sort=field`. Mark redacted columns `NoQuery` (`no_query: true`):
+- Every HTTP/wire query surface (flat filters, `?sort=`, `?where=`, `?rel.field=`, scoped includes, DSL, `SearchFields`, cursors, and app-spec `stat_card`/`chart` fields) refuses it (`400` at runtime or panic at `Define`).
+- In-process Go code (`TypedQuery.Where`) is intentionally **not** blocked so background jobs and read-modify-write paths can query the real value; pass `crud.WithReadHooks(ctx)` whenever in-process reads return rows to end users (see [hooks-and-transactions.md](hooks-and-transactions.md)).
+- `Hidden` removes a column from both responses and queries (indistinguishable from a non-existent column).
+- **BelongsTo FK writes are scope-checked:** Creating or updating a BelongsTo foreign key referencing a row the caller cannot read under the target's owner/tenant/read scopes returns `404` (same as reading that row), unless exempted by `owner.AllowCrossOwner`, `CrossOwnerRead`, `tenant.AllowCrossTenant`, `crud.WithServerWrites`, or unchanged on update.
 
-Each has a `*_test.go` you can read for the exact behaviour.
+### Widget signal exposure
 
-## Availability notes
+Widget `/state` endpoints are unauthenticated and process-global by default—only expose public display data unless gated. Set `Definition.RequireSession` (any valid browser session, anti-recon) or `Definition.RequireAuthenticated` (signed-in user). Both fail closed if no host predicate is installed, and SSR-inlined chrome obeys the same gate (`widget.GateSatisfied`).
 
-- **SQLite serialises writes.** Concurrent write load can climb to
-  100ms+ p99 latencies and starve out non-write traffic, a soft DoS
-  vector for any endpoint that writes. Set `MaxOpenConns(1)` on the
-  `*sql.DB`, keep writes off the request path where possible (queue +
-  background worker), or run Postgres. Full discussion in
-  [migrations](migrations.md) §Concurrency model.
+### OpenAPI note for auth endpoints
 
-## Local control planes and DNS rebinding
+`App.OpenAPISpec(title)` (`framework/openapi.EntityOpenAPIFor`) documents entity CRUD, bulk/export/pick routes, and declared custom endpoints using your app's `APIPrefix` and `JSONCase`. Plugin-registered `battery/auth` routes (`/auth/*`) are not yet included in the generated OpenAPI spec; if your gateway needs them in OpenAPI, merge a hand-written sibling spec.
 
-Anything that binds loopback and accepts privileged requests needs a
-`Host` check, not just an `Origin` check. Origin alone cannot stop DNS
-rebinding: the attacker points their own domain at `127.0.0.1`, so the
-browser treats the request as same-origin and `Origin` matches `Host`.
-Comparing `Host` against the authority the server expects is what
-refuses it, because a rebound request still carries the attacker's name.
+### SQLite write availability
 
-This applies to four surfaces the framework ships:
+SQLite serializes writes; heavy concurrent write traffic can stall non-write requests. Set `MaxOpenConns(1)`, offload heavy writes to a background queue, or switch to Postgres (see [migrations.md](migrations.md)).
 
-- **`/mcp`**: `core/mcp.Server` refuses a browser `Origin` that is not
-  same-origin with the request. Pin the authority with
-  `SetAllowedHosts` (or `SetRequireLoopbackHost(true)`) when the
-  transport is local; allow tunnels with `SetAllowedOrigins`.
-  `gofastr dev` pins to loopback automatically, because dev mode
-  implies the mutating control tools plus every entity's write tools
-  with no auth in front of them.
-- **`gofastr harness`**: the sidecar pins `Host` to the authority it
-  bound. Its chat page carries the bearer token in a meta tag, so an
-  unpinned `Host` would let a rebound page read the token and then
-  drive the agent.
-- **`kiln serve`**: pins `Host` to loopback whenever `--addr` bound a
-  loopback address. `kiln` also refuses request-borne agent commands
-  unless started with `--allow-custom-agent`: that form lets the
-  request body choose the argv of a spawned process.
-- **`battery/service`**: the installed daemon and its dev run pin
-  `Host` to their own loopback address plus `Config.AllowHosts`, refuse
-  cross-site unsafe methods, and require a session cookie minted from a
-  single-use token the control channel hands out. There is no switch
-  that turns the Host check off. See [service.md](service.md).
+## Middleware inventory (`core/middleware`)
 
-A deliberate non-loopback bind (`--addr 0.0.0.0:…`) skips the pin,
-since the framework cannot know the intended public name. That is the
-point at which the "unauthenticated" warning in the startup banner is
-the contract.
-
-## Widget signal exposure
-
-A widget's `/state` endpoint is **unauthenticated** by default, and
-`SignalSource.Read` takes no request context, so a signal value is
-process-global, identical for every caller, and cannot be scoped per
-user. Treat every signal as world-readable: counts, statuses, and other
-non-sensitive display data.
-
-Widgets whose signals should not be public set a session gate on the
-Definition. There are two levels. `Definition.RequireSession` gates
-`/state`, `/chrome`, and the RPC routes behind **any valid browser
-session** — under `framework/uihost` every page render auto-mints one,
-so this level scopes a widget per-session (anti-recon), it does not ask
-for a login. `Definition.RequireAuthenticated` is the authentication
-gate: the request must resolve to a signed-in user (under uihost, the
-user `battery/auth`'s `SessionMiddleware`/`RequireAuth` loaded onto the
-request context), which the anonymous session a first page load mints
-never satisfies. Both gates fail closed: if the host installed no
-predicate for the level, a widget that asked for one serves nothing
-rather than serving everyone, and SSR-inlined widget chrome applies the
-same verdict (`widget.GateSatisfied`) so a gated widget's chrome is not
-baked into a page its endpoints would refuse.
-
-## Owner isolation and `CrossOwnerRead`
-
-Entities with `OwnerField` scope every read/write to the requesting
-user's rows: the framework refuses anonymous requests (401) and
-injects `WHERE <owner_field> = <ctx user id>` into every query so a
-user can never see or mutate another user's data. `CrossOwnerRead`
-optionally widens this for **reads only**: when the request context
-holds the named RBAC permission, List/Get/Count span all owners.
-Writes (Create/Update/Delete) stay owner-scoped regardless, and
-multi-tenant isolation is preserved: a granted context in tenant A
-never sees tenant B rows. The widening is fail-closed: no access policy
-in context ⇒ no widening. See
-[entity-declarations](entity-declarations.md) → "CrossOwnerRead".
-
-## Masked fields and the query surface
-
-Redacting a field in an `AfterGet` / `AfterList` hook changes what the
-caller reads. It does not change what the database filtered and sorted
-on, so the stored value stays reachable through the query surface:
-
-```
-GET /cards?number_like=4111    → 1 row    every response still
-GET /cards?number_like=4112    → 0 rows   reads "****1111"
-```
-
-Repeat that a character at a time and the masked value comes back in
-full. `?sort=number` leaks relative ordering the same way.
-
-Mark such a column `NoQuery` (`no_query: true` in a declaration). The
-field stays in responses, and every wire query surface refuses it: flat
-filters, `?sort=` (including alongside `?cursor=`, where the sort is
-ignored but still validated), `?where=` predicate trees, nested
-`?rel.field=` filters, scoped include filters, and the DSL all return a
-400 naming the field. `?q=` search is refused earlier still: listing a
-`NoQuery` column in `SearchFields` panics at `Define`, so the app fails
-to start rather than serving a searchable mask, as does naming one as a
-cursor field.
-
-The in-process Go API is deliberately not gated. `TypedQuery.Where`
-accepts a caller-built condition on a `NoQuery` column and returns the
-stored value, because read-modify-write, seed lookups, and aggregates
-all need the real row; the server cannot tell those apart from a
-rendered list. Where rows reach an end user, pass
-`crud.WithReadHooks(ctx)` so the read hooks the HTTP surface runs apply:
-the `BeforeList`/`BeforeGet` scopes and the `AfterList`/`AfterGet` masks
-(see `hooks-and-transactions.md`).
-
-A nested `?rel.field=` filter needs the target entity's schema to run
-that check, so an unresolvable target refuses the filter rather than
-skipping the check. A relation may legitimately point at a table no
-entity registers; the auth battery self-migrates `auth_users`. Trusting
-the column name there meant any column of that table could be
-predicated on. `?include=` has always refused the same shape.
-
-A nested filter on a target that declares `Scope.OwnerField` or
-`Scope.MultiTenant` carries the caller's owner and tenant predicates into the
-`EXISTS` subquery. The clause counts rows without selecting them, so without
-those predicates it counts every row in the target table and the parent's row
-count confirms values in other owners' or tenants' rows one guess at a time.
-The predicates come from the same builder the include and eager paths use, so
-the three surfaces answer alike. A caller holding a cross-owner or cross-tenant
-grant gets no predicate on that axis, since they can already list the target
-wholesale; the axes are independent. See [access control](access-control.md).
-
-The two gates part company in process. The **posture** gate, which asks whether
-the caller may read the target entity at all, is HTTP-only: it is the baseline
-session requirement, and in-process code runs with no session by construction,
-so asking it there refuses every nested filter a background job makes and
-protects nothing. `ApplyIncludes` draws the line in the same place.
-
-The **scope predicates** are not HTTP-only. Owner, tenant, and read scope
-narrow a nested filter on every surface, in-process included, because they are
-what stops the `EXISTS` clause counting rows the caller may not see. A host
-handler that forwards a caller-influenced relation into `ListAll` or
-`CountAll` gets the same narrowing the HTTP path applies.
-
-Server-side code that genuinely means "read across every owner" says so with
-[`owner.AllowCrossOwner`](access-control.md) or `tenant.AllowCrossTenant`.
-Both are explicit at the call site, both are unreachable from an HTTP route,
-and both are already how every other in-process read widens its scope.
-
-`Hidden` and `NoQuery` are enforced when a nested-filter spec is RESOLVED, on
-both surfaces, because those describe the data rather than the caller: a masked
-column stays masked no matter who asks. That is specific to nested filters —
-`TypedQuery.Where` remains deliberately ungated for `NoQuery`, as described
-above.
-
-### Foreign keys on writes are scope-checked
-
-Read paths carry the target entity's posture: an `?include=` or a nested
-filter is refused when the caller may not read the related entity, or the
-registered join entity a many-to-many relation runs through, and the target's
-`BeforeList` scope narrows the rows it returns or matches. The join entity's
-own `BeforeList` scope narrows the link rows the same way. Write
-paths now resolve the same predicate. A create or update that sets a
-BelongsTo relation column such as `order_id` or `author_id` is answered
-with **404** when the target row exists but the caller cannot read it
-under the target's own owner, tenant, and read scopes — the exact status
-reading that foreign row gives, so existence is not leaked. A target
-whose own `BeforeList`/`BeforeGet` hooks scope reads is checked under
-their clauses too, as `?include=` over the relation applies them: a
-reference onto a row they hide, or onto one that does not exist, is
-404. The
-existence check underneath it (`FOREIGN KEY` on both dialects;
-`AutoMigrate` emits the clause and the `sqlite3` driver name defaults
-`_pragma=foreign_keys(1)`) still rejects a fabricated id.
-
-The gate mirrors the read side's exemptions exactly: a caller holding
-`owner.AllowCrossOwner`, the target's `CrossOwnerRead` permission,
-`tenant.AllowCrossTenant`, or a `crud.WithServerWrites` context (a
-host-driven write: jobs, imports, admin tooling) writes the reference
-unchanged. A NULL or absent FK, an unscoped target, or a target the
-registry does not know is skipped. So is an update that sends the
-reference the row already holds, every column of it, read under the
-same tenant and owner scopes as the UPDATE: an edit form re-sends a
-target the caller may no longer read (an archived customer), and keeping
-it crosses no boundary. A reference that changes in any column, or one
-that leaves a stored NULL, is checked. Creates, upserts and
-`TypedQuery.UpdateAll` read no stored row and check every reference
-they name. The same reasoning a
-`BeforeCreate`/`BeforeUpdate` hook was told to do in earlier versions
-([hooks and transactions](hooks-and-transactions.md)) is framework
-behaviour for BelongsTo now; a hook is only needed for has-many
-retargeting or business rules beyond scope.
-
-App spec screens are checked at generate time, because several of them
-reach the database without passing through the HTTP filter parser: a
-`stat_card` `source.filter` or summed `source.field`, and a chart's
-`group_by`. (The screen-level `search:`/`filters:` keys are gone; the
-entity's `search_fields:` and `display: facets:` are checked at entity
-registration instead.) The chart is the
-sharpest of these: `group_by` renders each distinct stored value as a
-bar or slice LABEL, so a masked column would print in full on a page
-whose table shows the mask.
-
-`Hidden` already implies all of this: it removes the column from
-responses *and* from every query surface. `NoQuery` is the option for
-values the caller must still see in some form.
-
-`NoQuery` does not mask anything on its own; the hook does. Register it
-on `AfterGet` **and** `AfterList`, since each response path runs the one
-that matches the shape it serves; a to-one `?include=` runs `AfterGet`
-because that is what the child's own `GET /child/{id}` runs.
-
-The rejection deliberately names a `NoQuery` field, unlike a `Hidden`
-one. A hidden column's existence is itself the secret, so it has to be
-indistinguishable from a column that does not exist; a `NoQuery` column
-is right there in the response, so a precise error costs nothing and
-saves a developer hunting for a typo.
-
-## Default CRUD authentication
-
-Prior to this section's introduction, an entity declaring **neither**
-`OwnerField` **nor** `Access` got zero enforcement from auto-CRUD: List,
-Get, Create, Update, and Delete were all reachable by an anonymous
-caller: an unauthenticated `POST /api/<entity>` returned 201 and
-persisted the row. Generated MCP tools inherited the same gap, since
-`RegisterEntityMCPTools` dispatches entity tools through the same router
-+ middleware chain as REST.
-
-Auto-CRUD is now secure-by-default: `framework/crud`'s `requireScope`
-chokepoint requires an authenticated session (`core/handler.GetUser`)
-for every operation on an entity that declares none of `OwnerField`,
-`Access`, or `Public`. The three opt-outs, in the order they're checked:
-
-1. **`OwnerField` set**: the existing `RequireOwner` gate already
-   requires an authenticated owner for every operation; the new
-   session gate is redundant there and steps aside.
-2. **`Access` declared** (any operation, even a partial block): RBAC
-   governs the entity. A blank `Read` leaves reads open to every caller;
-   a blank `Create`, `Update` or `Delete` is refused to every caller
-   (403), a wildcard role included. `framework.Anyone` opens an
-   operation on purpose (`Create: framework.Anyone` for a contact form
-   on an otherwise gated entity). The session gate does not layer an
-   extra requirement on top.
-3. **`Public: true`**: a deliberate, full opt-out. Every operation,
-   reads and writes, is open to anonymous callers: the framework's
-   pre-secure-by-default behaviour for that entity. Meant for content
-   that's genuinely public (a contact form, a blog's comments), not as
-   a workaround for a 401 during development. An entity that wants
-   public reads but gated writes uses `Access` instead (a blank
-   `Read` and a real permission for each write).
-
-The read posture has two questions, and `Public` answers only the first
-(may this caller read the entity). **Which rows** they see is
-`Exposure.ReadScope`: declared predicates on the entity's own columns,
-applied to every read surface (List, Get, count, cursor, stream,
-`?include=`, `?rel.field=`, the in-process API, typed queries), lifted for
-a caller holding the `Unrestricted` permission, or, when it is empty, for
-any signed-in caller. That empty-`Unrestricted` form is the "anonymous
-visitors see published rows, signed-in editors see drafts" posture, and it
-is deliberately weak: any signed-in user, not an editor role. Writes are
-not filtered by it. See
-[entity-declarations](entity-declarations.md) → "Row-level read scoping".
-
-A `BeforeGet` hook that scopes reads does filter writes. A record
-`GET /<entity>/{id}` answers 404 for, because the caller's own
-`BeforeGet` chain appends a clause that excludes it, is one `PUT`,
-`PATCH`, `DELETE`, a transition and each `_batch` update or delete item
-answer the same 404 for, with the bytes a missing id gets, and leave
-untouched. The check reads the row inside the write's transaction under
-the write's own tenant, owner and soft-delete scope, before any other
-step, so a hidden row, another owner's row and a missing one fail at the
-same point even for a body the write would have refused later. A hook
-error hides the row. In process it binds under `crud.WithReadHooks`, as
-`GetOne` does, and covers `RestoreOne`, `PurgeOne` and `UpsertOne`'s
-conflict arm too. See [hooks and transactions](hooks-and-transactions.md)
-→ "A `BeforeGet` scope binds writes too".
-
-Because entity MCP tools dispatch through the router, this gate governs
-their calls automatically, and the framework attaches the entity's
-`Access` permission to each generated tool as its `WithToolGate`, so a
-caller who visibly lacks it does not see the tool in `tools/list` (see
-[entity-declarations](entity-declarations.md) → "MCP Tools"). No
-`mcp.WithToolGate`/`auth.MCPUser` wiring of your own is needed for
-generated CRUD tools (that machinery remains for *custom*
-tools registered directly via `app.MCP.RegisterTool`; `Endpoint.MCPHandler`
-twins default to requiring an authenticated caller; see
-[agent-ready](agent-ready.md)).
-
-The entity's auto-generated `/{table}/llm.md` runs the **same** `requireScope`
-chain as `List`. It documents exactly the entity `List` serves, so it answers
-to the same gate: an authenticated caller without the entity's read permission
-gets a 403 on the schema, not just on the rows. The field list is a disclosure
-in its own right: it names every non-`Hidden` column, its type and its enum
-set.
-
-`gofastr generate` prints a warning listing every entity left publicly
-readable/writable (`public: true`), so a generated app never has open
-entities you didn't get told about. See
-[entity-declarations](entity-declarations.md) → "Default CRUD
-authentication" for the app spec YAML shape.
-
-`gofastr verify permissions` reports the same exposure on Go-declared
-entities (`app.Entity(...)` with an unscoped PII-shaped field exposed via
-auto-CRUD) as `GOFASTR1901`; `gofastr validate` reports it on
-`gofastr.yml` entities. The cross-user exposure is identical either way.
+- `RequestID()` — generates/echoes `X-Request-ID`.
+- `Recovery()` — panic → `500` (`no-store`) or connection close if response already started.
+- `Logging()` / `LoggingFn(getLogger)` / `LoggingWithWriter(w)` / `SampledLogging(n, slow)` / `DiscardLogging()` — request logging.
+- `SecurityHeaders(SecurityHeadersConfig)` — CSP, HSTS, frame, referrer, permissions headers.
+- `CORS(CORSConfig)` — cross-origin headers and preflights.
+- `CSRF(CSRFConfig)`, `MaskCSRFToken(token)`, `VerifiedCSRFSubmission(ctx)` — double-submit CSRF protection.
+- `Compress()` — gzip compression for text responses.
+- `RateLimit(RateLimitConfig)` — per-key token bucket.
+- `Timeout(d)` — per-request context deadline.
+- `NewMetrics()` / `MetricsMiddleware` / `MetricsHandler` — Prometheus RED metrics.
+- `Tracing()` — OpenTelemetry request spans.
 
 ## Common mistakes
 
-- **Relaxing CSP to fix a broken third-party script.** Override only
-  the directive you need (`script-src`, `style-src`); never replace
-  `default-src 'self'` with `'unsafe-inline'`.
-- **Skipping `Recovery` because the app doesn't panic.** It does
-  eventually. Without it, a single panic terminates the request handler
-  goroutine without writing a response, leaving the client hanging.
-- **Composing CORS before `RequestID`.** Preflights still need trace
-  IDs; keep `RequestID` first.
+- **Relaxing CSP globally to fix one third-party asset.** Override only the needed directive (`script-src`, `style-src`) via `WithSecurityHeaders`; never replace `default-src 'self'` with `'unsafe-inline'`.
+- **Disabling `Recovery` because handlers "don't panic".** One unhandled panic kills the request without writing a response, hanging the client.
+- **Mounting CORS before `RequestID`.** Keep `RequestID` outermost so preflight logs still carry trace IDs.
+- **Masking PII in `AfterGet`/`AfterList` without `NoQuery`.** Callers can still leak the real value via filter and sort queries.

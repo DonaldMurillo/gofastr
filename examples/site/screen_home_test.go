@@ -47,9 +47,10 @@ func TestHomeMarkupUsesOnlyKitClasses(t *testing.T) {
 func TestHomeKeepsCopyAndLinks(t *testing.T) {
 	out := string((&HomeScreen{}).Render())
 	for _, want := range []string{
-		"you or your agents",
+		"Go from idea to a full-stack app, fastr.",
+		"Simple for humans to understand",
 		`href="/get-started"`, `href="/docs/"`,
-		"Numbers you can check.", "MCP tools per entity", "npm packages",
+		"Numbers you can check.", "contract rules in gofastr verify", "npm packages",
 		"Server-rendered screens, not just an API.",
 		`href="/primitives"`, `href="/framework"`, `href="/agents"`,
 		`href="/interactivity"`, `href="/generator"`, `href="/examples"`,

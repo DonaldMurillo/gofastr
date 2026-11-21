@@ -1,9 +1,8 @@
-# Storage
+# Storage (`battery/storage`)
 
-`battery/storage` backs file uploads with a storage backend. It
-re-exports the `upload.Storage` interface (defined in `core/upload`) and
-ships local-filesystem, in-memory, and S3-compatible backends. You construct one and hand it to
-`framework.WithFileStorage`.
+`battery/storage` backs file uploads (`framework.WithFileStorage`) behind one `Storage` interface (`Save`, `Get`, `Delete`, `Exists`) with local-disk, in-memory, and S3-compatible backends.
+
+## Quickstart
 
 ```go
 import (
@@ -12,14 +11,11 @@ import (
 )
 
 store := storage.NewLocalStorage("./uploads")
-
 app := framework.NewApp(
 	framework.WithDB(db),
 	framework.WithFileStorage(store),
 )
 ```
-
-## The Storage interface
 
 <!-- gofastr:compile
 import "context"
@@ -34,22 +30,13 @@ type Storage interface {
 }
 ```
 
-`Save` writes the contents of `r` under `key`; `Get` returns a reader;
-`Delete` removes the object; `Exists` reports presence. On the local
-backends a key that names a directory (a prefix such as `uploads/posts`)
-is not an object: `Get` returns `ErrNotFound` (404 through
-`upload.ServeHandler`), `Exists` reports false, and `Delete` leaves the
-directory in place and treats it as a missing object. Keys are opaque
-strings the upload layer assigns. A backend rejects a key that escapes
-its namespace (path traversal, empty key) with an error; it does not
-rewrite the key.
+## Backends
 
-## Local backend
-
-`LocalStorage.Save` rejects control bytes in object keys. Legacy keys
-containing a control byte, such as a tab in a Unix filename, remain
-readable and deletable by their exact spelling when the filesystem
-supports them.
+| Backend | Range requests (`206`) | Multi-replica | Notes |
+| --- | --- | --- | --- |
+| `storage.NewLocalStorage(dir, opts...)` | Yes (`RangeGetter`) | Shared volume only | Atomic temp-file rename + `os.Root` symlink containment; call `Close()` on shutdown |
+| `storage.NewMemoryStorage()` | Yes (`RangeGetter`) | No | Tests only; 50 MiB per-object cap |
+| `storage.NewS3Storage(bucket, region, opts...)` | No (use presigned URLs) | Yes | Inject any `S3Client` (`WithS3Client`) and optional `Presigner` (`WithPresigner`) |
 
 <!-- gofastr:compile
 stmt: _ = store
@@ -61,122 +48,14 @@ store := storage.NewLocalStorage("./uploads",
 )
 ```
 
-`NewLocalStorage(baseDir, opts...)` roots storage at `baseDir` (created
-if missing). Writes are atomic: data lands in a temp file in the same
-directory, then renames into place. Containment is enforced on the
-symlink-resolved path at every operation, with the syscalls performed
-through an `os.Root` over the resolved root so a symlink planted *after*
-resolution is refused by the kernel too: a key that reaches through a
-symlinked directory or leaf to a file outside `baseDir` is refused with
-a key error instead of read, written, or deleted; errors never carry
-the absolute storage path. `WithPermissions` sets the saved Unix file mode;
-Windows files use protected owner-only ACLs.
-Directory ACL changes stop at the storage root, including when Windows path
-spellings differ only by letter case.
-A new key is also held to Windows-portable names: no `:` and no
-reserved device name (`CON`, `NUL`, `COM1`, ...) in any component, and no
-component ending in a space or dot. Those rules apply to `Save` only, so
-an object an older release stored under such a key stays readable and
-deletable. A key that names a directory of other keys is not an object:
-`Get` returns `ErrNotFound`, `Exists` reports false and `Delete` leaves
-the directory in place.
-`WithTempDir` overrides the temp directory used for the atomic write
-(a temp dir outside `baseDir` keeps the older resolve-then-open staging
-there, because the atomic rename cannot be expressed through the root).
-
-Both `storage.LocalStorage` and `upload.LocalStorage` implement `Close()`.
-Close the backend when its owner shuts down, after storage operations finish
-and readers returned by `Get` or `GetRange` are closed. This releases all
-pinned directory handles, including roots replaced after a symlinked base
-resolves differently. Re-pinning keeps an in-flight operation's root open
-through its rename and staging cleanup. Each retained handle otherwise prevents
-Windows from removing the storage directory.
-
-On a case-insensitive or Unicode-normalization-insensitive filesystem
-(macOS's default APFS, most CIFS mounts), two spellings of a key resolve
-to one file, so `Save` refuses a key that folds onto an existing object
-stored under a byte-different spelling — including through a directory
-component (`tenanta/new.txt` is refused when `TenantA/` exists) — with
-an `ErrInvalidKey` error (HTTP 400 through the upload serve layer)
-naming the stored spelling. The check runs again at the rename that
-commits the save, under a lock every local store in the process shares,
-so of two overlapping saves under folding spellings the second to
-commit is refused rather than overwriting the first. `Delete` refuses a
-folded spelling the same way, so erasing a row that names `A/b.png`
-cannot remove another user's `a/b.png`. On every operation a key must
-also be its own clean form: `a//b`, `a/./b`, `./a`, a trailing `/` and
-`.` are refused with `ErrInvalidKey` rather than resolved to the object
-they alias. S3 keys are byte-exact and unchanged. Saves from another
-process sharing the directory are not serialized. Re-saving the exact
-stored key stays an ordinary overwrite. Objects planted straight onto disk by other tools
-with folded spellings follow the filesystem's folding, not the store's.
-Finding the stored spelling means listing the directory, so the check
-lists only where folding is possible: a name with a non-ASCII byte or a
-`K`, `;` or `` ` `` (the ASCII targets of Unicode normalization), or one
-whose case-swapped spelling opens the same file. On a case-sensitive
-filesystem the cost of serving one object no longer grows with the number
-of objects beside it; on a folding one each operation still lists every
-directory on the key's path.
-
-`LocalStorage` implements `RangeGetter`, so HTTP range requests
-(`Range:` bytes) are answered with a `206` from the seekable file
-handle. Local is the right default for single-host deployments; under
-multiple replicas an upload to replica A is invisible to B unless the
-directory is shared storage.
-
-## Memory backend
-
-`storage.NewMemoryStorage()` stores objects in process memory and exposes
-seekable reads through `RangeGetter`. `Save` caps each object at 50 MiB.
-All operations return a canceled context error before acting; `Save` also
-checks cancellation after reading, before replacing the stored object.
-Contents disappear when the process exits.
-
-## S3 backend
-
-```go
-store := storage.NewS3Storage("my-bucket", "us-east-1",
-	storage.WithS3Client(myClient),
-	storage.WithPresigner(myPresigner),
-)
-```
-
-`NewS3Storage(bucket, region, opts...)` returns an `S3Storage`. It talks
-to S3-compatible stores through a minimal `S3Client` interface: the AWS
-SDK is not imported for you; pass a client via `WithS3Client`, or set a
-custom endpoint with `WithS3Endpoint`. Without a client,
-`Save` / `Get` / `Delete` / `Exists` cannot run; the constructor does
-not dial.
-
-`S3Storage` holds keys to the same form as the local backend, though S3
-itself would store any byte string: an empty key, any `..`, a control
-byte (NUL, CR, LF, DEL), a leading `/`, and a key that is not its own
-clean form (`a//b`, `./a`, `a/./b`, a trailing `/`, `.`) are refused with
-`upload.ErrInvalidKey` on every operation. In a bucket `a//b` is an
-object distinct from `a/b`, so a row naming the alias served or erased
-an object its key never named. `DefaultKeyValidator`, the standalone
-check a caller can apply to keys of its own, refuses the same keys plus
-a backslash.
-
-For direct browser uploads and downloads, pass a `Presigner` via
-`WithPresigner`. `PresignedGetURL` and `PresignedPutURL` then mint
-time-limited URLs that route traffic around the app entirely. The
-expiry must be positive: zero or negative is refused, since a presigner
-either clamps it to its own longer default or signs a dead URL.
-`S3Storage` does not implement `RangeGetter`: a network backend would
-have to buffer the whole object to `Seek`; presigned URLs are the
-intended path for large transfers.
-
-## Choosing
-
-| Backend       | Range requests        | Multi-replica             | Notes                              |
-|---------------|-----------------------|---------------------------|------------------------------------|
-| `LocalStorage` | yes (`206`)          | only with a shared volume | atomic writes; single-host default |
-| `S3Storage`   | no (use presigned URLs) | yes                     | client + optional presigner injected |
+Key safety guarantees across both local and S3 backends:
+- Strict key validation (`DefaultKeyValidator`): rejects empty keys, leading `/`, `..`, control bytes, and uncleaned aliases (`a//b`, `./a`, trailing `/`) with `upload.ErrInvalidKey`.
+- On case-insensitive/Unicode-folding filesystems (macOS APFS), `LocalStorage` refuses keys that fold onto an existing byte-different spelling so one key cannot overwrite or delete another.
+- For large S3 uploads/downloads or video streaming, configure `WithPresigner` to mint time-limited `PresignedPutURL` / `PresignedGetURL` links (positive expiry required).
 
 ## Common mistakes
 
-- **Pointing multiple replicas at a local directory.** Uploads land on one host and `Get` 404s from the others. Move uploads to S3 (or mount a shared volume) before scaling past one replica.
-- **Constructing `S3Storage` without a client.** `NewS3Storage` does not dial; it stores the config. The first `Save` / `Get` fails unless `WithS3Client` supplied an implementation.
-- **Expecting `S3Storage` to serve range requests.** It declines `RangeGetter`; a `<video>` or large download piped through the app buffers the whole object. Use `WithPresigner` and hand the browser a presigned URL.
-- **Retrying a key the backend rejected.** Backends reject traversal and empty keys with an error; they do not sanitize the key. Generate keys from trusted input (the upload layer does this) and surface the error rather than retrying the same value.
+- **Using `LocalStorage` across multiple replicas without a shared volume:** uploads on replica A 404 from replica B; move to `S3Storage`.
+- **Constructing `NewS3Storage` without `WithS3Client`:** the constructor does not dial; the first operation fails until a client is supplied.
+- **Streaming large S3 objects through Go instead of using `WithPresigner`:** `S3Storage` declines `RangeGetter`; use presigned URLs for big files.
+- **Forgetting `store.Close()` on `LocalStorage`:** releases pinned `os.Root` directory handles cleanly (especially important on Windows).

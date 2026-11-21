@@ -1,18 +1,8 @@
-# First-party relay
+# First-party relay (`battery/relay`)
 
-`battery/relay` is a declarative reverse proxy that serves third-party
-services — analytics vendors, chat widgets, error trackers — from your
-own origin. You declare one mount path and, under it, a fixed list of
-routes: prefix, upstream, allowed methods. Visitors' browsers then talk
-to `https://your-app.example.com/__gofastr/t/...` instead of the
-vendor's domain, and your strict default Content-Security-Policy
-(`default-src 'self'`) stays untouched: no `script-src` or
-`connect-src` exceptions, no third-party cookies on your origin, no
-vendor DNS on your pages. It is a `framework.Plugin`, not a Battery:
-no dependencies, no workers, one shared HTTP transport whose idle
-connections close on app shutdown.
+`battery/relay` is a locked-down reverse proxy plugin that serves allowlisted third-party endpoints (analytics, error tracking, scripts) from your own origin (`/__gofastr/t/...`) so your strict `default-src 'self'` CSP stays intact and user cookies never reach third-party vendors.
 
-## Wiring
+## Quickstart
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -27,163 +17,37 @@ app := framework.NewApp(
 	framework.WithConfig(framework.AppConfig{Name: "myapp"}),
 )
 r := relay.New(relay.Config{
-	// Path defaults to "/__gofastr/t"; any literal absolute path works
-	// ({, } and $ are refused).
 	Routes: []relay.Route{
 		{
-			Prefix:   "e/",   // subtree: POST /t/e/{rest} → plausible.io/api/event/{rest}
+			Prefix:   "e", // exact endpoint: POST /__gofastr/t/e → plausible.io/api/event
 			Upstream: "https://plausible.io/api/event",
 			Methods:  []string{"POST"},
 		},
 		{
-			Prefix:   "js/",   // GET /t/js/{rest} → plausible.io/js/{rest}
+			Prefix:   "js/", // subtree: GET /__gofastr/t/js/{rest} → plausible.io/js/{rest}
 			Upstream: "https://plausible.io/js",
 			Methods:  []string{"GET"},
-			CacheOK:  true,   // immutable, versioned scripts may cache
+			CacheOK:  true,
 		},
 	},
 })
 app.RegisterPlugin(r)
 ```
 
-Point the vendor's client SDK at the mount with `Base()` instead of
-hard-coding the prefix:
+Use `r.Base() + "/e"` to build client URLs instead of hardcoding `/__gofastr/t`.
 
-```go
-plausibleBase := r.Base() + "/e"
-```
+## Fixed hardening contract
 
-`New` panics on invalid config (unknown scheme, `http://` to a
-non-loopback host, an internal/private upstream, empty `Methods`,
-traversal in a prefix, `{`, `}`, or `$` in a prefix or `Config.Path`
-(paths must be literal), a mount colliding with a reserved
-`/__gofastr/...` route, percent-encoding, a fragment, a backslash or an
-empty segment in a prefix or `Config.Path`, a duplicate prefix, a method
-that is not an uppercase token, an upstream with userinfo, a query or a
-fragment, a `ContentTypes` entry that is not a lowercase `type/subtype`).
-A misdeclared relay is a programmer error you want at startup, not a
-runtime surprise. An upstream name that does not resolve at `New` is
-accepted; every request checks the addresses it resolves to before
-dialing, and an unresolvable one answers `502`.
-
-`Config.ClientIP` replaces the default client address (the peer on the
-wire) written into `X-Forwarded-For`. Back it with a trusted proxy layer,
-never with a function that reads a request header.
-
-## Route table semantics
-
-| Prefix shape    | Matches                          | Upstream mapping                          |
-|-----------------|----------------------------------|-------------------------------------------|
-| `e/` (subtree)  | `/t/e/` and everything below it  | base path + the sanitized tail            |
-| `ping` (exact)  | `/t/ping` only                   | base path as-is                           |
-
-- The request's **query string passes through** verbatim
-  (`/t/e/x?v=2` → upstream `…/x?v=2`); analytics SDKs need it.
-- **Methods are an allow-list.** Empty is invalid — be explicit.
-  Anything undeclared gets `405` with an `Allow` header; tails under
-  no declared prefix get `404`.
-  A permitted `HEAD` response forwards no body, so its representation's
-  `Content-Type` and positive `Content-Length` do not trigger body-type refusal.
-- **Bodies** are capped per route at `MaxBodyBytes` (default 8 MiB),
-  covering both declared `Content-Length` and chunked bodies → `413`.
-  The same budget bounds the upstream's response. Its status and headers
-  are already sent when the cap is reached, so the relay aborts the
-  stream: the client sees a broken response, never a clean one cut
-  short. A response of exactly the budget arrives whole.
-- **Content types** are an allow-list too. A route relays script
-  (`text/javascript`, `application/javascript`), `text/css`, images,
-  fonts, JSON (`application/json` and any `application/*+json`) and
-  `text/plain`. Anything else the vendor sends, `text/html` above all,
-  is replaced with a plain `502`. A route that relays a vendor's iframe
-  page opts the type back in with `ContentTypes: []string{"text/html"}`
-  (lowercase `type/subtype`, no parameters; `New` panics otherwise).
-  An SVG passes with `Content-Security-Policy: sandbox` added, unless
-  the route names `image/svg+xml` in `ContentTypes`. A body with no
-  `Content-Type` goes out as `application/octet-stream`. The check
-  guards a body: a response that forwards none (a `204` or `304`, a
-  `Content-Length: 0`, or a chunked body that ends before its first
-  byte) passes whatever its type, so a beacon endpoint answering `204`
-  or an empty `200` under `text/html` stays the success it was
-  upstream.
-- **Caching**: `CacheOK: false` (default) forces
-  `Cache-Control: no-store` on every response. `CacheOK: true` passes
-  upstream cache headers through, for immutable versioned assets.
-  `304 Not Modified` always passes through.
-
-## The hardening contract
-
-None of this is configurable. The relay is on your public edge, so its
-posture is fixed:
-
-| Guard | Behavior |
-|---|---|
-| Fixed origins | Scheme, host, and port come ONLY from `Route.Upstream`. The path tail and query are the only attacker-influenced parts of the outbound request. |
-| Tail validation | Traversal (`..`, `%2e%2e`), backslashes, NUL/control bytes, empty segments (`//`), encoded slashes (`%2F`, caught via `RawPath`), and fragment markers are refused with `400`. The router bounds path params; the relay still validates at the sink. |
-| Credentials stripped (inbound) | `Cookie`, `Authorization`, `Proxy-Authorization`, `X-CSRF-Token`, `X-API-Key`, every `X-Forwarded-*`, and every `X-Gofastr-*` (the app's own headers, among them the embed grant an embed frame sends on each fetch) never reach the vendor. `Referer` is cut to its origin (`https://app.example/`): a relayed request is same-origin, so the browser sends the full page URL, query string and any token in it included, where a request straight to the vendor would carry the origin alone. A `Referer` that is not an absolute `http(s)` URL is dropped. |
-| Forwarded metadata | `X-Forwarded-For` is the connection's peer (or your `Config.ClientIP`), `X-Forwarded-Proto` comes from the actual TLS state. Inbound forwarding headers are never trusted — they are one `curl -H` away from arbitrary values. |
-| Auth stripped (outbound) | `Set-Cookie`, `WWW-Authenticate`, `Proxy-Authenticate`, and `Access-Control-*` never reach the browser. `X-Content-Type-Options: nosniff` is always added. |
-| Browser state stripped (outbound) | `Refresh` (a header-driven navigation to any origin) `Clear-Site-Data` (deletes the visitor's app-origin storage from the vendor's side) and `Service-Worker-Allowed` (lets vendor script register a service worker over every app page) never reach the browser. Neither do the headers that set policy for the whole app origin and outlive the response: `NEL`, `Report-To` and `Reporting-Endpoints` (the browser would report requests to every app URL to a vendor endpoint, outside your CSP), `Alt-Svc`, `Accept-CH`, `Critical-CH`, `Strict-Transport-Security` and `Set-Login`. A value your app set before the relay ran stays. A `Link` header value with a target on another origin is dropped whole. The target is read the way the browser's URL parser reads it: tabs and newlines removed, `\` as `/`, so `<\\vendor.example/x>` is the protocol-relative URL it parses as. A target with a scheme (`https:`, `data:`) or an authority (`//host`) counts as another origin; relative targets (`</page/2>; rel="next"`) resolve against the app origin and are forwarded. |
-| No informational responses | An upstream `1xx` (`103 Early Hints`) is not forwarded: its headers skip the outbound strips, so a vendor `Link` preload would reach the browser. The headers the app set before the relay ran (the security headers) stay on the final response, ahead of the vendor's. |
-| Content types | Only script, style, image, font, JSON and `text/plain` responses pass; the rest are a `502`, logged with the vendor's type. `Route.ContentTypes` adds types per route. SVG carries `Content-Security-Policy: sandbox`. A missing `Content-Type` becomes `application/octet-stream` rather than being sniffed. A response with no body (`204`, `304`, empty `200`) passes whatever its type. |
-| No redirects | Any `3xx` carrying a `Location` header is replaced with a plain `502` and logged: forwarding it would leak the vendor origin (absolute) or point outside the mount (relative). `304` passes. |
-| No protocol switches | WebSockets and other upgrades are not relayed. The inbound `Connection: Upgrade` / `Upgrade` pair is dropped, so the vendor sees a plain HTTP request, and a `101 Switching Protocols` the vendor sends anyway is refused with a `502` and its connection closed: an open socket would run past the body cap and the request deadline. A chat widget that needs a socket connects to the vendor directly. |
-| Compression | Proxied bytes are never decompressed or re-encoded: a gzip body arrives byte-identical. |
-| Timeouts | Dial 5s, TLS handshake 5s, response headers 10s, whole request min(inherited context, 30s). Deadlines/timeouts → `504`; other transport failures → `502`. Error bodies are plain text; upstream error detail goes to the log only. |
-| Upstream restrictions | `https://` only, except `http://` for loopback (tests/dev). RFC1918, link-local (incl. cloud metadata), CGNAT, IPv6 unique-local, and `*.internal` upstreams are refused at `New` regardless of scheme. `localhost` and `*.localhost` count as loopback. |
-
-## Threat model
-
-**This is not an open proxy.** An open proxy takes a URL from the
-request and fetches it; the relay takes nothing. Every route names its
-upstream at construction, request data cannot select scheme, host, or
-port (verified by hostile-tail tests in `battery/relay`), credentials
-flow neither direction, and the outbound surface per route is bounded
-by the method list and the body cap.
-
-**A relayed response runs as your app.** It answers on your origin,
-so an HTML page from the vendor, whether an error page that echoes the
-query string or a compromised vendor, would be script with your
-cookies and your CSP's blessing: reflected XSS. That is why the relay
-refuses document types by default and adds `nosniff`, and why opting
-`text/html` in with `Route.ContentTypes` means trusting that vendor as
-much as your own code. Prefer pointing the iframe at the vendor's own
-origin.
-
-**Egress is your cost now.** Every relayed byte leaves from your
-servers, and every request your page makes to the vendor is a request
-an attacker can also make to your wallet: the mount is public unless
-you gate it (see below). The 8 MiB default body cap is a brake, not a
-budget — think before raising it.
-
-**Ad-block honesty.** Serving the vendor first-party defeats
-*domain-based* block lists (the request no longer goes to
-`plausible.io`, it goes to you). It does NOT defeat *path-based* lists:
-ad-blockers that ship generic rules for `/api/event`,
-`/collect`, `/analytics` style paths will match those same paths under
-your mount. That is why the default `Path` is the neutral
-`/__gofastr/t` and prefixes are yours to choose: pick names that
-describe YOUR integration (`t/e`, `t/js`), not the vendor's
-vocabulary, and don't expect immunity — visitors who block trackers on
-behavior rather than origin will still block.
+`battery/relay` is **not an open proxy**. Every guard is always on:
+- **Fixed upstreams:** scheme/host/port come solely from `Route.Upstream` (`https://` required; RFC 1918, loopback except explicit dev/test, link-local/metadata, and `*.internal` rejected at construction). Path tails reject traversal (`..`, `%2e%2e`), `%2F`, backslashes, and control bytes with `400`.
+- **No credential leakage either way:** inbound `Cookie`, `Authorization`, `Proxy-Authorization`, `X-CSRF-Token`, `X-API-Key`, `X-Forwarded-*`, and `X-Gofastr-*` (including embed grants) are stripped, and `Referer` is truncated to origin only. Outbound `Set-Cookie`, `WWW-Authenticate`, `Access-Control-*`, `Refresh`, `Clear-Site-Data`, `Service-Worker-Allowed`, `NEL`/`Report-To`, `Alt-Svc`, `Strict-Transport-Security`, and cross-origin `Link` headers are stripped.
+- **Strict content-type allowlist:** allows scripts, CSS, images, fonts, JSON, and `text/plain` (SVG gets `Content-Security-Policy: sandbox`). `text/html` and other types return `502` unless explicitly opted in via `Route.ContentTypes` (which trusts that vendor on your origin — prefer iframes on the vendor's origin instead).
+- **No redirects, no 1xx hints, no WebSocket upgrades:** `3xx` with `Location` and `101` upgrades return `502`.
+- **Bounded bodies & timeouts:** default 8 MiB request/response body cap (`MaxBodyBytes`), 30s request budget, `Cache-Control: no-store` unless `CacheOK: true`.
 
 ## Common mistakes
 
-- **Forgetting `auth.CSRF()` when you add `app.Use(auth.CSRF(...))`
-  app-wide.** The relay's POST routes are form-less beacons; a global
-  CSRF middleware 403s them because they carry no token. Exempt the
-  mount: `app.Use(auth.CSRF(auth.WithCSRFSkipPaths("/__gofastr/t/")))`
-  — the credential-stripping contract above is what makes this safe:
-  no cookies reach the vendor, so there is nothing to forge with.
-- **Gating the relay behind `auth.RequireSession`.** Analytics and
-  error-tracking beacons fire before login and from logged-out pages;
-  a session gate turns your first-party numbers into
-  "only logged-in users". Gate per-route with your own middleware if
-  you must, not app-wide.
-- **Assuming ad-block immunity.** First-party origin defeats
-  domain-based lists only. Path-based lists still match; see
-  "Ad-block honesty" above.
-- **Raising `MaxBodyBytes` without thinking.** The cap is an egress
-  brake: every accepted byte is billed to your upstream bandwidth.
-  Beacon endpoints need kilobytes; if a vendor wants 100 MiB uploads
-  through your relay, that traffic belongs on the vendor's own origin,
-  not yours.
+- **Forgetting to exempt the relay from app-wide CSRF middleware:** cookie-free analytics POSTs get `403` unless you pass `auth.WithCSRFSkipPaths("/__gofastr/t/")` (safe because `battery/relay` strips all cookies/credentials).
+- **Gating `/__gofastr/t/` behind `RequireSession`:** drops logged-out pageviews and error beacons.
+- **Expecting ad-block immunity for paths named `/collect` or `/analytics`:** first-party proxying defeats domain lists, not generic path-based rules. Use neutral route prefixes like `e/` and `js/`.
+- **Raising `MaxBodyBytes` blindly:** all relayed egress is billed to your server bandwidth.

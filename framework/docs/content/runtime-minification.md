@@ -1,199 +1,29 @@
 # Runtime JS and CSS minification
 
-GoFastr embeds the JavaScript source for its runtime fragments and
-on-demand modules in the host-app binary. On first read it assembles
-the fragments into `runtime.js`, minifies the scripts by default, and
-caches the resulting payloads. The stylesheets the framework composes
-are minified under the same switch. See
-[Stylesheets](#stylesheets).
+GoFastr embeds its browser runtime (`/__gofastr/runtime.js` and on-demand modules `/__gofastr/runtime/<name>.js`) and framework stylesheets (`/__gofastr/app.css`, `/__gofastr/comp/*.css`, `/__gofastr/comp-bundle.css`) directly into your binary and serves them minified by default (~50% smaller raw and gzipped) via a pure-Go, zero-dependency minifier (`core-ui/runtime/minify`).
 
-The minifier is a token-aware JavaScript pass implemented in
-`core-ui/runtime/minify` (pure Go, zero deps). Tier-2 scope:
-strip comments, collapse whitespace, distinguish regex literals from
-division, preserve string + template-literal payloads byte-for-byte,
-preserve ASI hazards (`return\nfoo`), and keep `++`/`--` together
-without identifier-fusion damage. Identifier renaming and dead-code
-elimination are out of scope; the output stays parseable JavaScript
-a developer can still read in browser devtools, just compactly.
+## When minification runs
 
-## When it runs
+The decision runs once per embedded asset (`sync.Once`) on first read:
 
-The runtime caches the served JavaScript after first use. Each serving
-path calls `minify.ServedJS` to apply the process-wide switch, and
-subsequent requests reuse the cached bytes.
+| Environment | Mode |
+| --- | --- |
+| `RUNTIME_NOMINIFY=1` | Raw (override) |
+| `RUNTIME_MINIFY=1` | Minified (override) |
+| `GOFASTR_ENV` ∈ `{production, prod, live, staging}` | Minified |
+| `GOFASTR_DEV=1` (and non-production `GOFASTR_ENV`) | Raw |
+| Nothing set (default binary) | Minified ("production wins") |
 
-Whether the minifier runs at all is gated by env vars:
+Minification strips comments and collapses whitespace while preserving JS identifiers (no obfuscation or source maps needed — breakpoints remain readable in DevTools) and preserving semantically significant CSS whitespace (`calc()`, media `and (`, descendant `:hover`).
 
-| Env state                                              | Result   |
-|--------------------------------------------------------|----------|
-| `GOFASTR_ENV` ∈ {`production`, `prod`, `live`, `staging`} | minify   |
-| `GOFASTR_DEV=1` (and `GOFASTR_ENV` not a non-dev env)  | raw      |
-| neither set                                            | minify   |
-| `RUNTIME_NOMINIFY=1`                                   | raw      |
-| `RUNTIME_MINIFY=1`                                     | minify   |
+## Size budgets and compression
 
-`RUNTIME_NOMINIFY` and `RUNTIME_MINIFY` are manual overrides for
-debugging in either serving mode. If both are truthy,
-`RUNTIME_NOMINIFY` wins.
-
-The defaults follow a **"production wins"** rule: an end-user who
-simply `go build`s their app and runs the binary in production,
-without setting any env vars gets the minified runtime
-automatically. Dev mode opts OUT via `GOFASTR_DEV=1`, the same env
-flag that already enables [livereload](dev-livereload.md).
-
-## What's served
-
-Two HTTP routes are affected:
-
-- `GET /__gofastr/runtime.js`: the bundled core runtime
-- `GET /__gofastr/runtime/<name>.js`: each on-demand module
-  (`copy`, `toasts`, `widgets`, `popover`, etc.), and every behaviour a
-  package registered with `registry.RegisterBehavior`, which the same
-  route serves under the same gate
-
-Both return whichever form (raw or minified) the gating contract
-selected on first use. The minified output is still a valid
-ES2020+ IIFE; no source maps are emitted, but the code remains
-human-readable enough to set breakpoints in.
-
-The core's gzip gates are the `coreGoalGZ` (16,944 bytes at level 6) and
-`coreCongestionWindowGZ` (19,588 bytes at level 1) constants in
-`core-ui/runtime/budget_test.go`, including static server-action refusal and skipped
-automatic mounts, full-document session cache invalidation,
-shared trap and initial focus eligibility, page-cancelled signal clicks,
-positive router click ownership, document-base-resolved query/fragment
-destination identity and live CSRF token protection across cached
-navigation, prefetch replay, and page-head cleanup. Prefetched pages retain the
-live CSRF token even after a session rotation, while `gofastr:navigate` still
-reports `cached: false` and other page metadata updates normally.
-Fallback toast rows and hydrated text signals use implicit status/alert
-live semantics without adding a second announcement through `aria-live`.
-Bare-primary loading adds only the navigation handoff to the existing
-demand-loaded envelope scheduler. Each gate keeps 2 B of clearance over the
-measured size; `core-ui/runtime/budget_test.go` is where both numbers live.
-Layouts without loading templates, outlets, or route areas still fetch
-neither the envelope nor the loading module.
-Ordinary-page form-helper discovery fits those
-gates by scheduling idle modules directly instead of building a batch
-queue. Browsers without `requestIdleCallback` still defer each idle load
-with `setTimeout`; helper-marked controls do not wait for a widget.
-
-## Stylesheets
-
-Every stylesheet the framework composes for a browser goes through
-`minify.ServedCSS`, under the same env gate as the runtime:
-
-- `/__gofastr/app.css` and its theme-variant URLs (`?t=<hash>`)
-- per-component CSS (`/__gofastr/comp/<name>.css`) and the
-  `/__gofastr/comp-bundle.css` bundle
-- widget stylesheets, the setup wizard's sheet, the print shell's
-  inlined CSS, and the `app.css` a static export writes
-
-The CSS pass strips comments, collapses whitespace, drops the space
-beside `{`, `}`, `;`, `,`, after `(` and `:`, before `)`, and the `;`
-before a `}`. It keeps every space that changes meaning: before `(`
-(`and (` is not the function `and(`), before `:` (`a :hover` selects
-descendants), around `>`, `+` and `~`, inside `calc()`, and in an
-empty custom property (`--x: ;`). Strings, escapes and unquoted
-`url()` bodies pass through byte for byte. A browser test hands
-Chrome every registered component sheet and `app.css`, as written and
-as minified, and requires the same rule tree from both.
-
-Two things change for code that reads the served CSS:
-
-- **Custom properties read back in the minified spelling.**
-  `getComputedStyle(el).getPropertyValue('--x')` returns the declared
-  text, so `minmax(0, 1fr)` comes back as `minmax(0,1fr)`. The value
-  means the same thing; compare tokens, not spacing.
-- **Tests that grep served CSS** should spell the needle through
-  `minify.ServedCSS("--color-primary: #4F46E5")`, which matches in
-  both modes. `registry.Entry.CSSFor` and `UIHost.AppCSS` still return
-  the readable source; `Entry.ServedCSSFor` returns what is sent.
-
-On the internal/testapps/hn front page the component bundle drops from 11.4 KB
-to 5.7 KB gzipped and `app.css` from 5.0 KB to 2.6 KB, so the HTML
-and both stylesheets together come to about 12 KB.
-
-## Sizes
-
-After minification (typical end-user deploy):
-
-- `runtime.js`: `core-ui/runtime/budget_test.go` holds the gzip gates at
-  16,944 B (level 6) and 19,588 B (level 1). The
-  level-1 gate sits 5,252 B past the 14 KiB initial congestion window,
-  so a cold first load of the core takes a second round trip; each
-  byte over 14 KiB is a named entry in that test
-- On-demand modules have a default production goal of 3 KiB gzipped. Embedded
-  modules with individual ceilings are listed in `moduleOverrides` in
-  `core-ui/runtime/budget_test.go`. Registered behaviours with individual
-  ceilings are listed in `behaviorOverrides` in
-  `core-ui/runtime/internal/treegate/budget_test.go`. The registered-behaviour
-  gate measures minified bytes regardless of the serving mode.
-
-The SSE module is pinned more tightly at 1,128 B gz (1,126 measured)
-and 2,605 B minified (2,603 measured). Those bytes include capped,
-jittered reconnect backoff, the pending-retry scan guard and bfcache restoration, exercised
-by `TestSSERetriesBackOffWithJitter`; they do not grow the core bundle.
-
-`headless-feedback` has a 3,146-byte ceiling (3,144 measured). Its
-focused-row detach observer restores the external origin after a
-server-rendered toast's Island dismissal without changing the kernel;
-`TestIslandToastReturnsFocus` pins that path and the pending-request
-focus guard. The observer runs only while a toast holds focus.
-
-Post-navigation cosmetics live in on-demand modules too: `activelink`
-(aria-current highlighting, idle-loaded), `preload` (route prefetch,
-loaded only when a route declares `app.Preload`), and `actionloader`
-(per-screen compiled action scripts, loaded only when the app has
-compiled actions).
-
-Gzip these responses at a reverse proxy or CDN, or set
-`AppConfig.Compression`, which adds `middleware.Compress` to the default
-chain (see [security](security.md#compression)).
-
-## Verifying behaviour in your app
-
-A quick sanity check after deploying:
-
-```bash
-curl -s https://your-app.example.com/__gofastr/runtime.js | head -c 80
-```
-
-- Minified starts with `(()=>{'use strict';let docEl=document.documentElement;`.
-- Raw starts with `// GoFastr Core-UI Runtime v0.4, ES2020+`.
-
-`/__gofastr/app.css` answers the same question for CSS: minified
-starts with `:root{--`, raw with `:root {` and a newline.
-
-If you expected one and got the other, check `GOFASTR_ENV` /
-`GOFASTR_DEV` / `RUNTIME_NOMINIFY` on the running process.
+- **Core runtime (`runtime.js`):** held under strict automated gzip gates in `core-ui/runtime/budget_test.go`; feature modules (`copy`, `toasts`, `widgets`, `popover`, `sse`, `activelink`, `preload`, `actionloader`, etc.) load on demand only when a page emits their markers.
+- **HTTP compression:** enable `AppConfig.Compression` (or gzip/brotli at your reverse proxy/CDN) to compress served JS, CSS, and HTML on the wire (see [Security](security.md#compression)).
+- **Tests inspecting served CSS:** use `minify.ServedCSS(needle)` instead of asserting unminified whitespace so tests pass in both dev and production modes.
 
 ## Common mistakes
 
-- **Expecting `GOFASTR_DEV=1` to win when `GOFASTR_ENV` says
-  production.** The gating order checks the overrides first, then
-  `GOFASTR_ENV`, then `GOFASTR_DEV`: a non-dev `GOFASTR_ENV`
-  (`production`, `prod`, `live`, `staging`) beats the dev flag. To
-  force raw output regardless, set `RUNTIME_NOMINIFY=1`.
-- **Changing env vars on a running process.** The raw-vs-minified
-  decision is made once per source on first read (`sync.Once`) and
-  cached for the life of the process. Restart after changing
-  `GOFASTR_ENV` / `RUNTIME_NOMINIFY` / `RUNTIME_MINIFY`.
-- **Anchoring tests or scripts on comment text in the runtime.** The
-  minifier strips comments and collapses whitespace, so a grep for a
-  comment-only substring (or a pre-minify spacing pattern) passes in
-  dev and fails in prod. Anchor on code, and accept both spacings.
-  For CSS, spell the needle through `minify.ServedCSS`.
-- **Hunting for source maps.** None are emitted by design; the
-  minified output keeps identifiers and stays debuggable. For full
-  readability while reproducing an issue, restart with
-  `RUNTIME_NOMINIFY=1`.
-
-The October 18 navigation metadata fix adds 519 bytes at level 6 and 649
-at level 1, measured against the merged tree without that change. These bytes
-carry page metadata and language through plain navigation and cache replay.
-The envelope shares the core implementation. Deep-link parameter handling
-moves to `widgetlinks`; envelope and widgets retain their existing limits.
-The budget tests also require an artificially padded core to cross the
-level-1 line, so recording the new measured cost does not disable that guard.
+- **Expecting `GOFASTR_DEV=1` to beat `GOFASTR_ENV=production`:** production always wins; set `RUNTIME_NOMINIFY=1` to force raw output anywhere.
+- **Changing `RUNTIME_NOMINIFY` without restarting:** the choice is cached via `sync.Once` per process.
+- **Grepping served JS or CSS for comments or exact pre-minify spaces:** comments are stripped and CSS spacing collapses (e.g. `minmax(0,1fr)`).

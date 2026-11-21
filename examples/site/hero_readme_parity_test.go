@@ -27,7 +27,7 @@ func TestHeroTabsMatchReadmeQuickstart(t *testing.T) {
 	}{
 		{"### Core only", heroCoreSrc},
 		{"### Framework", heroFrameworkSrc},
-		{"### Donald's Way", heroDonaldSrc},
+		{"### Full stack", heroDonaldSrc},
 	} {
 		i := strings.Index(readme, tc.heading)
 		if i < 0 {

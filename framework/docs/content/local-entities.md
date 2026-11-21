@@ -1,20 +1,10 @@
-# Local entities
+# Local entities (`framework/localentity`)
 
-`framework/localentity` declares records that live in the visitor's
-browser and renders the forms and lists that edit them. You write Go
-and design-system components; there is no server table, no handler,
-and no JavaScript in your app. A visitor's records survive reloads and
-closed tabs, and every open tab updates when any of them saves.
+`framework/localentity` lets you declare browser-local records (stored in IndexedDB via [`core-ui/localdb`](localdb.md)) and render server-built `framework/ui` forms and live lists for them in Go — zero server database tables, zero API routes, and zero hand-written JavaScript.
 
-Use it for per-visitor data that has no business on your server: a
-game team, a wishlist, a draft, a checklist. It is built on
-[localdb](localdb.md), which you can use directly when you need
-something a form and a list do not cover.
+Use it for per-visitor state that belongs only in the visitor's browser (checklists, wishlists, drafts, game teams). Changes survive reloads and sync automatically across open tabs.
 
-## Declare an entity
-
-Fields are `core/schema` fields, the same type an entity on the server
-uses.
+## Declare a local entity
 
 <!-- gofastr:compile
 -->
@@ -37,214 +27,46 @@ var (
 		{Name: "species", Type: schema.Enum, Required: true, Values: []string{"Pikachu", "Eevee"}},
 		{Name: "level", Type: schema.Int, Required: true, Min: ptr(1), Max: ptr(100)},
 	},
-		localentity.Indexed("level"), // lists can order by level
-		localentity.MaxRecords(6),    // a seventh is refused
+		localentity.Indexed("level"),
+		localentity.MaxRecords(6),
 	)
 )
 
 func main() { _ = Members }
 ```
 
-`Define` declares the backing IndexedDB store for you. Every record
-also gets three built-in fields:
+Supported field types: `String`, `Text`, `Int`, `Float`, `Bool`, `Enum`, `Date`, and `Timestamp` (plus automatic `id` UUIDv7, `created_at`, and `updated_at`). `Indexed(field)` requires the field to be `Required`. `Pattern` regexes must stay inside the shared Go/JS subset (no `\s`, bare `.`, inline flags, or named groups).
 
-| Field | Value |
-| --- | --- |
-| `id` | A UUIDv7 string minted in the browser. |
-| `created_at` | RFC 3339 time of the first save. |
-| `updated_at` | RFC 3339 time of the latest save. |
+## Forms and lists
 
-Field names are lowercase snake_case. The field types a browser record
-can hold are `String`, `Text`, `Int`, `Float`, `Bool`, `Enum`, `Date`
-and `Timestamp`; `Relation`, `JSON`, `Decimal`, `UUID`, `Image` and
-`File` are refused. `Required`, `Min`, `Max` (numeric bounds, or string
-length), `Pattern`, `Values` and `Default` are honored. `Define` checks a
-default's type, bounds, allowed values and pattern, and panics at startup
-with the field name if the default is invalid. A required field cannot
-have an empty string default. `Timestamp` defaults use RFC 3339 with a
-time zone and a period before any fractional seconds. They normalize to
-UTC with milliseconds and must land within years 0000 through 9999.
-
-## The form
-
-Wrap a normal `ui.Form` with `Entity.Form`. Each control's `name` is a
-field name.
+- **Form:** wrap a normal `ui.Form` (with its required `Action`) in `Members.Form("team-form", ...)`, matching each input's `Name` to its `schema.Field` name. Validation, locale-aware number parsing, type conversion, and edit/reset behavior run automatically in the `localentity-form` runtime module (and work inside `framework/embed` frames too).
+- **List:** configure `team := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})`, build row and empty templates with `team.Row(...)` and `team.Empty(...)`, and emit the list carrier with `team.Render(row, empty)`:
 
 ```go
-Members.Form("team-form", ui.Form(ui.FormConfig{
-	Action: "/", Method: "POST", HideSubmit: true, Ctx: ctx,
-},
-	ui.TextField(ui.TextFieldConfig{Name: "nickname", Label: "Nickname", ID: "member-nickname",
-		Required: true, MaxLength: 20}),
-	ui.Select(ui.SelectConfig{Name: "species", Label: "Species", ID: "member-species",
-		Required: true, Options: speciesOptions()}),
-	ui.NumberField(ui.NumberFieldConfig{Name: "level", Label: "Level", ID: "member-level",
-		Required: true, Min: ptr(1), Max: ptr(100)}),
-	ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Justify: ui.JustifyEnd},
-		ui.Button(ui.ButtonConfig{Label: "Clear", Type: "reset", Variant: ui.ButtonGhost}),
-		ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit", Variant: ui.ButtonPrimary}),
-	),
+form := Members.Form("team-form", ui.Form(ui.FormConfig{Action: "#"},
+	ui.Input(ui.InputConfig{Name: "nickname", Label: "Nickname", Required: true}),
+	ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
 ))
-```
 
-Field values follow the declaration: numbers are converted (a number
-typed into a text control reads in the page's language, the `<html
-lang>` the runtime writes numbers in, so `3,5` is 3.5 on a Spanish page
-and `1.234,5` is 1234.5; group marks count only where they match the
-locale's group sizes, so `12,34,567.8` is 1234567.8 on an Indian English
-page and `2.5` stays 2.5 on a Spanish one; an edit fills the control the
-same way. Only a text, search or textarea control is read and filled
-the local way: a number, range, select, radio or hidden input holds the
-browser's dot-decimal value, so `0.125` stays 0.125 there), a checked
-box saves `true` whatever its `value` attribute says (an unchecked one
-saves `false`), and string lengths count characters the way Go counts
-runes, so an emoji is one. When editing, an emptied optional field is
-removed from the record; a field the form has no control for is left
-as it was, and so is a field whose controls are all disabled. `Default`
-applies only when creating a record; a create from a form with no
-control for a Required field (and no Default) is refused. A `Date` must
-be a real calendar date (`2024-02-31` is refused); a `Timestamp` takes
-RFC 3339 or a `datetime-local` value, read in the visitor's time zone,
-and is stored as RFC 3339 in UTC, the formats core/schema parses. The
-`datetime-local` control shows minutes, so a `Timestamp` control the
-visitor left unchanged saves the stored value, seconds included. A
-second submit while a save is in flight is dropped, so a double click
-saves once.
-
-A `Pattern` must stay inside the regex syntax Go and JavaScript read the
-same way: literals, classes and ranges, groups with `(?:…)` as the only
-extension, `| ^ $ * + ?`, `{n,m}` quantifiers, the escapes `\d \w \b`
-and their capitals, an escaped metacharacter, `\-` inside a class,
-and `\p{…}` naming a Unicode general category (`\p{L}`, `\p{Nd}`).
-`\s`, `\S` and a bare `.` are refused too: JavaScript's `\s` is Unicode
-whitespace where Go's is ASCII, and its `.` skips every line terminator
-where Go's skips only `\n` — name the characters you accept in a class
-instead (`[ \t\r\n]+`, `[^,;]+`, …).
-`Define` refuses anything else at startup (inline flags, `(?P<name>)`,
-`\A`, `\z`, POSIX classes, other letter escapes, script names such as
-`\p{Greek}`). A pattern the browser still cannot compile refuses every
-value rather than letting values through.
-
-A `localentity` form works inside an [embedded surface](embed.md): the
-behaviour marks its forms `enctype="application/json"`, which the embed
-frame's navigation guard lets through. A Save clicked while the form
-behaviour is still loading is held and replayed once it loads.
-
-On submit the browser's own validation runs first (the `required`,
-`maxlength`, `min` and `max` the fields render). Then the behaviour
-reads only the declared fields, converts each to its type, checks it
-against the declaration (the `localentity-form` behaviour does this; lists are the `localentity` behaviour, so a page with only a list never loads the form code), and either places the problems beside their
-fields (the same error placement a server form uses) or saves the
-record and resets the form. Controls the declaration does not name,
-such as the CSRF input, are ignored.
-
-`ui.Form` still needs an `Action`. Without JavaScript the browser
-submits there, so point it at the page itself or at a route that says
-the page needs script.
-
-## The list
-
-A list is a configured view over the records. Put it inside a layout
-component: the rows become that component's children, so a `ui.Grid`
-lays them out as grid cells.
-
-```go
 team := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})
-
-ui.Grid(ui.GridConfig{Min: "14rem"}, team.Render(
+list := team.Render(
 	team.Row(func(r localentity.Row) render.HTML {
-		return ui.Card(ui.CardConfig{
-			HeadingContent: r.Text("nickname"),
-			HeadingLevel:   2,
-			Footer: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-				r.Edit("team-form", ui.Button(ui.ButtonConfig{Label: "Edit", Type: "button"})),
-				r.Delete(ui.Button(ui.ButtonConfig{Label: "Release", Type: "button", Variant: ui.ButtonDanger})),
-			),
-		}, ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
-			{Label: "Species", Value: r.Text("species")},
-			{Label: "Level", Value: r.Text("level")},
-		}}))
+		return html.Div(html.DivConfig{},
+			r.Text("nickname"),
+			r.Edit("team-form", ui.Button(ui.ButtonConfig{Label: "Edit"})),
+			r.Delete(ui.Button(ui.ButtonConfig{Label: "Remove"})),
+		)
 	}),
-	team.Empty(ui.EmptyState(ui.EmptyStateConfig{Title: "No Pokémon yet"})),
-))
+	team.Empty(html.Paragraph(html.TextConfig{}, render.Text("No members yet."))),
+)
 ```
 
-| Piece | Does |
-| --- | --- |
-| `ListConfig.OrderBy` | `created_at` (default), `updated_at`, or a field declared `Indexed`, which must be `Required`: IndexedDB leaves a record out of an index when the field is missing, so an optional ordering field would hide records. IndexedDB orders the rows through the index. |
-| `ListConfig.Desc`, `Limit` | Reverse the order; cap the rows shown. |
-| `Row(fn)` | The row template, built once on the server. One root element; no `id` attributes, since every record clones it. |
-| `Empty(content)` | What shows when there are no records. |
-| `r.Text(field)` | A span filled with the record's value as text. Built-ins work too. |
-| `r.Delete(control)` | A click deletes this record. |
-| `r.Edit(formID, control)` | A click loads this record into the form; the next save updates it. The form's reset button ends the edit. |
-| `Entity.Count()` | A span showing how many records there are. |
-
-`ui.CardConfig.HeadingContent` exists for this: it puts a filled-in
-value inside the card's own heading element, so the heading keeps the
-card's heading style.
-
-## What the visitor sees before the records load
-
-The server cannot see the visitor's records, so the first paint shows
-the list empty and the count blank. The behaviour fills both as soon as
-it loads, normally before the visitor notices. That is the cost of
-keeping the data off the server.
-
-## Safety
-
-Records are untrusted input when they come back out: anyone can edit
-IndexedDB from devtools, and any script on your origin can write it.
-
-- Values are written into rows with `textContent` only. A stored
-  `<img onerror=…>` shows as text. Objects and arrays show as nothing.
-- Only declared fields are read from a form and written to a record.
-  A control named `id`, `created_at` or `__proto__` added to the page
-  never reaches a record.
-- Field names are checked at startup, so none can name a prototype key.
-
-## Messages
-
-The words shown for a refused value or a full list are phrases
-(`localentity.required`, `localentity.full`, ...), sent to the browser
-in the runtime strings block, so a catalog translates them for every
-app. `WithMessages` replaces one for this app, in every language:
-
-```go
-localentity.WithMessages(localentity.Messages{
-	Full: "Your team is full: release a Pokémon first ({{n}} at most).",
-})
-```
-
-`{{n}}` is replaced by the bound. An unset field keeps its phrase.
-
-## Limits
-
-- One browser, one copy. Records do not follow the visitor to another
-  device or browser, and clearing site data deletes them.
-  `__gofastr.localdb.persist()` asks the browser to keep them under
-  storage pressure.
-- No server-side validation, hooks, or access rules: there is no
-  server write to hang them on.
-- Rows show text values. A row that needs a link or an image built
-  from a record is a page script reading [localdb](localdb.md)
-  directly.
+Use `Members.Count()` to render a live record count.
+- **Safety:** values populate via `textContent` only (never `innerHTML`), and undeclared or prototype keys (`id`, `created_at`, `__proto__`) are ignored on save. Customize messages with `localentity.WithMessages(...)`.
 
 ## Common mistakes
 
-- **Putting an `id` on an element inside `Row`.** Every record clones
-  the template, so the page ends up with duplicate ids. Use classes
-  from the design system and the `r.*` helpers instead.
-- **Naming a control differently from its field.** A control whose
-  `name` is not a declared field is ignored on save, so the value
-  silently never lands. Keep `Name` in the `ui` field config equal to
-  the `schema.Field` name.
-- **Ordering by a field that is not `Indexed`.** `List` panics at
-  render: IndexedDB orders through an index, and the page never sorts.
-- **Expecting the server to see the records.** Handlers, hooks, access
-  rules and `gofastr verify` coverage do not apply: nothing is written
-  on the server. Use a server entity when other users or devices need
-  the data.
-- **Building links or images from record values in a row.** Rows fill
-  text only. Read the records in a page script through
-  [localdb](localdb.md) and clean any URL before using it.
+- **Putting an `id` attribute inside `team.Row`:** rows clone the template per record, creating duplicate IDs.
+- **Mismatched field `Name` on a `ui` form input:** controls not matching a declared `schema.Field` name are ignored on save.
+- **Ordering a list by a field not declared `Indexed`:** panics at render; IndexedDB only orders via indexes.
+- **Using local entities for shared or critical data:** records live only in one browser and are wiped if site data is cleared; use a server entity when data must sync across devices or users.

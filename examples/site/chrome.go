@@ -33,10 +33,10 @@ func siteHeader(ctx context.Context) render.HTML {
 func siteFooter() render.HTML {
 	return sitefooter.Render(sitefooter.Config{
 		Version: versionLabel(),
-		Tagline: "The full-stack Go framework that doesn't get in the way of you or your agents. Early (v0.x). Built in public.",
+		Tagline: "Go from idea to a full-stack app, fastr. Simple for humans. Optimized for agents.",
 		Columns: siteFooterColumns(),
 		Bottom: []render.HTML{
-			html.Span(html.TextConfig{}, render.Text("© 2026. A research project, not a company.")),
+			html.Span(html.TextConfig{}, render.Text("© 2026 GoFastr · MIT License.")),
 		},
 	})
 }
