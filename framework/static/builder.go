@@ -57,6 +57,11 @@ type Builder struct {
 	// refuses one with a nonce source, a control byte, a quote or an angle
 	// bracket.
 	ContentSecurityPolicy string
+	// TrustedTypesPolicies and NoTrustedTypes shape the built-in policy's
+	// Trusted Types directives as middleware.SecurityHeadersConfig's
+	// fields of the same names do; a ContentSecurityPolicy ignores both.
+	TrustedTypesPolicies []string
+	NoTrustedTypes       bool
 
 	extraDirs map[string]fs.FS
 }

@@ -9,10 +9,11 @@ on_change:
   - The built-in policy is the default core/middleware.SecurityHeaders serves plus object-src 'none' and form-action 'self'; a change to that default is made here too.
 invariants:
   - id: default-policy
-    rule: With no ContentSecurityPolicy set, the export carries default-src 'self', img-src 'self' data:, object-src 'none', worker-src 'self', form-action 'self', frame-ancestors 'none' and base-uri 'none'.
+    rule: With no ContentSecurityPolicy set, the export carries default-src 'self', img-src 'self' data:, object-src 'none', worker-src 'self', form-action 'self', frame-ancestors 'none', base-uri 'none', and, unless NoTrustedTypes is set, middleware.TrustedTypesDirectives of TrustedTypesPolicies, which ExportStatic copies from the app's SecurityHeaders.
     enforced_by:
       - test: framework/static.TestStaticExportShipsCSP
       - test: framework/static.TestSweepStaticDefaultCSPDirectives
+      - test: framework/static.TestExportFollowsTrustedTypesSettings
   - id: unsafe-policy-refused
     rule: Build refuses a policy holding a nonce source in any case, a control byte other than tab, a double quote or an angle bracket.
     enforced_by:

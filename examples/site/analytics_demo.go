@@ -41,8 +41,8 @@ import (
 )
 
 // fakeAnalyticsBootstrapJS is the host-authored page bootstrap, the recipe
-// a real integration would ship: configure the SDK, load it through the
-// relay, resolve identity, fire the initial pageview, and translate the
+// a real integration would ship: configure the SDK (which loads next, through
+// the relay), resolve identity, fire the initial pageview, and translate the
 // runtime's SPA navigation event into one pageview per destination.
 //
 // Served by uihost.ScriptHandler as an EXTERNAL script (CSP: no inline JS)
@@ -56,7 +56,6 @@ const fakeAnalyticsBootstrapJS = `(function () {
   // SDKs do: the relay maps the sanitized tail verbatim onto the upstream
   // base path, and an empty tail would join as "/e" (path.Join drops the
   // trailing slash).
-  var SDK_URL = '/__gofastr/t/js/sdk.js';
   var EVENTS_URL = '/__gofastr/t/e/batch';
 
   // Configure the vendor SDK before it loads: it reads this on execution.
@@ -74,10 +73,9 @@ const fakeAnalyticsBootstrapJS = `(function () {
     pageview((e.detail && e.detail.path) || location.pathname);
   });
 
-  var s = document.createElement('script');
-  s.src = SDK_URL;
-  s.async = true;
-  s.onload = function () {
+  // The SDK is the next deferred tag (registered after this one), so it has
+  // run by DOMContentLoaded; see framework/docs analytics-recipes.md.
+  document.addEventListener('DOMContentLoaded', function () {
     // Who is the current visitor? Anonymous until the app says otherwise.
     fetch('/__site/analytics/whoami', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.json(); })
@@ -87,8 +85,7 @@ const fakeAnalyticsBootstrapJS = `(function () {
         pageview(location.pathname);
       })
       .catch(function () { /* analytics must never break the page */ });
-  };
-  document.head.appendChild(s);
+  });
 })();
 `
 
@@ -120,6 +117,10 @@ func wireFakeAnalytics(host *uihost.UIHost, app *framework.App) {
 	js := []byte(fakeAnalyticsBootstrapJS)
 	app.Router().Get("/__site/analytics/bootstrap.js", uihost.ScriptHandler(js))
 	if err := host.RegisterExternalScript(uihost.ScriptURL("/__site/analytics/bootstrap.js", js)); err != nil {
+		panic("analytics_demo: RegisterExternalScript: " + err.Error())
+	}
+	// The vendor SDK through the relay, after the bootstrap that configures it.
+	if err := host.RegisterExternalScript("/__gofastr/t/js/sdk.js"); err != nil {
 		panic("analytics_demo: RegisterExternalScript: " + err.Error())
 	}
 

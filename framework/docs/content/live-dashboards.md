@@ -39,12 +39,10 @@ A background ticker uses the same `PresenceSessions(topic)` + `PushUpdate` loopâ
 ```js
 document.addEventListener('gofastr:sse-status', (ev) => {
   if (!ev.detail.connected) return;
-  fetch("/__site/livedash/refresh?island=stats")
-    .then(r => r.text())
-    .then(html => {
-      const el = document.querySelector('[data-island="livedash-stats"]');
-      if (el) el.innerHTML = html;
-    });
+  // fetchPage writes through the runtime's Trusted Types policy; a raw
+  // el.innerHTML = html throws under the default CSP.
+  window.__gofastr.fetchPage("/__site/livedash/refresh?island=stats",
+    '[data-island="livedash-stats"]');
 });
 ```
 

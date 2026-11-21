@@ -70,7 +70,8 @@
       if (!/^[\w.-]+$/.test(id)) continue;
       loaded.add(id);
       const s = document.createElement('script');
-      s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];
+      const u = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];
+      s.src = window.__gofastr?._scriptURL?.(u) ?? u;
       s.onload = () => fireMounts(document, id);
       // A failed fetch must not pin the id: the next time the component
       // appears (an overlay reopened, a swap) the script is asked again.

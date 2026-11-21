@@ -125,7 +125,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cfg.Skip != nil && cfg.Skip(r) {
+			if (cfg.Skip != nil && cfg.Skip(r)) || isCSPReportPost(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -193,6 +193,16 @@ func CSRF(cfg CSRFConfig) Middleware {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// isCSPReportPost is a browser's violation report: it carries no token, and
+// its content type is one a cross-site page cannot send without a preflight.
+func isCSPReportPost(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return ct == "application/reports+json" || ct == "application/csp-report"
 }
 
 func isSafeMethod(method string) bool {

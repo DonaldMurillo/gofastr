@@ -4,16 +4,23 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
-const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+const staticExportBase = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+
+var staticExportCSP = staticExportBase + "; " + middleware.TrustedTypesDirectives()
 
 func (b *Builder) policy() string {
 	if p := strings.TrimSpace(b.ContentSecurityPolicy); p != "" {
 		return p
 	}
-	return staticExportCSP
+	if b.NoTrustedTypes {
+		return staticExportBase
+	}
+	return staticExportBase + "; " + middleware.TrustedTypesDirectives(b.TrustedTypesPolicies...)
 }
 
 func checkExportCSP(policy string) error {

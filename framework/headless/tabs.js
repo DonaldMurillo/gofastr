@@ -81,7 +81,7 @@
         // insertion pipeline html-mode signal regions use, then drop
         // the script — it is dead weight once every entry it held has
         // been read (the live-node moves own the panels from here).
-        panel.innerHTML = stash[m];
+        panel.innerHTML = NS._html?.(stash[m]) ?? stash[m];
         delete stash[m];
         if (Object.keys(stash).length === 0) {
           for (const s of own(wrapper, 'script[data-hui-tabs-stash]')) s.remove();

@@ -8,6 +8,10 @@ code:
 docs:
   - framework/docs/content/security.md
 invariants:
+  - id: csp-report-post-skips-csrf
+    rule: CSRF lets a POST whose media type is application/reports+json or application/csp-report through without a token, at any path, because a browser's violation report carries none and a cross-site page cannot send either type without a CORS preflight; any other content type at the report path still needs its token.
+    enforced_by:
+      - test: core/middleware.TestCSRFLetsCSPReportsThrough
   - id: host-prefix-on-secure-requests
     rule: On a request that is secure by CookieSecure, TLS or X-Forwarded-Proto https in any case, the cookie name, a custom CookieName included, carries the __Host- prefix unless NoHostPrefix is set, and a CookiePath other than "/" without NoHostPrefix panics at construction.
     enforced_by:

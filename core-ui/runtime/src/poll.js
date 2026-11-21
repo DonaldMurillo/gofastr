@@ -281,7 +281,7 @@
           const was = within(el);
           s.held = 0;
           s.lastHTML = html;
-          el.innerHTML = html;
+          el.innerHTML = NS._html?.(html) ?? html;
           if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el);
           refocus(el, was);
           // What the region holds once the modules that dress new

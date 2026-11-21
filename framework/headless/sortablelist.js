@@ -237,7 +237,7 @@
           .then((html) => {
             // The fresh rows are the server's order: the destination
             // confirms them, and the record puts the source back.
-            dest.innerHTML = html;
+            dest.innerHTML = NS._html?.(html) ?? html;
             if (next) dest.setAttribute(VERSION, next);
             dest.__huiAck = rowsOf(dest);
             dest.__huiOk = dest.__huiSeq;

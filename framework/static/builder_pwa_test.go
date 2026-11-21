@@ -80,7 +80,7 @@ func TestBuildEmitsPWAAssets(t *testing.T) {
 	}
 
 	reg := readOut(t, out, "__gofastr/pwa/register.js")
-	if !strings.Contains(reg, `register("/service-worker.js"`) {
+	if !strings.Contains(reg, `var url = "/service-worker.js"`) {
 		t.Errorf("register.js should target the root worker:\n%s", reg)
 	}
 
@@ -125,7 +125,7 @@ func TestBuildPWABasePath(t *testing.T) {
 	}
 
 	reg := readOut(t, out, "__gofastr/pwa/register.js")
-	if !strings.Contains(reg, `register("/sub/service-worker.js"`) || !strings.Contains(reg, `scope: "/sub/"`) {
+	if !strings.Contains(reg, `var url = "/sub/service-worker.js"`) || !strings.Contains(reg, `scope: "/sub/"`) {
 		t.Errorf("register.js should target the base-prefixed worker + scope:\n%s", reg)
 	}
 

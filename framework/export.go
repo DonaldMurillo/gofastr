@@ -58,6 +58,8 @@ func (a *App) exportStatic(ctx context.Context, dir, basePath string) (static.Re
 			return (&static.Builder{
 				Host: host, OutDir: dir, BasePath: basePath, Handler: a.router, Contributors: contributors,
 				ContentSecurityPolicy: a.Config.SecurityHeaders.ContentSecurityPolicy,
+				TrustedTypesPolicies:  a.Config.SecurityHeaders.TrustedTypesPolicies,
+				NoTrustedTypes:        a.Config.SecurityHeaders.NoTrustedTypes,
 			}).Build(ctx)
 		}
 	}

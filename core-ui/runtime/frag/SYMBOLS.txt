@@ -148,6 +148,7 @@ kernel	10	shown
 kernel	2	M
 kernel	2	_dc
 kernel	2	_fetch
+kernel	2	_html
 kernel	2	_json
 kernel	2	_locBase
 kernel	2	_localeOf
@@ -155,8 +156,10 @@ kernel	2	_locks
 kernel	2	_lp
 kernel	2	_readInlineJSON
 kernel	2	_says
+kernel	2	_scriptURL
 kernel	2	_single
 kernel	2	_splitLocale
+kernel	2	_tp
 kernel	2	_unlocalize
 kernel	2	closestAttr
 kernel	2	collectParams

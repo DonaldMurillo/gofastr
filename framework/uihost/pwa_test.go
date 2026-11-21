@@ -362,7 +362,7 @@ func TestPWARegisterScript(t *testing.T) {
 		t.Errorf("expected javascript content type, got %q", ct)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `register("/service-worker.js"`) {
+	if !strings.Contains(body, `var url = "/service-worker.js"`) {
 		t.Errorf("register.js should register the root service worker:\n%s", body)
 	}
 	if !strings.Contains(body, "gofastr:pwa-update") {

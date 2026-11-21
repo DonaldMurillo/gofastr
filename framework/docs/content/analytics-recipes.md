@@ -9,6 +9,7 @@ If you use Plausible, Umami, PostHog, or another hosted analytics tool, proxy it
 - Keeps `default-src 'self'` intact (no third-party `script-src` or `connect-src` exceptions).
 - Strips cookies, `Authorization`, and `X-Gofastr-*` headers before forwarding so your users' session tokens never reach the analytics vendor.
 - Avoids domain-based ad-blocker rules by serving from a neutral path on your own host (default `/__gofastr/t/...`).
+- Under the default CSP's Trusted Types enforcement, load the vendor SDK as a server-rendered tag (`RegisterExternalScript` of its relay path, after your bootstrap) instead of creating a `<script>` from a string, and give the scripts the SDK loads itself a narrow `default` policy: `trustedTypes.createPolicy("default", {createScriptURL})` admitting only same-origin URLs under the relay's assets route, with `"default"` listed in `SecurityHeadersConfig.TrustedTypesPolicies` (see [Security](security.md#trusted-types)).
 - Remember to exempt the relay mount from global CSRF middleware (`auth.WithCSRFSkipPaths("/__gofastr/t/")`) because analytics beacons are cookie-free POSTs.
 
 ## Recipe 2: Zero-vendor server-side pageviews and events

@@ -24,6 +24,30 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+
+- **CSP violation reports.** `framework.WithCSPReports` mounts a sink at
+  `POST /__gofastr/csp-report` and points the default policy at it with
+  `report-to`, `report-uri` and `'report-sample'`;
+  `SecurityHeadersConfig.CSPReportURI` sends reports elsewhere. See
+  [Security](framework/docs/content/security.md#violation-reports).
+- **Resource isolation, opt-in.** `framework.WithResourceIsolation`
+  refuses requests from other origins for anything but a page load: a
+  script tag, image, fetch or form post from another site gets 403.
+  See [Security](framework/docs/content/security.md#resource-isolation).
+
+### Changed
+
+- **BREAKING: the default Content-Security-Policy enforces Trusted
+  Types.** It adds `require-trusted-types-for 'script'; trusted-types
+  gofastr`, and the runtime writes every HTML string and script URL
+  through its `gofastr` policy. App JavaScript that assigns a plain
+  string to `innerHTML` or a similar sink now throws in browsers
+  that support Trusted Types. Use DOM methods, or name your own policy in
+  `SecurityHeadersConfig.TrustedTypesPolicies`; `NoTrustedTypes` turns
+  the directives off. See
+  [Security](framework/docs/content/security.md#trusted-types).
+
 ## [0.98.0] - 2026-11-20
 
 ### Added

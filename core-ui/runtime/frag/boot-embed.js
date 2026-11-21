@@ -255,7 +255,7 @@
         // writing first painted every embed unstyled until they arrived.
         const G = window.__gofastr;
         if (G && G._cssReady) await G._cssReady(html);
-        root.innerHTML = html;
+        root.innerHTML = _html(html);
         root.setAttribute('data-cui-embed-state', 'ready');
         // The MutationObserver installed by boot handles hydration and
         // demand-loading modules for the injected subtree; component CSS is

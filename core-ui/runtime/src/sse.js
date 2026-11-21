@@ -110,7 +110,7 @@
         // widgets.js / headless-feedback.
         const el = document.querySelector('[data-island="' + CSS.escape(String(island)) + '"]');
         if (!el) return;
-        el.innerHTML = html;
+        el.innerHTML = NS._html?.(html) ?? html;
         // A server-pushed island can introduce a [data-cui-comp] the
         // page hadn't carried, load its component CSS, same as every
         // other innerHTML swap path (nav/signals/poll/widgets).

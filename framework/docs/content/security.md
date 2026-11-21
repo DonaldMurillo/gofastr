@@ -60,7 +60,7 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 
 | Header | Default |
 |---|---|
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; require-trusted-types-for 'script'; trusted-types gofastr` |
 | `X-Content-Type-Options` | `nosniff` (always on, not configurable) |
 | `Referrer-Policy` | `no-referrer` |
 | `X-Frame-Options` | `DENY` |
@@ -69,11 +69,49 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 | `Cross-Origin-Resource-Policy` | `same-origin` (blocks cross-origin `<img>`/asset embeds; set `cross-origin` on public asset routes if needed) |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
 
-If you supply a custom `ContentSecurityPolicy`, it replaces the default whole. Keep `object-src 'none'`, `form-action 'self'`, `worker-src 'self'`, and `base-uri 'none'`—`default-src` does not cover `form-action` or `object-src`.
+If you supply a custom `ContentSecurityPolicy`, it replaces the default whole. Keep `object-src 'none'`, `form-action 'self'`, `worker-src 'self'`, `base-uri 'none'` and the Trusted Types directives (`middleware.TrustedTypesDirectives()` returns them)—`default-src` does not cover `form-action` or `object-src`.
 
 **HSTS** is emitted automatically on direct TLS and proxy-terminated HTTPS (`X-Forwarded-Proto: https`), never on plain-HTTP local dev. Set `HSTSMaxAge: -1` to disable, or set `HSTSIncludeSub` / `HSTSPreload`.
 
 **First-paint inline hashes:** To paint on the first response, `uihost` inlines small (≤16 KiB compressed) head resources (color-scheme bootstrap, matched component CSS, `app.css`) and appends their `'sha256-...'` hashes to the response CSP header. If a reverse proxy or CDN overwrites CSP outside Go, pass `uihost.WithNoInlineFirstPaint()` so all head assets stay external links. Avoid adding `'strict-dynamic'` unless you also allow third-party script hosts—`'strict-dynamic'` causes CSP3 browsers to ignore `'self'`, blocking `/__gofastr/runtime.js` unless you hash or nonce every script tag.
+
+### Trusted Types
+
+The default policy ends with `require-trusted-types-for 'script'; trusted-types gofastr`. In browsers that support Trusted Types, a plain string can no longer reach an HTML or script sink (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `DOMParser.parseFromString`, `document.write`, `eval`, a created `<script>`'s or a `Worker`'s URL): only a value made by an allowed policy passes, and only the policy named `gofastr` may be created. The runtime creates that policy (`middleware.TrustedTypesPolicy`) and routes every HTML string and script URL it writes through it; `core-ui/check`'s `LintTrustedTypesSinks` keeps the framework's own JavaScript on it. The policy checks nothing: `window.__gofastr.updateHTML`, `fetchPage` and the internal `_html` / `_scriptURL` wrappers write their caller's string, so pass them only trusted HTML.
+
+Your own scripts follow the same rule: build elements with `createElement` and `textContent`, or create a policy and name it:
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+-->
+```go
+app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeadersConfig{
+    TrustedTypesPolicies: []string{"charts"}, // trustedTypes.createPolicy('charts', {...}) in your script
+}))
+```
+
+Listing `default` only allows that name; your script still creates it with `trustedTypes.createPolicy("default", {...})`, and its callbacks decide what passes (one that returns every string unchanged lets injected strings through). `NoTrustedTypes: true` drops both directives. Both settings shape only the built-in policy; a `ContentSecurityPolicy` you set is sent as written.
+
+### Violation reports
+
+`framework.WithCSPReports(fn)` mounts `handler.CSPReportHandler` at `POST /__gofastr/csp-report` (`middleware.CSPReportPath`) and points the default chain's policy at it: a `Reporting-Endpoints: csp-endpoint="…"` header (beside any endpoints already set), `report-to csp-endpoint` and `report-uri`, and `'report-sample'` in the built-in policy. A nil `fn` logs at most 20 reports a minute at warn level.
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/handler"
+import "net/http"
+import "log/slog"
+-->
+```go
+app := framework.NewApp(framework.WithCSPReports(func(r *http.Request, rep handler.CSPReport) {
+    slog.WarnContext(r.Context(), "csp", "directive", rep.EffectiveDirective, "blocked", rep.BlockedURL)
+}))
+```
+
+The sink reads both formats (`application/reports+json`, `application/csp-report`), takes at most 64 KiB and 16 reports per request, decodes with `handler.UnmarshalStrict` (a repeated or case-folded key is a 400), escapes and caps every field at 256 bytes, and cuts URLs at their query. Anyone can post to it, so treat a report as a hint. `middleware.CSRF` lets a `POST` with a report content type through without a token, since a cross-site page cannot send either type without a preflight. To report elsewhere, set `SecurityHeadersConfig.CSPReportURI`; a policy of your own that already names `report-to` or `report-uri` is sent as written.
 
 ### Configuring the default chain's headers
 
@@ -94,7 +132,7 @@ Unset fields keep their strict defaults.
 
 ### Static exports
 
-A static export (the app binary's `--export <dir>` flag) embeds the CSP into each page via `<meta http-equiv="Content-Security-Policy">` and writes a `_headers` file for hosts like Netlify or Cloudflare Pages.
+A static export (the app binary's `--export <dir>` flag) embeds the CSP into each page via `<meta http-equiv="Content-Security-Policy">` and writes a `_headers` file for hosts like Netlify or Cloudflare Pages. It carries the same Trusted Types directives, shaped by the app's `TrustedTypesPolicies` and `NoTrustedTypes`.
 
 **The `<meta>` tag cannot enforce clickjacking protection.** Per CSP Level 3, browsers ignore `frame-ancestors` inside `<meta>` policies (and static exports emit no `X-Frame-Options` header). Hosts that ignore `_headers` (S3, GitHub Pages) serve exported pages with no clickjacking guard unless you configure your CDN to send `Content-Security-Policy` (or `X-Frame-Options: DENY`) as a real HTTP response header.
 
@@ -156,6 +194,24 @@ mux.Handle("POST /profile", handler.RefuseCrossSite(saveProfile))
 It returns `403` for non-GET/HEAD/OPTIONS requests with a form-forgeable content type (`handler.IsForgeableRequest`) coming from another site (`handler.IsCrossSiteRequest`: checks `Sec-Fetch-Site` with an `Origin`-vs-`Host` fallback, including sibling-subdomain checks). For `fetch()`-only endpoints where `Origin: null` (sandboxed iframes) should also be refused, use `handler.IsCrossSiteRequestStrict`. Leave routes that legitimately receive cross-site POSTs (such as Apple's OAuth `form_post` callback) unwrapped.
 
 **Same-site hop pages:** Because session cookies are `SameSite=Strict`, top-level links arriving from another site (email, chat) omit the cookie. Handlers that need the cookie on arrival (OAuth callbacks, email verification, guarded pages under `auth.SessionMiddleware`) return a tiny same-origin hop page (`Refresh: 0;url=...` + Continue link) using `handler.NeedsSameSiteHop` / `handler.SameSiteHopTarget` so the browser reloads same-site with the cookie attached. See [auth.md](auth.md#a-link-from-another-site-into-a-guarded-page).
+
+### Resource isolation
+
+Opt-in: `framework.WithResourceIsolation(allow)` refuses, with `403`, any request whose `Sec-Fetch-Site` names another origin (a same-site sibling included) unless it is a `GET`/`HEAD` navigation into a page or frame: a `<script>`, `<img>`, `fetch()`, form post or `<object>` from another site. Requests with no Fetch Metadata (curl, crawlers, older browsers) pass, the embed loader is always admitted, and every answer varies on the three `Sec-Fetch-*` headers so a shared cache cannot serve an allowed copy to a refused request. Admit CORS APIs, browser-called webhooks and OAuth `form_post` callbacks with `allow`:
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "net/http"
+import "strings"
+-->
+```go
+app := framework.NewApp(framework.WithResourceIsolation(func(r *http.Request) bool {
+    return strings.HasPrefix(r.URL.Path, "/api/public/") || r.URL.Path == "/auth/apple/callback"
+}))
+```
+
+Outside the default chain, wrap a handler with `handler.IsolateResources(allow)`; `handler.IsCrossOriginSubresource` is the same test as a predicate.
 
 ## Secret rotation
 
@@ -251,6 +307,7 @@ SQLite serializes writes; heavy concurrent write traffic can stall non-write req
 - `Recovery()` — panic → `500` (`no-store`) or connection close if response already started.
 - `Logging()` / `LoggingFn(getLogger)` / `LoggingWithWriter(w)` / `SampledLogging(n, slow)` / `DiscardLogging()` — request logging.
 - `SecurityHeaders(SecurityHeadersConfig)` — CSP, HSTS, frame, referrer, permissions headers.
+- `TrustedTypesDirectives(names...)` — the built-in policy's Trusted Types directives, for a policy you write yourself.
 - `CORS(CORSConfig)` — cross-origin headers and preflights.
 - `CSRF(CSRFConfig)`, `MaskCSRFToken(token)`, `VerifiedCSRFSubmission(ctx)` — double-submit CSRF protection.
 - `Compress()` — gzip compression for text responses.

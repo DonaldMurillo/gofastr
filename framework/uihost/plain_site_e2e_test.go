@@ -187,7 +187,7 @@ func TestPlainSiteShipsCoreOnly(t *testing.T) {
 	// Mutation it catches: a carve that regresses, or an un-itemised
 	// addition to frag/*.js, ships bytes to every plain page and
 	// crosses the line here first.
-	const coreLineGZ = 16944
+	const coreLineGZ = 17045
 	resp, err := http.Get(obs.URL + "/__gofastr/runtime.js")
 	if err != nil {
 		t.Fatalf("fetch runtime.js: %v", err)

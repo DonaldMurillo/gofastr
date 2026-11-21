@@ -572,7 +572,7 @@ func TestE2E_ToggleAction_RebindAfterSwap(t *testing.T) {
 		// the swap. A timer queued by the swap fires in a later task, so
 		// once it has run the scan has bound the new node and the click
 		// below exercises the rebind, not a race.
-		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = b.outerHTML; setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
+		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = window.__gofastr._html(b.outerHTML); setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
 		waitFor(`window.__swapScanned === true`),
 		chromedp.Evaluate(btn+`.click()`, nil),
 		waitFor(btn+`.getAttribute('data-state') === 'committed'`),
@@ -610,7 +610,7 @@ func TestE2E_OptimisticAction_RebindAfterSwap(t *testing.T) {
 		// the swap. A timer queued by the swap fires in a later task, so
 		// once it has run the scan has bound the new node and the click
 		// below exercises the rebind, not a race.
-		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = b.outerHTML; setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
+		chromedp.Evaluate(`(() => { window.__swapScanned = false; const b = `+btn+`; b.outerHTML = window.__gofastr._html(b.outerHTML); setTimeout(() => { window.__swapScanned = true; }, 0); })()`, nil),
 		waitFor(`window.__swapScanned === true`),
 		chromedp.Evaluate(btn+`.click()`, nil),
 		waitFor(btn+`.getAttribute('data-state') === 'committed'`),

@@ -205,7 +205,7 @@
   // paint on the first mouse navigation.
 
   const swapAtSlot = (slot, html) => {
-    slot.innerHTML = html;
+    slot.innerHTML = NS._html?.(html) ?? html;
     mergeSeedFromDOM(slot);
     NS.scanAndLoadCSS?.(slot);
     _focusSwapTarget(slot);
@@ -284,7 +284,7 @@
   // The template addressed by the bare swap key is the primary.
   const parseEnvelope = (html, primaryAddr) => {
     const tpl = document.createElement('template');
-    tpl.innerHTML = html;
+    tpl.innerHTML = NS._html?.(html) ?? html;
     const out = { seed: null, primary: { html: '' }, fills: [] };
     for (const el of tpl.content.children) {
       if (el.tagName === 'SCRIPT' && el.id === 'gofastr-signals-partial') {
@@ -330,7 +330,7 @@
   // keeps), never through fill bytes.
   const applyFillTargets = (resolved) => {
     for (const [t, f] of resolved) {
-      t.innerHTML = f.html;
+      t.innerHTML = NS._html?.(f.html) ?? f.html;
       G._paintGlobals?.(t);
       NS.scanAndLoadCSS?.(t);
     }
@@ -375,7 +375,7 @@
     const el = document.createElement('script');
     el.type = 'application/json';
     el.id = 'gofastr-signals-partial';
-    el.textContent = JSON.stringify(seed);
+    el.append(JSON.stringify(seed)); // textContent on a <script> is a Trusted Types sink
     return el;
   };
 
@@ -410,7 +410,7 @@
   // inert template: nothing in it runs or loads.
   const islandIn = (html) => {
     const t = document.createElement('template');
-    t.innerHTML = html;
+    t.innerHTML = NS._html?.(html) ?? html;
     return t.content.querySelector('script#gofastr-signals-partial');
   };
   // pageSeedIsland is a whole document's page-scoped seed island: the
@@ -965,7 +965,7 @@
           // The carrier rides <main>, so the cache entry below keeps the
           // page's language and words: a page left across shells is
           // never recaptured on leave.
-          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", NS._html?.(NS._docCarrier(pdoc)) ?? NS._docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           // The fetched head's page-scoped keys (pageSeedIsland: route.*
           // plus the names #gofastr-signals-page lists; globals keep

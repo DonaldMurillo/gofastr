@@ -281,6 +281,13 @@ type App struct {
 
 	tracing bool
 
+	isolateResources bool
+	isolateAllow     func(*http.Request) bool
+
+	cspReports  bool
+	cspReportFn func(*http.Request, handler.CSPReport)
+	cspLog      cspLogLimit
+
 	mcpIntrospection           bool
 	mcpControl                 bool
 	mcpControlGate             func(ctx context.Context) error
@@ -715,6 +722,27 @@ func WithTracing() AppOption {
 	}
 }
 
+// WithResourceIsolation adds handler.IsolateResources to the default chain:
+// a request from another origin that is not a GET or HEAD navigation is
+// answered 403 unless allow admits it. The embed loader is always admitted.
+// Incompatible with WithoutDefaultMiddleware.
+func WithResourceIsolation(allow func(*http.Request) bool) AppOption {
+	return func(a *App) {
+		a.isolateResources = true
+		a.isolateAllow = allow
+	}
+}
+
+// WithCSPReports mounts handler.CSPReportHandler at middleware.CSPReportPath
+// and, unless SecurityHeaders.CSPReportURI is set, points the default chain's
+// policy at it. fn gets each violation; nil logs it at warn level.
+func WithCSPReports(fn func(*http.Request, handler.CSPReport)) AppOption {
+	return func(a *App) {
+		a.cspReports = true
+		a.cspReportFn = fn
+	}
+}
+
 // WithI18n installs tr, also as i18n.Default, and adds locale negotiation to
 // the default chain. Incompatible with WithoutDefaultMiddleware.
 func WithI18n(tr *i18n.Translator) AppOption {
@@ -795,8 +823,17 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	shCfg := middleware.SecurityHeadersConfig{}
 	if a != nil {
 		shCfg = a.Config.SecurityHeaders
+		if a.cspReports && shCfg.CSPReportURI == "" {
+			shCfg.CSPReportURI = middleware.CSPReportPath
+		}
 	}
 	chain = append(chain, middleware.SecurityHeaders(shCfg))
+	if a != nil && a.isolateResources {
+		allow := a.isolateAllow
+		chain = append(chain, handler.IsolateResources(func(r *http.Request) bool {
+			return r.URL.Path == fembed.LoaderPath || (allow != nil && allow(r))
+		}))
+	}
 	if a == nil || !a.Config.DisableRequestTimeout {
 		chain = append(chain, middleware.Timeout(timeout))
 	}
@@ -1224,6 +1261,10 @@ func NewApp(opts ...AppOption) *App {
 	if a.noDefaults && a.metrics != nil {
 		panic("framework: WithMetrics is incompatible with WithoutDefaultMiddleware: " +
 			"mount middleware.MetricsMiddleware + middleware.MetricsHandler in your custom chain instead")
+	}
+	if a.noDefaults && a.isolateResources {
+		panic("framework: WithResourceIsolation is incompatible with WithoutDefaultMiddleware: " +
+			"mount handler.IsolateResources in your custom chain instead")
 	}
 	if a.noDefaults && a.tracing {
 		panic("framework: WithTracing is incompatible with WithoutDefaultMiddleware: " +
@@ -2389,6 +2430,53 @@ func (a *App) MountLLMMDAndDebugRoutes() (hasLLMMD bool) {
 	return hasLLMMD
 }
 
+// cspLogLimit caps the default report log: anyone can post to the sink.
+type cspLogLimit struct {
+	mu      sync.Mutex
+	window  time.Time
+	logged  int
+	dropped int
+}
+
+const (
+	cspLogPerWindow = 20
+	cspLogWindow    = time.Minute
+)
+
+func (l *cspLogLimit) take(now time.Time) (ok bool, droppedBefore int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if now.Sub(l.window) >= cspLogWindow {
+		droppedBefore, l.dropped = l.dropped, 0
+		l.window, l.logged = now, 0
+	}
+	if l.logged >= cspLogPerWindow {
+		l.dropped++
+		return false, droppedBefore
+	}
+	l.logged++
+	return true, droppedBefore
+}
+
+func (a *App) logCSPReport(r *http.Request, rep handler.CSPReport) {
+	ok, dropped := a.cspLog.take(time.Now())
+	if dropped > 0 {
+		a.Logger().WarnContext(r.Context(), "content security policy violations not logged", "dropped", dropped, "limit_per_minute", cspLogPerWindow)
+	}
+	if !ok {
+		return
+	}
+	a.Logger().WarnContext(r.Context(), "content security policy violation",
+		"directive", rep.EffectiveDirective,
+		"blocked", rep.BlockedURL,
+		"document", rep.DocumentURL,
+		"disposition", rep.Disposition,
+		"sample", rep.Sample,
+		"source", rep.SourceFile,
+		"line", rep.LineNumber,
+		"column", rep.ColumnNumber)
+}
+
 func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 	hasAPI = len(a.Registry.All()) > 0
 	if hasAPI {
@@ -2406,6 +2494,13 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 	}
 	if a.metrics != nil {
 		a.router.Get("/metrics", middleware.MetricsHandler(a.Metrics()))
+	}
+	if a.cspReports {
+		fn := a.cspReportFn
+		if fn == nil {
+			fn = a.logCSPReport
+		}
+		a.router.Handle("POST", middleware.CSPReportPath, handler.CSPReportHandler(fn))
 	}
 
 	hasLLMMD = a.MountLLMMDAndDebugRoutes()

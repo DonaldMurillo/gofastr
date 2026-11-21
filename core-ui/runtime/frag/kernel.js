@@ -257,6 +257,13 @@
     return typeof t === 'function' ? t(input, init) : fetch(input, init);
   };
 
+  // Trusted Types: the one policy (core/middleware.TrustedTypesPolicy) for every
+  // HTML write and script URL; see the runtime primitive's registry entry.
+  let _tp;
+  try { _tp = trustedTypes.createPolicy('gofastr', { createHTML: String, createScriptURL: String }); } catch (_) {}
+  const _html = (s) => _tp?.createHTML(s ?? '') ?? s;
+  const _scriptURL = (u) => _tp?.createScriptURL(u) ?? u;
+
   // -----------------------------------------------------------------------
   // Public API: kernel members only. Core fragments and demand modules add
   // their namespace members via Object.assign. Optional code therefore leaves
@@ -273,6 +280,8 @@
         module loaded into an older kernel sends none; nav.js spells the
         same value as a literal. */
     _markup: '2',
+    _html,
+    _scriptURL,
 
     /** fetch through the host transport when a host installed one.
         Same-origin requests from modules, batteries and app scripts go
@@ -401,7 +410,7 @@
     /** Update innerHTML of first element matching selector */
     updateHTML(selector, html) {
       const el = document.querySelector(selector);
-      if (el) el.innerHTML = html;
+      if (el) el.innerHTML = _html(html);
     },
 
     /** Set an attribute on first element matching selector */
@@ -439,7 +448,7 @@
       const html = await r.text();
       if (selector) {
         const el = document.querySelector(selector);
-        if (el) el.innerHTML = html;
+        if (el) el.innerHTML = _html(html);
       }
       return html;
     },
@@ -586,7 +595,7 @@
     // so swapping first and linking after flashed nearly every new page
     // unstyled.
     _cssReady(src) {
-      return this._sheetsFor(typeof src == 'string' ? new DOMParser().parseFromString(src, 'text/html') : src);
+      return this._sheetsFor(typeof src == 'string' ? new DOMParser().parseFromString(_html(src), 'text/html') : src);
     },
     _idleQueue: [],
     _idleFlushing: false,

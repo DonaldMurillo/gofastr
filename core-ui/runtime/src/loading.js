@@ -176,7 +176,7 @@
         }
         if (!tpl && isSlot && rl && rl.html) {
           tpl = document.createElement('template');
-          tpl.innerHTML = rl.html;
+          tpl.innerHTML = NS._html?.(rl.html) ?? rl.html;
           after = rl.after || 0;
           min = rl.min || 0;
         }

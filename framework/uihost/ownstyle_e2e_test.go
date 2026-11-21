@@ -214,9 +214,9 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 			chromedp.Evaluate(`(() => {
 				if (document.querySelector('link[href*="tie-kit"], [data-cui-bundle*="tie-kit"]')) return 'kit already in head';
 				const p = document.getElementById('lazy');
-				p.insertAdjacentHTML('afterend',
+				p.insertAdjacentHTML('afterend', window.__gofastr._html(
 					'<p class="tie" id="lazy-in">t</p>' +
-					'<div data-cui-internal data-cui-comp="tie-kit"><p class="tie" id="lazy-out">k</p></div>');
+					'<div data-cui-internal data-cui-comp="tie-kit"><p class="tie" id="lazy-out">k</p></div>'));
 				window.__gofastr.scanAndLoadCSS(p.parentNode);
 				return 'ok';
 			})()`, nil),

@@ -107,9 +107,13 @@ const workerProfileHostProbeJS = `(function () {
 			set(id, d.eval + "/" + d.wasm);
 		};
 	};
-	const on = new Worker("/__wp/on.js");
+	// The default CSP enforces Trusted Types and allows the one policy name
+	// the runtime uses; this page has no runtime, so it creates that policy.
+	const tt = window.trustedTypes ? trustedTypes.createPolicy("gofastr", { createScriptURL: String }) : null;
+	const url = function (u) { return tt ? tt.createScriptURL(u) : u; };
+	const on = new Worker(url("/__wp/on.js"));
 	on.onmessage = report("on");
-	const off = new Worker("/__wp/off.js");
+	const off = new Worker(url("/__wp/off.js"));
 	off.onmessage = report("off");
 })();
 `

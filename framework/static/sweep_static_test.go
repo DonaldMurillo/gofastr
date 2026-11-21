@@ -22,7 +22,7 @@ import (
 )
 
 func TestSweepStaticDefaultCSPDirectives(t *testing.T) {
-	for _, d := range []string{"default-src 'self'", "object-src 'none'", "form-action 'self'", "frame-ancestors 'none'", "base-uri 'none'", "worker-src 'self'"} {
+	for _, d := range []string{"default-src 'self'", "object-src 'none'", "form-action 'self'", "frame-ancestors 'none'", "base-uri 'none'", "worker-src 'self'", "require-trusted-types-for 'script'", "trusted-types gofastr"} {
 		if !strings.Contains(staticExportCSP, d) {
 			t.Errorf("the default export policy lacks %s: %s", d, staticExportCSP)
 		}
@@ -535,4 +535,16 @@ func (f sweepUnstattableFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrPermission}
 	}
 	return f.MapFS.Stat(name)
+}
+
+func TestExportFollowsTrustedTypesSettings(t *testing.T) {
+	if got := (&Builder{TrustedTypesPolicies: []string{"charts"}}).policy(); !strings.HasSuffix(got, "trusted-types gofastr charts") {
+		t.Errorf("an extra policy name is not in the export policy: %q", got)
+	}
+	if got := (&Builder{NoTrustedTypes: true}).policy(); strings.Contains(got, "trusted-types") {
+		t.Errorf("NoTrustedTypes kept a Trusted Types directive: %q", got)
+	}
+	if got := (&Builder{ContentSecurityPolicy: "default-src 'self'", NoTrustedTypes: true}).policy(); got != "default-src 'self'" {
+		t.Errorf("a configured policy was rewritten: %q", got)
+	}
 }

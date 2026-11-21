@@ -1,7 +1,9 @@
 primitive: middleware.headers
-summary: SecurityHeaders, the strict default set of browser security headers with HTTPS-only HSTS.
+summary: SecurityHeaders, the strict default set of browser security headers with HTTPS-only HSTS, and the CSP violation report sink.
 code:
   - core/middleware/security.go
+  - core/middleware/cspreport.go
+  - core/handler/cspreport.go
 docs:
   - framework/docs/content/security.md
 on_change:
@@ -23,11 +25,49 @@ invariants:
     enforced_by:
       - test: core/middleware.TestSecurityHeaders_CORPPresent
       - test: core/middleware.TestSecurityHeaders_COOPPresent
+  - id: default-csp-enforces-trusted-types
+    rule: Unless NoTrustedTypes is set, the default policy contains require-trusted-types-for 'script' and trusted-types naming TrustedTypesPolicy then each TrustedTypesPolicies name once, a name outside the trusted-types grammar panics, and the Trusted Types settings never rewrite a ContentSecurityPolicy the host sets (only CSPReportURI appends reporting directives to it).
+    enforced_by:
+      - test: core/middleware.TestDefaultCSPEnforcesTrustedTypes
+      - test: core/middleware.TestTrustedTypesPolicyNameIsChecked
+  - id: csp-reporting-opt-in
+    rule: With CSPReportURI set, SecurityHeaders defines CSPReportEndpoint in Reporting-Endpoints beside any endpoints an outer handler set (keeping one already named so), adds report-to and report-uri to each comma-separated policy that names neither and leaves one that names either as written, adds 'report-sample' to the default policy's default-src, and panics on a URI holding a space, quote, comma, semicolon, backslash or control byte; with it unset no reporting header or directive is sent.
+    enforced_by:
+      - test: core/middleware.TestCSPReportingHeaders
+      - test: core/middleware.TestCSPReportingKeepsHostDirectives
+      - test: core/middleware.TestReportingEndpointsKeepsOuterEndpoints
+      - test: core/middleware.TestCSPReportingSeesTabSeparatedDirectives
+      - test: core/middleware.TestCSPReportURIRefusesHeaderBreakers
+  - id: report-sink-is-bounded
+    rule: handler.CSPReportHandler takes only a POST of application/reports+json or application/csp-report up to 64 KiB, decodes it with UnmarshalStrict so a duplicate or case-folded key is a 400, passes at most 16 csp-violation entries per request, cuts URLs at their query, and escapes control bytes in every field before capping it at 256 bytes.
+    enforced_by:
+      - test: core/handler.TestCSPReportHandler
+      - test: core/handler.TestCSPReportHandlerRefusesSmuggledKeys
   - id: xss-auditor-disabled
     rule: "SecurityHeaders sends X-XSS-Protection: 0."
     enforced_by:
       - test: core/middleware.TestSweepSecurityHeadersDisableXSSAuditor
 decisions:
+  - id: trusted-types-on-by-default
+    date: 2026-11-21
+    status: accepted
+    decision: The default policy enforces Trusted Types, with NoTrustedTypes as the off switch and TrustedTypesPolicies for an app's own policy names.
+    rejected:
+      - option: Report-only first.
+        why: The runtime's own sinks all go through the policy, and a browser without Trusted Types ignores the directives; an app script that writes raw HTML finds out on the first page it loads, with the off switch one field away.
+      - option: Add the directives to a host's own ContentSecurityPolicy.
+        why: A policy the host sets is otherwise left alone by this middleware, which only appends reporting directives when CSPReportURI asks for them; TrustedTypesDirectives gives the host the two directives to add.
+    upholds: [default-csp-enforces-trusted-types]
+  - id: report-both-ways
+    date: 2026-11-21
+    status: accepted
+    decision: Reporting sends both report-to with a Reporting-Endpoints header and report-uri, to one sink that reads both formats.
+    rejected:
+      - option: report-to alone.
+        why: Not every browser reads Reporting-Endpoints, and Chrome sends Reporting API reports only to a secure endpoint, so plain-HTTP development would get none.
+      - option: Keep the document query in the report.
+        why: Page URLs carry tokens (password reset, email verify, signed links), and a log line is the wrong place for them.
+    upholds: [csp-reporting-opt-in, report-sink-is-bounded]
   - id: xss-auditor-off
     date: 2026-11-18
     status: accepted
