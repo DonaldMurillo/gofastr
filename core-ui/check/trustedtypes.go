@@ -18,8 +18,8 @@ var (
 
 // LintTrustedTypesSinks fires on an HTML sink (innerHTML, outerHTML or
 // srcdoc assignment, insertAdjacentHTML, parseFromString) whose value is
-// not a call of _html, on a Worker or a created script element's src whose URL
-// is not a call of _scriptURL, on a created script element's text assigned
+// not wholly a call of _html, on a Worker or a created script element's src
+// (property or attribute) whose URL is not wholly a call of _scriptURL, on a created script element's text assigned
 // with textContent, innerText or text, and on a sink no policy covers
 // (document.write, eval, new Function, importScripts, setHTMLUnsafe,
 // createContextualFragment). Under the default require-trusted-types-for
@@ -31,30 +31,30 @@ func LintTrustedTypesSinks(roots ...string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	const fix = "; wrap the value in the runtime's policy (kernel: _html(s) / _scriptURL(u); a module: NS._html?.(s) ?? s), since the default CSP's require-trusted-types-for 'script' makes a raw string throw"
+	const fix = "; wrap the server-rendered value in the runtime's policy (kernel: _html(s) / _scriptURL(u); a module: NS._html?.(s) ?? s), since the default CSP's require-trusted-types-for 'script' makes a raw string throw. Never wrap text from the URL, storage or user input: build that with textContent"
 	for _, f := range files {
 		for _, loc := range reTTHTMLAssign.FindAllStringIndex(f.Blank, -1) {
 			match := f.Blank[loc[0]:loc[1]]
 			eq := loc[0] + strings.LastIndex(match, "=")
-			if strings.Contains(match, "+=") || !reTTHTMLCall.MatchString(strings.TrimLeft(f.Code[eq+1:], " \t\r\n")) {
+			if strings.Contains(match, "+=") || !wrapsWhole(f, eq+1, len(f.Blank), reTTHTMLCall) {
 				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] an HTML property is assigned a raw string"+fix)
 			}
 		}
 		for _, loc := range reTTAdjacent.FindAllStringIndex(f.Blank, -1) {
-			args := callArgs(f, loc[1]-1)
-			if len(args) < 2 || !reTTHTMLCall.MatchString(args[1]) {
+			args := callArgSpans(f, loc[1]-1)
+			if len(args) < 2 || !wrapsWhole(f, args[1][0], args[1][1], reTTHTMLCall) {
 				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] insertAdjacentHTML is passed a raw string"+fix)
 			}
 		}
 		for _, loc := range reTTParse.FindAllStringIndex(f.Blank, -1) {
-			args := callArgs(f, loc[1]-1)
-			if len(args) < 1 || !reTTHTMLCall.MatchString(args[0]) {
+			args := callArgSpans(f, loc[1]-1)
+			if len(args) < 1 || !wrapsWhole(f, args[0][0], args[0][1], reTTHTMLCall) {
 				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] parseFromString is passed a raw string"+fix)
 			}
 		}
 		for _, loc := range reTTWorker.FindAllStringIndex(f.Blank, -1) {
-			args := callArgs(f, loc[1]-1)
-			if len(args) < 1 || !reTTScriptURLArg.MatchString(args[0]) {
+			args := callArgSpans(f, loc[1]-1)
+			if len(args) < 1 || !wrapsWhole(f, args[0][0], args[0][1], reTTScriptURLArg) {
 				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a Worker is given a raw script URL"+fix)
 			}
 		}
@@ -65,11 +65,19 @@ func LintTrustedTypesSinks(roots ...string) (*Result, error) {
 			}
 			seen[m[1]] = true
 			name := regexp.QuoteMeta(m[1])
-			re := regexp.MustCompile(`(?:^|[^\w$.])` + name + `\s*\.\s*src\s*=[^=]`)
-			for _, loc := range re.FindAllStringIndex(f.Blank, -1) {
+			src := regexp.MustCompile(`(?:^|[^\w$.])` + name + `\s*\.\s*src\s*=[^=]`)
+			for _, loc := range src.FindAllStringIndex(f.Blank, -1) {
 				eq := loc[0] + strings.LastIndex(f.Blank[loc[0]:loc[1]], "=")
-				if !reTTScriptURLArg.MatchString(strings.TrimLeft(f.Code[eq+1:], " \t\r\n")) {
+				if !wrapsWhole(f, eq+1, len(f.Blank), reTTScriptURLArg) {
 					res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a created script element's src is assigned a raw URL"+fix)
+				}
+			}
+			attr := regexp.MustCompile(`(?:^|[^\w$.])` + name + `\s*\.\s*setAttribute\s*\(`)
+			for _, loc := range attr.FindAllStringIndex(f.Blank, -1) {
+				args := callArgSpans(f, loc[1]-1)
+				if len(args) == 2 && strings.Trim(strings.ToLower(f.Code[args[0][0]:args[0][1]]), `'"`) == "src" &&
+					!wrapsWhole(f, args[1][0], args[1][1], reTTScriptURLArg) {
+					res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a created script element's src attribute is set to a raw URL"+fix)
 				}
 			}
 			text := regexp.MustCompile(`(?:^|[^\w$.])` + name + `\s*\.\s*(?:textContent|innerText|text)\s*=[^=]`)
@@ -85,14 +93,36 @@ func LintTrustedTypesSinks(roots ...string) (*Result, error) {
 	return res, nil
 }
 
-// callArgs splits the arguments of the call whose '(' is at open in f's
-// comment-free source, at top-level commas, each trimmed.
-func callArgs(f jsSource, open int) []string {
+// wrapsWhole reports whether the expression starting at from (before end) is
+// one call matching call, optionally followed by a ?? fallback, and not a
+// call combined with more by an operator: _html(a) + b is still a string.
+func wrapsWhole(f jsSource, from, end int, call *regexp.Regexp) bool {
+	for from < end && strings.IndexByte(" \t\r\n", f.Code[from]) >= 0 {
+		from++
+	}
+	m := call.FindStringIndex(f.Code[from:end])
+	if m == nil {
+		return false
+	}
+	closeAt := matchDelimForward(f.Blank, from+m[1]-1)
+	if closeAt < 0 || closeAt >= end {
+		return false
+	}
+	rest := strings.TrimLeft(f.Blank[closeAt+1:end], " \t\r\n")
+	if rest == "" || strings.HasPrefix(rest, "??") {
+		return true
+	}
+	return strings.IndexByte("+-*/%&|^?:.[<>=`", rest[0]) < 0
+}
+
+// callArgSpans returns the [start, end) offsets of each argument of the call
+// whose '(' is at open in f's comment-free source, split at top-level commas.
+func callArgSpans(f jsSource, open int) [][2]int {
 	end := matchDelimForward(f.Blank, open)
 	if end < 0 {
 		return nil
 	}
-	var out []string
+	var out [][2]int
 	depth, from := 0, open+1
 	for i := open + 1; i < end; i++ {
 		switch f.Blank[i] {
@@ -102,10 +132,20 @@ func callArgs(f jsSource, open int) []string {
 			depth--
 		case ',':
 			if depth == 0 {
-				out = append(out, strings.TrimSpace(f.Code[from:i]))
+				out = append(out, trimSpan(f, from, i))
 				from = i + 1
 			}
 		}
 	}
-	return append(out, strings.TrimSpace(f.Code[from:end]))
+	return append(out, trimSpan(f, from, end))
+}
+
+func trimSpan(f jsSource, from, end int) [2]int {
+	for from < end && strings.IndexByte(" \t\r\n", f.Code[from]) >= 0 {
+		from++
+	}
+	for end > from && strings.IndexByte(" \t\r\n", f.Code[end-1]) >= 0 {
+		end--
+	}
+	return [2]int{from, end}
 }

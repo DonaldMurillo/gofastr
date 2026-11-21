@@ -30,10 +30,11 @@ invariants:
       - test: core/middleware.TestDefaultCSPEnforcesTrustedTypes
       - test: core/middleware.TestTrustedTypesPolicyNameIsChecked
   - id: csp-reporting-opt-in
-    rule: With CSPReportURI set, SecurityHeaders sends Reporting-Endpoints naming it CSPReportEndpoint, adds report-to and report-uri to each comma-separated policy that lacks them, adds 'report-sample' to the default policy's default-src, and panics on a URI holding a space, quote, comma, semicolon, backslash or control byte; with it unset no reporting header or directive is sent.
+    rule: With CSPReportURI set, SecurityHeaders defines CSPReportEndpoint in Reporting-Endpoints beside any endpoints an outer handler set (keeping one already named so), adds report-to and report-uri to each comma-separated policy that names neither and leaves one that names either as written, adds 'report-sample' to the default policy's default-src, and panics on a URI holding a space, quote, comma, semicolon, backslash or control byte; with it unset no reporting header or directive is sent.
     enforced_by:
       - test: core/middleware.TestCSPReportingHeaders
       - test: core/middleware.TestCSPReportingKeepsHostDirectives
+      - test: core/middleware.TestReportingEndpointsKeepsOuterEndpoints
       - test: core/middleware.TestCSPReportURIRefusesHeaderBreakers
   - id: report-sink-is-bounded
     rule: CSPReportHandler takes only a POST of application/reports+json or application/csp-report up to 64 KiB, passes at most 16 csp-violation entries per request, cuts URLs at their query, and escapes control bytes in every field before capping it at 256 bytes.

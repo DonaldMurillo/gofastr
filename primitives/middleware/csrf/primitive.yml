@@ -9,7 +9,7 @@ docs:
   - framework/docs/content/security.md
 invariants:
   - id: csp-report-post-skips-csrf
-    rule: CSRF lets a POST to exactly CSPReportPath through without a token, because a browser's violation report carries none and the sink changes no state.
+    rule: CSRF lets a POST whose media type is application/reports+json or application/csp-report through without a token, at any path, because a browser's violation report carries none and a cross-site page cannot send either type without a CORS preflight; any other content type at the report path still needs its token.
     enforced_by:
       - test: core/middleware.TestCSRFLetsCSPReportsThrough
   - id: host-prefix-on-secure-requests

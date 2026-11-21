@@ -29,8 +29,9 @@ type SecurityHeadersConfig struct {
 	Secure bool
 
 	// CSPReportURI, when set, is where browsers send policy violation reports: it is named
-	// CSPReportEndpoint in a Reporting-Endpoints header, each policy that lacks them gains
-	// report-to and report-uri, and the default policy gains 'report-sample'.
+	// CSPReportEndpoint in Reporting-Endpoints (beside any endpoints already set), each policy
+	// that names neither report-to nor report-uri gains both, and the default policy gains
+	// 'report-sample'.
 	CSPReportURI string
 
 	// TrustedTypesPolicies names more Trusted Types policies the default policy lets page
@@ -99,7 +100,7 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h := w.Header()
 			h.Set("Content-Security-Policy", csp)
 			if reportingEndpoints != "" {
-				h.Set("Reporting-Endpoints", reportingEndpoints)
+				h.Set("Reporting-Endpoints", mergeReportingEndpoints(h.Get("Reporting-Endpoints"), reportingEndpoints))
 			}
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("Referrer-Policy", referrer)
@@ -155,16 +156,29 @@ func withCSPReporting(csp, uri string) string {
 				hasURI = true
 			}
 		}
-		p := strings.TrimRight(strings.TrimSpace(part), "; ")
-		if !hasTo {
-			p += "; report-to " + CSPReportEndpoint
+		if hasTo || hasURI {
+			parts[i] = strings.TrimSpace(part)
+			continue
 		}
-		if !hasURI {
-			p += "; report-uri " + uri
-		}
-		parts[i] = p
+		parts[i] = strings.TrimRight(strings.TrimSpace(part), "; ") + "; report-to " + CSPReportEndpoint + "; report-uri " + uri
 	}
 	return strings.Join(parts, ", ")
+}
+
+// mergeReportingEndpoints adds ours to an endpoint list an outer handler set,
+// unless that list already defines CSPReportEndpoint.
+func mergeReportingEndpoints(existing, ours string) string {
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return ours
+	}
+	for _, member := range strings.Split(existing, ",") {
+		name, _, _ := strings.Cut(strings.TrimSpace(member), "=")
+		if strings.TrimSpace(name) == CSPReportEndpoint {
+			return existing
+		}
+	}
+	return existing + ", " + ours
 }
 
 // TrustedTypesDirectives returns the default policy's Trusted Types directives,

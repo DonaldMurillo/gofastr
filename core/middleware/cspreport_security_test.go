@@ -32,18 +32,42 @@ func TestCSPReportingHeaders(t *testing.T) {
 	}
 }
 
+// A policy that already reports somewhere is left alone: adding report-to
+// beside a host's report-uri would make Chrome stop using the report-uri.
 func TestCSPReportingKeepsHostDirectives(t *testing.T) {
 	cfg := SecurityHeadersConfig{
-		ContentSecurityPolicy: "default-src 'self'; report-uri https://r.example/a, script-src 'self'; report-to mine;",
+		ContentSecurityPolicy: "default-src 'self'; report-uri https://r.example/a, script-src 'self'; report-to mine, img-src 'self';",
 		CSPReportURI:          "https://r.example/b",
 	}
 	w := httptest.NewRecorder()
 	SecurityHeaders(cfg)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	got := w.Header().Get("Content-Security-Policy")
-	want := "default-src 'self'; report-uri https://r.example/a; report-to " + CSPReportEndpoint +
-		", script-src 'self'; report-to mine; report-uri https://r.example/b"
+	want := "default-src 'self'; report-uri https://r.example/a, script-src 'self'; report-to mine, " +
+		"img-src 'self'; report-to " + CSPReportEndpoint + "; report-uri https://r.example/b"
 	if got != want {
 		t.Fatalf("CSP\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestReportingEndpointsKeepsOuterEndpoints(t *testing.T) {
+	ours := CSPReportEndpoint + `="` + CSPReportPath + `"`
+	for _, tc := range []struct{ outer, want string }{
+		{"", ours},
+		{`nel="https://r.example/nel"`, `nel="https://r.example/nel", ` + ours},
+		{CSPReportEndpoint + `="https://r.example/csp"`, CSPReportEndpoint + `="https://r.example/csp"`},
+	} {
+		h := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+		outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tc.outer != "" {
+				w.Header().Set("Reporting-Endpoints", tc.outer)
+			}
+			SecurityHeaders(SecurityHeadersConfig{CSPReportURI: CSPReportPath})(h).ServeHTTP(w, r)
+		})
+		w := httptest.NewRecorder()
+		outer.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+		if got := w.Header().Get("Reporting-Endpoints"); got != tc.want {
+			t.Errorf("outer %q: Reporting-Endpoints = %q, want %q", tc.outer, got, tc.want)
+		}
 	}
 }
 
@@ -138,17 +162,26 @@ func TestCSRFLetsCSPReportsThrough(t *testing.T) {
 		reached = true
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	r := httptest.NewRequest("POST", CSPReportPath, strings.NewReader("[]"))
-	r.Header.Set("Content-Type", "application/reports+json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	if !reached {
-		t.Fatalf("CSRF refused a violation report with %d", w.Code)
+	for _, ct := range []string{"application/reports+json", "application/csp-report; charset=utf-8"} {
+		reached = false
+		r := httptest.NewRequest("POST", "/internal/csp", strings.NewReader("[]"))
+		r.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if !reached {
+			t.Fatalf("CSRF refused a %s violation report with %d", ct, w.Code)
+		}
 	}
-	reached = false
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", CSPReportPath+"x", nil))
-	if reached {
-		t.Fatal("CSRF exemption reaches past the report path")
+	// A form-shaped post to the sink's path still needs its token.
+	for _, ct := range []string{"application/x-www-form-urlencoded", "text/plain", ""} {
+		reached = false
+		r := httptest.NewRequest("POST", CSPReportPath, strings.NewReader("a=b"))
+		if ct != "" {
+			r.Header.Set("Content-Type", ct)
+		}
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		if reached {
+			t.Fatalf("CSRF let a %q post through on the report path", ct)
+		}
 	}
 }

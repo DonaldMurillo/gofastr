@@ -11,7 +11,8 @@ served with `uihost.ScriptHandler` and registered with
 `handler.GetUser`, and the `featureflag.Store` seam. The default CSP
 (`default-src 'self'`) stays intact, no `connect-src`/`script-src`
 exceptions, no third-party cookies on your origin, and no inline JS
-anywhere.
+anywhere. The one addition is a Trusted Types policy for the vendor's
+own script loads ([Trusted Types](#trusted-types)).
 
 ## The pattern
 
@@ -39,10 +40,15 @@ app.RegisterPlugin(relay.New(relay.Config{
 
 // 2. The bootstrap: host-authored JS, served as a versioned external
 //    script and emitted on every full-page render, after runtime.js.
-js := []byte("/* configure the SDK, load it through the relay, wire pageviews + identity */")
+js := []byte("/* configure the SDK, wire pageviews + identity once it has run */")
 app.Router().Get("/fp/analytics.js", uihost.ScriptHandler(js))
 if err := host.RegisterExternalScript(uihost.ScriptURL("/fp/analytics.js", js)); err != nil {
 	panic(err) // refused only once serving has begun; wire in main or plugin Init
+}
+
+// 3. The SDK itself, through the relay, as the next tag after the bootstrap.
+if err := host.RegisterExternalScript("/__gofastr/t/v-assets/sdk.js"); err != nil {
+	panic(err)
 }
 ```
 
@@ -61,8 +67,54 @@ What each piece buys you:
   plugin's `Init`. (`uihost.WithExtraScripts` is the construction-time
   equivalent, held to the same same-origin grammar: a src with a scheme,
   a host or a `//cdn…` prefix is dropped with a warning, never shipped.)
+- Both tags are `defer` scripts, which run in the order they were
+  registered and before `DOMContentLoaded`. The bootstrap sets the
+  SDK's configuration, and its `DOMContentLoaded` listener finds the SDK
+  loaded. Rendering the SDK's tag on the server, rather than creating
+  a `<script>` element in the bootstrap, keeps the bootstrap clear of a
+  Trusted Types sink.
 - Use `relay.Base()` when composing URLs server-side instead of
   hard-coding the mount prefix.
+
+### Trusted Types
+
+The default CSP enforces Trusted Types
+([security](security.md#trusted-types)): a script that sets a created
+`<script>`'s `src`, or writes `innerHTML`, from a plain string throws.
+Your bootstrap avoids both by letting the server render the SDK's tag.
+A vendor SDK usually loads more of its own scripts later (PostHog's
+session replay and toolbar, for example), and those writes come from the
+vendor's code. Give them a `default` policy in the bootstrap that admits
+only script URLs under the relay's assets route, and let the app create
+it:
+
+```js
+if (window.trustedTypes) {
+  trustedTypes.createPolicy('default', {
+    createScriptURL: function (u) {
+      var url = new URL(u, location.href);
+      if (url.origin === location.origin && url.pathname.indexOf('/__gofastr/t/v-assets/') === 0) return u;
+      throw new TypeError('script URL refused: ' + u);
+    },
+  });
+}
+```
+
+<!-- gofastr:compile
+stmt: _ = app
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/core/middleware"
+-->
+```go
+app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeadersConfig{
+	TrustedTypesPolicies: []string{"default"},
+}))
+```
+
+The browser hands every plain string from any script to the `default`
+policy. This one has no `createHTML`, so plain-string HTML writes are
+still refused, and a script URL outside the vendor's assets route is
+refused too.
 
 The recipes below only differ in the route table, the SDK configuration,
 and the identity calls.
@@ -206,7 +258,9 @@ built from the connection's real peer, never from inbound headers, which
 is what PostHog resolves geo from. Nothing to configure. Do not override
 `relay.Config.ClientIP` with anything that reads inbound headers.
 
-The bootstrap, whole:
+The bootstrap, whole. Register it, then the SDK
+(`/__gofastr/t/ph-assets/array.js`), as the pattern above shows,
+and add `"default"` to `TrustedTypesPolicies`:
 
 ```js
 (function () {
@@ -214,10 +268,19 @@ The bootstrap, whole:
   var API = '/__gofastr/t/ph';
   var ASSETS = '/__gofastr/t/ph-assets';
 
-  var s = document.createElement('script');
-  s.src = ASSETS + '/array.js';
-  s.async = true;
-  s.onload = function () {
+  // PostHog loads replay and toolbar scripts itself: admit only its assets route.
+  if (window.trustedTypes) {
+    trustedTypes.createPolicy('default', {
+      createScriptURL: function (u) {
+        var url = new URL(u, location.href);
+        if (url.origin === location.origin && url.pathname.indexOf(ASSETS + '/') === 0) return u;
+        throw new TypeError('script URL refused: ' + u);
+      },
+    });
+  }
+
+  // The SDK is the next deferred tag, so it has run by DOMContentLoaded.
+  document.addEventListener('DOMContentLoaded', function () {
     var ph = window.posthog;
     if (!ph) return;
     ph.init('<phc_project_api_key>', {
@@ -245,8 +308,7 @@ The bootstrap, whole:
       var path = (e.detail && e.detail.path) || location.pathname;
       ph.capture('$pageview', { $current_url: location.origin + path });
     });
-  };
-  document.head.appendChild(s);
+  });
 })();
 ```
 

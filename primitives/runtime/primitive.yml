@@ -160,6 +160,8 @@ decisions:
         why: Every string the runtime writes is markup the app's own server rendered, so a sanitizer would only cost bytes and break trusted markup; the policy's job is to stop every other writer.
       - option: A default policy.
         why: A browser hands every plain string from any script to the default policy, so a pass-through one would accept injected strings and the enforcement would protect nothing.
+      - option: Keep _html and _scriptURL private to the kernel's closure.
+        why: Demand modules and the headless behaviours are separate scripts that load after the kernel, so they reach the policy through window.__gofastr; the wrappers are documented as internal and the lint checks every framework sink's whole value.
       - option: Refuse script URLs that are not same-origin paths.
         why: Every runtime script URL is built from a fixed /__gofastr/ prefix and a name the loader already pins, and the check cost 29 bytes at level 1 in a core already at its window.
     upholds: [sinks-go-through-the-trusted-types-policy]

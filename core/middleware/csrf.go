@@ -195,10 +195,14 @@ func CSRF(cfg CSRFConfig) Middleware {
 	}
 }
 
-// isCSPReportPost is a browser's violation report: it carries no token,
-// and the sink changes no state.
+// isCSPReportPost is a browser's violation report: it carries no token, and
+// its content type is one a cross-site page cannot send without a preflight.
 func isCSPReportPost(r *http.Request) bool {
-	return r.Method == http.MethodPost && r.URL.Path == CSPReportPath
+	if r.Method != http.MethodPost {
+		return false
+	}
+	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return ct == "application/reports+json" || ct == "application/csp-report"
 }
 
 func isSafeMethod(method string) bool {

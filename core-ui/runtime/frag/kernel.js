@@ -257,12 +257,8 @@
     return typeof t === 'function' ? t(input, init) : fetch(input, init);
   };
 
-  // -----------------------------------------------------------------------
-  // Trusted Types: every HTML string and script URL the runtime hands the
-  // DOM passes through the one 'gofastr' policy, the name the default CSP
-  // allows (core/middleware.TrustedTypesPolicy). No policy (an older
-  // browser) passes values through.
-  // -----------------------------------------------------------------------
+  // Trusted Types: the one policy (core/middleware.TrustedTypesPolicy) for every
+  // HTML write and script URL; see the runtime primitive's registry entry.
   let _tp;
   try { _tp = trustedTypes.createPolicy('gofastr', { createHTML: String, createScriptURL: String }); } catch (_) {}
   const _html = (s) => _tp?.createHTML(s ?? '') ?? s;

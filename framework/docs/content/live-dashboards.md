@@ -307,14 +307,14 @@ What SSE reconnect **does not** do:
   document.addEventListener('gofastr:sse-status', (ev) => {
     if (!ev.detail.connected) return;
     // The stream just reconnected. Refetch the current island HTML.
-    fetch("/__site/livedash/refresh?island=stats")
-      .then(r => r.text())
-      .then(html => {
-        const el = document.querySelector('[data-island="livedash-stats"]');
-        if (el) el.innerHTML = html;
-      });
+    window.__gofastr.fetchPage("/__site/livedash/refresh?island=stats",
+      '[data-island="livedash-stats"]');
   });
   ```
+
+  `fetchPage` writes the answer through the runtime's Trusted Types
+  policy. Under the default CSP an `el.innerHTML = html` of your own
+  throws ([security](security.md#trusted-types)).
 
   The `/__site/livedash/refresh` endpoint is exactly this reconcile
   surface; the dashboard ships it but does not wire the listener, so the

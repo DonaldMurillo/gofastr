@@ -5,6 +5,10 @@ code:
 docs:
   - framework/docs/content/admin.md
 invariants:
+  - id: admin-keeps-the-app-security-headers
+    rule: Every answer under the admin prefix is no-store and carries the app's own Content-Security-Policy when the app's chain set one, and the default security headers when it set none.
+    enforced_by:
+      - test: battery/admin.TestAdminKeepsTheAppSecurityHeaders
   - id: one-new-link-gate
     rule: The dashboard, its count fragment and the palette offer an entity's New link through one check, canCreateEntity, which needs the caller to read and to create the entity and the admin to serve its writes.
     enforced_by:

@@ -338,8 +338,10 @@ The policy is the one the app serves live:
 worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none';
 require-trusted-types-for 'script'; trusted-types gofastr`) when it
 is unset. `App.ExportStatic` passes it as
-`static.Builder.ContentSecurityPolicy`; a builder built by hand sets
-that field. An app that allows `font-src https://fonts.gstatic.com`
+`static.Builder.ContentSecurityPolicy`, and the built-in policy's
+Trusted Types settings (`TrustedTypesPolicies`, `NoTrustedTypes`) as the
+builder's fields of the same names; a builder built by hand sets those
+fields. An app that allows `font-src https://fonts.gstatic.com`
 live gets the same font host on the static site.
 
 `_headers` carries the value as written. The `<meta>` differs in two

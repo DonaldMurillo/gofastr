@@ -169,10 +169,16 @@ The runtime creates the `gofastr` policy when it starts
 it writes goes through it: page swaps, partial and poll updates, signal
 regions in `html` mode, module and behaviour scripts, the service
 worker. The markup comes from your own server, so the policy passes it
-through unchanged. What the policy adds is the guarantee that nothing
-else on the page writes HTML from a string. `core-ui/check`'s
-`LintTrustedTypesSinks` keeps the framework's own JavaScript on the
-policy.
+through unchanged. What enforcement adds is that a plain string can no
+longer reach a sink by accident: an injected value has to pass through
+the policy on its way, and the framework passes only markup its server
+rendered. The runtime's modules load as separate scripts, so the
+wrappers are reachable as `window.__gofastr._html` and `_scriptURL`.
+They are internal and check nothing: code that hands them text from the
+URL, storage or a user re-opens the hole the directive closed.
+`core-ui/check`'s `LintTrustedTypesSinks` keeps the framework's own
+JavaScript on the policy and checks that each sink's whole value is the
+policy call.
 
 Your own page scripts follow the same rule. Build elements with
 `createElement` and `textContent`, or fill a `<template>` the server
@@ -280,7 +286,7 @@ stmt: _ = app
 import "github.com/DonaldMurillo/gofastr/framework"
 -->
 ```go
-app := framework.NewApp(framework.WithCSPReports(nil)) // nil: log each report at warn level
+app := framework.NewApp(framework.WithCSPReports(nil)) // nil: log reports at warn level
 ```
 
 It mounts a sink at `POST /__gofastr/csp-report`
@@ -314,16 +320,23 @@ The sink reads both report formats (`application/reports+json` and
 request. Each field has control bytes escaped and is cut to 256 bytes.
 URLs lose their query and fragment, because page URLs can carry tokens.
 Anyone can post to the sink, so treat a report as a hint, not a fact.
-`middleware.CSRF` lets posts to this one path through without a token:
-a browser's report has none, and the sink changes nothing.
+The built-in logger writes at most 20 reports a minute and then one line
+counting the reports it dropped. `middleware.CSRF` lets a `POST` with
+one of the two report content types through without a token: a
+browser's report has none, and a page on another site cannot send
+either type without a CORS preflight. So a sink you mount yourself at
+another path works behind CSRF too.
 
 To send reports to another service, set
 `SecurityHeadersConfig.CSPReportURI` to its URL. You can do that
 without `WithCSPReports`, or with it, in which case your URI is kept and
 the local sink is still mounted. `SecurityHeaders` panics on a URI that
 holds a space, quote, comma, semicolon, backslash or control byte, since
-any of those would break the header. A policy of your own keeps any
-`report-to` or `report-uri` it already names.
+any of those would break the header. A policy of your own that already
+names `report-to` or `report-uri` is sent as written: adding `report-to`
+beside your `report-uri` would make Chrome stop sending to it. A
+`Reporting-Endpoints` header an outer handler set keeps its endpoints;
+`csp-endpoint` is added beside them unless it is already defined.
 
 ### Configuring the default chain's headers
 

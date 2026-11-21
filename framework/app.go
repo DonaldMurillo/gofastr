@@ -284,6 +284,7 @@ type App struct {
 
 	cspReports  bool
 	cspReportFn func(*http.Request, middleware.CSPReport)
+	cspLog      cspLogLimit
 
 	mcpIntrospection           bool
 	mcpControl                 bool
@@ -2480,7 +2481,42 @@ func (a *App) MountLLMMDAndDebugRoutes() (hasLLMMD bool) {
 	return hasLLMMD
 }
 
+// cspLogLimit caps the default report log: anyone can post to the sink.
+type cspLogLimit struct {
+	mu      sync.Mutex
+	window  time.Time
+	logged  int
+	dropped int
+}
+
+const (
+	cspLogPerWindow = 20
+	cspLogWindow    = time.Minute
+)
+
+func (l *cspLogLimit) take(now time.Time) (ok bool, droppedBefore int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if now.Sub(l.window) >= cspLogWindow {
+		droppedBefore, l.dropped = l.dropped, 0
+		l.window, l.logged = now, 0
+	}
+	if l.logged >= cspLogPerWindow {
+		l.dropped++
+		return false, droppedBefore
+	}
+	l.logged++
+	return true, droppedBefore
+}
+
 func (a *App) logCSPReport(r *http.Request, rep middleware.CSPReport) {
+	ok, dropped := a.cspLog.take(time.Now())
+	if dropped > 0 {
+		a.Logger().WarnContext(r.Context(), "content security policy violations not logged", "dropped", dropped, "limit_per_minute", cspLogPerWindow)
+	}
+	if !ok {
+		return
+	}
 	a.Logger().WarnContext(r.Context(), "content security policy violation",
 		"directive", rep.EffectiveDirective,
 		"blocked", rep.BlockedURL,

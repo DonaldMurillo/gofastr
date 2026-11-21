@@ -73,10 +73,8 @@ const fakeAnalyticsBootstrapJS = `(function () {
     pageview((e.detail && e.detail.path) || location.pathname);
   });
 
-  // The SDK is the next deferred script on the page (registered after this
-  // one), so it has run by DOMContentLoaded. Rendering its tag on the server
-  // instead of creating one here keeps the page clear of the script-URL
-  // sink the default CSP's Trusted Types enforcement guards.
+  // The SDK is the next deferred tag (registered after this one), so it has
+  // run by DOMContentLoaded; see framework/docs analytics-recipes.md.
   document.addEventListener('DOMContentLoaded', function () {
     // Who is the current visitor? Anonymous until the app says otherwise.
     fetch('/__site/analytics/whoami', { headers: { 'Accept': 'application/json' } })

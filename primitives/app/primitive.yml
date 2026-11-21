@@ -58,12 +58,13 @@ invariants:
       - test: framework.TestCompressedPageRewritten
     judge: Does this change move Compress inside the request timeout, where it no longer sees the timeout's flushes?
   - id: csp-reports-sink
-    rule: WithCSPReports mounts middleware.CSPReportHandler at POST middleware.CSPReportPath, sets the default chain's CSPReportURI to it unless one is configured, and logs each report at warn level when given no callback; without it no sink is mounted.
+    rule: WithCSPReports mounts middleware.CSPReportHandler at POST middleware.CSPReportPath, sets the default chain's CSPReportURI to it unless one is configured, and with no callback logs at most 20 reports a minute at warn level, then one line counting the dropped ones; without it no sink is mounted.
     enforced_by:
       - test: framework.TestWithCSPReportsMountsSinkAndPointsPolicyAtIt
       - test: framework.TestWithCSPReportsLogsByDefault
       - test: framework.TestWithCSPReportsKeepsAConfiguredReportURI
       - test: framework.TestNoCSPReportSinkByDefault
+      - test: framework.TestCSPReportLogIsRateLimited
   - id: resource-isolation-inside-security-headers
     rule: WithResourceIsolation adds handler.IsolateResources inside SecurityHeaders, always admitting the embed loader path, and the default chain has no isolation without it.
     enforced_by:

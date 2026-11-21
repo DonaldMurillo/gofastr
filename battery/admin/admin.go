@@ -588,10 +588,11 @@ func (b *Battery) routes() *router.Router {
 }
 
 // headers wraps every answer under the prefix, the screens the host
-// serves included, refusals too: the security headers whether or not the
-// app kept its default middleware, and no-store, because every admin
-// answer is per-caller data and a cookie-authenticated GET is outside
-// RFC 9111's Authorization-only storage rules.
+// serves included, refusals too: the default security headers when the
+// app's chain set no Content-Security-Policy (an app's own policy, its
+// reporting and its Trusted Types settings are kept), and no-store,
+// because every admin answer is per-caller data and a cookie-authenticated
+// GET is outside RFC 9111's Authorization-only storage rules.
 func (b *Battery) headers(next http.Handler) http.Handler {
 	secure := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -600,6 +601,10 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
+		if w.Header().Get("Content-Security-Policy") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		secure.ServeHTTP(w, r)
 	})
 }

@@ -532,3 +532,15 @@ func (f sweepUnstattableFS) Stat(name string) (fs.FileInfo, error) {
 	}
 	return f.MapFS.Stat(name)
 }
+
+func TestExportFollowsTrustedTypesSettings(t *testing.T) {
+	if got := (&Builder{TrustedTypesPolicies: []string{"charts"}}).policy(); !strings.HasSuffix(got, "trusted-types gofastr charts") {
+		t.Errorf("an extra policy name is not in the export policy: %q", got)
+	}
+	if got := (&Builder{NoTrustedTypes: true}).policy(); strings.Contains(got, "trusted-types") {
+		t.Errorf("NoTrustedTypes kept a Trusted Types directive: %q", got)
+	}
+	if got := (&Builder{ContentSecurityPolicy: "default-src 'self'", NoTrustedTypes: true}).policy(); got != "default-src 'self'" {
+		t.Errorf("a configured policy was rewritten: %q", got)
+	}
+}
