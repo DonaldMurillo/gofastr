@@ -100,26 +100,23 @@ func TestPasswordResetDefaultTTLIsOneHour(t *testing.T) {
 }
 
 func TestForgotPasswordCrossSiteRefused(t *testing.T) {
-	h := newChangeHarness(t, nil)
-	req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", strings.NewReader("email=a%40example.com"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Sec-Fetch-Site", "cross-site")
-	w := httptest.NewRecorder()
-	h.r.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("cross-site forgot-password form = %d, want 403", w.Code)
-	}
+	assertCrossSiteFormRefused(t, "/auth/forgot-password", "email=a%40example.com")
 }
 
 func TestResetPasswordCrossSiteRefused(t *testing.T) {
+	assertCrossSiteFormRefused(t, "/auth/reset-password", "token=t&password=a-new-long-password-1")
+}
+
+func assertCrossSiteFormRefused(t *testing.T, path, form string) {
+	t.Helper()
 	h := newChangeHarness(t, nil)
-	req := httptest.NewRequest(http.MethodPost, "/auth/reset-password", strings.NewReader("token=t&password=a-new-long-password-1"))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	w := httptest.NewRecorder()
 	h.r.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
-		t.Errorf("cross-site reset-password form = %d, want 403", w.Code)
+		t.Errorf("cross-site form POST %s = %d, want 403", path, w.Code)
 	}
 }
 

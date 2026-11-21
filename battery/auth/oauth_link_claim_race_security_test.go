@@ -133,43 +133,12 @@ func TestLinkCallbackStillLinks(t *testing.T) {
 	}
 }
 
-// emailHooked runs a hook once, right after the at-th FindByEmail since it
-// was armed has read its row.
-type emailHooked struct {
-	*EntityUserStore
-	mu    sync.Mutex
-	calls int
-	at    int
-	hook  func()
-}
-
-func (h *emailHooked) FindByEmail(ctx context.Context, email string) (User, string, error) {
-	u, hash, err := h.EntityUserStore.FindByEmail(ctx, email)
-	h.mu.Lock()
-	h.calls++
-	var run func()
-	if h.hook != nil && h.calls == h.at {
-		run, h.hook = h.hook, nil
-	}
-	h.mu.Unlock()
-	if run != nil {
-		run()
-	}
-	return u, hash, err
-}
-
-func (h *emailHooked) arm(at int, hook func()) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.calls, h.at, h.hook = 0, at, hook
-}
-
 // The link twin of TestOAuthClaimAfterLinkRecheckLeavesNoTokens: a claim
 // that lands after the re-check read its row must still find the tokens.
 func TestLinkClaimAfterRecheckLeavesNoTokens(t *testing.T) {
-	var hooked *emailHooked
+	var hooked *hookedUsers
 	c := newClaimRig(t, func(s *EntityUserStore) UserStore {
-		hooked = &emailHooked{EntityUserStore: s}
+		hooked = &hookedUsers{EntityUserStore: s}
 		return hooked
 	})
 	tokens := newSQLOAuthTokenStore(t)
