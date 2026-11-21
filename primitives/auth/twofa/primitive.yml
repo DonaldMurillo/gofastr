@@ -26,9 +26,10 @@ invariants:
       - test: battery/auth.TestPendingTwoFA_MutationEndpointsRejected
       - test: battery/auth.TestTwoFA_StepUpNeedsVerifiedFlag
   - id: writes-swap-over-what-was-read
-    rule: Enrol never overwrites an enabled factor, and enrol, verify, and the challenge's step consume write only over the state they read, so a racing disable or a second presentation of one step loses.
+    rule: Enrol refuses when its state read fails and never overwrites an enabled factor, enrol, verify, and the challenge's step consume write only over the state they read, and the challenge spends the step before it mints the verified session, so a racing disable or a second presentation of one step loses and one TOTP code leaves at most one verified session in the store.
     enforced_by:
       - test: battery/auth.TestTwoFAEnrollRefusesOverwritingEnabledFactor
+      - test: battery/auth.TestTwoFAEnrollFailsClosedOnReadError
       - test: battery/auth.TestTwoFAEnrollNoResurrect
       - test: battery/auth.TestTwoFAVerifyNoResurrect
       - test: battery/auth.TestTwoFAChallengeCodeSingleUseConcurrent

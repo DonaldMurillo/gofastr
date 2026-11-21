@@ -14,13 +14,16 @@ invariants:
       - test: battery/auth.TestJWT_KeyRotationAcceptsPreviousSecret
       - test: battery/auth.TestJWT_KeyRotationMultiplePreviousSecrets
   - id: token-checks
-    rule: ValidateToken refuses a bad signature (compared with hmac.Equal), an empty subject, an expired token and one issued more than two minutes in the future.
+    rule: ValidateToken refuses a bad signature, an empty subject, an expired token and one issued more than two minutes in the future.
     enforced_by:
       - test: battery/auth.TestJWTInvalidSignature
       - test: battery/auth.TestJWTRejectsEmptySubject
       - test: battery/auth.TestJWTExpiredTokenRejected
       - test: battery/auth.TestJWTRejectsFutureIssuedAt
       - test: battery/auth.TestJWTGenerateAndValidate
+  - id: signatures-compared-in-constant-time
+    rule: A token's signature and its credential tag are compared in constant time, never with == or bytes.Equal.
+    judge: Does this change compare a JWT signature or credential tag with anything but hmac.Equal or subtle.ConstantTimeCompare?
   - id: owner-from-the-fresh-row
     rule: With a user store set, RequireAuth takes identity and roles from the owner's fresh row on every request, answers 401 for a missing owner, and ends an open stream when the token or owner lapses.
     enforced_by:
@@ -35,8 +38,9 @@ invariants:
       - test: battery/auth.TestJWTCredentialTagSurvivesRotation
       - test: battery/auth.TestGenerateTokenRefusesUnknownUser
   - id: require-auth-wiring
-    rule: RequireAuth passes a request without a bearer token only when a verified embed grant or App.InProcessHandler put a user on it.
+    rule: RequireAuth passes a request without a bearer token only when a verified embed grant or App.InProcessHandler put a user on it, and refuses a grant that resolved no user.
     enforced_by:
+      - test: battery/auth.TestRequireAuthRefusesASubjectlessGrant
       - test: battery/auth.TestRequireAuthAcceptsAVerifiedGrant
       - test: battery/auth.TestInProcessRequireAuth
   - id: role-gate
