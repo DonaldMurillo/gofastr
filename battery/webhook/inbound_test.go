@@ -138,6 +138,9 @@ func TestIngest_HappyPath(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202", rr.Code)
 	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
 	id := respID(t, rr.Body.Bytes())
 
 	env, err := store.GetEnvelope(context.Background(), id)
@@ -191,6 +194,9 @@ func TestIngest_BadSignature_401_NoPersist(t *testing.T) {
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
 	if !strings.Contains(rr.Body.String(), "signature verification failed") {
 		t.Errorf("body should be generic, got %q", rr.Body.String())

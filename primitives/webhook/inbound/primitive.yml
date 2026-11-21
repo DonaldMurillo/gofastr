@@ -20,6 +20,11 @@ invariants:
     enforced_by:
       - test: battery/webhook.TestIngest_BadSignature_401_NoPersist
       - test: battery/webhook.TestIngest_OversizeBody_413
+  - id: post-answers-are-no-store
+    rule: IngestHandler stamps Cache-Control no-store on every answer to a POST, refusals included.
+    enforced_by:
+      - test: battery/webhook.TestIngest_HappyPath
+      - test: battery/webhook.TestIngest_BadSignature_401_NoPersist
   - id: unstorable-key-or-owner-refused
     rule: IngestHandler answers 400 to a dedupe key or owner that is not storable text, before anything persists.
     enforced_by:

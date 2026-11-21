@@ -43,6 +43,15 @@ invariants:
     rule: A delivery carrying Subscriber.Auth goes through a client that answers a 3xx as the response instead of following it.
     enforced_by:
       - test: battery/webhook.TestDeliveryWithAuthRefusesRedirect
+  - id: default-client-never-follows-a-redirect
+    rule: The client New builds when Options.HTTPClient is nil answers a 3xx as the response instead of following it, so a signed payload never goes to a host the subscriber did not name.
+    enforced_by:
+      - test: battery/webhook.TestDefaultClientRefusesRedirect
+  - id: response-read-is-capped
+    rule: An attempt reads at most MaxResponseBodyBytes of the receiver's body when it is positive, and keeps at most the smaller of ResponseBodyLimit and MaxResponseBodyBytes.
+    enforced_by:
+      - test: battery/webhook.TestReadResponseStopsAtTheCap
+      - test: battery/webhook.TestAttempt_LimitsResponseBodyRead
   - id: stored-bad-credential-fails-the-attempt
     rule: A stored subscriber whose credential would cross plain HTTP or overwrite a signature header fails the attempt without sending.
     enforced_by:

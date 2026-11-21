@@ -53,6 +53,29 @@ func TestAttempt_LimitsResponseBodyRead(t *testing.T) {
 	}, 2*time.Second, "delivery never succeeded with capped body")
 }
 
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func TestReadResponseStopsAtTheCap(t *testing.T) {
+	m := New(NewMemoryStore(), Options{MaxResponseBodyBytes: 16, ResponseBodyLimit: 1024})
+	body := &countingReader{r: strings.NewReader(strings.Repeat("a", 100))}
+	kept := m.readResponse(body, Auth{})
+	if body.n > 16 {
+		t.Errorf("read %d bytes of the response, want at most MaxResponseBodyBytes (16)", body.n)
+	}
+	if len(kept) != 16 {
+		t.Errorf("kept %d bytes, want 16: ResponseBodyLimit is cut to MaxResponseBodyBytes", len(kept))
+	}
+}
+
 // ----- HMAC includes timestamp -----------------------------------------------
 
 func TestSignWithTimestamp_RejectsReplay(t *testing.T) {
