@@ -66,6 +66,8 @@ func TestReportingEndpointsKeepsOuterEndpoints(t *testing.T) {
 		{"", ours},
 		{`nel="https://r.example/nel"`, `nel="https://r.example/nel", ` + ours},
 		{CSPReportEndpoint + `="https://r.example/csp"`, CSPReportEndpoint + `="https://r.example/csp"`},
+		// A comma inside a quoted URL is not a member boundary.
+		{`nel="https://r.example/a,` + CSPReportEndpoint + `=x"`, `nel="https://r.example/a,` + CSPReportEndpoint + `=x", ` + ours},
 	} {
 		h := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 		outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

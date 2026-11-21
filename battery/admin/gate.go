@@ -89,7 +89,6 @@ func (headerSink) Write(p []byte) (int, error) { return len(p), nil }
 func (headerSink) WriteHeader(int)             {}
 
 func (b *Battery) headers(next http.Handler) http.Handler {
-	secure := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(next)
 	defaults := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !b.underPrefix(r.URL.Path) {
@@ -98,10 +97,6 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 		}
 		h := w.Header()
 		h.Set("Cache-Control", "no-store")
-		if h.Get("Content-Security-Policy") == "" {
-			secure.ServeHTTP(w, r)
-			return
-		}
 		fill := headerSink{}
 		defaults.ServeHTTP(fill, r)
 		for name, values := range fill {

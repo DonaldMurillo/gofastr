@@ -175,13 +175,32 @@ func mergeReportingEndpoints(existing, ours string) string {
 	if existing == "" {
 		return ours
 	}
-	for _, member := range strings.Split(existing, ",") {
+	for _, member := range splitOutsideQuotes(existing) {
 		name, _, _ := strings.Cut(strings.TrimSpace(member), "=")
 		if strings.TrimSpace(name) == CSPReportEndpoint {
 			return existing
 		}
 	}
 	return existing + ", " + ours
+}
+
+// splitOutsideQuotes splits a structured-field dictionary at the commas
+// that sit outside its quoted strings, honouring backslash escapes in them.
+func splitOutsideQuotes(s string) []string {
+	var out []string
+	start, quoted := 0, false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case quoted && c == '\\':
+			i++
+		case c == '"':
+			quoted = !quoted
+		case !quoted && c == ',':
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, s[start:])
 }
 
 // TrustedTypesDirectives returns the default policy's Trusted Types directives,

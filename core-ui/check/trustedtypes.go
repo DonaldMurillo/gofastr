@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	reTTHTMLAssign   = regexp.MustCompile(`\.\s*(?:innerHTML|outerHTML|srcdoc)\s*(?:\+=|=[^=])`)
+	reTTHTMLAssign   = regexp.MustCompile(`\.\s*(?:innerHTML|outerHTML|srcdoc)\s*(?:\+=|(?:\|\||&&|\?\?)?=[^=])`)
 	reTTAdjacent     = regexp.MustCompile(`\binsertAdjacentHTML\s*\(`)
 	reTTParse        = regexp.MustCompile(`\bparseFromString\s*\(`)
 	reTTWorker       = regexp.MustCompile(`\bnew\s+(?:Shared)?Worker\s*\(`)

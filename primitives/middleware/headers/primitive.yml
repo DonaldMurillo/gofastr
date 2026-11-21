@@ -26,7 +26,7 @@ invariants:
       - test: core/middleware.TestSecurityHeaders_CORPPresent
       - test: core/middleware.TestSecurityHeaders_COOPPresent
   - id: default-csp-enforces-trusted-types
-    rule: Unless NoTrustedTypes is set, the default policy ends in require-trusted-types-for 'script' and trusted-types naming TrustedTypesPolicy then each TrustedTypesPolicies name once, a name outside the trusted-types grammar panics, and a ContentSecurityPolicy the host sets is sent as written.
+    rule: Unless NoTrustedTypes is set, the default policy contains require-trusted-types-for 'script' and trusted-types naming TrustedTypesPolicy then each TrustedTypesPolicies name once, a name outside the trusted-types grammar panics, and the Trusted Types settings never rewrite a ContentSecurityPolicy the host sets (only CSPReportURI appends reporting directives to it).
     enforced_by:
       - test: core/middleware.TestDefaultCSPEnforcesTrustedTypes
       - test: core/middleware.TestTrustedTypesPolicyNameIsChecked
@@ -56,7 +56,7 @@ decisions:
       - option: Report-only first.
         why: The runtime's own sinks all go through the policy, and a browser without Trusted Types ignores the directives; an app script that writes raw HTML finds out on the first page it loads, with the off switch one field away.
       - option: Add the directives to a host's own ContentSecurityPolicy.
-        why: A policy the host sets is sent as written everywhere else in this middleware; TrustedTypesDirectives gives the host the two directives to add.
+        why: A policy the host sets is otherwise left alone by this middleware, which only appends reporting directives when CSPReportURI asks for them; TrustedTypesDirectives gives the host the two directives to add.
     upholds: [default-csp-enforces-trusted-types]
   - id: report-both-ways
     date: 2026-11-21

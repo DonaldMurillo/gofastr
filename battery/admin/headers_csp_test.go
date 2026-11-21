@@ -47,6 +47,20 @@ func TestAdminKeepsTheAppSecurityHeaders(t *testing.T) {
 		}
 	}
 
+	// No app CSP: the admin adds the default CSP but keeps a header the app did set.
+	referrerOnly := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		page.ServeHTTP(w, r)
+	})
+	w = httptest.NewRecorder()
+	referrerOnly.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/posts", nil))
+	if got := w.Header().Get("Referrer-Policy"); got != "strict-origin-when-cross-origin" {
+		t.Errorf("admin replaced the app's Referrer-Policy: %q", got)
+	}
+	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "require-trusted-types-for") {
+		t.Errorf("admin did not fill the missing CSP: %q", w.Header().Get("Content-Security-Policy"))
+	}
+
 	// The fill follows the request: HSTS goes out over TLS and behind a TLS proxy.
 	for _, secure := range []func(*http.Request){
 		func(r *http.Request) { r.TLS = &tls.ConnectionState{} },
