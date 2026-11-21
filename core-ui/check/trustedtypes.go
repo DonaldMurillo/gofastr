@@ -19,7 +19,8 @@ var (
 // LintTrustedTypesSinks fires on an HTML sink (innerHTML, outerHTML or
 // srcdoc assignment, insertAdjacentHTML, parseFromString) whose value is
 // not a call of _html, on a Worker or a created script element's src whose URL
-// is not a call of _scriptURL, and on a sink no policy covers
+// is not a call of _scriptURL, on a created script element's text assigned
+// with textContent, innerText or text, and on a sink no policy covers
 // (document.write, eval, new Function, importScripts, setHTMLUnsafe,
 // createContextualFragment). Under the default require-trusted-types-for
 // 'script' each of these throws unless its value came from the runtime's
@@ -70,6 +71,10 @@ func LintTrustedTypesSinks(roots ...string) (*Result, error) {
 				if !reTTScriptURLArg.MatchString(strings.TrimLeft(f.Code[eq+1:], " \t\r\n")) {
 					res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a created script element's src is assigned a raw URL"+fix)
 				}
+			}
+			text := regexp.MustCompile(`(?:^|[^\w$.])` + name + `\s*\.\s*(?:textContent|innerText|text)\s*=[^=]`)
+			for _, loc := range text.FindAllStringIndex(f.Blank, -1) {
+				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a created script element's text is assigned a string, a TrustedScript sink even for type=application/json; append it with el.append(text) instead")
 			}
 		}
 		for _, loc := range reTTForbidden.FindAllStringIndex(f.Blank, -1) {

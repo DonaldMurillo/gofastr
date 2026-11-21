@@ -103,7 +103,7 @@ func newFakeVendor(t *testing.T) *fakeVendor {
 	f := &fakeVendor{}
 	mux := http.NewServeMux()
 	// SDK: any /js/... path serves the fake SDK (the relay maps the tail
-	// verbatim; the bootstrap requests /js/sdk.js).
+	// verbatim; the page requests /js/sdk.js).
 	mux.HandleFunc("/js/", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r, "")
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")

@@ -24,6 +24,8 @@ const trustedTypesFixture = `(() => {
   const n = () => document.write('<p>');                            // 7
   const o = (s) => eval(s);                                         // 8
   const p = (el) => el.innerHTML === '';                            // ok: a read
+  const r = (j) => { const s = document.createElement('script'); s.textContent = j; }; // 9 script text
+  const u = (j) => { const s = document.createElement('script'); s.append(j); };       // ok
   const q = "el.innerHTML = x";                                     // ok: a string
   // el.innerHTML = raw in a comment is ok
 })();
@@ -34,7 +36,7 @@ func TestLintTrustedTypesSinks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "fixture.js"), []byte(trustedTypesFixture), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lintExpectFindings(t, LintTrustedTypesSinks, dir, 8, "a, d, e, g, i, k, n, o", "[trusted-types-sink]")
+	lintExpectFindings(t, LintTrustedTypesSinks, dir, 9, "a, d, e, g, i, k, n, o, r", "[trusted-types-sink]")
 }
 
 func TestLintTrustedTypesSinks_RepoIsClean(t *testing.T) {

@@ -375,7 +375,7 @@
     const el = document.createElement('script');
     el.type = 'application/json';
     el.id = 'gofastr-signals-partial';
-    el.textContent = JSON.stringify(seed);
+    el.append(JSON.stringify(seed)); // textContent on a <script> is a Trusted Types sink
     return el;
   };
 

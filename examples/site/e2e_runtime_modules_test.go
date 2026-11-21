@@ -633,7 +633,7 @@ func TestE2E_RuntimeSplit_MutationObserverLoadsNewMarker(t *testing.T) {
 		// the module's marker attribute.
 		chromedp.Evaluate(`(() => {
             const wrap = document.createElement('div');
-            wrap.innerHTML = '<div data-hui-drop data-hui-drop-input="mut"><input type="file" id="mut"></div>';
+            wrap.innerHTML = window.__gofastr._html('<div data-hui-drop data-hui-drop-input="mut"><input type="file" id="mut"></div>');
             document.body.appendChild(wrap);
         })()`, nil),
 		waitFor(`!!document.querySelector('script[src*="/runtime/headless.js"]')`),
@@ -700,9 +700,9 @@ func TestE2E_RuntimeSplit_SPANavRescansLoadedModules(t *testing.T) {
             delete G._moduleScanners['headless-feedback'];
             const stack = document.createElement('div');
             stack.setAttribute('data-hui-toast-stack', 'spa-nav-rescan-test');
-            stack.innerHTML = '<div data-hui-toast-id="rescan-target" data-hui-toast-ttl-ms="300">' +
+            stack.innerHTML = window.__gofastr._html('<div data-hui-toast-id="rescan-target" data-hui-toast-ttl-ms="300">' +
                 '<div class="fui-notification fui-notification--info">SPA nav rescan target</div>' +
-                '</div>';
+                '</div>');
             document.body.appendChild(stack);
         })()`, nil),
 		chromedp.Evaluate(`window.__gofastr._moduleScanners['headless-feedback'] = window.__heldScanner`, nil),
