@@ -231,9 +231,10 @@ func TestRuntimeModule_SSE(t *testing.T) {
 		}
 	}
 	// TestSSERetriesBackOffWithJitter pins retry policy, ownership and restore:
-	// 2603 minified bytes plus 2 bytes of clearance.
-	if size := ModuleSize("sse"); size > 2605 {
-		t.Errorf("sse module is %d bytes — budget is 2605", size)
+	// 2603 minified bytes plus 2 bytes of clearance. The pushed fragment is
+	// written through the Trusted Types policy: 2621 plus 2.
+	if size := ModuleSize("sse"); size > 2623 {
+		t.Errorf("sse module is %d bytes — budget is 2623", size)
 	}
 }
 

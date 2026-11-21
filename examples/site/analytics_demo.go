@@ -74,7 +74,7 @@ const fakeAnalyticsBootstrapJS = `(function () {
   });
 
   // The SDK is the next deferred script on the page (registered after this
-  // one), so it has run by DOMContentLoaded. Rendering it as a <script src>
+  // one), so it has run by DOMContentLoaded. Rendering its tag on the server
   // instead of creating one here keeps the page clear of the script-URL
   // sink the default CSP's Trusted Types enforcement guards.
   document.addEventListener('DOMContentLoaded', function () {
