@@ -6,33 +6,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
-// RateLimiterConfig is an alias for the general-purpose sliding-window limiter
-// config now living in framework/ratelimit. Existing auth callers keep
-// compiling; new code should use ratelimit.Config directly. See
-// framework/ratelimit (and the "rate-limit" doc topic) for field semantics.
+// RateLimiterConfig is framework/ratelimit's Config.
 type RateLimiterConfig = ratelimit.Config
 
-// RateLimiter wraps the general-purpose sliding-window limiter from
-// framework/ratelimit. It exists to preserve auth's own 429 response shape
-// (JSON envelope for API clients, 303 redirect for browser form posts) via the
-// package-local guard, the general middleware emits a plain text 429. For
-// non-auth routes prefer ratelimit.Limiter + ratelimit.Middleware directly.
-//
-// Allow / AllowContext are promoted from the embedded limiter, so direct
-// callers (e.g. guardAuthLimit, the per-account login limiter) are unchanged.
+// RateLimiter is framework/ratelimit's limiter answering with auth's 429 shape.
 type RateLimiter struct {
 	*ratelimit.Limiter
 }
 
-// NewRateLimiter constructs a RateLimiter with the given config. Zero fields
-// fall back to the documented defaults (delegated to ratelimit.NewLimiter).
+// NewRateLimiter returns a RateLimiter for cfg.
 func NewRateLimiter(cfg RateLimiterConfig) *RateLimiter {
 	return &RateLimiter{Limiter: ratelimit.NewLimiter(cfg)}
 }
 
-// newScopedRateLimiter is NewRateLimiter with a default Scope, used by the
-// built-in auth consumers so limiters sharing one RateLimitStore never collide
-// on raw IP/email keys. An explicit cfg.Scope wins.
 func newScopedRateLimiter(cfg RateLimiterConfig, scope string) *RateLimiter {
 	if cfg.Scope == "" {
 		cfg.Scope = scope
@@ -40,9 +26,7 @@ func newScopedRateLimiter(cfg RateLimiterConfig, scope string) *RateLimiter {
 	return NewRateLimiter(cfg)
 }
 
-// Middleware returns an HTTP middleware that rate-limits by client IP using
-// auth's 429 response shape (JSON envelope). Blocked requests get 429 with a
-// Retry-After header.
+// Middleware limits by client IP, answering 429 with Retry-After.
 func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +38,6 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
-// guard is the shared check used by Middleware and direct handler wrapping
-// (magic-link send, password reset, 2FA challenge, email verification). It
-// records an attempt for the client IP and, when blocked, writes 429 +
-// Retry-After and returns false. The body uses writeAuthError (the canonical
-// JSON envelope), NOT the form-redirect shape, which guardAuthLimit applies
-// selectively for browser posts.
 func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	allowed, retry := rl.AllowContext(r.Context(), rl.clientIP(r))
 	if !allowed {
@@ -70,12 +48,6 @@ func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// clientIP is the per-IP limiter key: the request IP, honouring
-// X-Forwarded-For only when the limiter was configured with
-// TrustForwardedFor=true (and, when set, only from a TrustedProxies peer,
-// read from the right), with an IPv6 address collapsed to its /64.
-// Delegates to ratelimit.Limiter.ClientKey so the proxy-trust and prefix
-// rules each have exactly one implementation.
 func (rl *RateLimiter) clientIP(r *http.Request) string {
 	return rl.Limiter.ClientKey(r)
 }

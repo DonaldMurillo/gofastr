@@ -23,7 +23,8 @@ func gateCode(policy AccessPolicy, ctx context.Context) int {
 // built-in gates (2026-10-31 O53).
 func TestPrintGatesNarrowByScope(t *testing.T) {
 	user := handler.SetUser(context.Background(), struct{ ID string }{ID: "u1"})
-	owner := RequireOwner(func(*http.Request, any) bool { return true })
+	var ownsCalls int
+	owner := RequireOwner(func(*http.Request, any) bool { ownsCalls++; return true })
 	cases := []struct {
 		name string
 		ctx  context.Context
@@ -39,8 +40,12 @@ func TestPrintGatesNarrowByScope(t *testing.T) {
 		if got := gateCode(RequireAuth, tc.ctx); got != tc.want {
 			t.Errorf("SECURITY: RequireAuth, %s = %d, want %d", tc.name, got, tc.want)
 		}
+		ownsCalls = 0
 		if got := gateCode(owner, tc.ctx); got != tc.want {
 			t.Errorf("SECURITY: RequireOwner, %s = %d, want %d", tc.name, got, tc.want)
+		}
+		if tc.want != 0 && ownsCalls != 0 {
+			t.Errorf("RequireOwner, %s: owns ran for a caller without Scope", tc.name)
 		}
 	}
 }

@@ -16,12 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// buildStepForm composes the wizard body for one step: a progress
-// indicator (ProgressSteps) + the form (AuthCard wrapping Form +
-// FormField rows). Zero bespoke CSS, zero hand-rolled structural markup,
-// everything is typed framework/ui composition.
 func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, fieldErrors, values map[string]string) render.HTML {
-	// 1. Progress indicator.
 	progressSteps := make([]ui.ProgressStep, len(steps))
 	for i, s := range steps {
 		status := ui.ProgressStepUpcoming
@@ -42,7 +37,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		Orientation: ui.ProgressStepsVertical,
 	})
 
-	// 2. Form fields for the current step.
 	currentStep := steps[stepIdx]
 	var fields []render.HTML
 	for _, f := range currentStep.Fields {
@@ -52,8 +46,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		}
 		inputID := "setup-field-" + f.Name
 		inputValue := ""
-		// A rejected submission takes precedence over the environment,
-		// including an explicitly empty value. Secrets are never echoed.
 		if !f.Secret {
 			if submitted, ok := values[f.Name]; ok {
 				inputValue = submitted
@@ -73,7 +65,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		}))
 	}
 
-	// 3. Step error (non-field specific, e.g. step.Run failure).
 	var alert render.HTML
 	if stepErr, ok := fieldErrors["_step"]; ok && stepErr != "" {
 		alert = ui.Notification(ui.NotificationConfig{
@@ -83,7 +74,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 			Variant: ui.StatusDanger,
 		})
 	}
-	// Force-mode warning: setup already completed but operator re-entered.
 	if isForceMode() {
 		forceAlert := ui.Notification(ui.NotificationConfig{
 			Ctx:     ctx,
@@ -111,7 +101,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		SubmitLabel: submitLabel,
 	}, fields...)
 
-	// AuthCard wraps everything in a centered, constrained card.
 	return ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title.Text(ctx),
 		Alert: alert,
@@ -123,7 +112,6 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 	})
 }
 
-// buildCompletionPage renders the "all done" body.
 func (r *Runner) buildCompletionPage(ctx context.Context) render.HTML {
 	return ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title.Text(ctx),
@@ -138,7 +126,6 @@ func (r *Runner) buildCompletionPage(ctx context.Context) render.HTML {
 	})
 }
 
-// renderStep writes the current step's wizard page.
 func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	stepIdx := r.currentStep
@@ -146,9 +133,6 @@ func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 	r.mu.Unlock()
 
 	if stepIdx >= len(steps) {
-		// Steps exhausted but this request got PAST handleSetup's
-		// completeAndSwap gate, so Complete is still false (or erroring).
-		// Never claim completion here; explain instead.
 		r.renderIncomplete(req.Context(), w, pageIncompleteWiring.Text(req.Context()))
 		return
 	}
@@ -156,10 +140,6 @@ func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 	r.writePage(req.Context(), w, body)
 }
 
-// renderIncomplete writes an honest "steps ran, but setup is not complete"
-// page: a danger notification with the reason, never the completion page,
-// the app is still serving 503s, and saying "ready" would strand the
-// operator on a lie.
 func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, reason string) {
 	body := ui.AuthCard(ui.AuthCardConfig{
 		Title: r.cfg.Title.Text(ctx),
@@ -180,11 +160,6 @@ func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, re
 	r.writePage(ctx, w, body)
 }
 
-// renderHop answers a cross-site arrival on the setup link: a page from
-// this origin that loads target, the same link, again. The Refresh
-// header does the reload and the link is there for a browser that does
-// not follow it. target carries the setup token, so the page is kept out
-// of caches (writePage) and out of referrers.
 func (r *Runner) renderHop(w http.ResponseWriter, req *http.Request, target string) {
 	ctx := req.Context()
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -201,39 +176,27 @@ func (r *Runner) renderHop(w http.ResponseWriter, req *http.Request, target stri
 	}))
 }
 
-// renderStepWithErrors writes the step page with validation errors.
 func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors, values map[string]string) {
 	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors, values)
 	r.writePage(req.Context(), w, body)
 }
 
-// renderCompletionPage writes the "all done" page.
 func (r *Runner) renderCompletionPage(w http.ResponseWriter, req *http.Request) {
 	r.writePage(req.Context(), w, r.buildCompletionPage(req.Context()))
 }
 
-// writePage emits a complete standalone HTML document. Mirrors the
-// battery/admin pattern: theme CSS tokens + registered component CSS
-// collected via registry.Scan, so every framework/ui component used in
-// the body is styled without any bespoke stylesheet.
 func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body render.HTML) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	// Setup replaces the app's handler, so the app's security headers
-	// are not on these pages. None of them belongs in another site's
-	// frame: the wizard takes the admin password.
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 
 	comps := registry.Scan(string(body))
 
-	// Build <link> tags for the single combined CSS endpoint.
 	cssLink := `<link rel="stylesheet" href="/__setup/style.css">`
 
-	_ = comps // used by serveCSS via registry.Scan at request time
+	_ = comps
 
-	// The wizard speaks its phrases in the request's locale, so the
-	// document declares that language and its direction.
 	lang := i18n.DocLang(ctx)
 	fmt.Fprintf(w, `<!doctype html>
 <html dir="%s" lang="%s">
@@ -249,10 +212,6 @@ func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body rend
 </html>`, i18n.Dir(lang), render.Escape(lang), render.Escape(r.cfg.Title.Text(ctx)), cssLink, body)
 }
 
-// serveCSS emits the combined stylesheet: theme :root tokens + the CSS
-// for every framework/ui component used in the wizard body. Registered
-// components are scoped to [data-cui-comp="..."] so they don't collide
-// with the host app's styles.
 func (r *Runner) serveCSS(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")

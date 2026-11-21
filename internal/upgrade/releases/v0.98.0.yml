@@ -83,3 +83,7 @@ notes:
         - gofastr/core-ui/component.ServerCall
         - gofastr/core-ui/component.ActionDef.Server
         - gofastr/core-ui/component.ActionDef.Debounce
+  - change: "BREAKING - battery/desktop.New panics on a relative Config.DataDir, which used to resolve against the working directory at launch; Init now creates a missing Config.DataDir owner-only (0700), where it used to fail writing the identity file"
+    breaking: true
+    nodetect: "the value is usually built at runtime or read from configuration; a literal relative path is the only spelling that shows it, and an absolute one is unaffected"
+    guidance: "Pass an absolute path, for example filepath.Join(os.UserConfigDir(), ...), or leave Config.DataDir empty to use desktop.DataDir(Config.ID). A directory that already exists keeps its mode; chmod 700 it if other users can read it."

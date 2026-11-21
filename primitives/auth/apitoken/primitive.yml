@@ -1,0 +1,91 @@
+primitive: auth.apitoken
+summary: Scoped API tokens and service accounts, TokenMiddleware, the scope gates, the self-service token routes, their SQL stores and the MCP tool gates.
+code:
+  - battery/auth/apitoken.go
+  - battery/auth/apitoken_middleware.go
+  - battery/auth/apitoken_routes.go
+  - battery/auth/apitoken_sql.go
+  - battery/auth/mcp_gate.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: spec-validated
+    rule: IssueToken refuses with ErrInvalidTokenSpec an unstorable or over-256-byte name, an owner kind other than user or service, more than 32 scopes, a scope outside resource:verb, a negative TTL and a prefix outside ^[a-z][a-z0-9]{0,14}_$; WithTokenPrefix panics on such a prefix.
+    enforced_by:
+      - test: battery/auth.TestIssueTokenRefusesBadNameAndNegativeTTL
+      - test: battery/auth.TestIssueToken_ValidatesSpec
+      - test: battery/auth.TestTokenPrefixBranding
+      - test: battery/auth.TestWithTokenPrefixPanicsOnBadBrand
+  - id: only-the-hash-is-stored
+    rule: A token is stored and looked up only by the SHA-256 of its plaintext, and its display prefix keeps the brand plus seven random characters.
+    enforced_by:
+      - test: battery/auth.TestAPIToken_PlaintextNeverStored
+      - test: battery/auth.TestTokenDisplayPrefixKeepsRandomChars
+  - id: scopes-for-tokens-and-grants
+    rule: TokenScopes reports an embed grant's scopes as a token's, and HasScope lets a session or JWT through unscoped.
+    enforced_by:
+      - test: battery/auth.TestGrantScopesGateLikeTokenScopes
+      - test: battery/auth.TestRequireScope_SessionPasses
+  - id: middleware-fails-closed
+    rule: TokenMiddleware leaves a non-branded bearer alone, and for a branded one that is unknown, revoked, expired, owned by a missing or disabled owner or a bad owner kind it clears the context user and audits token.auth_failed.
+    enforced_by:
+      - test: battery/auth.TestAPIToken_NonGfskBearerPassesThrough
+      - test: battery/auth.TestAPIToken_UnknownTokenClearsUser
+      - test: battery/auth.TestAPIToken_RevokedTokenClearsUser
+      - test: battery/auth.TestAPIToken_ExpiredTokenClearsUser
+      - test: battery/auth.TestAPIToken_DisabledServiceAccountAnonymous
+      - test: battery/auth.TestGarbageOwnerKindFailsClosed
+  - id: middleware-success
+    rule: A valid token sets its owner, scopes and ID on the context, stamps last_used_at at most once a minute, and installs a recheck that ends an open stream when it is revoked.
+    enforced_by:
+      - test: battery/auth.TestTokenMiddleware_ExposesTokenID
+      - test: battery/auth.TestTokenMiddleware_LastUsedThrottle
+      - test: battery/auth.TestEventStreamClosesOnRevocation
+  - id: api-scopes-from-the-route
+    rule: RequireAPIScopes requires <resource>:read for GET and HEAD and <resource>:write otherwise, from every candidate resource of an unrouted path.
+    enforced_by:
+      - test: battery/auth.TestAPIScopes_DerivedFromRoute
+      - test: battery/auth.TestAPIScopes_UnroutedNeedsEveryCandidate
+  - id: routes-are-session-only
+    rule: The token routes refuse an API-token caller and an embed grant, and on an account with a second factor any request without one of the principal's own verified sessions.
+    enforced_by:
+      - test: battery/auth.TestTokensPlugin_RejectsTokenAuthCaller
+      - test: battery/auth.TestEmbedGrantCannotMintAPITokens
+      - test: battery/auth.TestTokenMintNeedsSteppedUpSessionOn2FAAccount
+    judge: Does this change let a stepped-up session of another user count toward the token routes' second-factor check?
+  - id: create-is-the-callers
+    rule: Create owns the token by the session user whatever the body says, refuses a ttl_seconds that is negative or wraps a Duration, answers a store failure 500 without its text, and is undone when a reset overtook it.
+    enforced_by:
+      - test: battery/auth.TestAPIToken_CreateIgnoresBodyOwner
+      - test: battery/auth.TestTokenMintRefusesWrappingTTL
+      - test: battery/auth.TestTokenCreate_StoreErrNotLeaked
+      - test: battery/auth.TestTokenCreateOvertakenByReset
+      - test: battery/auth.TestTokenCreateAfterResetBeforeSnapshot
+  - id: revoke-is-owner-scoped
+    rule: Revoke stamps only the owner's token, a foreign id answering ErrTokenNotFound, and a second revoke is a success.
+    enforced_by:
+      - test: battery/auth.TestAPIToken_RevokeOwnerScopedHTTP
+      - test: battery/auth.TestRevoke_IdempotentAndOwnerScoped
+  - id: unreadable-revocation-is-revoked
+    rule: A non-NULL revoked_at the parser cannot read counts as revoked.
+    enforced_by:
+      - test: battery/auth.TestTokenUnreadableRevokedAtFailsClosed
+  - id: erasure-takes-user-tokens-only
+    rule: Erasure deletes the erased user's tokens and leaves service-account tokens.
+    enforced_by:
+      - test: battery/auth.TestEraseRemovesUserAPITokens
+  - id: mcp-gates
+    rule: MCPUser and MCPRole refuse an embed grant and a caller the context Decider denies, and MCPRole one holding none of its roles.
+    enforced_by:
+      - test: battery/auth.TestEmbedGrantCannotPassMCPGates
+      - test: battery/auth.TestMCPGatesHonorDecider
+      - test: battery/auth.TestMCPRoleRefusesWrongRole
+decisions:
+  - id: admin-listing-off-the-interface
+    date: 2026-11-20
+    status: accepted
+    decision: ListAll and RevokeAny live on SQLAPITokenStore only, not APITokenStore.
+    rejected:
+      - option: Put them on the interface.
+        why: The plugin's self-service routes take an APITokenStore and must never reach every owner's tokens.
+    upholds: [revoke-is-owner-scoped]

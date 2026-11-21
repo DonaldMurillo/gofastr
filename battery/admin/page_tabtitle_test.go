@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -61,5 +63,23 @@ func TestPageTabTitleNamesTheView(t *testing.T) {
 	}
 	if asked != 0 {
 		t.Errorf("SECURITY: TabTitle ran %d times for a caller the page refuses", asked)
+	}
+}
+
+func TestPageTabTitleFallsBackInTheCallersLanguage(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", testPhrase("Reports").Key(), i18n.Message{Text: "Informes"})
+	p := Page{Path: "/reports", Title: testPhrase("Reports"), Build: says("report body")}
+	p.TabTitle = func(ctx context.Context) string {
+		if appui.RequestFromContext(ctx).URL.Query().Get("show") == "boom" {
+			panic("title store down")
+		}
+		return ""
+	}
+	x := setup(t, nil, Config{Pages: []Page{p}}, nil)
+	for _, query := range []string{"", "?show=boom"} {
+		if got := titleOf(get(inSpanish(x.as(theAdmin), cat), "/admin/reports"+query).Body.String()); !strings.HasPrefix(got, "Informes") {
+			t.Errorf("%q: tab title %q, want the Spanish Title", query, got)
+		}
 	}
 }

@@ -175,6 +175,8 @@ stored but is gone by the time a waiter reads it back (evicted by
 `WithMaxEntries` or Redis `maxmemory`, or expired under a short TTL)
 still reaches `dest`, through the same JSON round trip; only a negative
 `ttl` surfaces the miss.
+A loader that panics returns the panic as every waiter's error instead
+of ending the process.
 
 ## HTTP caching middleware
 
@@ -240,6 +242,8 @@ The middleware uses conservative shared-cache rules:
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
   without caching. `0` buffers every response whole, and a negative
   `maxBodyBytes` panics when the middleware is built.
+- An informational response (`103 Early Hints`) a handler writes before
+  its final status is dropped; the stored and replayed status is the final one.
 - A handler that flushes (an SSE stream) or hijacks the connection (a
   websocket upgrade) gets the client writer from then on, and its
   response is not stored, so the middleware can sit in front of

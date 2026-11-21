@@ -271,3 +271,22 @@ func TestCorruptWindowStateFileIgnored(t *testing.T) {
 		t.Fatalf("no Warn about the corrupt file; logs were:\n%s", msg)
 	}
 }
+
+// TestTamperedStoredPathIsNotTheBootRedirect: the remembered path is data at rest, validated again on the way out.
+func TestTamperedStoredPathIsNotTheBootRedirect(t *testing.T) {
+	for _, bad := range []string{"//evil.example", "https://evil.example/", "/a/../b"} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "windowstate.test"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		state, _ := json.Marshal(map[string]any{"entries": map[string]any{"windows": map[string]any{"main": map[string]any{"path": bad}}}})
+		if err := os.WriteFile(filepath.Join(dir, "windowstate.test", "state.json"), state, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		app, d := wsApp(t, desktop.Config{Title: "WS", RememberWindows: true}, dir, nil)
+		h := desktoptest.Run(t, app, d)
+		if got := h.BootRedirect(); got != "/" {
+			t.Fatalf("stored path %q became the boot redirect %q, want /", bad, got)
+		}
+	}
+}

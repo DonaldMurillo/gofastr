@@ -1,0 +1,50 @@
+primitive: desktop.appstate
+summary: The desktop battery's durable key and value store, one 0600 JSON file with debounced whole-file writes, a quit flush and change watchers.
+code:
+  - battery/desktop/appstate/
+docs:
+  - framework/docs/content/desktop.md
+twins:
+  - job: Write a file owner-only through a temp file in the same directory renamed over the target, never following a symlink at the target.
+    why: The two live in different packages, and internal/atomicfile.WriteFile, the shared writer, follows a symlink at the target, which both of these refuse; the merge needs a no-follow variant in internal/atomicfile.
+    sites:
+      - path: battery/desktop/appstate/appstate.go
+        note: Store.persist, the state file.
+      - path: battery/desktop/cap_fs.go
+        note: writeFileAtomic, fs.writeText.
+invariants:
+  - id: key-grammar-and-value-cap
+    rule: Get, Set and Delete refuse a key off ^[a-z][a-z0-9_.-]{0,63}$, and Set refuses a value whose encoded JSON passes MaxValueBytes.
+    enforced_by:
+      - test: battery/desktop/appstate.TestBadKeyRefused
+      - test: battery/desktop/appstate.TestOversizeValueRefused
+  - id: values-decode-exactly
+    rule: Get decodes a stored value through jsonexact, so an integer past 2^53 keeps its digits.
+    enforced_by:
+      - test: battery/desktop/appstate.TestGetKeepsBigIntegers
+  - id: corrupt-file-starts-empty
+    rule: Open answers an empty store with a Warn for an unreadable or corrupt file, so a truncated quit-time write never bricks the next launch.
+    enforced_by:
+      - test: battery/desktop/appstate.TestCorruptFileIsWarnAndEmpty
+  - id: delete-absent-writes-nothing
+    rule: Deleting an absent key schedules no write, and still notifies the watchers.
+    enforced_by:
+      - test: battery/desktop/appstate.TestDeleteAbsentWritesNothing
+  - id: one-write-at-a-time
+    rule: Flush takes writeMu before it snapshots and holds it through the persist, and the debounce timer's write is a Flush, so a timer write and the quit flush never interleave or land a stale snapshot.
+    enforced_by:
+      - test: battery/desktop/appstate.TestWriteSnapshotsUnderWriteLock
+  - id: failed-write-stays-dirty
+    rule: A persist that fails marks the store dirty again, so the next write or the quit flush retries it.
+    enforced_by:
+      - test: battery/desktop/appstate.TestFailedFlushKeepsTheChangeDirty
+  - id: atomic-owner-only-replace
+    rule: persist writes a 0600 temp file beside the state file and renames it over the path, so a reader sees a whole file and a symlink planted at the path is replaced, never followed.
+    enforced_by:
+      - test: battery/desktop/appstate.TestFileModeIs0600
+      - test: battery/desktop/appstate.TestSymlinkedStateFileNotFollowed
+      - test: battery/desktop/appstate.TestPersistIsAtomicReplace
+  - id: watcher-panic-contained
+    rule: Each watcher runs on its own goroutine outside the store's lock with a recover that logs a panic through the store's logger.
+    enforced_by:
+      - test: battery/desktop/appstate.TestWatcherPanicUsesStoreLogger

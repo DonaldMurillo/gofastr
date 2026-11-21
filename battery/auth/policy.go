@@ -11,19 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// SessionFrom returns the user loaded into ctx by SessionMiddleware (or
-// RequireAuth). ok is false when the request is anonymous, no session,
-// expired session, store outage, etc. Safe to call from any Render or
-// RenderCtx path; never panics, never touches the DB.
-//
-// Use this inside ContextComponent.RenderCtx for in-page gating:
-//
-//	func (s *Dashboard) RenderCtx(ctx context.Context) render.HTML {
-//	    if sess, ok := auth.SessionFrom(ctx); ok {
-//	        return UserSidebar(sess)
-//	    }
-//	    return AnonSidebar()
-//	}
+// SessionFrom returns the user SessionMiddleware or RequireAuth put in ctx, or false.
 func SessionFrom(ctx context.Context) (User, bool) {
 	raw, ok := handler.GetUser(ctx)
 	if !ok || raw == nil {
@@ -37,10 +25,6 @@ func SessionFrom(ctx context.Context) (User, bool) {
 }
 
 // PolicyOption tunes a policy constructor (SessionPolicy, RolePolicy).
-// Options control what happens on policy failure: redirect, render an
-// alternate component, or block with an HTTP status. The default for
-// SessionPolicy is Redirect("/login?next=…"); the default for
-// RolePolicy is Block(403).
 type PolicyOption func(*policyOpts)
 
 type policyOpts struct {
@@ -52,13 +36,6 @@ type policyOpts struct {
 }
 
 // WithRedirect sets the failure outcome to a 303 redirect to url.
-// By default, the policy appends ?next=<encoded-request-path> so the
-// post-login flow can return the user where they were going. Pass
-// auth.NoNext() to suppress the next-path append for fixed redirects
-// (e.g. "/" → marketing).
-//
-//	auth.WithRedirect("/login")              // next-path appended
-//	auth.WithRedirect("/", auth.NoNext())    // bare redirect, no next
 func WithRedirect(url string, opts ...RedirectOpt) PolicyOption {
 	cfg := redirectCfg{nextPath: true}
 	for _, fn := range opts {
@@ -79,22 +56,12 @@ type redirectCfg struct {
 	nextPath bool
 }
 
-// NoNext suppresses the auto-appended ?next=<request-path> on a
-// WithRedirect option. Use for fixed redirects where preserving the
-// origin path would be incorrect (e.g. anon "/" → "/marketing").
+// NoNext stops WithRedirect appending ?next=<request-path>.
 func NoNext() RedirectOpt {
 	return func(c *redirectCfg) { c.nextPath = false }
 }
 
-// WithRenderAlt sets the failure outcome to rendering an alt component
-// instead of the screen's own. factory MUST return a FRESH instance
-// every call, the framework invokes it once per request and the
-// returned component is then mutated by SetParams / Inject / Load
-// under the screen lock. A shared singleton is a cross-user data leak.
-//
-// For a stateless anon-landing page:
-//
-//	auth.WithRenderAlt(func() component.Component { return &Landing{} })
+// WithRenderAlt renders factory's component on failure; factory must return a fresh instance each call.
 func WithRenderAlt(factory func() component.Component) PolicyOption {
 	return func(o *policyOpts) {
 		o.altFactory = factory
@@ -103,16 +70,12 @@ func WithRenderAlt(factory func() component.Component) PolicyOption {
 	}
 }
 
-// WithBlock sets the failure outcome to an HTTP status (e.g. 401, 403,
-// 404) whose body is the status's generic phrase in the request's
-// locale. Default for SessionPolicy when no option is supplied is
-// Redirect("/login"); for RolePolicy it is Block(403).
+// WithBlock answers failure with status and its generic phrase.
 func WithBlock(status int) PolicyOption {
 	return WithBlockReason(status, i18n.Phrase{})
 }
 
-// WithBlockReason is WithBlock with the body naming reason, translated
-// per request.
+// WithBlockReason is WithBlock with reason as the body.
 func WithBlockReason(status int, reason i18n.Phrase) PolicyOption {
 	return func(o *policyOpts) {
 		o.block = status
@@ -122,18 +85,7 @@ func WithBlockReason(status int, reason i18n.Phrase) PolicyOption {
 	}
 }
 
-// SessionPolicy returns an app.Policy that allows requests with a
-// valid session and otherwise applies the configured failure outcome.
-// Default failure outcome is Redirect("/login?next=<request-path>").
-//
-// Session-only, like RequireSession: a caller authenticated by a
-// scoped API token (TokenScopes in ctx) fails the policy even though
-// TokenMiddleware sets the ctx user, so a leaked gfsk_ token cannot
-// ride session-gated screens past its scope leash.
-//
-// Attach via NewScreenGroup, ScreenGroup.WithPolicy, or
-// Screen.WithPolicy. Pair with SessionMiddleware upstream so the
-// policy can see the loaded user.
+// SessionPolicy allows a request with a session user (no API-token caller) and otherwise fails, by default to /login?next=<path>.
 func SessionPolicy(opts ...PolicyOption) app.Policy {
 	o := policyOpts{redirect: "/login", nextPath: true}
 	for _, fn := range opts {
@@ -141,12 +93,6 @@ func SessionPolicy(opts ...PolicyOption) app.Policy {
 	}
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
 		if _, tokenAuth := TokenScopes(ctx); tokenAuth {
-			// A scoped bearer credential is not a session: TokenMiddleware
-			// installs the token's owner as the ctx user the same way
-			// SessionMiddleware does, so the user check alone cannot tell
-			// them apart. TokenScopes (only TokenMiddleware sets them) is
-			// the discriminator, the same one requireSessionUserID and
-			// RequireSession apply.
 			return failureDecision(ctx, o)
 		}
 		if _, ok := SessionFrom(ctx); ok {
@@ -156,40 +102,14 @@ func SessionPolicy(opts ...PolicyOption) app.Policy {
 	})
 }
 
-// Roles is a tiny ergonomic helper so RolePolicy callers can write
-//
-//	auth.RolePolicy(auth.Roles("admin", "owner"), auth.WithRedirect("/login"))
-//
-// instead of the literal []string{...}. The asymmetry with the
-// sibling middleware auth.RequireRole(roles ...string) is forced by
-// Go's no-double-variadic rule. RolePolicy needs to accept option
-// values after the role list, so the roles can't themselves be
-// variadic.
+// Roles returns its arguments as a slice, for RolePolicy.
 func Roles(roles ...string) []string {
 	out := make([]string, len(roles))
 	copy(out, roles)
 	return out
 }
 
-// RolePolicy returns an app.Policy that allows requests where the
-// loaded user has at least one of the given roles. Default failure
-// outcome is Block(403). Implies SessionPolicy, an anonymous request
-// fails the role check and produces the configured failure outcome.
-//
-// Pair with the Roles helper for ergonomic literal lists:
-//
-//	auth.RolePolicy(auth.Roles("admin"), auth.WithRedirect("/login"))
-//
-// Note that the sibling HTTP middleware auth.RequireRole takes its
-// roles as variadic strings; RolePolicy can't because it accepts
-// PolicyOptions after the role list.
-//
-// Like RequireRole, a Decider installed in the request context
-// (access.WithDecider / DeciderMiddleware) binds this gate:
-// DecisionDeny refuses the caller before the role check,
-// DecisionAbstain falls through to it. And like SessionPolicy, a
-// caller authenticated by a scoped API token is refused: roles gate
-// interactive sessions, not bearer credentials.
+// RolePolicy allows a session user holding one of roles, as RequireRole judges it, and otherwise fails, by default with 403.
 func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 	o := policyOpts{block: 403}
 	for _, fn := range opts {
@@ -201,20 +121,9 @@ func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 			return failureDecision(ctx, o)
 		}
 		if _, tokenAuth := TokenScopes(ctx); tokenAuth {
-			// Implies SessionPolicy, so the same session-only contract:
-			// a scoped bearer token must not inherit its owner's roles
-			// on role-gated screens (the screen twin of RequireRole's
-			// grant refusal).
 			return failureDecision(ctx, o)
 		}
 		if roleGateDenied(ctx, u) {
-			// A DecisionDeny decider refuses the caller before the role
-			// check, DecisionAbstain falls through to it — the precedence
-			// RequireRole, MCPUser, and MCPRole already give the seam.
-			// Screens gated by RolePolicy are the fourth role-scoped
-			// surface; without this consult a host wiring
-			// access.DeciderMiddleware per the documented recipe gets no
-			// decider coverage on them.
 			return failureDecision(ctx, o)
 		}
 		if !hasAnyRole(ctx, u, roles) {
@@ -224,8 +133,6 @@ func RolePolicy(roles []string, opts ...PolicyOption) app.Policy {
 	})
 }
 
-// failureDecision builds the app.Decision for a failed policy check
-// based on configured policyOpts. Precedence: alt > redirect > block.
 func failureDecision(ctx context.Context, o policyOpts) app.Decision {
 	if o.altFactory != nil {
 		return decide.RenderAlt(o.altFactory)
@@ -260,11 +167,6 @@ func containsQuery(s string) bool {
 	return false
 }
 
-// requestPathFromCtx pulls the live request path out of ctx if
-// app.WithRequest was called upstream (uihost does this). Returns
-// empty string when no request is attached. The path is the escaped
-// one the browser sent: a key segment holding "/" (/orders/a%2Fb) has
-// to come back as that one segment, not as /orders/a/b.
 func requestPathFromCtx(ctx context.Context) string {
 	r := app.RequestFromContext(ctx)
 	if r == nil || r.URL == nil {

@@ -15,11 +15,8 @@ import (
 // a string CFBundleIdentifier and CFBundleShortVersionString.
 var ErrBadBundleInfo = errors.New("bundle Info.plist is unreadable")
 
-// maxInfoPlistSize caps one Info.plist read. `gofastr desktop build`
-// writes about 1.5 KiB.
 const maxInfoPlistSize = 1 << 20
 
-// infoPlistPath is the Info.plist location inside a .app bundle.
 const infoPlistPath = "Contents/Info.plist"
 
 // BundleInfo is the identity a bundle's Info.plist declares.
@@ -28,10 +25,7 @@ type BundleInfo struct {
 	ShortVersion string // CFBundleShortVersionString
 }
 
-// ParseInfoPlist reads the identity keys from an XML property list (the
-// format `gofastr desktop build` writes). A binary plist, a key whose
-// value is not a <string>, a repeated identity key, or a missing one is
-// refused: a bundle whose identity is ambiguous is not installed.
+// ParseInfoPlist reads the identity keys from an XML property list (the format `gofastr desktop build` writes).
 func ParseInfoPlist(data []byte) (BundleInfo, error) {
 	if len(data) > maxInfoPlistSize {
 		return BundleInfo{}, fmt.Errorf("%w: larger than %d bytes", ErrBadBundleInfo, maxInfoPlistSize)
@@ -68,9 +62,6 @@ func ParseInfoPlist(data []byte) (BundleInfo, error) {
 					return BundleInfo{}, fmt.Errorf("%w: the plist does not hold one top-level <dict>", ErrBadBundleInfo)
 				}
 			default:
-				// depth 3 is a top-level dict member; DecodeElement and
-				// Skip consume the element through its end tag, so
-				// deeper elements are never seen here.
 				var err error
 				key, err = plistMember(dec, el, key, &info, seen)
 				if err != nil {
@@ -86,8 +77,6 @@ func ParseInfoPlist(data []byte) (BundleInfo, error) {
 	return info, nil
 }
 
-// plistMember consumes one top-level dict member: a <key>, or the value
-// that follows the pending key. It returns the key still pending.
 func plistMember(dec *xml.Decoder, el xml.StartElement, key string, info *BundleInfo, seen map[string]bool) (string, error) {
 	if el.Name.Local == "key" {
 		if key != "" {
@@ -134,8 +123,7 @@ func plistMember(dec *xml.Decoder, el xml.StartElement, key string, info *Bundle
 	return "", nil
 }
 
-// ReadBundleInfo reads appDir/Contents/Info.plist. The read goes through
-// os.Root, so a symlink in the bundle cannot point it outside appDir.
+// ReadBundleInfo reads appDir/Contents/Info.plist.
 func ReadBundleInfo(appDir string) (BundleInfo, error) {
 	root, err := os.OpenRoot(appDir)
 	if err != nil {
@@ -154,9 +142,6 @@ func ReadBundleInfo(appDir string) (BundleInfo, error) {
 	return ParseInfoPlist(data)
 }
 
-// zipBundleInfo reads <root>/Contents/Info.plist out of a zip archive.
-// Two entries cleaning to that name are refused: which one an extractor
-// keeps is not this function's call to make.
 func zipBundleInfo(data []byte, root string) (BundleInfo, error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {

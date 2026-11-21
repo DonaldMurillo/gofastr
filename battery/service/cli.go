@@ -16,8 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
-// startWait bounds how long install, start and restart wait for the
-// daemon to answer on its control channel.
 const startWait = 15 * time.Second
 
 func (b *Battery) usage(w io.Writer) {
@@ -139,14 +137,6 @@ func (b *Battery) runForeground(ctx context.Context, args []string, build Builde
 	return b.serve(ctx, serveMode{dev: true, port: *port, openBrowser: *open}, build)
 }
 
-// runDevLoop is the child `gofastr dev` starts: `<app> --addr <addr>`.
-// It is the foreground dev run on that address's port, gate and all.
-// Sign in once with `<app> service open --dev`; the session survives
-// every rebuild because the dev run's secret and port do not change.
-// The localhost:<port> address `gofastr dev` prints redirects to
-// 127.0.0.1:<port>, where the session cookie lives. The service host
-// serves loopback only, so a host other than localhost or 127.0.0.1
-// is refused.
 func (b *Battery) runDevLoop(ctx context.Context, args []string, build Builder) error {
 	fs := flag.NewFlagSet(b.cfg.Name, flag.ContinueOnError)
 	fs.SetOutput(b.cfg.Stderr)
@@ -161,8 +151,6 @@ func (b *Battery) runDevLoop(ctx context.Context, args []string, build Builder) 
 	return b.serve(ctx, serveMode{dev: true, port: port}, build)
 }
 
-// loopbackPort returns the port of a loopback listen address: host
-// empty, localhost, or 127.0.0.1.
 func loopbackPort(addr string) (int, error) {
 	host, p, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -183,11 +171,8 @@ func loopbackPort(addr string) (int, error) {
 	return port, nil
 }
 
-// geteuid is os.Geteuid, a var so a test can play root.
 var geteuid = os.Geteuid
 
-// refuseRoot stops a per-user install from landing in root's account
-// by way of sudo.
 func refuseRoot() error {
 	if currentOS != "windows" && geteuid() == 0 {
 		return errors.New("service: refusing to install a per-user service as root; run this as the user who will use the app (system-wide install is not supported yet)")
@@ -209,16 +194,12 @@ func (b *Battery) install(port int) error {
 	if err != nil {
 		return err
 	}
-	// Refuse here, before anything is registered, rather than leave a
-	// daemon that crash-loops on the same limit.
 	if err := checkSocketPath(inst.socketPath()); err != nil {
 		return err
 	}
 	if err := inst.ensure(); err != nil {
 		return err
 	}
-	// A running copy holds the old binary (Windows refuses to replace a
-	// running .exe) and the port; stop waits for it to exit.
 	installed, err := b.mgr.installed(b)
 	if err != nil {
 		return err
@@ -247,11 +228,6 @@ func (b *Battery) install(port int) error {
 	return nil
 }
 
-// copySelf copies the running executable to the managed location, so
-// the registered program does not depend on where this one was run
-// from (a Downloads folder, a `go run` temp dir). Write to a temp file
-// in the target directory, then rename: the swap is atomic and a
-// half-written binary is never registered.
 func (b *Battery) copySelf() (string, error) {
 	src, err := os.Executable()
 	if err != nil {
@@ -308,10 +284,6 @@ func (b *Battery) uninstall(purge bool) error {
 	if err := b.mgr.uninstall(b); err != nil {
 		return err
 	}
-	// Whatever the manager reported, nothing is deleted while the
-	// daemon is still alive: it holds the database and the binary. A
-	// starting daemon named no pid, so the wait is on its control
-	// channel going away.
 	if daemon.PID > 0 || starting {
 		if err := b.waitExit(daemon); err != nil {
 			return fmt.Errorf("%w; nothing was deleted", err)
@@ -322,9 +294,6 @@ func (b *Battery) uninstall(purge bool) error {
 		return err
 	}
 	if err := os.RemoveAll(dir); err != nil {
-		// Windows will not delete the executable a process is running
-		// from, so the installed copy uninstalling itself cannot remove
-		// its own folder. Say so and carry on to --purge.
 		if !runningFrom(dir) {
 			return fmt.Errorf("service: remove %s: %w", dir, err)
 		}
@@ -415,11 +384,6 @@ func (b *Battery) status(inst layout, installed bool) error {
 	return nil
 }
 
-// waitReady polls the control channel until the daemon answers. A
-// daemon that exits at once (port taken) never answers, and the error
-// points at the log, where it said why. A starting daemon has bound its
-// socket but answers only once the app is ready, so a probe that dials
-// and then times out waiting for the reply is starting, not failed.
 func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	deadline := time.Now().Add(startWait)
 	for {
@@ -435,17 +399,8 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	}
 }
 
-// errStarting reports a daemon whose control socket accepts but does
-// not answer: it binds the socket before its builder runs and serves
-// it only once the app is ready. A builder that never returns looks
-// the same. There is a process, but no reply names its pid.
 var errStarting = errors.New("starting")
 
-// runningDaemon is the installed daemon's process, pid 0 when nothing
-// answers on its control channel, as the daemon reports it. A daemon
-// that dials but stays silent gets up to startingWait to answer; past
-// that the result is pid 0 with errStarting, and the caller still has a
-// process to stop.
 func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	inst, err := b.layoutFor(false)
 	if err != nil {
@@ -466,10 +421,6 @@ func (b *Battery) runningDaemon() (procalive.Identity, error) {
 	return resp.identity(), nil
 }
 
-// identity is the daemon process a reply names: its pid with the start
-// value the daemon read itself. A daemon built before it reported one
-// sends none, and the pid is sampled now instead; after a stop that
-// sample may already be a newer process's.
 func (r controlResponse) identity() procalive.Identity {
 	if r.ProcStart != 0 {
 		return procalive.Identity{PID: r.PID, Start: r.ProcStart}
@@ -477,23 +428,10 @@ func (r controlResponse) identity() procalive.Identity {
 	return procalive.Identify(r.PID)
 }
 
-// stopWait bounds how long a stop waits for the process to exit: the
-// daemon's own drain bound plus slack for the exit itself.
 var stopWait = stopTimeout + 10*time.Second
 
-// startingWait is how long stop keeps asking a daemon that dials but
-// does not answer, the silence of one still building its app, before
-// treating it as wedged.
 var startingWait = startWait
 
-// waitExit waits until the installed daemon's control channel is gone
-// and the daemon process has exited. The daemon keeps the channel open
-// until its drain finishes, but the channel closing is not the process
-// exiting: until it exits, Windows holds its executable locked and a
-// service manager still counts the job as running, so a start issued
-// then is dropped. A pid the kernel has handed to a newer process is
-// not the daemon (procalive.Identity), so a recycled pid does not hold
-// stop for the full wait or make uninstall refuse.
 func (b *Battery) waitExit(daemon procalive.Identity) error {
 	inst, err := b.layoutFor(false)
 	if err != nil {
@@ -512,7 +450,6 @@ func (b *Battery) waitExit(daemon procalive.Identity) error {
 	}
 }
 
-// runningFrom reports whether this process's executable is inside dir.
 func runningFrom(dir string) bool {
 	exe, err := os.Executable()
 	if err != nil {
@@ -528,8 +465,6 @@ func runningFrom(dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// daemonArgv is the argv install registers for exe on port, with the
-// state base this CLI resolved.
 func (b *Battery) daemonArgv(exe string, port int) ([]string, error) {
 	base, err := b.base()
 	if err != nil {
@@ -553,8 +488,6 @@ func (b *Battery) rotate(dev bool) error {
 	if _, err := callControl(l.socketPath(), "status"); errors.Is(err, errNotRunning) {
 		return nil
 	} else if err != nil {
-		// Something holds the socket but did not answer: it may still
-		// sign sessions with the old secret.
 		return fmt.Errorf("service: the secret was rotated, but the running %s did not answer (%w); restart it to apply the new secret", b.cfg.Name, err)
 	}
 	if dev {

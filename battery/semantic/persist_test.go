@@ -256,3 +256,17 @@ func TestWALReplayRefusesOtherModel(t *testing.T) {
 		t.Fatalf("reopen with model-b: err = %v, want *ModelMismatchError", err)
 	}
 }
+
+func TestLoadSnapshotRefusesAnotherModelOfTheSameDim(t *testing.T) {
+	dir := t.TempDir()
+	idx, _ := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
+	_ = idx.Add(context.Background(), Document{ID: "a", Text: "alpha"})
+	if err := idx.Snapshot(); err != nil {
+		t.Fatal(err)
+	}
+	_ = idx.Close()
+	err := NewFlatStore(64, "another-model").LoadSnapshot(filepath.Join(dir, "store.snap"))
+	if _, ok := errors.AsType[*ModelMismatchError](err); !ok {
+		t.Fatalf("a snapshot of another model with the same dimension loaded: %v", err)
+	}
+}

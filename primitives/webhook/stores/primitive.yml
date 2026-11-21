@@ -1,0 +1,94 @@
+primitive: webhook.stores
+summary: The outbound Store implementations, MemoryStore and SQLStore, their claim, settle, release, replay and retention paths, and the SecretCodec that seals subscriber secrets and credentials.
+code:
+  - battery/webhook/memory.go
+  - battery/webhook/sql.go
+  - battery/webhook/secret.go
+docs:
+  - framework/docs/content/webhooks.md
+twins:
+  - job: Claim due deliveries, settle them behind the terminal and claim fences, hand back unstarted claims, reset dead ones and reap successful ones.
+    why: MemoryStore guards a map with a mutex in process while SQLStore expresses the same fences as WHERE predicates every replica shares; the fence rules themselves are one set of functions (settleFence, claimFenced, leaseFenced), and eachLeasedStore pins the stores against each other.
+    sites:
+      - path: battery/webhook/memory.go
+        note: MemoryStore.UpdateDelivery, ClaimDueDeliveries, releaseClaim, ResetDelivery and ReapTerminalBefore.
+      - path: battery/webhook/sql.go
+        note: SQLStore.UpdateDelivery, claimPostgres, claimSqlite, releaseClaim, ResetDelivery and ReapTerminalBefore.
+invariants:
+  - id: claim-consumes-one-attempt
+    rule: ClaimDueDeliveries on every store bumps the stored attempts by one per claimed row and returns the bumped value, so a crash loop reaches MaxAttempts.
+    enforced_by:
+      - test: battery/webhook.TestClaimConsumesOneAttemptOnEveryStore
+      - test: battery/webhook.TestClaimConsumesAttemptCrashLoop
+  - id: settle-never-writes-attempts
+    rule: A settle keeps the stored attempts, adding one only for a fallback dequeue no claim counted.
+    enforced_by:
+      - test: battery/webhook.TestFallbackTickReachesMaxAttempts
+  - id: stale-settles-are-fenced
+    rule: On every store a non-terminal settle never replaces a success or dead row, nothing but a success replaces a success, a retry or dead settle lands only while the row holds its claim's lease, and a release lands only on its own lease.
+    enforced_by:
+      - test: battery/webhook.TestDeadNeverOverwritesSuccess
+      - test: battery/webhook.TestStaleRetryKeepsLiveLease
+      - test: battery/webhook.TestStaleDeadSettleKeepsReplay
+      - test: battery/webhook.TestStaleSuccessLandsOverDeadLetter
+      - test: battery/webhook.TestStaleReleaseKeepsNewClaim
+  - id: reset-and-reap-touch-only-their-rows
+    rule: ResetDelivery changes only a dead row, and ReapTerminalBefore deletes only successful rows past the cutoff, keeping dead ones for Replay.
+    enforced_by:
+      - test: battery/webhook.TestResetAndReapTouchOnlyTheirRowsOnEveryStore
+  - id: lease-arguments-are-checked
+    rule: SQLStore.ClaimDueDeliveries errors on a negative lease and takes 30s for a zero one.
+    enforced_by:
+      - test: battery/webhook.TestClaimLeaseNegativeRejected
+      - test: battery/webhook.TestClaimLeaseZeroKeepsDefault
+  - id: sqlite-claim-takes-the-write-lock-first
+    rule: The SQLite claim opens BEGIN IMMEDIATE, so concurrent claimers serialize instead of failing with SQLITE_BUSY.
+    enforced_by:
+      - test: battery/webhook.TestSQLiteClaimConcurrentNoBusy
+  - id: sqlite-due-times-are-utc
+    rule: SQLStore binds every time in UTC and rewrites, at construction, the due times an earlier release stored in another zone.
+    enforced_by:
+      - test: battery/webhook.TestSQLiteStoreRewritesZonedDueTimes
+  - id: secrets-need-a-codec-choice
+    rule: NewSQLStore errors without WithSQLSecretCodec or WithSQLAllowPlaintext.
+    enforced_by:
+      - test: battery/webhook.TestSQLStore_RefusesPlaintextWithoutOptIn
+  - id: corrupt-columns-are-errors
+    rule: A subscriber whose events or auth column does not parse reads back as an error, never as no events or no credential.
+    enforced_by:
+      - test: battery/webhook.TestSQLStoreCorruptColumnsAreErrors
+  - id: upsert-aliases-its-target
+    rule: The subscriber upsert aliases its target table, so a table named excluded works on both dialects.
+    enforced_by:
+      - test: battery/webhook.TestSubscribersTableNamedExcluded
+  - id: old-tables-are-upgraded
+    rule: NewSQLStore and NewSQLInboundStore add the columns later releases introduced to a table an earlier one created.
+    enforced_by:
+      - test: battery/webhook.TestSQLStoreUpgradesOldTables
+      - test: battery/webhook.TestWebhookStoresAddOwnerColumn
+    applies:
+      - battery/webhook/inbound_sql.go
+  - id: erasure-deletes-owned-deliveries
+    rule: Erasing a user deletes every delivery whose owner is that user, pending ones included.
+    enforced_by:
+      - test: battery/webhook.TestEraseRemovesOwnedDeliveries
+  - id: legacy-plaintext-decodes
+    rule: "The AES-GCM codec decodes a value without its wbenc:v1: prefix as itself, so a deployment can roll the codec without rewriting rows."
+    enforced_by:
+      - test: battery/webhook.TestAESGCMSecretCodec_DecodeAcceptsLegacyPlaintext
+decisions:
+  - id: dead-rows-outlive-retention
+    date: 2026-11-20
+    status: accepted
+    decision: Retention reaps only successful deliveries.
+    rejected:
+      - option: Reap dead rows past the window too.
+        why: Replay needs their body and last error, and retention is not a dead-letter TTL.
+    upholds: [reset-and-reap-touch-only-their-rows]
+  - id: no-key-ring
+    date: 2026-11-20
+    status: accepted
+    decision: NewAESGCMSecretCodec takes one key; rotation reads through an old-key codec and writes through a new-key one.
+    rejected:
+      - option: Bundle a key ring.
+        why: Key management belongs in the app's KMS adapter, and the codec stays a small primitive.

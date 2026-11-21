@@ -175,6 +175,17 @@ func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 	}
 }
 
+func TestPlanMenuBarDropsTopLevelSeparator(t *testing.T) {
+	validated, err := validateMenu(&Menu{Items: []MenuItem{{Role: RoleSeparator}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, _ := PlanMenuBar(context.Background(), "Notes", validated, false)
+	if len(plans) != 2 {
+		t.Fatalf("a top-level separator became a menu: %d menus, want the app and Edit menus only", len(plans))
+	}
+}
+
 func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
 		{Title: testPhrase("File"), Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},

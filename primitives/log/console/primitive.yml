@@ -1,0 +1,13 @@
+primitive: log.console
+summary: The human-readable console sink for development, one colourized line per entry.
+code:
+  - battery/log/console.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: console-writes-no-control-runes
+    rule: Every time, level, message, key and value the console prints, and a malformed entry, has its control, C1 and invisible runes written as escapes.
+    enforced_by:
+      - test: battery/log.TestConsoleSinkRendersNoControlBytes
+      - test: battery/log.TestConsoleSinkNeutralizesMsgKeyAndFallback
+      - test: battery/log.TestConsoleMalformedEntryIsEscaped

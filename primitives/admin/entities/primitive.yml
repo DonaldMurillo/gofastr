@@ -1,0 +1,94 @@
+primitive: admin.entities
+summary: The entity screens - which entities the admin exposes, their list, record and create screens drawn by framework/entityui, the gated write routes, the dashboard count fragment, and the SQL saved views store.
+code:
+  - battery/admin/entities.go
+  - battery/admin/saved_views.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new write route for an exposed entity mounts inside mountEntityAPI, wrapped in elevated and on crud.EntityRouter, and only when writable(e) holds.
+invariants:
+  - id: exposure-is-explicit
+    rule: The admin exposes none by default, only the named Entities otherwise, failing boot on an unknown name or one whose key cannot name a record, and with AllEntities only entities whose CRUD routes the app mounted.
+    enforced_by:
+      - test: battery/admin.TestEntitiesNoneExposedByDefault
+      - test: battery/admin.TestEntitiesUnknownNameFailsBoot
+      - test: battery/admin.TestRawTableNotServed
+      - test: battery/admin.TestAllEntitiesSkipsCRUDOff
+  - id: writes-run-elevated-but-not-past-capabilities
+    rule: The admin's write routes run the app's own CRUD handlers under the admin's elevation, and a state override still needs its capability by name.
+    enforced_by:
+      - test: battery/admin.TestEntityElevationLiftsAccess
+      - test: battery/admin.TestAdminOverrideNeedsCapability
+  - id: saved-view-route-is-elevated
+    rule: The saved views routes run under the admin's elevation, so a view needs only the read the admin's own list has.
+    enforced_by:
+      - test: battery/admin.TestAdminSavesAViewOfALockedEntity
+  - id: composite-keys-round-trip
+    rule: A record's id comes from the route's key params, never the decoded path, and recordHref answers "" for an id that does not split into the entity's key columns.
+    enforced_by:
+      - test: battery/admin.TestCompositeCrumbNamesSlashKey
+      - test: battery/admin.TestCompositeRecordHref
+  - id: create-opens-over-its-parents
+    rule: New opens as a drawer over the list and over the record of each entity it belongs to.
+    enforced_by:
+      - test: battery/admin.TestCreateOpensOverRelatedRecord
+  - id: count-fragment-reads-elevated
+    rule: The count fragment reads under the admin's elevation in the caller's scope, reads "—" for a refused or failed count, and stops being exact at manyRows.
+    enforced_by:
+      - test: battery/admin.TestEntityElevationLiftsAccess
+      - test: battery/admin.TestEntityCountReadsAndFormats
+      - test: battery/admin.TestCountTextStopsBeingExactAtManyRows
+  - id: views-belong-to-the-caller
+    rule: Every saved view query carries the owner and tenant read from ctx, a caller with no user or an empty id gets an error, and another owner's or tenant's view reads as ErrSavedViewNotFound.
+    enforced_by:
+      - test: battery/admin.TestSavedViewsOwnerIsolation
+      - test: battery/admin.TestSavedViewsTenantIsolation
+      - test: battery/admin.TestSavedViewsRefuseAUserWithNoID
+      - test: battery/admin.TestAdminSavedViewsPerAdmin
+  - id: view-cap-holds-under-concurrency
+    rule: Create counts and inserts in one transaction, under a per-caller advisory lock on Postgres whose key length-prefixes each part, so concurrent creates never pass SavedViewCap.
+    enforced_by:
+      - test: battery/admin.TestSavedViewsCapHoldsUnderConcurrency
+      - test: battery/admin.TestSavedViewsCapPerOwnerEntity
+      - test: battery/admin.TestSavedViewLockKeysDoNotAlias
+  - id: view-limits
+    rule: Create refuses a blank name and a name, filter or column set past entityui's limits.
+    enforced_by:
+      - test: battery/admin.TestSavedViewsContractLimits
+  - id: erasure-deletes-the-owners-views
+    rule: An erasure of a user deletes their saved views in every tenant.
+    enforced_by:
+      - test: battery/admin.TestEraseRemovesSavedViews
+  - id: feature-config-is-checked
+    rule: Init refuses a SavedViewsTable that is not a lowercase identifier, SavedViews with no database, and BulkJobs with no UI.
+    enforced_by:
+      - test: battery/admin.TestFeatureConfigRefusals
+    applies:
+      - battery/admin/admin.go
+  - id: write-routes-carry-the-entity
+    rule: Every admin write route is mounted on crud.EntityRouter(r, e), so a scope gate reads the entity from the route.
+    judge: Does this change mount an admin write route for an entity outside the crud.EntityRouter(r, e) router in mountEntityAPI?
+decisions:
+  - id: pg-flag-read-once
+    date: 2026-11-20
+    status: accepted
+    decision: The saved views store reads its dialect once at construction.
+    rejected:
+      - option: Call query.IsPostgres inside create.
+        why: It runs a query, which inside create's transaction waits forever on a one-connection pool.
+  - id: views-table-is-lowercase
+    date: 2026-11-20
+    status: accepted
+    decision: SavedViewsTable must match [a-z_][a-z0-9_]*.
+    rejected:
+      - option: Accept any SafeIdent name.
+        why: A mixed-case name can alias a differently-cased sibling on a case-insensitive collation or filesystem.
+    upholds: [feature-config-is-checked]
+  - id: view-ids-from-crypto-rand
+    date: 2026-11-20
+    status: accepted
+    decision: A saved view id is minted from crypto/rand.
+    rejected:
+      - option: An id from the clock.
+        why: Two stores creating in the same instant would race on one id.

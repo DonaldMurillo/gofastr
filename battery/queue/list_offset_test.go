@@ -91,3 +91,14 @@ func TestRedisListJobsOffset(t *testing.T) {
 	}
 	checkOffsets(t, q, "failed", []string{"d5", "d4", "d3", "d2", "d1"})
 }
+
+func TestDBListJobsBreaksTimeTiesByID(t *testing.T) {
+	_, q := openDBQueue(t, 0)
+	now := time.Now().UTC()
+	for _, id := range []string{"j2", "j4", "j1", "j3"} {
+		if err := q.Enqueue(context.Background(), Job{ID: id, Type: "x", CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkOffsets(t, q, "", []string{"j4", "j3", "j2", "j1"})
+}

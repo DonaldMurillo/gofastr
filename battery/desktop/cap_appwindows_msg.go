@@ -9,45 +9,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// The windows capability's cross-window messaging methods: post to one
-// window, broadcast to the others, the caller's own id. Pages message
-// each other through the server, never window to window: the bridge is
-// the only transport, so the same chokepoint, body limits, and logging
-// apply as to every other capability call. All three are ungated;
-// only the app's own same-origin windows exist.
-//
-// This file also holds the delivery helpers Emit and EmitTo share with
-// post and broadcast, so every _dispatch eval the process issues is
-// built exactly one way.
-
-// maxEventPayload caps the compact JSON of one cross-window payload
-// (64 KiB). The chokepoint already caps the whole request body at
-// 1 MiB; this is the policy bound for page-to-page messages. It is
-// measured on the COMPACT form, so whitespace cannot smuggle the
-// difference.
 const maxEventPayload = 64 << 10
 
-// dispatchJS builds the script every event delivery evaluates in a
-// window: _dispatch(name, JSON.parse(payload)). Name and payload travel
-// as quoted strings (jsQuote), and the payload is parsed by JSON.parse,
-// never spliced in as an object literal: __proto__ is a setter in a
-// literal, and duplicate __proto__ keys are a SyntaxError json.Valid
-// accepts.
 func dispatchJS(name, data string) string {
 	return "window.__gofastr && window.__gofastr.desktop && " +
 		"window.__gofastr.desktop._dispatch(" + jsQuote(name) + ", JSON.parse(" + jsQuote(data) + "))"
 }
 
-// inAppJS wraps js so it runs only while the page shows the app's own
-// origin; every script the battery sends a page goes through it
-// (TestEveryPageEvalIsOriginGated). A window can leave the app: the
-// runtime lets an external link navigate normally, and a page there
-// that defines window.__gofastr.desktop._dispatch or
-// window.__gofastr.navigate would receive every event, posted message
-// and deep link (an OAuth callback's code included). The check runs in
-// the page at eval time, so a navigation between the battery's lookup
-// and the eval cannot slip past it. Before Run binds, the origin is
-// "http://", which no page has.
 func (b *Battery) inAppJS(js string) string {
 	b.windowMu.Lock()
 	origin := "http://" + b.addr
@@ -55,9 +23,6 @@ func (b *Battery) inAppJS(js string) string {
 	return "if (location.origin === " + jsQuote(origin) + ") { " + js + " }"
 }
 
-// allowNavigation is WindowConfig.AllowNavigation: a window's main
-// frame may show the app's own origin and the blank page a web view
-// starts on (2026-10-27 L15). The origin is the one inAppJS gates on.
 func (b *Battery) allowNavigation(raw string) bool {
 	if b.cfg.DangerouslyAllowForeignNavigation || raw == "about:blank" {
 		return true
@@ -72,9 +37,7 @@ func (b *Battery) allowNavigation(raw string) bool {
 	return addr != "" && u.Scheme == "http" && u.Host == addr
 }
 
-// NavigationHost is what a shell logs for a navigation it refused: the
-// URL's host with control bytes scrubbed, never its path or query, which
-// may carry a token or an OAuth code.
+// NavigationHost returns raw's host with control bytes scrubbed, for logging a refused navigation.
 func NavigationHost(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -83,10 +46,6 @@ func NavigationHost(raw string) string {
 	return textsafe.ScrubControlBytes(u.Host)
 }
 
-// emitToWindowID delivers one prepared event to a live window. A window
-// that closed between the lookup and the eval reads as not_found, not
-// internal: the user clicking a close button mid-delivery is normal
-// window life, not a host error.
 func (b *Battery) emitToWindowID(windowID, name, data string) error {
 	w, ok := b.windowByID(windowID)
 	if !ok {
@@ -101,10 +60,6 @@ func (b *Battery) emitToWindowID(windowID, name, data string) error {
 	return nil
 }
 
-// compactEventPayload normalizes a page-supplied payload to compact
-// JSON and enforces the size cap. An absent payload becomes JSON's
-// null: an empty string would hand JSON.parse("") to the page, a
-// SyntaxError, not "no payload".
 func compactEventPayload(p json.RawMessage) (string, *Error) {
 	if len(p) == 0 {
 		return "null", nil
@@ -119,9 +74,6 @@ func compactEventPayload(p json.RawMessage) (string, *Error) {
 	return buf.String(), nil
 }
 
-// callerWindowID returns the window the calling page claims to live in
-// (the chokepoint put windowIDFromRequest's answer in the context;
-// "main" when the context carries nothing). A claim, not an identity.
 func callerWindowID(ctx context.Context) string {
 	if id, ok := ctx.Value(windowIDCtxKey{}).(string); ok && reWindowID.MatchString(id) {
 		return id
@@ -129,19 +81,14 @@ func callerWindowID(ctx context.Context) string {
 	return MainWindowID
 }
 
-// windowsBroadcastOutput is broadcast's result.
 type windowsBroadcastOutput struct {
 	Delivered int `json:"delivered"`
 }
 
-// windowsSelfOutput is self's result.
 type windowsSelfOutput struct {
 	ID string `json:"id"`
 }
 
-// windowsMessagingMethods are the cross-window methods of the windows
-// capability: post to one window, broadcast to all but the caller, the
-// caller's own id.
 func (b *Battery) windowsMessagingMethods() []Method {
 	return []Method{
 		{

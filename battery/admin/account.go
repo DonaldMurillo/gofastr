@@ -15,16 +15,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// The account page is the signed-in user's own settings: who they are,
-// the admin's theme in this browser, and their password. It reads only
-// the caller's own record, so it is not elevated.
-
 const (
 	passwordFormID = "admin-password-form"
 	nameFormID     = "admin-name-form"
 )
 
-// renderAccount draws <prefix>/account.
 func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
@@ -42,12 +37,9 @@ func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render
 		ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...))
 }
 
-// profileCard is the signed-in user: name, email (with its verified
-// state when the store records one) and roles.
 func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	var items []ui.DetailItem
 	_, nameStore := b.nameEditor(ctx)
-	// With a name form the form shows the name; a row would repeat it.
 	if name := b.userName(ctx); name != "" && nameStore == nil {
 		items = append(items, ui.DetailItem{Label: i18nui.AdminName.Text(ctx), Value: render.Text(name)})
 	}
@@ -82,9 +74,6 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	}, body...)
 }
 
-// nameForm sets the caller's display name, the name the account menu
-// and its avatar show. Saving returns to the page, so the shell redraws
-// with the new name.
 func (b *Battery) nameForm(ctx context.Context) render.HTML {
 	action := b.cfg.PathPrefix + "/account/_name"
 	return ui.Form(ui.FormConfig{
@@ -100,8 +89,6 @@ func (b *Battery) nameForm(ctx context.Context) render.HTML {
 	}))
 }
 
-// handleName stores the caller's display name. It names the caller
-// only: a user_id in the body is not read.
 func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/account"
 	vals, ok := b.readOps(w, r, page)
@@ -123,8 +110,6 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 		return
 	}
-	// SetUserName accepted the name, so CleanName does too: the row
-	// records the name as stored.
 	stored, _ := auth.CleanName(name)
 	b.appendAudit(r.Context(), "account", "set-name", actor, actor, map[string]any{"name": stored})
 	b.done(w, r, page, "name-saved")
@@ -138,8 +123,6 @@ func (b *Battery) nameEditor(ctx context.Context) (string, auth.NameStore) {
 	return id, b.nameStore()
 }
 
-// nameStore is the auth store's NameStore, or nil without Auth or a
-// store that keeps no name.
 func (b *Battery) nameStore() auth.NameStore {
 	if b.cfg.Auth == nil {
 		return nil
@@ -148,8 +131,6 @@ func (b *Battery) nameStore() auth.NameStore {
 	return s
 }
 
-// appearanceCard is the colour scheme, the same control and storage
-// the toolbar's toggle uses, and, with Config.Themes, the page's look.
 func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 	items := []ui.DetailItem{{
 		Label: i18nui.AdminThemeLabel.Text(ctx),
@@ -165,13 +146,6 @@ func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 	}, ui.DetailList(ui.DetailListConfig{Items: items}))
 }
 
-// passwordCard changes the caller's password through the auth battery's
-// POST <base>/password. The form posts JSON through the runtime, which
-// carries the CSRF token as a header, so the form holds only the route's
-// own fields (the route refuses unknown keys). The new password is asked
-// once: its show toggle is how the reader checks what they typed. A refusal comes back as
-// per-field errors drawn beside each input. An account with no password
-// (OAuth or magic-link only) is told how to set one instead.
 func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	card := func(body render.HTML) render.HTML {
 		return ui.Card(ui.CardConfig{
@@ -212,9 +186,6 @@ func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 	))
 }
 
-// emailVerified asks the auth store whether the caller's address is
-// verified. known is false without Auth, a store that does not record
-// it, or a failed lookup.
 func (b *Battery) emailVerified(ctx context.Context) (verified, known bool) {
 	if b.cfg.Auth == nil {
 		return false, false
@@ -234,9 +205,6 @@ func (b *Battery) emailVerified(ctx context.Context) (verified, known bool) {
 	return v, true
 }
 
-// hasPassword asks the auth store whether the caller has a password.
-// known is false when the store cannot say or the lookup failed; the
-// form is drawn then, and the route answers for itself.
 func (b *Battery) hasPassword(ctx context.Context) (has, known bool) {
 	checker, ok := b.cfg.Auth.UserStore().(auth.PasswordChecker)
 	if !ok {
@@ -253,8 +221,6 @@ func (b *Battery) hasPassword(ctx context.Context) (has, known bool) {
 	return v, true
 }
 
-// userName reads the signed-in user's display name: the user type's own
-// GetName, else the auth store's NameStore, else "".
 func (b *Battery) userName(ctx context.Context) string {
 	if u, _ := handlerUser(ctx).(interface{ GetName() string }); u != nil {
 		if name := u.GetName(); name != "" {
@@ -271,9 +237,6 @@ func (b *Battery) userName(ctx context.Context) string {
 	}
 	return name
 }
-
-// userEmail reads the signed-in user's email, or "" when the user type
-// carries none.
 
 func userEmail(ctx context.Context) string {
 	u, _ := handlerUser(ctx).(interface{ GetEmail() string })

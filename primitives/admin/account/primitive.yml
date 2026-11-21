@@ -1,0 +1,13 @@
+primitive: admin.account
+summary: The account page - the signed-in user's profile, display name, appearance and password, read for the caller's own record only and never elevated.
+code:
+  - battery/admin/account.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: name-post-names-the-caller
+    rule: The name post sets the display name of the signed-in caller by their own id, never a posted user_id, refuses an id-less caller, and audits the name as stored.
+    enforced_by:
+      - test: battery/admin.TestAccountNameNamesTheShell
+      - test: battery/admin.TestAccountNameNeedsUserID
+      - test: battery/admin.TestAccountNameChangeIsAudited

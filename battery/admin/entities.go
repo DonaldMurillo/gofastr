@@ -18,16 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// The entity screens are framework/entityui's list and record, read in
-// process with the caller's context plus the admin's elevation, and
-// written through routes under <prefix>/api/<entity> behind the gate.
-
-// entitiesToExpose resolves the entities the admin manages: Entities in
-// order (an unknown name, or one whose key cannot name a record, fails
-// boot), or with AllEntities every entity whose CRUD routes the app
-// mounted, which leaves out a raw App.Table, registered for migration
-// only. Neither exposes nothing. One entity per table, so a versioned
-// entity is listed once.
 func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 	byName := b.app.Registry.All()
 	seen := map[string]bool{}
@@ -38,8 +28,6 @@ func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 			if !ok {
 				return nil, fmt.Errorf("admin: Config.Entities names %q, which the app does not register", name)
 			}
-			// The admin serves records by id; a raw table skipped
-			// Define's key check.
 			if err := e.CheckRecordKey(); err != nil {
 				return nil, fmt.Errorf("admin: Config.Entities names %q: %w", name, err)
 			}
@@ -64,18 +52,14 @@ func (b *Battery) entitiesToExpose() ([]*entity.Entity, error) {
 	return out, nil
 }
 
-// exposed reports whether the admin manages e.
 func (b *Battery) exposed(e *entity.Entity) bool {
 	return slices.ContainsFunc(b.ents, func(x *entity.Entity) bool { return x.GetName() == e.GetName() })
 }
 
-// writable reports whether the admin serves e's writes: it exposes e
-// and the app did not mount e read-only (a columned App.View).
 func (b *Battery) writable(e *entity.Entity) bool {
 	return b.exposed(e) && !b.app.EntityReadOnlyMounted(e)
 }
 
-// exposedNamed returns the exposed entity with this name.
 func (b *Battery) exposedNamed(name string) (*entity.Entity, bool) {
 	for _, e := range b.ents {
 		if e.GetName() == name {
@@ -85,21 +69,14 @@ func (b *Battery) exposedNamed(name string) (*entity.Entity, bool) {
 	return nil, false
 }
 
-// entityBase is an entity's list path in the admin.
 func (b *Battery) entityBase(e *entity.Entity) string {
 	return b.cfg.PathPrefix + "/entities/" + e.GetName()
 }
 
-// apiBase is where the admin's entity screens send their writes.
 func (b *Battery) apiBase(e *entity.Entity) string {
 	return b.cfg.PathPrefix + "/api/" + e.GetName()
 }
 
-// entityPath splits an admin-relative path under /entities into the
-// exposed entity and what follows it: "" for the list, "create", or the
-// id of the record m, the route match the path resolved to, names,
-// joined as entity.JoinKey renders it. The id comes from m's params and
-// not the path, whose decoded text cannot split a key value holding "/".
 func (b *Battery) entityPath(rest string, m appui.Match) (*entity.Entity, string, bool) {
 	tail, ok := strings.CutPrefix(rest, "/entities/")
 	if !ok {
@@ -123,8 +100,6 @@ func (b *Battery) entityPath(rest string, m appui.Match) (*entity.Entity, string
 	return e, recordID(e, p), true
 }
 
-// recordPattern is the screen pattern tail naming one of e's records:
-// "/:id", or one segment per key column of a composite key.
 func recordPattern(e *entity.Entity) string {
 	cols := e.KeyColumns()
 	if len(cols) == 1 {
@@ -137,9 +112,6 @@ func recordPattern(e *entity.Entity) string {
 	return b.String()
 }
 
-// recordHref is the screen path of e's record id: the escaped id for a
-// one-column key; for a composite key the id itself, already one escaped
-// segment per key column. "" when the id does not split into e's key.
 func (b *Battery) recordHref(e *entity.Entity, id string) string {
 	n := len(e.KeyColumns())
 	if n == 1 {
@@ -151,8 +123,6 @@ func (b *Battery) recordHref(e *entity.Entity, id string) string {
 	return b.entityBase(e) + "/" + id
 }
 
-// recordID is the id of the record a screen matched by recordPattern
-// names.
 func recordID(e *entity.Entity, p map[string]string) string {
 	cols := e.KeyColumns()
 	if len(cols) == 1 {
@@ -165,7 +135,6 @@ func recordID(e *entity.Entity, p map[string]string) string {
 	return entity.JoinKey(parts)
 }
 
-// plural and singular are an entity's localized names.
 func (b *Battery) plural(ctx context.Context, e *entity.Entity) string {
 	d := ""
 	if e.Config.Display != nil {
@@ -182,9 +151,6 @@ func (b *Battery) singular(ctx context.Context, e *entity.Entity) string {
 	return i18nui.EntitySingular(ctx, nil, e.GetName(), d)
 }
 
-// relatedTo lists the exposed entities holding a relation that points at
-// e, for its record's Related tab. Each related list still passes its
-// own read gate.
 func (b *Battery) relatedTo(e *entity.Entity) []string {
 	var out []string
 	for _, other := range b.ents {
@@ -197,9 +163,6 @@ func (b *Battery) relatedTo(e *entity.Entity) []string {
 	return out
 }
 
-// parentRecords lists the record patterns of the exposed entities e
-// belongs to: the records whose Related tab lists e, the reverse of
-// relatedTo.
 func (b *Battery) parentRecords(e *entity.Entity) []string {
 	var out []string
 	for _, other := range b.ents {
@@ -212,10 +175,6 @@ func (b *Battery) parentRecords(e *entity.Entity) []string {
 	return out
 }
 
-// relatedRecords lists the record patterns e's record opens as a drawer
-// over, beside its list: the records it belongs to and the records that
-// belong to it, so a relation's open button and a Related tab's row push
-// a panel instead of leaving the drawer. Its own pattern is left out.
 func (b *Battery) relatedRecords(e *entity.Entity) []string {
 	own := b.entityBase(e) + recordPattern(e)
 	var out []string
@@ -236,15 +195,12 @@ func (b *Battery) relatedRecords(e *entity.Entity) []string {
 	return out
 }
 
-// mountEntities registers each exposed entity's list, record and create
-// screens, and its write routes.
 func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 	for _, e := range b.ents {
 		name := e.GetName()
 		base := "/entities/" + name
 		listPath := b.entityBase(e)
 		related := b.relatedTo(e)
-		// The list screen and the record drawer's steps walk the same list.
 		entityList := func() *entityui.ListBuilder {
 			return b.ui.List(name).Base(listPath).Bulk().Delete().Undo().Duplicate().
 				QueryBox().ColumnsMenu().LayoutSwitch().InlineEdit().Deleted().SavedViews().TabCounts()
@@ -260,9 +216,6 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		b.entityTitle(create, e, func(ctx context.Context, _ map[string]string) string {
 			return i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)})
 		})
-		// New, like a record, opens as a drawer over the list, and over
-		// the record of each entity it belongs to, whose Related tab adds
-		// to it; a direct load is the full page.
 		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
 		record := b.screen(group, base+recordPattern(e), i18nui.AdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
@@ -282,25 +235,18 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 	b.mountCounts(r)
 }
 
-// entityTitle replaces a screen's title with an entity-aware one.
 func (b *Battery) entityTitle(s *appui.Screen, e *entity.Entity, title func(ctx context.Context, p map[string]string) string) {
 	as := s.Component.(*adminScreen)
 	as.title = title
 	s.Title = title(context.Background(), nil)
 }
 
-// mountEntityAPI mounts an entity's write routes: the app's own CRUD
-// handler (hooks, audit, scope, the write checks) behind the gate, with
-// the elevation that lifts only the entity's Exposure.Access check. An
-// entity the app mounted read-only gets none.
 func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	if !b.writable(e) {
 		return
 	}
 	ch, err := b.app.CrudHandlerForEntity(e)
 	if err != nil {
-		// Init resolved e from the registry, so this is a programming
-		// error; the screens draw without a write path.
 		b.logger().Error("admin: no CRUD handler for exposed entity", "entity", e.GetName(), "error", err)
 		return
 	}
@@ -311,8 +257,6 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	}
 	api := b.apiBase(e)
 	rec := api + crud.KeyPath(e.KeyColumns())
-	// Every route below answers to the entity's resource, so a scope gate
-	// over this tree reads it from the route, not from the path.
 	r = crud.EntityRouter(r, e)
 	r.Post(api, elevated(ch.Create()))
 	r.Put(rec, elevated(ch.Update()))
@@ -321,8 +265,6 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	if len(crud.RoutableTransitions(e.Config.States)) > 0 {
 		r.Post(api+crud.TransitionPath(e.KeyColumns()), elevated(ch.Transition()))
 	}
-	// The override's capability is checked by name: elevation lifts the
-	// entity's update permission for the write, never the capability.
 	if e.Config.States != nil {
 		r.Post(rec+"/_override", elevated(b.ui.OverrideHandler(e.GetName())))
 	}
@@ -333,9 +275,6 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	r.Post(api+"/_bulk", elevated(b.ui.BulkHandler(e.GetName())))
 	r.Get(api+"/_export.csv", elevated(b.ui.ExportHandler(e.GetName())))
 	r.Post(api+"/_pick", elevated(b.ui.PickerHandler(e.GetName())))
-	// Saved views belong to the caller and touch no entity row, but a
-	// view needs the entity's read permission, and the admin reads its
-	// lists elevated: the view is gated by the same read the list is.
 	if b.savedViews != nil {
 		views := elevated(b.ui.SavedViewsHandler(e.GetName()))
 		r.Post(api+"/_views", views)
@@ -343,17 +282,10 @@ func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
 	}
 }
 
-// countPoll is how often a dashboard count refreshes. The poll module
-// pauses while the tab is hidden.
 const countPoll = "60s"
 
-// manyRows is where a count stops being exact on the dashboard: past it
-// the card reads "10k+".
 const manyRows = 10000
 
-// mountCounts mounts GET <prefix>/_count/<entity>, the fragment a
-// dashboard card polls: the card, redrawn with a fresh count read in the
-// caller's scope (never cached in server memory: counts are per caller).
 func (b *Battery) mountCounts(r *router.Router) {
 	r.Get(b.cfg.PathPrefix+"/_count/{entity}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e, ok := b.exposedNamed(r.PathValue("entity"))
@@ -368,9 +300,6 @@ func (b *Battery) mountCounts(r *router.Router) {
 	}))
 }
 
-// countText writes a count for a card in the reader's locale below
-// manyRows, else "10,000+". A refused, failed or late count (ok false)
-// reads "—".
 func countText(ctx context.Context, n int, ok bool) string {
 	switch {
 	case !ok:

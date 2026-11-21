@@ -13,3 +13,18 @@ invariants:
     rule: A service tool's output folded into an error and every log line the logs command prints pass through textsafe.ScrubTerminal first.
     enforced_by:
       - test: battery/service.TestToolOutputAndLogsAreScrubbedForTheTerminal
+  - id: per-user-install-refuses-root
+    rule: Install refuses to run as root outside Windows.
+    enforced_by:
+      - test: battery/service.TestInstallRefusesRoot
+  - id: state-is-owner-only
+    rule: The state directory is created and tightened to 0700, the secret is minted once and kept, and a secret under 32 bytes is refused.
+    enforced_by:
+      - test: battery/service.TestEnsurePrivateDirTightens
+      - test: battery/service.TestSecretMintedOnceOwnerOnly
+      - test: battery/service.TestShortSecretRefused
+  - id: data-dir-env-is-absolute-and-clean
+    rule: The data directory override must be an absolute path with no control characters.
+    enforced_by:
+      - test: battery/service.TestDataDirEnvMustBeAbsolute
+      - test: battery/service.TestDataDirEnvRefusesControlBytes

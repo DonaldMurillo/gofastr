@@ -20,37 +20,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// The SQL SavedViewStore behind Config.SavedViews: one table the admin
-// creates the way the queue battery creates its own (CREATE TABLE IF NOT
-// EXISTS per dialect, DATETIME on SQLite, TIMESTAMPTZ on Postgres). The
-// store is identity-blind: it reads the owner and the tenant from ctx
-// only, never from an argument or the view, and every query carries
-// owner and tenant in its WHERE clause.
-
-// savedViewsTableRe is the shape a Config.SavedViewsTable name must
-// have: a lowercase identifier, so it can never need quoting tricks or
-// alias a differently-cased sibling on a case-insensitive filesystem
-// or collation.
 var savedViewsTableRe = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
-// errSavedViewNoUser answers a ctx with no user: saved views are
-// per-user state, so there is nothing to act on.
 var errSavedViewNoUser = errors.New("admin: saved views need a signed-in user")
 
-// sqlSavedViews keeps saved views in the admin's database.
 type sqlSavedViews struct {
 	db    *sql.DB
-	table string // validated by savedViewsTableRe, quoted into SQL
-	// pg is the dialect, read once here: query.IsPostgres runs a query,
-	// which inside create's transaction would wait on a one-connection
-	// pool forever.
-	pg bool
+	table string
+	pg    bool
 }
 
 var _ entityui.SavedViewStore = (*sqlSavedViews)(nil)
 
-// newSavedViews creates the saved views table if it is missing and
-// returns the store over it.
 func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedViews, error) {
 	ts := "DATETIME"
 	pg := query.IsPostgres(db)
@@ -81,9 +62,6 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 	return s, nil
 }
 
-// registerSavedViews declares the table to App.ExportData and
-// App.EraseUserData under its configured name. A user's saved views are
-// theirs alone, so an erasure deletes them in every tenant.
 func registerSavedViews(table string) {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("admin_saved_views", table), Source: "admin", Table: table, PrimaryKey: "id",
@@ -95,9 +73,6 @@ func registerSavedViews(table string) {
 	})
 }
 
-// savedViewCaller reads the caller the store acts for: the owner is
-// handler.GetUser's GetID and the tenant comes from ctx, both read
-// fresh on every call.
 func savedViewCaller(ctx context.Context) (owner, ten string, err error) {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {
@@ -134,9 +109,7 @@ func (s *sqlSavedViews) List(ctx context.Context, entity string) ([]entityui.Sav
 	return out, rows.Err()
 }
 
-// Get returns one of the caller's views of entity. Another owner's or
-// tenant's view is ErrSavedViewNotFound, the same answer as an id that
-// does not exist.
+// Get returns one of the caller's views of entity, or ErrSavedViewNotFound.
 func (s *sqlSavedViews) Get(ctx context.Context, entity, id string) (entityui.SavedView, error) {
 	owner, ten, err := savedViewCaller(ctx)
 	if err != nil {
@@ -154,12 +127,8 @@ func (s *sqlSavedViews) Get(ctx context.Context, entity, id string) (entityui.Sa
 	return v, nil
 }
 
-// Create stores v for the caller and returns it with its ID. The cap
-// check and the insert run in one transaction, under a per-caller lock
-// on Postgres, so two concurrent creates cannot both slip past the cap;
-// a name the caller already
-// uses for the entity is refused by the unique index and answered
-// ErrSavedViewExists.
+// Create stores v for the caller and returns it with its ID; a name already
+// held is ErrSavedViewExists.
 func (s *sqlSavedViews) Create(ctx context.Context, v entityui.SavedView) (entityui.SavedView, error) {
 	owner, ten, err := savedViewCaller(ctx)
 	if err != nil {
@@ -185,9 +154,6 @@ func (s *sqlSavedViews) Create(ctx context.Context, v entityui.SavedView) (entit
 		return entityui.SavedView{}, err
 	}
 	if err := s.create(ctx, v, cols, owner, ten); err != nil {
-		// The unique index refused the name: the caller already holds
-		// it. Anything else (the cap, a dead database) is the error
-		// itself; the name re-read keeps the answer driver-agnostic.
 		if _, held := s.nameHeld(ctx, v.Entity, v.Name, owner, ten); held {
 			return entityui.SavedView{}, entityui.ErrSavedViewExists
 		}
@@ -196,12 +162,6 @@ func (s *sqlSavedViews) Create(ctx context.Context, v entityui.SavedView) (entit
 	return v, nil
 }
 
-// create writes the row inside one transaction that first counts the
-// caller's views of the entity. Postgres runs READ COMMITTED, where each
-// of two concurrent creates counts the other's insert out, so there the
-// transaction first takes an advisory lock on the caller's views of the
-// entity. SQLite allows one writer at a time: of two creates that both
-// counted, only the first commits.
 func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, owner, ten string) (err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -236,9 +196,6 @@ func (s *sqlSavedViews) create(ctx context.Context, v entityui.SavedView, cols, 
 	return tx.Commit()
 }
 
-// savedViewLockKey names one caller's views of one entity for the
-// advisory lock. Each part is length-prefixed, so no owner, tenant or
-// entity spelling can alias another caller's key.
 func savedViewLockKey(parts ...string) string {
 	var b strings.Builder
 	for _, p := range parts {
@@ -249,8 +206,6 @@ func savedViewLockKey(parts ...string) string {
 	return b.String()
 }
 
-// nameHeld reports whether the caller already holds name for entity,
-// the re-read behind ErrSavedViewExists.
 func (s *sqlSavedViews) nameHeld(ctx context.Context, entity, name, owner, ten string) (entityui.SavedView, bool) {
 	v, err := scanView(s.db.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT id, name, filter, columns FROM %s WHERE owner = $1 AND tenant = $2 AND entity = $3 AND name = $4`,
@@ -261,8 +216,8 @@ func (s *sqlSavedViews) nameHeld(ctx context.Context, entity, name, owner, ten s
 	return v, true
 }
 
-// Delete removes one of the caller's views of entity. Another owner's
-// or tenant's view is ErrSavedViewNotFound.
+// Delete removes one of the caller's views of entity, or answers
+// ErrSavedViewNotFound.
 func (s *sqlSavedViews) Delete(ctx context.Context, entity, id string) error {
 	owner, ten, err := savedViewCaller(ctx)
 	if err != nil {
@@ -282,7 +237,6 @@ func (s *sqlSavedViews) Delete(ctx context.Context, entity, id string) error {
 	return nil
 }
 
-// scanView reads one id, name, filter, columns row into a SavedView.
 func scanView(row interface{ Scan(...any) error }, entity string) (entityui.SavedView, error) {
 	var v entityui.SavedView
 	var cols sql.NullString
@@ -298,8 +252,6 @@ func scanView(row interface{ Scan(...any) error }, entity string) (entityui.Save
 	return v, nil
 }
 
-// mintSavedViewID mints a row id from crypto/rand: never the clock, so
-// two stores never race on the same id.
 func mintSavedViewID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

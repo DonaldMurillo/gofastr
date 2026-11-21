@@ -29,8 +29,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
-// auditRow is one audit entry as the admin reads it. actor_id and diff
-// are nullable: system writes carry no actor.
 type auditRow struct {
 	ID        string
 	Entity    string
@@ -42,32 +40,16 @@ type auditRow struct {
 	Diff sql.NullString
 }
 
-// auditOps are the operations the audit filter offers: the fixed set the
-// CRUD hooks and entityui's bulk runs write (crud's create, update,
-// delete, restore, purge and state_override, entityui's bulk summary),
-// then what the operations pages write (a queue replay, a role grant or
-// revoke, a user's role assignment, the account page's name, the module
-// levers). A state
-// transition writes "transition:<key>", which no fixed select could
-// enumerate, so it is filtered by entity instead; a refused operation
-// shows in the unfiltered log.
 var auditOps = []string{
 	"create", "update", "delete", "restore", "purge", "state_override", "bulk",
 	"replay", "grant", "revoke", "assign-roles", "set-name",
 	opModuleEnable, opModuleDisable, opModuleBump, opModuleRevoke,
 }
 
-// auditDayLayout is the ?from= and ?to= format the date inputs post. A
-// day parses as UTC midnight, so the bounds are UTC days whatever the
-// server's zone; the audit page documents it.
 const auditDayLayout = "2006-01-02"
 
-// maxAuditActor is the longest ?actor= the page accepts, in bytes.
 const maxAuditActor = 200
 
-// auditFilter is the Audit log page's narrowing, every value validated
-// before it reaches SQL. to is exclusive: the parsed day plus one, so
-// ?to= covers that whole day.
 type auditFilter struct {
 	actor   string
 	entity  string
@@ -78,10 +60,6 @@ type auditFilter struct {
 	hasTo   bool
 }
 
-// parseAuditFilter reads the page's query string. An invalid value is
-// dropped and its param name reported, so the page never 500s on a
-// hand-edited URL and never prints the value it refused. The same
-// predicate text runs on both dialects: one query, $n placeholders.
 func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
 	var f auditFilter
 	var warned []string
@@ -120,9 +98,6 @@ func (b *Battery) parseAuditFilter(q url.Values) (auditFilter, []string) {
 	return f, warned
 }
 
-// renderAudit draws the Audit log page: the filter form, then one page
-// of the rows it narrows to, newest first, with the pager under them. A
-// page turn keeps the filter; a page past the end shows the last one.
 func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.HTML {
 	dropped := false
 	var q url.Values
@@ -152,8 +127,6 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 		rows, err = b.queryAuditWhere(ctx, limit, (page-1)*limit, f)
 	}
 	if err != nil {
-		// A missing audit table is the usual cause; driver text stays in
-		// the log.
 		return b.loadFailed(ctx, "admin: load audit rows", i18nui.AdminAuditLoadFailed, err, []render.HTML{header}, "table", b.cfg.AuditTable)
 	}
 	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
@@ -168,11 +141,6 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(above, b.auditTable(ctx, rows, 2, pager))...)
 }
 
-// auditFilterForm is the page's filter: the list toolbar's Filters
-// dropdown, a GET form that navigates, so the filter state lives in the
-// page's own query string. Entity and operation are facets; the actor
-// and the date range ride along as Extra, counted on the badge. Reset
-// drops back to the bare page.
 func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTML {
 	entityOpts := []ui.FacetOption{{Value: "", Label: i18nui.AdminAuditAnyEntity.Text(ctx)}}
 	opOpts := []ui.FacetOption{{Value: "", Label: i18nui.AdminAuditAnyOp.Text(ctx)}}
@@ -205,8 +173,6 @@ func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTM
 	})
 }
 
-// dayValue formats a parsed filter day back for the date input; "" when
-// the filter is off.
 func dayValue(set bool, t time.Time) string {
 	if !set {
 		return ""
@@ -214,15 +180,10 @@ func dayValue(set bool, t time.Time) string {
 	return t.Format(auditDayLayout)
 }
 
-// queryAudit reads the newest limit audit rows in the caller's tenant,
-// unfiltered: the dashboard's recent activity. The page narrows through
-// queryAuditWhere.
 func (b *Battery) queryAudit(ctx context.Context, limit int) ([]auditRow, error) {
 	return b.queryAuditWhere(ctx, limit, 0, auditFilter{})
 }
 
-// countAuditWhere counts the audit rows the filter narrows to in the
-// caller's tenant, for the page's pager.
 func (b *Battery) countAuditWhere(ctx context.Context, f auditFilter) (int, error) {
 	table, err := b.auditTableSQL()
 	if err != nil {
@@ -234,8 +195,6 @@ func (b *Battery) countAuditWhere(ctx context.Context, f auditFilter) (int, erro
 	return n, err
 }
 
-// auditTableSQL names the audit table the way framework.EnsureAuditTable
-// created it: validated, then folded and quoted with query.QuoteFolded.
 func (b *Battery) auditTableSQL() (string, error) {
 	safe, err := query.SafeIdent(b.cfg.AuditTable)
 	if err != nil {
@@ -244,9 +203,6 @@ func (b *Battery) auditTableSQL() (string, error) {
 	return query.QuoteFolded(safe), nil
 }
 
-// queryAuditWhere reads one page of audit rows in the caller's tenant
-// narrowed by the page's validated filter: limit rows after skipping
-// offset, newest first, the id breaking a tie so pages never overlap.
 func (b *Battery) queryAuditWhere(ctx context.Context, limit, offset int, f auditFilter) ([]auditRow, error) {
 	table, err := b.auditTableSQL()
 	if err != nil {
@@ -271,12 +227,6 @@ func (b *Battery) queryAuditWhere(ctx context.Context, limit, offset int, f audi
 	return out, rows.Err()
 }
 
-// auditWhere is the filter's WHERE clause, "" when nothing narrows, and
-// its arguments. A tenant-scoped caller sees only rows stamped with
-// their tenant (system rows with no tenant included in nobody's scope);
-// a caller with no tenant, the platform operator, sees every row. Values
-// only ever travel as placeholders, and the built predicate is the same
-// text on Postgres and SQLite.
 func auditWhere(ctx context.Context, f auditFilter) (string, []any) {
 	var conds []string
 	var args []any
@@ -308,8 +258,6 @@ func auditWhere(ctx context.Context, f auditFilter) (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-// auditTable draws audit rows, with pager under them when it is set. An
-// entity row the admin exposes links to its record.
 func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel int, pager *ui.PaginationConfig) render.HTML {
 	cols := []ui.Column{
 		{Key: "time", Header: i18nui.AdminColTime.Text(ctx)},
@@ -321,8 +269,6 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	names := b.actorNames(ctx, rows)
 	now := time.Now()
 	data := make([]ui.Row, len(rows))
-	// One answer per record from the app's read hooks, however many of
-	// the page's rows name it.
 	ctx = entityui.WithChangeCache(ctx)
 	for i, r := range rows {
 		before, after := b.scopedSides(ctx, r)
@@ -340,11 +286,9 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 		Rows:          data,
 		Caption:       i18nui.AdminAudit.Text(ctx),
 		CaptionHidden: true,
-		// Phone cards keep the record and its changes in view; a scrolled
-		// table showed only who and when.
-		Responsive: ui.ResponsiveCards,
-		Pagination: pager,
-		Ctx:        ctx,
+		Responsive:    ui.ResponsiveCards,
+		Pagination:    pager,
+		Ctx:           ctx,
 		Empty: ui.EmptyStateConfig{
 			Title:        i18nui.AdminAuditEmpty.Text(ctx),
 			Description:  i18nui.AdminAuditEmptyDesc.Text(ctx),
@@ -353,13 +297,6 @@ func (b *Battery) auditTable(ctx context.Context, rows []auditRow, emptyLevel in
 	})
 }
 
-// auditRecord draws one row's record and what it changed. An exposed
-// entity's record reads "Invoice · INV-1010": a live one titled the way
-// the record screen's breadcrumb titles it and linked to that screen, a
-// deleted or purged one titled from the row's stored copy. An entity the
-// admin does not expose shows its table name and the id. The reads run
-// elevated: the audit log is behind the admin gate, and the trail must
-// name records whatever the entity's own read permission says.
 func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map[string]any) (record, changes render.HTML) {
 	if r.Entity == "access" {
 		if record, changes, ok := b.accessAudit(ctx, r); ok {
@@ -394,10 +331,6 @@ func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map
 	return record, changes
 }
 
-// accessAudit draws a Roles or User roles row: "Role · billing" with the
-// permission granted, revoked or refused, or "User · ada@example.com"
-// with the roles set or the one refused. ok is false for a row it has
-// no words for, which keeps the generic table name and id.
 func (b *Battery) accessAudit(ctx context.Context, r auditRow) (record, changes render.HTML, ok bool) {
 	var d struct {
 		Permission  string   `json:"permission"`
@@ -439,9 +372,6 @@ func (b *Battery) accessAudit(ctx context.Context, r auditRow) (record, changes 
 	return "", "", false
 }
 
-// bulkAudit draws a bulk run's summary row: "2 payments" and what the run
-// did, with what it skipped or failed on. ok is false for a detail that
-// does not parse or an action it has no word for.
 func bulkAudit(ctx context.Context, e *entity.Entity, r auditRow) (record, changes render.HTML, ok bool) {
 	if !r.Diff.Valid {
 		return "", "", false
@@ -490,11 +420,6 @@ func bulkOperation(action string) string {
 	return ""
 }
 
-// auditTitle names an exposed entity's audit row record: a live one by
-// its title, read the way the record screen's breadcrumb reads it (live
-// is true), and a deleted, purged or unreadable one from the row's
-// stored copy, its old side else its new. It answers "" when neither
-// names it. The reads run elevated, as auditRecord says why.
 func (b *Battery) auditTitle(ctx context.Context, e *entity.Entity, r auditRow, before, after map[string]any) (title string, live bool) {
 	if b.ui == nil {
 		return "", false
@@ -518,8 +443,6 @@ func (b *Battery) auditTitle(ctx context.Context, e *entity.Entity, r auditRow, 
 	return "", false
 }
 
-// auditSides is a row's stored old and new values, nil where the row
-// stored none or its diff does not parse.
 func auditSides(r auditRow) (before, after map[string]any) {
 	if !r.Diff.Valid {
 		return nil, nil
@@ -534,15 +457,6 @@ func auditSides(r auditRow) (before, after map[string]any) {
 	return d.Before, d.After
 }
 
-// scopedSides is auditSides for a caller who may see them: nil, nil
-// when the entity's read hooks hide the stored record from the caller
-// (a BeforeGet/BeforeList scope, which the record screen answers
-// not-found for), or when r's entity is owner-scoped and the caller's
-// owner scope hides the record. Elevation lifts neither, so the trail
-// names a record and lists its values only when the caller's own read
-// would: its stored copy names the caller as owner, or the live record
-// reads under the caller's scope and hooks. A hidden record keeps its id
-// and loses its title and changes.
 func (b *Battery) scopedSides(ctx context.Context, r auditRow) (before, after map[string]any) {
 	before, after = auditSides(r)
 	e, ok := b.exposedNamed(r.Entity)
@@ -570,9 +484,6 @@ func (b *Battery) scopedSides(ctx context.Context, r auditRow) (before, after ma
 	return nil, nil
 }
 
-// agoCell is a time as the activity feed says it, "2h ago", with the
-// exact UTC time on hover, in the reader's date format, and in the
-// datetime attribute.
 func agoCell(ctx context.Context, now, t time.Time) render.HTML {
 	if t.IsZero() {
 		return ui.EmptyValue()
@@ -582,9 +493,6 @@ func agoCell(ctx context.Context, now, t time.Time) render.HTML {
 		render.Text(ui.Ago(ctx, now, t)))
 }
 
-// opKind folds the operations that carry a key onto one name: every
-// "transition:<key>" is a transition, state_override an override, and a
-// module lever ("module_enable") its verb.
 func opKind(op string) string {
 	switch {
 	case strings.HasPrefix(op, "transition:"):
@@ -597,7 +505,6 @@ func opKind(op string) string {
 	return op
 }
 
-// opVariant tints an audit operation's badge.
 func opVariant(op string) ui.StatusVariant {
 	switch opKind(op) {
 	case "create", "restore", "grant", "enable":
@@ -610,9 +517,6 @@ func opVariant(op string) ui.StatusVariant {
 	return ui.StatusNeutral
 }
 
-// appendAudit records one ops mutation. The mutation already took
-// effect, so a failed write is logged with what it would have recorded,
-// never swallowed, and so is a mutation with no audit database to write.
 func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID string, diff map[string]any) {
 	if b.db == nil {
 		b.logger().Error("admin: no audit database; the change committed unrecorded",
@@ -625,7 +529,6 @@ func (b *Battery) appendAudit(ctx context.Context, entity, op, recordID, actorID
 	}
 }
 
-// sortedKeys returns m's keys in order, for deterministic markup.
 func sortedKeys[V any](m map[string]V) []string {
 	return slices.Sorted(maps.Keys(m))
 }

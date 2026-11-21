@@ -1,0 +1,65 @@
+primitive: queue.db
+summary: DBQueue, the SQL queue on SQLite and Postgres - its table and migrations, the fenced claim, settle and release, the worker pool with lanes and gates, replay and browsing, and the jobs table's export and erasure.
+code:
+  - battery/queue/db.go
+  - battery/queue/legacy_normalize.go
+  - battery/queue/export.go
+docs:
+  - framework/docs/content/queue.md
+invariants:
+  - id: settles-are-claim-fenced
+    rule: Ack, Nack and every settle match the row only while it is claimed under the presenting claim's token, so a stale claim never deletes or moves the claim that replaced it.
+    enforced_by:
+      - test: battery/queue.TestDBStaleClaimCannotSettleTheNewOne
+      - test: battery/queue.TestDBStaleNackLosesARaceToANewClaim
+      - test: battery/queue.TestDBReleaseCannotTouchReclaimant
+  - id: failure-follows-the-retry-policy
+    rule: A failed claim dead-letters at once on ErrPermanent, waits a RetryAfterError's delay instead of the backoff, and dead-letters when its next retry falls past CreatedAt+MaxAge.
+    enforced_by:
+      - test: battery/queue.TestPermanentDeadLettersAtOnce
+      - test: battery/queue.TestRetryAfterSetsNextAttempt
+      - test: battery/queue.TestMaxAgeGivesUp
+      - test: battery/queue.TestMaxAgeAppliesWhenLeaseExpires
+  - id: last-error-is-scrubbed-and-capped
+    rule: A job keeps its handler error's text with control bytes scrubbed and cut to maxLastError runes.
+    enforced_by:
+      - test: battery/queue.TestDBListJobsCarriesStatusUpdatedAndLastError
+  - id: lease-outlasts-the-handler-budget
+    rule: NewDBQueue and SetLeaseTimeout refuse a claim lease no longer than WithDBHandlerTimeout.
+    enforced_by:
+      - test: battery/queue.TestHandlerBudgetMustFitInsideLease
+  - id: gate-defers-without-an-attempt
+    rule: The worker loop re-checks the gate after the claim, and a gated or shutdown-cut job goes back to pending with its attempt refunded.
+    enforced_by:
+      - test: battery/queue.TestGateReleaseSurvivesShutdown
+      - test: battery/queue.TestShutdownBeforeStartRefundsClaim
+      - test: battery/queue.TestShutdownMidHandlerRefunds
+  - id: sqlite-claim-takes-the-write-lock-first
+    rule: The SQLite claim runs under BEGIN IMMEDIATE, so concurrent claimers serialize instead of failing with SQLITE_BUSY.
+    enforced_by:
+      - test: battery/queue.TestSQLiteDequeueConcurrentNoBusy
+  - id: list-pages-are-stable
+    rule: ListJobs orders by created_at then id, both descending, so jobs created in one instant page without repeats or gaps.
+    enforced_by:
+      - test: battery/queue.TestDBListJobsBreaksTimeTiesByID
+  - id: replay-touches-only-failed-rows
+    rule: Replay and ReplayJob reset a job only while its status is failed.
+    enforced_by:
+      - test: battery/queue.TestReplayJobReportsWhetherItQueued
+  - id: handlerless-job-is-dead-lettered
+    rule: A claimed job whose handler is gone is dead-lettered as permanent, never acked away.
+    enforced_by:
+      - test: battery/queue.TestNoHandlerJobIsDeadLettered
+  - id: close-without-start-returns
+    rule: Close of a queue that never started returns at once.
+    enforced_by:
+      - test: battery/queue.TestCloseWithoutStartReturns
+decisions:
+  - id: settle-detached-from-the-worker
+    date: 2026-11-20
+    status: accepted
+    decision: A worker writes Ack, Nack and hand-backs on a context detached from its own and bounded, so a shutdown does not lose the outcome of work that ran.
+    rejected:
+      - option: Settle on the worker's context.
+        why: A shutdown landing as the handler returns would leave the job claimed until its lease expired and run it again.
+    upholds: [gate-defers-without-an-attempt]

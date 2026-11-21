@@ -20,58 +20,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Harness runs an app through the desktop battery's REAL Run flow with
-// the fake Shell in place of the OS: the loopback listener, the boot
-// token, the session cookie, the Host pin, the frozen registry, the
-// menu and tray wiring, and the chokepoint all run exactly as in a
-// window, and the harness plays the two sides the OS normally plays.
-//
-// The page side: Get/Post/Call issue requests the way the WebView
-// would, carrying the window's session cookie (a Stranger client has
-// none). The native side: ClickMenu, ClickTray, PressKey, OpenSettings,
-// CloseWindow, CloseMainWindow, and Answer are the user's hands on the
-// menus, the tray, the window chrome, and the permission alerts.
-// Everything that crossed the shell is observable: Notifications,
-// Events, Navigations, WindowIDs, and the Shell's own recorders.
-//
-//	shell := desktoptest.NewShell()
-//	app, d := buildApp(shell) // desktop.Config{Shell: shell, ...}
-//	h := desktoptest.Run(t, app, d)
-//	h.Get("/").AssertStatus(t, 200)
-//	h.ClickMenu("File", "New note")
-//	h.Wait("the navigation", func() bool { return len(h.Navigations()) == 1 })
-//	var out struct{ Title string }
-//	h.Call("window", "title", nil).MustResult(t, &out)
-//
-// Run quits the app and waits for Battery.Run to return in t.Cleanup.
+// Harness runs an app through the battery's real Run flow with the fake Shell standing in for the OS.
 type Harness struct {
 	t testing.TB
 
-	// App is the app under test; Battery its desktop battery; Shell
-	// the fake shell the battery was configured with.
+	// App is the app under test; Battery its desktop battery; Shell the fake shell the battery was configured with.
 	App     *framework.App
 	Battery *desktop.Battery
 	Shell   *Shell
 
-	addr    string
-	session *http.Cookie
-	client  *http.Client
-	// bootRedirect is the Location the enter handshake answered with
-	// ("/", or the main window's remembered path).
+	addr         string
+	session      *http.Cookie
+	client       *http.Client
 	bootRedirect string
 
 	runErr     chan error
 	quitOnce   sync.Once
 	quitResult error
 
-	// eventsSeen is WaitEvent's cursor into Events.
 	eventsSeen int
 }
 
-// pollInterval and waitTimeout bound Wait. maxHarnessBody bounds one
-// response read (8 MiB: generous for every page, island, and export
-// body the apps under test produce, while a wedged handler cannot
-// wedge the harness on an unbounded body).
 const (
 	pollInterval   = 10 * time.Millisecond
 	waitTimeout    = 10 * time.Second
@@ -79,15 +48,7 @@ const (
 	maxHarnessBody = 8 << 20
 )
 
-// Run starts d.Run(app) on a goroutine, waits for the fake window to
-// receive the boot navigation, walks the single-use token handshake
-// as the WebView would, and returns the harness holding the resulting
-// session. d must have been constructed with a *Shell (Config.Shell).
-//
-// When GOFASTR_DESKTOP_DATA_DIR is unset it is pointed at t.TempDir()
-// so a suite never writes under the developer's Application Support;
-// an app whose main assembles desktop.AppOptions before Run must set
-// the variable itself, before that call.
+// Run starts d.Run(app), walks the boot handshake as the WebView would, and quits the app in t.Cleanup.
 func Run(t testing.TB, app *framework.App, d *desktop.Battery) *Harness {
 	t.Helper()
 	shell, ok := d.Shell().(*Shell)
@@ -113,7 +74,7 @@ func Run(t testing.TB, app *framework.App, d *desktop.Battery) *Harness {
 			t.Fatalf("desktoptest.Run: Battery.Run returned before the window opened: %v", err)
 		default:
 		}
-		w := shell.Window(mainWindowID)
+		w := shell.Window(desktop.MainWindowID)
 		if w == nil {
 			return false
 		}
@@ -162,12 +123,7 @@ func Run(t testing.TB, app *framework.App, d *desktop.Battery) *Harness {
 	return h
 }
 
-// mainWindowID and sessionCookieName mirror the battery's constants;
-// the harness asserts against them rather than importing internals.
-const (
-	mainWindowID      = "main"
-	sessionCookieName = "__gofastr_desktop"
-)
+const sessionCookieName = "__gofastr_desktop"
 
 // Addr is the loopback host:port the app is listening on.
 func (h *Harness) Addr() string { return h.addr }
@@ -175,19 +131,16 @@ func (h *Harness) Addr() string { return h.addr }
 // URL joins path onto the app's loopback origin.
 func (h *Harness) URL(path string) string { return "http://" + h.addr + path }
 
-// SessionCookie is the window's session cookie, for a client the
-// harness does not own (a real browser driven through CDP, say).
+// SessionCookie is the window's session cookie, for a client the harness does not own (a real browser driven through CDP, say).
 func (h *Harness) SessionCookie() *http.Cookie {
 	c := *h.session
 	return &c
 }
 
-// Client is the page's HTTP client: it carries the session cookie and
-// never follows redirects.
+// Client is the page's HTTP client: it carries the session cookie and never follows redirects.
 func (h *Harness) Client() *http.Client { return h.client }
 
-// Stranger is a client with no session: another local process that
-// found the port. The gate must refuse everything it sends.
+// Stranger is a client with no session: another local process that found the port.
 func (h *Harness) Stranger() *http.Client {
 	return &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -197,8 +150,6 @@ func (h *Harness) Stranger() *http.Client {
 	}
 }
 
-// ----- the page side ------------------------------------------------------
-
 // Response is one recorded reply.
 type Response struct {
 	Status int
@@ -207,7 +158,7 @@ type Response struct {
 	err    error
 }
 
-// AssertStatus fails the test unless the status matches. Chainable.
+// AssertStatus fails the test unless the status matches.
 func (r *Response) AssertStatus(t testing.TB, want int) *Response {
 	t.Helper()
 	if r.err != nil {
@@ -244,8 +195,7 @@ func (h *Harness) Get(path string) *Response {
 	return h.request(http.MethodGet, path, nil)
 }
 
-// Post issues a JSON POST from the window (what the page's islands and
-// forms send to the app's own routes).
+// Post issues a JSON POST from the window (what the page's islands and forms send to the app's own routes).
 func (h *Harness) Post(path string, body any) *Response {
 	return h.request(http.MethodPost, path, body)
 }
@@ -260,9 +210,7 @@ func (h *Harness) Delete(path string) *Response {
 	return h.request(http.MethodDelete, path, nil)
 }
 
-// Do sends an arbitrary request from the window: the session cookie
-// is attached by the client's jar (the request URL must be on the
-// app's origin, see URL).
+// Do sends an arbitrary request from the window: the session cookie is attached by the client's jar (the request URL must be on the app's origin, see URL).
 func (h *Harness) Do(req *http.Request) *Response {
 	return h.send(h.client, req)
 }
@@ -283,7 +231,6 @@ func (h *Harness) request(method, path string, body any) *Response {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	// What a same-origin fetch from the page carries.
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	return h.send(h.client, req)
 }
@@ -301,8 +248,7 @@ func (h *Harness) send(c *http.Client, req *http.Request) *Response {
 	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: string(data)}
 }
 
-// CallResult is one bridge call's outcome, decoded from the
-// chokepoint's envelope: OK with Result, or Code and Message.
+// CallResult is one bridge call's outcome, decoded from the chokepoint's envelope: OK with Result, or Code and Message.
 type CallResult struct {
 	Status  int
 	OK      bool
@@ -312,7 +258,7 @@ type CallResult struct {
 	err     error
 }
 
-// AssertOK fails the test unless the call succeeded. Chainable.
+// AssertOK fails the test unless the call succeeded.
 func (c *CallResult) AssertOK(t testing.TB) *CallResult {
 	t.Helper()
 	if c.err != nil {
@@ -349,18 +295,12 @@ func (c *CallResult) MustResult(t testing.TB, v any) {
 	}
 }
 
-// Call invokes a capability method the way the page's bridge does: a
-// JSON POST to the chokepoint with the session cookie and the calling
-// window's header. The caller is the MAIN window's page; CallFrom
-// plays any other window. input nil sends an empty object.
+// Call invokes a capability method the way the page's bridge does: a JSON POST to the chokepoint with the session cookie and the calling window's header.
 func (h *Harness) Call(capability, method string, input any) *CallResult {
-	return h.CallFrom(mainWindowID, capability, method, input)
+	return h.CallFrom(desktop.MainWindowID, capability, method, input)
 }
 
-// CallFrom invokes a capability method as the page in windowID does:
-// the same POST plus X-Gofastr-Window: windowID. The id is exactly
-// what the bridge reads from a real page, a claim it does not verify,
-// so a test can send even a grammatical id no window has.
+// CallFrom invokes a capability method as the page in windowID does: the same POST plus X-Gofastr-Window: windowID.
 func (h *Harness) CallFrom(windowID, capability, method string, input any) *CallResult {
 	if input == nil {
 		input = map[string]any{}
@@ -400,8 +340,7 @@ func (h *Harness) CallFrom(windowID, capability, method string, input any) *Call
 	}
 }
 
-// Manifest fetches the frozen capability manifest the page's bridge
-// is generated from.
+// Manifest fetches the frozen capability manifest the page's bridge is generated from.
 func (h *Harness) Manifest() desktop.Manifest {
 	h.t.Helper()
 	var m desktop.Manifest
@@ -412,9 +351,6 @@ func (h *Harness) Manifest() desktop.Manifest {
 	return m
 }
 
-// ----- the native side ----------------------------------------------------
-
-// config is the WindowConfig Run received.
 func (h *Harness) config() desktop.WindowConfig {
 	h.t.Helper()
 	cfg, ok := h.Shell.Config()
@@ -424,13 +360,7 @@ func (h *Harness) config() desktop.WindowConfig {
 	return cfg
 }
 
-// ClickMenu activates a main-menu item by its title path ("File",
-// "New note"), matched against each title phrase's English, so a test
-// reads the same in every OS language. A role item with no title
-// matches its role name
-// ("quit"). Navigate and Handler items go through the battery's menu
-// dispatch like a native click; quit, settings, and show roles do what
-// the native shell does for them.
+// ClickMenu activates a main-menu item by its English title path.
 func (h *Harness) ClickMenu(titles ...string) {
 	h.t.Helper()
 	cfg := h.config()
@@ -441,8 +371,7 @@ func (h *Harness) ClickMenu(titles ...string) {
 	h.activate(cfg, item, strings.Join(titles, " > "))
 }
 
-// ClickTray activates a tray-menu item by its title's English (or
-// role name for a title-less role item).
+// ClickTray activates a tray-menu item by its title's English (or role name for a title-less role item).
 func (h *Harness) ClickTray(title string) {
 	h.t.Helper()
 	cfg := h.config()
@@ -453,8 +382,7 @@ func (h *Harness) ClickTray(title string) {
 	h.activate(cfg, item, "tray > "+title)
 }
 
-// PressKey activates the main-menu item carrying the accelerator
-// ("cmd+n"), matched case-insensitively.
+// PressKey activates the main-menu item carrying the accelerator ("cmd+n"), matched case-insensitively.
 func (h *Harness) PressKey(key string) {
 	h.t.Helper()
 	cfg := h.config()
@@ -520,7 +448,6 @@ func itemTitles(items []desktop.MenuItem) string {
 	return "[" + strings.Join(out, ", ") + "]"
 }
 
-// activate does what the native shell does for one clicked item.
 func (h *Harness) activate(cfg desktop.WindowConfig, item desktop.MenuItem, where string) {
 	h.t.Helper()
 	switch {
@@ -532,7 +459,7 @@ func (h *Harness) activate(cfg desktop.WindowConfig, item desktop.MenuItem, wher
 		}
 		cfg.OnSettings(context.Background())
 	case item.Role == desktop.RoleShow:
-		if w := h.Shell.Window(mainWindowID); w != nil {
+		if w := h.Shell.Window(desktop.MainWindowID); w != nil {
 			_ = w.Focus()
 		}
 	case item.Role != "":
@@ -547,8 +474,7 @@ func (h *Harness) activate(cfg desktop.WindowConfig, item desktop.MenuItem, wher
 	}
 }
 
-// OpenSettings activates the app menu's own Settings item (cmd+, on
-// macOS), the one the shell synthesizes when Config.Settings is set.
+// OpenSettings activates the app menu's own Settings item (cmd+, on macOS), the one the shell synthesizes when Config.Settings is set.
 func (h *Harness) OpenSettings() {
 	h.t.Helper()
 	cfg := h.config()
@@ -561,11 +487,10 @@ func (h *Harness) OpenSettings() {
 	cfg.OnSettings(context.Background())
 }
 
-// CloseWindow is the user closing a secondary window through the OS:
-// the fake window is marked closed and the battery is told.
+// CloseWindow is the user closing a secondary window through the OS: the fake window is marked closed and the battery is told.
 func (h *Harness) CloseWindow(id string) {
 	h.t.Helper()
-	if id == mainWindowID {
+	if id == desktop.MainWindowID {
 		h.t.Fatal("desktoptest.CloseWindow: use CloseMainWindow for the main window")
 	}
 	w := h.Shell.Window(id)
@@ -578,14 +503,11 @@ func (h *Harness) CloseWindow(id string) {
 	}
 }
 
-// CloseMainWindow is the user clicking the main window's close
-// button: with Tray.CloseHidesWindow the window hides and the app
-// stays alive (Focus, the show role, brings it back); otherwise the
-// app quits.
+// CloseMainWindow clicks the main window's close button: it hides under Tray.CloseHidesWindow, else the app quits.
 func (h *Harness) CloseMainWindow() {
 	h.t.Helper()
 	cfg := h.config()
-	w := h.Shell.Window(mainWindowID)
+	w := h.Shell.Window(desktop.MainWindowID)
 	if w == nil {
 		h.t.Fatal("desktoptest.CloseMainWindow: no main window")
 	}
@@ -597,13 +519,9 @@ func (h *Harness) CloseMainWindow() {
 }
 
 // Answer queues decisions for the next permission prompts, in order.
-// An unanswered prompt denies.
 func (h *Harness) Answer(ds ...desktop.Decision) { h.Shell.SetPromptDecisions(ds...) }
 
-// ----- observation --------------------------------------------------------
-
-// Window returns the fake window with the given id; the test fails
-// when there is none.
+// Window returns the fake window with the given id; the test fails when there is none.
 func (h *Harness) Window(id string) *Window {
 	h.t.Helper()
 	w := h.Shell.Window(id)
@@ -613,33 +531,26 @@ func (h *Harness) Window(id string) *Window {
 	return w
 }
 
-// MoveWindow plays the user dragging window id to frame f: the fake
-// window's frame changes and the shell reports through
-// WindowConfig.OnWindowFrame, the way a native move does.
+// MoveWindow plays the user dragging window id to frame f.
 func (h *Harness) MoveWindow(id string, f desktop.Frame) {
 	h.t.Helper()
 	h.Window(id) // fails the test naming a window that is not open
 	h.Shell.MoveWindow(id, f)
 }
 
-// FocusWindow plays the OS making window id key: the fake shell fires
-// WindowConfig.OnWindowFocus on a goroutine, the way the native
-// windowDidBecomeKey: delegate reports.
+// FocusWindow plays the OS making window id key: the fake shell fires WindowConfig.OnWindowFocus on a goroutine, the way the native windowDidBecomeKey: delegate reports.
 func (h *Harness) FocusWindow(id string) { h.Shell.FocusWindow(id) }
 
 // BlurWindow plays the window resigning key (windowDidResignKey:).
 func (h *Harness) BlurWindow(id string) { h.Shell.BlurWindow(id) }
 
-// SetReduceTransparency plays the user flipping the accessibility
-// setting: the shell's Appearance changes and OnAppearance fires.
+// SetReduceTransparency plays the user flipping the accessibility setting: the shell's Appearance changes and OnAppearance fires.
 func (h *Harness) SetReduceTransparency(on bool) { h.Shell.SetReduceTransparency(on) }
 
-// SidebarWidthOf returns the sidebar zone window id carries (0 when
-// there is no such window).
+// SidebarWidthOf returns the sidebar zone window id carries (0 when there is no such window).
 func (h *Harness) SidebarWidthOf(id string) int { return h.Shell.SidebarWidthOf(id) }
 
-// BootRedirect is the Location the boot handshake answered with: "/"
-// or, when the app remembers windows, the main window's last path.
+// BootRedirect is the Location the boot handshake answered with: "/" or, when the app remembers windows, the main window's last path.
 func (h *Harness) BootRedirect() string { return h.bootRedirect }
 
 // WindowIDs lists the battery's live windows, main first.
@@ -664,19 +575,16 @@ type Event struct {
 // Unmarshal decodes the event's payload into v.
 func (e Event) Unmarshal(v any) error { return json.Unmarshal(e.Payload, v) }
 
-// Events returns every native event dispatched to the main window's
-// page, in order, parsed out of the evals the battery issued. A
-// secondary window's events are that window's own: h.Window(id).Events().
+// Events returns every native event dispatched to the main window's page, in order, parsed out of the evals the battery issued.
 func (h *Harness) Events() []Event {
-	w := h.Shell.Window(mainWindowID)
+	w := h.Shell.Window(desktop.MainWindowID)
 	if w == nil {
 		return nil
 	}
 	return w.Events()
 }
 
-// WaitEvent waits for the next event named name that Events has not
-// handed out through an earlier WaitEvent, and returns it.
+// WaitEvent waits for the next event named name that Events has not handed out through an earlier WaitEvent, and returns it.
 func (h *Harness) WaitEvent(name string) Event {
 	h.t.Helper()
 	return waitEvent(h.t, name, &h.eventsSeen, h.Events, h.Wait)
@@ -702,10 +610,9 @@ func waitEvent(t TB, name string, cursor *int, events func() []Event, wait func(
 	return got
 }
 
-// Navigations returns every path the battery told the main window's
-// page to navigate to (menu Navigate items), in order.
+// Navigations returns every path the battery told the main window's page to navigate to (menu Navigate items), in order.
 func (h *Harness) Navigations() []string {
-	w := h.Shell.Window(mainWindowID)
+	w := h.Shell.Window(desktop.MainWindowID)
 	if w == nil {
 		return nil
 	}
@@ -718,8 +625,7 @@ func (h *Harness) Navigations() []string {
 	return out
 }
 
-// Wait polls cond every 10ms for up to 10s and fails the test naming
-// what it waited for.
+// Wait polls cond every 10ms for up to 10s and fails the test naming what it waited for.
 func (h *Harness) Wait(what string, cond func() bool) {
 	h.t.Helper()
 	deadline := time.Now().Add(waitTimeout)
@@ -735,9 +641,7 @@ func (h *Harness) Wait(what string, cond func() bool) {
 	h.t.Fatalf("desktoptest: timed out waiting for %s", what)
 }
 
-// Quit ends the app the way the quit role does and waits for
-// Battery.Run to return; it returns Run's error. Idempotent, and
-// registered in t.Cleanup by Run.
+// Quit ends the app the way the quit role does and waits for Battery.Run to return; it returns Run's error.
 func (h *Harness) Quit() error {
 	h.quitOnce.Do(func() {
 		h.Shell.Quit()
@@ -751,23 +655,13 @@ func (h *Harness) Quit() error {
 	return h.quitResult
 }
 
-// ----- eval parsing -------------------------------------------------------
-
-// dispatchMarker and navigateMarker are the shapes Battery.Emit and
-// the menu dispatch evaluate in the page. The names and payloads are
-// JSON string literals, so a JSON decoder reads them back exactly.
 const (
 	dispatchMarker = ".desktop._dispatch("
 	navigateMarker = "window.__gofastr.navigate("
 )
 
-// originGatePrefix opens the guard the battery wraps every page script
-// in, so it runs only on the app's own origin:
-// if (location.origin === "<origin>") { <script> }.
 const originGatePrefix = "if (location.origin === "
 
-// stripOriginGate returns the script inside the origin guard, or js
-// unchanged when it carries none.
 func stripOriginGate(js string) string {
 	rest, ok := strings.CutPrefix(js, originGatePrefix)
 	if !ok {
@@ -788,9 +682,7 @@ func stripOriginGate(js string) string {
 	return body
 }
 
-// ParseEvent recognizes the script Battery.Emit evaluates and returns
-// the event it carries. It finds the dispatch call anywhere in the
-// script, so the origin guard around it needs no stripping.
+// ParseEvent recognizes the script Battery.Emit evaluates and returns the event it carries.
 func ParseEvent(js string) (Event, bool) {
 	i := strings.Index(js, dispatchMarker)
 	if i < 0 {
@@ -813,8 +705,7 @@ func ParseEvent(js string) (Event, bool) {
 	return Event{Name: name, Payload: json.RawMessage(data)}, true
 }
 
-// ParseNavigate recognizes the script a menu Navigate item evaluates
-// and returns its path. The origin guard around it is ignored.
+// ParseNavigate recognizes the script a menu Navigate item evaluates and returns its path.
 func ParseNavigate(js string) (string, bool) {
 	js = stripOriginGate(js)
 	if !strings.HasPrefix(js, navigateMarker) {
@@ -824,8 +715,6 @@ func ParseNavigate(js string) (string, bool) {
 	return p, ok
 }
 
-// jsonString decodes one JSON string literal at the start of s and
-// returns it with the number of bytes consumed.
 func jsonString(s string) (string, int, bool) {
 	dec := json.NewDecoder(strings.NewReader(s))
 	var v string

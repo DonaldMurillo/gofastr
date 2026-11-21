@@ -4,7 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -256,5 +260,107 @@ func TestQueuedPromptGivesUpWithItsRequest(t *testing.T) {
 	}
 	if got := len(fake.prompts()); got != 1 {
 		t.Fatalf("%d alerts, want 1: the aborted waiter must not prompt", got)
+	}
+}
+
+func TestConcurrentFirstCallsShowOneAlert(t *testing.T) {
+	b, fake := newTestBattery(t)
+	shell := &blockingPromptShell{fakeShell: fake, entered: make(chan struct{}, 2), release: make(chan Decision, 2)}
+	b.shell = shell
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	results := make(chan bool, 2)
+	go func() { proceed, _ := b.authorizeCall(context.Background(), c, m); results <- proceed }()
+	<-shell.entered
+	go func() { proceed, _ := b.authorizeCall(context.Background(), c, m); results <- proceed }()
+	time.Sleep(50 * time.Millisecond)
+	shell.release <- DecisionAllow
+	shell.release <- DecisionDeny
+	for i := 0; i < 2; i++ {
+		if !<-results {
+			t.Fatal("a call waiting behind the answered alert was refused: it must read the persisted allow")
+		}
+	}
+	if got := len(fake.prompts()); got != 1 {
+		t.Fatalf("%d alerts for two concurrent first calls, want 1", got)
+	}
+}
+
+func TestUnknownStoredDecisionReadsAsDeny(t *testing.T) {
+	b, fake := newTestBattery(t)
+	store := newSQLiteGrants(t)
+	b.grants = store
+	if _, err := store.db.Exec(`INSERT INTO desktop_grants (capability, permission, decision, granted_at) VALUES ('clipboard', 'clipboard:write', 'garbage', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	if proceed, code := b.authorizeCall(context.Background(), c, m); proceed || code != CodeDenied {
+		t.Fatalf("a garbage grant value: proceed=%v code=%q, want refused with %q", proceed, code, CodeDenied)
+	}
+	if got := len(fake.prompts()); got != 0 {
+		t.Fatalf("%d alerts, want 0: a stored value is an answer", got)
+	}
+}
+
+// deadlineStore records the deadline each Set is given.
+type deadlineStore struct {
+	*memGrantStore
+	deadline time.Time
+	bounded  bool
+}
+
+func (s *deadlineStore) Set(ctx context.Context, capability, permission, decision string) error {
+	s.deadline, s.bounded = ctx.Deadline()
+	return s.memGrantStore.Set(ctx, capability, permission, decision)
+}
+
+func TestGrantWriteIsBoundedByGrantWriteTimeout(t *testing.T) {
+	b, fake := newTestBattery(t)
+	store := &deadlineStore{memGrantStore: newMemGrantStore()}
+	b.grants = store
+	fake.promptDecisions = []Decision{DecisionDeny}
+	c, m := methodNamed(t, b, "clipboard", "writeText")
+	before := time.Now()
+	b.authorizeCall(context.Background(), c, m)
+	if !store.bounded {
+		t.Fatal("the grant write ran with no deadline; a hung store would hold the call forever")
+	}
+	if store.deadline.After(time.Now().Add(grantWriteTimeout)) || store.deadline.Before(before) {
+		t.Fatalf("grant write deadline %v is not within grantWriteTimeout (%v) of the write", store.deadline, grantWriteTimeout)
+	}
+}
+
+// failingReadStore fails the Nth Get and answers every other one from an empty store.
+type failingReadStore struct {
+	*memGrantStore
+	failOn int
+	gets   int
+}
+
+func (s *failingReadStore) Get(ctx context.Context, capability, permission string) (string, bool, error) {
+	s.gets++
+	if s.gets == s.failOn {
+		return "", false, errors.New("disk I/O error")
+	}
+	return s.memGrantStore.Get(ctx, capability, permission)
+}
+
+func TestGrantReadErrorFailsClosed(t *testing.T) {
+	for _, failOn := range []int{1, 2} {
+		t.Run(fmt.Sprintf("read %d", failOn), func(t *testing.T) {
+			b, shell, called := newChokepointBattery(t)
+			b.grants = &failingReadStore{memGrantStore: newMemGrantStore(), failOn: failOn}
+			shell.promptDecisions = []Decision{DecisionAllow}
+			srv := serveBridge(t, b)
+			status, body := postCall(t, srv, "/__gofastr/desktop/call/testcap/gated", "application/json", "{}")
+			if status != http.StatusInternalServerError || !strings.Contains(body, `"`+CodeInternal+`"`) {
+				t.Fatalf("grant read %d failed: %d %s, want 500 %s", failOn, status, body, CodeInternal)
+			}
+			if n := len(shell.prompts()); n != 0 {
+				t.Fatalf("grant read %d failed and the user was prompted %d times", failOn, n)
+			}
+			if called.Load() != 0 {
+				t.Fatalf("grant read %d failed and the handler ran", failOn)
+			}
+		})
 	}
 }

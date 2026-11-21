@@ -10,30 +10,20 @@ import (
 
 // InspectorConfig configures an Inspector.
 type InspectorConfig struct {
-	// Label names the region for assistive tech. Required: an unnamed
-	// region is a landmark nobody can navigate.
+	// Label names the region for assistive tech.
 	Label string
 
-	// Title is the panel header. Optional.
+	// Title is the panel header.
 	Title string
 
-	// Items renders as ui.DetailList (label/value rows) under the
-	// header. The catalog already owns that primitive; the inspector
-	// owns the surface.
+	// Items renders as ui.DetailList (label/value rows) under the header.
 	Items []ui.DetailItem
 
 	// Footer renders at the bottom of the panel.
 	Footer render.HTML
 }
 
-// Inspector is the macOS inspector pane: a labelled side panel on the
-// glass surface showing details about the selection. It renders the
-// surface (Glass) and the structure; ui.DetailList renders the rows,
-// so the framework's detail styling (grid, collapse) applies unchanged.
-//
-// The panel is content, not layout: InspectorSplit puts it in the
-// trailing column beside the content, the native inspector position.
-// It does not position itself.
+// Inspector is a labelled glass side panel of detail rows; it panics without a Label.
 func Inspector(cfg InspectorConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("desktopui: Inspector requires Label")
@@ -60,14 +50,7 @@ func Inspector(cfg InspectorConfig) render.HTML {
 	return Glass(GlassConfig{}, inspectorStyle.WrapHTML(aside))
 }
 
-// InspectorSplit places content and an inspector side by side: the
-// content takes the remaining width, the inspector keeps the trailing
-// column at --desktop-inspector-width (default 260px, measured,
-// unverified). When the window is too narrow for both (content under
-// 20rem), the inspector wraps below the content instead of squeezing
-// it.
-//
-//	desktopui.InspectorSplit(body, desktopui.Inspector(cfg))
+// InspectorSplit places content and an inspector side by side, the inspector in the trailing column.
 func InspectorSplit(content, inspector render.HTML) render.HTML {
 	return inspectorSplitStyle.WrapHTML(render.Tag("div", html.Attrs{
 		"class": "desktopui-inspector-split",

@@ -13,37 +13,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
-// RateLimitStore is the optional shared backend for RateLimiter. When
-// RateLimiterConfig.Store is set, every replica consults the same
-// attempt ledger, so the brute-force budget stays MaxAttempts total
-// instead of MaxAttempts × replicas and a block on one replica holds on
-// all of them.
-//
-// The store receives the limiter's resolved config on every call so one
-// store instance can serve limiters with different budgets (login,
-// register, 2FA challenge), implementations must derive per-limiter
-// state from the key alone, which the RateLimiter already namespaces.
+// RateLimitStore is a limiter backend shared by replicas, so a budget and a block hold across them.
 type RateLimitStore interface {
 	Allow(ctx context.Context, key string, cfg RateLimiterConfig) (allowed bool, retryAfter time.Duration, err error)
 }
 
-// SQLRateLimitStore is a RateLimitStore backed by two database tables
-// (SQLite or PostgreSQL): one row per attempt plus a per-key block row.
-// Timestamps are stored as unix milliseconds so window comparisons are
-// plain integer arithmetic on both dialects.
-//
-// Usage:
-//
-//	shared := auth.NewSQLRateLimitStore(db, "auth_rate_limits")
-//	mgr := auth.New(auth.AuthConfig{
-//	    LoginRateLimit: &auth.RateLimiterConfig{Store: shared},
-//	    ...
-//	})
-//
-// The schema is created lazily on first use, hosts never hand-roll the
-// DDL. Admission fails closed under concurrency, across any number of
-// replicas: Allow records the attempt before it counts (see Allow), so a
-// burst on one key admits at most MaxAttempts callers, and possibly none.
+// SQLRateLimitStore is a RateLimitStore in two SQLite or PostgreSQL tables: attempts and blocks.
 type SQLRateLimitStore struct {
 	db      *sql.DB
 	table   string
@@ -56,17 +31,14 @@ type SQLRateLimitStore struct {
 	lastSweep map[string]time.Time // per-scope, so one busy scope can't starve others' GC
 }
 
-// NewSQLRateLimitStore creates a shared rate-limit store on the given
-// table base name (an "_attempts" sibling table is derived from it).
-// Panics if the table name contains unsafe characters.
+// NewSQLRateLimitStore returns a store on table and table_attempts; it panics on an unsafe name.
 func NewSQLRateLimitStore(db *sql.DB, table string) *SQLRateLimitStore {
 	query.MustIdent(table)
 	query.MustIdent(table + "_attempts")
 	return &SQLRateLimitStore{db: db, table: table, lastSweep: map[string]time.Time{}}
 }
 
-// EnsureSchema creates both tables if absent. Idempotent; invoked
-// lazily by Allow, exported for hosts that migrate eagerly at boot.
+// EnsureSchema creates both tables; Allow calls it until it first succeeds.
 func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
 	for _, table := range []string{s.table, s.table + "_attempts"} {
 		if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), table); err != nil {
@@ -90,20 +62,10 @@ func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// ensureSchemaOnce runs EnsureSchema until it first succeeds, then never
-// again. Unlike a sync.Once that latches the *result*, a transient
-// failure (DB unreachable during boot warm-up, context deadline) is
-// retried on the next Allow, so a single blip can't permanently brick
-// this replica's limiter into denying every login until a restart.
-// CREATE TABLE IF NOT EXISTS is idempotent, so re-running is cheap.
 func (s *SQLRateLimitStore) ensureSchemaOnce(ctx context.Context) error {
 	if s.schemaReady.Load() {
 		return nil
 	}
-	// Serialize first-time creation: CREATE TABLE/INDEX IF NOT EXISTS is not
-	// race-free on Postgres (two concurrent runs can both pass the existence
-	// check and one errors), which would spuriously fail-close a login. Only
-	// one goroutine runs EnsureSchema; the rest wait and see schemaReady.
 	s.schemaMu.Lock()
 	defer s.schemaMu.Unlock()
 	if s.schemaReady.Load() {
@@ -116,32 +78,7 @@ func (s *SQLRateLimitStore) ensureSchemaOnce(ctx context.Context) error {
 	return nil
 }
 
-// Allow implements RateLimitStore with the same sliding-window +
-// block semantics as the in-process limiter.
-//
-// The admission decision is insert-then-count. Each caller commits its
-// own attempt row first and only then counts the key's in-window rows.
-// Every statement is autocommit, so a caller's COUNT runs after its own
-// INSERT committed: order the committed inserts, and the k-th one sees at
-// least k rows. At most MaxAttempts callers can therefore see a count of
-// MaxAttempts or less, however many arrive at once and on however many
-// replicas. A caller that sees more is denied and writes the block.
-//
-// The earlier count-then-insert read the quota and acted on it in
-// separate statements, so a concurrent burst all read the same
-// pre-insert count and all got in (19 to 34 admissions out of 50 against
-// MaxAttempts=10 on Postgres). Insert-then-count needs no transaction,
-// advisory lock or dialect-specific UPSERT, so the same SQL holds on
-// SQLite and Postgres. A denied caller's row stays behind; it predates
-// the block it triggered and is cleared when that block expires.
-//
-// The bound is one-sided, and fails closed. When every insert of a burst
-// commits before any of its counts run, every caller sees the whole burst
-// and none is admitted, even with MaxAttempts or fewer legitimate callers
-// in it once the burst runs past the budget. That errs toward denial, the
-// right side for a brute-force limiter. A limiter whose budget a stranger
-// can spend for someone else (the per-address mail limit) is a lockout
-// lever on this store, which is why that one defaults to in-memory state.
+// Allow records the attempt, then counts the key's in-window attempts, with the in-process limiter's window and block rules; a store error refuses.
 func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimiterConfig) (bool, time.Duration, error) {
 	if err := s.ensureSchemaOnce(ctx); err != nil {
 		return false, 0, err
@@ -153,14 +90,6 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	blocks := query.QuoteFolded(s.table)
 	attempts := query.QuoteFolded(s.table + "_attempts")
 
-	// Amortized sweep so abandoned keys (attacker-minted emails, rotated
-	// XFF) don't accumulate forever. At most once per Window PER SCOPE, and
-	// scoped to THIS limiter's keys: the _attempts table is shared across
-	// scopes with independent Windows, so (a) a short-window co-tenant (e.g.
-	// a 2FA challenge limiter) must not delete a long-window limiter's (e.g.
-	// 1h login-account) still-valid rows, hence the scope prefix, and (b)
-	// each scope owns its own sweep timer, so a busy scope can't monopolize
-	// a single shared timer and starve every other scope's GC.
 	s.mu.Lock()
 	sweep := now.Sub(s.lastSweep[cfg.Scope]) >= cfg.Window
 	if sweep {
@@ -173,12 +102,6 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND attempted_at_ms <= $2`, attempts, inScope), scopePrefix, cutoffMs); err != nil {
 			return false, 0, err
 		}
-		// An expired block goes with the attempts it covered, as on the
-		// per-key path below. Dropping only the block left those attempts
-		// counting: with BlockDuration < Window the key's next try found
-		// them still in the window and was blocked again, where the
-		// in-memory limiter admits it. Attempts made after the block
-		// expired are fresh and stay.
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, inScope, blocks), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
@@ -187,21 +110,15 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		}
 	}
 
-	// Honour an active block; clear an expired one.
 	var blockedUntilMs int64
 	err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT blocked_until_ms FROM %s WHERE rl_key = $1", blocks), key).Scan(&blockedUntilMs)
 	switch {
 	case err == sql.ErrNoRows:
-		// No block on record.
 	case err != nil:
 		return false, 0, err
 	case nowMs < blockedUntilMs:
 		return false, time.Duration(blockedUntilMs-nowMs) * time.Millisecond, nil
 	default:
-		// Clear only the block that was read and the attempts it covered.
-		// A concurrent caller may already have written a fresh block or
-		// recorded a post-expiry attempt; deleting by key alone would
-		// erase those and hand the burst a second budget.
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1 AND blocked_until_ms = $2", blocks), key, blockedUntilMs); err != nil {
 			return false, 0, err
 		}
@@ -210,13 +127,10 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		}
 	}
 
-	// Prune this key's out-of-window attempts.
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE rl_key = $1 AND attempted_at_ms <= $2", attempts), key, cutoffMs); err != nil {
 		return false, 0, err
 	}
 
-	// Record first, count second. The doc comment explains why this order
-	// is what makes the decision atomic per key.
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (rl_key, attempted_at_ms) VALUES ($1, $2)", attempts), key, nowMs); err != nil {
 		return false, 0, err
 	}

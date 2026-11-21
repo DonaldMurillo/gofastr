@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-// MemoryStore is the bundled in-process Store. It keeps subscribers
-// and deliveries in maps protected by a single mutex. Suitable for
-// single-instance apps and tests; nothing is persistent.
+// MemoryStore is the in-process Store, for single-instance apps and tests.
 type MemoryStore struct {
 	mu          sync.RWMutex
 	subscribers map[string]Subscriber
@@ -74,16 +72,8 @@ func (m *MemoryStore) AddDelivery(_ context.Context, d Delivery) error {
 	return nil
 }
 
-// UpdateDelivery persists a delivery's post-attempt state. The attempts
-// counter is owned by the claim (ClaimDueDeliveries consumes one attempt
-// per claim), so an existing row's attempts survive this write: d.Attempts
-// is a claim-time snapshot, and overwriting it absolutely let a stale
-// claimant's settle rewind the attempts a re-claimant's claim had consumed.
-// A delivery the Manager's plain DueDeliveries fallback dequeued had no
-// claim, so its settle adds the one attempt (see SQLStore.UpdateDelivery).
-// A missing row is a no-op, as SQLStore's UPDATE is: retention may have
-// reaped a delivered row, and a stale settle inserting it again made
-// completed work deliverable again.
+// UpdateDelivery persists a delivery's post-attempt state, keeping the stored
+// attempts and fencing a stale settle.
 func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
 	cur, ok := m.deliveries[d.ID]
@@ -92,11 +82,6 @@ func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 		return nil
 	}
 	if slices.Contains(settleFence(d.Status), cur.Status) || claimFenced(d, cur.NextAttemptAt) {
-		// Fenced no-op: a stale claimant's settle must not regress a
-		// terminal row (settleFence) nor replace a newer claim's lease
-		// (claimFenced). No error: the write is stale, not failed —
-		// the same fenced no-op the queue's completions report for an
-		// outrun claim.
 		m.mu.Unlock()
 		return nil
 	}
@@ -130,8 +115,7 @@ func (m *MemoryStore) ListDeliveries(_ context.Context, subscriberID string, lim
 	return out, nil
 }
 
-// ListDeadDeliveries implements [ReplayableStore]: terminally-failed
-// (StatusDead) deliveries, newest-first.
+// ListDeadDeliveries implements ReplayableStore.
 func (m *MemoryStore) ListDeadDeliveries(_ context.Context, limit int) ([]Delivery, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -149,9 +133,7 @@ func (m *MemoryStore) ListDeadDeliveries(_ context.Context, limit int) ([]Delive
 	return out, nil
 }
 
-// ResetDelivery implements [ReplayableStore]: returns a dead delivery to
-// pending (attempts + error cleared, due now). Only StatusDead rows are
-// touched, so resetting a non-dead/unknown delivery is a no-op.
+// ResetDelivery implements ReplayableStore.
 func (m *MemoryStore) ResetDelivery(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -199,19 +181,7 @@ func dueDeliveryLess(a, b Delivery) bool {
 	return a.NextAttemptAt.Before(b.NextAttemptAt)
 }
 
-// ClaimDueDeliveries reserves rows under the store's write lock and
-// pushes their NextAttemptAt to now+leasePeriod so a concurrent
-// claimer sees them as not-yet-due. Single-process by design, the
-// memory store can't span instances, but exposing the same interface
-// keeps Manager wiring uniform across store backends. A leasePeriod of
-// 0 keeps the 30s default; a negative one is rejected — a negative
-// lease can only be a sign or unit error, and folding it onto the
-// default would hand the caller a longer lease than they asked for.
-//
-// Each claim consumes one attempt (Attempts++ under the same lock), the
-// memory twin of SQLStore's `attempts = attempts + 1` claim UPDATE: a
-// worker that dies between claim and settle has still consumed a
-// delivery, so MaxAttempts bounds claims, not just landed settles.
+// ClaimDueDeliveries implements LeasedStore under the store's lock.
 func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit int, leasePeriod time.Duration) ([]Delivery, error) {
 	if leasePeriod < 0 {
 		return nil, fmt.Errorf("webhook: MemoryStore.ClaimDueDeliveries: leasePeriod must be >= 0 (got %v)", leasePeriod)
@@ -244,7 +214,6 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		d.Attempts++
 		d.NextAttemptAt = leaseUntil
 		d.UpdatedAt = leaseUntil
-		// The store keeps its own payload; the caller gets one copy.
 		m.deliveries[d.ID] = *d
 		d.Payload = cloneBytes(d.Payload)
 		d.claimedUntil = leaseUntil
@@ -252,9 +221,6 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 	return candidates, nil
 }
 
-// releaseClaim hands back a claim the worker never started (see
-// claimReleaser): pending, due at now, its attempt refunded. It touches the
-// row only while it still holds d's lease.
 func (m *MemoryStore) releaseClaim(_ context.Context, d Delivery, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -269,10 +235,8 @@ func (m *MemoryStore) releaseClaim(_ context.Context, d Delivery, now time.Time)
 	return nil
 }
 
-// ReapTerminalBefore implements [RetentionSweeper]: it deletes successful
-// deliveries whose UpdatedAt is older than cutoff, the memory twin of
-// SQLStore.ReapTerminalBefore. Dead rows are deliberately retained —
-// Replay needs the body, retention is not a dead-letter TTL.
+// ReapTerminalBefore deletes successful deliveries older than cutoff; dead
+// ones are kept for Replay.
 func (m *MemoryStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -281,11 +245,6 @@ func (m *MemoryStore) ReapTerminalBefore(_ context.Context, cutoff time.Time) (i
 	}), nil
 }
 
-// reapMatching deletes every entry of m for which match reports true and
-// returns the count deleted. The caller holds whatever lock guards m. It
-// replaces the duplicated delete-and-count loops formerly in
-// MemoryStore.ReapTerminalBefore and MemoryInboundStore.ReapTerminalBefore,
-// which differed only in map type and terminal status.
 func reapMatching[K comparable, V any](m map[K]V, match func(V) bool) int64 {
 	var n int64
 	for k, v := range m {

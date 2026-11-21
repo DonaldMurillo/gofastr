@@ -19,106 +19,69 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 )
 
-// Config constructs a service Battery. ID and Port are required.
+// Config constructs a service Battery.
 type Config struct {
-	// ID is the reverse-DNS app id ("dev.gofastr.hello"). It names the
-	// launchd label, the systemd unit, the Windows task, and the state
-	// directory, so its grammar is strict: ASCII letters, digits, dots
-	// and dashes, at least one dot, starting and ending with a letter or
-	// digit, no empty segment.
+	// ID is the reverse-DNS app id ("dev.gofastr.hello").
 	ID string
 
 	// Name is the installed executable's base name and the name the CLI
-	// prints in its hints. Default: the last segment of ID.
+	// prints in its hints.
 	Name string
 
-	// Port is the loopback port the installed daemon binds. It is fixed
-	// so bookmarks survive restarts; `install --port` overrides it per
-	// installation. If another program holds the port the daemon exits
-	// with an error naming it. There is no fallback to another port.
+	// Port is the loopback port the installed daemon binds.
 	Port int
 
 	// DevPort is the port of the foreground dev run (`service run`).
-	// Zero picks a free port; worktree isolation applies as for any App.
 	DevPort int
 
-	// SessionTTL bounds a browser session minted by `open`. Zero means
-	// seven days. A negative value is refused by New.
+	// SessionTTL bounds a browser session minted by `open`.
 	SessionTTL time.Duration
 
-	// AllowHosts adds Host header values the daemon accepts besides its
-	// own loopback address, for a reverse proxy in front of it. Each
-	// entry is a host[:port] and is logged at every start. Prefer this
-	// to turning the Host check off: there is no way to turn it off.
-	// A caller in Docker or WSL2 that reaches the app through
-	// BindAddress names the host as it sees it ("host.docker.internal:
-	// 8080"); list that value here.
+	// AllowHosts adds Host header values the daemon accepts besides its own
+	// loopback address, for a reverse proxy in front of it.
 	AllowHosts []string
 
-	// OpenPrefixes lists path prefixes ("/api") the session gate lets
-	// through without a browser session, for a client with no browser
-	// that the app authenticates itself (an API key, a bearer token,
-	// battery/auth). The Host check still applies to them, and so does
-	// the refusal of a forged cross-site write (a cross-origin JSON call
-	// is preflighted, so CORS decides it), and a request that does carry a
-	// session is still signed in as the local user. Everything else
-	// stays gated. Each entry is an absolute path of plain segments;
-	// "/" and anything under /__gofastr/ are refused, and the match is
-	// on whole segments of the clean, unescaped path, so /apix and
-	// /api/../admin stay gated. Logged as a warning at every start.
+	// OpenPrefixes lists path prefixes ("/api") the session gate lets through
+	// without a browser session, for a client with no browser that the app
+	// authenticates itself (an API key, a bearer token, battery/auth).
 	OpenPrefixes []string
 
-	// BindAddress is the IP address the daemon and the dev run listen
-	// on. Empty means 127.0.0.1. Set it ("0.0.0.0", or one interface's
-	// address) when a caller outside this machine's loopback has to
-	// reach the app: a container, a WSL2 guest, another machine. The
-	// Host check stays: Host must still name 127.0.0.1, localhost, a
-	// specific BindAddress, or an AllowHosts entry, so DNS rebinding
-	// stays blocked. The browser session still only comes from
-	// `service open` on this machine; pair this with OpenPrefixes for
-	// the routes those callers use. Logged as a warning at every start.
+	// BindAddress is the IP address the daemon and the dev run listen on.
 	BindAddress string
 
-	// InsecureTokenInURL lets `open --print` print a one-shot sign-in
-	// URL instead of opening a local page, for a headless machine
-	// reached over an SSH tunnel. The token is still single-use and
-	// expires in 60 seconds, but it passes through argv, terminal
-	// scrollback and browser history. Logged as a warning at every
-	// start.
+	// InsecureTokenInURL lets `open --print` print a one-shot sign-in URL
+	// instead of opening a local page, for a headless machine reached over an
+	// SSH tunnel.
 	InsecureTokenInURL bool
 
-	// Stdout and Stderr receive the CLI's output. Nil means os.Stdout
-	// and os.Stderr.
+	// Stdout and Stderr receive the CLI's output.
 	Stdout, Stderr io.Writer
 
-	// Stdin feeds `service mcp`. Nil means os.Stdin.
+	// Stdin feeds `service mcp`.
 	Stdin io.Reader
 }
 
-// Runtime is what the host's builder receives: the state directory
-// and secret of the mode being run, resolved before the App exists.
+// Runtime is what the host's builder receives: the state directory and
+// secret of the mode being run, resolved before the App exists.
 type Runtime struct {
-	// DataDir is the 0700 state directory. Put the app's database here.
+	// DataDir is the 0700 state directory.
 	DataDir string
-	// Secret is the persisted app secret (32 random bytes, base64url),
-	// minted on first run.
+	// Secret is the persisted app secret (32 random bytes, base64url), minted
+	// on first run.
 	Secret string
 	// Dev is true for the foreground dev run.
 	Dev bool
 }
 
-// MCPCommand is the argv an agent's MCP config runs to reach this
-// daemon or dev run: `<exe> service mcp [--dev] --state-dir <DataDir>`.
-// It is what the run's local record carries as mcp_command. Nil when
-// the executable path is unknown.
+// MCPCommand is the argv an agent's MCP config runs to reach this daemon
+// or dev run: `<exe> service mcp [--dev] --state-dir <DataDir>`.
 func (rt Runtime) MCPCommand() []string {
 	return mcpCommand(rt.Dev, rt.DataDir)
 }
 
-// AppOptions opens the mode's SQLite database (app.db in DataDir)
-// and returns it with the persisted secret, so sessions and signed
-// tokens survive a restart. An app with its own database skips this
-// and passes framework.WithSecret(rt.Secret) and its own WithDB.
+// AppOptions opens the mode's SQLite database (app.db in DataDir) and
+// returns it with the persisted secret, so sessions and signed tokens
+// survive a restart.
 func (rt Runtime) AppOptions() ([]framework.AppOption, error) {
 	db, err := localapp.OpenDB(rt.DataDir)
 	if err != nil {
@@ -127,11 +90,10 @@ func (rt Runtime) AppOptions() ([]framework.AppOption, error) {
 	return []framework.AppOption{framework.WithDB(db), framework.WithSecret(rt.Secret)}, nil
 }
 
-// Builder constructs the App for a daemon or dev run. It is never
-// called for the other verbs.
+// Builder constructs the App for a daemon or dev run.
 type Builder func(Runtime) (*framework.App, error)
 
-// Battery is the service host. Construct with New; call Run from main.
+// Battery is the service host.
 type Battery struct {
 	cfg  Config
 	err  error
@@ -140,22 +102,16 @@ type Battery struct {
 
 	gate *gate
 
-	// baseOverride is the daemon's --base-dir; empty elsewhere.
 	baseOverride string
 
 	mu  sync.Mutex
 	app *framework.App
 }
 
-// defaultSessionTTL is the browser session lifetime when
-// Config.SessionTTL is zero.
 const defaultSessionTTL = 7 * 24 * time.Hour
 
-// New validates cfg and constructs the Battery. A config error is held
-// and returned by Run, so main has one error path.
+// New validates cfg and constructs the Battery.
 func New(cfg Config) *Battery {
-	// Own copies of the slices validateConfig checks: a caller that
-	// edits its slice after New must not change what the gate serves.
 	cfg.OpenPrefixes = append([]string(nil), cfg.OpenPrefixes...)
 	cfg.AllowHosts = append([]string(nil), cfg.AllowHosts...)
 	b := &Battery{cfg: cfg, tool: execTool}
@@ -182,13 +138,10 @@ func New(cfg Config) *Battery {
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "service" }
 
-// Init implements framework.Battery: it installs the loopback gate,
-// which also answers the sign-in path, in front of the whole server,
-// and the owner extractor that reads the local identity the gate puts
-// on each signed-in request.
-// Outside a daemon or dev run (a test that registers the battery and
-// serves the App itself) there is no gate, and Init leaves the App's
-// routes open.
+// Init implements framework.Battery: it installs the loopback gate, which
+// also answers the sign-in path, in front of the whole server, and the
+// owner extractor that reads the local identity the gate puts on each
+// signed-in request.
 func (b *Battery) Init(app *framework.App) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -199,9 +152,6 @@ func (b *Battery) Init(app *framework.App) error {
 	if b.gate == nil {
 		return nil
 	}
-	// A signed session is the OS user the service runs as. An app that
-	// links battery/auth keeps auth's identity end to end: the gate
-	// then only gates, and auth signs callers in.
 	if localapp.Install() {
 		b.gate.user = nil
 	} else {
@@ -211,12 +161,7 @@ func (b *Battery) Init(app *framework.App) error {
 	return nil
 }
 
-// Run dispatches the command line. args is os.Args[1:]. No arguments
-// is the foreground dev run; "service <verb> ..." runs a verb;
-// "--addr <addr>" (what `gofastr dev` passes its child) is the dev run
-// on that loopback port; any other first argument is a usage error,
-// so an app with its own subcommands checks for those before calling
-// Run.
+// Run dispatches the command line.
 func (b *Battery) Run(ctx context.Context, args []string, build Builder) error {
 	if b.err != nil {
 		return b.err
@@ -235,13 +180,8 @@ func (b *Battery) Run(ctx context.Context, args []string, build Builder) error {
 }
 
 var (
-	// reAppID: letters/digits at both ends, letters/digits/dots/dashes
-	// inside. The id reaches a plist label, a systemd unit name, a task
-	// name, a path segment and argv of launchctl/systemctl/schtasks, so
-	// a leading dash (option injection) and a leading dot are refused.
 	reAppID = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$`)
-	// reName is the executable base name grammar.
-	reName = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+	reName  = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 )
 
 func validateConfig(cfg Config) error {
@@ -282,8 +222,6 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
-// bindHost is the IP the App listens on: Config.BindAddress, else
-// 127.0.0.1.
 func (b *Battery) bindHost() string {
 	if b.cfg.BindAddress != "" {
 		return b.cfg.BindAddress
@@ -291,8 +229,6 @@ func (b *Battery) bindHost() string {
 	return "127.0.0.1"
 }
 
-// boundHostOK reports whether host (the listener's reported address)
-// is the address the battery asked for.
 func (b *Battery) boundHostOK(host string) bool {
 	want, err := netip.ParseAddr(b.bindHost())
 	if err != nil {
@@ -305,18 +241,12 @@ func (b *Battery) boundHostOK(host string) bool {
 	return got.Unmap() == want.Unmap() || (want.IsUnspecified() && got.IsUnspecified())
 }
 
-// browserAddr is the address `open`, `status` and `start` hand the
-// user for a listener bound at addr. A wildcard bind is reached on this
-// machine at its loopback, 127.0.0.1 for 0.0.0.0 and ::1 for ::, the
-// host the gate pins and the session cookie lives on; a specific
-// address is used as bound.
 func browserAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return addr
 	}
 	if ip, err := netip.ParseAddr(host); err == nil && ip.IsUnspecified() {
-		// "::" may be IPv6-only; its loopback is ::1.
 		if ip.Is6() {
 			return net.JoinHostPort("::1", port)
 		}
@@ -325,17 +255,11 @@ func browserAddr(addr string) string {
 	return addr
 }
 
-// isLoopbackIP reports whether s is a loopback IP literal.
 func isLoopbackIP(s string) bool {
 	ip, err := netip.ParseAddr(s)
 	return err == nil && ip.IsLoopback()
 }
 
-// extraHosts is AllowHosts plus the specific BindAddress at port: a
-// caller that reaches the app on that interface's address sends it as
-// Host. A loopback address other than 127.0.0.1 (::1, 127.0.0.2) is
-// pinned the same way: `open` hands the browser the address as bound. An unspecified BindAddress (0.0.0.0, ::) adds nothing: the
-// address a caller uses is not knowable here, so it goes in AllowHosts.
 func (b *Battery) extraHosts(port int) []string {
 	hosts := append([]string(nil), b.cfg.AllowHosts...)
 	if ip, err := netip.ParseAddr(b.cfg.BindAddress); err == nil {
@@ -343,7 +267,6 @@ func (b *Battery) extraHosts(port int) []string {
 		case !ip.IsUnspecified():
 			hosts = append(hosts, net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		case ip.Is6():
-			// browserAddr sends the browser to [::1] for a "::" bind.
 			hosts = append(hosts, net.JoinHostPort("::1", strconv.Itoa(port)))
 		}
 	}
@@ -360,7 +283,6 @@ func validatePort(field string, p int, zeroOK bool) error {
 	return nil
 }
 
-// reHost is a host[:port] made of DNS characters or an IPv4 literal.
 var reHost = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?$`)
 
 func validateAllowHost(h string) error {

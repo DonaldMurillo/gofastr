@@ -13,38 +13,17 @@ import (
 
 // GlassConfig configures a Glass surface.
 type GlassConfig struct {
-	// Thick selects the sheet and popover variant: a more opaque fill,
-	// a stronger blur, and the XL corner radius. The default is the
-	// thin chrome variant for toolbars and floating controls.
+	// Thick selects the sheet and popover variant: a more opaque fill, a stronger blur, and the XL corner radius.
 	Thick bool
 
 	// Class appends to the surface's class list.
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// ARIA overrides) to the surface element. Keys the component owns
-	// are dropped: class and data-cui-comp.
+	// ExtraAttrs forwards additional attributes (data-* test hooks, ARIA overrides) to the surface element.
 	ExtraAttrs html.Attrs
 }
 
-// Glass is the translucent surface the desktop theme styles its chrome
-// with: backdrop blur + saturation, a translucent fill, and a 1px inset
-// rim highlight. It is the honest CSS glass the plan allows. Real
-// refraction needs an SVG reference filter inside backdrop-filter,
-// which WebKit does not implement (bug 245510) and Firefox refuses, so
-// none of that ships here. The fill values are measured, unverified.
-//
-// The two <html> classes the desktop runtime module sets are baked in:
-//
-//   - desktop-reduce-transparency: the surface goes opaque Surface with
-//     no filter (WebKit has no prefers-reduced-transparency query, so
-//     the shell pushes the state as a class).
-//   - desktop-inactive: the fill flattens and --color-accent dims to
-//     TextMuted for the whole subtree, mirroring how a native material
-//     dims when its window stops being key.
-//
-// Glass renders a plain <div>; wrap it or pass children. It carries no
-// landmark or role of its own.
+// Glass is the translucent surface the desktop chrome is styled with.
 func Glass(cfg GlassConfig, children ...render.HTML) render.HTML {
 	cls := "desktopui-glass"
 	if cfg.Thick {
@@ -62,8 +41,6 @@ func Glass(cfg GlassConfig, children ...render.HTML) render.HTML {
 
 var glassStyle = registry.RegisterStyle("desktopui-glass", glassCSS)
 
-// Knobs: --ui-glass-rim (rgba(255, 255, 255, 0.16)), --ui-glass-rim-thick
-// (rgba(255, 255, 255, 0.18)) — the inset rim highlight colour per variant.
 func glassCSS(_ style.Theme) string {
 	return `[data-cui-comp="desktopui-glass"] {
   border-radius: var(--radii-lg, 12px);

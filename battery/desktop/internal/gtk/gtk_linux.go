@@ -9,15 +9,6 @@ import (
 	"sync"
 )
 
-// The shared libraries the Linux host binds to, and the distro packages
-// that carry them. GTK 3 and WebKitGTK 4.1 are the targets: 4.1 is what
-// Ubuntu 22.04 onward, Debian 12 and Tauri ship against, and
-// webkitgtk-6.0 (GTK 4) is a later probe.
-//
-// Optional libraries are the ones a host can do without: notifications
-// degrade to nothing without libnotify, and a snapshot needs gdk-pixbuf
-// only to turn the cairo surface into PNG bytes. A missing optional
-// library leaves its symbols zero and Load still succeeds.
 var (
 	libGLib    = &library{soname: "libglib-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
 	libGObject = &library{soname: "libgobject-2.0.so.0", packages: "libglib2.0-0 (Debian/Ubuntu), glib2 (Fedora)"}
@@ -32,12 +23,8 @@ var (
 	libNotify = &library{soname: "libnotify.so.4", packages: "libnotify4 (Debian/Ubuntu), libnotify (Fedora)", optional: true}
 )
 
-// libraries is the load order. GLib and GObject come first so the
-// symbols WebKitGTK resolves lazily are already global in the process.
 var libraries = []*library{libGLib, libGObject, libGIO, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
 
-// installLine is the one instruction a user can act on. Everything else
-// in the list above arrives as a dependency of these two.
 const installLine = "libgtk-3-0 and libwebkit2gtk-4.1-0 on Debian/Ubuntu, gtk3 and webkit2gtk4.1 on Fedora"
 
 type library struct {
@@ -47,13 +34,7 @@ type library struct {
 	handle   uintptr
 }
 
-// Symbols holds the C entry points Load resolves. Each is a raw function
-// address for internal/ffi.Call; the shell wraps them, this package does
-// not, so that the table stays a flat, greppable list of what the host
-// actually binds to.
-//
-// Fields whose library is optional are zero when that library is absent;
-// every other field is non-zero once Load returns nil.
+// Symbols holds the C entry points Load resolves.
 type Symbols struct {
 	GtkMainLevel                             uintptr // gtk_main_level
 	GtkDialogResponse                        uintptr // gtk_dialog_response
@@ -217,14 +198,11 @@ type Symbols struct {
 	GdkPropertyChange               uintptr // gdk_property_change
 	WebkitWebViewSetBackgroundColor uintptr // webkit_web_view_set_background_color
 
-	// Optional per symbol: the X11 backend's entry points. A GDK built
-	// without X11 lacks them, and they must never be called on a Wayland
-	// display, so the shell checks the display type first.
+	// Optional per symbol: the X11 backend's entry points.
 	GdkX11DisplayGetType          uintptr // gdk_x11_display_get_type
 	GdkX11ScreenSupportsNetWMHint uintptr // gdk_x11_screen_supports_net_wm_hint
 
-	// Optional: gdk-pixbuf turns a snapshot's cairo surface into PNG
-	// bytes; libnotify carries notifications.
+	// Optional: gdk-pixbuf turns a snapshot's cairo surface into PNG bytes; libnotify carries notifications.
 	GdkPixbufSaveToBufferv uintptr // gdk_pixbuf_save_to_bufferv
 	NotifyInit             uintptr // notify_init
 	NotifySetAppName       uintptr // notify_set_app_name
@@ -233,8 +211,7 @@ type Symbols struct {
 	NotifyNotificationShow uintptr // notify_notification_show
 }
 
-// Sym is the resolved table. Reading a field before a successful Load
-// yields zero.
+// Sym is the resolved table.
 var Sym Symbols
 
 type symbol struct {
@@ -243,11 +220,6 @@ type symbol struct {
 	name   string
 }
 
-// table is every entry point the Linux host binds, in one flat list so
-// that "what does this depend on" is a single read. The smoke test
-// asserts that every non-optional entry resolves on a machine with the
-// libraries installed, which is what keeps the list honest as WebKitGTK
-// moves.
 func table() []symbol {
 	return []symbol{
 		{&Sym.WebkitWebsiteDataManagerNew, libWebKit, "webkit_website_data_manager_new"},
@@ -408,9 +380,6 @@ func table() []symbol {
 	}
 }
 
-// optionalSymbols may be missing from a library that is present: the GDK
-// X11 backend's entry points, absent from a GDK built without X11. Load
-// leaves a missing one zero instead of failing.
 func optionalSymbols() []symbol {
 	return []symbol{
 		{&Sym.GdkX11DisplayGetType, libGdk, "gdk_x11_display_get_type"},
@@ -423,18 +392,7 @@ var (
 	loadErr  error
 )
 
-// Load dlopens the GTK and WebKitGTK stack and resolves Sym. It runs at
-// most once; every later call returns the first result.
-//
-// It must be called from the thread that will own the GTK main loop:
-// dlopen runs a library's constructors on the calling thread, and GTK
-// wants those on the same thread as gtk_init and gtk_main. Nothing here
-// calls gtk_init — that is the shell's job in phase 6 — so Load is safe
-// to call from a test.
-//
-// A missing required library produces an error wrapping ErrUnavailable
-// whose text names the distro packages to install, so Run tells the user
-// what to install instead of failing on a missing symbol.
+// Load dlopens the GTK and WebKitGTK stack and resolves Sym.
 func Load() error {
 	loadOnce.Do(load)
 	return loadErr
@@ -447,10 +405,6 @@ func load() {
 			if lib.optional {
 				continue
 			}
-			// Name the headline packages, not just the transitive
-			// dependency that happened to fail first: a user told to
-			// install libglib2.0-0 because that is what dlopen tripped
-			// on still has no WebKitGTK afterwards.
 			loadErr = fmt.Errorf("desktop: the Linux window needs GTK 3 and WebKitGTK 4.1, and %s could not be loaded; install %s (%s): %w",
 				lib.soname, installLine, lib.packages, err)
 			return
@@ -487,14 +441,10 @@ func load() {
 	}
 }
 
-// Available reports whether the required libraries are present. It is
-// Load without the error text, for a caller deciding between the GTK
-// shell and a clear "not supported here" message.
+// Available reports whether the required libraries are present.
 func Available() bool {
 	return Load() == nil
 }
 
-// Missing reports whether err is the "library not installed" case rather
-// than a broken installation, so a caller can tell the user to install a
-// package instead of filing a bug.
+// Missing reports whether err is the library-not-installed case.
 func Missing(err error) bool { return errors.Is(err, ErrUnavailable) }

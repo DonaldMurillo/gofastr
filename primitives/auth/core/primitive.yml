@@ -1,0 +1,177 @@
+primitive: auth.core
+summary: CorePlugin's password login, logout, me and register, the body decoding every auth handler shares, and the battery's own pages and phrases.
+code:
+  - battery/auth/core.go
+  - battery/auth/form_decode.go
+  - battery/auth/json_limit.go
+  - battery/auth/pages.go
+  - battery/auth/phrases.go
+  - battery/auth/agents.go
+  - battery/auth/agents.md
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: cross-site-forms-refused
+    rule: rejectCrossSiteForm answers 403 to every forgeable request (core/handler.IsForgeableRequest, which covers text/plain and bodyless posts, not only form types) that core/handler.IsCrossSiteRequest calls cross-site.
+    enforced_by:
+      - test: battery/auth.TestLoginFormCrossOriginRejected
+      - test: battery/auth.TestLoginFormCrossSiteFetchMetadataRejected
+      - test: battery/auth.TestRegisterFormCrossOriginRejected
+      - test: battery/auth.TestVerifyRejectsCrossSiteTextPlain
+      - test: battery/auth.TestVerifyRejectsCrossSiteNoBody
+  - id: cross-site-refusal-spends-no-budget
+    rule: Login and register refuse a cross-site form before their per-IP limiter runs, so refused posts spend none of the visitor's budget.
+    enforced_by:
+      - test: battery/auth.TestLoginCrossSitePostsDontBurnLoginBudget
+      - test: battery/auth.TestCrossSitePostsDontBurnRateBudget
+  - id: limit-answer-fits-the-caller
+    rule: A throttled form post gets the 303 form error and a JSON caller a 429 with Retry-After.
+    enforced_by:
+      - test: battery/auth.TestRegisterFormRateLimit303
+  - id: one-session-cookie-mint
+    rule: mintSessionCookie is the only writer of the session cookie, always HttpOnly, Path=/, SameSite=Strict, no Domain and Secure as SessionSecure says; an empty token clears it with an epoch Expires and MaxAge -1.
+    enforced_by:
+      - test: battery/auth.TestSessionCookieAttributes
+      - test: battery/auth.TestCorePlugin_LoginCookieUsesStrictSameSite
+      - test: battery/auth.TestCorePlugin_LogoutCookieUsesStrictSameSite
+      - test: battery/auth.TestMagicLinkRedCookieStrict
+  - id: login-throttles-per-account-before-lookup
+    rule: Login spends the per-account limiter, keyed on the canonical address, before the user-store lookup; DevMode relaxes only the per-IP login limiter.
+    enforced_by:
+      - test: battery/auth.TestRateLimit_PerAccount_BlocksIPRotationAttack
+      - test: battery/auth.TestRateLimit_DevModeRelaxesPerIPLogin
+  - id: unknown-login-burns-the-configured-hash
+    rule: A login for an unknown address or a failed lookup verifies a dummy made by DefaultHasher, and records login.failed with no user id, like a wrong password.
+    enforced_by:
+      - test: battery/auth.TestLogin_TimingSafe_NoEnumerationByResponseTime
+      - test: battery/auth.TestLoginDummyHashTracksDefaultHasher
+  - id: login-rechecks-the-credential
+    rule: After the session is stored, login re-reads the address and drops the session, answering 401, when it now names another user or a different hash.
+    enforced_by:
+      - test: battery/auth.TestLoginLosesRaceToReset
+      - test: battery/auth.TestLoginRefusedWhenEmailNowNamesAnotherUser
+  - id: login-two-factor-mint
+    rule: Login mints through MintSession; a session-store failure answers 500 and is not audited as a two-factor failure, a pending session gets no JWT and a form login of it goes to WithTwoFactorURL, and Init refuses a missing WithTwoFactorURL next to a TwoFactorChecker plugin.
+    enforced_by:
+      - test: battery/auth.TestLoginSessionCreateFailureIsNotATwoFactorFailure
+      - test: battery/auth.TestPendingTwoFA_NoJWTIssued
+      - test: battery/auth.TestCoreFormLoginOf2FAAccountGoesToTwoFactorURL
+      - test: battery/auth.TestCoreInitRequiresTwoFactorURLWith2FA
+  - id: login-jwt-bound-and-optional
+    rule: The JSON login's JWT is bound to the hash just verified and is left out under CookieOnly.
+    enforced_by:
+      - test: battery/auth.TestJWTDiesWithCredentialChange
+      - test: battery/auth.TestBFFPostureSuppressesLoginJWT
+  - id: logout-revokes-every-cookie-or-fails
+    rule: Logout deletes the session behind every same-name cookie, records session.revoked only for a delete that succeeded, and answers 500 without clearing the cookie when any delete failed.
+    enforced_by:
+      - test: battery/auth.TestSessionReadsTryEveryCookieCandidate
+      - test: battery/auth.TestLogoutFailsClosedOnRevokeFailure
+  - id: clear-site-data-vocabulary
+    rule: WithLogoutClearSiteData panics on a type the Clear-Site-Data header does not define.
+    enforced_by:
+      - test: battery/auth.TestLogoutClearSiteDataConfigurable
+  - id: me-refuses-pending-and-gone
+    rule: /me answers 403 when the only sessions are pending a second factor and 401 when the session's account is gone.
+    enforced_by:
+      - test: battery/auth.TestPendingTwoFA_Me_Rejected
+      - test: battery/auth.TestSoftDeletedUserCannotSignIn
+  - id: register-answers-uniformly
+    rule: Register answers 202 (JSON) or the same 303 (form) for a taken and a free address, sets no session cookie on either, hashes the password before the branch, answers 500 on a store failure, and mails the existing holder a notice with no URL off the timed path through the bounded mail queue.
+    enforced_by:
+      - test: battery/auth.TestRegisterNoEmailTakenOracle
+      - test: battery/auth.TestRegisterDuplicateNotifiesHolder
+      - test: battery/auth.TestRegisterStoreFailureIs500
+      - test: battery/auth.TestDuplicateNoticeBoundedAndStopped
+  - id: register-form-errors-land-on-register
+    rule: A register form's errors, its cross-site and throttle refusals included, fall back to SetDefaultRegisterErrorPath, not the login path.
+    enforced_by:
+      - test: battery/auth.TestRegisterErrorsLandOnRegisterPath
+  - id: json-envelope-encodes-first
+    rule: writeAuthJSON marshals before writing, answering the canonical 500 envelope when the body cannot encode, and marks the response no-store.
+    enforced_by:
+      - test: battery/auth.TestMeAnswersEncodeFailure
+      - test: battery/auth.TestCredentialResponsesSetNoStore
+  - id: unphrased-error-text-hidden
+    rule: writeAuthErrorFor answers an error without its own phrase with the frame phrase, never the error's text.
+    enforced_by:
+      - test: battery/auth.TestCanonicalizerErrorTextNotEchoed
+  - id: link-base-url-checked
+    rule: invalidLinkBaseURL refuses a BaseURL that does not parse, is not http or https, or has no host; an empty one passes.
+    enforced_by:
+      - test: battery/auth.TestEmailBaseURLRedSchemeValidated
+      - test: battery/auth.TestLinkBaseURLNeedsAHost
+  - id: duplicate-form-fields-refused
+    rule: An auth form naming a field twice, or a multipart auth form carrying a file part, is refused, so the form and JSON surfaces cannot read different values.
+    enforced_by:
+      - test: battery/auth.TestLoginFormDuplicateFieldsRejected
+      - test: battery/auth.TestMultipartLoginRefusesDuplicateAndFileFields
+      - test: battery/auth.TestMultipartRegisterAndLogin
+  - id: one-email-canonicalizer
+    rule: Every ingestion point canonicalizes through canonicalizeEmailWith, which refuses unstorable text, applies an override whole (refusing unstorable output), and otherwise strips invisible and C1 runes, trims, lowercases and NFC-normalizes, refusing anything that is not one local@domain.
+    enforced_by:
+      - test: battery/auth.TestEmailRefusesUnstorableText
+      - test: battery/auth.TestCanonicalizerOverrideOutputMustBeStorable
+      - test: battery/auth.TestInvisibleTwinEmailsOneAccount
+      - test: battery/auth.TestLoginEmailCaseInsensitive
+      - test: battery/auth.TestRegisterFoldsUnicodeTwinEmails
+      - test: battery/auth.TestCanonicalEmailRefusesNonAddress
+  - id: email-length-bounded
+    rule: An address longer than 254 bytes answers 400 at every email-ingesting endpoint.
+    enforced_by:
+      - test: battery/auth.TestOverlongShapedEmailRefused
+  - id: redirects-stay-same-origin
+    rule: successRedirect honours ?next= only as a same-origin relative path, and a form error redirects only to a same-origin Referer's path with its query dropped, else the configured fallback, else JSON.
+    enforced_by:
+      - test: battery/auth.TestLoginFormRejectsExternalRedirect
+      - test: battery/auth.TestSuccessRedirect_RejectsBackslashBypass
+      - test: battery/auth.TestWriteFormAuthError_RejectsCrossOriginReferer
+      - test: battery/auth.TestWriteFormAuthError_StripsRefererQuery
+      - test: battery/auth.TestFormAuthError_FallsBackToConfiguredPath
+  - id: error-param-sanitised
+    rule: sanitiseErr replaces white space, control, non-ASCII and URL- or HTML-special bytes with '+'.
+    enforced_by:
+      - test: battery/auth.TestSanitiseErrMakesURLAndHTMLSafe
+  - id: credential-responses-no-store
+    rule: writeCredentialHeaders marks a response no-store, no-cache, must-revalidate, private.
+    enforced_by:
+      - test: battery/auth.TestCredentialResponsesSetNoStore
+  - id: strict-json-bodies
+    rule: decodeJSONLimited refuses a non-JSON content type with 415, a body over 1 MiB with 413, and a duplicated or case-folded key.
+    enforced_by:
+      - test: battery/auth.TestLogin_RejectsTextPlainJSON
+      - test: battery/auth.TestMagicLinkSend_RejectsMissingContentType
+      - test: battery/auth.TestHandlerBodyLimit_MagicLinkSend
+      - test: battery/auth.TestMagicLinkSendRejectsDuplicateKeys
+      - test: battery/auth.TestTwoFAChallengeRejectsCaseFoldedKeys
+  - id: confirm-page-is-private
+    rule: The magic-link confirmation page is sent no-store with no referrer, and the plain document puts its Action through urlsafe.CleanAnchor.
+    enforced_by:
+      - test: battery/auth.TestConfirmPageIsNotCachedOrReferred
+      - test: battery/auth.TestDefaultConfirmPageRefusesUnsafeAction
+      - test: battery/auth.TestPagesRenderMagicLinkConfirm
+decisions:
+  - id: register-does-not-sign-in
+    date: 2026-11-20
+    status: accepted
+    decision: Register creates the account and signs nobody in; the caller logs in next.
+    rejected:
+      - option: Answer 409 for a taken address and sign a new one in.
+        why: Either answer tells an anonymous caller which addresses hold accounts, and a cookie on only one branch is the same oracle.
+    upholds: [register-answers-uniformly]
+  - id: auth-errors-own-envelope
+    date: 2026-11-20
+    status: accepted
+    decision: battery/auth keeps its own writeAuthError with the flat envelope framework/crud's writeJSONError uses.
+    rejected:
+      - option: Import framework/crud's writer.
+        why: Batteries may not import framework/crud.
+    upholds: [json-envelope-encodes-first]
+twins:
+  - job: Write the flat JSON error envelope {error, success, code, reason}.
+    why: Batteries may not import framework/crud, so the auth battery keeps a copy; no shared lower package holds the writer yet.
+    sites:
+      - path: battery/auth/core.go
+        note: writeAuthErrorFields.
+      - path: framework/crud/crud.go
+        note: writeJSONError.

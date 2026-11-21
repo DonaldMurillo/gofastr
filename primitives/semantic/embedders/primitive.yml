@@ -1,0 +1,14 @@
+primitive: semantic.embedders
+summary: The shipped embedders - OllamaEmbedder over an Ollama-compatible server, and the deterministic StubEmbedder for tests.
+code:
+  - battery/semantic/embedder_ollama.go
+  - battery/semantic/stub_embedder.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: ollama-answers-are-checked
+    rule: OllamaEmbedder refuses a response past 10 MiB, an empty embedding and embeddings of different dimensions in one batch.
+    enforced_by:
+      - test: battery/semantic.TestOllamaResponseCapDetectsExtraBytes
+      - test: battery/semantic.TestOllamaRejectsEmptyEmbeddings
+      - test: battery/semantic.TestOllamaRejectsInconsistentDimensions

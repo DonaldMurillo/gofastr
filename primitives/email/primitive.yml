@@ -1,0 +1,10 @@
+primitive: email
+summary: The transactional email battery, a plain library with the Email and Sender types, the SMTP and log senders and file templates.
+code:
+  - battery/email/email.go
+  - battery/email/doc.go
+  - battery/email/agents.go
+docs:
+  - framework/docs/content/email.md
+on_change:
+  - A new Email field or SMTPConfig option goes in email.md, and LogSender says whether it prints it.

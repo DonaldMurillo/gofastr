@@ -1,52 +1,26 @@
-// Package admin is the back office for GoFastr apps: a dashboard, the
-// entity screens, and the operations pages (jobs, audit log, roles, user
-// roles, process modules), drawn in one shell through the app's UI host.
-//
-// Every page renders through the host's pipeline (runtime.js, client
-// navigation, the toast stack) and composes the kit; the battery ships no
-// CSS. The entity screens are framework/entityui's list and record, read
-// in process under the caller's own context plus the admin's per-call
-// elevation (crud.WithElevation), and written through routes the battery
-// mounts behind its own gate.
-//
-// One default-deny gate covers every page and route: an authenticated
-// caller holding Config.AdminRole ("admin"), or whatever Config.Authorize
-// decides. A signed-out caller gets 401 (or a redirect to Config.LoginPath),
-// a signed-in caller without the role 403. An embed grant and an access
-// Decider's deny refuse the whole back office.
-//
-// Every mutation records an audit row. A failed audit write is logged,
-// never swallowed, because the mutation already took effect.
+// Package admin is the back office for GoFastr apps: a dashboard, the entity
+// screens and the ops pages, drawn in one gated shell through the app's UI
+// host.
 package admin
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"mime"
 	"net/http"
-	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/queue"
-	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
-	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
-	"github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
@@ -54,138 +28,113 @@ import (
 
 // Config configures the Admin battery.
 type Config struct {
-	// PathPrefix is the URL prefix every admin page and route mounts
-	// under. Defaults to "/admin".
+	// PathPrefix is the URL prefix every admin page and route mounts under.
+	// Defaults to "/admin".
 	PathPrefix string
 
-	// Title is the product name in the sidebar and the page titles.
-	// Defaults to the localized "Admin".
+	// Title is the product name in the sidebar and the page titles. Defaults
+	// to the localized "Admin".
 	Title string
 
 	// Logo is an image URL drawn beside Title in the sidebar. Empty draws
 	// Title's initial.
 	Logo string
 
-	// UI is the app's entity screens (App.EntityUI). Required when the
-	// admin exposes any entity: the admin draws its lists and records
-	// with it and points their writes at its own gated routes. The admin
-	// reads every name it uses from the entities' Display config.
+	// UI is the app's entity screens (App.EntityUI), required when the admin
+	// exposes any entity.
 	UI *entityui.UI
 
-	// Entities lists the entity names the admin exposes, under
-	// <PathPrefix>/entities/<name>. Empty (the default) exposes none:
-	// an admin dropped into an app names what it manages. Set AllEntities
-	// for every entity with CRUD on. Naming an entity also exposes one
-	// with CRUD off.
+	// Entities lists the entity names the admin exposes. Empty (the default)
+	// exposes none.
 	Entities []string
 
-	// AllEntities exposes every registered entity whose CRUD is on.
-	// CRUD-off entities (battery/auth's users and sessions) stay hidden,
-	// so it never exposes credential tables. Ignored when Entities is set.
+	// AllEntities exposes every registered entity whose CRUD is on. Ignored
+	// when Entities is set.
 	AllEntities bool
 
-	// Themes are the page themes the account page's Appearance card
-	// offers as its Look, a ui.ThemePicker beside the light and dark
-	// toggle: each a theme registered with style.RegisterThemeOverride
-	// (theme.Brutal is one). Empty offers the toggle alone.
+	// Themes are the looks the account page's Appearance card offers beside
+	// the light and dark toggle.
 	Themes []ui.ThemeChoice
 
-	// Queue is the job queue the Jobs page and the dashboard's failed
-	// jobs card read. Nil leaves both out.
+	// Queue is the job queue the Jobs page and the dashboard's failed jobs
+	// card read. Nil leaves both out.
 	Queue queue.Browsable
 
-	// DB holds the audit log the Audit log page and the dashboard's
-	// recent activity read, and the ops pages write. Defaults to the app's
-	// DB. Entity reads and writes always go through the app's own CRUD
-	// handlers.
+	// DB holds the audit log and, with SavedViews, the saved views. Defaults
+	// to the app's DB.
 	DB *sql.DB
 
 	// AuditTable is the audit log table. Defaults to "audit_log".
 	AuditTable string
 
-	// QueueListLimit is the Jobs page's rows per page; a pager under the
-	// table reaches older jobs. Default 50.
+	// QueueListLimit is the Jobs page's rows per page. Default 50.
 	QueueListLimit int
 
-	// AuditListLimit is the Audit log page's rows per page; a pager
-	// under the table reaches older rows. Default 50.
+	// AuditListLimit is the Audit log page's rows per page. Default 50.
 	AuditListLimit int
 
 	// SavedViews enables the admin database's saved filters and columns, up to
 	// entityui.SavedViewCap named views per user, tenant and entity.
 	SavedViews bool
 
-	// SavedViewsTable is the saved views table. Defaults to
-	// "admin_saved_views". Must be a lowercase identifier
-	// ([a-z_][a-z0-9_]*).
+	// SavedViewsTable is the saved views table, a lowercase identifier.
+	// Defaults to "admin_saved_views".
 	SavedViewsTable string
 
-	// BulkJobs runs bulk actions over more records than one request may
-	// touch, on a battery/queue backend. Build it with NewBulkJobs and
-	// pass the same value to app.EntityUI's Extensions.Jobs; Init binds
-	// it to Config.UI and hands back any job a crash left unenqueued.
+	// BulkJobs runs bulk actions over more records than one request may touch;
+	// pass the same value to app.EntityUI's Extensions.Jobs.
 	BulkJobs *BulkJobs
 
-	// Authorize replaces the role check: it returns true to admit the
-	// request. The embed refusal and a Decider's deny still run first.
-	// Nil requires an authenticated user whose GetRoles() holds AdminRole.
+	// Authorize replaces the role check; the embed, token-scope and Decider
+	// refusals still run first.
 	Authorize func(ctx context.Context) bool
 
-	// AdminRole is the role the default check requires. Defaults to
-	// "admin". Ignored when Authorize is set.
+	// AdminRole is the role the default check requires. Defaults to "admin".
 	AdminRole string
 
-	// LoginPath, when set, sends a signed-out page request to
-	// LoginPath?next=<path and query> instead of a 401. A signed-in
-	// caller without the role still gets 403.
+	// LoginPath, when set, redirects a signed-out page request to
+	// LoginPath?next=<path and query> instead of a 401.
 	LoginPath string
 
 	// SignOutPath is where the account menu's Sign out posts. Defaults to
-	// Auth's logout route when Auth is set; with neither, the menu has no
-	// Sign out.
+	// Auth's logout route.
 	SignOutPath string
 
-	// Policy is the role policy the Roles page manages and the tier
-	// checks read. With GrantStore the page grants and revokes.
+	// Policy is the role policy the Roles page manages and the tier checks
+	// read.
 	Policy *access.RolePolicy
 
-	// GrantStore persists role grants. With Policy, Grant and Revoke
-	// write both the live policy and the database. Wire it with
-	// framework.NewGrantStore(db, policy), EnsureSchema and LoadInto.
+	// GrantStore persists role grants; with Policy the Roles page grants and
+	// revokes.
 	GrantStore *access.GrantStore
 
-	// Auth backs the User roles page: its UserStore lists users and
-	// updates their roles (EntityUserStore does both).
+	// Auth backs the User roles page through its UserStore.
 	Auth *auth.AuthManager
 
-	// EffectiveRoles adds resolved roles to the User roles page. Direct
-	// roles always show as "direct"; these are unioned with them and
-	// labeled by their origin.
+	// EffectiveRoles adds resolved roles, labeled by origin, to the User roles
+	// page.
 	EffectiveRoles func(ctx context.Context, userID string) []access.RoleWithOrigin
 
-	// ProcessModules is the process-module supervisor the Modules page
-	// manages (app.ProcessModules()). Nil leaves the page out.
+	// ProcessModules is the supervisor the Modules page manages. Nil leaves
+	// the page out.
 	ProcessModules processModuleController
 
-	// Pages are the app's own admin pages, drawn in the shell with
-	// breadcrumbs and a palette entry.
+	// Pages are the app's own admin pages, drawn in the shell.
 	Pages []Page
 
 	// Cards are the app's own dashboard cards.
 	Cards []Card
 
-	// Metrics are the figures in the strip at the top of the dashboard,
-	// in order: counts and sums over exposed entities. The strip holds
-	// six; with a Queue, the sixth is its Failed jobs figure.
+	// Metrics are the dashboard strip's figures, at most six with a Queue's
+	// Failed jobs figure among them.
 	Metrics []Metric
 
 	// Attention are the list views the dashboard's Needs attention panel
-	// previews, beside the recent activity.
+	// previews.
 	Attention []Watch
 
 	// DashboardNew names an exposed entity whose New button heads the
-	// dashboard, the page's primary action ("New customer"). Empty draws
-	// none; the entity cards keep their own New either way.
+	// dashboard.
 	DashboardNew string
 
 	// Links are extra sidebar links, each in a nav group.
@@ -194,14 +143,12 @@ type Config struct {
 	// Commands are extra palette entries with fixed labels and URLs.
 	Commands []ui.PaletteCommand
 
-	// EmailPreviews are the mails the Emails page renders with sample
-	// data, so a template can be read before anything sends it. Empty
-	// leaves the page out.
+	// EmailPreviews are the mails the Emails page renders with sample data.
+	// Empty leaves the page out.
 	EmailPreviews []EmailPreview
 
-	// Logger receives what a handler cannot tell its caller, notably an
-	// audit row that failed to write after its mutation committed.
-	// Defaults to slog.Default().
+	// Logger receives what a handler cannot tell its caller, such as a failed
+	// audit write. Defaults to slog.Default().
 	Logger *slog.Logger
 }
 
@@ -209,7 +156,7 @@ type Config struct {
 type Battery struct {
 	cfg    Config
 	app    *framework.App
-	db     *sql.DB // the audit log's database
+	db     *sql.DB
 	host   *uihost.UIHost
 	router *router.Router
 	ents   []*entity.Entity
@@ -217,11 +164,10 @@ type Battery struct {
 	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
 	ops    []opsPage
 
-	savedViews entityui.SavedViewStore // nil unless Config.SavedViews
+	savedViews entityui.SavedViewStore
 }
 
-// New constructs the Admin battery. Pass the result to
-// framework.App.RegisterBattery.
+// New constructs the Admin battery for framework.App.RegisterBattery.
 func New(cfg Config) *Battery {
 	if cfg.PathPrefix == "" {
 		cfg.PathPrefix = "/admin"
@@ -248,7 +194,6 @@ func New(cfg Config) *Battery {
 	return &Battery{cfg: cfg, db: cfg.DB}
 }
 
-// logger returns the configured logger.
 func (b *Battery) logger() *slog.Logger {
 	if b.cfg.Logger != nil {
 		return b.cfg.Logger
@@ -272,9 +217,8 @@ func (b *Battery) loadFailed(ctx context.Context, label string, phrase i18n.Phra
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "admin" }
 
-// ReservedEmbedPrefixes reports the prefix the battery mounted, so an
-// embed grant can never reach the back office even when the app relocated
-// it with Config.PathPrefix. See framework.EmbedReserving.
+// ReservedEmbedPrefixes reports the mounted prefix, so no embed grant reaches
+// the back office.
 func (b *Battery) ReservedEmbedPrefixes() []string {
 	if b.cfg.PathPrefix == "" {
 		return []string{"/admin"}
@@ -282,10 +226,8 @@ func (b *Battery) ReservedEmbedPrefixes() []string {
 	return []string{b.cfg.PathPrefix}
 }
 
-// Init implements framework.Battery. It refuses, naming what is missing,
-// an app with no UI host, an exposed entity without Config.UI, an icon
-// the kit does not register, and a page whose path or build is unusable;
-// then it mounts the shell, the pages and the routes.
+// Init implements framework.Battery. It errors on a config it cannot draw,
+// then mounts the shell, the pages and the routes.
 func (b *Battery) Init(app *framework.App) error {
 	b.app = app
 	if b.db == nil {
@@ -341,8 +283,6 @@ func (b *Battery) Init(app *framework.App) error {
 	if b.cfg.BulkJobs != nil {
 		b.cfg.BulkJobs.setAdmit(b.admitJob)
 		jobsUI := b.jobsUI()
-		// Bind first: a job resumed before its handler was registered
-		// would be dead-lettered by the queue as an unknown type.
 		b.cfg.BulkJobs.Bind(jobsUI)
 		if n, err := jobsUI.ResumeBulkJobs(context.Background(), entityui.BulkResumeGrace); err != nil {
 			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
@@ -354,12 +294,6 @@ func (b *Battery) Init(app *framework.App) error {
 	return nil
 }
 
-// jobsUI is the UI a bound BulkJobs runs queued runs through. Both the
-// admin's bulk route and the app's own queue runs, so an entity counts
-// as written wherever either route writes it: under the admin's write
-// base when the admin exposes it (a named CRUD-off entity has no other),
-// else under the app's REST routes. Binding Config.UI alone stopped
-// every queued run over an entity only the admin writes.
 func (b *Battery) jobsUI() *entityui.UI {
 	app := b.cfg.UI
 	return app.WithAPIPath(func(e *entity.Entity) (string, bool) {
@@ -373,14 +307,12 @@ func (b *Battery) jobsUI() *entityui.UI {
 	})
 }
 
-// SavedViews returns the saved views store, or nil when Config.SavedViews
-// is off. Every method acts for the caller in ctx only; see
-// entityui.SavedViewStore.
+// SavedViews returns the saved views store, or nil when Config.SavedViews is
+// off.
 func (b *Battery) SavedViews() entityui.SavedViewStore {
 	return b.savedViews
 }
 
-// checkConfig refuses the names and paths Init cannot draw.
 func (b *Battery) checkConfig() error {
 	for _, e := range b.ents {
 		if n := navOf(e); n != nil {
@@ -468,10 +400,6 @@ func (b *Battery) checkConfig() error {
 	return nil
 }
 
-// checkFeatureConfig refuses the optional features' config Init cannot
-// start: a saved views table name that is not a lowercase identifier,
-// saved views with no database to keep them in, and bulk jobs with no
-// UI to run them through.
 func (b *Battery) checkFeatureConfig() error {
 	if !savedViewsTableRe.MatchString(b.cfg.SavedViewsTable) {
 		return fmt.Errorf("admin: SavedViewsTable %q must be a lowercase identifier ([a-z_][a-z0-9_]*)", b.cfg.SavedViewsTable)
@@ -485,7 +413,6 @@ func (b *Battery) checkFeatureConfig() error {
 	return nil
 }
 
-// checkIcon refuses an icon name the kit does not register.
 func checkIcon(name, owner string) error {
 	if name != "" && !ui.IconRegistered(name) {
 		return fmt.Errorf("admin: %s names icon %q, which the kit does not register (ui.RegisterIcon adds one)", owner, name)
@@ -493,222 +420,12 @@ func checkIcon(name, owner string) error {
 	return nil
 }
 
-// entityNames lists entity names for an error message.
 func entityNames(ents []*entity.Entity) string {
 	names := make([]string, len(ents))
 	for i, e := range ents {
 		names[i] = e.GetName()
 	}
 	return strings.Join(names, ", ")
-}
-
-// ----- the gate --------------------------------------------------------------
-
-// askPolicy runs one of the app's policy callbacks and fails closed: a
-// panic answers false, and the log names the callback and the panic's
-// type, never its value.
-func (b *Battery) askPolicy(name string, ask func() bool) (ok bool) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			b.logger().Error("admin: policy callback panicked", "callback", name, "panic", fmt.Sprintf("%T", rec))
-			ok = false
-		}
-	}()
-	return ask()
-}
-
-// AdminScope is the API-token scope that reaches the admin. A request an
-// API token authenticated passes the gate only when the token holds it
-// ("admin:*" and "*:*" cover it): a token carries its owner's roles,
-// and one an admin minted for another surface must not open the back
-// office. Sessions and JWTs carry no token scopes and are unaffected.
-const AdminScope = "admin:access"
-
-// authorized reports whether the request may use the admin. The embed
-// refusal, a token without AdminScope and a Decider's deny run before
-// everything else and cannot be lifted by Authorize; a Decider can veto
-// the admin, never admit it.
-func (b *Battery) authorized(ctx context.Context) bool {
-	if _, embedded := embed.GrantFromContext(ctx); embedded {
-		return false
-	}
-	if held, tokenAuthed := auth.TokenScopes(ctx); tokenAuthed && !auth.ScopeMatch(held, AdminScope) {
-		return false
-	}
-	if d := access.GetDecider(ctx); d != nil {
-		if d(ctx, access.GetRoles(ctx), access.Wildcard, access.Ref{}) == access.DecisionDeny {
-			return false
-		}
-	}
-	if b.cfg.Authorize != nil {
-		return b.askPolicy("Authorize", func() bool { return b.cfg.Authorize(ctx) })
-	}
-	// battery/auth seeds a nil user on every request, so ok alone is true
-	// for an anonymous caller; the nil check is what refuses one.
-	return slices.Contains(callerHeldRoles(ctx), b.adminRole())
-}
-
-// admitJob is the gate a queued bulk run's rebuilt context passes, the
-// same one the admin's bulk route applies: Config.Policy goes on a
-// context that has none, and a creator the gate admits now runs
-// elevated. A creator it no longer admits runs as a plain caller.
-func (b *Battery) admitJob(ctx context.Context) context.Context {
-	if b.cfg.Policy != nil && access.PolicyFromContext(ctx) == nil {
-		ctx = access.WithPolicy(ctx, b.cfg.Policy)
-	}
-	if b.authorized(ctx) {
-		return b.elevate(ctx)
-	}
-	return ctx
-}
-
-// elevate lifts the Access check of the entities the admin exposes and
-// of no other: a relation, a hook or a stat reaching an entity the admin
-// does not show reads as the caller. Call it only once the caller passed
-// the gate.
-func (b *Battery) elevate(ctx context.Context) context.Context {
-	return crud.WithElevation(ctx, b.names...)
-}
-
-// adminRole returns the configured admin role, defaulting to "admin".
-func (b *Battery) adminRole() string {
-	if b.cfg.AdminRole != "" {
-		return b.cfg.AdminRole
-	}
-	return "admin"
-}
-
-// authzStatus is 401 for a caller with no user, 403 for a signed-in one.
-func (b *Battery) authzStatus(ctx context.Context) int {
-	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		return http.StatusForbidden
-	}
-	return http.StatusUnauthorized
-}
-
-// routes is the router group every admin route mounts on, behind the
-// gate.
-func (b *Battery) routes() *router.Router {
-	return b.router.Group("", func(next http.Handler) http.Handler { return b.gate(next) })
-}
-
-// headers wraps every answer under the prefix, the screens the host
-// serves included, refusals too: the security headers whether or not the
-// app kept its default middleware, and no-store, because every admin
-// answer is per-caller data and a cookie-authenticated GET is outside
-// RFC 9111's Authorization-only storage rules.
-func (b *Battery) headers(next http.Handler) http.Handler {
-	secure := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(next)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !b.underPrefix(r.URL.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		secure.ServeHTTP(w, r)
-	})
-}
-
-// gate refuses unauthorized callers and, for a state-changing method, a
-// cross-site request. It is the battery's own CSRF posture at the one
-// choke point every mutating route passes through; middleware.CSRF adds
-// token checks on top when the host mounts it, but the battery does not
-// rely on it.
-func (b *Battery) gate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isSafeAdminMethod(r.Method) && auth.RejectCrossSiteForm(w, r) {
-			return
-		}
-		if !b.authorized(r.Context()) {
-			status := b.authzStatus(r.Context())
-			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
-				handler.NoteSessionRefusal(r.Context())
-				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(loginNext(r)), http.StatusSeeOther)
-				return
-			}
-			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// loginNext is the page a signed-out request asked for, as the login
-// redirect's next: its escaped path and its query. A list keeps its
-// filter, view, sort and page in the query, so the path alone brought a
-// signed-in admin back to a different page than the link named.
-func loginNext(r *http.Request) string {
-	next := r.URL.EscapedPath()
-	if r.URL.RawQuery != "" {
-		next += "?" + r.URL.RawQuery
-	}
-	return next
-}
-
-// isSafeAdminMethod reports a method that cannot mutate state, exempt
-// from the cross-site refusal: a cross-site link to an admin page is
-// legitimate.
-func isSafeAdminMethod(method string) bool {
-	switch method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	return false
-}
-
-// ----- ops posts -------------------------------------------------------------
-
-// maxAdminBodyBytes caps an ops post body at the repo's
-// bodylimit.MaxJSONBodyBytes.
-const maxAdminBodyBytes int64 = bodylimit.MaxJSONBodyBytes
-
-// isRPC reports a post from the runtime's form RPC, which sends JSON. A
-// plain form post (no script) sends urlencoded.
-func isRPC(r *http.Request) bool {
-	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	return err == nil && mt == "application/json"
-}
-
-// readOps reads an ops post's fields from either encoding, capped. A form
-// RPC sends a field that appears once as a string and a repeated one as
-// an array; any other JSON value is refused. On failure it has answered.
-func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (url.Values, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-	if isRPC(r) {
-		// Strict: a repeated or case-folded key reads one way here and
-		// another on the form surface, so the body is refused.
-		var raw map[string]any
-		//gofastr:allow(floatnum) only strings and string arrays become form values; a number is refused
-		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
-			b.refuseBodyError(w, r, page, err)
-			return nil, false
-		}
-		vals := url.Values{}
-		for k, v := range raw {
-			switch t := v.(type) {
-			case string:
-				vals.Set(k, t)
-			case []any:
-				for _, item := range t {
-					s, ok := item.(string)
-					if !ok {
-						b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
-						return nil, false
-					}
-					vals.Add(k, s)
-				}
-			default:
-				b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
-				return nil, false
-			}
-		}
-		return vals, true
-	}
-	if err := r.ParseForm(); err != nil {
-		b.refuseBodyError(w, r, page, err)
-		return nil, false
-	}
-	return r.PostForm, true
 }
 
 // refuseBodyError answers a failed ops-post body read through the ops
@@ -719,121 +436,4 @@ func (b *Battery) refuseBodyError(w http.ResponseWriter, r *http.Request, page s
 		return
 	}
 	b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
-}
-
-// result is one outcome an ops post reports: its message and whether it
-// succeeded. The names are the only values a page reads from ?result=,
-// so a page never prints request text.
-type result struct {
-	key i18n.Phrase
-	ok  bool
-}
-
-var results = map[string]result{
-	"done":                   {i18nui.AdminDone, true},
-	"replayed":               {i18nui.AdminReplayed, true},
-	"replayed-all":           {i18nui.AdminReplayedAll, true},
-	"replayed-some":          {i18nui.AdminReplayedSome, true},
-	"granted":                {i18nui.AdminGranted, true},
-	"permissions-saved":      {i18nui.AdminPermissionsSaved, true},
-	"roles-saved":            {i18nui.AdminRolesSaved, true},
-	"name-saved":             {i18nui.AdminNameSaved, true},
-	"module-enabled":         {i18nui.AdminModuleEnabled, true},
-	"module-disabled":        {i18nui.AdminModuleDisabled, true},
-	"module-bumped":          {i18nui.AdminModuleBumped, true},
-	"module-revoked":         {i18nui.AdminModuleRevoked, true},
-	"refused":                {i18nui.AdminRefused, false},
-	"failed":                 {i18nui.AdminFailed, false},
-	"body-too-large":         {i18nui.AdminBodyTooLarge, false},
-	"bad-input":              {i18nui.AdminBadInput, false},
-	"grant-refused":          {i18nui.AdminGrantRefused, false},
-	"assign-refused":         {i18nui.AdminAssignRefused, false},
-	"roles-conflict":         {i18n.StatusPhrase(http.StatusConflict), false},
-	"own-admin-refused":      {i18nui.AdminOwnAdminRefused, false},
-	"own-permission-refused": {i18nui.AdminOwnPermRefused, false},
-	"name-refused":           {i18nui.AdminNameRefused, false},
-	"unknown-capability":     {i18nui.AdminUnknownCapability, false},
-	"revoked-by-wildcard":    {i18nui.AdminRevokedByWildcard, false},
-	"module-failed":          {i18nui.AdminModuleFailed, false},
-	"module-refused":         {i18nui.AdminModuleRefused, false},
-	"queue-load-failed":      {i18nui.AdminQueueLoadFailed, false},
-	"replay-unsupported":     {i18nui.AdminFailed, false},
-	"replay-duplicate":       {i18nui.AdminReplayDuplicate, false},
-	"replay-nothing":         {i18nui.AdminReplayNothing, false},
-	"replay-all-nothing":     {i18nui.AdminReplayAllNothing, false},
-}
-
-// done answers a successful ops post. A form RPC gets 204 and a toast;
-// the form's own navigation re-fetches the page. A plain post gets a 303
-// back to page with ?result=name.
-func (b *Battery) done(w http.ResponseWriter, r *http.Request, page, name string) {
-	res := results[name]
-	if isRPC(r) {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: res.key.Text(r.Context()), TTL: 4000})
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)
-}
-
-// refuse answers a refused or failed ops post with status. A form RPC
-// gets {"error": message}, which the runtime shows as a toast; a plain
-// post gets a 303 back to page with ?result=name.
-func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, status int, name string, fields ...string) {
-	res := results[name]
-	if isRPC(r) {
-		message := res.key.Text(r.Context())
-		body := map[string]any{"error": message}
-		if len(fields) > 0 {
-			fieldErrors := make(map[string]string, len(fields))
-			for _, field := range fields {
-				fieldErrors[field] = message
-			}
-			body["fields"] = fieldErrors
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			slog.Warn("admin: encode refusal body", "error", err)
-			handler.WriteError(w, r, handler.Fail(http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError)))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(status)
-		w.Write(encoded)
-		w.Write([]byte("\n"))
-		return
-	}
-	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)
-}
-
-// withResult appends ?result=name to page, keeping its query.
-func withResult(page, name string) string {
-	u, err := url.Parse(page)
-	if err != nil {
-		return page
-	}
-	q := u.Query()
-	q.Set("result", name)
-	u.RawQuery = q.Encode()
-	return u.String()
-}
-
-// resultNotice draws a plain post's outcome, read back from ?result= on
-// the page it returned to. An unknown name draws nothing.
-func resultNotice(ctx context.Context) render.HTML {
-	r := appui.RequestFromContext(ctx)
-	if r == nil || r.URL == nil {
-		return ""
-	}
-	res, ok := results[r.URL.Query().Get("result")]
-	if !ok {
-		return ""
-	}
-	variant := ui.StatusSuccess
-	if !res.ok {
-		variant = ui.StatusDanger
-	}
-	return ui.Callout(ui.CalloutConfig{Variant: variant}, render.Text(res.key.Text(ctx)))
 }

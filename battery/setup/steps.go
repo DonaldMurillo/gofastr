@@ -15,26 +15,6 @@ import (
 
 // AdminStep builds the "create initial admin" step plus the Complete
 // predicate ("at least one user exists").
-//
-// The step collects an email + password, validates the password against
-// the auth battery's strength policy (RecommendedMinPasswordBytes), hashes
-// it with the same bcrypt hasher the battery uses, and creates a user
-// with roles ["admin"].
-//
-// The Complete predicate probes the users table directly,
-// auth.UserStore has no count/list surface and the brief forbids adding
-// methods to battery/auth. The narrowest exported surface is the *sql.DB
-// the host already holds (the same one passed to
-// auth.NewEntityUserStore).
-//
-// usersTable MUST match the table name passed to
-// auth.NewEntityUserStore (typically "auth_users"). The identifier is
-// validated with query.SafeIdent and quoted with query.QuoteFolded, the
-// folded name AutoMigrate and the auth store use, since
-// it can't be parameterized. An empty or unsafe name panics, fail loud,
-// never silently fall back to a hardcoded default.
-//
-// EnvVars: GOFASTR_ADMIN_EMAIL / GOFASTR_ADMIN_PASSWORD.
 func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(context.Context) (bool, error)) {
 	if _, err := query.SafeIdent(usersTable); err != nil {
 		panic(fmt.Sprintf("setup: AdminStep usersTable is invalid: %v", err))
@@ -62,11 +42,6 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 			},
 		},
 		Run: func(ctx context.Context, values map[string]string) error {
-			// Store the address login will look up. Login canonicalizes
-			// the submitted email and FindByEmail matches exactly, so an
-			// admin stored as the raw "Ops@Example.com" could never sign
-			// in. The host's AuthConfig.CanonicalizeEmail, when set,
-			// replaces the default here exactly as it does at login.
 			email, err := canonicalAdminEmail(m, values["ADMIN_EMAIL"])
 			if err != nil {
 				return err
@@ -88,9 +63,6 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 
 	complete := func(ctx context.Context) (bool, error) {
 		var exists bool
-		// SELECT 1 FROM <quotedTable> LIMIT 1, one row means at least
-		// one user. The table is guaranteed to exist (EnsureSchema ran
-		// in AuthManager.Init before setup).
 		err := db.QueryRowContext(ctx, "SELECT 1 FROM "+quotedTable+" LIMIT 1").Scan(&exists)
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -104,10 +76,6 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 	return step, complete
 }
 
-// canonicalAdminEmail folds raw the way m's login handler does: the
-// host's AuthConfig.CanonicalizeEmail when set, auth.CanonicalEmail
-// otherwise. An address that canonicalizes to nothing (whitespace or
-// invisible runes only) is refused like an empty one.
 func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
 	if err := validateAdminEmail(raw); err != nil {
 		return "", err
@@ -126,7 +94,6 @@ func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
 	return email, nil
 }
 
-// validateAdminEmail refuses an empty admin address.
 func validateAdminEmail(v string) error {
 	if !textsafe.Storable(v) {
 		return i18n.NewError(reasonEmailInvalid)
@@ -137,10 +104,7 @@ func validateAdminEmail(v string) error {
 	return nil
 }
 
-// HealthStep builds a "verify adapters" step with no fields. Its Run
-// executes the app's registered readiness checks via the exported
-// RunReadinessChecks method and fails with a per-check, actionable
-// error list. In the wizard this renders as a "verify adapters" step.
+// HealthStep builds a "verify adapters" step with no fields.
 func HealthStep(app *framework.App) Step {
 	return Step{
 		Name:   "Verify Adapters",

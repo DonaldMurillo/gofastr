@@ -1,0 +1,58 @@
+primitive: admin.bulkjobs
+summary: BulkJobs, the entityui.JobRunner on battery/queue that runs a bulk action over more records than one request may touch, and AuthPrincipal, which rebuilds the confirming user for each chunk.
+code:
+  - battery/admin/jobs.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: runner-needs-queue-and-principal
+    rule: NewBulkJobs errors without a queue or a PrincipalFunc, and Enqueue and a queued run before Bind answer errBulkJobsUnbound and leave the job for ResumeBulkJobs.
+    enforced_by:
+      - test: battery/admin.TestBulkJobsUnboundRefusals
+  - id: bind-before-resume
+    rule: Init binds the runner before it resumes unenqueued jobs, so no resumed job reaches the queue before its handler is registered.
+    enforced_by:
+      - test: battery/admin.TestBulkInitResumesOrphanJob
+      - test: battery/admin.TestBulkResumeExpiredEnqueuedJob
+    applies:
+      - battery/admin/admin.go
+  - id: resume-waits-out-the-grace
+    rule: Init resumes only an unenqueued job older than entityui.BulkResumeGrace, so a confirm between writing its snapshot and enqueuing it is left alone.
+    enforced_by:
+      - test: battery/admin.TestBulkInitLeavesAYoungUnenqueuedJob
+  - id: payload-is-the-job-id
+    rule: A queued job carries only the bulk job's id, decoded strictly so an unknown field runs nothing, and the creator as its UserID so erasing them drops their pending runs.
+    enforced_by:
+      - test: battery/admin.TestBulkJobPayloadWithAnUnknownFieldRunsNothing
+      - test: battery/admin.TestBulkLeaseRetriesAreDelayed
+  - id: busy-lease-is-rescheduled
+    rule: A run that finds its bulk lease busy or lost enqueues a fresh delivery a full entityui.BulkJobLease later, keeping the UserID, instead of spending a queue attempt.
+    enforced_by:
+      - test: battery/admin.TestBulkLeaseRetriesAreDelayed
+  - id: every-chunk-rebuilds-the-creator
+    rule: Principal rebuilds the creator's context with their current roles on the user and on access.WithRoles, then runs the admin's gate on it.
+    enforced_by:
+      - test: battery/admin.TestAuthPrincipalBuildsCurrentContext
+      - test: battery/admin.TestBulkRunUsesCurrentRoles
+      - test: battery/admin.TestBulkRunAdminIsElevated
+  - id: tenant-run-checks-membership
+    rule: AuthPrincipal refuses a tenant run with no TenantMember or whose creator no longer belongs to the tenant, and stamps the tenant otherwise.
+    enforced_by:
+      - test: battery/admin.TestAuthPrincipalChecksTenantMember
+decisions:
+  - id: bind-closes-the-wiring-cycle
+    date: 2026-11-20
+    status: accepted
+    decision: The wiring runs NewBulkJobs, then app.EntityUI with Extensions.Jobs, then admin.Config.BulkJobs, and the admin's Init calls Bind once it holds both the runner and the UI.
+    rejected:
+      - option: Build the runner from the UI.
+        why: EntityUI refuses an over-cap selection on a host with no Jobs, so the runner must exist before the UI it runs through.
+    upholds: [bind-before-resume]
+  - id: principal-is-required
+    date: 2026-11-20
+    status: accepted
+    decision: NewBulkJobs refuses to start without a PrincipalFunc.
+    rejected:
+      - option: Run queued chunks under the context the queue worker has.
+        why: That is nobody's identity, so the bulk writes would run unchecked.
+    upholds: [runner-needs-queue-and-principal, every-chunk-rebuilds-the-creator]

@@ -1,0 +1,54 @@
+primitive: admin.dashboard
+summary: The dashboard - the metric strip, an entity card per exposed entity polling its own count, the Needs attention panel, failed jobs, recent activity and the app's own cards.
+code:
+  - battery/admin/dashboard.go
+  - battery/admin/activity.go
+  - battery/admin/attention.go
+  - battery/admin/metrics.go
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: late-count-falls-back
+    rule: A card whose count misses countDeadline reads a bounded probe of at most manyRows ids under its own deadline, and "—" only when that read fails too.
+    enforced_by:
+      - test: battery/admin.TestCountFallsBackToBoundedRead
+  - id: activity-asks-hooks-once
+    rule: The recent activity card asks the app's read hooks once per record however many of its rows name that record.
+    enforced_by:
+      - test: battery/admin.TestAuditChangesAskHooksOncePerRealRecord
+  - id: activity-names-actors
+    rule: An activity row names its actor by their account's email through Auth, by the id when no account matches, and as System for a row with no actor, and a bulk run reads as one sentence.
+    enforced_by:
+      - test: battery/admin.TestAuditPageNamesTheActor
+      - test: battery/admin.TestRecentActivityReadsAsSentences
+      - test: battery/admin.TestRecentActivityNamesBulkRuns
+  - id: watches-are-checked
+    rule: Init refuses a Watch whose view the entity does not declare or whose Rows fall outside 0 to 20, and a zero Rows previews 5.
+    enforced_by:
+      - test: battery/admin.TestAttentionPreviewsWatchedViews
+  - id: empty-watch-draws-nothing
+    rule: The Needs attention panel leaves out a watched view whose count is zero.
+    enforced_by:
+      - test: battery/admin.TestAttentionPreviewsWatchedViews
+      - test: battery/admin.TestAttentionCountsFilterFuncView
+  - id: metrics-are-checked
+    rule: Init refuses a Metric the database cannot compute, a Tone on a top-level figure, and more figures than the strip holds, counting a Queue's Failed jobs figure as one.
+    enforced_by:
+      - test: battery/admin.TestMetricsRefuseWhatCannotCompute
+      - test: battery/admin.TestMetricsAreOneStrip
+      - test: battery/admin.TestQueueTakesOneMetricSlot
+    applies:
+      - battery/admin/admin.go
+  - id: jobs-figure-is-platform-only
+    rule: The strip's Failed jobs figure and the failed jobs panel draw only for the platform operator.
+    enforced_by:
+      - test: battery/admin.TestTenantAttentionOmitsFailedJobs
+      - test: battery/admin.TestTenantAdminNavOmitsPlatformPages
+decisions:
+  - id: dashboard-polls
+    date: 2026-11-20
+    status: accepted
+    decision: Every dashboard card, count and figure refreshes by data-cui-poll from its own fragment route, never by a push.
+    rejected:
+      - option: Push fresh counts over SSE.
+        why: Passive freshness polls; SSE is for background events only (hard rule 3).

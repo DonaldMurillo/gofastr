@@ -13,17 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// SQLPasskeyStore is the database-backed PasskeyStore: passkeys survive
-// restarts and every replica sees the same set.
-//
-// Schema (created by EnsureSchema, which PasskeyPlugin.Init calls): the
-// credential id and COSE public key as unpadded base64url TEXT, the sign
-// counter and timestamps as BIGINT (unix seconds; 0 is "never"), and the
-// backup flags as 0/1 INTEGER, so one DDL runs on SQLite and Postgres.
-// Transports are a comma-joined TEXT list and the AAGUID 32 hex digits
-// (” when unknown); both columns are added to a table an older build
-// created.
-// A public key is not a secret, so nothing is sealed.
+// SQLPasskeyStore is a PasskeyStore in a SQLite or PostgreSQL table.
 type SQLPasskeyStore struct {
 	db      *sql.DB
 	table   string
@@ -42,8 +32,7 @@ func NewSQLPasskeyStore(db *sql.DB, table ...string) (*SQLPasskeyStore, error) {
 	return &SQLPasskeyStore{db: db, table: t}, nil
 }
 
-// EnsureSchema creates the table and its user index if absent. The table
-// is the folded name erasure and export read, as for the other auth stores.
+// EnsureSchema creates the table and its user index.
 func (s *SQLPasskeyStore) EnsureSchema(ctx context.Context) error {
 	if err := refuseCaseKeptTable(ctx, s.db, s.dialect.of(s.db), s.table); err != nil {
 		return err
@@ -90,16 +79,7 @@ func timeOrZero(sec int64) time.Time {
 	return time.Unix(sec, 0).UTC()
 }
 
-// AddPasskey implements PasskeyStore. It counts the user's passkeys and
-// inserts in one transaction. On Postgres, where each of two concurrent
-// adds would count the other's insert out, the transaction first takes
-// an advisory lock on the user's passkeys. The lock names the table by
-// its resolved oid, so two spellings of one table ("Passkeys",
-// "public.passkeys") share it, and the transaction is READ COMMITTED
-// whatever the server default: under REPEATABLE READ the count would
-// read the snapshot taken before the lock wait, missing the insert the
-// lock waited for. SQLite allows one writer at a time: of two adds that
-// both counted, only the first commits.
+// AddPasskey implements PasskeyStore, counting and inserting in one transaction under a per-user lock on Postgres.
 func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, maxPerUser int) (err error) {
 	t := query.QuoteFolded(s.table)
 	pg := s.dialect.of(s.db) == migrate.DialectPostgres
@@ -117,7 +97,6 @@ func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, m
 		}
 	}()
 	if pg {
-		// An oid is digits, so the ':' cannot be forged by a user id.
 		if _, err = tx.ExecContext(ctx,
 			`SELECT pg_advisory_xact_lock(hashtextextended(($1::regclass)::oid::text || ':' || $2::text, 0))`,
 			t, c.UserID); err != nil {

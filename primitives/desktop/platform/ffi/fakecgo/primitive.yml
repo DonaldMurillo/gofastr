@@ -1,0 +1,97 @@
+primitive: desktop.platform.ffi.fakecgo
+summary: A Go assembly port of runtime/cgo's C glue that supplies the _cgo runtime hooks a CGO_ENABLED=0 binary needs once runtime.iscgo is true, so runtime.cgocall works without cgo.
+code:
+  - battery/desktop/internal/fakecgo/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - The port follows runtime/cgo of the Go release in go.mod; a Go upgrade re-reads gcc_unix.c, gcc_libinit_unix.c, pthread_unix.c, gcc_setenv.c and gcc_{arm64,amd64}.S and the runtime linknames in runtime/cgo.go.
+  - Run its tests with CGO_ENABLED=0; with cgo on the package is not built.
+invariants:
+  - id: iscgo-before-go-code
+    rule: Importing the package without cgo makes rt0_go call _cgo_init before any Go code, sets runtime.iscgo, stores setg_gcc and installs a non-nil crosscall2 func value, so runtime.main's iscgo branch does not throw.
+    enforced_by:
+      - test: battery/desktop/internal/fakecgo.TestIscgoAndInit
+  - id: setenv-reaches-libc
+    rule: os.Setenv and os.Unsetenv reach the C environment through _cgo_setenv and _cgo_unsetenv.
+    enforced_by:
+      - test: battery/desktop/internal/fakecgo.TestSetenvRoundTrip
+  - id: threads-start-through-pthreads
+    rule: Every M after init starts through _cgo_thread_start as a detached pthread with the parent's stack size and signals blocked during creation, and survives GC under load.
+    enforced_by:
+      - test: battery/desktop/internal/fakecgo.TestThreadsAndGC
+      - test: battery/desktop/internal/fakecgo.TestDeepCallbackOnMainThreadStack
+decisions:
+  - id: why-fakecgo
+    date: 2026-11-20
+    status: accepted
+    decision: The package exists so runtime.cgocall, which throws cgocall unavailable unless runtime.iscgo is true, can be used without cgo.
+    rejected:
+      - option: Call C through syscall.syscall9.
+        why: Its libcCall path throws shrinking stack in libcall when GC shrinks a goroutine parked in a never-returning C call.
+    upholds: [iscgo-before-go-code]
+  - id: port-from-go-sources
+    date: 2026-11-20
+    status: accepted
+    decision: The port is from the Go sources of the release in use, one assembly file per architecture.
+    rejected:
+      - option: Copy ebitengine/purego's internal/fakecgo.
+        why: The repository takes no third-party code, and the runtime's own C files are the reference the hooks must match.
+    upholds: [iscgo-before-go-code]
+  - id: only-without-cgo
+    date: 2026-11-20
+    status: accepted
+    decision: The implementation builds only with !cgo.
+    rejected:
+      - option: Build it always.
+        why: With cgo, runtime/cgo defines the same _cgo hooks and the link fails on duplicates.
+    upholds: [iscgo-before-go-code]
+  - id: glibc-2-34-unversioned
+    date: 2026-11-20
+    status: accepted
+    decision: On linux every pthread symbol is imported from libc.so.6 with no symbol version.
+    rejected:
+      - option: libpthread.so.0 or versioned imports.
+        why: glibc 2.34 folded libpthread into libc, and an unversioned symbol binds to the default version; an older glibc fails at exec with an undefined symbol, the honest failure.
+    upholds: [threads-start-through-pthreads]
+  - id: linux-binary-is-dynamic
+    date: 2026-11-20
+    status: accepted
+    decision: The cgo_import_dynamic directives make the linux binary dynamically linked, which also gives it the PT_TLS segment g needs once iscgo moves g into thread-local storage.
+    rejected:
+      - option: A static binary.
+        why: The internal linker emits PT_TLS only beside PT_DYNAMIC, so with iscgo on there is no static TLS block for g.
+    revisit_if: A Go release emits PT_TLS without PT_DYNAMIC; readelf -l on the test binary shows INTERP, DYNAMIC and TLS together today.
+    upholds: [iscgo-before-go-code]
+  - id: crosscall2-set-in-assembly
+    date: 2026-11-20
+    status: accepted
+    decision: x_cgo_init installs the crosscall2 func value in assembly.
+    rejected:
+      - option: Assign it from a package init.
+        why: runtime.main calls set_crosscall2 before any package init runs.
+    upholds: [iscgo-before-go-code]
+  - id: no-pthread-key
+    date: 2026-11-20
+    status: accepted
+    decision: _cgo_pthread_key_created stays zero and _cgo_bindm stays nil, so a foreign-thread callback always takes cgocallback's dropm branch, a full needm and dropm pair per callback.
+    rejected:
+      - option: Bind one M per C thread through a pthread key.
+        why: It is only faster, and it needs C destructors on thread exit.
+    upholds: [threads-start-through-pthreads]
+  - id: optional-linux-hooks-nil
+    date: 2026-11-20
+    status: accepted
+    decision: _cgo_mmap, _cgo_munmap, _cgo_sigaction, _cgo_yield, _cgo_callers and the traceback hooks stay nil.
+    rejected:
+      - option: Port them too.
+        why: The runtime nil-checks each and falls back to its own calls; they exist for sanitizers and tracebacks this host does not use.
+    upholds: [iscgo-before-go-code]
+  - id: dynamic-addresses-from-assembly
+    date: 2026-11-20
+    status: accepted
+    decision: The address of every cgo_import_dynamic symbol comes from a GLOBL and DATA pair in assembly.
+    rejected:
+      - option: A Go byte var with go:linkname.
+        why: It materializes a Go data symbol and yields a bogus address.
+    upholds: [setenv-reaches-libc]

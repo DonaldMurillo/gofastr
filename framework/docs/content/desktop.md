@@ -114,7 +114,10 @@ if err := d.Run(app); err != nil {
 ## The data dir
 
 `os.UserConfigDir()/<id>` (`~/Library/Application Support/<id>` on
-macOS), created 0700. Four files live there:
+macOS), created 0700. The id is reverse-DNS: `[A-Za-z0-9.-]+` with at
+least one dot, at most 253 characters, and not made only of dots and
+dashes (`..` would name the parent directory). `New`, `DataDir` and
+`AppOptions` refuse any other id. Four files live there:
 
 | File | What it is |
 |---|---|
@@ -129,7 +132,9 @@ set every one-person host opens.
 `GOFASTR_DESKTOP_DATA_DIR` overrides the base directory and requires an
 absolute path. Go code can refer to the variable name as
 `desktop.DataDirEnv`. Tests and CI use it to avoid touching a real profile.
-`Config.DataDir` overrides the whole path per battery.
+`Config.DataDir` overrides the whole path per battery. It must be
+absolute (`New` panics otherwise), and `Init` creates it owner-only
+(0700) when it is missing, as it does the default directory.
 
 ### Persistent browser profiles on Linux
 
@@ -1140,6 +1145,18 @@ Components:
   `preset.Modal("confirm").Skeleton(desktopui.SheetSkeleton(desktopui.SheetConfig{Title: "Discard draft?"}))`.
 - For segmented controls, use `ui.SegmentedControl`; the theme's
   tokens restyle it.
+
+The desktop components read these CSS knobs, each with the default
+shown:
+
+| Knob | Default | What it sets |
+|---|---|---|
+| `--ui-glass-rim` | `rgba(255, 255, 255, 0.16)` | The thin `Glass` surface's inset rim highlight. |
+| `--ui-glass-rim-thick` | `rgba(255, 255, 255, 0.18)` | The thick `Glass` surface's inset rim highlight. |
+| `--desktop-sidebar-surface` | `transparent` (a 2% text wash in dark mode) | The sidebar zone's fill. |
+| `--desktop-sourcelist-row` | `28px` | A `SourceList` row's minimum height. |
+| `--desktop-sheet-width` | `420px` | A `Sheet`'s maximum width. |
+| `--desktop-popover-width` | `320px` | A `Popover`'s maximum width. |
 
 Under `desktop-inactive`, glass fills flatten, `--color-accent` dims
 to the muted text color inside glass, and the selected source-list row

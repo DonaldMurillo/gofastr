@@ -3106,6 +3106,32 @@ the manager.
 PKCE is sent as with every provider. If Apple ever refuses it, set
 `DisablePKCE`. `Issuer` and `HTTPClient` exist for tests.
 
+## Smaller knobs
+
+- `AuthConfig.CookieOnly` leaves the JWT out of JSON login responses, so a
+  browser holds only the HttpOnly session cookie. `WithBFFPosture` sets it
+  together with session hydration, CSRF and the Origin guard; set it alone
+  only when you install those yourself.
+- `SessionMiddleware(mgr, auth.WithSessionLogger(l))` sends the
+  middleware's store-error WARN lines (and its DEBUG not-found lines) to
+  `l`; `nil` silences them. `TokenMiddleware(..., auth.WithTokenLogger(l))`
+  does the same for the token store.
+- `auth.CSRF(auth.WithDevCSRFKey(path))` loads, or creates and writes, a
+  stable HMAC key at `path` so forms survive a dev-server restart. Use
+  `WithCSRFSecret` with a key from your secret store in production.
+- `SQLAPITokenStore.ListAll` and `SQLAPITokenStore.RevokeAny` list and
+  revoke every owner's tokens. They are not on `APITokenStore`, so the
+  self-service `/auth/tokens` routes cannot reach them; wire them into your
+  own admin-gated screen.
+- `auth.VerifyAuthEntitiesPrivate(reg, "users", "sessions", logger)` logs
+  a WARN for every registered version of those entities that has CRUD or
+  MCP on, and for a name not registered yet. Call it after `app.Entity`.
+- `auth.UserEntityFields().With(extra...)` returns the users entity's
+  fields plus your own columns, leaving the canonical list untouched, and
+  `auth.TwoFAEntityFields()` returns the 2FA table's fields (the secret and
+  backup codes hidden, the `version` column included) for a host that
+  registers that table as an entity.
+
 ## Threat model assumptions
 
 - The application sits behind a TLS terminator that rewrites

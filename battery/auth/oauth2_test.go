@@ -211,6 +211,9 @@ func TestOAuth2Plugin_StateExpiry(t *testing.T) {
 	// The stateless token now carries the expiry, so simulate expiry
 	// by minting a token with an explicit past expiry and the same
 	// HMAC the production code would produce.
+	if _, ok := p.validateAndConsumeState(mintBackdatedState(t, p, "mock", time.Now().Add(time.Minute)), "mock"); !ok {
+		t.Fatal("control: a live backdated-format state was refused")
+	}
 	state := mintBackdatedState(t, p, "mock", time.Now().Add(-15*time.Minute))
 
 	if _, ok := p.validateAndConsumeState(state, "mock"); ok {
@@ -230,7 +233,7 @@ func mintBackdatedState(t *testing.T, p *OAuth2Plugin, providerName string, expi
 	}
 	nonceB64 := stateTestB64.EncodeToString(nonce)
 	expiryStr := strconv.FormatInt(expiry.Unix(), 10)
-	payload := nonceB64 + "." + providerName + "." + expiryStr
+	payload := nonceB64 + "." + providerName + "." + expiryStr + "."
 	mac := hmac.New(sha256.New, p.stateKey)
 	mac.Write([]byte(payload))
 	sig := stateTestB64.EncodeToString(mac.Sum(nil))

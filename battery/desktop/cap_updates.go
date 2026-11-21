@@ -5,13 +5,6 @@ import (
 	"encoding/json"
 )
 
-// updatesCapability: the page's view of the updater. check is ungated
-// (it reads the public feed); install is gated updates:install so the
-// OS prompt asks the user once before an app bundle is replaced.
-//
-// New registers this capability for every battery, configured or not:
-// an unconfigured app gets a real unsupported error instead of an
-// undefined namespace, the same posture as an OS-absent capability.
 func (b *Battery) updatesCapability() Capability {
 	return Capability{
 		Name:        "updates",
@@ -48,7 +41,6 @@ func (b *Battery) updatesCapability() Capability {
 	}
 }
 
-// updateCheckOutput is updates.check's result.
 type updateCheckOutput struct {
 	Available bool   `json:"available"`
 	Version   string `json:"version"`

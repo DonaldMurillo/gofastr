@@ -14,33 +14,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Watch is a list view whose rows need someone: past-due invoices,
-// failed payments. The dashboard's Needs attention panel previews the
-// first rows of every watched view that has any.
+// Watch is a list view whose rows need someone, previewed in the dashboard's
+// Needs attention panel.
 type Watch struct {
 	// Entity is an exposed entity's name.
 	Entity string
 
-	// View is a key of the entity's Display.Views: its Where picks the
-	// rows and its Sort orders them.
+	// View is a key of the entity's Display.Views.
 	View string
 
-	// Columns replaces the entity's list columns in the preview; empty
-	// keeps them.
+	// Columns replaces the entity's list columns in the preview; empty keeps
+	// them.
 	Columns []string
 
 	// Rows is how many rows the preview shows: 5 when zero, at most 20.
 	Rows int
 }
 
-// watchRows is how many rows a watch previews by default, and maxWatchRows
-// the most it may ask for: a dashboard panel, not a list.
 const (
 	watchRows    = 5
 	maxWatchRows = 20
 )
 
-// checkWatch refuses a watch that names what the admin cannot draw.
 func (b *Battery) checkWatch(w Watch) error {
 	e, ok := b.exposedNamed(w.Entity)
 	if !ok {
@@ -60,7 +55,6 @@ func (b *Battery) checkWatch(w Watch) error {
 	return nil
 }
 
-// watchedView is the declared view the watch names.
 func watchedView(e *entity.Entity, key string) (entity.ListView, bool) {
 	i := slices.IndexFunc(listViews(e), func(v entity.ListView) bool { return v.Key == key })
 	if key == "" || i < 0 {
@@ -69,18 +63,12 @@ func watchedView(e *entity.Entity, key string) (entity.ListView, bool) {
 	return listViews(e)[i], true
 }
 
-// attentionCard is the Needs attention panel: a preview of each watched
-// view with rows, read in the admin's scope, or a line saying there are
-// none. A view the count cannot read draws nothing.
 func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 	var lists []render.HTML
 	for i, w := range b.cfg.Attention {
 		e, _ := b.exposedNamed(w.Entity)
 		v, _ := watchedView(e, w.View)
 		cctx, cancel := context.WithTimeout(ctx, countDeadline)
-		// The view's own count: a filter-func view has no Where, and a
-		// view hidden from the caller draws nothing (its list would fall
-		// back to All under the view's heading).
 		n, ok := b.ui.CountView(cctx, w.Entity, w.View)
 		cancel()
 		if !ok || n == 0 {

@@ -12,9 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// InvalidDocumentTextError identifies a document field containing invalid
-// UTF-8 or a NUL byte. Add and the owned keyword adapter refuse it before
-// invoking a storage backend, including an in-memory backend.
+// InvalidDocumentTextError identifies a document field holding invalid UTF-8
+// or a NUL byte.
 type InvalidDocumentTextError struct {
 	Field string
 }
@@ -23,25 +22,18 @@ func (err *InvalidDocumentTextError) Error() string {
 	return fmt.Sprintf("semantic: document %s must be valid UTF-8 without NUL bytes", err.Field)
 }
 
-// MetadataNumberRangeError identifies document metadata holding a JSON
-// number Postgres jsonb cannot store: more than 131072 digits before the
-// decimal point or 16383 after it, or an exponent above 1073741823. Add refuses it on every store.
 type MetadataNumberRangeError struct{}
 
 func (*MetadataNumberRangeError) Error() string {
 	return "semantic: document metadata holds a number outside the range Postgres jsonb stores (131072 digits before the decimal point, 16383 after, exponent 1073741823)"
 }
 
-// InvalidQueryError is a Query the caller must change: an MMRLambda out of
-// range, Rerank with no Reranker, or text or a filter no store could hold.
 type InvalidQueryError struct {
 	Reason string
 }
 
 func (err *InvalidQueryError) Error() string { return "semantic: " + err.Reason }
 
-// validateQueryText holds a query's text and filter to the bounds Add
-// holds a document to, so no filter value is one no chunk could store.
 func validateQueryText(q Query) error {
 	for _, field := range []struct{ name, value string }{
 		{"text", q.Text},
@@ -76,8 +68,6 @@ func validateDocumentText(document Document) error {
 			return &InvalidDocumentTextError{Field: field.name}
 		}
 	}
-	// kind is also bound raw to PgVectorStore's text column; JSON's
-	// UTF-8 normalization cannot validate that separate representation.
 	if raw, present := document.Metadata["kind"]; present {
 		if kind, isString := raw.(string); !isString || !textsafe.Storable(kind) {
 			return &InvalidDocumentTextError{Field: "metadata"}
@@ -86,8 +76,6 @@ func validateDocumentText(document Document) error {
 	if len(document.Metadata) == 0 {
 		return nil
 	}
-	// PgVectorStore marshals metadata the same way; refusing here keeps
-	// every store accepting the same documents.
 	encoded, err := json.Marshal(document.Metadata)
 	if err != nil {
 		return fmt.Errorf("semantic: document metadata cannot be encoded as JSON: %w", err)
@@ -95,15 +83,6 @@ func validateDocumentText(document Document) error {
 	return storableMetadataJSON(encoded)
 }
 
-// storableMetadataJSON checks exactly the encoded value the JSONB column
-// will hold, including custom encoders and fields omitted by JSON tags.
-// UseNumber preserves JSON numbers outside float64's range during the NUL
-// token walk. Checking every string token also retains duplicate object
-// members that decoding into a map would discard. The decoder turns a
-// lone surrogate escape into U+FFFD, while Postgres's jsonb input refuses
-// it, so escapes are checked on the encoded bytes first. A decoding
-// failure refuses the metadata. Number tokens keep their literal text, so
-// a number past jsonb's numeric range is refused here, not at the store.
 func storableMetadataJSON(encoded []byte) error {
 	invalid := &InvalidDocumentTextError{Field: "metadata"}
 	if !utf8.Valid(encoded) || loneSurrogateEscape(encoded) {
@@ -132,29 +111,24 @@ func storableMetadataJSON(encoded []byte) error {
 	}
 }
 
-// Postgres numeric limits as jsonb applies them, measured on Postgres 16.
 const (
 	jsonbMaxIntegerDigits  = 131072
 	jsonbMaxFractionDigits = 16383
-	jsonbMaxExponent       = 1<<30 - 1 // INT_MAX/2 in numeric's parser
+	jsonbMaxExponent       = 1<<30 - 1
 )
 
-// jsonbNumberFits reports whether a JSON number literal (already valid
-// JSON) fits Postgres numeric: the digits after the decimal point count
-// even for zero (0.0000e-20000 is refused), and the digits before it are
-// counted from the first nonzero digit.
 func jsonbNumberFits(literal string) bool {
 	mantissa, exponentText, _ := strings.Cut(strings.ToLower(strings.TrimPrefix(literal, "-")), "e")
 	exponent := int64(0)
 	if exponentText != "" {
 		parsed, err := strconv.ParseInt(exponentText, 10, 32)
 		if err != nil {
-			return false // beyond any digit count jsonb stores either way
+			return false
 		}
 		exponent = parsed
 	}
 	if exponent > jsonbMaxExponent {
-		return false // refused before the digits are counted, zero included
+		return false
 	}
 	integer, fraction, _ := strings.Cut(mantissa, ".")
 	if int64(len(fraction))-exponent > jsonbMaxFractionDigits {
@@ -163,16 +137,12 @@ func jsonbNumberFits(literal string) bool {
 	digits := integer + fraction
 	first := strings.IndexFunc(digits, func(r rune) bool { return r != '0' })
 	if first < 0 {
-		return true // zero has no integer digits to overflow
+		return true
 	}
-	// Power of ten of the leading nonzero digit.
 	weight := int64(len(integer)-1-first) + exponent
 	return weight < jsonbMaxIntegerDigits
 }
 
-// loneSurrogateEscape reports a \uD800-\uDFFF escape in encoded JSON that
-// is not a high surrogate followed directly by a low one. Outside strings
-// a backslash is invalid JSON, which the token walk refuses.
 func loneSurrogateEscape(encoded []byte) bool {
 	pendingHigh := false
 	for i := 0; i < len(encoded); i++ {
@@ -186,7 +156,7 @@ func loneSurrogateEscape(encoded []byte) bool {
 			if pendingHigh {
 				return true
 			}
-			i++ // skip the escaped character, a backslash included
+			i++
 			continue
 		}
 		r, ok := hexRune(encoded[i+2:])

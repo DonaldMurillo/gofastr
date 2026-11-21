@@ -276,3 +276,29 @@ func TestAuditDigestIDLinksNothing(t *testing.T) {
 		t.Fatal("a digest record_id was looked up as a live record")
 	}
 }
+
+func TestAuditNamesARecordOnlyTheElevationReads(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": lockedPosts()}, Config{Entities: []string{"posts"}}, nil)
+	x.insert("posts", map[string]any{"id": "p1", "title": "Locked one", "status": "draft"})
+	x.seedAudit("a1", "", "posts", "update", "p1", "u1", time.Now().UTC())
+	if body := get(withPolicy(x.as(theAdmin)), "/admin/audit").Body.String(); !strings.Contains(body, "Locked one") {
+		t.Fatalf("the audit row did not name a record the admin reads only through its elevation:\n%s", body)
+	}
+}
+
+func TestAuditWithNoDatabaseIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	b := &Battery{cfg: Config{Logger: capturingLogger(&buf)}}
+	b.appendAudit(context.Background(), "access", "grant", "editor", "u1", nil)
+	if got := buf.String(); !strings.Contains(got, "no audit database") || !strings.Contains(got, "editor") {
+		t.Fatalf("a change with no audit database was not logged: %q", got)
+	}
+}
+
+func TestParseLimitIsCapped(t *testing.T) {
+	for raw, want := range map[string]int{"": 50, "-3": 50, "x": 50, "20": 20, "5000": 1000} {
+		if _, got := decodePage(url.Values{"limit": {raw}}, 50, opsMaxLimit); got != want {
+			t.Errorf("decodePage limit %q = %d, want %d", raw, got, want)
+		}
+	}
+}

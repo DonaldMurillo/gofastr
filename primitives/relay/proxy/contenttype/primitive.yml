@@ -1,0 +1,31 @@
+primitive: relay.proxy.contenttype
+summary: Which response media types a route may relay on the app's origin, and the sandbox an SVG gets.
+code:
+  - battery/relay/contenttype.go
+docs:
+  - framework/docs/content/relay.md
+invariants:
+  - id: only-listed-types-pass
+    rule: A response with a body passes only as script, style, image, font, a JSON type or text/plain, or a type the route lists in ContentTypes; any other is replaced by a plain 502 after the upstream body is closed.
+    enforced_by:
+      - test: battery/relay.TestRelayedContentTypeAllowList
+      - test: battery/relay.TestRouteContentTypesOptIn
+      - test: battery/relay.TestRefusedContentTypeClosesUpstreamBody
+  - id: svg-is-sandboxed
+    rule: An image/svg+xml response passes with Content-Security-Policy sandbox unless the route lists it in ContentTypes.
+    enforced_by:
+      - test: battery/relay.TestRelayedSVGSandboxed
+  - id: untyped-body-is-octet-stream
+    rule: A response body with no Content-Type is labelled application/octet-stream, so the server never sniffs it.
+    enforced_by:
+      - test: battery/relay.TestMissingContentTypeNotSniffed
+  - id: bodiless-response-passes-any-type
+    rule: A 204, a 304, an empty body and the answer to a HEAD pass whatever their type; a body whose first read fails is not empty.
+    enforced_by:
+      - test: battery/relay.TestBodilessResponsePassesAnyType
+      - test: battery/relay.TestBodilessReadErrorCountsAsBody
+      - test: battery/relay.TestHeadIgnoresRepresentationType
+  - id: content-types-entry-is-canonical
+    rule: New panics for a ContentTypes entry that is not a lowercase type/subtype with no parameters or wildcard.
+    enforced_by:
+      - test: battery/relay.TestNewPanicsOnBadContentType

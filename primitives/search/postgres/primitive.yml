@@ -1,0 +1,31 @@
+primitive: search.postgres
+summary: The Postgres full-text backend over one table with a stemmed tsv column, a trigger-filled unstemmed tsv_prefix column and weighted fields.
+code:
+  - battery/search/postgres.go
+docs:
+  - framework/docs/content/search.md
+invariants:
+  - id: language-is-allow-listed
+    rule: NewPostgres refuses a Language outside ^[a-z_]+$, and the table name passes query.SafeIdent.
+    enforced_by:
+      - test: battery/search.TestPostgresHostileConfigRejected
+  - id: query-parsed-in-the-index-language
+    rule: The tsquery is parsed with the configured regconfig, the one the tsv column was built with, never the database default.
+    enforced_by:
+      - test: battery/search.TestPostgresLanguageStemming
+  - id: weighted-non-string-is-an-error
+    rule: Index returns an error for a present weighted field whose value is not a string.
+    enforced_by:
+      - test: battery/search.TestPostgresWeightedNonStringRefused
+  - id: index-names-fit-63-bytes
+    rule: Index names are cut or hashed to Postgres's 63 bytes, and a table whose base+"_tsv_idx" cut at 63 bytes names an index released builds made keeps it.
+    enforced_by:
+      - test: battery/search.TestPostgresLongTableIndexes
+      - test: battery/search.TestPostgresKeepsReleasedTsvIndex
+      - test: battery/search.TestPgRelNameFitsAndDiffers
+  - id: backfill-runs-until-no-row-is-left
+    rule: ensurePrefixColumn fills tsv_prefix in batches until a probe finds no unfilled row, so a batch another replica emptied does not end it early.
+    enforced_by:
+      - test: battery/search.TestPostgresBackfillOutlastsLostBatch
+      - test: battery/search.TestPostgresBackfillLeavesTableOpen
+      - test: battery/search.TestPostgresPrefixBackfillsOldTable

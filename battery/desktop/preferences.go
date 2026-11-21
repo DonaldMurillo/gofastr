@@ -15,14 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// Declared preferences: typed app settings on Config.Preferences, stored
-// in the app state under "settings", read back typed through
-// (*Battery).Preferences, and rendered by PreferencesScreen (the screen
-// builder the host mounts). The declaration is the whole surface: a key
-// nobody declared cannot be stored, read, or rendered.
-//
-// EXPERIMENTAL: part of battery/desktop.
-
 // PreferenceKind is one declared preference's value type.
 type PreferenceKind string
 
@@ -33,46 +25,28 @@ const (
 	PreferenceChoice PreferenceKind = "choice"
 )
 
-// rePreferenceKey is the key grammar: a lowercase letter, then up to 63
-// lowercase letters, digits, or underscores. Dots would collide with the
-// app state's namespace separators, so they are refused.
 var rePreferenceKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
-// Preference declares one setting. Default must match Kind (bool, int,
-// string, and for Choice a string listed in Choices); Min and Max bound
-// an Int (both optional, but Min must not exceed Max); Choices is the
-// option list of a Choice. New panics on a declaration that breaks any
-// of that: it is a wiring error, the same posture as a bad menu.
+// Preference declares one setting.
 type Preference struct {
-	// Key is the preference's storage and form-field name. It must
-	// match ^[a-z][a-z0-9_]{0,63}$ and be unique in the list.
+	// Key is the preference's storage and form-field name.
 	Key string
 	// Label is the field's visible label, in the reader's language.
-	// Required.
 	Label i18n.Phrase
 	// Help is optional field help rendered under the control.
 	Help i18n.Phrase
-	// Kind is the value type. Required (the zero value is refused).
+	// Kind is the value type.
 	Kind PreferenceKind
-	// Default is the value used until something is stored. It must
-	// match Kind: bool, int, string, or (Choice) a string in Choices.
+	// Default is the value used until something is stored.
 	Default any
-	// Choices is the option list; required for Choice, refused for
-	// every other kind.
+	// Choices is the option list; required for Choice, refused for every other kind.
 	Choices []string
 	// Min and Max bound an Int; refused for every other kind.
 	Min, Max *int
 }
 
-// settingsStateKey is the app state key holding every stored
-// preference: one JSON object mapping preference keys to their typed
-// values, e.g. {"work_minutes":25,"sound":"chime"}. The state
-// capability confines page keys to "page.", so this entry is never
-// reachable from the page.
 const settingsStateKey = "settings"
 
-// validatePreferences refuses a declaration list New would otherwise
-// have to debug at first use. Every rule names the key that broke it.
 func validatePreferences(decls []Preference) error {
 	seen := make(map[string]struct{}, len(decls))
 	for _, p := range decls {
@@ -140,22 +114,14 @@ func validatePreferences(decls []Preference) error {
 	return nil
 }
 
-// Preferences is the typed reader and writer over the declared
-// preference list. Get it from (*Battery).Preferences; it reads the app
-// state store once Run has opened it and answers the declared defaults
-// before that (the --serve shape). Safe for concurrent use.
+// Preferences is the typed reader and writer over the declared preference list.
 type Preferences struct {
 	b     *Battery
 	decls []Preference
 	index map[string]int
-	// mu serializes the read-modify-write of the one settings entry,
-	// the same job windowStore.mu does for the remembered windows.
-	mu sync.Mutex
+	mu    sync.Mutex
 }
 
-// newPreferences validates decls and takes a defensive copy (Choices,
-// Min, Max included) so a caller mutating its Config afterwards cannot
-// change what the battery serves.
 func newPreferences(b *Battery, decls []Preference) (*Preferences, error) {
 	if err := validatePreferences(decls); err != nil {
 		return nil, err
@@ -184,8 +150,6 @@ func (p *Preferences) Declared() []Preference {
 	return slices.Clone(p.decls)
 }
 
-// declaration panics on an undeclared key: like a bad Config, that is a
-// programming error the caller wants loudly, not an error to handle.
 func (p *Preferences) declaration(key string) Preference {
 	i, ok := p.index[key]
 	if !ok {
@@ -194,8 +158,7 @@ func (p *Preferences) declaration(key string) Preference {
 	return p.decls[i]
 }
 
-// Bool answers the bool preference's stored-or-default value. It panics
-// when the key is undeclared or declared as another kind.
+// Bool answers the bool preference's stored-or-default value.
 func (p *Preferences) Bool(key string) bool {
 	d := p.declaration(key)
 	if d.Kind != PreferenceBool {
@@ -205,8 +168,7 @@ func (p *Preferences) Bool(key string) bool {
 	return v
 }
 
-// Int answers the int preference's stored-or-default value. It panics
-// when the key is undeclared or declared as another kind.
+// Int answers the int preference's stored-or-default value.
 func (p *Preferences) Int(key string) int {
 	d := p.declaration(key)
 	if d.Kind != PreferenceInt {
@@ -216,9 +178,7 @@ func (p *Preferences) Int(key string) int {
 	return v
 }
 
-// String answers the string or choice preference's stored-or-default
-// value. It panics when the key is undeclared or declared as another
-// kind.
+// String answers the string or choice preference's stored-or-default value.
 func (p *Preferences) String(key string) string {
 	d := p.declaration(key)
 	if d.Kind != PreferenceString && d.Kind != PreferenceChoice {
@@ -229,8 +189,6 @@ func (p *Preferences) String(key string) string {
 }
 
 // All answers every declared key with its stored-or-default value.
-// Before Run (no store) that is the declared defaults, which is also
-// what an app serving itself over plain HTTP behind --serve reads.
 func (p *Preferences) All() map[string]any {
 	stored := p.storedMap()
 	out := make(map[string]any, len(p.decls))
@@ -247,10 +205,6 @@ func (p *Preferences) All() map[string]any {
 	return out
 }
 
-// value answers one declaration's stored-or-default value. The type
-// assertion is split from its use because coercePreference guarantees
-// the kind's Go type on success; on failure the default (validated at
-// New to match the kind) is the answer.
 func (p *Preferences) value(d Preference) any {
 	if raw, ok := p.storedMap()[d.Key]; ok {
 		if v, err := coercePreference(d, raw); err == nil {
@@ -262,10 +216,6 @@ func (p *Preferences) value(d Preference) any {
 	return d.Default
 }
 
-// storedMap returns the stored settings entry. Nil (an empty read)
-// when there is no store yet, nothing is stored, or the entry does not
-// decode: every one of those means "declared defaults", the store's own
-// posture for a truncated quit-time write.
 func (p *Preferences) storedMap() map[string]json.RawMessage {
 	s := p.b.stateStore()
 	if s == nil {
@@ -280,15 +230,11 @@ func (p *Preferences) storedMap() map[string]json.RawMessage {
 	return m
 }
 
-// warnStored reports one stored value that failed its own declaration.
 func (p *Preferences) warnStored(key string, err error) {
 	p.b.logger.Warn("desktop: stored preference falls back to its default",
 		"key", key, "error", err.Error())
 }
 
-// preferenceError is one invalid value for one named preference. The
-// capability answers it as invalid_input and the preferences screen's
-// route turns it into the form-error envelope for that field.
 type preferenceError struct {
 	key    string
 	reason i18n.Phrase
@@ -299,8 +245,6 @@ func (e *preferenceError) Error() string {
 	return fmt.Sprintf("preference %q: %s", e.key, e.reason.Format(e.params))
 }
 
-// refusePreference is the preferenceError for key that cerr, a refusal
-// from coercePreference, describes.
 func refusePreference(key string, cerr error) *preferenceError {
 	if pe, ok := errors.AsType[*i18n.Error](cerr); ok {
 		return &preferenceError{key: key, reason: pe.Reason, params: pe.Params}
@@ -308,11 +252,6 @@ func refusePreference(key string, cerr error) *preferenceError {
 	return &preferenceError{key: key, reason: reasonPrefBadShape}
 }
 
-// setRaw applies every entry at once: all entries are validated first
-// and the first invalid one refuses the whole call (a half-applied
-// settings form is the bug this prevents), then the merged map is
-// stored under settingsStateKey and preferences_changed carries the
-// applied keys to every open window. keys is sorted.
 func (p *Preferences) setRaw(values map[string]json.RawMessage) (keys []string, err error) {
 	return p.setValues(values, false)
 }
@@ -328,17 +267,12 @@ func (p *Preferences) setValues(values map[string]json.RawMessage, form bool) (k
 	if err != nil {
 		return nil, err
 	}
-	// Announce after the write and outside the lock: Emit evaluates
-	// JavaScript in every window and must never run under a mutex.
 	if err := p.b.Emit("preferences_changed", map[string]any{"keys": applied}); err != nil {
 		p.b.logger.Warn("desktop: announcing a preferences change failed", "error", err.Error())
 	}
 	return applied, nil
 }
 
-// applyLocked validates every entry and merges it into the stored
-// settings entry; the caller holds mu so two writers cannot lose one's
-// keys to the other's read-modify-write.
 func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawMessage, form bool) ([]string, error) {
 	var cur map[string]json.RawMessage
 	if _, gerr := s.Get(settingsStateKey, &cur); gerr != nil || cur == nil {
@@ -370,16 +304,12 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 		coerced[key] = v
 	}
 
-	// Read-modify-write of the one settings entry: an undeclared key
-	// already in the file (an app that removed a preference) is left
-	// in place and simply never read.
 	for key := range coerced {
 		delete(cur, key)
 	}
 	for _, key := range slices.Sorted(maps.Keys(coerced)) {
 		data, merr := json.Marshal(coerced[key])
 		if merr != nil {
-			// Unreachable: coerced values are bool, int, or string.
 			return nil, &Error{Code: CodeInternal, Message: "encoding a preference failed"}
 		}
 		cur[key] = data
@@ -398,13 +328,7 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 	return slices.Sorted(maps.Keys(coerced)), nil
 }
 
-// Set stores v under the declared key. The accepted shapes are the
-// JSON forms of the kind's Go type (bool, whole number, string) plus
-// the string spellings the runtime's form serializer produces ("true",
-// "30"): app code passes the typed value, the form path passes the
-// string. String values must not contain CR or LF. Range and choice
-// rules apply; a refusal is a *preferenceError
-// and before Run (no store) it is *Error CodeUnsupported.
+// Set stores v under the declared key.
 func (p *Preferences) Set(key string, v any) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -414,18 +338,7 @@ func (p *Preferences) Set(key string, v any) error {
 	return err
 }
 
-// coercePreference validates one raw JSON value against a declaration
-// and answers its Go value. Accepted forms: the kind's native JSON type
-// (true, 25, "chime") and, for bool and int, the string spellings the
-// form serializer sends ("true", "30"). A blank int string is refused
-// here; the form route skips blank ints before calling (they mean "not
-// provided", and only that path knows it).
 func coercePreference(d Preference, raw json.RawMessage) (any, error) {
-	// JSON null unmarshals into any type with a nil error and leaves
-	// the zero value behind, so every branch below would take it for a
-	// valid value of its kind. No rendered control produces it; refuse
-	// it before the kind branches, which also covers the stored-value
-	// read path (value() coerces what it reads back).
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, i18n.NewError(reasonPrefNull)
 	}
@@ -469,7 +382,6 @@ func coercePreference(d Preference, raw json.RawMessage) (any, error) {
 	return nil, i18n.NewError(reasonPrefUnknownKind, map[string]any{"kind": strconv.Quote(string(d.Kind))})
 }
 
-// checkIntRange applies an int declaration's Min and Max.
 func checkIntRange(d Preference, n int) (any, error) {
 	if d.Min != nil && n < *d.Min {
 		return nil, i18n.NewError(reasonPrefTooSmall, map[string]any{"min": *d.Min})

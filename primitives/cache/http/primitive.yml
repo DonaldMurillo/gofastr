@@ -1,0 +1,70 @@
+primitive: cache.http
+summary: CacheMiddleware, the shared HTTP response cache for anonymous GETs, keyed by host, escaped path and query, with variants per Vary and eviction on unsafe requests.
+code:
+  - battery/cache/middleware.go
+docs:
+  - framework/docs/content/cache.md
+twins:
+  - job: Name the request headers that make a request a caller's credential.
+    why: framework/app.go cannot be imported by the battery for an unexported helper; TestCacheCredentialCanon pins the two lists equal.
+    sites:
+      - path: battery/cache/middleware.go
+        note: credentialHeaders.
+      - path: framework/app.go
+        note: credentialFingerprint's header list.
+invariants:
+  - id: credentialed-requests-bypass
+    rule: A request with a non-empty Authorization, X-API-Key, X-Gofastr-Embed or Cookie field line is never served from or stored in the cache.
+    enforced_by:
+      - test: battery/cache.TestCacheMiddleware_DoesNotCacheAuthorizationRequestsByDefault
+      - test: battery/cache.TestCacheMiddleware_DoesNotCacheCookieAuthenticatedRequestsByDefault
+      - test: battery/cache.TestCacheSkipsAPIKeyRequests
+      - test: battery/cache.TestCacheMiddleware_DoesNotCacheEmbedGrantResponses
+      - test: battery/cache.TestCacheCredentialCanon
+      - test: battery/cache.TestCredentialedAndAnonymousNeverShareAnEntry
+  - id: bypasses
+    rule: Non-GET methods and runtime navigation fetches pass through with X-Cache BYPASS, and a request no-cache or no-store is never served a stored response.
+    enforced_by:
+      - test: battery/cache.TestNavigationFetchesBypassCache
+      - test: battery/cache.TestBypassesAdvertiseCacheStatus
+      - test: battery/cache.TestCacheMiddleware_RequestNoCacheBypassesStoredVariant
+      - test: battery/cache.TestCacheMiddleware_RequestNoStoreBypassesStoredVariant
+  - id: unsafe-request-evicts
+    rule: After an unsafe method runs, the stored GET of its target is deleted under every locale key and every variant.
+    enforced_by:
+      - test: battery/cache.TestUnsafeRequestEvictsGET
+      - test: battery/cache.TestUnsafeRequestEvictsEveryLocale
+      - test: battery/cache.TestUnsafeRequestEvictsEveryVariant
+      - test: battery/cache.TestSafeRequestKeepsGET
+  - id: key-has-host-and-escaped-path
+    rule: The key includes the request Host and the escaped path, so two hosts or /a%2Fb and /a/b never share an entry.
+    enforced_by:
+      - test: battery/cache.TestCacheMiddleware_DoesNotLeakAcrossHosts
+      - test: battery/cache.TestCacheKeysEscapedSlashApart
+  - id: only-full-shared-representations-store
+    rule: Only 2xx and 3xx responses other than 304 and 206 are stored, and never one with Content-Range, one with Set-Cookie (outer or inner), private, no-store or no-cache on any Cache-Control line, or Vary * on any line; a 304 read back from a backend is not replayed.
+    enforced_by:
+      - test: battery/cache.TestCacheMiddleware_StoreableStatuses
+      - test: battery/cache.TestCacheMiddleware_DoesNotCache304
+      - test: battery/cache.TestPrimed304IsNotReplayed
+      - test: battery/cache.TestCacheHonoursOuterNoStore
+      - test: battery/cache.TestCacheMiddleware_DoesNotCachePrivateResponses
+      - test: battery/cache.TestCacheMiddleware_DoesNotCacheNoCacheResponses
+      - test: battery/cache.TestVaryStarOnSecondLineNotStored
+  - id: variant-keys-are-unambiguous
+    rule: A variant's key digests each captured field with its length, so two variants whose fields concatenate to the same string get two keys.
+    enforced_by:
+      - test: battery/cache.TestVariantKeysSeparateFields
+  - id: vary-includes-outer-headers
+    rule: The stored variant varies on every Vary line the handler and the middleware outside the cache set, the outer i18n Accept-Language among them.
+    enforced_by:
+      - test: battery/cache.TestCacheKeysAcceptLanguage
+      - test: battery/cache.TestCacheMiddleware_VaryAllHeaderValues
+  - id: informational-status-dropped
+    rule: A 1xx other than 101 that the handler writes is dropped, so the stored and served status is the final one.
+    enforced_by:
+      - test: battery/cache.TestCacheKeepsStatusAfterHints
+  - id: negative-limit-panics
+    rule: CacheMiddlewareWithLimit panics on a negative maxBodyBytes.
+    enforced_by:
+      - test: battery/cache.TestCacheLimitRefusesNegative

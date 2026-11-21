@@ -194,3 +194,61 @@ func TestStaleSettleRecreatesNoReapedRow(t *testing.T) {
 		}
 	})
 }
+
+func TestResetAndReapTouchOnlyTheirRowsOnEveryStore(t *testing.T) {
+	eachLeasedStore(t, func(t *testing.T, s LeasedStore) {
+		ctx := context.Background()
+		old := time.Now().UTC().Add(-time.Hour)
+		for id, st := range map[string]DeliveryStatus{"live": StatusPending, "sent": StatusSuccess, "dead": StatusDead} {
+			d := Delivery{ID: id, SubscriberID: "s", Event: "e", Payload: []byte(`{}`), Status: st, Attempts: 2,
+				NextAttemptAt: old.Add(time.Hour * 24), CreatedAt: old, UpdatedAt: old}
+			if err := s.AddDelivery(ctx, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+		get := func(id string) *Delivery {
+			ds, _ := s.ListDeliveries(ctx, "s", 10)
+			for i := range ds {
+				if ds[i].ID == id {
+					return &ds[i]
+				}
+			}
+			return nil
+		}
+		if err := s.(ReplayableStore).ResetDelivery(ctx, "live"); err != nil {
+			t.Fatal(err)
+		}
+		if got := get("live"); got == nil || got.Attempts != 2 {
+			t.Errorf("ResetDelivery changed a pending row: %+v", got)
+		}
+		if _, err := s.(RetentionSweeper).ReapTerminalBefore(ctx, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if got := get("dead"); got == nil {
+			t.Error("retention reaped a dead delivery Replay still needs")
+		}
+		if got := get("sent"); got != nil {
+			t.Error("retention kept a successful delivery past the window")
+		}
+	})
+}
+
+func TestClaimConsumesOneAttemptOnEveryStore(t *testing.T) {
+	eachLeasedStore(t, func(t *testing.T, s LeasedStore) {
+		ctx := context.Background()
+		now := time.Now().UTC()
+		d := Delivery{ID: "d1", SubscriberID: "s", Event: "e", Payload: []byte(`{}`), Status: StatusPending,
+			NextAttemptAt: now.Add(-time.Second), CreatedAt: now, UpdatedAt: now}
+		if err := s.AddDelivery(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		claimed, err := s.ClaimDueDeliveries(ctx, now, 10, time.Minute)
+		if err != nil || len(claimed) != 1 || claimed[0].Attempts != 1 {
+			t.Fatalf("claim = %+v, %v; want one delivery on its first attempt", claimed, err)
+		}
+		ds, _ := s.ListDeliveries(ctx, "s", 10)
+		if len(ds) != 1 || ds[0].Attempts != 1 {
+			t.Errorf("the stored row did not record the claim's attempt: %+v", ds)
+		}
+	})
+}

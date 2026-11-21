@@ -9,8 +9,6 @@ import (
 )
 
 // S3Client is a minimal interface for S3-compatible operations.
-// This avoids importing the AWS SDK directly; callers provide their own
-// implementation or use the PresignedURL field for direct browser uploads.
 type S3Client interface {
 	PutObject(ctx context.Context, bucket, key string, r io.Reader, size int64, contentType string) error
 	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
@@ -18,7 +16,8 @@ type S3Client interface {
 	HeadObject(ctx context.Context, bucket, key string) (bool, error)
 }
 
-// Presigner generates presigned URLs for direct browser uploads/downloads.
+// Presigner generates presigned URLs for direct browser
+// uploads/downloads.
 type Presigner interface {
 	PresignGet(ctx context.Context, bucket, key string, expires time.Duration) (*url.URL, error)
 	PresignPut(ctx context.Context, bucket, key string, expires time.Duration) (*url.URL, error)
@@ -49,7 +48,6 @@ func WithPresigner(p Presigner) S3Option {
 }
 
 // S3Storage implements Storage backed by an S3-compatible object store.
-// It uses a minimal S3Client interface so no AWS SDK is imported directly.
 type S3Storage struct {
 	Bucket    string
 	Region    string
@@ -59,7 +57,6 @@ type S3Storage struct {
 }
 
 // NewS3Storage creates a new S3Storage for the given bucket and region.
-// Use WithS3Client to inject an actual client before calling Save/Get/etc.
 func NewS3Storage(bucket, region string, opts ...S3Option) *S3Storage {
 	s := &S3Storage{
 		Bucket: bucket,
@@ -71,10 +68,6 @@ func NewS3Storage(bucket, region string, opts ...S3Option) *S3Storage {
 	return s
 }
 
-// validateKey refuses an S3 key that is empty, holds "..", a control byte
-// or a leading slash, or is not its own clean form (checkObjectKey). S3
-// itself would store "a//b" and "./a" as objects distinct from "a/b" and
-// "a", so a row naming the alias serves or erases what its key never named.
 func validateKey(key string) error {
 	return checkObjectKey(key)
 }
@@ -124,28 +117,20 @@ func (s *S3Storage) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 // PresignedGetURL returns a presigned URL for downloading the object.
-// expires must be positive.
 func (s *S3Storage) PresignedGetURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
 	return s.presignedURL(ctx, key, expires, Presigner.PresignGet)
 }
 
-// PresignedPutURL returns a presigned URL for uploading the object directly.
-// expires must be positive.
+// PresignedPutURL returns a presigned URL for uploading the object
+// directly.
 func (s *S3Storage) PresignedPutURL(ctx context.Context, key string, expires time.Duration) (*url.URL, error) {
 	return s.presignedURL(ctx, key, expires, Presigner.PresignPut)
 }
 
-// presignedURL runs the key validation and presigner-nil guard shared by
-// the presigned-URL pair, then delegates to the passed Presign method.
-// presign is a method expression (Presigner.PresignGet), not a method
-// value: a method value on a nil s.presigner would panic at the call
-// site before the nil guard below ever ran.
 func (s *S3Storage) presignedURL(ctx context.Context, key string, expires time.Duration, presign func(Presigner, context.Context, string, string, time.Duration) (*url.URL, error)) (*url.URL, error) {
 	if err := validateKey(key); err != nil {
 		return nil, err
 	}
-	// A zero or negative expiry is none a presigner can honor: one SDK
-	// clamps it to its own (longer) default, another signs a dead URL.
 	if expires <= 0 {
 		return nil, fmt.Errorf("storage: presign expiry must be positive, got %v", expires)
 	}

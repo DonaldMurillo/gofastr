@@ -8,22 +8,13 @@ import (
 	"unicode"
 )
 
-// StubEmbedder is a deterministic, dependency-free [Embedder] used by
-// tests and offline development. It produces a hashed bag-of-words
-// representation: each whitespace-separated token is hashed into one of
-// Dim buckets with a sign derived from a second hash, and the result is
-// L2-normalized.
-//
-// It is NOT a real embedding model, there is no semantic similarity
-// across paraphrases or synonyms, but it is fast, allocation-light,
-// and produces high cosine similarity for documents that share tokens,
-// which is enough to test the retrieval pipeline end-to-end.
+// StubEmbedder is a deterministic hashed bag-of-words Embedder for tests and
+// offline development.
 type StubEmbedder struct {
 	dim int
 }
 
-// NewStubEmbedder returns a StubEmbedder of the given dimension.
-// Dimensions <= 0 fall back to 128.
+// NewStubEmbedder returns a StubEmbedder of dimension dim, 128 when dim <= 0.
 func NewStubEmbedder(dim int) *StubEmbedder {
 	if dim <= 0 {
 		dim = 128
@@ -54,15 +45,12 @@ func (s *StubEmbedder) encode(text string) []float32 {
 		h.Write([]byte(tok))
 		sum := h.Sum64()
 		idx := int(sum % uint64(s.dim))
-		// second hash for the sign so different tokens partially cancel
-		// instead of always reinforcing the same bucket.
 		sign := float32(1)
 		if (sum>>32)&1 == 1 {
 			sign = -1
 		}
 		v[idx] += sign
 	}
-	// L2 normalize so cosine similarity = dot product.
 	var sumsq float64
 	for _, x := range v {
 		sumsq += float64(x) * float64(x)

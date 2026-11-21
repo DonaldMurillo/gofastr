@@ -1,0 +1,20 @@
+primitive: rtc.turn
+summary: ICE URL validation and TURN credentials in the coturn static-auth-secret convention, with the refresh loop that re-mints them.
+code:
+  - battery/rtc/turn.go
+docs:
+  - framework/docs/content/rtc.md
+invariants:
+  - id: ice-urls-are-ice
+    rule: New refuses an ICE URL whose scheme is not stun, stuns, turn or turns, or whose host or port is malformed.
+    enforced_by:
+      - test: battery/rtc.TestInvalidICESchemeRefused
+      - test: battery/rtc.TestICEURIDepthRedRefusesBadPorts
+  - id: coturn-credentials
+    rule: A TURN credential's username is "<expiry>:<peer>" and its password the base64 HMAC-SHA1 of it under the secret, with a TTL of one hour by default and one minute at least.
+    enforced_by:
+      - test: battery/rtc.TestTurnCredentialMatchesCoturn
+  - id: refresh-skips-revoked
+    rule: Before a TURN refresh mints new credentials, revoked peers are closed instead.
+    enforced_by:
+      - test: battery/rtc.TestTURNRefreshSkipsRevokedPeer

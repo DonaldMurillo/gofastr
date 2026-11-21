@@ -1,0 +1,90 @@
+primitive: admin.audit
+summary: The Audit log page - its filter, its paged read of the audit table in the caller's tenant, how each row names its record and changes, and appendAudit for the ops pages' own writes.
+code:
+  - battery/admin/audit.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new op an admin page writes joins auditOps, opKind and opVariant, as audit-ops-cover-admin-writes checks.
+invariants:
+  - id: filter-values-are-validated
+    rule: parseAuditFilter drops and names in a warning an actor longer than 200 bytes or holding control bytes, an entity the admin does not expose, an op outside auditOps and a day that is not YYYY-MM-DD, so no such value reaches SQL and the page never 500s or prints it.
+    enforced_by:
+      - test: battery/admin.TestAuditFilterIgnoresBadValues
+  - id: to-day-is-inclusive-utc
+    rule: ?from= and ?to= are UTC days and ?to= covers its whole day, read as before the next day's midnight.
+    enforced_by:
+      - test: battery/admin.TestAuditFilterByDateRange
+  - id: tenant-reads-its-own-rows
+    rule: A caller with a tenant reads only audit rows stamped with that tenant, and a caller with none reads every row.
+    enforced_by:
+      - test: battery/admin.TestAuditStaysInsideTheTenant
+  - id: pages-are-stable
+    rule: Audit pages order by created_at then id, both descending, so rows written in one instant never repeat or vanish across pages, and a page past the end shows the last one.
+    enforced_by:
+      - test: battery/admin.TestAuditPagesBreakTimeTiesByID
+      - test: battery/admin.TestAuditPagesOlderRows
+  - id: load-failure-stays-generic
+    rule: A failed audit read draws a generic danger callout and logs the driver's error, never showing it on the page.
+    enforced_by:
+      - test: battery/admin.TestAuditLoadFailureIsLogged
+  - id: table-named-as-ensured
+    rule: The audit reads name the table through query.SafeIdent and query.QuoteFolded, the form framework.EnsureAuditTable created it in, so a mixed-case AuditTable reads on Postgres.
+    enforced_by:
+      - test: battery/admin.TestMixedCaseAuditTable
+  - id: hidden-record-keeps-only-its-id
+    rule: A row whose record the caller's read hooks hide, or whose owner scope hides it, shows its id, op and time and neither its title nor its changes.
+    enforced_by:
+      - test: battery/admin.TestAuditPurgedRecordFollowsHooks
+      - test: battery/admin.TestAuditHidesOtherOwnersRecords
+      - test: battery/admin.TestAuditChangesHideHookMaskedField
+  - id: titles-read-elevated
+    rule: A row names its live record by the title the record screen reads under the admin's elevation, whatever the entity's own read permission says, and a deleted or purged one from its stored copy.
+    enforced_by:
+      - test: battery/admin.TestAuditNamesARecordOnlyTheElevationReads
+  - id: digest-id-is-not-a-record
+    rule: A record id framework.AuditDigestID recognises is never looked up as a live record or linked.
+    enforced_by:
+      - test: battery/admin.TestAuditDigestIDLinksNothing
+  - id: hooks-asked-once-per-record
+    rule: One page asks the app's read hooks once per record however many of its rows name that record.
+    enforced_by:
+      - test: battery/admin.TestAuditChangesAskHooksOncePerRealRecord
+  - id: diff-keeps-big-integers
+    rule: A row's stored old and new values decode through jsonexact, so an integer past 2^53 shows exactly.
+    enforced_by:
+      - test: battery/admin.TestAuditChangesKeepBigIntegers
+  - id: keyed-ops-fold
+    rule: opKind folds every transition:<key> into transition, state_override into override and a module lever into its verb, for the badge's tint and icon.
+    enforced_by:
+      - test: battery/admin.TestAuditOpKindFoldsKeyedOps
+  - id: access-and-bulk-rows-read-as-sentences
+    rule: A Roles, User roles or bulk-run row names what it granted, revoked, assigned or did to how many records instead of a table name and an id.
+    enforced_by:
+      - test: battery/admin.TestAuditNamesAccessChanges
+      - test: battery/admin.TestAuditNamesBulkRuns
+  - id: failed-audit-write-is-logged
+    rule: appendAudit logs at error level, with what it would have recorded, an audit write that fails and a change made with no audit database.
+    enforced_by:
+      - test: battery/admin.TestAuditWriteFailureIsLogged
+      - test: battery/admin.TestAuditWithNoDatabaseIsLogged
+  - id: limit-is-capped
+    rule: decodePage answers the fallback for an absent, unparsable or non-positive ?limit= and caps a larger one at opsMaxLimit, 1000.
+    enforced_by:
+      - test: battery/admin.TestParseLimitIsCapped
+decisions:
+  - id: transitions-found-by-entity
+    date: 2026-11-20
+    status: accepted
+    decision: The op select offers the fixed ops the CRUD hooks, bulk runs and ops pages write; a transition:<key> op is found by filtering on its entity, and a refused op only in the unfiltered log.
+    rejected:
+      - option: List every transition key in the op select.
+        why: Keys are per-entity state machine names, which no fixed select can enumerate.
+    upholds: [filter-values-are-validated]
+  - id: audit-table-as-cards-on-phones
+    date: 2026-11-20
+    status: accepted
+    decision: The audit table draws as cards on a phone (ui.ResponsiveCards).
+    rejected:
+      - option: A horizontally scrolled table.
+        why: It showed only who and when, with the record and its changes off screen.

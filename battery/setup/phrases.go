@@ -2,15 +2,12 @@ package setup
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The refusals this package writes, under their catalog keys.
 var (
 	reasonSetupTokenInvalid  = i18n.Define("setup.token_invalid", "forbidden: invalid or expired setup token. Check the server startup log for the setup URL.")
 	reasonSetupTokenRequired = i18n.Define("setup.token_required", "forbidden: setup token required. Check the server startup log for the setup URL.")
 	reasonSetupTokenUsed     = i18n.Define("setup.token_used", "forbidden: setup token already used or expired. Continue in your original browser session, or restart the app to mint a fresh token.")
 )
 
-// The wizard's own words: its notices, buttons and the finished and
-// unfinished pages.
 var (
 	pageTitle             = i18n.Define("setup.title", "Setup")
 	pageUnavailable       = i18n.Define("setup.unavailable", "Service is in first-run setup mode.")
@@ -30,11 +27,8 @@ var (
 	pageCheckFailed       = i18n.Define("setup.check_failed", "Every step ran, but the completion check failed: {{cause}}. Fix the underlying issue and reload this page: setup finishes automatically once the check passes.")
 )
 
-// pageHopTitle heads the page a cross-site arrival on the setup link
-// gets, which loads the link again from this origin (renderHop).
 var pageHopTitle = i18n.Define("setup.hop_title", "Opening setup")
 
-// The built-in steps' titles, labels and refusals.
 var (
 	adminStepTitle      = i18n.Define("setup.admin_step", "Create Admin")
 	adminEmailLabel     = i18n.Define("setup.admin_email", "Admin email")

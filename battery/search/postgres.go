@@ -17,71 +17,43 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// PostgresSearch is a full-text search backend backed by a single Postgres
-// table whose tsv column is a TSVECTOR maintained via to_tsvector at index
-// time. It is the production counterpart to Memory: zero extra infrastructure
-// for a Postgres-first app, and ranked results straight out of the database.
-//
-// The text body (Document.Text) is always indexed at weight 'A'. Structured
-// fields may be promoted to weights 'B'..'D' via PostgresConfig.WeightedFields
-// so a hit in, say, a document's title outranks one in its body. Structured
-// fields are also stored as JSONB, which powers Query.FieldEquals containment
-// filtering, the tenant/owner/permission scoping hook.
-//
-// Prefix matching is built in: the final query term is suffixed with ":*" so
-// command-palette / search-as-you-type queries ("pagin" → "pagination") work
-// without a second round trip. The language config stems the prefix too
-// ("paginat:*" → 'paginat':*, while the index holds 'pagin'), so a second
-// tsvector column, tsv_prefix, holds the same text under the unstemmed
-// 'simple' config and the last term also prefix-matches it. A trigger
-// computes tsv_prefix on every write, so a writer that never names the
-// column (the previous release, during a rolling upgrade) still keeps it
-// current.
-//
-// This backend deliberately avoids pg_trgm, which requires CREATE EXTENSION
-// (a superuser privilege many managed-DB roles lack). Fuzzy/trigram search is
-// left to a future backend that can opt into the extension explicitly.
+// PostgresSearch is a full-text search backend backed by a single
+// Postgres table whose tsv column is a TSVECTOR maintained via
+// to_tsvector at index time.
 type PostgresSearch struct {
 	db          *sql.DB
-	table       string // validated configured table name
-	quotedTable string // validated + quoted table identifier
-	quotedIndex string // validated + quoted GIN index name
-	prefixIndex string // quoted GIN index name for tsv_prefix
-	prefixFn    string // raw name of the trigger function filling tsv_prefix
-	prefixTrg   string // stored name of the trigger that calls it: folded, unqualified
-	language    string // validated tsvector config name (e.g. "english")
+	table       string
+	quotedTable string
+	quotedIndex string
+	prefixIndex string
+	prefixFn    string
+	prefixTrg   string
+	language    string
 
-	weightedFields     map[string]byte // field key -> weight 'A'..'D'
-	weightedFieldOrder []string        // sorted keys -> deterministic SQL
+	weightedFields     map[string]byte
+	weightedFieldOrder []string
 }
 
-// PostgresConfig configures a PostgresSearch. The zero value is usable after
-// NewPostgres applies defaults.
+// PostgresConfig configures a PostgresSearch.
 type PostgresConfig struct {
-	// Table is the destination table. Defaults to "search_documents".
+	// Table is the destination table.
 	Table string
 
-	// Language is the tsvector text-search configuration name. Defaults to
-	// "english". Validated at construction against ^[a-z_]+$, only lowercase
-	// letters and underscores survive, so a caller cannot smuggle SQL here.
+	// Language is the tsvector text-search configuration name.
 	Language string
 
 	// WeightedFields maps Document.Fields keys (string values only) to a
-	// tsvector weight in the range 'A'..'D'. The matched field's string value
 	// is indexed at that weight; Document.Text is always weight 'A'. A
 	// configured field present with a non-string value makes Index
 	// return an error.
 	WeightedFields map[string]byte
 }
 
-// langRe bounds the tsvector configuration name to a safe allowlist. Only
-// lowercase ASCII letters and underscores are accepted, no quotes, spaces,
-// semicolons, or anything that could break out of the regconfig cast.
 var langRe = regexp.MustCompile(`^[a-z_]+$`)
 
-// NewPostgres constructs a PostgresSearch, validating the table identifier
-// (via the same core/query.SafeIdent used across the framework), the language
-// allowlist, and every configured weight.
+// NewPostgres constructs a PostgresSearch, validating the table
+// identifier (via the same core/query.SafeIdent used across the
+// framework), the language allowlist, and every configured weight.
 func NewPostgres(db *sql.DB, cfg PostgresConfig) (*PostgresSearch, error) {
 	if db == nil {
 		return nil, errors.New("search: nil db")
@@ -131,9 +103,6 @@ func NewPostgres(db *sql.DB, cfg PostgresConfig) (*PostgresSearch, error) {
 	}, nil
 }
 
-// pgName cuts an identifier to the 63 bytes Postgres keeps, so a catalog
-// lookup by name finds what the DDL created. The name is validated
-// ASCII, so no rune is split.
 func pgName(s string) string {
 	if len(s) > 63 {
 		return s[:63]
@@ -141,8 +110,6 @@ func pgName(s string) string {
 	return s
 }
 
-// storedTriggerName is the tgname Postgres keeps for a trigger created
-// as query.QuoteIndexName(s): the part after the last dot, folded.
 func storedTriggerName(s string) string {
 	if i := strings.LastIndexByte(s, '.'); i >= 0 {
 		s = s[i+1:]
@@ -150,11 +117,6 @@ func storedTriggerName(s string) string {
 	return strings.ToLower(s)
 }
 
-// pgTsvIndexName names the tsv index the way released builds did:
-// base+"_tsv_idx" as Postgres cuts it at 63 bytes, so a table those
-// builds set up keeps its one index. Only a 63-byte base, where that cut
-// is the table's own name and the index was never built, takes
-// pgRelName's hashed form.
 func pgTsvIndexName(base string) string {
 	name := base + "_tsv_idx"
 	if len(name) > 63 {
@@ -166,13 +128,6 @@ func pgTsvIndexName(base string) string {
 	return name
 }
 
-// pgRelName names a relation derived from base (an index on the table
-// base names). base+suffix is kept when it fits Postgres's 63 bytes, so
-// an existing index is found again. A longer one is base cut short, an
-// 8-hex-digit hash of the whole base, then suffix: Postgres would cut it
-// at 63 bytes itself, and two indexes on a table of 58 bytes or more
-// would get one name, or at 63 bytes the table's own name, and CREATE
-// INDEX IF NOT EXISTS would skip them.
 func pgRelName(base, suffix string) string {
 	if len(base)+len(suffix) <= 63 {
 		return base + suffix
@@ -184,7 +139,7 @@ func pgRelName(base, suffix string) string {
 }
 
 // EnsureSchema creates the table and its GIN index if they do not already
-// exist. Idempotent, safe to call on every boot.
+// exist.
 func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	if err := query.RefuseCaseKeptTables(ctx, p.db, p.table); err != nil {
 		return fmt.Errorf("search: %w", err)
@@ -202,7 +157,6 @@ func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	if _, err := p.db.ExecContext(ctx, createTable); err != nil {
 		return fmt.Errorf("search: create table: %w", err)
 	}
-	// A table an earlier release created has no owner column.
 	if _, err := p.db.ExecContext(ctx, fmt.Sprintf(
 		`ALTER TABLE %s ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT ''`, p.quotedTable)); err != nil {
 		return fmt.Errorf("search: add owner column: %w", err)
@@ -220,21 +174,12 @@ func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// afterPrefixBatch is a test hook run after each backfill batch with
-// the rows it filled.
 var afterPrefixBatch func(filled int64)
 
-// prefixBackfillBatch is how many rows one backfill statement fills.
 var prefixBackfillBatch = 1000
 
-// prefixFilledComment marks a tsv_prefix column every row of which has
-// been filled, so a later boot skips the backfill.
 const prefixFilledComment = "gofastr search: tsv_prefix filled"
 
-// prefixTriggerBody computes tsv_prefix for the row being written: the
-// text at weight A, then each weighted field the trigger names as a
-// (key, weight) argument pair, all under the unstemmed 'simple' config.
-// It is the one definition of the column; Index leaves it to the trigger.
 const prefixTriggerBody = `
 BEGIN
 	NEW.tsv_prefix := setweight(to_tsvector('simple'::regconfig, NEW.text), 'A');
@@ -245,17 +190,6 @@ BEGIN
 END
 `
 
-// ensurePrefixColumn adds tsv_prefix to a table created before it existed,
-// installs the trigger that keeps it current, and fills the rows written
-// before the trigger existed. The column is added in a statement of its
-// own, which holds the table only for the catalog change; the rows are
-// then filled in committed batches, so other replicas keep searching and
-// indexing throughout (a row not yet filled still matches through tsv,
-// it only misses prefixes past its stem). A replica that finds a
-// backfill already under way fills the rows left and waits behind the
-// other's batches. When no row is left the column is marked. The
-// trigger goes in before the backfill, so once the mark is set no
-// writer, whatever release it runs, can leave a row empty or stale.
 func (p *PostgresSearch) ensurePrefixColumn(ctx context.Context) error {
 	var has bool
 	var comment sql.NullString
@@ -276,9 +210,6 @@ func (p *PostgresSearch) ensurePrefixColumn(ctx context.Context) error {
 	if has && comment.String == prefixFilledComment {
 		return nil
 	}
-	// SET text = text fires the trigger, which fills the row. The outer
-	// tsv_prefix IS NULL is rechecked after a lock wait, so a row another
-	// replica filled meanwhile is not filled twice.
 	backfill := fmt.Sprintf(`UPDATE %[1]s SET text = text
 		WHERE tsv_prefix IS NULL AND id IN (SELECT id FROM %[1]s WHERE tsv_prefix IS NULL LIMIT $1)`,
 		p.quotedTable)
@@ -298,8 +229,6 @@ func (p *PostgresSearch) ensurePrefixColumn(ctx context.Context) error {
 		if n > 0 {
 			continue
 		}
-		// A batch that filled nothing either finished the table or lost
-		// its rows to another replica's batch; only an empty probe ends it.
 		var left bool
 		if err := p.db.QueryRowContext(ctx, remaining).Scan(&left); err != nil {
 			return fmt.Errorf("search: backfill tsv_prefix: %w", err)
@@ -314,12 +243,6 @@ func (p *PostgresSearch) ensurePrefixColumn(ctx context.Context) error {
 	return nil
 }
 
-// ensurePrefixTrigger installs the function and trigger that compute
-// tsv_prefix on every insert and on every update of text or fields. A
-// boot that finds both current changes nothing; a changed WeightedFields
-// replaces the trigger (its arguments carry the fields). Replicas booting
-// together take turns on an advisory lock: two concurrent CREATE OR
-// REPLACE FUNCTION calls fail with "tuple concurrently updated".
 func (p *PostgresSearch) ensurePrefixTrigger(ctx context.Context) error {
 	var trgArgs []string
 	var wantArgs []byte
@@ -355,8 +278,6 @@ func (p *PostgresSearch) ensurePrefixTrigger(ctx context.Context) error {
 		}
 	}
 	if !hasTrg || !bytes.Equal(gotArgs, wantArgs) {
-		// The field keys are host configuration of any spelling; the
-		// server quotes each one as a literal.
 		quoted := make([]string, len(trgArgs))
 		for j, a := range trgArgs {
 			//gofastr:allow(GOFASTR1502) one quote per configured field key, only when the trigger is (re)created at boot
@@ -381,25 +302,16 @@ func (p *PostgresSearch) ensurePrefixTrigger(ctx context.Context) error {
 	return nil
 }
 
-// Index inserts or replaces a document (UPSERT on id). The tsv column is
-// rebuilt in SQL from the text body and any configured weighted fields whose
-// value is a string, so re-indexing the same id updates in place with no
-// duplicate rows.
+// Index inserts or replaces a document (UPSERT on id).
 func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 	fieldsJSON, err := marshalFields(doc.Fields)
 	if err != nil {
 		return err
 	}
 
-	// Argument layout: $1=id $2=type $3=text $4=fields(JSONB) $5=language
-	// $6=owner.
 	args := []any{doc.ID, doc.Type, doc.Text, fieldsJSON, p.language, doc.Owner}
 	const textIdx, langIdx = 3, 5
 
-	// Text body is always weight 'A'. Each present weighted string field
-	// appends another setweight(...) term; all values are parameterized and
-	// only the validated weight chars are interpolated as literals.
-	// tsv_prefix is the trigger's to fill (see ensurePrefixTrigger).
 	var tsv strings.Builder
 	fmt.Fprintf(&tsv, "setweight(to_tsvector($%d::regconfig, $%d), 'A')", langIdx, textIdx)
 	for _, key := range p.weightedFieldOrder {
@@ -409,10 +321,6 @@ func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 		}
 		val, ok := v.(string)
 		if !ok {
-			// A configured weighted field present with a non-string
-			// value is a data mismatch, not an absent field: silently
-			// skipping it leaves the value unsearchable with no signal
-			// to the indexer (the laxcoerce shape).
 			return fmt.Errorf("search: index %q: weighted field %q must be a string, got %T", doc.ID, key, v)
 		}
 		args = append(args, val)
@@ -420,8 +328,6 @@ func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
 			langIdx, len(args), p.weightedFields[key])
 	}
 
-	// The target is aliased so a table named excluded does not collide
-	// with the EXCLUDED pseudo-row.
 	stmt := fmt.Sprintf(`INSERT INTO %s AS t (id, type, text, fields, owner, tsv)
 VALUES ($1, $2, $3, $4, $6, %s)
 ON CONFLICT (id) DO UPDATE SET
@@ -446,8 +352,7 @@ func (p *PostgresSearch) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// Search runs a ranked full-text query. See buildTsQuery for the query-text
-// rules and Query.FieldEquals for the JSONB scoping hook.
+// Search runs a ranked full-text query.
 func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) {
 	if err := validateFieldEquals(q.FieldEquals); err != nil {
 		return nil, err
@@ -460,31 +365,15 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 			return nil, fmt.Errorf("search: marshal field filter: %w", err)
 		}
 	}
-	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
-	// query matches every document (score 0, Type/FieldEquals filters still
-	// applied), while a query whose terms all sanitize away (pure
-	// punctuation) matches nothing, the same split Memory makes on
-	// queryTerms.
 	if len(strings.Fields(q.Text)) == 0 {
 		return p.searchAll(ctx, q, fieldFilter)
 	}
 	terms := queryTerms(q.Text)
 	if len(terms) == 0 {
-		// Terms existed but none survived sanitization: nothing can match.
 		return []Result{}, nil
 	}
 	rest, last := terms[:len(terms)-1], terms[len(terms)-1]+":*"
 
-	// The tsquery must be parsed with the SAME text-search configuration the
-	// tsv column was built with, to_tsquery($1) alone would use the
-	// database's default config and silently mis-stem every non-default
-	// language (index "corriendo" under spanish → lexeme 'corr'; an
-	// english-parsed query for "corría" never matches it).
-	//
-	// A row matches the stemmed query q, or the last term's unstemmed
-	// prefix qp against tsv_prefix plus the other terms stemmed (qn; a
-	// stopword-only qn has no nodes and constrains nothing, as it does in
-	// q).
 	args := []any{tsJoin(rest, last), p.language, last}
 	from := "CROSS JOIN to_tsquery($2::regconfig, $1) AS q CROSS JOIN to_tsquery('simple'::regconfig, $3) AS qp"
 	var where strings.Builder
@@ -504,8 +393,6 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 
-	// Clamp pagination exactly like Memory: negative offset becomes 0, and a
-	// non-positive limit means "no limit". OFFSET/LIMIT are bound as params.
 	offset := max(q.Offset, 0)
 	limit := q.Limit
 
@@ -533,9 +420,6 @@ ORDER BY score DESC, id ASC%s`,
 	return scanSearchRows(rows)
 }
 
-// searchAll is the empty-query path: every document (score 0) that passes
-// the Type/FieldEquals filters, ordered by id for a stable page walk,
-// the same documents Memory returns for empty text.
 func (p *PostgresSearch) searchAll(ctx context.Context, q Query, fieldFilter []byte) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder
@@ -574,8 +458,6 @@ ORDER BY id ASC%s`,
 	return scanSearchRows(rows)
 }
 
-// scanSearchRows drains a search result set into []Result, reconstructing
-// each Document (including its JSONB fields). It closes rows.
 func scanSearchRows(rows *sql.Rows) ([]Result, error) {
 	defer rows.Close()
 	var results []Result
@@ -604,27 +486,6 @@ func scanSearchRows(rows *sql.Rows) ([]Result, error) {
 	return results, nil
 }
 
-// buildTsQuery turns a raw query string into a to_tsquery operand. It is the
-// single chokepoint where untrusted query text is sanitized before reaching
-// the database, so it is pure (no DB dependency) and unit-testable directly.
-//
-// Rules:
-//   - Split at every rune that is not a letter, digit, underscore, or
-//     hyphen ([\pL\pN_-]): whitespace, an apostrophe ("won't" → "won" "t"),
-//     and every to_tsquery operator, '&', '|', '!', ':', '(', ')', and SQL
-//     metacharacter, none of which reaches a term.
-//   - Lowercase and trim leading/trailing '-'/'_' so a term can never be
-//     pure punctuation.
-//   - Drop empties.
-//   - Dedupe (case-insensitive after lowercasing) and cap at maxQueryTerms so
-//     an attacker-controlled query cannot amplify cost, the same bound
-//     Memory applies.
-//   - If nothing survives, return "" (caller short-circuits to empty results).
-//   - Join the survivors with " & " (AND semantics, matching Memory) and
-//     suffix the LAST term with ":*" for prefix matching.
-//
-// The result is passed strictly as a parameter to to_tsquery($n): query text
-// is never interpolated into SQL.
 func buildTsQuery(text string) string {
 	terms := queryTerms(text)
 	if len(terms) == 0 {
@@ -633,7 +494,6 @@ func buildTsQuery(text string) string {
 	return tsJoin(terms[:len(terms)-1], terms[len(terms)-1]+":*")
 }
 
-// tsJoin AND-joins tsquery operands, skipping an empty one.
 func tsJoin(terms []string, last string) string {
 	out := make([]string, 0, len(terms)+1)
 	out = append(out, terms...)
@@ -643,12 +503,6 @@ func tsJoin(terms []string, last string) string {
 	return strings.Join(out, " & ")
 }
 
-// queryTerms is the sanitized term list both database backends query
-// with: split at every rune a term cannot hold, sanitized (see
-// sanitizeTsTerm), deduped, and capped at maxQueryTerms. Splitting rather
-// than deleting keeps the query's words where the tokenizers put the
-// document's: unicode61 and the Postgres parser index "won't" as "won"
-// and "t", and a glued "wont" matched neither.
 func queryTerms(text string) []string {
 	parts := strings.FieldsFunc(text, func(r rune) bool { return !termRune(r) })
 	seen := make(map[string]struct{}, len(parts))
@@ -670,9 +524,6 @@ func queryTerms(text string) []string {
 	return terms
 }
 
-// sanitizeTsTerm lowercases s and retains only [\pL\pN_-], then trims
-// leading/trailing '-'/'_'. The trim guarantees no term is pure punctuation,
-// which keeps the emitted to_tsquery syntactically valid.
 func sanitizeTsTerm(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -684,13 +535,8 @@ func sanitizeTsTerm(s string) string {
 	return strings.Trim(b.String(), "-_")
 }
 
-// termRune reports whether r can appear in a query term: [\pL\pN_-]. \pN
-// is every number category, not only decimal digits: unicode61 keeps
-// H₂O's ₂ inside one token, and the Postgres parser splits the term
-// itself.
 func termRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' || r == '-'
 }
 
-// Compile-time interface check.
 var _ Backend = (*PostgresSearch)(nil)

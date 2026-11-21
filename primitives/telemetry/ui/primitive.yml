@@ -1,0 +1,21 @@
+primitive: telemetry.ui
+summary: The overview, requests, issues and logs screens over the telemetry files, and the plugin that mounts them for an app without an admin.
+code:
+  - battery/telemetry/telemetryui/
+docs:
+  - framework/docs/content/telemetry.md
+invariants:
+  - id: authorize-is-required
+    rule: The standalone mount refuses a Config with no Authorize, and every page and rows route asks it on each request.
+    enforced_by:
+      - test: battery/telemetry/telemetryui.TestInitRefusesAnOpenOrHostlessMount
+      - test: battery/telemetry/telemetryui.TestScreensRefuseAnUnadmittedCaller
+      - test: battery/telemetry/telemetryui.TestRowsRouteRefusesAnUnadmittedCaller
+  - id: query-values-cleaned
+    rule: A query value shown or searched loses its control characters and is cut to maxParam bytes on a rune boundary.
+    enforced_by:
+      - test: battery/telemetry/telemetryui.TestQueryValuesAreCleaned
+  - id: only-short-reads-refresh
+    rule: Only the newest page of a range no wider than a day, with nothing narrowing it, refetches its rows on a timer.
+    enforced_by:
+      - test: battery/telemetry/telemetryui.TestOnlyAShortReadRefreshesItself

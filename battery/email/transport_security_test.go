@@ -19,6 +19,7 @@ type fakeSMTP struct {
 	ln        net.Listener
 	mu        sync.Mutex
 	gotData   bool
+	gotMail   bool
 	advertise string // extra EHLO capabilities line, empty for none
 }
 
@@ -69,7 +70,12 @@ func (f *fakeSMTP) handle(conn net.Conn) {
 			}
 		case strings.HasPrefix(cmd, "AUTH"):
 			w("235 Authentication successful\r\n")
+		case strings.HasPrefix(cmd, "STARTTLS"):
+			w("454 TLS not available due to temporary reason\r\n")
 		case strings.HasPrefix(cmd, "MAIL"):
+			f.mu.Lock()
+			f.gotMail = true
+			f.mu.Unlock()
 			w("250 OK\r\n")
 		case strings.HasPrefix(cmd, "RCPT"):
 			w("250 OK\r\n")
@@ -134,6 +140,26 @@ func TestSMTP_NoCleartextWhenSTARTTLSUnavailable(t *testing.T) {
 	}
 	if srv.receivedData() {
 		t.Fatalf("SECURITY: [email] message body was transmitted in cleartext (DATA reached server) despite no TLS")
+	}
+}
+
+// A relay that advertises STARTTLS and then refuses it ends the send,
+// AllowCleartext or not: no MAIL FROM follows the refusal.
+func TestSMTP_FailedSTARTTLSEndsTheSend(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		srv := newFakeSMTP(t, "STARTTLS")
+		host, portStr := srv.addr()
+		port, _ := strconv.Atoi(portStr)
+		err := NewSMTPSender(SMTPConfig{Host: host, Port: port, AllowCleartext: allow}).Send(context.Background(), Email{
+			From: "a@b.test", To: []string{"x@y.test"}, Subject: "secret", TextBody: "confidential body",
+		})
+		srv.mu.Lock()
+		gotMail := srv.gotMail
+		srv.mu.Unlock()
+		srv.ln.Close()
+		if err == nil || !strings.Contains(err.Error(), "starttls failed") || gotMail {
+			t.Fatalf("AllowCleartext=%v: Send = %v, MAIL FROM sent = %v; want a starttls error and no MAIL FROM", allow, err, gotMail)
+		}
 	}
 }
 

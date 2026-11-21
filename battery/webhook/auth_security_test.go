@@ -128,6 +128,23 @@ func TestDeliveryWithAuthRefusesRedirect(t *testing.T) {
 	}
 }
 
+func TestDefaultClientRefusesRedirect(t *testing.T) {
+	var elsewhere headerCatcher
+	other := httptest.NewServer(elsewhere.handler(http.StatusOK, ""))
+	defer other.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer redirector.Close()
+	d := deliverOnce(t, Subscriber{URL: redirector.URL}, Options{})
+	elsewhere.mu.Lock()
+	n := len(elsewhere.seen)
+	elsewhere.mu.Unlock()
+	if n != 0 || d.ResponseStatus != http.StatusTemporaryRedirect {
+		t.Fatalf("redirect target got %d request(s), delivery recorded %d; want 0 and the 307", n, d.ResponseStatus)
+	}
+}
+
 // A failed attempt keeps the status and the start of the body, so a
 // refusal can be diagnosed; the stored text is capped and cannot carry
 // a control byte to an operator's terminal.

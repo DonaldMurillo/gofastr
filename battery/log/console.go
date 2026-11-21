@@ -15,24 +15,14 @@ import (
 	"golang.org/x/term"
 )
 
-// ConsoleMode controls whether a human-readable colorized console sink
-// is attached alongside the file/webhook sinks. It is the Config.Console
-// field's type.
+// ConsoleMode controls whether a human-readable colorized console sink is
+// attached alongside the file/webhook sinks.
 type ConsoleMode int
 
 const (
-	// ConsoleAuto is the zero value: the console sink is attached only
 	// when stderr is a terminal and NO_COLOR is unset or empty. This is the
-	// "zero-config dev color, nothing in prod" behavior, Config{}
-	// gives a local developer a colorized stderr feed without leaking
-	// ANSI into journald / container logs where stderr is captured, not
-	// shown.
 	ConsoleAuto ConsoleMode = iota
-	// ConsoleOn forces the console sink on regardless of TTY. Useful
-	// under process supervisors that capture stderr as plain text: you
-	// get human-readable lines instead of JSON without the dev running
-	// in a real terminal. Coloring still follows TTY + NO_COLOR, so
-	// piping the output drops ANSI and stays greppable.
+	// ConsoleOn forces the console sink on regardless of TTY.
 	ConsoleOn
 	// ConsoleOff skips automatic attachment of the console sink.
 	ConsoleOff
@@ -42,38 +32,18 @@ const (
 // writes to os.Stderr, color auto-detected from the writer being a TTY
 // and NO_COLOR being unset or empty.
 type ConsoleOpts struct {
-	// Writer is the destination. Nil defaults to os.Stderr.
+	// Writer is the destination.
 	Writer io.Writer
 
-	// Color forces color on (true) or off (false). When nil (default),
-	// color is enabled only when Writer is a terminal and NO_COLOR is
 	// unset or empty, so piping to a file or through `cat` drops the ANSI codes
-	// and the output stays greppable.
 	Color *bool
 
-	// TimeFormat overrides the timestamp format. Defaults to
-	// "15:04:05.000" (HH:MM:SS.mmm). Set to "" for the same default.
+	// TimeFormat overrides the timestamp format.
 	TimeFormat string
 }
 
 // ConsoleSink is a Sink that renders each JSON entry as a single
 // human-readable, optionally colorized line:
-//
-//	14:32:07.412 INFO  app.start app="myapp" go="go1.24.1"
-//
-// It parses the JSON the fanout emits (see the Sink.Write contract) so
-// it can apply level colors, bold the message, and dim the timestamp.
-// Attr order is preserved via token decoding, operators see fields in
-// the order the code emitted them, not json's randomized map order.
-//
-// If the entry is not a JSON object the raw bytes are written verbatim
-// plus a newline, so a malformed entry is still visible rather than
-// silently dropped.
-//
-// Concurrency: safe for concurrent use. Write serializes on a mutex so
-// concurrent entries don't interleave on the terminal. After Close,
-// Write returns ErrSinkClosed, consistent with the other sinks so the
-// fanout's post-Stop drop counter advances correctly.
 func ConsoleSink(opts ConsoleOpts) Sink {
 	w := opts.Writer
 	if w == nil {
@@ -102,9 +72,6 @@ type consoleSink struct {
 	closed  bool
 }
 
-// ansi holds the ANSI escape sequences used by the renderer. When color
-// is disabled every field is the empty string, so the same render path
-// produces greppable plain text without branching.
 type ansi struct {
 	reset, dim, bold                     string
 	gray, red, green, yellow, blue, cyan string
@@ -116,12 +83,8 @@ var ansiColor = ansi{
 	yellow: "\x1b[33m", blue: "\x1b[34m", cyan: "\x1b[36m",
 }
 
-var ansiNone ansi // zero value → all-empty → plain text
+var ansiNone ansi
 
-// shouldColor reports whether w should receive ANSI color. Honors the
-// NO_COLOR convention (https://no-color.org): a non-empty value
-// disables color regardless of TTY. Otherwise color is enabled only
-// when w is an *os.File backed by a terminal.
 func shouldColor(w io.Writer) bool {
 	if v, ok := os.LookupEnv("NO_COLOR"); ok && v != "" {
 		return false
@@ -142,10 +105,6 @@ func (s *consoleSink) Write(entry []byte) error {
 		_, err := s.w.Write(line)
 		return err
 	}
-	// Malformed JSON: write it + newline so the entry is at least
-	// visible. Better to surface garbage than to silently drop it, but
-	// never raw: an entry that is not JSON was not escaped by slog
-	// either, so an ESC or C1 byte in it would drive the terminal.
 	_, err := io.WriteString(s.w, escapeUnsafe(string(entry))+"\n")
 	return err
 }
@@ -162,8 +121,6 @@ type kv struct {
 	val json.RawMessage
 }
 
-// render formats one JSON entry as a (possibly colorized) line ending
-// in '\n'. Returns ok=false if entry is not a JSON object.
 func (s *consoleSink) render(entry []byte) ([]byte, bool) {
 	dec := json.NewDecoder(bytes.NewReader(entry))
 	tok, err := dec.Token()
@@ -185,12 +142,6 @@ func (s *consoleSink) render(entry []byte) ([]byte, bool) {
 		if err := dec.Decode(&raw); err != nil {
 			return nil, false
 		}
-		// time, level, msg and every key are written bare, so each
-		// is the decoded string with its unsafe runes escaped: slog's
-		// JSON encoder escapes C0 only, and a C1 CSI or a bidi override
-		// in a message built from request data reached the terminal
-		// live. Trimming the quotes off the JSON text also printed a
-		// quote in the message as \".
 		switch key {
 		case "time":
 			ts = escapeUnsafe(jsonText(raw))
@@ -204,8 +155,6 @@ func (s *consoleSink) render(entry []byte) ([]byte, bool) {
 	}
 
 	var b strings.Builder
-	// Timestamp: dimmed, reformatted to HH:MM:SS.mmm. Falls back to the
-	// raw RFC3339 string if it doesn't parse.
 	if ts != "" {
 		b.WriteString(s.a.dim)
 		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
@@ -216,19 +165,15 @@ func (s *consoleSink) render(entry []byte) ([]byte, bool) {
 		b.WriteString(s.a.reset)
 		b.WriteByte(' ')
 	}
-	// Level: colored by severity, padded to a fixed 5-wide column so
-	// the message column aligns across entries.
 	b.WriteString(levelColor(s.a, level))
 	b.WriteString(padLevel(level))
 	b.WriteString(s.a.reset)
 	b.WriteByte(' ')
-	// Message: bold.
 	if msg != "" {
 		b.WriteString(s.a.bold)
 		b.WriteString(msg)
 		b.WriteString(s.a.reset)
 	}
-	// Attrs: key (gray) = value (cyan), in emission order.
 	for _, p := range rest {
 		b.WriteByte(' ')
 		b.WriteString(s.a.gray)
@@ -258,8 +203,6 @@ func levelColor(a ansi, level string) string {
 	}
 }
 
-// padLevel left-pads the level name to a 5-wide column so DEBUG/INFO/
-// WARN/ERROR all align. Unknown levels are padded the same way.
 func padLevel(level string) string {
 	const width = 5
 	if len(level) >= width {
@@ -268,17 +211,6 @@ func padLevel(level string) string {
 	return level + strings.Repeat(" ", width-len(level))
 }
 
-// formatValue renders a JSON RawMessage for the key=value display.
-// Strings are shown bare when simple (no spaces, '=', quotes, control
-// chars) and quoted otherwise; numbers/bools/null/objects/arrays
-// are passed through as compact JSON. Multi-line values (e.g. panic
-// stacks) keep their newlines escaped so each entry stays one line,
-// the full unescaped value is always available in the file sink.
-//
-// The quoted form goes through quoteTerminalSafe, NOT json.Marshal:
-// Go's encoder escapes only C0 and U+2028/9, so a C1 control or bidi
-// rune survives a round trip raw (the round-4 console probe) and the
-// "quoted" value still writes a live 0x9B/0x85/U+202E to the terminal.
 func formatValue(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -296,8 +228,6 @@ func formatValue(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// jsonText returns raw decoded as a JSON string, or raw's own text when
-// it is some other JSON value.
 func jsonText(raw json.RawMessage) string {
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
@@ -343,27 +273,10 @@ func escapeTerminal(s string, quotes bool) string {
 	return b.String()
 }
 
-// escapeUnsafe returns s with every C0/DEL/C1 control and zero-width or
-// bidi rune written as a \uXXXX escape (\n, \r and \t as their short
-// forms), for text the console writes bare: the message, keys, and the
-// time and level fields. Everything else, spaces and quotes included,
-// stays as it is.
 func escapeUnsafe(s string) string { return escapeTerminal(s, false) }
 
-// quoteTerminalSafe renders s as a JSON-style double-quoted literal in
-// which every C0/DEL/C1 control and zero-width/bidi rune lands as a
-// \uXXXX escape instead of a raw byte sequence the terminal would
-// execute or reorder. Readable short escapes (\n, \r, \t) keep panic
-// stacks greppable.
 func quoteTerminalSafe(s string) string { return `"` + escapeTerminal(s, true) + `"` }
 
-// needsQuoting reports whether a string attr value must render as a
-// JSON-quoted literal instead of bare text: anything with a space, the
-// key=value metacharacters, or — via core/textsafe, the round-4
-// widening — any C0/DEL/C1 control or zero-width/bidi rune. A bare
-// U+009B/U+009D is executed as an escape by 8-bit terminals, U+0085
-// breaks the line, and RLO reorders the rendered line, so those values
-// must land in the terminal as \uXXXX escapes, not raw runes.
 func needsQuoting(s string) bool {
 	if s == "" {
 		return true

@@ -210,6 +210,8 @@ The 503 response on non-setup paths uses the same locale through
 Rejected validation and step execution preserve submitted non-secret values,
 including empty values, ahead of environment defaults. Fields with
 `Secret: true` render as password inputs and are never prefilled or logged.
+A wizard form body is capped at 1 MiB, as the auth battery's forms are,
+since `/setup` can be unauthenticated under `DisableToken`.
 The wizard trims the spaces around a plain field; a secret is kept exactly
 as typed, so a password with a space at either end signs in afterwards. `setup.HealthStep(app)` runs the app's registered
 readiness checks (the same ones `/readyz` serves) and fails with a

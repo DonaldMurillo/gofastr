@@ -55,3 +55,18 @@ func TestAuditPagesOlderRows(t *testing.T) {
 		t.Errorf("page 3's link %q drops the filter or the page", href)
 	}
 }
+
+func TestAuditPagesBreakTimeTiesByID(t *testing.T) {
+	x := setup(t, map[string]entity.EntityConfig{"posts": postsConfig()}, Config{Entities: []string{"posts"}, AuditListLimit: 2}, nil)
+	now := time.Now().UTC()
+	for _, id := range []string{"a2", "a4", "a1", "a3"} {
+		x.seedAudit(id, "", "posts", "create", "r-"+id, "u1", now)
+	}
+	var got []string
+	for _, p := range []string{"1", "2"} {
+		got = append(got, auditIDsShown(get(x.as(theAdmin), "/admin/audit?p="+p).Body.String())...)
+	}
+	if want := []string{"a4", "a3", "a2", "a1"}; !slices.Equal(got, want) {
+		t.Errorf("rows written in one instant page as %v, want %v by id", got, want)
+	}
+}

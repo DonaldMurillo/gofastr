@@ -1,0 +1,105 @@
+primitive: semantic.index
+summary: Open and the index - the public types, Add and Remove as one logged replace, Query's pipeline, the write bounds on document text and metadata, and the eraser.
+code:
+  - battery/semantic/semantic.go
+  - battery/semantic/index.go
+  - battery/semantic/storable.go
+docs:
+  - framework/docs/content/semantic-search.md
+invariants:
+  - id: open-fails-closed
+    rule: Open errors without an Embedder, on ReadOnly without Path, on Path over a store that cannot snapshot, on Keyword over a store that cannot list chunks, and on a MemoryKeyword over a store other processes share.
+    enforced_by:
+      - test: battery/semantic.TestReadOnlyNeedsPath
+      - test: battery/semantic.TestOpen_FailsClosedOnPathWithoutSnapshotter
+      - test: battery/semantic.TestOpen_FailsClosedOnKeywordWithoutChunkLister
+      - test: battery/semantic.TestOpenRefusesLocalKeywordOnSharedStore
+  - id: failed-open-releases-the-lock
+    rule: An Open that fails releases the writer's lock on Path.
+    enforced_by:
+      - test: battery/semantic.TestFailedOpenReleasesLock
+  - id: snapshot-every-defaults
+    rule: A zero SnapshotEvery means a snapshot every 1000 mutating ops.
+    enforced_by:
+      - test: battery/semantic.TestZeroSnapshotEveryUsesDefault
+  - id: add-never-asks-stats-per-write
+    rule: Open seeds the store's dimension, so Add never calls Store.Stats on a write.
+    enforced_by:
+      - test: battery/semantic.TestAddDoesNotCallStatsPerWrite
+  - id: last-duplicate-wins
+    rule: Add keeps only the last Document of each ID in a batch, on FlatStore and PgVectorStore alike, and validates only that one.
+    enforced_by:
+      - test: battery/semantic.TestLastDuplicateWinsFlat
+      - test: battery/semantic.TestLastDuplicateWinsPgVector
+      - test: battery/semantic.TestAddValidatesOnlyLastDocumentPerID
+  - id: replace-is-one-wal-record
+    rule: A replace is logged as one WAL record naming the embedder model before any step applies, and is then applied on a context that no longer cancels.
+    enforced_by:
+      - test: battery/semantic.TestCancelMidReplaceStaysConsistent
+      - test: battery/semantic.TestWALReplayRefusesOtherModel
+  - id: half-applied-write-heals-first
+    rule: A logged replace whose apply failed part-way is applied again before the next write and before any snapshot.
+    enforced_by:
+      - test: battery/semantic.TestHalfAppliedReplaceHealsBeforeNextWrite
+      - test: battery/semantic.TestHalfAppliedReplaceHealsOnSnapshot
+      - test: battery/semantic.TestHalfAppliedReplaceKeepsWAL
+  - id: broken-wal-resets-through-a-snapshot
+    rule: After a failed append the next write first takes a snapshot, which restarts the WAL.
+    enforced_by:
+      - test: battery/semantic.TestWALTornAppendKeepsRestart
+  - id: shared-store-replaces-atomically
+    rule: Over a store with its own atomic replace (PgVectorStore) and no WAL, a replace goes through that store, serialized per document across replicas.
+    enforced_by:
+      - test: battery/semantic.TestPgReplaceSerializesReplicas
+      - test: battery/semantic.TestPgVectorRefusesAnotherModel
+  - id: snapshot-syncs-before-the-wal-cut
+    rule: A snapshot is renamed into place and its directory synced before the WAL is truncated.
+    enforced_by:
+      - test: battery/semantic.TestSnapshotSyncsDirBeforeWALCut
+  - id: query-bounds-and-faults
+    rule: Query refuses an MMRLambda outside 0 to 1 or NaN and a Rerank with no Reranker as InvalidQueryError, clamps K to maxQueryK and the candidate width with it, and bounds the keyword leg's terms.
+    enforced_by:
+      - test: battery/semantic.TestQueryRejectsInvalidMMRLambda
+      - test: battery/semantic.TestQueryCallerFaultsAnswer400
+      - test: battery/semantic.TestQueryClampsK
+      - test: battery/semantic.TestHybridKeywordQueryTermsBounded
+  - id: reranker-sees-the-candidate-set
+    rule: Without MMR the reranker receives up to the candidate width, and K cuts its output.
+    enforced_by:
+      - test: battery/semantic.TestRerankCanChangeTopOne
+  - id: mmr-uses-a-unit-query
+    rule: Query normalizes the query vector before MMR, so its length does not scale relevance against redundancy.
+    enforced_by:
+      - test: battery/semantic.TestMMRIgnoresQueryVectorLength
+  - id: hits-carry-no-vectors
+    rule: Query strips every hit's vector before returning.
+    enforced_by:
+      - test: battery/semantic.TestRoundTrip
+  - id: eraser-only-where-it-can-run
+    rule: Open registers an eraser only for a writable index over a store it can list and no other process shares.
+    enforced_by:
+      - test: battery/semantic.TestReadOnlyIndexRegistersNoEraser
+      - test: battery/semantic.TestIndexSkipsEraserItCannotRun
+  - id: document-text-is-storable
+    rule: Add refuses a document whose id, source, text, owner or metadata kind is not storable text, or whose metadata JSON holds a lone surrogate escape or a number Postgres jsonb cannot hold.
+    enforced_by:
+      - test: battery/semantic.TestAddRefusesUnstorableText
+      - test: battery/semantic.TestAddMetadataMatchesStoredJSON
+      - test: battery/semantic.TestAddRefusesNumbersJSONBCannotHold
+decisions:
+  - id: fail-closed-on-missing-capabilities
+    date: 2026-11-20
+    status: accepted
+    decision: Open refuses a custom Store that cannot honour Path or Keyword.
+    rejected:
+      - option: Run without the feature.
+        why: Persistence that never persists, and hybrid search that drops every keyword hit, would pass for working.
+    upholds: [open-fails-closed]
+  - id: k-clamped-silently
+    date: 2026-11-20
+    status: accepted
+    decision: A K over maxQueryK (1000) is clamped, not refused.
+    rejected:
+      - option: Answer an error.
+        why: A large K is harmless intent; only the allocation it drives needs a bound.
+    upholds: [query-bounds-and-faults]

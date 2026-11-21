@@ -21,28 +21,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// This file verifies the two WebAuthn ceremonies (Level 3, §7.1
-// registration and §7.2 authentication) with the standard library only:
-// a bounded CBOR decoder for the attestation object and the COSE public
-// key, and crypto/ecdsa, crypto/ed25519 and crypto/rsa for signatures.
-//
-// Attestation is requested as "none" and never verified: the battery has
-// no trust policy for authenticator makers, so an attestation statement
-// would prove nothing it acts on. Every registration is treated as
-// attestation type None. What binds a credential to its user is the
-// session that registered it and every later assertion's signature.
-
-// COSE algorithm identifiers the battery accepts (IANA COSE registry).
 const (
 	coseAlgES256 int64 = -7
 	coseAlgEdDSA int64 = -8
 	coseAlgRS256 int64 = -257
 )
 
-// passkeyAlgs is the pubKeyCredParams order sent to the browser.
 var passkeyAlgs = []int64{coseAlgEdDSA, coseAlgES256, coseAlgRS256}
 
-// Authenticator data flag bits.
 const (
 	flagUP byte = 1 << 0 // user present
 	flagUV byte = 1 << 2 // user verified
@@ -52,20 +38,13 @@ const (
 	flagED byte = 1 << 7 // extension data included
 )
 
-// maxCredentialIDLen is the spec's ceiling for a credential id.
 const maxCredentialIDLen = 1023
 
-// webauthnRP is the relying party: the RP ID credentials are scoped to
-// and the exact origins whose ceremonies are accepted.
 type webauthnRP struct {
 	ID      string
 	Origins []string
 }
 
-// validate refuses an RP ID or origin set that cannot work or would
-// accept more than the host meant: every origin is scheme://host[:port]
-// with nothing after it, https unless the host is localhost, and its
-// host is the RP ID or a subdomain of it.
 func (rp webauthnRP) validate() error {
 	if rp.ID == "" || strings.ContainsAny(rp.ID, "/:@ ") || rp.ID != strings.ToLower(rp.ID) {
 		return fmt.Errorf("RPID %q must be a lowercase domain name", rp.ID)
@@ -79,8 +58,6 @@ func (rp webauthnRP) validate() error {
 			return fmt.Errorf("origin %q must be scheme://host[:port] with nothing after it", o)
 		}
 		host := u.Hostname()
-		// Browsers serialise an origin without its scheme's default
-		// port, so "https://example.com:443" would match no ceremony.
 		if (u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "http" && u.Port() == "80") {
 			return fmt.Errorf("origin %q names its default port; browsers report it as %s://%s", o, u.Scheme, host)
 		}
@@ -97,14 +74,7 @@ func (rp webauthnRP) validate() error {
 	return nil
 }
 
-// checkClientData parses clientDataJSON, checks its type, origin and
-// cross-origin bit, and returns the challenge the browser signed over,
-// decoded from base64url. The caller redeems that challenge: issuing it
-// and spending it once is what makes the ceremony fresh.
 func (rp webauthnRP) checkClientData(raw []byte, wantType string) (string, error) {
-	// Browsers may add members (the spec reserves room for them), so
-	// unknown keys are allowed; a duplicate or case-folded key pair is
-	// refused, since two readers could disagree about which one counts.
 	var m map[string]any
 	//gofastr:allow(floatnum) clientData members are read as strings and a bool only
 	if err := handler.UnmarshalStrict(raw, &m); err != nil {
@@ -133,8 +103,6 @@ func (rp webauthnRP) checkClientData(raw []byte, wantType string) (string, error
 	return string(ch), nil
 }
 
-// clientDataField reads one clientDataJSON member: absent is the zero
-// value, present with another JSON type is an error.
 func clientDataField[T string | bool](m map[string]any, key string) (T, error) {
 	var zero T
 	v, ok := m[key]
@@ -148,7 +116,6 @@ func clientDataField[T string | bool](m map[string]any, key string) (T, error) {
 	return t, nil
 }
 
-// registrationResult is what a verified registration stores.
 type registrationResult struct {
 	credID         []byte
 	publicKey      []byte // the COSE_Key bytes as the authenticator sent them
@@ -159,11 +126,6 @@ type registrationResult struct {
 	aaguid         []byte // 16 bytes; all zero when the authenticator withholds it
 }
 
-// verifyAttestation checks an attestation object's authenticator data
-// against the RP: RP ID hash, user presence and verification, the backup
-// bits, and attested credential data carrying a supported public key.
-// The attestation statement is not verified (see the file comment).
-// conditional skips the UP and UV checks (auth.passkey/only-conditional-create-skips-presence).
 func (rp webauthnRP) verifyAttestation(attObj []byte, conditional bool) (registrationResult, error) {
 	v, n, err := cborDecode(attObj)
 	if err != nil {
@@ -204,17 +166,12 @@ func (rp webauthnRP) verifyAttestation(attObj []byte, conditional bool) (registr
 	}, nil
 }
 
-// assertionResult is what a verified assertion reports back.
 type assertionResult struct {
 	signCount      uint32
 	backupEligible bool
 	backedUp       bool
 }
 
-// verifyAssertion checks an assertion against the stored COSE key:
-// authenticator data against the RP, then the signature over
-// authenticatorData || SHA-256(clientDataJSON). clientDataJSON must have
-// passed checkClientData already.
 func (rp webauthnRP) verifyAssertion(coseKey, clientDataJSON, authData, sig []byte) (assertionResult, error) {
 	key, err := parseCOSEKey(coseKey)
 	if err != nil {
@@ -252,7 +209,6 @@ func (rp webauthnRP) checkAuthData(ad authData, conditional bool) error {
 	return nil
 }
 
-// authData is parsed authenticator data (§6.1).
 type authData struct {
 	rpIDHash  []byte
 	flags     byte
@@ -263,9 +219,6 @@ type authData struct {
 	key       coseKey
 }
 
-// parseAuthData parses authenticator data. Registration (attested=true)
-// requires attested credential data; an assertion refuses it. Extension
-// data is skipped over when flagged, and nothing may follow it.
 func parseAuthData(b []byte, attested bool) (authData, error) {
 	if len(b) < 37 {
 		return authData{}, errors.New("authenticator data shorter than 37 bytes")
@@ -317,16 +270,11 @@ func parseAuthData(b []byte, attested bool) (authData, error) {
 	return ad, nil
 }
 
-// coseKey is a parsed credential public key.
 type coseKey struct {
 	alg int64
 	pub crypto.PublicKey
 }
 
-// parseCOSEKey parses a COSE_Key (RFC 9052/9053) for one of the three
-// supported algorithms and checks the key itself: a P-256 point on the
-// curve, a 32-byte Ed25519 key, an RSA modulus of at least 2048 bits
-// with an odd exponent.
 func parseCOSEKey(b []byte) (coseKey, error) {
 	v, n, err := cborDecode(b)
 	if err != nil {
@@ -371,12 +319,6 @@ func parseCOSEKey(b []byte) (coseKey, error) {
 		if mod.BitLen() < 2048 || len(eb) == 0 || len(eb) > 4 {
 			return coseKey{}, errors.New("COSE key: RS256 needs a modulus of at least 2048 bits")
 		}
-		// Verification cost grows with the square of the modulus, and
-		// attestation "none" checks nothing about the key: a 4-Mbit modulus
-		// registered once made every anonymous sign-in attempt against it
-		// burn about a minute of CPU. crypto/tls caps peer RSA keys at 8192
-		// bits for the same reason (CVE-2023-29409). Login re-parses the
-		// stored key, so an oversized key already stored is refused too.
 		if mod.BitLen() > maxCOSERSABits || mod.Bit(0) == 0 {
 			return coseKey{}, errors.New("COSE key: RS256 needs an odd modulus of at most 8192 bits")
 		}
@@ -389,7 +331,6 @@ func parseCOSEKey(b []byte) (coseKey, error) {
 	return coseKey{}, fmt.Errorf("COSE key: unsupported kty %d / alg %d", kty, alg)
 }
 
-// maxCOSERSABits is the largest RSA modulus a passkey may register.
 const maxCOSERSABits = 8192
 
 func (k coseKey) verify(msg, sig []byte) bool {
@@ -406,18 +347,8 @@ func (k coseKey) verify(msg, sig []byte) bool {
 	return false
 }
 
-// ─── CBOR (RFC 8949), the subset WebAuthn uses ────────────────────────
-
-// cborMaxDepth bounds nesting; WebAuthn structures nest three deep.
 const cborMaxDepth = 8
 
-// cborDecode decodes one CBOR data item from the front of b and returns
-// it with the number of bytes it took. Integers decode to int64, byte
-// strings to []byte, text to string, arrays to []any, maps to
-// map[any]any (keys int64 or string, duplicates refused), and the simple
-// values false, true and null. Indefinite lengths, tags and floats are
-// refused, and so is any length longer than the bytes left, so a hostile
-// length prefix never sizes an allocation.
 func cborDecode(b []byte) (any, int, error) {
 	d := cborDecoder{b: b}
 	v, err := d.item(0)
@@ -460,8 +391,6 @@ func (d *cborDecoder) head() (major byte, arg uint64, err error) {
 	return 0, 0, fmt.Errorf("cbor: reserved additional info %d", info)
 }
 
-// count checks a length or element count against the bytes left: every
-// element takes at least one byte.
 func (d *cborDecoder) count(n uint64) (int, error) {
 	if n > uint64(len(d.b)-d.off) {
 		return 0, errCBORTruncated

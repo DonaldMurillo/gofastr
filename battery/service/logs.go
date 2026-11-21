@@ -12,17 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// maxLogSize is where the daemon trims its own log at start. launchd
-// and the Windows path append to one file forever; journald rotates on
-// its own.
 const maxLogSize = 10 << 20
 
-// trimLog keeps one generation: when path is over maxLogSize it is
-// its last maxLogSize bytes are copied to path.1 and it is truncated in
-// place. Copy-then-truncate, not
-// rename, because launchd opened the file before the daemon ran and
-// keeps writing through that descriptor (O_APPEND lands at the new
-// end).
 func trimLog(path string) error {
 	fi, err := os.Stat(path)
 	if err != nil || fi.Size() <= maxLogSize {
@@ -43,14 +34,8 @@ func trimLog(path string) error {
 	return os.Truncate(path, 0)
 }
 
-// tailBytes bounds how much of the log `logs` reads to find the last
-// lines.
 const tailBytes = 1 << 20
 
-// tailFile prints the last n lines of path to w and, with follow,
-// keeps printing what is appended (starting over after a trim).
-// Control bytes are stripped: a log line is data from requests and
-// must not drive the terminal.
 func tailFile(w io.Writer, path string, n int, follow bool) error {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -60,7 +45,7 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 	if err != nil {
 		return fmt.Errorf("service: open log: %w", err)
 	}
-	defer func() { f.Close() }() // follow may swap f for a recreated log
+	defer func() { f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -72,7 +57,7 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 	}
 	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
 	if start > 0 && len(lines) > 0 {
-		lines = lines[1:] // first line is cut mid-way
+		lines = lines[1:]
 	}
 	if n > 0 && len(lines) > n {
 		lines = lines[len(lines)-n:]
@@ -91,9 +76,6 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 		if err != nil {
 			continue
 		}
-		// The path names another file (the log was removed and written
-		// anew, by uninstall --purge and a reinstall): follow the new
-		// one from its start, never the deleted one.
 		if !os.SameFile(cur, fi) {
 			nf, err := os.Open(path)
 			if err != nil {

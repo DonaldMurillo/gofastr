@@ -1,0 +1,21 @@
+primitive: auth.policy
+summary: SessionPolicy and RolePolicy for core-ui screens, and the framework/owner extractor the battery installs.
+code:
+  - battery/auth/policy.go
+  - battery/auth/owner.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: policies-are-session-only
+    rule: SessionPolicy and RolePolicy fail an API-token caller; RolePolicy fails a caller the Decider denies and one holding none of its roles.
+    enforced_by:
+      - test: battery/auth.TestRequireSessionRedRefusesBearer
+      - test: battery/auth.TestRolePolicyRedHonorsDecider
+      - test: battery/auth.TestRolePolicy_BlocksMissingRole
+  - id: failure-outcome
+    rule: A failed policy renders the alt component if set, else redirects (appending ?next= with the escaped request path and noting a session refusal), else blocks with the status.
+    enforced_by:
+      - test: battery/auth.TestPolicyOptionPrecedenceAltFirst
+      - test: battery/auth.TestSessionPolicy_RedirectsAnonWithNextPath
+      - test: battery/auth.TestSessionPolicy_NextPathEdgeCases
+      - test: battery/auth.TestCrossSiteArrivalHopsOnlyOnSessionPolicyRedirects

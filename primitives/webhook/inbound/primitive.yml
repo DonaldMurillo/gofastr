@@ -1,0 +1,77 @@
+primitive: webhook.inbound
+summary: Inbound ingestion - IngestHandler, the verifiers, ProcessInbound's envelope lifecycle, and the memory and SQL InboundStores.
+code:
+  - battery/webhook/inbound.go
+  - battery/webhook/inbound_memory.go
+  - battery/webhook/inbound_sql.go
+docs:
+  - framework/docs/content/webhooks.md
+twins:
+  - job: Mark an envelope processing while consuming one attempt, and settle it without regressing a processed envelope.
+    why: MemoryInboundStore checks the status under its mutex while SQLInboundStore puts the same fence in the UPDATE's WHERE clause; isTerminalInboundStatus is the one rule both read, and the parity tests run both stores.
+    sites:
+      - path: battery/webhook/inbound_memory.go
+        note: MarkEnvelopeProcessing and UpdateEnvelope.
+      - path: battery/webhook/inbound_sql.go
+        note: MarkEnvelopeProcessing and UpdateEnvelope.
+invariants:
+  - id: verify-before-persist
+    rule: IngestHandler caps the body at MaxBodyBytes (413 past it) and verifies before anything persists, answering a failed check 401 with a generic body.
+    enforced_by:
+      - test: battery/webhook.TestIngest_BadSignature_401_NoPersist
+      - test: battery/webhook.TestIngest_OversizeBody_413
+  - id: post-answers-are-no-store
+    rule: IngestHandler stamps Cache-Control no-store on every answer to a POST, refusals included.
+    enforced_by:
+      - test: battery/webhook.TestIngest_HappyPath
+      - test: battery/webhook.TestIngest_BadSignature_401_NoPersist
+  - id: unstorable-key-or-owner-refused
+    rule: IngestHandler answers 400 to a dedupe key or owner that is not storable text, before anything persists.
+    enforced_by:
+      - test: battery/webhook.TestIngestUnstorableDedupeKeyAndOwnerRefused
+  - id: seen-key-is-acked
+    rule: A request whose dedupe key was already registered for its source is answered 200 without persisting or enqueuing again.
+    enforced_by:
+      - test: battery/webhook.TestIngest_Dedupe_SecondGets200
+      - test: battery/webhook.TestIngest_QueueNil_Dedupes
+  - id: dedupe-key-registers-after-enqueue
+    rule: With a Queue the dedupe key is registered only after the enqueue succeeds, through RegisterDedupeKey when the store has it, so an envelope that never reached the queue cannot ack the sender's retry.
+    enforced_by:
+      - test: battery/webhook.TestIngest_RedeliveryAfterEnqueueFailure
+      - test: battery/webhook.TestRedeliverySurvivesFailedCleanup
+      - test: battery/webhook.TestDedupeKeyRegistersAfterProcessed
+  - id: only-allowlisted-headers-persist
+    rule: An envelope stores only the headers KeepHeaders names.
+    enforced_by:
+      - test: battery/webhook.TestIngest_HappyPath
+  - id: processed-envelope-is-not-rerun
+    rule: ProcessInbound acks a job whose envelope is processed or no longer admitted without running the handler, and both stores refuse to mark a processed envelope processing or consume an attempt for it.
+    enforced_by:
+      - test: battery/webhook.TestProcessedEnvelopeSkipsHandler
+      - test: battery/webhook.TestDeletedEnvelopeSkipsHandler
+      - test: battery/webhook.TestProcessingClaimSkipsAProcessedEnvelopeOnEveryStore
+  - id: stale-envelope-settle-is-fenced
+    rule: A failed settle never overwrites a processed envelope on either store.
+    enforced_by:
+      - test: battery/webhook.TestInboundRedStaleSettleFenced
+  - id: outcome-outlives-cancellation
+    rule: ProcessInbound writes the handler's outcome on a context detached from the job's, bounded by settleTimeout, and logs a lost failed write.
+    enforced_by:
+      - test: battery/webhook.TestInboundOutcomeSurvivesCancel
+      - test: battery/webhook.TestProcessInbound_FailedStateUpdateLogged
+decisions:
+  - id: no-unique-dedupe-constraint
+    date: 2026-11-20
+    status: accepted
+    decision: The inbound table indexes (source, dedupe_key) without a unique constraint, so two concurrent first deliveries can both persist.
+    rejected:
+      - option: A unique constraint on (source, dedupe_key).
+        why: The key is registered only after the enqueue, and a failed enqueue's envelope must stay without one; at-least-once is the documented contract.
+    upholds: [dedupe-key-registers-after-enqueue]
+  - id: hmac-verifier-has-no-replay-window
+    date: 2026-11-20
+    status: accepted
+    decision: HMACSHA256Verifier checks the GitHub-style body signature alone, and a replay is caught by the dedupe key.
+    rejected:
+      - option: Require a timestamp header.
+        why: GitHub-style senders sign the body only, so the verifier could not accept them.

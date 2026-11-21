@@ -1,0 +1,18 @@
+primitive: sitesearch.extract
+summary: Extract, which reads a rendered page's main content into sections, skipping chrome, hidden content and pages marked noindex.
+code:
+  - battery/sitesearch/extract.go
+docs:
+  - framework/docs/content/site-search.md
+invariants:
+  - id: hidden-and-ignored-stay-out
+    rule: Text under a hidden, inert, popover, aria-hidden or data-search-ignore element, or the page chrome, never reaches the index, nor does a hidden main.
+    enforced_by:
+      - test: battery/sitesearch.TestExtractSkipsChrome
+      - test: battery/sitesearch.TestExtractSkipsHiddenMain
+  - id: robots-noindex-drops-the-page
+    rule: A page's own robots noindex or none drops it, and a robots tag inside a data-search-ignore subtree does not.
+    enforced_by:
+      - test: battery/sitesearch.TestExtractRobotsNoneDrops
+      - test: battery/sitesearch.TestExtractIgnoredNoindexKeepsPage
+      - test: battery/sitesearch.TestExtractNoindex

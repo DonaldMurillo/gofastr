@@ -1,0 +1,47 @@
+primitive: desktop.shell
+summary: The Shell and Window contract every platform package implements, the unsupported shell, the shell's own words and the dialog-input checks every shell runs first.
+code:
+  - battery/desktop/shell.go
+  - battery/desktop/shell_default.go
+  - battery/desktop/shell_text.go
+  - battery/desktop/dialog_input.go
+  - battery/desktop/phrases.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A change to the Shell, Window or NativeDriver interface lands in every platform package (macos, windows, linux), the unsupported shell and desktoptest's fake in the same commit.
+invariants:
+  - id: shell-threading-contract
+    rule: A Shell's Run owns the UI thread, blocks until the window closes or Quit, and calls ready exactly once on the UI thread; Quit is safe before Run and after it returns; every other Shell and Window method is safe from any goroutine and hops to the UI thread itself without blocking it.
+    judge: Does this change make a Shell or Window method other than Run block the UI thread, call ready more than once, or touch toolkit state off the UI thread?
+    applies:
+      - battery/desktop/macos/*.go
+      - battery/desktop/windows/*.go
+      - battery/desktop/linux/*.go
+  - id: cancelled-dialog-is-errcancelled
+    rule: A dialog or prompt whose context is cancelled resolves to ErrCancelled or an error, never a hang.
+    judge: Does this change add a native dialog or prompt that ignores its context's cancellation?
+    applies:
+      - battery/desktop/macos/*.go
+      - battery/desktop/windows/*.go
+      - battery/desktop/linux/*.go
+  - id: unsupported-shell-names-the-platform
+    rule: Every method of the unsupported shell that does native work returns an unsupported *Error naming GOOS and GOARCH, and its Main runs fn inline.
+    enforced_by:
+      - test: battery/desktop.TestDefaultShellUnsupportedNamesPlatform
+  - id: shell-words-follow-preferred-language
+    rule: ShellContext picks the first of the OS's preferred languages the app's catalog has, else the environment's locale, and attaches the default translator.
+    enforced_by:
+      - test: battery/desktop.TestShellContextPicksPreferredLanguage
+  - id: dialog-input-checked-the-same-everywhere
+    rule: CheckFileDialog refuses a filter name or default name that is not NativeText (valid UTF-8 with no NUL) and a default name holding / or \, and FilterPatterns maps png and .png to *.png, * and no extensions to *, and refuses an empty extension or one holding a path separator, a glob character or ;.
+    enforced_by:
+      - test: battery/desktop.TestFilterPatternsForms
+      - test: battery/desktop.TestCheckFileDialogRefuses
+  - id: shells-check-dialog-input-first
+    rule: Every platform shell passes dialog options through desktop.CheckFileDialog before handing them to the OS, so a page gets the same answer for the same input on every OS.
+    judge: Does this change open a native file dialog without first running its filters and default name through desktop.CheckFileDialog?
+    applies:
+      - battery/desktop/macos/shell_darwin_caps.go
+      - battery/desktop/windows/caps_windows.go
+      - battery/desktop/linux/caps_linux.go

@@ -1,15 +1,4 @@
-// Package authui draws battery/auth's own screens with the design
-// system: the magic-link confirmation and the same-site hop a cross-site
-// OAuth link callback or verification link lands on. Both render as a
-// ui.AuthCard through a UIHost, so they carry the app's layout, theme
-// and runtime like every other page.
-//
-//	host := uihost.New(site)
-//	mgr := auth.New(auth.AuthConfig{..., Pages: authui.Pages(host)})
-//
-// battery/auth does not import this package: an API-only app that uses
-// auth keeps the plain built-in documents and never links the design
-// system.
+// Package authui draws battery/auth's magic-link confirmation and same-site hop as ui.AuthCard pages through a UIHost.
 package authui
 
 import (
@@ -44,8 +33,6 @@ func (p pages) Hop(w http.ResponseWriter, r *http.Request, d auth.HopPageData) {
 	p.host.RenderScreen(w, r, hopScreen{d: d}, uihost.ScreenResponse{})
 }
 
-// confirmScreen asks the user to confirm the sign-in a magic link
-// opened. Its form posts the token back; nothing signs in on the GET.
 type confirmScreen struct {
 	component.ContextOnly
 	d auth.ConfirmPageData
@@ -55,16 +42,12 @@ func (s confirmScreen) ScreenTitle(context.Context) string { return s.d.Words.Ti
 
 func (s confirmScreen) RenderCtx(ctx context.Context) render.HTML {
 	fields := []render.HTML{html.Input(html.InputConfig{Type: "hidden", Name: "token", Value: s.d.Token})}
-	// ui.Form stamps the CSRF input itself when the middleware put a
-	// token on ctx. The battery read the cookie instead when it did not,
-	// and that field has to ride the form, or the only button 403s.
 	if middleware.TokenFromContext(ctx) == "" && s.d.CSRFField != "" {
 		fields = append(fields, render.HTML(s.d.CSRFField))
 	}
 	return ui.AuthCard(ui.AuthCardConfig{
 		Title: s.d.Words.Title,
 		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
-			// Ask is escaped already, the address inside it included.
 			html.Paragraph(html.TextConfig{}, render.HTML(s.d.Words.Ask)),
 			html.Paragraph(html.TextConfig{}, render.Text(s.d.Words.Warning)),
 			ui.Form(ui.FormConfig{
@@ -78,8 +61,6 @@ func (s confirmScreen) RenderCtx(ctx context.Context) render.HTML {
 	})
 }
 
-// hopScreen is what a cross-site arrival sees for a moment while the
-// battery's Refresh header loads the same URL again from this origin.
 type hopScreen struct {
 	component.ContextOnly
 	d auth.HopPageData

@@ -7,8 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// withheldCookieArrival reports a top-level page load that began on
-// another site and carried no session cookie: a Strict one is withheld there.
 func withheldCookieArrival(r *http.Request, cookie string) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -18,8 +16,6 @@ func withheldCookieArrival(r *http.Request, cookie string) bool {
 		h.Get("Sec-Fetch-Dest") == "document" && len(r.CookiesNamed(cookie)) == 0
 }
 
-// arrivalHopWriter answers a withheld-cookie arrival's 401, or a
-// redirect a gate noted (handler.NoteSessionRefusal), with the hop page.
 type arrivalHopWriter struct {
 	http.ResponseWriter
 	r       *http.Request

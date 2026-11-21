@@ -1,0 +1,31 @@
+primitive: log.file
+summary: The rotating file sink, its default per-app path, and the file tail the MCP tools read history through.
+code:
+  - battery/log/file.go
+  - battery/log/file_unix.go
+  - battery/log/file_windows.go
+  - battery/log/tail.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: file-is-owner-only-and-no-symlink
+    rule: The log file is created 0600 by default, its new parents 0700, and a symlink at the path is refused.
+    enforced_by:
+      - test: battery/log.TestFileSinkDefaultModeIs0o600
+      - test: battery/log.TestFileSinkParentDirDefaultModeIs0o700
+      - test: battery/log.TestFileSinkRefusesSymlink
+      - test: battery/log.TestTailFileRejectsSymlinkPath
+  - id: rotation-owns-canonical-backups
+    rule: Rotation shifts only backups whose suffix is a canonical positive decimal and drops those past MaxBackups.
+    enforced_by:
+      - test: battery/log.TestRotationTreatsZeroPaddedBackupsAsForeign
+      - test: battery/log.TestFileSinkRespectsMaxBackups
+  - id: existing-file-tightened-never-loosened
+    rule: Opening an existing log file the process owns narrows its mode to the bits both it and FileMode allow, never widens it, and leaves a file another user owns as it is.
+    enforced_by:
+      - test: battery/log.TestFileSinkTightensExistingLooseFile
+      - test: battery/log.TestFileSinkLeavesSharedLogFileMode
+  - id: entries-flushed-and-rotated-first
+    rule: Write flushes each entry to the file before it returns, and rotates before an entry that would take a non-empty file past MaxSize, not after.
+    enforced_by:
+      - test: battery/log.TestFileSinkFlushesAndRotatesBeforeWrite

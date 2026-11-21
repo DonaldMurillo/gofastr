@@ -14,16 +14,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// loginPageMaxAge is how long a spent sign-in page may sit in the
-// login directory before the next `open` deletes it. Its token died
-// after 60 seconds; the file is only clutter by then.
 const loginPageMaxAge = 5 * time.Minute
 
-// openWith asks the daemon of layout l for a sign-in token and opens
-// the browser on it. The token travels inside a 0600 page that POSTs
-// it, so it never appears in argv (visible to every local user in
-// `ps`), the browser's history, or a Referer. With print, it prints a
-// one-shot URL instead, which Config.InsecureTokenInURL must allow.
 func (b *Battery) openWith(l layout, print bool) error {
 	if print && !b.cfg.InsecureTokenInURL {
 		return errors.New("service: --print needs Config.InsecureTokenInURL: a token in a URL leaks through argv and browser history")
@@ -66,7 +58,6 @@ func (b *Battery) openWith(l layout, print bool) error {
 	return nil
 }
 
-// removeStalePages deletes sign-in pages older than loginPageMaxAge.
 func removeStalePages(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -83,9 +74,6 @@ func removeStalePages(dir string) {
 	}
 }
 
-// launchBrowser opens path in the user's default browser. On macOS a
-// bare `open file.html` follows the .html file association, which on
-// many machines is an editor; `open -b` names the browser instead.
 func (b *Battery) launchBrowser(path string) error {
 	switch currentOS {
 	case "darwin":
@@ -100,15 +88,8 @@ func (b *Battery) launchBrowser(path string) error {
 	}
 }
 
-// launchServicesPrefs is the per-user LaunchServices store, relative to
-// the home directory: the handler the user picked for each URL scheme.
 const launchServicesPrefs = "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
 
-// defaultBrowser is the bundle id of the macOS handler for http URLs,
-// read from the LaunchServices store with plutil. No store, or no http
-// entry in it, means the system default, Safari. "" (fall back to a
-// bare open) when the store cannot be read or names something that is
-// not a bundle id.
 func (b *Battery) defaultBrowser() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -140,6 +121,4 @@ func (b *Battery) defaultBrowser() string {
 	return "com.apple.Safari"
 }
 
-// bundleID is a reverse-DNS bundle identifier; anything else is not
-// passed to `open -b`.
 var bundleID = regexp.MustCompile(`^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)

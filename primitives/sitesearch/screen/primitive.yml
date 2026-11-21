@@ -1,0 +1,15 @@
+primitive: sitesearch.screen
+summary: The search results page, built from framework/ui components, which works through a GET form without script.
+code:
+  - battery/sitesearch/screen.go
+docs:
+  - framework/docs/content/site-search.md
+invariants:
+  - id: page-param-bounded
+    rule: The page parameter is capped at maxPage, so the offset it makes cannot overflow.
+    enforced_by:
+      - test: battery/sitesearch.TestScreenPages
+  - id: screen-path-is-absolute
+    rule: ScreenPath panics on a path that does not start with a slash.
+    enforced_by:
+      - test: battery/sitesearch.TestScreenPathRefusesRelative

@@ -11,12 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 )
 
-// The dynamic-loader surface: the only symbols this package imports
-// at link time. Everything else in AppKit, WebKit, and libobjc is
-// looked up at runtime with dlopen/dlsym, the same shape
-// golang.org/x/sys uses for libSystem (see their
-// syscall_darwin_libSystem.go and zsyscall_darwin_arm64.s).
-
 var (
 	libc_dlopen_trampoline_addr       uintptr
 	libc_dlsym_trampoline_addr        uintptr
@@ -30,17 +24,11 @@ var (
 //go:cgo_import_dynamic libc_pthread_self pthread_self "/usr/lib/libSystem.B.dylib"
 
 const (
-	rtldNow    = 2 // RTLD_NOW
-	rtldGlobal = 8 // RTLD_GLOBAL: expose to dlsym(RTLD_DEFAULT)
-	// RTLD_DEFAULT on darwin is (void*)-2; as a uintptr that is ^1.
+	rtldNow     = 2 // RTLD_NOW
+	rtldGlobal  = 8 // RTLD_GLOBAL: expose to dlsym(RTLD_DEFAULT)
 	rtldDefault = ^uintptr(1)
 )
 
-// dlopenCount counts successful Dlopen calls. The lazy-init test in
-// battery/desktop reads it through DlopenCount to prove that merely
-// importing this package (as cmd/gofastr does, through the desktop
-// battery) loads no framework: the count must still be zero after
-// package init.
 var dlopenCount atomic.Int64
 
 // DlopenCount returns the number of successful dlopen calls so far.
@@ -61,10 +49,7 @@ func Dlopen(path string, mode int) (uintptr, error) {
 	return r1, nil
 }
 
-// DlopenGlobal loads a dynamic library with RTLD_NOW|RTLD_GLOBAL,
-// exposing its symbols (and Objective-C classes) process-wide. This
-// is the lazy-loading wrapper shells use for optional frameworks
-// (UniformTypeIdentifiers, UserNotifications) that may be absent.
+// DlopenGlobal loads a dynamic library with RTLD_NOW|RTLD_GLOBAL, exposing its symbols (and Objective-C classes) process-wide.
 func DlopenGlobal(path string) (uintptr, error) {
 	return Dlopen(path, rtldNow|rtldGlobal)
 }
@@ -98,17 +83,9 @@ func PthreadSelf() uintptr {
 	return r1
 }
 
-// frameworksOnce guards the one-time framework load.
 var frameworksOnce sync.Once
 
-// OpenFrameworks dlopens AppKit, WebKit, and libobjc with
-// RTLD_NOW|RTLD_GLOBAL. It MUST be called on the main thread: a
-// dlopen runs the image's static initializers (+load methods) on the
-// calling thread, and AppKit requires that to be the main one. The
-// desktop shell's Run is the only caller; everything before it
-// (package import, shell construction, ensureRuntime) loads nothing,
-// which is what keeps cmd/gofastr's blank import of the battery from
-// touching AppKit.
+// OpenFrameworks dlopens AppKit, WebKit, and libobjc with RTLD_NOW|RTLD_GLOBAL.
 func OpenFrameworks() {
 	AssertMainThread("OpenFrameworks")
 	frameworksOnce.Do(func() {

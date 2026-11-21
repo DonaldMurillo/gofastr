@@ -210,3 +210,23 @@ func TestSQLStore_UnsafeTableRejected(t *testing.T) {
 		t.Fatal("expected unsafe deliveries table to be rejected")
 	}
 }
+
+func TestSQLStoreCorruptColumnsAreErrors(t *testing.T) {
+	db, s := openSQLStore(t)
+	ctx := context.Background()
+	sub := Subscriber{ID: "sub-1", URL: "https://example.com/hook", Secret: "topsecret", Events: []string{"*"}, Active: true}
+	if err := s.AddSubscriber(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	for col, bad := range map[string]string{"auth": "not json", "events": "not json"} {
+		if _, err := db.Exec(`UPDATE webhook_subscribers SET `+col+` = ?`, bad); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.GetSubscriber(ctx, "sub-1"); err == nil {
+			t.Errorf("a corrupt %s column read back as a subscriber", col)
+		}
+		if err := s.AddSubscriber(ctx, sub); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

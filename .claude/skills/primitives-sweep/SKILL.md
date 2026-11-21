@@ -23,6 +23,12 @@ The order of work across packages is in `primitives/PLAN.md`.
 - Directives: `//go:`, `//gofastr:allow(...)` with its reason,
   `//gofastr:test-reads`, `//gofastr:generated`, build tags, `// Output:`
   in examples, licence headers. Leave these exactly as they are.
+- Markers a tool reads, with their reason: `// best-effort:`,
+  `// safe-sql:`, `// safe-html:`, `// reporting-query:`,
+  `// not-a-secret:`, `// nosecret:`, `// allow-skip:`,
+  `// csrf-exempt:` and `// check-csp:ignore-file`. `gofastr verify`,
+  `make csp-check` and `make secret-scan` fail without them; run all three
+  before calling a sweep done.
 - Doc comments on exported identifiers. These are kept but may be
   trimmed: cut one down to the contract (what it does, what it returns,
   when it errors) and move the history out.

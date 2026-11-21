@@ -10,12 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Account represents one linked OAuth provider for a user. The optional
-// profile fields are populated when the store implements
-// OAuthEnrichedLinker, useful for rendering "you're connected to
-// Google as alice@example.com (Alice, 📸)" in a settings UI. Stores
-// that only implement OAuthLinker continue to return the minimum
-// (Provider + ProviderID), the rest stay empty.
+// Account is one OAuth identity linked to a user; the profile fields are set when the store keeps them.
 type Account struct {
 	Provider   string     `json:"provider"`
 	ProviderID string     `json:"providerId"`
@@ -25,43 +20,29 @@ type Account struct {
 	LinkedAt   *time.Time `json:"linkedAt,omitempty"`
 }
 
-// OAuthAccountProfile is the optional profile payload an
-// OAuthEnrichedLinker receives at link time. Mirrors the subset of
-// OAuth2UserInfo that's worth surfacing in a UI later.
+// OAuthAccountProfile is the profile an OAuthEnrichedLinker stores with a link.
 type OAuthAccountProfile struct {
 	Email     string
 	Name      string
 	AvatarURL string
 }
 
-// OAuthEnrichedLinker is the optional UserStore extension that accepts
-// profile metadata at link time so AccountLister can return it later.
-// Stores that implement this interface get the OAuth handler's full
-// FetchUserInfo payload; stores that only implement OAuthLinker get
-// just (provider, providerID) and the rest is dropped.
+// OAuthEnrichedLinker is the UserStore extension that stores a profile with each link.
 type OAuthEnrichedLinker interface {
 	LinkOAuthEnriched(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error
 }
 
-// OAuthProfileRefresher is the optional UserStore extension that updates
-// the profile of an existing (provider, providerID) link to userID and
-// never creates one. A returning OAuth sign-in refreshes the profile
-// through it. It must not insert: an account claim can remove the link
-// between the sign-in's lookup and its refresh, and an upsert there puts
-// back the binding the claim removed. A store without it keeps the
-// profile from link time.
+// OAuthProfileRefresher updates the profile of an existing link to userID and never creates one.
 type OAuthProfileRefresher interface {
 	RefreshOAuthProfile(ctx context.Context, userID, provider, providerID string, profile OAuthAccountProfile) error
 }
 
-// AccountLister is the optional UserStore extension that returns the
-// linked OAuth accounts for a user. Required by AccountsPlugin.
+// AccountLister returns a user's linked identities; AccountsPlugin requires it.
 type AccountLister interface {
 	ListAccounts(ctx context.Context, userID string) ([]Account, error)
 }
 
-// AccountUnlinker is the optional UserStore extension that removes a
-// link. Required by AccountsPlugin's unlink endpoint.
+// AccountUnlinker removes a link; AccountsPlugin's unlink requires it.
 type AccountUnlinker interface {
 	UnlinkOAuth(ctx context.Context, userID, provider string) error
 }
@@ -72,57 +53,29 @@ type UnlinkOutcome int
 const (
 	// UnlinkNotLinked: the user has no link for the provider.
 	UnlinkNotLinked UnlinkOutcome = iota
-	// UnlinkRefusedLast: removing the link would leave the user with no
-	// way to log in (no other link, no password).
+	// UnlinkRefusedLast: the link is the user's last login method.
 	UnlinkRefusedLast
 	// UnlinkRemoved: the link was deleted.
 	UnlinkRemoved
 )
 
-// AtomicUnlinker is the optional UserStore extension that decides and
-// applies the last-credential guard in ONE store operation, so the
-// refuse-the-last invariant holds when two unlinks race: each call
-// re-counts the remaining login methods inside the same lock or
-// statement that performs the delete, and exactly one of two concurrent
-// unlinks of a two-method account can win.
-//
-// Stores that cannot offer this keep the handler's check-then-act
-// fallback (ListAccounts → HasPassword → UnlinkOAuth), which pins the
-// invariant per request but not across concurrent requests.
+// AtomicUnlinker applies the last-login-method guard and the delete in one store operation.
 type AtomicUnlinker interface {
-	// UnlinkOAuthGuarded removes the provider link for userID unless
-	// that would leave the user with no login method (no remaining
-	// links, no password). The password signal is the store's own
-	// (EntityUserStore reads its password_set column), so the guard and
-	// the delete observe the same state.
+	// UnlinkOAuthGuarded removes the link unless it is userID's last login method, reporting the outcome.
 	UnlinkOAuthGuarded(ctx context.Context, userID, provider string) (UnlinkOutcome, error)
 }
 
-// PasswordChecker is the optional UserStore extension that reports whether
-// a user has a real password set (vs the placeholder hash used by OAuth /
-// magic-link auto-created accounts). The unlink guard uses it to refuse an
-// unlink that would leave the user with no way to log in. Stores that do
-// not implement it fall back to the conservative links-only check.
+// PasswordChecker reports whether a user has a real password, not the placeholder.
 type PasswordChecker interface {
 	HasPassword(ctx context.Context, userID string) (bool, error)
 }
 
-// OAuthUserCreator is the optional UserStore extension that creates a
-// user known to have NO password (OAuth or magic-link auto-create). The
-// store is responsible for recording that fact so a subsequent
-// HasPassword call returns false. Stores that don't implement it get the
-// legacy "CreateUser with placeholder hash" path, which is functional
-// but cannot distinguish password-set from placeholder-only users.
+// OAuthUserCreator creates a user recorded as having no password.
 type OAuthUserCreator interface {
 	CreateUserNoPassword(ctx context.Context, email string, roles []string) (User, error)
 }
 
-// ─── AccountsPlugin ─────────────────────────────────────────────────────────
-
 // AccountsPlugin provides:
-//   - GET    /auth/accounts          → list linked OAuth providers.
-//   - DELETE /auth/unlink/{provider} → remove a link, refusing if it
-//     would leave the user without any way to log in (last credential).
 type AccountsPlugin struct {
 	mgr *AuthManager
 }
@@ -147,9 +100,6 @@ func (p *AccountsPlugin) requireUserID(w http.ResponseWriter, r *http.Request) (
 	if rejectInProcessAccountOperation(w, r) {
 		return "", false
 	}
-	// Bound to the context principal when there is one: unlinking a
-	// provider from the account behind some other cookie on the request
-	// would act on a user the request is not running as.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
@@ -177,8 +127,6 @@ func (p *AccountsPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonListAccountsFailed)
 		return
 	}
-	// Per-caller linked-provider inventory: the same session-scoped,
-	// cache-replayable recon shape as /auth/tokens and /auth/me.
 	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"accounts": accts})
@@ -194,9 +142,6 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusBadRequest, reasonProviderRequired)
 		return
 	}
-	// router.Param cuts a NUL but keeps invalid UTF-8, which Postgres
-	// refuses in a text bind (22021, a 500). No account is linked under
-	// a name that cannot be stored.
 	if !textsafe.Storable(provider) {
 		writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
 		return
@@ -209,12 +154,6 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Atomic path: when the store can decide and delete in one
-	// operation, use it — the check-then-act shape below cannot hold
-	// the refuse-the-last invariant under concurrent unlinks (two
-	// racing DELETEs of a two-method OAuth-only account both counted
-	// two links, so both succeeded and stripped the account to zero
-	// login methods).
 	if atomicUnlinker, ok := p.mgr.UserStore().(AtomicUnlinker); ok {
 		outcome, err := atomicUnlinker.UnlinkOAuthGuarded(r.Context(), userID, provider)
 		if err != nil {
@@ -244,9 +183,6 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Legacy fallback (store without AtomicUnlinker): the same last-
-	// credential guard as above, but as separate store round-trips, so
-	// the invariant holds per request, not across concurrent ones.
 	accts, err := lister.ListAccounts(r.Context(), userID)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonListAccountsFailed)
@@ -298,18 +234,6 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"unlinked": provider})
 }
 
-// revokeProviderTokens drops the OAuthTokenStore row for (userID,
-// provider) after a successful unlink. The stored access/refresh token is
-// a password-equivalent for the provider API; unlink is the user's "this
-// app no longer acts as me at {provider}" action, so leaving the row
-// behind keeps a revoked delegation's credential alive. The store is the
-// OAuth2 plugin's (OAuth2Config.TokenStore) — a wiring without the
-// OAuth2 plugin, or with no TokenStore configured, never persisted
-// provider tokens, so there is nothing to revoke and this is a no-op.
-// writeNotLinked answers an unlink of a provider the user has no link
-// to. An earlier unlink may have removed the link and then failed to
-// drop the stored tokens; that 500 is retried here, and this is the only
-// path that can still reach them, so the tokens are dropped first.
 func (p *AccountsPlugin) writeNotLinked(w http.ResponseWriter, r *http.Request, userID, provider string) {
 	if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkRevokeFailed)

@@ -31,3 +31,24 @@ func TestOpenWALTightensExistingFile(t *testing.T) {
 		t.Fatalf("WAL mode = %o, want 0600", got)
 	}
 }
+
+func TestPersistDirsAreOwnerOnly(t *testing.T) {
+	root := t.TempDir()
+	w, err := openWAL(filepath.Join(root, "wal", "index.wal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.f.Close()
+	if err := NewFlatStore(3, "m").Snapshot(filepath.Join(root, "snap", "store.snap")); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"wal", "snap"} {
+		fi, err := os.Stat(filepath.Join(root, dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fi.Mode().Perm(); got != 0o700 {
+			t.Errorf("%s dir mode = %o, want 0700", dir, got)
+		}
+	}
+}

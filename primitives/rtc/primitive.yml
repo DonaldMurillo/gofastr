@@ -6,6 +6,26 @@ code:
 docs:
   - framework/docs/content/rtc.md
 invariants:
+  - id: authorize-is-required
+    rule: Mount, ServeHTTP and Init refuse a Signaler with no Config.Authorize.
+    enforced_by:
+      - test: battery/rtc.TestMountPanicsWithoutAuthorize
+      - test: battery/rtc.TestServeHTTPPanicsWithoutAuthorize
+      - test: battery/rtc.TestInitRefusesNilAuthorize
+  - id: signal-cap-fits-the-read-limit
+    rule: New panics when MaxSignalBytes plus the envelope does not fit the socket read limit, and on a negative cap.
+    enforced_by:
+      - test: battery/rtc.TestNewPanicsOnBadConfig
+  - id: join-fields-are-bounded
+    rule: A Join is refused unless its room is 1-128 printable ASCII bytes, role 0-32 and peer id 0-64 of the same, and user (0-128) and display name (0-64) hold no control bytes.
+    enforced_by:
+      - test: battery/rtc.TestValidJoinRefusesEachBadField
+      - test: battery/rtc.TestJoinValidationRefused
+  - id: refusal-reads-every-upgrade-line
+    rule: A refused join is a WebSocket close with code 4000 plus the status when any Upgrade field line names websocket, and a plain HTTP status otherwise.
+    enforced_by:
+      - test: battery/rtc.TestRefusalReadsEveryUpgradeLine
+      - test: battery/rtc.TestAuthorizeRefusalReachesSocket
   - id: frame-flood-closes-the-socket
     rule: Each signaling socket passes its frames through a tokenbucket.Bucket that starts full at twice MaxFramesPerSecond and refills at MaxFramesPerSecond, and the first frame the bucket refuses closes the socket.
     enforced_by:

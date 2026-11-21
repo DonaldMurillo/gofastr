@@ -28,11 +28,11 @@ type callbackArgs struct {
 	result uintptr
 }
 
-// callbackWrapFn exists so its func value's first word — the ABIInternal
-// entry point runtime.cgocallback invokes through a funcval — can be
-// loaded into callbackWrapABI for the assembly trampoline. The assembler
-// rejects the <ABIInternal> symbol suffix outside package runtime, so
-// the entry point is recovered from the func value instead.
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.index)]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.args)-8]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.args.Float)-64]
+var _ = [1]struct{}{}[unsafe.Offsetof(callbackArgs{}.result)-136]
+
 var (
 	callbackWrapFn  = callbackWrap
 	callbackWrapABI uintptr
@@ -49,11 +49,6 @@ const MaxCallbacks = 64
 var (
 	callbacksMu sync.Mutex
 	callbacks   [MaxCallbacks]func(args *Args) uintptr
-	// anyThread marks slots registered with NewCallbackAnyThread: the
-	// ThreadCheck hook is skipped for them, because their caller
-	// legitimately runs on a thread Go did not create. The runtime
-	// handles that through needm on the extra M the fake-cgo layer made
-	// it allocate at startup (proc.go:1968-1970).
 	anyThread   [MaxCallbacks]bool
 	callbackLen int
 )
@@ -62,12 +57,7 @@ var (
 // The shell uses it to assert the callback runs on the toolkit thread.
 var ThreadCheck func()
 
-// NewCallback registers fn in a fixed slot and returns the address of
-// that slot's trampoline, a C function pointer that calls fn(args) and
-// forwards its uintptr return value to the C caller. The integer and
-// float return registers both carry the result bits, so a callback
-// declared to return a double works as well as one returning a pointer.
-// It panics when all MaxCallbacks slots are used.
+// NewCallback registers fn and returns its C function pointer; it panics when every slot is used.
 func NewCallback(fn func(args *Args) uintptr) uintptr {
 	return newCallback(fn, false)
 }

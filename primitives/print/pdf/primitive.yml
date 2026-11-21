@@ -1,0 +1,34 @@
+primitive: print.pdf
+summary: The PDF route of a print document, which admits the caller, takes a battery-wide render slot and hands the shelled HTML to the configured PDFRenderer.
+code:
+  - battery/print/pdf.go
+docs:
+  - framework/docs/content/print.md
+invariants:
+  - id: no-renderer-is-501
+    rule: With no PDFRenderer configured the PDF route answers 501 Not Implemented.
+    enforced_by:
+      - test: battery/print.TestNotConfiguredReturns501
+  - id: renders-are-bounded
+    rule: At most MaxConcurrentRenders RenderPDF calls run at once across every document, default 4, and a request past the cap gets 503 with Retry-After before its Build runs.
+    enforced_by:
+      - test: battery/print.TestPDFRenderConcurrencyBounded
+  - id: access-before-render-slot
+    rule: The access policy runs before a render slot is taken, so a refused caller holds no slot and learns it was refused, not that the renderer is busy.
+    enforced_by:
+      - test: battery/print.TestPDFRefusedRequestHoldsNoRenderSlot
+      - test: battery/print.TestPDFAccessRefusalWinsOverBusy
+  - id: filename-stem-is-safe
+    rule: The PDF's Content-Disposition filename keeps only letters, digits, dot, underscore and dash from the document name and, for a route with exactly one param, that param's value.
+    enforced_by:
+      - test: battery/print.TestPDFFilenameKeepsOnlySafeBytes
+      - test: battery/print.TestPDFFilenameParamCounts
+decisions:
+  - id: busy-is-503-not-a-queue
+    date: 2026-11-20
+    status: accepted
+    decision: A PDF request past the render cap is answered 503 with Retry-After at once.
+    rejected:
+      - option: Queue it for the next free slot.
+        why: Each render in the shipped backend is a whole Chromium process, and a queue behind RequireAuth still lets a caller pile up waiting requests and their data loads.
+    upholds: [renders-are-bounded]

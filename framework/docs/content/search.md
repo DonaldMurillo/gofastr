@@ -118,7 +118,8 @@ matches its parts) and matches whole words, the last query term as the
 start of a word, so `error` does not find `xerror`. Two differences
 remain: it does not stem (`pages` does not find `page`), and it also
 searches a document's string `Fields`, which the SQL backends store
-but do not index.
+but do not index. On every backend a query counts at most its first 64 distinct
+terms; the rest are dropped.
 The words themselves still differ at the edges (diacritics, symbols,
 repeated hyphens): see
 [What each backend counts as the same word](#what-each-backend-counts-as-the-same-word).

@@ -2,10 +2,6 @@ package desktop
 
 import "fmt"
 
-// profileShell is optional so existing shell implementations keep their zero
-// behavior. Preparation happens after secondary activation forwarding, but
-// before app.Start opens a listener or database. ReleaseProfile must retain a
-// native-owned lease until its users have stopped, not just until GTK returns.
 type profileShell interface {
 	PrepareProfile(appID, dataDir string) (listenAddr string, err error)
 	CommitProfile(addr string) error

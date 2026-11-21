@@ -248,6 +248,7 @@ func TestOIDCSec_DiscoveryIssuerMismatch(t *testing.T) {
 func TestOIDCSec_WeakRSAKey(t *testing.T) {
 	f := newFakeIdP(t)
 	weak := mustRSAKey(t, 1024)
+	f.rsaKey = weak
 	f.jwksFn = func(int) []map[string]any {
 		return []map[string]any{rsaJWKMap(f.rsaKID, &weak.PublicKey)}
 	}

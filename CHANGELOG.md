@@ -113,6 +113,11 @@ few lines, and link the PR or the docs page for the rest.
   Quote values meant to stay strings (for example, `default: "0x10"`) in
   existing app specs and older Pack or Kiln snapshots. See the
   [YAML migration examples](framework/docs/content/app-spec.md#yaml-subset).
+- **BREAKING - desktop: `New` panics on a relative `Config.DataDir`**, which
+  used to resolve against the working directory at launch. `Init` now
+  creates a missing `Config.DataDir` owner-only (0700) instead of failing.
+  Pass an absolute path, or leave the field empty for
+  `desktop.DataDir(Config.ID)`.
 
 ### Removed
 
@@ -784,6 +789,15 @@ few lines, and link the PR or the docs page for the rest.
   panic that reaches the tracing middleware sets it to `"panic"`, the new
   `tracing.ErrorTypePanic` constant that queue job spans use too. See
   [Observability](framework/docs/content/observability.md).
+- **battery/storage: a failed rename no longer names the temp file.** With
+  `WithTempDir` outside the base directory, a `Save` whose final rename
+  failed returned an error quoting the temp file's absolute path, which
+  the CRUD handlers echo into a 400 body. The rename error is now
+  scrubbed like every other `LocalStorage` error.
+- **semantic: every answer of `semantic.Handler` is `Cache-Control: no-store`.**
+  The 204 of `DELETE /doc` and the 404 and 405 of an unserved path or
+  method went out without it. See
+  [Semantic search](framework/docs/content/semantic-search.md#http-routes).
 - **`tracing.Job` spans carry `error.type`** like SQL, HTTP client and
   queue job spans: the error's Go type under `%w` wrappers, or
   `tracing.ErrorTypePanic` for a panic. The status still holds the

@@ -9,17 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// mailQueue delivers mail the auth handlers send off the timed path (the
-// password-reset link, the duplicate-registration notice). The handler has
-// already written its uniform answer, so the send cannot run on the
-// request; a bare goroutine per send would pile up without bound behind a
-// stalled provider and outlive shutdown. The queue bounds both: a fixed
-// worker pool reads a fixed-capacity channel, a full channel drops the
-// send rather than block the handler, every send runs under its own
-// deadline, and stop cancels the sends in flight and joins the workers.
-//
-// The zero value is not ready: build one with newMailQueue. Workers start
-// on the first enqueue, so a plugin that never mails starts none.
 type mailQueue struct {
 	name    string // log label: the plugin the mail belongs to
 	timeout time.Duration
@@ -34,9 +23,6 @@ type mailQueue struct {
 	wg      sync.WaitGroup
 }
 
-// mailJob is one queued send. ctx carries the request's values without its
-// cancellation (the client already has its answer); send gets a context
-// bounded by the queue's per-send timeout and its stop.
 type mailJob struct {
 	ctx       context.Context
 	emailHash string
@@ -58,9 +44,6 @@ func newMailQueue(name string) *mailQueue {
 	}
 }
 
-// enqueue schedules send and reports whether it was queued. It never
-// blocks: after stop, or with the queue full, the send is dropped and
-// logged by the hashed address.
 func (q *mailQueue) enqueue(requestCtx context.Context, to string, send func(ctx context.Context)) bool {
 	job := mailJob{ctx: context.WithoutCancel(requestCtx), emailHash: hashedIdentifier(to), send: send}
 	q.mu.Lock()
@@ -90,12 +73,6 @@ func (q *mailQueue) enqueue(requestCtx context.Context, to string, send func(ctx
 	return queued
 }
 
-// scrubbedNoticeSend is the queue body every email notice shares: the
-// sender is host code, so a panic is recovered and logged scrubbed
-// (textsafe.Recovered keeps control/bidi bytes of the panic value out
-// of the operator's tail — the recovercallback contract) and a send
-// failure is logged by the hashed recipient, never propagated into the
-// queue. plugin and the two messages name the notice in the log.
 func scrubbedNoticeSend(plugin, panicMsg, failMsg, to string, sender EmailSender, body string) func(context.Context) {
 	return func(ctx context.Context) {
 		defer func() {
@@ -109,9 +86,6 @@ func scrubbedNoticeSend(plugin, panicMsg, failMsg, to string, sender EmailSender
 	}
 }
 
-// stop cancels the sends in flight, closes the queue and waits for the
-// workers. ctx bounds the wait when a sender ignores cancellation. A
-// later enqueue is refused: shutdown is final.
 func (q *mailQueue) stop(ctx context.Context) error {
 	q.mu.Lock()
 	if !q.stopped {
@@ -148,10 +122,6 @@ func (q *mailQueue) work() {
 	}
 }
 
-// run calls one send under the per-send deadline, cancelled early by stop.
-// send is host code (a sender, a body template), so a panic is recovered
-// here as a backstop; the value is not logged, since a sender's panic can
-// carry the body, and a reset body is a takeover link.
 func (q *mailQueue) run(job mailJob) {
 	defer func() {
 		if recover() != nil {
