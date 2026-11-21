@@ -24,6 +24,8 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-11-20
+
 ### Added
 
 - **`schema.TimestampArg` and `yaml.BoolValue`.** `TimestampArg`
@@ -46,6 +48,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **Refreshed `README.md`, the docs site (`examples/site`), and all
+  embedded guides (`framework/docs/content/*.md`)** around the
+  barebones-to-full-stack adoption ladder, with verified API and
+  security accuracy fixes across the guide set
+  ([#879](https://github.com/DonaldMurillo/gofastr/pull/879)).
 - **BREAKING: static export refuses a route whose output file name is not
   portable,** such as one holding `:` or `?`, before writing anything,
   and names the route. Such a route used to export on Linux and macOS
