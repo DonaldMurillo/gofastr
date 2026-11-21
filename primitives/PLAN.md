@@ -190,7 +190,7 @@ roster loops, now `localMembersLocked`). One bug was fixed on the way:
 The replay eval after the sweep held every number, moving one cell at most,
 but no replay task reads `core-ui/` (`2026-11-20-replay-coreui-sweep.md`).
 
-`battery/` is swept, 25.6% to 4.5%, its tests 11.4% to 11.2%. All 38 package
+`battery/` is swept, 25.6% to 4.5%, its tests 11.4% to 11.1%. All 38 package
 directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 (before, after; a directory counts its subdirectories):
 
@@ -210,8 +210,8 @@ directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
 
 In `fakecgo`, starred, what remains is a one-line doc on each exported
 function and the package. The four groups (desktop; auth; admin, queue,
-semantic and webhook; the thirteen others) added 122 primitives, 802
-invariants (16 judged only) and 131 decisions, plus 171 tests for rules
+semantic and webhook; the thirteen others) added 122 primitives, 836
+invariants (23 judged only) and 133 decisions, plus 214 tests for rules
 that had none. Twelve batteries got their first top-level primitive
 (`desktop`, `log`, `cache`, `email`, `search`, `sitesearch`, `storage`,
 `setup`, `relay`, `print`, `notify`, `telemetry`); the seven that had one
@@ -231,7 +231,17 @@ twice, two mail-queue panic tests returned before the worker's fate was
 known, and a search test named for a clause it did not check), and two
 docs that said the opposite of the code (`search.md` on a non-string
 weighted field, webhook's `Options` on a caller's HTTP client). Every
-proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Left
+proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Review
+bots skipped the PR for its size, so four agents that did not write it
+reviewed it adversarially (hard rule 13,
+`docs/reviews/2026-11-21-battery-sweep-adversarial-review.md`): about 220
+mutations of its new invariants, of which about 45 survived, and about 40
+rules from deleted comments that nothing guarded, among them a TOTP code
+that could verify two sessions, the updater's archive checksum and a
+cached response served to an anonymous caller if the code regressed. Each
+got a test watched failing or a judged invariant; the fixes found two more
+real bugs, a temp path in a storage rename error and semantic answers
+without `no-store`. Left
 unproven on Linux: the macOS and Windows desktop rules, whose tests run
 only there, and storage's case-folded keys, whose tests skip on a case-sensitive filesystem. The replay eval after it held
 every number but `form-field-typo`, whose runs swing between one sibling
