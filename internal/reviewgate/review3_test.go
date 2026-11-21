@@ -159,8 +159,9 @@ func TestMixedLineTypesMerge(t *testing.T) {
 
 func TestFailuresNeverExitOne(t *testing.T) {
 	t.Run("codex will not start", func(t *testing.T) {
+		// Executable, so it is found; its interpreter is missing, so it cannot start.
 		script, codex, repo := setup(t, [3]string{block, block, block})
-		if err := os.Chmod(codex, 0o600); err != nil {
+		if err := os.WriteFile(codex, []byte("#!/nonexistent/interpreter\n"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		if got, out := run(t, script, codex, repo); got != 2 {
