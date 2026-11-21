@@ -1,20 +1,12 @@
 # Agent-readiness
 
-AI agents (and scanners like [isitagentready.com](https://isitagentready.com/))
-look for a small set of well-known discovery artifacts before they can use a
-site: a curated `/llms.txt`, an A2A agent card, sitemap + robots, `Link`
-response headers pointing at all of it, and markdown content negotiation.
-GoFastr already ships the *plumbing*: MCP tools, an OpenAPI spec, per-screen
-markdown docs, sitemap, robots. Getting agent-ready mostly means adding
-the *discovery* layer that makes those capabilities findable.
+One option mounts `/mcp`; one more serves `/llms.txt`, an agent card, per-screen `llm.md`, markdown content negotiation, and `.well-known` discovery. During development, `gofastr dev` also wires dev MCP tools and embedded docs for your coding agent automatically.
 
-Every piece below is **opt-in and additive**: existing robots/sitemap/openapi/
-llm.md behavior is unchanged. Turn the sane defaults on in one call, or wire
-each piece granularly.
+Every production discovery surface is opt-in and additive: enable the full bundle in one call, or wire individual options.
 
-## One-call bundle
+## One-call setup
 
-`uihost.WithAgentReady` + `framework.WithMCP` is the full agent-ready shape:
+Pair `uihost.WithAgentReady` with `framework.WithMCP` (and optionally `framework.WithMCPTools(mcptools.Register)` to expose the embedded framework docs):
 
 ```go
 package main
@@ -27,33 +19,34 @@ import (
 
 func main() {
 	site := app.NewApp("Acme")
-	// …register your screens on site…
+	// register screens on site...
 
-	host := uihost.New(site, uihost.WithAgentReady(uihost.AgentReadyConfig{
-		BaseURL: "https://example.com",
-		Title:   "Acme",
-		Summary: "Acme is a billing console. MCP tools live at /mcp.",
-		AgentCard: &uihost.AgentCardConfig{
-			Name:        "Acme Agent",
-			Description: "Operator agent for the Acme billing console.",
-			MCPEndpoint: "/mcp",
-		},
-	}))
-	// WithMCP auto-mounts /mcp (POST JSON-RPC + GET SSE) so the host
-	// doesn't hand-wire the route the agent card advertises.
+	host := uihost.New(site,
+		uihost.WithPublicLLMMD(),
+		uihost.WithAgentReady(uihost.AgentReadyConfig{
+			BaseURL: "https://example.com",
+			Title:   "Acme",
+			Summary: "Acme billing console. MCP tools live at /mcp.",
+			AgentCard: &uihost.AgentCardConfig{
+				Name:        "Acme Agent",
+				Description: "Operator agent for the Acme billing console.",
+				MCPEndpoint: "/mcp",
+			},
+		}),
+	)
+
 	fwApp := framework.NewUIHostApp(host, framework.WithMCP())
 	fwApp.Start(":8080")
 }
 ```
 
-That serves `/llms.txt`, `/.well-known/agent-card.json`, AI-bot-aware `/robots.txt`, and emits `Link`
-response headers on every HTML page. `WithPublicLLMMD` (already common) makes
-the bundle's default `/llms.txt` link the per-screen markdown index, and
-enables markdown content negotiation when `WithMarkdownNegotiation` is added.
+That mounts `/mcp` (Streamable HTTP JSON-RPC + SSE), `/llms.txt`, `/.well-known/agent-card.json`, `/.well-known/mcp.json`, AI-bot-aware `/robots.txt`, and `Link` response headers on every HTML page.
 
-## The pieces
+## Discovery & markdown surfaces
 
-### `/llms.txt`: curated markdown index  (llmstxt.org)
+### `/llms.txt` and `/llms-full.txt`
+
+Configure `/llms.txt` via `uihost.WithAgentReady` or standalone `uihost.WithLLMsTxt`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -62,7 +55,7 @@ import "github.com/DonaldMurillo/gofastr/framework/uihost"
 uihost.WithLLMsTxt("Acme", "A billing console.",
 	[]uihost.LLMsTxtSection{
 		{Title: "Docs", Links: []uihost.LLMsTxtLink{
-			{Name: "Index", URL: "/llm-pages.md", Notes: "every screen"},
+			{Name: "Pages", URL: "/llm-pages.md", Notes: "every screen"},
 			{Name: "API", URL: "/openapi.json"},
 		}},
 		{Title: "Optional", Links: []uihost.LLMsTxtLink{
@@ -71,236 +64,41 @@ uihost.WithLLMsTxt("Acme", "A billing console.",
 	})
 ```
 
-The file is markdown per the spec: an H1 title, a `>` blockquote summary, then
-one `## Section` per file-list of `- [name](url): notes`. A section titled
-`Optional` is the spec's skippable-context list. When no sections are passed
-(and the bundle is on with `WithPublicLLMMD`), a default **Docs** section links
-the app's `/llm-pages.md` index, which itself enumerates every screen and its
-per-screen `/llm.md` doc.
+- Set `WhenToUse` and `CLI` (`uihost.CLIToolConfig`) on `AgentReadyConfig` to add `## When to use` and `## CLI` sections directly in `/llms.txt`.
+- When `WithPublicLLMMD()` is active and no sections are supplied, `/llms.txt` links `/llm-pages.md` automatically (plus `## API` / `## MCP` when `OpenAPIEndpoint` / `MCPEndpoint` are set).
+- Serve a single-file full corpus at `/llms-full.txt` with `uihost.WithLLMsFullTxt(markdown)` or `AgentReadyConfig.FullText` (and link it from `Sections` so agents discover it).
 
-The bundle adds three content pieces on top of the file-list sections:
+### Per-screen `llm.md` and Markdown content negotiation
 
-- **`WhenToUse`** renders a `## When to use` section — one or two plain
-  sentences naming the best-fit use cases. This is the phrasing scanners
-  (and agents deciding whether your service fits their task) read first.
-- **`CLI`** renders a `## CLI` section with the install command in a fenced
-  code block plus a docs link, so an agent reaches for the scriptable path
-  instead of scraping the UI:
+With `uihost.WithPublicLLMMD()`, every screen serves a per-URL markdown view (`/about/llm.md`, `/products/42/llm.md`) built through the same `Load`, locale, SEO metadata, and policy chain as the HTML page. Policy-blocked routes return a metadata-free withheld doc or `404` matching the HTML status, and all page-markdown responses send `Cache-Control: private, no-store` with `Vary: Cookie`.
 
-  ```go
-  uihost.WithAgentReady(uihost.AgentReadyConfig{
-  	Title: "Acme",
-  	WhenToUse: "Reach for Acme when you need invoices issued or " +
-  		"voided programmatically.",
-  	CLI: &uihost.CLIToolConfig{
-  		Name: "acme", Install: "npm install -g @acme/cli", Docs: "/docs/cli",
-  	},
-  })
-  ```
+#### Markdown content negotiation
 
-- **Auto-links**: when `OpenAPIEndpoint` is set the index gains an `## API`
-  section linking it, and when the agent card's `MCPEndpoint` is set it gains
-  an `## MCP` section linking the endpoint and `/.well-known/mcp.json`.
-  Sections you wrote yourself win: if your `Sections` already link a path,
-  the auto-section for it is not appended.
+Add `uihost.WithMarkdownNegotiation()` (or `AgentReadyConfig.ContentNegotiation`) alongside `WithPublicLLMMD()` so any page URL serves markdown directly when a client sends `Accept: text/markdown` with weight at least as high as HTML. Both HTML and markdown variants emit `Vary: Accept` so shared caches never mix them.
 
-Setting `WhenToUse` or `CLI` alone turns `/llms.txt` on — both only render
-inside the index, so configuring one is itself the opt-in.
+Unmatched routes automatically return RFC 9457 `application/problem+json` for JSON clients, markdown recovery links for `Accept: text/markdown` (when enabled), or your HTML 404 for browsers.
 
-### `/llms-full.txt`: the full-corpus tier
+### A2A agent card & signed cards
 
-The llmstxt.org convention has two tiers: `/llms.txt` is the small index
-an agent fetches first; `/llms-full.txt` is the whole docs corpus in one
-markdown file, for agents that want everything in a single request
-instead of following links. Serve it by passing the concatenated
-markdown:
+Setting `AgentCard` serves `/.well-known/agent-card.json` (Agent2Agent v1.0 schema):
 
-```go
-uihost.WithLLMsFullTxt(fullCorpusMarkdown)
-// or, via the bundle:
-uihost.WithAgentReady(uihost.AgentReadyConfig{
-	Title:    "Acme",
-	FullText: fullCorpusMarkdown,
-})
-```
-
-The content is served verbatim as `text/plain`. Nothing links it
-automatically. Add a `Sections` entry pointing at `/llms-full.txt` so
-agents reading the index can find it. The docs site in `examples/site`
-does exactly this: its `/llms.txt` indexes every embedded framework
-doc as a raw markdown URL, and its `/llms-full.txt` is the whole
-corpus concatenated.
-
-### A2A agent card  (Agent2Agent v1.0)
-
-`/.well-known/agent-card.json` describes the agent's identity, service
-endpoint, capabilities, and skills, conforming to the A2A v1.0 AgentCard
-(camelCase JSON keys per ADR-001; `supportedInterfaces` and `skills` are
-REQUIRED and always present). The service endpoint lives in
-`supportedInterfaces[].url`. There is no top-level `url` in v1.0. When
-`MCPEndpoint` is set, that endpoint is advertised as the JSON-RPC
-interface (it genuinely speaks JSON-RPC: `initialize` and `tools/list`
-work), and a derived `mcp` skill points agents at it.
-
-| `AgentCardConfig` field | Purpose |
+| Field | Purpose |
 |---|---|
-| `Name` *(required)* | Human-readable agent name. |
-| `Description` | Short summary. |
-| `Version` | Software version; defaults `1.0.0`. |
-| `URL` | Fallback for the `supportedInterfaces[].url` when `MCPEndpoint` is unset; defaults to the resolved base URL. |
-| `MCPEndpoint` | e.g. `"/mcp"`, advertised as `supportedInterfaces[].url` (baseURL + endpoint), plus a derived `mcp` skill + a `Link: rel="service"` header. |
-| `A2AEndpoint` | e.g. `"/a2a"`, advertised as `supportedInterfaces[].url` INSTEAD of the MCP endpoint, with `streaming` + `pushNotifications` forced true. Requires the exchange the path implies: `framework.WithA2A` (see [the A2A task exchange](a2a.md)). |
-| `Streaming`, `PushNotifications` | Capability flags (default false). |
-| `SecuritySchemes` | OpenAPI-style schemes under `securitySchemes`; omitted when nil. |
-| `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
-| `SigningKeys` | Sign the card (A2A §8.4) + serve `/.well-known/jwks.json`; requires a pinned `BaseURL` — see [Signed agent cards](#signed-agent-cards-a2a-v10-84). |
+| `Name` *(required)* | Agent display name |
+| `Description`, `Version` | Summary and version (default `"1.0.0"`) |
+| `MCPEndpoint` | Advertises `/mcp` in `supportedInterfaces` + derived `mcp` skill |
+| `A2AEndpoint` | Advertises `/a2a` instead of MCP (pair with `framework.WithA2A`, see [a2a.md](a2a.md)) |
+| `DefaultInputModes`, `DefaultOutputModes` | MIME types (default `["text/plain"]`; per-skill overrides supported) |
+| `SecuritySchemes` | OpenAPI-style auth schemes |
+| `SigningKeys` | Signs the card with JWS (A2A §8.4) and publishes `/.well-known/jwks.json` |
 
-Each `AgentSkill` may override the card's MIME defaults with `InputModes`
-and `OutputModes` (`inputModes`/`outputModes` in JSON, omitted when empty).
-`App.A2ASkills()` preserves these modes, including `application/json` for
-entity skills that require a JSON data part.
+**Signed agent cards:** pass `Ed25519` or `ECDSA` (P-256/P-384/P-521) keys in `SigningKeys`. List multiple keys during rotation. Signing requires an explicit pinned `BaseURL` (panics at boot otherwise, preventing host-header spoofing on a signed card).
 
-### Signed agent cards (A2A v1.0 §8.4)
+### Robots, `Link` headers, and Organization JSON-LD
 
-Set `AgentCardConfig.SigningKeys` and the card gains a `signatures`
-array: one JWS (RFC 7515) per key, each computed over the RFC 8785
-canonical form of the card with `signatures` excluded — exactly the
-construction A2A v1.0 §8.4 specifies, so off-the-shelf A2A clients can
-verify it. The verification keys are published as a JWK Set at
-`/.well-known/jwks.json`, and each signature's protected header
-(`alg`, `typ:"JOSE"`, `kid`, `jku`) points at that endpoint.
-
-```go
-edKey := /* ed25519.PrivateKey or *ecdsa.PrivateKey (P-256/P-384/P-521) */
-uihost.WithAgentReady(uihost.AgentReadyConfig{
-    BaseURL: "https://agents.example.com",
-    AgentCard: &uihost.AgentCardConfig{
-        Name: "My Agent", MCPEndpoint: "/mcp",
-        SigningKeys: []uihost.AgentCardSigningKey{{KeyID: "2026-08", Signer: edKey}},
-    },
-})
-```
-
-| `AgentCardSigningKey` field | Purpose |
-|---|---|
-| `KeyID` | JWS `kid` + JWKS `kid`. Empty defaults to the key's RFC 7638 SHA-256 thumbprint, so one key always maps to one kid. |
-| `Signer` | `ed25519.PrivateKey` (`EdDSA`) or `*ecdsa.PrivateKey` on P-256/P-384/P-521 (`ES256`/`ES384`/`ES512`). Anything else fails the boot — the framework will not guess an algorithm for an unmodeled key type. |
-
-Rotation: list several keys. Each adds one `signatures` entry and one
-JWK, so a client that trusts any listed key keeps verifying across a
-key change; remove the old entry once clients have rotated.
-
-**Signing pins the base URL.** A signed card whose URLs derive from the
-request's `Host` header would hand an attacker a *validly signed* card
-pointing at their own host. When `SigningKeys` is set, an explicit
-`WithAgentReady{BaseURL}` (or `WithSitemap{BaseURL}`) is required;
-without one the host panics at mount instead of ever serving a
-request-derived signed card.
-
-How a client verifies: fetch the card, note each
-`signatures[].protected` header (`kid`, `jku`, `alg`), fetch the JWKS
-at `jku` over HTTPS, select the key by `kid`, delete the `signatures`
-member, canonicalize the rest with JCS (RFC 8785), and verify the
-signature over `BASE64URL(protected) "." BASE64URL(canonicalCard)` with
-the header's algorithm. A worked verifier (Node WebCrypto, sharing no
-code with the framework) lives at
-`framework/uihost/testdata/signing/verify-card.mjs`.
-
-### AI-bot-aware robots
-
-`WithAgentReady{AllowAIBots: boolPtr(true)}` augments `/robots.txt` with
-explicit per-crawler rules (GPTBot, ClaudeBot, Google-Extended, CCBot, …) so
-the site reads as agent-friendly to scanners; `false` denies them. It merges
-into the existing `WithRobots` config regardless of option order. When
-allowed, the bots are listed as consecutive `User-agent:` lines in the
-main group, so they inherit the host's `Allow`/`Disallow` rules. A
-standalone `Allow: /` group would shadow path-specific exclusions, since
-RFC 9309 applies only a crawler's most-specific group. When denied,
-each bot gets its own `Disallow: /` group.
-
-### `Link:` response headers
-
-`WithAgentReady` (or `WithAgentLinkHeaders`) emits a `Link` header on every
-HTML page advertising the configured artifacts: `rel="sitemap"`,
-`rel="llms-txt"`, `rel="agent-card"`, `rel="service"` (the MCP endpoint),
-`rel="service-desc"` (the OpenAPI spec, when `OpenAPIEndpoint` is set), and
-`rel="alternate"` type `text/markdown` (the page's `/llm.md`). Absolute URLs
-use the resolved base URL (see below).
-
-### Markdown content negotiation
-
-`WithMarkdownNegotiation()` makes any HTML page serve its markdown rendering
-when the request's `Accept` header prefers `text/markdown` (the Cloudflare
-convention). Requires `WithPublicLLMMD` so the per-screen renderers are
-available. The header must explicitly accept `text/markdown` with a positive
-quality value at least as high as HTML's. Equal weights favor the explicit
-markdown request; a wildcard or absent header alone keeps HTML.
-
-While negotiation is enabled, **both variants of a page URL — the markdown
-response *and* the HTML one — carry `Vary: Accept`**, so a shared cache keys
-on the Accept header and never replays the markdown body to a browser (or
-the HTML body to an agent). Pages on hosts without the opt-in carry no
-`Vary: Accept`, since the URL has a single representation.
-
-Page markdown is rendered for the caller, the way the HTML is: policy,
-`Load` and the signed-in session decide what it holds. So the negotiated
-markdown, `/llm-pages.md` and every screen's `llm.md` answer
-`Cache-Control: private, no-store` with `Vary: Cookie`, the headers the
-HTML page carries, and no shared cache stores one reader's doc for the
-next.
-
-The markdown answers with the status the HTML would: a page that draws
-its not-found state answers 404 in either, a page whose policy blocks
-answers the block's status over the withheld doc, and a page whose
-policy redirects answers the same 303. The per-screen `/llm.md` route is
-a catalog entry and keeps answering 200 with the withheld doc, except
-for a screen whose policy answers `decide.NotFound()` (or a static page
-whose resolver answers `ErrNotFound`), which answers 404 as an unknown
-URL does.
-
-Every page-markdown answer is per caller: the negotiated twin, the
-per-screen `/llm.md` (exact, pattern and concrete dynamic URLs) and the
-`/llm-pages.md` index all run the policy chain with the live request,
-and the per-URL ones run the page's `Load`. So they answer the way the
-HTML page does, `Cache-Control: no-store` plus `Vary: Cookie`, and a
-shared cache never replays a signed-in reader's markdown to the next
-caller. `/llms.txt` and `/llms-full.txt` run nothing per caller and keep
-`Cache-Control: no-cache`.
-
-### Agent-friendly 404s  (RFC 9457 + markdown recovery)
-
-A request that matches no route gets a 404 shaped like the client asked:
-
-- `Accept: application/json` (or `application/problem+json`) → an
-  `application/problem+json` body per RFC 9457: `{"type":"about:blank",
-  "title":"Not Found","status":404,"detail":"…"}`. This arm is always on —
-  a machine-readable error shape is error-format correctness, not an agent
-  feature. A browser-style `Accept` (`text/html,…,*/*`) still gets the HTML
-  404, custom `WithNotFoundScreen` included.
-- `Accept: text/markdown`, when markdown negotiation is enabled → a
-  `text/markdown` body with recovery links (`[Home](/)`,
-  `[Site map](/sitemap.xml)`, `[llms.txt](/llms.txt)`).
-
-The host picks the available format with the highest `Accept` weight.
-Problem JSON and Markdown must be named explicitly and have a positive
-weight. A valid `application/problem+json` range takes precedence over
-the `application/json` alias, even at `q=0`. On a tie, problem JSON wins
-over Markdown, and either wins over HTML. For example, `Accept: text/html,
-application/json;q=0.5` gets HTML. The same weight comparison applies to
-HTML and problem JSON on 405 and 500 errors.
-
-Every 404 arm carries `Vary: Accept`. Neither machine arm reflects the
-requested path back into the body — the markdown arm deliberately says
-nothing about the URL, and the problem document omits it, so a hostile path
-can never land unescaped in a machine-readable error.
-
-### Organization JSON-LD  (`WithOrganization`)
-
-Scanners (and agents doing due diligence) look for an Organization schema
-with a `contactPoint` and a `PostalAddress` to verify the business behind a
-site is real and reachable. `uihost.WithOrganization` declares it once; the
-host embeds it as an `<script type="application/ld+json">` block in every
-full page head:
+- **AI-bot robots:** `AgentReadyConfig.AllowAIBots` merges explicit crawler rules (`GPTBot`, `ClaudeBot`, `Google-Extended`, etc.) into `/robots.txt` without clobbering existing `Disallow` rules. Set `ContentSignals` to emit a `Content-Signal:` directive.
+- **`Link` headers:** `WithAgentReady` (or `WithAgentLinkHeaders`) attaches `rel="sitemap"`, `rel="llms-txt"`, `rel="agent-card"`, `rel="service"`, `rel="service-desc"`, and `rel="alternate"` (`text/markdown`) headers on HTML responses.
+- **Organization JSON-LD:** embed an `Organization` schema block in every full page `<head>` via `uihost.WithOrganization`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -309,7 +107,7 @@ import "github.com/DonaldMurillo/gofastr/framework/uihost"
 uihost.WithOrganization(uihost.OrganizationConfig{
 	Name:  "Acme Inc",
 	URL:   "https://example.com",
-	Email: "support@example.com", // and/or Phone
+	Email: "support@example.com",
 	Address: uihost.PostalAddress{
 		Street: "1 Main St", Locality: "Springfield",
 		Region: "IL", PostalCode: "62701", Country: "US",
@@ -317,403 +115,55 @@ uihost.WithOrganization(uihost.OrganizationConfig{
 })
 ```
 
-`Logo` and `SameAs` (GitHub/LinkedIn profile URLs) are optional. The JSON is
-built with `encoding/json`, so host-supplied strings are escaped and cannot
-break out of the data block; unset pieces (`contactPoint`, `address`) are
-omitted rather than emitted empty, and `ContactType` defaults to
-`"customer support"`.
+## MCP server, dev loop & auth
 
-### Per-screen `llm.md` carries the screen's SEO
+`framework.WithMCP()` mounts your app's MCP server at `/mcp` (Streamable HTTP) and serves `/.well-known/mcp.json` + MCP server cards.
 
-The per-screen `/llm.md` document (and the negotiated-markdown response)
-opens with a YAML front-matter block mirroring the same screen's HTML
-`<head>` metadata: `title`, `description`, `canonical`, `robots`,
-`og_title` / `og_description` / `og_image`, `twitter_card` /
-`twitter_title`, `hreflang` (a list), and `schema_types` (the JSON-LD
-`@type` names). The values are resolved from the same
-`ScreenSEO` bundle + per-concern interfaces (`ScreenCanonical`,
-`ScreenRobots`, `ScreenHreflangs`, `ScreenSchema`) the head renders from,
-so a crawler and an LLM see one consistent metadata set per route.
-Screens with no SEO declarations get no front-matter, and the markdown is
-unchanged. A static export writes the same front matter:
-`UIHost.LLMMDWithSEO(ctx, path, screen, doc)` turns the doc
-`app.ScreenLLMMDForPath` rendered into the served one. See
-[SEO](/docs/seo) for the per-screen interfaces.
+- **Custom tools & docs:** pass `framework.WithMCPTools(fn)` to register custom `core/mcp` tools—or `framework.WithMCPTools(mcptools.Register)` (from `framework/docs/mcptools`) to expose `framework_docs_list`, `framework_docs_get`, and `framework_docs_search`. Set server instructions with `framework.WithMCPInstructions(text)`. See [MCP server](mcp.md) for annotations, resources, and prompts.
+- **Introspection & control:** `framework.WithMCPIntrospection()` adds read-only runtime tools (`app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`, `app_unmounted`) plus the contract catalog tools (`contracts_list`, `contracts_explain`, `contracts_capabilities`). `framework.WithMCPControl()` adds `app_module_enable`/`disable` gated behind `admin` by default (customize with `framework.WithMCPControlGate`).
+- **Dev loop auto-wiring:** under `gofastr dev` (`GOFASTR_DEV`), `/mcp`, introspection, control, `contracts_verify`/`contracts_fix`, `battery/log` tools, and entity CRUD tools activate automatically on loopback listeners (`GOFASTR_DEV_MCP=0` disables; non-loopback binds refuse dev tools unless `GOFASTR_DEV_MCP_EXPOSE=1`).
 
-### Every URL gets its own doc
+### Gating MCP tools & resources
 
-Each page's llm.md is built per URL, not from one shared pattern doc:
-`GET /about/llm.md`, `GET /products/42/llm.md` (or
-`/docs/getting-started/llm.md` on a catch-all route) builds the same
-per-request instance the page render uses, the route match and its
-resolvers → `SetParams` → DI → `Load`, so the markdown carries that
-page's loaded title and rendered content, including a `Load` that reads
-a route resolver. The static exporter does the same for every exact
-route and every URL a screen's `StaticPaths` enumerates, and SPA partial
-responses carry the post-`Load` title in `X-Gofastr-Title`, so in-app
-navigation to a dynamic page updates the browser title correctly. All of
-it sits behind the `WithPublicLLMMD` opt-in.
+Entity CRUD tools run through the same router as your HTTP API, so an agent passes the same session/JWT auth, RBAC, and `OwnerField`/tenant checks a user does—and `tools/list` hides tools a caller cannot invoke.
 
-The doc answers 404 wherever the page does: a resolver or `Load`
-answering `app.ErrNotFound` (also when `Load` read the resolver and
-dropped its error), an outlet declared `FallbackNotFound` that nothing
-fills, or a status set with `app.SetStatus` or `ScreenStatusCode`. The
-static exporter writes no llm.md for such a page. Any other failure
-degrades to the pattern-level doc rather than erroring.
+For directly registered tools, `Endpoint.MCPHandler` twins, or private `/mcp` endpoints:
 
-Context-aware page content uses the request's translator and locale,
-including the unprefixed default locale, header- or cookie-negotiated
-locales, and pattern-level fallback docs. Links receive a locale prefix
-only when that locale's URLs have one. The standalone
-`app.ScreenLLMMDHandler` also renders per request when a translator or
-locale is attached; without either or a locale prefix, it reuses its
-background-context document.
+- **Per-tool gate:** prefer `mcp.WithToolGate(gate)` over the older `mcp.Gated` wrapper so unauthorized callers don't even see the tool schema in `tools/list`:
 
-Both standalone handlers, `app.ScreenLLMMDHandler` and
-`app.AppLLMMDHandler`, send `Cache-Control: private, no-store` and add
-`Vary: Cookie` without replacing existing Vary fields. Their policy- and
-locale-dependent bodies must not be retained by a shared cache.
-
-Inline code in markdown preserves the HTML's displayed code: entities
-decode once, so `&lt;div&gt;` becomes `<div>` inside an inert code span,
-while double-encoded `&amp;lt;` remains the literal text `&lt;`. Tag-shaped
-code and backticks cannot become live markup or terminate their span.
-
-Every markdown surface evaluates the screen's policy chain with the live
-request: a non-Allow decision, or a region guard (an outlet's, an area's,
-or a fill's policy) that redirects, serves a metadata-free "withheld" doc
-(route path and type only: no title, description, SEO front matter, or
-content),
-and the `/llm-pages.md` index lists policy-gated screens path-only. A
-screen whose pattern policy answers not-found is left out of the index
-entirely, and its pattern doc answers 404. An
-authenticated agent whose request passes the policy sees the full docs.
-The pattern-level surfaces (the index, the `/llm.md` beside a route
-pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
-path runs its full policy phase, region guards and resolvers included,
-and a dynamic pattern under a layout that carries any region guard, or
-in a group that `Requires` a resolver, is withheld, because a guard or
-a required resolver decides per URL. The per-URL doc of such a
-page still runs its guards and serves.
-
-### What the HTML conversion keeps
-
-The page's HTML becomes markdown: headings, paragraphs, lists, links,
-images, emphasis, tables and code. A `<pre>` block is fenced with its
-line breaks whether or not it wraps a `<code>` element, so a
-highlighted code block (a `<pre>` of per-line spans, which is what
-`ui.CodeBlock` and `ui.Markdown` render) reads as code; a one-line
-`<pre>` stays flowing text. A link or an image inside a table cell
-stays a link, and a code block inside one becomes a single code span,
-since a fence's line breaks would split the row. A description list (`ui.DetailList`) reads one
-`term: description` pair a line.
-
-### Rendered values cannot inject markdown structure
-
-Every value that goes into a served markdown document — page content
-converted from HTML, screen titles and descriptions (including the
-per-instance titles dynamic routes load), index table cells — is decoded
-and escaped per slot on the way in: code blocks are fenced one backtick
-longer than any run inside them, link text and destinations escape
-brackets and parentheses, table cells escape pipes and line breaks, and
-one-line header fields keep their first line only. Entity content that
-carries ` ``` `, `](https://…)`, `&#124;`, or a newline stays data in the
-document instead of becoming a live fence, link, column, or heading.
-Headers in the raw bytes (`\]`, `\|`) render as the plain characters.
-
-### MCP auto-mount  (`framework.WithMCP`)
-
-`framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
-JSON-RPC + GET Server-Sent Events), replacing the manual
-`fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the nine tools that read the running app's state
-are reachable at the canonical endpoint the agent card advertises:
-`app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `app_goroutine_leaks`, `app_routines`, `app_unmounted`
-(the [unmounted](unmount.md) copies the binary was built with).
-
-During shutdown's readiness grace, `app_readiness` returns `ready: false`
-and `reason: "draining"` without running readiness checks, matching `/readyz`.
-
-The embedded
-framework docs are a separate option, `framework.WithMCPTools(mcptools.Register)` from
-`framework/docs/mcptools`, which adds `framework_docs_list`,
-`framework_docs_get` and `framework_docs_search`; package framework does not
-import the docs corpus, so the app opts in. `WithMCPTools` takes any
-`func(*mcp.Server) error`: the framework runs it during init after every
-plugin and battery `Init` and before the introspection set, and a
-registrar error (a tool-name collision included) fails the boot. Alongside them sits the contract catalog
-(`contracts_list`, `contracts_explain`, `contracts_capabilities`), which
-describes what the framework requires of the app's own code. Under
-`gofastr dev` the catalog gains a working half: `contracts_verify` runs
-the analyzers over the app's source and returns structured findings, and
-`contracts_fix` applies one rule's autofixes. Neither is registered
-outside the dev loop, since both touch local source files.
-Explicit `WithMCPIntrospection()` does not suppress these dev tools;
-generated apps receive them too. `GOFASTR_DEV_MCP=0` or a production
-environment keeps them off even when introspection was explicitly enabled.
-`framework.WithMCPInstructions(text)` sets the `instructions` the
-server's `initialize` answers with: what the server is for and when a
-client should call its tools. It applies to whichever server the options
-leave installed, so it works with `WithMCPServer` in any order. See
-[MCP server](mcp.md) for `SetInstructions`, tool annotations and
-`RequestMeta`.
-Calling `WithMCP` **and** manually mounting `/mcp`
-panics with a route conflict. Pick one. Generated apps ship with
-`WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
-
-`framework.WithMCPControl()` adds the mutating counterpart:
-`app_module_enable` / `app_module_disable` toggle registered modules on the
-running app (persisted through the module store, dependency-checked). Keep
-it off any `/mcp` reachable by untrusted callers.
-
-When you opt in explicitly, both control tools require a caller holding
-the **`admin` role**: they run behind `framework.MCPRequireRole("admin")`
-as an `mcp.WithToolGate` precondition, which refuses a request with no
-identity, an embed grant, a caller an access `Decider` denies, and a
-caller without the role. The role is read from the user's
-`GetRoles() []string` (battery/auth's `User` has it) or from the roles
-access middleware put on the context, the same rule `/.debug` uses. Make
-sure the app's session/JWT middleware runs on the `/mcp` route, or every
-call answers as if the tool did not exist (a gated item answers exactly
-as an unknown name). An identity alone was the old gate, and on an app
-with open sign-up it let any account turn a module off for everyone.
-When your operators hold another role, replace the gate:
+```go
+app.MCP.RegisterTool("orders_refund", "Refund an order", schema, refundHandler,
+	mcp.WithToolGate(auth.MCPRole("support")))
+```
+- **Whole-endpoint gate:** close the entire MCP data surface (`tools/*`, `resources/*`, `prompts/*`, keeping `initialize` and `ping` open) in one option:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
 -->
 ```go
 framework.NewApp(
-    framework.WithMCP(),
-    framework.WithMCPControl(),
-    framework.WithMCPControlGate(framework.MCPRequireRole("ops")),
+	framework.WithMCP(),
+	framework.WithMCPGate(framework.MCPRequireUser()),
 )
 ```
 
-An API token carries its owner's roles, so `MCPRequireRole` narrows a
-scope-restricted caller (an API token or embed grant) to the roles its
-scopes name: it passes only with `access.RoleScope(role)`
-(`"role:admin"`; `"role:*"` and `"*:*"` cover every role) for a role
-that admits it. A `customers:read` token an admin minted for a
-reporting job does not reach the control tools. Sessions and JWTs carry
-no scopes and are unaffected.
+- **Custom entity endpoint twins (`Endpoint.MCPHandler`):** require an authenticated caller by default; narrow with `Endpoint.MCPGate` or open explicitly with `Endpoint.Public: true`.
+- **Resources & MCP Apps:** gate sensitive resources with `mcp.WithResourceGate(gate)`. Use `framework.WithMCPApp(mcp.AppConfig{...})` to register interactive HTML widgets (`ui://` resources + CSP allowlists; see [Agent host](agent-host.md)).
+- **Rich tool results:** return `mcp.ImageResult` for inline images or `mcp.ToolResult{Structured: ..., Content: ...}` for structured output alongside `mcp.WithOutputSchema`.
 
-`framework.MCPRequireUser()` and `MCPRequireRole` both consult the
-`Decider` the way battery/auth's `MCPUser` and `MCPRole` do: the caller's
-roles, `access.RoleGateCapability` and the zero `Ref`, so
-`DecisionDeny` refuses the call.
+## Well-known & OAuth discovery endpoints
 
-A gated tool is also **hidden from `tools/list`** for callers who cannot
-invoke it. That matters more than it sounds: `tools/list` used to run with
-no gate at all, so an anonymous POST came back with every tool's
-`inputSchema`, and for entity CRUD tools those schemas are built from live
-entity definitions, naming every entity and every non-`Hidden` field with
-its type and enum set. The call refused; the schema was already out.
-
-Prefer `mcp.WithToolGate(gate)` as a `RegisterTool` option over the older
-`mcp.Gated(gate, handler)` wrapper. `Gated` wraps the handler, so it only
-ever reached `tools/call`. The listing never consulted it.
-
-```go
-app.MCP.RegisterTool("orders_refund", "…", schema, refundHandler,
-    mcp.WithToolGate(auth.MCPRole("support")))
-```
-
-When the whole endpoint is private, close it in one place instead:
-
-<!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework"
--->
-```go
-framework.NewApp(
-    framework.WithMCP(),
-    framework.WithMCPGate(framework.MCPRequireUser()),
-)
-```
-
-`NewApp` installs the gate after every option has run, so it lands on the
-server `WithMCPServer` supplies whichever option comes first.
-`WithMCPGate` covers the whole data surface: `tools/list`, `tools/call`,
-`resources/list`, `resources/read`, `resources/templates/list`,
-`prompts/list` and `prompts/get`. The `initialize` handshake and `ping` stay open by
-design: they carry only the protocol version, capability booleans and the
-server name, and a client that cannot handshake cannot present credentials.
-
-The `gofastr dev` loop is exempt: it turns these tools on with no auth
-configured at all, so a gate would only lock the dev loop out of its own
-app. Its exposure is bounded on the other axis instead: dev **refuses
-to register the control tools when the listener is not loopback**. Bind
-to `localhost`, or set `GOFASTR_DEV_MCP_EXPOSE=1` to accept the risk.
-On the same bind, the guard withdraws the dev-implied `app_*` and
-`contracts_*` tools. An explicit `WithMCPIntrospection()` keeps the
-`app_*` introspection tools and the read-only contract catalog.
-The check reads the address the server actually binds: `Start("")`,
-`":8080"` and a bare `"8080"` all listen on every interface (`Start("")`
-binds `:http`, port 80), so each counts as exposed. A listener handed to
-`App.Serve` is judged by its network: an in-process one (`memory`,
-`pipe`) is local, and a unix socket is exposed whatever its path.
-The transport's loopback `Host` pin is a browser control (it stops DNS
-rebinding); it does nothing against a direct TCP client, which sets
-`Host` freely. That is why the bind matters too.
-
-Auth splits by tool kind: entity CRUD tools re-dispatch
-through the router, so session/JWT auth, owner scoping, and RBAC apply
-exactly as they do over HTTP (the caller's Cookie/Authorization from the `/mcp`
-request carries through). `tools/list` hides an RBAC-gated entity tool
-from a caller the `/mcp` request shows lacks the permission. A caller with
-no user and no credential header (Cookie, Authorization, X-API-Key, an embed
-grant) can only run the call anonymous, so it is judged as anonymous and
-does not see the gated tool's schema. Directly registered tools, meaning custom
-`app.MCP.RegisterTool` handlers and `Endpoint.MCPHandler` twins, run
-without route middleware, so they carry their own gate.
-
-**`Endpoint.MCPHandler` twins default to requiring an authenticated
-caller.** An `Endpoint` has two front doors for one operation: `Handler`
-inherits the route's middleware chain, `MCPHandler` does not. An endpoint
-behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
-and ungated over MCP. Declare something stricter with
-`Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
-endpoint that really is anonymous. `Public` opens the HTTP route too,
-which otherwise answers 401 to a caller with no user. An API token
-reaches a twin only with `<table>:read` (GET, HEAD) or `<table>:write`
-(any other method) among its scopes, whichever gate decides it:
-
-```go
-entity.Endpoint{
-    Method: "POST", Path: "{id}/publish", MCP: true,
-    Handler:    publishHTTP,
-    MCPHandler: publishTool,
-    MCPGate:    auth.MCPRole("editor"),   // else: any authenticated caller
-}
-```
-
-A twin built with `handler.ToolAdapter` binds its `path`-tagged
-parameters with the endpoint's own route pattern, which the framework
-puts on the call context at registration: a `{path...}` catch-all
-route's twin accepts a slash-bearing value the route accepts, while a
-`..` segment, an empty segment and a control byte are refused exactly
-as the router refuses them. A tool registered by hand with
-`app.MCP.RegisterTool` has no route, so every path parameter stays
-strict — a `/` in one is refused.
-
-For your own `RegisterTool` calls, gate them per-caller with
-`mcp.WithToolGate` + battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)`
-(see [plugins](plugins.md)).
-
-Process modules (issue `#37`) add a third tool kind alongside the entity
-CRUD tools and directly-registered handlers. Each tool a process module
-exposes is registered under a reserved `module.` prefix,
-`module.<name>.<tool>`, so two modules cannot collide and every call is
-attributable to its owning module. A disabled module's tools are omitted
-from `tools/list` and refused by `tools/call` (the composite call gate);
-an enabled-but-down module's tools stay listed but return a retryable
-temp-unavailable error while the child is not Ready. A tool call forwards
-to the child through the same capability broker as the module's HTTP
-routes. The agent's authority is delegated identically, and there is no
-separate tool-permission vocabulary. See [process modules](process-modules.md).
-
-**The dev loop implies all of it but the docs tools.** Under `gofastr dev` (`GOFASTR_DEV`),
-`framework.NewApp` auto-enables the mount, introspection, and control
-(the `framework_docs_*` tools still need `WithMCPTools(mcptools.Register)`);
-battery/log auto-registers its `log_recent` / `log_filter` /
-`log_metrics` / `log_set_level` debug tools; and every CRUD-enabled
-entity serves its `{entity}_list/get/create/update/delete` data tools
-without per-entity `mcp: true`, with zero options: the local dev loop
-is livereload for agents. Opt out with `GOFASTR_DEV_MCP=0` (mirrors
-`GOFASTR_DEV_LIVERELOAD=0`); a production `GOFASTR_ENV` always wins.
-A dev-implied mount yields to a hand-wired `/mcp` route instead of
-panicking, so older scaffolds keep working under `gofastr dev`.
-
-### Rich tool results, resources, and MCP Apps
-
-A tool handler returns `any`. By default a plain value is JSON-marshaled
-into a single `{type:"text"}` block (unchanged). To emit richer content,
-return one of `core/mcp`'s result types:
-
-```go
-// An image block: every MCP client renders it inline (no token bomb from
-// a base64 string smuggled through text):
-return mcp.ImageResult{Data: pngBytes, MimeType: "image/png"}, nil
-
-// Structured output (validated against a declared outputSchema) plus
-// explicit blocks. A structured-only result still mirrors a text block for
-// clients that don't read structuredContent:
-return mcp.ToolResult{
-    Structured: map[string]any{"count": 3},
-    Content:    []mcp.Content{mcp.TextContent("3 matches")},
-}, nil
-```
-
-Declare a tool's output shape and attach `_meta` at registration with
-options:
-
-```go
-app.MCP.RegisterTool(name, desc, inputSchema, handler,
-    mcp.WithOutputSchema(schema),                    // → tools/list.outputSchema
-    mcp.WithToolMeta(map[string]any{                 // → tools/list._meta (verbatim)
-        "ui": map[string]any{"resourceUri": "ui://app/widget.html"},
-    }),
-)
-```
-
-**Resources.** `app.MCP.RegisterResource(uri, name, mimeType, contents)`
-serves a resource via `resources/list` + `resources/read`; registering any
-resource makes `initialize` advertise the `resources` capability. The
-contents func runs per read and may return text or a binary blob (base64 on
-the wire). Attach resource `_meta` with `mcp.WithResourceMeta(...)`. Note
-resources are **not** covered by the tool call gate: `mcp.Gated` /
-`auth.MCPUser` gate tool handlers, not `resources/read`. Public content (an
-MCP App's widget HTML) needs no gating; to serve sensitive or per-caller
-data, add `mcp.WithResourceGate(gate)` (the resource-side analogue of
-`mcp.WithToolGate`, where `auth.MCPUser()` / `auth.MCPRole(...)` work as gates).
-It runs before the contents func on every read and hides the resource from
-`resources/list` for a caller it refuses.
-
-**MCP Apps.** The [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
-lets a tool declare an interactive HTML widget the host renders in a
-sandboxed iframe. `framework.WithMCPApp` wires both halves in one call:
-the `ui://` resource carrying the HTML, and the tool whose `_meta` links
-to it (with the ChatGPT Apps SDK `openai/outputTemplate` compat alias).
-
-```go
-framework.WithMCPApp(mcp.AppConfig{
-    Name:        "studio",
-    Description: "Open the studio widget.",
-    InputSchema: schema,
-    Handler:     studioTool,
-    ResourceURI: "ui://myapp/studio.html",
-    HTML:        studioHTML,  // self-contained, inline JS/CSS
-    CSP: mcp.AppCSP{  // rides on the resource's _meta.ui
-        ConnectDomains:  []string{"https://api.openweathermap.org"},
-        ResourceDomains: []string{"https://cdn.jsdelivr.net"},
-    },
-})
-```
-
-`CSP` is the spec's structured object, not a policy string: the host turns
-each allowlist into the matching iframe directive (`connectDomains` →
-`connect-src`; `resourceDomains` → `img-src`/`script-src`/`style-src`/
-`font-src`/`media-src`; `frameDomains` → `frame-src`; `baseUriDomains` →
-`base-uri`). An empty or omitted field allows no external origins, and a
-zero `AppCSP` emits no `csp` key at all.
-
-The widget HTML is the app author's job (a single vanilla-JS file needs no
-build step); `mcp.WidgetDocument` assembles it so the widget client's
-script URL cannot drift — see the [agent-host contract](agent-host.md)
-for the full authoring walk-through and the host-theme convention.
-`WithMCPApp` is an explicit opt-in registered during
-`InitPlugins`, so a duplicate tool name or resource uri is a hard build
-error. Requires the `/mcp` server to be mounted (`WithMCP`, or the dev
-auto-mount).
-
-### OAuth Protected Resource  (RFC 9728)
-
-When the app exposes OAuth-token-protected resources (e.g. battery/auth's JWT
-bearer API), `framework.WithOAuthProtectedResource` serves
-`/.well-known/oauth-protected-resource` so a client can discover which
-authorization servers mint accepted tokens, the supported scopes, and how to
-present a bearer token:
+| Endpoint | Option / trigger |
+|---|---|
+| `/.well-known/api-catalog` | Automatic when entities are mounted (`/openapi.json`) |
+| `/.well-known/mcp.json` & `/.well-known/mcp/server-card.json` | `framework.WithMCP()` |
+| `/.well-known/agent-skills/index.json` | Always served; populate via `framework.WithAgentSkills(...)` |
+| `/.well-known/oauth-protected-resource` | `framework.WithOAuthProtectedResource(cfg)` (RFC 9728; requires HTTPS URLs) |
+| `/.well-known/oauth-authorization-server` | `framework.WithOAuthAuthorizationServer(cfg)` (RFC 8414) |
+| `/auth.md` | `framework.WithAuthMD(cfg)` |
+| `/.well-known/http-message-signatures-directory` | `framework.WithWebBotAuth(cfg)` ([Web Bot Auth](web-bot-auth.md)) |
+| `/.well-known/openai-apps-challenge` | `framework.WithOpenAIAppsChallenge(token)` (skipped when empty) |
+| `/.well-known/ucp` / `/.well-known/acp.json` | `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` |
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -726,194 +176,41 @@ framework.WithOAuthProtectedResource(framework.OAuthProtectedResourceConfig{
 })
 ```
 
-When `Resource` has a path (`https://api.example.com/mcp`), the document is
-also served at `/.well-known/oauth-protected-resource/mcp`, the URL RFC 9728
-§3.1 has a client build for it.
+## Base URL & proxy trust
 
-`Resource` is required and must be an absolute HTTPS URL with a hostname,
-no userinfo, and no fragment. A query is allowed but discouraged. Each
-`AuthorizationServers` entry must be an absolute HTTPS issuer URL with a
-hostname and no userinfo, query, or fragment; an issuer path is allowed.
-`Start`, `Serve` and `Run` reject invalid metadata configuration before
-booting, under any host.
+Discovery URLs resolve in order: `WithAgentReady{BaseURL}`, then `WithSitemap{BaseURL}`, then request scheme + `r.Host`.
 
-The framework serves the document; emitting the companion
-`WWW-Authenticate: … resource_metadata=…` header on 401s (RFC 9728 §5) is left
-to the host's auth middleware so it can be scoped to the exact token-protected
-routes.
-
-### Scanner-conformance endpoints  (isitagentready.com)
-
-The framework auto-serves the well-known artifacts the isitagentready
-scanner scores, so a host wiring the basics passes without per-route work:
-
-| Check | Endpoint | When served |
-|---|---|---|
-| API Catalog (RFC 9727) | `/.well-known/api-catalog` (linkset+json) | when the app has entities (`/openapi.json` exists) |
-| MCP Server Card (SEP-2127) | `/.well-known/mcp/server-card.json` + spec-reserved `/mcp/server-card` + `/.well-known/mcp/catalog.json` | when `WithMCP` exposes `/mcp` |
-| MCP Manifest | `/.well-known/mcp.json` — flat `endpoint`/`transport` fields AND a nested `mcpServers` map, both naming `/mcp` with `streamable-http` | when `WithMCP` exposes `/mcp` |
-| Agent Skills Index | `/.well-known/agent-skills/index.json` | always (empty list passes; `WithAgentSkills` adds entries) |
-| OAuth Authorization Server (RFC 8414) | `/.well-known/oauth-authorization-server` | opt-in (`WithOAuthAuthorizationServer`) |
-| OpenAI apps domain check | `/.well-known/openai-apps-challenge` (`text/plain`) | opt-in (`WithOpenAIAppsChallenge`), when the token is not empty |
-| Content Signals | `Content-Signal:` line in robots.txt | `AgentReadyConfig.ContentSignals` |
-| Auth.md (WorkOS profile) | `/auth.md` (markdown) + `agent_auth` block in the OAuth AS metadata | opt-in (`WithAuthMD`) |
-
-```go
-framework.WithAgentSkills([]framework.AgentSkillEntry{{
-    Name: "code-review", Description: "Review code.",
-    URL: "/.well-known/agent-skills/code-review/SKILL.md", Digest: "sha256:...",
-}})
-framework.WithOAuthAuthorizationServer(framework.OAuthAuthorizationServerConfig{
-    Issuer: "https://auth.example", TokenEndpoint: "https://auth.example/token",
-})
-```
-
-`WithOpenAIAppsChallenge(token)` answers OpenAI's app submission domain
-check: the portal gives you a token and fetches it back from
-`/.well-known/openai-apps-challenge`. The route serves the token as
-`text/plain` with `Cache-Control: no-store`. Surrounding whitespace is
-trimmed, so a value read from a file with a trailing newline works. An
-empty token mounts nothing, so you can pass an unset environment variable.
-A token longer than 1024 bytes, or one holding a space, a control byte or
-a non-ASCII byte, makes `WithOpenAIAppsChallenge` panic when it is called;
-the message does not quote the token.
-
-```go
-framework.WithOpenAIAppsChallenge(os.Getenv("OPENAI_APPS_CHALLENGE"))
-```
-
-All 11 scored isitagentready checks are covered: robots.txt, Sitemap,
-Link headers, Markdown negotiation, AI bot rules, Content Signals, API
-Catalog, OAuth Protected Resource, MCP Server Card, Agent Skills Index,
-and OAuth Authorization Server (6 always-on via the bundle; the rest
-opt-in / conditional). The production scanner also lists: A2A card
-(covered: `/.well-known/agent-card.json`), Auth.md (`WithAuthMD`), Web
-Bot Auth (`WithWebBotAuth`: the site publishes a JWKS at
-`/.well-known/http-message-signatures-directory` so it can sign its own
-outbound requests), UCP (`WithUCP` → `/.well-known/ucp`), and ACP
-(`WithACP` → `/.well-known/acp.json`). Not buildable as served routes:
-DNS-AID (DNS SVCB/HTTPS + DNSSEC), x402 (HTTP 402 payment middleware),
-MPP (payment execution + an `x-payment-info` OpenAPI extension needing a
-payment backend), WebMCP (client-side browser API), ap2 (server-only).
-
-## Base URL resolution
-
-All absolute discovery URLs (agent card `url`, `Link` header targets) use one
-canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
-`WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
-A `BaseURL` made only of slashes counts as unset.
-The per-request scheme comes from the TLS state. `X-Forwarded-Proto`
-(exactly `http` or `https`) overrides it only when the TCP peer is listed
-in `uihost.WithTrustedProxies` or, when the host sets no list, in the
-App's `AppConfig.TrustedProxies`, which the App puts on each request's
-context: any client can send the header, and an untrusted one could
-otherwise make the host advertise `http://` URLs or poison a cached
-copy. A host list replaces the App's rather than adding to it. With
-neither list the host trusts nobody, so behind a TLS-terminating proxy,
-list the proxy or set a `BaseURL`, or the card and the `Link` headers
-say `http://`. `X-Forwarded-Host` is deliberately
-**not** honored from anyone: reflecting it into the `Link:
-rel="service"` header would be a cache-poisoning primitive, so the
-addressed `Host` is used instead. Set `BaseURL` explicitly when your
-proxy rewrites the host. While the origin is derived per request, the
-card and the pages carrying these `Link` headers send `Vary: Host` and
-`Vary: X-Forwarded-Proto`; a configured `BaseURL` drops both.
-
-The framework layer's own well-known documents (the MCP server card,
-`/.well-known/mcp.json`, `/.well-known/api-catalog`, `/auth.md`, the
-agent extras) resolve their origin the same way, from `AppConfig`:
-`BaseURL` wins outright when set, and without it the scheme comes from
-the TLS state, with `X-Forwarded-Proto` honored only from a peer listed
-in `AppConfig.TrustedProxies`, the same trust rule the rate limiters
-apply to `X-Forwarded-For`. An empty `TrustedProxies` trusts nobody:
-behind a TLS-terminating proxy that forwards the header, list the proxy
-or set `BaseURL`, or the documents advertise `http://` origins.
-
-Signed cards are the exception to the per-request fallback: with
-`SigningKeys` set, an explicit `BaseURL` is **required** and the host
-refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v10-84)).
+Behind a TLS-terminating proxy, set `BaseURL` or list the proxy in `AppConfig.TrustedProxies` (or `uihost.WithTrustedProxies`) so `X-Forwarded-Proto` is trusted. `X-Forwarded-Host` is deliberately **not** honored from any caller (reflecting it into `Link` headers or discovery docs enables cache poisoning); always set `BaseURL` when a proxy rewrites the host.
 
 ## Granular options
 
 | Option | Serves |
 |---|---|
-| `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers (incl. OpenAPI `service-desc` when `cfg.OpenAPIEndpoint` is set, e.g. `"/openapi.json"`). |
-| `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
-| `uihost.WithLLMsFullTxt(content)` | `/llms-full.txt` only (full-corpus tier, served verbatim). |
-| `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json`. |
-| *(card signing)* | With `AgentCardConfig.SigningKeys`: `/.well-known/jwks.json` (the card's verification keys). |
-| `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
-| `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |
-| `uihost.WithOrganization(cfg)` | Organization JSON-LD (`contactPoint` + `PostalAddress`) in every full page head. |
-| `framework.WithMCP()` | Auto-mount `/mcp` (Streamable HTTP) + discovery well-knowns (server card, `/.well-known/mcp.json` manifest). |
-| `framework.WithMCPIntrospection()` | The read-only `app_*` tools (routes, plugins, batteries, modules, config, readiness, goroutine leaks, routines) plus the `contracts_*` catalog. |
-| `framework.WithMCPTools(register)` | Run a `func(*mcp.Server) error` at init, after plugin/battery `Init` and before introspection; `mcptools.Register` from `framework/docs/mcptools` adds the `framework_docs_*` tools. |
-| `framework.WithMCPApp(cfg)` | Register an MCP App: a `ui://` HTML widget resource + its linking tool. |
-| `framework.WithOAuthProtectedResource(cfg)` | RFC 9728 metadata doc. |
-| `framework.WithAuthMD(cfg)` | `/auth.md` + `agent_auth` block. |
-| `framework.WithWebBotAuth(cfg)` | `/.well-known/http-message-signatures-directory` JWKS; with `cfg.Verify` set, inbound verification middleware (experimental). |
-| `framework.WithAgentSkills(skills)` | `/.well-known/agent-skills/index.json`. |
-| `framework.WithOAuthAuthorizationServer(cfg)` | RFC 8414 AS metadata. |
-| `framework.WithUCP(cfg)` / `framework.WithACP(cfg)` | `/.well-known/ucp` / `/.well-known/acp.json`. |
-| `framework.WithA2A(cfg)` | Mount the A2A v1.0 task exchange at `/a2a` (default) with derived entity skills; see [the A2A task exchange](a2a.md). |
+| `uihost.WithAgentReady(cfg)` | Bundle: `/llms.txt`, agent card, AI-bot robots, `Link` headers |
+| `uihost.WithLLMsTxt(...)` / `WithLLMsFullTxt(...)` | `/llms.txt` or `/llms-full.txt` standalone |
+| `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` (+ `/.well-known/jwks.json` if signed) |
+| `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML pages |
+| `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` negotiation (needs `WithPublicLLMMD`) |
+| `uihost.WithOrganization(cfg)` | Organization JSON-LD in `<head>` |
+| `framework.WithMCP()` | `/mcp` + MCP server card & manifest |
+| `framework.WithMCPIntrospection()` | Read-only `app_*` and `contracts_*` tools |
+| `framework.WithMCPTools(register)` | Custom MCP tools (pass `mcptools.Register` for `framework_docs_*`) |
+| `framework.WithMCPControl()` | Admin-gated `app_module_enable` / `app_module_disable` |
+| `framework.WithMCPGate(gate)` | Endpoint-wide MCP auth gate |
+| `framework.WithMCPApp(cfg)` | MCP App `ui://` widget resource + tool |
+| `framework.WithA2A(cfg)` | A2A v1.0 task exchange at `/a2a` ([a2a.md](a2a.md)) |
+
+## What this does not cover
+
+- **A2A task execution requires `framework.WithA2A`.** The agent card alone advertises `/mcp`; add `WithA2A` if you want full A2A task streaming and push notifications.
+- **DNS-AID** is a DNS TXT record managed at your registrar, not by your Go binary.
+- **x402 / MPP payments** require an external payment backend and middleware beyond discovery docs.
 
 ## Common mistakes
 
-- **Forgetting `WithMCP` (or a manual `/mcp` mount).** The agent card can
-  advertise `/mcp`, but if nothing serves it the endpoint 404s. The bundle
-  does *not* mount MCP for you. Call `framework.WithMCP()` alongside it.
-  `/llms.txt` links the well-known MCP manifest only when `WithMCP` mounts
-  it. A manual `/mcp` mount still gets its endpoint link, not a nonexistent
-  manifest link. Manual hosts serving a manifest can declare its path with
-  `UIHost.SetMCPManifestPath` before serving requests.
-- **Advertising markdown negotiation without `WithPublicLLMMD`.**
-  `WithMarkdownNegotiation` renders via the per-screen LLM doc, which only
-  exists when markdown rendering is public. Without it, the negotiated
-  response falls through to HTML.
-- **Hand-writing per-route `/llm.md` links in `/llms.txt`.** Non-screen routes
-  (`/api/*`, `/healthz`, `/.well-known/*`) have no markdown. Link the
-  `/llm-pages.md` index instead (the default does this).
-- **Calling `WithMCP` and also mounting `/mcp` by hand.** Route conflict →
-  panic at startup. Use one.
-- **Serving `/llms-full.txt` without linking it from `/llms.txt`.** Agents
-  start at the index; a full-corpus file nothing points to won't be found.
-  Add a `Sections` entry with URL `/llms-full.txt`.
-- **Mixing `WithAgentReady` with granular agent-ready options** is safe.
-  `WithAgentReady` *merges* into whatever a granular option
-  (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
-  `WithAgentLinkHeaders`) already installed: the bundle wins for every field
-  it explicitly sets, and a field it leaves unset preserves the granular value.
-  Empty strings, nil slices/maps/pointers, and false card capability flags
-  are unset; non-nil empty slices/maps can explicitly clear collections.
-  A title-derived card preserves a granular version and MCP/A2A endpoints.
-  Apply granular baselines before the bundle; a later granular surface option
-  replaces that surface's configuration.
-  So `WithMarkdownNegotiation()` before `WithAgentReady{Title: …}` keeps content
-  negotiation on; you can equally enable it via the bundle's `ContentNegotiation`
-  field. (Both still require `WithPublicLLMMD`, per the note above.)
-- **Signing the card without pinning `BaseURL`.** Boot fails on purpose.
-  A signature over a request-derived URL would make an attacker-supplied
-  `Host` header produce a validly-signed card pointing at the attacker's
-  endpoint. Set `WithAgentReady{BaseURL: ...}` (or the sitemap's) and
-  the panic disappears.
-
-## What this deliberately does not do
-
-- **The card alone is not a task server.** By default the card
-  advertises the MCP endpoint (`/mcp`) in `supportedInterfaces` and is
-  structurally conformant, but GoFastr serves MCP tool calls
-  (`tools/list`, `tools/call`), not the A2A task lifecycle. To serve
-  the actual exchange behind the card — SendMessage, tasks, streaming,
-  push — add `framework.WithA2A` and point the card's `A2AEndpoint` at
-  it; see [the A2A task exchange](a2a.md).
-- **No DNS-AID.** DNS TXT records for AI discovery are infra/DNS, not
-  framework code. Add them at your registrar/host.
-- **Inbound Web Bot Auth verification is opt-in and experimental.**
-  `WithWebBotAuth` publishes the site's signing JWKS by default; set
-  its `Verify` field to also verify RFC 9421 signatures on inbound
-  requests (`framework.VerifiedAgent`), tracking
-  draft-meunier-webbotauth-httpsig-protocol-02. See
-  `web-bot-auth.md`.
-- **No x402 / MPP payment.** These need real payment middleware (HTTP 402 +
-  payment requirements) or a payment backend; the framework serves discovery
-  docs (UCP/ACP) but not payment execution.
+- **Advertising `/mcp` on the agent card without calling `framework.WithMCP()`.** `WithAgentReady` only publishes discovery metadata; call `framework.WithMCP()` to actually mount `/mcp`.
+- **Enabling `WithMarkdownNegotiation` without `WithPublicLLMMD`.** Negotiated markdown relies on the per-screen renderer and falls back to HTML without `WithPublicLLMMD`.
+- **Calling `WithMCP()` and manually mounting `/mcp`.** Route conflict panics at startup—pick one.
+- **Serving `/llms-full.txt` without linking it in `/llms.txt`.** Agents read `/llms.txt` first; add an entry pointing to `/llms-full.txt`.
+- **Signing the agent card without setting `BaseURL`.** Signing panics at boot unless `BaseURL` is pinned.
+- **Using `mcp.Gated` instead of `mcp.WithToolGate`.** `mcp.Gated` only blocks `tools/call` while leaving the tool's schema visible in `tools/list`; `mcp.WithToolGate` hides it from unauthorized callers too.

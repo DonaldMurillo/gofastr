@@ -1,5 +1,5 @@
 version: v0.98.0
-title: Pending release
+title: Refreshed docs story, stricter CLI and validation gates, and battery hardening
 notes:
   - change: "BREAKING - the admin role editor saves a role change through auth.RoleSwapper, a compare-and-set on the roles it read; a custom auth.UserStore that does not implement it refuses every role edit"
     breaking: true
@@ -87,7 +87,3 @@ notes:
     breaking: true
     nodetect: "the value is usually built at runtime or read from configuration; a literal relative path is the only spelling that shows it, and an absolute one is unaffected"
     guidance: "Pass an absolute path, for example filepath.Join(os.UserConfigDir(), ...), or leave Config.DataDir empty to use desktop.DataDir(Config.ID). A directory that already exists keeps its mode; chmod 700 it if other users can read it."
-  - change: "BREAKING - the default Content-Security-Policy enforces Trusted Types: require-trusted-types-for 'script'; trusted-types gofastr"
-    breaking: true
-    guidance: "App JavaScript that assigns a plain string to innerHTML, outerHTML or insertAdjacentHTML, calls DOMParser.parseFromString or document.write, or sets a created script's src now throws in browsers that support Trusted Types. Build the DOM with textContent or createElement, or create your own Trusted Types policy and list its name in SecurityHeadersConfig.TrustedTypesPolicies; SecurityHeadersConfig.NoTrustedTypes turns the directives off."
-    nodetect: "the sinks are in the app's own JavaScript, often inside Go strings or templates, and whether a given write ever runs on a page the default policy covers depends on the app"

@@ -1,224 +1,39 @@
 # Codegen
 
-Every generator runs as `gofastr generate <name>`. Generators come in two
-kinds, and the kind decides who runs them and whether you may edit what they
-write.
+Every generator runs via `gofastr generate <name>` and falls into one of two categories:
 
-**Scaffold** generators write code into your repo once. From then on you own
-it and edit it like any other source file. A second run refuses to overwrite
-existing files unless you pass `--force`.
+- **Scaffold generators (one-shot, you own the files):** `app [spec]`, `entity <name>`, `screen <name>`, `package [<name>]`. Refuse to overwrite existing files without `--force` (`app --add` writes only new files).
+- **Derived generators (regenerated from source, `DO NOT EDIT`):** `client`, `endpoints`, `cli` (rebuilds `*.gen.go`, leaves `custom.go` untouched), `sdk`, `styles [patterns]`.
 
-- `app [spec]`: the whole app from an [app spec](app-spec.md)
-  (default `gofastr.yml`; a file or a directory). `--add` merges new
-  entities and screens into an existing app.
-- `entity <name>` and `screen <name>`: an editable stub in a generated app.
-- `package [<name>]`: a copy of a canonical chrome package (siteheader,
-  sitefooter, docpage), recorded as an [unmounted](unmount.md) copy. No
-  name lists them.
+Plain `gofastr generate` (also run by `gofastr build` and `gofastr generate --watch`) runs derived generators and project extensions configured in [`gofastr.settings.yml`](settings.md), plus automatically refreshes `entities/endpoints.gen.go` (when `endpoints:` is present) and `entities/client/client.go` (when it exists). Scaffold generators are refused inside `codegen:` so builds can never clobber owned code.
 
-**Derived** generators keep a type-safe layer in sync with a source. Their
-files say DO NOT EDIT, and a rerun replaces them.
-
-- `client`: `entities/client/client.go`, the app's typed Go client, from
-  `entities/*.go`.
-- `endpoints`: `entities/endpoints.gen.go`, the registration of the custom
-  endpoints declared in `gofastr.settings.yml`. See
-  [Custom endpoints](endpoints.md).
-- `cli`: a customer-facing CLI for the app API. Its `*.gen.go` files are
-  rebuilt; `custom.go` is created once and stays yours. See
-  [Ship your API as a CLI](app-cli.md).
-- `sdk`: Go and JavaScript/TypeScript API clients. See [SDK](sdk.md).
-- `styles [patterns]`: typed Go for app tokens and owned style sheets.
-
-Plain `gofastr generate` runs the codegen config below. `gofastr build`
-and `gofastr generate --watch` call it, so the config lists derived
-generators and project extensions only. A scaffold generator in the config
-is an error: a build would re-run it on code you own.
-
-`gofastr generate --help` prints the same list, grouped by kind.
-
-## Config discovery
-
-The codegen config is the `codegen:` section of
-[`gofastr.settings.yml`](settings.md). `gofastr generate` reads it from:
-
-1. `--config=<path>` when supplied: a settings file.
-2. Otherwise `gofastr.settings.yml`, looked up from the current directory to
-   the project root.
-
-Whether or not a config is found, `gofastr generate` then rebuilds
-`entities/endpoints.gen.go` when the settings file has an `endpoints:`
-section, and `entities/client/client.go` when that file exists; neither
-needs a config entry. With neither a config nor a client it has nothing to
-generate and exits with guidance. To generate an app, run `gofastr generate
-app gofastr.yml`.
-
-CLI flags override config values where they overlap:
-
-- `--out=<dir>` overrides `codegen.output`.
-- `--clean` and `--no-clean` override `codegen.clean`.
-
-Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
-With `--json` and without `--watch`, stdout is exactly one document on
-success or failure.
-Invalid flags, missing arguments and unknown generator names produce an
-error document (`files: []`, `errors: [{message: ...}]`); all prose, warnings,
-progress and errors go to stderr. The same error shape applies to every
-generate verb, including one that rejects `--json` as unsupported.
-`--help` (or `-h`) under `--json` writes the addressed generator's usage to
-stderr with no document. Help also takes precedence over `--watch`.
-Any other argument is an error.
-Watch mode also tracks the enclosing `go.mod`, including when the codegen
-config lives in a subdirectory, so module-path edits rebuild generated imports.
-With `--watch --json`, stdout is a stream of JSON documents, one per cycle
-(including failed cycles). Read it with a streaming JSON decoder such as
-`jq`; banners and cycle status go to stderr, and no terminal-clear escape
-is emitted. A failed cycle does not stop watching; repair the input and save
-to generate again.
-
-JSON runs send extension diagnostics to stderr and suppress overwrite
-warnings on stdout. An error diagnostic returns the error document and
-fails the run before generated files are written.
-
-Source, configuration, and write failures use the same error document in
-both dry runs and write runs. Plain generate emits its single success
-document only after endpoint and client rebuilds succeed; a late failure
-reports an error, not a second document after a success. Writes completed
-before an I/O failure are not rolled back; fix the error and rerun.
-
-Engine JSON `files[].path` includes `codegen.output` (or `--out`), just
-like the text report, in dry runs and write runs. Resolve relative paths
-from the discovered project's directory, where generation runs.
-
-## Config shape
+## Configuring `gofastr.settings.yml`
 
 ```yaml
-# gofastr.settings.yml
 version: 1
 codegen:
   output: gen
   clean: true
   generators:
-    - name: custom/reports
-      extension: report-generator
-      source:
-        type: json_file
-        path: reports.codegen.json
-      output: reports
-  extensions:
-    - name: report-generator
-      command: ["./tools/report-generator"]
+    - name: sdk
+      output: sdk
+    - name: cli
+      output: cmd/myapp
+      config:
+        binary: myapp
+        only: [orders, products]
+    - name: styles
+      config:
+        patterns: ["./ui/..."]
 ```
 
-`codegen.output` is the root for all generated paths. A generator's `output`
-is a subdirectory under that root. Generated paths must be relative and cannot
-contain parent traversal.
+Flags: `--config=<path>`, `--out=<dir>`, `--clean` / `--no-clean`, `--dry-run`, `--json` (one JSON document per run, or NDJSON stream with `--watch --json`).
 
-Each generator names an `extension`, with two built-in exceptions. An entry
-named `sdk` (no `extension`) runs the built-in SDK generator, the same
-output as `gofastr generate sdk` (from the entity set, or from the document
-its `from_openapi` names); see the [sdk](sdk.md) doc. An entry named
-`styles` runs `gofastr generate styles` after the other generators. It
-writes beside each sheet rather than under `codegen.output`, so it takes no
-`output` or `source`; its only config key is `patterns`, a list of Go
-package patterns (`./...` when absent). `--dry-run` skips it, and
-`--json` refuses a config that lists it before any writes: styles has
-neither a dry run nor a JSON report. Run styles separately without `--json`.
+## Custom extensions
 
-An entry named `cli` runs `gofastr generate cli` after the engine. It writes
-to its own `output` (default `cmd/<binary>`), not under `codegen.output`,
-takes no `source`, and its `config` keys mirror the flags: `binary`,
-`api_prefix` and `from_openapi` (a file in the project, never a URL) are
-strings; `only` and `exclude` are YAML lists; `verbs` is a list or a map
-from entity to its list. `gofastr generate cli` reads the same entry,
-flags winning key by key. `--json` refuses a config that lists it,
-because the CLI run would print its own report into that document. See [Keeping it current](app-cli.md#keeping-it-current).
-
-There is no `client` entry. Every plain `gofastr generate` and `gofastr
-build` rebuilds `entities/client/client.go` when it exists, so a config
-that lists `client` is refused before any generator runs; remove the
-entry.
+Add project-specific generators without modifying the `gofastr` CLI by declaring an external command extension in `gofastr.settings.yml`:
 
 ```yaml
-generators:
-  - name: sdk
-  - name: cli
-    config:
-      binary: shop
-      only: [orders, products]
-  - name: styles
-    config:
-      patterns: ["./ui/..."]
-```
-
-Use optional `id` when running the same generator more than once:
-
-```yaml
-generators:
-  - id: public-reports
-    name: custom/reports
-    extension: report-generator
-    source:
-      type: json_dir
-      path: public/reports
-    output: public/reports
-```
-
-Go embedders that link `github.com/DonaldMurillo/gofastr/codegen` directly can
-also register in-process generators with `Registry.RegisterGenerator`.
-Use `CheckCommandExtensions` before running generators from a discovered
-config. `Discovery.CommandExtensionDetails` gives the config path and
-declared commands for a diagnostic. It returns an empty string when
-the config declares no commands.
-
-## Sources
-
-Supported source types:
-
-- `json_dir`: reads every `*.json` file in a directory in sorted order.
-- `json_file`: reads one JSON file.
-
-Source paths are project-relative. Absolute paths and `..` traversal are
-rejected. Future source types can be added without changing the generator and
-extension protocol.
-
-## Extensions
-
-External extensions let projects add arbitrary code generation without linking
-that code into the `gofastr` CLI.
-
-A command extension is an arbitrary binary named by whichever
-`gofastr.settings.yml` is in the project, so it runs with a deliberately narrow
-contract:
-
-- **A discovered config does not run commands on its own.** When nobody
-  named the settings file on the command line, `gofastr generate` and
-  `gofastr build` refuse its command extensions. Run
-  `gofastr generate --config <path>` to name it (then
-  `gofastr build --no-generate`, since build takes no `--config`), or set
-  `GOFASTR_CODEGEN_ALLOW_COMMANDS=1`.
-- **The environment is an allowlist, not an inheritance.** The child gets what a
-  build-time tool needs to run and nothing else: `PATH`, `HOME`, a temp dir,
-  locale, and the Go toolchain variables. It does not see `GOFASTR_SECRET`,
-  `DATABASE_URL`, or cloud credentials. Pass project-specific values under the
-  extension's `config:` key, which arrives on stdin with the rest of the
-  request; do not expect an ambient environment variable to reach it.
-- **Output is scrubbed of terminal control bytes.** An extension's stderr is
-  replayed to your terminal, so escape sequences are stripped from it (and from
-  diagnostic messages) before they are written. Newlines and tabs survive.
-- **Output is bounded and the wait is bounded.** stdout and stderr are capped,
-  and an extension that stops producing output cannot hang the generate
-  indefinitely.
-- **A `severity: error` diagnostic fails the run.** Returning one is how an
-  extension rejects the input it was given.
-
-The old built-in `gofastr generate ts` / `gofastr generate typescript` command
-has been removed. Projects that need TypeScript or frontend
-artifacts should configure a project extension and decide their own output
-shape rather than relying on a maintained built-in TypeScript target.
-
-```yaml
-version: 1
 codegen:
   output: gen
   generators:
@@ -231,149 +46,38 @@ codegen:
   extensions:
     - name: report-generator
       command: ["./tools/report-generator"]
-      config:
-        package: reports
 ```
 
-The CLI invokes each extension phase with JSON on stdin:
+Security & protocol rules for command extensions:
+- **Explicit opt-in:** auto-discovered settings files do not execute arbitrary commands automatically — pass `--config <path>` or set `GOFASTR_CODEGEN_ALLOW_COMMANDS=1`.
+- **Allowlisted env:** child processes receive only `PATH`, `HOME`, temp dir, locale, and Go toolchain vars (never `GOFASTR_SECRET` or `DATABASE_URL`). Pass custom values via `extension.config`.
+- **Strict JSON stdin/stdout protocol (`protocol_version: 1`):** runs phases `load` → `validate` → `render` → `finalize`; `severity: error` diagnostics fail generation; `clean: true` removes only files listed in `.codegen-manifest.json`. Each phase sends an `ExtensionRequest` on stdin and reads an `ExtensionResponse` on stdout:
 
 ```json
-{
-  "protocol_version": 1,
-  "phase": "render",
-  "project_dir": ".",
-  "generator": {
-    "name": "custom/reports",
-    "extension": "report-generator",
-    "source": { "type": "json_file", "path": "reports.codegen.json" },
-    "output": "reports"
-  },
-  "extension": {
-    "name": "report-generator",
-    "command": ["./tools/report-generator"],
-    "config": { "package": "reports" }
-  },
-  "source": { "name": "reports" },
-  "files": []
-}
+// stdin (request)
+{"protocol_version":1,"phase":"render","project_dir":".","generator":{"name":"custom/reports"},"source":{"reports":[]}}
+
+// stdout (response)
+{"protocol_version":1,"files":[{"path":"reports/index.gen.go","content":"package reports\n"}],"diagnostics":[]}
 ```
-
-The extension must print protocol JSON on stdout:
-
-```json
-{
-  "protocol_version": 1,
-  "diagnostics": [
-    { "severity": "info", "message": "generated reports" }
-  ],
-  "files": [
-    { "path": "report.go", "content": "package reports\n" }
-  ],
-  "deletes": ["stale_report.go"]
-}
-```
-
-The CLI runs phases in this order: `load`, `validate`, `render`, `finalize`.
-Extensions may return files or diagnostics from any phase. Stderr is forwarded
-as extension log output. A non-zero exit, malformed response, unsafe generated
-path, or file collision fails the generation run.
-
-`files` and `deletes` are relative to the generator's `output` directory.
-Deletes can only remove pending files owned by the same extension, so an
-extension cannot silently remove another generator's output.
-
-Response JSON is decoded strictly. Unknown response fields and unsupported
-`protocol_version` values fail generation.
-
-Go embedders can register in-process generators and extensions through
-`github.com/DonaldMurillo/gofastr/codegen`.
-
-## Cleaning and manifest
-
-Configured codegen writes `.codegen-manifest.json` in the output root. Clean
-mode removes only paths listed in that manifest before writing new output.
-Unowned files are left alone.
-
-The manifest also records a sum of every file it lists. Before a run
-replaces a listed file whose content no longer matches its sum, it warns
-that the file was edited and the edit is about to be lost. A clean run
-checks every listed file; an unclean run checks only the files it writes
-again.
 
 ## Provenance markers
 
-The built-in generators stamp a marker at the top of each file they write
-in a format with comments; the table below lists them.
-It says which generator made the file, its kind, and a sum of the rest of
-the file:
+Built-in generators stamp a single comment header at the top of each generated file (for formats supporting comments) recording the generator name, kind (`scaffold` or `derived`), version, optional `source` (for unmounted packages), and a 16-hex SHA-256 content sum:
 
 ```go
 //gofastr:generated generator=app kind=scaffold version=v0.92.0 sum=3f9a0c51d2e87b14
-
-// Package main is the app.
-package main
 ```
 
-- `generator` is the `gofastr generate` subcommand that wrote the file,
-  or `unmount` for a copy `gofastr unmount` or `gofastr generate package`
-  made.
-- `kind` is `scaffold` or `derived`, as above.
-- `version` is the gofastr release that scaffolded the file, or `dev` for
-  a CLI built from a checkout. Derived files carry no version: any CLI
-  rebuilds them, and a version there would rewrite every derived file on
-  each release with no change to its code.
-- `source` appears on an unmounted copy only: the import path the copy
-  came from. See [Unmounting a package](unmount.md).
-- `sum` is the first 16 hex digits of the SHA-256 of the file without the
-  marker line. It detects edits; it is not a signature.
-
-The marker uses the file's own comment syntax and sits in its first eight
-lines, below anything that has to come first:
-
-| File | Marker |
-|------|--------|
-| `.go`, `go.mod`, `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts` | `//gofastr:generated …` and a blank line, so gofmt never folds it into a doc comment |
-| `.css` | `/* gofastr:generated … */` |
-| `.md`, `.html` | `<!-- gofastr:generated … -->`, after a doctype |
-| `.yml`, `.yaml`, `.toml`, `.sh`, `Makefile`, `.gitignore`, `.dockerignore`, `.env*` | `# gofastr:generated …`, after a shebang |
-| `Dockerfile` | `# gofastr:generated …`, after `# syntax=`, `# escape=` and `# check=` directives |
-| `.sql` | `-- gofastr:generated …` |
-
-JSON, `go.sum` and other files with no comment syntax carry no marker.
-An owned style sheet's marker is left out of what `gofastr gen styles`
-embeds and of its `Source hash`, so stamping a sheet does not make its
-generated Go stale.
-
-Each generator reads the markers before it writes:
-
-- A scaffold generator that finds files in its way says what is there
-  before it refuses: how many each generator and version wrote, how many
-  have no marker, and how many marked files were edited since.
-- `--force` names every target whose content no longer matches its sum.
-  A marked file you never touched is not listed, even when today's
-  template differs. See [App specs](app-spec.md).
-- A derived generator that is about to rebuild an edited file warns that
-  the edit is lost and names the source to change instead: the style
-  sheet for `styles`, the entity declarations for `sdk`, `client` and
-  `cli` (or the OpenAPI document a `cli` or `sdk --from-openapi` run read).
-
-Editing a scaffold file is expected: the marker stays and its sum stops
-matching, which only tells the next `--force` that the file holds your
-work. Delete the marker line if you would rather the file carry no trace
-of the generator.
-
-`gofastr verify` counts the marked files by kind, generator and version,
-and warns about each derived file edited since it was generated:
-
-```
-Generated files: derived styles: 4, scaffold app v0.92.0: 31; 6 scaffold file(s) edited since, which is expected: they are yours
-```
+How GoFastr uses markers:
+- Scaffold `--force` warns about every marked file whose sum no longer matches (meaning you edited it).
+- Derived generators warn before overwriting an edited derived file and point you to the source to change instead.
+- `gofastr verify` summarizes generated files and flags edited derived files.
+- Editing scaffold files is expected — delete the marker line if you prefer no trace.
 
 ## Common mistakes
 
-- Using `--config=/path/to/gofastr.settings.yml` and expecting sources to be
-  relative to the shell directory. Config paths define the project root.
-- Pointing `--out` at `.` or `..`. Codegen refuses to write or clean outside a
-  project subdirectory.
-- Returning undocumented fields from an extension response. The protocol is
-  strict so typos fail instead of being ignored.
+- **Listing `app` or `client` inside `codegen.generators`:** `app` is a one-shot scaffold (refused in config) and `client` refreshes automatically when present.
+- **Pointing `--out` at `.` or `..`:** codegen requires a project subdirectory so clean mode never touches the module root.
+- **Expecting ambient env secrets inside a command extension:** extensions run under a minimal allowlisted environment; pass configuration via `extension.config`.
+- **Assuming `--config=/other/dir/gofastr.settings.yml` resolves paths from your shell cwd:** paths resolve relative to the settings file's project root.

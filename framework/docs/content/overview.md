@@ -1,29 +1,16 @@
 # Overview
 
-GoFastr is a full-stack Go framework. You build the whole app in Go:
-database schema and migrations, a REST API, and a server-rendered UI, plus opt-in
-batteries for auth, background jobs, search, and storage. Everything it
-generates is plain Go on disk that you own: no reflection, no runtime you're
-stuck inside. When it's in your way, drop to `core/`, `net/http`, or
-`database/sql`.
+GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: **go from idea to a full-stack app, fastr.** Simple for humans to understand. Optimized for agents and the agentic ecosystem.
 
-Agents work with it two ways. In production, the agents your users bring call
-your data over MCP, with the same login and permissions your users have. In
-development, `gofastr dev` gives your coding agent (Claude Code, Codex) the
-running app's routes, config, and logs over MCP, so it can help you build and
-debug.
+You decide how barebones or batteries-included you want to be. Start with a stdlib-first router and HTML builder, or turn on server-rendered screens with interactive islands (no React or Node), auth, SQLite or Postgres, background jobs, search, and MCP—all in plain Go you own, compiling to one binary.
 
-This page lists every feature and links to its doc. Read it once, then jump to
-what you need. New here? Start with
-[Get started](/get-started) and [Project structure](/docs/project-structure).
+## Barebones or full stack
 
-## Two layers
+GoFastr is split into clean layers, and you can mix them in the same app.
 
-GoFastr is two layers, and you can work at either one.
+### 1. Barebones (`core/` + `core-ui/`)
 
-**`core/` + `core-ui/`: the primitives.** stdlib-first building blocks: router,
-query, schema, render, mcp, openapi (core); HTML primitives, signals, the
-runtime (core-ui). Each works on its own, no framework required:
+Stdlib-first building blocks—router, typed handlers, HTML rendering, SQL query builder, schema, migrations, OpenAPI, MCP, signals, and the client runtime. Each package works on its own with no framework required:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/router"
@@ -31,167 +18,91 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 import "net/http"
 -->
 ```go
-// core only: a router and a handler.
 r := router.New()
 r.Get("/", render.HTMLHandler(func(req *http.Request) render.HTML {
-    return render.Tag("h1", nil, render.Text("Hello from core."))
+	return render.Tag("h1", nil, render.Text("Hello from core."))
 }))
 http.ListenAndServe(":8080", r)
 ```
 
-**`framework/` + `framework/ui/`: the opinionated layer.** Built on those
-primitives. Declare an entity and the framework wires them together for you. You
-get a migrated table, a REST API with filtering/sorting/pagination, MCP tools,
-and an OpenAPI spec:
+### 2. Managed server + UI + MCP (`framework/` + `framework/ui/`)
+
+Step up to `framework` when you want a managed server lifecycle, styled UI components, middleware, health checks, and MCP tools—without needing a database or entities yet:
 
 <!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core-ui/html"
+import "github.com/DonaldMurillo/gofastr/core/mcp"
+import "github.com/DonaldMurillo/gofastr/core/render"
 import "github.com/DonaldMurillo/gofastr/framework"
-import "database/sql"
-var db *sql.DB
-import "github.com/DonaldMurillo/gofastr/core/schema"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+type HomeScreen struct{}
+func (s *HomeScreen) ScreenTitle(context.Context) string { return "Hello" }
+func (s *HomeScreen) Render() render.HTML {
+	return ui.Card(ui.CardConfig{Heading: "Ship faster"},
+		html.Paragraph(html.TextConfig{}, render.Text("Server-rendered HTML in Go.")),
+	)
+}
 -->
 ```go
-// framework: one entity, wired end to end.
-app := framework.NewApp(framework.WithDB(db))
-app.Entity("posts", framework.EntityConfig{
-    Fields: []schema.Field{
-        {Name: "title", Type: schema.String, Required: true},
-        {Name: "body",  Type: schema.Text},
-    },
-})
-app.Start(":8080")
+pages := app.NewApp("Demo")
+pages.Register("/", &HomeScreen{}, nil)
+
+fw := framework.NewUIHostApp(uihost.New(pages),
+	framework.WithMCP(),
+	framework.WithMCPTools(func(s *mcp.Server) error {
+		return s.RegisterTool("ping", "Health ping", nil, func(context.Context, map[string]any) (any, error) {
+			return map[string]string{"status": "ok"}, nil
+		})
+	}),
+)
+fw.Start(":8080")
 ```
 
-See [Entity declarations](/docs/entity-declarations). The `app.Entity` call
-above is a runtime registration; it wires the table, routes, and tools in
-memory and writes no files. `gofastr init` scaffolds the project that hosts it:
-`main.go`, `screens.go`, `screens_auth.go` (sign-in over `battery/auth`), and
-`entities/entities.go` at the module root, all plain Go you read, edit, and
-commit. When the framework is in your way, drop back to
-`core/`. You can also scaffold a whole app from a `gofastr.yml` app spec with
-the [code generator](/docs/codegen); the running app never needs the file.
+### 3. Full stack (`gofastr init` + `battery/`)
 
-(A few `core/` packages pull in a dependency: `core/middleware` and
-`core/tracing` use OpenTelemetry, `core/middleware` also uses
-`golang.org/x/net/http/httpguts`, `core/i18n` uses `golang.org/x/text`,
-`core/settings` uses `golang.org/x/mod` and `core/webbotauth` uses
-`golang.org/x/net`. The rest of `core/` is stdlib-only.)
+When you want to move as fast as possible, `gofastr init myapp` scaffolds a working app on disk—plain Go you read, edit, and commit—with SQLite or Postgres, auth screens, hot reload (`gofastr dev`), and onboarding files for your coding agent. Add optional `app.Entity(...)` declarations when you want auto-wired tables, REST CRUD, OpenAPI, and MCP tools, or drop to `net/http` and `database/sql` whenever a route needs custom logic.
 
-## Modeling your domain
+You can also scaffold a whole multi-screen app from a single `gofastr.yml` file ([app spec tutorial](/docs/tutorial-app-spec)), then delete the YAML and own the Go.
 
-Declare entities; get their tables, routes, and tools.
+## The major areas
 
-- **[Entity declarations](/docs/entity-declarations)**: Go or a `gofastr.yml`;
-  both produce the same tables, routes, and tools. Set `OwnerField` for
-  per-user data.
-- **[Filter DSL](/docs/query-dsl)**:
-  `?status=published&views_gte=10&sort=-created_at` parses to a typed `Where`.
-- **[Eager loading](/docs/includes)**: `?include=author.profile` flattens the N+1.
-- **[Cursor pagination](/docs/cursor-pagination)**: keyset paging, opt-in.
-- **[Hooks & transactions](/docs/hooks-and-transactions)**: `BeforeCreate` /
-  `AfterUpdate` hooks share the parent transaction.
-- **[Batch endpoints](/docs/batch-endpoints)**: create, update, or delete many
-  rows in one request. **[Migrations](/docs/migrations)**: versioned, ordered,
-  reversible.
-- **[Multi-tenant scope](/docs/multi-tenant)**: automatic `tenant_id` filtering.
+### UI without a JS build step
 
-## Serving HTTP
+Every page renders full HTML on the server. A small vanilla-JS runtime hydrates it in place: cross-page links navigate client-side with a route cache, and in-page updates happen via server islands, client signals, polling, or SSE push.
 
-The middleware between the socket and your handler, on by default.
+- **[UI getting started](/docs/ui-getting-started)** and **[UI capability map](/docs/ui-capability-map)**: build your first screens and pick the right pattern.
+- **[Reactivity model](/docs/reactivity)** and **[Runtime contract](/docs/runtime-contract)**: signals → RPC → polling → SSE.
+- **[Theming](/docs/theming)**, **[Forms](/docs/form-module)**, **[Widgets](/docs/widgets)**, and the live **[component gallery](/components/)**.
+- **[Static export](/docs/static-export)** and **[PWA](/docs/pwa)**: ship static sites or installable apps from the same screens.
 
-- **[Auth](/docs/auth)**: login, OAuth, magic-link, 2FA, password reset; each a
-  plugin. **[Access control](/docs/access-control)**: roles, permissions,
-  policies.
-- **[Security defaults](/docs/security)**: CSP, CSRF, rate limit, headers.
-- **[Idempotency](/docs/idempotency)**: an `Idempotency-Key` header replays
-  mutations safely. **[Webhooks](/docs/webhooks)**: signed outbound delivery
-  with retry. **[Notifications](/docs/notifications)**: multi-channel delivery.
-- **[Health checks](/docs/health-checks)** · **[Plugins](/docs/plugins)**: the
-  lifecycle every battery uses.
+### Backend, data & batteries
 
-## Building UI
+SQLite (pure Go, `CGO_ENABLED=0`) and Postgres out of the box, plus opt-in `battery/` packages behind small interfaces.
 
-Server-rendered with islands: every page is full HTML on first load; a small
-runtime attaches handlers to the existing DOM; in-page changes (sort, paginate,
-add a row) are island calls that swap one fragment: no hard refresh, no client
-re-render.
+- **[Backend capability map](/docs/backend-capability-map)**: find the exact package for any backend job.
+- **[Entity declarations](/docs/entity-declarations)**, **[Migrations](/docs/migrations)**, **[Hooks & transactions](/docs/hooks-and-transactions)**, and **[Query DSL](/docs/query-dsl)**: opt-in data layer when CRUD saves you time.
+- **[Auth](/docs/auth)**, **[Access control](/docs/access-control)**, **[Security defaults](/docs/security)**, and **[Multi-tenant scoping](/docs/multi-tenant)**: fail-closed by default.
+- **[Queue](/docs/queue)**, **[Cron](/docs/cron)**, **[Email](/docs/email)**, **[Search](/docs/search)**, **[Storage](/docs/storage)**, **[Webhooks](/docs/webhooks)**, and **[Admin UI](/docs/admin)**: import only what you use.
 
-- **[Getting started (UI)](/docs/ui-getting-started)**: scaffold, theme,
-  screen, custom component. **[UI wiring](/docs/ui-wiring)**: adding the UI to
-  a plain `framework.App` by hand.
-- **[Theming](/docs/theming)**: token catalog, dark mode, section overrides,
-  `--ui-*` vars. **[Runtime contract](/docs/runtime-contract)**: the
-  SSR/hydration/island/SSE model and the full `data-cui-*` reference.
-- **[New components](/docs/ui-new-components)**: the minimal-register,
-  SSR-inline, hydrate contract. **[Widget builder](/docs/widgets)**: islands
-  that hydrate against a registered handler.
-- **[Interactive patterns](/docs/interactive-patterns)** ·
-  **[Signal store](/docs/signal-store)**: client state shared by many
-  consumers from one declaration.
-- **[Forms](/docs/form-module)**: server-validated, with island-swapped error
-  states.
-- **[PWA](/docs/pwa)**: installable manifest and an offline shell via
-  `uihost.WithPWA`; works live and in static exports.
-- **[Image pipeline](/docs/image)**: pure-Go resize and WebP.
-  **[Print documents](/docs/print)**: print-friendly HTML and PDF.
-  **[Runtime modules](/docs/runtime-minification)**: split per feature, so a
-  page ships only the JS it uses.
-- Browse component demos and wiring notes in the **[gallery](/components/)**.
-- **[Porting an app with an existing frontend](/docs/porting)**: the escape
-  hatch for a foreign DOM contract — html/template screens plus
-  `static.Mount` for a compiled design system. Possible, deliberately
-  unsupported; the page says exactly where the line is.
+### Built for coding agents and the agentic web
 
-## Persisting & migrating
+Agents work with GoFastr on both sides of deployment:
 
-SQLite and Postgres, dialect-aware.
+- **While building:** `gofastr dev` hands Claude Code or Codex your app's routes, config, docs, and logs over MCP; `gofastr verify` runs static and semantic contract checks ([contracts](/docs/contracts)) to catch security, routing, and UI bugs before they ship.
+- **In production:** opt-in options serve `/mcp` tools behind the same auth and permissions as your HTTP API, along with per-screen `llm.md` (via `uihost.WithPublicLLMMD()`), `/llms.txt`, and discovery endpoints ([agent-ready](/docs/agent-ready), [MCP server](/docs/mcp)).
 
-- **[Audit log](/docs/audit-log)**: a row per Create, Update, and Delete.
-- **[Isolation](/docs/isolation)**: a separate local DB per git worktree.
-- **[Factories](/docs/factories)**: fixtures for tests.
-  **[Full-text search](/docs/search)**.
-- **[Uploads](/docs/uploads)**: file and image fields with pluggable storage.
-- **[Env / .env](/docs/dotenv)**: auto-loaded by `NewApp`.
+### Shipping & growing
 
-## Working with agents
-
-- **[Agent-readiness](/docs/agent-ready)**: per-entity MCP tools, auto
-  `llm.md`, and the discovery endpoints your app serves.
-- **[MCP server](/docs/mcp)**: the `core/mcp` reference: wire methods,
-  registering tools, resources, templates, and prompts, gates, cursor
-  pagination.
-- **[Embed](/docs/embed)**: hand a screen to a site you don't control: one
-  `<script>` tag, an origin allowlist, a themed iframe.
-  **[Semantic search](/docs/semantic-search)**: local vector retrieval, no API
-  key. **[Audit deps](/docs/audit-deps)**: find candidate global registration
-  calls in a source tree.
-- **[Kiln](/docs/kiln)**: experimental build-mode binary: an agent edits an
-  in-memory model over HTTP.
-- **[ACP](/docs/acp)**: the Agent Client Protocol server package behind
-  `kiln acp`: sessions, streamed updates, permissioned tool calls.
-
-## Operations
-
-- **[Logging](/docs/log)**: structured JSON, with MCP query tools.
-- **[Feature flags](/docs/feature-flags)** · **[i18n](/docs/i18n)** ·
-  **[Cron](/docs/cron)** · **[Events](/docs/events)** ·
-  **[Admin UI](/docs/admin)**.
-
-## Reference
-
-- **[Benchmarks](/docs/benchmarks)** ·
-  **[Performance results](/docs/perf-results)**: how it performs and how
-  that's measured.
-- **[Code generation](/docs/codegen)**: what the scaffold writes and how to
-  read it.
-- The **[full A–Z index](/docs/)** lists every doc.
+- **[Project structure](/docs/project-structure)**: start flat, extract domain packages only when boundaries appear.
+- **[Deployment](/docs/deploy)** and **[Horizontal scaling](/docs/scaling)**: one static binary on a VPS, or multiple replicas with shared sessions and fanout.
+- **[Client SDKs](/docs/sdk)**, **[Customer CLI](/docs/app-cli)**, and **[Application hosts](/docs/application-hosts)**: generate Go/TS SDKs or a branded CLI, or run your app headless in-process.
 
 ## Where to go next
 
-1. **[Get started](/get-started)**: a running app in a few minutes.
-2. **[Entity declarations](/docs/entity-declarations)**: the core of the model.
-3. **[Examples](/examples)**: reference apps, smallest first.
-4. **[Components](/components/)**: every UI component, one page each.
-
-Every doc is grounded in the code, and each guide ends with a "common mistakes"
-note. The same content is available offline with `gofastr docs`.
+1. **[Get started](/get-started)**: from zero to a running app in minutes.
+2. **[Project structure](/docs/project-structure)**: how a GoFastr app is laid out and grows.
+3. **[Examples](/examples)**: runnable reference apps, including the Meridian SaaS console.
+4. **[Full docs index](/docs/)**: every topic, also available offline with `gofastr docs`.

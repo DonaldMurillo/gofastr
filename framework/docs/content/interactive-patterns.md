@@ -1,550 +1,79 @@
 # Interactive patterns
 
-The runtime ships client-side interactive behavior through `data-cui-*`
-attributes on regular HTML elements. No JavaScript is required from the
-application author. The runtime's click delegation, IntersectionObserver,
-and module system handle everything.
+GoFastr's runtime drives in-page interactivity through `data-cui-*` and `data-hui-*` attributes on regular server-rendered HTML—no hand-written JS required. Use the Go helpers in `core-ui/interactive` and `framework/ui`, or write attributes directly for custom islands.
 
-This doc catalogs every interactive pattern the framework provides, grouped
-by whether the behavior is **client-only** (no server round-trip) or
-**RPC-backed** (fires a fetch, updates the page).
+For the wider reactivity ladder (signals → RPC → polling → SSE), see [Reactivity model](reactivity.md) and [Runtime contract](runtime-contract.md).
 
-Writing the `data-cui-*` attributes by hand instead of using a wrapper
-helper? Jump to [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
-It walks a complete example and calls out the four things that trip up
-almost everyone the first time (endpoint registration, the `name`→JSON-key
-rule, select triggers, and the two route-param syntaxes).
+## Client-only patterns (no server round-trip)
 
----
+- **Signals:** Named DOM strings mutated via `interactive.SetLocal`, `IncLocal`, `ToggleLocal` (`data-cui-signal-set="name:val"`, `data-cui-signal-inc="name[:delta]"`, `data-cui-signal-toggle="name"`). Elements with `data-cui-signal="name"` update automatically (add `data-cui-flash-on-update` for a reduced-motion-safe highlight).
+- **Controls:**
+  - `ui.Counter` (`Slice` or `SignalName`, configurable `Step`).
+  - `ui.Tabs` (signal-driven tabs; opt-in `StateAttrs`, `ID`, and `VacateHidden` to keep hidden panels out of DOM—leave `VacateHidden` off if server pushes move tabs before user interaction).
+  - `ui.SignalToggle` (`role="switch"` bound to `"true"`/`"false"`).
+  - `ui.Collapsible` (native `<details>`, optional `Name` for native exclusive accordions).
+  - `ui.CopyButton` (`Target` element ID, clipboard copy + screen-reader status).
+  - `ui.PasswordInput` (show/hide toggle, `spellcheck="false"`, `autocapitalize="off"`), `ui.OneTimeCode` (6-digit numeric text input, `autocomplete="one-time-code"`), `ui.TextArea` (`Autogrow: true`).
+  - `preset.ToastStack` (bottom-right auto-dismissing notifications), `ui.ThemeToggle` / `ui.ThemePicker`, `ui.AnchoredRail` / `ui.TableOfContents` (scroll spy + mobile `PhoneSheet`).
+- **Dropdowns & panes:** `interactive.Dropdown(trigger, panel)` for click-toggle panels; `interactive.OpenPaneOnClick` / `ClosePaneOnClick` / `SwapPaneOnClick` / `PaneKey` for `ui.PaneHost` (see [pane-host.md](pane-host.md)); `interactive.OpenOnClick` / `ToastOnClick` for widgets and toasts:
 
-## Client-only patterns
-
-These run entirely in the browser. No network request is made.
-
-### Signal state
-
-Signals hold named values in the browser's runtime signal store.
-The click-time mutation attributes write the following values:
-
-| Attribute | Effect |
-|---|---|
-| `data-cui-signal-set="name:value"` | Stores the string `value` in `name`. |
-| `data-cui-signal-inc="name[:delta]"` | Coerces the current value to a number, starts from 0 if it cannot be converted, and stores the sum. The default delta is 1. |
-| `data-cui-signal-toggle="name"` | Stores the Boolean `true` or `false` in `name`. |
-
-`getSignal`, subscriptions, and computed reducers read the stored value
-with its type. Text bindings display the value as text. Attribute
-bindings write strings, or set and remove presence-based Boolean
-attributes such as `disabled`.
-
-Any element carrying a `data-cui-signal` attribute renders the current
-value of that signal as its text content. The runtime updates it on
-mutation. Add `data-cui-flash-on-update` and it also flashes a brief
-`.cui-flash` highlight, styled by the built-in app.css (skipped when
-`prefers-reduced-motion: reduce` is active).
-
-Go helpers: `interactive.SetLocal()`, `interactive.IncLocal()`,
-`interactive.ToggleLocal()`.
-
-### Counter
-
-`framework/ui.Counter` renders a numeric counter with +/− buttons.
-Uses `data-cui-signal-inc`. Configurable `Step` for
-non-unit increments. The kernel steps the signal store, not the
-markup: `ui.Counter` over a `Slice` steps from the page's seed. A bare
-`headless.Counter` hands its own `Value` to the signal when it arrives
-(`data-hui-counter-value`, bound by `headless-controls`), so its first
-+ steps from the number on screen; set `Seeded` when the page seeds
-the signal itself.
-
-### Tabs
-
-`framework/ui.Tabs` renders a signal-driven tab strip. Clicking a tab
-sets the signal to the tab's index; CSS attribute selectors show/hide
-the matching panel. No JavaScript beyond the runtime's click delegation.
-
-With `Slice`, the strip selects the slice's value for the request. A
-value that names no tab (negative, or 5 on a three-tab strip) selects
-tab 0, and when the `headless-tabs` module loads it writes 0 back into
-the signal, so the store and anything else bound to the signal read
-the tab the page shows. An in-range value is left as it is.
-
-Three opt-in config knobs add the contracts a port from a component
-library usually needs (every zero value keeps the default output
-byte-identical):
-
-- `StateAttrs bool` — adds `data-state="active"/"inactive"` to every
-  tab button. The `headless-tabs` module keeps it in step
-  with the selection after client-side switches, alongside the
-  `aria-selected` mirroring core already does.
-- `ID string` — wires tab↔panel semantics: button
-  `id="<ID>-tab-<i>"` + `aria-controls="<ID>-panel-<i>"`, panel
-  `id="<ID>-panel-<i>"`. You own cross-page uniqueness of `ID`.
-  Without `ID` the prefix is the signal name; set `Ctx` and a second
-  strip on the same signal in one render gets `<name>-2` ids.
-- `VacateHidden bool` — hidden panels ship empty with their content in
-  an adjacent JSON stash, so page-scoped test locators cannot match
-  text inside hidden panels. The `headless-tabs` module restores content on
-  first show and moves the live nodes out/in on every later switch, so
-  island content the runtime swapped in survives re-show. While a
-  panel is vacated, document-scoped updates targeting it (SSE pushes,
-  in-flight RPC responses) are dropped permanently: nothing is queued
-  for replay, re-show resurrects the panel's pre-vacate nodes, and only
-  updates that arrive after re-show land.
-
-  Timing caveat for `VacateHidden`: the `headless-tabs` module is
-  demand-loaded on the strip's `data-hui-tabs` marker, so any signal write that lands before
-  that — an SSE, poll, or RPC-driven update, or a hydration-time
-  signal value differing from what SSR rendered — moves `data-active`
-  on a strip nobody has touched, and the newly-active panel shows
-  empty until the first interaction heals it. SSR itself is unaffected
-  (the initially-active panel always ships with its content), so
-  server-rendered deep links, anchors, restored scroll, and autofocus
-  are fine. If your app moves tabs without a user touching them, leave
-  `VacateHidden` off.
-
-### Toggle switch
-
-`framework/ui.SignalToggle` renders a `type="button"` switch with
-`aria-checked` bound to a Boolean signal. Clicking flips the stored
-Boolean without submitting the enclosing form. The ARIA attribute
-reads `"true"` or `"false"` in the DOM.
-
-### Collapsible
-
-`framework/ui.Collapsible` wraps native `<details>` with
-`data-hui-disclosure` for keyboard support (Escape to close) and
-`aria-expanded` mirroring. The browser handles open/close natively.
-Sections that share a `CollapsibleConfig.Name` form an exclusive
-group (the native `<details name>` accordion): opening one closes
-the others, with no script.
-
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+-->
 ```go
-ui.Collapsible(ui.CollapsibleConfig{Summary: "Billing", Name: "faq"}, billing)
-ui.Collapsible(ui.CollapsibleConfig{Summary: "Security", Name: "faq"}, security)
+interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit"}), "edit-drawer")
+interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),
+    interactive.Toast{Variant: "success", Title: "Saved", TTLMs: 5000})
 ```
-
-### Copy to clipboard
-
-`framework/ui.CopyButton` renders a button that copies text to the
-clipboard via `navigator.clipboard.writeText()`. The copy module
-(`headless-copy`, through the `data-hui-copy*` hooks) shows a
-brief "Copied!" state and announces it to screen readers once the
-clipboard has taken the text. A write the browser refuses (a declined
-permission, an insecure origin with no clipboard) announces the
-`ui.copy.failed` sentence instead, with no copied state and no toast.
-Without script the page promises nothing about the clipboard.
-
-`CopyButtonConfig.Target` is the source element's id, with or without
-a leading `#` (`"code-1"` and `"#code-1"` are the same). It is not a
-CSS selector: the module looks the element up with `getElementById`,
-and render panics on a value with selector syntax such as
-`".code"` or `"pre > code"`.
-
-### Password visibility toggle
-
-`framework/ui.PasswordInput` renders a password field with a reveal
-button that toggles between `type="password"` and `type="text"`. The
-headless behaviour module (`framework/headless/behavior.js`) binds the
-button's `data-hui-reveal` hook: it retypes the input, swaps the
-button's visible word and accessible name from the four `data-hui-*`
-attributes the component rendered from its `Strings`, and keeps the
-caret where the reader left it.
-
-The input carries `spellcheck="false"` and `autocapitalize="off"`
-whichever type it shows: revealed, it is a text input, and a spell
-checker (some send the text off the device) must not read the secret.
-`MinLength` and `EnterKeyHint` set `minlength` and `enterkeyhint` on the
-input. With the toggle, a sign-up or change-password form asks for the
-new password once; it needs no confirm field.
-
-### One-time code field
-
-`framework/ui.OneTimeCode` renders the input for a one-time code (an
-authenticator app's TOTP code, a code sent by SMS or email), built on
-`ui.Control` inside a `FormField` whose label names it. It is
-`type="text"` with `autocomplete="one-time-code"`, `inputmode="numeric"`,
-`pattern="[0-9]{6}"`, `minlength`/`maxlength` 6, `enterkeyhint="done"`
-and no spell check. `Digits` changes the length and `Name` (default
-`code`, the field `/auth/2fa/challenge` reads) the field name. The
-type stays text, not number: a code keeps its leading zeros and gets
-no spinner. `i18nui.AuthOneTimeCode` ("Authentication code") is the
-default label. See [the 2FA flow](auth.md#the-2fa-flow).
-
-`ui.ControlConfig` carries the hints a sign-in field needs:
-`EnterKeyHint`, `InputMode` and `NoSpellCheck` (`spellcheck="false"`
-and `autocapitalize="off"`). `AutoCapitalize` sets the case an
-on-screen keyboard starts in, one of `ui.AutoCapitalizeOff`,
-`AutoCapitalizeSentences`, `AutoCapitalizeWords` (names) or
-`AutoCapitalizeCharacters` (postcodes); it wins over `NoSpellCheck`'s
-`off`, and any other value panics.
-
-### Textarea auto-resize
-
-`framework/ui.TextArea` accepts `Autogrow: true`. Where the browser
-supports `field-sizing: content` (`CSS.supports`), the runtime module
-(`textarea.js`) hands the textarea to it, with its `rows` and `cols`
-as the minimum size (the browser ignores both under `field-sizing`),
-and measures nothing after. Elsewhere the module is the fallback: it listens for
-input and resizes the textarea to fit its content, and refits after
-reset or focus. A textarea wired in a hidden
-panel keeps its height until it can be measured. ResizeObserver fits it
-when the panel opens and when its width changes; focus provides a fallback
-where ResizeObserver is unavailable. Detached controls release their
-observer targets. Triggered by the `data-cui-autogrow` attribute.
-
-### Toast notifications
-
-`core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack in the bottom-right corner, clear of a page's header actions;
-`.Mount` moves it. The feedback module (`headless-feedback`) owns the pure
-client-side toast runtime. Toasts
-auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
-by clicking the close button.
-
-### Theme toggle
-
-`framework/ui.ThemeToggle` renders a dark/light/auto switch. The
-navigation module (`headless-navigation`, through the
-`data-hui-theme-*` hooks) persists the preference in `localStorage`
-and toggles the `color-scheme` meta + root attribute.
-`framework/ui.ThemePicker` is its sibling for whole-page themes: the
-same module puts a registered override's class on `<html>` and
-persists it (theming → "Page themes: `ui.ThemePicker`").
-
-### Scroll spy
-
-The scroll-spy rail is `framework/ui.AnchoredRail` over
-`headless.Rail` (`data-hui-rail` on the nav, `data-hui-rail-observe`
-naming the observed region): the `headless-rail` module
-IntersectionObserves which section is currently in the upper portion
-of the viewport and marks the corresponding nav link
-`aria-current="true"` / `.is-active`. Below the last section (a page's
-"next steps" tail) the last section stays marked, and the pick runs
-again when a scroll settles, so a jump to the end lands on it too. The table of contents
-(`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
-Initial selection and later scroll updates ignore sections hidden by `display:none`,
-the `hidden` attribute, or closed `<details>`, even when a hidden descendant
-still reports layout rectangles. If every section is hidden at initial selection,
-no entry is marked.
-On phones `AnchoredRailConfig.PhoneSheet` folds the rail into a pill
-that names the section in view and opens the rail as a bottom sheet,
-or with `PhoneSheetTop` into a bar under the sticky header that opens
-it beneath (layouts → the aside's contents list). The observer's band starts
-below the header and that bar: `--ui-sticky-top` plus
-`--ui-sheet-bar-offset`.
-The retired scrollspy spelling is gone with its module.
-
----
 
 ## RPC-backed patterns
 
-These fire an HTTP request to the server and update the page based on
-the response. The runtime handles `fetch()`, CSRF tokens, and DOM
-updates.
+Build an `interactive.Action` with `Get`, `Post`, `Put`, `Patch`, or `Delete`, then chain modifiers and attach via `OnClick`, `OnSubmit`, `LiveSearch`, or `.Attrs()` (preferred when passing `ExtraAttrs` to `ui.Button`):
 
-### OnClick (button → server → signal)
+<!-- gofastr:compile
+stmt: _ = del
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
+-->
+```go
+del := ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger,
+    ExtraAttrs: interactive.Delete("/api/items/42").
+        WithConfirm("Delete this item?").
+        OnSuccess(interactive.SetSignal("items")).Attrs()})
+```
 
-`interactive.OnClick(html, action)` wraps any element so clicking it
-fires an RPC. The `Action` specifies the HTTP method, path, and
-optional effects (set signal, open widget, navigate).
+| Helper / modifier | What it does |
+|---|---|
+| `OnClick(el, action)` | Button click → `fetch()` with CSRF token forwarding |
+| `OnSubmit(form, action)` | Intercepts `<form>` submit → JSON (or multipart) `fetch()` |
+| `LiveSearch(form, action, debounceMs)` | Debounced `input` trigger (default 300ms) for search & filter forms |
+| `.WithBody(json)` | Attaches a validated static JSON body to a non-form RPC |
+| `.WithConfirm(msg)` / `.WithConfirmDialog(Confirm{Title, Message, Accept, Danger})` | Pre-flight themed confirmation dialog (Cancel focused by default); also `ui.MenuItem.Confirm` |
+| `.OnSuccess(interactive.SetSignal(name))` | Writes response into `interactive.BindHTML` / `BindText` / `BindAttr` regions |
+| `.OnSuccess(interactive.Navigate(path))` | Cache-bypassing SPA navigation; pair with server-side `ui.InvalidateScreens(w, "/orders")` to evict other cached routes |
+| `.OnSuccess(interactive.AfterText(s), interactive.AfterDisable())` | One-shot button text swap + disable after 2xx |
+| `.OnSuccess(interactive.ScrollTo(sel))` / `PushState(path)` | Smooth-scroll or `pushState` URL update after 2xx (server `X-Gofastr-Push-State` wins) |
+| `.OnSuccessToast(title)` / `.OnSuccessToastAction(label, next)` | Success toast (survives navigation) with optional Undo action (server equivalent: `ui.AddToast` + `interactive.NewToastAction`) |
+| `.OnErrorToast(title)` | Shows an error toast with the server's JSON `error` message on non-2xx |
+| `interactive.EditToggle` / `CancelEdit` | Signal helpers for click-to-edit forms |
+| `ui.OptimisticAction` / `ui.ToggleAction` | Immediate visual commit + background RPC + rollback on failure (see [optimistic-ui.md](optimistic-ui.md)) |
 
-Attributes injected: `data-cui-rpc`, `data-cui-rpc-method`,
-`data-cui-rpc-signal`.
+### Themed confirmation modal (`ui.ConfirmAction`)
 
-### OnSubmit (form → server → signal)
-
-`interactive.OnSubmit(form, action)` attaches `data-cui-rpc` to the
-`<form>`. The runtime intercepts the form's regular submit event and
-sends the request with `fetch()`. Add `OnSuccess(interactive.SetSignal(name))`
-to write the successful response into that signal. This effect emits
-`data-cui-rpc-signal` on the form.
-
-### Live Search (debounced input → RPC)
-
-`interactive.LiveSearch(form, action, debounceMs)` wraps a search form
-so typing fires debounced RPCs. It writes `data-cui-rpc-trigger="input"`
-and `data-cui-rpc-debounce-ms` on the form. Pass 0 for the default of
-250 ms, or supply a delay in milliseconds.
-
-### Dropdown (click-toggle panel)
-
-`interactive.Dropdown(trigger, panel)` wraps a trigger and a panel: the
-trigger gets `data-cui-dropdown`, `aria-expanded` and `aria-haspopup`,
-the panel `data-cui-dropdown-panel` and `hidden`. The runtime's dropdown
-module toggles it on click and closes it on a click outside or Escape.
-Knob: `--ui-dropdown-min-width` (11rem).
-
-### Optimistic Update (immediate visual + background RPC)
-
-`interactive.OptimisticUpdate(action, idle, success)` accepts only the
-Action's RPC endpoint and method. An Action carrying confirmation, a body,
-toasts, or success effects panics at render time rather than discarding
-those options. Use `interactive.OnClick` for an Action needing that wiring.
-It renders a button that immediately flips to its success visual on
-click, then fires the RPC in the background. On failure the button
-shakes, reverts, and announces the failure through a status element.
-
-Uses the kernel's `action` module through the `data-hui-action*`
-hooks `interactive.OptimisticUpdate` (and `framework/ui.OptimisticAction`)
-render; see [runtime-contract](runtime-contract.md).
-
-### Toggle Action (three-state commit/untoggle)
-
-`framework/ui.ToggleAction` renders a three-state button
-(idle → pending → committed) for binary server-backed state the user
-flips in place: Follow/Following, plan pickers, watch/unwatch.
-Clicking an idle button optimistically shows the committed label,
-POSTs `Endpoint` (or `Method`), and rolls back on non-2xx. With
-`AllowUntoggle: true` a second click reverts it, hitting
-`UntoggleEndpoint` when set, otherwise flipping locally with no
-request. Buttons sharing a `Group` form a client-side mutex:
-committing one reverts the previously-committed sibling (no extra
-RPC; the server stays the source of truth). SSR ships the initial
-state via `Committed`, and `aria-pressed` mirrors it for AT users.
+When a destructive action needs a richer body than `WithConfirmDialog`, `ui.ConfirmAction` returns a `(trigger, modal)` pair—mount `modal` once at startup via `widget.Mount` and register your RPC handler:
 
 ```go
-ui.ToggleAction(ui.ToggleActionConfig{
-    Endpoint:         "/api/follow/42",
-    IdleLabel:        "Follow",
-    CommittedLabel:   "Following ✓",
-    Committed:        alreadyFollowing, // SSR initial state
-    AllowUntoggle:    true,
-    UntoggleEndpoint: "/api/unfollow/42",
+trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
+    Name: "delete-user-42", TriggerLabel: "Delete",
+    Title: "Delete user?", Body: "This permanently removes the user.",
+    RPCPath: "/users/42/delete", SuccessSignal: "users-list",
 })
 ```
 
-Uses the kernel's `action` module through the `data-hui-action*`
-hooks (`data-hui-action-untoggle`, `data-hui-action-group`) the
-button renders; see [runtime-contract](runtime-contract.md).
+## Polling (passive freshness)
 
-### Inline Edit helpers
-
-`interactive.EditToggle(html, signalName)` and
-`interactive.CancelEdit(html, signalName)` provide semantic wrappers
-for click-to-edit patterns. `EditToggle` uses `data-cui-signal-toggle`
-to enter edit mode; `CancelEdit` uses `data-cui-signal-set="name:false"`
-to close it. The actual save uses `interactive.OnSubmit`.
-
-### Navigate (button → server → SPA page change)
-
-`interactive.OnClick` with a `Navigate` effect replaces the page
-content via the runtime's SPA navigation, with no full browser reload.
-The navigation bypasses the screen cache, so the destination always
-shows post-mutation state.
-
-Navigate covers the screen the user lands on; a mutation that also
-stales *other* cached screens names them on the response:
-
-```go
-func createOrder(w http.ResponseWriter, r *http.Request) {
-    // …write the order…
-    // Drop every cached query variant of /orders in this tab, so
-    // back-nav re-fetches instead of showing the pre-create list.
-    ui.InvalidateScreens(w, "/orders")
-    w.WriteHeader(http.StatusNoContent)
-}
-```
-
-The two compose: `InvalidateScreens` evicts, `Navigate` (or
-`data-cui-rpc-navigate`) fetches the destination fresh. Eviction alone
-never re-renders the visible page. Selector rules and scope are in
-[the runtime contract](runtime-contract.md).
-
-### Confirm (pre-flight confirmation dialog)
-
-`Action.WithConfirm(message)` gates the action behind a **pre-flight**
-confirmation. The gate runs *before* the request is dispatched: the runtime
-opens the kit's confirm dialog, and cancelling (the Cancel button, Escape or
-a click on the backdrop) aborts, so the RPC never fires.
-
-```go
-interactive.OnClick(publishBtn,
-    interactive.Post("/api/items/42/publish").
-        WithConfirm("Publish this item to every customer?"),
-)
-```
-
-Attribute injected: `data-cui-confirm="message"`.
-
-For a destructive action (delete, revoke, purge), spell the dialog in full
-with `Action.WithConfirmDialog`: a title, the message, the accept button's
-label, and `Danger`, which draws the accept button in the danger variant.
-
-```go
-interactive.Delete("/api/invoices/42").
-    WithConfirmDialog(interactive.Confirm{
-        Title:   "Delete this invoice?",
-        Message: "This cannot be undone.",
-        Accept:  "Delete",
-        Danger:  true,
-    })
-```
-
-Attributes injected: `data-cui-confirm`, `data-cui-confirm-title`,
-`data-cui-confirm-accept` and `data-cui-confirm-tone="danger"`. An empty
-`Title` or `Accept` keeps the dialog's own ("Are you sure?", "Confirm");
-an empty `Message` panics.
-
-The dialog is `framework/ui`'s, registered as a template the host renders
-once per page, so it wears the theme in light and dark with no CSS of
-yours. Cancel takes focus when it opens: Enter on an open confirm never
-answers yes. A page with no kit imported falls back to `window.confirm`,
-so the gate never opens.
-
-The runtime honors the attribute on any form submit (native POST, SPA, or
-RPC) and on RPC triggers; on a form, a submit button's message takes
-precedence over the form's.
-
-Menu items have the same gate as a config field: `ui.MenuItem.Confirm`
-emits `data-cui-confirm` alongside the item's RPC wiring (ignored on
-non-RPC items — the gate covers form submits and RPC triggers, and a
-plain menu link is neither).
-
-A confirmation that needs more than a title and a sentence (a form field,
-a list of what goes) is a modal of its own:
-[`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction).
-
-### OnErrorToast (say why a request was refused)
-
-A button RPC that gets a non-2xx answer does nothing visible by default
-(a form reports its refusals beside the fields instead).
-`Action.OnErrorToast(title)` makes the failure visible: the runtime shows
-an error toast titled `title`, with the server's JSON `error` message as
-its body. A network failure shows the same title with a network-error body.
-
-```go
-interactive.Delete("/api/orders/42").
-    WithConfirm("Delete this order?").
-    OnSuccess(interactive.Navigate("/orders")).
-    OnErrorToast("Could not delete this order.")
-```
-
-Attribute injected: `data-cui-rpc-error-toast="title"`. An empty title
-falls back to `Request failed (<status>)`. The resource detail page's
-Delete and state-transition buttons carry it, so a `409` from a record
-that other records still reference reaches the user.
-
-### OnSuccessToast and OnSuccessToastAction (say what happened, offer Undo)
-
-`Action.OnSuccessToast(title)` shows a success toast on a 2xx answer,
-before any `OnSuccess(Navigate(…))` runs: the toast stack sits outside
-the swapped region, so the toast outlives the navigation.
-`OnSuccessToastAction(label, next)` puts one button on that toast (and
-panics without one); pressing it runs `next`, with next's own toasts and navigation. A toast
-with a button stays up ten seconds instead of six, paused while hovered
-or focused.
-
-```go
-interactive.Delete("/api/invoices/42").
-    OnSuccessToast("Invoice deleted").
-    OnSuccess(interactive.Navigate("/invoices")).
-    OnSuccessToastAction("Undo", interactive.Post("/api/invoices/42/_restore").
-        WithBody(`{}`).
-        OnSuccessToast("Invoice restored"))
-```
-
-Attributes injected: `data-cui-rpc-success-toast="title"` and
-`data-cui-rpc-success-action` (JSON: the label and next's attributes).
-The button carries the next action's `data-cui-rpc` and `data-cui-rpc-*`
-attributes, including `data-cui-rpc-signal` for a response signal.
-`OnSuccessToastAction` panics on preflight confirmation and standalone
-signal-mutation attributes. The browser copies only RPC attributes
-onto the toast button. entityui's `Undo()` on a soft delete uses this hook.
-
-A server answer offers the same button: `interactive.NewToastAction(label,
-next)` builds it under the same rules, and `ui.ToastTrigger.Action`
-carries it in the `X-Gofastr-Toast` header. entityui's bulk delete
-answers its Undo this way. `ui.AddToast` drops a toast whose action
-carries a control byte, as it does for the title.
-
-```go
-ui.AddToast(w, ui.ToastTrigger{
-    Variant: ui.StatusSuccess, Title: "3 deleted",
-    Action: interactive.NewToastAction("Undo",
-        interactive.Post("/api/notes/_bulk").WithBody(body).
-            OnSuccess(interactive.Navigate("/notes"))),
-})
-```
-
-### AfterText (one-shot button label swap on success)
-
-`interactive.AfterText(text)` replaces the trigger element's text content
-with `text` after a 2xx response. One-shot: re-clicks are idempotent. Pair
-with `AfterDisable` for "Saved ✓" feedback.
-
-```go
-interactive.OnClick(saveBtn,
-    interactive.Post("/api/save").OnSuccess(
-        interactive.AfterText("Saved ✓"),
-        interactive.AfterDisable(),
-    ),
-)
-```
-
-Attribute injected: `data-cui-rpc-after-text="text"`.
-
-### AfterDisable (permanently disable trigger on success)
-
-`interactive.AfterDisable()` sets `aria-disabled="true"` and `disabled` on
-the trigger after a 2xx response. Use with `AfterText` to prevent re-submission.
-
-Attribute injected: `data-cui-rpc-after-disable` (boolean).
-
-### ScrollTo (scroll to newly-added content on success)
-
-`interactive.ScrollTo(selector)` smooth-scrolls the element matching
-`selector` into view after a 2xx response. Use to direct the user's eye at
-content that the RPC just inserted.
-
-```go
-interactive.OnClick(addBtn,
-    interactive.Post("/api/items").OnSuccess(
-        interactive.ScrollTo("#items-list"),
-    ),
-)
-```
-
-Attribute injected: `data-cui-rpc-scroll-to="selector"`.
-
-### PushState (update URL without re-fetch on success)
-
-`interactive.PushState(path)` applies a URL change via `history.pushState`
-after a 2xx response without triggering a navigation fetch. Use for actions
-that know the canonical URL ahead of time (e.g. pagination).
-
-The server-supplied `X-Gofastr-Push-State` response header takes precedence
-when both are present.
-
-Inside an intercepted pane, the write belongs to that pane's history span;
-closing the pane returns to the page underneath. Query-only (`?p=2`),
-fragment-only (`#details`) and same-origin absolute URLs resolve against
-the current browser URL. Subsequent query links stay inside the pane when
-the write keeps the pane's route; a same-origin absolute URL naming an
-unrelated route does not provide that guarantee.
-
-```go
-interactive.OnClick(page2Btn,
-    interactive.Post("/islands/items/page").OnSuccess(
-        interactive.PushState("?p=2"),
-    ),
-)
-```
-
-Attribute injected: `data-cui-push-state="path"`.
-
-
----
-
-## Polling patterns
-
-Polling is passive freshness without a held connection. The runtime
-re-fetches a region on a Go-duration interval and swaps the body,
-using the same code path an RPC signal swap uses.
-
-### Page-level polling
-
-Two attributes on the region you want to refresh:
+For counters, statuses, and dashboards that refresh on a cadence without holding an SSE connection:
 
 ```html
 <div data-cui-poll="30s" data-cui-poll-src="/islands/orders/today">
@@ -552,310 +81,42 @@ Two attributes on the region you want to refresh:
 </div>
 ```
 
-- `data-cui-poll` is a Go duration (`30s`, `5m`, `1h`). Five seconds
-  is the floor.
-- `data-cui-poll-src` is the URL the runtime fetches; the response
-  body replaces the region's `innerHTML`.
-- The interval is jittered, pauses while the tab is hidden, and
-  doubles the interval on a failed fetch (capped at 5x the base, reset on the next success).
-- Any replica can answer the fetch from the DB. No fanout, no held
-  connection.
-
-Use a read endpoint. A poll fires on a timer, so a write endpoint
-would write on every tab on every interval.
-
-### Widget-level polling
-
-For a widget that tracks a server-side value, `Builder.Poll(interval)`
-re-fetches the widget's `/state` on the cadence and re-applies changed
-signals. See [Widgets](widgets.md) → Polling.
-
-### When to pick polling
-
-Polling is the recommended tier for a surface that needs to stay
-fresh on a cadence: a counter, a status pill, a dashboard. Reserve
-SSE push for semantics that need the connection: presence,
-collaborative editing, sub-second updates. See
-[Reactivity model](reactivity.md) for the full ladder.
-
----
+- `data-cui-poll` accepts a Go duration (`5s` minimum), jitters automatically, pauses on hidden tabs, and backs off up to 5× on errors. Use read-only endpoints only.
+- Widgets use `Builder.Poll(interval)` to refresh `/state` on a cadence (see [widgets.md](widgets.md)).
 
 ## Sortable list (single + kanban)
 
-`framework/ui.SortableList` (on the `headless.SortableList` primitive,
-bound by the registered `headless-sortablelist` module) renders a
-reorderable `<ol>` with HTML5 drag-and-drop plus a keyboard fallback
-(Space to grab, Arrow keys to move, Space to drop, Esc to cancel).
-After a successful reorder the module POSTs the new key sequence to
-`RPCPath` as form-encoded `order=<comma-sep-keys>`. A non-2xx response
-reverts the DOM. The `Items` slice may be empty. An empty column
-renders a valid, sortable `<ol>` wrapper with no `<li>` children and
-remains a drop target (empty Kanban columns, issue #82).
-`ui.SortableListItems` with no items returns an empty fragment, so an
-authoritative conflict-reconciliation endpoint can replace a column
-with an empty response.
-
-### Single list (back-compat)
+`ui.SortableList` renders an HTML5 drag-and-drop + keyboard-accessible (`Space` to grab/drop, Arrow keys to move, `Esc` to cancel) `<ol>` that POSTs `order=<keys>` (plus `container=<id>` and `moved=<key>` for Kanban columns sharing a `Group`):
 
 ```go
 ui.SortableList(ui.SortableListConfig{
-    Label:   "Priorities",
-    RPCPath: "/api/reorder",
-    Items:   []ui.SortableItem{{Key: "a", Label: "A"}, {Key: "b", Label: "B"}},
+    Label:       col.Title,
+    Group:       "board-1",        // omit for standalone single-list reorder
+    Container:   col.ID,           // unique per column; empty columns still accept drops
+    RPCPath:     "/api/board/move",
+    Version:     boardVersion,     // optional: enables 409 conflict reconciliation
+    ConflictRPC: "/api/board/conflict?container=" + col.ID,
+    Items:       col.Items,
 })
 ```
 
-The POST body is `order=a,b`. Existing single-list callers compile and
-behave identically; a list without `Container` never sends a
-`container=` field on same-container reorders (back-compat).
-
-### Kanban (cross-container)
-
-Render one list per column, all sharing the same `Group` (the board id),
-each with a unique `Container` (the column id the server writes to).
-Lists with the same non-empty `Group` allow drag and keyboard moves
-between them; lists with no group (or different groups) stay isolated.
-A column may start empty (`Items: nil`). It still renders the
-sortable wrapper and accepts drops.
-
-```go
-for _, col := range board.Columns {
-    ui.SortableList(ui.SortableListConfig{
-        Label:     col.Title,           // aria-label = column name
-        Group:     "board-1",           // same for every column
-        Container: col.ID,              // unique per column
-        RPCPath:   "/api/board/move",
-        Items:     col.Items,           // may be empty
-    })
-}
-```
-
-A cross-container drop POSTs to the **destination** list's `RPCPath`:
-
-```
-order=<dest-keys>&moved=<key>&container=<col-id>
-```
-
-The server knows which item moved (`moved`), to which column
-(`container`), and the new destination order (`order`). It removes the
-item from its previous column and inserts it into the destination at
-the right position. A **same-container** reorder on a list that has a
-`Container` configured also sends `container=<col-id>` (issue #84) so
-the server can route the write without inferring the column from the
-key set; a list without `Container` keeps the legacy `order=<keys>`
-payload exactly. Cross-container commits always carry `container=`
-(empty when the list has no configured id).
-
-Keyboard: Arrow Left/Right moves a grabbed item to the adjacent column
-in the same group (including an empty one); Arrow Up/Down reorders
-within the column.
-
-### Version-aware 409 conflict recovery
-
-When `Version` is set, the runtime appends `version=<token>` to every
-commit. A `409 Conflict` response then fires a **distinct conflict
-path** instead of a blanket rollback:
-
-1. The 409 response body is read under hard safety bounds (issue #83):
-   the `Content-Type` MUST be `application/json`, at most ~4 KB is
-   read, the body MUST parse as the error envelope every route answers
-   with (`{"error":"…","code":409,"reason":"…"}`, what
-   `handler.WriteError` writes), and `error` (which must be a string) is capped at ~300 characters. Anything malformed,
-   oversized, non-JSON, or unreadable, including an empty body,
-   falls back to the generic copy (today's behavior, backward
-   compatible).
-2. When a valid message is present, it is shown through the polite
-   `aria-live` region (replacing the generic copy) and the framework's
-   toast helper (`__gofastr.toast`, loaded on demand) when one is
-   wired.
-3. If `ConflictRPC` is set, the runtime then GET-fetches it and
-   replaces the destination list's `innerHTML` with the response
-   (server-rendered reconciliation: an empty response reconciles the
-   column to zero items, #82). The source list is restored from its
-   snapshot. If `ConflictRPC` is absent, the runtime falls back to
-   rollback + a `console.warn`.
-4. The token renews from the `X-Gofastr-Sortable-Version` response
-   header, which `ui.RenewSortableVersion(w, version)` writes. Call it on
-   the 2xx that accepts a move: every list of the move's `Group` still
-   holding the token the move sent takes the new version. Call it on the
-   conflict endpoint's response with the version its rows were read at:
-   the refreshed list takes it with its rows. Lists holding another token
-   keep theirs and conflict on their next move. Without the renewal the
-   second move sends the first move's token and conflicts. Linked lists
-   share one token, the board's.
-
-```json
-{"error": "Cannot move ORB-12 to Done because ORB-9 is incomplete.", "code": 409, "reason": "transition_blocked", "success": false}
-```
-
-Without `Version`, `409` is treated like any other non-2xx (rollback),
-for back-compat. A polite `aria-live` region announces grab, move (position
-+ column), drop-commit success, and rollback/conflict (with the
-server's message when available) for screen-reader users.
----
+When `Version` is set:
+- Call `ui.RenewSortableVersion(w, newVersion)` on 2xx moves and on `ConflictRPC` responses so subsequent moves carry the updated token.
+- On `409 Conflict` with the standard JSON error envelope (`{"error":"..."}`), the runtime announces the message, fetches `ConflictRPC` (`ui.SortableListItems`), and reconciles the column instead of a blind rollback. See [optimistic-ui.md](optimistic-ui.md).
 
 ## Writing a hand-written island, end to end
 
-The wrapper helpers above cover the common cases, but sometimes you write the
-`data-cui-*` attributes by hand: a bespoke widget, a generated screen, a
-one-off control. The runtime is happy to drive raw attributes, but four
-things trip up almost everyone the first time. This section walks a complete
-example and calls each one out.
+Four gotchas when writing raw `data-cui-*` attributes yourself:
 
-The example: a product list with a category `<select>` that swaps the list
-via an RPC (an in-page state change: an island, **not** a route).
+1. **Register the RPC route yourself.** Only `widget.Mount` auto-registers routes. A hand-written `data-cui-rpc="/islands/products/filter"` needs `app.Router().Post("/islands/products/filter", handler)` or clicks silently 404.
+2. **JSON keys come from `name`, not `id`.** Non-multipart RPC forms serialize to JSON using each control's `name` attribute.
+3. **`data-cui-rpc-trigger="input"` already covers `<select>`, checkboxes, and radios.** There is no `change` trigger—set `data-cui-rpc-debounce-ms="1"` on a `<select>` for instant firing.
+4. **Route params:** `app.Router()` (Go `ServeMux`) requires `{id}`; screen routes (`app.Register` / `ScreenGroup`) accept either `:id` or `{id}`.
 
-### 1. Register the endpoint yourself
+## Complex interactive components & presence dots
 
-`data-cui-rpc` is just a string the runtime POSTs to. **Nothing registers
-that route for you.** The auto-wiring you may have seen belongs to
-`widget.Mount` / `widget.MountBuilder`, which register a widget's
-`/style.css`, `/state`, and `/chrome` routes. A *hand-written* `data-cui-rpc`
-path has no widget behind it, so you add the handler on the app router:
-
-```go
-app.Router().Post("/islands/products/filter", http.HandlerFunc(filterProducts))
-```
-
-Forget this and the click fires a request that 404s, with no compile error
-and nothing in the page to hint at the missing route. If a `data-cui-rpc`
-button "does nothing", check the server log for a 404 first.
-
-### 2. The JSON key is the input's `name`, not its `id`
-
-When the runtime submits a form-backed RPC, it serializes the form to JSON
-using each control's **`name`** attribute as the key (non-multipart forms go
-out as `application/json`; see the forms note in
-[runtime-contract](runtime-contract.md#forms)). The `id` is for
-CSS/labels and never appears in the body.
-
-```html
-<form data-cui-rpc="/islands/products/filter" data-cui-rpc-method="POST"
-      data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
-  <select id="cat" name="category">   <!-- key is "category" (name), not "cat" (id) -->
-    <option value="all">All</option>
-    <option value="tools">Tools</option>
-    <option value="parts">Parts</option>
-  </select>
-</form>
-```
-
-```go
-func filterProducts(w http.ResponseWriter, r *http.Request) {
-    var body struct{ Category string `json:"category"` } // matches name=, not id=
-    _ = json.NewDecoder(r.Body).Decode(&body)
-    // …render the filtered rows, write them back…
-}
-```
-
-**Why this bites:** `curl -d 'category=tools'` hits the handler fine, so the
-server looks correct in isolation. The mismatch only surfaces in a real
-browser, where the runtime keys the body off `name`. Test the wired-up form
-in a browser, not just the endpoint in isolation.
-
-### 3. A `<select>` (or checkbox/radio) needs no `change` trigger
-
-There is deliberately **no `data-cui-rpc-trigger="change"`.** Selects,
-checkboxes, and radios all emit an `input` event on commit in every modern
-browser, so `data-cui-rpc-trigger="input"` already fires for them. Wrap the
-control in a `<form data-cui-rpc … data-cui-rpc-trigger="input">` (as above)
-and you're done. Adding a second `change` trigger would be redundant behavior
-for a control the `input` trigger already covers, and the core runtime is
-gzip-budget-locked, so the framework does not ship one.
-
-For a `<select>` the `input`/`change` distinction doesn't matter (both fire
-once, on selection), so set a small debounce, `data-cui-rpc-debounce-ms="1"`,
-to fire promptly instead of waiting out the 250 ms default meant for
-keystroke typeahead. This recipe is covered end-to-end by
-`TestInputTrigger/SelectFiresRPC` in `core-ui/runtime`.
-
-### 4. Route-param syntax: `{id}` on the HTTP router, both on the screen router
-
-Two routers, two placeholder conventions to keep straight:
-
-| Router | Where you use it | Placeholder syntax |
-|---|---|---|
-| Framework HTTP router (`app.Router()`) | RPC endpoints, API routes, anything you `.Get`/`.Post` | Go 1.22 style only: `/islands/products/{id}/filter` |
-| UI screen router (`app.Register` / screen groups) | Page routes whose params reach `SetParams` | **Either** `/products/:id` **or** `/products/{id}` |
-
-So an RPC handler is registered with braces:
-
-```go
-app.Router().Post("/islands/products/{id}/filter", http.HandlerFunc(filterProducts))
-// read it with r.PathValue("id")
-```
-
-…while a page route may use either form, and they match identically:
-
-```go
-app.Register("/products/:id", &ProductScreen{}, layout)     // colon form
-app.Register("/products/{id}", &ProductScreen{}, layout)    // brace form, same route
-// param arrives via ParamSetter.SetParams either way
-```
-
-The screen router normalizes `{id}` to `:id` at registration so every
-downstream consumer (resolve, the route manifest, `llm.md`) sees one
-shape. The HTTP router is Go 1.22's `ServeMux` and accepts **only**
-`{id}`. A `:id` segment on an `app.Router().Post(...)` path simply
-never matches (no error, just a 404). When an RPC route "isn't hit",
-check that it uses `{id}`, not `:id`.
-
----
-
-## Themed confirmation (`ui.ConfirmAction`)
-
-`Action.WithConfirm` and `WithConfirmDialog` (above) ask in the kit's
-confirm dialog, which holds a title, one sentence and two buttons. When the
-confirmation needs more, `framework/ui.ConfirmAction` renders a widget
-**alertdialog** with a body of its own: a modal that matches your theme
-(light + dark, via tokens, zero bespoke CSS), traps focus, closes on Escape,
-and is drivable by tests.
-
-It's the same island contract you already know, composed from two existing
-primitives: the trigger carries `data-cui-open` (open the modal), and the
-modal's Confirm button carries the real `data-cui-rpc`. Cancel just closes;
-only Confirm dispatches. No new runtime attributes, no core JS.
-
-```go
-trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
-    Name:         "delete-user-42",   // unique per action; qualify per row
-    TriggerLabel: "Delete",
-    Title:        "Delete user?",
-    Body:         "This permanently removes the user and their data.",
-    ConfirmLabel: "Delete it",        // defaults to "Confirm"
-    CancelLabel:  "Keep it",          // defaults to "Cancel"
-    RPCPath:      "/users/42/delete", // the Confirm button POSTs here
-})
-
-// Mount the modal ONCE at app startup (registers its widget routes):
-def := modal.Build()
-widget.Mount(app.Router(), &def)
-
-// Render `trigger` wherever the destructive button belongs; register the
-// RPC handler yourself (rule 1 above still applies):
-app.Router().Post("/users/42/delete", http.HandlerFunc(deleteUser))
-```
-
-Cancel is the initially-focused button by default (safer for destructive
-flows: a stray Enter can't fire the action); set
-`AutofocusConfirm: true` for benign "Apply changes?" confirmations. The
-returned pair is deliberately two values: the trigger renders inline, the
-modal mounts once. Forgetting the `widget.Mount` is the usual "the dialog
-never opens" cause.
-
----
-
-## Presence rosters (who is here)
-
-`ui.Avatar` and `ui.AvatarGroup` can show a **presence dot**, the
-visual half of "who is viewing this". Set `AvatarConfig.Status` to
-`ui.AvatarOnline`, `AvatarAway`, `AvatarBusy`, or `AvatarOffline`; the
-dot colors come from the status tokens, so a themed app recolors them
-for free. `StatusLabel` overrides the dot's accessible name. The
-default is the status word ("Online", "Away", "Busy", "Offline", the
-`ui.avatar.status*` phrases) in the language of `AvatarConfig.Ctx`;
-`AvatarGroup` and `Dropdown` hand their own `Ctx` to an avatar that
-sets none.
+- **Built-in interactive components:** `ui.Carousel`, `ui.Combobox`, `ui.CommandPalette` (supports server `RPCPath` returning `ui.PaletteResults` or `Search: true` site search; render per-request trigger via `ui.CommandPaletteTrigger`), `ui.DatePicker`, `ui.FileDropzone`, `ui.Gallery` + `ui.Lightbox`, `ui.Menu`, `ui.MultiSelect`, `ui.NotificationBell`, `ui.Popover`, `ui.RangeSlider`, `ui.Slider`, `ui.SortableList`, `ui.TagInput`, `ui.Tree`, `ui.NetworkRetryBanner`.
+- **Presence dots:** `ui.Avatar` / `ui.AvatarGroup` render semantic status dots (`AvatarOnline`, `AvatarAway`, `AvatarBusy`, `AvatarOffline`); pair with `core-ui/island` presence topics for live rosters (see [presence.md](presence.md)):
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/ui"
@@ -870,261 +131,11 @@ ui.AvatarGroup(ui.AvatarGroupConfig{
 })
 ```
 
-To make the roster **live**, feed the group's HTML through a signal,
-the same pattern NotificationBell uses: render the `AvatarGroup` inside
-a `data-cui-signal="…"` `data-cui-signal-mode="html"` region and push
-new HTML when the roster changes (via an RPC response signal or an
-island re-render). The status values are just data you supply.
-
-> **Presence *transport* is app-owned today.** The framework gives you
-> the roster **rendering** (the status dot) and the live-region
-> **plumbing** (signals + SSE), but it does not yet track *who* holds
-> an open connection to a given entity. Deriving the live roster is
-> work an app wires itself for now: binding the authenticated user to
-> their SSE connection, observing connect/disconnect, and aggregating
-> that across replicas. Adding this to the framework is tracked in
-> issue #47.
-
-## Complex interactive components
-
-These are full components (not wrapper functions) that ship with their
-own runtime modules for client-side behavior.
-
-| Component | Runtime module | Behavior |
-|---|---|---|
-| Carousel | `headless-carousel` | Prev/next navigation, pagination dots, keyboard, auto-rotation |
-| Combobox | `headless-combobox` | Debounced search RPC, listbox navigation, type-ahead |
-| Command Palette | (uses Modal + Combobox) | ⌘K overlay with search |
-| Drag Sortable List | `headless-sortablelist` (framework/headless) | Native drag-and-drop + keyboard reorder, cross-container kanban, version-aware 409 conflict recovery, RPC commit, per-move announcements through Strings |
-| File Dropzone | `filedropzone.js` (framework/ui) | Image thumbnail strip; the drop, the chosen-files list and the pick announcement are the headless module's `data-hui-drop` hooks |
-| Gallery + Lightbox | `framework/ui/lightbox.js` (registered behaviour) | Image zoom overlay, prev/next, keyboard |
-| Menu | `headless-menu` | Keyboard navigation (arrows, Home/End, type-ahead), submenu open/close (ArrowRight/Left, swapped in RTL), menuitemradio group arbitration |
-| Multi-select | `headless-multiselect` (framework/headless) | Checkbox group with chip display; plain-form submit, disclosure via `headless-disclosure` |
-| Notification Bell | (uses Popover) | Bell + unread badge + dropdown |
-| Popover | `popover.js` | Anchored positioning, auto-flip, arrow drawing |
-| Range Slider | `headless-controls` | Dual-thumb with cross-clamp, live output sentence |
-| Slider | `headless-controls` | Live value mirror |
-| Tag Input | `headless-collections` | Free-form chips, Enter/comma/blur to commit, removal announcements |
-| Tree | `headless-tree` (framework/headless) | WAI-ARIA tree pattern, roving tabindex, arrows/Home/End/type-ahead, expand/collapse through the toggle (lazy branches keep the kernel rpc wiring) |
-| Network Retry Banner | `headless-feedback` (offline SystemBanner) | Shows on the framework's lost-connection report, retry link probes health |
-| Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
-| Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |
-
-### Command palette
-
-`ui.CommandPalette` returns a trigger and a modal component. The
-trigger is a link to `FallbackHref` that opens the modal with script
-and binds `Shortcut` (default `Meta+K`). By default it is visually
-hidden, for chrome that draws its own search button. Set
-`Trigger: ui.PaletteTriggerField` to draw a search field instead: a
-magnifier, `TriggerText` (default: the placeholder) and the shortcut's
-keycaps (`⌘K`). Below 48rem it shrinks to a 44px icon button. The knob
-`--ui-cmd-trigger-width` (default 16rem) sets the field's width.
-
-The panel keeps one height while the reader types, so a filter that
-leaves one row does not move the field or footer: the list fills what
-they leave and scrolls. `--ui-cmd-palette-height` (default 30rem,
-capped by the viewport) and `--ui-cmd-palette-width` (default 36rem)
-size it; on a phone it fills the screen.
-
-A palette with `RPCPath` searches on the server. The endpoint reads `q`
-from the form body and answers option rows built by
-`ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
-palette's `Name`. A command with a safe `Href` renders an anchor,
-so readers can also use the browser's usual link actions.
-With no commands it answers one disabled row reading
-`empty`, or the localized "No matches" when `empty` is `""`.
-
-A palette with `Search: true` searches the pages instead: the
-[site search](site-search.md) battery's index, live or from a static
-export's index files. It needs `Commands`, the rows shown before the
-first keystroke, and adds page and section rows below the matching
-commands as the reader types. They fade in as they arrive, except a
-row that stays across keystrokes, and not at all under reduced motion.
-On a phone or tablet the footer drops its keyboard hints and keeps the
-close button.
-
-```go
-paletteConfig := ui.CommandPaletteConfig{
-    Name: "admin-palette", RPCPath: "/admin/_palette",
-    FallbackHref: "/admin/search", Trigger: ui.PaletteTriggerField,
-}
-_, palette := ui.CommandPalette(paletteConfig)
-widget.MountBuilder(app.Router(), palette) // once at startup
-
-// In the page chrome, on every request:
-trigger := ui.CommandPaletteTrigger(r.Context(), paletteConfig)
-
-func search(w http.ResponseWriter, r *http.Request) {
-    r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
-    if err := r.ParseForm(); err != nil {
-        http.Error(w, "bad form", http.StatusBadRequest)
-        return
-    }
-    cmds := find(r.Context(), r.FormValue("q")) // []ui.PaletteCommand
-    w.Header().Set("Content-Type", "text/html; charset=utf-8")
-    w.Write([]byte(ui.PaletteResults(r.Context(), "admin-palette", cmds, "")))
-}
-```
-
-`CommandPalette`'s returned trigger is a snapshot of `cfg.Ctx`, not a
-request slot. `CommandPaletteTrigger(ctx, cfg)` renders the same markup
-without rebuilding the modal; its explicit `ctx` resolves the default
-accessible label and field placeholder even when `cfg.Ctx` differs.
-Explicit `TriggerLabel`, `TriggerText` and `Placeholder` still win. A nil
-context uses English fallbacks. Keep the name and shortcut consistent with
-the mounted body. For translated commands, mount `CommandPaletteFunc` and
-pass the request-built config to `CommandPaletteTrigger`.
-
----
-
-## Using the interactive package
-
-An `Action` is built with the method constructors (`Post`, `Get`, `Put`,
-`Delete`, `Patch`) and refined with chained methods (`.OnSuccess(...)`,
-`.WithConfirm(...)`). Its fields are unexported, so there is no struct
-literal.
-
-```go
-import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
-
-// Button that increments a client-side counter (delta 1)
-btn := interactive.IncLocal(
-    html.Button(html.ButtonConfig{Label: "+1"}),
-    "my-counter", 1,
-)
-
-// Form that submits via RPC without page reload
-form := interactive.OnSubmit(
-    myForm,
-    interactive.Post("/api/save"),
-)
-
-// Live search with 300ms debounce
-search := interactive.LiveSearch(
-    searchForm,
-    interactive.Post("/api/search"),
-    300,
-)
-```
-
-### Action body and attribute maps
-
-`.WithBody(json)` attaches a static JSON body to a non-form RPC (a button
-click with no surrounding `<form>`). It validates the JSON at build time.
-Attributes injected: `data-cui-rpc-body`.
-
-```go
-interactive.OnClick(btn,
-    interactive.Post("/api/transition/42").WithBody(`{"status":"shipped"}`))
-```
-
-`.Attrs()` returns the `data-cui-*` attributes an `Action` would inject, as a
-`map[string]string`. Use it to merge RPC wiring into an existing attribute map
-(a `render.Tag`/`ExtraAttrs` map) so the renderer's sorted output stays
-byte-identical. Prefer it over the `OnClick`/`OnSubmit` wrappers whenever the
-element already carries other attributes, since the wrappers splice at the
-tag's first `>` and can reorder attributes relative to a sorted map.
-
-<!-- gofastr:compile
-stmt: _ = del
-import "github.com/DonaldMurillo/gofastr/framework/ui"
-import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
--->
-```go
-del := ui.Button(ui.ButtonConfig{Label: "Delete", Variant: ui.ButtonDanger,
-    ExtraAttrs: interactive.Delete("/api/items/42").
-        WithConfirm("Delete this item?").
-        OnSuccess(interactive.SetSignal("items")).Attrs()})
-```
-
-### Click-to-open triggers and toasts
-
-`OpenOnClick` opens a registered widget on click (no RPC). Attributes
-injected: `data-cui-open`. Distinct from the `OpenWidget` effect, which opens
-a widget only after a successful RPC (`data-cui-rpc-open`).
-
-`ToastOnClick` fires a toast on click. Attributes injected:
-`data-cui-toast` (compact JSON of the non-zero `Toast` fields: `variant`,
-`title`, `body`, `stack`, `ttl`).
-
-<!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/core-ui/interactive"
-import "github.com/DonaldMurillo/gofastr/framework/ui"
--->
-```go
-interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Edit"}), "edit-drawer")
-interactive.ToastOnClick(ui.Button(ui.ButtonConfig{Label: "Saved!"}),
-    interactive.Toast{Variant: "success", Title: "Saved", TTLMs: 5000})
-```
-
-### Pane triggers
-
-`OpenPaneOnClick` / `ClosePaneOnClick` / `SwapPaneOnClick` drive a
-`PaneHost` side pane on click. All validate the pane name
-(`"secondary"` / `"tertiary"`; `ClosePaneOnClick` also accepts `""` to
-close the topmost pane, emitting `data-hui-pane-close=""`, matched by
-presence). Attributes injected: `data-hui-pane-open-control`
-(`OpenPaneOnClick`), `data-hui-pane-close` (`ClosePaneOnClick`),
-`data-hui-pane-swap` (`SwapPaneOnClick`); `PaneKey` adds
-`data-hui-pane-key` for deep-linked hosts.
-
-### Signal display bindings
-
-`BindHTML`, `BindText`, and `BindAttr` wrap an island content region so its
-content is driven by a named client signal (the value an RPC writes via
-`SetSignal`). They inject `data-cui-signal` plus `data-cui-signal-mode`
-(`html` / `text` / `attr`); `BindAttr` also injects `data-cui-signal-attr`.
-The names mirror `core-ui/store`'s typed `Slice.Bind*` methods: reach for a
-`store.Slice` when the signal is seeded server-side and read by typed code;
-reach for these wrappers when binding an island HTML region to an RPC signal.
-
-```go
-// An island slot an RPC re-renders and returns as a fragment.
-listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
-```
-
----
-
-## See also
-
-- [UI capability map](ui-capability-map.md) starts from optimistic UI, live dashboard, mutation, rollback, and reconciliation jobs.
-- [Optimistic UI](optimistic-ui.md) for the mutation lifecycle contract,
-  rollback vs authoritative refresh, and the seven composed recipes.
-- [`docs/ui-new-components.md`](ui-new-components.md): full component catalog.
-- [`docs/widgets.md`](widgets.md): widget framework (Modal, Drawer, Popover mounts).
-- [runtime-contract](runtime-contract.md): the SSR/hydration/island/SSE model + `data-cui-*` attribute reference (embedded extract of `core-ui/ARCHITECTURE.md`).
-- [`docs/ui-getting-started.md`](ui-getting-started.md): first-time UI setup.
-
 ## Common mistakes
 
-- **Assuming a hand-written `data-cui-rpc` route is auto-registered.**
-  Only `widget.Mount` wires routes automatically (for a widget's own
-  style/state/chrome). A raw `data-cui-rpc="/x"` you write by hand needs
-  its own `app.Router().Post("/x", …)`. Otherwise the click 404s silently.
-  See [Writing a hand-written island, end to end](#writing-a-hand-written-island-end-to-end).
-- **Decoding the RPC body by the input's `id`.** The runtime keys the JSON
-  body off each control's **`name`**, not its `id`. `curl` testing hides the
-  mismatch; only a real browser exposes it. Same section, rule 2.
-- **Turning in-page state changes into routes.** Sort, paginate,
-  expand, tab-switch stay on their route: an embedded region is an island
-  (RPC swaps one fragment), and a list screen's own sort and page live in
-  its query string as intercepted navigations. Adding a new route (or
-  `location.href = …`) for them is the architecture's named failure
-  mode #1.
-- **Re-implementing pagination/sort/filter math in JS.** The server
-  owns that logic; the client's job is to fire the RPC and swap the
-  returned HTML. Duplicated math drifts from the server's the first
-  time either changes.
-- **Comparing a stored signal to the wrong type.** Compare the result of
-  `getSignal` using the type its producer writes. Increment writes a number,
-  toggle writes a Boolean, and set writes a string. CSS attribute selectors
-  compare the rendered attribute text.
-- **Using SSE to deliver an action's response.** SSE is push-only.
-  It carries background events for *other* clients. The result of a user action
-  arrives in the RPC response itself (`data-cui-rpc-signal`, island
-  swap), never via the event stream.
-- **Inventing a new `data-cui-*` attribute without updating the
-  contract.** Every attribute the runtime reads must land in
-  `core-ui/ARCHITECTURE.md` and the runtime test suite. Undocumented
-  attributes are drift the next author can't discover.
+- **Forgetting to mount a hand-written `data-cui-rpc` endpoint.** Raw RPC URLs aren't auto-registered—check server logs for 404s.
+- **Decoding RPC JSON by input `id` instead of `name`.** Browser form serialization uses `name`.
+- **Modeling in-page state as routes or `location.href`.** Keep tabs, expands, and embedded table state on the current route (islands or query params).
+- **Duplicating sort/filter/pagination math in JS.** Let the server compute and return HTML fragments.
+- **Treating signals as typed booleans/numbers.** DOM signals are strings (`"true"`/`"false"`).
+- **Delivering user-action responses over SSE.** Return the result directly in the HTTP RPC response; SSE is push-only for background updates.

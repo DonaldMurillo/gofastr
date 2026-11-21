@@ -35,6 +35,23 @@ few lines, and link the PR or the docs page for the rest.
   refuses requests from other origins for anything but a page load: a
   script tag, image, fetch or form post from another site gets 403.
   See [Security](framework/docs/content/security.md#resource-isolation).
+
+### Changed
+
+- **BREAKING: the default Content-Security-Policy enforces Trusted
+  Types.** It adds `require-trusted-types-for 'script'; trusted-types
+  gofastr`, and the runtime writes every HTML string and script URL
+  through its `gofastr` policy. App JavaScript that assigns a plain
+  string to `innerHTML` or a similar sink now throws in browsers
+  that support Trusted Types. Use DOM methods, or name your own policy in
+  `SecurityHeadersConfig.TrustedTypesPolicies`; `NoTrustedTypes` turns
+  the directives off. See
+  [Security](framework/docs/content/security.md#trusted-types).
+
+## [0.98.0] - 2026-11-20
+
+### Added
+
 - **`schema.TimestampArg` and `yaml.BoolValue`.** `TimestampArg`
   converts a `time.Time`, a non-nil `*time.Time` or an RFC 3339 string
   to the stored timestamp layout; CRUD writes and typed timestamp
@@ -55,15 +72,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
-- **BREAKING: the default Content-Security-Policy enforces Trusted
-  Types.** It adds `require-trusted-types-for 'script'; trusted-types
-  gofastr`, and the runtime writes every HTML string and script URL
-  through its `gofastr` policy. App JavaScript that assigns a plain
-  string to `innerHTML` or a similar sink now throws in browsers
-  that support Trusted Types. Use DOM methods, or name your own policy in
-  `SecurityHeadersConfig.TrustedTypesPolicies`; `NoTrustedTypes` turns
-  the directives off. See
-  [Security](framework/docs/content/security.md#trusted-types).
+- **Refreshed `README.md`, the docs site (`examples/site`), and all
+  embedded guides (`framework/docs/content/*.md`)** around the
+  barebones-to-full-stack adoption ladder, with verified API and
+  security accuracy fixes across the guide set
+  ([#879](https://github.com/DonaldMurillo/gofastr/pull/879)).
 - **BREAKING: static export refuses a route whose output file name is not
   portable,** such as one holding `:` or `?`, before writing anything,
   and names the route. Such a route used to export on Linux and macOS
@@ -820,6 +833,12 @@ few lines, and link the PR or the docs page for the rest.
   queue job spans: the error's Go type under `%w` wrappers, or
   `tracing.ErrorTypePanic` for a panic. The status still holds the
   error's text.
+- **A not-found page no longer advertises the route's markdown doc.**
+  `ServeNotFound`, `decide.NotFound()` and a `Load` or resolver answering
+  `app.ErrNotFound` now send the same `Link` header as a URL no route
+  matches, with no `rel="alternate"` `/llm.md` entry, so a hidden route no
+  longer shows up in its headers (#844). See
+  [Agent-ready](framework/docs/content/agent-ready.md).
 
 ### Security
 

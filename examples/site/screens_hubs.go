@@ -297,7 +297,7 @@ ui.Form(ui.FormConfig{Method: "POST", Action: "/login", ID: "login", SubmitLabel
 		},
 		Next: []hubNextLink{
 			{Title: "Build a real app", Href: "/get-started", Hint: "The four-minute guide, from install to a running page."},
-			{Title: "Next area: Framework", Href: "/framework", Hint: "Entities, auth, migrations, and the framework/ui components."},
+			{Title: "Next area: Framework", Href: "/framework", Hint: "framework/ui components, theming, auth, migrations, and optional entities."},
 		},
 	}
 }
@@ -410,26 +410,38 @@ count := cart.Int("count", 0)`,
 func frameworkHub() *TeachHubScreen {
 	return &TeachHubScreen{
 		Name:  "Framework",
-		Title: "The framework layer, on top of core",
-		Desc:  "The framework layer of GoFastr: entities and CRUD on the backend, composed components on the front: auth, access control, migrations, and theming.",
-		Lede:  "framework and framework/ui sit on top of the primitives. Declare an entity and get the database, API, and tools; compose screens from components that already match your theme.",
-		Moves: []string{"entities", "auth", "access control", "migrations", "components", "theming"},
+		Title: "Turn on the full stack when you want it",
+		Desc:  "The framework layer of GoFastr: UI components, theming, auth, access control, migrations, and optional CRUD entities on top of core.",
+		Lede:  "framework and framework/ui compose the core primitives into a productive full-stack app: themed UI components, auth, access control, migrations, and optional entity declarations—while letting you drop to plain Go anywhere.",
+		Moves: []string{"components", "theming", "auth", "access control", "migrations", "entities"},
 		Concepts: []hubConcept{
 			{
-				Title:    "Entities",
-				Body:     []render.HTML{hubP("Declare an entity in Go: fields, types, relations. One call gives you the table, REST endpoints, validation, an OpenAPI entry, and MCP tools.")},
-				CodeFile: "main.go",
+				Title:    "Components",
+				Body:     []render.HTML{hubP("framework/ui composes intent, not tags: PageHeader, DataTable, Form, Card, charts. Each ships its own CSS through the theme, so a page inherits your look for free.")},
+				CodeFile: "screen.go",
 				CodeLang: "go",
-				Code: `app.Entity("posts", framework.EntityConfig{
-    Exposure: &framework.ExposureConfig{Public: true},
-    Fields: []schema.Field{
-        {Name: "title", Type: schema.String, Required: true},
-        {Name: "body", Type: schema.Text},
-        {Name: "status", Type: schema.Enum,
-            Values: []string{"draft", "published"}, Default: "draft"},
-    },
+				Code: `ui.PageHeader(ui.PageHeaderConfig{
+    Eyebrow:  "Settings",
+    Title:    "Workspace settings",
+    Subtitle: "Tune defaults for everyone on this workspace.",
+    Actions:  ui.Button(ui.ButtonConfig{Label: "Save changes", Variant: ui.ButtonPrimary}),
 })`,
-				RefSlug: "entity-declarations",
+				RefHref: "/components",
+				RefText: "/components: the live gallery →",
+			},
+			{
+				Title:    "Theming",
+				Body:     []render.HTML{hubP("One typed theme drives every color, space, and font as CSS variables. Change a token and every component updates. You never edit a component's CSS to reskin an app.")},
+				CodeFile: "theme.go",
+				CodeLang: "go",
+				Code: `t := theme.Default(theme.Overrides{
+    Primary:  "oklch(0.82 0.155 78)", // amber accent
+    Dark:     &theme.Overrides{Primary: "oklch(0.82 0.155 78)"},
+    Surface:  "oklch(0.17 0.006 75)",
+    RadiusMd: 6,
+})
+site.WithTheme(t)`,
+				RefSlug: "theming",
 			},
 			{
 				Title:    "Auth",
@@ -476,36 +488,24 @@ if err := framework.AutoMigrate(db, app.Registry); err != nil {
 				RefSlug: "migrations",
 			},
 			{
-				Title:    "Components",
-				Body:     []render.HTML{hubP("framework/ui composes intent, not tags: PageHeader, DataTable, Form, Card, charts. Each ships its own CSS through the theme, so a page inherits your look for free.")},
-				CodeFile: "screen.go",
+				Title:    "Entities",
+				Body:     []render.HTML{hubP("Optional: declare an entity in Go with fields, types, and relations. One call gives you the table, REST endpoints, validation, an OpenAPI entry, and MCP tools.")},
+				CodeFile: "main.go",
 				CodeLang: "go",
-				Code: `ui.PageHeader(ui.PageHeaderConfig{
-    Eyebrow:  "Settings",
-    Title:    "Workspace settings",
-    Subtitle: "Tune defaults for everyone on this workspace.",
-    Actions:  ui.Button(ui.ButtonConfig{Label: "Save changes", Variant: ui.ButtonPrimary}),
+				Code: `app.Entity("posts", framework.EntityConfig{
+    Exposure: &framework.ExposureConfig{Public: true},
+    Fields: []schema.Field{
+        {Name: "title", Type: schema.String, Required: true},
+        {Name: "body", Type: schema.Text},
+        {Name: "status", Type: schema.Enum,
+            Values: []string{"draft", "published"}, Default: "draft"},
+    },
 })`,
-				RefHref: "/components",
-				RefText: "/components: the live gallery →",
-			},
-			{
-				Title:    "Theming",
-				Body:     []render.HTML{hubP("One typed theme drives every color, space, and font as CSS variables. Change a token and every component updates. You never edit a component's CSS to reskin an app.")},
-				CodeFile: "theme.go",
-				CodeLang: "go",
-				Code: `t := theme.Default(theme.Overrides{
-    Primary:  "oklch(0.82 0.155 78)", // amber accent
-    Dark:     &theme.Overrides{Primary: "oklch(0.82 0.155 78)"},
-    Surface:  "oklch(0.17 0.006 75)",
-    RadiusMd: 6,
-})
-site.WithTheme(t)`,
-				RefSlug: "theming",
+				RefSlug: "entity-declarations",
 			},
 		},
 		Next: []hubNextLink{
-			{Title: "Next area: Agents", Href: "/agents", Hint: "The MCP tools an entity gets, and the discovery your app serves."},
+			{Title: "Next area: Agents", Href: "/agents", Hint: "Custom core/mcp tools, optional entity tools, and discovery endpoints your app serves."},
 			{Title: "Next area: Interactivity", Href: "/interactivity", Hint: "Server-driven UI: islands, signals, forms."},
 		},
 	}
@@ -517,19 +517,19 @@ func agentsHub() *TeachHubScreen {
 	codeText := func(s string) render.HTML { return html.Code(html.TextConfig{}, render.Text(s)) }
 	return &TeachHubScreen{
 		Name:  "Agents",
-		Title: "Built for two kinds of agents",
-		Desc:  "GoFastr's agent surface: production MCP tools your users' agents call with their own login, and dev MCP that hands your coding agent the running app's routes, config, and logs.",
-		Lede:  "Two kinds of agents, two layers of MCP. In production, the agents your users bring call your data with the same login and permissions the users have. While you build, gofastr dev hands your coding agent the running app.",
-		Moves: []string{"production MCP", "dev MCP", "auto llm.md", "discovery", "local search"},
+		Title: "Built for coding agents and the agentic web",
+		Desc:  "GoFastr's agent surface: dev MCP and contract verification while you build, plus /mcp tools and discovery endpoints once you ship.",
+		Lede:  "One MCP surface for coding agents while you build, and one for user agents once you ship. Under gofastr dev, your coding agent reads live routes, config, logs, and contract checks; in production, user agents call /mcp under the same login and permissions as your HTTP API.",
+		Moves: []string{"production MCP", "dev MCP", "per-screen llm.md", "discovery", "local search"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Production MCP tools",
-				Body:     []render.HTML{hubP("Turn on MCP and every CRUD entity gets tools an agent can call. The tools run through the same auth, owner, and tenant checks as your HTTP API. An agent gets exactly the access its user has, and nothing more.")},
+				Body:     []render.HTML{hubP("Turn on MCP to serve custom core/mcp tools and optional entity CRUD tools at /mcp. Entity tools run through the same router as your HTTP API, so an agent passes the same login, role, and owner checks a user does.")},
 				CodeFile: "main.go",
 				CodeLang: "go",
 				Code: `fwApp := framework.NewUIHostApp(host,
     framework.WithConfig(framework.AppConfig{Name: "app"}),
-    framework.WithMCP(),              // entities get MCP tools at /mcp
+    framework.WithMCP(),              // mounts /mcp for custom and entity tools
     framework.WithMCPIntrospection(),
     framework.WithMCPTools(mcptools.Register), // framework_docs_* over the embedded docs
 )`,
@@ -552,13 +552,17 @@ gofastr dev`,
 				RefSlug: "dev-livereload",
 			},
 			{
-				Title: "Auto llm.md",
+				Title: "Per-screen llm.md",
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
-					render.Text("Every screen and every entity ships an "),
+					render.Text("Add "),
+					codeText("uihost.WithPublicLLMMD()"),
+					render.Text(" to serve a plain-text "),
 					codeText("llm.md"),
-					render.Text(" automatically: a plain-text description an agent reads to understand the page or the API. On by default; opt one out with "),
+					render.Text(" view beside every screen. Entities also serve "),
+					codeText("/{table}/llm.md"),
+					render.Text(" by default (opt out with "),
 					codeText("NoLLMMD"),
-					render.Text(".")),
+					render.Text(").")),
 				},
 				RefSlug: "agent-ready",
 			},

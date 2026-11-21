@@ -1,185 +1,45 @@
-# Upgrading: move an app to a newer GoFastr release
+# Upgrading GoFastr
 
-Two things version independently: the **Go module dependency** your app
-builds against, and the **`gofastr` CLI** installed with `go install`.
-Updating `go.mod` does NOT update the CLI binary; keep them on the same
-release. Every command below uses `vX.Y.Z` as a placeholder; substitute
-the release you're upgrading to.
+Your app's **Go module dependency** (`go.mod`) and the **`gofastr` CLI binary** version independently — keep both on the same release when upgrading.
 
-If your locale catalog translates the obsolete-job replay notice,
-rename `admin.replay_nothing` to `ui.admin.replayNothing`.
+> Crossing `v0.87.0`? Read [What changed in v0.87.0](release-0-87.md) first. Crossing `v0.86.0`? Read [What changed in v0.86.0](release-0-86.md) first.
 
-For route groups without an MCP namespace, update any code that expects
-`RouteGroup.MCPToolName("posts", "list")` to return `posts.list`. It now
-returns the registered name, `posts_list`.
+## Guided upgrades (`gofastr upgrade`)
 
-Crossing v0.87.0? Read [What changed in v0.87.0](release-0-87.md)
-first. That release reskinned the default theme, added entity screens
-(`framework/entityui`) and rebuilt the admin on them, and the page lists
-every breaking change with what replaces it.
-
-Crossing v0.86.0? Read [What changed in v0.86.0](release-0-86.md)
-first. That release rebuilt the UI layer, and the page lists every
-breaking change with what replaces it.
-
-## The guided path: `gofastr upgrade`
-
-The CLI embeds a migration registry: one entry per release that
-carried breaking or migration-relevant changes, maintained alongside
-the changelog. `gofastr upgrade` reads your `go.mod`, resolves the
-target release, and shows exactly what you'll cross on the way:
+The CLI embeds a release-by-release migration registry that scans your codebase, YAML configs, stylesheets, and HTML attributes for breaking changes and prints exact `file:line` fix instructions:
 
 ```bash
-# Install the TARGET release's CLI first; an older binary's registry
-# can't know about releases that came after it:
+# 1. Install the TARGET release's CLI first (older CLIs don't know newer notes):
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 
-gofastr upgrade                # plan against the newest tagged release
-gofastr upgrade --to vX.Y.Z    # plan against a specific release
-gofastr upgrade --apply        # also run go get / tidy / build / test
-gofastr upgrade --from vA.B.C  # go.mod already bumped: name the old release
+# 2. Plan the upgrade against your current go.mod:
+gofastr upgrade                 # newest tagged release
+gofastr upgrade --to vX.Y.Z     # specific target release
+gofastr upgrade --apply         # also run go get / tidy / vendor / build / test
+gofastr upgrade --from vA.B.C   # if go.mod was already bumped before scanning
 ```
 
-The plan lists each in-between release's notes (BREAKING entries called
-out clearly), and where a change has a known code signature, the report
-points at the affected `file:line` in *your* project: the same guided
-style as `gofastr audit a11y`. `--apply` then runs the mechanical
-steps and stops at the first failure so you fix with the notes in hand.
-`--apply` against an OLDER release is refused unless `--allow-downgrade`
-is passed: the steps are written for moving forward, and the notes
-describe what a downgrade undoes, not how to undo it. The exit status is
-1 while any BREAKING note still has edit hits (2 for the refused
-downgrade), so a script does not read unfinished migration work as
-success. A review hit does not count: it may already be right, so it
-never clears.
-An app that vendors its dependencies (`vendor/modules.txt`) gets a
-`go mod vendor` step after `go mod tidy`; without it every later go
-command refuses the stale `vendor/`. A release candidate target
-(`--to v0.96.0-rc.1`) shows the notes of the release it precedes.
+Notes on `gofastr upgrade`:
+- Exits `1` while any **BREAKING** edit note still matches your code (`2` for a refused downgrade without `--allow-downgrade`).
+- Lists any unreadable, oversized (>8 MiB), symlink-escaping, or complex build-tag files under **Unscanned** so you can review them manually.
+- Reports any [unmounted](unmount.md) framework packages with links to their upstream diffs (never overwrites unmounted copies).
 
-The scan lists unreadable source, stylesheet, text and settings files as
-**Unscanned**, including symlinks that escape the project root. Review
-these entries before treating a report with no matches as a clean scan.
-A missing optional `gofastr.yml` is not an unreadable-file warning.
-Stylesheet, text and settings reads are capped at 8 MiB per file;
-larger files appear as **Unscanned** instead of being read in full.
-A Go constraint naming more than eight distinct free build tags appears as
-**Unscanned** with `constraint names more than 8 tags`: the bounded search
-did not decide whether that file can build. This is different from
-`no satisfiable build configuration`, which means no supported platform and
-tag assignment satisfies the constraint. Review tag-limit files separately.
-Retired HTML attributes in Go string values and attribute maps match
-ASCII-case-insensitively, including names ending in `-` that identify
-an attribute family. Unicode lookalikes remain distinct.
-Retired CSS selectors match escaped identifier spellings too, including
-hexadecimal escapes, while reporting the original source position. Escaped
-punctuation stays part of its identifier, never a combinator, class boundary
-or pseudo-class function; longer names remain distinct.
-Retired classes also match `[class=…]` and `[class~=…]` selectors. Quoted
-values follow CSS string escapes: an escaped LF, CR, CRLF or form feed
-continues the value without adding whitespace before class-token matching.
-A `config:` note's `value:` regexp matches the scalar's parsed value,
-never the source spelling: the scanner reads gofastr.yml through the
-YAML parser, which keeps values, not tokens. Write the pattern against
-these forms:
+## Manual upgrade checklist
 
-| YAML source | Matched text |
-|---|---|
-| `theme: 2.0` | `2` |
-| `ratio: 1.10` | `1.1` |
-| `kilo: 1e3` | `1000` |
-| `price: 3.250` | `3.25` |
-| `count: 42` | `42` |
-| `flag: true` | `true` |
-| `word: hello` | `hello` (strings are the one verbatim kind) |
-| `nothing: ~` | `<nil>` |
-
-So a note about `theme: 2.0` writes `^2(\.0)?$` or `^2$`, and `^2\.0$`
-stays silent — a false clean, which is why the parsed form is the one to
-pin. A float past `+MaxFloat64` is refused by the parser rather than
-matched, and only `true`/`True`/`TRUE` (and their false counterparts)
-are booleans.
-A module without a `go` directive is checked as Go 1.16, the Go tool's
-default, rather than bypassing minimum-version notes. An invalid
-`go.mod` either prevents scan startup or appears as **Unscanned** when
-the directive matcher encounters it after loading.
-Module directives are inspected before package loading can add or
-upgrade them, including nested modules.
-
-## The manual workflow
-
-1. **List the available releases:**
-
-   ```bash
-   go list -m -versions github.com/DonaldMurillo/gofastr
-   ```
-
-2. **Read the release notes** for the release you chose; breaking
-   changes, migrations, and deprecations are called out per release:
-   <https://github.com/DonaldMurillo/gofastr/releases> (the same
-   content ships in `CHANGELOG.md`). Do this *before* touching
-   `go.mod`.
-
-3. **Update the module dependency:**
-
+1. List releases: `go list -m -versions github.com/DonaldMurillo/gofastr`
+2. Read `CHANGELOG.md` / release notes for every release between your current and target versions.
+3. Update both module and CLI:
    ```bash
    go get github.com/DonaldMurillo/gofastr@vX.Y.Z
-   ```
-
-4. **Update the standalone CLI to the same release** (if you use it):
-
-   ```bash
    go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
-   ```
-
-5. **Clean the module files:**
-
-   ```bash
    go mod tidy
    ```
-
-6. **Build and test:**
-
-   ```bash
-   go build ./...
-   go test ./...
-   ```
-
-7. **Confirm which version Go actually selected** (MVS can pick a
-   higher version than you asked for if another dependency requires it):
-
-   ```bash
-   go list -m github.com/DonaldMurillo/gofastr
-   ```
-
-8. **Review the `go.mod` / `go.sum` diff before committing.**
-
-For the CLI, `gofastr --help` is the smoke test that the new binary is
-on your PATH. Don't treat `gofastr version` as proof of the installed
-tag: `go install` builds don't always carry injected version metadata.
+4. Verify the resolved version (MVS may select a higher version): `go list -m github.com/DonaldMurillo/gofastr`
+5. Build, test, and review `go.mod` / `go.sum`: `go build ./... && go test ./...`
 
 ## Common mistakes
 
-- **Upgrading `go.mod` but not the CLI.** `go get` changes what your
-  app builds against; the `gofastr` binary on your PATH stays whatever
-  you last installed. Generators, `gofastr build`'s gates, and the
-  embedded docs then disagree with your framework version. Step 4 is
-  not optional if you use the CLI.
-- **Running `gofastr upgrade` with the OLD binary.** The migration
-  registry ships inside the CLI, so a binary older than the target
-  can't know the target's notes (it warns when this happens). Install
-  the target CLI first, then plan the upgrade.
-- **Running `go get` before `gofastr upgrade`.** The plan starts at the
-  version in `go.mod`, so a bumped `go.mod` hides every note in between
-  ("Already on the target release"). Pass `--from` with the release the
-  code was written for, and the scan points at the same lines, through
-  the compile errors when the app no longer type-checks.
-- **Skipping the release notes on a multi-release jump.** Breaking
-  changes are per-release; jumping vA→vD means reading B, C, and D.
-  `gofastr upgrade` collects all of them for exactly this case.
-- **Trusting `go get` over `go list -m`.** Another dependency can pull
-  a newer GoFastr than you requested (minimal version selection).
-  Step 7 tells you what you're actually running.
-- **Committing `go.sum` churn blind.** The diff should contain the
-  gofastr bump and its transitive updates; anything else deserves a
-  look before it lands.
+- **Running `go get` without updating the `gofastr` CLI:** generators, `gofastr build` gates, and embedded docs fall out of sync with your module version.
+- **Running `gofastr upgrade` with the old CLI binary:** install the target CLI first so it carries the target release's migration notes.
+- **Bumping `go.mod` before running `gofastr upgrade` without `--from`:** `gofastr upgrade` sees you're already on the target version and skips intermediate notes. Pass `--from vOld`.
+- **Ignoring the **Unscanned** list:** review unscanned files before assuming zero matches means a clean migration.

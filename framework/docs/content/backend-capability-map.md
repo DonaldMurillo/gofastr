@@ -1,16 +1,12 @@
 # Backend capability map
 
-Start here when you know the *job* and need the primitive: "how do I scope
-rows to a user", "where does auth come from", "how do I prove the API works".
-This page is a routing table, not a tutorial: one row per job, the symbols to
-compose, and a command that proves it. Read the linked topic only once a row
-tells you which one you need.
+Start here when you know the *job* you need done—"how do I add auth", "how do I scope rows per user", "how do I run background jobs"—and want the exact package, verification command, and doc without reading five guides first.
 
-The UI equivalent is [ui-capability-map.md](ui-capability-map.md).
+For the UI side, see [ui-capability-map.md](ui-capability-map.md).
 
-## The 20-line app
+## The app spine
 
-Everything below assumes this shape. It is the whole spine.
+Every `framework.App` starts with `framework.NewApp(...)`. Register custom handlers on `app.Router()`, mount opt-in `battery/` packages, and use `app.Entity(...)` whenever auto-wired CRUD, OpenAPI, and MCP tools save you time:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -21,122 +17,72 @@ import "github.com/DonaldMurillo/gofastr/core/schema"
 -->
 ```go
 app := framework.NewApp(
-    framework.WithDB(db),              // any *sql.DB, sqlite3 or postgres
-    framework.WithAPIPrefix("/api"),   // optional; routes AND openapi paths move
+	framework.WithDB(db),            // any *sql.DB, sqlite3 or postgres
+	framework.WithAPIPrefix("/api"), // optional; moves entity routes + OpenAPI paths under /api
 )
 app.Entity("tickets", entity.EntityConfig{
-    Table:      "tickets",
-    Scope:      &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping. See the table.
-    Fields: []schema.Field{
-        {Name: "title", Type: schema.String, Required: true},
-    },
+	Table: "tickets",
+	Scope: &framework.ScopeConfig{OwnerField: "user_id"}, // per-user scoping
+	Fields: []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+	},
 })
 app.Start(":8080")
 ```
 
-`framework.App.Entity` is the declaration. From that one call you get the table, REST
-CRUD, `_batch`, `_events`, OpenAPI, and MCP tools. You do not wire them
-separately, and there is no route file to keep in sync.
-
-## Verify anything in three commands
-
-These work against any GoFastr app and are the fastest way to answer "did
-that actually do what I think".
+## Quick sanity checks
 
 ```bash
-gofastr verify                       # contract check: routing, permissions, security, data
-curl localhost:8080/healthz          # is it up
-curl localhost:8080/openapi.json | jq '.paths | keys'   # every mounted API path
+gofastr verify                                        # static + contract checks
+curl localhost:8080/healthz                           # health probe
+curl localhost:8080/openapi.json | jq '.paths | keys' # mounted API paths
 ```
 
-Every `/api/…` path below assumes `framework.WithAPIPrefix("/api")` from the
-snippet above. It is **optional**: without it, entities mount at the bare
-`/tickets`, and every command here works with the `/api` dropped. Reach for
-`curl localhost:8080/openapi.json | jq '.paths | keys'` when you are unsure.
-Under either setting, a documented path is the path you request.
-
-**`/openapi.json` and `/api/llm.md` answer `401` by default.** The schema is
-a disclosure, so both are behind the auth gate until you pass
-`framework.WithPublicOpenAPI()`. Behind that gate the spec is also filtered
-per request to the entities the caller can read (`access:` grants, owner and
-tenant context) — an entity you would get 403 on is absent from your spec,
-not just marked. That is not a bug to debug; the startup
-banner says so next to each URL. `/metrics` is likewise **not mounted** until
-`framework.WithMetrics()`, and returns `404` otherwise.
-
-Read the startup banner before adding a debug print. It lists every mounted
-route, marks which need auth, and names the option that ungates them.
+Note: `/openapi.json` and `/api/llm.md` answer `401` by default (pass `framework.WithPublicOpenAPI()` to open them, or sign in—authenticated callers see only entities they can read). `/metrics` mounts only when `framework.WithMetrics()` is set. The startup banner prints every mounted route and its auth gate.
 
 ## Jobs
 
 | Job to be done | Compose | Prove it | Docs |
 |---|---|---|---|
+| Custom HTTP / typed JSON routes | `app.Router()` (`core/router`, `core/handler`) | `curl localhost:8080/...` | [Custom endpoints](endpoints.md) |
 | CRUD over a table | `framework.App.Entity` with `entity.EntityConfig` | `curl localhost:8080/api/tickets` | [Entity declarations](entity-declarations.md) |
-| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField` | `gofastr verify permissions` runs `GOFASTR1901` for auto-exposed entities with PII-shaped fields | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
-| Login, signup, sessions, password reset | `battery/auth`: `auth.New`, `auth.SessionMiddleware` | `curl -i -X POST localhost:8080/auth/login -d '{...}'` → `Set-Cookie` | [Auth](auth.md) |
+| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField` (not a manual `WHERE`) | `gofastr verify data` flags unscoped user tables | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
+| Login, signup, sessions, resets | `battery/auth`: `auth.New`, `auth.SessionMiddleware` | `POST /auth/login` → `Set-Cookie` | [Auth](auth.md) |
 | Roles and permissions | `access.NewRolePolicy`, `access.Middleware`, `access.Wildcard` | `gofastr verify permissions` | [Access control](access-control.md) |
-| Signed sessions across replicas | `framework.WithSecret` / `GOFASTR_SECRET`, `framework.WithSecretRotation` | restart the process; an existing cookie still authenticates | [Scaling](scaling.md), [Auth](auth.md) |
-| Schema changes | auto-migration on `Start`, or `gofastr migrate` for explicit files | `gofastr migrate status` | [Migrations](migrations.md) |
-| A REST client, typed | `gofastr generate sdk` | the generated client compiles against the live spec | [SDK](sdk.md) |
-| Let an agent drive the app | entity MCP tools (automatic), `framework.WithMCPIntrospection` | `curl localhost:8080/api/llm.md` (401 without `framework.WithPublicOpenAPI`) | [Agent-ready](agent-ready.md) |
-| Background work, retries, dead-letter | `battery/queue` | queue depth on `/metrics` (needs `framework.WithMetrics`) | [Queue](queue.md) |
-| Scheduled work | `framework.Scheduler` (cron) | with `framework.WithMetrics`, `/metrics` shows the run counter advance | [Cron](cron.md) |
-| React to a write | `battery/webhook` for outbound, `framework/hook` for in-transaction | a hook that returns an error rolls the write back | [Webhooks](webhooks.md), [Hooks and transactions](hooks-and-transactions.md) |
-| Send mail | `battery/email` | the SMTP backend logs the send; swap in a fake for tests | [Email](email.md) |
-| File and image uploads | `battery/storage`, `framework/imagefield` | `curl -F file=@x.png localhost:8080/api/posts` | [Storage](storage.md), [Uploads](uploads.md) |
-| Full-text and vector search | `battery/search`, `battery/semantic` | `curl 'localhost:8080/api/posts?q=term'` | [Search](search.md), [Semantic search](semantic-search.md) |
-| Search over the site's pages | `battery/sitesearch` | `curl 'localhost:8080/__gofastr/search/query?q=term'` | [Site search](site-search.md) |
-| Multi-tenancy | `framework/tenant`, a declaration rather than a WHERE clause | `gofastr verify data` | [Multi-tenant](multi-tenant.md) |
-| Soft delete | `framework/softdelete` | `?trashed=true` returns the deleted rows | [Entity declarations](entity-declarations.md) |
-| Rate limiting | `framework/ratelimit` | replay a request past the limit → `429` | [Rate limit](rate-limit.md) |
-| An admin back-office | `battery/admin` | visit `/admin` | [Admin](admin.md) |
-| First-boot setup on an empty DB | `battery/setup` | start against an empty database → setup token in the log | [First run](first-run.md) |
-| Logs, metrics, panics | `battery/log`, `framework.WithMetrics`, `framework.App.WithAuditLog` | `curl localhost:8080/metrics` after `framework.WithMetrics()` | [Observability](observability.md), [Log](log.md), [Audit log](audit-log.md) |
-| Health and readiness probes | wired by `Start` | `curl localhost:8080/healthz` | [Health checks](health-checks.md) |
-| Run more than one replica | `framework.WithFanout` for SSE/presence; everything else is stateless | two processes, one database, sessions work on both | [Scaling](scaling.md) |
-| Tests with a real DB and real HTTP | `framework.TestHarness`, `framework.AutoMigrate`, `framework/factory` | `go test ./...` | [Testkit](testkit.md), [Factories](factories.md) |
+| Signed sessions across replicas | `framework.WithSecret` / `GOFASTR_SECRET`, `framework.WithSecretRotation` | restart process; existing cookie still works | [Scaling](scaling.md), [Auth](auth.md) |
+| Schema changes | auto-migration on `Start`, or `gofastr migrate` for SQL files | `gofastr migrate status` | [Migrations](migrations.md) |
+| Typed REST clients | `gofastr generate sdk` | generated Go/TS client compiles against spec | [SDK](sdk.md) |
+| Expose app to agents | `framework.WithMCP`, `framework.WithMCPTools`, `framework.WithMCPIntrospection` | `POST /mcp` (`tools/list`) or `GET /api/llm.md` | [Agent-ready](agent-ready.md) |
+| Background jobs & retries | `battery/queue` | queue depth on `/metrics` | [Queue](queue.md) |
+| Scheduled jobs | `framework.Scheduler` (cron) | run counter advances on `/metrics` | [Cron](cron.md) |
+| React to writes | `framework/hook` (in-tx), `battery/webhook` (outbound) | hook error rolls back the transaction | [Hooks and transactions](hooks-and-transactions.md), [Webhooks](webhooks.md) |
+| Send email | `battery/email` | log sender prints sends in dev; swap SMTP for prod | [Email](email.md) |
+| File & image uploads | `battery/storage`, `framework/imagefield` | `curl -F file=@x.png localhost:8080/api/posts` | [Storage](storage.md), [Uploads](uploads.md) |
+| Full-text & vector search | `battery/search`, `battery/semantic` | `curl 'localhost:8080/api/posts?q=term'` | [Search](search.md), [Semantic search](semantic-search.md) |
+| Site-wide page search | `battery/sitesearch` | `curl 'localhost:8080/__gofastr/search/query?q=term'` | [Site search](site-search.md) |
+| Multi-tenancy | `framework/tenant` | `gofastr verify data` | [Multi-tenant](multi-tenant.md) |
+| Soft delete | `framework/softdelete` | `?trashed=true` lists deleted rows | [Entity declarations](entity-declarations.md) |
+| Rate limiting | `framework/ratelimit` | exceed limit → `429` | [Rate limit](rate-limit.md) |
+| Admin back-office | `battery/admin` | visit `/admin` | [Admin](admin.md) |
+| First-boot onboarding | `battery/setup` | boot empty DB → setup token in logs | [First run](first-run.md) |
+| Logs, metrics, audit trail | `battery/log`, `framework.WithMetrics`, `framework.App.WithAuditLog` | `curl localhost:8080/metrics` | [Observability](observability.md), [Log](log.md), [Audit log](audit-log.md) |
+| Health & readiness probes | wired by `Start` | `curl localhost:8080/healthz` | [Health checks](health-checks.md) |
+| Multiple replicas | `framework.WithFanout` for SSE/presence | two processes sharing one DB + secret | [Scaling](scaling.md) |
+| Integration tests | `framework.TestHarness`, `framework.AutoMigrate`, `framework/factory` | `go test ./...` | [Testkit](testkit.md), [Factories](factories.md) |
 
 ## What not to hand-write
 
-Each of these is a declaration, and writing it by hand is the most common way
-an app ends up with a bug the framework would have prevented:
+Hand-writing these is the fastest way to introduce bugs the framework already prevents:
 
-- a `WHERE user_id = ?` filter → `Scope.OwnerField`
-- a pagination/sort/filter query string parser → `framework/filter`,
-  `framework/pagination`, `framework/dsl`
-- a password hash and session cookie → `battery/auth`
-- an OpenAPI document → generated from the entity declarations
-- a retry loop around a background job → `battery/queue`
+- Per-user `WHERE user_id = ?` filters → use `Scope.OwnerField` (covers REST, batch, MCP, and includes together)
+- Query string pagination/sort/filter parsers → `framework/filter`, `framework/pagination`, `framework/dsl`
+- Password hashing & session cookies → `battery/auth`
+- Manual OpenAPI YAML → generated from entity declarations
+- Ad-hoc goroutine retry loops → `battery/queue`
 
 ## Common mistakes
 
-- **Reading topic docs before this page.** They are references, not
-  orientation. Land on the row first, then open the one link it points at.
-- **Hand-writing a filter for per-user data.** `Scope.OwnerField` scopes rows on
-  generated REST, batch, MCP, and include surfaces. Under
-  `gofastr verify permissions`, `GOFASTR1901` inspects non-public Go entities
-  exposed by auto-CRUD or MCP. It looks for whole name tokens such as
-  `email`, `phone`, and `ssn` in statically readable fields and skips relation
-  fields. The check accepts an owner field, tenant scope, or a read
-  permission: an `Access.Read` that is not blank or `anyone`. Permissions
-  on create, update or delete alone leave the check active. An access
-  value the rule cannot read statically is treated as a read gate.
-- **Trusting `paths` in a stale mental model of the spec.** Under
-  `framework.WithAPIPrefix` the OpenAPI path keys carry the prefix, so a
-  documented path is the path you request. See
-  [API versioning](api-versioning.md).
-- **Adding an option before `framework.WithConfig`.** `WithConfig` replaces
-  the whole `AppConfig` struct rather than merging into it, so any granular
-  option placed *before* it is zeroed. Put granular options *after*
-  `WithConfig`, since later options win. Two guards make the mistake hard to keep:
-  `gofastr init` scaffolds `WithConfig` as the *first* option (so pasting
-  `framework.WithPublicOpenAPI()` anywhere below it works), and `NewApp` logs
-  a warning naming each field an earlier option set that `WithConfig` zeroed
-  and no later option restored. Replace semantics are deliberate: a merge
-  could not tell an explicit zero from an unset field, so `WithConfig` could
-  never turn a boolean back off.
-- **Adding a route for in-page state.** In-page state stays on its route:
-  a list screen's sort, page and filter live in its query string, and a
-  region embedded in a page is an island. Neither gets a path of its own.
-  That is a UI question. See
-  [ui-capability-map.md](ui-capability-map.md).
+- **Reading deep topic docs before checking this map.** Use the table to pick the right package first, then open its guide.
+- **Hand-writing per-user SQL filters on CRUD entities.** A manual `WHERE` only protects one handler; `Scope.OwnerField` enforces isolation across REST, batch, includes, and MCP (`gofastr verify data` catches the gap).
+- **Forgetting `WithAPIPrefix` when checking OpenAPI paths.** OpenAPI paths include your configured prefix (`/api/tickets`, not `/tickets`).
+- **Assuming `/openapi.json` or `/metrics` is broken when it returns `401` or `404`.** Check the startup banner: OpenAPI is auth-gated by default and `/metrics` requires `framework.WithMetrics()`.

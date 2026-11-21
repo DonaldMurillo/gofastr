@@ -1,0 +1,7 @@
+version: v0.99.0
+title: Pending release
+notes:
+  - change: "BREAKING - the default Content-Security-Policy enforces Trusted Types: require-trusted-types-for 'script'; trusted-types gofastr"
+    breaking: true
+    guidance: "App JavaScript that assigns a plain string to innerHTML, outerHTML or insertAdjacentHTML, calls DOMParser.parseFromString or document.write, or sets a created script's src now throws in browsers that support Trusted Types. Build the DOM with textContent or createElement, or create your own Trusted Types policy and list its name in SecurityHeadersConfig.TrustedTypesPolicies; SecurityHeadersConfig.NoTrustedTypes turns the directives off."
+    nodetect: "the sinks are in the app's own JavaScript, often inside Go strings or templates, and whether a given write ever runs on a page the default policy covers depends on the app"

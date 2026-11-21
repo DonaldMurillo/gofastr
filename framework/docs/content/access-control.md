@@ -1,8 +1,6 @@
 # Access control
 
-GoFastr's access control is permission-based with role-based grants.
-The framework gives you the building blocks; wiring permissions to
-users is your responsibility (typically in an auth middleware).
+GoFastr's access control is permission-based with role grants. Your auth layer puts roles on the request context; the policy checks whether those roles hold a required capability.
 
 ## Quickstart
 
@@ -12,37 +10,26 @@ policy.Grant("admin",  "posts:read", "posts:write", "posts:delete")
 policy.Grant("editor", "posts:read", "posts:write")
 policy.Grant("reader", "posts:read")
 
-app.Use(func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        ctx := framework.WithPolicy(r.Context(), policy)
-        ctx  = framework.WithRoles(ctx, currentUserRoles(r))
-        next.ServeHTTP(w, r.WithContext(ctx))
-    })
-})
+// Attach policy + current user's roles to every request:
+app.Use(framework.AccessMiddleware(policy, currentUserRoles))
+// currentUserRoles has signature func(ctx context.Context) []string
 
+// Gate individual routes:
 app.Router().Post("/posts",
     framework.RequirePermission("posts:write")(http.HandlerFunc(postsHandler)))
 ```
 
-The policy + roles wiring above is common enough that there's a one-liner
-for it, `framework.AccessMiddleware`:
-
-```go
-app.Use(framework.AccessMiddleware(policy, currentUserRoles))
-// currentUserRoles has signature func(ctx context.Context) []string
-```
+`AccessMiddleware` is shorthand for calling `framework.WithPolicy(ctx, policy)` and `framework.WithRoles(ctx, roles)` in middleware. Both are required—missing either fails closed (`403`).
 
 ## Gating auto-CRUD (`Exposure.Access`)
 
-`RequirePermission` gates routes you mount yourself. To gate the
-**auto-generated CRUD** for an entity, declare the permission for each
-operation on the entity config:
+Declare operation permissions directly on an entity to gate its REST routes, batch/stream endpoints, `_events` SSE feed, and generated MCP tools:
 
 ```go
 app.Entity("posts", framework.EntityConfig{
     Exposure: &framework.ExposureConfig{
         Access: framework.AccessControl{
-            Read:   "posts:read",   // List + Get
+            Read:   "posts:read",   // List + Get + _events
             Create: "posts:write",
             Update: "posts:write",
             Delete: "posts:delete",
@@ -51,248 +38,51 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
-When a field is set, auto-CRUD refuses a request whose context lacks the
-permission with **403**: on List, Get, Create, Update, Delete, the
-batch/stream variants, and the `_events` SSE feed.
+Once any field in `Access` is set:
+- **Blank `Read`:** reads are open to everyone ("public reads, gated writes").
+- **Blank `Create`, `Update`, or `Delete`:** denied to every caller (`403`), including wildcard roles and MCP tools (only trusted server code with `crud.WithElevation` can write).
+- **`framework.Anyone`** (`"anyone"` in YAML): explicitly opens that operation to anonymous callers (e.g., `Create: framework.Anyone` for a public contact form). Owner and tenant scoping still apply if configured.
 
-Once any field is set, a blank one means:
+### Row-level filtering, OpenAPI & in-process reads
 
-- **`Read` blank**: reads are open to every caller, the "public reads,
-  gated writes" shape.
-- **`Create`, `Update` or `Delete` blank**: the write is refused to every
-  caller with 403, a wildcard role included, and its MCP tool is
-  refused too. Only server code that elevated its context
-  (`crud.WithElevation`) still writes.
-- **`framework.Anyone`** (`"anyone"` in an app spec or entity
-  declaration): the operation is open to every caller, signed in or not.
-  It is not a permission: no role grants it and no scope names it.
+- **Row-level read scoping:** `Exposure.Access` controls *whether* a caller can access the entity; `Exposure.ReadScope` controls *which rows* they see (e.g., `status=published` for anonymous callers, all rows for `Unrestricted` or signed-in users). See [entity-declarations.md](entity-declarations.md).
+- **OpenAPI filtering:** `/openapi.json` advertises `401`/`403` and `bearerAuth`/`cookieAuth` on every gated entity (everything except `Public: true`), and omits entities the caller cannot read so schemas aren't disclosed. Pass `WithPublicOpenAPI` to serve the full unfiltered spec. If you customize `AuthConfig.SessionCookie`, update the scheme via `Spec.SetSecurityScheme("cookieAuth", ...)`.
+- **In-process Go calls:** `Exposure.Access` is HTTP-only. Trusted server-side Go (`CrudHandler.ListAll`, typed repos, SSR screens) still enforces owner and tenant scoping, but does not run `Exposure.Access` automatically—use `CanReadScoped` / `RequireRead` below or lifecycle hooks for SSR and custom handlers.
+- **Cross-owner reads:** Set `Scope.CrossOwnerRead` to a permission name so staff/admin roles can read across owners while writes remain owner-scoped. For trusted background code, use `owner.AllowCrossOwner(ctx)`.
 
-Owner and tenant scoping apply either way: `Create: framework.Anyone`
-on an `OwnerField` entity still needs a signed-in owner.
+## Policies, capabilities & wildcards
+
+A **Permission** is a string (conventionally `"<resource>:<verb>"`), a **Role** holds permissions, and a **Policy** implements:
 
 ```go
-app.Entity("inquiries", framework.EntityConfig{
-    Exposure: &framework.ExposureConfig{
-        Access: framework.AccessControl{
-            Read:   "inquiries:read",
-            Create: framework.Anyone, // the public contact form
-            Update: "inquiries:write",
-            Delete: "inquiries:admin",
-        },
-    },
-})
-``` The
-roles + policy must be in the request context first; mount
-`framework.AccessMiddleware` (above) ahead of the CRUD routes.
+type Policy interface {
+    Can(ctx context.Context, permission Permission) bool
+}
+```
 
-`Access` decides **whether** a caller may read the entity at all. **Which
-rows** they see is a second question with its own knob: `Exposure.ReadScope`
-declares row predicates on the entity's own columns (anonymous visitors see
-`status=published`; a caller holding the `Unrestricted` permission, or,
-when it is empty, any signed-in caller, sees every row). The two compose:
-`Access.Read` gates the route, then `ReadScope` narrows the rows. See
-[entity-declarations](entity-declarations.md) → "Row-level read scoping".
-
-The generated OpenAPI spec (`/openapi.json`) advertises **401** (authentication
-required) and **403** (authenticated but forbidden) on every operation of an
-RBAC-gated entity, including the `_batch` and `_events` endpoints. This means
-generated SDKs and agents see the correct error contract instead of treating
-RBAC-gated routes as public.
-
-The auth-gated spec is also **filtered per request**: an authenticated caller
-who holds no read grant for an entity (failed owner/tenant context, a
-missing `Access.Read` permission, or a scoped API token or embed grant
-without `<table>:read`) does not see that entity at all in the
-document — no schema component, no paths — the same read-scope filter
-`/api/llm.md`'s index runs. The schema is the disclosure; a caller who would
-only ever get 401/403 on an entity's rows never learns its name or columns
-from the spec. `WithPublicOpenAPI` stays the full-disclosure opt-in: the
-public spec serves every entity to every caller.
-
-The spec also declares **how** callers authenticate. Auto-CRUD is
-secure-by-default (see [security](security.md) → "Default CRUD
-authentication"), so every entity, whether owner-scoped, multi-tenant,
-RBAC-gated, or just under the plain default session requirement, is
-auth-gated in the spec UNLESS it declares `Public: true`. Every gated operation carries
-`components.securitySchemes` with two schemes it accepts: `bearerAuth`
-(HTTP bearer, JWT) and `cookieAuth` (the auth battery's session cookie),
-listed in a per-operation `security` block. Either scheme authorises the
-call. Only `Public: true` entities are left unmarked, so clients and
-codegen correctly treat exactly those (and nothing else) as publicly
-reachable. Auth is per-operation, not global: the spec never sets a
-top-level `security` requirement.
-
-The `cookieAuth` name is the auth battery's production default
-(`__Host-session`, set in `battery/auth` `AuthConfig.defaults()`); `DevMode`
-flips it to `session_id`. If your deployment overrides
-`AuthConfig.SessionCookie`, overwrite the scheme after building the spec:
-`Spec.SetSecurityScheme("cookieAuth", …)` replaces it by name.
-
-> **Important: `Exposure.Access` is HTTP-only.** It gates the HTTP
-> CRUD routes, not in-process repository or `CrudHandler` calls. This is
-> intentional: in-process Go code is trusted, while owner and tenant
-> isolation still apply at the data layer. SSR screens do not inherit
-> `Exposure.Access` checks automatically. Enforce per-row rules for SSR
-> in lifecycle hooks or explicit screen/handler checks before calling
-> `CrudHandler.CreateOne/UpdateOne/DeleteOne/GetOne/ListAll/UpsertOne` or a
-> generated typed repo. For deliberate cross-owner reads, use
-> `owner.AllowCrossOwner(ctx)` only from trusted server-side Go; HTTP CRUD
-> has no path to it. See [entity-declarations](entity-declarations.md) →
-> "Reading across owners".
->
-> **Declarative cross-owner read.** `Scope.CrossOwnerRead` names a
-> permission that, when held by the request context, lifts owner scoping
-> for READ operations only on that entity, so a staff or admin role can
-> see every owner's rows on List/Get/Count while writes stay scoped. It
-> is fail-closed (no policy ⇒ no widening) and requires `OwnerField`. See
-> [entity-declarations](entity-declarations.md) → "Letting a role read
-> every owner's rows".
-
-> Before this existed, exposing an entity granted **every authenticated
-> user full CRUD** unless you hand-composed route-group middleware.
-> `Exposure.Access` makes the requirement visible at the declaration
-> and enforced by default.
-
-## Concepts
-
-- **Permission**: string capability. By convention `"<resource>:<verb>"`
-  (`"posts:read"`, `"users:delete"`). A capability registry can validate
-  grants, but the registry is optional and the string format remains yours.
-- **Role**: string key that holds a list of permissions.
-- **Policy**: maps role → permissions. `RolePolicy` is the shipped
-  implementation; the `Policy` interface lets you swap in your own.
-
-The framework never asks who the user *is*, only what permissions
-their context carries. Get the roles into context however you want:
-JWT claims, session cookie, API key lookup. **Service accounts** (see
-[Authentication → Service accounts & API tokens](auth.md#service-accounts--scoped-api-tokens))
-hold roles exactly like users and flow through the same `Policy.Can`
-path; an API token's **scopes** (`posts:read`, `*:*`) are an additional
-token-level restriction layered on top, enforced by `auth.HasScope` /
-`auth.RequireScope`. Scopes only narrow: `RequirePermission`,
-`access.Can`, `CanResource` and `CanResourceExact` all refuse a scoped
-caller (an API token or embed grant) whose scopes do not grant the
-permission, since the token carries its owner's roles, and a Decider's
-`DecisionAllow` does not lift that. So an `orders:update` token an admin
-minted cannot run an `orders:approve` state transition, and an entity
-whose `Access.Delete` is `plans:admin` needs `plans:admin` in the token's
-scopes on top of the route's `plans:write`. A permission outside the
-`resource:verb` scope vocabulary cannot be minted, so no token passes it.
-The role gates (`framework.MCPRequireRole`, `/.debug`,
-`auth.RequireRole`, `auth.MCPRole`) do the same with
-`access.RoleScope(role)`: a scoped caller acts on a role only when it
-holds `"role:<role>"` (`"role:*"` and `"*:*"` cover every role).
-
-## API
-
-### Building a policy
-
-Register the capabilities the application checks, then grant them to roles:
+Implement `Policy` yourself for DB-backed or external (e.g., OPA) authorization. The built-in `RolePolicy` supports an optional capability registry to catch typos at startup and during `gofastr verify` (rule `GOFASTR1904`):
 
 ```go
-p := framework.NewRolePolicy()
+p := framework.NewRolePolicy().StrictCapabilities() // omit StrictCapabilities() to warn instead of error
 p.Register("users:read", "users:write", "teams:read", "teams:write")
 
-if err := p.Grant("admin", access.Wildcard); err != nil {
+if err := p.Grant("admin", access.Wildcard); err != nil { // "*" superuser; imported from framework/access
     return err
 }
-if err := p.Grant("editor", "users:read", "users:write"); err != nil {
+if err := p.Grant("editor", "teams:*"); err != nil { // expands immediately to teams:read, teams:write
     return err
 }
-p.Revoke("editor", "users:write")
-
-caps := p.Capabilities() // sorted defensive copy
+p.Revoke("editor", "teams:write")
 ```
 
-`Wildcard` is the one symbol here that is not re-exported on the
-`framework` facade. Import `github.com/DonaldMurillo/gofastr/framework/access`
-for it.
+- `access.Wildcard` (`"*"`) is the global superuser grant (import `github.com/DonaldMurillo/gofastr/framework/access`).
+- Resource wildcards like `"teams:*"` expand against registered capabilities at `Grant`/`Revoke` time; `Can` always does exact matching (or `"*"`). Always call `Register` before granting resource wildcards.
+- Strict rejections return `*access.UnknownCapabilityError` (struct fields `e.Grant` and `e.Nearest`) so admin UIs can return `400`.
+- Read-only inspection helpers (defensive copies): `p.Roles()`, `p.PermissionsOf(role)`, `p.Capabilities()`.
 
-`Register` is idempotent and thread-safe. `Grant` ignores duplicate entries.
-With a non-empty registry, an unknown grant is accepted for backward
-compatibility but emits a `slog` warning naming the grant, its nearest
-registered capability, and that it will never match a registered gate.
+### Checking in handlers & caching role lookups
 
-Registering also turns on a check in `gofastr verify`. Rule GOFASTR1904
-flags every checked name the registry does not hold: entity `Access`
-blocks, `ScopeConfig.CrossOwnerRead`, `ReadScopeConfig.Unrestricted`,
-state-transition and entityui action `Permission` fields, and
-`RequirePermission`, `Can`, `CanResource` and `CanResourceExact`
-arguments. A typo there compiles and then denies every role granted the
-intended name, while the wildcard holder, usually the admin testing the
-screen, still passes. The rule reads
-string literals, package-level constants (a constants package's
-`perms.PlansWrite` too) and concatenations of them; a function's own
-variable is not read. Each binary is judged against the names registered
-in the packages it links, so a package two binaries share must find the
-name in both. An app that never calls `Register` is not checked, and
-neither is a binary with a `Register` call whose arguments the pass
-cannot read, such as `p.Register(loadCaps()...)`.
-
-```go
-// caps.go: one spelling per capability. Untyped, so the same constant
-// fits Register's access.Permission and AccessControl's string fields.
-const (
-    PlansWrite = "plans:write"
-    PlansAdmin = "plans:admin"
-)
-
-p.Register(PlansWrite, PlansAdmin)
-framework.EntityConfig{Exposure: &framework.ExposureConfig{
-    Access: framework.AccessControl{Create: PlansWrite, Delete: PlansAdmin},
-}}
-```
-
-Opt into rejection when configuration mistakes must stop startup:
-
-```go
-p := framework.NewRolePolicy().StrictCapabilities()
-p.Register("users:read", "users:write")
-if err := p.Grant("editor", "usres:write"); err != nil {
-    return err // rejected; nothing was granted
-}
-```
-
-Strict rejections are typed: `errors.As(err, &e)` with
-`*access.UnknownCapabilityError` distinguishes a caller's typo (`e.Grant`,
-`e.Nearest`) from a real store failure, so handlers can answer 400 instead of
-500. The admin grant screen does exactly this.
-
-The global `access.Wildcard` (`"*"`) remains the superuser grant. A
-resource wildcard such as `"teams:*"` is different: with a non-empty
-registry, `Grant` expands it immediately to every registered capability with
-the `"teams:"` prefix, and `Can` continues to perform exact matching. The
-wildcard itself is not retained. `GrantStore.Grant` persists those expanded
-rows, and `LoadInto` expands old wildcard rows while loading them. `Revoke`
-expands `"teams:*"` with the same rule, so revoking a wildcard removes at
-least the set granting it installed; the raw literal is revoked alongside
-its expansion, which keeps a wildcard granted before its capabilities were
-registered revocable too.
-
-With an empty registry, ordinary grants keep the previous behavior and emit
-no warning. A non-global grant containing `*` cannot expand, so it emits the
-loud warning and remains stored for compatibility; strict mode rejects it.
-Register capabilities before using resource wildcards.
-
-### Attaching to a request
-
-```go
-ctx = framework.WithPolicy(ctx, policy)
-ctx = framework.WithRoles(ctx, []string{"editor", "reader"})
-```
-
-Both calls are required. Without them, every permission check
-denies, fail-closed.
-
-### Checking from a handler
-
-```go
-perms := framework.GetPermissions(ctx)
-// [posts:read posts:write …]
-```
-
-To branch UI (or any logic) on the caller's roles rather than their
-resolved permissions, read the roles back with `GetRoles`:
+Read permissions or roles from context:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -302,28 +92,12 @@ import "slices"
 -->
 ```go
 roles := framework.GetRoles(ctx)
-// [editor reader], the same slice installed by WithRoles
 if slices.Contains(roles, "admin") {
-    // render the admin-only nav
+    // role-shaped UI branching; prefer framework.GetPermissions(ctx) or access.Can for authz
 }
 ```
 
-`GetRoles` is the reader half of the role-context seam: `WithRoles`
-puts roles in, `GetRoles` reads them back. It returns `nil` for a nil
-context or one carrying no roles. It never panics, so it is safe to call
-on an un-wired (anonymous) request. Permission checks should still go
-through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
-branching where the permission grant map isn't the right granularity.
-
-`access.RequestUserRoles(ctx)` reads roles from the user in the request
-context. It returns `nil` when there is no user or the user does not
-implement `GetRoles() []string`. Generated apps use it as the role
-callback for `access.Middleware` and `ui.SetRolesExtractor`.
-
-### Caching role resolution
-
-`access.NewCachedResolver` wraps the role lookup function passed to
-`access.Middleware`:
+To avoid hitting the DB on every request, wrap your role loader with `access.NewCachedResolver` (30s default TTL, single-flight per `(userID, tenantID)`, bounded to 100,000 keys, never caches anonymous or canceled lookups):
 
 ```go
 roles := access.NewCachedResolver(
@@ -336,247 +110,29 @@ roles := access.NewCachedResolver(
     },
     access.WithTTL(30*time.Second),
 )
-
 app.Use(access.Middleware(policy, roles.Resolve))
 ```
 
-The default TTL is 30 seconds. Cache keys come from the authenticated value in
-`core/handler` context when it implements `GetID() string`, which is the same
-user seam populated by `battery/auth`, plus the request's tenant
-(`tenant.SetTenantID`, read back through `handler.GetTenantID`), so a user
-who is admin in one tenant and viewer in another gets each tenant's roles.
-Missing or empty user IDs resolve without caching, so anonymous requests
-never share role state. Concurrent
-misses for one user share one lookup. `Resolve` returns defensive copies;
-call `Invalidate(userID)` (every tenant of that user) after changing one user's role inputs or
-`InvalidateAll()` after a global role-policy change. A zero or negative TTL
-keeps same-key single-flight behavior but does not retain results: the
-calls waiting on a lookup share its result, and the next call looks up
-again. A lookup invalidated while it runs shares nothing, so its waiters
-look up again.
+Call `roles.Invalidate(userID)` or `roles.InvalidateAll()` after changing roles. Note that cache invalidation is local to the replica—on multi-replica deployments, shorten `WithTTL` or store runtime grants in a `GrantStore` with fanout.
 
-**`Invalidate` and `InvalidateAll` clear this replica's cache only.** No
-fanout carries them. With several replicas behind a load balancer, the
-others keep serving a user's old roles until their own entries expire, up
-to the TTL (30 seconds by default). A demoted admin can still act as admin
-on another replica for that long. If that window is too wide, shorten it
-with `access.WithTTL`, or keep the role inputs in a `GrantStore`, whose
-grants and revokes reach every replica on its fanout (see
-[Cross-replica grant propagation](#cross-replica-grant-propagation)).
+### Scoped tokens & roles
 
-The map is bounded, not just expired-on-read: a later `Resolve` sweeps
-entries whose TTL has lapsed at most once per TTL, and once 100,000
-distinct user ids are cached it sheds entries to a low-water mark
-(soonest-expiring first), so a registration flood of never-returning ids
-cannot grow the cache without bound. A resolution whose context was already
-canceled is never cached: the resolver seam has no error return, so a
-canceled DB lookup would otherwise read as "no roles" and one aborted
-request would strip that user's permissions for a full TTL.
+Service accounts and personal API tokens ([auth.md](auth.md#service-accounts--scoped-api-tokens)) carry their owner's roles, **narrowed** by their token scopes. `RequirePermission`, `access.Can`, `CanResource`, and `CanResourceExact` refuse any scoped caller whose scopes don't cover the permission (even if a `Decider` returns `DecisionAllow`). Role gates (`auth.RequireRole`, `auth.MCPRole`, `framework.MCPRequireRole`, `/.debug`) require `"role:<name>"` (`access.RoleScope(role)`, `"role:*"`, or `"*:*"`).
 
-Or via middleware on a specific route:
+## Non-CRUD surfaces & relation checks
 
-```go
-app.Router().Delete("/posts/{id}",
-    framework.RequirePermission("posts:delete")(http.HandlerFunc(postsHandler)))
-```
+SSR screens, reports, exports, and custom handlers bypass CRUD route middleware. Use the `CrudHandler` read-posture helpers so every surface enforces the same baseline session, owner, tenant, and RBAC rules as `GET /api/<entity>`:
 
-`RequirePermission` returns `403 access denied: missing permission X`
-when the user does not hold the named permission, or when the request
-is scope-restricted (an API token or embed grant) and no held scope
-grants it (`access.ScopeAllows`): a `customers:read` token minted by an
-admin does not pass `RequirePermission("posts:delete")`. A permission
-that is not `resource:verb` cannot be named by a scope, so a scoped
-caller never passes it. The error format
-is JSON via `core/handler.WriteError`, with `"reason":"missing_permission"`.
+- **`crudHandler.CanReadScoped(ctx)`:** Returns `bool` for SSR/UI checks without writing HTTP responses.
+- **`crudHandler.RequireRead(w, r)`:** Writes the exact same `401`/`403` error response as the CRUD list route and returns `false` on denial.
+- **`crudHandler.CanReadRecordScoped(ctx, id)`:** Checks collection posture plus a per-record `Decider` (use on detail/edit screens).
+- **`crudHandler.CanReadRelatedScoped(ctx)`:** Same as `CanReadScoped`, plus checks `Exposure.CRUD` and scoped-token `<table>:read` (use for pickers, facets, and relation labels).
 
-## The `Policy` interface
+Prefer `CanReadScoped` over `CanRead`—`CanRead` only checks RBAC and returns `true` for anonymous callers on default-posture entities that declare no `Access` block. `framework/entityui` calls these helpers automatically (rendering muted `—` instead of raw IDs for unreadable relations). On CRUD routes, `?include=rel` and `?rel.field=` automatically enforce the target entity's posture and owner/tenant scopes.
 
-```go
-type Policy interface {
-    Can(ctx context.Context, permission Permission) bool
-}
-```
+## Persistent grants (`GrantStore`)
 
-The check takes only the `ctx` and the permission string. There is
-**no** resource argument. Everything a policy needs (subject, roles,
-tenant, request metadata) travels in the context. Implement this to
-plug in:
-
-- Database-backed permission lookups.
-- External authorisation services (OPA, etc.).
-
-`RolePolicy` is the shipped implementation; it resolves the roles
-installed via `WithRoles` against its grant map.
-
-### Row-level ("can user X update post Y?") checks
-
-The `Policy` interface is **coarse-grained**: it answers "does this
-context hold permission P?", not "may this context act on record R?".
-There is no resource argument, so per-record decisions are made
-elsewhere:
-
-- **Owner scoping**: set `Scope.OwnerField` so auto-CRUD only
-  ever reads/writes rows owned by the caller. See
-  [entity-declarations.md](entity-declarations.md) → "Per-user scoping".
-- **Row-level read scoping**: `Exposure.ReadScope` filters reads by
-  predicates on the entity's own columns, lifting the filter for a caller
-  holding the declared `Unrestricted` permission. It narrows WHICH rows a
-  read returns (List, Get, count, include, nested filters) rather than
-  refusing. See [entity-declarations.md](entity-declarations.md) →
-  "Row-level read scoping".
-- **`BeforeCreate` / `BeforeUpdate` / `BeforeDelete` hooks**: these run
-  with the candidate record (and, for updates, the patch) in hand, so
-  they can deny per-row. Return an error from the hook to reject. This is
-  the supported seam for "can user X update post Y?".
-
-Keep coarse permission checks in the `Policy` and put record-aware logic
-in a hook or owner scoping. Don't try to smuggle the resource through
-`Can`.
-
-## Where to apply checks
-
-Two patterns, both supported:
-
-1. **Per-route middleware**: `RequirePermission` is one line per
-   route, easy to audit, but disconnects the permission name from
-   the entity declaration.
-2. **In a `BeforeCreate` / `BeforeUpdate` hook**: closer to the
-   data, can inspect the patch, can deny per-record. More code; use
-   when row-level checks matter.
-
-The framework does **not** auto-generate permission strings from
-entity declarations. Pick a convention (`posts:read`, `posts:write`,
-…) and apply it consistently.
-
-## Surfaces other than the CRUD routes
-
-The CRUD routes enforce every gate for the entity they serve. Two things do
-NOT inherit that automatically, and both have to check for themselves:
-
-1. **Another surface reading the same rows**: a server-rendered screen, an
-   island fragment, a report, an export. It never enters the route middleware,
-   so it is a second door to the same data.
-2. **The same route reaching a DIFFERENT entity.** `?include=rel` eager-loads
-   the related entity's rows and `?rel.field=` filters across it, so the
-   *related* entity's posture governs, not the one in the path. The framework
-   enforces this for you; anything else that walks a relation must do the same.
-
-   The two are not enforced identically, because they read differently:
-
-   - **`?include=rel`** answers 403 when you may not read the target, at every
-     depth. When you may read it, the rows come back scoped: owner- and
-     tenant-scoped targets return the rows you are entitled to, which for a
-     caller with no owner is *none*: a 200 with an empty relation rather than
-     a refusal. Soft-deleted rows never appear.
-   - **`?rel.field=`** compiles to an `EXISTS` clause that counts rows without
-     selecting them, so it cannot narrow them by selecting. It answers 403 when
-     you may not read the target, and for a target you may read it carries your
-     owner and tenant predicates into the subquery, so it counts exactly the
-     rows that target's own list route would serve you, and no others. A guess
-     that matches another owner's row reads the same as a guess that matches
-     nothing. A caller holding a cross-owner or cross-tenant grant gets no
-     predicate for that axis, since they can already list the target wholesale.
-     The axes are independent: a cross-owner grant narrows nothing on the
-     tenant axis, and vice versa.
-
-Use `CrudHandler.CanReadScoped(ctx)`. It answers the whole read posture as a
-boolean, with no HTTP response written:
-
-```go
-if !crudHandler.CanReadScoped(ctx) {
-    return ui.Callout(ui.CalloutConfig{Title: "Not available", Variant: ui.StatusWarning},
-        render.Text("You do not have permission to view this."))
-}
-```
-
-It covers, in order: the **baseline session requirement** that auto-CRUD
-applies to any entity declaring no `OwnerField`, no `Access`, and no `Public`;
-owner scoping (`Scope.OwnerField`); tenant scoping; and finally RBAC
-(`Exposure.Access`).
-
-An HTTP handler that serves the entity's rows outside its CRUD routes calls
-`CrudHandler.RequireRead(w, r)` instead. It asks the same question and, when the
-answer is no, writes what `GET /api/<entity>` writes for that caller: the same
-status (401 for a missing session or tenant, 403 for a missing permission) and
-the same envelope, the missing permission named. EntityUI's `_export.csv`,
-`_bulk`, `_pick`, trash and saved-view routes refuse this way once a request
-reaches the gate. Each route runs its own checks first, which answer in their
-own words: every route answers 404 for an entity or field it does not serve,
-`_pick`, trash and saved views refuse a cross-site post with 403, `_bulk` reads
-its JSON body before the gate (415, 413 or 400 for one that is not JSON, too
-large or malformed), and the
-saved-view routes answer 403 to a caller with no signed-in user before asking
-`RequireRead`.
-
-```go
-if !crudHandler.RequireRead(w, r) {
-    return // the list route's refusal is already written
-}
-```
-
-`CanRead(ctx)` answers only the RBAC question. That is not the whole posture:
-an entity in the default secure-by-default shape declares no `Access` at all, so
-`CanRead` returns true for an anonymous caller while `GET /api/<entity>` answers
-401. A surface gated on `CanRead` alone therefore rendered every row of a
-default-posture entity to anonymous visitors. Prefer `CanReadScoped` unless you
-specifically want the RBAC-only question.
-
-For a single record, such as a detail page or an edit form, use
-`CanReadRecordScoped(ctx, id)` instead. It asks the same question about a
-specific row, which matters when a resource-aware `Decider` allows the listing
-and denies one record; the collection-level predicate would render a row the
-read-one route refuses.
-
-For rows of an entity reached through another one's relation (a label, a
-facet, a picker), use `CanReadRelatedScoped(ctx)`. It adds the gate
-`?include=` applies: it refuses an entity whose `Exposure.CRUD` is false and a
-scope-restricted request (an API token or embed grant) that does not hold
-`<table>:read`.
-
-`framework/entityui` (the list, record and create screens generated apps
-and the admin draw) calls these for you, so a screen inherits the check:
-`List` runs `CanReadScoped` before any read, `Record` runs
-`CanReadScoped` and `CanReadRecordScoped`, and every read of a DIFFERENT
-entity — relation cell labels, the create form's relation picker, a
-relation facet's options, the Related tab's lists, and the stats and
-charts — passes that entity's own gate first. Labels, facets and the picker
-use `CanReadRelatedScoped` and leave out a related row the Decider refuses by
-id; a named CSV export drops such a row too.
-
-A relation to an entity the caller may not read renders muted (an em
-dash), never the raw foreign key. A bare id is useless to a reader and
-discloses an internal identifier. A relation facet whose entity is
-refused draws no options, so the facet is absent rather than an empty
-control. A related list the caller may not read draws the same
-"not available" notice its own list would, never its rows.
-
-`battery/admin` does not draw entity screens through your app's builders;
-it enforces its own admin gate.
-
-## Common mistakes
-
-- **Forgetting `WithPolicy`.** Every check fails closed. If
-  `RequirePermission` denies everyone, this is usually why.
-- **Granting permissions on the wrong policy instance.** `RolePolicy`
-  is mutable; if you grant on one instance and put a different
-  instance into context, checks pass for the in-context one and
-  ignore the granted one.
-- **Encoding business logic in permission strings.** Keep them
-  resource:verb. Express logic in `Policy` implementations or
-  hooks. Strings should be data, not code.
-- **Trusting client-supplied roles.** Roles come from your auth
-  layer; never from a request header or body the user controls.
-- **Gating a screen on `CanRead` instead of `CanReadScoped`.** The
-  RBAC-only check passes for an anonymous caller on a default-posture
-  entity, so the screen serves rows the JSON route refuses.
-
-
-## Persistent grants (GrantStore)
-
-`RolePolicy` grants are code-defined at boot: `policy.Grant("admin", ...)`.
-For apps that need **runtime-editable** RBAC (an admin UI that grants and
-revokes without a redeploy), `access.GrantStore` persists grants to a
-database table and keeps the live `*RolePolicy` in sync.
+When roles need runtime edits (for example from `battery/admin`) without redeploying, `GrantStore` persists changes in `access_grants` and keeps your live `*RolePolicy` synchronized:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -591,376 +147,101 @@ policy := framework.NewRolePolicy()
 policy.Grant("admin", access.Wildcard) // code-defined baseline
 
 store := framework.NewGrantStore(db, policy)
-store.EnsureSchema(ctx)                    // CREATE TABLE IF NOT EXISTS access_grants
-store.LoadInto(ctx, policy)               // hydrate from DB → live policy
+store.EnsureSchema(ctx)
+store.LoadInto(ctx, policy)
 
-// Later: runtime grant (admin screen, CLI, etc.)
-store.Grant(ctx, "editor", "posts:write")  // DB INSERT + policy.Grant
-store.Revoke(ctx, "editor", "posts:write") // DB DELETE + policy.Revoke
+store.Grant(ctx, "editor", "posts:write")  // DB + live policy
+store.Revoke(ctx, "editor", "posts:write") // DB delete + tombstone + live policy
 ```
 
-### Shape
+### Cross-replica propagation & revocation tombstones
 
-The store **holds a reference** to the live `*RolePolicy` (store-holds-policy).
-`NewGrantStore(db, policy)` binds the policy; `LoadInto(ctx, policy)` loads
-persisted rows into it (call once at boot). Subsequent `Grant`/`Revoke` calls
-mutate both the DB and the policy in one call, and both expand resource
-wildcards identically: a `Revoke` of `"teams:*"` deletes and tombstones the
-same rows a `Grant` of `"teams:*"` persisted (plus the raw literal). The
-policy's RWMutex covers concurrent `Can` checks, so a grant/revoke is
-"atomic enough": a reader sees the state before or after, never a torn map.
+Wire the store with `framework.WithGrantStore(store)` alongside `framework.WithFanout(pg)` so `Grant`/`Revoke` publishes refresh signals on the `gofastr.access` lane. Peers re-read that role from the DB and swap it atomically via `RolePolicy.ReplaceRole`. A background reconciliation timer reloads every role every 5 minutes (`access.DefaultReconcileInterval`, tunable via `access.WithReconcileInterval`) in case a fanout frame is dropped.
 
-### Cross-replica grant propagation
+`Revoke` writes a tombstone in `access_grants_revoked` so revoking a code-seeded grant survives restarts and propagates across replicas. Effective grants are always `(code baseline ∪ DB grants) − tombstones`:
+- Calling `Grant` is the only way to lift a tombstone.
+- After `Revoke("teams:*")`, granting a single child like `Grant("teams:read")` returns `access.ErrRevokedByWildcard` (re-grant `"teams:*"`, then revoke individual permissions). Use `store.CheckGrant(ctx, role, perms...)` to preflight a batch without writing.
+- `EnsureSchema` registers both tables with `App.ExportData`; restart after `App.ImportData` so `LoadInto` reloads them.
+- `Grant`/`Revoke` are trusted server calls with no built-in authz check (`battery/admin` gates them behind its admin gate).
 
-`GrantStore.Grant`/`Revoke` mutate the LOCAL `*RolePolicy` only. With N
-replicas behind a load balancer sharing one database, the other replicas'
-in-memory policies stay stale until restart: an editor granted on replica
-A still fails `Can("posts:write")` on replica B until B reboots.
-
-Attaching a fanout closes that window. Register the store with the app
-(`framework.WithGrantStore`) so the framework auto-wires it to the same
-fanout as `WithFanout`:
-
-```go
-pg, err := fanout.NewPostgres(dsn, db)
-if err != nil {
-    log.Fatal(err)
-}
-app := framework.NewApp(
-    framework.WithDB(db),
-    framework.WithGrantStore(store),
-    framework.WithFanout(pg),
-)
-```
-
-On every `Grant`/`Revoke`, the store publishes a refresh-signal on the
-`gofastr.access` lane naming the role whose grants changed. Each
-subscriber re-reads that role's grants from `access_grants` and atomically
-swaps them into its local policy via `RolePolicy.ReplaceRole` (the store
-rebuilds the role as `(code baseline ∪ DB grants) − revocation tombstones`).
-The message body is never trusted: a crafted payload can only trigger a
-re-read, never pollute the policy directly.
-
-A refresh signal is best effort: a stalled bus drops frames. So every
-replica with a fanout also reloads every role from the database on a
-timer, every 5 minutes by default (`access.DefaultReconcileInterval`). A
-replica that missed a revoke stops honouring it within one interval
-instead of keeping it until the next change to that role or a restart.
-Set the interval with `access.WithReconcileInterval(d)`; zero or negative
-turns the reconcile off. The timer starts with `SetFanout` and stops with
-the stop function it returns, so a store without a fanout runs none.
-
-Calling `SetFanout` again with a new fanout stops the previous attachment
-once the new subscription succeeds. If subscription fails, the previous
-attachment stays active. Each returned stop function applies to its own
-attachment and can be called repeatedly.
-
-### Revocation tombstones
-
-A `Revoke` does more than delete the grant row: it also inserts a
-**revocation tombstone** into a parallel `access_grants_revoked` table
-(created by `EnsureSchema`, same shape as the grants table). Reloads and
-fresh boots subtract tombstones from the `(baseline ∪ DB)` union, so a
-revoked grant stays revoked on every replica:
-
-- **Revokes propagate to peers.** A peer's fanout-driven reload reads the
-  tombstone from the shared DB, so it no longer merges a revoked
-  code-seeded grant back in, even though the peer's own code baseline
-  still declares it.
-- **Revokes survive restarts.** A replica that boots after the revoke runs
-  `LoadInto`, which subtracts tombstones from the live policy, so a
-  re-seeded code grant does not resurrect the permission. The captured
-  code baseline itself stays whole: once a re-grant lifts the tombstone,
-  a replica that booted under it allows again, like every other replica.
-- **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes the
-  tombstones `Revoke` writes for the same input: `Grant("teams:*")` lifts
-  the `teams:*` tombstone and the tombstones of everything it expands to.
-  It is the ONE way to un-revoke. A tombstoned permission stays revoked
-  even if the code keeps declaring it, until `Grant()` is called. DB
-  intent outlives code declarations, the same precedence the store
-  already gives DB grants over the code baseline.
-- **A wildcard revocation is lifted whole.** After `Revoke("teams:*")`,
-  `Grant("teams:read")` returns `access.ErrRevokedByWildcard` and writes
-  nothing: every reload expands the `teams:*` tombstone against the
-  registry and would subtract `teams:read` again, so the grant would hold
-  on one replica only. Grant `teams:*`, then revoke what the role should
-  not hold. `GrantStore.CheckGrant(ctx, role, perms...)` returns the
-  error `Grant` would (this one, or a strict-mode
-  `*access.UnknownCapabilityError`) without writing, so a caller applying
-  several changes can refuse them all before writing any. The admin RBAC
-  page answers the refusal as a 409 with that advice. The global `*`
-  tombstone is never expanded, so it refuses nothing.
-- **Tombstone wins on conflict.** If a permission is somehow both granted
-  and tombstoned (an inconsistent write), reloads fail closed: the
-  tombstone wins.
-- **Wildcards expand before tombstones apply.** A grant made while the
-  registry did not know a resource persists the wildcard literally
-  (`reports:*`). Reloads and `LoadInto` both expand that row against the
-  current registry first and subtract tombstones second, so revoking one
-  capability it covers (`reports:delete`) keeps it revoked on every
-  reload.
-- **A reload leaves out what a strict policy refuses.** A role's DB rows
-  can hold a capability this replica has not registered: a newer replica
-  in a rolling deploy registered and granted it first. A fanout reload
-  drops that grant, with a warning, and applies the rest of the role, so
-  a revoke issued after it still lands. `LoadInto` keeps refusing such a
-  row at boot.
-
-**Consistency window.** Fanout is lossy best-effort. A publish that
-doesn't reach a peer (the peer's queue overflowed, the bus was briefly
-down) leaves that peer stale until the NEXT grant/revoke on the same
-role, or until restart. The store itself remains correct: it always
-reads from and writes to the DB; only the in-memory cache lags. A
-reconnecting replica's `LoadInto` reloads authoritative state on boot,
-and because tombstones live in the DB, a missed revoke signal does not
-resurrect on restart. The boot re-applies the tombstone.
-
-**Backups.** `EnsureSchema` registers both tables with `App.ExportData`,
-so an archive carries the runtime grants and the tombstones, and a restore
-keeps every revoke of a permission the code declares. Restart after
-`App.ImportData`: `LoadInto` reads the restored rows at boot.
-
-Capability validation happens before `GrantStore` writes. A strict rejection
-therefore leaves both the database and live policy unchanged. In warning mode,
-unknown concrete grants remain persisted for compatibility. The admin roles
-screen offers the values from `Policy.Capabilities()` in a select when the
-registry is non-empty and marks existing non-global grants outside the
-registry with a “Not declared” badge.
-
-### Security
-
-- Role and permission strings are **bound as `$n` parameters**, never
-  interpolated into SQL. The table name is validated via `query.SafeIdent`.
-- `Grant`/`Revoke` do **not** check authorization: they are trusted
-  server-side calls. The admin battery gates them behind its default-deny
-  `b.gate` (see [Admin UI](admin.md)).
-- There is no unauthenticated or self-service grant path.
-
-### Enumeration API
-
-`RolePolicy` exposes read-only getters for admin UIs:
-
-```go
-roles := policy.Roles()                    // sorted []string
-perms := policy.PermissionsOf("editor")    // []Permission (copy)
-caps  := policy.Capabilities()             // sorted []Permission (copy)
-```
-
-All three return defensive copies. Callers iterate without holding the lock.
-
-### Effective roles in the admin
-
-`admin.Config.EffectiveRoles` can add resolved role origins to the user-role
-screen without changing the direct roles stored by `battery/auth`:
+To display resolved (non-direct) roles in `battery/admin`'s user screen, pass `admin.Config.EffectiveRoles`:
 
 ```go
 admin.New(admin.Config{
     Auth: authManager,
     EffectiveRoles: func(ctx context.Context, userID string) []access.RoleWithOrigin {
-        return []access.RoleWithOrigin{
-            {Role: organizationRole(ctx, userID), Origin: "resolved"},
-        }
+        return []access.RoleWithOrigin{{Role: organizationRole(ctx, userID), Origin: "resolved"}}
     },
 })
 ```
 
-The screen unions these entries with `auth_users.roles`, labels stored roles
-as `direct`, and preserves only the direct roles in its assignment form.
-Duplicate role/origin pairs are shown once. When the hook is nil, the screen
-keeps its direct-roles-only output.
+## Resource-scoped decisions (`Decider`)
 
+`Policy.Can` is intentionally coarse ("does this caller hold `projects:update`?"). For per-row rules, start with `Scope.OwnerField`, `Exposure.ReadScope`, or `BeforeCreate`/`BeforeUpdate`/`BeforeDelete` hooks.
 
-## Resource-scoped decisions
-
-The `Policy.Can` check is coarse-grained by design: "does this context hold
-permission P?", with no resource argument (see [Row-level checks](#row-level-can-user-x-update-post-y-checks)).
-Owner scoping and lifecycle hooks cover most per-row needs. When you need a
-per-resource authority that those don't express, such as "a team **maintainer** may
-edit **their** team's projects, but not other teams'", without standing up a
-ReBAC/tuple store, install a **Decider**. The decider is consulted *before* the
-role policy on resource-aware checks, so it can tighten *or* loosen the coarse
-`Can` answer per record.
-
-### The seam
+When you need relationship-based authority ("a team maintainer can edit their team's projects") across CRUD, batch operations, and route gates, install a `Decider`:
 
 ```go
-// access.Ref identifies the resource a check is about.
 type Ref struct {
-    Type string // entity name: "projects"
-    ID   string // record id; "" for collection-level checks (List/Create/batch gate/feed)
+    Type string // entity name, e.g. "projects"
+    ID   string // record id, or "" for collection-level checks
 }
 
-type Decision int
-const (
-    DecisionAbstain Decision = iota // fall through to the role policy (Can)
-    DecisionAllow                   // permit; role policy not consulted
-    DecisionDeny                    // refuse, even when the role policy would allow
-)
-
-type Decider func(ctx context.Context, roles []string, capability Permission, resource Ref) Decision
+type Decider func(ctx context.Context, roles []string, capability access.Permission, resource access.Ref) access.Decision
 ```
 
-`access.CanResource(ctx, capability, resource)` is the resource-aware entrypoint:
-
-1. If a `Decider` is in ctx → call it with the caller's roles, the capability,
-   and the `Ref`. `DecisionAllow` → true; `DecisionDeny` → false;
-   `DecisionAbstain` → fall through.
-2. Otherwise (or after Abstain) → exactly `access.Can(ctx, capability)`.
-
-`access.Can` itself is untouched: there is no wildcard or resource-segment
-logic in the hot path. The resource-aware path is a separate entrypoint you opt
-into; with no decider installed, `CanResource` answers byte-identically to `Can`.
-
-`access.CanResourceExact(ctx, capability, resource)` asks the `Decider` the
-same way, but on abstain passes only when the caller's roles hold `capability`
-by name: a role granted the Wildcard does not satisfy it. A state move's
-`Permission` is checked this way, so a superuser role does not pick up every
-narrow capability an app declares.
-
-The seam binds **every** permission gate, not only resource-scoped ones:
-`access.RequirePermission` consults it too, passing the zero `Ref` (a
-route gate holds no record), so `DecisionDeny` fails the route closed
-with 403 even when the role policy grants the permission. battery/auth's
-role gates route through the same seam, as do the framework's MCP gates
-(`MCPRequireUser`, `MCPRequireRole`) and `/.debug`: each passes the
-caller's roles, `access.RoleGateCapability` (`"auth:role-gate"`) and the
-zero `Ref`, so a resource-aware decider should abstain on that
-capability.
+A `Decider` returns one of three values:
+- **`access.DecisionAllow`:** Permits immediately (loosens beyond role policy; still narrowed by token scopes).
+- **`access.DecisionDeny`:** Refuses immediately (tightens below role policy; even `access.Wildcard` cannot override it).
+- **`access.DecisionAbstain`** (zero value): Falls through to `RolePolicy`.
 
 ### Wiring it: DeciderMiddleware
 
-`access.DeciderMiddleware(d)` installs a decider into request context. Mount it
-alongside `access.Middleware`. The two compose; the policy+roles middleware
-feeds the decider its `roles` argument:
+Mount `access.DeciderMiddleware` after `access.Middleware`:
 
 ```go
-roles := access.NewCachedResolver(
-    func(ctx context.Context) []string {
-        user := auth.GetCurrentUser(ctx)
-        if user == nil { return nil }
-        return loadEffectiveRoles(ctx, user.GetID())
-    },
-    access.WithTTL(30*time.Second),
-)
-
 app.Use(access.Middleware(policy, roles.Resolve))
 app.Use(access.DeciderMiddleware(decideProjectAccess))
 ```
 
-### Worked example: team maintainers edit their projects
-
-A team-maintainer rule that the role policy can't express: any caller holding
-`projects:update` may edit *some* projects, but a maintainer may edit every
-project their team owns even without the global grant. The decider consults a
-memberships table and returns Allow/Deny/Abstain:
-
 ```go
 func decideProjectAccess(ctx context.Context, roles []string, cap access.Permission, res access.Ref) access.Decision {
-    // Only opine on project writes for a specific record.
     if res.Type != "projects" || res.ID == "" {
         return access.DecisionAbstain
     }
     user := auth.GetCurrentUser(ctx)
     if user == nil {
-        return access.DecisionAbstain // let the role policy fail-closed
+        return access.DecisionAbstain
     }
-    // Maintainer of this project's team → allow the update regardless of role.
     if cap == "projects:update" && isMaintainerOf(ctx, user.GetID(), res.ID) {
         return access.DecisionAllow
     }
-    // Otherwise defer to the role policy (which may grant projects:update globally).
     return access.DecisionAbstain
 }
 ```
 
-Auto-CRUD consults this automatically: `Exposure.Access` gates route through
-`CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
-ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
-collection-level ops (list/create/batch/the `_events` feed). The `_batch`
-update and delete routes then ask again for every item, with
-`Ref{Type: <entity name>, ID: <item id>}`, inside the batch transaction: a Deny
-on any one item fails the batch (`committed: false`, that item's error is
-`access denied`) and nothing is written. A per-record Deny therefore covers
-`PATCH /<entity>/_batch` and `DELETE /<entity>/_batch` as well as the single
-routes. No handler change is needed: declaring the `Access` block and mounting
-`DeciderMiddleware` is the whole wiring.
+Auto-CRUD calls `access.CanResource(ctx, cap, ref)` automatically (including per-item inside `PATCH`/`DELETE /_batch` transactions). State-transition permissions use `access.CanResourceExact`, where `access.Wildcard` does not match on abstain. Route and role gates (`RequirePermission`, `auth.RequireRole`, `MCPRequireRole`, `/.debug`) also consult the decider with a zero `Ref` (role gates pass `access.RoleGateCapability`), so resource deciders should abstain when `res.ID == ""`.
 
-### When to Deny vs Abstain
+## ScopeMatch (token & module scopes)
 
-- **Deny** when the decider has *positive knowledge* the caller must not act on
-  this resource, e.g. "this project belongs to a team the caller is not on".
-  Deny short-circuits to false; the role policy never runs, so even a wildcard
-  grant cannot override it. Use Deny to tighten below the role policy.
-- **Abstain** when the decider has *no opinion*: the resource type isn't one it
-  governs, the caller's relationship is unknown, or you want the role policy to
-  decide. Abstain is the zero value, so a decider that forgets to return is
-  safe (falls through to `Can`). Use Abstain to delegate.
-- **Allow** when the decider grants access the role policy would not, e.g. the
-  team-maintainer case above. Allow short-circuits to true; use it to loosen
-  beyond the role policy for a specific resource.
-
-A decider that always returns Abstain is a no-op: behaviour is exactly the
-role-policy-only world. That is the safe default while you roll the decider out.
-
-### Alternative: the `resource:id:capability` string convention
-
-An app-side pattern (the framework does **not** interpret this) encodes the
-resource into the permission string itself: `"projects:42:update"`. Combined
-with `GrantStore`, each such string becomes a row in `access_grants`, so the
-grant matrix is visible in the admin UI and editable at runtime. Every
-per-resource grant is a real, enumerable row.
-
-The tradeoff is **row explosion**: one row per (role, resource, capability),
-which is fine for dozens of resources but does not scale to thousands. The
-framework's `Can` performs exact-string matching, so it never parses the
-`resource:id:capability` segments. That decomposition is a convention your
-code (or a wrapper policy) owns. If you need per-resource authority at scale,
-or with inheritance ("a maintainer of team T may edit all of T's projects"),
-use the **Decider seam** above: one membership check replaces unbounded grant
-rows, and the rule lives in your code where it can consult any table or
-service. The two compose: a Decider can fall back to `Abstain` and let a
-`resource:id:capability` grant row in the policy decide.
-
-## ScopeMatch (module/token scope algebra)
-
-`Can` is the RBAC hot path and stays deliberately blunt: it matches an
-**exact** permission string, or the global `Wildcard` (`"*"`). It does **not**
-understand `posts:*` or `*:read`. Widening it would silently change live
-RBAC for every caller, so it is untouched.
-
-`access.ScopeMatch(granted []Permission, required Permission) bool` is the
-separate, pure matcher for the richer `resource:verb` wildcard grammar used
-by **token scopes** and **module capability grants**:
+`RolePolicy.Can` only matches exact strings or `"*"`. For the `resource:verb` wildcard algebra used by API tokens and module grants, call `access.ScopeMatch` (and validate inputs with `access.ValidScope`):
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/access"
 -->
 ```go
-// exact | resource wildcard | verb wildcard | grant-all
-access.ScopeMatch([]access.Permission{"posts:*"}, "posts:read")  // true
-access.ScopeMatch([]access.Permission{"*:read"}, "users:read")   // true
-access.ScopeMatch([]access.Permission{"*:*"}, "anything:here")   // true
-access.ScopeMatch(nil, "posts:read")                             // false (deny by default)
+access.ScopeMatch([]access.Permission{"posts:*"}, "posts:read") // true
+access.ScopeMatch([]access.Permission{"*:read"}, "users:read")  // true
+access.ScopeMatch([]access.Permission{"*:*"}, "anything:here")  // true
+access.ScopeMatch(nil, "posts:read")                            // false (deny by default)
 ```
 
-It is a function of its two arguments only: it **does not consult the
-capability registry and does not expand resource wildcards** the way
-`RolePolicy.Grant` does at grant time (`teams:*` matches literally here; it
-is not fanned out to registered `teams:` capabilities). Matching and
-grant-time expansion are deliberately not entangled.
+`ScopeMatch` is purely syntactic—it does not consult a capability registry. `auth.HasScope` and `auth.ScopeMatch` delegate directly to it.
 
-`battery/auth`'s token-scope matcher (`HasScope` / `auth.ScopeMatch`)
-delegates to this function, so the `resource:verb` algebra has exactly one
-home. Use `access.ValidScope(s)` to reject malformed scope strings at
-mint/install time under the same closed vocabulary. New capability gates
-that hold `[]Permission` should call `access.ScopeMatch` directly rather
-than reimplementing a weaker string matcher.
+## Common mistakes
 
-`access.SplitScope(s)` is the one parser of the `resource:verb` shape
-the matcher reads; ok is false when the colon is missing, leading or
-trailing.
-
-`access.UserID(ctx)` returns the signed-in user's id as a string — ""
-when the context carries no user or the user type has none — so code
-that keys data or audit rows on the caller shares one extractor
-instead of each spelling the `GetID` assertion.
+- **Forgetting `WithPolicy` or `AccessMiddleware`.** Every check fails closed; if `RequirePermission` denies everyone, check your middleware order.
+- **Mutating a different `*RolePolicy` instance.** Grant on the same instance passed to `AccessMiddleware`.
+- **Gating an SSR screen on `CanRead` instead of `CanReadScoped`.** `CanRead` only checks RBAC and passes anonymous users on default-posture entities.
+- **Trusting client-supplied roles.** Roles must come from your auth layer, never from request headers or bodies.
+- **Looking for `Wildcard` on the `framework` facade.** Unlike `NewRolePolicy`, `Wildcard` is not re-exported on `framework`—import `access.Wildcard` from `github.com/DonaldMurillo/gofastr/framework/access`.

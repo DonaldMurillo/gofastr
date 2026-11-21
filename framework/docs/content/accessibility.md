@@ -1,249 +1,69 @@
-# Accessibility: built-in guarantees, the audit command, the build gate
+# Accessibility
 
-GoFastr treats accessibility in three layers: the component library
-ships correct semantics by default, `gofastr build` enforces the static
-floor the type system can see, and `gofastr audit a11y --url` runs the
-full axe-core engine against the running app for everything only a real
-render can catch.
+GoFastr enforces accessibility in three layers: accessible semantics built into `framework/ui`, a static lint gate built into `gofastr dev` and `gofastr build`, and a headless-Chrome axe-core runtime audit (`gofastr audit a11y --url`) plus Go test harness (`framework/testkit/axetest`).
 
-## What the framework already does
+## Built-in component guarantees
 
-`framework/ui` and `core-ui` components carry their ARIA contract
-internally: labelled landmarks, `aria-expanded` on disclosures,
-`aria-selected` mirroring on tabs, modals as native `<dialog>` elements (an inert page behind them),
-`aria-live` announcement regions, keyboard navigation on menus, trees,
-carousels, and sortable lists. Composing the design system instead of
-hand-rolling markup is the single biggest accessibility win an app can
-make (see the UI architecture doc's hard rules).
+- **Semantic defaults:** `framework/ui` components handle landmarks, `aria-expanded`, `aria-selected`, native `<dialog>` modals, live regions, and keyboard navigation out of the box.
+- **Form validation & focus:** fields show errors only after blur or submit (`:user-invalid` mirrored to `aria-invalid` by `headless-validity`), refused submits announce once through a polite live region (`#cui-form-errors`) and move focus to the first invalid field, and hints sit between label and input.
+- **Document language & text scaling:** every page emits `<meta name="text-scale" content="scale">` and defaults `<html lang="en">` (override with `app.WithLang(...)` or `uihost.WithLang(...)`).
+- **Typed HTML requirements:** `core-ui/html` surfaces required accessibility fields directly on config structs (`html.Image` `Alt`, `html.Button` `Label`/`AriaLabel`, `html.Nav` `Label`/`LabelledBy`, `html.FieldSet` `Legend`).
 
-The typed HTML layer makes the remaining requirements *visible in the
-config struct*: `html.Image` has an `Alt` field, `html.Button` a
-`Label`, `html.Nav` a `Label`/`LabelledBy` pair, `html.FieldSet` a
-`Legend`. The audit below checks that you actually set them.
+## Static lint and build gate (`gofastr audit a11y`)
 
-Forms follow the same rules on every surface:
-
-- A field shows its error once the reader has left it or tried to
-  submit, not while they type: the kit styles
-  `:is(:user-invalid, [aria-invalid="true"])`, and the
-  `headless-validity` module copies `:user-invalid` onto `aria-invalid`
-  (`"true"` or `"false"`) for every control in a field or choice, so a
-  screen reader hears the same state the border shows. A server's
-  verdict stays until the next submit clears it.
-- A refused submit is read once, from one polite live region
-  (`#cui-form-errors`), as one "Label: message" sentence per field. No
-  error node is its own `role="alert"`. Focus then moves to the first
-  refused field.
-- A field's hint sits between its label and its control, so the rule
-  is read before the reader types.
-- Every page's head carries `<meta name="text-scale" content="scale">`:
-  in Chrome and Edge the OS text size scales the root font, and every
-  `rem` follows it. Other browsers ignore it.
-
-The document language (WCAG 3.1.1) defaults to `en`. Set it for a
-non-English app with `app.WithLang("…")` (or `uihost.WithLang("…")`),
-which stamps `<html lang>` on every rendered surface: pages, error
-screens, and the PWA offline shell.
-
-## `gofastr audit a11y`: the guided static lint
-
-```
-$ gofastr audit a11y
-Accessibility lint — 2 issue(s) in 1 file(s)
-
-app/screens/home.go:42: html.Image: missing required field "Alt" in ImageConfig
-    fix: every image needs Alt. Informative image → describe what it shows
-    ("Team photo at launch"). Decorative image → explicit empty Alt: "" so
-    screen readers skip it. Never omit the field.
+```bash
+gofastr audit a11y
 ```
 
-Static mode, the default, scans every non-test, non-generated `.go` file
-under the selected root (default `.`) for core-ui/html element configs
-missing their required accessibility fields. Each finding explains the
-rule. The goal is that the fix teaches WCAG
-name/role/value basics rather than just flagging a line. Exit code 1 on findings,
-so it can gate CI directly.
+Scans non-test, non-generated `.go` files for missing required accessibility fields on `core-ui/html` and `framework/ui` configs (`Image`, `Button`, `Link`, `Nav`, `Section`, `Aside`, `Group`, `Label`, `Input`, `Select`, `TextArea`, `FieldSet`, `Heading`, `Form`, `Abbr`, `Time`, `Source`), printing concrete fix hints and exiting `1` on findings.
 
-The lint understands the ARIA escape hatch: an `ExtraAttrs` literal
-carrying `aria-label` / `aria-labelledby` / `role` satisfies the
-matching typed field (icon-only buttons are the canonical case). Note
-that `ui.Button` **owns** `aria-label`: an `ExtraAttrs["aria-label"]` is
-dropped, and the accessible name comes from `Label`. `html.Button` sets
-`aria-label` from `AriaLabel`, else from `Label`, so an `ExtraAttrs`
-value survives only when both are empty — the icon-only case. When
-several buttons share a visible `Label` ("Revoke") but need distinct
-accessible names, set `ButtonConfig.AriaLabel` — it overrides the
-Label-derived name without changing the visible text. Two
-deliberate scope limits: a config built in a variable
-(`cfg := html.ImageConfig{…}; html.Image(cfg)`) and a non-literal
-`ExtraAttrs` value can't be inspected statically, so they pass the lint.
-The elements' own runtime validation (`html.Button` panics without an
-accessible name) and the axe runtime scan cover those paths.
+Both `gofastr dev` and `gofastr build` run this lint automatically and block builds on findings (`--no-a11y` is an emergency escape hatch, not a project setting).
 
-Checked elements: `Image` (Alt), `Button` (Label), `Link`/`LinkHTML`
-(Href + text), `Nav`/`Section`/`Aside` (Label or LabelledBy), `Group`
-(Role), `Label` (For + Text), `Input`/`Select`/`TextArea` (Name),
-`FieldSet` (Legend), `Heading` (Level), `Form` (Method), `Abbr`
-(Title), `Time` (Datetime), `Source` (Src + Type).
+## Runtime audit (`gofastr audit a11y --url`)
 
-## The build gate
+```bash
+gofastr audit a11y --url http://localhost:8080
 
-`gofastr build` runs the same lint between `go vet` and compilation and
-**fails the build** on findings, printing the guided report. `gofastr
-dev` applies the identical gate to every rebuild, so dev and build
-enforce the same floor: a finding stops the server from starting, the
-watcher keeps running, and fixing + saving retries. The rules are cheap
-(pure static analysis, no browser) and every finding has a concrete
-fix, so the default is enforcement. `--no-a11y` (on either command)
-skips the gate when you genuinely need a build anyway. Treat it like
-`//nolint`, not like a setting.
-
-## `gofastr audit a11y --url`: the full runtime audit
-
-```
-$ gofastr audit a11y --url http://localhost:8080
-Auditing 14 page(s) at http://localhost:8080 under 2 color scheme(s)…
-
-Audited 14 of 14 discovered pages.
-
-/pricing (dark scheme)
-  [serious] color-contrast: Elements must meet minimum color contrast ratio thresholds
-      guide: https://dequeuniversity.com/rules/axe/4.10/color-contrast
-      at: .pricing-card__footnote
-```
-
-This drives headless Chrome with the vendored axe-core engine (the same
-harness the framework's own example gates use: hermetic, no CDN fetch)
-and audits **both color schemes**: contrast, focus order, landmark
-structure, ARIA validity. These are the classes of failure only a
-rendered page exposes. Pages are discovered from the app's `/sitemap.xml`
-(`uihost.WithSitemap`), so a sitemap-configured app gets full-site
-coverage with zero flags. For a sitemap index, the browser reads the
-listed parts in the same session (logged in, when credentials are
-given) and audits the unique page paths they contain; a part that
-cannot be read is a discovery failure. Page locations in URL sets must be HTTP(S)
-URLs with a host or root-relative paths. An origin-only HTTP(S) URL
-counts as `/`. A 404 or 410 from the root sitemap falls back to `/`.
-Discovery failures, including malformed sitemap XML or a sitemap with
-no usable page locations, exit 1. Use `--pages /a,/b` to set the pages
-explicitly. Accessibility violations also exit 1.
-
-For an authenticated app, pass the same credentials a user enters on the
-auth battery's `/login` page:
-
-```
-gofastr audit a11y --url http://localhost:8080 \
-  --email admin@example.com --password "$ADMIN_PASSWORD" \
+# Authenticated pages (submits the /login form first; set GOFASTR_AUDIT_PASSWORD in your environment or pipe on stdin so the password never appears in process arguments):
+gofastr audit a11y \
+  --url http://localhost:8080 \
+  --email admin@example.com --password - \
   --pages /admin,/admin/entities/products
 ```
 
-The auditor fills `input[name=email]` and `input[name=password]`, then clicks
-the login form's submit button so the app's own submit event, session cookie,
-and redirect all run normally. With no explicit page list, sitemap discovery
-runs after login in that authenticated browser session.
+Drives headless Chromium with vendored axe-core (zero CDN calls) across **both light and dark color schemes**, discovering routes from `/sitemap.xml` (falling back to `/` when no sitemap exists) or `--pages`. Unreachable/redirected pages fail the run so a silent `/login` redirect never reports a false pass.
 
-Every run reports `Audited N of M discovered pages`. Redirected pages are
-listed under `Could not reach` and make the command exit 1 even when axe found
-no violations on the reachable pages. A run whose only page is `/login` also
-exits 1 with a coverage warning; it is not evidence that authenticated pages
-are clean.
-
-Requires a Chrome/Chromium install (headless). Run it against `gofastr
-dev`'s server during development, or against a staging deploy in CI.
-
-## The axe test harness: pin the gate as a test
-
-`framework/testkit/axetest` is the same harness the audit command and
-the framework's own example gates use, exported so a host app can pin
-the runtime audit into its own suite:
+## Pinning axe in `go test` (`framework/testkit/axetest`)
 
 ```go
 import "github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 
 func TestAxeAllPagesClean(t *testing.T) {
-    browser := axetest.NewBrowser(t)
-    for _, page := range pages { // derive from your screen catalog
-        tab, done := axetest.NewTab(t, browser)
-        if err := chromedp.Run(tab,
-            chromedp.Navigate(base+page),
-            axetest.WaitReady(),
-        ); err != nil {
-            t.Fatalf("load %s: %v", page, err)
-        }
-        violations, err := axetest.ScanSchemes(tab, axetest.Schemes, allowlist)
-        // fail on err or violations; each Violation carries its Scheme
-        done()
-    }
+	browser := axetest.NewBrowser(t)
+	for _, page := range pages {
+		tab, done := axetest.NewTab(t, browser)
+		if err := chromedp.Run(tab, chromedp.Navigate(base+page), axetest.WaitReady()); err != nil {
+			done()
+			t.Fatalf("load %s: %v", page, err)
+		}
+		violations, err := axetest.ScanSchemes(tab, axetest.Schemes, allowlist)
+		done()
+		if err != nil {
+			t.Fatalf("scan %s: %v", page, err)
+		}
+		if len(violations) > 0 {
+			t.Errorf("%s: %s", page, axetest.FormatViolations(violations))
+		}
+	}
 }
 ```
 
-The pieces, for a gate that needs more than one load-and-scan per page:
-
-| Call | What it does |
-|---|---|
-| `NewBrowser(t)` / `NewTab(t, browser)` | One headless Chrome per test, a fresh tab (30 s deadline) per page so the previous page's SSE socket closes. |
-| `WaitReady()` | Waits until the page has settled: the load event fired, web fonts loaded, the runtime booted, no client navigation is in flight, and every runtime module the page asked for has registered. It fails after 10 s and names what is still missing, for example `runtime module tabs has not registered`. |
-| `Prepare(scheme)` | Freezes transitions and forces `light` or `dark` on the current page. It returns once `<html data-color-scheme>` and the color-scheme meta name the scheme and the page's colors have stopped changing. It can run again on the same page to switch schemes. |
-| `Scan(tab, scheme, allowlist, opts...)` | Runs axe on the page as it is right now, so you can open a modal first and then scan. The axe engine is injected once per page; a second scan reuses it. A `window.axe` the page defines itself is replaced, never used. A rule that crashes (axe throws, for example on a color it cannot parse) is an error naming the rule, since it checked nothing; a rule in the allowlist is skipped either way. |
-| `ScanSchemes(tab, schemes, allowlist, opts...)` | `Prepare` then `Scan` for each scheme on one loaded page. An empty scheme list is an error. |
-
-Scan both schemes on one page load with `ScanSchemes` instead of opening a
-tab per scheme. Loading the page again for the second scheme costs a
-navigation and an axe injection and finds nothing new.
-
-Derive the page list from the same source your screens register from
-(a catalog, `app.Routes()`) so a new screen is scanned automatically.
-A hand-maintained list drifts. `examples/site/axe_test.go` is the full
-reference pattern (per-page allowlists with justifications, mobile
-target-size pass).
-
-Every successful `Scan` also records the scanned path into
-`.gofastr/axe-coverage.json` (the axe-coverage manifest,
-`framework/axecov`) under the canonical coverage root:
-`GOFASTR_AXE_COVERAGE_DIR` when set, else Go's own root rule (nearest
-`go.work` ancestor, else nearest `go.mod`, else the working directory).
-The result
-is a per-project record of which pages the axe suite actually
-exercised. The manifest is a local build artifact: gitignored, wiped by
-`make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
-recording. Note the recorded path is the browser's FINAL location:
-a scan that got redirected records the destination, never the page you
-asked for. Apps that opt into `uihost.WithStrict()` fail dev boot for
-any page route the manifest doesn't cover: every screen must have an
-axe test (`gofastr docs strict-mode`).
-
-## Recommended loop
-
-1. Compose `framework/ui` components; reach for `core-ui/html` only for
-   genuinely bespoke fragments.
-2. Let `gofastr build` keep the static floor green (it's on by default).
-3. Before shipping UI changes: `gofastr audit a11y --url
-   http://localhost:8082` and fix what axe reports in both schemes.
-4. For apps with their own test suites, pin the runtime gate as a test.
-   See `examples/site/axe_test.go` for the reference pattern (per-page
-   allowlists with justifications, mobile target-size pass).
+Use `axetest.ScanSchemes` to scan both schemes on one loaded page. Every successful `Scan` records the final resolved path in `.gofastr/axe-coverage.json` (`framework/axecov`), which `uihost.WithStrict()` checks in dev mode so new screens cannot skip axe coverage (see [Strict mode](strict-mode.md)).
 
 ## Common mistakes
 
-- **`Alt: ""` versus no `Alt` at all.** The empty string is a deliberate
-  "decorative, skip me" signal; omitting the field entirely is the bug
-  the lint flags. Decide which one the image is, and don't silence the
-  finding with filler text like "image".
-- **Silencing the build gate permanently.** `--no-a11y` is an escape
-  hatch for a blocked build, not a project setting. If a rule seems
-  wrong for a real case, the element probably isn't the right primitive
-  (a `Section` that needs no label may just be a `Div`).
-- **Auditing only one color scheme.** Contrast regressions hide in the
-  scheme your machine doesn't use. The runtime audit forces dark AND
-  light on every page for exactly this reason. Don't scope it back down.
-- **Running the runtime audit without a sitemap or page list.** Without
-  `uihost.WithSitemap` the scan falls back to `/`. The coverage line makes
-  that narrow run visible, but it still cannot discover routes that were
-  never advertised. Configure the sitemap or pass `--pages` explicitly.
-- **Auditing protected routes without credentials.** A redirect to `/login`
-  is reported as unreachable and fails the run. Pass `--email` and
-  `--password`; both are required together.
-- **Fixing the symptom in CSS.** An axe `color-contrast` finding on a
-  component means the *token* is wrong (`--color-text-subtle` on
-  `--color-surface`), not that one selector needs an override. Fix the
-  theme so every component inherits the correction.
+- **Omitting `Alt` instead of setting `Alt: ""` on decorative images:** explicit `""` tells screen readers to skip the image; omitting `Alt` fails the static lint.
+- **Using `--no-a11y` as a permanent flag:** fix the underlying primitive instead (for example use `Div` when a container is not a landmark `Section`).
+- **Auditing only one color scheme:** contrast regressions hide in dark mode; always run both schemes.
+- **Auditing protected routes without `--email` / `--password`:** redirects to `/login` fail the run as unreachable pages.
+- **Patching contrast findings with ad-hoc CSS:** fix the theme token (`--color-text-subtle`, `--color-surface`) so every component inherits the fix.

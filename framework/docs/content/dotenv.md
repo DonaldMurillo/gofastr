@@ -1,34 +1,19 @@
-# .env files
+# `.env` files (`core/dotenv`)
 
-`framework.NewApp()` reads `.env` files at the start of construction,
-before any options run, so plugins, batteries, and option callbacks
-that peek at `os.Environ` see the merged values.
+`framework.NewApp()` automatically loads `.env` files at the start of construction before options run, so plugins, batteries, and config callbacks see merged values.
 
-## Defaults
+## Precedence and load order
 
-Files are probed in this order (earlier wins on conflict):
+1. **Real process `os.Environ` always wins:** `dotenv.Apply` only sets variables not already present in the environment, so operator-supplied `DATABASE_URL=...` always overrides dotfiles.
+2. `.env.local` (gitignored per-developer secrets)
+3. `.env.<APP_ENV>` (only when `APP_ENV` is set, e.g. `.env.production`)
+4. `.env` (committed shared defaults)
 
-1. `.env.local`: gitignored; per-developer secrets.
-2. `.env.<APP_ENV>`: only when `APP_ENV` is set
-   (e.g. `.env.production`).
-3. `.env`: committed defaults shared by all environments.
+`NewApp` skips missing files. If loading fails (for example on a malformed assignment), `NewApp` **panics** before applying any file values or running app options; the error names the file and line number without printing the line's text so secrets don't leak.
 
-`NewApp` skips missing files. If loading fails, `NewApp` panics before
-applying any file values or running app options. The error names the file
-and includes the line number for malformed assignments.
+## File format and `${VAR}` expansion
 
-## Precedence
-
-Existing `os.Environ` always wins over file values. Operators expect
-their explicit `DATABASE_URL=...` to override anything in a dotfile,
-and the loader honors that. The framework calls `os.Setenv` only for
-keys not already present.
-
-## File format
-
-A strict subset of the de facto dotenv spec:
-
-```
+```dotenv
 # comments and blank lines are allowed
 FOO=bar
 # Double quotes interpret \n, \t, \" and \\.
@@ -43,141 +28,36 @@ PATH_TPL="${HOME}/bin"
 ESCAPED="\${not expanded}"
 ```
 
-Hard rules:
+Rules:
+- Keys match `[A-Za-z_][A-Za-z0-9_]*`. Multi-line values are not supported (use `\n` in double quotes).
+- Inline `#` comments after **unquoted** values become part of the value — quote values when appending comments, or put comments on their own line.
+- Only bracketed `${VAR}` inside double quotes expands (bare `$VAR` is left literal). Lookup checks `os.Environ`, earlier files in the precedence chain, then earlier keys in the same file, without re-expanding substituted values (no cycles or double-expansion):
 
-- Keys must start with a letter or underscore; the rest is
-  `[A-Za-z0-9_]`. Anything else is a parse error.
-- Multi-line values are **not** supported. Use `\n` inside a
-  double-quoted value.
-- Inline comments after an UNQUOTED value are preserved as part of
-  the value. Write a quoted value if you need to embed `#`.
-- The parser fails fast on malformed input rather than skipping the
-  bad line (loud-by-default). The error names the file and line, never
-  the line's text, since a `.env` line holds a secret.
-- A key repeated in one file keeps its last value. A UTF-8 BOM at the
-  start of the file is ignored; a NUL byte is an error.
-- A file's values together may hold at most 10 times the bytes read so
-  far, a value pulled from the environment or an earlier file counting
-  as read once; the line that passes it is an error.
-
-## Variable expansion `${VAR}`
-
-Only inside double-quoted values. Bracket form **only**: bare `$VAR`
-is left verbatim (less ambiguous, fewer footguns).
-
-Lookup order for `${NAME}` when `Load` (and so `NewApp`) reads the
-files is the order `Apply` keeps values in, so a value built from a
-name reads the same value the app runs with:
-
-1. `os.Environ`. `Apply` never overwrites a set variable, so with
-   `DB_HOST=prod` in the environment, `DB_HOST` is `prod` and
-   `DATABASE_URL="postgres://${DB_HOST}/app"` is built on `prod` too.
-2. The value an earlier file in the precedence chain set. That is the
-   value `Load` keeps, so a `.env` line
-   `DATABASE_URL="postgres://${DB_HOST}/app"` follows the `DB_HOST`
-   from `.env.local`, not the one `.env` itself shadowed.
-3. Keys parsed earlier in the same file.
-4. Empty string (no error, matching shell behaviour).
-
-`dotenv.Parse` on its own reads no environment: it expands against the
-keys earlier in the same input only.
-
-Before v0.96 the environment came third, after the files' own keys, so
-a dotfile value built from `${DB_HOST}` used the file's host while the
-environment's `DB_HOST` was the one applied.
-
-A value read from an earlier file or the environment counts as input
-for the expansion budget once, so one `${PATH}` in a short file is
-fine; the budget still refuses a line that repeats it many times.
-
-Each value is substituted as stored and never expanded a second time,
-the way a shell substitutes a variable. A single-quoted literal or an
-escaped `\${...}` stays literal when another line references it, and an
-environment value holding `${x}` goes in as the text `${x}`:
-
-```
+```dotenv
 PW='a${b}c'
 # Expands to postgres://u:a${b}c@h/db.
 DSN="postgres://u:${PW}@h/db"
 ```
 
-- **No cycles.** `A="${A}"` reads A before this line sets it (empty the
-  first time). Since a looked-up value is never re-expanded, no chain
-  can loop or compound through lookups.
-- **`\${...}` escape.** Escapes and `${...}` are read in one pass, so
-  `\$` is a literal `$` that starts no lookup, and `\\${DIR}` is a
-  literal backslash followed by DIR's value.
-- **Malformed `${...` (no closing brace)** is left verbatim. The
-  parser never silently drops bytes.
+## Reading env vars before `NewApp`
 
-## Disabling auto-load
-
-Set `GOFASTR_DOTENV=off` in the **process** environment (not in a
-`.env` file, that's chicken-and-egg) before `NewApp` runs. Useful when:
-
-- You ship custom paths via `dotenv.LoadAndApply("ops/secrets.env")`
-  before `NewApp` and don't want the default probe to also fire.
-- You run integration tests that need a hermetic env.
-
-## Using the package directly
-
-```go
-import "github.com/DonaldMurillo/gofastr/core/dotenv"
-
-// Parse without touching os.Environ:
-vals, err := dotenv.Load(".env.local", ".env")
-
-// Apply (existing env wins):
-loaded, skipped := dotenv.Apply(vals)
-
-// One-shot:
-err := dotenv.LoadAndApply(".env")
-```
-
-`dotenv.Expand(s, local, envFn)` is exposed for callers that want to
-run the same `${VAR}` substitution against a custom lookup (e.g. when
-loading a non-`.env` config and wanting consistent expansion rules).
-
-## Common mistakes
-
-- **Expecting a `.env` value to override the real environment.**
-  Precedence is the other way: `Apply` only calls `os.Setenv` for keys
-  not already present. An operator's `DATABASE_URL=…` always beats the
-  dotfile, by design.
-- **Putting `GOFASTR_DOTENV=off` in a `.env` file.** Chicken-and-egg:
-  the loader would have to read the file to learn it shouldn't read
-  the file. The kill switch only works as a process env var set before
-  `NewApp` runs.
-- **Using bare `$VAR` expansion.** Only the bracket form `${VAR}`
-  expands, and only inside double-quoted values. Bare `$VAR`,
-  single-quoted strings, and unquoted values are left verbatim.
-- **Appending `# comment` after an unquoted value.** Inline comments
-  after an UNQUOTED value are preserved as part of the value. Quote
-  the value if the comment (or a literal `#`) shouldn't be in it.
-
-
-## Reading a variable before `NewApp`
-
-`framework.NewApp` loads the dotenv files itself, so most code never has to.
-Code that must read a variable *earlier*, say a `main.go` opening its database
-before constructing the app, has to load them first, and must load the **same
-set in the same order**:
+If `main.go` opens a database before calling `framework.NewApp`, load the exact same file list first using `framework.DefaultDotEnvPaths()` and check the error:
 
 ```go
 if err := dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...); err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
-
 db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
 ```
 
-`DefaultDotEnvPaths()` returns `.env.local`, then `.env.<APP_ENV>` when
-`APP_ENV` is set, then `.env`.
+Never hardcode just `dotenv.LoadAndApply(".env")` before `NewApp` — because existing env vars win, loading `.env` first would pin base defaults and block `.env.local` / `.env.<APP_ENV>`.
 
-Use it rather than a hand-written list. `dotenv.Apply` never overwrites a
-variable that is already set, so loading a **shorter** list first pins the
-lower-precedence file's value, and `NewApp`'s later load of
-`.env.<APP_ENV>` can no longer win: a deployment using tiered env files
-silently gets its base `.env` value.
+Set `GOFASTR_DOTENV=off` in the **process environment** to disable automatic loading in `NewApp` (useful in hermetic integration tests).
 
-The scaffold `gofastr init` emits uses the same file order.
+## Common mistakes
+
+- **Expecting `.env` to override an exported shell variable:** real environment variables always win by design.
+- **Putting `GOFASTR_DOTENV=off` inside `.env`:** must be set in the process environment before `NewApp` runs.
+- **Using bare `$VAR` or single quotes for expansion:** only `"${VAR}"` inside double quotes expands.
+- **Appending `# comment` after an unquoted value:** becomes part of the value; quote the value first.
+- **Loading only `.env` before `NewApp`:** use `framework.DefaultDotEnvPaths()...` so `.env.local` and `.env.<APP_ENV>` retain precedence.

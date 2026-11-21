@@ -1,152 +1,61 @@
 # Comparison: where GoFastr sits
 
-GoFastr is a full-stack Go framework: server-rendered screens, a REST
-API, MCP tools, and migrations, written as plain Go against
-`framework/` and `framework/ui/`, which sit on stdlib-first primitives
-in `core/` and `core-ui/`. An optional `gofastr.yml` app spec
-scaffolds a whole app, UI and API with scoped permissions, as Go you
-read, commit, and own. Several tools cover parts of that job; no Go
-tool we know of covers all of it. This page maps the neighbours
-honestly, including the ways they are better, so you can pick the
-right tool, which is sometimes not this one.
+GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: plain Go you own, from barebones `core/` primitives up to server-rendered UI, auth, SQLite/Postgres, batteries, and MCP in one binary. Several great tools cover parts of that job. This page compares them—including where they beat GoFastr—so you can pick the right one.
 
-A note on "MCP tools from your schema": that was a differentiator in
-early 2025 and is table stakes now: Supabase ships an MCP server,
-PocketBase has community MCP servers, FastAPI has FastAPI-MCP. GoFastr
-generates MCP tools from entities too (on top of `core/mcp`, which any
-GoFastr app can use directly), but that's supporting evidence, not the
-main point of comparison here. What's different is the codegen
-pipeline that generates the whole stack and hands you the code to own.
+## What actually makes GoFastr different
+
+- **Barebones to full-stack in one repo.** You can start with plain `core/router` and `core/render` handlers, or turn on the full stack (`framework/ui`, `battery/auth`, migrations, entities, queues, search), and drop back to `net/http` or `database/sql` anywhere in the same app.
+- **Full-stack UI in Go with no JS build pipeline.** Go renders HTML on the server and a small runtime hydrates interactive islands in place—no React, Vue, or separate frontend repo.
+- **Built for humans and coding agents together.** Plain Go on disk is easy to read and debug by hand; `gofastr dev` MCP and `gofastr verify` contract checks keep coding agents honest while building; `/mcp` and `llm.md` expose your app to user agents in production.
+
+MCP support by itself is table stakes today (Supabase, FastAPI-MCP, and community PocketBase plugins all offer it). The difference is having the UI, backend, auth, verification, and agent surfaces share one plain-Go codebase with no platform lock-in.
 
 ## vs PocketBase
 
-**What PocketBase is:** a runtime BaaS. One prebuilt binary with
-embedded SQLite, an admin dashboard, auth, files, and realtime. You
-configure collections at runtime through the dashboard; you extend it
-by writing hooks (Go or JS) that run *inside* PocketBase's lifecycle.
+**PocketBase** is a prebuilt runtime BaaS: one binary with embedded SQLite, an admin dashboard, auth, files, and realtime. You configure collections at runtime and extend it with Go or JS hooks inside PocketBase's lifecycle.
 
-**The difference in kind:** PocketBase is a host you configure.
-GoFastr is Go source you own, written by hand against the framework
-or scaffolded by the optional app spec as a flat `package main`
-(`main.go`, `app.go`, `screens_register.go` + `screen_*.go`, `entities/`). You commit it,
-diff it in code review, debug it with a debugger, and refactor it like
-any other package. There's no runtime
-schema store and no canonical file you have to keep living inside: you
-generate once, then edit the Go directly, and you can delete the
-app spec once the code is yours. If you want to drop below the
-framework, you write `net/http`. There's no plugin API to route
-around.
+**The trade-off:** PocketBase is a host you configure; GoFastr is Go source you own. In GoFastr, your routes, screens, and schema live in ordinary Go files you diff in PRs, refactor with your IDE, and step through in a debugger. If a route doesn't fit the framework, you write `net/http` directly.
 
-**Choose PocketBase when** you want a backend in five minutes, the
-admin dashboard is the product, and you're happy working inside its
-extension points. It's been in production longer, across more
-projects, and has a larger community. **Choose GoFastr when** the
-output needs to be a Go codebase your team (or your agents) can read
-and change directly, and you want the server-rendered UI generated
-from the same schema as the API.
+- **Choose PocketBase** when you want an instant backend + admin UI and are happy working inside its extension hooks. It is far more mature and battle-tested.
+- **Choose GoFastr** when you want a real Go codebase (UI included) that you and your agents edit directly with no runtime schema store.
 
 ## vs Encore.go
 
-**What Encore is:** a Go backend framework where infrastructure
-(Pub/Sub, cron, secrets, databases) is declared in code and provisioned
-by Encore's tooling, with tracing and a dashboard. It's commercially
-backed and more mature.
+**Encore** is a mature, commercially backed Go backend framework where databases, Pub/Sub, cron, and secrets are declared in code and provisioned by Encore's toolchain and cloud/self-hosted runtime.
 
-**The difference in kind:** Encore's features depend on its platform:
-its build system, its cloud or self-hosted runtime, its dashboard.
-GoFastr has no platform: `go build` emits a single static binary that
-runs anywhere a binary runs, and it sends no telemetry. The trade-off
-is real in both directions: Encore sets up infrastructure and
-distributed tracing for you; GoFastr doesn't couple you to a platform
-and keeps a plain `go.mod`.
+**The trade-off:** Encore manages infrastructure and distributed tracing for you, at the cost of coupling your build and runtime to Encore's platform. GoFastr has no platform—`go build` emits a plain static binary with a normal `go.mod` and zero telemetry—and also covers the server-rendered UI layer.
 
-**Also a scope difference:** Encore is backend-first; GoFastr generates
-the server-rendered UI (screens, nav, islands) from the same app spec
-as the API. **Choose Encore when** you want managed infrastructure and
-a mature toolchain. **Choose GoFastr when** you want nothing between
-your binary and your VPS.
+- **Choose Encore** when you want managed cloud infrastructure, built-in distributed tracing, and a mature backend platform.
+- **Choose GoFastr** when you want full-stack Go (including UI) with nothing between your binary and a VPS.
 
 ## vs Wasp
 
-**What Wasp is:** the closest thing to the same approach. A
-`main.wasp` declaration compiles to a full-stack app (auth, CRUD, jobs,
-email), and "the framework for the AI era" is literally their tagline.
-Wasp is more mature, has a team, a community, and production users.
+**Wasp** is a full-stack JS/TS framework where a `main.wasp` file compiles to a React + Node + Prisma app. It is more mature, with a dedicated team and production community.
 
-**The difference in kind:** the generator model, then the runtime
-model. Wasp (like Encore and Amplify) is a *canonical-declaration*
-tool: `main.wasp` *is* the program; you live in it and regenerate
-from it, and the emitted code belongs to the tool, not to you to
-hand-edit. GoFastr scaffolds once: the
-app generator emits idiomatic Go you then own and edit directly; `generate`
-is one-shot and refuses to overwrite an existing project (pass
-`--force` to regenerate), and you can delete the app spec entirely
-once the code is yours. The trade-off is real: a canonical
-declaration promises "no drift" because there's one source; GoFastr's
-approach trades that for a plain Go codebase with no second language to
-grow into. There's also a runtime difference: Wasp targets JS/TS,
-React SPA + Node + Prisma, while GoFastr is the Go counterpart:
-SSR-first HTML with island hydration instead of a client-side React
-app, one static binary instead of a Node deployment, `database/sql`
-instead of an ORM. If you're a TypeScript shop, Wasp is the obvious
-pick. If you want the same idea in Go, with Go's deployment story,
-compile-time guarantees, and code you own, that's what GoFastr is
-for.
+**The trade-off:** Wasp uses a *canonical declaration*—`main.wasp` stays the source of truth and owns the generated code. GoFastr's optional `gofastr.yml` app spec is strictly *scaffold-and-own*: it generates idiomatic Go once, refuses to clobber your edits, and can be deleted immediately. On top of that, GoFastr compiles to one static Go binary with SSR + islands instead of a Node + React stack.
 
-## vs hand-rolled Gin/Echo + sqlc
+- **Choose Wasp** if your team lives in TypeScript and React.
+- **Choose GoFastr** if you want Go's single-binary deployment, compile-time checks, and plain source files you own.
 
-**What hand-rolling is:** the Go default, and often the right call:
-maximal control, zero framework risk, every line auditable.
+## vs hand-rolled Go (stdlib / Gin / Echo + sqlc)
 
-**What you write yourself:** the glue. Per-entity CRUD handlers,
-request validation, filtering/sorting/pagination math, batch
-endpoints, cursor paging, OpenAPI annotations kept in sync by hand, an
-MCP server if agents need tools, migrations, per-user scoping enforced
-in every query, RBAC checks in every handler, and any admin/UI layer.
-One entity declaration in `framework/entity` generates that glue, and
-because the output is plain Go on disk, dropping the framework costs
-the same either way: delete the declaration, keep the code, write
-`net/http`.
+**Hand-rolling** is the Go default—and often the right choice. Maximum control, zero framework surface, every line explicit.
 
-**Choose hand-rolling when** the domain is small, the endpoints are
-few, or the requirements are unusual enough that generated CRUD is
-noise. **Choose GoFastr when** the app is CRUD-heavy and the glue
-would dominate the diff.
+**The trade-off:** On prototypes and small-to-medium apps, hand-rolling means rewriting the same glue every time: auth and sessions, CSRF/CSP headers, form validation, server-rendered UI components, pagination/filtering, migrations, OpenAPI, MCP tools, and background jobs. GoFastr gives you those pieces ready to use, while letting you drop down to `core/` or `net/http` for anything custom.
 
-## What GoFastr does *not* have (read before adopting)
+- **Choose hand-rolling** for tiny microservices, unusual protocols, or teams that want zero framework abstractions.
+- **Choose GoFastr** when you want to go from idea to a full-stack app fast without giving up plain Go escape hatches.
 
-- **It's v0.x.** Breaking changes happen between releases; pin a
-  version. The `v1.0.0` tag will mark the stability promise.
-- **No external production adopters yet.** The pipeline is proven by
-  the repo's own tooling, docs site, and the
-  [`examples/meridian`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/meridian)
-  flagship, not by someone else's production traffic. This is a
-  young framework and says so.
-- **Solo maintainer.** Bus factor of one. Issues get read; SLAs don't
-  exist.
-- **SQLite and Postgres only.** No MySQL, no MongoDB.
-- **No hosted anything.** No cloud, no dashboard-as-a-service, no
-  telemetry. That's deliberate, but if you want Encore's or Supabase's
-  managed experience, this isn't it.
-- **Small community.** The docs are extensive and embedded in the
-  binary (`gofastr docs`), but you won't find a thousand Stack
-  Overflow answers.
+## Honest caveats (read before adopting)
 
-If those trade-offs are disqualifying for your context, the tools
-above are good. Use them. If they're acceptable for a v0.x bet on Go
-you own, start with the
-[app spec tutorial](tutorial-app-spec.md).
+- **Pre-1.0:** Breaking changes still happen between minor releases. Pin a version and use `gofastr upgrade` when moving forward ([stability](stability.md)).
+- **Early adoption:** GoFastr powers [Barcode & QR Code Maker](https://barcode.donaldmurillo.com/), its own docs site, and `examples/meridian`, but it does not have a large ecosystem of external production teams yet.
+- **Solo maintainer:** Bus factor of one; no commercial SLAs.
+- **SQLite and Postgres only:** No MySQL, no MongoDB.
+- **No hosted cloud:** Deliberate—you deploy the binary yourself.
 
 ## Common mistakes
 
-- **Evaluating GoFastr as a BaaS.** There's no runtime collection
-  editor; the app spec is a compile-time scaffold input, not a live
-  schema store. And it isn't something you keep regenerating from
-  either. Once it scaffolds the Go, that Go is what you edit and
-  redeploy directly (you can delete the app spec).
-- **Assuming MCP support is the differentiator.** It isn't anymore;
-  most schema-bearing platforms expose MCP. Compare the codegen
-  pipeline and the fact that you own the output instead.
-- **Comparing maturity 1:1.** Every alternative on this page is more
-  mature. The honest pitch is the difference above plus the
-  trade-offs above, not feature parity.
+- **Evaluating GoFastr as a BaaS.** There is no runtime collection editor; everything lives in Go files you compile and deploy.
+- **Treating `gofastr.yml` as a permanent DSL.** The app spec is an optional one-shot scaffolder. You can build a GoFastr app without ever touching YAML, or scaffold once and delete the file.
+- **Assuming you have to use entities for everything.** `core/` routes, custom `framework` handlers, and hand-written screens are first-class; entities are just an opt-in shortcut when CRUD saves time.

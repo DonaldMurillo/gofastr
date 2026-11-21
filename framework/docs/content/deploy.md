@@ -1,165 +1,56 @@
 # Deployment
 
-GoFastr apps compile to a **single static binary** with templates, runtime
-JS, and (optionally) embedded migrations baked in. That makes deployment
-boring in the good way: build one binary, run it with a few env vars.
+GoFastr apps compile to a single static binary with templates, runtime JS, and optional embedded migrations baked in. Build one binary, pass your environment variables, and run it.
 
-## The single-binary model
+## Building the binary
 
-`go build` your `main` package → one executable. It serves HTTP, runs
-auto-migrations on `Start`, and embeds the UI runtime. No Node, no asset
-pipeline, no sidecar.
+`go build` compiles your `main` package into one executable—no Node, no asset pipeline, no sidecar:
 
 ```bash
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o app ./
 ./app                 # listens on :8080 (or $PORT)
 ```
 
-Run `gofastr build` from the project root. It runs code generation when
-configured or when the app has derived client or endpoint files. It runs
-`go vet ./...`, the accessibility and `.ui.go` hydration sandbox checks, the
-embed server-action check, and contract verification from the invoking
-directory. The final build compiles the current package by default. Use
-`--pkg` to select a main package under `cmd/`, including one created by
-code generation. Set a binary path with `-o=<path>` or `--output=<path>`.
+`gofastr build` runs code generation, project-wide `go vet`, and the accessibility check before building. Pass `--pkg` when `main` lives under `cmd/`:
 
 ```bash
 gofastr build
 gofastr build --pkg ./cmd/server
 ```
 
-> **Go version.** `go.mod` declares `go 1.27.4`. The patch level is a
-> security floor: Go 1.27.0 to 1.27.2 build `crypto/x509` with
-> GO-2026-6809, which the SMTP sender's TLS handshake reaches, and
-> 1.27.3 builds `net/http` with GO-2026-6859, an HTTP/1 server crash
-> through a `MaxBytesReader` header race. `go get`
-> raises an app's own `go` line to match, and the default
-> `GOTOOLCHAIN=auto` downloads 1.27.4; with `GOTOOLCHAIN=local`, install
-> it first. The framework uses the 1.27
-> standard library directly: `uuid` for request ids and entity keys,
-> `strings.CutLast`, and the runtime's `goroutineleak` profile behind
-> `/.debug/goroutineleak`. Go 1.21+ refuses to build a module whose `go`
-> directive is below a dependency's, so the floor can only rise: `chromedp`
-> (v0.15.1, `go 1.26`) is a direct dependency of the browser-driven tooling in
-> `framework/testkit/axetest`, the CLI accessibility audit, and the eval
-> harness. `battery/print/chromepdf` is a nested module that isolates the print
-> feature's own chromedp usage and does not set the floor.
-
-> **SQLite vs Postgres.** The bundled `gofastr` CLI uses SQLite. For a
-> Postgres deployment, import a Postgres driver in your app and pass a
-> `*sql.DB` via `framework.WithDB`. `CGO_ENABLED=0` works with the pure-Go
-> `jackc/pgx` stdlib driver; the `mattn/go-sqlite3` driver needs CGO, so
-> choose your base image accordingly (see the Dockerfile note below).
+- **Go toolchain:** GoFastr targets `go 1.27.4` (minimum security floor for `crypto/x509` and `net/http` fixes, plus 1.27 stdlib features). With default `GOTOOLCHAIN=auto`, Go downloads it automatically.
+- **SQLite vs. Postgres:** `CGO_ENABLED=0` works with pure-Go Postgres (`jackc/pgx` stdlib driver) and `modernc.org/sqlite`. If you use CGO `mattn/go-sqlite3`, build with `CGO_ENABLED=1` and run on a base image with libc.
 
 ## One server over SSH: `gofastr deploy`
 
-For one Linux server (a small VPS is enough), `gofastr deploy` puts the
-app there as a systemd service. Nothing else is installed on the server:
-no agent, no container runtime.
+For a single Linux server (with `sshd`, `systemd`, `bash`, and root or passwordless sudo), `gofastr deploy` cross-compiles the binary, uploads it, and manages it as a systemd service—no agent or container runtime required:
 
-```sh
+```bash
 gofastr deploy deploy@203.0.113.7 --name shop --env-file prod.env --port 8080
+gofastr deploy status deploy@203.0.113.7 --name shop
+gofastr deploy rollback deploy@203.0.113.7 --name shop
 ```
 
-It asks the server what CPU it has, builds the package in this directory
-for it, copies the binary over SSH, starts it, and waits for the app to
-answer `/healthz` with a 2xx within 30 seconds. If activation or the
-health check fails, the command prints diagnostics and exits non-zero.
-It tries to restore the previous release, or the latest eligible release
-in the order if the previous one was incomplete. Once it switches back,
-it removes the failed release. With no earlier release, the failed
-release stays in place. Installs and rollbacks for the same app take
-turns on the server, including environment inheritance and recovery.
+Useful flags: `--keep` (releases retained, default 5), `--bin <file>` (deploy a prebuilt Linux binary), `--pkg` (main package if not `.`), `--ssh-port`, and `-i`.
 
-`--name` defaults to the lowercased directory basename. Set it
-explicitly if that name is invalid. A valid name is 1 to 31 characters,
-starts with a lower-case ASCII letter, and uses only lower-case ASCII
-letters, digits, and hyphens.
+What it configures on the host:
 
-What it sets up, on the first deploy and kept the same on later ones:
+- `/opt/<name>/releases/<UTC-time>/<name>` and `/opt/<name>/current` symlink, plus per-release unit snapshots under `units/`.
+- A non-login system user `<name>` and writable data directory `/var/lib/<name>` (`HOME` and `XDG_STATE_HOME` point here, so relative SQLite paths and [telemetry](telemetry.md) stay contained).
+- `/etc/<name>/env` from `--env-file` (root + app readable only; omitted on later deploys to keep existing env).
+- `/etc/systemd/system/<name>.service` (auto-restarts on crash, starts on boot, forces `GOFASTR_ENV=production`) and `<name>.socket`.
 
-- `/opt/<name>/releases/<release ID>/<name>`, one directory per release,
-  and `/opt/<name>/current`, a link to the release in place. The newest
-  five earlier successful deployments are kept (`--keep`).
-- A system user `<name>` with no login, which the app runs as.
-- `/var/lib/<name>`, the only place the app may write (mode 0750). `HOME`
-  and `XDG_STATE_HOME` point into it, so a SQLite file with a relative
-  path and the [telemetry](telemetry.md) files land there.
-- Each release keeps its environment as `KEY=value` lines from
-  `--env-file`, readable by root and the app only. The active file is
-  `/opt/<name>/current/env`. A deploy without `--env-file` inherits the
-  current release's environment, including `/etc/<name>/env` on an
-  older installation.
-- `/etc/systemd/system/<name>.service`: restarts the app after a crash,
-  every time, and starts it at boot. It sets `GOFASTR_ENV=production`,
-  which turns the dev-only features off whatever `GOFASTR_DEV` says in
-  an env file copied from a laptop.
-- `/etc/systemd/system/<name>.socket`: systemd opens the app's port and
-  keeps it. See below.
+After starting a release, `gofastr deploy` waits up to 30 seconds for `/healthz` to return 2xx. On failure, it rolls back to the previous release, prints the failing app logs, and exits non-zero.
 
-### Restarts do not close the port
+### Zero-refusal restarts via socket activation
 
-systemd holds the listening socket and hands it to the app when it
-starts (`App.Start` takes it in place of opening the address it was
-given). While the app is down, between one release and the next or
-after a crash, connections wait in the socket's queue and are answered
-by the app that starts: a deploy, a rollback or a crash is a slower
-request, not a refused one. Measured on a 1 CPU server at ten requests a
-second: none failed through a redeploy, a rollback and three `kill -9`
-in a row; the slowest took 1.4 seconds.
+systemd owns the listening socket (`--port` on all interfaces) and hands it to `App.Start`. During a deploy, rollback, or crash restart, incoming connections queue in the kernel socket instead of being refused, then get served once the new process starts.
 
-The port in the socket unit is `--port`, on every interface. The app's
-own address setting is not used while systemd passes it a socket, and
-what the bind may expose (the dev-only MCP tools, livereload) is decided
-from the socket's address, not from that setting.
-
-A binary that cannot take a socket (built on a GoFastr before this, or
-not a GoFastr app) is detected and opens its own port as before, with
-about a second of closed port on each restart. The first deploy that
-moves an app from one way to the other closes the port once.
-
-Each release keeps the units it was deployed with, in
-`releases/<release ID>/units/`, and going back to a release puts them
-back. When the port changes, systemd opens the socket on the new port.
-
-```sh
-gofastr deploy status deploy@203.0.113.7 --name shop     # release, service, health
-gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
-```
-
-`rollback` starts the release before the running one in the server's
-recorded deployment order and checks it the same way. Before a deploy or
-rollback, the server reconciles that order with releases on disk.
-A deploy marks a release incomplete until activation and its health
-check succeed. Reconciliation and rollback skip incomplete releases.
-A release left unrecorded by an older client or by an interruption after
-successful activation can still enter the order. An eligible unrecorded
-running release goes first, followed by other eligible unrecorded
-releases in descending release ID order. Previously recorded releases
-keep their relative order. An installation without a recorded order
-starts with descending release ID order.
-If rollback activation or its health check fails, the server tries to
-restore the release it left if it is eligible. Each release uses its own
-environment and saved `--port` and `--health` settings. For a release
-without saved health settings, pass those flags to `rollback` or
-`status` as needed.
-`--wait <seconds>` sets the elapsed time allowed for each release's
-health check. `status` probes the health URL only while the service is
-active.
-
-The server needs sshd, systemd, bash and `flock` from util-linux. The SSH
-user must be root or have passwordless sudo. Use `user@host` or a host
-from your SSH config; `--ssh-port` and `-i` are passed to `ssh`. `--bin
-<file>` deploys a Linux binary you built yourself in place of building
-one, and `--pkg` names the main package when it is not `.`.
-
-What it does not do: TLS (put a reverse proxy in front, or see
-[Serving HTTPS from the app](#serving-https-from-the-app)), a firewall,
-or more than one server.
+`gofastr deploy` does not set up TLS (put a reverse proxy in front or use [Serving HTTPS from the app](#serving-https-from-the-app)), a firewall, or multi-node orchestration.
 
 ## Production Dockerfile
 
-Multi-stage, distroless runtime, non-root, pure-Go build (Postgres):
+Multi-stage, distroless, non-root, pure-Go build (Postgres):
 
 ```dockerfile
 # ---- build ----
@@ -179,182 +70,75 @@ USER nonroot:nonroot
 ENTRYPOINT ["/app"]
 ```
 
-> Using the CGO SQLite driver (`mattn/go-sqlite3`) instead? Build with
-> `CGO_ENABLED=1` on `golang:1.27` and run on `gcr.io/distroless/base-debian12`
-> (has libc) rather than `static`.
+Using CGO `mattn/go-sqlite3`? Build with `CGO_ENABLED=1` and run on `gcr.io/distroless/base-debian12` instead of `static`.
 
-## Configuration (env)
+## Environment & secrets
 
-GoFastr reads config from the environment. `NewApp` also loads `.env`
-files in every environment and gives process environment variables precedence.
-It skips missing files and panics on load errors, including malformed files.
-Set `GOFASTR_DOTENV=off` to disable this automatic load. See [dotenv](dotenv.md).
+GoFastr reads config from real process environment variables. `NewApp` also loads `.env` files at boot in every environment; real env vars always win, and you can disable file loading with `GOFASTR_DOTENV=off` (see [dotenv](dotenv.md)). Never commit `.env` files or bake them into container images—inject production secrets from your platform's secret store (Kubernetes Secrets, AWS Secrets Manager/SSM, Vault).
 
-| Var | Purpose |
-|-----|---------|
-| `PORT` | Listen port. A bare value like `8080` is normalized to `:8080`, so PaaS-injected `$PORT` works. |
-| `DATABASE_URL` | Your app reads this and passes the connection to `WithDB`. |
-| `APP_ENV` | Adds `.env.<APP_ENV>` to the dotenv load order whenever it is set. |
-| auth secrets | If you use `battery/auth`, set its JWT/session secret explicitly in production. Do not rely on the dev auto-generated secret (it rotates per process and silently invalidates sessions). See [auth](auth.md). |
-| `GOFASTR_SECRET` | HMAC signing key for the uihost session token. Set it (or use `framework.WithSecret` in code) so a session token issued by one replica verifies on every other replica. With one replica and no secret, an ephemeral boot secret is minted (sessions roll over on restart). With `WithFanout` and no secret, the app refuses to boot. See [Reactivity model](reactivity.md) and [Horizontal scaling](scaling.md). |
+| Variable | Purpose |
+|---|---|
+| `PORT` | Listen port. Bare values like `8080` normalize to `:8080`. |
+| `DATABASE_URL` | Read by your app and passed to `framework.WithDB`. |
+| `APP_ENV` | Adds `.env.<APP_ENV>` to the dotenv load order whenever set. |
+| `GOFASTR_SECRET` | HMAC signing key (≥32 chars) for `uihost` session tokens. Set it (or `framework.WithSecret`) before running multiple replicas; required with `WithFanout`. |
+| `GOFASTR_SECRET_PREVIOUS` | Comma-separated previous `GOFASTR_SECRET` values for zero-downtime key rotation. |
+| `AuthConfig.JWTSecret` | Required in production (`DevMode=false`) when using `battery/auth`; `Init` fails closed if empty. |
 
-## Secrets
+### Rotating secrets without logging everyone out
 
-GoFastr reads secrets from the process environment. It does not bundle a
-secrets manager, and `.env` files are a **development** convenience only
-(never commit them, never ship them in the image). In production, inject
-secrets as env vars from your platform's secret store:
+Both session and JWT keys support dual verification during a rotation window—sign with the new secret, verify against new **or** previous, wait one token lifetime, then drop the old secret:
 
-- **Kubernetes:** a `Secret` mounted as env vars (or via the CSI secrets
-  store driver).
-- **AWS:** Secrets Manager / SSM Parameter Store → env at task start
-  (ECS task definition `secrets:`, or fetch-on-boot).
-- **Vault:** the Vault Agent injector or `vault kv get` in an init step.
-
-### Rotating secrets without a mass logout
-
-Both the uihost session key (`GOFASTR_SECRET`) and the auth JWT key
-(`AuthConfig.JWTSecret`) rotate gracefully: new tokens are signed with the
-new secret, and verification accepts the new **or** the previous secret for
-one token lifetime, after which you drop the old one.
-
-- **`GOFASTR_SECRET`**: set `GOFASTR_SECRET` to the new value and
-  `GOFASTR_SECRET_PREVIOUS` to the old (comma-separated to roll through
-  several; each ≥32 chars). In code: `framework.WithSecretRotation(newSecret,
-  oldSecret)`. Deploy to every replica, wait one session TTL, then unset
-  `GOFASTR_SECRET_PREVIOUS` and redeploy. `GOFASTR_SECRET` is used exactly as set,
-  surrounding whitespace included; an old value that carries some (a
-  trailing newline from a file, a pasted space or tab) is accepted in
-  `GOFASTR_SECRET_PREVIOUS` both with and without it. In a comma-separated
-  list the spaces around each comma are layout, so only an entry's line
-  break is kept there: move such a value in on its own.
-- **`AuthConfig.JWTSecret`**: set `JWTSecret` to the new value and move the
-  old into `JWTPreviousSecrets`. Wait one `JWTExpiry` (default 1h), then
-  remove it and redeploy.
-
-Omitting the previous key, the pre-rotation behavior, still invalidates
-every outstanding token at once. Use the previous-key form only during an
-active rotation. See [security](security.md) for the underlying key rules.
-
-The one secret every auth-enabled app must set is **`AuthConfig.JWTSecret`**
-(typically from env). With `DevMode=false` and no `JWTSecret`, the auth
-battery **fails closed**: `Init` returns an error and the app refuses to
-start, because an empty signing key yields forgeable, restart-unstable
-sessions. In dev, a per-process secret is auto-minted (with a WARN log)
-so the boilerplate never ships a literal `change-me`.
+- **`GOFASTR_SECRET`:** Set `GOFASTR_SECRET` to the new key and `GOFASTR_SECRET_PREVIOUS` to the old key (or pass `framework.WithSecretRotation(newSecret, oldSecret)` in Go). Deploy, wait one session TTL, then unset `GOFASTR_SECRET_PREVIOUS`. Note: `GOFASTR_SECRET` is used verbatim including whitespace; a single entry in `GOFASTR_SECRET_PREVIOUS` tolerates accidental trailing whitespace/newlines.
+- **`AuthConfig.JWTSecret`:** Set `JWTSecret` to the new key and put the old one in `JWTPreviousSecrets`. Deploy, wait one `JWTExpiry` (default 1h), then remove `JWTPreviousSecrets`.
 
 ## Migrations
 
-`App.Start` auto-migrates on boot: it creates missing tables and adds
-missing columns (additive only: it never drops, renames, or retypes;
-those need a reviewed versioned migration from `gofastr migrate generate`,
-applied with `gofastr migrate up`). For controlled rollouts, run migrations
-as a separate step with the CLI instead of on every replica's boot:
+`App.Start` runs additive auto-migrations on boot (creating missing tables and adding missing columns—never drops, renames, or retypes). For controlled rollouts or destructive changes, generate and run versioned migrations as a separate deploy step:
 
 ```bash
 gofastr migrate up --db-url="$DATABASE_URL"
 gofastr migrate status --db-url="$DATABASE_URL"
 ```
 
-See [Migrations](migrations.md) for the production-hardening details
-(locking, checksums, dirty-state, destructive-change gating).
+See [Migrations](migrations.md) for locking, checksums, and destructive-change rules.
 
 ## TLS & graceful shutdown
 
-Terminate TLS at your ingress/load balancer (the common setup) and run the
-app over plain HTTP behind it. When nothing sits in front, the app can
-serve HTTPS itself (next section). `App.Start` installs signal handling and
-drains in-flight requests on `SIGINT`/`SIGTERM` via `App.Shutdown`, so
-rolling deploys don't cut active requests.
+Most deployments terminate TLS at an ingress or reverse proxy and speak plain HTTP to the app.
 
-First, `/readyz` turns `503` and the app keeps serving for the readiness
-grace (default 5s, `framework.WithReadinessDrain`; see
-[Health and readiness](health-checks.md#draining-on-shutdown)), so the
-load balancer stops routing here before the listener closes. `/healthz`
-stays `200` until exit. The grace counts against `Shutdown`'s deadline
-and takes at most half of it; an app bound to loopback only, or run by
-`battery/service`, skips it.
+On `SIGINT`/`SIGTERM`, `App.Start` drains cleanly via `App.Shutdown`:
 
-The drain after it is **bounded**: `AppConfig.ShutdownTimeout` (default
-15s, on top of the grace) caps it, and anything still open at the deadline is force-closed so the process
-exits well inside Kubernetes' 30s SIGTERM→SIGKILL window. Long-lived
-connections never go idle, so the drain does not wait on them; it ends
-them when it starts, and the client reconnects to another replica or to
-the restarted process:
+1. `/readyz` immediately flips to `503` while the server keeps serving for the readiness grace (`framework.WithReadinessDrain`, default 5s, capped at half the shutdown deadline; skipped on loopback binds and `battery/service`). `/healthz` stays `200` until exit.
+2. The listener stops accepting new connections (dropping idle speculative preconnects) and drains active requests up to `AppConfig.ShutdownTimeout` (default 15s on top of grace).
+3. Long-lived connections end immediately so they don't stall shutdown: GET SSE streams (`text/event-stream`) have their context cancelled, `core/stream` WebSockets receive close code `1001` (with up to 2s for close handshakes), manually hijacked connections are closed, and in-flight cron jobs have their contexts cancelled.
 
-- An event stream (a GET whose response goes out as `text/event-stream`,
-  whatever the request's `Accept` said) has its request context
-  cancelled, so its handler returns. A POST answered as a stream (MCP's
-  streamable HTTP) is one call's reply and drains like any other request.
-- A WebSocket opened with `core/stream`'s `Upgrade` (the `battery/rtc`
-  signaler included) gets a close frame with code 1001, going away,
-  even if the handler that opened it has returned. A connection a
-  handler hijacked by hand is closed. Neither would end otherwise:
-  `http.Server.Shutdown` does not wait for or close a hijacked
-  connection. A hijack attempted after the drain started is refused,
-  and its connection closed. The drain gives the close handshakes up to
-  2s (less if the `Shutdown` context ends first), then closes any
-  connection whose peer has not answered.
-
-A connection that was accepted but never sent
-a request (a browser's speculative preconnect) is closed once the
-listener stops accepting, so it cannot hold the drain to its deadline.
-That covers one accepted while the drain was ending the streams above. In-flight cron jobs are joined under the
-same deadline (their contexts are cancelled when the drain starts).
-If your process owns signal handling itself, set
-`AppConfig.DisableSignalHandling` and call `App.Shutdown` (or
-`App.RunWithSignals`) from your own handler. `Shutdown` is idempotent,
-so double-wiring is harmless: the teardown runs once, and a later or
-concurrent call waits for it to finish (or for its own context to end)
-before it returns.
+If your process manages OS signals itself, set `AppConfig.DisableSignalHandling` and call `App.Shutdown` (idempotent) or `App.RunWithSignals`.
 
 ### Serving HTTPS from the app
 
-`framework.WithTLS` (or `AppConfig.TLS`) serves HTTPS on the listen
-address. Pick one certificate source:
+When nothing sits in front of the app, `framework.WithTLS` (or `AppConfig.TLS`) terminates TLS 1.2+ with HTTP/2 directly. Pick exactly one certificate source:
 
 ```go
-// Files on disk, e.g. from certbot. A renewal is picked up on the next
-// handshake after either file changes; no restart.
+// Disk files (e.g., certbot); renewals are picked up automatically on the next handshake.
 framework.WithTLS(framework.TLSConfig{
     CertFile: "/etc/letsencrypt/live/example.com/fullchain.pem",
     KeyFile:  "/etc/letsencrypt/live/example.com/privkey.pem",
 })
 
-// Let's Encrypt, obtained and renewed by the app.
+// Automatic Let's Encrypt via TLS-ALPN-01 on :443 (no :80 listener required).
 framework.WithTLS(framework.TLSConfig{AutoCert: &framework.AutoCertConfig{
     Domains:  []string{"example.com", "www.example.com"},
-    CacheDir: "/var/lib/myapp/certs",
+    CacheDir: "/var/lib/myapp/certs", // required to avoid hitting ACME rate limits on restart
     Email:    "ops@example.com",
 }})
 ```
 
-The third source, `Config`, takes a `*tls.Config` you build (client
-certificates, a certificate store). Setting none or more than one fails
-`Start`, as does a certificate pair that does not load.
-
-- TLS 1.2 is the minimum for every source; a `Config` asking for less
-  fails `Start`.
-- HTTP/2 is offered over TLS.
-- `AutoCert` answers the TLS-ALPN-01 challenge on the HTTPS port, so the
-  app must be reachable on `:443` at every name in `Domains` and nothing
-  needs to listen on `:80`. Handshakes for other names are refused.
-  `CacheDir` keeps certificates across restarts; without it each restart
-  asks Let's Encrypt again and hits its rate limits. Setting `AutoCert`
-  accepts the authority's terms of service; set `DirectoryURL` to the
-  staging directory while testing a deployment.
-- The startup banner prints `https://` URLs, and the `Secure` cookie and
-  HSTS checks see the connection as HTTPS.
-
-Plain HTTP on the same port gets net/http's 400 answer. To redirect
-port 80, run a second listener or let the load balancer do it.
+You can also pass a custom `*tls.Config` via `TLSConfig.Config` (TLS 1.2 minimum enforced). `AutoCert` refuses handshakes for unlisted hostnames; set `DirectoryURL` to Let's Encrypt staging while testing. Plain HTTP on the TLS port returns 400—run a separate `:80` listener or proxy if you need HTTP→HTTPS redirects.
 
 ### HTTP versions
 
-`framework.WithHTTPProtocols` (or `AppConfig.HTTPProtocols`) passes an
-`http.Protocols` to the server. Unset, the app speaks HTTP/1.1, plus
-HTTP/2 when TLS is on. A proxy that speaks HTTP/2 to the app without TLS
-(h2c, prior knowledge) needs:
+By default the server speaks HTTP/1.1, plus HTTP/2 over TLS. To accept unencrypted HTTP/2 (`h2c` prior knowledge) from an internal proxy, pass `framework.WithHTTPProtocols`:
 
 ```go
 var p http.Protocols
@@ -363,26 +147,20 @@ p.SetUnencryptedHTTP2(true)
 app := framework.NewApp(framework.WithHTTPProtocols(p))
 ```
 
-h2c by `Upgrade: h2c` is not supported, and HTTP/3 is not offered.
+`Upgrade: h2c` and HTTP/3 are not supported.
 
 ## HTTP server timeouts
 
-`App.Start` builds the embedded `http.Server` with four connection deadlines:
+`App.Start` sets four `http.Server` connection deadlines by default:
 
-| Field | Default | Bounds |
-|-------|---------|--------|
-| `ReadHeaderTimeout` | 10s | Time to receive the request headers (slowloris defence). Keep this set. |
-| `ReadTimeout` | 60s | Whole request read: headers + body. Caps upload time. |
-| `WriteTimeout` | 60s | Whole response write, from first header byte to the last. Caps every response. |
-| `IdleTimeout` | 120s | How long a keep-alive connection may sit idle between requests. |
+| Field | Default | Purpose |
+|---|---|---|
+| `ReadHeaderTimeout` | 10s | Time to receive request headers (slowloris defense). Keep set. |
+| `ReadTimeout` | 60s | Whole request read (headers + body). Caps upload time. |
+| `WriteTimeout` | 60s | Whole response write. Caps every handler response. |
+| `IdleTimeout` | 120s | Max idle time on keep-alive connections. |
 
-These used to be hardcoded; a handler that needed to run longer than 60s was
-out of luck regardless of its own `ctx` deadline. Override any of them through
-`framework.WithHTTPServerTimeouts` (or the `AppConfig.HTTPServerTimeouts`
-field). Each field is a `*time.Duration`: leave it `nil` to keep the default,
-or point at a value, including `0`, which **disables** that one deadline
-(matching `net/http`, where a zero duration means "no timeout"). Build the
-pointers with the `new(expr)` builtin:
+Override any field via `framework.WithHTTPServerTimeouts` (or `AppConfig.HTTPServerTimeouts`). Fields are `*time.Duration`: `nil` keeps the default, `0` disables that deadline:
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -391,47 +169,16 @@ import "time"
 -->
 ```go
 app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
-    WriteTimeout: new(2 * time.Minute), // slow report handler
-    ReadTimeout:  new(time.Duration(0)), // disable: accept arbitrarily large uploads
+    WriteTimeout: new(2 * time.Minute),    // slow report handler
+    ReadTimeout:  new(time.Duration(0)),   // disable for large uploads
 }))
 ```
 
-`AppConfig.DisableRequestTimeout` is the coarser, older knob: it removes the
-per-request `Timeout` middleware from the chain **and** zeroes the server
-`ReadTimeout`/`WriteTimeout`. An explicit `HTTPServerTimeouts` value wins over
-that zeroing, so you can drop the middleware yet keep a custom deadline: set
-the field you want to keep and leave `DisableRequestTimeout` for the rest.
+### Long-running requests & per-route budgets
 
-### Long-running requests
+Prefer raising `WriteTimeout` just enough for your slowest real endpoint instead of disabling it globally. If `AppConfig.RequestTimeout` (per-request middleware deadline, default 30s) exceeds an unset `WriteTimeout`, `WriteTimeout` automatically raises to `RequestTimeout + 10s`. Setting an explicit non-zero `WriteTimeout <= RequestTimeout` fails `App.Start` so buffered 504 responses aren't cut off.
 
-A request that legitimately outlives the default `WriteTimeout`, a slow
-report, a large export, an AI completion, needs the deadline raised or
-removed for that path:
-
-<!-- gofastr:compile
-stmt: _ = app
-import "github.com/DonaldMurillo/gofastr/framework"
-import "time"
--->
-```go
-// Raise the server write deadline app-wide for a report-heavy service.
-app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
-    WriteTimeout: new(2 * time.Minute),
-}))
-```
-
-Prefer the smallest raise that covers your slowest real request over disabling
-the deadline entirely. `WriteTimeout` is a whole-response backstop: without
-it, a handler that hangs holds its connection (and a goroutine) forever.
-A `RequestTimeout` raised past the write deadline raises an unset
-`WriteTimeout` to the budget plus 10s; an explicit `WriteTimeout` no
-longer than the enforced request deadline — your `RequestTimeout`, or
-its 30s default when unset — makes `Start` return an error, since every
-buffered response finished after the write deadline (the timeout
-middleware's own 504 included) would be lost. `0` still disables it.
-
-The per-request middleware deadline (`AppConfig.RequestTimeout`, default
-30s) can be overridden per route or per group instead of app-wide:
+You can override the middleware timeout per route or group:
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -441,95 +188,41 @@ import "time"
 -->
 ```go
 app := framework.NewApp()
-// One slow dashboard keeps its own budget; every other route stays at 30s.
 app.Router().SetRouteTimeout("GET", "/reports/{id}", 2*time.Minute)
-// Or budget a whole group; the nearest enclosing group wins, and an
-// exact SetRouteTimeout beats any group.
+
 admin := app.Router().Group("/admin")
 admin.SetTimeout(5 * time.Minute)
-// router.NoTimeout exempts a route from the middleware deadline entirely.
+
 app.Router().SetRouteTimeout("POST", "/exports", router.NoTimeout)
 ```
 
-When the deadline fires, the 504 logs a structured `request timeout`
-line naming the method, path, budget, and — when a route or group
-override is configured — the matched pattern. Two caveats:
-the server-level `WriteTimeout` above still bounds the whole response,
-so a route budget beyond it needs `WithHTTPServerTimeouts` raised too;
-and `DisableRequestTimeout` removes the middleware entirely, taking the
-per-route budgets with it.
-
-A buffered handler that finishes at or after its budget returns 504 even
-when the middleware observes its completion before the timer notification.
-A handler that finishes before the deadline keeps its successful response.
+Note that `WriteTimeout` still caps the whole response, so a route budget above 60s also needs `WithHTTPServerTimeouts` raised. `AppConfig.DisableRequestTimeout` removes the timeout middleware (including per-route budgets) and zeroes unset `ReadTimeout`/`WriteTimeout`.
 
 ### SSE and streaming
 
-`WriteTimeout` bounds the whole response, and a Server-Sent Events stream is a
-single response, so the stream is cut when the deadline lapses. That does not
-break the framework's `/__gofastr/sse` bus: the browser's `EventSource`
-reconnects automatically, so live updates keep flowing at any
-`WriteTimeout`. The default 60s simply means an idle-enough stream reconnects
-at most once a minute. For a presence/collaboration surface where you want
-fewer reconnects on a single long-lived stream, raise `WriteTimeout` or set it
-to `0`. The per-request middleware deadline is a separate concern: a handler
-that flushes (as every SSE subscription does) already sheds it at first flush;
-see [Reactivity](reactivity.md).
+Because `WriteTimeout` bounds an entire response, SSE streams reconnect when it lapses. On `/__gofastr/sse`, `EventSource` reconnects automatically, so the 60s default works out of the box. For long-lived presence streams where you want fewer reconnects, raise `WriteTimeout` or set it to `0`. Flushing responses already bypass the per-request `Timeout` middleware (see [Reactivity](reactivity.md)).
 
-## Running more than one replica
+## Multi-replica deployments, health & metrics
 
-Everything on this page assumes one replica. Sessions, rate limits,
-cron, in-memory queues, and SSE push are **process-local by default**
-and need a shared backend (or a single-runner strategy) before you
-scale out. See [Horizontal scaling](scaling.md) for the complete
-what-breaks/what-fixes-it list.
+- **Scaling out:** Sessions, rate limits, cron, in-memory queues, and SSE push are process-local by default. See [Horizontal scaling](scaling.md) before running more than one replica.
+- **Health probes:** `/healthz` and `/readyz` (including DB checks when configured) are registered automatically. See [Health checks](health-checks.md).
+- **Observability:** Enable `framework.WithMetrics()` for Prometheus `/metrics` (scrape internally—it is unauthenticated by design) and `framework.WithTracing()` for OpenTelemetry. See [Observability](observability.md).
 
-## Health & metrics
+## Pre-launch checklist
 
-- **Readiness/liveness:** auto-registered probes (plus a DB readiness check
-  when a DB is configured). Point your orchestrator's probes at them. See
-  [Health checks](health-checks.md).
-- **Metrics:** enable `framework.WithMetrics()` to expose Prometheus
-  `/metrics`; enable `framework.WithTracing()` for OpenTelemetry. See
-  [Observability](observability.md). Scrape `/metrics` from inside the
-  cluster. It is unauthenticated by design.
-
-## Checklist
-
-- [ ] `CGO_ENABLED` matches your DB driver (0 for pgx, 1 for go-sqlite3).
-- [ ] Auth/session secret set explicitly (not the dev default).
-- [ ] `GOFASTR_SECRET` set (or `framework.WithSecret` in code) before running a second replica. Required with `WithFanout`.
-- [ ] Migrations run as a deploy step (or accepted on-boot for single-replica).
-- [ ] Readiness/liveness probes wired.
-- [ ] `/metrics` scraped from inside the network only.
-- [ ] TLS terminated at ingress, or served by the app with `WithTLS`.
-- [ ] Database backup scheduled and a restore actually tested. See [Backups and restore](backups.md).
-- [ ] Server timeouts fit your slowest real request. Raise `WriteTimeout` via `WithHTTPServerTimeouts` for report/export/AI endpoints instead of letting the 60s default cut them.
+- [ ] `CGO_ENABLED` matches your DB driver (`0` for `pgx`/`modernc`, `1` for `go-sqlite3`).
+- [ ] `AuthConfig.JWTSecret` set from env (not dev fallback).
+- [ ] `GOFASTR_SECRET` set before running multiple replicas (required with `WithFanout`).
+- [ ] Migrations run as a deploy step (or additive auto-migrate accepted for single replica).
+- [ ] `/healthz` and `/readyz` wired in your orchestrator; `/metrics` restricted to internal network.
+- [ ] TLS terminated at ingress or configured via `framework.WithTLS`.
+- [ ] Backups scheduled and restore tested (see [Backups and restore](backups.md)).
+- [ ] `WriteTimeout` / `ReadTimeout` fit your slowest report, export, AI, or upload route.
 
 ## Common mistakes
 
-- **Shipping `.env` files in the image.** They are a development
-  convenience only. In production, inject secrets as real env vars
-  from your platform's secret store. Real env always wins over file
-  values anyway, so a stowaway `.env` is at best dead weight and at
-  worst a leaked secret.
-- **Expecting boot auto-migrate to handle every schema change.** It
-  creates tables and adds columns, additive only. Drops, renames, and
-  type changes need a reviewed versioned migration (`gofastr migrate
-  generate <name>` then `gofastr migrate up`); booting won't do them.
-- **CGO flag and base image out of sync.** `CGO_ENABLED=0` with
-  `mattn/go-sqlite3` fails at build; a CGO build on
-  `distroless/static` fails at runtime (no libc, so use
-  `base-debian12`). Pure-Go pgx is what makes the static image work.
-- **Booting production auth without a `JWTSecret`.** With
-  `DevMode=false` and no `JWTSecret`, the battery refuses to start
-  (`Init` errors, `App.Start` fails). There is no auto-minted fallback
-  in production: the dev fallback rotates per process, which would
-  silently invalidate sessions on every deploy. Set the secret
-  explicitly from env.
-- **A slow handler dies at exactly 60s.** The server's `WriteTimeout` is a
-  60s default; a report, export, or AI-completion handler that runs longer is
-  cut mid-response no matter what `ctx` deadline it sets. Raise
-  `WriteTimeout` (or `ReadTimeout` for uploads) via `WithHTTPServerTimeouts`
-  to fit your slowest real request, see "HTTP server timeouts" above. SSE is
-  not affected the same way: `EventSource` reconnects when a stream is cut.
+- **Shipping `.env` files in container images.** `.env` is for local dev only—inject production secrets via real environment variables and set `GOFASTR_DOTENV=off` if you want file loading disabled entirely.
+- **Expecting boot auto-migrate to drop or rename columns.** Auto-migrate is additive only. Destructive changes require `gofastr migrate generate` and `gofastr migrate up`.
+- **CGO flag and base image mismatch.** `CGO_ENABLED=0` fails with `mattn/go-sqlite3`, and a `CGO_ENABLED=1` binary crashes on `distroless/static` (missing libc—use `base-debian12`).
+- **Booting production auth without `JWTSecret`.** With `DevMode=false`, `auth.Init` fails closed instead of minting an ephemeral key.
+- **Slow endpoints dying at 60s.** The server `WriteTimeout` defaults to 60s regardless of handler `ctx` deadlines. Raise it via `WithHTTPServerTimeouts` for reports, exports, or LLM endpoints.

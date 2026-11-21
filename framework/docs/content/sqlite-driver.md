@@ -1,202 +1,49 @@
-# The SQLite driver GoFastr ships
+# SQLite driver
 
-GoFastr apps talk to SQLite through
-[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite), which is the
-SQLite C source translated to Go. It is real SQLite with no cgo, so
-`CGO_ENABLED=0 go build` works and the binary has no C toolchain
-dependency.
+GoFastr talks to SQLite through pure-Go `modernc.org/sqlite` — **zero CGO required**, so `CGO_ENABLED=0 go build` produces static binaries with no C toolchain dependency.
 
-You get it by importing `gofastr/sqlite/stdlib` for its side effect. That
-package registers modernc under the conventional `sqlite3` name and
-rewrites every DSN opened through it.
+## Configuration
+
+Import `github.com/DonaldMurillo/gofastr/sqlite/stdlib` for its side effect. It registers `modernc.org/sqlite` under the conventional `"sqlite3"` driver name and rewrites every DSN with production-safe defaults (`gofastr init` adds this import automatically):
 
 ```go
 import (
-    "database/sql"
+	"database/sql"
 
-    _ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 db, err := sql.Open("sqlite3", "app.db")
 ```
 
-`gofastr init` writes that import into the app it scaffolds, so a
-generated app already has it.
+Common DSNs:
+- `app.db` or `file:app.db` — persistent file on disk
+- `file::memory:?cache=shared` — in-memory database for tests (shared cache keeps tables alive across pooled connections)
 
-## What the DSN rewrite adds
+## Default parameters added by the DSN rewrite
 
-Four parameters go onto every DSN. Set any of them yourself and your
-value wins.
+Four parameters are injected onto every opened DSN unless you explicitly set your own value:
+- **`_time_format=sqlite`** — writes `time.Time` values in SQLite's `2006-01-02 15:04:05.999999999-07:00` layout (byte-compatible with `mattn/go-sqlite3` and GoFastr's timestamp scanners)
+- **`_pragma=busy_timeout(5000)`** — waits up to 5 seconds on brief write contention instead of immediately returning `SQLITE_BUSY`
+- **`_pragma=foreign_keys(1)`** — enforces `FOREIGN KEY` constraints on every connection (SQLite leaves them off by default; pass `_pragma=foreign_keys(0)` if you explicitly need to opt out)
+- **`_txlock=immediate`** — begins write transactions with `BEGIN IMMEDIATE` so `busy_timeout` applies up front instead of failing with `SQLITE_BUSY_SNAPSHOT` on read-then-write upgrades (read-only transactions stay deferred)
 
-### Foreign keys are on
+The driver does **not** inject `journal_mode(WAL)` or `synchronous(NORMAL)` automatically. For file-backed production databases with concurrent readers, add them to your DSN explicitly (e.g., `file:app.db?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)`).
 
-`_pragma=foreign_keys(1)`.
+## Single-writer concurrency tips
 
-SQLite ignores `FOREIGN KEY` clauses unless a connection turns them on,
-and every SQLite driver leaves them off. `AutoMigrate` writes a
-`FOREIGN KEY` clause for each `belongs_to` relation, except where the
-relation's column is the entity's `Scope.OwnerField`: that column holds
-the session identity, which lives in the auth battery's table rather than
-in the related entity, so a key on it is one the framework would violate
-on every create. Without this parameter an app read as though the
-remaining relations were enforced while nothing enforced them.
-The same entity declarations on Postgres did enforce them, which meant
-one schema had two different guarantees depending on the database.
+SQLite allows one writer at a time (and many concurrent readers once WAL mode is enabled):
+- Keep write transactions short; never make outbound HTTP calls inside a SQL transaction.
+- Under heavy concurrent writes, keep `db.SetMaxOpenConns(1)` (or separate read/write pools) so Go serializes writers cleanly rather than racing on `busy_timeout`.
+- Mount a persistent disk volume in production (never ephemeral container storage or NFS), and use online backups instead of copying files directly (see [Backups](backups.md)).
 
-An upgrade note. Releases before the foreign-key default also emitted the
-owner-column clause itself, and a database created by them still carries
-it: every create on that table fails, because the column holds the session
-identity, which never has a matching row in the table the key names.
-SQLite has no DROP CONSTRAINT, so `gofastr migrate repair` rebuilds the
-affected tables instead:
+## Moving to PostgreSQL later
 
-```bash
-gofastr migrate repair --from=gofastr.yml --db-url=file:app.db          # report
-gofastr migrate repair --from=gofastr.yml --db-url=file:app.db --apply  # rebuild
-```
-
-The rebuild works from each table's own stored DDL, so rows, column
-defaults, indices, and other constraints all survive. Boot logs a warning
-naming each affected table until it is repaired.
-
-`_pragma=foreign_keys(0)` exists for the other legacy problem: a database
-that accumulated rows pointing at nothing while nothing enforced the keys.
-Those rows surface as errors on the next write that touches them. Read the
-rows, fix or delete them, and treat the pragma as a temporary measure for
-that cleanup, not a fix: it disables enforcement for the whole database,
-including the relations that are doing real work.
-
-### Timestamps use SQLite's own text layout
-
-`_time_format=sqlite`.
-
-modernc's default for `time.Time` binds is Go's `String()` output, which
-looks like `2026-07-20 23:59:59.123456789 +0000 UTC`. Nothing in GoFastr
-parses that. `battery/auth`, `framework/outbox` and the hand written
-timestamp scans all read either RFC3339 or the layout SQLite writes, so
-a timestamp stored in the default format read back as the zero time and
-every session looked expired.
-
-This setting also matches what mattn/go-sqlite3 wrote, so databases
-created before the driver change stay readable with no migration.
-
-### Writers wait instead of failing
-
-`_pragma=busy_timeout(5000)`.
-
-SQLite allows one writer at a time. modernc defaults the timeout to 0,
-so a second writer gets `SQLITE_BUSY` immediately rather than waiting.
-Any app serving concurrent requests depends on the wait. mattn defaulted
-to 5000ms and this restores it.
-
-### Write transactions take the lock when they begin
-
-`_txlock=immediate`.
-
-The busy timeout covers waiting for a lock, not every way a write can
-lose to another writer. SQLite's default `BEGIN` is `DEFERRED`: a
-transaction that reads before it writes holds a snapshot from that read,
-and if another connection commits before the first write, the write
-cannot move past that commit. SQLite returns `SQLITE_BUSY` (extended code
-517, `SQLITE_BUSY_SNAPSHOT`) at once and the timeout never runs. The CRUD
-delete reads the row for the audit snapshot before it deletes, so with a
-job queue writing in the background a plain `DELETE` failed with a 500.
-
-`BEGIN IMMEDIATE` takes the write lock as the transaction starts, where
-the busy timeout applies, so concurrent writers queue instead of failing.
-A read-only transaction (`sql.TxOptions{ReadOnly: true}`) still begins
-deferred and takes no write lock. `_txlock=deferred` restores SQLite's
-default.
-
-### Settle writes retry a busy database
-
-A write can still meet the lock after `busy_timeout` runs out on a
-heavily contended file. `framework/db/sqlbusy` retries such a write:
-`sqlbusy.Is(err)` reports `SQLITE_BUSY` or `SQLITE_LOCKED`,
-`sqlbusy.Retry(ctx, fn)` calls `fn` again, with a short jittered pause,
-until it lands, fails another way, or `ctx` ends. A `ctx` with no
-deadline gets `sqlbusy.DefaultBudget` (ten seconds). On a deadline it
-returns the context error wrapped around the last busy error.
-`sqlbusy.Exec` does the same for a statement whose row count the caller
-reads. The queue, outbox and
-webhook settles use it, so a nack or ack that meets the lock no longer
-leaves its row claimed until the lease runs out. Retry only a write
-that is safe to repeat: those settles are fenced on their claim, so a
-late retry that lost the race changes nothing.
-
-## In-memory databases need one connection
-
-`sql.Open("sqlite3", ":memory:")` gives each pooled connection its own
-private database. A test that writes on one connection and reads on
-another finds an empty schema, and the failure looks like a missing
-table rather than a pooling problem.
-
-```go
-db, _ := sql.Open("sqlite3", ":memory:")
-db.SetMaxOpenConns(1)
-```
-
-Use a file under `t.TempDir()` when a test needs more than one
-connection.
-
-## There is one SQLite here
-
-This repository used to carry a second, from scratch SQLite engine that
-some test suites ran against as a cross check. It was removed. modernc
-is real SQLite rather than a second reading of the SQL spec, so whenever
-the two disagreed the answer was always that the local engine was wrong,
-and its own bugs cost more to find and fix than the cross check ever
-returned. The suites that used it now run against the driver
-applications ship.
+Entities, migrations, hooks, query DSL, includes, and cursor pagination target the same SQL abstraction across SQLite and PostgreSQL. Switching later mostly means opening a Postgres `*sql.DB` and updating any raw dialect-specific SQL you wrote by hand.
 
 ## Common mistakes
 
-**Opening `:memory:` without capping the pool.** Each connection gets its
-own database, so the writer and the reader see different schemas. The
-error says the table does not exist, which sends you looking at your
-migration instead of your pool. Call `db.SetMaxOpenConns(1)`, or use a
-file under `t.TempDir()`.
-
-**Importing the package for its name instead of its side effect.** The
-import is blank on purpose. `import "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`
-without the `_` fails to compile because nothing references the package,
-and dropping the import entirely gives you `sql: unknown driver "sqlite3"`
-at `sql.Open`.
-
-**Assuming a dangling foreign key still inserts.** It did before this
-release and it does not now. An app upgraded onto the new default sees
-errors on writes touching rows that already point at nothing, which is
-existing corruption becoming visible rather than a new failure. Read the
-rows, fix or delete them, then remove any `_pragma=foreign_keys(0)` you
-added while cleaning up.
-
-**Reaching for the pragma when an upgraded database rejects every create.**
-A pre-foreign-keys release may have left a key on an entity's owner
-column, and the resulting error names the constraint, not the cause. Run
-`gofastr migrate repair --from=<spec.yml> --apply` to rebuild the table
-without it. Disabling foreign keys would only hide the problem, and it
-turns off the keys that belong there too.
-
-**Deleting a parent before its children.** By default, undeclared foreign keys
-use `NO ACTION`, requiring children to be deleted first. To cascade child deletions
-automatically, configure `.OnDeleteCascade()` (or `.OnDeleteAction(entity.OnDeleteCascade)`)
-on the relation. ManyToMany pivot tables always cascade automatically. (Note: `.Cascade()`
-enables nested cascade writes, not delete cascading.)
-
-The delete action is written when the table is created or rebuilt. For an
-existing table, `DiffSchema` reports a change to `.OnDeleteAction(...)`.
-`ApplySchemaDiffWithOptions` with `AllowDestructive` applies it by rebuilding
-the table because SQLite cannot alter a constraint. Boot leaves existing
-foreign keys in place, and `gofastr migrate generate` skips their comparison
-because the snapshot records no constraint names. To track the change in a
-versioned migration, write the table rebuild by hand.
-
-**Removing `_time_format=sqlite` from a DSN you build yourself.** The
-readers in `battery/auth` and `framework/outbox` accept either RFC3339 or
-SQLite's space-separated layout, so a hand-written timestamp in either
-form reads back fine. What they cannot read is modernc's own default,
-Go's `time.Time` `String()` output (`2026-07-20 23:59:59.123456789 +0000
-UTC`); a value stored that way parses as the zero time, so a session
-looks expired and a scheduled job looks overdue. That is the whole reason
-the parameter is added. If you assemble a DSN by hand rather than letting
-`sqlite/stdlib` rewrite it, carry the parameter across.
+- **Opening `"sqlite3"` without importing `_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`:** either the driver is unregistered or you miss the automatic `_time_format=sqlite`, `busy_timeout(5000)`, `foreign_keys(1)`, and `_txlock=immediate` defaults.
+- **Using `:memory:` without `?cache=shared` across multiple connections:** each pooled connection gets its own empty database, causing "no such table" errors in tests.
+- **Running SQLite on an ephemeral container disk or NFS share:** ephemeral disks wipe data on redeploy, and network filesystems break SQLite file locking.
+- **Copying `app.db` with `cp` while the server is running:** a raw file copy can miss `-wal`/`-shm` or capture a torn snapshot. Use `VACUUM INTO` or [Backups](backups.md).
