@@ -148,8 +148,11 @@ func withCSPReporting(csp, uri string) string {
 	for i, part := range parts {
 		hasTo, hasURI := false, false
 		for _, d := range strings.Split(part, ";") {
-			name, _, _ := strings.Cut(strings.TrimSpace(d), " ")
-			switch strings.ToLower(name) {
+			f := strings.Fields(d)
+			if len(f) == 0 {
+				continue
+			}
+			switch strings.ToLower(f[0]) {
 			case "report-to":
 				hasTo = true
 			case "report-uri":

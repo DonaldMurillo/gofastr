@@ -82,19 +82,35 @@ func (b *Battery) routes() *router.Router {
 	return b.router.Group("", func(next http.Handler) http.Handler { return b.gate(next) })
 }
 
+type headerSink http.Header
+
+func (s headerSink) Header() http.Header       { return http.Header(s) }
+func (headerSink) Write(p []byte) (int, error) { return len(p), nil }
+func (headerSink) WriteHeader(int)             {}
+
 func (b *Battery) headers(next http.Handler) http.Handler {
 	secure := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(next)
+	defaults := headerSink{}
+	probe, _ := http.NewRequest(http.MethodGet, "/", nil)
+	middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).
+		ServeHTTP(defaults, probe)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !b.underPrefix(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		if w.Header().Get("Content-Security-Policy") != "" {
-			next.ServeHTTP(w, r)
+		h := w.Header()
+		h.Set("Cache-Control", "no-store")
+		if h.Get("Content-Security-Policy") == "" {
+			secure.ServeHTTP(w, r)
 			return
 		}
-		secure.ServeHTTP(w, r)
+		for name, values := range defaults {
+			if h.Get(name) == "" {
+				h[name] = values
+			}
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

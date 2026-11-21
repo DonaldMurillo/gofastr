@@ -100,6 +100,9 @@ func IsCrossOriginSubresource(r *http.Request) bool {
 func IsolateResources(allow func(*http.Request) bool) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Vary", "Sec-Fetch-Site")
+			w.Header().Add("Vary", "Sec-Fetch-Mode")
+			w.Header().Add("Vary", "Sec-Fetch-Dest")
 			if IsCrossOriginSubresource(r) && (allow == nil || !allow(r)) {
 				WriteError(w, r, Fail(http.StatusForbidden, ReasonCrossSiteRefused))
 				return

@@ -171,11 +171,14 @@ regions in `html` mode, module and behaviour scripts, the service
 worker. The markup comes from your own server, so the policy passes it
 through unchanged. What enforcement adds is that a plain string can no
 longer reach a sink by accident: an injected value has to pass through
-the policy on its way, and the framework passes only markup its server
-rendered. The runtime's modules load as separate scripts, so the
+the policy on its way, and the framework's own writes pass markup its
+server rendered. The runtime's modules load as separate scripts, so the
 wrappers are reachable as `window.__gofastr._html` and `_scriptURL`.
-They are internal and check nothing: code that hands them text from the
-URL, storage or a user re-opens the hole the directive closed.
+They are internal and check nothing, and so do the public
+`window.__gofastr.updateHTML` and `fetchPage`, which write their
+caller's string through the policy: pass them only trusted HTML. Code
+that hands any of them text from the URL, storage or a user re-opens the
+hole the directive closed.
 `core-ui/check`'s `LintTrustedTypesSinks` keeps the framework's own
 JavaScript on the policy and checks that each sink's whole value is the
 policy call.
@@ -196,10 +199,14 @@ app := framework.NewApp(framework.WithSecurityHeaders(middleware.SecurityHeaders
 }))
 ```
 
-The name `default` creates the browser's catch-all policy, which every
-plain string passes through. That lets a third-party library run
-unchanged while you migrate, and it also lets an injected string
-through, so treat it as a stopgap. `NoTrustedTypes: true` drops both
+Listing the name `default` only allows a policy of that name; your
+script still has to create it with `trustedTypes.createPolicy("default",
+{...})`. Once created, the browser hands it every plain string any
+script passes to a sink, so a third-party library runs unchanged. Its
+callbacks decide what passes: one that checks each value (only script
+URLs from one path, say) keeps the protection for everything else, and
+one that returns every string unchanged lets injected strings through
+too, so use that kind only as a stopgap while you migrate. `NoTrustedTypes: true` drops both
 directives. Both settings change only the built-in policy: a
 `ContentSecurityPolicy` you set is sent as written, so add the two
 directives yourself if you want them there.

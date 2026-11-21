@@ -26,6 +26,26 @@ func TestAdminKeepsTheAppSecurityHeaders(t *testing.T) {
 		t.Error("admin answer is not no-store")
 	}
 
+	// An app chain that set only its own CSP still gets admin's other defaults.
+	onlyCSP := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		page.ServeHTTP(w, r)
+	})
+	w = httptest.NewRecorder()
+	onlyCSP.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/posts", nil))
+	if got := w.Header().Get("Content-Security-Policy"); got != "default-src 'self'" {
+		t.Errorf("admin replaced the app's CSP: %q", got)
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "SAMEORIGIN" {
+		t.Errorf("admin replaced a header the app set: X-Frame-Options %q", got)
+	}
+	for _, name := range []string{"X-Content-Type-Options", "Referrer-Policy", "Cross-Origin-Opener-Policy"} {
+		if w.Header().Get(name) == "" {
+			t.Errorf("admin did not fill the missing %s", name)
+		}
+	}
+
 	w = httptest.NewRecorder()
 	page.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/posts", nil))
 	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "require-trusted-types-for") || w.Header().Get("X-Frame-Options") != "DENY" {

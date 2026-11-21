@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/admin.md
 invariants:
   - id: admin-keeps-the-app-security-headers
-    rule: Every answer under the admin prefix is no-store and carries the app's own Content-Security-Policy when the app's chain set one, and the default security headers when it set none.
+    rule: Every answer under the admin prefix is no-store and carries every default security header, where a header the app's chain already set (its Content-Security-Policy included) keeps the app's value.
     enforced_by:
       - test: battery/admin.TestAdminKeepsTheAppSecurityHeaders
   - id: one-new-link-gate

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +77,31 @@ func TestIsolateResources(t *testing.T) {
 	IsolateResources(nil)(ok).ServeHTTP(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("nil allow: status %d, want 403", w.Code)
+	}
+}
+
+// The answer depends on the Fetch Metadata headers, so a shared cache must
+// key on them: an allowed same-origin copy may not be served cross-site.
+func TestIsolateResourcesVariesOnFetchMetadata(t *testing.T) {
+	h := IsolateResources(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	}))
+	for _, site := range []string{"same-origin", "cross-site"} {
+		r := httptest.NewRequest("GET", "/app.js", nil)
+		r.Header.Set("Sec-Fetch-Site", site)
+		r.Header.Set("Sec-Fetch-Mode", "no-cors")
+		r.Header.Set("Sec-Fetch-Dest", "script")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		vary := strings.Join(w.Header().Values("Vary"), ",")
+		for _, want := range []string{"Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest"} {
+			if !strings.Contains(vary, want) {
+				t.Errorf("%s answer (%d): Vary %q lacks %s", site, w.Code, vary, want)
+			}
+		}
+		if site == "same-origin" && !strings.Contains(vary, "Accept-Encoding") {
+			t.Errorf("the handler's own Vary was dropped: %q", vary)
+		}
 	}
 }

@@ -22,10 +22,11 @@ invariants:
       - test: core/handler.TestNeedsSameSiteHop
       - test: core/handler.TestSameSiteHopTarget
   - id: resource-isolation
-    rule: IsCrossOriginSubresource is true when Sec-Fetch-Site is present and neither same-origin nor none, except for a GET or HEAD navigation whose destination is not an object or embed, and IsolateResources answers those 403 unless its allow func admits them.
+    rule: IsCrossOriginSubresource is true when Sec-Fetch-Site is present and neither same-origin nor none, except for a GET or HEAD navigation whose destination is not an object or embed, and IsolateResources answers those 403 unless its allow func admits them, adding Sec-Fetch-Site, Sec-Fetch-Mode and Sec-Fetch-Dest to Vary on every answer so a shared cache cannot serve an allowed copy to a refused request.
     enforced_by:
       - test: core/handler.TestIsCrossOriginSubresource
       - test: core/handler.TestIsolateResources
+      - test: core/handler.TestIsolateResourcesVariesOnFetchMetadata
   - id: safe-relative-path
     rule: IsSafeRelativePath accepts only a single-slash path with no scheme, host, backslash, NUL, CR, LF or tab, raw or percent-decoded.
     enforced_by:

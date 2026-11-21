@@ -14,6 +14,10 @@ invariants:
       - test: core-ui/runtime.TestRuntimePolicyIsTheOneTheCSPAllows
       - test: core-ui/check.TestLintTrustedTypesSinks_RepoIsClean
       - test: framework/uihost.TestRuntimeSwapsUnderTrustedTypes
+    applies:
+      - framework/headless/*.js
+      - battery/sitesearch/*.js
+      - framework/uihost/pwa.go
   - id: attributes-are-documented
     rule: Every data-cui-* attribute the runtime or a registered behaviour reads has a row in the core-ui/ARCHITECTURE.md attribute table, named in the row's first column; a mention in a description cell or in prose does not count.
     enforced_by:
@@ -158,7 +162,7 @@ decisions:
     decision: The 'gofastr' policy passes HTML and script URLs through unchanged (createHTML and createScriptURL are String), each core sink calls the kernel's _html or _scriptURL, and a module calls NS._html?.(s) ?? s so it still runs beside an older kernel.
     rejected:
       - option: Sanitize in createHTML.
-        why: Every string the runtime writes is markup the app's own server rendered, so a sanitizer would only cost bytes and break trusted markup; the policy's job is to stop every other writer.
+        why: The runtime's own writes carry markup the app's server rendered, and updateHTML and fetchPage write their caller's string, which the docs require to be trusted HTML; a sanitizer would cost bytes and break that markup. The policy's job is to make a plain string at a sink throw, not to judge what the runtime is handed.
       - option: A default policy.
         why: A browser hands every plain string from any script to the default policy, so a pass-through one would accept injected strings and the enforcement would protect nothing.
       - option: Keep _html and _scriptURL private to the kernel's closure.

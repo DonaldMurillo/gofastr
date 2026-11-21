@@ -29,6 +29,9 @@ const trustedTypesFixture = `(() => {
   const v = (el, a, b) => { el.innerHTML = _html(a) + b; };          // 10 call plus more
   const w = (el, a) => { el.innerHTML = _html(a); el.focus(); };     // ok
   const x = (u) => { const s = document.createElement('script'); s.setAttribute('src', u); }; // 11 attribute
+  const z1 = (el, a) => { el.innerHTML = _html(a) ?? a ? a : ''; }; // 12 conditional after the fallback
+  const z2 = (el, a) => { el.innerHTML = NS._html?.(a.b[0]) ?? a.b[0]; }; // ok
+  const z3 = (u) => { const s = document.createElement('script'); s.setAttribute('src', u,); }; // 13 trailing comma
   const y = (u) => { const s = document.createElement('script'); s.setAttribute('src', _scriptURL(u)); s.setAttribute('type', 'module'); }; // ok
   const q = "el.innerHTML = x";                                     // ok: a string
   // el.innerHTML = raw in a comment is ok
@@ -40,7 +43,7 @@ func TestLintTrustedTypesSinks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "fixture.js"), []byte(trustedTypesFixture), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lintExpectFindings(t, LintTrustedTypesSinks, dir, 11, "a, d, e, g, i, k, n, o, r, v, x", "[trusted-types-sink]")
+	lintExpectFindings(t, LintTrustedTypesSinks, dir, 13, "a, d, e, g, i, k, n, o, r, v, x, z1, z3", "[trusted-types-sink]")
 }
 
 func TestLintTrustedTypesSinks_RepoIsClean(t *testing.T) {

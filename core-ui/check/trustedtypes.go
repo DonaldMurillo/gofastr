@@ -108,11 +108,53 @@ func wrapsWhole(f jsSource, from, end int, call *regexp.Regexp) bool {
 	if closeAt < 0 || closeAt >= end {
 		return false
 	}
-	rest := strings.TrimLeft(f.Blank[closeAt+1:end], " \t\r\n")
-	if rest == "" || strings.HasPrefix(rest, "??") {
-		return true
+	i := skipSpaceTo(f.Blank, closeAt+1, end)
+	if strings.HasPrefix(f.Blank[i:end], "??") {
+		// The fallback for a missing kernel: one plain operand, nothing after it.
+		i = skipOperand(f.Blank, skipSpaceTo(f.Blank, i+2, end), end)
+		if i < 0 {
+			return false
+		}
+		i = skipSpaceTo(f.Blank, i, end)
 	}
-	return strings.IndexByte("+-*/%&|^?:.[<>=`", rest[0]) < 0
+	return i >= end || strings.IndexByte("+-*/%&|^?:.[<>=`", f.Blank[i]) < 0
+}
+
+func skipSpaceTo(s string, i, end int) int {
+	for i < end && strings.IndexByte(" \t\r\n", s[i]) >= 0 {
+		i++
+	}
+	return i
+}
+
+// skipOperand returns the offset after one operand at i: a name, then any
+// .name, [index] or (arguments), or -1 when no name starts there.
+func skipOperand(s string, i, end int) int {
+	start := i
+	for i < end && (isJSIdentChar(s[i]) || s[i] == '$') {
+		i++
+	}
+	if i == start {
+		return -1
+	}
+	for i < end {
+		switch {
+		case s[i] == '.' && i+1 < end && (isJSIdentChar(s[i+1]) || s[i+1] == '$'):
+			i++
+			for i < end && (isJSIdentChar(s[i]) || s[i] == '$') {
+				i++
+			}
+		case s[i] == '[' || s[i] == '(':
+			c := matchDelimForward(s, i)
+			if c < 0 || c >= end {
+				return -1
+			}
+			i = c + 1
+		default:
+			return i
+		}
+	}
+	return i
 }
 
 // callArgSpans returns the [start, end) offsets of each argument of the call
@@ -137,7 +179,10 @@ func callArgSpans(f jsSource, open int) [][2]int {
 			}
 		}
 	}
-	return append(out, trimSpan(f, from, end))
+	if last := trimSpan(f, from, end); last[0] < last[1] || len(out) == 0 {
+		out = append(out, last)
+	}
+	return out
 }
 
 func trimSpan(f jsSource, from, end int) [2]int {

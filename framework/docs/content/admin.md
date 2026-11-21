@@ -828,7 +828,10 @@ defaults to `Auth`'s logout route.
 Every response under the prefix, refusals included, carries
 `Cache-Control: no-store` and the security headers
 (`middleware.SecurityHeaders`), whether or not the app installs its
-default middleware. Admin pages hold per-caller, tenant-scoped data, and
+default middleware. Headers the app's own middleware already set win:
+its Content-Security-Policy (with its reporting and Trusted Types
+settings) reaches admin pages as written, and the admin fills in only
+the default headers that are still missing. Admin pages hold per-caller, tenant-scoped data, and
 HTTP's storage rules cover Authorization headers, not cookie sessions.
 
 ## CSRF

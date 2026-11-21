@@ -49,6 +49,17 @@ func TestCSPReportingKeepsHostDirectives(t *testing.T) {
 	}
 }
 
+// CSP allows any ASCII whitespace after a directive name.
+func TestCSPReportingSeesTabSeparatedDirectives(t *testing.T) {
+	own := "default-src 'self'; report-uri\thttps://r.example/a"
+	if got := cspOf(SecurityHeadersConfig{ContentSecurityPolicy: own, CSPReportURI: "https://r.example/b"}); got != own {
+		t.Fatalf("a tab-separated report-uri was not seen: %q", got)
+	}
+	if got := cspOf(SecurityHeadersConfig{ContentSecurityPolicy: "default-src\t'self'", CSPReportURI: "https://r.example/b"}); !strings.HasSuffix(got, "; report-to "+CSPReportEndpoint+"; report-uri https://r.example/b") {
+		t.Fatalf("a policy with no reporting directive got none: %q", got)
+	}
+}
+
 func TestReportingEndpointsKeepsOuterEndpoints(t *testing.T) {
 	ours := CSPReportEndpoint + `="` + CSPReportPath + `"`
 	for _, tc := range []struct{ outer, want string }{
@@ -98,6 +109,17 @@ func TestCSRFLetsCSPReportsThrough(t *testing.T) {
 		h.ServeHTTP(w, r)
 		if !reached {
 			t.Fatalf("CSRF refused a %s violation report with %d", ct, w.Code)
+		}
+	}
+	// Only a POST is a report: another unsafe method with the report type still needs its token.
+	for _, m := range []string{"PUT", "DELETE", "PATCH"} {
+		reached = false
+		r := httptest.NewRequest(m, CSPReportPath, strings.NewReader("[]"))
+		r.Header.Set("Content-Type", "application/reports+json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if reached || w.Code != http.StatusForbidden {
+			t.Fatalf("CSRF let a %s with a report type through (status %d)", m, w.Code)
 		}
 	}
 	// A form-shaped post to the sink's path still needs its token.
