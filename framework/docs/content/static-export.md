@@ -335,7 +335,8 @@ The policy is the one the app serves live:
 `AppConfig.SecurityHeaders.ContentSecurityPolicy` (set with
 `framework.WithSecurityHeaders`), or the built-in default
 (`default-src 'self'; img-src 'self' data:; object-src 'none';
-worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`) when it
+worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none';
+require-trusted-types-for 'script'; trusted-types gofastr`) when it
 is unset. `App.ExportStatic` passes it as
 `static.Builder.ContentSecurityPolicy`; a builder built by hand sets
 that field. An app that allows `font-src https://fonts.gstatic.com`

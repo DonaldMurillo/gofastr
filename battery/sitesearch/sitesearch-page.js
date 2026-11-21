@@ -80,7 +80,8 @@
     const to = r.headers.get('X-Gofastr-Location') || followed;
     if (to) return NS.navigate(to, { replace: true });
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);
-    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    const text = await r.text();
+    const doc = new DOMParser().parseFromString(NS._html?.(text) ?? text, 'text/html');
     const fresh = doc.querySelector('[data-search-page]');
     if (!current(sec, n)) return;
     if (!fresh) throw new Error('sitesearch-page: missing results');

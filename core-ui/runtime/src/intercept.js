@@ -121,7 +121,7 @@
   function swap(t, res) {
     NS._closeInterceptWidgets?.(t.el);
     t.el._cuiGen = (t.el._cuiGen || 0) + 1;
-    t.el.innerHTML = res.html;
+    t.el.innerHTML = NS._html?.(res.html) ?? res.html;
     // The pane's page signals, as an in-page navigation seeds them.
     NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);

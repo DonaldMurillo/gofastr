@@ -42,7 +42,8 @@
   const workerFor = (name) => {
     if (workers[name]) return workers[name];
     const entry = entryFor(name, 'js');
-    const worker = new Worker(assetURL(name, 'js', entry.js));
+    const url = assetURL(name, 'js', entry.js);
+    const worker = new Worker(NS._scriptURL?.(url) ?? url);
     const record = { worker: worker, pending: new Map() };
     workers[name] = record;
 

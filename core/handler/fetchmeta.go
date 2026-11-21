@@ -72,6 +72,43 @@ func RefuseCrossSite(h http.Handler) http.Handler {
 	})
 }
 
+// IsCrossOriginSubresource reports a request whose Sec-Fetch-Site is
+// present and neither same-origin nor none, unless it is a GET or HEAD
+// navigation into a page or frame: a script, image, style, fetch, form
+// post or object load from another origin. A same-site sibling counts as
+// another origin. A request with no Fetch Metadata is not one.
+func IsCrossOriginSubresource(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
+		return false
+	}
+	if r.Header.Get("Sec-Fetch-Mode") != "navigate" {
+		return true
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return true
+	}
+	switch r.Header.Get("Sec-Fetch-Dest") {
+	case "object", "embed":
+		return true
+	}
+	return false
+}
+
+// IsolateResources returns middleware that answers 403 to every request
+// IsCrossOriginSubresource reports, unless allow (when non-nil) admits it.
+func IsolateResources(allow func(*http.Request) bool) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsCrossOriginSubresource(r) && (allow == nil || !allow(r)) {
+				WriteError(w, r, Fail(http.StatusForbidden, ReasonCrossSiteRefused))
+				return
+			}
+			h.ServeHTTP(w, r)
+		})
+	}
+}
+
 // SameSiteHopParam is the query parameter SameSiteHopTarget adds to the
 // URL a hop page loads again, so NeedsSameSiteHop does not answer that
 // reload with another hop.

@@ -8,6 +8,10 @@ code:
 docs:
   - framework/docs/content/security.md
 invariants:
+  - id: csp-report-post-skips-csrf
+    rule: CSRF lets a POST to exactly CSPReportPath through without a token, because a browser's violation report carries none and the sink changes no state.
+    enforced_by:
+      - test: core/middleware.TestCSRFLetsCSPReportsThrough
   - id: host-prefix-on-secure-requests
     rule: On a request that is secure by CookieSecure, TLS or X-Forwarded-Proto https in any case, the cookie name, a custom CookieName included, carries the __Host- prefix unless NoHostPrefix is set, and a CookiePath other than "/" without NoHostPrefix panics at construction.
     enforced_by:

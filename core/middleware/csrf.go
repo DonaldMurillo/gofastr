@@ -125,7 +125,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cfg.Skip != nil && cfg.Skip(r) {
+			if (cfg.Skip != nil && cfg.Skip(r)) || isCSPReportPost(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -193,6 +193,12 @@ func CSRF(cfg CSRFConfig) Middleware {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// isCSPReportPost is a browser's violation report: it carries no token,
+// and the sink changes no state.
+func isCSPReportPost(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == CSPReportPath
 }
 
 func isSafeMethod(method string) bool {

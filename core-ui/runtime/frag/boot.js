@@ -75,7 +75,7 @@
     const scriptSrc = el.getAttribute('data-behavior');
     if (scriptSrc && /^\/__gofastr\/widget\/[A-Za-z0-9_-]+\.js(\?[^"'<>]*)?$/.test(scriptSrc)) {
       const script = document.createElement('script');
-      script.src = scriptSrc;
+      script.src = _scriptURL(scriptSrc);
       document.head.appendChild(script);
     } else if (scriptSrc) {
       console.warn('[gofastr] refused data-behavior src:', scriptSrc);
@@ -214,7 +214,7 @@
       const reqs = (_registered.find((m) => m.name === name) || {}).requires || [];
       Promise.all(reqs.map(loadModule)).then(() => {
         const s = document.createElement('script');
-        s.src = url;
+        s.src = _scriptURL(url);
         s.async = false;
         s.onload = () => {
           const lm2 = window.__gofastr.loadedModules;

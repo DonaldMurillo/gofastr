@@ -724,7 +724,16 @@ const (
 	// A bare data-cui-signal-set name sets the empty string, as its contract
 	// row says (+7, TestSignalSetBareNameSetsEmptyString), in the click
 	// delegate that owns every signal mutation: 16854 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19 + 57 + 7 + 88
+	// The 2026-11-21 Trusted Types policy adds 101: the kernel creates the
+	// one 'gofastr' policy the default CSP's trusted-types names, and every
+	// HTML write and script URL in core (the router's swaps and parses, the
+	// signal html mode, the module loader, data-behavior, the embed mount)
+	// passes through _html or _scriptURL. Under require-trusted-types-for
+	// 'script' a raw string throws, so the policy must exist before any
+	// module could load and every core sink must use it
+	// (TestRuntimeSwapsUnderTrustedTypes, check.TestLintTrustedTypesSinks_RepoIsClean):
+	// 16943 measured → 17043, plus 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19 + 57 + 7 + 88 + 101
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1259,7 +1268,14 @@ const (
 	// attribute-value arm was measured (+30 more) and left out: the
 	// framework's renderers escape "<" in attribute values. Two bytes of
 	// clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 19588
+	// The Trusted Types policy (see coreGoalGZ) measures 19702 at level 1
+	// (+121 on 19581). It cannot carve: the default CSP makes every raw
+	// HTML string or script URL throw, and core's own router, signals and
+	// module loader write them before any module could load. Its spelling
+	// was measured smallest of four (a same-origin check on script URLs,
+	// +29, and a shared parse helper, +6, were left out). Two bytes of
+	// clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19704
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1438,6 +1454,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"a bare signal-set name sets the empty string": 7, // (l1: -14)
 		// Measured 16854 → 16942 (2026-11-10): TestParseDocSkipsHeadScriptText.
 		"a head script's text is not read as tags": 88, // (l1: 121)
+		// Measured 16943 → 17043 (2026-11-21), plus 2: TestRuntimeSwapsUnderTrustedTypes.
+		"every core HTML write and script URL goes through the Trusted Types policy": 101,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1563,7 +1581,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	moduleOverrides := map[string]int{
 		// 1126 measured plus 2 clearance: TestSSERetriesBackOffWithJitter
 		// pins capped jittered retries, scan ownership and bfcache restoration.
-		"sse": 1128,
+		// 1138 measured + 2 (2026-11-21): the pushed fragment is written through the Trusted Types policy (TestRuntimeSwapsUnderTrustedTypes).
+		"sse": 1140,
 		// envelope 7696 measured (7694 + 2 clearance; that measure
 		// already carries the seen-path tracking, the stable pane
 		// keys and the hash-carrying pending slot);
@@ -1750,7 +1769,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestDialogBackdropClickCloses, TestPanelOverDialogMountsInside).
 		// Not carvable: showModal() must run in the mount, or the modal
 		// shows outside the top layer until a module loads.
-		"widgets": 4063,
+		// 4065 measured + 2 (2026-11-21): a fetched widget body is written through the Trusted Types policy (TestRuntimeSwapsUnderTrustedTypes).
+		"widgets": 4067,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1869,7 +1889,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// TestSweepRestoresUnfilledRegion).
 		// 1386 measured: TestLoadingExitSurvivesSupersede keeps exit caps
 		// independent of the entry's pending-show timer, plus 2 clearance.
-		"loading": 1388,
+		// 1398 measured + 2 (2026-11-21): the loading template is filled through the Trusted Types policy (TestRuntimeSwapsUnderTrustedTypes).
+		"loading": 1400,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted
@@ -1894,7 +1915,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Pinned at the measured size plus 2 clearance.
 		// 2414 measured: TestDeferredParamUsesServerAddress pins the live
 		// markup generation on each deferred part request.
-		"parts": 2416,
+		// 2420 measured + 2 (2026-11-21): a part is written through the Trusted Types policy (TestRuntimeSwapsUnderTrustedTypes).
+		"parts": 2422,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
@@ -2208,7 +2230,10 @@ func TestTypicalPagePayloadBudget(t *testing.T) {
 func TestEmbedSizeBudgets(t *testing.T) {
 	const (
 		loaderBudgetGZ = 1536
-		frameBudgetGZ  = 12 * 1024
+		// 12365 measured + 2 (2026-11-21): the frame document runs under the
+		// default CSP's Trusted Types enforcement, so the kernel's policy and
+		// the mount's _html call ship here too (TestRuntimeSwapsUnderTrustedTypes).
+		frameBudgetGZ = 12*1024 + 79
 	)
 
 	loader, err := EmbedLoaderJS()

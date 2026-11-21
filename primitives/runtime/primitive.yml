@@ -8,6 +8,12 @@ docs:
 on_change:
   - A new or renamed data-cui-* attribute gets its row in the core-ui/ARCHITECTURE.md attribute table and a runtime test in the same change.
 invariants:
+  - id: sinks-go-through-the-trusted-types-policy
+    rule: The kernel creates exactly one Trusted Types policy, named middleware.TrustedTypesPolicy, and every HTML string and script URL the runtime, its modules and the shipped behaviours hand the DOM passes through it, so a page under the default CSP raises no Trusted Types violation on first load, module loads, a poll swap, an html-mode signal, a navigation inside or across shells, or Back.
+    enforced_by:
+      - test: core-ui/runtime.TestRuntimePolicyIsTheOneTheCSPAllows
+      - test: core-ui/check.TestLintTrustedTypesSinks_RepoIsClean
+      - test: framework/uihost.TestRuntimeSwapsUnderTrustedTypes
   - id: attributes-are-documented
     rule: Every data-cui-* attribute the runtime or a registered behaviour reads has a row in the core-ui/ARCHITECTURE.md attribute table.
     enforced_by:
@@ -145,6 +151,18 @@ invariants:
       - test: core-ui/runtime.TestAutogrowUsesFieldSizing
       - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal
 decisions:
+  - id: pass-through-trusted-types-policy
+    date: 2026-11-21
+    status: accepted
+    decision: The 'gofastr' policy passes HTML and script URLs through unchanged (createHTML and createScriptURL are String), each core sink calls the kernel's _html or _scriptURL, and a module calls NS._html?.(s) ?? s so it still runs beside an older kernel.
+    rejected:
+      - option: Sanitize in createHTML.
+        why: Every string the runtime writes is markup the app's own server rendered, so a sanitizer would only cost bytes and break trusted markup; the policy's job is to stop every other writer.
+      - option: A default policy.
+        why: A browser hands every plain string from any script to the default policy, so a pass-through one would accept injected strings and the enforcement would protect nothing.
+      - option: Refuse script URLs that are not same-origin paths.
+        why: Every runtime script URL is built from a fixed /__gofastr/ prefix and a name the loader already pins, and the check cost 29 bytes at level 1 in a core already at its window.
+    upholds: [sinks-go-through-the-trusted-types-policy]
   - id: poll-before-push
     status: accepted
     decision: Passive freshness (dashboards, counters, statuses) polls with data-cui-poll; SSE is the last rung.

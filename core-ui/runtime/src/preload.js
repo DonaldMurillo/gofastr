@@ -171,7 +171,7 @@
         put(path, e);
         if (!warm) return;
         const t = document.createElement('template');
-        t.innerHTML = e.html;
+        t.innerHTML = NS._html?.(e.html) ?? e.html;
         for (const r of [t, ...t.content.querySelectorAll('template')]) NS.scanAndLoadCSS(r.content);
       })
       .catch(() => {})

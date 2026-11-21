@@ -185,7 +185,7 @@
   // the layout boundaries the navigator keeps. Scripts are never copied.
   const syncPageHead = (root, skipCSRF) => {
     const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
-    const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
+    const source = carrier ? new DOMParser().parseFromString(_html(carrier.getAttribute('data-cui-page-head') || ''), 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
     const nodes = source.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]');
     document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => { if (node.name !== 'csrf-token') node.remove(); });
@@ -221,7 +221,7 @@
     const re = /<script\b[^]*?(?:<\/script\s*>|$)|<!--[^]*?(?:-->|$)|<title\b[^]*?(?:<\/title\s*>|$)|(<style\b[^]*?(?:<\/style\s*>|$))|(<body\b)/gi;
     let out = '', i = 0, m;
     while ((m = re.exec(h)) && !m[2]) if (m[1]) { out += h.slice(i, m.index); i = re.lastIndex; }
-    return new DOMParser().parseFromString(m ? out + h.slice(i) : h, 'text/html');
+    return new DOMParser().parseFromString(_html(m ? out + h.slice(i) : h), 'text/html');
   };
   window.__gofastr._parseDoc = parseDoc;
   const docCarrier = (source) => {
@@ -510,7 +510,7 @@
   };
 
   const swapAtSlot = (slot, html) => {
-    slot.innerHTML = html;
+    slot.innerHTML = _html(html);
     mergeSeedFromDOM(slot);
     window.__gofastr.scanAndLoadCSS(slot);
     // Move focus onto the fresh content so keyboard users are not
@@ -712,7 +712,7 @@
         const sd = sharedDepth(layouts), deep = sd && domChainKeys()[sd - 1];
         if (deep && layer !== deep) {
           const t = document.createElement('template');
-          t.innerHTML = html;
+          t.innerHTML = _html(html);
           const cell = t.content.querySelector(`[data-cui-layout-slot="${CSS.escape(deep)}"]`);
           if (cell) {
             html = [...t.content.children].filter((e) => e.matches('template[data-cui-page-head],#gofastr-signals-partial')).map((e) => e.outerHTML).join('') + cell.innerHTML;
@@ -792,7 +792,7 @@
           const sourceRoot = shellEl(pdoc) || nm;
           // The carrier rides <main>, so the cache entry below (and the
           // whole-main fallback) keeps the page's language and words.
-          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc) + docSeed(pdoc));
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", _html(docCarrier(pdoc) + docSeed(pdoc)));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to

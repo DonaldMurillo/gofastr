@@ -142,7 +142,7 @@
     if (!target) return;
     if (L) L.claim(st.entries.get(addr));
     if (p.seed && E) E.applySeed(p.seed);
-    target.innerHTML = p.html;
+    target.innerHTML = NS._html?.(p.html) ?? p.html;
     NS.scanAndLoadCSS?.(target);
     st.parts.set(addr, p.html);
     window.dispatchEvent(new CustomEvent('gofastr:fill', {
@@ -208,7 +208,7 @@
     if (L) await L.holdExit(st.entries.get(addr));
     if (st.dead || !NS._navLive(st.epoch)) return;
     if (p.seed && E) E.applySeed(p.seed);
-    target.innerHTML = p.html;
+    target.innerHTML = NS._html?.(p.html) ?? p.html;
     if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(target);
     st.parts.set(addr, p.html);
     const ce = E && E.cacheGet && E.cacheGet(st.path);

@@ -64,8 +64,11 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// breakpoint) closes and lets the page go, watched by a
 		// ResizeObserver per armed trap and asked again at each Tab:
 		// 3255 measured + 2. The trap and its release are one posture.
-		"framework/headless/disclosure.js":   3257,
-		"framework/headless/sortablelist.js": 3191,
+		"framework/headless/disclosure.js": 3257,
+		// TestLintTrustedTypesSinks_RepoIsClean: a refreshed list is written
+		// through the runtime's Trusted Types policy, which the default CSP
+		// requires at every HTML sink: 3200 measured + 2.
+		"framework/headless/sortablelist.js": 3202,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed

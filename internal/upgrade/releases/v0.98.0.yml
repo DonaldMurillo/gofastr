@@ -1,7 +1,11 @@
 version: v0.98.0
-title: YAML hex and octal integers
+title: YAML hex and octal integers; Trusted Types in the default CSP
 notes:
   - change: "BREAKING - unquoted hex and octal integers in app specs and snapshots now read as numbers"
     breaking: true
     guidance: "Quote values meant to stay strings before loading an existing app spec or older Pack or Kiln snapshot, for example default: \"0x10\" or values: [\"0x01\", \"0x02\"]."
     nodetect: "whether a YAML value is meant as a number or as text depends on the field and the app, not the value's spelling"
+  - change: "BREAKING - the default Content-Security-Policy enforces Trusted Types: require-trusted-types-for 'script'; trusted-types gofastr"
+    breaking: true
+    guidance: "App JavaScript that assigns a plain string to innerHTML, outerHTML or insertAdjacentHTML, calls DOMParser.parseFromString or document.write, or sets a created script's src now throws in browsers that support Trusted Types. Build the DOM with textContent or createElement, or create your own Trusted Types policy and list its name in SecurityHeadersConfig.TrustedTypesPolicies; SecurityHeadersConfig.NoTrustedTypes turns the directives off."
+    nodetect: "the sinks are in the app's own JavaScript, often inside Go strings or templates, and whether a given write ever runs on a page the default policy covers depends on the app"

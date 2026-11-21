@@ -43,11 +43,12 @@ invariants:
     enforced_by:
       - test: framework.TestIdempotencyMemoryStoreWarnsWithFanout
   - id: default-chain-options-refuse-without-defaults
-    rule: NewApp panics when WithI18n, WithMetrics or WithTracing is paired with WithoutDefaultMiddleware, and WithLocaleResolver panics unless WithI18n came before it.
+    rule: NewApp panics when WithI18n, WithMetrics, WithTracing or WithResourceIsolation is paired with WithoutDefaultMiddleware, and WithLocaleResolver panics unless WithI18n came before it.
     enforced_by:
       - test: framework.TestApp_WithI18nPanicsWithWithoutDefaultMiddleware
       - test: framework.TestWithMetrics_PanicsWithoutDefaults
       - test: framework.TestWithTracing_PanicsWithoutDefaults
+      - test: framework.TestWithResourceIsolationPanicsWithoutDefaults
       - test: framework.TestApp_WithLocaleResolverWithoutI18nPanics
   - id: default-chain-order
     rule: In DefaultMiddleware locale negotiation runs outside every middleware that can refuse a request and has its own recovery inside it, the locale-prefix rewriter runs inside Compress, and Compress runs outside the request timeout.
@@ -56,6 +57,18 @@ invariants:
       - test: framework.TestApp_PanicAnswersInLocale
       - test: framework.TestCompressedPageRewritten
     judge: Does this change move Compress inside the request timeout, where it no longer sees the timeout's flushes?
+  - id: csp-reports-sink
+    rule: WithCSPReports mounts middleware.CSPReportHandler at POST middleware.CSPReportPath, sets the default chain's CSPReportURI to it unless one is configured, and logs each report at warn level when given no callback; without it no sink is mounted.
+    enforced_by:
+      - test: framework.TestWithCSPReportsMountsSinkAndPointsPolicyAtIt
+      - test: framework.TestWithCSPReportsLogsByDefault
+      - test: framework.TestWithCSPReportsKeepsAConfiguredReportURI
+      - test: framework.TestNoCSPReportSinkByDefault
+  - id: resource-isolation-inside-security-headers
+    rule: WithResourceIsolation adds handler.IsolateResources inside SecurityHeaders, always admitting the embed loader path, and the default chain has no isolation without it.
+    enforced_by:
+      - test: framework.TestWithResourceIsolationRefusesCrossOriginSubresources
+      - test: framework.TestResourceIsolationIsOffByDefault
   - id: chain-independent-middleware
     rule: The trusted-proxy context, Web Bot Auth verification and the retired-markup check are installed whether or not the default chain is.
     enforced_by:

@@ -51,7 +51,7 @@ import (
 // (core/middleware security.go), the one the analytics integration must
 // live under without any widening.
 const wantDefaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
-	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; require-trusted-types-for 'script'; trusted-types gofastr"
 
 // fakeVendorSDKJS is the tiny "vendor SDK" served by the fake upstream
 // THROUGH the relay. PostHog-shaped surface: window.__fakeVendor with

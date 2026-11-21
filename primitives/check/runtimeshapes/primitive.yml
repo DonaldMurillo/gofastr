@@ -1,12 +1,13 @@
 primitive: check.runtimeshapes
-summary: The ten runtime-shape lints over the runtime's fragment and module sources, one per recurring bug shape the adversarial audits found - unescaped selector interpolation, own-property registry reads, response bodies mounted before an ok gate, attribute-borne path segments, bare-argument selectors, raw cookie writes, ungated module URLs, raw storage keys, raw decodeURIComponent and prototype-key writes.
+summary: The eleven runtime-shape lints over the runtime's fragment and module sources, one per recurring bug shape the adversarial audits found - unescaped selector interpolation, own-property registry reads, response bodies mounted before an ok gate, attribute-borne path segments, bare-argument selectors, raw cookie writes, ungated module URLs, raw storage keys, raw decodeURIComponent, prototype-key writes and HTML or script sinks that skip the Trusted Types policy.
 code:
   - core-ui/check/runtimeshapes.go
+  - core-ui/check/trustedtypes.go
 docs:
   - framework/docs/content/runtime-contract.md
 invariants:
   - id: each-shape-fires
-    rule: Each of LintSelectorInterpolation, LintRegistryOwnProps, LintResponseMountedAfterOK, LintAttributePathSegments, LintSelectorBareArgGuarded, LintCookieConcat, LintModuleURLShape, LintStorageKeyRaw, LintDecodeURIRaw and LintProtoKeyWrite reports its pre-fix shape and its synthetic positives.
+    rule: Each of LintSelectorInterpolation, LintRegistryOwnProps, LintResponseMountedAfterOK, LintAttributePathSegments, LintSelectorBareArgGuarded, LintCookieConcat, LintModuleURLShape, LintStorageKeyRaw, LintDecodeURIRaw, LintProtoKeyWrite and LintTrustedTypesSinks reports its pre-fix shape and its synthetic positives.
     enforced_by:
       - test: core-ui/check.TestLintSelectorInterpolation_FiresOnPreFixShapes
       - test: core-ui/check.TestLintSelectorInterpolation_SyntheticPositives
@@ -20,6 +21,7 @@ invariants:
       - test: core-ui/check.TestStorageKeyRawFiresOnAttrKey
       - test: core-ui/check.TestLintDecodeURIRaw_FiresOnAttrDerived
       - test: core-ui/check.TestLintProtoKeyWrite_FiresOnAttrKey
+      - test: core-ui/check.TestLintTrustedTypesSinks
   - id: fix-spellings-stay-quiet
     rule: Code-shaped text inside a string literal, comment or regex literal never fires, and every audited fix spelling - escaped or numeric operands, own-property guards, status gates, sanitizers - stays quiet.
     enforced_by:
@@ -45,6 +47,7 @@ invariants:
       - test: core-ui/check.TestLintStorageKeyRaw_RepoIsClean
       - test: core-ui/check.TestLintDecodeURIRaw_RepoIsClean
       - test: core-ui/check.TestLintProtoKeyWrite_RepoIsClean
+      - test: core-ui/check.TestLintTrustedTypesSinks_RepoIsClean
 decisions:
   - id: lint-sources-not-the-bundle
     date: 2026-11-20

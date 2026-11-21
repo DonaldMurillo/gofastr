@@ -121,7 +121,7 @@
         // html-mode binding of `x`. Render it as text instead. The
         // value still reaches the node; it just stops being markup.
         if (slot.untrusted) { node.textContent = value; return true; }
-        node.innerHTML = value;
+        node.innerHTML = _html(value);
         window.__gofastr.scanAndLoadCSS(node);
         // Wire any toast items the freshly-swapped HTML brought in.
         // Awaits the toasts module, when an island-driven update

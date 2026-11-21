@@ -7,7 +7,8 @@ import (
 )
 
 const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
-	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; " +
+	"require-trusted-types-for 'script'; trusted-types gofastr"
 
 func (b *Builder) policy() string {
 	if p := strings.TrimSpace(b.ContentSecurityPolicy); p != "" {

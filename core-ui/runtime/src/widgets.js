@@ -311,7 +311,7 @@
       w.removeAttribute('hidden');
     } else if (html) {
       const tmp = document.createElement('div');
-      tmp.innerHTML = html;
+      tmp.innerHTML = NS._html?.(html) ?? html;
       w = tmp.firstElementChild;
     } else {
       delete NS._widgets[cfg.name];

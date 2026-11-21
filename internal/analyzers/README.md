@@ -507,3 +507,11 @@ reader of a hand-written text file strips a leading byte order mark
 through `internal/bom` (core/dotenv, core/markdown and core/yaml inline
 the trim so `gofastr unmount` can copy them); a new reader joins
 `TestReadersIgnoreBOM`.
+The 2026-11-21 Trusted Types change added `trusted-types-sink` to the
+runtimeshapes family in core-ui/check (`LintTrustedTypesSinks`, run over
+every shipped `.js` file): an `innerHTML`, `outerHTML` or `srcdoc`
+assignment, `insertAdjacentHTML` or `parseFromString` whose value is not
+an `_html` call, a `Worker` or created `<script>` URL that is not a
+`_scriptURL` call, and the sinks no policy covers (`document.write`,
+`eval`, `new Function`, `importScripts`, `setHTMLUnsafe`,
+`createContextualFragment`). Under the default CSP each of these throws.
