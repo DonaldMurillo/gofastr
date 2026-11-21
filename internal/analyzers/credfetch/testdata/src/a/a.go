@@ -12,7 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
+	str "strings"
 )
 
 // defaultHTTP is the oauth2.go shape: a Timeout but no CheckRedirect.
@@ -41,7 +41,7 @@ func (p *IdP) Exchange(code string) (*Token, error) {
 	form := url.Values{}
 	form.Set("code", code)
 	form.Set("client_secret", p.secret)
-	req, err := http.NewRequest(http.MethodPost, p.tokenEndpoint, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest(http.MethodPost, p.tokenEndpoint, str.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func newFederated(issuer string, base *http.Client) *FederatedIdP {
 func (f *FederatedIdP) Token(secret string) (*Token, error) {
 	form := url.Values{}
 	form.Set("client_secret", secret)
-	req, err := http.NewRequest(http.MethodPost, f.issuer+"/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest(http.MethodPost, f.issuer+"/token", str.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -104,4 +104,30 @@ func (f *FederatedIdP) Token(secret string) (*Token, error) {
 		return nil, err
 	}
 	return &tok, nil
+}
+
+func aliasedForm(secret string) {
+	client := &http.Client{} // want `no CheckRedirect on a credential-bearing fetch`
+	form := url.Values{"client_secret": {secret}}
+	req, _ := http.NewRequest(http.MethodPost, "https://idp.example/exchange", str.NewReader(form.Encode()))
+	_, _ = client.Do(req)
+}
+
+func valueClient(secret string) {
+	client := http.Client{} // want `no CheckRedirect on a credential-bearing fetch`
+	req, _ := http.NewRequest(http.MethodPost, "https://idp.example/exchange", nil)
+	req.SetBasicAuth("client", secret)
+	_, _ = client.Do(req)
+}
+
+var packageClient = http.Client{} // want `no CheckRedirect on a credential-bearing fetch`
+
+type holder struct{ client http.Client }
+
+func valueClientsFromBindings(secret string) {
+	req, _ := http.NewRequest(http.MethodPost, "https://idp.example/exchange", nil)
+	req.SetBasicAuth("client", secret)
+	_, _ = packageClient.Do(req)
+	h := holder{client: http.Client{}} // want `no CheckRedirect on a credential-bearing fetch`
+	_, _ = h.client.Do(req)
 }

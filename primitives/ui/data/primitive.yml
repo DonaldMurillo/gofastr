@@ -146,9 +146,11 @@ invariants:
     enforced_by:
       - test: framework/ui.TestMetricBandCSSIsFlatWideAndTwoColumnMobile
   - id: chip-dismiss-targets-the-bar
-    rule: Every chip dismissal and Clear all target RPCSignal, "filter-bar" when unset.
+    rule: Every chip dismissal and Clear all target RPCSignal, defaulting to SignalName when set and otherwise to "filter-bar".
     enforced_by:
       - test: framework/ui.TestFilterChipBarRendersChips
+      - test: framework/ui.TestFilterChipBarRPCSignal
+      - test: framework/ui.TestFilterChipBarIslandSwapContract
   - id: timeline-body-wrapped
     rule: A Timeline event's caller Body is wrapped in .fui-timeline__body, and the timeline sheet styles parts by class, never a bare p.
     enforced_by:

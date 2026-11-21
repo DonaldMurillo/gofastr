@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -97,5 +98,16 @@ func TestCLIEndpointOnlyEntityRegisters(t *testing.T) {
 	}
 	if main := renderCLIMain(spec); !strings.Contains(main, "cmds = append(cmds, customersCommands()...)") {
 		t.Errorf("customers commands not registered:\n%s", main)
+	}
+}
+
+// An unknown flag is bad usage, exit 2, the same status the rest of the
+// generate family answers; `generate endpoints` used to exit 1.
+func TestGenerateEndpointsUnknownFlagExitsTwo(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { runGenerateEndpoints([]string{"--zzz-unknown-flag=1"}) })
+	})
+	if code != 2 {
+		t.Fatalf("generate endpoints --zzz exited %d, want 2", code)
 	}
 }

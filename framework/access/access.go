@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
@@ -256,43 +257,15 @@ func nearestCapability(grant Permission, registered []Permission) Permission {
 		return ""
 	}
 	nearest := registered[0]
-	best := EditDistance(string(grant), string(nearest))
+	best := fuzzy.Levenshtein(string(grant), string(nearest))
 	for _, candidate := range registered[1:] {
-		distance := EditDistance(string(grant), string(candidate))
+		distance := fuzzy.Levenshtein(string(grant), string(candidate))
 		if distance < best {
 			nearest = candidate
 			best = distance
 		}
 	}
 	return nearest
-}
-
-// EditDistance returns the Levenshtein distance between a and b.
-func EditDistance(a, b string) int {
-	if len(a) < len(b) {
-		a, b = b, a
-	}
-	previous := make([]int, len(b)+1)
-	current := make([]int, len(b)+1)
-	for i := range previous {
-		previous[i] = i
-	}
-	for i := 1; i <= len(a); i++ {
-		current[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 0
-			if a[i-1] != b[j-1] {
-				cost = 1
-			}
-			current[j] = min(
-				current[j-1]+1,
-				previous[j]+1,
-				previous[j-1]+cost,
-			)
-		}
-		previous, current = current, previous
-	}
-	return previous[len(b)]
 }
 
 // Revoke removes permissions from role, expanding "res:*" like Grant and also

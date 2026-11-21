@@ -8,6 +8,20 @@ import (
 	"testing"
 )
 
+// expectDefaultApp404 starts the default App and proves an opt-in route
+// stays absent from it: GET route must answer 404. wantPrefix is the
+// failure message up to the status code.
+func expectDefaultApp404(t *testing.T, route, wantPrefix string) {
+	t.Helper()
+	app, cleanup := startApp(t, NewApp())
+	defer cleanup()
+	rec := httptest.NewRecorder()
+	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, route, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("%s got %d", wantPrefix, rec.Code)
+	}
+}
+
 // ── API catalog (RFC 9727 linkset) ─────────────────────────────────
 
 func TestAPICatalog_RouteMountedWithAPI(t *testing.T) {
@@ -37,14 +51,7 @@ func TestAPICatalog_RouteMountedWithAPI(t *testing.T) {
 }
 
 func TestAPICatalog_NotMountedWithoutAPI(t *testing.T) {
-	app, cleanup := startApp(t, NewApp()) // no entities
-	defer cleanup()
-
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/api-catalog", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("want 404 without entities, got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/.well-known/api-catalog", "want 404 without entities,")
 }
 
 // ── MCP server card ────────────────────────────────────────────────
@@ -95,14 +102,7 @@ func TestMCPServerCard_RouteMountedWithMCP(t *testing.T) {
 }
 
 func TestMCPServerCard_NotMountedWithoutMCP(t *testing.T) {
-	app, cleanup := startApp(t, NewApp())
-	defer cleanup()
-
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/mcp/server-card.json", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("want 404 without WithMCP, got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/.well-known/mcp/server-card.json", "want 404 without WithMCP,")
 }
 
 // ── Agent skills index ─────────────────────────────────────────────
@@ -184,11 +184,5 @@ func TestOAuthAuthorizationServer(t *testing.T) {
 }
 
 func TestOAuthAuthorizationServer_NotMountedByDefault(t *testing.T) {
-	app, cleanup := startApp(t, NewApp())
-	defer cleanup()
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("want 404 by default, got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/.well-known/oauth-authorization-server", "want 404 by default,")
 }

@@ -113,10 +113,7 @@ func TestFileDropzoneExtraAttrsOnRoot(t *testing.T) {
 		Label:      "x",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("dropzone root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "dropzone root")
 }
 
 // The drop hooks are the runtime's contract. A caller's ExtraAttrs
@@ -194,5 +191,12 @@ func TestFileDropzonePreviewDoesNotStealDropOwnership(t *testing.T) {
 	region := h[:strings.Index(h, "<input")]
 	if strings.Contains(region, "data-fui-dropzone-preview") {
 		t.Errorf("the preview marker leaked onto the drop region:\n%s", h)
+	}
+}
+
+func TestDropzoneErrorKeepsHelpDescribed(t *testing.T) {
+	h := string(FileDropzone(FileDropzoneConfig{Name: "f", Label: "Files", Help: "PDF only", Error: "Too big"}))
+	if !strings.Contains(h, `aria-describedby="f-error f-help"`) {
+		t.Fatalf("input must name the error, then the help it still shows:\n%s", h)
 	}
 }

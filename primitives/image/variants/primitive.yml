@@ -27,11 +27,14 @@ invariants:
       - test: framework/image.TestVariantSetRejectAnimated
       - test: framework/image.TestRejectAnimatedAfterChainStep
   - id: whole-set-refused-up-front
-    rule: Colliding names and a resize target past the source's MaxPixels are refused for every variant before the first is encoded, so ProcessTo never hands its sink part of a set it then refuses.
+    rule: ProcessTo validates every variant's width, encoding, name and resize target before the first sink call and uses that validated list for the run. It shares the source-independent checks with imagefield.New.
     enforced_by:
       - test: framework/image.TestSweepImageProcessToRefusesWholeSetUpFront
       - test: framework/image.TestVariantSetRefusesDuplicateNames
       - test: framework/image.TestResizeTargetPastMaxPixels
+      - test: framework/image.TestProcessToRejectsInvalidLaterVariant
+      - test: framework/image.TestProcessToUsesValidatedVariants
+      - test: framework/imagefield.TestNewRejectsBadConfig
   - id: no-upscale-by-default
     rule: Without AllowUpscale a variant's width is clamped to the source width, and with it the variant is produced at its declared width.
     enforced_by:
@@ -44,7 +47,7 @@ invariants:
     enforced_by:
       - test: framework/image.TestVariantSetPreservesAspect
   - id: variant-needs-width-and-format
-    rule: A variant with Width below 1 or an unknown Format is an error.
+    rule: A variant with Width below 1 or a Format without a variant encoder is an error.
     enforced_by:
       - test: framework/image.TestVariantSetRejectsZeroWidth
       - test: framework/image.TestVariantSetRejectsUnknownFormat

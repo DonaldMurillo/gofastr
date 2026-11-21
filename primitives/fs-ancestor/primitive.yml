@@ -1,0 +1,9 @@
+primitive: fs-ancestor
+summary: Search a directory and its parents using the caller's boundary and error policy.
+code:
+  - internal/ancestor/
+invariants:
+  - id: nearest-boundary
+    rule: ancestor.Find checks the starting directory first and stops at the first match or probe error.
+    enforced_by:
+      - test: internal/ancestor.TestFind

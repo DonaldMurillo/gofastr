@@ -11,12 +11,7 @@ import (
 )
 
 func (a *App) registerContractTools() error {
-	tools := []struct {
-		name        string
-		description string
-		schema      map[string]any
-		handler     func(ctx context.Context, params map[string]any) (any, error)
-	}{
+	tools := []mcpToolSpec{
 		{
 			name: "contracts_list",
 			description: "List every rule the GoFastr contract system enforces: ID (GOFASTR####), " +
@@ -64,15 +59,7 @@ func (a *App) registerContractTools() error {
 			handler: a.toolContractsCapabilities,
 		},
 	}
-	for _, t := range tools {
-		if a.skipDevEntityMCPCollision(t.name) {
-			continue
-		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, readOnlyToolHints()); err != nil {
-			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
-		}
-	}
-	return nil
+	return a.registerBuiltinTools("tool", tools, a.introspectionToolOptions()...)
 }
 
 func contractRefusal(format string, args ...any) error {

@@ -14,7 +14,7 @@ import (
 //     (fmt.Sprintf("query failed: %v", err), fmt.Sprint(err)) went to the
 //     client on a 5xx with the rule silent.
 //   - decode: 1a4d9e2a. encoding/json's own text, naming the server's Go
-//     types, sent to a client at any status.
+//     types, sent through an HTTP 4xx/5xx or JSON-RPC error sink.
 //   - rewrap: d01462e8a. A typed error rebuilt from its own text loses its
 //     code.
 //   - selfcall: the review's recursion crash. A func var re-bound to a

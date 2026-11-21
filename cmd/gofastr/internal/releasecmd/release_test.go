@@ -19,11 +19,24 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestOptionsRequireVersion(t *testing.T) {
 	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "--version is required") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Usage errors exit 2, as every sibling command does, so a script can
+// tell a bad flag from a failed release.
+func TestReleaseUsageErrorsExitTwo(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunRelease([]string{"--frobnicate"}) })
+	})
+	if code != 2 {
+		t.Fatalf("release --frobnicate: exit %d, want 2", code)
 	}
 }
 

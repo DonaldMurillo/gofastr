@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0e0648f322e03976
+//gofastr:generated generator=app kind=scaffold version=dev sum=88905f18f385bafd
 
 package entities
 
@@ -254,13 +254,6 @@ func OnReviewsUpdated(app *framework.App, fn func(ctx context.Context, row *Revi
 // has been removed (or soft-deleted).
 func OnReviewsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return onEntityDeleted(app, "reviews", fn)
-}
-
-// extractReviewsRecord unmarshals an event payload's "record" field into a
-// *Reviews, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extractReviewsRecord(ev framework.Event, entityName string) (*Reviews, bool) {
-	return extractEntityRecord[Reviews](ev, entityName)
 }
 
 // registerReviews registers the "reviews" entity with app.

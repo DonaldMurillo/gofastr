@@ -38,14 +38,19 @@ fi
 # -list prints the names and then an "ok" line; Benchmark names are left
 # out because -run never runs a benchmark.
 listing=$(go test -list '.*' "$pkg")
-mapfile -t all < <(printf '%s\n' "$listing" | grep -E '^(Test|Example|Fuzz)[^ ]*$' | LC_ALL=C sort -u)
+all=()
+while IFS= read -r line; do
+  all+=("$line")
+done < <(printf '%s\n' "$listing" | grep -E '^(Test|Example|Fuzz)[^ ]*$' | LC_ALL=C sort -u)
 
 picked=()
-for i in "${!all[@]}"; do
-  if [ $((i % n)) -eq "$k" ]; then
-    picked+=("${all[$i]}")
-  fi
-done
+if [ "${#all[@]}" -gt 0 ]; then
+  for i in "${!all[@]}"; do
+    if [ $((i % n)) -eq "$k" ]; then
+      picked+=("${all[$i]}")
+    fi
+  done
+fi
 
 if [ "${#picked[@]}" -eq 0 ]; then
   echo "go-test-shard: shard $spec of $pkg selected none of ${#all[@]} tests" >&2

@@ -24,7 +24,7 @@ func openAPIArtifacts(t *testing.T, doc string) fstest.MapFS {
 		SchemaVersion: sdk.SchemaVersion, App: "barc", SDKVersion: "1.0.0", GofastrVersion: "v0.97.0",
 		Source: sdk.SourceOpenAPI, Entities: []string{}, SchemaHash: hash, TokenHeader: "X-Barc-Key",
 		Artifacts: map[string]sdk.Artifact{
-			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "example.com/barc-sdk"},
+			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "example.com/barc-sdk", Directory: "barc-sdk"},
 			"js": {File: sdk.JSArtifact, SHA256: sdkSum("//js\n"), Bytes: 5},
 		},
 	})

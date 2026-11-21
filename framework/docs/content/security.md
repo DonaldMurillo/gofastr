@@ -1134,10 +1134,10 @@ entities you didn't get told about. See
 [entity-declarations](entity-declarations.md) → "Default CRUD
 authentication" for the app spec YAML shape.
 
-`gofastr audit lint` flags this as rule `unscoped-pii`, and it inspects
-Go-declared entities (`app.Entity(...)` with an unscoped PII-shaped field
-exposed via auto-CRUD) as well as `gofastr.yml`: the cross-user exposure
-is identical either way.
+`gofastr verify permissions` reports the same exposure on Go-declared
+entities (`app.Entity(...)` with an unscoped PII-shaped field exposed via
+auto-CRUD) as `GOFASTR1901`; `gofastr validate` reports it on
+`gofastr.yml` entities. The cross-user exposure is identical either way.
 
 ## Common mistakes
 

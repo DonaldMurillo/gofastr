@@ -1,11 +1,15 @@
 package uihost
 
 import (
+	"io"
 	"io/fs"
 	"net/http"
+	"net/textproto"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 
@@ -115,6 +119,87 @@ func devStaticNoStore(w http.ResponseWriter) {
 	if dev.Enabled() {
 		w.Header().Set("Cache-Control", "no-store")
 	}
+}
+
+func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body io.Reader, size int64, mod time.Time) {
+	h := w.Header()
+	known := !mod.IsZero() && !mod.Equal(time.Unix(0, 0))
+	if known {
+		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
+	}
+	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
+	failed := false
+	current := h.Get("Etag")
+	if im := r.Header.Get("If-Match"); im != "" {
+		failed = !etagListMatches(im, current, false)
+	} else if t, err := http.ParseTime(r.Header.Get("If-Unmodified-Since")); known && err == nil {
+		failed = mod.Truncate(time.Second).After(t)
+	}
+	notModified := false
+	if inm := r.Header.Get("If-None-Match"); inm != "" {
+		notModified = etagListMatches(inm, current, true)
+	} else if t, err := http.ParseTime(r.Header.Get("If-Modified-Since")); safe && known && err == nil {
+		notModified = !mod.Truncate(time.Second).After(t)
+	}
+	switch {
+	case failed, notModified && !safe:
+		w.WriteHeader(http.StatusPreconditionFailed)
+		return
+	case notModified:
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	h.Set("Content-Type", corestatic.DetectFromName(name))
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Length", strconv.FormatInt(size, 10))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = io.CopyN(w, body, size)
+	}
+}
+
+// etagListMatches scans an If-Match (strong) or If-None-Match (weak)
+// list against the response ETag as net/http does: "*" matches, and a
+// malformed tag ends the scan.
+func etagListMatches(list, current string, weak bool) bool {
+	for {
+		list = textproto.TrimString(list)
+		switch {
+		case list == "":
+			return false
+		case list[0] == ',':
+			list = list[1:]
+		case list[0] == '*':
+			return true
+		default:
+			tag, rest, ok := scanETag(list)
+			if !ok {
+				return false
+			}
+			if weak && strings.TrimPrefix(tag, "W/") == strings.TrimPrefix(current, "W/") ||
+				!weak && tag == current && tag[0] == '"' {
+				return true
+			}
+			list = rest
+		}
+	}
+}
+
+func scanETag(s string) (tag, rest string, ok bool) {
+	start := len(s) - len(strings.TrimPrefix(s, "W/"))
+	if len(s) < start+2 || s[start] != '"' {
+		return "", "", false
+	}
+	for i := start + 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			return s[:i+1], s[i+1:], true
+		case c == 0x21 || c >= 0x23 && c <= 0x7E || c >= 0x80:
+		default:
+			return "", "", false
+		}
+	}
+	return "", "", false
 }
 
 func fsEntryIsDir(f fs.File) bool {

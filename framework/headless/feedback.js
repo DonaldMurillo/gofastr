@@ -249,10 +249,14 @@
     if (!el) return false;
     if (typeof a === 'string') { try { a = JSON.parse(a); } catch (_) { a = null; } }
     const attrs = a && a.attrs;
-    if (!a || !a.label || !attrs || typeof attrs['data-cui-rpc'] !== 'string') { el.remove(); return false; }
+    const endpoint = attrs && attrs['data-cui-rpc'];
+    if (!a || typeof a.label !== 'string' || !a.label || typeof endpoint !== 'string' || !endpoint) {
+      el.remove();
+      return false;
+    }
     el.textContent = a.label;
     el.hidden = false;
-    Object.keys(attrs).forEach((k) => { if (RPC_ATTR.test(k)) el.setAttribute(k, attrs[k]); });
+    Object.entries(attrs).forEach(([k, v]) => { if (RPC_ATTR.test(k) && typeof v === 'string') el.setAttribute(k, v); });
     return true;
   }
 
@@ -294,7 +298,7 @@
     // attributes. Any other variant (neutral, a registered status
     // variant) is not a tone: it wears what the template lists for it
     // and says no tone word, so it never passes for info.
-    const tone = TONES.indexOf(variant) >= 0 ? variant : '';
+    const tone = TONES.includes(variant) ? variant : '';
     const assertive = tone === 'warning' || tone === 'danger';
 
     const tpl = rowTemplate(container);

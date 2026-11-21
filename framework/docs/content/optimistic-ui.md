@@ -429,7 +429,7 @@ trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
     RPCPath:       "/__site/optimistic/delete?id=" + item.ID,
     SuccessSignal: "item-list", // ← swaps the list region on 2xx
 })
-// widget.Mount(app.Router(), modal.Build()), once, at startup
+// widget.MountBuilder(app.Router(), modal), once, at startup
 
 // Render the trigger inline next to its row; the modal mounts globally.
 trigger

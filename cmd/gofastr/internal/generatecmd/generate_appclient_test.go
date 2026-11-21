@@ -49,12 +49,12 @@ func TestAppClientIsDerived(t *testing.T) {
 func TestPlainGenerateRebuildsClient(t *testing.T) {
 	dir := cliTempModule(t)
 	addPostsField(t, dir)
-	out := clitest.CovT_capStdout(t, func() { appgen.GenerateProject(nil) })
+	out := clitest.CovT_capOutput(t, func() { appgen.GenerateProject(nil) })
 	data, _ := os.ReadFile(filepath.Join(dir, "entities", "client", "client.go"))
 	if !strings.Contains(string(data), `json:"subtitle`) {
 		t.Fatalf("client not rebuilt with the new field:\n%s", out)
 	}
-	if again := clitest.CovT_capStdout(t, func() { appgen.GenerateProject(nil) }); strings.Contains(again, "Rebuilt") {
+	if again := clitest.CovT_capOutput(t, func() { appgen.GenerateProject(nil) }); strings.Contains(again, "Rebuilt") {
 		t.Fatalf("rewrote an up-to-date client:\n%s", again)
 	}
 }
@@ -83,7 +83,7 @@ func TestBuildSkipsEditedLegacyClient(t *testing.T) {
 	dir := cliTempModule(t)
 	before := legacyClient(t, dir)
 	addPostsField(t, dir)
-	out := clitest.CovT_capStdout(t, func() { appgen.GenerateProject(nil) })
+	out := clitest.CovT_capOutput(t, func() { appgen.GenerateProject(nil) })
 	after, _ := os.ReadFile(filepath.Join(dir, "entities", "client", "client.go"))
 	if string(after) != before {
 		t.Fatal("plain generate overwrote an edited scaffold client")
@@ -97,11 +97,11 @@ func TestGenerateClientForceTakesOver(t *testing.T) {
 	dir := cliTempModule(t)
 	legacyClient(t, dir)
 	var code int
-	out := clitest.CovT_capStdout(t, func() { code = clitest.CovT_capExit(t, func() { appgen.RunGenerateClient(nil) }) })
+	out := clitest.CovT_capOutput(t, func() { code = clitest.CovT_capExit(t, func() { appgen.RunGenerateClient(nil) }) })
 	if code != 1 || !strings.Contains(out, "--force") {
 		t.Fatalf("want a refusal without --force, exit %d:\n%s", code, out)
 	}
-	clitest.CovT_capStdout(t, func() { appgen.RunGenerateClient([]string{"--force"}) })
+	clitest.CovT_capOutput(t, func() { appgen.RunGenerateClient([]string{"--force"}) })
 	data, _ := os.ReadFile(filepath.Join(dir, "entities", "client", "client.go"))
 	if m, _, ok := codegen.ReadMarker("client.go", string(data)); !ok || m.Generator != "client" {
 		t.Fatalf("--force did not take the client over: %+v", m)
@@ -112,7 +112,7 @@ func TestSettingsGenerateRebuildsClient(t *testing.T) {
 	dir := cliTempModule(t)
 	clitest.WriteSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        binary: shop\n")
 	addPostsField(t, dir)
-	out := clitest.CovT_capStdout(t, func() { appgen.GenerateProject(nil) })
+	out := clitest.CovT_capOutput(t, func() { appgen.GenerateProject(nil) })
 	data, _ := os.ReadFile(filepath.Join(dir, "entities", "client", "client.go"))
 	if !strings.Contains(string(data), `json:"subtitle`) {
 		t.Fatalf("client not rebuilt under a settings file:\n%s", out)
@@ -122,7 +122,7 @@ func TestSettingsGenerateRebuildsClient(t *testing.T) {
 func TestClientOnlyGenerateJSON(t *testing.T) {
 	dir := cliTempModule(t)
 	addPostsField(t, dir)
-	out := clitest.CovT_capStdout(t, func() { appgen.GenerateProject([]string{"--json"}) })
+	out := clitest.CovT_capOutput(t, func() { appgen.GenerateProject([]string{"--json"}) })
 	if !strings.HasPrefix(strings.TrimSpace(out), "{") && !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("no JSON document:\n%s", out)
 	}
@@ -134,7 +134,7 @@ func TestClientOnlyGenerateJSON(t *testing.T) {
 func TestForceClientJSONIsClean(t *testing.T) {
 	dir := cliTempModule(t)
 	legacyClient(t, dir)
-	out := clitest.CovT_capStdout(t, func() { appgen.RunGenerateClient([]string{"--force", "--json"}) })
+	out := clitest.CovT_capOutput(t, func() { appgen.RunGenerateClient([]string{"--force", "--json"}) })
 	if s := strings.TrimSpace(out); !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
 		t.Fatalf("stdout is not just JSON:\n%s", out)
 	}

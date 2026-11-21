@@ -43,42 +43,11 @@ func indexMethods(pass *analysis.Pass) methodIndex {
 	return out
 }
 
-// checkLatch runs the three sub-arms over each dispatched wrapper type.
-func checkLatch(pass *analysis.Pass, rw *types.Interface, dispatched map[*types.Named]bool, methods methodIndex) {
-	reported := map[ast.Node]bool{}
-	recoverReads := recoverReadFields(pass)
-	for _, f := range pass.Files {
-		if pathflow.IsTestFile(pass, f) {
-			continue
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			ts, ok := n.(*ast.TypeSpec)
-			if !ok {
-				return true
-			}
-			tn, ok := pass.TypesInfo.Defs[ts.Name].(*types.TypeName)
-			if !ok || tn.IsAlias() {
-				return true
-			}
-			named, ok := tn.Type().(*types.Named)
-			if !ok || !dispatched[named] {
-				return true
-			}
-			st, ok := named.Underlying().(*types.Struct)
-			if !ok || !wrapsWriter(st, rw) {
-				return true
-			}
-			if !types.Implements(named, rw) && !types.Implements(types.NewPointer(named), rw) {
-				return true
-			}
-			mset := types.NewMethodSet(types.NewPointer(named))
-			name := named.Obj().Name()
-			checkSenders(pass, name, mset, methods, reported)
-			checkReadFrom(pass, name, mset, methods, reported)
-			checkEarlyLatch(pass, name, mset, methods, recoverReads, reported)
-			return true
-		})
-	}
+// checkLatch runs the three latch sub-arms over a dispatched wrapper.
+func checkLatch(pass *analysis.Pass, name string, mset *types.MethodSet, methods methodIndex, recoverReads map[*types.Var]bool, reported map[ast.Node]bool) {
+	checkSenders(pass, name, mset, methods, reported)
+	checkReadFrom(pass, name, mset, methods, reported)
+	checkEarlyLatch(pass, name, mset, methods, recoverReads, reported)
 }
 
 // checkSenders, sub-arm (a): a Flush, FlushError or ReadFrom declared in
@@ -183,47 +152,16 @@ func declared(mset *types.MethodSet, methods methodIndex, name string) *ast.Func
 // function) — anywhere in the package's non-test files.
 func recoverReadFields(pass *analysis.Pass) map[*types.Var]bool {
 	out := map[*types.Var]bool{}
-	decls := map[*types.Func]*ast.FuncDecl{}
-	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
-				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
-					decls[fn] = fd
-				}
-			}
-		}
-	}
-	for _, f := range pass.Files {
-		if pathflow.IsTestFile(pass, f) {
+	for body := range astx.DeferredBodies(pass, func(f *ast.File) bool { return !pathflow.IsTestFile(pass, f) }) {
+		if !callsRecover(pass, body) {
 			continue
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			ds, ok := n.(*ast.DeferStmt)
-			if !ok {
-				return true
-			}
-			var body *ast.BlockStmt
-			switch fun := ast.Unparen(ds.Call.Fun).(type) {
-			case *ast.FuncLit:
-				body = fun.Body
-			default:
-				if fn, ok := astx.CalleeFunc(pass, fun); ok {
-					if fd := decls[fn.Origin()]; fd != nil {
-						body = fd.Body
-					}
+		ast.Inspect(body, func(n ast.Node) bool {
+			if s, ok := n.(*ast.SelectorExpr); ok {
+				if v, ok := pass.TypesInfo.Uses[s.Sel].(*types.Var); ok && v.IsField() {
+					out[v] = true
 				}
 			}
-			if body == nil || !callsRecover(pass, body) {
-				return true
-			}
-			ast.Inspect(body, func(n ast.Node) bool {
-				if s, ok := n.(*ast.SelectorExpr); ok {
-					if v, ok := pass.TypesInfo.Uses[s.Sel].(*types.Var); ok && v.IsField() {
-						out[v] = true
-					}
-				}
-				return true
-			})
 			return true
 		})
 	}

@@ -11,11 +11,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -107,14 +107,8 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("core", "WithTwoFactorURL", c.twoFactorURL); err != nil {
 		return err
 	}
-	// Every plugin is registered before any Init runs, so a 2FA plugin
-	// later in the list is already visible.
-	if c.twoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: core plugin: %q handles two-factor sign-in, so set NewCorePlugin().WithTwoFactorURL to the page that finishes it: a form login of a 2FA account is pending until /2fa/challenge, and its next page would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "core", "NewCorePlugin().WithTwoFactorURL", c.twoFactorURL, "a form login", "its next page"); err != nil {
+		return err
 	}
 	cfg := mgr.Config()
 	if cfg.LoginRateLimit != nil {
@@ -171,14 +165,11 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // the attacker's own token, auto-submitted from their page, minted a
 // session in the victim's browser.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !handler.IsForgeableRequest(r) {
+	if !crossSiteForm(r) {
 		return false
 	}
-	if handler.IsCrossSiteRequest(r) {
-		writeFormAuthError(w, r, http.StatusForbidden, reasonCrossSiteRequest)
-		return true
-	}
-	return false
+	writeFormAuthError(w, r, http.StatusForbidden, reasonCrossSiteRequest)
+	return true
 }
 
 // guardAuthLimit applies a per-IP limiter with the response shape matched
@@ -689,9 +680,7 @@ func (c *CorePlugin) registerHandler() http.HandlerFunc {
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
+		writeAuthJSON(w, r, http.StatusAccepted, map[string]any{"accepted": true}, skipCredentialHeaders)
 	}
 }
 
@@ -736,7 +725,18 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, status int, reason i
 	writeAuthErrorFields(w, r, status, reason, nil, params...)
 }
 
+func refuseAuth(w http.ResponseWriter, r *http.Request, isForm bool, status int, reason i18n.Phrase) {
+	if isForm {
+		writeFormAuthError(w, r, status, reason)
+		return
+	}
+	writeAuthError(w, r, status, reason)
+}
+
 func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]string, params ...map[string]any) {
+	if status < 400 || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	body := map[string]any{
 		"error":   reason.Text(requestContext(r), params...),
 		"success": false,
@@ -749,18 +749,22 @@ func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, re
 	writeAuthJSON(w, r, status, body)
 }
 
-// writeAuthJSON answers body as JSON with status, the shared success
-// spelling: the value is marshalled before a byte is written, so a body
-// that cannot encode (a NaN in a computed field) answers the canonical
-// 500 envelope instead of the intended status with an empty body.
-func writeAuthJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
+type authJSONOption uint8
+
+const skipCredentialHeaders authJSONOption = 1
+
+// writeAuthJSON marshals the body before sending the status and headers.
+// An encoding error gets the standard 500 response.
+func writeAuthJSON(w http.ResponseWriter, r *http.Request, status int, body any, options ...authJSONOption) {
 	b, err := json.Marshal(body)
 	if err != nil {
 		slog.Warn("auth: encode response", "error", err)
 		writeAuthError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
-	writeCredentialHeaders(w)
+	if !slices.Contains(options, skipCredentialHeaders) {
+		writeCredentialHeaders(w)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(b)

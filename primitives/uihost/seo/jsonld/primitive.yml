@@ -41,3 +41,10 @@ decisions:
     rejected:
       - option: One literal holding the whole element.
         why: The inline-script contract (GOFASTR1805) reads each literal and would flag JSON-LD, which is inert data the browser never runs.
+  - id: ship-through-screen-schema
+    date: 2026-11-20
+    status: accepted
+    decision: A screen ships JSON-LD through the uihost ScreenSchema hook, which the host renders into <head>.
+    rejected:
+      - option: Return Render's output from SEOScreen.HeadHTML.
+        why: The host scrubs every <script> out of HeadHTML, so the block never ships.

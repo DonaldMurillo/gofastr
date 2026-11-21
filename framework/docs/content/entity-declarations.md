@@ -451,18 +451,17 @@ entities:
 
 ### Booleans that gate access are not guessed
 
-Most boolean keys accept anything YAML calls false-ish. Six do not, because
-for them a mis-read value opens something up rather than closing it:
-`scope.multi_tenant`, `scope.soft_delete`, a field's `hidden`, `no_query`,
-`read_only`, and a screen's `access.auth`. These require a real `true` or
-`false` and error on anything else.
+The app-spec decoder reads access flags such as `scope.multi_tenant`,
+`scope.soft_delete`, a field's `hidden`, `no_query` and `read_only`,
+and a screen's `access.auth` strictly. It accepts YAML booleans and
+the quoted strings `"true"` and `"false"`. Other values produce an error.
 
-The reason is YAML 1.2, which `core/yaml` implements: `yes`, `on`, `y`, and
-`1` are **strings**, not booleans. Written `auth: yes`, the value used to
-read as false and the screen was registered with no policy: publicly
-reachable, with no error to say so. `multi_tenant: yes` dropped tenant
-scoping the same way. Keys where false is the inert direction (`public`,
-`mcp`, `crud`, `enabled`) keep the lax reading.
+YAML 1.2 reads bare `yes`, `on` and `y` as strings and bare `1` as an
+integer. Before strict decoding, `auth: yes` silently registered a
+public screen and `multi_tenant: yes` silently dropped tenant scoping.
+Flags such as `exposure.public`, `exposure.mcp`, `exposure.crud` and
+`pwa.enabled` keep the lax reading. `app.auth.enabled` uses strict
+decoding because a false value disables authentication for the whole app.
 
 ### Field keys
 
@@ -846,8 +845,9 @@ affinity because it contains `INT`, while `REAL TEXT` has TEXT affinity.
 `schema.SQLiteDecimalRefusal` returns the reason and
 `schema.DecimalExactOnSQLite` the yes/no.
 
-A create or update refuses a `decimal` its column cannot store as sent,
-with a 400 naming the field, on both dialects:
+`schema.DecimalRegexp` matches decimal literal syntax for writes and
+numeric filters. A create or update also refuses a `decimal` its column
+cannot store as sent, with a 400 naming the field, on both dialects:
 
 | Value | Refused when | Code |
 | --- | --- | --- |
@@ -1030,11 +1030,12 @@ the User in context.
 
 For declared entities this rule is lint-enforced: an
 auto-exposed entity (`crud` defaults on, or `mcp: true`) with PII-shaped
-field names and no `owner_field` / `access` / `multi_tenant` while
-`app.auth` is disabled is an **error** from `gofastr validate`, a
-prominent warning from `gofastr generate`, and an `unscoped-pii` finding
-from `gofastr audit lint`. See [app specs](app-spec.md) → "Unscoped
-PII".
+field names and no `owner_field`, `access.read` (a non-blank permission
+other than `anyone`), or `multi_tenant` is an **error** from `gofastr validate`
+and a warning from `gofastr generate`. For an entity declared in Go,
+`gofastr verify permissions` reports it as `GOFASTR1901`.
+The rule applies with either app auth setting. See [Unscoped PII in app
+specs](app-spec.md#unscoped-pii-gofastr-validate-error-gofastr-generate-warning).
 
 ### Letting a role read every owner's rows (`CrossOwnerRead`)
 
@@ -1068,7 +1069,8 @@ entities:
     owner_field: user_id
     cross_owner_read: tickets:read:all
     fields:
-      - {name: subject, type: string}
+      - name: subject
+        type: string
 ```
 
 Grant the permission to the role that should see across owners:
@@ -1088,9 +1090,10 @@ app.Use(access.Middleware(policy, func(ctx context.Context) []string {
 }))
 ```
 
-The admin battery's wildcard grant (`*`) passes any permission check, so
-an entity opted in via `CrossOwnerRead` is fully visible in the back
-office automatically.
+The back office uses the same owner scope. To read across owners there,
+grant the permission named by `CrossOwnerRead` to a role the caller holds
+in the request's role policy. The admin role grants access to the back
+office, and cross-owner reads require that separate permission check.
 
 **Fail-closed.** When no access policy is in the request context (an
 un-wired request, or the caller's roles don't include the permission),
@@ -1381,8 +1384,10 @@ entities:
   - name: articles
     search_fields: [title, body]
     fields:
-      - {name: title, type: string}
-      - {name: body, type: text}
+      - name: title
+        type: string
+      - name: body
+        type: text
 ```
 
 A request like `GET /api/articles?q=go%20concurrency` tokenizes the term
@@ -1719,6 +1724,11 @@ value with `filter.CoerceValue` and binds it as that type:
 | Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC. The UTC year must be 1 or later: Postgres refuses year 0000 | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
 | Date | `YYYY-MM-DD`, year 0001 or later | the text sent |
 
+In Go, `schema.TimestampArg(v)` converts a `time.Time`, a non-nil
+`*time.Time`, or a parseable RFC 3339 string to `schema.TimestampLayout`.
+Other values pass through unchanged. CRUD writes and typed timestamp columns
+use this conversion when binding values.
+
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).
 `/openapi.json` types it the same way: an `integer` property and an
@@ -1801,20 +1811,19 @@ column may be read: NoQuery keeps it out of filters and sorts only),
 and masking hooks still run on whatever came back. `CountAll` applies
 both identically, so a page count matches its rows.
 
-Two aggregates run under the same scopes and compute in the database,
-over every match rather than a page:
+Two aggregates run under the same scopes and cover every matching row:
 
 ```go
 total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
 groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
 ```
 
-`SumAll` returns decimal text ("0" over no rows). A `decimal` column sums
-as exact `NUMERIC` on Postgres; SQLite streams the scoped stored values
-and adds their decimal text exactly, avoiding binary-float accumulation.
-This uses constant working memory but reads every matching decimal row.
-Trailing zeroes may differ between dialects. It takes a
-visible int, float or decimal field. `GroupCountAll` returns each stored
+`SumAll` returns decimal text ("0" over no rows). Integer and decimal
+totals use exact arithmetic on both engines, including integer totals
+outside the signed 64-bit range. Postgres computes them in the database.
+SQLite streams every matching stored value and adds it in Go. Decimal
+trailing zeroes may differ between dialects. `SumAll` takes a visible int,
+float or decimal field. `GroupCountAll` returns each stored
 value with its count, ordered by value with the no-value group last, a
 bool as `true`/`false`; a
 positive limit caps the groups, so ask for one more than you draw to
@@ -2442,6 +2451,12 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   `time.Time`, a `*time.Time` or RFC 3339 text and bind it in the
   layout crud stores, so `…10:00:00Z` matches the row stored as
   `…10:00:00.000000Z` on SQLite and ranges compare instants.
+- A string column's `Like` and `NotLike` take a pattern on SQLite and
+  Postgres. Matching folds ASCII letters only. `%` matches zero or more
+  characters, and `_` matches one character. A backslash quotes the next
+  character, so the Go raw string `a\_b` matches a literal underscore.
+  Two backslashes or a single trailing backslash match a literal backslash.
+  Both operators skip NULL values.
 - An enum field with declared values gets a value type and one constant
   per value (`PostsStatusValue`, `PostsStatusDraft`, `PostsStatusLive`).
   The model, both payloads and the column
@@ -2544,13 +2559,12 @@ app.Entity("posts", framework.EntityConfig{ /* … */ })
 // → GET /api/posts, POST /api/posts/_batch, GET /api/posts/_events
 ```
 
-This is the clean fix when a page/screen wants the same path as an entity (a
-home page at `/posts` vs. the `posts` CRUD): put the data routes under `/api`
-and let the UI own the bare paths. The generated OpenAPI spec expresses the
-prefix via its server URL, so `/openapi.json` stays consistent, and **MCP tool
-names are unchanged** (`posts_list`, not `api_posts_list`). `GroupEntity`
-routes are unaffected: a route group owns its own prefix. Leaving `APIPrefix`
-empty keeps the bare mounts, so adding it is never a breaking change.
+Use a prefix when the UI needs the bare paths. For example, a page can
+serve at `/posts` while CRUD serves at `/api/posts`. The generated
+OpenAPI operation paths include the prefix, and the MCP tool
+`posts_list` dispatches to the prefixed route. `GroupEntity` uses the
+group's own prefix. See [API versioning](api-versioning.md#1-a-single-global-prefix-withapiprefix)
+for prefix normalization and examples.
 
 > **Common mistake:** registering a screen at `/posts` while a `posts` entity
 > mounts there too. Without `APIPrefix` you'll get a route-conflict panic naming
@@ -2618,6 +2632,8 @@ server log only. When the refused constraint is one the entity declares
 body carries the fields the caller sent in the validation shape, so a
 form shows the refusal on the control:
 `{"error":"conflict","reason":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]},"field_reasons":{"number":["unique_taken"]}}`.
+SQLite matches table and column names in UNIQUE and NOT NULL diagnostics
+using ASCII case folding. The response uses the declared field's wire key.
 A relation's message is "refers to a record that does not exist". A
 column the caller did not send (the owner column of a per-account
 index) is not named, and a conflict on a `hidden` or `no_query` field
@@ -2763,6 +2779,10 @@ app.Entity("posts", framework.EntityConfig{
     }},
 })
 ```
+
+Go endpoint declarations accept methods in any case. Route registration,
+OpenAPI, and the SDK reference use `openapi.EntityEndpointMethod` to trim
+surrounding whitespace and uppercase the method.
 
 Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
 entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are

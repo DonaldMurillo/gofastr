@@ -51,18 +51,17 @@ package sanitizefix
 
 import (
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"regexp"
 	"regexp/syntax"
-	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -77,7 +76,7 @@ func run(pass *analysis.Pass) (any, error) {
 	var decls []*ast.FuncDecl
 	byObj := map[types.Object]*ast.FuncDecl{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -166,14 +165,14 @@ func recombines(pass *analysis.Pass, call *ast.CallExpr, patterns *regexpBinding
 				old = conv.Args[0] // []byte("<!--")
 			}
 		}
-		s, ok := constString(pass, old)
+		s, ok := astx.StringConstant(pass, old)
 		return ok && utf8.RuneCountInString(s) >= 2
 	}
 	return false
 }
 
 func emptyReplacement(pass *analysis.Pass, e ast.Expr) bool {
-	if s, ok := constString(pass, e); ok {
+	if s, ok := astx.StringConstant(pass, e); ok {
 		return s == ""
 	}
 	e = ast.Unparen(e)
@@ -185,21 +184,13 @@ func emptyReplacement(pass *analysis.Pass, e ast.Expr) bool {
 	switch x := e.(type) {
 	case *ast.CallExpr:
 		if tv, ok := pass.TypesInfo.Types[x.Fun]; ok && tv.IsType() && len(x.Args) == 1 {
-			s, ok := constString(pass, x.Args[0])
+			s, ok := astx.StringConstant(pass, x.Args[0])
 			return ok && s == ""
 		}
 	case *ast.CompositeLit:
 		return len(x.Elts) == 0
 	}
 	return false
-}
-
-func constString(pass *analysis.Pass, e ast.Expr) (string, bool) {
-	tv, ok := pass.TypesInfo.Types[e]
-	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", false
-	}
-	return constant.StringVal(tv.Value), true
 }
 
 // regexpVars maps every variable initialised with regexp.MustCompile
@@ -306,7 +297,7 @@ func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != "regexp" || (fn.Name() != "MustCompile" && fn.Name() != "Compile") {
 		return "", false
 	}
-	return constString(pass, call.Args[0])
+	return astx.StringConstant(pass, call.Args[0])
 }
 
 func patternOf(pass *analysis.Pass, x ast.Expr, patterns *regexpBindings) (string, bool) {

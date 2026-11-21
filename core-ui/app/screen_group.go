@@ -19,7 +19,6 @@ type ScreenGroup struct {
 	screens    []*Screen
 	children   []*ScreenGroup // nested sub-groups
 	parent     *ScreenGroup
-	parentApp  *Router
 	standalone bool // when true, the host's default layout does NOT wrap this group
 
 	fills map[*Outlet]fillDecl

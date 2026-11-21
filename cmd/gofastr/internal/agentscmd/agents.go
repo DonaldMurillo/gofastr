@@ -49,9 +49,7 @@ func RunAgents(args []string) {
 		return
 	}
 	if len(args) == 0 {
-		cli.Fail("Subcommand required.")
-		cli.Info("Usage: gofastr agents [init|sync|skill] [dir]")
-		cli.OsExit(1)
+		cli.UsageFail("Subcommand required. Usage: gofastr agents [init|sync|skill] [dir]")
 	}
 	switch args[0] {
 	case "init":
@@ -61,9 +59,7 @@ func RunAgents(args []string) {
 	case "skill":
 		runAgentsSkill(args[1:])
 	default:
-		cli.Fail("Unknown subcommand %q.", args[0])
-		cli.Info("Try `gofastr agents init`, `gofastr agents sync`, or `gofastr agents skill`.")
-		cli.OsExit(1)
+		cli.UsageFail("Unknown subcommand %q. Try `gofastr agents init`, `gofastr agents sync`, or `gofastr agents skill`.", args[0])
 	}
 }
 

@@ -2,7 +2,6 @@ package framework
 
 import (
 	"context"
-	"fmt"
 )
 
 // WithSeed registers fn to run at Start after auto-migration and entity
@@ -19,18 +18,9 @@ func (a *App) WithSeed(fn func(ctx context.Context) error) *App {
 func (a *App) runSeedHooks() error {
 	a.ensureLifecycleContext()
 	for _, fn := range a.seedHooks {
-		if err := a.runSeedHookSafe(fn); err != nil {
+		if err := a.runHookSafe("seed hook", fn); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (a *App) runSeedHookSafe(fn func(ctx context.Context) error) (err error) {
-	defer func() {
-		if v := recover(); v != nil {
-			err = recoveredPanic(a.Logger(), "seed hook", fmt.Sprintf("%T", v))
-		}
-	}()
-	return fn(a.appCtx)
 }

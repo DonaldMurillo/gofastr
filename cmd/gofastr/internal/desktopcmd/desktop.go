@@ -29,7 +29,7 @@ import (
 func RunDesktop(args []string) {
 	if len(args) == 0 {
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	switch args[0] {
@@ -49,7 +49,7 @@ func RunDesktop(args []string) {
 		}
 		cli.Fail("Unknown desktop verb: %s (want run, build, install, uninstall, types, keygen, or feed)", args[0])
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -78,7 +78,7 @@ func runDesktopRun(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
@@ -215,24 +215,7 @@ func runDesktopRun(args []string) {
 	// the loop below sees it on its first turn, and watchCtx has already
 	// ended the dependency query.
 	watch := devcmd.NewWatch(watchCtx, f.dir, f.pkg, buildEnv)
-	go func() {
-		poll := watch.Poller(before, since)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				if poll.Changed() {
-					select {
-					case reload <- struct{}{}:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go watch.Notify(before, since, stop, reload)
 
 	for {
 		select {
@@ -398,7 +381,7 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if f.formatSet && (targetOS != "linux" || (f.format != "executable" && f.format != "tar.gz")) {
@@ -792,7 +775,7 @@ func runDesktopTypes(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 

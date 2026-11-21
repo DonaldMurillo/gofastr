@@ -2,6 +2,7 @@ package analyzers_test
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestPhysicalSidesAreReported(t *testing.T) {
 // CSS; the override's exemption ends at its own closing brace, and the
 // rule after it is judged on its own bytes.
 func TestPhysicalSideAfterDirBlockOnSameLine(t *testing.T) {
-	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { transform: scaleX(-1) } .menu { border-right: 1px solid var(--color-border); }`\n")
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { BORDER-LEFT: 1px solid red } .menü { BORDER-RIGHT: 1px solid var(--color-border); }`\n")
 	found := countRule(t, ds, contracts.RulePhysicalSide)
 	if len(found) != 1 || !strings.Contains(found[0].Message, "border-inline-end") {
 		t.Fatalf("the .menu rule after the :dir() block is its own declaration; got %v", found)
@@ -77,9 +78,115 @@ func TestLTRBackgroundOverrideDoesNotMirrorRTL(t *testing.T) {
 
 func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	ds := designFixture(t, "core-ui/widget/page.go",
-		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"left\", \"{spacing.lg}\", \"text-align\", \"right\").End()\n}\n")
+		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"LEFT\", \"{spacing.lg}\", \"TEXT-ALIGN\", \"right\").End()\n}\n")
 	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 2 {
 		t.Fatalf("want 2 GOFASTR1824 on the Set pairs, got %d: %v", len(found), found)
+	}
+}
+
+func TestPhysicalSideBuilderDirOverride(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{"\tss.Rule(\".a:dir(rtl)\").Set(\"margin-left\", \"4px\").End()\n", 0},
+		{"\tss.Rule(\".a\").Pseudo(\":dir(rtl)\", \"left\", \"8px\").End()\n", 0},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tss.Set(\"margin-left\", \"4px\")\n", 0},
+		{"\tss.Rule(\".a:dir(rtl)\").End()\n\tss.Rule(\".b\")\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a\")\n\tif rtlOnly { ss.Rule(\".a:dir(rtl)\") }\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tif rtlOnly { ss.Rule(\".b\") }\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\")\n\tif rtlOnly { ss.Set(\"margin-left\", \"4px\") }\n", 1},
+		{"\tif rtlOnly { ss.Rule(\".a:dir(rtl)\"); ss.Set(\"margin-left\", \"4px\") }\n", 0},
+		{"\tss.Rule(\".a:dir(rtl), .b\").Set(\"margin-left\", \"4px\").End()\n", 1},
+		{"\tss.Rule(\".a, .b:dir(rtl)\")\n\tss.Set(\"margin-left\", \"4px\")\n", 1},
+		{"\tss.Rule(\".a:dir(rtl):is(.x, .y), .b:dir(ltr)\").Set(\"margin-left\", \"4px\").End()\n", 0},
+		{"\tss.Rule(\".a:is(:dir(rtl), .b)\").Set(\"margin-left\", \"4px\").End()\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\").Child(\".b, .c\", \"left\", \"8px\").End()\n", 1},
+		{"\tss.Rule(\".a:dir(rtl)\").Child(\".b, .c:dir(ltr)\", \"left\", \"8px\").End()\n", 0},
+		{"\tss.Rule(\".a\").Pseudo(\":hover\", \"left\", \"8px\").End()\n", 1},
+	} {
+		ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet, rtlOnly bool) {\n"+tc.body+"}\n")
+		if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != tc.want {
+			t.Errorf("%q: want %d GOFASTR1824, got %d: %v", tc.body, tc.want, len(found), found)
+		}
+	}
+}
+
+func TestPhysicalSideCSSDirOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name, css string
+		want      int
+	}{
+		{"mixed list", ".a:dir(rtl), .b { margin-left: 4px; }", 1},
+		{"multiline mixed list", ".a,\n.b:dir(rtl)\n{ margin-left: 4px; }", 1},
+		{"all directional", ".a:dir(rtl):is(.x, .y),\n.b:dir(ltr) { margin-left: 4px; }", 0},
+		{"nested dir is insufficient", ".a:is(:dir(rtl), .b) { margin-left: 4px; }", 1},
+		{"mixed list is no RTL mirror", ".a { background-position: right 12px center; }\n.a:dir(rtl), .b { background-position: left 12px center; }", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, input := range []struct{ rel, body string }{
+				{"framework/ui/x.style.css", tc.css},
+				{"framework/ui/raw.go", "package ui\nvar other = `unclosed(`\nvar css = `" + tc.css + "`"},
+				{"framework/ui/quoted.go", "package ui\nvar css = " + strings.Join(quoteCSSLines(tc.css), " +\n")},
+			} {
+				found := countRule(t, designFixture(t, input.rel, input.body), contracts.RulePhysicalSide)
+				if len(found) != tc.want {
+					t.Errorf("%s: want %d GOFASTR1824, got %v", input.rel, tc.want, found)
+				}
+			}
+		})
+	}
+}
+
+func quoteCSSLines(css string) []string {
+	lines := strings.SplitAfter(css, "\n")
+	for i, line := range lines {
+		lines[i] = strconv.Quote(line)
+	}
+	return lines
+}
+
+func TestPhysicalSideIgnoresGoCompositeFields(t *testing.T) {
+	ds := designFixture(t, "battery/desktop/windows/shell_windows.go", "package windows\n\n"+
+		"func resize(width, height int) {\n"+
+		"\tbounds := struct{ Left, Top, Right, Bottom int32 }{Right: int32(width), Bottom: int32(height)}\n"+
+		"\t_ = bounds\n"+
+		"}\n")
+	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Fatalf("Go composite literal reported as CSS: %v", found)
+	}
+}
+
+func TestPhysicalSideIgnoresGoStringPairsOutsideBuilders(t *testing.T) {
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nimport \"net/url\"\n\n"+
+		"var coordinates = []string{\"right\", \"12px\"}\n"+
+		"func update(q url.Values) { q.Set(\"left\", \"12px\") }\n")
+	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Fatalf("Non-style string pairs reported as CSS: %v", found)
+	}
+}
+
+func TestPhysicalSideInSeparateBuilderCall(t *testing.T) {
+	ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet) {\n"+
+		"\tss.Rule(\".a\")\n"+
+		"\tss.Set(\n"+
+		"\t\t\"right\",\n"+
+		"\t\t\"12px\",\n"+
+		"\t)\n"+
+		"}\n")
+	findings := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 6 {
+		t.Fatalf("want the physical side at line 6: %v", findings)
+	}
+}
+
+func TestPhysicalSideInDesignSystemStylesheet(t *testing.T) {
+	ds := designFixture(t, "framework/ui/panel.style.css", "/* .a { left: 0; } */\n"+
+		".a { right: 0; }\n"+
+		".a:dir(rtl) { left: 0; }\n")
+	findings := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 2 {
+		t.Fatalf("want the physical side at line 2: %v", findings)
 	}
 }
 
@@ -135,7 +242,7 @@ func TestPhysicalSideDirBlockAcrossLines(t *testing.T) {
 	}{
 		{"var css = `.a:dir(rtl) {\n  margin-left: var(--spacing-sm, 4px);\n}`", 0},
 		{"var css = `.a:dir(rtl) {\n  margin-left: 0;\n}\n.b {\n  margin-left: var(--spacing-sm, 4px);\n}`", 1},
-		{"var css = `.a { background-position: right 12px center; }\n.a:dir(rtl) {\n  background-position: left 12px center;\n}`", 0},
+		{"var css = `.a { background-position: right 12px center; }\n.a:dir(rtl) {\n  BACKGROUND-POSITION: left 12px center;\n}`", 0},
 		{"var css = `.a { background-position: right 12px center; }`\n\n// a :dir(rtl) rule could flip background-position here\n", 1},
 	} {
 		ds := designFixture(t, "framework/ui/x.go", "package ui\n\n"+tc.src+"\n")

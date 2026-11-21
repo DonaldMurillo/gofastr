@@ -27,13 +27,7 @@ func TestAuthMD_ServesMarkdown(t *testing.T) {
 }
 
 func TestAuthMD_NotConfigured404(t *testing.T) {
-	app, cleanup := startApp(t, NewApp())
-	defer cleanup()
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth.md", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("want 404 without WithAuthMD, got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/auth.md", "want 404 without WithAuthMD,")
 }
 
 func TestAuthMD_AgentAuthMergedIntoAS(t *testing.T) {

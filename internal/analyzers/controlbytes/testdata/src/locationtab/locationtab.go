@@ -113,3 +113,18 @@ func refuseNewlineRedirect(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, target, http.StatusPermanentRedirect)
 }
+
+func scrubOctalException(s string) string {
+	var b strings.Builder
+	for i := range len(s) {
+		if c := s[i]; c < 0x20 && c != 0o11 || c == 0x7f {
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func redirectOctalException(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, scrubOctalException(r.URL.Path), http.StatusPermanentRedirect) // want `controlbytes: request-derived value reaches http.Redirect Location unscrubbed`
+}

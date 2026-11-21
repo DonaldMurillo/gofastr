@@ -25,7 +25,7 @@ func (s *SettingsScreen) Load(ctx context.Context) error {
     CompanyName.Seed(ctx, s.tenant.Name)
     return nil
 }
-editBtn := interactive.OnClick(ui.Button("Rename"),
+editBtn := interactive.OnClick(ui.Button(ui.ButtonConfig{Label: "Rename"}),
     CompanyName.Publish(interactive.Post("/island/org/rename")))
 
 // CONSUMERS: pure presentational, anywhere; attr + initial value from one source.

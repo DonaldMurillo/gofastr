@@ -242,10 +242,5 @@ func (s *SQLPasskeyStore) DeletePasskey(ctx context.Context, userID string, id [
 // DeletePasskeysForUser implements PasskeyStore.
 func (s *SQLPasskeyStore) DeletePasskeysForUser(ctx context.Context, userID string) (int, error) {
 	q := fmt.Sprintf(`DELETE FROM %s WHERE user_id = $1`, query.QuoteFolded(s.table))
-	res, err := s.db.ExecContext(ctx, q, userID)
-	if err != nil {
-		return 0, err
-	}
-	n, err := res.RowsAffected()
-	return int(n), err
+	return execPurgeCount(ctx, s.db, q, userID)
 }

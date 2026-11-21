@@ -185,9 +185,8 @@ results, the harness contract) are exempt. The exemption list lives in
   over one bootstrap API.
 - [Security defaults](security.md): default middleware chain, CSP,
   CORS, CSRF, rate limiting.
-- [Auditing init-time registrations](audit-deps.md): `gofastr audit deps`
-  lists every `init()` that mutates framework-wide state, so a dependency
-  that hijacks startup is visible before `main()` runs.
+- [Auditing global registration call sites](audit-deps.md): `gofastr audit deps`
+  reports candidate calls to framework-wide registration APIs in a selected source tree.
 - [Idempotency keys](idempotency.md): `Idempotency-Key` header
   support for safe-retry of POST / PUT / PATCH / DELETE.
 - [Health checks](health-checks.md): `/healthz` + `/readyz`,

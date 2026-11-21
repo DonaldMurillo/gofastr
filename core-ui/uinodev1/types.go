@@ -84,7 +84,7 @@ func (p StackProps) validate(lim Limits) error {
 	if p.Align != "" && !isAlignValue(p.Align) {
 		return errBadEnum("stack.align", p.Align)
 	}
-	return checkStrings(lim, "stack", p.Gap)
+	return checkStrings(lim, "stack", p.Gap, p.Align, p.Direction)
 }
 func (p StackProps) estimatedTextSize() int { return len(p.Gap) + len(p.Align) + len(p.Direction) }
 
@@ -100,7 +100,7 @@ func (p ClusterProps) validate(lim Limits) error {
 	if p.Align != "" && !isAlignValue(p.Align) {
 		return errBadEnum("cluster.align", p.Align)
 	}
-	return checkStrings(lim, "cluster", p.Gap)
+	return checkStrings(lim, "cluster", p.Gap, p.Align)
 }
 func (p ClusterProps) estimatedTextSize() int { return len(p.Gap) + len(p.Align) }
 
@@ -145,7 +145,7 @@ func (p CardProps) validate(lim Limits) error {
 	if p.Elevation != "" && p.Elevation != "flat" && p.Elevation != "low" && p.Elevation != "high" {
 		return errBadEnum("card.elevation", p.Elevation)
 	}
-	return checkStrings(lim, "card", p.Title)
+	return checkStrings(lim, "card", p.Title, p.Elevation)
 }
 func (p CardProps) estimatedTextSize() int { return len(p.Title) + len(p.Elevation) }
 
@@ -169,8 +169,8 @@ func (p HeadingProps) validate(lim Limits) error {
 	if p.Level < 1 || p.Level > 6 {
 		return errBadRange("heading.level", p.Level, 1, 6)
 	}
-	if p.Text == "" {
-		return errRequired("heading.text")
+	if err := requiredString("heading.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "heading", p.Text)
 }
@@ -184,8 +184,8 @@ type ParagraphProps struct {
 func (ParagraphProps) propsMarker()             {}
 func (ParagraphProps) childPolicy() childPolicy { return childPolicyNone }
 func (p ParagraphProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("paragraph.text")
+	if err := requiredString("paragraph.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "paragraph", p.Text)
 }
@@ -199,8 +199,8 @@ type TextProps struct {
 func (TextProps) propsMarker()             {}
 func (TextProps) childPolicy() childPolicy { return childPolicyNone }
 func (p TextProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("text.text")
+	if err := requiredString("text.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "text", p.Text)
 }
@@ -214,8 +214,8 @@ type StrongProps struct {
 func (StrongProps) propsMarker()             {}
 func (StrongProps) childPolicy() childPolicy { return childPolicyNone }
 func (p StrongProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("strong.text")
+	if err := requiredString("strong.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "strong", p.Text)
 }
@@ -229,8 +229,8 @@ type EmProps struct {
 func (EmProps) propsMarker()             {}
 func (EmProps) childPolicy() childPolicy { return childPolicyNone }
 func (p EmProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("em.text")
+	if err := requiredString("em.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "em", p.Text)
 }
@@ -244,8 +244,8 @@ type CodeProps struct {
 func (CodeProps) propsMarker()             {}
 func (CodeProps) childPolicy() childPolicy { return childPolicyNone }
 func (p CodeProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("code.text")
+	if err := requiredString("code.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "code", p.Text)
 }
@@ -259,8 +259,8 @@ type SmallProps struct {
 func (SmallProps) propsMarker()             {}
 func (SmallProps) childPolicy() childPolicy { return childPolicyNone }
 func (p SmallProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("small.text")
+	if err := requiredString("small.text", p.Text); err != nil {
+		return err
 	}
 	return checkStrings(lim, "small", p.Text)
 }
@@ -275,13 +275,13 @@ type BadgeProps struct {
 func (BadgeProps) propsMarker()             {}
 func (BadgeProps) childPolicy() childPolicy { return childPolicyNone }
 func (p BadgeProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("badge.text")
+	if err := requiredString("badge.text", p.Text); err != nil {
+		return err
 	}
 	if p.Tone != "" && !isToneValue(p.Tone) {
 		return errBadEnum("badge.tone", p.Tone)
 	}
-	return checkStrings(lim, "badge", p.Text)
+	return checkStrings(lim, "badge", p.Text, p.Tone)
 }
 func (p BadgeProps) estimatedTextSize() int { return len(p.Text) + len(p.Tone) }
 
@@ -376,7 +376,7 @@ func (p StatCardProps) validate(lim Limits) error {
 	if p.Trend != "" && p.Trend != "up" && p.Trend != "down" && p.Trend != "flat" {
 		return errBadEnum("stat-card.trend", p.Trend)
 	}
-	return checkStrings(lim, "stat-card", p.Label, p.Value, p.Unit)
+	return checkStrings(lim, "stat-card", p.Label, p.Value, p.Unit, p.Trend)
 }
 func (p StatCardProps) estimatedTextSize() int {
 	return len(p.Label) + len(p.Value) + len(p.Unit) + len(p.Trend)
@@ -467,13 +467,13 @@ type ButtonProps struct {
 func (ButtonProps) propsMarker()             {}
 func (ButtonProps) childPolicy() childPolicy { return childPolicyNone }
 func (p ButtonProps) validate(lim Limits) error {
-	if p.Label == "" {
-		return errRequired("button.label")
+	if err := requiredString("button.label", p.Label); err != nil {
+		return err
 	}
 	if p.Variant != "" && !isButtonVariant(p.Variant) {
 		return errBadEnum("button.variant", p.Variant)
 	}
-	return checkStrings(lim, "button", p.Label)
+	return checkStrings(lim, "button", p.Label, p.Variant)
 }
 func (p ButtonProps) estimatedTextSize() int { return len(p.Label) + len(p.Variant) }
 
@@ -486,8 +486,8 @@ type LinkProps struct {
 func (LinkProps) propsMarker()             {}
 func (LinkProps) childPolicy() childPolicy { return childPolicyNone }
 func (p LinkProps) validate(lim Limits) error {
-	if p.Text == "" {
-		return errRequired("link.text")
+	if err := requiredString("link.text", p.Text); err != nil {
+		return err
 	}
 	if p.To != "" && !IsValidHostRelative(p.To) {
 		return errBadURL("link.to", p.To)
@@ -505,14 +505,14 @@ type ImageProps struct {
 func (ImageProps) propsMarker()             {}
 func (ImageProps) childPolicy() childPolicy { return childPolicyNone }
 func (p ImageProps) validate(lim Limits) error {
-	if p.Src == "" {
-		return errRequired("image.src")
+	if err := requiredString("image.src", p.Src); err != nil {
+		return err
 	}
 	if !IsValidHostRelative(p.Src) {
 		return errBadURL("image.src", p.Src)
 	}
-	if p.Alt == "" {
-		return errRequired("image.alt")
+	if err := requiredString("image.alt", p.Alt); err != nil {
+		return err
 	}
 	return checkStrings(lim, "image", p.Src, p.Alt)
 }
@@ -540,6 +540,13 @@ func isButtonVariant(s string) bool {
 		return true
 	}
 	return false
+}
+
+func requiredString(field, v string) error {
+	if v == "" {
+		return errRequired(field)
+	}
+	return nil
 }
 
 func checkStrings(lim Limits, field string, vals ...string) error {

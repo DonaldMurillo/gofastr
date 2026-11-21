@@ -53,7 +53,7 @@ func CheckKitRoots(sheet *Stylesheet, roots []KitRoot) []Diagnostic {
 	}
 	c := &kitRootChecker{roots: roots}
 	for _, r := range sheet.Rules {
-		c.walk(r, nil, false)
+		c.walk(r, nil)
 	}
 	slices.SortStableFunc(c.out, func(a, b Diagnostic) int {
 		if a.Line != b.Line {
@@ -69,19 +69,15 @@ type kitRootChecker struct {
 	out   []Diagnostic
 }
 
-func (c *kitRootChecker) walk(r *Rule, parent *KitRoot, inKF bool) {
-	if r.At {
-		kf := inKF || r.Name == "keyframes"
-		for _, n := range r.Nested {
-			c.walk(n, parent, kf)
-		}
+func (c *kitRootChecker) walk(r *Rule, parent *KitRoot) {
+	if r.At && r.Name == "keyframes" {
 		return
 	}
-	if inKF {
-		return
+	match := parent
+	if !r.At {
+		match = c.subjectRoot(r.Prel, parent)
 	}
-	match := c.subjectRoot(r.Prel, parent)
-	if match != nil {
+	if match != nil && (!r.At || r.Name == "media" || r.Name == "container" || r.Name == "supports") {
 		for _, d := range r.Decls {
 			if IsPlacementProperty(d.Name) {
 				continue
@@ -101,7 +97,7 @@ func (c *kitRootChecker) walk(r *Rule, parent *KitRoot, inKF bool) {
 		}
 	}
 	for _, n := range r.Nested {
-		c.walk(n, match, inKF)
+		c.walk(n, match)
 	}
 }
 

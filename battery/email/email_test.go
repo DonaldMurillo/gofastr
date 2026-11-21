@@ -5,87 +5,12 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestEmailCreation(t *testing.T) {
-	email := Email{
-		From:     "sender@example.com",
-		To:       []string{"alice@example.com", "bob@example.com"},
-		CC:       []string{"cc@example.com"},
-		BCC:      []string{"bcc@example.com"},
-		Subject:  "Test Subject",
-		TextBody: "Hello, World!",
-		HTMLBody: "<h1>Hello, World!</h1>",
-		Attachments: []Attachment{
-			{
-				Filename:    "test.txt",
-				Content:     []byte("test content"),
-				ContentType: "text/plain",
-			},
-		},
-		Headers: map[string]string{
-			"X-Custom": "value",
-		},
-	}
-
-	if email.From != "sender@example.com" {
-		t.Errorf("expected From to be sender@example.com, got %s", email.From)
-	}
-	if len(email.To) != 2 {
-		t.Errorf("expected 2 To recipients, got %d", len(email.To))
-	}
-	if len(email.CC) != 1 {
-		t.Errorf("expected 1 CC recipient, got %d", len(email.CC))
-	}
-	if len(email.BCC) != 1 {
-		t.Errorf("expected 1 BCC recipient, got %d", len(email.BCC))
-	}
-	if email.Subject != "Test Subject" {
-		t.Errorf("expected Subject to be Test Subject, got %s", email.Subject)
-	}
-	if email.TextBody != "Hello, World!" {
-		t.Errorf("expected TextBody to be Hello, World!, got %s", email.TextBody)
-	}
-	if email.HTMLBody != "<h1>Hello, World!</h1>" {
-		t.Errorf("expected HTMLBody, got %s", email.HTMLBody)
-	}
-	if len(email.Attachments) != 1 {
-		t.Errorf("expected 1 attachment, got %d", len(email.Attachments))
-	}
-	if email.Attachments[0].Filename != "test.txt" {
-		t.Errorf("expected attachment filename test.txt, got %s", email.Attachments[0].Filename)
-	}
-	if email.Headers["X-Custom"] != "value" {
-		t.Errorf("expected X-Custom header to be value, got %s", email.Headers["X-Custom"])
-	}
-}
-
-func TestEmailEmptyFields(t *testing.T) {
-	email := Email{
-		From:    "sender@example.com",
-		To:      []string{"alice@example.com"},
-		Subject: "Minimal",
-	}
-
-	if len(email.CC) != 0 {
-		t.Errorf("expected no CC, got %d", len(email.CC))
-	}
-	if len(email.BCC) != 0 {
-		t.Errorf("expected no BCC, got %d", len(email.BCC))
-	}
-	if len(email.Attachments) != 0 {
-		t.Errorf("expected no attachments, got %d", len(email.Attachments))
-	}
-	if len(email.Headers) != 0 {
-		t.Errorf("expected no headers, got %d", len(email.Headers))
-	}
-}
 
 func TestLogSenderDefault(t *testing.T) {
 	sender := NewLogSender()
@@ -605,6 +530,28 @@ func TestBuildMessageSimple(t *testing.T) {
 	if !strings.Contains(msgStr, "Just text.") {
 		t.Error("expected text body")
 	}
+
+	t.Run("minimal", func(t *testing.T) {
+		msg, err := buildMessage(Email{
+			From:    "sender@example.com",
+			To:      []string{"alice@example.com"},
+			Subject: "Minimal",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wire := string(msg)
+		for _, want := range []string{"From: sender@example.com", "To: alice@example.com", "Subject: Minimal"} {
+			if !strings.Contains(wire, want) {
+				t.Errorf("minimal message missing %q", want)
+			}
+		}
+		for _, unwanted := range []string{"\r\nCc:", "\r\nBcc:", "multipart/", "Content-Disposition:"} {
+			if strings.Contains(wire, unwanted) {
+				t.Errorf("minimal message contains %q", unwanted)
+			}
+		}
+	})
 }
 
 func TestBuildMessageWithCC(t *testing.T) {
@@ -675,13 +622,40 @@ func TestBuildMessageMultipart(t *testing.T) {
 	if !strings.Contains(msgStr, "<p>HTML version.</p>") {
 		t.Error("expected HTML body in multipart message")
 	}
-}
 
-func TestErrSendFailed(t *testing.T) {
-	err := fmt.Errorf("%w: something went wrong", ErrSendFailed)
-	if !IsErrSendFailed(err) {
-		t.Error("expected error to match ErrSendFailed")
-	}
+	t.Run("populated", func(t *testing.T) {
+		msg, err := buildMessage(Email{
+			From:     "sender@example.com",
+			To:       []string{"alice@example.com", "bob@example.com"},
+			CC:       []string{"cc@example.com"},
+			BCC:      []string{"bcc@example.com"},
+			Subject:  "Test Subject",
+			TextBody: "Hello, World!",
+			HTMLBody: "<h1>Hello, World!</h1>",
+			Attachments: []Attachment{
+				{Filename: "test.txt", Content: []byte("test content"), ContentType: "text/plain"},
+			},
+			Headers: map[string]string{"X-Custom": "value"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wire := string(msg)
+		for _, want := range []string{
+			"From: sender@example.com", "To: alice@example.com, bob@example.com",
+			"Cc: cc@example.com", "Subject: Test Subject", "X-Custom: value",
+			"multipart/mixed", "multipart/alternative", "\r\nHello, World!\r\n", "<h1>Hello, World!</h1>",
+			`Content-Disposition: attachment; filename="test.txt"`,
+			base64.StdEncoding.EncodeToString([]byte("test content")),
+		} {
+			if !strings.Contains(wire, want) {
+				t.Errorf("populated message missing %q", want)
+			}
+		}
+		if strings.Contains(wire, "bcc@example.com") {
+			t.Error("populated message disclosed the blind recipient in the message body or headers")
+		}
+	})
 }
 
 // Both senders implement Sender.
@@ -689,8 +663,3 @@ var (
 	_ Sender = (*SMTPSender)(nil)
 	_ Sender = (*LogSender)(nil)
 )
-
-// IsErrSendFailed checks if an error wraps ErrSendFailed.
-func IsErrSendFailed(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "email: send failed")
-}

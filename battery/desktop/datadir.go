@@ -10,11 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// dataDirEnv, when set, replaces os.UserConfigDir() as the base the
-// per-app data dir lives under. Tests point it at a temp dir so a suite
-// never touches the developer's real Application Support; CI does the
-// same. The value must be absolute.
-const dataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
+// DataDirEnv names the absolute base-directory override for DataDir.
+const DataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
 
 // DataDir returns the per-app data directory under the OS user config
 // dir (os.UserConfigDir → Application Support, %AppData%,
@@ -45,28 +42,13 @@ func dataDirPath(id string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("desktop: resolve user config dir: %w", err)
 	}
-	if v := os.Getenv(dataDirEnv); v != "" {
+	if v := os.Getenv(DataDirEnv); v != "" {
 		if !filepath.IsAbs(v) {
-			return "", fmt.Errorf("desktop: %s must be absolute, got %q", dataDirEnv, v)
+			return "", fmt.Errorf("desktop: %s must be absolute, got %q", DataDirEnv, v)
 		}
 		base = v
 	}
 	return filepath.Join(base, id), nil
-}
-
-// appOptionsDataDir resolves the effective data directory for an app
-// id, honouring an explicit override (Config.DataDir).
-func appOptionsDataDir(override, id string) (string, error) {
-	if override != "" {
-		if !filepath.IsAbs(override) {
-			return "", fmt.Errorf("desktop: Config.DataDir %q must be absolute", override)
-		}
-		if err := fileperm.MkdirPrivate(override); err != nil {
-			return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
-		}
-		return override, nil
-	}
-	return DataDir(id)
 }
 
 // randomToken returns 32 bytes from crypto/rand, base64url-encoded.

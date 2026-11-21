@@ -409,7 +409,11 @@ func (s *scanner) consumeBadURLRemnants() {
 // Tokenize splits src into CSS tokens following the CSS Syntax Level 3 consume
 // algorithms.
 func Tokenize(src string) []Token {
-	s := newScanner(stripBOM(src))
+	return tokenize(stripBOM(src))
+}
+
+func tokenize(src string) []Token {
+	s := newScanner(src)
 	out := make([]Token, 0, 64)
 	emit := func(t TokenType, start, line, col int) {
 		out = append(out, Token{t, s.src[start:s.pos], line, col, start, s.pos})

@@ -34,9 +34,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -62,7 +63,7 @@ var setMethods = map[string]bool{
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

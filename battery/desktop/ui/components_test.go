@@ -20,7 +20,7 @@ func TestFloatingToolbarComposesUIToolbar(t *testing.T) {
 	for _, w := range []string{
 		`data-cui-comp="desktopui-floating-toolbar"`,
 		`data-cui-comp="ui-toolbar"`,
-		`role="toolbar"`,
+		`role="group"`,
 		`aria-label="Timer actions"`,
 		`data-cui-comp="desktopui-glass"`,
 	} {

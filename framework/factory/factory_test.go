@@ -3,7 +3,6 @@ package factory
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -239,4 +238,3 @@ func TestSequence_NextIsMonotonicAndConcurrentSafe(t *testing.T) {
 // the EntityRegistry interface (without importing it here, which
 // would re-create the cycle this package avoids).
 var _ EntityRegistry = (*fakeRegistry)(nil)
-var _ = errors.New

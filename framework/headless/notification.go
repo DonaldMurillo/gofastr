@@ -156,6 +156,19 @@ var toastVariantRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 var styleNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 
+// toastWordAttrs carries the dismiss label and the tone words a toast says,
+// on the stack for the server-rendered rows and on the template for the
+// module-cloned ones.
+func toastWordAttrs(w *Strings) html.Attrs {
+	return html.Attrs{
+		"data-hui-toast-dismiss-label": w.DismissTitled,
+		"data-hui-toast-tone-info":     w.ToneInfo,
+		"data-hui-toast-tone-success":  w.ToneSuccess,
+		"data-hui-toast-tone-warning":  w.ToneWarning,
+		"data-hui-toast-tone-danger":   w.ToneDanger,
+	}
+}
+
 // ToastTemplate renders the row template, every part the module fills present and empty.
 func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
@@ -177,7 +190,7 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 			render.Text("×")),
 	)
 	item := b.El("div", PartToastItem, Mark(Internal(nil), "data-hui-toast-item"), row)
-	attrs := html.Attrs{
+	attrs := Merge(html.Attrs{
 		"data-hui-toast-template":        "",
 		"data-hui-toast-glyph-info":      p.Glyphs["info"],
 		"data-hui-toast-glyph-success":   p.Glyphs["success"],
@@ -187,12 +200,7 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		"data-hui-toast-variant-success": s.Variant(PartRoot, "success"),
 		"data-hui-toast-variant-warning": s.Variant(PartRoot, "warning"),
 		"data-hui-toast-variant-danger":  s.Variant(PartRoot, "danger"),
-		"data-hui-toast-dismiss-label":   w.DismissTitled,
-		"data-hui-toast-tone-info":       w.ToneInfo,
-		"data-hui-toast-tone-success":    w.ToneSuccess,
-		"data-hui-toast-tone-warning":    w.ToneWarning,
-		"data-hui-toast-tone-danger":     w.ToneDanger,
-	}
+	}, toastWordAttrs(w))
 	if len(p.Variants) > 0 {
 		extra := map[string]toastVariant{}
 		for _, v := range p.Variants {
@@ -247,11 +255,7 @@ func ToastStack(p ToastStackProps, s Classes) render.HTML {
 		own["data-hui-toast-max"] = strconv.Itoa(p.Max)
 	}
 	w := p.Strings.Resolve()
-	own["data-hui-toast-dismiss-label"] = w.DismissTitled
-	own["data-hui-toast-tone-info"] = w.ToneInfo
-	own["data-hui-toast-tone-success"] = w.ToneSuccess
-	own["data-hui-toast-tone-warning"] = w.ToneWarning
-	own["data-hui-toast-tone-danger"] = w.ToneDanger
+	own = Merge(own, toastWordAttrs(w))
 	kids := append([]render.HTML{}, p.Toasts...)
 	return b.El("div", PartRoot, own, kids...)
 }

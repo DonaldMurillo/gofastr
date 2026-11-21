@@ -229,16 +229,6 @@ func ViewTransitionPresetCSS(preset string) (string, error) {
 	}
 }
 
-// MustViewTransitionPresetCSS is ViewTransitionPresetCSS for package-level and option-call
-// positions; an unknown name panics at the same stage a bad layout name would.
-func MustViewTransitionPresetCSS(preset string) string {
-	css, err := ViewTransitionPresetCSS(preset)
-	if err != nil {
-		panic(err)
-	}
-	return css
-}
-
 // TransitionSheet names the component sheet holding the layout's TransitionCSS, the data-cui-comp
 // marker its layer root carries; empty when the layout declares no transition.
 func (l *Layout) TransitionSheet() string {

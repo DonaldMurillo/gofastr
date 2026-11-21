@@ -3,7 +3,7 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"slices"
 	"testing"
 )
 
@@ -46,29 +46,25 @@ func TestConnectRedirectToGatedRouteIs404(t *testing.T) {
 	}
 }
 
-// A CONNECT redirect's bare target path is not a "METHOD /path" key, so
-// the gate must never be asked about it. A bare-key call would panic
-// and be refused by the gate's recovery, making the redirect return 404
-// instead of the 307 for the live route.
 func TestConnectRedirectGateSeesOnlyRouteKeys(t *testing.T) {
-	r := New()
-	var keys []string
-	r.SetRouteGate(func(pattern string) bool {
-		keys = append(keys, pattern)
-		if !strings.Contains(pattern, " ") {
-			panic("unexpected key " + pattern)
-		}
-		return true
-	})
-	r.Handle("", "/admin/panel/", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	rr := httptest.NewRecorder()
-	r.ServeHTTP(rr, httptest.NewRequest(http.MethodConnect, "/admin/panel", nil))
-	if rr.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("CONNECT /admin/panel = %d, want 307 to the live route", rr.Code)
-	}
-	for _, key := range keys {
-		if !strings.Contains(key, " ") {
-			t.Errorf("gate asked about bare key %q; want only METHOD /path keys", key)
-		}
+	for _, method := range []string{"", http.MethodConnect} {
+		t.Run("method="+method, func(t *testing.T) {
+			r := New()
+			const pattern = "/admin/{section}/"
+			want := method + " " + pattern
+			var keys []string
+			r.SetRouteGate(func(key string) bool {
+				keys = append(keys, key)
+				return key == want
+			})
+			r.Handle(method, pattern, status(http.StatusOK))
+			rec := fallbackServe(r, http.MethodConnect, "", "/admin/team%20space")
+			if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/admin/team%20space/" {
+				t.Errorf("CONNECT = %d %v, want redirect to the live route", rec.Code, rec.Header())
+			}
+			if !slices.Equal(keys, []string{want}) {
+				t.Errorf("gate keys = %q, want [%q]", keys, want)
+			}
+		})
 	}
 }

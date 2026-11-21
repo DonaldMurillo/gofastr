@@ -7,10 +7,11 @@
 //   - the look is siteheader.style.css, an owned style; Style.Scope
 //     stamps the owner on the root, and `gofastr gen styles` writes the
 //     class methods in siteheader_style.gen.go;
-//   - every dimension is a theme token: the page measure and the bar
-//     height are built-ins, and the one value only this bar needs, the
-//     phone menu's stagger, is its own token in siteheader.tokens.css,
-//     generated as Tokens for the app to Extend its theme with;
+//   - spacing and shared sizes use theme tokens, including the page
+//     measure and bar height. The glass blur and phone menu's motion
+//     offset are literal. The phone menu's stagger is declared in
+//     siteheader.tokens.css and generated as Tokens for the app to
+//     Extend its theme with;
 //   - the behaviour is the framework's: headless.Disclosure's module
 //     closes the phone menu on Escape, on a link tap and on navigation,
 //     and traps focus while it is open; the runtime's active-link pass

@@ -167,7 +167,11 @@ func TestSweepStaticUnresolvedDocIsWithheld(t *testing.T) {
 	a.RegisterScreen(scr, nil)
 	out := t.TempDir()
 	b := &Builder{Host: uihost.New(a), OutDir: out}
-	if err := b.writeLLMMD(context.Background(), &Result{}, func(p string) string { return p }, map[string]bool{}); err != nil {
+	locales, err := b.planLocales(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.writeLLMMD(locales[0], &Result{}, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
 	if doc := readOut(t, out, "admin/abc/llm.md"); strings.Contains(doc, "NIGHTFALL") || strings.Contains(doc, "secret admin body") {
@@ -438,8 +442,8 @@ func TestSweepStaticWatch(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := newMtimeMap()
-	m.scan([]string{dir})
+	m := &mtimeMap{}
+	m.files = m.scan([]string{dir})
 	if err := os.Remove(f); err != nil {
 		t.Fatal(err)
 	}

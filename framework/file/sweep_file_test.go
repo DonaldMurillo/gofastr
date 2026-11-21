@@ -171,6 +171,7 @@ func TestImageDerivativesValidateTable(t *testing.T) {
 		"ref-scheme":          {ImageDerivatives{Variants: []DerivedVariant{{StorageRef: "javascript:x"}}}, ErrFileFieldURLScheme},
 		"ref-traversal":       {ImageDerivatives{Variants: []DerivedVariant{{StorageRef: "a/../b"}}}, ErrFileFieldTraversal},
 		"ref-bidi":            {ImageDerivatives{Variants: []DerivedVariant{{StorageRef: "a‮b"}}}, ErrFileFieldControlBytes},
+		"mime-oversize":       {ImageDerivatives{Variants: []DerivedVariant{{MIME: "image/" + long}}}, ErrFileFieldOversize},
 		"mime-bidi":           {ImageDerivatives{Variants: []DerivedVariant{{MIME: "image/​webp"}}}, ErrFileFieldControlBytes},
 		"mime-control":        {ImageDerivatives{Variants: []DerivedVariant{{MIME: "image/webp\r\n"}}}, ErrFileFieldControlBytes},
 		"mime-unsafe":         {ImageDerivatives{Variants: []DerivedVariant{{MIME: "image/<x>"}}}, ErrFileFieldMimeUnsafe},
@@ -198,6 +199,12 @@ func TestVariantStorageRefsAndExternalURL(t *testing.T) {
 	}
 	if _, ok := VariantStorageRefs([]byte(`{"storage_ref":"a"}`)); ok {
 		t.Error("a JSON object was read as a variants array")
+	}
+	if refs, ok := VariantStorageRefs([]byte(`null`)); ok || len(refs) != 0 {
+		t.Errorf("null: refs = %v, ok = %v, want no refs and false", refs, ok)
+	}
+	if refs, ok := VariantStorageRefs([]byte(`[]`)); !ok || len(refs) != 0 {
+		t.Errorf("[]: refs = %v, ok = %v, want no refs and true", refs, ok)
 	}
 	for s, want := range map[string]bool{"http://h/x": true, "HTTPS://h/x": true, "/uploads/x": false, "ftp://h/x": false, "http:///x": false} {
 		if got := IsExternalURL(s); got != want {

@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, error) {
@@ -184,7 +186,7 @@ func Run(ctx context.Context, suite *Suite, opts Options) (Summary, string, erro
 		if err := os.MkdirAll(variantToolsDir, 0o700); err != nil {
 			return Summary{}, runDir, err
 		}
-		gofastrBin := filepath.Join(variantToolsDir, executableName("gofastr"))
+		gofastrBin := filepath.Join(variantToolsDir, proctree.ExecutableName("gofastr"))
 		buildCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		err = runCommand(buildCtx, variant.FrameworkRoot, filepath.Join(variantToolsDir, "build-gofastr.log"), nil, "go", "build", "-o", gofastrBin, "./cmd/gofastr")
 		cancel()
@@ -529,6 +531,9 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.BuilderDocsSearches = docsStats.Searches
 		result.BuilderDocsTopics = docsStats.Topics
 		result.BuilderUsedCapabilityMap = docsStats.UsedCapabilityMap
+		if docsStats.ReadErr != nil {
+			fmt.Fprintf(os.Stderr, "candidate %s: read CLI shim log: %v (CLI and docs counts are lower bounds)\n", mapping.BlindID, docsStats.ReadErr)
+		}
 		result.BuilderUsedMCP = builderUsedMCP(inv.LogPath, buildOutput)
 		integrityErr := verifyFrameworkIntegrity(variant.FrameworkRoot, gofastrBin, mapping.FrameworkFingerprint)
 		if integrityErr != nil {
@@ -575,7 +580,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 	if testErr != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, "go test: "+testErr.Error())
 	}
-	appBin := filepath.Join(mapping.ResultDir, executableName("candidate-app"))
+	appBin := filepath.Join(mapping.ResultDir, proctree.ExecutableName("candidate-app"))
 	compileCtx, compileCancel := context.WithTimeout(ctx, 10*time.Minute)
 	buildErr := runCommand(compileCtx, mapping.Workspace, filepath.Join(mapping.ResultDir, "go-build.log"), candidateEnv, "go", "build", "-o", appBin, ".")
 	compileCancel()
@@ -594,7 +599,7 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		return result
 	}
 
-	port, err := freePort()
+	port, err := proctree.FreePort()
 	if err != nil {
 		result.TechnicalIssues = append(result.TechnicalIssues, "allocate port: "+err.Error())
 		return result
@@ -604,32 +609,23 @@ func executeCandidate(ctx context.Context, suite *Suite, opts Options, gofastrBi
 		result.TechnicalIssues = append(result.TechnicalIssues, "server log: "+err.Error())
 		return result
 	}
-	server := exec.CommandContext(ctx, appBin)
-	configureCommandCancellation(server)
+	server := exec.Command(appBin)
 	server.Dir = mapping.Workspace
 	server.Env = environmentWithOverrides(candidateEnv, fmt.Sprintf("PORT=127.0.0.1:%d", port))
 	server.Stdout, server.Stderr = serverLog, serverLog
-	serverCleanup, err := startOwnedCommand(server)
+	serverCommand, err := proctree.Start(ctx, server)
 	if err != nil {
 		_ = serverLog.Close()
 		result.TechnicalIssues = append(result.TechnicalIssues, "start server: "+err.Error())
 		return result
 	}
-	serverExited := make(chan struct{})
-	var serverWaitErr error
-	go func() {
-		serverWaitErr = server.Wait()
-		close(serverExited)
-	}()
 	defer func() {
-		serverCleanup()
-		_ = server.Process.Kill()
-		<-serverExited
+		serverCommand.Stop()
 		_ = serverLog.Close()
 	}()
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	healthCtx, healthCancel := context.WithTimeout(ctx, 2*time.Minute)
-	err = waitForOwnedHealth(healthCtx, baseURL+"/healthz", serverExited, func() error { return serverWaitErr })
+	err = waitForOwnedHealth(healthCtx, baseURL+"/healthz", serverCommand)
 	healthCancel()
 	result.ServerSucceeded = err == nil
 	if err != nil {

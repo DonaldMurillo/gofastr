@@ -255,6 +255,7 @@ safe-but-reduced path.
 
 | Interface | Used by | Effect when implemented |
 |---|---|---|
+| `RoleSwapper` | Admin role editor, `AuthManager.SwapUserRoles` | Atomically replace roles only if the account still has the expected role set. `EntityUserStore` implements it. Stores without this interface refuse edits from the role editor. |
 | `OAuthLinker` | `OAuth2Plugin` | **Required** for production OAuth login: binds identity to `(provider, providerID)`. `EntityUserStore` implements it (creates a `<user_table>_oauth_links` table on `EnsureSchema`). Without it, `OAuth2Plugin.Init` fails closed in production. The legacy email-only fallback is gone because an IdP emitting an unverified email could otherwise sign in as an existing account. |
 | `OAuthEnrichedLinker` | `OAuth2Plugin` | Persist profile fields (name, avatar, email) so `AccountsPlugin` can return them in `/auth/accounts`. |
 | `OAuthProfileRefresher` | `OAuth2Plugin` | Update the profile of an existing link on a returning sign-in, never inserting one. `EntityUserStore` implements it. Without it the profile stays as it was at link time. |
@@ -1370,8 +1371,14 @@ by default; no configuration required.
 The same guard covers the other bodyless POSTs a signed-in user's cookie
 can carry: `/2fa/disable`, `/2fa/backup-codes` and `/2fa/enroll` refuse a
 cross-site request, so a hidden form on another site cannot turn off a
-user's second factor or replace their backup codes. `/2fa/verify` and
-`/2fa/challenge` read a JSON body and answer 415 to anything else.
+user's second factor or replace their backup codes. `/2fa/verify` accepts
+only JSON and returns 415 for any other content type. `/2fa/challenge`
+accepts either JSON or a form.
+
+Batteries that refuse the same forgeable shape with `i18n.HTTPError`
+share `auth.RejectCrossSiteForm(w, r)` — the admin battery's gate and
+the setup wizard's POST handler both call it — while auth's own form
+routes keep their redirect-shaped refusal.
 
 ## Browser-backend (BFF) posture
 
@@ -1618,6 +1625,8 @@ auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
 One store instance can back every limiter: keys are namespaced by
 `RateLimiterConfig.Scope`, which each built-in limiter defaults to a
 distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
+Scopes are case-sensitive. SQLite and Postgres sweeps expire attempts
+and blocks only inside the scope that triggered the sweep.
 A store error **fails closed** (denies with a short Retry-After): an
 attacker must never lift the limit by degrading its backend. See
 [Horizontal scaling](scaling.md).
@@ -1656,7 +1665,9 @@ The identity mutations are covered too: a successful `GET
 `oauth.unlinked` (Meta: provider, mirroring `oauth.linked`), and
 `AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
 so a role change driven from a script or future surface leaves the same
-trail the admin back-office writes.
+trail the admin back-office writes. `AuthManager.SwapUserRoles` emits the
+same event after a successful conditional update. It returns `false, nil`
+if the prior roles differ or the account disappears.
 
 `EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
 `AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8
@@ -2255,6 +2266,7 @@ GET    /auth/oauth/{provider}/callback  → callback, binds (provider, providerI
 Unlink refuses (`409`) when the requested unlink would leave the user
 with no remaining login method. The check considers both linked OAuth
 accounts and whether the user has set a real password.
+The SQL user store treats a NULL password flag as an unset password.
 
 Unlink also **drops the stored provider tokens**: when the OAuth2 plugin
 has a `TokenStore` (`OAuth2Config.TokenStore`), a successful

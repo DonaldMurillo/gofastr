@@ -1,5 +1,7 @@
 package crud
 
+import "github.com/DonaldMurillo/gofastr/framework/internal/mcpname"
+
 // MCPToolNames returns the names RegisterEntityMCPTools registers for
 // ch's entity, in registration order: the five CRUD tools, then one per
 // routable move under its own key. A namespace on the handler
@@ -11,10 +13,7 @@ func MCPToolNames(ch *CrudHandler) []string {
 	}
 	ent := ch.Entity.GetName()
 	name := func(action string) string {
-		if ch.MCPNamespace == "" {
-			return ent + "_" + action
-		}
-		return ch.MCPNamespace + "." + ent + "." + action
+		return mcpname.EntityTool(ch.MCPNamespace, ent, action)
 	}
 	names := []string{
 		name("list"),

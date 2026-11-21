@@ -64,7 +64,7 @@ func TestPlainSiteShipsCoreOnly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	_ = browserExecutable(t)
+	execPath := chromedptest.BrowserPath(t)
 
 	var mu sync.Mutex
 	moduleReqs := map[string]int{}
@@ -112,7 +112,10 @@ func TestPlainSiteShipsCoreOnly(t *testing.T) {
 	}))
 	t.Cleanup(obs.Close)
 
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	ctx := chromedptest.Context(t,
+		chromedptest.Timeout(60*time.Second),
+		chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)),
+	)
 	_ = chromedp.Run(ctx, network.Enable())
 
 	if err := chromedp.Run(ctx,

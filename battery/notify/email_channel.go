@@ -130,38 +130,17 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (er
 }
 
 // ErrUnsafeHeader is returned when rendered Extra contains a header
-// name/value that would let a caller smuggle SMTP headers (CR/LF), or
-// when it tries to override a reserved header that the channel owns.
+// name or value that email.ValidateHeaders refuses, or when it tries to
+// override Sender or Reply-To.
 var ErrUnsafeHeader = errors.New("notify: unsafe header")
 
-// reservedHeaderNames are header keys that callers must NOT override
-// through Rendered.Extra["headers"]. The channel or the sender computes
-// them itself (To/From/Subject and the MIME structure headers), or they
-// are routing-critical fields a caller could weaponize for recipient
-// smuggling (Bcc, Cc) or reply hijacking (Reply-To). Compared
-// case-insensitively.
-var reservedHeaderNames = map[string]struct{}{
-	"to":                        {},
-	"cc":                        {},
-	"bcc":                       {},
-	"from":                      {},
-	"sender":                    {},
-	"reply-to":                  {},
-	"subject":                   {},
-	"content-type":              {},
-	"content-transfer-encoding": {},
-	"mime-version":              {},
-}
-
 func validateCustomHeaders(h map[string]string) error {
-	for k, v := range h {
-		if strings.ContainsAny(k, "\r\n\x00:") {
-			return fmt.Errorf("%w: header name contains CR/LF/NUL/colon: %q", ErrUnsafeHeader, k)
-		}
-		if strings.ContainsAny(v, "\r\n\x00") {
-			return fmt.Errorf("%w: header value contains CR/LF/NUL: %q=%q", ErrUnsafeHeader, k, v)
-		}
-		if _, reserved := reservedHeaderNames[strings.ToLower(strings.TrimSpace(k))]; reserved {
+	if err := email.ValidateHeaders(h); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnsafeHeader, err)
+	}
+	for k := range h {
+		switch strings.ToLower(k) {
+		case "sender", "reply-to":
 			return fmt.Errorf("%w: reserved header %q cannot be overridden via Extra.headers", ErrUnsafeHeader, k)
 		}
 	}

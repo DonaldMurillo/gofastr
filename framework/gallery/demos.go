@@ -38,27 +38,32 @@ func InitialKanbanColumns() []KanbanColumn {
 	}
 }
 
+// SortableConfig describes a Kanban column and its rows at the given board version.
+func (c KanbanColumn) SortableConfig(version int) ui.SortableListConfig {
+	items := make([]ui.SortableItem, len(c.Cards))
+	for i, card := range c.Cards {
+		items[i] = ui.SortableItem{Key: card.Key, Label: card.Title}
+	}
+	return ui.SortableListConfig{
+		Label:       c.Title,
+		Group:       "kanban-demo",
+		Container:   c.ID,
+		RPCPath:     "/__site/sortable/move",
+		Version:     fmt.Sprintf("v%d", version),
+		ConflictRPC: "/__site/sortable/conflict?container=" + c.ID,
+		Items:       items,
+	}
+}
+
 // RenderKanbanBoard renders the columns as linked sortable lists at the
 // board's version. The caller owns any locking around cols.
 func RenderKanbanBoard(cols []KanbanColumn, version int) render.HTML {
 	rendered := make([]render.HTML, 0, len(cols))
 	for _, c := range cols {
-		items := make([]ui.SortableItem, len(c.Cards))
-		for i, card := range c.Cards {
-			items[i] = ui.SortableItem{Key: card.Key, Label: card.Title}
-		}
 		rendered = append(rendered, ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 			html.Heading(html.HeadingConfig{Level: 3},
 				render.Text(c.Title)),
-			ui.SortableList(ui.SortableListConfig{
-				Label:       c.Title,
-				Group:       "kanban-demo",
-				Container:   c.ID,
-				RPCPath:     "/__site/sortable/move",
-				Version:     fmt.Sprintf("v%d", version),
-				ConflictRPC: "/__site/sortable/conflict?container=" + c.ID,
-				Items:       items,
-			}),
+			ui.SortableList(c.SortableConfig(version)),
 		))
 	}
 	return ui.Grid(ui.GridConfig{Min: "14rem", Gap: ui.GapMD}, rendered...)
@@ -96,14 +101,7 @@ func RenderOptimisticCreateList(notes []OptimisticNote) render.HTML {
 func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 	items := make([]render.HTML, 0, len(notes))
 	for _, n := range notes {
-		trigger, _ := ui.ConfirmAction(ui.ConfirmActionConfig{
-			Name:         "opt-delete-" + n.ID,
-			TriggerLabel: "Delete",
-			Title:        "Delete this note?",
-			Body:         "It will be removed from the list.",
-			RPCPath:      "/__site/optimistic/delete?id=" + n.ID,
-			ConfirmLabel: "Delete it",
-		})
+		trigger, _ := optimisticDeleteAction(n.ID)
 		items = append(items, listRow(html.Attrs{"data-opt-id": n.ID},
 			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween},
 				render.Text(n.Title),
@@ -120,7 +118,24 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 // OptimisticFailDeleteTrigger renders the "Delete (will fail)" trigger,
 // whose modal's RPC always answers 422.
 func OptimisticFailDeleteTrigger() render.HTML {
-	trigger, _ := ui.ConfirmAction(ui.ConfirmActionConfig{
+	trigger, _ := optimisticFailDeleteAction()
+	return trigger
+}
+
+func optimisticDeleteAction(id string) (render.HTML, *widget.Builder) {
+	return ui.ConfirmAction(ui.ConfirmActionConfig{
+		Name:          "opt-delete-" + id,
+		TriggerLabel:  "Delete",
+		Title:         "Delete this note?",
+		Body:          "It will be removed from the list.",
+		RPCPath:       "/__site/optimistic/delete?id=" + id,
+		ConfirmLabel:  "Delete it",
+		SuccessSignal: "opt-delete-list",
+	})
+}
+
+func optimisticFailDeleteAction() (render.HTML, *widget.Builder) {
+	return ui.ConfirmAction(ui.ConfirmActionConfig{
 		Name:          "opt-delete-fail-n1",
 		TriggerLabel:  "Delete n1 (will fail)",
 		Title:         "Delete this note?",
@@ -129,7 +144,6 @@ func OptimisticFailDeleteTrigger() render.HTML {
 		ConfirmLabel:  "Delete it",
 		SuccessSignal: "opt-delete-list",
 	})
-	return trigger
 }
 
 // OptimisticDeleteModals returns the confirm modal of every initial delete
@@ -137,26 +151,10 @@ func OptimisticFailDeleteTrigger() render.HTML {
 func OptimisticDeleteModals() []*widget.Builder {
 	out := make([]*widget.Builder, 0, len(InitialOptimisticNotes)+1)
 	for _, n := range InitialOptimisticNotes {
-		_, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
-			Name:          "opt-delete-" + n.ID,
-			TriggerLabel:  "Delete",
-			Title:         "Delete this note?",
-			Body:          "It will be removed from the list.",
-			RPCPath:       "/__site/optimistic/delete?id=" + n.ID,
-			ConfirmLabel:  "Delete it",
-			SuccessSignal: "opt-delete-list",
-		})
+		_, modal := optimisticDeleteAction(n.ID)
 		out = append(out, modal)
 	}
-	_, failModal := ui.ConfirmAction(ui.ConfirmActionConfig{
-		Name:          "opt-delete-fail-n1",
-		TriggerLabel:  "Delete n1 (will fail)",
-		Title:         "Delete this note?",
-		Body:          "The demo handler rejects this with 422: the list must stay unchanged.",
-		RPCPath:       "/__site/optimistic/delete/fail?id=n1",
-		ConfirmLabel:  "Delete it",
-		SuccessSignal: "opt-delete-list",
-	})
+	_, failModal := optimisticFailDeleteAction()
 	out = append(out, failModal)
 	return out
 }
@@ -192,10 +190,15 @@ func RenderOptimisticDeleteDemoFor(notes []OptimisticNote) render.HTML {
 	listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "opt-delete-list")
 	return stack(
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: `trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
-    Name:    "opt-delete-" + item.ID,
-    RPCPath: "/__site/optimistic/delete?id=" + item.ID,
+    Name:          "opt-delete-" + item.ID,
+    TriggerLabel:  "Delete",
+    Title:         "Delete this note?",
+    Body:          "It will be removed from the list.",
+    RPCPath:       "/__site/optimistic/delete?id=" + item.ID,
+    ConfirmLabel:  "Delete it",
+    SuccessSignal: "opt-delete-list",
 })
-widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
+widget.MountBuilder(app.Router(), modal) // once, at startup`}),
 		listRegion,
 		ui.Cluster(ui.ClusterConfig{}, OptimisticFailDeleteTrigger()),
 		note(

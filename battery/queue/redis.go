@@ -2,9 +2,7 @@ package queue
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -561,17 +559,8 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 		// is claimed, so nothing can hold a key's later jobs back.
 		return ErrSequenceUnsupported
 	}
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = redisRandomID()
-	}
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = q.now()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	if err := normalizeJob(&job, func(job *Job) { defaultCreatedAt(job, q.now) }); err != nil {
+		return err
 	}
 	data, err := json.Marshal(job)
 	if err != nil {
@@ -684,7 +673,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// The pop's token names its record, and it becomes the claim token
 		// if this entry is the one claimed: Reclaim tells a record whose
 		// claim reached the processing hash by it.
-		token := redisRandomID()
+		token := randomID()
 		data, rec, err := q.pop(ctx, token)
 		if err != nil {
 			// Distinguish a genuinely empty queue (sentinel) from a real
@@ -703,6 +692,17 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			}
 			return Job{}, fmt.Errorf("dequeue: pop: %w", err)
 		}
+		// restoreAndRequeue returns a popped entry to the main list and
+		// re-enqueues the skipped jobs, joining every failure onto err.
+		restoreAndRequeue := func(err error, restoreBytes, restoreLabel string) error {
+			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", restoreBytes, true); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("%s: %w", restoreLabel, restoreErr))
+			}
+			if rerr := requeueSkipped(); rerr != nil {
+				return errors.Join(err, rerr)
+			}
+			return err
+		}
 
 		var job Job
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
@@ -714,12 +714,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			resultErr := fmt.Errorf("unmarshal job: %w", err)
 			if _, qerr := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", data, true); qerr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
-				}
+				return Job{}, restoreAndRequeue(resultErr, data, "restore malformed job")
 			}
-			rerr := requeueSkipped()
-			if rerr != nil {
+			if rerr := requeueSkipped(); rerr != nil {
 				resultErr = errors.Join(resultErr, rerr)
 			}
 			return Job{}, resultErr
@@ -753,26 +750,14 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 				// The bumped job cannot be re-encoded: restore the
 				// original bytes and surface the loss, the same
 				// contract a failed DLQ push holds.
-				resultErr := fmt.Errorf("dequeue: marshal exhausted job: %w", err)
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
-				}
-				rerr := requeueSkipped()
-				if rerr != nil {
-					resultErr = errors.Join(resultErr, rerr)
-				}
-				return Job{}, resultErr
+				return Job{}, restoreAndRequeue(
+					fmt.Errorf("dequeue: marshal exhausted job: %w", err),
+					data, "restore exhausted job")
 			}
 			if _, err := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", string(dlqData), true); err != nil {
-				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(dlqData), true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
-				}
-				rerr := requeueSkipped()
-				if rerr != nil {
-					resultErr = errors.Join(resultErr, rerr)
-				}
-				return Job{}, resultErr
+				return Job{}, restoreAndRequeue(
+					fmt.Errorf("dequeue: dead-letter exhausted job: %w", err),
+					string(dlqData), "restore exhausted job")
 			}
 			continue
 		}
@@ -785,15 +770,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// The bumped record cannot be re-encoded: restore the
 			// original bytes and surface the loss, the same
 			// no-silent-loss contract the processing push below holds.
-			resultErr := fmt.Errorf("dequeue: marshal bumped job: %w", err)
-			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
-			}
-			rerr := requeueSkipped()
-			if rerr != nil {
-				resultErr = errors.Join(resultErr, rerr)
-			}
-			return Job{}, resultErr
+			return Job{}, restoreAndRequeue(
+				fmt.Errorf("dequeue: marshal bumped job: %w", err),
+				data, "restore popped job")
 		}
 
 		// Track in processing queue for visibility timeout. The job was
@@ -811,15 +790,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// on a later Dequeue. If the restore itself fails the job is
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
-			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
-			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(bumped), true); restoreErr != nil {
-				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
-			}
-			rerr := requeueSkipped()
-			if rerr != nil {
-				resultErr = errors.Join(resultErr, rerr)
-			}
-			return Job{}, resultErr
+			return Job{}, restoreAndRequeue(
+				fmt.Errorf("dequeue: track in processing: %w", err),
+				string(bumped), "restore popped job")
 		}
 		if !claimedIt {
 			// The pop record was gone: an erasure removed the job while this
@@ -1513,11 +1486,4 @@ func (q *RedisQueue) Close() error {
 		q.unregisterErase()
 	}
 	return nil
-}
-
-// redisRandomID generates a 16-byte hex string ID.
-func redisRandomID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

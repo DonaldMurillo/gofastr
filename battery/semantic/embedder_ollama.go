@@ -59,9 +59,8 @@ type OllamaConfig struct {
 	// "nomic-embed-text". Whatever you pick must be a model the server
 	// has pulled.
 	Model string
-	// Dim is the embedding dimension. If 0, it is detected on the
-	// first call by inspecting the response. Setting it explicitly
-	// skips a probe at construction time and lets [FlatStore] pre-size.
+	// Dim sets the embedding dimension so [FlatStore] can size itself on open.
+	// If zero, the first successful [Embed] response determines the dimension.
 	Dim int
 	// Timeout is the per-request HTTP timeout. Defaults to 30s.
 	Timeout time.Duration

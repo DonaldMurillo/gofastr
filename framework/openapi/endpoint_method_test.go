@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -8,11 +9,12 @@ import (
 )
 
 func TestEndpointMethodIgnoresCase(t *testing.T) {
-	for _, method := range []string{"get", "head", "delete"} {
-		t.Run(method, func(t *testing.T) {
+	for _, raw := range []string{"get", "head", "delete", " get ", " head "} {
+		t.Run(raw, func(t *testing.T) {
+			method := strings.TrimSpace(raw)
 			definition := entity.Define("posts", entity.EntityConfig{
 				Fields: []schema.Field{{Name: "title", Type: schema.String}},
-				Endpoints: []entity.Endpoint{{Method: method, Path: "search", SDK: true,
+				Endpoints: []entity.Endpoint{{Method: raw, Path: "search", SDK: true,
 					InputSchema: []schema.Field{{Name: "rank", Type: schema.Int, Required: true}}}},
 			})
 			paths := getMap(t, EntityOpenAPI(reg(definition), "test", "1", nil).Build(), "paths")

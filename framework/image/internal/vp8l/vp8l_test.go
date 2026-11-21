@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/draw"
 	"testing"
 
 	"golang.org/x/image/webp"
@@ -142,32 +143,30 @@ func TestEncodeThreeColors(t *testing.T) {
 // distance prefix-code symbol overflowed the 40-symbol alphabet and
 // the encoder panicked at dFreq[distSym]++ in lz77.go. The fix caps
 // matchDist in findMatch so distSym stays in [0, 40).
-// TestUniformImageShortCircuitsMultiPass asserts that a solid-color
+// TestUniformImageUsesOnePass asserts that a solid-color
 // image is encoded in a single pass. The multi-pass strategy gains
 // nothing on inputs where every predictor mode produces the same
 // residual distribution (zero), so we save 4×CPU.
-func TestUniformImageShortCircuitsMultiPass(t *testing.T) {
-	src := image.NewNRGBA(image.Rect(0, 0, 128, 128))
-	for i := 0; i < len(src.Pix); i += 4 {
-		src.Pix[i+0] = 200
-		src.Pix[i+1] = 50
-		src.Pix[i+2] = 100
-		src.Pix[i+3] = 255
+func TestUniformImageUsesOnePass(t *testing.T) {
+	bounds := image.Rect(0, 0, 128, 128)
+	for _, test := range []struct {
+		name string
+		src  draw.Image
+	}{
+		{"NRGBA", image.NewNRGBA(bounds)},
+		{"RGBA", image.NewRGBA(bounds)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fill := image.NewUniform(color.NRGBA{R: 200, G: 50, B: 100, A: 255})
+			draw.Draw(test.src, bounds, fill, image.Point{}, draw.Src)
+			lastEncodePasses.Store(0)
+			out := roundTrip(t, test.src)
+			if passes := lastEncodePasses.Load(); passes != 1 {
+				t.Errorf("uniform image used %d passes, want 1", passes)
+			}
+			assertPixelEqual(t, test.src, out)
+		})
 	}
-	var buf bytes.Buffer
-	lastEncodePasses.Store(0)
-	if err := Encode(&buf, src); err != nil {
-		t.Fatalf("Encode: %v", err)
-	}
-	if p := lastEncodePasses.Load(); p != 1 {
-		t.Errorf("uniform image used %d passes, want 1", p)
-	}
-	// Sanity: still decodes correctly.
-	out, err := webp.Decode(&buf)
-	if err != nil {
-		t.Fatalf("webp.Decode: %v", err)
-	}
-	assertPixelEqual(t, src, out)
 }
 
 // TestDistanceBoundary pins the exact boundary of the distance

@@ -2,9 +2,7 @@ package processmoduletest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
@@ -38,47 +35,11 @@ import (
 // The child process is the test binary itself, re-executed under an env
 // guard (GOFASTR_PROCESS_MODULE_CHILD=…). The child wires a moduleproto
 // Peer over stdin/stdout and serves a configurable handshake/ready/http
-// behavior driven by more env vars. See [processModuleChildMain].
-
-// childEnvName is the env var gating the in-test child binary.
-const childEnvName = "GOFASTR_PROCESS_MODULE_CHILD"
-
-// childMode enumerates the behavior presets the child honors. The harness
-// sets one via [childEnvName].
-type childMode string
-
-const (
-	childModeEcho      childMode = "echo"       // happy path: handshake, ready, echo http
-	childModeBadDigest childMode = "bad_digest" // surface_sha256 mismatch → terminal
-	childModeSlow      childMode = "slow"       // http handler sleeps so kill -9 lands mid-call
-	childModeCrashExit childMode = "crash_exit" // exit 1 immediately on each spawn
-	// crash_in_handshake: exit 1 from inside the handshake handler, so
-	// the host's handshake call fails on the transport (peer closed /
-	// EOF / EPIPE) rather than through a verdict. The timing crash_exit
-	// hits by accident under load, made deterministic.
-	childModeCrashInHandshake childMode = "crash_in_handshake"
-)
-
-// childEnv returns the env block for re-executing the test binary as a
-// module child in the given mode. PATH is preserved so the child can exec.
-func childEnv(mode childMode, extra map[string]string) []string {
-	base := []string{
-		childEnvName + "=" + string(mode),
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + os.Getenv("HOME"),
-		"TMPDIR=" + os.Getenv("TMPDIR"),
-		"LANG=C.UTF-8",
-		"LC_ALL=C.UTF-8",
-	}
-	for k, v := range extra {
-		base = append(base, k+"="+v)
-	}
-	return base
-}
+// behavior driven by more env vars. See [pmtestkit.ChildMain].
 
 // descriptorForChild builds a valid descriptor pinned to the test-binary
 // artifact, with the given route + grants + surface digest.
-func descriptorForChild(t *testing.T, mode childMode) framework.ProcessModuleDescriptor {
+func descriptorForChild(t *testing.T, mode pmtestkit.Mode) framework.ProcessModuleDescriptor {
 	t.Helper()
 	path, sha := pmtestkit.ChildArtifact(t)
 	surface, surfaceErr := framework.ComputeSurfaceSHA256(framework.ProcessModuleDescriptor{
@@ -109,11 +70,11 @@ func descriptorForChild(t *testing.T, mode childMode) framework.ProcessModuleDes
 // newTestSupervisor constructs a supervisor with test-friendly knobs over
 // the given store. The runner is wrapped in an [envRunner] so the child
 // re-exec receives GOFASTR_PROCESS_MODULE_CHILD=<mode>.
-func newTestSupervisor(t *testing.T, store framework.ProcessModuleStore, mode childMode) *framework.ProcessModuleSupervisor {
+func newTestSupervisor(t *testing.T, store framework.ProcessModuleStore, mode pmtestkit.Mode) *framework.ProcessModuleSupervisor {
 	t.Helper()
 	sup, err := framework.NewProcessModuleSupervisor(framework.SupervisorConfig{
 		Store:             store,
-		Runner:            &envRunner{inner: &framework.TrustedProcessRunner{}, env: childEnv(mode, nil)},
+		Runner:            &envRunner{inner: &framework.TrustedProcessRunner{}, env: pmtestkit.Env(mode, nil)},
 		Broker:            framework.NopBroker{},
 		SpawnDeadline:     3 * time.Second,
 		PollInterval:      50 * time.Millisecond,
@@ -189,7 +150,7 @@ func safeLogf(t *testing.T) func(string, ...any) {
 func TestSupervisor_UntrustedNoSandbox(t *testing.T) {
 	store := newTestStore(t)
 	sup := newBareTestSupervisor(t, store, &framework.TrustedProcessRunner{})
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	d.TrustTier = framework.TrustUntrusted
 	_, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"})
 	if err == nil {
@@ -217,34 +178,18 @@ func (r *envRunner) Start(ctx context.Context, spec framework.ChildSpec) (framew
 	return r.inner.Start(ctx, spec)
 }
 
-// waitForState polls the supervisor's Info for name until state == want
-// or the timeout elapses. Fatal on timeout.
-func waitForState(t *testing.T, sup *framework.ProcessModuleSupervisor, name string, want framework.ProcessState, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		info, err := sup.Info(name)
-		if err == nil && info.State == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	info, _ := sup.Info(name)
-	t.Fatalf("waitForState %q: want %s, last=%s", name, want, info.State)
-}
-
 // ---- Test 2: handshake digest mismatch → terminal Failed, NO restart ----
 
 func TestSupervisor_HandshakeMismatchFailed(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
-		// Re-exec guard: the child runs [processModuleChildMain].
+	if os.Getenv(pmtestkit.EnvName) != "" {
+		// Re-exec guard: the child runs [pmtestkit.ChildMain].
 		return
 	}
 	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeBadDigest)
-	d := descriptorForChild(t, childModeBadDigest)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeBadDigest)
+	d := descriptorForChild(t, pmtestkit.ModeBadDigest)
 	// Surface digest mismatch: the descriptor says X, the child echoes Y
-	// (childModeBadDigest). The handshake must terminate the module.
+	// (pmtestkit.ModeBadDigest). The handshake must terminate the module.
 	if _, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -253,7 +198,7 @@ func TestSupervisor_HandshakeMismatchFailed(t *testing.T) {
 		t.Fatalf("enable: %v", err)
 	}
 	// Must land in Failed (terminal), not loop Crashed → Backoff → Starting.
-	waitForState(t, sup, d.Name, framework.StateFailed, 5*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateFailed, 5*time.Second)
 	// Wait another spawn-deadline and confirm no restart attempt.
 	time.Sleep(300 * time.Millisecond)
 	info, _ := sup.Info(d.Name)
@@ -268,12 +213,12 @@ func TestSupervisor_HandshakeMismatchFailed(t *testing.T) {
 // ---- Test 3: circuit opens after 5 crashes, generation bump resets ----
 
 func TestSupervisor_CircuitOpensAndGenResets(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeCrashExit)
-	d := descriptorForChild(t, childModeCrashExit)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeCrashExit)
+	d := descriptorForChild(t, pmtestkit.ModeCrashExit)
 	if _, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -317,12 +262,12 @@ func TestSupervisor_CircuitOpensAndGenResets(t *testing.T) {
 // TestSupervisor_CircuitOpensAndGenResets flaked under load: its child
 // sometimes exited before the handshake write rather than after it.
 func TestSupervisor_ChildDyingMidHandshakeIsACrash(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeCrashInHandshake)
-	d := descriptorForChild(t, childModeCrashInHandshake)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeCrashInHandshake)
+	d := descriptorForChild(t, pmtestkit.ModeCrashInHandshake)
 	if _, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -350,12 +295,12 @@ func TestSupervisor_ChildDyingMidHandshakeIsACrash(t *testing.T) {
 // ---- Test 5: disabled → 404; enabled-but-down → 503 + Retry-After ----
 
 func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeEcho)
-	d := descriptorForChild(t, childModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	if _, err := sup.Register(context.Background(), d, framework.ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -388,7 +333,7 @@ func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	// Wait for Ready, then verify a successful proxy call.
-	waitForState(t, sup, d.Name, framework.StateReady, 5*time.Second)
+	waitForStateTB(t, sup, d.Name, framework.StateReady, 5*time.Second)
 	okRec := httptest.NewRecorder()
 	okReq := httptest.NewRequest(http.MethodGet, "/echo", nil)
 	sup.ProxyHandler(d.Name, "echo").ServeHTTP(okRec, okReq)
@@ -422,101 +367,6 @@ func TestSupervisor_Disabled404_EnableDown503(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Child process (self-exec). The test binary re-execs itself with
-// GOFASTR_PROCESS_MODULE_CHILD=<mode>; this main wires a moduleproto Peer
-// over stdin/stdout and serves the configured behavior. Nothing is written
-// to the repo tree, the artifact IS the test binary copied to t.TempDir().
-// ============================================================================
-
-// processModuleChildMain is invoked from TestMain when the env guard is set.
-// It returns the exit code the process should use.
-func processModuleChildMain(mode childMode) int {
-	codec, err := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "child: codec:", err)
-		return 1
-	}
-	peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)
-	// Handshake handler: echo expected, with per-mode digest behavior.
-	if err := peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, params json.RawMessage) (any, error) {
-		var hp moduleproto.HandshakeParams
-		_ = json.Unmarshal(params, &hp)
-		surface := hp.Expected.SurfaceSHA256
-		if mode == childModeBadDigest {
-			surface = "DIFFERENT"
-		}
-		if mode == childModeCrashInHandshake {
-			os.Exit(1)
-		}
-		return moduleproto.HandshakeResult{
-			Proto: moduleproto.ProtoRange{Min: 1, Max: 1},
-			Identity: moduleproto.Identity{
-				Name:              hp.Expected.Name,
-				Version:           hp.Expected.Version,
-				InstanceID:        hp.Expected.InstanceID,
-				DesiredGeneration: hp.Expected.DesiredGeneration,
-			},
-			SurfaceSHA256: surface,
-			Features:      nil,
-			Ready:         false,
-		}, nil
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, "child: register handshake:", err)
-		return 1
-	}
-	// Ready handler.
-	if err := peer.Handle(moduleproto.MethodReady, func(context.Context, json.RawMessage) (any, error) {
-		return moduleproto.ReadyResult{Ready: true}, nil
-	}); err != nil {
-		return 1
-	}
-	// HTTP handler.
-	if err := peer.Handle(moduleproto.MethodHTTP, func(_ context.Context, params json.RawMessage) (any, error) {
-		var p moduleproto.HTTPRequestParams
-		_ = json.Unmarshal(params, &p)
-		switch mode {
-		case childModeSlow:
-			// Sleep so a kill -9 lands mid-call.
-			time.Sleep(2 * time.Second)
-		}
-		body, _ := json.Marshal(map[string]any{"route": p.RouteID, "ok": true})
-		return moduleproto.HTTPResponseResult{
-			Status:  http.StatusOK,
-			Headers: map[string]string{"X-Child": "demo"},
-			Body: moduleproto.HTTPResponseBody{
-				Kind:  moduleproto.BodyKindJSON,
-				Value: body,
-			},
-		}, nil
-	}); err != nil {
-		return 1
-	}
-	// Drain handler.
-	_ = peer.Handle(moduleproto.MethodDrain, func(context.Context, json.RawMessage) (any, error) {
-		return moduleproto.DrainResult{Inflight: 0}, nil
-	})
-	peer.Start()
-	if mode == childModeCrashExit {
-		// Exit immediately on spawn. The host's exit watcher catches it.
-		time.Sleep(20 * time.Millisecond) // let the read loop start
-		os.Exit(1)
-	}
-	<-peer.Done()
-	return 0
-}
-
-// childTestMain is the TestMain entry that dispatches to the child when the
-// env guard is set. It returns true if the child ran (and the test process
-// should exit); false otherwise (normal test run).
-func childTestMain(m *testing.M) bool {
-	if mode := childMode(os.Getenv(childEnvName)); mode != "" {
-		// This is a child re-exec. Run the child loop and exit.
-		os.Exit(processModuleChildMain(mode))
-	}
-	return false
-}
-
 // TestMain dispatches two modes of this test binary:
 //   - module child (GOFASTR_PROCESS_MODULE_CHILD=<mode>): wires a
 //     moduleproto Peer for the supervisor integration tests.
@@ -526,7 +376,7 @@ func childTestMain(m *testing.M) bool {
 // dispatch here: the probe machinery is unexported in framework root, so
 // the tests that spawn probe children stayed there.
 func TestMain(m *testing.M) {
-	if childTestMain(m) {
+	if pmtestkit.MaybeChild() {
 		return
 	}
 	os.Exit(m.Run())

@@ -4,9 +4,10 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 // The three 2026-11 arms share one scope: a reflect field walk the
@@ -36,7 +37,7 @@ func runArms(pass *analysis.Pass) {
 	tagWalk := map[*types.Func]bool{}
 	anyWalk := map[*types.Func]bool{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

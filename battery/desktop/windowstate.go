@@ -1,11 +1,7 @@
 package desktop
 
 import (
-	"encoding/json"
-	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
@@ -33,11 +29,6 @@ const windowsStateKey = "windows"
 type storedWindow struct {
 	Frame *Frame `json:"frame,omitempty"`
 	Path  string `json:"path,omitempty"`
-}
-
-// windowStateFile is the shape of the windows entry.
-type windowStateFile struct {
-	Windows map[string]storedWindow `json:"windows"`
 }
 
 // windowStore reads and updates the remembered windows in the battery's
@@ -165,26 +156,4 @@ func (s *windowStore) setMainPath(p string) {
 	e.Path = p
 	w[MainWindowID] = e
 	s.save(w)
-}
-
-// readWindowsFile is the test reader: the remembered windows in a data
-// dir's state file.
-func readWindowsFile(dir string) (windowStateFile, error) {
-	data, err := os.ReadFile(filepath.Join(dir, stateFileName))
-	if err != nil {
-		return windowStateFile{}, err
-	}
-	var f struct {
-		Entries map[string]json.RawMessage `json:"entries"`
-	}
-	if err := json.Unmarshal(data, &f); err != nil {
-		return windowStateFile{}, fmt.Errorf("state.json: %w", err)
-	}
-	var w windowStateFile
-	if raw, ok := f.Entries[windowsStateKey]; ok {
-		if err := json.Unmarshal(raw, &w); err != nil {
-			return windowStateFile{}, fmt.Errorf("state.json %s entry: %w", windowsStateKey, err)
-		}
-	}
-	return w, nil
 }

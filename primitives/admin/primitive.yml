@@ -23,6 +23,7 @@ invariants:
     enforced_by:
       - test: battery/admin.TestReplayOfAJobThatIsNotFailedDoesNothing
       - test: battery/admin.TestReplayAllAuditsOnlyWhatItQueued
+      - test: battery/admin.TestReplayAllRefusesWhenNothingWasQueued
       - test: battery/admin.TestRefusedModuleLeverIsNotAuditedAsDone
       - test: battery/queue.TestReplayJobReportsWhetherItQueued
       - test: framework.TestRevokeGrantsOfAnUnheldGrantErrors
@@ -31,15 +32,20 @@ invariants:
     enforced_by:
       - test: battery/admin.TestSingleReplayNeverScansTheFailedList
   - id: dropped-filter-warns
-    rule: The Audit and Jobs pages warn that a filter was not applied when a narrowing query pair cannot be decoded or holds a value the page cannot use, an unknown ?status= on the Jobs page included, instead of silently listing wider.
+    rule: The Audit and Jobs pages warn when a decoded filter value cannot be used, including invalid UTF-8 in an Audit actor and an unknown status in Jobs.
     enforced_by:
-      - test: battery/admin.TestUndecodablePairWarns
       - test: battery/admin.TestAuditFilterIgnoresBadValues
+      - test: battery/admin.TestAuditFilterIgnoresInvalidActorUTF8
       - test: battery/admin.TestUnknownFilterValueWarns
   - id: audit-ops-cover-admin-writes
     rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
     enforced_by:
       - test: battery/admin.TestAuditOpsCoverWhatTheAdminWrites
+  - id: wildcard-change-needs-decider-allow
+    rule: Under a configured Decider, every RBAC change that moves the global wildcard (assigning or removing a role that grants "*", and granting or revoking "*" on a role through _grant or a grid save) goes through assignmentDeciderRefuses and needs DecisionAllow for "*"; an abstention or deny refuses it before anything is written.
+    enforced_by:
+      - test: battery/admin.TestWildcardRoleChangesRequireDeciderAllow
+      - test: battery/admin.TestWildcardGrantRequiresDeciderAllow
 decisions:
   - id: new-link-asks-can-create-entity
     date: 2026-11-16

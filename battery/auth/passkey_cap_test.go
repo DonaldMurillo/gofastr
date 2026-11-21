@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // passkeyCapContract: the per-user cap holds when registrations race.
@@ -91,8 +91,8 @@ func TestSQLitePasskeyCapUnderRace(t *testing.T) {
 // others are still connecting, and none overlap.
 func pgCapPool(t *testing.T, setup ...string) (*sql.DB, string) {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN"))
-	if dsn == "" {
+	dsn, _, err := pgtest.ResolveEnv()
+	if err != nil {
 		t.Skip("TEST_POSTGRES_DSN not set")
 	}
 	db, err := sql.Open("postgres", dsn)

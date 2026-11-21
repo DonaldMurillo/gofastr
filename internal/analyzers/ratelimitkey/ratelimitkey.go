@@ -222,8 +222,8 @@ func (s *state) isCollapsed(e ast.Expr, depth int) bool {
 		}
 		fn = fn.Origin()
 		switch {
-		case recvIs(fn, "net/netip", "Addr") && fn.Name() == "Prefix",
-			recvIs(fn, "net", "IP") && fn.Name() == "Mask",
+		case astx.ReceiverIs(fn, "net/netip", "Addr") && fn.Name() == "Prefix",
+			astx.ReceiverIs(fn, "net", "IP") && fn.Name() == "Mask",
 			isPkgFunc(fn, "net", "CIDRMask"),
 			s.isCollapser(fn):
 			return true
@@ -393,7 +393,7 @@ func (s *state) checkCall(call *ast.CallExpr) {
 	if sig.Recv() != nil && limiterMethod[strings.ToLower(fn.Name())] {
 		if n := astx.NamedOf(astx.Deref(sig.Recv().Type())); n != nil && limiterType.MatchString(n.Obj().Name()) {
 			for _, a := range call.Args {
-				if isString(s.pass.TypesInfo.TypeOf(a)) && s.isRaw(a, 0) {
+				if astx.IsString(s.pass.TypesInfo.TypeOf(a)) && s.isRaw(a, 0) {
 					s.pass.Reportf(a.Pos(),
 						"ratelimitkey: the %s key %s is a client's full address: one IPv6 subscriber holds a whole /64 and rotates past a per-address limit; key on ratelimit.IPKey (or (*Limiter).ClientKey), which collapses IPv6 to its /64",
 						fn.Name(), types.ExprString(a))
@@ -421,28 +421,15 @@ func (s *state) reportFunc(e ast.Expr, where string) {
 		what, where)
 }
 
-func recvIs(fn *types.Func, pkg, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	return ok && sig.Recv() != nil && astx.IsNamed(astx.Deref(sig.Recv().Type()), pkg, name)
-}
-
 func isPkgFunc(fn *types.Func, pkg, name string) bool {
 	sig, ok := fn.Type().(*types.Signature)
 	return ok && sig.Recv() == nil && fn.Pkg() != nil && fn.Pkg().Path() == pkg && fn.Name() == name
 }
 
-func isString(t types.Type) bool {
-	if t == nil {
-		return false
-	}
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Info()&types.IsString != 0
-}
-
 // addrType reports whether t can carry an address: a string, net.IP or
 // netip.Addr.
 func addrType(t types.Type) bool {
-	return isString(t) || astx.IsNamed(t, "net", "IP") || astx.IsNamed(t, "net/netip", "Addr")
+	return astx.IsString(t) || astx.IsNamed(t, "net", "IP") || astx.IsNamed(t, "net/netip", "Addr")
 }
 
 // addrResult reports whether fn's first result can carry an address.
@@ -459,7 +446,7 @@ func isKeyFuncType(t types.Type) bool {
 	sig, ok := t.Underlying().(*types.Signature)
 	return ok && sig.Params().Len() == 1 && sig.Results().Len() == 1 &&
 		astx.IsNamed(astx.Deref(sig.Params().At(0).Type()), "net/http", "Request") &&
-		isString(sig.Results().At(0).Type())
+		astx.IsString(sig.Results().At(0).Type())
 }
 
 // returnsKeyFunc reports whether fn returns a func(*http.Request) string.

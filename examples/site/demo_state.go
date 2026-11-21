@@ -102,6 +102,7 @@ func resetDemoSessions() { demoSessions.clear() }
 // slides forward with activity (matching the store's sliding TTL). getOrCreate
 // seeds a fresh session on first write.
 func demoStateWrite(w http.ResponseWriter, r *http.Request) *demoState {
+	w.Header().Set("Cache-Control", "no-store")
 	id := readDemoCookie(r)
 	if id == "" {
 		id = newDemoID()

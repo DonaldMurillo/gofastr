@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"runtime"
 	"syscall"
 	"testing"
 	"unsafe"
@@ -45,4 +46,5 @@ func TestImmersiveColorSetMessage(t *testing.T) {
 	if isImmersiveColorSetMessage(wmSettingChange, 0) || isImmersiveColorSetMessage(wmSettingChange+1, uintptr(unsafe.Pointer(setting))) {
 		t.Fatal("unrelated setting-change message was recognized")
 	}
+	runtime.KeepAlive(setting)
 }

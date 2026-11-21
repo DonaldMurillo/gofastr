@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // Pins: a store unreachable past LeaseTTL must drain AND RECOVER when the store
@@ -71,13 +73,13 @@ func redLeaseSlotPID(sup *ProcessModuleSupervisor, name string) int {
 // clear LeaseFailing, respawn a NEW child (new instance/pid), and serve 200
 // again within a bounded window (a few poll intervals + one spawn deadline).
 func TestLeaseRedRecoversAfterOutage(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := &redLeaseFlakyStore{SQLProcessModuleStore: newTestStore(t)}
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	// Register artifact cleanup before supervisor cleanup, so shutdown runs first.
-	sup := newTestSupervisor(t, store, childModeEcho)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeEcho)
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("setup broken: register: %v", err)
 	}
@@ -87,7 +89,7 @@ func TestLeaseRedRecoversAfterOutage(t *testing.T) {
 	}
 	// Allow one full spawn deadline and a retry during initial startup,
 	// matching the recovery budget below.
-	waitForState(t, sup, d.Name, StateReady, 8*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 8*time.Second)
 
 	// Baseline child identity (pid via the in-package slot, instance via Info).
 	origInfo, err := sup.Info(d.Name)

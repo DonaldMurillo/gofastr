@@ -1,10 +1,8 @@
 # framework/gallery — importable component catalog
 
-A library that ships every framework/ui component as a
-pre-canned, self-contained demo. Originally `examples/site/components.go`,
-it was lifted so any tool can render the whole design system against an
-arbitrary theme — most importantly the theme-configuration tool that will
-live inside the `gofastr` CLI binary, which cannot import `examples/`.
+A catalog of framework/ui components with previews, code examples, and
+wiring notes. The docs site and the `gofastr` theme editor use it to
+show components against their own themes.
 
 **Use this when** the prompt mentions: theme previewer, theme
 configuration tool, render every component, design-system gallery,
@@ -20,7 +18,7 @@ import "github.com/DonaldMurillo/gofastr/framework/gallery"
 // Iterate the catalog in display order.
 for _, e := range gallery.Catalog {
     fmt.Println(e.Slug, e.Name, e.Category)
-    html := e.Demo() // render.HTML — self-contained, no host wiring
+    html := e.Demo() // render.HTML — a preview or a wiring note
 }
 
 // Or look up one entry.
@@ -46,7 +44,7 @@ gallery.CategorySlug("Buttons & links") // "buttons-links" — fragment-safe
   Lightbox, etc.). The set itself is private; this is the only accessor.
 - **`PkgForSlug`** — maps a slug to its Go source package for deep-linking
   the showcase header to pkg.go.dev.
-- **Demo support**: `InitialKanbanColumns`, `RenderKanbanBoard`,
+- **Demo support**: `InitialKanbanColumns`, `RenderKanbanBoard`, `KanbanColumn.SortableConfig`,
   `RenderOptimisticCreateList`/`RenderOptimisticDeleteList`,
   `OptimisticDeleteModals`, `SidebarShowcaseConfig`,
   `DemoSectionMenuConfig`, `DemoCompany` — the seed data + render helpers
@@ -82,6 +80,21 @@ pattern.
 nil for an unknown one. A host that needs different data for a demo (a
 static export with other defaults, say) calls the render helpers itself,
 as above; the catalog has no override hook.
+
+Use `KanbanColumn.SortableConfig(version)` for both the board's lists and
+the conflict response. Render the response with `ui.SortableListItems`
+and pass the config's `Version` to `ui.RenewSortableVersion`.
+
+## Host routes
+
+Call `MountDemoWidgets(router, DemoWidgetPages{…})` before
+mounting the UIHost to scope the modal, drawer, bottom sheet, and sidebar
+drawer individually. An empty page list leaves that overlay global.
+
+`MountDemoFormRoute(router, demoPage)` handles stateless demo POSTs at
+`DemoFormPath`. The docs site's live StepWizard supplies its own
+`POST /forms/wizard` to handle step transitions. The theme editor shows
+an inert StepWizard preview.
 
 ## Don't reinvent
 

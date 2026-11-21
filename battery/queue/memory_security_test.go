@@ -15,22 +15,21 @@ import (
 // re-enqueue fails — the enqueue-first/remove-second ordering that
 // RedisQueue.Replay documents as the lossless rule ("a failure between
 // the two ops leaves the job on the dead list (recoverable) rather than
-// dropping it"). Surface: MemoryQueue.Replay, which inverts it — it
-// deletes from q.dead BEFORE calling Enqueue, so a cancelled context
-// (battery/admin passes r.Context(), a client disconnect or request
-// deadline fires it) or a Replay racing Close loses the record
-// permanently: the visible error invites a retry that is then the
-// documented idempotent no-op against a vanished job.
+// dropping it"). Surface: MemoryQueue.Replay, which enqueues BEFORE
+// removing the dead record, so a cancelled context (battery/admin passes
+// r.Context(), a client disconnect or request deadline fires it) or a
+// Replay racing Close leaves the job on the dead list, where a retried
+// Replay can pick it up again.
 //
-// (The companion memory-surface finding from the same recon pass — the
-// worker pool dropping unregistered-type jobs without a trace — is
-// already pinned, RED, by TestUnknownTypeJobDropIsObservable/memory in
-// queue_security_test.go; not duplicated here.)
+// (The companion memory-surface property — the worker pool retaining
+// unregistered-type jobs — is pinned by TestUnknownTypeJobDropIsObservable/
+// memory in queue_security_test.go; not duplicated here.)
 // ============================================================================
 
 // TestReplayKeepsJobWhenEnqueueFails: a failed re-enqueue must leave the
 // job retrievable from ListJobs("failed") so the visible error can be
-// retried. Today the record is consumed first and the loss is permanent.
+// retried; Replay enqueues before removing the dead record, so the job
+// stays recoverable.
 func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 	assertRetained := func(t *testing.T, q *MemoryQueue, id string, replayErr error) {
 		t.Helper()
@@ -39,7 +38,7 @@ func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 			t.Fatalf("list failed jobs: %v", err)
 		}
 		if len(dead) != 1 || dead[0].ID != id {
-			t.Fatalf("Replay consumed the terminal record before the re-enqueue succeeded (replay err=%v, failed jobs=%v): the visible error invites a retry that is now the documented idempotent no-op against a vanished job — permanent loss", replayErr, dead)
+			t.Fatalf("Replay removed the terminal record although the re-enqueue failed (replay err=%v, failed jobs=%v): the visible error invites a retry that would now be the documented idempotent no-op against a vanished job — permanent loss", replayErr, dead)
 		}
 	}
 

@@ -65,7 +65,7 @@ func NewCOMHandler(iid string, invoke func(arg1, arg2 uintptr) uintptr) (uintptr
 	if id == 0 {
 		id = comNextID.Add(1)
 	}
-	h := (*comHeader)(unsafe.Pointer(mem))
+	h := (*comHeader)(NativePtr(mem))
 	h.VTable = uintptr(unsafe.Pointer(&comVTable[0]))
 	h.ID = id
 	h.Refs = 1
@@ -80,8 +80,8 @@ func comQueryInterface(this, riid, out uintptr) uintptr {
 	if out == 0 || this == 0 || riid == 0 {
 		return E_POINTER
 	}
-	*(*uintptr)(unsafe.Pointer(out)) = 0
-	h := (*comHeader)(unsafe.Pointer(this))
+	*(*uintptr)(NativePtr(out)) = 0
+	h := (*comHeader)(NativePtr(this))
 	comMu.RLock()
 	want := comIDs[h.ID]
 	comMu.RUnlock()
@@ -89,7 +89,7 @@ func comQueryInterface(this, riid, out uintptr) uintptr {
 	if got != "0000000000000000c000000000000046" && got != want {
 		return E_NOINTERFACE
 	}
-	*(*uintptr)(unsafe.Pointer(out)) = this
+	*(*uintptr)(NativePtr(out)) = this
 	comAddRef(this)
 	return S_OK
 }
@@ -98,7 +98,7 @@ func comAddRef(this uintptr) uintptr {
 	if this == 0 {
 		return 0
 	}
-	h := (*comHeader)(unsafe.Pointer(this))
+	h := (*comHeader)(NativePtr(this))
 	return atomic.AddUintptr(&h.Refs, 1)
 }
 
@@ -106,7 +106,7 @@ func comRelease(this uintptr) uintptr {
 	if this == 0 {
 		return 0
 	}
-	h := (*comHeader)(unsafe.Pointer(this))
+	h := (*comHeader)(NativePtr(this))
 	left := atomic.AddUintptr(&h.Refs, ^uintptr(0))
 	if left == 0 {
 		id := h.ID
@@ -126,7 +126,7 @@ func comInvoke(this, arg1, arg2 uintptr) uintptr {
 	if this == 0 {
 		return E_POINTER
 	}
-	h := (*comHeader)(unsafe.Pointer(this))
+	h := (*comHeader)(NativePtr(this))
 	comMu.RLock()
 	fn := comHandlers[h.ID]
 	comMu.RUnlock()
@@ -139,8 +139,8 @@ func comInvoke(this, arg1, arg2 uintptr) uintptr {
 // Release drops a COM interface reference.
 func Release(obj uintptr) {
 	if obj != 0 {
-		vtable := *(*uintptr)(unsafe.Pointer(obj))
-		fn := *(*uintptr)(unsafe.Pointer(vtable + 2*unsafe.Sizeof(uintptr(0))))
+		vtable := *(*uintptr)(NativePtr(obj))
+		fn := *(*uintptr)(unsafe.Add(NativePtr(vtable), 2*unsafe.Sizeof(uintptr(0))))
 		_, _, _ = syscall.SyscallN(fn, obj)
 	}
 }
@@ -154,8 +154,8 @@ func COMCall(obj uintptr, slot int, args ...uintptr) (uintptr, error) {
 	if obj == 0 {
 		return 0, fmt.Errorf("COM call on nil interface")
 	}
-	vtable := *(*uintptr)(unsafe.Pointer(obj))
-	fn := *(*uintptr)(unsafe.Pointer(vtable + uintptr(slot)*unsafe.Sizeof(uintptr(0))))
+	vtable := *(*uintptr)(NativePtr(obj))
+	fn := *(*uintptr)(unsafe.Add(NativePtr(vtable), uintptr(slot)*unsafe.Sizeof(uintptr(0))))
 	all := append([]uintptr{obj}, args...)
 	r, _, _ := syscall.SyscallN(fn, all...)
 	if int32(r) < 0 {
@@ -248,7 +248,7 @@ func normalizeGUID(s string) string {
 }
 
 func guidFromMemory(p uintptr) string {
-	g := *(*GUID)(unsafe.Pointer(p))
+	g := *(*GUID)(NativePtr(p))
 	b := (*[16]byte)(unsafe.Pointer(&g))
 	return hex.EncodeToString(b[:])
 }
@@ -320,7 +320,7 @@ func CopyHGlobal(h uintptr) []byte {
 	if p == 0 {
 		return nil
 	}
-	out := append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(p)), int(size))...)
+	out := append([]byte(nil), unsafe.Slice((*byte)(NativePtr(p)), int(size))...)
 	_, _, _ = kernel.NewProc("GlobalUnlock").Call(h)
 	return out
 }
@@ -345,17 +345,20 @@ func CreateInstance(clsid, iid string) (uintptr, error) {
 
 func CoTaskMemFree(p uintptr) { _, _, _ = ole32.NewProc("CoTaskMemFree").Call(p) }
 
+// NativePtr returns p, an address Windows handed over (a message lparam, a COM
+// object, native heap), as a pointer. Go memory passed as p must be kept alive.
+func NativePtr(p uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&p)) }
+
 func ReadUTF16(p uintptr, max int) string {
 	if p == 0 {
 		return ""
 	}
-	words := unsafe.Slice((*uint16)(unsafe.Pointer(p)), max)
-	for i, w := range words {
-		if w == 0 {
-			return syscall.UTF16ToString(words[:i])
-		}
+	base := NativePtr(p)
+	n := 0
+	for n < max && *(*uint16)(unsafe.Add(base, 2*n)) != 0 {
+		n++
 	}
-	return syscall.UTF16ToString(words)
+	return syscall.UTF16ToString(unsafe.Slice((*uint16)(base), n))
 }
 
 func UTF16Ptr(s string) (*uint16, error) { return syscall.UTF16PtrFromString(s) }

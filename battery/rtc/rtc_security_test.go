@@ -464,9 +464,10 @@ func TestTurnCredentialMatchesCoturn(t *testing.T) {
 	}
 }
 
-// TestStatusResendAfterGeneration is the socket-level prerequisite for
-// the client's resend-on-hydrate: a peer that reconnects gets a fresh
-// snapshot whose ICE credentials are re-minted (new expiry).
+// TestSnapshotRemintsTURNPerConnection is the socket-level
+// prerequisite for the client's resend-on-hydrate: a peer that
+// reconnects gets a fresh snapshot whose ICE credentials are
+// re-minted (new expiry).
 func TestSnapshotRemintsTURNPerConnection(t *testing.T) {
 	s := newTestSignaler(t, Config{
 		TURN: &TURN{URLs: []string{"turn:t.example:3478"}, Secret: "s", TTL: time.Hour},

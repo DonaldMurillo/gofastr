@@ -16,6 +16,7 @@ import (
 	cfanout "github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	pq "github.com/lib/pq"
 )
 
@@ -39,10 +40,9 @@ type pgInlineMsg struct {
 // channel named after its fallback table, the topic inside the payload, and
 // payloads too large to NOTIFY spilled to that table.
 type PostgresFanout struct {
-	dsn     string
-	db      *sql.DB
-	channel string
-	table   string
+	dsn   string
+	db    *sql.DB
+	table string
 
 	skipEnsure bool
 
@@ -74,8 +74,8 @@ type PostgresFanout struct {
 // Option configures a [PostgresFanout].
 type Option func(*PostgresFanout)
 
-// WithTableName sets the fallback table, and so the channel; default
-// "gofastr_fanout_msgs".
+// WithTableName sets the fallback table and channel, both folded to ASCII
+// lowercase. The default is "gofastr_fanout_msgs".
 func WithTableName(name string) Option {
 	return func(p *PostgresFanout) {
 		if name != "" {
@@ -128,10 +128,10 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 	if len(p.table) > 63 {
 		return nil, fmt.Errorf("fanout: table name %q is %d bytes; Postgres caps identifiers (and NOTIFY channels) at 63", p.table, len(p.table))
 	}
-	p.channel = p.table
 	if err := query.RefuseCaseKeptTables(context.Background(), db, p.table); err != nil {
 		return nil, fmt.Errorf("fanout: %w", err)
 	}
+	p.table = asciicase.Lower(p.table)
 	if !p.skipEnsure {
 		if err := p.ensureTable(); err != nil {
 			return nil, fmt.Errorf("fanout: ensure table: %w", err)
@@ -140,17 +140,17 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 
 	p.listener = pq.NewListener(dsn, pgReconnectMin, pgReconnectMax, p.onListenerEvent)
 	listenErr := make(chan error, 1)
-	go func() { listenErr <- p.listener.Listen(p.channel) }()
+	go func() { listenErr <- p.listener.Listen(p.table) }()
 	select {
 	case err := <-listenErr:
 		if err != nil {
 			p.listener.Close()
-			return nil, fmt.Errorf("fanout: listen %q: %w", p.channel, err)
+			return nil, fmt.Errorf("fanout: listen %q: %w", p.table, err)
 		}
 	case <-time.After(p.listenTimeout):
 		p.listener.Close()
 		return nil, fmt.Errorf("fanout: listen %q: timed out after %s waiting for the listener connection (is the DSN reachable and the database up?)",
-			p.channel, p.listenTimeout)
+			p.table, p.listenTimeout)
 	}
 	p.fetchCtx, p.stopFetch = context.WithCancel(context.Background())
 	p.dispatched = make(chan struct{})
@@ -189,16 +189,17 @@ func (p *PostgresFanout) Publish(ctx context.Context, topic string, payload []by
 		return fmt.Errorf("fanout: marshal: %w", err)
 	}
 	if len(wrapped) <= pgInlineThreshold {
-		return p.notify(ctx, string(wrapped))
+		if err := p.notify(ctx, string(wrapped)); err != nil {
+			return fmt.Errorf("fanout: pg_notify: %w", err)
+		}
+		return nil
 	}
 	return p.publishViaTable(ctx, string(wrapped))
 }
 
 func (p *PostgresFanout) notify(ctx context.Context, payload string) error {
-	if _, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.channel, payload); err != nil {
-		return fmt.Errorf("fanout: pg_notify: %w", err)
-	}
-	return nil
+	_, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.table, payload)
+	return err
 }
 
 func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) error {
@@ -209,8 +210,7 @@ func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) er
 		return fmt.Errorf("fanout: insert fallback row: %w", err)
 	}
 	p.maybePurge(ctx)
-	if _, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.channel,
-		fmt.Sprintf("t:%d", id)); err != nil {
+	if err := p.notify(ctx, fmt.Sprintf("t:%d", id)); err != nil {
 		return fmt.Errorf("fanout: pg_notify fallback pointer: %w", err)
 	}
 	return nil
@@ -286,7 +286,7 @@ func (p *PostgresFanout) logRecvDrop(flag *atomic.Bool, msg string, err error) {
 	if !flag.CompareAndSwap(false, true) {
 		return
 	}
-	args := []any{"channel", p.channel, "table", p.table}
+	args := []any{"channel", p.table, "table", p.table}
 	if err != nil {
 		args = append(args, "err", err)
 	}
@@ -361,15 +361,15 @@ func (p *PostgresFanout) onListenerEvent(ev pq.ListenerEventType, err error) {
 	case pq.ListenerEventDisconnected:
 		if err != nil {
 			slog.Default().Warn("fanout: postgres listener disconnected; reconnecting (messages during the gap are lost)",
-				"channel", p.channel, "err", err)
+				"channel", p.table, "err", err)
 		}
 	case pq.ListenerEventReconnected:
 		p.connectFailedLogged.Store(false)
-		slog.Default().Info("fanout: postgres listener reconnected", "channel", p.channel)
+		slog.Default().Info("fanout: postgres listener reconnected", "channel", p.table)
 	case pq.ListenerEventConnectionAttemptFailed:
 		if err != nil && p.connectFailedLogged.CompareAndSwap(false, true) {
 			slog.Default().Warn("fanout: postgres listener connection attempt failed; retrying (initial messages may be dropped until it connects)",
-				"channel", p.channel, "err", err)
+				"channel", p.table, "err", err)
 		}
 	}
 }

@@ -57,3 +57,26 @@ func TestWalkHandsFailuresToFn(t *testing.T) {
 		t.Errorf("Walk = %v, want fn's error", err)
 	}
 }
+
+// Walk renders what the live router serves: a portable-filename refusal
+// belongs to Build alone.
+func TestWalkKeepsNonPortablePages(t *testing.T) {
+	a := coreapp.NewApp("walk-portable")
+	a.Register("/a:b", nfStaticScreen("colon"), nil)
+	a.Register("/x/aux", nfStaticScreen("aux"), nil)
+	var seen []string
+	err := Walk(context.Background(), uihost.New(a), nil, func(path, _ string, err error) error {
+		if err != nil {
+			t.Errorf("%s: %v", path, err)
+			return nil
+		}
+		seen = append(seen, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(seen, " "); got != "/x/aux /a:b" {
+		t.Errorf("rendered %q, want /x/aux /a:b", got)
+	}
+}

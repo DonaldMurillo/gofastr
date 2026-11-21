@@ -290,23 +290,66 @@ func TestRunMigrationDownNoTx_FailureLeavesDirty(t *testing.T) {
 	}
 }
 
-func TestStatus_AppliedQueryError(t *testing.T) {
-	m, mock := newTestMigrator(t)
-	expectCreateTable(mock)
-	mock.ExpectQuery("SELECT version").WillReturnError(errors.New("fail"))
-	if _, err := m.Status(context.Background()); err == nil {
-		t.Fatal("expected applied-versions query error")
-	}
-}
-
 func TestStatus_ScanError(t *testing.T) {
 	m, mock := newTestMigrator(t)
 	expectCreateTable(mock)
-	// Wrong column count → scan error.
-	mock.ExpectQuery("SELECT version").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("not-a-number"))
-	if _, err := m.Status(context.Background()); err == nil {
-		t.Fatal("expected scan error")
+	mock.ExpectQuery("pg_attribute").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
+		WillReturnRows(sqlmock.NewRows([]string{"version", "name", "applied_at", "checksum", "dirty"}).
+			AddRow("not-a-number", "x", nil, "", false))
+	if _, err := m.Status(context.Background()); err == nil || !strings.Contains(err.Error(), `Scan error on column index 0, name "version"`) {
+		t.Fatalf("Status error = %v, want a version scan error", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestUpDown_HasGroupColumnError(t *testing.T) {
+	probeErr := errors.New("probe fail")
+	for _, tt := range []struct {
+		name string
+		run  func(*Migrator, context.Context) error
+	}{
+		{"up", func(m *Migrator, ctx context.Context) error { return m.Up(ctx) }},
+		{"down", func(m *Migrator, ctx context.Context) error { return m.Down(ctx, 1) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, mock := newTestMigrator(t)
+			mustReg(t, m, Migration{Version: 1, Name: "x", Up: "U", Down: "D"})
+			expectLock(mock)
+			expectCreateTable(mock)
+			mock.ExpectQuery("pg_attribute").WillReturnError(probeErr)
+			expectUnlock(mock)
+			if err := tt.run(m, context.Background()); !errors.Is(err, probeErr) {
+				t.Fatalf("error = %v, want %v", err, probeErr)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatalf("unmet expectations: %v", err)
+			}
+		})
+	}
+}
+
+func TestCreateMigrationsTable_CaseKeptLookupError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	m := New(db, WithTableName("MyMigrations"))
+	lookupErr := errors.New("catalog lookup failed")
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT to_regclass($1) IS NOT NULL, to_regclass($2) IS NOT NULL`)).
+		WithArgs(`"MyMigrations"`, `"mymigrations"`).
+		WillReturnError(lookupErr)
+
+	if err := m.CreateMigrationsTable(context.Background()); !errors.Is(err, lookupErr) {
+		t.Fatalf("CreateMigrationsTable error = %v, want %v", err, lookupErr)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
 	}
 }
 
@@ -450,30 +493,6 @@ DROP TABLE a;`
 	}
 	if !strings.Contains(mig.Down, "DROP TABLE b") || !strings.Contains(mig.Down, "DROP TABLE a") {
 		t.Fatalf("multi-line Down not joined: %q", mig.Down)
-	}
-}
-
-func TestUpDown_AppliedVersionsQueryError(t *testing.T) {
-	// up() path.
-	m, mock := newTestMigrator(t)
-	m.Register(Migration{Version: 1, Name: "x", Up: "U", Down: "D"})
-	expectLock(mock)
-	expectCreateTable(mock)
-	mock.ExpectQuery("SELECT version").WillReturnError(errors.New("fail"))
-	expectUnlock(mock)
-	if err := m.Up(context.Background()); err == nil {
-		t.Fatal("expected up applied-versions query error")
-	}
-
-	// down() path.
-	m2, mock2 := newTestMigrator(t)
-	m2.Register(Migration{Version: 1, Name: "x", Up: "U", Down: "D"})
-	expectLock(mock2)
-	expectCreateTable(mock2)
-	mock2.ExpectQuery("SELECT version").WillReturnError(errors.New("fail"))
-	expectUnlock(mock2)
-	if err := m2.Down(context.Background(), 1); err == nil {
-		t.Fatal("expected down applied-versions query error")
 	}
 }
 

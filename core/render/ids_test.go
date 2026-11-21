@@ -74,6 +74,26 @@ func TestRegionBatchNestsInARegion(t *testing.T) {
 	}
 }
 
+func TestRegionBatchOwnsChildSuffixes(t *testing.T) {
+	ctx := WithIDScope(context.Background())
+	b := NewRegionBatch(ctx, 2)
+	children := []string{"-title"}
+	UniqueID(b.Context(0), "card", children...)
+	UniqueID(b.Context(0), "card.tab", children...)
+	ReserveID(b.Context(0), "panel", children...)
+	children[0] = "-label"
+
+	var ids []string
+	for _, id := range []string{"card", "card.tab", "panel"} {
+		ids = append(ids, UniqueID(b.Context(1), id+"-title"), UniqueID(b.Context(1), id+"-label"))
+	}
+	b.Settle(0)
+	want := HTML("card-title-2 card-label card.tab-title-2 card.tab-label panel-title-2 panel-label")
+	if got := b.Settle(1)(HTML(strings.Join(ids, " "))); got != want {
+		t.Errorf("settled ids = %q, want %q", got, want)
+	}
+}
+
 func TestRegionBatchUnsafeIDKeepsBytes(t *testing.T) {
 	ctx := WithIDScope(context.Background())
 	b := NewRegionBatch(ctx, 1)

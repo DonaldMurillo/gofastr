@@ -2,7 +2,7 @@
 // `go vet -vettool` over this repo. Run via `make analyze`, the
 // pre-commit hook, and CI's vet step:
 //
-//	go build -o dist/vettool ./cmd/vettool
+//	go build -buildvcs=false -o dist/vettool ./cmd/vettool
 //	go vet -vettool=dist/vettool ./...
 package main
 

@@ -509,11 +509,16 @@ func TestLintAttributePathSegments_WrappedAttrAssign(t *testing.T) {
 	}
 }
 
-// TestParenArrowParams: a parenthesised arrow — `const f = (raw) => {`
-// — got no parameter events and no function head, so parameter
-// provenance and shadowing failed for it (R8-CK4-01): the decode trace
-// could not follow parsePair's parameter, and a same-named parameter
-// laundered a file-scope literal through the selector build.
+func TestNoVarAfterQuotedDivision(t *testing.T) {
+	dir := writeRuntimeFixture(t, "division.js", "const ratio = '6' /* divisor follows */ / 2; var legacy = 1;\n")
+	res, err := LintNoVarJS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{1})
+}
+
+// TestParenArrowParams covers decode provenance and shadowing for parenthesized arrows.
 func TestParenArrowParams(t *testing.T) {
 	decodeDir := writeRuntimeFixture(t, "parendecode.js", `(() => {
   const out = {};
@@ -546,8 +551,9 @@ pick(el.dataset.tool);
 // paren-arrow parameter with NO attribute-derived call site stays the
 // family's out-of-scope silence.
 func TestParenArrowParamsStayUntraceable(t *testing.T) {
-	dir := writeRuntimeFixture(t, "parenquiet.js", `const save = (key) => localStorage.setItem(PREFIX + encodeURIComponent(key), '1');
-save(el.getAttribute('data-cui-note'));
+	dir := writeRuntimeFixture(t, "parenquiet.js", `const out = {};
+const save = (key) => { out[decodeURIComponent(key)] = 1; };
+save('static%20key');
 `)
 	res, err := LintDecodeURIRaw(dir)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 func TestFieldsTableMarksNoQueryField(t *testing.T) {
@@ -23,21 +24,22 @@ func TestExampleFilterFieldSkipsNoQueryFields(t *testing.T) {
 		{Name: "number", Type: schema.Int, NoQuery: true},
 		{Name: "label", Type: schema.String},
 	}}
-	field, op := exampleFilter(cfg)
-	if field != "label" {
-		t.Fatalf("exampleFilter field = %q, want queryable label", field)
+	sample := exampleFilter(cfg)
+	if sample.field != "label" {
+		t.Fatalf("exampleFilter field = %q, want queryable label", sample.field)
 	}
-	if op != "_gte" {
-		t.Fatalf("exampleFilter op = %q, want _gte on a String column", op)
+	if sample.op != filter.OpGte {
+		t.Fatalf("exampleFilter op = %q, want _gte on a String column", sample.op)
 	}
 }
 
 func TestExampleFilterFieldRejectsNoQueryCreatedAtFallback(t *testing.T) {
 	cfg := entity.EntityConfig{Fields: []schema.Field{
+		{Name: "id", Type: schema.UUID, AutoGenerate: schema.AutoUUID},
 		{Name: "created_at", Type: schema.Timestamp, NoQuery: true, AutoGenerate: schema.AutoTimestamp},
 	}}
-	field, op := exampleFilter(cfg)
-	if field != "id" || op != "" {
-		t.Fatalf("exampleFilter = (%q, %q), want id with plain equality", field, op)
+	sample := exampleFilter(cfg)
+	if sample.field != "id" || sample.op != filter.OpEq {
+		t.Fatalf("exampleFilter = %+v, want id with plain equality", sample)
 	}
 }

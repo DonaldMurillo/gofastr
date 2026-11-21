@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -20,13 +21,40 @@ func WithMCPIntrospection() AppOption {
 	}
 }
 
+type mcpToolSpec struct {
+	name        string
+	description string
+	schema      map[string]any
+	handler     mcp.ToolHandler
+	hints       mcp.ToolOption // per-tool annotations, after the shared options
+}
+
+func (a *App) registerBuiltinTools(kind string, tools []mcpToolSpec, opts ...mcp.ToolOption) error {
+	for _, t := range tools {
+		if a.skipDevEntityMCPCollision(t.name) {
+			continue
+		}
+		toolOpts := opts
+		if t.hints != nil {
+			toolOpts = append(slices.Clip(opts), t.hints)
+		}
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, toolOpts...); err != nil {
+			return fmt.Errorf("framework: register MCP %s %q: %w", kind, t.name, err)
+		}
+	}
+	return nil
+}
+
+func (a *App) introspectionToolOptions() []mcp.ToolOption {
+	opts := []mcp.ToolOption{readOnlyToolHints()}
+	if a.mcpIntrospectionDevImplied {
+		opts = append(opts, mcp.WithDevImplied())
+	}
+	return opts
+}
+
 func (a *App) registerIntrospectionTools() error {
-	tools := []struct {
-		name        string
-		description string
-		schema      map[string]any
-		handler     func(ctx context.Context, params map[string]any) (any, error)
-	}{
+	tools := []mcpToolSpec{
 		{
 			name:        "app_routes",
 			description: "List every HTTP route registered on the App's router. Each entry has method (GET/POST/…) and pattern (Go 1.22 ServeMux syntax). Use to discover the surface area before issuing requests.",
@@ -82,19 +110,7 @@ func (a *App) registerIntrospectionTools() error {
 			handler:     a.toolUnmounted,
 		},
 	}
-	opts := []mcp.ToolOption{readOnlyToolHints()}
-	if a.mcpIntrospectionDevImplied {
-		opts = append(opts, mcp.WithDevImplied())
-	}
-	for _, t := range tools {
-		if a.skipDevEntityMCPCollision(t.name) {
-			continue
-		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
-			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
-		}
-	}
-	return nil
+	return a.registerBuiltinTools("tool", tools, a.introspectionToolOptions()...)
 }
 
 func (a *App) toolRoutes(_ context.Context, _ map[string]any) (any, error) {

@@ -141,7 +141,7 @@ var ownedPackages = []string{
 	"framework/processmoduletest", "framework/uie2e", "framework/internal/pmtestkit",
 	"framework/ratelimit", "framework/hook", "framework/db", "framework/db/sqlbusy", "framework/lifecycle",
 	"framework/routegroup", "framework/slowquery", "framework/tenant", "framework/softdelete", "framework/owner",
-	"framework/internal/casing", "framework/internal/exif", "framework/internal/jpegcost",
+	"internal/casing", "framework/internal/exif", "framework/internal/jpegcost",
 	"framework/internal/jpegtest", "framework/internal/testdb",
 	"framework/experimental/apiversions", "framework/experimental/webmcp",
 	"core/mcp",

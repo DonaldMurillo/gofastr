@@ -64,6 +64,17 @@ type Stats struct {
 // that took longer is counted as this long.
 const StatsCeiling = 10 * time.Second
 
+// RoundDuration rounds d to two significant digits: a percentile read
+// from buckets is right to within its bucket, and "683.5 ms" says
+// more than the counts know.
+func RoundDuration(d time.Duration) time.Duration {
+	unit := time.Duration(1)
+	for d/unit >= 100 {
+		unit *= 10
+	}
+	return (d + unit/2) / unit * unit
+}
+
 // maxStatsPoints bounds a series: a chart has no use for more, and a
 // one-minute step over a year must not be asked for.
 const maxStatsPoints = 2000

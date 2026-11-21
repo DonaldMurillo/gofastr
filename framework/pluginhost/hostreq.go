@@ -74,7 +74,9 @@ func hostRequirementFeature(token string) (feature string, ok bool) {
 	}
 	f := strings.TrimSpace(strings.TrimPrefix(t, HostRequirementPrefix))
 	if !allowedPolicyFeatures[f] {
-		return "", false
+		// Return the feature anyway: the caller's error names what was
+		// declared, so a typo says which token to fix.
+		return f, false
 	}
 	return f, true
 }

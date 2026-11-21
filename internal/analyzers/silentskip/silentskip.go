@@ -66,6 +66,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -100,7 +101,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	c.resolve()
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {

@@ -236,6 +236,21 @@ func TestDeleteReturning(t *testing.T) {
 	}
 }
 
+func TestUpdateOwnsWhereArguments(t *testing.T) {
+	binds := []any{5}
+	update := Update("users").Where("id = $9", binds...).Set("name", "new")
+	binds[0] = 7
+
+	sql, args := update.Build()
+	if want := "UPDATE users SET name = $1 WHERE (id = $2)"; sql != want || len(args) != 2 || args[0] != "new" || args[1] != 5 {
+		t.Errorf("Build = %q %v, want %q [new 5]", sql, args, want)
+	}
+	sql, args = update.Matching("id")
+	if want := "SELECT id FROM users WHERE (id = $1)"; sql != want || len(args) != 1 || args[0] != 5 {
+		t.Errorf("Matching = %q %v, want %q [5]", sql, args, want)
+	}
+}
+
 func TestWriteMatching(t *testing.T) {
 	sql, args := Delete("users").Where("id = $1", 5).Where("deleted_at IS NULL").Matching("id", "name")
 	if want := "SELECT id, name FROM users WHERE (id = $1) AND (deleted_at IS NULL)"; sql != want || len(args) != 1 || args[0] != 5 {

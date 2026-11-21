@@ -26,35 +26,26 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// assistBrowserCtx boots a browser for the test with the flags the flow
-// needs (WebMCP exposed, fake camera device, fake grant UI) and tears
-// it down with the test: both the allocator and the browser context
-// are cancelled from t.Cleanup, so no Chrome outlives the suite.
+// assistBrowserCtx opens the suite's window with the flags the flow
+// needs (WebMCP exposed, fake camera device, fake grant UI). The tabs
+// newTab opens from it land in the window's BrowserContext, so they
+// share one cookie jar.
 func assistBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// Exposes navigator.modelContext (Chromium 146+).
-		chromedp.Flag("enable-blink-features", "WebMCP"),
-		// getUserMedia without a real camera or permission dialog.
-		chromedp.Flag("use-fake-device-for-media-stream", true),
-		chromedp.Flag("use-fake-ui-for-media-stream", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1280, 800),
+	return chromedptest.Context(t,
+		chromedptest.WindowSize(1280, 800),
+		chromedptest.WithoutDeadline(),
+		chromedptest.AllocatorOptions(
+			// Exposes navigator.modelContext (Chromium 146+).
+			chromedp.Flag("enable-blink-features", "WebMCP"),
+			// getUserMedia without a real camera or permission dialog.
+			chromedp.Flag("use-fake-device-for-media-stream", true),
+			chromedp.Flag("use-fake-ui-for-media-stream", true),
+		),
 	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	root, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-	t.Cleanup(cancel)
-	if err := chromedp.Run(root); err != nil {
-		t.Fatalf("browser failed to start: %v", err)
-	}
-	return root
 }
 
 func newTab(t *testing.T, browser context.Context) context.Context {

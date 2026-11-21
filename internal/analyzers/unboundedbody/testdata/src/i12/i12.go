@@ -16,7 +16,20 @@ const maxBody = 1 << 20
 // limitBody is the battery/semantic routes.go middleware.
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxBody {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func limitBodyConditionally(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength >= 0 {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -31,16 +44,23 @@ func Handler() http.Handler {
 	mux.Handle("POST /raw", limitBody(rawHandler()))
 	mux.Handle("POST /raw2", rawHandler())
 	mux.Handle("POST /method", limitBody(http.HandlerFunc(new(svc).serve)))
+	mux.Handle("POST /form", limitBodyConditionally(http.HandlerFunc(readAndParseForm)))
 	return mux
 }
 
 func requireJSON(next http.Handler) http.Handler { return next }
 
-// indexHandler is wrapped at its only mount: quiet.
+// indexHandler's mount covers the raw read. Form parsing requires its own proof.
 func indexHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
+		_ = r.ParseForm() // want `parses the request form with no cap`
 	})
+}
+
+func readAndParseForm(w http.ResponseWriter, r *http.Request) {
+	_, _ = io.ReadAll(r.Body) // want "reads an inbound request body with no size cap"
+	_ = r.ParseForm()         // want `parses the request form with no cap`
 }
 
 // queryHandler is wrapped through an intermediate middleware: quiet.
@@ -167,4 +187,18 @@ func fakeWrapped() http.Handler {
 
 func mountFake(mux *http.ServeMux) {
 	mux.Handle("POST /fake", notAMiddleware(fakeWrapped(), nil))
+}
+
+func outerRead(w http.ResponseWriter, r *http.Request) func() {
+	capLater := func() { capRequest(w, r) }
+	_, _ = io.ReadAll(r.Body) // want `reads an inbound request body with no size cap`
+	_ = r.ParseForm()         // want `parses the request form with no cap`
+	return capLater
+}
+
+func nestedParseFactory() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parse := func() { _ = r.ParseForm() } // want `parses the request form with no cap`
+		parse()
+	})
 }

@@ -21,6 +21,8 @@ package retired
 import (
 	"bytes"
 	stdhtml "html"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Scan walks html's start tags and calls visit once per tag with the tag
@@ -194,7 +196,7 @@ func scanAttrs(b []byte, attrs *[][]byte, classes *[][]byte) int {
 // hasAttr reports whether attrs already holds name, folding case.
 func hasAttr(attrs [][]byte, name []byte) bool {
 	for _, a := range attrs {
-		if bytes.EqualFold(a, name) {
+		if asciicase.EqualFold(a, name) {
 			return true
 		}
 	}
@@ -205,7 +207,7 @@ func hasAttr(attrs [][]byte, name []byte) bool {
 // attribute's value, character references decoded first. Other
 // attributes' values carry no classes.
 func recordClassValue(name, value []byte, classes *[][]byte) {
-	if len(value) == 0 || !bytes.EqualFold(name, []byte("class")) {
+	if len(value) == 0 || !asciicase.EqualFold(name, []byte("class")) {
 		return
 	}
 	if bytes.IndexByte(value, '&') >= 0 {

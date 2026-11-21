@@ -1,11 +1,11 @@
 # Server logs (`battery/log`)
 
 The `battery/log` plugin wires structured JSON-line server logs into the
-app. A single `*slog.Logger` writes to one or more **sinks**; built-in
-sinks cover four destinations:
+app. A single `*slog.Logger` writes to one or more **sinks**. Built-in
+sinks provide five ways to send logs to files, streams, or a webhook:
 
 1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`,
-   `~/.local/state/<app>/server.log` when the variable is unset). Once
+   `~/.local/state/<app>/server.log` when the variable is unset or empty). Once
    this plugin's `Init` has run, a later battery or plugin whose `Init`
    panics ends the boot with an error that names this file. The file
    holds the full stack; a terminal console sink shows it on one escaped
@@ -13,6 +13,14 @@ sinks cover four destinations:
 2. A **chosen file** at an explicit path, with size+count rotation.
 3. A **webhook** URL that receives batched JSON.
 4. A **JSON stream** on stdout (or any `io.Writer`) for container deploys.
+5. A **console** sink that writes one human-readable line per entry to
+   stderr by default. `Config.Console` controls automatic attachment.
+   The zero value, `ConsoleAuto`, adds the sink when stderr is a terminal
+   and `NO_COLOR` is unset or empty. `ConsoleOn` adds it regardless of
+   TTY or `NO_COLOR`, with color enabled only under the same terminal
+   and environment conditions as `ConsoleAuto`. `ConsoleOff` skips
+   automatic attachment. Add `ConsoleSink(ConsoleOpts{...})` to
+   `Config.Sinks` to choose a writer or override color detection.
 
 The plugin also installs:
 
@@ -217,6 +225,7 @@ in the path cannot forge log lines or repaint an operator's tail.
 | `Sinks`                  | `[DefaultFileSink]` | If empty, resolves a per-app file under the OS state dir.      |
 | `DisableLifecycleEvents` | `false`             | Set true to skip `app.start` / `app.stop` entries.             |
 | `AddSource`              | `false`             | Adds `source` (file:line) attribute to every entry.            |
+| `Console`                | `ConsoleAuto`       | Adds a colorized stderr sink when stderr is a TTY and `NO_COLOR` is unset or empty. `ConsoleOn` always adds it and uses the same color detection. `ConsoleOff` skips automatic attachment. |
 | `ErrorReporter`          | `nil` (slog)        | Receives recovered panics + app-reported errors. nil keeps the existing `http.panic` log line; set to `NewHTTPErrorReporter(url, opts)` to POST JSON reports. |
 
 > **Zero-config = full plugin.** `Config{}` gives you everything: file

@@ -12,11 +12,10 @@ type QueryBuilder struct {
 	table   string
 	columns []string
 	joins   []joinClause
-	wheres  []whereClause
+	wheres  whereClauses
 	orderBy []orderClause
 	limit   *int
 	offset  *int
-	args    []any
 }
 
 type joinClause struct {
@@ -28,7 +27,24 @@ type joinClause struct {
 type whereClause struct {
 	connector string
 	condition string
-	args      []any
+	argCount  int
+}
+
+type whereClauses struct {
+	clauses []whereClause
+	args    []any
+}
+
+func newWhereClauses() whereClauses {
+	return whereClauses{
+		clauses: make([]whereClause, 0, 4),
+		args:    make([]any, 0, 4),
+	}
+}
+
+func (w *whereClauses) add(connector, condition string, args ...any) {
+	w.clauses = append(w.clauses, whereClause{connector: connector, condition: condition, argCount: len(args)})
+	w.args = append(w.args, args...)
 }
 
 type orderClause struct {
@@ -41,15 +57,9 @@ type orderClause struct {
 func Select(columns ...string) *QueryBuilder {
 	return &QueryBuilder{
 		columns: slices.Clone(columns),
-		wheres:  make([]whereClause, 0, defaultWhereCap),
-		args:    make([]any, 0, defaultArgCap),
+		wheres:  newWhereClauses(),
 	}
 }
-
-const (
-	defaultWhereCap = 4
-	defaultArgCap   = 4
-)
 
 // From sets the table to query.
 func (qb *QueryBuilder) From(table string) *QueryBuilder {
@@ -59,23 +69,13 @@ func (qb *QueryBuilder) From(table string) *QueryBuilder {
 
 // Where appends a condition ANDed with everything before it: Where(a).OrWhere(b).Where(c) builds ((a) OR (b)) AND (c).
 func (qb *QueryBuilder) Where(condition string, args ...any) *QueryBuilder {
-	qb.wheres = append(qb.wheres, whereClause{
-		connector: "AND",
-		condition: condition,
-		args:      args,
-	})
-	qb.args = append(qb.args, args...)
+	qb.wheres.add("AND", condition, args...)
 	return qb
 }
 
 // OrWhere appends a condition ORed with everything before it.
 func (qb *QueryBuilder) OrWhere(condition string, args ...any) *QueryBuilder {
-	qb.wheres = append(qb.wheres, whereClause{
-		connector: "OR",
-		condition: condition,
-		args:      args,
-	})
-	qb.args = append(qb.args, args...)
+	qb.wheres.add("OR", condition, args...)
 	return qb
 }
 
@@ -150,12 +150,7 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 		orderDir = "DESC"
 	}
 	condition := fmt.Sprintf("%s %s $1", field, op)
-	qb.args = append(qb.args, value)
-	qb.wheres = append(qb.wheres, whereClause{
-		connector: "AND",
-		condition: condition,
-		args:      []any{value},
-	})
+	qb.wheres.add("AND", condition, value)
 	for _, o := range qb.orderBy {
 		if identSlot(sanitizeFragment(o.column)) == field {
 			return qb
@@ -169,8 +164,8 @@ func (qb *QueryBuilder) Cursor(field string, value any, dir string) *QueryBuilde
 func (qb *QueryBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
-	args := make([]any, len(qb.args))
-	copy(args, qb.args)
+	args := make([]any, len(qb.wheres.args))
+	copy(args, qb.wheres.args)
 
 	cols := "*"
 	if len(qb.columns) > 0 {
@@ -195,9 +190,9 @@ func (qb *QueryBuilder) Build() (string, []any) {
 		sb.WriteString(sanitizeFragment(j.on))
 	}
 
-	if len(qb.wheres) > 0 {
+	if len(qb.wheres.clauses) > 0 {
 		sb.WriteString(" WHERE ")
-		appendWhereClauses(&sb, qb.wheres, 1)
+		appendWhereClauses(&sb, qb.wheres.clauses, 1)
 	}
 
 	if len(qb.orderBy) > 0 {
@@ -255,7 +250,7 @@ func appendWhereClauses(sb *strings.Builder, wheres []whereClause, paramIdx int)
 			sb.WriteString(" ")
 		}
 		condition, inLineComment := renumberCondition(w.condition, paramIdx)
-		paramIdx += len(w.args)
+		paramIdx += w.argCount
 		sb.WriteByte('(')
 		sb.WriteString(condition)
 		if inLineComment {

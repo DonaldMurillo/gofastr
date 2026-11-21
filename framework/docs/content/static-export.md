@@ -24,8 +24,9 @@ serving the old target while that directory exists.
 `framework.App.ExportStatic(ctx, dir, basePath)` drives the app in-process,
 with no port and no crawl: it enumerates every declared route, renders each
 through the SSG-aware render path, and dumps all `/__gofastr` assets with
-**query-free filenames**. `basePath` is the URL subpath for a project-site
-deploy (`"/gofastr"`); pass `""` for an apex deploy.
+**query-free filenames**. Mount the UI host before calling it. Set `basePath`
+to the URL subpath for a project-site deploy (`"/gofastr"`), or pass `""`
+for an apex deploy.
 
 Generated locale alternates and `x-default` include that mount path, just
 like sitemap URLs. A sitemap `BaseURL` already ending in the mount path
@@ -38,11 +39,23 @@ direction markers, including when only a layout slot swaps. Entering an
 RTL locale loads the direction behavior on demand and updates `<html dir>`;
 returning to a cached LTR page restores its direction without a full reload.
 
+<!-- gofastr:compile
+-->
 ```go
-fwApp, _ := framework.NewApp(opts...)
-// "" = apex; "/gofastr" for a https://<user>.github.io/gofastr/ deploy.
-if err := fwApp.ExportStatic(context.Background(), "_site", ""); err != nil {
-    log.Fatal(err)
+package site
+
+import (
+    "context"
+
+    "github.com/DonaldMurillo/gofastr/core-ui/app"
+    "github.com/DonaldMurillo/gofastr/framework"
+    "github.com/DonaldMurillo/gofastr/framework/uihost"
+)
+
+func exportSite(ctx context.Context, application *app.App, opts ...framework.AppOption) error {
+    fwApp := framework.NewApp(opts...)
+    fwApp.Mount(uihost.New(application))
+    return fwApp.ExportStatic(ctx, "_site", "")
 }
 ```
 
@@ -130,7 +143,7 @@ go build -o site ./examples/site/
   (`widgets`, `headless-feedback`, `headless-navigation`, …), one file per module.
 - `/__gofastr/app.css` and `/__gofastr/comp/<name>.css`: global and
   per-component stylesheets.
-- Per-route `llm.md` (unless `NoLLMMD` is set). The exported `llm.md`
+- Per-route `llm.md` (unless `NoLLMMD` is set). The exported `llm-pages.md`
   index links only the docs the export wrote: a dynamic route lists its
   pattern followed by a link to each exported page's doc, and a page
   whose doc was not written appears without a link. The builder hands
@@ -256,6 +269,8 @@ decoded form, so an escaped `/caf%C3%A9` to a `/café` route is a page
 link and takes the prefix. A copied file wins over a route that also
 matches its path, as it does on the live server.
 
+Dynamic routes contain a parameter segment such as `:id` or `{id}`.
+The app router's `app.RouteHasParams` treats a segment like `a:b` as literal.
 Dynamic routes require the screen to implement `StaticPathsProvider`, the
 static-export analogue of Next.js's `generateStaticParams`. Each returned
 param map is substituted into the route pattern to produce one concrete
@@ -295,7 +310,14 @@ with a combining accent), which APFS stores as one. A
 redirect's page is checked the same way, against the pages and the
 other redirects.
 
-Routes whose screen doesn't implement `StaticPathsProvider` (or returns an
+Before writing any files, the builder checks that page and redirect
+routes map to portable filenames, including after parameter expansion
+and locale prefixing. The error names the route. For example, the live
+router accepts `/a:b` as a literal route, but a static export refuses it
+because Windows reserves the colon in filenames. `static.Walk` writes no
+files and skips this check, so the site search index keeps such pages.
+
+Dynamic routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a
 `WARN` naming the route pattern and the fix (implement `StaticPaths`) rather
 than dropping it silently; the missing pages are a build-time signal, not a

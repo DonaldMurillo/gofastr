@@ -552,6 +552,7 @@ func TestHasGroupColumn_SQLiteBranch(t *testing.T) {
 
 func TestAppliedVersions_QueryAndScanErrors(t *testing.T) {
 	ctx := context.Background()
+	queryErr := errors.New("rows fail")
 
 	// Legacy query error (after hasGroupColumn succeeds): up() path.
 	{
@@ -562,10 +563,13 @@ func TestAppliedVersions_QueryAndScanErrors(t *testing.T) {
 		mock.ExpectQuery("pg_attribute").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
-			WillReturnError(errors.New("rows fail"))
+			WillReturnError(queryErr)
 		expectUnlock(mock)
-		if err := m.Up(ctx); err == nil {
-			t.Fatal("expected appliedVersions query error")
+		if err := m.Up(ctx); !errors.Is(err, queryErr) {
+			t.Fatalf("Up error = %v, want %v", err, queryErr)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("unmet expectations: %v", err)
 		}
 	}
 
@@ -604,6 +608,7 @@ func TestAppliedVersions_QueryAndScanErrors(t *testing.T) {
 
 func TestDown_Status_AppliedVersionsErrors(t *testing.T) {
 	ctx := context.Background()
+	queryErr := errors.New("rows fail")
 
 	// down(): legacy appliedVersions query error.
 	{
@@ -614,10 +619,13 @@ func TestDown_Status_AppliedVersionsErrors(t *testing.T) {
 		mock.ExpectQuery("pg_attribute").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
-			WillReturnError(errors.New("rows fail"))
+			WillReturnError(queryErr)
 		expectUnlock(mock)
-		if err := m.Down(ctx, 1); err == nil {
-			t.Fatal("expected down appliedVersions query error")
+		if err := m.Down(ctx, 1); !errors.Is(err, queryErr) {
+			t.Fatalf("Down error = %v, want %v", err, queryErr)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("unmet expectations: %v", err)
 		}
 	}
 
@@ -630,9 +638,12 @@ func TestDown_Status_AppliedVersionsErrors(t *testing.T) {
 		mock.ExpectQuery("pg_attribute").
 			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		mock.ExpectQuery("SELECT version, name, applied_at, checksum, dirty FROM").
-			WillReturnError(errors.New("rows fail"))
-		if _, err := m.Status(ctx); err == nil {
-			t.Fatal("expected status appliedVersions query error")
+			WillReturnError(queryErr)
+		if _, err := m.Status(ctx); !errors.Is(err, queryErr) {
+			t.Fatalf("Status error = %v, want %v", err, queryErr)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("unmet expectations: %v", err)
 		}
 	}
 }

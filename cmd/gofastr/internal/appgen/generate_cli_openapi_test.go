@@ -114,23 +114,30 @@ func TestOpenAPICLI_SpecModel(t *testing.T) {
 	}
 }
 
-func TestOpenAPICLI_MissingOperationIDFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3","paths":{"/x":{"get":{"summary":"no id"}}}}`
+// oaBuildErr decodes a JSON OpenAPI document and hands it to
+// BuildOpenAPICLISpec, failing the test when the fixture itself does not
+// decode.
+func oaBuildErr(t *testing.T, doc string) error {
+	t.Helper()
 	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
+	if err := json.Unmarshal([]byte(doc), &m); err != nil {
+		t.Fatalf("fixture does not decode: %v", err)
+	}
 	_, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c")
+	return err
+}
+
+func TestOpenAPICLI_MissingOperationIDFails(t *testing.T) {
+	err := oaBuildErr(t, `{"openapi":"3.0.3","paths":{"/x":{"get":{"summary":"no id"}}}}`)
 	if err == nil || !strings.Contains(err.Error(), "operationId") {
 		t.Fatalf("missing operationId must fail, got %v", err)
 	}
 }
 
 func TestOpenAPICLI_DuplicateCommandFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3","paths":{
-	  "/a":{"get":{"operationId":"doThing"}},
-	  "/b":{"get":{"operationId":"do_thing"}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	_, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c")
+	err := oaBuildErr(t, `{"openapi":"3.0.3","paths":{
+  "/a":{"get":{"operationId":"doThing"}},
+  "/b":{"get":{"operationId":"do_thing"}}}}`)
 	if err == nil || !strings.Contains(err.Error(), "already used") {
 		t.Fatalf("colliding commands must fail, got %v", err)
 	}
@@ -151,11 +158,8 @@ func TestOpenAPICLI_DuplicateGoNameFails(t *testing.T) {
 }
 
 func TestOpenAPICLI_ReservedFlagFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"listA",
-	  "parameters":[{"name":"token","in":"query","schema":{"type":"string"}}]}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	_, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c")
+	err := oaBuildErr(t, `{"openapi":"3.0.3","paths":{"/a":{"get":{"operationId":"listA",
+  "parameters":[{"name":"token","in":"query","schema":{"type":"string"}}]}}}}`)
 	if err == nil || !strings.Contains(err.Error(), "reserves") {
 		t.Fatalf("reserved flag must fail, got %v", err)
 	}
@@ -214,25 +218,21 @@ func TestOpenAPICLI_TypedArrayParamFails(t *testing.T) {
 }
 
 func TestOpenAPICLI_RefCycleFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3",
-	  "components":{"schemas":{"A":{"$ref":"#/components/schemas/B"},"B":{"$ref":"#/components/schemas/A"}}},
-	  "paths":{"/a":{"post":{"operationId":"mk",
-	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err == nil || !strings.Contains(err.Error(), "cycle") {
+	err := oaBuildErr(t, `{"openapi":"3.0.3",
+  "components":{"schemas":{"A":{"$ref":"#/components/schemas/B"},"B":{"$ref":"#/components/schemas/A"}}},
+  "paths":{"/a":{"post":{"operationId":"mk",
+    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`)
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("$ref cycle must fail loudly, got %v", err)
 	}
 }
 
 func TestOpenAPICLI_AllOfSelfRefFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3",
-	  "components":{"schemas":{"A":{"allOf":[{"$ref":"#/components/schemas/A"}]}}},
-	  "paths":{"/a":{"post":{"operationId":"mk",
-	    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	if _, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c"); err == nil || !strings.Contains(err.Error(), "$ref cycle") {
+	err := oaBuildErr(t, `{"openapi":"3.0.3",
+  "components":{"schemas":{"A":{"allOf":[{"$ref":"#/components/schemas/A"}]}}},
+  "paths":{"/a":{"post":{"operationId":"mk",
+    "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/A"}}}}}}}}`)
+	if err == nil || !strings.Contains(err.Error(), "$ref cycle") {
 		t.Fatalf("allOf self-reference must fail with the $ref cycle error, got %v", err)
 	}
 }
@@ -289,11 +289,8 @@ func TestOpenAPICLI_MistypedBodyFails(t *testing.T) {
 }
 
 func TestOpenAPICLI_ExternalRefFails(t *testing.T) {
-	doc := `{"openapi":"3.0.3","paths":{"/a":{"post":{"operationId":"mk",
-	  "requestBody":{"content":{"application/json":{"schema":{"$ref":"other.json#/X"}}}}}}}}`
-	var m map[string]any
-	_ = json.Unmarshal([]byte(doc), &m)
-	_, err := BuildOpenAPICLISpec(m, CliOptions{Binary: "x"}, "c")
+	err := oaBuildErr(t, `{"openapi":"3.0.3","paths":{"/a":{"post":{"operationId":"mk",
+  "requestBody":{"content":{"application/json":{"schema":{"$ref":"other.json#/X"}}}}}}}}`)
 	if err == nil || !strings.Contains(err.Error(), "external $ref") {
 		t.Fatalf("external ref must fail, got %v", err)
 	}

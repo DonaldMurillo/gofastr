@@ -90,14 +90,17 @@ func TestOwnerScopedUniqueQuietCases(t *testing.T) {
 func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
+	clitest.WriteFileAll(t, filepath.Join(dir, "go.mod"), "module "+frameworkModulePath+"/example\n")
 	clitest.WriteFileAll(t, filepath.Join(dir, "bp.yml"), clitest.OwnerUniqueYML)
 	out := clitest.CovT_capStdout(t, func() {
 		clitest.CovT_capExit(t, func() {
 			GenerateFromAppSpec(GenerateOptions{Spec: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
-	if !strings.Contains(out, `"customers"`) || !strings.Contains(out, "409") {
-		t.Fatalf("generate should warn about customers.email:\n%s", out)
+	unique := strings.Index(out, "uniqueness spans every account")
+	collision := strings.Index(out, "ambiguous import")
+	if unique < 0 || collision < 0 || unique >= collision {
+		t.Fatalf("generate should print the uniqueness warning before the module collision:\n%s", out)
 	}
 }
 

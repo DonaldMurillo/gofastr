@@ -97,11 +97,14 @@ func (ls *LocalStorage) Close() error {
 // New writes are still held to the portable rules.
 func (ls *LocalStorage) validateKey(key string) error {
 	if key == "" {
-		return fmt.Errorf("storage: empty key")
+		return fmt.Errorf("%w: empty key", upload.ErrInvalidKey)
 	}
 	// Check for path traversal sequences
 	if strings.Contains(key, "..") {
 		return fmt.Errorf("%w: key %q contains a path traversal sequence", upload.ErrInvalidKey, key)
+	}
+	if strings.ContainsRune(key, '\x00') {
+		return fmt.Errorf("%w: key %q contains a NUL byte", upload.ErrInvalidKey, key)
 	}
 	// Reject absolute paths and volume-qualified paths on every platform.
 	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
@@ -132,17 +135,20 @@ func (ls *LocalStorage) validateWritableKey(key string) error {
 	if err := ls.validateKey(key); err != nil {
 		return err
 	}
+	if err := checkControlBytes(key); err != nil {
+		return err
+	}
 	return validateWindowsCompatibleKey(key)
 }
 
 func validateWindowsCompatibleKey(key string) error {
 	for _, part := range strings.FieldsFunc(key, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if strings.ContainsRune(part, ':') {
-			return fmt.Errorf("storage: key %q contains a Windows alternate-data-stream separator", key)
+			return fmt.Errorf("%w: key %q contains a Windows alternate-data-stream separator", upload.ErrInvalidKey, key)
 		}
 		trimmed := strings.TrimRight(part, " .")
 		if trimmed == "" || trimmed != part {
-			return fmt.Errorf("storage: key %q contains a Windows-invalid path component", key)
+			return fmt.Errorf("%w: key %q contains a Windows-invalid path component", upload.ErrInvalidKey, key)
 		}
 		base := strings.ToUpper(trimmed)
 		if dot := strings.IndexByte(base, '.'); dot >= 0 {
@@ -152,7 +158,7 @@ func validateWindowsCompatibleKey(key string) error {
 		case "CON", "PRN", "AUX", "NUL",
 			"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
 			"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
-			return fmt.Errorf("storage: key %q contains reserved Windows device name %q", key, part)
+			return fmt.Errorf("%w: key %q contains reserved Windows device name %q", upload.ErrInvalidKey, key, part)
 		}
 	}
 	return nil
@@ -359,24 +365,36 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		}
 		// The rename is the commit: a save canceled during the copy
 		// leaves the stored object as it was.
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := upload.CommitUnfolded(key, root, rt, func() error {
-			if err := rt.Rename(tmpRel, rel); err != nil {
-				return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
-			}
-			return nil
+		if err := ls.commitTail(ctx, key, root, dstPath, rt, func() error {
+			return rt.Rename(tmpRel, rel)
 		}); err != nil {
 			return err
-		}
-		if err := fileperm.Restrict(dstPath, false); err != nil {
-			return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
 		}
 		success = true
 		return nil
 	}
 	return ls.saveResolveThenOpen(ctx, key, dstPath, tempDir, root, r)
+}
+
+// commitTail is the shared commit sequence of both save paths: refuse a
+// canceled context, rename the staged temp over the destination inside
+// CommitUnfolded, then restrict the destination's permissions.
+func (ls *LocalStorage) commitTail(ctx context.Context, key, root, dstPath string, rt *os.Root, rename func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := upload.CommitUnfolded(key, root, rt, func() error {
+		if err := rename(); err != nil {
+			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := fileperm.Restrict(dstPath, false); err != nil {
+		return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
+	}
+	return nil
 }
 
 // saveResolveThenOpen is the pre-root staging path: CreateTemp in the
@@ -422,19 +440,10 @@ func (ls *LocalStorage) saveResolveThenOpen(ctx context.Context, key, dstPath, t
 	}
 
 	// The rename is the commit; see Save.
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := upload.CommitUnfolded(key, root, nil, func() error {
-		if err := os.Rename(tmpPath, dstPath); err != nil {
-			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
-		}
-		return nil
+	if err := ls.commitTail(ctx, key, root, dstPath, nil, func() error {
+		return os.Rename(tmpPath, dstPath)
 	}); err != nil {
 		return err
-	}
-	if err := fileperm.Restrict(dstPath, false); err != nil {
-		return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
 	}
 
 	success = true
@@ -531,7 +540,7 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
+			return nil, fmt.Errorf("%w: %q", upload.ErrNotFound, key)
 		}
 		return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
 	}
@@ -542,7 +551,7 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 		if err != nil {
 			return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
 		}
-		return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
+		return nil, fmt.Errorf("%w: %q", upload.ErrNotFound, key)
 	}
 	return f, nil
 }

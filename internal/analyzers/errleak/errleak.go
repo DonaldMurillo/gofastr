@@ -46,7 +46,7 @@
 // any flags or an explicit [n] argument index) and the error among its
 // operands — fmt.Sprintf("query failed: %v", err) is a built string,
 // not a format handed to a helper; the format may be a named constant
-// (constString resolves it). Until the 2026-11-02 guard bash the HTTP
+// (the type checker resolves it). Until the 2026-11-02 guard bash the HTTP
 // arm read only .Error(), and the JSON-RPC arm only the bare
 // "%v"/"%s" format; until the 2026-11-03 gap round an [n] index or a
 // constant format slipped both.
@@ -55,9 +55,8 @@
 // their contract, sinks and silences are in origin.go. Decode
 // (1a4d9e2a): an error from json.Unmarshal / (*json.Decoder).Decode,
 // directly, %w-wrapped, or returned by a helper (rawJSONErr fact), whose
-// text reaches a client at ANY status, a JSON-RPC code, or a Code/Message
-// literal: encoding/json's text names the server's Go types, so the 4xx
-// posture above does not cover it. Fix: handler.JSONErrorDetail(err).
+// text reaches a call with a 4xx/5xx HTTP status or a JSON-RPC error
+// code, or a Code/Message literal. Fix: handler.JSONErrorDetail(err).
 // Rewrap (d01462e8a): `&T{Message: err.Error()}` (or a helper returning a
 // T-carrying value) for an error type T, where err is a callback's error
 // (foreignErr fact) or a parameter and the function never tests it for
@@ -75,15 +74,16 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
 	Name:      "errleak",
-	Doc:       "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response, encoding/json's text at any status, and rebuilding a typed error from its own text; log it and write a fixed message instead",
+	Doc:       "forbids sending an error's text to the client on a 5xx response or inside a JSON-RPC internal-error response, encoding/json's error text in 4xx/5xx HTTP and JSON-RPC error responses, and rebuilding a typed error from its own text; log it and write a fixed message instead",
 	Run:       run,
 	FactTypes: []analysis.Fact{(*rawJSONErr)(nil), (*foreignErr)(nil)},
 }
@@ -94,7 +94,7 @@ func run(pass *analysis.Pass) (any, error) {
 	reported := map[*ast.CallExpr]bool{}
 	var decls []*ast.FuncDecl
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -107,31 +107,19 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok {
 				return true
 			}
-			if hasServerErrorStatus(pass, call.Args) {
-				for _, arg := range call.Args {
-					pos, found := findErrorText(pass, arg)
-					if !found {
-						pos, found = findSprintfErr(pass, arg)
-					}
-					if found {
-						pass.Reportf(pos,
-							"sends an internal error's text on a 5xx response: a server-side error string carries DSNs, paths and SQL to the client — log it and write a fixed message")
-						reported[call] = true
-						return true
-					}
-				}
+			var message string
+			switch {
+			case hasServerErrorStatus(pass, call.Args):
+				message = "sends an internal error's text on a 5xx response: a server-side error string carries DSNs, paths and SQL to the client — log it and write a fixed message"
+			case hasInternalCodeArg(pass, call.Args):
+				message = internalMsg
 			}
-			if hasInternalCodeArg(pass, call.Args) {
+			if message != "" {
 				for _, arg := range call.Args {
-					if pos, found := findErrorText(pass, arg); found {
-						pass.Reportf(pos, internalMsg)
+					if pos := firstErrorText(pass, arg); pos.IsValid() {
+						pass.Reportf(pos, "%s", message)
 						reported[call] = true
-						return true
-					}
-					if pos, found := findSprintfErr(pass, arg); found {
-						pass.Reportf(pos, internalMsg)
-						reported[call] = true
-						return true
+						break
 					}
 				}
 			}
@@ -184,141 +172,17 @@ func hasInternalCodeArg(pass *analysis.Pass, args []ast.Expr) bool {
 	return false
 }
 
-// findErrorText looks for a call to Error() on an error-typed receiver
-// anywhere inside expr, so both err.Error() and "prefix: "+err.Error()
-// are caught.
-func findErrorText(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bool) {
-	ast.Inspect(expr, func(n ast.Node) bool {
-		if found {
-			return false
+func firstErrorText(pass *analysis.Pass, expr ast.Expr) token.Pos {
+	var formatted token.Pos
+	for call := range errorTexts(pass, expr) {
+		if len(call.Args) == 0 {
+			return call.Pos() // Prefer a direct Error call within this argument.
 		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+		if !formatted.IsValid() {
+			formatted = call.Pos()
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Error" || len(call.Args) != 0 {
-			return true
-		}
-		tv, ok := pass.TypesInfo.Types[sel.X]
-		if !ok {
-			return true
-		}
-		if types.Implements(tv.Type, errorInterface) {
-			pos, found = call.Pos(), true
-			return false
-		}
-		return true
-	})
-	return pos, found
-}
-
-// findSprintfErr looks for an fmt string formatter handed an
-// error-typed argument — the other spelling of "hand the error's text
-// over": fmt.Sprint / fmt.Sprintln of the error, or fmt.Sprintf whose
-// format renders an operand as text (%v, %s, %q, with any flags), as in
-// fmt.Sprintf("query failed: %v", err). Until the 2026-11-02 guard bash
-// only the bare "%v"/"%s" format counted and only on the JSON-RPC arm,
-// so http.Error(w, fmt.Sprintf("query failed: %v", err), 500) was
-// silent.
-func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bool) {
-	ast.Inspect(expr, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		xid, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		pkg, ok := pass.TypesInfo.Uses[xid].(*types.PkgName)
-		if !ok || pkg.Imported().Path() != "fmt" {
-			return true
-		}
-		args := call.Args
-		switch sel.Sel.Name {
-		case "Sprint", "Sprintln":
-		case "Sprintf":
-			if len(args) < 2 {
-				return true
-			}
-			s, ok := constString(pass, args[0])
-			if !ok {
-				return true
-			}
-			args = formattedTextArgs(s, args[1:])
-		default:
-			return true
-		}
-		for _, a := range args {
-			tv, ok := pass.TypesInfo.Types[a]
-			if !ok {
-				continue
-			}
-			if types.Implements(tv.Type, errorInterface) {
-				pos, found = call.Pos(), true
-				return false
-			}
-		}
-		return true
-	})
-	return pos, found
+	}
+	return formatted
 }
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
-
-func formattedTextArgs(format string, args []ast.Expr) []ast.Expr {
-	var text []ast.Expr
-	argument := 0
-	reordered := false
-	for offset := 0; offset < len(format); offset++ {
-		if format[offset] != '%' {
-			continue
-		}
-	directive:
-		for offset++; offset < len(format); offset++ {
-			character := format[offset]
-			switch {
-			case character == '[':
-				reordered = true
-				end := strings.IndexByte(format[offset:], ']')
-				if end < 0 {
-					break directive
-				}
-				index, err := strconv.Atoi(format[offset+1 : offset+end])
-				if err != nil || index < 1 {
-					offset += end
-					break directive
-				}
-				argument = index - 1
-				offset += end
-			case character == '*':
-				if argument < len(args) {
-					argument++
-				}
-			case strings.ContainsRune("-+# .0123456789", rune(character)):
-			case character == '%':
-				break directive
-			default:
-				if strings.ContainsRune("vsq", rune(character)) && argument < len(args) {
-					text = append(text, args[argument])
-				}
-				if argument < len(args) {
-					argument++
-				}
-				break directive
-			}
-		}
-	}
-	if !reordered && argument < len(args) {
-		text = append(text, args[argument:]...)
-	}
-	return text
-}

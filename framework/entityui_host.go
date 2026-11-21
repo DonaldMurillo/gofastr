@@ -70,10 +70,8 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	return u
 }
 
-const bulkResumeGrace = time.Minute
-
 func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
-	if n, err := u.ResumeBulkJobs(ctx, bulkResumeGrace); err != nil {
+	if n, err := u.ResumeBulkJobs(ctx, entityui.BulkResumeGrace); err != nil {
 		slog.ErrorContext(ctx, "framework: EntityUI: resume bulk jobs", "resumed", n, "error", err)
 	} else if n > 0 {
 		slog.InfoContext(ctx, "framework: EntityUI: resumed bulk jobs", "count", n)

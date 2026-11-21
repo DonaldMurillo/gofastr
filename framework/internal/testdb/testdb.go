@@ -4,47 +4,28 @@ package testdb
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-	_ "github.com/lib/pq"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-var (
-	pgOnce    sync.Once
-	pgBaseDSN string
-	pgErr     error
-	pgUsing   string
-	pgLogged  atomic.Bool
-)
+var pgLogged atomic.Bool
 
-var errNoPostgres = errors.New(
-	"TEST_POSTGRES_DSN is not set: start one with `make postgres-up` (docker compose) " +
-		"or point at an existing server, e.g. " +
-		"TEST_POSTGRES_DSN='postgres://test:test@localhost:5432/framework_test?sslmode=disable'")
-
-// ResolvePostgresOnce returns TEST_POSTGRES_DSN, or an error saying how to supply one; memoised per process.
+// ResolvePostgresOnce returns TEST_POSTGRES_DSN through the shared
+// pgtest resolution (memoised per process), or pgtest's error naming
+// how to supply one.
 func ResolvePostgresOnce() (string, error) {
-	pgOnce.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
-			pgBaseDSN = dsn
-			pgUsing = "env"
-			return
-		}
-		pgErr = errNoPostgres
-	})
-	return pgBaseDSN, pgErr
+	dsn, _, err := pgtest.ResolveEnv()
+	return dsn, err
 }
 
 // Dialects is the canonical list of dialects ForEachDialect iterates.
@@ -66,12 +47,17 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 		t.Cleanup(func() { db.Close() })
 		return db
 	case migrate.DialectPostgres:
-		base, err := ResolvePostgresOnce()
+		base, source, err := pgtest.ResolveEnv()
 		if err != nil {
 			t.Skipf("Postgres unavailable: %v", err)
 		}
+		schemaName := NewSchemaName(t)
+		scoped, err := pgtest.DSNWithSearchPath(base, schemaName)
+		if err != nil {
+			t.Fatalf("scope dsn to %s: %v", schemaName, err)
+		}
 		if !pgLogged.Swap(true) {
-			t.Logf("Postgres tests using %s: %s", pgUsing, RedactDSN(base))
+			t.Logf("Postgres tests using %s: %s", source, RedactDSN(base))
 		}
 		db, err := sql.Open("postgres", base)
 		if err != nil {
@@ -81,13 +67,8 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 		if err := WaitPGReady(db); err != nil {
 			t.Fatalf("ping pg: %v", err)
 		}
-		schemaName := NewSchemaName(t)
 		if _, err := db.ExecContext(context.Background(), "CREATE SCHEMA "+schemaName); err != nil {
 			t.Fatalf("create schema %s: %v", schemaName, err)
-		}
-		scoped, err := withSearchPath(base, schemaName)
-		if err != nil {
-			t.Fatalf("scope dsn to %s: %v", schemaName, err)
 		}
 		scopedDB, err := sql.Open("postgres", scoped)
 		if err != nil {
@@ -107,100 +88,6 @@ func Open(t *testing.T, dialect migrate.Dialect) *sql.DB {
 	}
 	t.Fatalf("unknown dialect: %s", dialect)
 	return nil
-}
-
-func withSearchPath(dsn, schema string) (string, error) {
-	if schema == "" {
-		return "", errors.New("empty schema name")
-	}
-	for _, r := range schema {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_') {
-			return "", fmt.Errorf("schema %q is not [a-z0-9_]; refusing to put it in a DSN", schema)
-		}
-	}
-	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		u, err := url.Parse(dsn)
-		if err != nil {
-			return "", fmt.Errorf("parse dsn: %w", err)
-		}
-		q := u.Query()
-		q.Set("search_path", schema)
-		u.RawQuery = q.Encode()
-		return u.String(), nil
-	}
-	pairs, err := splitKeywordValueDSN(dsn)
-	if err != nil {
-		return "", err
-	}
-	kept := make([]string, 0, len(pairs)+1)
-	for _, p := range pairs {
-		if p.key == "search_path" {
-			continue
-		}
-		kept = append(kept, p.raw)
-	}
-	kept = append(kept, "search_path="+schema)
-	return strings.Join(kept, " "), nil
-}
-
-type dsnPair struct{ key, raw string }
-
-func splitKeywordValueDSN(dsn string) ([]dsnPair, error) {
-	var out []dsnPair
-	i := 0
-	isSpace := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
-	for {
-		for i < len(dsn) && isSpace(dsn[i]) {
-			i++
-		}
-		if i >= len(dsn) {
-			return out, nil
-		}
-		start := i
-		for i < len(dsn) && dsn[i] != '=' && !isSpace(dsn[i]) {
-			i++
-		}
-		key := dsn[start:i]
-		if key == "" {
-			return nil, fmt.Errorf("dsn: empty key at offset %d", start)
-		}
-		for i < len(dsn) && isSpace(dsn[i]) {
-			i++
-		}
-		if i >= len(dsn) || dsn[i] != '=' {
-			return nil, fmt.Errorf("dsn: key %q has no value", key)
-		}
-		i++
-		for i < len(dsn) && isSpace(dsn[i]) {
-			i++
-		}
-		if i < len(dsn) && dsn[i] == '\'' {
-			i++
-			for {
-				if i >= len(dsn) {
-					return nil, fmt.Errorf("dsn: unterminated quoted value for key %q", key)
-				}
-				if dsn[i] == '\\' && i+1 < len(dsn) {
-					i += 2
-					continue
-				}
-				if dsn[i] == '\'' {
-					i++
-					break
-				}
-				i++
-			}
-		} else {
-			for i < len(dsn) && !isSpace(dsn[i]) {
-				if dsn[i] == '\\' && i+1 < len(dsn) {
-					i += 2
-					continue
-				}
-				i++
-			}
-		}
-		out = append(out, dsnPair{key: key, raw: dsn[start:i]})
-	}
 }
 
 // ForEachDialect runs fn as a subtest on each of Dialects, with a database from Open.
@@ -237,19 +124,13 @@ func NewSchemaName(t *testing.T) string {
 	return fmt.Sprintf("t_%s_%d_%d", clean, pid, id)
 }
 
-// WaitPGReady pings db until it answers, for about five seconds.
+// WaitPGReady pings db until it answers, for about five seconds, through
+// the shared pgtest retry loop.
 func WaitPGReady(db *sql.DB) error {
-	const maxAttempts = 25
-	for range maxAttempts {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		err := db.PingContext(ctx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
+	if err := pgtest.PingRetry(db, 25, 500*time.Millisecond, 200*time.Millisecond); err != nil {
+		return fmt.Errorf("Postgres did not become ready within ~5s")
 	}
-	return fmt.Errorf("Postgres did not become ready within ~5s")
+	return nil
 }
 
 // RedactDSN strips credentials from a DSN for logs, with internal/dsnredact.

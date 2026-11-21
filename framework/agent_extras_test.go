@@ -27,13 +27,7 @@ func TestWebBotAuth_ServesJWKS(t *testing.T) {
 }
 
 func TestWebBotAuth_NotConfigured404(t *testing.T) {
-	app, cleanup := startApp(t, NewApp())
-	defer cleanup()
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/http-message-signatures-directory", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("want 404, got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/.well-known/http-message-signatures-directory", "want 404,")
 }
 
 func TestUCP_ServesDiscovery(t *testing.T) {

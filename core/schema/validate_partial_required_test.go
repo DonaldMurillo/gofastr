@@ -2,9 +2,6 @@ package schema
 
 import "testing"
 
-//go:fix inline
-func float64Ptr(v float64) *float64 { return new(v) }
-
 // TestValidatePartial_RejectsPresentButEmptyRequired pins the data-corruption
 // fix surfaced in adversarial review: when a sparse-update body INCLUDES a
 // required field but sends an empty zero-value, validation must reject.

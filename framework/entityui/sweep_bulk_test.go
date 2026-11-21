@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 
 // A panicking app action logs only the panic's type: its text may carry record contents.
 func TestSweepBulkActionPanicLogsTypeOnly(t *testing.T) {
-	buf := sweepCaptureLog(t)
+	buf := captureLogs(t, slog.LevelDebug)
 	ext := Extensions{Entities: map[string]Extension{"invoices": {Actions: []Action{{
 		Key: "boom", Bulk: true,
 		Run: func(context.Context, ActionContext) error { panic("secret row text") },

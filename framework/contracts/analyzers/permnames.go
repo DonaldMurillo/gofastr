@@ -22,8 +22,9 @@ type permNames struct {
 	Registered map[string]map[string]bool
 	// Unknown marks a package with a registration the pass cannot read:
 	// its registry is incomplete, so no binary linking it is judged.
-	Unknown map[string]bool
-	Checks  []permUse
+	Unknown      map[string]bool
+	Checks       []permUse
+	CoverageOnly []permUse
 }
 
 var permArg = map[string]int{
@@ -318,12 +319,12 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 			return kindOf(recv) == recvPolicy
 		}
-		record := func(e ast.Expr, locals map[string]bool, shaped bool) {
+		record := func(uses *[]permUse, e ast.Expr, locals map[string]bool, shaped bool) {
 			name, ok := c.str(pkg, aliases, e, locals, 0)
 			if !ok || name == "" || (shaped && !looksLikePermission(name)) {
 				return
 			}
-			out.Checks = append(out.Checks, permUse{Name: name, Package: pkg, File: pf.src.Rel, Pos: e.Pos()})
+			*uses = append(*uses, permUse{Name: name, Package: pkg, File: pf.src.Rel, Pos: e.Pos()})
 		}
 		register := func(call *ast.CallExpr, recv ast.Expr, locals map[string]bool) {
 			var names []string
@@ -385,7 +386,13 @@ func collectPermNames(p *contracts.Pass) permNames {
 						return true
 					}
 					if i, isCheck := permArg[method]; isCheck && i < len(call.Args) && isAccess(recv) {
-						record(call.Args[i], locals, false)
+						record(&out.Checks, call.Args[i], locals, false)
+					}
+					switch method {
+					case "Require", "HasScope", "RequireAPIScopes":
+						for _, arg := range call.Args {
+							record(&out.CoverageOnly, arg, locals, true)
+						}
 					}
 				case *ast.CompositeLit:
 					if !readsLiterals {
@@ -412,7 +419,7 @@ func collectPermNames(p *contracts.Pass) permNames {
 							continue
 						}
 						if key, isIdent := kv.Key.(*ast.Ident); isIdent && fields[key.Name] {
-							record(kv.Value, locals, shapedPermTypes[typeName])
+							record(&out.Checks, kv.Value, locals, shapedPermTypes[typeName])
 						}
 					}
 				}

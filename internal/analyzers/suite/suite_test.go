@@ -376,3 +376,13 @@ func TestAllowNamesMatchRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestStandaloneSuiteKeepsStockVetPasses(t *testing.T) {
+	want := map[string]bool{"hostport": true, "waitgroup": true}
+	for _, a := range Analyzers() {
+		delete(want, a.Name)
+	}
+	if len(want) != 0 {
+		t.Errorf("standalone vettool is missing %v", want)
+	}
+}

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -265,20 +264,7 @@ func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam st
 	q := scrubbedQuery(p.Query)
 	q.Set(sortParam, key)
 	q.Set(dirParam, string(dir))
-
-	href := "?" + q.Encode()
-	if p.Path != "" {
-		u, err := url.Parse(p.Path)
-		if err != nil {
-			panic("headless: Table Path " + strconv.Quote(p.Path) + " does not parse as a URL: " + err.Error())
-		}
-		u.RawQuery = q.Encode()
-		href = u.String()
-	}
-	if urlsafe.CleanAnchor(href) == "" {
-		panic("headless: Table Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
-	}
-	return href
+	return queryHref("Table", p.Path, q)
 }
 
 // scrubbedQuery copies q without C0 control bytes and DEL, dropping a key or value that scrubs to empty.

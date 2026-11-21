@@ -428,14 +428,15 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 	// below can remove a local peer for it. A known id (an update, or
 	// a peer of this replica moving away) is never refused.
 	now := time.Now()
+	merged := s.mergedPeersLocked(msg.Room, now)
 	known := false
-	for _, p := range s.mergedPeersLocked(msg.Room, now) {
+	for _, p := range merged {
 		if p.ID == msg.Peer.ID {
 			known = true
 			break
 		}
 	}
-	if !known && len(s.mergedPeersLocked(msg.Room, now)) >= s.cfg.MaxPeers {
+	if !known && len(merged) >= s.cfg.MaxPeers {
 		return
 	}
 	prev := s.remoteViewLocked(msg.Room, time.Time{})

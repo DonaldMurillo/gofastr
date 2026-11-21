@@ -41,9 +41,10 @@ invariants:
       - test: core-ui/check.TestCSPIgnoreDirectiveCRLF
       - test: core-ui/check.TestLintNoInlineScripts_SkipsTestFiles
   - id: walks-skip-build-output
-    rule: The recursive lints skip vendor, node_modules, testdata, hidden directories and build output such as dist.
+    rule: The recursive lints, and LintNoInlineRecursive's one walk for both lanes, skip vendor, node_modules, testdata, hidden directories and build output such as dist.
     enforced_by:
       - test: core-ui/check.TestRecursiveScriptsSkipDist
+      - test: core-ui/check.TestCombinedInlineWalkSkipsBuildOutputForBothLanes
       - test: core-ui/check.TestRecursiveStylesSkipBuildOutput
   - id: repo-is-csp-clean
     rule: The framework tree emits no inline script or style outside the allowed markers.

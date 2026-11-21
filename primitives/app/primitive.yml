@@ -150,6 +150,10 @@ invariants:
       - test: framework.TestSweepApp2OptionsSeeDotEnv
       - test: framework.TestNewApp_GofastrDotEnvOffSkipsLoad
       - test: framework.TestNewApp_AppEnvSelectsOverlay
+  - id: dotenv-malformation-panics-at-construction
+    rule: NewApp skips missing dotenv files and panics with the file name and line number on malformed dotenv assignments.
+    enforced_by:
+      - test: framework.TestNewApp_DotEnvStartup
   - id: explicit-option-beats-env
     rule: WithSecret and WithSecretRotation win over GOFASTR_SECRET and GOFASTR_SECRET_PREVIOUS, WithRole wins over GOFASTR_ROLE, and an invalid role from either panics.
     enforced_by:

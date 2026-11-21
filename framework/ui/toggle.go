@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // ToggleConfig configures a Checkbox/Radio/Switch.
@@ -89,7 +90,7 @@ func switchProps(cfg ToggleConfig, id string) headless.SwitchProps {
 
 func choiceID(ctx context.Context, callerID, inputType, name, value string) string {
 	if inputType == "radio" && value != "" {
-		name += "-" + slug(value)
+		name += "-" + idslug.Make(value)
 	}
 	return scopedControlID(ctx, callerID, name, "-hint", "-error")
 }
@@ -199,7 +200,7 @@ func RadioGroup(cfg RadioGroupConfig) render.HTML {
 		class:    cfg.Class,
 		required: cfg.Required,
 		extra:    html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby"),
-		options:  normalizeRadioOptions(cfg.Options),
+		options:  normalizeToggleOptions(cfg.Options),
 	})
 }
 
@@ -244,8 +245,15 @@ func CheckboxGroup(cfg CheckboxGroupConfig) render.HTML {
 		class:    cfg.Class,
 		required: cfg.Required,
 		extra:    html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-describedby"),
-		options:  normalizeCheckboxOptions(cfg.Options),
+		options:  normalizeToggleOptions(cfg.Options),
 	})
+}
+
+type toggleOption struct {
+	Value    string
+	Label    string
+	Checked  bool
+	Disabled bool
 }
 
 type toggleGroupOption struct {
@@ -255,17 +263,10 @@ type toggleGroupOption struct {
 	disabled bool
 }
 
-func normalizeRadioOptions(in []RadioGroupOption) []toggleGroupOption {
+func normalizeToggleOptions[T RadioGroupOption | CheckboxGroupOption](in []T) []toggleGroupOption {
 	opts := make([]toggleGroupOption, len(in))
-	for i, opt := range in {
-		opts[i] = toggleGroupOption{value: opt.Value, label: opt.Label, checked: opt.Checked, disabled: opt.Disabled}
-	}
-	return opts
-}
-
-func normalizeCheckboxOptions(in []CheckboxGroupOption) []toggleGroupOption {
-	opts := make([]toggleGroupOption, len(in))
-	for i, opt := range in {
+	for i, option := range in {
+		opt := toggleOption(option)
 		opts[i] = toggleGroupOption{value: opt.Value, label: opt.Label, checked: opt.Checked, disabled: opt.Disabled}
 	}
 	return opts

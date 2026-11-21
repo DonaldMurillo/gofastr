@@ -147,6 +147,22 @@ var _ = style.Contribute(nil)
 	}
 }
 
+func TestAuditDeps_DecodesImportLiterals(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, root, "raw/source.go", "package raw\nimport `github.com/DonaldMurillo/gofastr/core-ui/style`\nfunc register() { style.Contribute() }\n")
+	mustWrite(t, root, "escaped/source.go", `package escaped
+import "github.com/DonaldMurillo/gofastr/core-ui/\x73tyle"
+func register() { style.Contribute() }
+`)
+	findings, err := auditDeps(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 2 || findings[0].Kind != "style.Contribute" || findings[1].Kind != "style.Contribute" {
+		t.Fatalf("auditDeps findings = %+v, want both import spellings", findings)
+	}
+}
+
 func TestAuditDeps_HumanReportListsPackagesAndKinds(t *testing.T) {
 	findings := []AuditFinding{
 		{Pkg: "example.com/a", Kind: "style.Contribute", File: "a/a.go", Line: 10},

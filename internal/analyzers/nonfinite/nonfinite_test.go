@@ -9,5 +9,5 @@ import (
 )
 
 func TestNonFinite(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), nonfinite.Analyzer, "a")
+	analysistest.Run(t, analysistest.TestData(), nonfinite.Analyzer, "a", "lookalike")
 }

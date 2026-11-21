@@ -38,14 +38,32 @@ size_mb() {
 	du -sm "$dir" | cut -f1
 }
 
+# ago NOW SECONDS prints a UTC timestamp SECONDS before NOW in touch -t
+# form. BSD touch has no -d '1 hour ago'; the two date families spell
+# "the epoch N seconds back" differently (BSD -r, GNU -d @N), so the
+# probe picks the spelling the host understands. CI runs GNU
+# coreutils; dev laptops run BSD tools.
+ago() {
+	local epoch=$(($1 - $2))
+	if date -v-1m +%s >/dev/null 2>&1; then
+		date -r "$epoch" +%Y%m%d%H%M.%S
+	else
+		date -d "@$epoch" +%Y%m%d%H%M.%S
+	fi
+}
+
 case "$mode" in
 age)
-	touch -d '1 hour ago' "$marker"
+	# Use UTC for both formatting and parsing, including the repeated
+	# local hour when daylight saving time ends.
+	export TZ=UTC0
+	now=$(date +%s)
+	touch -t "$(ago "$now" 3600)" "$marker"
 	if [ ! -d "$dir" ]; then
 		echo "go-cache-prune: no cache at $dir, nothing to age"
 		exit 0
 	fi
-	entries -exec touch -c -d '2 hours ago' {} +
+	entries -exec touch -c -t "$(ago "$now" 7200)" {} +
 	echo "go-cache-prune: aged $(entries | wc -l) entries, $(size_mb) MB"
 	;;
 prune)

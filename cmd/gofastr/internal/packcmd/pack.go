@@ -1,11 +1,14 @@
 package packcmd
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -24,6 +27,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
@@ -51,17 +55,9 @@ func decodeAppSpecString(yml string) (appspec.AppSpec, error) {
 // decoder and this serializer must learn it or the round-trip test fails.
 // =============================================================================
 
-// encodeAppSpecYAML serializes a App spec to gofastr.yml text. It returns
-// an error — naming the key and the map it came from — for any map key that
-// cannot survive the decodeAppSpec round trip: core/yaml never unquotes
-// keys, so quoting would mangle them just as surely as emitting them raw
-// would forge structure. Refusing is the honest inverse.
+// encodeAppSpecYAML serializes an app spec or reports an unrepresentable key or value.
 func encodeAppSpecYAML(bp appspec.AppSpec) (string, error) {
 	root := appSpecToMap(bp)
-	// YAML text is Unicode: a string holding a byte that is not UTF-8 has
-	// no spelling a YAML 1.2 decoder reads back (core/yaml reads "\xff"
-	// as U+00FF, as the spec says), so refuse it as an unrepresentable key
-	// is refused.
 	if at := invalidUTF8At(reflect.ValueOf(root), "app spec"); at != "" {
 		return "", fmt.Errorf("%s holds a byte that is not UTF-8; YAML cannot carry it", at)
 	}
@@ -722,6 +718,10 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 		return fmt.Errorf("cannot emit %q as a map key under %s: %s", key, where, reason)
 	}
 	child := joinYAMLPath(path, key)
+	keyText := key
+	if needsKeyQuote(key) {
+		keyText = quoteYAMLStringEscaped(key)
+	}
 	pad := strings.Repeat(" ", indent)
 	switch v := val.(type) {
 	case map[string]any:
@@ -735,23 +735,23 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 			// gives for an empty map inside properties, props, or seed
 			// rows. Trailing-at-EOF is the same case: parseMap's
 			// p.pos >= len(p.lines) branch also yields the empty map node.
-			sb.WriteString(pad + key + ":\n")
+			sb.WriteString(pad + keyText + ":\n")
 			return nil
 		}
-		sb.WriteString(pad + key + ":\n")
+		sb.WriteString(pad + keyText + ":\n")
 		return writeYAMLMap(sb, v, indent+2, orderFor(key), child)
 	case []any:
 		if len(v) == 0 {
-			sb.WriteString(pad + key + ": []\n")
+			sb.WriteString(pad + keyText + ": []\n")
 			return nil
 		}
 		if allScalars(v) {
-			sb.WriteString(pad + key + ": ")
+			sb.WriteString(pad + keyText + ": ")
 			writeFlowList(sb, v)
 			sb.WriteString("\n")
 			return nil
 		}
-		sb.WriteString(pad + key + ":\n")
+		sb.WriteString(pad + keyText + ":\n")
 		for _, item := range v {
 			if err := writeYAMLListItem(sb, item, indent+2, orderFor(key), child); err != nil {
 				return err
@@ -759,7 +759,7 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 		}
 		return nil
 	default:
-		sb.WriteString(pad + key + ": ")
+		sb.WriteString(pad + keyText + ": ")
 		writeScalarInline(sb, val)
 		sb.WriteString("\n")
 		return nil
@@ -832,55 +832,23 @@ func joinYAMLPath(parent, key string) string {
 	return parent + "." + key
 }
 
-// yamlKeyRejectReason returns why key cannot round-trip through core/yaml as
-// a map key, or "" if it can. Every case below is verified against the
-// parser, never assumed:
-//
-//   - core/yaml cuts a line at the FIRST ':' and never unquotes keys
-//     (yaml.go parseMap), so quoting is not an escape hatch — a quoted key
-//     re-parses mangled, and a raw key containing ':' re-parses truncated;
-//   - lexLines strips ' #'-comments, trims edge whitespace, normalizes CRLF,
-//     and rejects tabs anywhere in a line;
-//   - parseMap rejects flow indicators in keys outright;
-//   - parseBlock dispatches a "- " prefix to the list grammar, so such a key
-//     re-parses as a list item instead of a map entry.
-//
-// A key failing any of these would re-parse as a different key or as
-// structure the source never declared — the seed-row/entity-property forgery
-// this guard exists to stop — so pack refuses rather than emit a file that
-// lies about the app it snapshots.
+// yamlKeyRejectReason describes keys pack cannot represent safely.
 func yamlKeyRejectReason(key string) string {
 	switch {
 	case key == "":
-		return "empty key: the parser drops the entry on re-parse"
-	case strings.ContainsAny(key, "\n\r"):
-		return "line breaks re-parse as new YAML structure — the key-injection vector"
-	case strings.Contains(key, ":"):
-		return "core/yaml cuts keys at the first ':' and never unquotes, so the key would re-parse truncated"
-	case strings.ContainsAny(key, "\"'"):
-		return "a quote anywhere in a key desyncs core/yaml's comment scanner from the " +
-			"quoted value, and a leading quote sends the whole entry down the " +
-			"quoted-scalar path — either way the file cannot be read back"
-	case strings.Contains(key, "#"):
-		// Conservative rather than parser-exact: '#' only opens a comment at
-		// position 0 or after a space, so an interior a#b would in fact
-		// survive. Refused anyway — one simple predicate beats a
-		// position-dependent one, and no real key carries a '#'.
-		return "'#' may open a comment on re-parse, depending on position"
-	case strings.ContainsAny(key, "[]{}"):
-		return "core/yaml rejects flow indicators in keys, so the file could not be read back"
-	case strings.HasPrefix(key, "- "):
-		return "a '- ' prefix re-parses the entry as a list item"
-	case strings.Contains(key, "\t"):
-		return "core/yaml rejects tabs anywhere in a line, so the file could not be read back"
+		return "empty key"
 	case key != strings.TrimSpace(key):
-		return "edge whitespace is trimmed on re-parse, so the key would change"
+		return "edge whitespace is unsupported in mapping keys"
+	case strings.ContainsAny(key, "[]{}"):
+		return "flow indicators are unsupported in mapping keys"
 	case hasUnprintable(key):
-		// After the tab/line-break cases, which carry their own reasons.
-		return "a control or invisible character cannot be quoted in a key, and raw it " +
-			"reaches the terminal pack prints to (an ESC or C1 byte drives it)"
+		return "control or invisible characters are unsupported in mapping keys"
 	}
 	return ""
+}
+
+func needsKeyQuote(key string) bool {
+	return strings.ContainsAny(key, ":#\"'") || strings.ContainsAny(key[:1], "&*!") || strings.HasPrefix(key, "- ")
 }
 
 func writeFlowList(sb *strings.Builder, list []any) {
@@ -937,14 +905,7 @@ func allScalars(list []any) bool {
 	return true
 }
 
-// quoteYAMLString double-quotes s for core/yaml's parseQuoted, which runs
-// strconv.Unquote on the quoted region. Unquote replaces invalid UTF-8 bytes
-// with U+FFFD, so before this escaped them, a value like "a\xffb'" came back
-// as "a\ufffdb'" — corruption this serializer introduced, not parser noise.
-// Invalid bytes and non-printable runes are therefore emitted as the Go
-// escape forms Unquote decodes back to the exact bytes (\xNN, \uNNNN,
-// \UNNNNNN); printable multi-byte runes (café, 日本語) pass through
-// literally, and an apostrophe needs no escape inside double quotes.
+// quoteYAMLString quotes text whose bare form would change its meaning.
 func quoteYAMLString(s string) string {
 	if !coreyaml.NeedsQuote(s) {
 		return s
@@ -952,11 +913,7 @@ func quoteYAMLString(s string) string {
 	return quoteYAMLStringEscaped(s)
 }
 
-// quoteYAMLStringEscaped is quoteYAMLString's always-quote form, for callers
-// that have a context-specific reason to quote beyond NeedsQuote's
-// value-context rules (writeYAMLListItem: a ':' anywhere in a block-list
-// item is the map-cut delimiter). Same escaping contract as
-// quoteYAMLString: exact bytes back through parseQuoted's strconv.Unquote.
+// quoteYAMLStringEscaped writes YAML double quotes and escapes non-printable runes.
 func quoteYAMLStringEscaped(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -972,8 +929,6 @@ func quoteYAMLStringEscaped(s string) string {
 			b.WriteString(`\n`)
 		case r == '\t':
 			b.WriteString(`\t`)
-		case r == utf8.RuneError && size == 1:
-			b.WriteString(fmt.Sprintf(`\x%02x`, s[i-1]))
 		case !unicode.IsPrint(r):
 			switch {
 			case r < 0x80:
@@ -1077,9 +1032,21 @@ func orderFor(key string) []string {
 // The generator emits a known, finite grammar; these readers reverse it.
 // =============================================================================
 
-func packParseFile(path string) (*ast.File, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
+func packParseFile(path string, mode parser.Mode) (*ast.File, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	src, err := appgen.ReadRegularSource(root, filepath.Base(path))
+	if err != nil {
+		return nil, err
+	}
+	return parser.ParseFile(token.NewFileSet(), path, src, mode)
+}
+
+func packParsePhrases(path string) (*ast.File, error) {
+	file, err := packParseFile(path, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1164,12 +1131,11 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	stubs, stubComments := map[string]*ast.FuncDecl{}, map[string]string{}
 	var helpers []appspec.AppSpecNamedStub
 	stubsPath := filepath.Join(dir, "stubs.go")
-	if _, err := os.Stat(stubsPath); err == nil {
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, stubsPath, nil, parser.ParseComments)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", stubsPath, err)
-		}
+	file, err := packParseFile(stubsPath, parser.ParseComments)
+	if err != nil && !os.IsNotExist(err) && !errors.Is(err, appgen.ErrNonRegularSource) {
+		return fmt.Errorf("parse %s: %w", stubsPath, err)
+	}
+	if err == nil {
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok {
@@ -1177,7 +1143,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			}
 			key := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) == 1 {
-				key = appspec.AstSelLast(fn.Recv.List[0].Type) + "." + key
+				key = astbase.RecvBaseNameGeneric(fn) + "." + key
 			}
 			stubs[key] = fn
 			if fn.Doc != nil {
@@ -1205,7 +1171,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	}
 	bp.Helpers = helpers
 
-	if appFile, err := packParseFile(filepath.Join(dir, "app.go")); err == nil {
+	if appFile, err := packParsePhrases(filepath.Join(dir, "app.go")); err == nil {
 		ast.Inspect(appFile, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) != 1 {
@@ -1222,11 +1188,22 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 					bp.Middleware = append(bp.Middleware, appspec.AppSpecNamedStub{Name: packStubName(root)})
 				}
 			case "RegisterPlugin":
-				lit, ok := call.Args[0].(*ast.CompositeLit)
+				arg := ast.Unparen(call.Args[0])
+				if ptr, ok := arg.(*ast.UnaryExpr); ok && ptr.Op == token.AND {
+					arg = ast.Unparen(ptr.X)
+				}
+				lit, ok := arg.(*ast.CompositeLit)
 				if !ok {
 					return true
 				}
-				typ := appspec.AstSelLast(lit.Type)
+				literalType := lit.Type
+				switch inst := literalType.(type) {
+				case *ast.IndexExpr:
+					literalType = inst.X
+				case *ast.IndexListExpr:
+					literalType = inst.X
+				}
+				typ := appspec.AstSelLast(literalType)
 				root, isStub := strings.CutSuffix(typ, "Plugin")
 				if !isStub || stubs[typ+".Init"] == nil {
 					return true
@@ -1245,7 +1222,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 		})
 	}
 
-	mainFile, err := packParseFile(filepath.Join(dir, "main.go"))
+	mainFile, err := packParsePhrases(filepath.Join(dir, "main.go"))
 	if err != nil {
 		return nil
 	}
@@ -1299,10 +1276,10 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 // edited rows as authored ones.
 func packReadSeed(dir string, entities map[string]framework.EntityDeclaration) ([]appspec.AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
-	if _, err := os.Stat(path); err != nil {
+	file, err := packParsePhrases(path)
+	if os.IsNotExist(err) || errors.Is(err, appgen.ErrNonRegularSource) {
 		return nil, nil
 	}
-	file, err := packParseFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -1425,10 +1402,10 @@ func packReadSeedWeights(e ast.Expr) map[string]map[string]int {
 // sidebarConfig() ui.SidebarConfig{Items: []ui.SidebarItem{...}}.
 func packReadNav(dir string) ([]appspec.AppSpecNavItem, error) {
 	path := filepath.Join(dir, "app.go")
-	if _, err := os.Stat(path); err != nil {
+	file, err := packParsePhrases(path)
+	if os.IsNotExist(err) || errors.Is(err, appgen.ErrNonRegularSource) {
 		return nil, nil
 	}
-	file, err := packParseFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -1504,11 +1481,11 @@ func packIconName(e ast.Expr) string {
 // and pack adds the theme, the output dir and the secrets kept in .env.
 func packReadApp(dir string) (appspec.AppSpecApp, error) {
 	appPath := filepath.Join(dir, "app.go")
-	appFile, err := packParseFile(appPath)
+	appFile, err := packParsePhrases(appPath)
 	if err != nil {
 		return appspec.AppSpecApp{APIPrefix: "api"}, fmt.Errorf("parse %s: %w", appPath, err)
 	}
-	mainFile, err := packParseFile(filepath.Join(dir, "main.go"))
+	mainFile, err := packParsePhrases(filepath.Join(dir, "main.go"))
 	if err != nil {
 		mainFile = nil
 	}
@@ -1654,7 +1631,7 @@ func packReadScreens(dir string) ([]appspec.AppSpecScreen, error) {
 	// even one with zero screens. Its presence means the layout is per-file
 	// and simply has no authored screens; do NOT fall through to the legacy
 	// reader (which expects a screens.go that this layout never writes).
-	if _, err := os.Stat(filepath.Join(dir, "screens_register.go")); err == nil {
+	if info, err := os.Lstat(filepath.Join(dir, "screens_register.go")); err == nil && info.Mode().IsRegular() {
 		return nil, nil
 	}
 	return packReadLegacyScreens(dir)
@@ -1678,7 +1655,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 		return nil, nil // no output dir yet
 	}
 	parseRoot := func(rel string) (*ast.File, error) {
-		src, rerr := root.ReadFile(rel)
+		src, rerr := appgen.ReadRegularSource(root, rel)
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -1691,13 +1668,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	var screenNames []string
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		// The seam (screens_register.go) and the shared nodeComponent helper
-		// (screen_shared.go) carry no screen type or mount; skip them. The
-		// per-screen files all start with "screen_".
-		if name == "screen_shared.go" || !strings.HasPrefix(name, "screen_") {
+		if e.IsDir() || !appgen.IsPerScreenSource(name) {
 			continue
 		}
 		screenNames = append(screenNames, name)
@@ -1714,14 +1685,17 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	}
 	titles := map[string]string{}
 	descs := map[string]string{}
+	types := map[string]string{}
 	bodies := map[string][]appspec.AppSpecBlock{}
 	var orderedRegs []screenOrderReg
+	var screenFiles []*ast.File
 	for _, name := range screenNames {
 		file, perr := parseRoot(name)
 		if perr != nil {
 			continue // unreadable leaf (symlink outside the root) or unparsable: skip
 		}
 		helperFiles = append(helperFiles, file)
+		screenFiles = append(screenFiles, file)
 		fnDecls := map[string]*ast.FuncDecl{}
 		for _, d := range file.Decls {
 			if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil {
@@ -1733,12 +1707,14 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
 				continue
 			}
-			recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+			recv := astbase.RecvBaseName(fn)
 			switch fn.Name.Name {
 			case "ScreenTitle":
 				titles[recv] = returnString(fn)
 			case "ScreenDescription":
 				descs[recv] = returnString(fn)
+			case "ScreenType":
+				types[recv] = packScreenType(fn)
 			}
 		}
 		orderedRegs = append(orderedRegs, packScreenRegistrarsFromFile(file, fnDecls)...)
@@ -1746,11 +1722,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	helpers := packHelperReturns(helperFiles...)
 	// Render bodies need the helpers map; rescan now that helpers are known.
 	actions := map[string][]packScreenAction{}
-	for _, name := range screenNames {
-		file, _ := parseRoot(name)
-		if file == nil {
-			continue
-		}
+	for _, file := range screenFiles {
 		for recv, acts := range packScreenActions(file) {
 			actions[recv] = acts
 		}
@@ -1760,7 +1732,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 				continue
 			}
 			if fn.Name.Name == "Render" || fn.Name.Name == "RenderCtx" {
-				recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+				recv := astbase.RecvBaseName(fn)
 				bodies[recv] = reverseRenderBody(fn, helpers)
 			}
 		}
@@ -1777,6 +1749,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 			Name:   typeNameToScreenName(r.reg.typeName),
 			Route:  paramToBrace(r.reg.route),
 			Title:  titles[r.reg.typeName],
+			Type:   types[r.reg.typeName],
 			Layout: r.reg.layout,
 			Body:   body,
 		}
@@ -1803,39 +1776,10 @@ type screenOrderReg struct {
 // (no screen call) contribute nothing.
 func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDecl) []screenOrderReg {
 	var out []screenOrderReg
-	ast.Inspect(file, func(n ast.Node) bool {
-		cl, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		id, ok := cl.Type.(*ast.Ident)
-		if !ok || id.Name != "screenRegistrar" {
-			return true
-		}
-		var order int
-		var fnName string
-		for _, elt := range cl.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-			switch appgen.IdentName(kv.Key) {
-			case "order":
-				if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
-					if n, err := strconv.Atoi(lit.Value); err == nil {
-						order = n
-					}
-				}
-			case "fn":
-				fnName = appgen.IdentName(kv.Value)
-			}
-		}
-		if fnName == "" {
-			return false
-		}
-		fn := fnDecls[fnName]
+	for _, registrar := range appgen.ScreenRegistrars(file) {
+		fn := fnDecls[registrar.Func]
 		if fn == nil || fn.Body == nil {
-			return false
+			continue
 		}
 		for _, stmt := range fn.Body.List {
 			es, ok := stmt.(*ast.ExprStmt)
@@ -1867,12 +1811,11 @@ func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDe
 				continue
 			}
 			if r.typeName != "" {
-				out = append(out, screenOrderReg{order: order, reg: r})
-				return false
+				out = append(out, screenOrderReg{order: registrar.Order, reg: r})
+				break
 			}
 		}
-		return false
-	})
+	}
 	return out
 }
 
@@ -1900,35 +1843,38 @@ func screenArg(e ast.Expr, fn *ast.FuncDecl) ast.Expr {
 // packReadLegacyScreens reads the pre-per-screen aggregated layout: screen
 // types in screens.go, registrations in app.go's RegisterGenerated.
 func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
-	appFile, err := packParseFile(filepath.Join(dir, "app.go"))
+	appFile, err := packParsePhrases(filepath.Join(dir, "app.go"))
 	if err != nil {
 		return nil, err
 	}
 	regs := packReadScreenRegs(appFile)
 	// A legacy app with no screens never emitted screens.go; that's zero
 	// authored screens, not an error.
-	if _, statErr := os.Stat(filepath.Join(dir, "screens.go")); os.IsNotExist(statErr) {
+	scrFile, err := packParsePhrases(filepath.Join(dir, "screens.go"))
+	if os.IsNotExist(err) {
 		return nil, nil
 	}
-	scrFile, err := packParseFile(filepath.Join(dir, "screens.go"))
 	if err != nil {
 		return nil, err
 	}
 	helpers := packHelperReturns(appFile, scrFile)
 	titles := map[string]string{}
 	descs := map[string]string{}
+	types := map[string]string{}
 	bodies := map[string][]appspec.AppSpecBlock{}
 	for _, d := range scrFile.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
 			continue
 		}
-		recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+		recv := astbase.RecvBaseName(fn)
 		switch fn.Name.Name {
 		case "ScreenTitle":
 			titles[recv] = returnString(fn)
 		case "ScreenDescription":
 			descs[recv] = returnString(fn)
+		case "ScreenType":
+			types[recv] = packScreenType(fn)
 		case "Render", "RenderCtx":
 			bodies[recv] = reverseRenderBody(fn, helpers)
 		}
@@ -1945,6 +1891,7 @@ func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 			Name:   typeNameToScreenName(r.typeName),
 			Route:  paramToBrace(r.route),
 			Title:  titles[r.typeName],
+			Type:   types[r.typeName],
 			Layout: r.layout,
 			Body:   body,
 		}
@@ -1957,6 +1904,14 @@ func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+func packScreenType(fn *ast.FuncDecl) string {
+	expr, ok := screenMethodReturn(fn).(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	return appspec.ScreenTypeFromConst(appgen.IdentName(expr.X) + "." + expr.Sel.Name)
 }
 
 // packReadScreenRegs reads site.Register / site.RegisterScreen(...) calls.
@@ -2038,12 +1993,7 @@ func packReadAppHome(dir string) string {
 		return ""
 	}
 	parse := func(name string) *ast.File {
-		// os.Root follows a symlink that stays inside dir: only a
-		// regular file is parsed, as the directory loop below requires.
-		if info, err := root.Lstat(name); err != nil || !info.Mode().IsRegular() {
-			return nil
-		}
-		src, err := root.ReadFile(name)
+		src, err := appgen.ReadRegularSource(root, name)
 		if err != nil {
 			return nil
 		}
@@ -2055,7 +2005,7 @@ func packReadAppHome(dir string) string {
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if !e.IsDir() && e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+		if e.Type().IsRegular() && appgen.IsProductionGoSource(e.Name()) {
 			names = append(names, e.Name())
 		}
 	}
@@ -2140,14 +2090,7 @@ func packReconcileAppHome(screens []appspec.AppSpecScreen, home string) {
 	if home == "" {
 		return
 	}
-	current := "/"
-	for _, s := range screens {
-		if s.Layout == "app" {
-			current = s.Route
-			break
-		}
-	}
-	if current == home {
+	if appspec.AppHome(screens) == home {
 		return
 	}
 	idx := slices.IndexFunc(screens, func(s appspec.AppSpecScreen) bool {
@@ -2188,15 +2131,19 @@ func compositeTypeName(e ast.Expr) string {
 }
 
 func returnString(fn *ast.FuncDecl) string {
+	return appspec.AstString(screenMethodReturn(fn))
+}
+
+func screenMethodReturn(fn *ast.FuncDecl) ast.Expr {
 	if fn.Body == nil {
-		return ""
+		return nil
 	}
 	for _, stmt := range fn.Body.List {
 		if ret, ok := stmt.(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
-			return appspec.AstString(ret.Results[0])
+			return ret.Results[0]
 		}
 	}
-	return ""
+	return nil
 }
 
 func typeNameToScreenName(tn string) string {
@@ -2376,6 +2323,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	if node, ok := reverseNodeBlock(call); ok {
 		return node, true
 	}
+	if chart, ok := reverseChartCall(call); ok {
+		return chart, true
+	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
@@ -2392,9 +2342,6 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 		if _, isCard := c["Description"]; !isCard && len(call.Args) == 2 {
 			if child, ok := call.Args[1].(*ast.CallExpr); ok {
 				if b, ok := reverseChartCall(child); ok {
-					if b.Props == nil {
-						b.Props = map[string]any{}
-					}
 					putStr(b.Props, "title", appspec.AstString(c["Heading"]))
 					return b, true
 				}
@@ -2409,11 +2356,6 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 			}
 		}
 		return b, true
-	case "ui.BarChart", "ui.PieChart", "appUI.LineChart", "lineChart":
-		// Untitled chart (no wrapping ui.Card).
-		if b, ok := reverseChartCall(call); ok {
-			return b, true
-		}
 	case "ui.PageHeader":
 		c := cfgOf(call, 0)
 		return block("page_header", props2("title", appspec.AstString(c["Title"]), "subtitle", appspec.AstString(c["Subtitle"]), "eyebrow", appspec.AstString(c["Eyebrow"]))), true
@@ -2504,12 +2446,8 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	return appspec.AppSpecBlock{}, false
 }
 
-// reverseEntityForm reads the entity_form block appSpecEntityFormExpr
-// emits: render.Join(ui.PageHeader{Title}, ui.Form(cfg, <one control per
-// field>)), whose ExtraAttrs carry the data-entity-form and
-// data-entity-mode markers. Each control names its field in a Name key,
-// directly or inside ui.FormField's Input func, in the order the form
-// lists them, which is the allowlist that reproduces the form.
+// reverseEntityForm recovers an entity_form from its header, form markers,
+// and controls in their rendered order.
 func reverseEntityForm(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	if len(call.Args) != 2 {
 		return appspec.AppSpecBlock{}, false
@@ -2553,18 +2491,17 @@ func reverseEntityForm(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	return b, true
 }
 
-// entityFormControlField names the entity field one form control draws.
-// The generator writes the field twice: as the control's wire key (Name,
-// camelCase: launchedOn) and as its element id ("field-" plus the
-// declared name: field-launched_on). Only the id spells the field the
-// entity declares, so it wins; Name is the fallback for a control that
-// carries no id.
+// entityFormControlField recovers the declared field name from ID or For.
+// The wire name tells a form-scoped ID from an unscoped field whose name holds a dash.
 func entityFormControlField(control ast.Expr) string {
-	id, wire := "", ""
+	var id, wire string
 	ast.Inspect(control, func(n ast.Node) bool {
+		if id != "" && wire != "" {
+			return false
+		}
 		kv, ok := n.(*ast.KeyValueExpr)
-		if id != "" || !ok {
-			return id == ""
+		if !ok {
+			return true
 		}
 		key, ok := kv.Key.(*ast.Ident)
 		if !ok {
@@ -2572,7 +2509,7 @@ func entityFormControlField(control ast.Expr) string {
 		}
 		switch key.Name {
 		case "ID", "For":
-			if v, found := strings.CutPrefix(appspec.AstString(kv.Value), "field-"); found && v != "" {
+			if v, found := strings.CutPrefix(appspec.AstString(kv.Value), "field-"); found && id == "" {
 				id = v
 			}
 		case "Name":
@@ -2580,12 +2517,16 @@ func entityFormControlField(control ast.Expr) string {
 				wire = appspec.AstString(kv.Value)
 			}
 		}
-		return id == ""
+		return true
 	})
-	if id != "" {
-		return id
+	if id == "" {
+		return wire
 	}
-	return wire
+	formID, field, scoped := strings.Cut(id, "-")
+	if scoped && strings.HasPrefix(formID, "entity_form_") && field != "" && appspec.WireKey(field) == wire {
+		return field
+	}
+	return id
 }
 
 func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) appspec.AppSpecBlock {
@@ -3010,7 +2951,7 @@ func reverseAuthCard(call *ast.CallExpr) appspec.AppSpecBlock {
 		}
 	}
 	kind, hrefKey := "login_form", "register_href"
-	if strings.Contains(action, "register") {
+	if u, err := url.Parse(action); err == nil && path.Base(u.Path) == appspec.AuthRegisterSegment {
 		kind, hrefKey = "signup_form", "login_href"
 	}
 	p := map[string]any{}
@@ -3056,31 +2997,22 @@ func reverseRenderTag(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 		}
 		return appspec.AppSpecBlock{Type: "section", Class: tagAttrClass(call.Args[1]), Text: renderTextArg(call.Args[2])}, true
 	case "div":
-		// chart wrapper: render.Tag("div", {class:"mrd-chart"}, Heading(title), ui.BarChart/PieChart(...)).
+		var chart appspec.AppSpecBlock
+		var title string
 		for _, arg := range call.Args[2:] {
-			ac, ok := arg.(*ast.CallExpr)
+			child, ok := arg.(*ast.CallExpr)
 			if !ok {
 				continue
 			}
-			switch callSel(ac) {
-			case "ui.BarChart", "ui.PieChart", "ui.LineChart":
-				kind := map[string]string{"ui.BarChart": "bar_chart", "ui.PieChart": "pie_chart", "ui.LineChart": "line_chart"}[callSel(ac)]
-				p := map[string]any{}
-				// title from the sibling heading.
-				for _, h := range call.Args[2:] {
-					if hc, ok := h.(*ast.CallExpr); ok && callSel(hc) == "html.Heading" {
-						putStr(p, "title", renderTextArg(hc.Args[len(hc.Args)-1]))
-					}
-				}
-				// source from groupBars/groupSlices(ctx, entity, group_by).
-				cc := cfgOf(ac, 0)
-				if dataCall, ok := cc["Bars"].(*ast.CallExpr); ok {
-					p["source"] = chartSource(dataCall)
-				} else if dataCall, ok := cc["Slices"].(*ast.CallExpr); ok {
-					p["source"] = chartSource(dataCall)
-				}
-				return appspec.AppSpecBlock{Kind: kind, Props: p}, true
+			if callSel(child) == "html.Heading" && len(child.Args) > 0 {
+				title = renderTextArg(child.Args[len(child.Args)-1])
+			} else if chart.Kind == "" {
+				chart, _ = reverseChartCall(child)
 			}
+		}
+		if chart.Kind != "" {
+			putStr(chart.Props, "title", title)
+			return chart, true
 		}
 	}
 	return appspec.AppSpecBlock{}, false
@@ -3101,32 +3033,30 @@ func tagAttrClass(e ast.Expr) string {
 	return ""
 }
 
-// reverseChartCall recognizes the three chart emission shapes and returns
-// the corresponding app spec block (without a title; the caller sets it
-// from a wrapping ui.Card heading when present):
-//
-//	ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: groupBars(ctx, e, g), …})
-//	ui.PieChart(ui.PieChartConfig{Ctx: ctx, Slices: groupSlices(ctx, e, g)})
-//	lineChart(ctx, e, g)
+// reverseChartCall decodes a chart; wrappers recover any title.
 func reverseChartCall(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
-	switch callSel(call) {
-	case "ui.BarChart", "ui.PieChart":
-		kind := map[string]string{"ui.BarChart": "bar_chart", "ui.PieChart": "pie_chart"}[callSel(call)]
-		p := map[string]any{}
-		cc := cfgOf(call, 0)
-		if dataCall, ok := cc["Bars"].(*ast.CallExpr); ok {
-			p["source"] = chartSource(dataCall)
-		} else if dataCall, ok := cc["Slices"].(*ast.CallExpr); ok {
-			p["source"] = chartSource(dataCall)
-		}
-		return appspec.AppSpecBlock{Kind: kind, Props: p}, true
-	case "appUI.LineChart", "lineChart":
-		// appUI.LineChart(ctx, entity, group_by), the spelling the
-		// generator emits; lineChart(ctx, entity, group_by) is the app-local
-		// helper older apps carry.
-		return appspec.AppSpecBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
+	if appgen.IdentName(call.Fun) == "lineChart" || callSel(call) == "appUI.LineChart" {
+		return block("line_chart", map[string]any{"source": chartSource(call)}), true
 	}
-	return appspec.AppSpecBlock{}, false
+	var kind string
+	switch callSel(call) {
+	case "ui.BarChart":
+		kind = "bar_chart"
+	case "ui.PieChart":
+		kind = "pie_chart"
+	case "ui.LineChart":
+		kind = "line_chart"
+	default:
+		return appspec.AppSpecBlock{}, false
+	}
+	props := map[string]any{}
+	cfg := cfgOf(call, 0)
+	if dataCall, ok := cfg["Bars"].(*ast.CallExpr); ok {
+		props["source"] = chartSource(dataCall)
+	} else if dataCall, ok := cfg["Slices"].(*ast.CallExpr); ok {
+		props["source"] = chartSource(dataCall)
+	}
+	return block(kind, props), true
 }
 
 func chartSource(dataCall *ast.CallExpr) map[string]any {
@@ -3240,7 +3170,7 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 		return bp, err
 	}
 	// Endpoints live in the settings file generate app wrote them to.
-	if bp.Endpoints, err = appgen.ExistingEndpoints(dir); err != nil {
+	if bp.Endpoints, _, err = appgen.ExistingEndpoints(dir); err != nil {
 		return bp, err
 	}
 	return bp, nil
@@ -3297,41 +3227,77 @@ func packFoldRecordKeys(bp appspec.AppSpec) {
 	}
 }
 
-// RunPack implements `gofastr pack [app-dir] [-o out.yml]`: a lossy
-// best-effort snapshot, not a round-trip inverse of generate. It reconstructs
-// a gofastr.yml from a generated app's Go source.
-func RunPack(args []string) {
-	dir := "."
-	out := ""
+const packUsage = "Usage: gofastr pack [app-dir] [-o out.yml]"
+
+type packArgs struct {
+	dir  string
+	out  string
+	help bool
+}
+
+// AppDir returns the project directory for a pack invocation.
+func AppDir(args []string) (string, error) {
+	opts, err := parsePackArgs(args)
+	return opts.dir, err
+}
+
+func parsePackArgs(args []string) (packArgs, error) {
+	var opts packArgs
 	for i := 0; i < len(args); i++ {
-		switch args[i] {
+		switch arg := args[i]; arg {
 		case "-o", "--out":
-			// A missing value or an unknown flag would print the YAML to
-			// stdout and exit 0 while the caller expected a file.
 			if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "-") {
-				packFail(true, "pack: %s needs a file name", args[i])
-				return
+				return packArgs{}, fmt.Errorf("%s needs a file name", arg)
 			}
-			out = args[i+1]
 			i++
+			opts.out = args[i]
 		case "-h", "--help":
-			cli.Info("Usage: gofastr pack [app-dir] [-o out.yml]")
-			cli.Info("Reconstructs a best-effort gofastr.yml from a generated app's Go source")
-			cli.Info("(entities, app config, theme, screens, nav, seed). Lossy: not a round-trip")
-			cli.Info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
-			cli.Info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
-			cli.Info("Pack then regenerates from the packed spec and checks the Go files at the")
-			cli.Info("app root and directly under entities/ (tests aside): it names each one it")
-			cli.Info("does not reproduce, could not read, or left out as hand-written.")
-			return
+			return packArgs{help: true}, nil
 		default:
-			if strings.HasPrefix(args[i], "-") {
-				packFail(true, "pack: unknown flag %s (usage: gofastr pack [app-dir] [-o out.yml])", args[i])
-				return
+			if name, value, ok := strings.Cut(arg, "="); ok && (name == "-o" || name == "--out") {
+				if value == "" {
+					return packArgs{}, fmt.Errorf("%s needs a file name", name)
+				}
+				opts.out = value
+				continue
 			}
-			dir = args[i]
+			if strings.HasPrefix(arg, "-") {
+				return packArgs{}, fmt.Errorf("unknown flag %s (%s)", arg, packUsage)
+			}
+			if opts.dir != "" {
+				return packArgs{}, fmt.Errorf("expected at most one app directory (%s)", packUsage)
+			}
+			if arg == "" {
+				return packArgs{}, fmt.Errorf("app directory must not be empty (%s)", packUsage)
+			}
+			opts.dir = arg
 		}
 	}
+	if opts.dir == "" {
+		opts.dir = "."
+	}
+	return opts, nil
+}
+
+// RunPack reconstructs a best-effort app spec from a generated app's Go source.
+func RunPack(args []string) {
+	opts, err := parsePackArgs(args)
+	if err != nil {
+		cli.UsageFail("pack: %v", err)
+		return
+	}
+	if opts.help {
+		cli.Info(packUsage)
+		cli.Info("Reconstructs a best-effort gofastr.yml from a generated app's Go source")
+		cli.Info("(entities, app config, theme, screens, nav, seed). Lossy: not a round-trip")
+		cli.Info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
+		cli.Info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
+		cli.Info("Pack then regenerates from the packed spec and checks the Go files at the")
+		cli.Info("app root and directly under entities/ (tests aside): it names each one it")
+		cli.Info("does not reproduce, could not read, or left out as hand-written.")
+		return
+	}
+	dir, out := opts.dir, opts.out
 	// With no -o the YAML is stdout, so everything else goes to stderr.
 	toStderr := out == ""
 	bp, err := packAppSpec(dir)
@@ -3344,6 +3310,11 @@ func RunPack(args []string) {
 		packFail(toStderr, "pack: %v", err)
 		return
 	}
+	decoded, err := decodeAppSpecString(yml)
+	if err != nil {
+		packFail(toStderr, "pack: could not decode the packed YAML: %v", err)
+		return
+	}
 	// The seed password lives only in .env. Without it the packed spec
 	// seeds no admin, and the check below then names app.go and main.go;
 	// say why first.
@@ -3352,7 +3323,7 @@ func RunPack(args []string) {
 	}
 	// The check regenerates from the packed spec and names every file it
 	// does not reproduce, so the loss is reported instead of silent.
-	if c, err := checkPack(dir, bp); err != nil {
+	if c, err := checkPack(dir, decoded); err != nil {
 		packNote(toStderr, "pack: could not check the packed spec against %s: %v", dir, err)
 	} else {
 		reportPackCheck(c, toStderr)

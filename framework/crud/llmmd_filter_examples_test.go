@@ -130,7 +130,7 @@ func TestLLMMDFilterExamplesMatchTheFieldType(t *testing.T) {
 // operator's text sample: there is no field type to match.
 func TestLLMMDFilterExamplePlaceholderKeepsTextSample(t *testing.T) {
 	var b strings.Builder
-	writeLLMOpRow(&b, "_in", filter.OpIn, "IN (comma-separated)", "a,b,c", nil, filter.NewKeySpeller())
+	writeLLMOpRow(&b, "_in", filter.OpIn, "is one of", "a,b,c", nil, filter.NewKeySpeller())
 	if !strings.Contains(b.String(), "`<field>_in=a,b,c`") {
 		t.Errorf("placeholder row = %q, want the <field>_in=a,b,c example", b.String())
 	}

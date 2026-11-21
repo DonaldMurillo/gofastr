@@ -8,14 +8,22 @@
 //
 // For every fixture the driver:
 //  1. copies it to a temp dir;
-//  2. points gofastr at the CURRENT repo tree via a `replace` directive (this
-//     is how an unreleased bump lands without a published tag);
-//  3. applies the fixture's migration.patch, the manual Go-source edits
+//  2. scans it as generated, still pinned to its own release — it must
+//     type-check there, and every migration.patch hunk must be matched by
+//     some in-range note;
+//  3. points gofastr at the CURRENT repo tree via a `replace` directive
+//     (this is how an unreleased bump lands without a published tag);
+//  4. scans again, still unpatched — every compile error the upgrade
+//     causes must be explained by an in-range note, and one `gofastr
+//     upgrade` CLI smoke run keeps the shipped binary path covered;
+//  5. applies the fixture's migration.patch, the manual Go-source edits
 //     `gofastr upgrade --apply` cannot do mechanically, one hunk per
 //     registry note (internal/upgrade/releases);
-//  4. runs go mod tidy + go build (the mechanical steps `--apply` runs);
-//  5. boots the upgraded binary against a copy of seed.db;
-//  6. asserts the full runtime contract over the existing data.
+//  6. scans a third time, patched — no retired spelling survives and the
+//     app type-checks again;
+//  7. runs go mod tidy + go build (the mechanical steps `--apply` runs);
+//  8. boots the upgraded binary against a copy of seed.db and asserts
+//     the full runtime contract over the existing data.
 //
 // The driver is gated behind GOFASTR_UPGRADE_FIXTURES=1: it shells out to the
 // Go toolchain, fetches modules, and boots real servers, so it never runs in
@@ -34,7 +42,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -48,6 +55,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
@@ -311,7 +319,10 @@ func (a *runningApp) kill() {
 // bootApp starts the upgraded binary against dbPath and waits for readiness.
 func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 	t.Helper()
-	port := freePort(t)
+	port, err := proctree.FreePort()
+	if err != nil {
+		t.Fatalf("free port: %v", err)
+	}
 	addr := "127.0.0.1:" + strconv.Itoa(port)
 	logf, err := os.CreateTemp("", "upgrade-fixture-*.log")
 	if err != nil {
@@ -375,16 +386,6 @@ func bootApp(t *testing.T, bin, dbPath string) *runningApp {
 	ra.kill()
 	t.Fatalf("upgraded app did not become ready on %s within 60s (last GET /: %s). Boot log:\n%s", addr, last, firstLines(string(bootLog), 40))
 	return nil
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("free port: %v", err)
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
 }
 
 func doRequest(t *testing.T, method, url, body string, client *http.Client) int {

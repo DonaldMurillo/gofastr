@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 )
@@ -163,16 +164,17 @@ func (s VariantSet) run(src *Image, op string, emit func(VariantHeader, *bytes.B
 	if src == nil {
 		return StreamResult{}, fmt.Errorf("image: VariantSet.%s: nil source", op)
 	}
-	if len(s.Variants) > MaxVariantsPerSet {
-		return StreamResult{}, fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(s.Variants), MaxVariantsPerSet)
+	if err := CheckVariants(s.Variants); err != nil {
+		return StreamResult{}, err
 	}
+	s.Variants = slices.Clone(s.Variants)
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
 	}
 	if s.RejectAnimated && src.frames > 1 {
 		return StreamResult{}, ErrAnimatedSource
 	}
-	if err := s.checkUpFront(src); err != nil {
+	if err := s.checkResizeTargets(src); err != nil {
 		return StreamResult{}, err
 	}
 
@@ -186,17 +188,8 @@ func (s VariantSet) run(src *Image, op string, emit func(VariantHeader, *bytes.B
 
 	var buf bytes.Buffer
 	for i, v := range s.Variants {
-		if v.Width < 1 {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Width must be >= 1", i)
-		}
-		if v.Format == FormatUnknown {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
-		}
 		scaled := src.Resize(s.targetWidth(v, bounds.Dx()), 0)
-		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
-		if err != nil {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
-		}
+		enc := variantEncodings[v.Format].encode(scaled, v.Quality)
 		buf.Reset()
 		if err := enc.Write(&buf); err != nil {
 			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
@@ -238,10 +231,7 @@ func (s VariantSet) targetWidth(v Variant, srcW int) int {
 	return v.Width
 }
 
-func (s VariantSet) checkUpFront(src *Image) error {
-	if err := CheckVariantNames(s.Variants); err != nil {
-		return err
-	}
+func (s VariantSet) checkResizeTargets(src *Image) error {
 	w := src.Bounds().Dx()
 	for i, v := range s.Variants {
 		if err := src.checkResize(s.targetWidth(v, w), 0); err != nil {
@@ -249,6 +239,25 @@ func (s VariantSet) checkUpFront(src *Image) error {
 		}
 	}
 	return nil
+}
+
+// CheckVariants validates the count, widths, encodings and names of a variant list.
+func CheckVariants(vs []Variant) error {
+	if len(vs) > MaxVariantsPerSet {
+		return fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(vs), MaxVariantsPerSet)
+	}
+	for i, v := range vs {
+		if v.Width < 1 {
+			return fmt.Errorf("image: VariantSet.Variants[%d]: Width must be >= 1", i)
+		}
+		if v.Format == FormatUnknown {
+			return fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
+		}
+		if _, ok := variantEncodings[v.Format]; !ok {
+			return fmt.Errorf("image: VariantSet.Variants[%d]: unsupported format %d", i, int(v.Format))
+		}
+	}
+	return CheckVariantNames(vs)
 }
 
 // CheckVariantNames reports colliding or overlong variant names.
@@ -294,41 +303,25 @@ func variantName(base string, v Variant) string {
 	if suffix == "" {
 		suffix = strconv.Itoa(v.Width)
 	}
-	return base + "-" + suffix + "." + variantExt(v.Format)
+	ext := variantEncodings[v.Format].ext
+	if ext == "" {
+		ext = "bin"
+	}
+	return base + "-" + suffix + "." + ext
 }
 
-func variantExt(f Format) string {
-	switch f {
-	case FormatJPEG:
-		return "jpg"
-	case FormatPNG:
-		return "png"
-	case FormatGIF:
-		return "gif"
-	case FormatBMP:
-		return "bmp"
-	case FormatTIFF:
-		return "tiff"
-	case FormatWebP:
-		return "webp"
-	}
-	return "bin"
+type variantEncoding struct {
+	ext    string
+	encode func(*Image, int) *Encoder
 }
 
-func encodeForFormat(img *Image, f Format, quality int) (*Encoder, error) {
-	switch f {
-	case FormatJPEG:
-		return img.JPEG(JPEGOptions{Quality: quality}), nil
-	case FormatPNG:
-		return img.PNG(), nil
-	case FormatGIF:
-		return img.GIF(), nil
-	case FormatBMP:
-		return img.BMP(), nil
-	case FormatTIFF:
-		return img.TIFF(), nil
-	case FormatWebP:
-		return img.WebP(), nil
-	}
-	return nil, fmt.Errorf("unsupported format %q", f)
+var variantEncodings = map[Format]variantEncoding{
+	FormatJPEG: {"jpg", func(img *Image, quality int) *Encoder {
+		return img.JPEG(JPEGOptions{Quality: quality})
+	}},
+	FormatPNG:  {"png", func(img *Image, _ int) *Encoder { return img.PNG() }},
+	FormatGIF:  {"gif", func(img *Image, _ int) *Encoder { return img.GIF() }},
+	FormatBMP:  {"bmp", func(img *Image, _ int) *Encoder { return img.BMP() }},
+	FormatTIFF: {"tiff", func(img *Image, _ int) *Encoder { return img.TIFF() }},
+	FormatWebP: {"webp", func(img *Image, _ int) *Encoder { return img.WebP() }},
 }

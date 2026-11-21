@@ -19,7 +19,8 @@ import (
 var sectionMenuJS string
 
 var _ = registry.RegisterBehavior("sectionmenu", sectionMenuJS,
-	registry.Markers(`[data-cui-comp="cui-section-menu"]`))
+	registry.Markers(`[data-cui-comp="cui-section-menu"]`),
+	registry.Requires("activelink"))
 
 // SectionItem is one navigable link in a SectionMenu group.
 type SectionItem struct {

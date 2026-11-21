@@ -11,6 +11,7 @@ import (
 	"math"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
@@ -164,13 +165,15 @@ func TestJPEGQualityExtremes(t *testing.T) {
 	}
 }
 
-// TestPNGCompressionInvalid: image/png treats unknown CompressionLevel
-// values how? Does the framework guard?
+// TestPNGCompressionInvalid pins the guard decision: a CompressionLevel
+// outside -3..0 fails the encode instead of reaching image/png.
 func TestPNGCompressionInvalid(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 8, 8))
 	img := FromImage(src, FormatPNG)
 	_, err := img.PNG(PNGOptions{Compression: png.CompressionLevel(99)}).Bytes()
-	t.Logf("PNG Compression=99 err=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "out of valid range") {
+		t.Errorf("PNG Compression=99 err=%v, want the out-of-range guard error", err)
+	}
 }
 
 // TestBlurHashRanges covers the documented domain.
@@ -334,17 +337,4 @@ func TestSinkPanics(t *testing.T) {
 	_, _ = set.ProcessTo(img, func(h VariantHeader, r io.Reader) error {
 		panic("sink go boom")
 	})
-}
-
-// TestVariantSetWidthLargerThanSourceUpscales documents the "no
-// without-enlargement guard" behavior of VariantSet.
-func TestVariantSetWidthLargerThanSourceUpscales(t *testing.T) {
-	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 16, 16))
-	img := FromImage(src, FormatPNG)
-	set := VariantSet{Variants: []Variant{{Width: 2048, Format: FormatPNG}}}
-	res, err := set.Process(img)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("Variant width=2048 from src=16x16 produced %dx%d (%d bytes) — upscaled blindly", res.Variants[0].Width, res.Variants[0].Height, len(res.Variants[0].Bytes))
 }

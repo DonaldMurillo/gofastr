@@ -23,6 +23,7 @@ invariants:
     rule: A section id derived from its heading keeps the letters and digits of every script, lowercased, so a non-Latin heading still gets an anchor.
     enforced_by:
       - test: framework/ui.TestLayoutSectionNonLatinHeadingIDs
+      - test: internal/idslug.TestMakeKeepsEveryScript
   - id: section-derived-ids-are-unique
     rule: A Section id derived from its heading takes a numeric suffix when the context's id scope already holds it, and an explicit ID is never changed.
     enforced_by:

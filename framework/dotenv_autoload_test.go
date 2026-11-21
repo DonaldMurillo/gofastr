@@ -3,6 +3,7 @@ package framework_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -20,6 +21,31 @@ func withCWD(t *testing.T, dir string) {
 		t.Fatalf("chdir %s: %v", dir, err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(prev) })
+}
+
+func TestNewApp_DotEnvStartup(t *testing.T) {
+	t.Setenv("GOFASTR_DOTENV", "")
+
+	t.Run("malformed", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if err := os.WriteFile(".env", []byte("# comment\nmissing_equals\n"), 0o600); err != nil {
+			t.Fatalf("write .env: %v", err)
+		}
+
+		defer func() {
+			r := recover()
+			msg, ok := r.(string)
+			if !ok || !strings.Contains(msg, "parse .env:") || !strings.Contains(msg, "line 2:") {
+				t.Fatalf("NewApp panic = %v, want a dotenv parse error naming .env and line 2", r)
+			}
+		}()
+		framework.NewApp()
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		framework.NewApp()
+	})
 }
 
 // TestNewApp_AutoLoadsDotEnv pins the auto-load contract: dropping a

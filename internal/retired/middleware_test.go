@@ -90,6 +90,32 @@ func TestMiddlewareJSONDataSilent(t *testing.T) {
 	}
 }
 
+func TestMiddlewareJSONScansValuesOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body string
+		want                    []string
+	}{
+		{"object key", "application/json", `{"<i class=\"ui-button\">":0}`, nil},
+		{"sniffed object key", "", `{"<i class=\"ui-button\">":0}`, nil},
+		{"top-level string", "application/json", `"<i class=\"ui-button\" data-fui-signal>"`, wantPageFindings},
+		{"nested values", "application/json", `[{"<i class=\"ui-hero\">":{"value":"<i class=\"ui-button\">"}},[true,null,"<i data-fui-signal>"],"<i class=\"ui-button\">"]`, wantPageFindings},
+		{"repeated key", "application/json", `{"value":"<i class=\"ui-button\">","value":"<i data-fui-signal>"}`, wantPageFindings},
+		{"large number", "application/json", `[1e400,"<i class=\"ui-button\" data-fui-signal>"]`, wantPageFindings},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got := serveMW(t, func(w http.ResponseWriter, _ *http.Request) {
+				if tc.contentType != "" {
+					w.Header().Set("Content-Type", tc.contentType)
+				}
+				fmt.Fprint(w, tc.body)
+			})
+			if !equalStrings(got, tc.want) {
+				t.Fatalf("reports = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // Stylesheets, scripts and binary bodies are not markup.
 func TestMiddlewareSkipsOtherTypes(t *testing.T) {
 	for _, ct := range []string{"text/css; charset=utf-8", "application/javascript", "image/svg+xml", "application/octet-stream", "text/markdown; charset=utf-8"} {

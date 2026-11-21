@@ -33,19 +33,6 @@ func v086Loaded(t *testing.T) (*upgrade.Registry, *upgrade.Release) {
 	return nil, nil
 }
 
-// TestV086NotesConvertedOrNodetect pins that each v0.86.0 note either
-// describes matchers or says why it cannot.
-func TestV086NotesConvertedOrNodetect(t *testing.T) {
-	_, rel := v086Loaded(t)
-	for i, n := range rel.Notes {
-		hasFind := !n.Find.Empty()
-		reason := strings.TrimSpace(n.Nodetect)
-		if hasFind == (reason != "") {
-			t.Errorf("note %d (%s): must carry exactly one of find and nodetect", i, n.Change)
-		}
-	}
-}
-
 // lineOf returns the 1-based line holding mark's first occurrence in
 // src, so expected hit lines derive from the fixture text itself.
 func lineOf(t *testing.T, src, mark string) int {

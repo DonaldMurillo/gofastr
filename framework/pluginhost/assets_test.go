@@ -7,13 +7,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 )
 
 func TestAssetServerConfinesDiskSymlinks(t *testing.T) {
@@ -580,19 +580,23 @@ func TestNilAssetFSWithoutSpecsServes(t *testing.T) {
 	}
 }
 
-func TestPlainDiskAssetFSRejectsOddValues(t *testing.T) {
-	type subFS struct{ other int }
-	for name, v := range map[string]any{
+type subFS struct{ fsys fs.FS }
+
+func (s *subFS) Open(name string) (fs.File, error) { return s.fsys.Open(name) }
+
+func TestDiskFSRecognitionRejectsOddValues(t *testing.T) {
+	diskFS := os.DirFS(t.TempDir())
+	for name, fsys := range map[string]fs.FS{
 		"nil":            nil,
 		"nil pointer":    (*subFS)(nil),
-		"lookalike type": &subFS{},
+		"lookalike type": &subFS{fsys: diskFS},
 		"map fs":         fstest.MapFS{},
 	} {
-		if plainDiskAssetFS(reflect.ValueOf(v)) {
+		if _, disk := rootfs.DiskFS(fsys); disk {
 			t.Errorf("%s: treated as a plain disk filesystem", name)
 		}
 	}
-	if !plainDiskAssetFS(reflect.ValueOf(os.DirFS(t.TempDir()))) {
+	if _, ok := rootfs.DiskFS(diskFS); !ok {
 		t.Error("os.DirFS not recognized")
 	}
 }

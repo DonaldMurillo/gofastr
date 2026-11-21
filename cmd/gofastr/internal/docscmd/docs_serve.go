@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	relsemver "github.com/DonaldMurillo/gofastr/internal/semver"
 	"golang.org/x/mod/semver"
 )
@@ -91,17 +92,21 @@ func runDocsServe(args []string) {
 	flags.BoolVar(&opts.full, "full", false, "build and run the live site with `go install` (every demo works)")
 	flags.BoolVar(&opts.refresh, "refresh", false, "discard the cached copy and download it again")
 	flags.BoolVar(&opts.open, "open", false, "open the site in the default browser")
-	flags.Usage = printDocsServeHelp
+	flags.SetOutput(io.Discard)
+	flags.Usage = func() {}
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			printDocsServeHelp(os.Stdout)
 			return
 		}
+		cli.Fprintf(os.Stderr, "%v\n", err)
+		printDocsServeHelp(os.Stderr)
 		cli.OsExit(2)
 		return
 	}
 	if flags.NArg() > 0 {
 		cli.Fprintf(os.Stderr, "unexpected argument %q\n\n", flags.Arg(0))
-		printDocsServeHelp()
+		printDocsServeHelp(os.Stderr)
 		cli.OsExit(2)
 		return
 	}
@@ -111,8 +116,8 @@ func runDocsServe(args []string) {
 	}
 }
 
-func printDocsServeHelp() {
-	fmt.Fprint(os.Stderr, `gofastr docs serve: browse the docs site offline
+func printDocsServeHelp(out io.Writer) {
+	fmt.Fprint(out, `gofastr docs serve: browse the docs site offline
 
 Usage:
   gofastr docs serve [flags]
@@ -471,7 +476,7 @@ func serveDocsDir(dir string, opts docsServeOptions) error {
 	// Worktree isolation remaps a dev app's port so parallel checkouts do
 	// not collide. The docs site is not the project's app, and the user
 	// asked for this port, so serve it there.
-	_ = os.Setenv("GOFASTR_ISOLATION", "off")
+	_ = os.Setenv(isolation.EnvIsolation, "off")
 	return app.Start(net.JoinHostPort("127.0.0.1", strconv.Itoa(opts.port)))
 }
 

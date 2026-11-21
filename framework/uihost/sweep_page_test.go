@@ -95,7 +95,8 @@ func TestSweepPageWidgetChromeSeesTheRequest(t *testing.T) {
 	widget.MountBuilder(router.New(), widget.New("sweep-page-ctx").Slot("body", sweepPageCtxSlot{}))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(context.WithValue(req.Context(), sweepPageCtxKey{}, "alice"))
-	if got := injectWidgetSSR(`<html><body></body></html>`, req); !strings.Contains(got, `<span id="sweepctx">alice</span>`) {
+	widgets, _ := widgetSSRHTML(req)
+	if got := injectWidgetSSR(`<html><body></body></html>`, widgets); !strings.Contains(got, `<span id="sweepctx">alice</span>`) {
 		t.Fatalf("inlined widget chrome did not render with the request context:\n%s", got)
 	}
 }

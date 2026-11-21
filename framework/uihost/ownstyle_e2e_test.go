@@ -93,7 +93,7 @@ func ownedStyleContext(t *testing.T) context.Context {
 	t.Helper()
 	return chromedptest.Context(t,
 		chromedptest.Timeout(60*time.Second),
-		chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+		chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 }
 
 // ownProp reads one computed property from each element id.

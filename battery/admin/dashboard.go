@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -111,10 +110,7 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 // entityCard is one entity's card inside the element that polls it:
 // the poll answer replaces the card with a fresh one.
 func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML {
-	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-		"data-cui-poll":     countPoll,
-		"data-cui-poll-src": b.cfg.PathPrefix + "/_count/" + url.PathEscape(e.GetName()),
-	}}, b.entityStat(ctx, e))
+	return polled(b.cfg.PathPrefix+"/_count/"+url.PathEscape(e.GetName()), countPoll, b.entityStat(ctx, e))
 }
 
 // probeCount is a late count's fallback: a bounded read of at most
@@ -189,8 +185,8 @@ func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
 func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
-		b.logger().Error("admin: list failed jobs", "error", err)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx)))
+		return ui.Card(ui.CardConfig{Heading: i18nui.AdminFailedJobs.Text(ctx), HeadingLevel: 2},
+			b.loadFailed(ctx, "admin: list failed jobs", i18nui.AdminQueueLoadFailed, err, nil))
 	}
 	if len(jobs) == 0 {
 		return ""
@@ -218,9 +214,8 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	all := headerLink(i18nui.AdminAudit.Text(ctx), b.cfg.PathPrefix+"/audit")
 	rows, err := b.queryAudit(ctx, dashboardRows)
 	if err != nil {
-		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
+			b.loadFailed(ctx, "admin: load audit rows", i18nui.AdminAuditLoadFailed, err, nil, "table", b.cfg.AuditTable))
 	}
 	if len(rows) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
@@ -293,10 +288,7 @@ func (b *Battery) appCards(ctx context.Context) render.HTML {
 	for i, c := range b.cfg.Cards {
 		body := b.buildSlot(ctx, "card "+c.Key, c.Build)
 		if c.Poll > 0 {
-			body = html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-				"data-cui-poll":     c.Poll.String(),
-				"data-cui-poll-src": b.cardPath(c.Key),
-			}}, body)
+			body = polled(b.cardPath(c.Key), c.Poll.String(), body)
 		}
 		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title.Text(ctx), HeadingLevel: 2}, body)
 	}

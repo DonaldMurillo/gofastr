@@ -394,7 +394,7 @@ func sitemapLocaleContext(set i18n.PathLocales, tag string) context.Context {
 }
 
 func expandRouteForSitemap(ctx context.Context, a *app.App, pattern string) []string {
-	if !strings.Contains(pattern, ":") {
+	if !isDynamicScreenPath(pattern) {
 		return []string{pattern}
 	}
 	screen, ok := a.Router.ScreenByPattern(pattern)

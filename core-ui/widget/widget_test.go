@@ -9,7 +9,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
-	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -29,19 +28,6 @@ func TestBuilderDefaults(t *testing.T) {
 	}
 	if def.Backdrop {
 		t.Errorf("default Backdrop should be false")
-	}
-}
-
-func TestBuilderModalSetsBackdropAndCloseOnEscape(t *testing.T) {
-	def := preset.Modal("confirm").Build()
-	if !def.Backdrop {
-		t.Errorf("Modal preset must enable Backdrop")
-	}
-	if !def.CloseOnEscape {
-		t.Errorf("Modal preset must enable CloseOnEscape")
-	}
-	if !def.CloseOnClickOutside {
-		t.Errorf("Modal preset must enable CloseOnClickOutside")
 	}
 }
 

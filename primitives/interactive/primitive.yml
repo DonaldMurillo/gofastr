@@ -31,12 +31,12 @@ invariants:
     enforced_by:
       - test: core-ui/interactive.TestBindAttrRefusesExecutingAttributes
   - id: inject-at-the-real-tag-end
-    rule: The wrappers insert their attributes before the first '>' that is outside a single- or double-quoted attribute value, and leave markup with no tag unchanged.
+    rule: The wrappers splice through registry.AppendAttributes, so their attributes land on the root tag after any leading comments, before the first '>' outside a single- or double-quoted attribute value and before a self-closing slash.
     enforced_by:
       - test: core-ui/interactive.TestWrapGTInAttributeValue
       - test: core-ui/interactive.TestWrapRawHTMLGTInAttrValue
       - test: core-ui/interactive.TestWrapSkipsSingleQuotedGT
-      - test: core-ui/interactive.TestWrapNoTag
+      - test: core-ui/interactive.TestInteractiveAttributesReachRootAfterComments
   - id: injected-attrs-are-sorted
     rule: Every wrapper writes its attributes in sorted key order, so a wrapped element is the same bytes on every render and matches a sorted render.Tag map.
     enforced_by:
@@ -51,10 +51,11 @@ invariants:
       - test: core-ui/interactive.TestToastJSONKeepsMarkupCharacters
       - test: core-ui/interactive.TestToastOnClickOmitsZeroFields
   - id: optimistic-carries-only-the-endpoint
-    rule: OptimisticUpdate panics on an Action carrying anything but its endpoint and method, and renders a type="button" so it never submits an enclosing form.
+    rule: OptimisticUpdate panics on an Action carrying anything but its endpoint and method, renders a type="button" so it never submits an enclosing form, and carries a role="status" span and failure text the runtime announces when it rolls the button back.
     enforced_by:
       - test: core-ui/interactive.TestOptimisticRejectsLostOptions
       - test: core-ui/interactive.TestOptimisticButtonDoesNotSubmit
+      - test: core-ui/interactive.TestOptimisticUpdateRendersComponentAttrs
   - id: panes-are-named
     rule: OpenPaneOnClick panics unless the pane is secondary or tertiary, and ClosePaneOnClick also accepts the empty pane, meaning the topmost.
     enforced_by:
@@ -68,9 +69,9 @@ invariants:
       - test: core-ui/interactive.TestDropdownStampsCompMarkerAndCSS
       - test: core-ui/interactive.TestDropdownPanelInitiallyHidden
   - id: live-search-debounce
-    rule: LiveSearch triggers on input and debounces 300ms when debounceMs is 0.
+    rule: LiveSearch triggers on input and debounces 250ms, the runtime's default, when debounceMs is 0.
     enforced_by:
-      - test: core-ui/interactive.TestLiveSearchDefaultDebounce
+      - test: core-ui/interactive.TestLiveSearchDebounce
       - test: core-ui/interactive.TestLiveSearchAttrMatchesRuntime
   - id: attrs-is-a-copy
     rule: Action.Attrs returns a fresh map each call, so changing it leaves the Action unchanged.

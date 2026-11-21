@@ -49,6 +49,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // Config configures the Admin battery.
@@ -110,10 +111,8 @@ type Config struct {
 	// under the table reaches older rows. Default 50.
 	AuditListLimit int
 
-	// SavedViews turns on per-user saved views over the admin's
-	// database (Config.DB or the app's): one named filter/columns set
-	// per user per entity, kept apart by owner and tenant. The store is
-	// SavedViews(); the UI wiring is the host's (UI.WithSavedViews).
+	// SavedViews enables the admin database's saved filters and columns, up to
+	// entityui.SavedViewCap named views per user, tenant and entity.
 	SavedViews bool
 
 	// SavedViewsTable is the saved views table. Defaults to
@@ -192,7 +191,7 @@ type Config struct {
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
-	// Commands are extra palette entries that go to a URL.
+	// Commands are extra palette entries with fixed labels and URLs.
 	Commands []ui.PaletteCommand
 
 	// EmailPreviews are the mails the Emails page renders with sample
@@ -216,6 +215,7 @@ type Battery struct {
 	ents   []*entity.Entity
 	names  []string     // the names of ents, the set the admin elevates
 	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
+	ops    []opsPage
 
 	savedViews entityui.SavedViewStore // nil unless Config.SavedViews
 }
@@ -254,6 +254,19 @@ func (b *Battery) logger() *slog.Logger {
 		return b.cfg.Logger
 	}
 	return slog.Default()
+}
+
+// loadFailed logs a list read that failed and draws the screen's
+// failure notice: a danger callout, under the page's header when the
+// screen has one. logAttrs carry any extra log attributes.
+func (b *Battery) loadFailed(ctx context.Context, label string, phrase i18n.Phrase, err error, header []render.HTML, logAttrs ...any) render.HTML {
+	args := append(logAttrs, "error", err)
+	b.logger().Error(label, args...)
+	callout := ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(phrase.Text(ctx)))
+	if len(header) == 0 {
+		return callout
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(header, callout)...)
 }
 
 // Name implements framework.Battery.
@@ -331,7 +344,7 @@ func (b *Battery) Init(app *framework.App) error {
 		// Bind first: a job resumed before its handler was registered
 		// would be dead-lettered by the queue as an unknown type.
 		b.cfg.BulkJobs.Bind(jobsUI)
-		if n, err := jobsUI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
+		if n, err := jobsUI.ResumeBulkJobs(context.Background(), entityui.BulkResumeGrace); err != nil {
 			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
 		} else if n > 0 {
 			b.logger().Info("admin: resumed bulk jobs", "count", n)
@@ -532,15 +545,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	}
 	// battery/auth seeds a nil user on every request, so ok alone is true
 	// for an anonymous caller; the nil check is what refuses one.
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return false
-	}
-	rh, ok := u.(interface{ GetRoles() []string })
-	if !ok {
-		return false
-	}
-	return slices.Contains(rh.GetRoles(), b.adminRole())
+	return slices.Contains(callerHeldRoles(ctx), b.adminRole())
 }
 
 // admitJob is the gate a queued bulk run's rebuilt context passes, the
@@ -616,7 +621,7 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 // rely on it.
 func (b *Battery) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
+		if !isSafeAdminMethod(r.Method) && auth.RejectCrossSiteForm(w, r) {
 			return
 		}
 		if !b.authorized(r.Context()) {
@@ -658,9 +663,9 @@ func isSafeAdminMethod(method string) bool {
 
 // ----- ops posts -------------------------------------------------------------
 
-// maxAdminBodyBytes caps an ops post body, the repo's 1 MiB form
-// convention (battery/auth, the CSRF middleware, crud's Bind).
-const maxAdminBodyBytes int64 = 1 << 20
+// maxAdminBodyBytes caps an ops post body at the repo's
+// bodylimit.MaxJSONBodyBytes.
+const maxAdminBodyBytes int64 = bodylimit.MaxJSONBodyBytes
 
 // isRPC reports a post from the runtime's form RPC, which sends JSON. A
 // plain form post (no script) sends urlencoded.
@@ -674,21 +679,13 @@ func isRPC(r *http.Request) bool {
 // an array; any other JSON value is refused. On failure it has answered.
 func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (url.Values, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-	tooLarge := func(err error) bool {
-		_, ok := errors.AsType[*http.MaxBytesError](err)
-		return ok
-	}
 	if isRPC(r) {
 		// Strict: a repeated or case-folded key reads one way here and
 		// another on the form surface, so the body is refused.
 		var raw map[string]any
 		//gofastr:allow(floatnum) only strings and string arrays become form values; a number is refused
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
-			if tooLarge(err) {
-				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return nil, false
-			}
-			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+			b.refuseBodyError(w, r, page, err)
 			return nil, false
 		}
 		vals := url.Values{}
@@ -713,14 +710,20 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		return vals, true
 	}
 	if err := r.ParseForm(); err != nil {
-		if tooLarge(err) {
-			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return nil, false
-		}
-		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+		b.refuseBodyError(w, r, page, err)
 		return nil, false
 	}
 	return r.PostForm, true
+}
+
+// refuseBodyError answers a failed ops-post body read through the ops
+// envelope: 413 over the cap, 400 bad-input otherwise.
+func (b *Battery) refuseBodyError(w http.ResponseWriter, r *http.Request, page string, err error) {
+	if bodylimit.TooLarge(err) {
+		b.refuse(w, r, page, http.StatusRequestEntityTooLarge, "body-too-large")
+		return
+	}
+	b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 }
 
 // result is one outcome an ops post reports: its message and whether it
@@ -746,9 +749,11 @@ var results = map[string]result{
 	"module-revoked":         {i18nui.AdminModuleRevoked, true},
 	"refused":                {i18nui.AdminRefused, false},
 	"failed":                 {i18nui.AdminFailed, false},
+	"body-too-large":         {i18nui.AdminBodyTooLarge, false},
 	"bad-input":              {i18nui.AdminBadInput, false},
 	"grant-refused":          {i18nui.AdminGrantRefused, false},
 	"assign-refused":         {i18nui.AdminAssignRefused, false},
+	"roles-conflict":         {i18n.StatusPhrase(http.StatusConflict), false},
 	"own-admin-refused":      {i18nui.AdminOwnAdminRefused, false},
 	"own-permission-refused": {i18nui.AdminOwnPermRefused, false},
 	"name-refused":           {i18nui.AdminNameRefused, false},
@@ -759,7 +764,8 @@ var results = map[string]result{
 	"queue-load-failed":      {i18nui.AdminQueueLoadFailed, false},
 	"replay-unsupported":     {i18nui.AdminFailed, false},
 	"replay-duplicate":       {i18nui.AdminReplayDuplicate, false},
-	"replay-nothing":         {replayNothing, false},
+	"replay-nothing":         {i18nui.AdminReplayNothing, false},
+	"replay-all-nothing":     {i18nui.AdminReplayAllNothing, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;

@@ -29,7 +29,7 @@ func TestDesktopBuildRejectsUnsupportedFormat(t *testing.T) {
 		t.Run(test.target, func(t *testing.T) {
 			output := filepath.Join(t.TempDir(), "not-created")
 			var code int
-			text := clitest.CovT_capStdout(t, func() {
+			text := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() {
 					runDesktopBuildForOS([]string{"--id=dev.example.notes", "--pkg=./missing", "--format=" + test.format, "-o=" + output}, test.target)
 				})
@@ -330,7 +330,7 @@ func TestDesktopBuildLinuxArchive(t *testing.T) {
 	t.Setenv("GOARCH", "amd64")
 	out := filepath.Join(fixture, "dist")
 	var code int
-	clitest.CovT_capStdout(t, func() {
+	clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopBuildForOS([]string{"--id=dev.example.archive", "--name=Quotes \"$HOME\" 100%", "--version=1.2.3", "--format=tar.gz", "-o=" + out}, "linux")
 		})

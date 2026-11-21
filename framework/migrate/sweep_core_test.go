@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 
 	_ "github.com/lib/pq"
 )
@@ -30,7 +32,7 @@ func sweepDB(t *testing.T) *sql.DB {
 
 func sweepPG(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	dsn := os.Getenv(pgtest.DSNEnv)
 	if dsn == "" {
 		t.Skip("TEST_POSTGRES_DSN is not set")
 	}
@@ -167,6 +169,48 @@ func TestSweepCoreUnmanagedEntityGetsNoDDL(t *testing.T) {
 	}
 	if cols := sweepColumns(t, db, "v"); len(cols) != 0 {
 		t.Fatalf("an unmanaged entity got a table: %v", cols)
+	}
+	// The invariant's other half: an entity with no fields gets no DDL on
+	// every entry point, not only at boot.
+	ghost := rawEnt("ghost", "ghost", nil, nil, "")
+	if err := MigrateEntityDialect(db, ghost, DialectSQLite); err != nil {
+		t.Fatal(err)
+	}
+	if cols := sweepColumns(t, db, "ghost"); len(cols) != 0 {
+		t.Fatalf("a fields-less entity got a table: %v", cols)
+	}
+	reg := unsortedRegistry{ghost}
+	changes, err := DiffSchema(context.Background(), db, reg)
+	if err != nil {
+		t.Fatalf("DiffSchema refused a fields-less entity: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Fatalf("DiffSchema proposed DDL for a fields-less entity: %v", changes)
+	}
+	previous := rawEnt("ghost", "ghost", []schema.Field{
+		{Name: "id", Type: schema.Int},
+		{Name: "label", Type: schema.String, Unique: true},
+	}, nil, "id")
+	previous.Config.Indices = []entity.Index{{Columns: []string{"id", "label"}}}
+	for _, tc := range []struct {
+		name string
+		prev SchemaSnapshot
+	}{
+		{"never migrated", SchemaSnapshot{Tables: map[string]map[string]string{}}},
+		{"previously migrated", SnapshotFromRegistry(unsortedRegistry{previous}, DialectSQLite)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up, down, next, err := GeneratePlan(Plan{Registry: reg}, tc.prev, DialectSQLite)
+			if err != nil {
+				t.Fatalf("GeneratePlan refused a fields-less entity: %v", err)
+			}
+			if up != "" || down != "" {
+				t.Fatalf("GeneratePlan proposed DDL for a fields-less entity: up=%q down=%q", up, down)
+			}
+			if !reflect.DeepEqual(next, tc.prev) {
+				t.Fatalf("skipped entity changed the snapshot: got %+v, want %+v", next, tc.prev)
+			}
+		})
 	}
 }
 

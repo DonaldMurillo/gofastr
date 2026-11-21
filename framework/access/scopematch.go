@@ -6,7 +6,7 @@ import "strings"
 // resource:verb grammar ("posts:*", "*:read", "*:*"). It does not expand
 // against the capability registry. Empty grants or a malformed required deny.
 func ScopeMatch(granted []Permission, required Permission) bool {
-	wantRes, wantVerb, ok := splitScope(string(required))
+	wantRes, wantVerb, ok := SplitScope(string(required))
 	if !ok {
 		return false
 	}
@@ -14,7 +14,7 @@ func ScopeMatch(granted []Permission, required Permission) bool {
 		if g == required {
 			return true
 		}
-		res, verb, ok := splitScope(string(g))
+		res, verb, ok := SplitScope(string(g))
 		if !ok {
 			continue
 		}
@@ -53,7 +53,9 @@ func isScopeChar(c byte) bool {
 		c == '_' || c == '*' || c == '-'
 }
 
-func splitScope(s string) (resource, verb string, ok bool) {
+// SplitScope splits a "resource:verb" permission string. ok is false
+// when the colon is missing, leading or trailing.
+func SplitScope(s string) (resource, verb string, ok bool) {
 	idx := strings.IndexByte(s, ':')
 	if idx <= 0 || idx == len(s)-1 {
 		return "", "", false

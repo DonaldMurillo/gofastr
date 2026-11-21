@@ -26,6 +26,7 @@ func receiveFor(t *testing.T, s *winShell, hwnd uintptr, rawURL string) uintptr 
 	t.Helper()
 	msg, wide := copyDataFor(t, rawURL)
 	got := s.receiveDeepLink(hwnd, uintptr(unsafe.Pointer(msg)))
+	runtime.KeepAlive(msg)
 	runtime.KeepAlive(wide)
 	return got
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 )
 
 // devContractWatch reports contract findings in the dev loop, after the
@@ -81,32 +82,14 @@ func (w *devContractWatch) analyse() {
 	// Every failure of the analysis ITSELF is reported, once. A silent
 	// return here leaves the loop printing nothing while the analyzers
 	// have not actually looked, and in a loop, nothing reads as "clean".
-	cfg, err := contracts.LoadConfig(w.root, "")
+	baselinePath := contracts.BaselineFileName
+	if w.root != "" && w.root != "." {
+		baselinePath = strings.TrimSuffix(w.root, "/") + "/" + baselinePath
+	}
+	report, err := contractsrun.RunPipeline(w.root, baselinePath, contracts.RunOptions{}, true)
 	if err != nil {
 		w.printErrOnce(err)
 		return
-	}
-	pass, err := contracts.NewPass(w.root, cfg)
-	if err != nil {
-		w.printErrOnce(err)
-		return
-	}
-	report, err := contracts.Run(pass, contracts.RunOptions{})
-	if err != nil {
-		w.printErrOnce(err)
-		return
-	}
-	baseline, berr := contracts.ReadBaseline(devBaselinePath(w.root))
-	if berr != nil {
-		// Matching `gofastr verify`, which fails hard here: skipping an
-		// unreadable baseline would flood the loop with the very debt it
-		// records, and reporting against a state nobody chose is worse
-		// than saying why nothing can be reported.
-		w.printErrOnce(berr)
-		return
-	}
-	if baseline != nil {
-		report.ApplyBaseline(baseline)
 	}
 	// Narrow to what is actually being worked on. Outside a repository
 	// this returns nil and nothing narrows, which is the right fallback.
@@ -211,12 +194,4 @@ func (w *devContractWatch) printOnce(summary string) {
 	fmt.Println()
 	cli.Warn("contracts: findings in what you changed:")
 	cli.Println(summary)
-}
-
-// devBaselinePath is the conventional baseline location under root.
-func devBaselinePath(root string) string {
-	if root == "" || root == "." {
-		return contracts.BaselineFileName
-	}
-	return strings.TrimSuffix(root, "/") + "/" + contracts.BaselineFileName
 }

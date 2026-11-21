@@ -28,16 +28,18 @@ func TestWithMaxOffsetBoundsList(t *testing.T) {
 		t.Fatalf("WithMaxOffset(0) must keep the previous ceiling, got %d", got)
 	}
 	for _, tc := range []struct {
-		path string
-		want int
+		path       string
+		want       int
+		wantStream int
 	}{
-		{"/api/reddocs?offset=1&limit=1", http.StatusOK},
-		{"/api/reddocs?offset=2&limit=1", http.StatusBadRequest},
-		// The offset ceiling is checked before cursor mode is chosen, so
-		// an over-limit ?offset= is refused even alongside ?cursor= (the
-		// spec's ?offset= description says so).
-		{"/api/reddocs?cursor=&offset=2&limit=1", http.StatusBadRequest},
-		{"/api/reddocs?page=3&limit=1", http.StatusBadRequest},
+		{"/api/reddocs?offset=1&limit=1", http.StatusOK, http.StatusOK},
+		{"/api/reddocs?offset=2&limit=1", http.StatusBadRequest, http.StatusBadRequest},
+		// ?cursor= makes List serve keyset mode, which never reads
+		// ?offset=, so the ceiling does not apply there. The direct
+		// streaming entry point serves offset mode whatever the query
+		// holds, so it still refuses.
+		{"/api/reddocs?cursor=&offset=2&limit=1", http.StatusOK, http.StatusBadRequest},
+		{"/api/reddocs?page=3&limit=1", http.StatusBadRequest, http.StatusBadRequest},
 	} {
 		rec := httptest.NewRecorder()
 		ch.List()(rec, withTestUser(httptest.NewRequest(http.MethodGet, tc.path, nil), "alice"))
@@ -47,8 +49,8 @@ func TestWithMaxOffsetBoundsList(t *testing.T) {
 		rec = httptest.NewRecorder()
 		sreq := withTestUser(httptest.NewRequest(http.MethodGet, tc.path, nil), "alice")
 		ch.ServeStreamingList(sreq.Context(), rec, sreq, []string{"id", "body_text"}, nil, nil, nil, 1, 1, nil)
-		if rec.Code != tc.want {
-			t.Errorf("stream %s = %d, want %d (body=%s)", tc.path, rec.Code, tc.want, rec.Body.String())
+		if rec.Code != tc.wantStream {
+			t.Errorf("stream %s = %d, want %d (body=%s)", tc.path, rec.Code, tc.wantStream, rec.Body.String())
 		}
 	}
 }

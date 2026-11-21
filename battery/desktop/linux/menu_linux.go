@@ -117,15 +117,7 @@ func (a menuAction) activate() {
 	case desktop.RoleShow:
 		_ = w.Focus()
 	case desktop.RoleAbout:
-		// A plain informational GTK dialog; no application capability is invoked.
-		title, body := desktop.AboutText(s.text())
-		var dialog uintptr
-		withString("%s", func(format uintptr) {
-			withString(body, func(text uintptr) { dialog = call(gtk.Sym.GtkMessageDialogNew, w.handle, 2, 0, 2, format, text) })
-		})
-		withString(title, func(p uintptr) { call(gtk.Sym.GtkWindowSetTitle, dialog, p) })
-		connect(dialog, "response", aboutResponse, 0)
-		call(gtk.Sym.GtkWidgetShowAll, dialog)
+		w.showAboutMain()
 	default:
 		if a.id != "" && s.cfg.OnMenu != nil {
 			onMenu, id := s.cfg.OnMenu, a.id
@@ -145,8 +137,6 @@ func (s *linuxShell) text() context.Context {
 	}
 	return s.textCtx
 }
-
-var aboutResponse = ffi.NewCallback(func(a *ffi.Args) uintptr { call(gtk.Sym.GtkWidgetDestroy, a.Int[0]); return 0 })
 
 func (w *linuxWindow) releaseMenuActions() {
 	for _, id := range w.menuTokens {

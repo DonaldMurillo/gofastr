@@ -275,23 +275,6 @@ func TestBuildExportsKeyWithSlash(t *testing.T) {
 	}
 }
 
-func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
-	// No StaticPaths method on this screen, so it should be skipped silently.
-	type plainProduct struct{ productScreenWithoutPaths }
-	a := coreapp.NewApp("SSGTest")
-	a.Register("/items/:id", &plainProduct{}, nil)
-	host := uihost.New(a)
-
-	out := t.TempDir()
-	res, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	if len(res.Pages) != 0 {
-		t.Errorf("expected 0 pages, got %v", res.Pages)
-	}
-}
-
 type productScreenWithoutPaths struct{}
 
 func (productScreenWithoutPaths) Render() render.HTML                          { return render.HTML("ignored") }

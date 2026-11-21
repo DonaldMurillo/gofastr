@@ -45,7 +45,7 @@ func (ds *UIHost) manifestFor(lr localeRender) manifestEntry {
 		ds.mu.RLock()
 		acts, err := json.Marshal(ds.actionHash)
 		ds.mu.RUnlock()
-		if err == nil && len(ds.actionHash) > 0 {
+		if err == nil {
 			b = append(b, acts...)
 		} else {
 			b = append(b, "{}"...)

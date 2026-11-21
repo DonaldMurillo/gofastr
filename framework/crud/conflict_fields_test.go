@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // conflictCreate POSTs body twice and returns the second answer's code
@@ -47,6 +48,50 @@ func TestUniqueConflictNamesField(t *testing.T) {
 	}
 	if got := env["fields"]; !reflect.DeepEqual(got, map[string]any{"email": []any{"is already in use"}}) {
 		t.Errorf("fields = %v, want email named", got)
+	}
+}
+
+func TestConstraintFieldCasingParity(t *testing.T) {
+	const ddl = `CREATE TABLE items (id TEXT PRIMARY KEY, Sku TEXT UNIQUE, Title TEXT NOT NULL)`
+	for _, dialect := range []string{"sqlite", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			cfg := entity.EntityConfig{
+				Name: "items", Table: "Items",
+				Fields: []schema.Field{
+					{Name: "SKU", WireName: "stockCode", Type: schema.String, Unique: true},
+					{Name: "TITLE", WireName: "label", Type: schema.String},
+				},
+			}.WithTimestamps(false)
+			var ch *CrudHandler
+			if dialect == "postgres" {
+				db := pgtest.DB(t)
+				if _, err := db.Exec(ddl); err != nil {
+					t.Fatal(err)
+				}
+				ch = NewCrudHandler(entity.Define(cfg.Name, cfg), db)
+			} else {
+				db := setupDB(t, ddl)
+				ch = NewCrudHandler(entity.Define(cfg.Name, cfg), db)
+			}
+
+			code, env := conflictCreate(t, ch, `{"stockCode":"sku-1","label":"one"}`)
+			want := map[string]any{"stockCode": []any{"unique_taken"}}
+			if code != http.StatusConflict || !reflect.DeepEqual(env["field_reasons"], want) {
+				t.Errorf("UNIQUE = %d %v, want 409 and %v", code, env, want)
+			}
+			req := withTestUser(httptest.NewRequest("POST", "/x", strings.NewReader(`{"stockCode":"sku-2"}`)), "u1")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			ch.Create()(rec, req)
+			env = nil
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatal(err)
+			}
+			want = map[string]any{"label": []any{"required"}}
+			if rec.Code != http.StatusBadRequest || !reflect.DeepEqual(env["field_reasons"], want) {
+				t.Errorf("NOT NULL = %d %v, want 400 and %v", rec.Code, env, want)
+			}
+		})
 	}
 }
 

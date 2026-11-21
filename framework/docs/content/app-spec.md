@@ -12,10 +12,16 @@ extras such as `ID` or `Class` cannot override the canonical `id` or `class`.
 
 Generation rejects image blocks without `src`, fieldsets without `legend`,
 text-only labels without `for`, and node-rendered links without text,
-children, or a nonblank `aria-label` or `aria-labelledby` prop. A plain
-`{type: link, href: /docs}` block uses its href as the label; adding `kind`,
-props, actions, an island, or a widget selects the node renderer and requires
-content or one of those accessible-name props. The low-level node renderer
+children, or a nonblank `aria-label` or `aria-labelledby` prop. This plain
+link block uses its href as the label:
+
+```yaml
+- type: link
+  href: /docs
+```
+
+Adding `kind`, props, actions, an island, or a widget selects the node renderer
+and requires content or one of those accessible-name props. The low-level node renderer
 degrades incomplete nodes instead of panicking:
 an image is omitted, an empty-legend fieldset stays a fieldset, a label may
 remain unassociated, and a link without `href` becomes text content.
@@ -212,6 +218,10 @@ not silently disabled constraints. Omitted flags still default to false.
 - a value starting with `!` is a tag, and tags are refused: the core
   `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
   the string.
+
+`yaml.BoolValue(node, label)` is available to Go callers that need a YAML
+boolean scalar. It returns `<label> must be a boolean` for a missing node
+or any other value, including a quoted boolean.
 
 If an older spec or Pack/Kiln snapshot uses an unquoted hex or octal number
 as a string, quote it before loading. For example, write
@@ -633,6 +643,10 @@ exists, so it lands in the skipped list and the existing file is left
 untouched. There is no diffing or merging: `--add` only writes files that
 don't exist. Running the same fragment twice is safe.
 
+A new authored or synthesized screen must have a distinct mounted route.
+For example, `/docs/{slug}` conflicts with a mounted `/docs/:page`
+because both match the same URLs.
+
 **A new screen over an entity that already has screens** is refused. An
 entity's list, record and create screens share one file,
 `screen_<entity>_crud.go`; once the project has it, `--add` cannot put
@@ -773,7 +787,7 @@ the owned `app.go` (there is no new-file representation to scaffold).
 
 ## Packing: `gofastr pack` (lossy snapshot of the app as an app spec)
 
-`gofastr pack [app-dir]` reconstructs a best-effort `gofastr.yml` from a generated
+`gofastr pack [app-dir] [-o out.yml]` reconstructs a best-effort `gofastr.yml` from a generated
 app's Go source, a lossy snapshot, not a round-trip inverse of `gofastr
 generate`. It reads the real artifacts via the
 Go AST (it does **not** stash a manifest): the per-entity `entities/<name>.go`
@@ -791,7 +805,9 @@ Node blocks (a `type: section`, a heading, a div or any other tag the
 node renderer draws, with its `island:` or `widget:` wrapper) read back
 from their `uinode.Node` literal with the kind, props and children the
 generator wrote, and each `actions:` entry comes back from the screen's
-`component.On` registration.
+`component.On` registration. Pack preserves drawer, sheet and dialog screen
+types. Login and signup forms keep their kind when their action uses a
+custom auth base path.
 Control properties round-trip in canonical form, not their original
 spelling: action-button variants and types are case-insensitive and
 lowercased while parsing. Default `variant: primary`, `type: button`,
@@ -809,17 +825,21 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Pack accepts one optional app directory and checks the CLI version
+against that project's `go.mod`. The directory defaults to the current
+working directory.
+
 `-o`/`--out` requires a nonempty filename, not another flag. An empty value
 is refused rather than falling back to stdout. To deliberately write
 a dash-prefixed filename, use an explicit relative path such as `./-out.yml`.
 
-Every string in the output comes from the app's source, and none reaches
-the terminal raw if it could drive it: a value holding a control or
-invisible character (an ESC, a C1 control, a bidi override, a zero-width
-space) is written double-quoted with that character escaped, and reads
-back as the same bytes. A map key holding one is refused, since keys
-cannot be quoted. The notes pack prints percent-encode the same
-characters in file names.
+Pack double-quotes keys where punctuation could change the mapping, as
+in `"host:port": localhost`. It refuses keys that are empty, have leading
+or trailing whitespace, or contain control characters, invisible
+characters or flow indicators (`[`, `]`, `{` and `}`).
+Pack refuses invalid UTF-8 in both keys and values. It escapes control
+and invisible characters in string values. Diagnostic file names use
+percent encoding for those characters.
 
 Pack refuses a `schema.Field` it cannot write back as a spec field,
 naming the field and key, rather than drop it: a set `WireName`,
@@ -832,9 +852,13 @@ becomes the text its `i18n.Define` in the same file gives, and an
 `i18nui.FieldLabel` call becomes its English argument. The packed spec
 holds the English only; translations stay in `locales/`.
 
-Pack then checks its own result. It regenerates the app from the packed
-spec in memory and compares each Go file at the app root and directly
-under `entities/` with the file on disk, ignoring
+Pack recovers the declared `fields` of a generated create form from
+both older field IDs and IDs scoped to an individual form.
+
+Pack decodes the emitted YAML before writing it and uses that decoded
+spec to regenerate the app in memory. It compares the generated Go
+files with regular Go files at the app root and directly under
+`entities/`, ignoring
 [provenance markers](codegen.md#provenance-markers), CRLF line endings
 and a byte order mark. Files in other directories are not checked. It
 reports three kinds of file, on stderr when the spec goes to stdout:
@@ -842,7 +866,8 @@ reports three kinds of file, on stderr when the spec goes to stdout:
 - Go files the spec does not generate and no marker claims: hand-written
   code, left out of the spec.
 - Files it could not read, such as a symlink or a file without read
-  permission. Pack left them out of the spec too.
+  permission. Pack skips optional symlinked Go files during recovery.
+  A symlink in place of required Go source stops the command.
 - Files the packed spec generates differently, with the reason the marker
   gives: edited since it was generated, untouched but still different, no
   marker at all, marked but no longer generated, or generated by the spec
@@ -896,23 +921,15 @@ constructs (modulo comments + formatting). When you add a new construct to
 that set, teach **both** the generator and pack, or the round-trip test
 fails.
 
-The serializer half of that invariant is stronger: `parse(yml)` ≡
-`parse(encode(parse(yml)))` holds for every construct the grammar can
-declare, including `endpoints`, `middleware`, `plugins`, and `helpers`. For
-the list constructs (entities, screens,
-blocks, nav, seed, endpoints, stubs, and their nested lists), the guards
-also cover every field *inside* each element — the omission class this
-catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
-down, where a set construct key already differs from the zero output and
-the top-level checks pass anyway. A value that would re-parse as anything
-but itself is quoted: `"`, backslash and non-printable runes are escaped,
-so a quoted value comes back unchanged. An apostrophe passes through inside
-double quotes; bare, `60'` would merge two flow-list members into one. Every
-committed example app spec gates this, not just Meridian, and
-reflection-driven guards fail the day an `AppSpec` or construct field
-exists that the serializer's key lists don't cover — the drift that let
-`middleware`/`plugins`/`helpers` ship dropped, and `seed.count`,
-`seed.weights`, and `renames` after them.
+The serializer round-trips supported declarations, including
+`endpoints`, `middleware`, `plugins` and `helpers`, within the key and
+UTF-8 restrictions above. It quotes value strings that YAML could parse
+as another type or reject, such as `"true"` or `"1e999"`. Double-quoted
+values use YAML escapes for quotes, backslashes and non-printable
+Unicode characters. The `\xNN`, `\uNNNN` and `\UNNNNNNNN` escapes
+represent Unicode code points. Every committed example app spec
+exercises the serializer. Reflection-driven tests check that the
+serializer covers each app-spec field, including fields inside lists.
 
 Note what that invariant does and does not say. It is about the
 **declarations**: pack reads `examples/meridian`'s Go and recovers the same
@@ -929,10 +946,12 @@ excluded). `internal/testapps/ecommerce` regenerates in place as a whole, becaus
 app spec sets `output_dir: app` and the generator owns that directory
 outright.
 
-Pack recovers `hooks`, `middleware`, `plugins`, and `helpers` from their
-wiring (the `Use`, `RegisterPlugin` and `RegisterHook` calls) and the names
-and descriptions in `stubs.go`, so a stub whose body you have since written
-still packs. It reads `endpoints` back from the `endpoints:` section of
+Pack recovers wired hook, middleware and plugin names from the
+`RegisterHook`, `Use` and `RegisterPlugin` calls and their definitions
+in `stubs.go`. Helper names come from their definitions in `stubs.go`.
+Hook descriptions come from generated stub comments. The generated
+middleware, plugin and helper stubs carry names only. Pack reads
+`endpoints` from the `endpoints:` section in the app directory's
 `gofastr.settings.yml`. A linked handler file is yours once you write its
 body, so the check counts it as hand-written rather than comparing it.
 `internal/testapps/ecommerce/app` packs with nothing unrecovered, and a test holds it
@@ -1079,15 +1098,28 @@ entities:
     crud: true
     search_fields: [number]
     fields:
-      - {name: number, type: string, required: true}
-      - {name: amount, type: decimal, required: true}
-      - {name: status, type: enum, values: [draft, open, paid, void], default: draft}
-      - {name: paid_on, type: date}
+      - name: number
+        type: string
+        required: true
+      - name: amount
+        type: decimal
+        required: true
+      - name: status
+        type: enum
+        values: [draft, open, paid, void]
+        default: draft
+      - name: paid_on
+        type: date
     states:
       field: status
       initial: [draft]
       transitions:
-        - {key: mark_paid, label: Mark paid, from: [open], to: paid, stamp: paid_on, variant: primary}
+        - key: mark_paid
+          label: Mark paid
+          from: [open]
+          to: paid
+          stamp: paid_on
+          variant: primary
     display:
       singular: Invoice
       plural: Invoices
@@ -1097,7 +1129,8 @@ entities:
       form:
         main:
           - row: [number, amount]
-          - {section: dates, items: [paid_on]}
+          - section: dates
+            items: [paid_on]
         side: [status]
 ```
 
@@ -1113,11 +1146,10 @@ Dashboard data blocks read through the same value: `stat_card` calls
 `LineChart`, each resolving the entity at render time (a chart source
 needs no screen and no registry entry).
 
-`appBaseCSS()` (mounted ahead of `static/app.css`) is an owned,
-empty-by-default extension point for app-specific base CSS: every
-generated screen composes `framework/ui` components and `core-ui/app`
-layouts that ship their own styling, so the generator emits zero bespoke
-CSS.
+Generated screens compose `framework/ui` components and `core-ui/app`
+layouts with their own styling. Add app styles in
+[owned style sheets](ui-composition-recipes.md) using `<name>.style.css` and
+`gofastr gen styles`.
 
 #### Extending the screens (`extensions.go`)
 
@@ -1205,9 +1237,14 @@ entities:
     crud: true
     primary_key: [student_id, course_id]
     fields:
-      - {name: student_id, type: string, required: true}
-      - {name: course_id, type: string, required: true}
-      - {name: grade, type: string}
+      - name: student_id
+        type: string
+        required: true
+      - name: course_id
+        type: string
+        required: true
+      - name: grade
+        type: string
 ```
 
 The rules are `EntityConfig.PrimaryKey`'s
@@ -1242,9 +1279,12 @@ key column, in key order, as a list:
   - name: lines
     crud: true
     fields:
-      - {name: order_store, type: string}
-      - {name: order_no, type: int}
-      - {name: sku, type: string}
+      - name: order_store
+        type: string
+      - name: order_no
+        type: int
+      - name: sku
+        type: string
     relations:
       - type: belongs_to
         name: order
@@ -1307,14 +1347,26 @@ variant with a `12rem` default minimum. Spacing must use the shared
 **Long-form content**: `markdown` renders formatted prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
 `type: heading` / `type: paragraph` blocks are also typeset to a comfortable
-column on marketing pages. **Pricing**: a `pricing` block takes
-`props: {plans: [{name, price, period, description, features: […], cta_text,
-cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
-highlighted), so a pricing page reads like marketing, not an admin grid. A
-plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
-or a fragment), and a numeric `price` is quoted (`price: "29"`); validation
-refuses either. A `callout` takes `props.title` and `text:` as its body and
-needs at least one of them.
+column on marketing pages. **Pricing**: a `pricing` block renders a row of
+`ui.PricingCard`s and highlights a featured plan.
+
+```yaml
+- kind: pricing
+  props:
+    plans:
+      - name: Starter
+        price: "29"
+        period: month
+        description: For small teams
+        features: [Shared workspace, Email support]
+        cta_text: Start
+        cta_href: /signup
+        featured: true
+```
+
+A plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
+or a fragment). Quote numeric prices. A `callout` takes `props.title` and
+`text:` as its body and needs at least one of them.
 
 A catalog prop that takes text refuses a number or a boolean: an unquoted
 `heading: 2026` decodes as a number, which the generator would draw as
@@ -1402,10 +1454,25 @@ its `text:`. These props are text: quote a number (`value: "42"`), since
 an unquoted one reads as no value at all.
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
-that computes a live metric server-side:
-`source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
-optional `filter: status=active`) for a `stat_card`, and
-`source: {entity: customers, group_by: status}` for a chart. `agg` is
+that computes a live metric server-side.
+
+```yaml
+- kind: stat_card
+  props:
+    label: Monthly revenue
+    source:
+      entity: customers
+      agg: sum
+      field: mrr
+- kind: bar_chart
+  props:
+    source:
+      entity: customers
+      group_by: status
+```
+
+A `stat_card` can also use `agg: count` with an optional
+`filter: status=active`. `agg` is
 `count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
 `int`, `float` or `decimal` field; validation refuses anything else rather
 than rendering "—". A count takes no `field` and no `format`, and a sum's
@@ -1715,8 +1782,10 @@ When the app spec holds any of these values, the generator also emits a
 `.gitignore` it always emits excludes `.env` and `.env.local`, `.gofastr/`,
 `bin/` (the `gofastr build` output) and the SQLite database files
 (`*.db`, `*.db-shm`, `*.db-wal`). The generated `main.go` loads
-`.env.local`/`.env` before opening the DB; a real process env var
-always wins over the files. `generate` is one-shot and refuses to
+`framework.DefaultDotEnvPaths()` before opening the DB. Process environment
+variables take precedence over values in those files. During construction,
+`NewApp` skips missing files and panics on load errors when automatic loading
+is enabled. See [dotenv](dotenv.md). `generate` is one-shot and refuses to
 overwrite an existing `.env` (or any other file) unless you pass `--force`.
 
 #### `dev_mode`
@@ -1822,11 +1891,12 @@ app:
     seed_password: change-me
 ```
 
-With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/),
-an auto-generated HTML back-office at `path`: an overview and audit page,
-and an editable CRUD screen for every registered entity at `<path>/e/<table>`
-(View / Edit / Delete / Create), all proxying each entity's own CrudHandler so
-validation, owner/tenant scope, hooks, and events apply. Access is gated by
+With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/).
+The back office adds an overview, an audit page and a screen at
+`<path>/entities/<name>` for each entity with mounted CRUD. It skips entities
+with CRUD off and shows read-only views without write controls. Writes go
+through the entity's own CrudHandler, so validation, owner and tenant scope,
+hooks, and events apply. Access is gated by
 `role`; an unauthenticated GET is redirected to `login_path` (pair it with a
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
@@ -2005,7 +2075,7 @@ Screen body blocks support the legacy sugar keys (`type`, `text`, `level`,
 as that `kind`, so it draws the same component. `type: section` is the
 exception: it stays the plain `<section>` tag (`kind: section` is
 `ui.Section`). Supported render kinds include structural tags, text tags, forms,
-buttons, links, inputs, images, lists, tables, and raw nodes. `island` wraps a
+buttons, links, inputs, images, lists, and tables. `island` wraps a
 block in `island.NewIsland`; `widget` wraps it in `component.NewWidget`.
 `actions` generate GoFastr screen actions and add the required `data-action`
 attributes to the rendered node.
@@ -2070,6 +2140,10 @@ on: each names the app spec file (and the line, where the parser provides
 one), what is wrong, and the remedy. `gofastr generate` runs the same checks
 before writing any file.
 
+Screen mounts use `app.CanonicalRoutePattern`, the same normalization as
+screen registration. A catch-all such as `/docs/{path...}` mounts as
+`/docs/:path*` and captures one or more path segments.
+
 The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
@@ -2090,8 +2164,9 @@ The generator rejects:
   and `/api/docs`; with `pwa`, `/manifest.webmanifest` and
   `/service-worker.js`; with `llm_md`, `/llm-pages.md` and any route
   ending in `/llm.md`; with `admin`, anything at or under the admin path
-  (default `/admin`), where the back-office serves every entity at
-  `<path>/e/<table>`. The framework's route answers instead of the
+  (default `/admin`). Entity screens live at `<path>/entities/<name>` for
+  entities with mounted CRUD. Entities with CRUD off are excluded, and
+  read-only views have no write controls. The framework's route answers instead of the
   screen, or, where it answers only some callers, the screen takes it
   over: a screen at `/openapi.json` served HTML to anonymous callers in
   place of the gated schema
@@ -2233,18 +2308,16 @@ Per-user data must be scoped before auto-CRUD/MCP exposure. When an entity
 is auto-exposed (`crud` defaults on, or `mcp: true`), declares PII-shaped
 fields (names containing tokens like `email`, `phone`, `address`, `ssn`,
 `password`, `token`, `secret`, `card`, …), and sets none of `owner_field`,
-`access` (with at least one non-blank permission), or `multi_tenant`,
-every *authenticated* user could read and write every other user's row on
-the generated API (the secure-by-default gate already stops anonymous
-callers; the exposure here is cross-user). Enabling `app.auth` alone does
-**not** suppress the rule: a session is necessary to reach the API but
-not sufficient to scope it; only per-entity scoping does that.
+`access.read` (a non-blank permission other than `anyone`), or
+`multi_tenant`, it leaves reads unscoped. Without an access declaration,
+the default session gate allows any signed-in user to read other users'
+rows. An access declaration with only write permissions can allow public
+reads. To satisfy the check, declare ownership, tenant scoping, or a read
+permission on the entity.
 `gofastr validate` reports this as an error (exit 1),
 naming the entity, the matched fields, and the remedies; `gofastr generate`
 prints the same finding as a warning and proceeds (suppressed under `--json`
-to keep stdout machine-parseable). `gofastr audit lint` also reports it
-(rule `unscoped-pii`) when a conventional `gofastr.yml` / `gofastr.yaml` /
-`gofastr.json` sits at the audited root. Fix it with any of:
+to keep stdout machine-parseable). Fix it with any of:
 
 ```yaml
 entities:
@@ -2364,15 +2437,17 @@ portability rules are built into that template:
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   app spec boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
   `postgres` app spec declares the engine the spec ships against, so the
-  test carves a disposable database from the env-provided
-  `TEST_POSTGRES_DSN` admin DSN and points the child at it
-  (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
-  Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
-  green-by-skip instead of timing out with a misleading "server did not become
-  ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
+  test uses [testkit](testkit.md#newisolateddbdsn) to carve a disposable
+  database from `TEST_POSTGRES_DSN` and point the child at it
+  (`DATABASE_URL` + `DB_DRIVER=postgres`). The test skips when the DSN is
+  unset, Postgres is unreachable, or the admin connection cannot create
+  the test database. Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
   (The generated `main.go` links both drivers, so switching `DB_DRIVER`
   between `sqlite` and `postgres` at boot works whatever the spec declares.)
+
+Both drivers set `GOFASTR_SEMANTIC_COVERAGE=1` in the child environment so
+the server records which contracts the generated suite exercises.
 
 With gated screens and a seeded admin, the test signs in as that admin and
 then requires each gated screen to answer 200. The admin is seeded with the
@@ -2395,9 +2470,8 @@ fails with the redirect's 303 instead of passing on the login page.
   validation, and the generated app's auth battery would refuse to boot.)
 - **Expecting `app.auth: enabled` to protect entity data.** The
   session middleware is pass-through for anonymous requests. Only
-  per-entity `owner_field`, `access`, or `multi_tenant` gate the
-  generated CRUD and MCP endpoints; that's why the unscoped-PII check fires
-  even with auth enabled.
+  per-entity `owner_field`, `access.read`, or `multi_tenant` satisfy
+  the unscoped-PII check for generated CRUD and MCP reads.
 - **Copying an entity-screen engine into a generated app.** The screens
   draw through `appUI` (`framework/entityui`, built in `extensions.go`):
   keep the generated builders and your `appExtensions` hooks there, and

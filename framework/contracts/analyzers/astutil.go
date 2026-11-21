@@ -182,20 +182,41 @@ func diag(p *contracts.Pass, ruleID, file string, pos token.Pos, msg string) con
 	}
 }
 
-func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
+func legacyCommentLines(fset *token.FileSet, file *ast.File) map[int][]string {
+	var comments map[int][]string
+	if file == nil {
+		return nil
+	}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if comments == nil {
+				comments = make(map[int][]string)
+			}
+			line := fset.PositionFor(c.Pos(), false).Line
+			for i, text := range strings.Split(c.Text, "\n") {
+				comments[line+i] = append(comments[line+i], text)
+			}
+		}
+	}
+	return comments
+}
+
+func hasLegacyAnnotation(lines []string, comments map[int][]string, lineNo int, markers ...string) bool {
 	if lineNo < 1 || lineNo > len(lines) {
 		return false
 	}
-	check := func(s string) bool {
-		lower := strings.ToLower(s)
-		for _, m := range markers {
-			if strings.Contains(lower, m) {
-				return true
+	check := func(line int) bool {
+		for _, comment := range comments[line] {
+			lower := strings.ToLower(comment)
+			for _, marker := range markers {
+				if strings.Contains(lower, marker) {
+					return true
+				}
 			}
 		}
 		return false
 	}
-	if check(lines[lineNo-1]) {
+	if check(lineNo) {
 		return true
 	}
 	for i, seen := lineNo-2, 0; i >= 0 && seen < 4; i-- {
@@ -203,7 +224,7 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 			continue
 		}
 		seen++
-		if check(lines[i]) {
+		if check(i + 1) {
 			return true
 		}
 		trimmed := strings.TrimSpace(lines[i])
@@ -215,5 +236,138 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 }
 
 func stripComments(src string) string { return codetext.Strip(src, false) }
+
+type sourceSpan struct{ start, end int }
+
+func sqlWaiverSpans(src lintSource) []sourceSpan {
+	if src.file == nil || !strings.Contains(strings.ToLower(src.body), "safe-sql:") {
+		return nil
+	}
+	targets := sqlWaiverTargets(src.file)
+	var spans []sourceSpan
+	for _, group := range src.file.Comments {
+		for _, comment := range group.List {
+			if !sqlWaiverHasReason(comment.Text) {
+				continue
+			}
+			target := sqlWaiverStatement(targets, comment, src)
+			for _, stmt := range target.parts {
+				if !containsFuncLiteral(stmt) {
+					start, end := src.fset.PositionFor(stmt.Pos(), false), src.fset.PositionFor(stmt.End(), false)
+					spans = append(spans, sourceSpan{start.Offset, end.Offset})
+				}
+			}
+		}
+	}
+	return spans
+}
+
+func sqlWaiverHasReason(comment string) bool {
+	text := strings.TrimPrefix(comment, "//")
+	if body, ok := strings.CutPrefix(text, "/*"); ok {
+		text = strings.TrimSuffix(body, "*/")
+	}
+	text = strings.TrimSpace(text)
+	const marker = "safe-sql:"
+	return len(text) >= len(marker) && strings.EqualFold(text[:len(marker)], marker) &&
+		strings.TrimSpace(text[len(marker):]) != ""
+}
+
+type sqlWaiverTarget struct {
+	start, end   token.Pos
+	parts        []ast.Node
+	trailingOnly bool
+}
+
+func sqlWaiverTargets(file *ast.File) []sqlWaiverTarget {
+	var targets []sqlWaiverTarget
+	add := func(n ast.Node) {
+		targets = append(targets, sqlWaiverTarget{start: n.Pos(), end: n.End(), parts: []ast.Node{n}})
+	}
+	header := func(n ast.Node, body *ast.BlockStmt, parts ...ast.Node) {
+		target := sqlWaiverTarget{start: n.Pos(), end: body.Lbrace + 1}
+		for _, part := range parts {
+			if part != nil {
+				target.parts = append(target.parts, part)
+				add(part)
+			}
+		}
+		if len(target.parts) != 0 {
+			targets = append(targets, target)
+		}
+	}
+	for n := range ast.Preorder(file) {
+		switch n := n.(type) {
+		case *ast.IfStmt:
+			header(n, n.Body, n.Init, n.Cond)
+		case *ast.SwitchStmt:
+			header(n, n.Body, n.Init, n.Tag)
+		case *ast.TypeSwitchStmt:
+			header(n, n.Body, n.Init, n.Assign)
+		case *ast.ForStmt:
+			header(n, n.Body, n.Init, n.Cond, n.Post)
+		case *ast.RangeStmt:
+			header(n, n.Body, n.Key, n.Value, n.X)
+		case *ast.FuncDecl:
+			if n.Body != nil && len(n.Body.List) == 1 {
+				switch stmt := n.Body.List[0].(type) {
+				case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.DeclStmt:
+					targets = append(targets, sqlWaiverTarget{n.Pos(), n.End(), []ast.Node{stmt}, true})
+				}
+			}
+		case *ast.GenDecl:
+			if len(n.Specs) == 1 {
+				if spec, ok := n.Specs[0].(*ast.ValueSpec); ok {
+					targets = append(targets, sqlWaiverTarget{start: n.Pos(), end: n.End(), parts: []ast.Node{spec}})
+				}
+			}
+		case *ast.AssignStmt, *ast.ExprStmt, *ast.ReturnStmt, *ast.SendStmt, *ast.GoStmt, *ast.DeferStmt, *ast.ValueSpec, *ast.DeclStmt:
+			add(n)
+		}
+	}
+	return targets
+}
+
+func sqlWaiverStatement(targets []sqlWaiverTarget, comment *ast.Comment, src lintSource) sqlWaiverTarget {
+	commentStart := src.fset.PositionFor(comment.Pos(), false)
+	commentEnd := src.fset.PositionFor(comment.End(), false)
+	lineStart := commentStart.Offset - commentStart.Column + 1
+	standalone := strings.TrimSpace(src.body[lineStart:commentStart.Offset]) == ""
+	var best sqlWaiverTarget
+	for _, target := range targets {
+		start := src.fset.PositionFor(target.start, false)
+		end := src.fset.PositionFor(target.end, false)
+		trailing := end.Line == commentStart.Line && end.Offset <= commentStart.Offset &&
+			strings.TrimSpace(src.body[end.Offset:commentStart.Offset]) == ""
+		if target.trailingOnly {
+			if !trailing || start.Line != end.Line {
+				continue
+			}
+		} else {
+			preceding := standalone && commentEnd.Line+1 == start.Line && commentEnd.Offset <= start.Offset &&
+				strings.TrimSpace(src.body[commentEnd.Offset:start.Offset]) == ""
+			inside := start.Offset < commentStart.Offset && commentEnd.Offset <= end.Offset && !standalone &&
+				strings.TrimSpace(src.body[max(lineStart, start.Offset):commentStart.Offset]) != ""
+			if !trailing && !preceding && !inside {
+				continue
+			}
+		}
+		if target.start > best.start || target.start == best.start && target.end < best.end {
+			best = target
+		}
+	}
+	return best
+}
+
+func containsFuncLiteral(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(child ast.Node) bool {
+		if _, ok := child.(*ast.FuncLit); ok {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
 
 func stripScriptComments(src string) string { return codetext.Strip(src, true) }

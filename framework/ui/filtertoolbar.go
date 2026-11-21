@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/internal/idslug"
 )
 
 // FacetKind selects how a facet renders its options.
@@ -361,7 +362,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
-	id := render.UniqueID(ctx, "filter-search-"+slug(s.Name))
+	id := render.UniqueID(ctx, "filter-search-"+idslug.Make(s.Name))
 	wrap := html.Attrs{"data-cui-internal": ""}
 	kids := []render.HTML{SearchInput(SearchInputConfig{
 		Ctx:         ctx,
@@ -383,7 +384,7 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 	pills := make([]render.HTML, 0, len(f.Options)+1)
 	seen := map[string]int{}
 	pillID := func(o FacetOption) string {
-		id := "filter-" + slug(f.Name) + "-" + slug(o.Value+"-"+o.Label)
+		id := "filter-" + idslug.Make(f.Name) + "-" + idslug.Make(o.Value+"-"+o.Label)
 		seen[id]++
 		if n := seen[id]; n > 1 {
 			id += "-" + strconv.Itoa(n)

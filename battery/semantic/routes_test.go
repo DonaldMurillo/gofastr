@@ -1,7 +1,6 @@
 package semantic
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -126,15 +125,14 @@ func TestHTTPDeleteWithoutID(t *testing.T) {
 	}
 }
 
-func TestPluginRegistersRoutes(t *testing.T) {
-	// Smoke-test the framework plugin against a freshly constructed
-	// router so we know the prefix wiring works end-to-end.
-	ctx := context.Background()
-	_ = ctx
-	idx, _ := Open(Options{Embedder: NewStubEmbedder(32)})
+func TestPluginPrefixAndIdentity(t *testing.T) {
+	idx, err := Open(Options{Embedder: NewStubEmbedder(32)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := NewPlugin(idx)
 	if p.Name() != "semantic" {
-		t.Fatalf("Name = %q, want embed", p.Name())
+		t.Fatalf("Name = %q, want semantic", p.Name())
 	}
 	if p.Index() != idx {
 		t.Fatalf("Plugin.Index() returned a different index")

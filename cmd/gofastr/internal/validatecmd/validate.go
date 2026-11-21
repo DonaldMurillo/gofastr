@@ -13,7 +13,7 @@ import (
 
 // RunValidate implements `gofastr validate <gofastr.yml|dir>`: parse the
 // app spec, run every generate-time validation (including the app.module /
-// go.mod consistency check and a full render pass), and exit 0/1. Errors are
+// go.mod consistency check and a full render pass). Errors are
 // written for agents iterating on an app spec: each names the file (and line
 // where the parser provides one), what is wrong, and the remedy.
 func RunValidate(args []string) {
@@ -24,7 +24,7 @@ func RunValidate(args []string) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
 		cli.Fail("Usage: gofastr validate <gofastr.yml|dir>")
 		cli.Info("Parses the app spec and runs every generate-time validation. Exit 0 = valid.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	// One app spec per run. A second path was never read, so
@@ -77,42 +77,10 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// A module path that collides with the framework's own produces code that
-	// cannot build anywhere outside this repo. Warned (not failed) for the same
-	// reason `generate` warns: the in-repo examples legitimately declare such
-	// paths. Surfaced here because validate → fix → generate is the loop the
-	// CLI documents, and a finding that only appears at the last step is a
-	// finding the loop is designed to skip past.
-	for _, f := range appgen.LintModuleCollision(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// Uniqueness that spans owners on an owner-scoped entity: a warning,
-	// since a value unique across all accounts can be deliberate.
-	for _, f := range appgen.LintOwnerScopedUnique(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A screen over an entity that needs a session, in an app with no
-	// sign-in: the screen draws "Not available" for every visitor.
-	for _, f := range appgen.LintSignedOutScreens(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A custom_form that POSTs to a screen route: screens answer GET only.
-	for _, f := range appgen.LintPostFormsOnScreens(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// Image or file fields with no file storage wired: uploads answer 400.
-	for _, f := range appgen.LintUploadFields(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A nav link to a path nothing in the spec serves: the generated
-	// app's strict boot refuses it, but owned Go code can add routes
-	// validate cannot see, so this only warns.
-	for _, f := range appgen.LintNavHrefs(bp, anchor) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A route under a locale-shaped first segment with locale_prefixes on.
-	for _, f := range appgen.LintLocaleRoutes(bp) {
-		cli.Warn("%s: %s", path, f.Message())
+	// Seven warnings `gofastr generate` also prints; each lint's own doc
+	// says why it warns rather than fails.
+	for _, msg := range appgen.CommonLintFindings(bp, anchor, appgen.ModuleCollisionsFirst) {
+		cli.Warn("%s: %s", path, msg)
 	}
 	cli.Success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
@@ -152,8 +120,9 @@ Checks:
   unscoped PII exposure
   a complete in-memory render of generated files
 
-Exit status is 0 when valid, 1 when any check fails, and 2 for a usage
-error such as a second path (validate one app spec per run).`)
+Exit status is 0 for a valid app spec or when --help or -h appears in any
+position. A failed check exits 1. Exit status 2 indicates a missing app
+spec path, a first argument starting with --, or an extra path or flag.`)
 }
 
 // failAppSpecValidation prints a validation failure prefixed with the

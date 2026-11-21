@@ -28,8 +28,16 @@ func usersShown(body string) []string {
 // negative OFFSET, which would fail the page instead of showing the last.
 func TestUsersHugePageOffsetStays(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/admin/rbac/users?limit=500&p=9223372036854775807", nil)
-	if opts, _ := listUsersOpts(r); opts.Offset < 0 {
+	if opts, _ := listUsersOpts(r.URL.Query()); opts.Offset < 0 {
 		t.Errorf("offset %d for a huge page", opts.Offset)
+	}
+}
+
+func TestUsersPageClampsLimit(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/admin/rbac/users?limit=501&p=2", nil)
+	opts, page := listUsersOpts(r.URL.Query())
+	if opts.Limit != 500 || opts.Offset != 500 || page != 2 {
+		t.Errorf("paging = %+v, page %d, want limit 500, offset 500, page 2", opts, page)
 	}
 }
 

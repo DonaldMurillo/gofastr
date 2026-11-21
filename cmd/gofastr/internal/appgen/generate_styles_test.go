@@ -46,7 +46,7 @@ func runStylesCase(t *testing.T, files map[string]string, wantNoFile string) (di
 	dir = t.TempDir()
 	styleGenSeed(t, dir, files)
 	clitest.CovT_chdir(t, dir)
-	printed = clitest.CovT_capStdout(t, func() {
+	printed = clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runGenerateStyles(nil) })
 	})
 	if wantNoFile != "" {
@@ -471,7 +471,7 @@ func TestGenStylesRefusesSymlinkEscape(t *testing.T) {
 	}
 	clitest.CovT_chdir(t, proj)
 	var code int
-	printed := clitest.CovT_capStdout(t, func() {
+	printed := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runGenerateStyles(nil) })
 	})
 	if code != 1 {

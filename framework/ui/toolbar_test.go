@@ -25,18 +25,19 @@ func TestToolbarRequiresAtLeastOneGroup(t *testing.T) {
 	Toolbar(ToolbarConfig{Label: "x"})
 }
 
-func TestToolbarEmitsRoleToolbar(t *testing.T) {
+func TestToolbarEmitsLabelledGroup(t *testing.T) {
 	h := string(Toolbar(ToolbarConfig{
 		Label: "Format",
 		Groups: []ToolbarGroup{
 			{Label: "Text", Children: []render.HTML{Button(ButtonConfig{Label: "Bold"})}},
 		},
 	}))
-	if !strings.Contains(h, `role="toolbar"`) {
-		t.Errorf("Toolbar should have role=toolbar:\n%s", h)
+	root := h[:strings.Index(h, ">")+1]
+	if !strings.Contains(root, `role="group"`) {
+		t.Errorf("Toolbar root should have role=group:\n%s", root)
 	}
-	if !strings.Contains(h, `aria-label="Format"`) {
-		t.Errorf("Toolbar should have aria-label=Label:\n%s", h)
+	if !strings.Contains(root, `aria-label="Format"`) {
+		t.Errorf("Toolbar root should have aria-label=Label:\n%s", root)
 	}
 }
 
@@ -54,10 +55,9 @@ func TestToolbarGroupRoleEmittedWhenLabeled(t *testing.T) {
 	if !strings.Contains(h, `aria-label="Inline"`) {
 		t.Errorf("labeled group should have aria-label:\n%s", h)
 	}
-	// Unlabeled group should not have role=group (only one occurrence overall).
-	if strings.Count(h, `role="group"`) != 1 {
-		t.Errorf("only labeled groups should have role=group, got %d:\n%s",
-			strings.Count(h, `role="group"`), h)
+	children := h[strings.Index(h, ">")+1:]
+	if strings.Count(children, `role="group"`) != 1 {
+		t.Errorf("only the labelled child group should have role=group:\n%s", children)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `role="toolbar"`, `aria-label="Format"`, `class="fui-toolbar mine"`,
+		`data-test="hook"`, `role="group"`, `aria-label="Format"`, `class="fui-toolbar mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("root missing %q:\n%s", want, root)

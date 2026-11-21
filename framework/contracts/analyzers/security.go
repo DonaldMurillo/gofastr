@@ -53,17 +53,12 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if !ok {
 			continue
 		}
-		lines := strings.Split(string(body), "\n")
-		sqlConcat := ruleSQLConcat(p, f.Rel, string(body), lines)
-		out = append(out, sqlConcat...)
-		htmlConcat := ruleHTMLConcat(p, f.Rel, lines)
-		out = append(out, htmlConcat...)
-		out = append(out, ruleFormCSRF(p, f.Rel, string(body), lines)...)
-		if file, parsed := p.AST(f.Rel); parsed {
-			out = append(out, ruleSQLConcatAST(p, f.Rel, file, string(body), lines, sqlConcat)...)
-			out = append(out, ruleHTMLBuiltAST(p, f.Rel, file, lines, htmlConcat)...)
-			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
-			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
+		file, _ := p.AST(f.Rel)
+		src := newLintSource(f.Rel, string(body), p.FileSet(), file)
+		out = append(out, sharedSecurityRules(src)...)
+		if file != nil {
+			out = append(out, ruleInsecureCookie(p, src)...)
+			out = append(out, ruleHardcodedSecret(p, src)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
 			out = append(out, ruleRawJSONBody(p, f.Rel, file)...)
 			out = append(out, ruleAbsoluteAttempts(p, f.Rel, file)...)
@@ -80,6 +75,19 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 	}
 	return out, nil
+}
+
+func sharedSecurityRules(src lintSource) []contracts.Diagnostic {
+	waivers := sqlWaiverSpans(src)
+	sql := ruleSQLConcat(src, waivers)
+	html := ruleHTMLConcat(src)
+	out := append(ruleFormCSRF(src), sql...)
+	out = append(out, html...)
+	if src.file != nil {
+		out = append(out, ruleSQLConcatAST(src, sql, waivers)...)
+		out = append(out, ruleHTMLBuiltAST(src, html)...)
+	}
+	return out
 }
 
 // GOFASTR1401: SQL built by concatenation.
@@ -101,15 +109,24 @@ var taintMarkers = []string{
 	"pathvalue", "formvalue",
 }
 
-func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contracts.Diagnostic {
+func ruleSQLConcat(src lintSource, waivers []sourceSpan) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
+	body := src.body
+	if len(waivers) > 0 {
+		masked := []byte(body)
+		for _, span := range waivers {
+			for i := span.start; i < span.end; i++ {
+				if masked[i] != '\n' {
+					masked[i] = ' '
+				}
+			}
+		}
+		body = string(masked)
+	}
 	for i, line := range strings.Split(stripComments(body), "\n") {
 		if !reSQLConcatLiteral.MatchString(line) &&
 			!reSQLSprintf.MatchString(line) &&
 			!reSQLBuilderConcat.MatchString(line) {
-			continue
-		}
-		if hasLegacyAnnotation(lines, i+1, "safe-sql:") {
 			continue
 		}
 		lower := strings.ToLower(line)
@@ -124,9 +141,9 @@ func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contra
 			continue
 		}
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleSQLStringConcat, File: rel, Line: i + 1,
+			RuleID: contracts.RuleSQLStringConcat, File: src.rel, Line: i + 1,
 			Message: "request-derived value concatenated into a SQL statement",
-			Snippet: strings.TrimSpace(lines[min(i, len(lines)-1)]),
+			Snippet: strings.TrimSpace(src.lines[min(i, len(src.lines)-1)]),
 		})
 	}
 	return out
@@ -141,16 +158,24 @@ var sqlCallNames = map[string]bool{
 var reSQLVerbText = regexp.MustCompile(`(?i)\b` + sqlVerb)
 
 // ruleSQLConcatAST covers what the line scan cannot see: raw-string literals and concatenations split across lines.
-func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic, waivers []sourceSpan) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
 		seen[d.Line] = true
 	}
 	var out []contracts.Diagnostic
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
+		}
+		if len(waivers) > 0 {
+			offset := src.fset.PositionFor(call.Pos(), false).Offset
+			for _, span := range waivers {
+				if span.start <= offset && offset < span.end {
+					return true
+				}
+			}
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || !sqlCallNames[sel.Sel.Name] {
@@ -161,11 +186,11 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 			if !isConcat || !reSQLVerbText.MatchString(text) {
 				continue
 			}
-			start := p.Position(arg.Pos())
-			end := p.Position(arg.End())
+			start := src.fset.Position(arg.Pos())
+			end := src.fset.Position(arg.End())
 			reported := false
-			for ln := start.Line; ln <= end.Line && ln <= len(lines); ln++ {
-				if seen[ln] || hasLegacyAnnotation(lines, ln, "safe-sql:") {
+			for ln := start.Line; ln <= end.Line && ln <= len(src.lines); ln++ {
+				if seen[ln] {
 					reported = true
 					break
 				}
@@ -174,9 +199,9 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 				continue
 			}
 			suspicious := reSQLQuotedInterp.MatchString(text)
-			src := strings.ToLower(body[start.Offset:end.Offset])
+			expression := strings.ToLower(src.body[start.Offset:end.Offset])
 			for _, marker := range taintMarkers {
-				if strings.Contains(src, marker) {
+				if strings.Contains(expression, marker) {
 					suspicious = true
 					break
 				}
@@ -186,10 +211,10 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 			}
 			out = append(out, contracts.Diagnostic{
 				RuleID:  contracts.RuleSQLStringConcat,
-				File:    rel,
+				File:    src.rel,
 				Line:    start.Line,
 				Message: "request-derived value concatenated into a SQL statement",
-				Snippet: strings.TrimSpace(lines[min(start.Line-1, len(lines)-1)]),
+				Snippet: strings.TrimSpace(src.lines[min(start.Line-1, len(src.lines)-1)]),
 			})
 		}
 		return true
@@ -233,17 +258,17 @@ func sqlConcatText(e ast.Expr) (string, bool) {
 
 var reRenderHTMLConcat = regexp.MustCompile(`render\.HTML\([^)]*\+[^)]*\)`)
 
-func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.Diagnostic {
+func ruleHTMLConcat(src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	for i, line := range lines {
+	for i, line := range src.lines {
 		if !reRenderHTMLConcat.MatchString(line) {
 			continue
 		}
-		if hasLegacyAnnotation(lines, i+1, "safe-html:") {
+		if hasLegacyAnnotation(src.lines, src.comments, i+1, "safe-html:") {
 			continue
 		}
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleHTMLConcat, File: rel, Line: i + 1,
+			RuleID: contracts.RuleHTMLConcat, File: src.rel, Line: i + 1,
 			Message: "render.HTML receives a concatenated string: the interpolated half is not escaped",
 			Snippet: strings.TrimSpace(line),
 		})
@@ -252,14 +277,14 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 }
 
 // ruleHTMLBuiltAST covers Sprintf/Sprint/Join builds, split or call-led concatenations and locals assigned such a build.
-func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+func ruleHTMLBuiltAST(src lintSource, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
 		seen[d.Line] = true
 	}
-	aliases := importAliases(file)
+	aliases := importAliases(src.file)
 	var out []contracts.Diagnostic
-	for _, decl := range file.Decls {
+	for _, decl := range src.file.Decls {
 		var locals map[string][]ast.Expr
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
 			locals = localAssignments(fn.Body)
@@ -281,12 +306,12 @@ func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []str
 			if how == "" {
 				return true
 			}
-			line := p.Position(call.Pos()).Line
-			if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
+			line := src.fset.Position(call.Pos()).Line
+			if seen[line] || hasLegacyAnnotation(src.lines, src.comments, line, "safe-html:") {
 				return true
 			}
 			seen[line] = true
-			d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
+			d := src.diagnostic(contracts.RuleHTMLConcat, call.Pos(),
 				"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
 			out = append(out, d)
 			return true
@@ -317,6 +342,20 @@ func localAssignments(body *ast.BlockStmt) map[string][]ast.Expr {
 		return true
 	})
 	return locals
+}
+
+// isOSStdin reports whether v reads os's Stdin under any import
+// spelling: the package name, an alias, or a suffixed path.
+func isOSStdin(v *ast.SelectorExpr, aliases map[string]string) bool {
+	if v.Sel == nil || v.Sel.Name != "Stdin" {
+		return false
+	}
+	id, ok := v.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	p := aliases[id.Name]
+	return p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os"
 }
 
 func unparen(e ast.Expr) ast.Expr {
@@ -386,14 +425,14 @@ var (
 	reCSRFExempt = regexp.MustCompile(`(?i)csrf-exempt:\s*\S`)
 )
 
-func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contracts.Diagnostic {
-	stripped := stripComments(body)
+func ruleFormCSRF(src lintSource) []contracts.Diagnostic {
+	stripped := stripComments(src.body)
 	protections := len(reCSRFCall.FindAllString(stripped, -1)) +
 		len(reCSRFField.FindAllString(stripped, -1)) +
-		len(reCSRFExempt.FindAllString(body, -1))
+		len(reCSRFExempt.FindAllString(src.body, -1))
 
 	var formLines []int
-	for i, line := range lines {
+	for i, line := range src.lines {
 		if reFormPOST.MatchString(line) {
 			formLines = append(formLines, i)
 		}
@@ -404,10 +443,10 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 	var out []contracts.Diagnostic
 	for _, idx := range formLines[:len(formLines)-protections] {
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleFormWithoutCSRF, File: rel, Line: idx + 1,
+			RuleID: contracts.RuleFormWithoutCSRF, File: src.rel, Line: idx + 1,
 			Message: fmt.Sprintf("this file renders %d POST form(s) but wires CSRF %d time(s)",
 				len(formLines), protections),
-			Snippet:  strings.TrimSpace(lines[idx]),
+			Snippet:  strings.TrimSpace(src.lines[idx]),
 			Evidence: map[string]string{"forms": fmt.Sprint(len(formLines)), "protections": fmt.Sprint(protections)},
 		})
 	}
@@ -416,10 +455,10 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 
 // GOFASTR1404: http.Cookie without security attributes.
 
-func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
+func ruleInsecureCookie(p *contracts.Pass, src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	aliases := importAliases(file)
-	ast.Inspect(file, func(n ast.Node) bool {
+	aliases := importAliases(src.file)
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
 		if !ok {
 			return true
@@ -471,13 +510,13 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 			return true
 		}
 		pos := p.Position(lit.Pos())
-		if hasLegacyAnnotation(lines, pos.Line, "insecure-cookie:") {
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "insecure-cookie:") {
 			return true
 		}
-		d := diag(p, contracts.RuleInsecureCookie, rel, lit.Pos(),
+		d := diag(p, contracts.RuleInsecureCookie, src.rel, lit.Pos(),
 			fmt.Sprintf("cookie is missing %s", strings.Join(missing, ", ")))
 		d.Evidence = map[string]string{"missing": strings.Join(missing, ",")}
-		d.Fix = cookieFix(p, rel, lit, missing, httpAlias(sel))
+		d.Fix = cookieFix(p, src.rel, lit, missing, httpAlias(sel))
 		out = append(out, d)
 		return true
 	})
@@ -583,7 +622,7 @@ func looksLikeCredential(v string) bool {
 	return classes >= 3 && digit > 0
 }
 
-func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
+func ruleHardcodedSecret(p *contracts.Pass, src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 
 	report := func(name string, value ast.Expr) {
@@ -604,17 +643,17 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 			}
 		}
 		pos := p.Position(value.Pos())
-		if hasLegacyAnnotation(lines, pos.Line, "not-a-secret:") {
+		if hasLegacyAnnotation(src.lines, src.comments, pos.Line, "not-a-secret:") {
 			return
 		}
-		d := diag(p, contracts.RuleHardcodedSecret, rel, value.Pos(),
+		d := diag(p, contracts.RuleHardcodedSecret, src.rel, value.Pos(),
 			fmt.Sprintf("%s is assigned a literal value", name))
 		d.Evidence = map[string]string{"name": name, "length": fmt.Sprint(len(lit))}
 		d.Snippet, d.RedactSnippet = "", true
 		out = append(out, d)
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.AssignStmt:
 			for i, lhs := range v.Lhs {
@@ -1303,12 +1342,8 @@ func seedSourceFields(pkg *rawJSONPkg) {
 				}
 			}
 		case *ast.SelectorExpr:
-			if v.Sel != nil && v.Sel.Name == "Stdin" {
-				if id, ok := v.X.(*ast.Ident); ok {
-					if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
-						return true
-					}
-				}
+			if isOSStdin(v, aliases) {
+				return true
 			}
 		case *ast.ParenExpr:
 			return direct(v.X, tainted, aliases)
@@ -1692,12 +1727,8 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[stri
 		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
 			return taintBody
 		}
-		if v.Sel != nil && v.Sel.Name == "Stdin" {
-			if id, ok := v.X.(*ast.Ident); ok {
-				if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
-					return taintFrame
-				}
-			}
+		if isOSStdin(v, aliases) {
+			return taintFrame
 		}
 		if v.Sel != nil {
 			if k := fields[v.Sel.Name]; k != 0 {
@@ -1740,33 +1771,39 @@ func runData(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if !ok {
 			continue
 		}
-		lines := strings.Split(string(body), "\n")
-		flagged := map[int]bool{}
-		report := func(lineNo int) {
-			if flagged[lineNo] || hasLegacyAnnotation(lines, lineNo, "best-effort", "ignore the error", "errors here") {
-				return
-			}
-			flagged[lineNo] = true
-			out = append(out, contracts.Diagnostic{
-				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: lineNo,
-				Message: "both the result and the error of this write are discarded",
-				Snippet: strings.TrimSpace(lines[lineNo-1]),
-			})
+		file, _ := p.AST(f.Rel)
+		out = append(out, ruleIgnoredExec(newLintSource(f.Rel, string(body), p.FileSet(), file))...)
+	}
+	return out, nil
+}
+
+func ruleIgnoredExec(src lintSource) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	flagged := map[int]bool{}
+	report := func(lineNo int) {
+		if flagged[lineNo] || hasLegacyAnnotation(src.lines, src.comments, lineNo, "best-effort", "ignore the error", "errors here") {
+			return
 		}
-		for i, line := range lines {
-			if reIgnoredExec.MatchString(line) {
-				report(i + 1)
-			}
+		flagged[lineNo] = true
+		out = append(out, contracts.Diagnostic{
+			RuleID: contracts.RuleIgnoredExec, File: src.rel, Line: lineNo,
+			Message: "both the result and the error of this write are discarded",
+			Snippet: strings.TrimSpace(src.lines[lineNo-1]),
+		})
+	}
+	for i, line := range src.lines {
+		if reIgnoredExec.MatchString(line) {
+			report(i + 1)
 		}
-		if file, parsed := p.AST(f.Rel); parsed {
-			for _, pos := range bareExecStatements(file) {
-				if line := p.Position(pos).Line; line >= 1 && line <= len(lines) {
-					report(line)
-				}
+	}
+	if src.file != nil {
+		for _, pos := range bareExecStatements(src.file) {
+			if line := src.fset.Position(pos).Line; line >= 1 && line <= len(src.lines) {
+				report(line)
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 func bareExecStatements(file *ast.File) []token.Pos {

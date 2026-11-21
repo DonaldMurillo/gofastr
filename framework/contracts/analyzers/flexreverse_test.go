@@ -33,7 +33,7 @@ func TestFlexReverseIsReported(t *testing.T) {
 		{"framework/ui/x.go", "var css = `.a { flex-direction: column-reverse; }`"},
 		{"framework/ui/x.go", "var css = `.a { flex-flow: row-reverse wrap; }`"},
 		{"framework/ui/x.go", "var css = `.a { FLEX-DIRECTION: Row-Reverse !important; }`"},
-		{"core-ui/widget/page.go", "func f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"display\", \"flex\", \"flex-direction\", \"row-reverse\").End()\n}"},
+		{"core-ui/widget/page.go", "func f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"display\", \"flex\", \"FLEX-DIRECTION\", \"Row-Reverse\").End()\n}"},
 		{"battery/admin/x.go", "var css = `.a{display:flex;flex-direction:row-reverse}`"},
 	} {
 		ds := designFixture(t, tc.rel, "package x\n\n"+tc.src+"\n")

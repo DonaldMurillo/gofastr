@@ -3,6 +3,7 @@ package static
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,14 +27,14 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 		}
 	}
 
-	state := newMtimeMap()
+	state := &mtimeMap{}
 	if out, err := filepath.Abs(b.OutDir); err == nil && b.OutDir != "" {
 		state.skip = out
 	}
 	if dir, name, err := b.pageManifest(); err == nil && b.OutDir != "" {
 		state.skipFile = filepath.Join(dir, name)
 	}
-	state.scan(watchDirs)
+	state.files = state.scan(watchDirs)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -76,14 +77,8 @@ func (m *mtimeMap) ignored(path string) bool {
 	return err == nil && abs == m.skipFile
 }
 
-func newMtimeMap() *mtimeMap {
-	return &mtimeMap{files: make(map[string]time.Time)}
-}
-
-func (m *mtimeMap) scan(dirs []string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.files = make(map[string]time.Time)
+func (m *mtimeMap) scan(dirs []string) map[string]time.Time {
+	files := make(map[string]time.Time)
 	for _, d := range dirs {
 		_ = filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
 			if err != nil {
@@ -99,49 +94,19 @@ func (m *mtimeMap) scan(dirs []string) {
 			if err != nil || info.IsDir() {
 				return nil
 			}
-			m.files[path] = info.ModTime()
+			files[path] = info.ModTime()
 			return nil
 		})
 	}
+	return files
 }
 
 func (m *mtimeMap) changed(dirs []string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	dirty := false
-	seen := make(map[string]struct{}, len(m.files))
-
-	for _, d := range dirs {
-		_ = filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if m.skipped(path, de) {
-				return filepath.SkipDir
-			}
-			if m.ignored(path) {
-				return nil
-			}
-			info, err := os.Stat(path)
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			seen[path] = struct{}{}
-			prev, ok := m.files[path]
-			if !ok || !prev.Equal(info.ModTime()) {
-				dirty = true
-				m.files[path] = info.ModTime()
-			}
-			return nil
-		})
-	}
-
-	for path := range m.files {
-		if _, ok := seen[path]; !ok {
-			delete(m.files, path)
-			dirty = true
-		}
-	}
+	files := m.scan(dirs)
+	dirty := !maps.EqualFunc(m.files, files, time.Time.Equal)
+	m.files = files
 	return dirty
 }

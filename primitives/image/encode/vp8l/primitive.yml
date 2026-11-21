@@ -18,6 +18,8 @@ invariants:
       - test: framework/image/internal/vp8l.TestEncodeEmptyErrors
       - test: framework/image/internal/vp8l.TestRoundTripAR16385x1Rejected
       - test: framework/image/internal/vp8l.TestRoundTripAR16384x1
+      - test: framework/image/internal/vp8l.TestRoundTripAR1x16384
+      - test: framework/image/internal/vp8l.TestRejectsHeightOver16384
   - id: smallest-candidate-wins
     rule: Encode writes the smallest of the outputs of its candidate predictor modes 1, 2, 11, 12 and 13.
     enforced_by:
@@ -25,7 +27,7 @@ invariants:
   - id: uniform-image-one-pass
     rule: An NRGBA or RGBA image whose pixels are all equal is encoded in one pass instead of one per candidate mode.
     enforced_by:
-      - test: framework/image/internal/vp8l.TestUniformImageShortCircuitsMultiPass
+      - test: framework/image/internal/vp8l.TestUniformImageUsesOnePass
   - id: transforms-applied-in-written-order
     rule: The predictor transform is applied before subtract-green, the order their headers are written, so the decoder's reverse order restores the pixels.
     enforced_by:
@@ -53,6 +55,7 @@ invariants:
     rule: When every entry of lengths, unused ones included, holds one value, the code-length code has one symbol and no bits are written per primary length; any second value (a 0 beside used lengths counts) makes it write per-length bits.
     enforced_by:
       - test: framework/image/internal/vp8l.TestSweepVP8LOneLengthTreeWritesNoPerSymbolBits
+      - test: framework/image/internal/vp8l.TestUnusedSymbolForcesLengthBits
   - id: code-length-code-fits-three-bits
     rule: The code-length code's own lengths are limited to 7, since each is written in a 3-bit field.
     judge: Does this change let writeHuffmanTree build the code-length code with a limit above 7?

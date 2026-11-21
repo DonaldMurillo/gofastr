@@ -61,10 +61,7 @@ func TestStatusPillRejectsUnknownTone(t *testing.T) {
 
 func TestStatusPillExtraAttrsOnRoot(t *testing.T) {
 	h := StatusPill(StatusPillConfig{Label: "v0.1.0", ExtraAttrs: map[string]string{"data-test": "hook"}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("StatusPill root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "StatusPill root")
 }
 
 // A pill hidden by script (el.hidden = true, the pattern a page uses

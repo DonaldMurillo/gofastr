@@ -77,7 +77,7 @@ func TestNativeForm_UnadornedFormSubmitsNatively(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	chCtx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 	var url string
 	var cookies string
 	var beforeShot, afterShot []byte

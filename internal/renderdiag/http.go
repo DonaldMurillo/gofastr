@@ -26,7 +26,11 @@ func TestResponse(w http.ResponseWriter, r *http.Request) (http.ResponseWriter, 
 			previous(message)
 		}
 	})
-	return out, r.WithContext(ctx)
+	r = r.WithContext(ctx)
+	if _, ok := w.(http.Flusher); ok {
+		return &flushingTestResponse{testResponse: out}, r
+	}
+	return out, r
 }
 
 type productionStatusKey struct{}
@@ -34,7 +38,7 @@ type productionStatusKey struct{}
 // ProductionStatus scopes production recovery status to a test-owned handler.
 func ProductionStatus(t testing.TB, next http.Handler) http.Handler {
 	t.Helper()
-	active := productionFlag(t)
+	active := TestExemption(t, "renderdiag: production status exemption")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), productionStatusKey{}, active)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -47,13 +51,15 @@ func ProductionStatus(t testing.TB, next http.Handler) http.Handler {
 // wrapper.
 func ProductionContext(t testing.TB, ctx context.Context) context.Context {
 	t.Helper()
-	return context.WithValue(ctx, productionStatusKey{}, productionFlag(t))
+	return context.WithValue(ctx, productionStatusKey{}, TestExemption(t, "renderdiag: production status exemption"))
 }
 
-func productionFlag(t testing.TB) *atomic.Bool {
+// TestExemption returns a flag that stays true until t ends, for a helper
+// arming a test-only posture; who names the panic outside a test binary.
+func TestExemption(t testing.TB, who string) *atomic.Bool {
 	t.Helper()
 	if !testing.Testing() {
-		panic("renderdiag: production status exemption requires a test binary")
+		panic(who + " requires a test binary")
 	}
 	active := new(atomic.Bool)
 	active.Store(true)
@@ -89,20 +95,15 @@ func (w *testResponse) Write(body []byte) (int, error) {
 	return w.ResponseWriter.Write(body)
 }
 
-// Unwrap exposes the underlying writer so http.NewResponseController
-// reaches the real writer's capabilities instead of failing on the
-// wrapper. Without it a Flush (or any future controller extension)
-// would silently no-op only in test binaries.
+// Unwrap lets http.NewResponseController reach the underlying writer.
 func (w *testResponse) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
-// Flush delegates when the underlying writer supports it, so streamed
-// responses keep streaming under the test wrapper. The 500-on-panic
-// contract is unaffected: these responses commit headers only after
-// rendering completes.
-func (w *testResponse) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
+type flushingTestResponse struct{ *testResponse }
+
+func (w *flushingTestResponse) Flush() { _ = w.FlushError() }
+
+func (w *flushingTestResponse) FlushError() error {
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }

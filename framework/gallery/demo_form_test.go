@@ -33,21 +33,22 @@ func postDemoForm(routes *router.Router, action string) *httptest.ResponseRecord
 	return rec
 }
 
-// Every POST form a catalog demo renders answers 303 back to its demo.
-// They posted to the page itself ("?") or to a docs-site route, so a
-// screen answered 405, or a host other than the docs site answered 404.
+// Gallery-owned POST forms answer 303 back to their demo.
 func TestDemoFormsRedirectToDemo(t *testing.T) {
 	routes := demoFormRoutes(t)
-	// The docs site serves a real wizard at this path; the demo walks it.
-	hostOwned := map[string]bool{"/forms/wizard": true}
 	posted := 0
+	wizard := 0
 	for _, e := range Catalog {
 		for _, tag := range formTagRE.FindAllString(string(e.Demo()), -1) {
 			attrs := map[string]string{}
 			for _, m := range formAttrRE.FindAllStringSubmatch(tag, -1) {
 				attrs[strings.ToLower(m[1])] = html.UnescapeString(m[2])
 			}
-			if strings.ToUpper(attrs["method"]) != http.MethodPost || hostOwned[attrs["action"]] {
+			if strings.ToUpper(attrs["method"]) != http.MethodPost {
+				continue
+			}
+			if e.Slug == "stepwizard" && attrs["action"] == "/forms/wizard" {
+				wizard++
 				continue
 			}
 			posted++
@@ -68,6 +69,9 @@ func TestDemoFormsRedirectToDemo(t *testing.T) {
 	// form, conditionalfield, formrepeater, repeater, selection.
 	if posted < 5 {
 		t.Fatalf("found %d POST demo forms, want at least 5", posted)
+	}
+	if wizard != 1 {
+		t.Fatalf("found %d host-owned StepWizard POST forms, want 1", wizard)
 	}
 }
 

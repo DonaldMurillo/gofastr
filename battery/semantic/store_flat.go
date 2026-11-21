@@ -29,10 +29,8 @@ type FlatStore struct {
 	byDoc map[string][]int
 }
 
-// NewFlatStore returns an empty store sized for vectors of dimension
-// dim produced by the named model. dim and model are recorded so
-// future persistence (M2) can refuse to load a snapshot embedded with
-// a different model.
+// NewFlatStore returns an empty store sized for vectors of dimension dim.
+// It records dim and model to validate snapshots on load.
 func NewFlatStore(dim int, model string) *FlatStore {
 	return &FlatStore{
 		dim:   dim,
@@ -125,9 +123,7 @@ func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter,
 	if s.dim != 0 && len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
 	}
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	q := make([]float32, len(qv))
 	copy(q, qv)
 	normalize(q)
@@ -437,12 +433,6 @@ func (e *dimError) Error() string {
 
 // compile-time assertion that FlatStore implements Store.
 var _ Store = (*FlatStore)(nil)
-
-// errEmptyStore is returned by future persistence code when a snapshot
-// header is present but the chunk list is empty. Reserved for M2.
-var errEmptyStore = errors.New("semantic: store snapshot has no chunks")
-
-var _ = errEmptyStore
 
 // cloneChunk isolates vectors and metadata at the store boundary. The
 // metadata copy is deep: a nested map or slice shared with the caller or

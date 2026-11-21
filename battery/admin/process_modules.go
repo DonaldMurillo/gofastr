@@ -148,7 +148,11 @@ func moduleServes(state framework.ProcessState) i18n.Phrase {
 // moduleGenerationCell is desired / observed; a lagging observed
 // generation means convergence is in flight.
 func moduleGenerationCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
-	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + i18n.Number(ctx, m.ObservedGeneration)
+	observed := i18n.Number(ctx, m.ObservedGeneration)
+	if m.DesiredGeneration == 0 {
+		return render.Text("— / " + observed)
+	}
+	text := i18n.Number(ctx, m.DesiredGeneration) + " / " + observed
 	if m.ObservedGeneration < m.DesiredGeneration {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: ui.StatusDanger})
 	}

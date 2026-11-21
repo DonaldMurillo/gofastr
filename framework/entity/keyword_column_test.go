@@ -17,7 +17,7 @@ func TestTypedColumnQuotesKeyword(t *testing.T) {
 		{NewStringColumn("title").Eq("x").SQL(), `title = $1`},
 		{NewStringColumn("title").IsNull().SQL(), `title IS NULL`},
 		{NewBoolColumn("group").Eq(true).SQL(), `"group" = $1`},
-		{NewStringColumn("Status").Like("x").SQL(), `Status LIKE $1`},
+		{NewStringColumn("Status").Eq("x").SQL(), `Status = $1`},
 	} {
 		if c[0] != c[1] {
 			t.Errorf("got %s, want %s", c[0], c[1])

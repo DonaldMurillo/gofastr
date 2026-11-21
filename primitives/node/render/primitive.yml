@@ -10,24 +10,19 @@ invariants:
   - id: untrusted-strips-actions
     rule: RenderNode and RenderKind drop data-action, data-action-*, data-param-* and every registered behaviour marker attribute, in any letter case, at every depth, without changing the caller's props map.
     enforced_by:
-      - test: core-ui/noderender.TestRenderNodeStripsActionAttrs
       - test: core-ui/noderender.TestIRCannotFireActions
       - test: core-ui/noderender.TestRenderNodeStripsActionAttrsOnNestedChild
-      - test: core-ui/noderender.TestRenderKindStripsActionAttrs
       - test: core-ui/noderender.TestRenderNodeStripsActionAttrsCaseInsensitive
       - test: core-ui/noderender.TestIRDropsBehaviorMarkers
       - test: core-ui/noderender.TestUntrustedRenderLeavesPropsIntact
   - id: trusted-keeps-actions
     rule: RenderTrustedNode and RenderTrustedKind keep the action attributes, for the whole tree under a trusted root.
     enforced_by:
-      - test: core-ui/noderender.TestRenderTrustedNodeKeepsActionAttrs
-      - test: core-ui/noderender.TestRenderTrustedKindKeepsActionAttrs
       - test: core-ui/noderender.TestTrustedIRKeepsActions
     judge: Does this change call RenderTrustedNode or RenderTrustedKind on a tree that came from Kiln, a process module, a model or any user-supplied document?
   - id: attrs-are-an-allow-list
     rule: A prop becomes an attribute only when it is aria-*, a data-* outside data-behavior, data-widget, data-component, data-bind, data-island, data-cui-* and data-fui-*, or a name in allowedAttrs, so style, every on* handler and srcdoc are dropped.
     enforced_by:
-      - test: core-ui/noderender.TestRenderNodeDropsDangerousAttrs
       - test: core-ui/noderender.TestIRDropsScriptAndURLGadgets
       - test: core-ui/noderender.TestIRCannotFireActions
       - test: core-ui/noderender.TestRenderNodeStripsDataFuiFamily

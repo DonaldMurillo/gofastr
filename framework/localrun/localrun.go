@@ -148,8 +148,18 @@ func Register(rec Record) (unregister func(), err error) {
 	if err != nil {
 		return nil, fmt.Errorf("localrun: %w", err)
 	}
+	if len(body) > maxRecordBytes {
+		return nil, fmt.Errorf("localrun: record is %d bytes, over the %d List reads", len(body), maxRecordBytes)
+	}
+	if err := recordMetaErr(rec); err != nil {
+		return nil, err
+	}
 
-	root, err := openDir(true)
+	dir, err := Dir()
+	if err != nil {
+		return nil, err
+	}
+	root, err := openDirAt(dir, true)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +175,16 @@ func Register(rec Record) (unregister func(), err error) {
 		_ = root.Remove(start)
 		return nil, err
 	}
+	// The registration owns this directory: a later change to the
+	// environment override must not strand a live record.
 	return func() {
-		_ = remove(name)
-		_ = remove(start)
+		root, err := openDirAt(dir, false)
+		if err != nil {
+			return
+		}
+		defer root.Close()
+		_ = root.Remove(name)
+		_ = root.Remove(start)
 	}, nil
 }
 
@@ -244,16 +261,8 @@ func List() ([]Record, error) {
 var loadRecord = readRecord
 
 func readRecord(root *os.Root, name, id string) (Record, bool) {
-	f, err := root.OpenFile(name, openRecordFlags, 0)
-	if err != nil {
-		return Record{}, false
-	}
-	defer f.Close()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || !ownFile(f, fi) {
-		return Record{}, false
-	}
-	body, err := io.ReadAll(io.LimitReader(f, maxRecordBytes+1))
-	if err != nil || len(body) > maxRecordBytes {
+	body, ok := readOwned(root, name, maxRecordBytes)
+	if !ok {
 		return Record{}, false
 	}
 	var rec Record
@@ -263,11 +272,7 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 	if rec.Version != recordVersion || rec.ID != id || !strings.HasPrefix(id, fmt.Sprintf("%d-", rec.PID)) {
 		return Record{}, false
 	}
-	u, err := url.Parse(rec.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Record{}, false
-	}
-	if rec.MCPPath != "" && !strings.HasPrefix(rec.MCPPath, "/") {
+	if recordMetaErr(rec) != nil {
 		return Record{}, false
 	}
 	return rec, true
@@ -284,17 +289,40 @@ func dropOrphanStart(root *os.Root, names []string, id string) {
 	_ = root.Remove(id + startExt)
 }
 
-func readStart(root *os.Root, name string) uint64 {
+// recordMetaErr reports why rec breaks the URL and MCP path rules
+// every reader applies.
+func recordMetaErr(rec Record) error {
+	u, err := url.Parse(rec.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("localrun: a record needs an http or https URL with a host, got %q", rec.URL)
+	}
+	if rec.MCPPath != "" && !strings.HasPrefix(rec.MCPPath, "/") {
+		return fmt.Errorf("localrun: MCP path %q must start with a slash", rec.MCPPath)
+	}
+	return nil
+}
+
+// readOwned reads at most max bytes from name when it is a regular
+// file this process owns.
+func readOwned(root *os.Root, name string, max int) ([]byte, bool) {
 	f, err := root.OpenFile(name, openRecordFlags, 0)
 	if err != nil {
-		return 0
+		return nil, false
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || !ownFile(f, fi) {
-		return 0
+		return nil, false
 	}
-	body, err := io.ReadAll(io.LimitReader(f, maxStartBytes+1))
-	if err != nil || len(body) > maxStartBytes {
+	body, err := io.ReadAll(io.LimitReader(f, int64(max)+1))
+	if err != nil || len(body) > max {
+		return nil, false
+	}
+	return body, true
+}
+
+func readStart(root *os.Root, name string) uint64 {
+	body, ok := readOwned(root, name, maxStartBytes)
+	if !ok {
 		return 0
 	}
 	v, err := strconv.ParseUint(string(body), 10, 64)
@@ -306,20 +334,15 @@ func readStart(root *os.Root, name string) uint64 {
 
 var openRoot = os.OpenRoot
 
-func remove(name string) error {
-	root, err := openDir(false)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	return root.Remove(name)
-}
-
 func openDir(create bool) (*os.Root, error) {
 	dir, err := Dir()
 	if err != nil {
 		return nil, err
 	}
+	return openDirAt(dir, create)
+}
+
+func openDirAt(dir string, create bool) (*os.Root, error) {
 	if create {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("localrun: %w", err)

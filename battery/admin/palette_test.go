@@ -88,12 +88,14 @@ func TestPaletteHidesRefusedPages(t *testing.T) {
 	}
 }
 
-// An ops post past 1 MiB is refused before it is read.
+// An ops post past 1 MiB is refused before it is read, through the ops
+// envelope: a plain post is redirected back with ?result=body-too-large
+// and a form RPC gets the 413 the runtime toasts.
 func TestOpsPostBodyIsCapped(t *testing.T) {
 	r := newRBACEnv(t, Config{})
 	big := url.Values{"role": {"editor"}, "permission": {strings.Repeat("x", 2<<20)}}
-	if rr := post(r.as(theAdmin), "/admin/rbac/_grant", big); rr.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("a 2 MiB grant = %d, want 413", rr.Code)
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_grant", big)); got != "body-too-large" {
+		t.Fatalf("a 2 MiB grant redirected with result=%q, want body-too-large", got)
 	}
 	rr := rpc(r.as(theAdmin), "/admin/rbac/_grant", map[string]any{"role": "editor", "permission": strings.Repeat("x", 2<<20)})
 	if rr.Code != http.StatusRequestEntityTooLarge {

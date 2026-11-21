@@ -158,3 +158,11 @@ func typedNilVariableLabel(values map[string]any) (int, error) {
 invalid:
 	return 0, refusal
 }
+
+func additionalSuccessPredicate(opts map[string]any) (int, error) {
+	n, ok := opts["retries"].(int) // want `type assertion .* treated as absence`
+	if ok && n >= 0 {
+		return n, nil
+	}
+	return 0, nil
+}

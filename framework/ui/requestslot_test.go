@@ -16,17 +16,6 @@ var (
 	slotHome   = i18n.Define("test.requestslot.home", "Home")
 )
 
-// frenchCtx is a request context whose reader reads French, with each
-// phrase in tr translated to its value.
-func frenchCtx(tr map[i18n.Phrase]string) context.Context {
-	cat := i18n.NewMapCatalog()
-	for p, text := range tr {
-		cat.Set("fr", p.Key(), i18n.Message{Text: text})
-	}
-	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	return i18n.WithTranslator(ctx, i18n.NewTranslator(cat, "en"))
-}
-
 // renderBody renders a mounted widget's body slot the way the widget
 // server does: once per request, with that request's context.
 func renderBody(t *testing.T, b *widget.Builder, ctx context.Context) string {
@@ -49,7 +38,7 @@ func TestConfirmDialogWordsPerRequest(t *testing.T) {
 	_, b := ConfirmAction(ConfirmActionConfig{
 		Name: "del", TriggerLabel: "Delete", Title: "Delete?", Body: "Gone for good.", RPCPath: "/del",
 	})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{
 		i18nui.DialogConfirm: "Confirmer", i18nui.DialogCancel: "Annuler",
 	}))
 	if !strings.Contains(fr, "Confirmer") || !strings.Contains(fr, "Annuler") {
@@ -62,7 +51,7 @@ func TestConfirmDialogWordsPerRequest(t *testing.T) {
 
 func TestBellEmptyTextPerRequest(t *testing.T) {
 	_, b := NotificationBell(NotificationBellConfig{Name: "bell", Label: "Notifications", Href: "/notifications"})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{i18nui.NotificationEmpty: "Aucune notification"}))
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{i18nui.NotificationEmpty: "Aucune notification"}))
 	if !strings.Contains(fr, "Aucune notification") {
 		t.Fatalf("French request must get the French empty text:\n%s", fr)
 	}
@@ -70,7 +59,7 @@ func TestBellEmptyTextPerRequest(t *testing.T) {
 
 func TestShortcutSheetTitlePerRequest(t *testing.T) {
 	_, b := ShortcutSheet(ShortcutSheetConfig{FallbackHref: "/keys", Items: []ShortcutItem{{Chord: "/", Label: "Search"}}})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{
 		i18nui.ShortcutSheetTitle: "Raccourcis clavier", i18nui.CommandPaletteClose: "Fermer",
 	}))
 	if !strings.Contains(fr, "Raccourcis clavier") || !strings.Contains(fr, `aria-label="Fermer"`) {
@@ -82,7 +71,7 @@ func TestShortcutSheetFuncBuildsPerRequest(t *testing.T) {
 	b := ShortcutSheetFunc(func(ctx context.Context) ShortcutSheetConfig {
 		return ShortcutSheetConfig{FallbackHref: "/keys", Items: []ShortcutItem{{Chord: "/", Label: slotSearch.Text(ctx)}}}
 	})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{slotSearch: "Rechercher"}))
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{slotSearch: "Rechercher"}))
 	if !strings.Contains(fr, "Rechercher") {
 		t.Fatalf("the rows must be built for the request:\n%s", fr)
 	}
@@ -90,7 +79,7 @@ func TestShortcutSheetFuncBuildsPerRequest(t *testing.T) {
 
 func TestCommandPalettePlaceholderPerRequest(t *testing.T) {
 	_, b := CommandPalette(CommandPaletteConfig{RPCPath: "/palette", FallbackHref: "/search"})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{i18nui.CommandPalettePlaceholder: "Tapez une commande"}))
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{i18nui.CommandPalettePlaceholder: "Tapez une commande"}))
 	if !strings.Contains(fr, "Tapez une commande") {
 		t.Fatalf("French request must get the French placeholder:\n%s", fr)
 	}
@@ -100,7 +89,7 @@ func TestCommandPaletteFuncBuildsPerRequest(t *testing.T) {
 	b := CommandPaletteFunc(func(ctx context.Context) CommandPaletteConfig {
 		return CommandPaletteConfig{FallbackHref: "/search", Commands: []PaletteCommand{{Label: slotHome.Text(ctx), Href: "/"}}}
 	})
-	fr := renderBody(t, b, frenchCtx(map[i18n.Phrase]string{slotHome: "Accueil"}))
+	fr := renderBody(t, b, frenchWords(map[i18n.Phrase]string{slotHome: "Accueil"}))
 	if !strings.Contains(fr, "Accueil") {
 		t.Fatalf("the commands must be built for the request:\n%s", fr)
 	}

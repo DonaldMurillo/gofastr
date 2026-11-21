@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 )
 
 // ariaNode is one entry of a Playwright aria snapshot: the YAML-shaped
@@ -56,7 +57,7 @@ func parseAriaSnapshot(src string) ([]*ariaNode, error) {
 	root := &ariaNode{}
 	stack := []frame{{indent: -1, node: root, open: true}}
 	count := 0
-	src = strings.TrimPrefix(src, "\uFEFF")
+	src = bom.Trim(src)
 	src = strings.ReplaceAll(strings.ReplaceAll(src, "\r\n", "\n"), "\r", "\n")
 	for i, raw := range strings.Split(src, "\n") {
 		lineNo := i + 1

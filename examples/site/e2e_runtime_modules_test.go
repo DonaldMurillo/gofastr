@@ -418,39 +418,15 @@ func TestE2E_RuntimeSplit_ToastModuleFailureShowsFallback(t *testing.T) {
 	}
 }
 
-// TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache is the #278
-// regression guard. It forces deterministically the two conditions CI
-// hit by accident:
-//
-//  1. An earlier server on port P serves the home page; the site-wide
-//     toast stack makes the boot scan fetch headless-feedback.js,
-//     which the server sends with `Cache-Control: public,
-//     max-age=31536000, immutable`. The SHARED browser profile (one
-//     Chrome for the whole suite, one cache per profile, not per tab)
-//     now holds a 200 for
-//     http://127.0.0.1:P/__gofastr/runtime/headless-feedback.js?v=<hash>.
-//  2. A server that 500s headless-feedback.js then binds the SAME
-//     port P. In CI this happens by chance — httptest ports are
-//     ephemeral and the kernel reuses recently closed ones — which is
-//     why #278 is intermittent and order-dependent, not
-//     load-dependent.
-//
-// Without per-tab cache isolation the boot scan resolves
-// headless-feedback.js from the stale immutable entry without a
-// network request: the 500 never fires, loadModule('headless-feedback')
-// resolves, the REAL toast renders, and the fallback correctly never
-// appears — exactly the CI diagnostic (headless-feedback in
-// loadedModules, its script in runtimeScripts, fallbackPresent:
-// false). siteBrowserCtx prevents that by clearing the browser cache
-// when it hands out a tab.
+// TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache primes an immutable 200
+// and rebinds the same origin to a 500 server in a separate browser context (#278).
 func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: -short")
 	}
 	app := newTestApp(t)
 
-	// Phase 1 — prime the shared profile's cache for
-	// headless-feedback.js on port P (200 + immutable).
+	// Phase 1 primes the first browser context's cache with an immutable 200.
 	prime := httptest.NewUnstartedServer(app.Router())
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -507,15 +483,15 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 	}
 	broken.Listener = ln500
 	broken.Start()
-	// Same SSE-hang guard as the prime server: the phase-2 tab holds an
+	// Same SSE-hang guard as the prime server: the second context holds an
 	// EventSource to this server when the test ends.
 	t.Cleanup(func() { broken.CloseClientConnections(); broken.Close() })
 	if broken.URL != primeURL {
 		t.Fatalf("rebind produced a different origin: primed %s, rebound %s", primeURL, broken.URL)
 	}
 
-	// Phase 2 — same-origin 500 server, fresh tab. The fallback MUST
-	// appear; a stale cached 200 would mask the 500 instead.
+	// Phase 2 uses a separate browser context to fetch the same URL and render
+	// the fallback from the 500 response.
 	ctx := newE2EBrowserCtx(t)
 	urls, _ := collectRuntimeModuleURLs(ctx)
 
@@ -588,8 +564,8 @@ func TestE2E_RuntimeSplit_Toast500NotMaskedByStalePortCache(t *testing.T) {
 		return true
 	})
 	if fallbackResult != "ok" {
-		t.Errorf("headless-feedback.js 500 on a port whose cached 200 the browser still holds should NOT mask the fallback; "+
-			"the module must fail and the fallback must render. Diagnostic: %s; headless-feedback.js requests observed: %v; "+
+		t.Errorf("the second browser context should render the fallback after the same-origin headless-feedback.js 500. "+
+			"Diagnostic: %s; headless-feedback.js requests observed: %v; "+
 			"500-server headless-feedback.js hits: %d; all runtime URLs: %v",
 			fallbackResult, feedbackRequested, feedbackHits.Load(), observed)
 		return

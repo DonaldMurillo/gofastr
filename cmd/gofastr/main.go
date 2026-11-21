@@ -114,7 +114,6 @@ func printHelp() {
                         --list catalog · --explain <rule> · --json · --sarif <file> · --fix
   audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations
-                        lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
   deploy <user@host>    Put the app on a Linux server over SSH as a systemd service:
@@ -122,8 +121,9 @@ func printHelp() {
                         before if the check fails. rollback · status.
                         See "gofastr docs deploy"
   telemetry <sub>       Read the log and trace files battery/telemetry writes, with
-                        the app running or not: logs · requests · request <trace-id>
-                        --dir <directory> or --app <name>. See "gofastr docs telemetry"
+                        the app running or not: stats · logs · requests · issues ·
+                        request <trace-id>. --dir <directory> or --app <name>. See
+                        "gofastr docs telemetry"
   upgrade               Guide the app to a newer GoFastr release: shows every
                         migration note between go.mod's version and the target,
                         points at affected lines; --apply runs the go get/tidy/
@@ -209,7 +209,14 @@ var commands = []commandSpec{
 	{names: []string{"unmount"}, run: unmountcmd.RunUnmount, ownsHelp: true, versionChecked: true},
 	{names: []string{"remount"}, run: unmountcmd.RunRemount, ownsHelp: true, versionChecked: true},
 	{names: []string{"theme"}, run: themecmd.RunTheme, ownsHelp: true, versionChecked: true},
-	{names: []string{"version"}, run: func([]string) { cli.Println(project.VersionLine()) }},
+	{names: []string{"version"}, run: func(args []string) {
+		for _, a := range args {
+			if cli.IsFlagToken(a) {
+				cli.UsageFail("Unknown flag %s: `gofastr version` takes no flags.", a)
+			}
+		}
+		cli.Println(project.VersionLine())
+	}},
 	{names: []string{"help"}, run: func([]string) { printHelp() }},
 }
 
@@ -293,7 +300,7 @@ func dispatch(args []string) {
 			}
 		}
 		printHelp()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -323,7 +330,11 @@ func warnVersionMismatch(cmd string, args []string) {
 	if err != nil {
 		return
 	}
-	if dir := projectDirFlag(cmd, args); dir != "" {
+	dir := projectDirFlag(cmd, args)
+	if cmd == "pack" && dir == "" {
+		return
+	}
+	if dir != "" {
 		if !filepath.IsAbs(dir) {
 			dir = filepath.Join(wd, dir)
 		}
@@ -334,10 +345,15 @@ func warnVersionMismatch(cmd string, args []string) {
 	}
 }
 
-// projectDirFlag is the project directory a command was pointed at
-// with --dir (`gofastr dev --dir=../app`), or "" when it works in the
-// current directory.
+// projectDirFlag returns the directory selected by dev or pack arguments.
 func projectDirFlag(cmd string, args []string) string {
+	if cmd == "pack" {
+		dir, err := packcmd.AppDir(args)
+		if err != nil {
+			return ""
+		}
+		return dir
+	}
 	if cmd != "dev" {
 		return ""
 	}

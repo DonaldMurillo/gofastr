@@ -1,9 +1,10 @@
 // Package log is the GoFastr server-log plugin.
 //
 // It registers a *slog.Logger whose JSON-line output is fanned out to one
-// or more Sinks (file, default file, webhook, console). It also installs
-// HTTP access-log middleware and a panic-recovery middleware that route
-// through the same sinks, and logs app start/stop lifecycle events.
+// or more Sinks (default file, chosen file, webhook, JSON stream,
+// console). It also installs HTTP access-log middleware and a
+// panic-recovery middleware that route through the same sinks, and
+// logs app start/stop lifecycle events.
 //
 // Usage:
 //

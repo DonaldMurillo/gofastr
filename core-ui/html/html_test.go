@@ -126,53 +126,6 @@ func TestAria(t *testing.T) {
 }
 
 // ============================================================================
-// roles.go: Constants
-// ============================================================================
-
-func TestRoleConstants(t *testing.T) {
-	roles := map[string]string{
-		"RoleBanner":        RoleBanner,
-		"RoleNavigation":    RoleNavigation,
-		"RoleMain":          RoleMain,
-		"RoleContentinfo":   RoleContentinfo,
-		"RoleComplementary": RoleComplementary,
-		"RoleSearch":        RoleSearch,
-		"RoleForm":          RoleForm,
-		"RoleRegion":        RoleRegion,
-		"RoleDialog":        RoleDialog,
-		"RoleAlert":         RoleAlert,
-		"RoleAlertDialog":   RoleAlertDialog,
-		"RoleStatus":        RoleStatus,
-		"RoleLog":           RoleLog,
-		"RoleMarquee":       RoleMarquee,
-		"RoleTimer":         RoleTimer,
-		"RoleButton":        RoleButton,
-		"RoleLink":          RoleLink,
-		"RoleCheckbox":      RoleCheckbox,
-		"RoleRadio":         RoleRadio,
-		"RoleTab":           RoleTab,
-		"RoleTabList":       RoleTabList,
-		"RoleTabPanel":      RoleTabPanel,
-		"RoleGrid":          RoleGrid,
-		"RoleGridCell":      RoleGridCell,
-		"RoleRow":           RoleRow,
-		"RoleRowGroup":      RoleRowGroup,
-		"RoleTable":         RoleTable,
-		"RoleList":          RoleList,
-		"RoleListItem":      RoleListItem,
-		"RoleListbox":       RoleListbox,
-		"RoleOption":        RoleOption,
-		"RoleMenu":          RoleMenu,
-		"RoleMenuItem":      RoleMenuItem,
-	}
-	for name, val := range roles {
-		if val == "" {
-			t.Errorf("role constant %s is empty", name)
-		}
-	}
-}
-
-// ============================================================================
 // text.go: Text elements
 // ============================================================================
 

@@ -346,8 +346,8 @@ func TestE2E_Toolbar_RoleAndGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
-	if role != "toolbar" {
-		t.Errorf("expected role=toolbar, got %q", role)
+	if role != "group" {
+		t.Errorf("expected role=group, got %q", role)
 	}
 }
 

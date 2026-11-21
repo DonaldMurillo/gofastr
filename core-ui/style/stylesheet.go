@@ -51,10 +51,7 @@ func (ss *StyleSheet) Set(props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Set called before any Rule(); call .Rule(\"…\") first")
 	}
-	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Set on %q expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
-			ss.during.selector, len(props), props[len(props)-1]))
-	}
+	requirePropPairs(props, "Set on %q", ss.during.selector)
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		mustBePropName("Set on "+ss.during.selector, props[i])
@@ -73,16 +70,13 @@ func (ss *StyleSheet) Transition(transitions ...string) *StyleSheet {
 	return ss
 }
 
-// Pseudo adds a pseudo-class/element rule nested under the current selector.
+// Pseudo appends a pseudo-class or pseudo-element to each current selector.
 func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Pseudo(" + pseudo + ") called before any Rule(); call .Rule(\"…\") first")
 	}
-	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Pseudo(%q) expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
-			pseudo, len(props), props[len(props)-1]))
-	}
-	child := cssRule{selector: ss.during.selector + pseudo}
+	requirePropPairs(props, "Pseudo(%q)", pseudo)
+	child := cssRule{selector: suffixSelectors(ss.during.selector, pseudo)}
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		mustBePropName("Pseudo("+pseudo+")", props[i])
@@ -92,16 +86,13 @@ func (ss *StyleSheet) Pseudo(pseudo string, props ...string) *StyleSheet {
 	return ss
 }
 
-// Child adds a descendant selector rule under the current rule.
+// Child appends a descendant to each current selector.
 func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 	if ss.during == nil {
 		panic("stylesheet: Child(" + descendant + ") called before any Rule(); call .Rule(\"…\") first")
 	}
-	if len(props)%2 != 0 {
-		panic(fmt.Sprintf("stylesheet: Child(%q) expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
-			descendant, len(props), props[len(props)-1]))
-	}
-	child := cssRule{selector: ss.during.selector + " " + descendant}
+	requirePropPairs(props, "Child(%q)", descendant)
+	child := cssRule{selector: suffixSelectors(ss.during.selector, " "+descendant)}
 	for i := 0; i < len(props); i += 2 {
 		val := ss.theme.ResolveAll(props[i+1])
 		mustBePropName("Child("+descendant+")", props[i])
@@ -111,11 +102,32 @@ func (ss *StyleSheet) Child(descendant string, props ...string) *StyleSheet {
 	return ss
 }
 
+func suffixSelectors(selector, suffix string) string {
+	parts := splitTopLevelCommas(selector)
+	if len(parts) == 1 {
+		return selector + suffix
+	}
+	for i, part := range parts {
+		parts[i] = strings.TrimRight(part, " \t\r\n\f") + suffix
+	}
+	return strings.Join(parts, ",")
+}
+
+func requirePropPairs(props []string, context, name string) {
+	if len(props)%2 != 0 {
+		panic(fmt.Sprintf("stylesheet: %s expects pairs of prop, value; got %d args (odd). Last arg %q has no value",
+			fmt.Sprintf(context, name), len(props), props[len(props)-1]))
+	}
+}
+
 // Media adds a @media query wrapping rules built in the callback.
 func (ss *StyleSheet) Media(query string, fn func(ss *StyleSheet)) *StyleSheet {
+	return ss.wrapRules("@media "+query, fn)
+}
+
+func (ss *StyleSheet) wrapRules(outer string, fn func(*StyleSheet)) *StyleSheet {
 	child := &StyleSheet{theme: ss.theme}
 	fn(child)
-	outer := "@media " + query
 	for _, r := range child.rules {
 		r.parents = append([]string{outer}, r.parents...)
 		if ss.during != nil {
@@ -129,30 +141,20 @@ func (ss *StyleSheet) Media(query string, fn func(ss *StyleSheet)) *StyleSheet {
 
 // Container adds a @container query wrapping rules built in the callback.
 func (ss *StyleSheet) Container(name string, query string, fn func(ss *StyleSheet)) *StyleSheet {
-	child := &StyleSheet{theme: ss.theme}
-	fn(child)
 	outer := "@container "
 	if name != "" {
 		outer += name + " "
 	}
-	outer += query
-	for _, r := range child.rules {
-		r.parents = append([]string{outer}, r.parents...)
-		if ss.during != nil {
-			ss.during.children = append(ss.during.children, r)
-		} else {
-			ss.rules = append(ss.rules, r)
-		}
-	}
-	return ss
+	return ss.wrapRules(outer+query, fn)
 }
 
-// Keyframes adds a @keyframes animation.
+// Keyframes adds a @keyframes animation. Each step requires property/value pairs.
 func (ss *StyleSheet) Keyframes(name string, steps ...KeyframeStep) *StyleSheet {
 	r := cssRule{parents: []string{"@keyframes " + name}}
 	for _, step := range steps {
+		requirePropPairs(step.Props, "Keyframes(%q)", name)
 		stepRule := cssRule{selector: step.Selector}
-		for i := 0; i+1 < len(step.Props); i += 2 {
+		for i := 0; i < len(step.Props); i += 2 {
 			val := ss.theme.ResolveAll(step.Props[i+1])
 			mustBePropName("Keyframes("+name+")", step.Props[i])
 			stepRule.props = append(stepRule.props, cssProp{prop: step.Props[i], value: val})
@@ -186,41 +188,42 @@ func (ss *StyleSheet) End() *StyleSheet {
 // CSS generates the complete CSS string from all rules.
 func (ss *StyleSheet) CSS() string {
 	var b strings.Builder
+	writeRules(&b, ss.rules)
+	return b.String()
+}
+
+// writeRules coalesces consecutive siblings with the same outer media or container query.
+func writeRules(b *strings.Builder, rules []cssRule) {
 	atParent := ""
-	for _, r := range ss.rules {
+	for _, r := range rules {
 		top := r.outerParent()
 		if strings.HasPrefix(top, "@media") || strings.HasPrefix(top, "@container") {
 			if atParent != top {
 				if atParent != "" {
 					b.WriteString("}\n")
 				}
-				fmt.Fprintf(&b, "%s {\n", top)
+				fmt.Fprintf(b, "%s {\n", top)
 				atParent = top
 			}
-			ss.writeRuleInner(&b, r, 1)
+			writeRule(b, r, 1)
 			continue
 		}
 		if atParent != "" {
 			b.WriteString("}\n")
 			atParent = ""
 		}
-		ss.writeRuleInner(&b, r, 0)
+		writeRule(b, r, 0)
 	}
 	if atParent != "" {
 		b.WriteString("}\n")
 	}
-	return b.String()
 }
 
-func (ss *StyleSheet) writeRule(b *strings.Builder, r cssRule) {
-	ss.writeRuleInner(b, r, 0)
-}
-
-func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
+func writeRule(b *strings.Builder, r cssRule, start int) {
 	if start == 0 && len(r.parents) > 0 && strings.HasPrefix(r.parents[0], "@keyframes") {
 		fmt.Fprintf(b, "%s {\n", r.parents[0])
 		for _, child := range r.children {
-			ss.writeRule(b, child)
+			writeRule(b, child, 0)
 		}
 		b.WriteString("}\n")
 		return
@@ -240,29 +243,7 @@ func (ss *StyleSheet) writeRuleInner(b *strings.Builder, r cssRule, start int) {
 		b.WriteString("}\n")
 	}
 
-	atParent := ""
-	for _, child := range r.children {
-		cp := child.outerParent()
-		if cp != "" && (strings.HasPrefix(cp, "@media") || strings.HasPrefix(cp, "@container")) {
-			if atParent != cp {
-				if atParent != "" {
-					b.WriteString("}\n")
-				}
-				fmt.Fprintf(b, "%s {\n", cp)
-				atParent = cp
-			}
-			ss.writeRuleInner(b, child, 1)
-			continue
-		}
-		if atParent != "" {
-			b.WriteString("}\n")
-			atParent = ""
-		}
-		ss.writeRule(b, child)
-	}
-	if atParent != "" {
-		b.WriteString("}\n")
-	}
+	writeRules(b, r.children)
 
 	for i := 0; i < openedHere; i++ {
 		b.WriteString("}\n")

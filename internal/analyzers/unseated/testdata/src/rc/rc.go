@@ -620,3 +620,27 @@ func nestedSelectTick(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func nestedHeartbeatOnly(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	beat := time.NewTicker(time.Second)
+	defer beat.Stop()
+	for { // want `re-checks its principal only when this select delivers an event`
+		if r.Context().Err() == nil {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-beat.C:
+				_ = sse.WriteComment("hb")
+			case ev := <-feed():
+				if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+					return
+				}
+				_ = sse.WriteEvent("e", ev)
+			}
+		}
+	}
+}

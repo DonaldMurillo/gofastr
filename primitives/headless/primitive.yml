@@ -206,6 +206,7 @@ invariants:
   - id: nil-strings-take-the-probe-or-english
     rule: A nil Strings resolves to the harness probe when one is set and to a fresh copy of the English defaults otherwise.
     enforced_by:
+      - test: framework/headless.TestNilStringsResolveFreshDefaults
       - test: framework/headless.TestSpecGoldenStrings
       - test: framework/headless.TestEveryWordIsSaidBySomeCase
       - test: framework/headless.TestSpecGolden

@@ -19,7 +19,7 @@
 // returning http.ErrUseLastResponse) and every body is read through
 // io.LimitReader(resp.Body, 1<<20).
 //
-// Posture 1 reports the CLIENT — its composite literal or var
+// The analyzer reports the CLIENT — its composite literal or var
 // declaration, once per root — when every provable construction leaves
 // CheckRedirect unset (a composite literal without the key, directly or
 // as a package/file-level var's initializer, a struct field assigned
@@ -49,12 +49,6 @@
 //   - a URL read from a field or parameter named tokenURL or
 //     tokenEndpoint.
 //
-// Posture 2 (the unbounded decode of a credential fetch's response)
-// was delegated to unboundedresp on 2026-09-07: same fire shape, any
-// client, with the one-hop capped-helper credit. unboundedbody owns
-// request bodies; unboundedresp owns response bodies; this analyzer
-// owns the redirect posture alone.
-//
 // Fields are keyed by (struct type, field name): battery/auth alone has
 // GoogleProvider.httpClient unset and OIDCProvider.httpClient guarded,
 // and a name-only key would let either silence or condemn the other.
@@ -78,9 +72,6 @@
 //     client used only with requests that carry no credential;
 //   - a field assigned BOTH a guarded and an unguarded client: the
 //     guarded writer wins, the rule will not guess which one runs;
-//   - streaming bodies (bufio.Scanner, io.Copy, a pump goroutine): a
-//     stream is unbounded by design; only document-shaped reads
-//     (NewDecoder/ReadAll of the response body) report;
 //   - requests tunnelled through a helper's parameters (client and
 //     credential passed into another function): out of reach for a
 //     one-function dataflow;
@@ -101,19 +92,19 @@ package credfetch
 import (
 	"fmt"
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
 	Name: "credfetch",
-	Doc:  "report http.Clients with no CheckRedirect carrying credential-bearing requests, and their unbounded response decodes",
+	Doc:  "reports http.Clients that carry credential-bearing requests without a CheckRedirect policy",
 	Run:  run,
 }
 
@@ -217,7 +208,7 @@ func (c *pkgCtx) collect() {
 						continue
 					}
 					for i, name := range vs.Names {
-						if i < len(vs.Values) && c.isClientExpr(vs.Values[i]) {
+						if i < len(vs.Values) && c.isClientType(vs.Values[i]) {
 							if obj, ok := c.pass.TypesInfo.ObjectOf(name).(*types.Var); ok {
 								c.varLit[obj] = vs.Values[i]
 							}
@@ -243,7 +234,7 @@ func (c *pkgCtx) collect() {
 							continue
 						}
 						key, ok := kv.Key.(*ast.Ident)
-						if !ok || !c.isClientExpr(kv.Value) {
+						if !ok || !c.isClientType(kv.Value) {
 							continue
 						}
 						if k := c.fieldKeyOfLit(v, key.Name); k != "" {
@@ -253,7 +244,7 @@ func (c *pkgCtx) collect() {
 				case *ast.AssignStmt:
 					for i, lhs := range v.Lhs {
 						sel, ok := lhs.(*ast.SelectorExpr)
-						if !ok || i >= len(v.Rhs) || !c.isClientExpr(v.Rhs[i]) {
+						if !ok || i >= len(v.Rhs) || !c.isClientType(v.Rhs[i]) {
 							continue
 						}
 						if k := c.fieldKeyOfSel(sel); k != "" {
@@ -413,10 +404,11 @@ func (c *pkgCtx) checkFunc(fd *ast.FuncDecl, reported map[token.Pos]bool) {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Do" || len(call.Args) != 1 {
+		if !ok || sel.Sel.Name != "Do" || len(call.Args) != 1 || !c.isClientType(sel.X) {
 			return true
 		}
-		if !c.isClientExpr(sel.X) {
+		method, ok := astx.CalleeFunc(c.pass, sel)
+		if !ok || !astx.ReceiverIs(method, "net/http", "Client") {
 			return true
 		}
 		cred := f.credential(call.Args[0])
@@ -521,7 +513,7 @@ func (f *fnCtx) headerCredential(req *types.Var) string {
 		return ok && o == req
 	}
 	judgeKey := func(k ast.Expr) {
-		if key, ok := stringArg(f.c.pass.TypesInfo, k); ok {
+		if key, ok := stringArg(f.c.pass, k); ok {
 			if headerCred[strings.ToLower(key)] {
 				found = fmt.Sprintf("%s header", key)
 			}
@@ -655,7 +647,7 @@ func urlName(e ast.Expr) string {
 // formCredential unwraps NewReader(form.Encode()) / form.Encode() and
 // matches the form's keys against the credential set.
 func (f *fnCtx) formCredential(body ast.Expr) string {
-	enc := unwrapEncode(body)
+	enc := f.c.unwrapEncode(body)
 	if enc == nil {
 		return ""
 	}
@@ -687,7 +679,7 @@ func (f *fnCtx) formCredential(body ast.Expr) string {
 		}
 		if id, ok := sel.X.(*ast.Ident); ok {
 			if o, ok := f.c.pass.TypesInfo.ObjectOf(id).(*types.Var); ok && o == obj {
-				if key, ok := stringArg(f.c.pass.TypesInfo, call.Args[0]); ok && formCred[normalizeKey(key)] {
+				if key, ok := stringArg(f.c.pass, call.Args[0]); ok && formCred[normalizeKey(key)] {
 					found = fmt.Sprintf("form key %q", key)
 				}
 			}
@@ -701,7 +693,7 @@ func (f *fnCtx) formCredential(body ast.Expr) string {
 	if lit, ok := f.bound[obj].(*ast.CompositeLit); ok {
 		for _, elt := range lit.Elts {
 			if kv, ok := elt.(*ast.KeyValueExpr); ok {
-				if key, ok := stringArg(f.c.pass.TypesInfo, kv.Key); ok && formCred[normalizeKey(key)] {
+				if key, ok := stringArg(f.c.pass, kv.Key); ok && formCred[normalizeKey(key)] {
 					return fmt.Sprintf("form key %q", key)
 				}
 			}
@@ -733,15 +725,15 @@ func (f *fnCtx) requestCall(e ast.Expr, depth int) *ast.CallExpr {
 
 // unwrapEncode strips strings.NewReader / bytes.NewReader around a
 // form.Encode() call, and passes an Encode call through.
-func unwrapEncode(e ast.Expr) *ast.CallExpr {
+func (c *pkgCtx) unwrapEncode(e ast.Expr) *ast.CallExpr {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
 		return nil
 	}
-	switch qualified(call.Fun) {
+	switch c.qualifiedFunc(call.Fun) {
 	case "strings.NewReader", "bytes.NewReader":
 		if len(call.Args) == 1 {
-			return unwrapEncode(call.Args[0])
+			return c.unwrapEncode(call.Args[0])
 		}
 		return nil
 	}
@@ -766,22 +758,10 @@ func (c *pkgCtx) nilRHS(a *ast.AssignStmt, i int) bool {
 	return c.isNil(a.Rhs[i])
 }
 
-// isClientExpr reports whether e's type is *http.Client.
-func (c *pkgCtx) isClientExpr(e ast.Expr) bool {
-	t := c.pass.TypesInfo.TypeOf(e)
-	return t != nil && t.String() == "*net/http.Client"
-}
-
-// isClientType reports whether the type expression's type is
-// http.Client or *http.Client: a composite literal spells the value
-// form, its address the pointer form, and both carry the CheckRedirect
-// key.
+// isClientType reports whether e has type http.Client or *http.Client.
 func (c *pkgCtx) isClientType(e ast.Expr) bool {
-	t := c.pass.TypesInfo.TypeOf(e)
-	if t == nil {
-		return false
-	}
-	return t.String() == "net/http.Client" || t.String() == "*net/http.Client"
+	t := types.Unalias(c.pass.TypesInfo.TypeOf(e))
+	return astx.IsNamed(types.Unalias(astx.Deref(t)), "net/http", "Client")
 }
 
 func (c *pkgCtx) fieldKeyOfLit(lit *ast.CompositeLit, field string) string {
@@ -828,18 +808,6 @@ func (c *pkgCtx) qualifiedFunc(fun ast.Expr) string {
 	return ""
 }
 
-// qualified renders a callee as ident.Func without type information
-// (used inside fully inspected subtrees, where the ident is the import
-// alias).
-func qualified(fun ast.Expr) string {
-	if sel, ok := fun.(*ast.SelectorExpr); ok {
-		if id, ok := sel.X.(*ast.Ident); ok {
-			return id.Name + "." + sel.Sel.Name
-		}
-	}
-	return ""
-}
-
 // identOf returns the identifier at the heart of an expression.
 func identOf(e ast.Expr) *ast.Ident {
 	switch v := e.(type) {
@@ -874,10 +842,10 @@ func exprPath(e ast.Expr) string {
 // or computed constant the type checker folded (the --from-openapi CLI
 // client sets its token header through const tokenHeader, and a
 // literal-only read let that client ship with no CheckRedirect).
-func stringArg(info *types.Info, e ast.Expr) (string, bool) {
-	if info != nil {
-		if tv, ok := info.Types[e]; ok && tv.Value != nil && tv.Value.Kind() == constant.String {
-			return constant.StringVal(tv.Value), true
+func stringArg(pass *analysis.Pass, e ast.Expr) (string, bool) {
+	if pass.TypesInfo != nil {
+		if s, ok := astx.StringConstant(pass, e); ok {
+			return s, true
 		}
 	}
 	lit, ok := e.(*ast.BasicLit)

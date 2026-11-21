@@ -44,19 +44,11 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					mapErr := fsError
-					var f *os.File
-					var err error
-					if b.pathAllowed(req.Path) {
-						f, err = os.Open(req.Path)
-					} else if root, rel, ok := b.folderGrant(req.Path); ok {
-						f, err = root.Open(rel)
-						root.Close()
-						mapErr = folderError
-					} else {
-						return nil, errPathNotAllowed
-					}
+					f, mapErr, err := resolveFS(b, req.Path, os.Open, (*os.Root).Open)
 					if err != nil {
+						if mapErr == nil {
+							return nil, err
+						}
 						return nil, mapErr(err)
 					}
 					defer f.Close()
@@ -87,7 +79,7 @@ func (b *Battery) fsCapability() Capability {
 					if !b.pathAllowed(req.Path) {
 						return nil, errPathNotAllowed
 					}
-					if err := writeFileAtomic(req.Path, []byte(req.Text)); err != nil {
+					if _, err := atomicfile.WriteFileNoFollow(req.Path, []byte(req.Text), fileperm.RestrictOpenFile); err != nil {
 						return nil, fsError(err)
 					}
 					return nil, nil
@@ -105,19 +97,11 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					var info fs.FileInfo
-					var err error
-					mapErr := fsError
-					if b.pathAllowed(req.Path) {
-						info, err = os.Stat(req.Path)
-					} else if root, rel, ok := b.folderGrant(req.Path); ok {
-						info, err = root.Stat(rel)
-						root.Close()
-						mapErr = folderError
-					} else {
-						return nil, errPathNotAllowed
-					}
+					info, mapErr, err := resolveFS(b, req.Path, os.Stat, (*os.Root).Stat)
 					if err != nil {
+						if mapErr == nil {
+							return nil, err
+						}
 						return nil, mapErr(err)
 					}
 					return fsStatOutput{
@@ -186,6 +170,24 @@ func fsError(err error) *Error {
 	return &Error{Code: CodeInternal, Message: InternalErrorMsg}
 }
 
+// resolveFS runs the one filesystem call an allowed path permits: an
+// allow-listed path through the OS, a picked folder's path through its
+// root, closed after the call. It answers the call's error mapper, nil
+// only for the refusal, whose error needs none.
+func resolveFS[T any](b *Battery, path string, plain func(string) (T, error), rooted func(*os.Root, string) (T, error)) (T, func(error) *Error, error) {
+	if b.pathAllowed(path) {
+		v, err := plain(path)
+		return v, fsError, err
+	}
+	if root, rel, ok := b.folderGrant(path); ok {
+		v, err := rooted(root, rel)
+		root.Close()
+		return v, folderError, err
+	}
+	var zero T
+	return zero, nil, errPathNotAllowed
+}
+
 // AllowPath puts p on the fs allow-list: p must be absolute; the list
 // stores filepath.Clean(p) AND, when the path exists, its
 // filepath.EvalSymlinks resolution (for a missing path, its deepest
@@ -200,8 +202,7 @@ func fsError(err error) *Error {
 // between. That buys an attacker nothing here, a same-uid process can
 // read the file directly, and the page, which is the actual attacker in
 // this threat model, cannot create a symlink through any bridge method.
-// The write path is unaffected either way: writeFileAtomic finishes
-// with os.Rename, which does not follow a final symlink.
+// The write replaces the final directory entry, including a symlink.
 func (b *Battery) AllowPath(p string) error {
 	if !filepath.IsAbs(p) {
 		return errors.New("desktop: AllowPath requires an absolute path")
@@ -275,37 +276,6 @@ func (b *Battery) pathAllowed(p string) bool {
 		return resolvedOK
 	}
 	return true
-}
-
-// writeFileAtomic writes data to path via a 0600 temp file in the same
-// directory followed by os.Rename, so a crash never leaves a torn file
-// and a replaced file keeps the temp's 0600 mode.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".gofastr-desktop-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if err := fileperm.RestrictOpenFile(f); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := atomicfile.Replace(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 type fsTextOutput struct {

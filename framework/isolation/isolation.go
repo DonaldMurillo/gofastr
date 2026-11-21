@@ -24,10 +24,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+	"github.com/lib/pq"
 )
 
 const (
-	envIsolation       = "GOFASTR_ISOLATION"
+	EnvIsolation       = "GOFASTR_ISOLATION"
 	envApplied         = "GOFASTR_ISOLATION_APPLIED"
 	envID              = "GOFASTR_ISOLATION_ID"
 	envPortPrefix      = "GOFASTR_ISOLATION_PORT_"
@@ -115,7 +116,7 @@ func Resolve(projectDir string) (*Runtime, error) {
 		id = makeID(start)
 	}
 	active := cfg.Enabled
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(envIsolation))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvIsolation))) {
 	case "off", "false", "0", "disabled":
 		active = false
 	case "on", "true", "1", "always":
@@ -306,13 +307,13 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 	if section == nil {
 		return base, nil
 	}
-	m, err := expectMap(section, "isolation")
+	m, err := coreyaml.ExpectMap(section, "isolation")
 	if err != nil {
 		return Config{}, err
 	}
 	cfg := base
 	if v := m["enabled"]; v != nil {
-		enabled, err := boolValue(v, "isolation.enabled")
+		enabled, err := coreyaml.BoolValue(v, "isolation.enabled")
 		if err != nil {
 			return Config{}, err
 		}
@@ -322,7 +323,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		cfg.Mode = scalarString(v)
 	}
 	if v := m["port"]; v != nil {
-		port, err := expectMap(v, "isolation.port")
+		port, err := coreyaml.ExpectMap(v, "isolation.port")
 		if err != nil {
 			return Config{}, err
 		}
@@ -352,7 +353,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["database"]; v != nil {
-		db, err := expectMap(v, "isolation.database")
+		db, err := coreyaml.ExpectMap(v, "isolation.database")
 		if err != nil {
 			return Config{}, err
 		}
@@ -361,7 +362,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["services"]; v != nil {
-		services, err := expectMap(v, "isolation.services")
+		services, err := coreyaml.ExpectMap(v, "isolation.services")
 		if err != nil {
 			return Config{}, err
 		}
@@ -375,7 +376,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["env"]; v != nil {
-		env, err := expectMap(v, "isolation.env")
+		env, err := coreyaml.ExpectMap(v, "isolation.env")
 		if err != nil {
 			return Config{}, err
 		}
@@ -410,7 +411,7 @@ var envShapingNames = map[string]bool{
 
 func isEnvShapingName(key string) bool {
 	return envShapingNames[strings.ToUpper(key)] ||
-		strings.HasPrefix(strings.ToUpper(key), "GOFASTR_ISOLATION")
+		strings.HasPrefix(strings.ToUpper(key), EnvIsolation)
 }
 
 func isTemplateValue(val string) bool {
@@ -746,10 +747,31 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 		return dsn, nil
 	}
 	u, err := url.Parse(dsn)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
 		return dsn, err
 	}
 	db := strings.TrimPrefix(u.Path, "/")
+	params := u.Query()
+	queryDB := params.Get("dbname")
+	if alias := params.Get("database"); alias != "" {
+		db = alias
+	} else if queryDB != "" {
+		if db == "" || db == queryDB {
+			db = queryDB
+		} else {
+			cfg, err := pq.NewConfig(dsn)
+			if err != nil {
+				return "", errors.New("isolation: invalid Postgres URL settings")
+			}
+			db = cfg.Database
+		}
+	}
+	hasQueryDB := queryDB != "" || params.Get("database") != ""
+	if hasQueryDB {
+		params.Del("dbname")
+		params.Del("database")
+		u.RawQuery = params.Encode()
+	}
 	if db == "" {
 		return dsn, nil
 	}
@@ -760,6 +782,9 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 		suffix = "_wt_" + hex.EncodeToString(sum[:])[:16]
 	}
 	if strings.HasSuffix(db, suffix) {
+		if hasQueryDB {
+			u.Path, u.RawPath = "/"+db, ""
+		}
 		return u.String(), nil
 	}
 	if len(db)+len(suffix) > pgMaxIdentifier {
@@ -769,15 +794,8 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 		}
 		db = db[:cut]
 	}
-	u.Path = "/" + db + suffix
+	u.Path, u.RawPath = "/"+db+suffix, ""
 	return u.String(), nil
-}
-
-func expectMap(node *coreyaml.Node, label string) (map[string]*coreyaml.Node, error) {
-	if node == nil || node.Kind != coreyaml.Map {
-		return nil, fmt.Errorf("%s must be a map", label)
-	}
-	return node.Map, nil
 }
 
 func scalarString(node *coreyaml.Node) string {
@@ -785,17 +803,6 @@ func scalarString(node *coreyaml.Node) string {
 		return ""
 	}
 	return fmt.Sprint(node.Value)
-}
-
-func boolValue(node *coreyaml.Node, label string) (bool, error) {
-	if node == nil || node.Kind != coreyaml.Scalar {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	v, ok := node.Value.(bool)
-	if !ok {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	return v, nil
 }
 
 func intValue(node *coreyaml.Node, label string) (int, error) {

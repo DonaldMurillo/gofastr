@@ -2,7 +2,6 @@ package entityui
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -171,8 +170,7 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
-		if handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if refuseCrossSitePost(w, r, reasonAccessDenied) {
 			return
 		}
 		m, err := u.meta(entityName)
@@ -193,17 +191,11 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 			return
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, pickerBodyLimit)
 		var body pickerBody
-		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+		if !decodeBody(w, r, pickerBodyLimit, &body) {
 			return
 		}
 		opts, more, refused, err := u.pickerOptions(ctx, f, body.Q)

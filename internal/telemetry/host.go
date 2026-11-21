@@ -39,6 +39,26 @@ func (r HostReading) MemPercent() int {
 	return percentOf(r.MemUsed, r.MemTotal)
 }
 
+// HeldBytes is what this process holds: the kernel's count where there
+// is one, else the Go heap.
+func (r HostReading) HeldBytes() int64 {
+	if r.RSSBytes != 0 {
+		return r.RSSBytes
+	}
+	return r.HeapBytes
+}
+
+// ByteSize rounds n the way a machine's sizes are read: whole
+// megabytes under a gigabyte, gigabytes to one decimal over it. The
+// unit is "MB" or "GB".
+func ByteSize(n int64) (float64, string) {
+	const mb, gb = 1 << 20, 1 << 30
+	if n < gb {
+		return float64((n + mb/2) / mb), "MB"
+	}
+	return float64(n) / gb, "GB"
+}
+
 func percentOf(used, total int64) int {
 	if total <= 0 || used < 0 {
 		return -1

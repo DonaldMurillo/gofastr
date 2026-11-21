@@ -16,7 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 

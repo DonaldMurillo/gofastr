@@ -377,16 +377,16 @@ func (w *winWindow) SetFrame(f desktop.Frame) error {
 	})
 	if err == nil {
 		if w.shell.onFrame != nil {
-			onFrame, id := w.shell.onFrame, w.id
-			deliverOnGoroutine(func() { onFrame(id, applied) })
+			onFrame := w.shell.onFrame
+			deliverOnGoroutine(func() { onFrame(w, applied) })
 		}
 	}
 	return err
 }
 
 func (w *winWindow) SetSidebarWidth(points int) error {
-	if points < 0 || points > desktop.MaxSidebarWidth {
-		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebar width is outside the supported range"}
+	if err := desktop.ValidateSidebarWidth(points); err != nil {
+		return err
 	}
 	return w.withHandle(func(uintptr) error {
 		w.sidebarWidth = points

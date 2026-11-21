@@ -53,7 +53,7 @@ entities:
         to: users
 `)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { dispatch([]string{"validate", path}) })
 	})
 	if code != 1 {

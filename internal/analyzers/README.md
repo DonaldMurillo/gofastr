@@ -140,12 +140,9 @@ the vet analyzer `credfetch`: an http.Client with no CheckRedirect
 carrying a credential-bearing request (a client_secret/token/code
 form, an Authorization header, or a token-endpoint URL) re-sends the
 credential to whatever host a redirect names — refuse redirects the
-way battery/auth oidcNoRedirect does. Its unbounded-decode arm
-(a `json.NewDecoder(resp.Body)` / `io.ReadAll(resp.Body)` with no
-`io.LimitReader` on such a fetch's response) was lifted into
-`unboundedresp` by the 2026-09-07 round-5 rules, which fires on any
-client; credfetch owns redirects only. Both postures skip `_test.go` files
-outright (2026-09-04 posture): a test client POSTing a fixture
+way battery/auth oidcNoRedirect does. `unboundedresp` checks uncapped
+reads of outbound response bodies for any client. Both checks skip
+`_test.go` files: a test client POSTing a fixture
 code to an httptest.Server is not a credential flow, and a client
 assignment in a test file must not decide a production field's
 verdict — battery/auth/oauth2_test.go:657/:679 kept firing after
@@ -203,9 +200,10 @@ WaitDelay — a child that never closes the pipe wedges Wait),
 `unboundedresp` (an io.ReadAll or JSON decode of an
 *http.Response body with no io.LimitReader/MaxBytesReader, on ANY
 client — credfetch's decode arm lifted to every fetch), `nostore`
-(a 2xx body written on a path that resolved a principal with no
-Cache-Control set — RFC 9111's storage restriction covers
-Authorization headers, not cookie-authenticated requests, so every
+(a 2xx body written on a path that resolved a principal without a
+`Cache-Control` directive that suppresses shared storage. RFC 9111's
+storage restriction covers Authorization headers. Cookie-authenticated
+requests need their own directive, so every
 per-caller response suppresses storage itself; ack bodies built
 from constants and request scalars, header pass-throughs, and
 bodyless 2xx stay quiet), and `unseated` (a long-lived stream —
@@ -335,9 +333,9 @@ ResponseWriter wrapper with no `Unwrap`, which hides Flush/Hijack/
 deadlines from `http.ResponseController`, and a header change after
 the next handler ran). Two arms ship from the `unseated` package:
 `unrechecked` (a long-lived stream for a resolved principal whose
-delivery loop never re-checks it, or whose connect-time authz or
-tenant decision never re-runs) and `nowritedeadline` (a client write
-in a stream's park loop with no write deadline on the path, and a
+delivery loop lacks a re-check on delivery or while idle, or whose
+connect-time authorization or tenant decision never re-runs on delivery)
+and `nowritedeadline` (a client write in a stream's park loop with no write deadline on the path, and a
 `ResponseController` deadline a parked stream arms and never clears:
 on HTTP/2 it resets the stream when it fires, write pending or not). Widened
 in the same round: `worldreadable` (an owner-only `os.OpenFile`
@@ -425,9 +423,10 @@ that exempts tab clears nothing at a redirect) and a guard-then-strip
 arm (test the stripped value, not the raw one); `sanitizefix` (a
 one-pass multi-character removal in a scrub/strip/sanitize function:
 `<scr<script></script>ipt>`; loop to a fixpoint); `errleak` fires on
-encoding/json error text reaching a client at ANY status (use
-`handler.JSONErrorDetail`) and on `&T{Message: err.Error()}` with no
-`errors.As` for `*T` first. Small request shapes: `authpresence`
+encoding/json error text in calls with a 4xx or 5xx HTTP status
+constant, calls with a JSON-RPC error code, and Code/Message literals
+(use `handler.JSONErrorDetail`). It also fires on
+`&T{Message: err.Error()}` with no `errors.As` for `*T` first. Small request shapes: `authpresence`
 (Authorization presence used as a scheme test — the browser sends
 Basic/Negotiate on its own; and a cookie list naming the bare name
 before its `__Host-`/`__Secure-` twin), `multipartparse` (multipart

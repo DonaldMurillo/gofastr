@@ -35,6 +35,7 @@ var loadedFlagAssign = regexp.MustCompile(`loadedModules[^;]*?(\[[^\]]*\]|\.[A-Z
 // flagBeforeInstall reports whether src writes its loaded flag before
 // its first addEventListener; "" when it does, otherwise the reason.
 func flagBeforeInstall(src string) string {
+	src = minify.Minify(src)
 	am := loadedFlagAssign.FindStringIndex(src)
 	if am == nil {
 		return "never sets its loaded flag"
@@ -58,6 +59,8 @@ func TestFlagBeforeInstallReadsTheWriteNotTheInit(t *testing.T) {
 		{"one-liner adapter form", `(NS.loadedModules = NS.loadedModules || {})[NAME] = true; document.addEventListener('click', f);`, true},
 		{"kernel dotted form, minified", `(window.__gofastr.loadedModules||={}).reveal=!0;document.addEventListener("click",f)`, true},
 		{"no flag at all", `document.addEventListener('click', f);`, false},
+		{"flag only in a comment", "// NS.loadedModules[NAME] = true;\ndocument.addEventListener('click', f);", false},
+		{"listener only in a comment", "/* document.addEventListener('click', f); */ NS.loadedModules[NAME] = true;", true},
 	}
 	for _, c := range cases {
 		if got := flagBeforeInstall(c.src) == ""; got != c.ok {
@@ -91,11 +94,7 @@ func TestRegisteredBehaviorsSetLoadedFlagBeforeInstalling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
-		src := string(raw)
-		if minify.Enabled() {
-			src = minify.Minify(src)
-		}
-		if why := flagBeforeInstall(src); why != "" {
+		if why := flagBeforeInstall(string(raw)); why != "" {
 			t.Errorf("%s %s: a retry re-executes the file and would install it twice", rel, why)
 		}
 	}

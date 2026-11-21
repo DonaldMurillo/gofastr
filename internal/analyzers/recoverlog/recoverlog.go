@@ -37,14 +37,15 @@
 // wrapper the value is piped into (truncate, errors.New, fmt.Errorf)
 // — reaches a LOG SINK in the same function, or is passed to a
 // same-package function or method whose body sinks that parameter,
-// with no scrub in between. Log sinks are the ones
-// controlbytes lists: package-level slog.* and *slog.Logger methods
+// with no scrub in between. Log sinks are the shapes the shared
+// logsink table lists (controlbytes reports the same calls from the
+// request side): package-level slog.* and *slog.Logger methods
 // (message and values, slog.Any/slog.String), slog.Log, the std log
 // package (package-level or on a *log.Logger; Print*, and the Fatal* and
 // Panic* families, which print the message before they exit or panic),
-// fmt.Print* / fmt.Fprint* to os.Stdout/os.Stderr, and WriteString /
-// Write on os.Stdout/os.Stderr themselves. Fatal*, Panic* and the direct
-// stream write arrived with the 2026-11-02 guard bash.
+// fmt.Print* / fmt.Fprint* to os.Stdout/os.Stderr or to a local every
+// binding of which is one of the streams, and WriteString / Write on
+// os.Stdout/os.Stderr themselves.
 //
 // A value counts as scrubbed when it passes through a call whose name
 // says scrub/sanitiz/strip/Recovered (core/textsafe.Recovered is the
@@ -81,6 +82,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/logsink"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
@@ -201,15 +203,15 @@ func (a *analyzer) walk(t *taint, body *ast.BlockStmt) {
 				}
 			}
 		}
-		for _, s := range sinks {
-			if !s.matches(a, call) {
+		for _, s := range logsink.Shapes {
+			if !s.Matches(a.pass, call) {
 				continue
 			}
-			for _, arg := range s.args(call) {
+			for _, arg := range s.Args(call) {
 				if t.tainted(arg) {
 					a.pass.Reportf(call.Pos(),
 						"recoverlog: recover() value reaches %s unscrubbed; the panicked-on bytes forge log lines in the operator tail (scrub at the sink: textsafe.Recovered)",
-						s.name)
+						s.Name)
 					break
 				}
 			}
@@ -257,11 +259,11 @@ func (a *analyzer) bodySinksRaw(t *taint, body *ast.BlockStmt) bool {
 		if !ok {
 			return true
 		}
-		for _, s := range sinks {
-			if !s.matches(a, call) {
+		for _, s := range logsink.Shapes {
+			if !s.Matches(a.pass, call) {
 				continue
 			}
-			for _, arg := range s.args(call) {
+			for _, arg := range s.Args(call) {
 				if t.tainted(arg) {
 					found = true
 					return false
@@ -372,7 +374,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		}
 		return false
 	case *ast.CallExpr:
-		if isRecoverCall(t.a.pass, e) {
+		if astx.IsRecover(t.a.pass, e) {
 			return true
 		}
 		if scrubNamed(e.Fun) {
@@ -381,7 +383,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		// fmt.Sprintf with only %q and %T verbs: %q pre-escapes control
 		// bytes and %T renders a type name, so the format itself is the
 		// scrub. One %v or %s beside them renders the value raw.
-		if t.a.qualifiedFunc(e.Fun) == "fmt.Sprintf" && len(e.Args) > 0 {
+		if astx.PkgFuncName(t.a.pass, ast.Unparen(e.Fun)) == "fmt.Sprintf" && len(e.Args) > 0 {
 			if lit, ok := e.Args[0].(*ast.BasicLit); ok && onlyQuoteOrTypeVerbs(lit.Value) {
 				return false
 			}
@@ -495,221 +497,4 @@ func scrubNamed(fun ast.Expr) bool {
 		return false
 	}
 	return scrubName.MatchString(name)
-}
-
-// isRecoverCall: the builtin recover().
-func isRecoverCall(pass *analysis.Pass, call *ast.CallExpr) bool {
-	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
-	if !ok || id.Name != "recover" {
-		return false
-	}
-	_, isBuiltin := pass.TypesInfo.Uses[id].(*types.Builtin)
-	return isBuiltin
-}
-
-// ---- sinks ---------------------------------------------------------------
-
-type sink struct {
-	name    string
-	matches func(a *analyzer, call *ast.CallExpr) bool
-	args    func(call *ast.CallExpr) []ast.Expr
-}
-
-var sinks = []sink{
-	{
-		name: "slog.String/slog.Any",
-		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch a.qualifiedFunc(sel) {
-			case "slog.String", "slog.Any":
-				return true
-			}
-			return false
-		},
-		args: valueArg1,
-	},
-	{
-		// slog.Debug/... on a *slog.Logger receiver — slog.Default()
-		// and injected loggers alike — and package-level slog.*, which
-		// writes to the default logger (stderr).
-		name: "slog.Debug/Info/Warn/Error key-value",
-		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Debug", "Info", "Warn", "Error",
-				"DebugContext", "InfoContext", "WarnContext", "ErrorContext":
-			default:
-				return false
-			}
-			if a.pkgPathOf(sel) == "log/slog" {
-				return true
-			}
-			tv, ok := a.pass.TypesInfo.Types[sel.X]
-			if !ok {
-				return false
-			}
-			return astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
-		},
-		// msg, k1, v1: message and values at even offsets from 0; the
-		// *Context forms shift one for ctx.
-		args: astx.EvenOffsetArgs,
-	},
-	{
-		// Log(ctx, level, msg, k1, v1): message and values at even
-		// offsets from 2.
-		name: "slog.Log key-value",
-		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Log" {
-				return false
-			}
-			if a.pkgPathOf(sel) == "log/slog" {
-				return true
-			}
-			tv, ok := a.pass.TypesInfo.Types[sel.X]
-			return ok && astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
-		},
-		args: func(call *ast.CallExpr) []ast.Expr {
-			var out []ast.Expr
-			for i := 2; i < len(call.Args); i += 2 {
-				out = append(out, call.Args[i])
-			}
-			return out
-		},
-	},
-	{
-		name: "std log print",
-		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Print", "Printf", "Println",
-				// Fatal* and Panic* print the same message through the
-				// logger before they exit or panic.
-				"Fatal", "Fatalf", "Fatalln", "Panic", "Panicf", "Panicln":
-			default:
-				return false
-			}
-			// Package-level log.Print* (default logger → stderr), or
-			// the same methods on a *log.Logger receiver.
-			if a.pkgPathOf(sel) == "log" {
-				return true
-			}
-			tv, ok := a.pass.TypesInfo.Types[sel.X]
-			return ok && astx.IsNamed(astx.Deref(tv.Type), "log", "Logger")
-		},
-		args: func(call *ast.CallExpr) []ast.Expr { return call.Args },
-	},
-	{
-		name: "stdout/stderr print",
-		matches: func(a *analyzer, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			// os.Stderr.WriteString(msg) / .Write([]byte(msg)): the
-			// stream written directly, without fmt.
-			if sel.Sel.Name == "WriteString" || sel.Sel.Name == "Write" {
-				if wsel, ok := ast.Unparen(sel.X).(*ast.SelectorExpr); ok &&
-					(wsel.Sel.Name == "Stdout" || wsel.Sel.Name == "Stderr") && a.pkgPathOf(wsel) == "os" {
-					return true
-				}
-			}
-			switch a.qualifiedFunc(sel) {
-			case "fmt.Print", "fmt.Printf", "fmt.Println":
-				// No writer argument: these write to os.Stdout
-				// outright.
-				return true
-			case "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln":
-			default:
-				return false
-			}
-			if len(call.Args) == 0 {
-				return false
-			}
-			wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
-				return false
-			}
-			return a.pkgPathOf(wsel) == "os"
-		},
-		// The F forms carry the writer at offset 0; the bare Print
-		// forms check every argument, format string included.
-		args: func(call *ast.CallExpr) []ast.Expr {
-			if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
-				return call.Args[1:]
-			}
-			return call.Args
-		},
-	},
-}
-
-func valueArg1(call *ast.CallExpr) []ast.Expr {
-	if len(call.Args) >= 2 {
-		return call.Args[1:2]
-	}
-	return nil
-}
-
-// ---- small helpers -------------------------------------------------------
-
-// qualifiedFunc renders a selector callee as "pkg.Func", resolving the
-// import through the type checker; a bare identifier callee renders as
-// its own name.
-func (a *analyzer) qualifiedFunc(fun ast.Expr) string {
-	sel, ok := ast.Unparen(fun).(*ast.SelectorExpr)
-	if !ok {
-		// A bare-ident callee (a local function) can never equal a
-		// dotted package name, and every caller compares against
-		// those; its own name says nothing here. scrubNamed reads
-		// local names directly, not through this.
-		return ""
-	}
-	if pkg := a.pkgNameOf(sel); pkg != "" {
-		return pkg + "." + sel.Sel.Name
-	}
-	return sel.Sel.Name
-}
-
-// pkgNameOf renders the imported package NAME behind a selector's X
-// (slog, not log/slog — the spelling a call site writes).
-func (a *analyzer) pkgNameOf(sel *ast.SelectorExpr) string {
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkgName, ok := a.pass.TypesInfo.Uses[x].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkgName.Imported().Name()
-}
-
-// pkgPathOf renders the imported package path behind a selector's X,
-// "" when X is not a package identifier.
-func (a *analyzer) pkgPathOf(sel *ast.SelectorExpr) string {
-	x, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	obj := a.pass.TypesInfo.Uses[x]
-	if obj == nil {
-		return ""
-	}
-	pkgName, ok := obj.(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkgName.Imported().Path()
 }

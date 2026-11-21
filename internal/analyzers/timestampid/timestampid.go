@@ -94,7 +94,7 @@ const maxDepth = 4
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

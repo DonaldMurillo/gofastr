@@ -265,8 +265,8 @@ cached forever (`Cache-Control: immutable`); the manifest is served
 `no-cache`. Two exports of the same pages produce the same files.
 
 Any battery can add files to an export the same way: implement
-`static.Contributor` (`ExportStart(ctx)` when a build begins, so a build
-that failed partway leaves nothing behind; `ExportPage(path, html)` per
+`static.Contributor` (`ExportStart(ctx)` when a build begins, before any
+`StaticPaths` call, so a build that failed partway leaves nothing behind; `ExportPage(path, html)` per
 rendered page; then `ExportFiles(ctx)` once) and `App.ExportStatic` calls
 it. `static.Walk` renders the same page set at runtime, skipping any path
 its `skip` func names before rendering it. A page that fails to render

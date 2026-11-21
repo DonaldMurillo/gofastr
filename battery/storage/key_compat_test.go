@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,6 +17,7 @@ var unportableButExistingKeys = []string{
 	"user:123/avatar.png",               // namespaced key, colon
 	"reports/NUL",                       // reserved Windows device name
 	"archive/backup.",                   // trailing dot
+	"archive/part\t1.txt",               // control byte in a Unix filename
 }
 
 // TestExistingKeysStayReadableAndDeletable pins the compatibility contract:
@@ -58,8 +60,22 @@ func TestExistingKeysStayReadableAndDeletable(t *testing.T) {
 		if got.String() != "payload-"+key {
 			t.Errorf("Get(%q) = %q", key, got.String())
 		}
+		rr, err := ls.GetRange(ctx, key)
+		if err != nil {
+			t.Errorf("GetRange(%q) = %v", key, err)
+		} else {
+			got.Reset()
+			_, err := got.ReadFrom(rr)
+			rr.Close()
+			if err != nil || got.String() != "payload-"+key {
+				t.Errorf("GetRange(%q) = %q, %v", key, got.String(), err)
+			}
+		}
 		if err := ls.Delete(ctx, key); err != nil {
 			t.Errorf("Delete(%q) = error %v; existing objects must stay removable", key, err)
+		}
+		if _, err := os.Stat(full); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("after Delete(%q), Stat error = %v, want os.ErrNotExist", key, err)
 		}
 	}
 }

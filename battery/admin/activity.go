@@ -136,12 +136,12 @@ func (b *Battery) bulkLead(ctx context.Context, names map[string]string, r audit
 		return ""
 	}
 	var verb i18n.Phrase
-	switch {
-	case d.Action == "delete":
+	switch bulkOperation(d.Action) {
+	case "delete":
 		verb = i18nui.AdminVerbDelete
-	case d.Action == "restore":
+	case "restore":
 		verb = i18nui.AdminVerbRestore
-	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
+	case "update":
 		verb = i18nui.AdminVerbUpdate
 	default:
 		return ""

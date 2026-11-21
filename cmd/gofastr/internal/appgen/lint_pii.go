@@ -6,32 +6,28 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
+	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/piicheck"
 )
 
 // unscopedFinding is one entity flagged by lintUnscopedEntities.
 type unscopedFinding struct {
-	Entity string
+	Entity        string
+	AnonymousRead bool
 }
 
-// Message spells out the exposure and every remedy. Unlike the PII rule
-// this is informational: genuinely public data (a blog's posts) is a
-// legitimate shape, but letting every OTHER authenticated user read and
-// overwrite it almost never is, so the warning fires until the entity
-// says how it's governed. This entity already requires a session for
-// every operation (auto-CRUD's secure-by-default gate); the exposure
-// here is cross-user, not anonymous: any signed-in caller can read,
-// create, update, and delete any row.
+// Message names who can read unscoped rows and how to limit read access.
 func (f unscopedFinding) Message() string {
+	readers := "every authenticated user"
+	if f.AnonymousRead {
+		readers = "anonymous callers"
+	}
 	return fmt.Sprintf(
-		"entity %q is exposed via auto-CRUD/MCP with no per-user scoping: every authenticated user can read, create, update, and delete every OTHER user's row (a session is already required to reach it: this is cross-user exposure). Set owner_field: <column> for per-user rows, access: permissions (RBAC) to gate by role, or multi_tenant: true",
-		f.Entity)
+		"entity %q exposes unscoped reads via auto-CRUD/MCP. %s can read every row. Set owner_field: <column> for per-user rows, require a permission in access.read (RBAC), or set multi_tenant: true",
+		f.Entity, readers)
 }
 
-// publicFinding is one entity flagged by lintPublicEntities, a
-// declared `public: true` opt-out. Unlike unscopedFinding this
-// IS the anonymous-access surface: Public is a deliberate, full bypass of
-// the session requirement (issue #65), not an oversight, so the message
-// confirms the declaration rather than prescribing a remedy.
+// publicFinding is one entity explicitly opting into open reads and writes.
 type publicFinding struct {
 	Entity string
 }
@@ -164,9 +160,7 @@ func lintPublicEntities(bp appspec.AppSpec) []publicFinding {
 	return out
 }
 
-// lintUnscopedEntities returns one finding per auto-exposed entity with NO
-// scoping mechanism at all: the superset of lintUnscopedPII that doesn't
-// depend on field names. Warned at generate time; never blocks.
+// lintUnscopedEntities warns on unscoped reads regardless of field names.
 func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 	var out []unscopedFinding
 	for _, decl := range bp.Entities {
@@ -175,14 +169,15 @@ func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 		if !appspec.EntityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
-		// Public: true already carries its own, more accurate warning
-		// (lintPublicEntities): this entity requires no session at all,
-		// so unscopedFinding.Message()'s "a session is already required"
-		// claim would be false for it.
-		if scope.OwnerField != "" || scope.MultiTenant || appspec.HasAccessGate(exposure.Access) || exposure.Public {
+		// Explicitly public entities have their own warning.
+		access := exposure.Access
+		if exposure.Public || piicheck.Scoped(scope.OwnerField, scope.MultiTenant, access != nil && piicheck.GatesAccess(access.Read)) {
 			continue
 		}
-		out = append(out, unscopedFinding{Entity: decl.Name})
+		out = append(out, unscopedFinding{
+			Entity:        decl.Name,
+			AnonymousRead: access != nil && fwentity.AccessControl(*access).Declared(),
+		})
 	}
 	return out
 }

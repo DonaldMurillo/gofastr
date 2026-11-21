@@ -91,7 +91,7 @@ The CLI reads it:
   about a file marked as a copy of a package the section does not list.
 - `gofastr upgrade` lists the copies with the upstream diff to the target
   release.
-- `gofastr audit deps` lists them after the init-time registrations.
+- `gofastr audit deps` lists them after the registration call sites.
 
 ## Remount
 

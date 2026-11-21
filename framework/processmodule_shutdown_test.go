@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // countingRunner counts the children it starts.
@@ -63,13 +65,13 @@ func (p *childProbe) OnStop(context.Context) error {
 // batteries had stopped, while the design drains children first so their
 // in-flight reverse calls still reach the queue and DB (2026-10-27 S1).
 func TestShutdownStopsProcessModules(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	db := newStoreDB(t)
 	t.Cleanup(func() { _ = db.Close() })
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	app.RegisterProcessModule(d, ApprovedGrants{"articles:read"})
 
 	sup := app.ProcessModules()
@@ -77,7 +79,7 @@ func TestShutdownStopsProcessModules(t *testing.T) {
 	sup.cfg.BackoffMin = 5 * time.Millisecond
 	sup.cfg.BackoffMax = 20 * time.Millisecond
 	sup.cfg.DrainPerModule = 2 * time.Second
-	runner := &countingRunner{inner: &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)}}
+	runner := &countingRunner{inner: &envRunner{inner: &TrustedProcessRunner{}, env: pmtestkit.Env(pmtestkit.ModeEcho, nil)}}
 	sup.Slot(d.Name).runner = runner
 	probe := &childProbe{sup: sup, name: d.Name}
 	app.RegisterBattery(probe)
@@ -86,7 +88,7 @@ func TestShutdownStopsProcessModules(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatal(err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 5*time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -157,13 +159,13 @@ func (c *heldWatchChild) Wait() error {
 // still held a child that had already exited, and the window grew with
 // load. Drain now settles the slot itself, as a disable drain does.
 func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	db := newStoreDB(t)
 	t.Cleanup(func() { _ = db.Close() })
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	app.RegisterProcessModule(d, ApprovedGrants{"articles:read"})
 
 	sup := app.ProcessModules()
@@ -172,7 +174,7 @@ func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
 	gate := make(chan struct{})
 	t.Cleanup(func() { close(gate) })
 	runner := &heldWatchRunner{
-		inner:    &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
+		inner:    &envRunner{inner: &TrustedProcessRunner{}, env: pmtestkit.Env(pmtestkit.ModeEcho, nil)},
 		gate:     gate,
 		watching: make(chan struct{}),
 	}
@@ -184,7 +186,7 @@ func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatal(err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 5*time.Second)
 	select {
 	case <-runner.watching:
 	case <-time.After(10 * time.Second):
@@ -213,11 +215,11 @@ func TestDrainClearsTheSlotBeforeBatteriesStop(t *testing.T) {
 // inside the runner when Close ran installed its child afterwards and it
 // ran on with nothing left to stop it (2026-10-27 S48).
 func TestCloseRefusesALateChild(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	runner := &gatedRunner{
-		inner:   &envRunner{inner: &TrustedProcessRunner{}, env: childEnv(childModeEcho, nil)},
+		inner:   &envRunner{inner: &TrustedProcessRunner{}, env: pmtestkit.Env(pmtestkit.ModeEcho, nil)},
 		entered: make(chan struct{}, 1),
 		gate:    make(chan struct{}),
 	}
@@ -227,7 +229,7 @@ func TestCloseRefusesALateChild(t *testing.T) {
 		}
 	})
 	sup := newBareTestSupervisor(t, newTestStore(t), runner)
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatal(err)
 	}

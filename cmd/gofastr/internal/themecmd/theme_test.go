@@ -158,3 +158,25 @@ func TestThemeStarterIsTheAppsOwn(t *testing.T) {
 		t.Error("theme starter declares component options; the framework defaults already apply")
 	}
 }
+
+// Bare `gofastr theme` is a refusal, not success: the usage block goes
+// to stderr and the exit status is 2, like every other missing
+// subcommand in the CLI. It used to print usage on stdout and exit 0.
+func TestBareThemePrintsUsageToStderrAndExitsTwo(t *testing.T) {
+	var code int
+	var out, errOut string
+	out = clitest.CovT_capStdout(t, func() {
+		errOut = clitest.CovT_capStderr(t, func() {
+			code = clitest.CovT_capExit(t, func() { RunTheme(nil) })
+		})
+	})
+	if code != 2 {
+		t.Fatalf("bare theme exited %d, want 2", code)
+	}
+	if !strings.Contains(errOut, "Usage: gofastr theme") {
+		t.Fatalf("bare theme usage missing on stderr:\n%s", errOut)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("bare theme wrote to stdout:\n%s", out)
+	}
+}

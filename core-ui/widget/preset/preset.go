@@ -89,14 +89,11 @@ var (
 
 // Drawer is a left-edge dialog panel with a backdrop that closes on Escape and click-outside.
 func Drawer(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.Edge).
 		Backdrop().
+		Dismissible().
 		Role("dialog")
-	d := b.Definition()
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }
 
 // Banner is a persistent strip along the top of the page.
@@ -107,25 +104,19 @@ func Banner(name string) *widget.Builder {
 
 // BottomSheet is a bottom-edge Drawer that the user can drag down to dismiss.
 func BottomSheet(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.Bottom).
 		Backdrop().
+		Dismissible().
 		Role("dialog").
 		DragDismiss()
-	d := b.Definition()
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }
 
 // Popover is a hidden top-right panel with no backdrop, opened by data-cui-open and anchored to its trigger by data-cui-popover-anchor.
 func Popover(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.TopRight).
 		Hidden().
+		Dismissible().
 		Surface()
-	d := b.Definition()
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }

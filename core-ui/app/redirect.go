@@ -257,15 +257,5 @@ func segsOverlap(x, y string) bool {
 	case !px && py:
 		return routeseg.ConstraintOK(y, x)
 	}
-	cx, cy := routeseg.Constraint(x), routeseg.Constraint(y)
-	if cx == "" || cy == "" || cx == cy {
-		return true
-	}
-	disjoint := map[[2]string]bool{
-		{"int", "alpha"}: true, {"alpha", "int"}: true,
-		{"uuid", "int"}: true, {"int", "uuid"}: true,
-		{"uuid", "alpha"}: true, {"alpha", "uuid"}: true,
-		{"uuid", "alnum"}: true, {"alnum", "uuid"}: true,
-	}
-	return !disjoint[[2]string{cx, cy}]
+	return routeseg.Overlap(routeseg.Constraint(x), routeseg.Constraint(y))
 }

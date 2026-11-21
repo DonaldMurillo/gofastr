@@ -63,8 +63,9 @@ func TestRunRejectsUnreadableClientSource(t *testing.T) {
 		if _, ok := pass.AST("broken.go"); ok {
 			t.Fatal("malformed source parsed successfully")
 		}
-		if _, err := Run(pass, RunOptions{Analyzers: []string{name}}); err == nil || !strings.Contains(err.Error(), "source inspection incomplete") {
-			t.Fatalf("parser failure mislabeled: %v", err)
+		report, err := Run(pass, RunOptions{Analyzers: []string{name}})
+		if err != nil || report.Unparsed != 1 || report.Passed() {
+			t.Fatalf("want an incomplete report for a cached parse failure: report=%+v error=%v", report, err)
 		}
 	})
 }

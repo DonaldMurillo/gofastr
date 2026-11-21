@@ -121,3 +121,21 @@ func FuzzParseStrings(f *testing.F) {
 		_, _ = findVersion(data, 0x1000, 0)
 	})
 }
+
+func TestParseStringsRefusesMalformedTextValues(t *testing.T) {
+	hi := []byte{'h', 0, 'i', 0} // UTF-16LE "hi" without its NUL
+	build := func(words uint16) []byte {
+		str := block("FileDescription", hi, words, 1)
+		table := block("040904B0", nil, 0, 1, str)
+		sfi := block("StringFileInfo", nil, 0, 1, table)
+		return block("VS_VERSION_INFO", make([]byte, 52), 52, 0, sfi)
+	}
+	// The declared size runs past the block end.
+	if _, err := ParseStrings(build(100)); !errors.Is(err, ErrNoVersion) {
+		t.Errorf("a value longer than its block parsed: %v", err)
+	}
+	// The text never ends in a NUL within its declared size.
+	if _, err := ParseStrings(build(2)); !errors.Is(err, ErrNoVersion) {
+		t.Errorf("an unterminated text value parsed: %v", err)
+	}
+}

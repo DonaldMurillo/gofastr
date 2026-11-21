@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-//go:fix inline
-func f64(v float64) *float64 { return new(v) }
-
 // Decimal/Float must reject non-finite values so Min/Max bounds can't be
 // bypassed via NaN/Inf (IEEE-754 makes every comparison false for NaN).
 func TestNonFiniteBoundsBypass(t *testing.T) {
@@ -182,13 +179,11 @@ func TestPatternEnforcedOnPartialUpdate(t *testing.T) {
 
 // Property: an unsigned integer that does not fit in int64 must be
 // REJECTED by an Int field, not silently reinterpreted as a negative
-// int64 that then slips past the bounds. toInt64's uint64 case guards
-// this (validate.go: "overflow check"), but the plain `uint` case —
-// 64-bit on every platform this framework targets — converts with no
-// guard, so the same number rejected as uint64 passes as uint and
-// wraps: uint(MaxUint64) validates as -1, defeating Max-only bounds
-// (a quantity/limit field accepting a "negative" value) and making the
-// two unsigned spellings of one number disagree.
+// int64 that then slips past the bounds. toInt64 guards both unsigned
+// spellings, the uint64 case and the 64-bit plain `uint` case alike;
+// before the uint arm got its guard, uint(MaxUint64) wrapped to -1 and
+// slipped past a Max-only bound (a quantity/limit field accepting a
+// "negative" value), so the two spellings of one number disagreed.
 func TestIntUintWrapBypassesMaxBound(t *testing.T) {
 	capped := Field{Name: "qty", Type: Int, Max: new(float64(1000))}
 	for _, v := range []any{

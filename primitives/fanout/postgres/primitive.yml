@@ -9,17 +9,20 @@ invariants:
     rule: Publish NOTIFYs a wrapper of at most 7000 bytes inline and stores a larger one in the fallback table, NOTIFYing a t:<id> pointer that receivers SELECT.
     enforced_by:
       - test: framework/fanout.TestPostgres_BigPayloadFallsBackToTable
+      - test: framework/fanout.TestPostgresPublishNotifiesInlineAndSpill
   - id: channel-is-the-table-name
-    rule: The NOTIFY channel is the fallback table's name, so two fanouts with different tables on one database never see each other's messages, inline or spilled.
+    rule: LISTEN and NOTIFY use the canonical ASCII-lowercase fallback table name, so aliases for one physical table share a channel and different tables remain isolated.
     enforced_by:
+      - test: framework/fanout.TestPostgresListenUsesCanonicalFallbackTableName
       - test: framework/fanout.TestPostgres_InlineMessageStaysOnItsTable
       - test: framework/fanout.TestPostgres_TableNameIsolatesChannel
   - id: construction-refuses-bad-config
-    rule: NewPostgres errors on a nil db, an empty dsn, a table name SafeIdent refuses or longer than 63 bytes, and a case-kept table an older build left.
+    rule: NewPostgres errors on a nil db, an empty dsn, a table name SafeIdent refuses or longer than 63 bytes, and a case-kept table an older build left, naming both spellings when the older table and this build's table both exist.
     enforced_by:
       - test: framework/fanout.TestLongTableNameRefusedForItsLength
       - test: framework/fanout.TestPostgres_LongTableNameRejected
       - test: framework/fanout.TestPostgres_CaseKeptTableRefused
+      - test: framework/fanout.TestPostgres_QualifiedCaseKeptBothRefused
   - id: listen-is-bounded
     rule: NewPostgres closes the listener and errors when LISTEN is not up within the listen timeout, instead of retrying an unreachable dsn forever.
     enforced_by:

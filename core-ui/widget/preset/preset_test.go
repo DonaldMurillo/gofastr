@@ -88,6 +88,21 @@ func TestToastStackDefaultIsBottomRight(t *testing.T) {
 	}
 }
 
+func TestFloatingPanelDismissalIsOptIn(t *testing.T) {
+	panel := FloatingPanel("tools")
+	before := panel.Build()
+	if before.CloseOnEscape || before.CloseOnClickOutside {
+		t.Fatal("FloatingPanel enabled dismissal by default")
+	}
+	after := panel.Dismissible().Build()
+	if !after.CloseOnEscape || !after.CloseOnClickOutside {
+		t.Fatal("Dismissible did not enable both dismissal flags")
+	}
+	if after.Backdrop || after.Role != before.Role || after.Position != widget.BottomRight {
+		t.Fatalf("Dismissible changed backdrop, role or position: %+v", after)
+	}
+}
+
 func TestBannerDefaults(t *testing.T) {
 	d := Banner("b").Build()
 	if d.Position != widget.Top {

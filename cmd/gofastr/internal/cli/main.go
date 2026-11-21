@@ -71,7 +71,9 @@ func Dim(msg string) string {
 	return "\033[2m" + msg + "\033[0m"
 }
 
-// Success, Fail, Info, Warn and InfoString print one status line. The
+// Success, Fail, Info, Warn and InfoString print one status line. Fail's
+// line goes to stderr, where errors belong; the rest report progress on
+// stdout. The
 // mark's colour is the helper's own; every ARGUMENT is scrubbed of what
 // a terminal acts on instead of printing (textsafe.ScrubTerminal: C0 but
 // tab and newline, DEL, C1, bidi overrides and zero-width runes), so a
@@ -85,7 +87,17 @@ func Success(format string, args ...interface{}) {
 }
 
 func Fail(format string, args ...interface{}) {
-	fmt.Printf("  %s %s\n", Red("✗"), scrubbedf(format, args...))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Red("✗"), scrubbedf(format, args...))
+}
+
+// UsageFail reports a command-line usage error — an unknown flag, a
+// missing value, a wrong operand — through the one path every command
+// shares: the ✗ line on stderr like Fail, then exit status 2, the
+// status verify documents as "bad usage". --help output stays on
+// stdout.
+func UsageFail(format string, args ...interface{}) {
+	Fail(format, args...)
+	OsExit(2)
 }
 
 func Info(format string, args ...interface{}) {

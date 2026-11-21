@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,8 +18,12 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
+	"github.com/DonaldMurillo/gofastr/framework/sdkdocs"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"golang.org/x/net/html"
 )
 
 // sdkFixtureDecls covers the shapes the SDK emitters must handle: a plain
@@ -105,6 +112,93 @@ func TestSDKManifestMatchesDistFiles(t *testing.T) {
 	}
 	if !strings.Contains(got["dist/"+sdk.JSArtifact], "gofastr:generated generator=sdk") {
 		t.Errorf("dist/%s carries no marker", sdk.JSArtifact)
+	}
+}
+
+func TestSDKGoArchiveAndInstallGuidesShareDirectory(t *testing.T) {
+	opts := SdkOptions{name: "My App", module: "local/my-app-sdk", sdkVersion: "1.2.3"}
+	spec, err := buildSDKSpec(sdkFixtureDecls(), &opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := renderSDKFiles(spec, []string{"go"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dist := fstest.MapFS{}
+	for _, f := range files {
+		if name, ok := strings.CutPrefix(f.Name, "dist/"); ok {
+			dist[name] = &fstest.MapFile{Data: []byte(f.Content)}
+		}
+	}
+	data := dist[sdk.GoArtifact].Data
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dir string
+	for _, f := range archive.File {
+		if prefix, ok := strings.CutSuffix(f.Name, "/go.mod"); ok {
+			dir = prefix
+			break
+		}
+	}
+	if dir == "" {
+		t.Fatal("Go SDK module missing from archive")
+	}
+	manifest, err := sdk.ReadManifest(dist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manifest.Artifacts["go"].Directory; got != dir {
+		t.Errorf("manifest directory = %q, archive directory = %q", got, dir)
+	}
+	want := "go mod edit -replace local/my-app-sdk=./" + dir
+	readme, err := archive.Open(dir + "/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readme.Close()
+	var guide bytes.Buffer
+	if _, err := guide.ReadFrom(readme); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(guide.String(), want+"\n") {
+		t.Errorf("generated README lacks replace command for %q", dir)
+	}
+
+	fwApp := framework.NewApp(framework.WithoutDefaultMiddleware())
+	for _, decl := range spec.Decls {
+		cfg, err := decl.Config()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fwApp.Entity(decl.Name, cfg)
+	}
+	coreApp := app.NewApp("My App")
+	uihost.New(coreApp).Mount(fwApp.Router())
+	if err := sdkdocs.Mount(coreApp, fwApp.Router(), sdkdocs.Config{
+		Registry: fwApp.Registry, Artifacts: dist, IncludeGated: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res := httptest.NewRecorder()
+	fwApp.Router().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "https://localhost/docs/api", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("SDK docs overview status = %d", res.Code)
+	}
+	var served strings.Builder
+	tokens := html.NewTokenizer(res.Body)
+	for kind := tokens.Next(); kind != html.ErrorToken; kind = tokens.Next() {
+		if kind == html.TextToken {
+			served.Write(tokens.Text())
+		}
+	}
+	if tokens.Err() != io.EOF {
+		t.Fatal(tokens.Err())
+	}
+	if !strings.Contains(served.String(), want+"\n") {
+		t.Errorf("served install guide lacks replace command for %q", dir)
 	}
 }
 

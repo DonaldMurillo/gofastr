@@ -6,6 +6,8 @@ import (
 	"go/types"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 )
 
 // textParams maps each of the package's functions and methods to the
@@ -74,7 +76,8 @@ func textParams(pass *analysis.Pass) map[*types.Func]map[int]bool {
 					if pkg, name := callee(pass, n); pkg == module+"core/render" && name == "Text" && len(n.Args) == 1 {
 						changed = mark(d, n.Args[0]) || changed
 					}
-					if sinks := out[calleeFunc(pass, n)]; sinks != nil {
+					fn, _ := astx.CalleeFunc(pass, ast.Unparen(n.Fun))
+					if sinks := out[fn]; sinks != nil {
 						for i, arg := range n.Args {
 							if sinks[i] {
 								changed = mark(d, arg) || changed
@@ -146,7 +149,7 @@ func textValues(pass *analysis.Pass, lit *ast.CompositeLit) []ast.Expr {
 // checkTextArgs reports English passed to a parameter that textParams
 // found writing into the page.
 func checkTextArgs(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
-	fn := calleeFunc(pass, call)
+	fn, _ := astx.CalleeFunc(pass, ast.Unparen(call.Fun))
 	sinks := ui.textParams[fn]
 	for i, arg := range call.Args {
 		if !sinks[i] {

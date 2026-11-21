@@ -251,7 +251,6 @@ type formBuilder struct {
 	create     bool
 	values     map[string]string
 	placed     map[string]bool
-	err        error
 	replace    []string
 	compact    bool
 }
@@ -479,14 +478,14 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 	if fb.masked[f.Name] && !fb.create {
 		return fb.maskedControl(ctx, f, label, help, id)
 	}
-	if kind, ok := fb.kind(f); ok {
+	if kind, ok := fb.b.ui.kindOf(fb.m, f); ok {
 		return fb.kindInput(ctx, f, label, help, id, kind)
 	}
 	return fb.typedInput(ctx, f, label, help, id)
 }
 
 func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label string) render.HTML {
-	if k, ok := fb.kind(f); ok && (k.Detail != nil || k.Cell != nil) {
+	if k, ok := fb.b.ui.kindOf(fb.m, f); ok && (k.Detail != nil || k.Cell != nil) {
 		row, val := fb.row, fb.value(f)
 		if !fb.create && fb.displayRow != nil {
 			row, val = fb.displayRow, fieldtext.Form(f, fb.m.rowValue(fb.displayRow, f.Name))
@@ -752,36 +751,14 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	})
 }
 
-func (fb *formBuilder) kind(f schema.Field) (Kind, bool) {
-	name := fb.m.hint(f.Name).Input
-	if name == "" {
-		return Kind{}, false
-	}
-	if k, ok := fb.b.ui.ext.Kinds[name]; ok {
-		return k, true
-	}
-	if isBuiltinKind(name) {
-		return builtinKind(name), true
-	}
-	return Kind{}, false
-}
-
-func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
-	masked := map[string]bool{}
-	for _, f := range m.fields {
-		if m.system(f) || m.locked(f) {
-			continue
-		}
-		if fieldtext.Cell(m.rowValue(raw, f.Name)) != fieldtext.Cell(m.rowValue(hooked, f.Name)) {
-			masked[f.Name] = true
-		}
-	}
-	return masked
-}
-
-func rewrittenFields(m *meta, raw, hooked map[string]any) map[string]bool {
+// changedFields names the fields whose stored and hooked reads differ; a
+// nil skip keeps every field.
+func changedFields(m *meta, raw, hooked map[string]any, skip func(schema.Field) bool) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
+		if skip != nil && skip(f) {
+			continue
+		}
 		if fieldtext.Cell(m.rowValue(raw, f.Name)) != fieldtext.Cell(m.rowValue(hooked, f.Name)) {
 			out[f.Name] = true
 		}

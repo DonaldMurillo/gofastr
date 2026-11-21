@@ -20,7 +20,7 @@ type SandboxRunner struct {
 	backend SandboxBackend
 	opts    SandboxOpts
 
-	// EnvAllowlist names the host variables the child gets; nil uses
+	// EnvAllowlist names the host variables the child gets. An empty list uses
 	// [DefaultChildEnvAllowlist].
 	EnvAllowlist []string
 
@@ -73,7 +73,11 @@ func (e *SandboxConformanceError) Unwrap() error { return ErrSandboxUnavailable 
 
 // Start implements [Runner]; a Wrap error or panic fails the spawn before exec.
 func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
-	prep, err := prepareChildForSpawn(spec, r.allowlist())
+	var allowlist []string
+	if r != nil {
+		allowlist = r.EnvAllowlist
+	}
+	prep, err := prepareChildForSpawn(spec, envAllowlistOrDefault(allowlist))
 	if err != nil {
 		return nil, err
 	}
@@ -123,13 +127,6 @@ func (r *SandboxRunner) Backend() SandboxBackend {
 		return nil
 	}
 	return r.backend
-}
-
-func (r *SandboxRunner) allowlist() []string {
-	if r == nil || len(r.EnvAllowlist) == 0 {
-		return DefaultChildEnvAllowlist()
-	}
-	return r.EnvAllowlist
 }
 
 func releasePrepFDs(prep *childPrep) {

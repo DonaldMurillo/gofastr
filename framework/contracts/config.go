@@ -204,6 +204,7 @@ func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Nod
 		c.capSeverity[cap] = sev
 		return nil
 	case coreyaml.Map:
+		disabled := false
 		for _, key := range slices.Sorted(maps.Keys(node.Map)) {
 			child := node.Map[key]
 			switch key {
@@ -212,9 +213,7 @@ func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Nod
 				if err != nil {
 					return err
 				}
-				if !on {
-					c.capSeverity[cap] = SeverityOff
-				}
+				disabled = !on
 			case "severity":
 				s, err := stringValue(path, child)
 				if err != nil {
@@ -239,6 +238,9 @@ func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Nod
 				}
 				return fmt.Errorf("%s:%d: unknown key %q under capability %q", path, child.Line, key, cap)
 			}
+		}
+		if disabled {
+			c.capSeverity[cap] = SeverityOff
 		}
 		return nil
 	default:
@@ -268,6 +270,7 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 			}
 			c.ruleSeverity[rule.ID] = sev
 		case coreyaml.Map:
+			disabled := false
 			for _, sub := range slices.Sorted(maps.Keys(child.Map)) {
 				val := child.Map[sub]
 				switch sub {
@@ -286,9 +289,7 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 					if err != nil {
 						return err
 					}
-					if !on {
-						c.ruleSeverity[rule.ID] = SeverityOff
-					}
+					disabled = !on
 				case "exempt", "exclude":
 					list, err := stringList(path, val)
 					if err != nil {
@@ -298,6 +299,9 @@ func (c *Config) applyRules(path string, node *coreyaml.Node) error {
 				default:
 					return fmt.Errorf("%s:%d: unknown key %q under rule %s", path, val.Line, sub, rule.ID)
 				}
+			}
+			if disabled {
+				c.ruleSeverity[rule.ID] = SeverityOff
 			}
 		default:
 			return fmt.Errorf("%s:%d: rule %s must be a severity or a map", path, child.Line, rule.ID)

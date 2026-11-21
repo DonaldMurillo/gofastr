@@ -247,9 +247,51 @@ func TestParseUnmountArgs(t *testing.T) {
 		{"unmount", []string{"a", "b"}},
 		{"unmount", []string{"--dry-run"}},
 	} {
-		clitest.CovT_capStdout(t, func() {
+		clitest.CovT_capOutput(t, func() {
 			if _, _, _, _, ok := parseUnmountArgs(tc.cmd, tc.args); ok {
 				t.Errorf("%s %v accepted", tc.cmd, tc.args)
+			}
+		})
+	}
+}
+
+// `--out -dir` must be refused with the --out=-dir remedy, not silently
+// taken as the output directory (cli.IsFlagToken's rule).
+func TestParseUnmountArgsRefusesFlagLikeOutValue(t *testing.T) {
+	msg := clitest.CovT_capOutput(t, func() {
+		if _, out, _, _, ok := parseUnmountArgs("unmount", []string{"core/yaml", "--out", "-dir"}); ok || out != "" {
+			t.Errorf("--out -dir accepted (ok=%v out=%q); want the --out=-dir refusal", ok, out)
+		}
+	})
+	if !strings.Contains(msg, "write --out=<value>") {
+		t.Errorf("--out -dir diagnostic = %q, want the equals-form remedy", msg)
+	}
+	if _, out, _, _, ok := parseUnmountArgs("unmount", []string{"core/yaml", "--out=-dir"}); !ok || out != "-dir" {
+		t.Errorf("--out=-dir: ok=%v out=%q, want true and -dir", ok, out)
+	}
+}
+
+// Usage errors exit 2, as every sibling command does, so a script can
+// tell a bad flag from a failed run.
+func TestUnmountUsageErrorsExitTwo(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func()
+	}{
+		{"unmount unknown flag", func() { RunUnmount([]string{"--bogus"}) }},
+		{"unmount flag-like output value", func() { RunUnmount([]string{"core/yaml", "--out", "-dir"}) }},
+		{"unmount two packages", func() { RunUnmount([]string{"a", "b"}) }},
+		{"unmount flag without package", func() { RunUnmount([]string{"--dry-run"}) }},
+		{"remount unknown flag", func() { RunRemount([]string{"--bogus"}) }},
+		{"remount without package", func() { RunRemount(nil) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code := clitest.CovT_capExit(t, func() {
+				clitest.CovT_capStdout(t, tc.run)
+			})
+			if code != 2 {
+				t.Errorf("exit %d, want 2", code)
 			}
 		})
 	}
@@ -299,7 +341,7 @@ func runGo(t *testing.T, dir string, args ...string) string {
 func runUnmountCmd(t *testing.T, run func([]string), args ...string) (string, int) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { run(args) })
 	})
 	return out, code
@@ -617,7 +659,7 @@ func TestApplyImportRewireReplacesWhole(t *testing.T) {
 	dir := t.TempDir()
 	clitest.WriteTestFile(t, filepath.Join(dir, "a.go"), "package a\n")
 	old := heldfiletest.Held(t, filepath.Join(dir, "a.go"))
-	plan := []importRewire{{name: "a.go", mode: 0o644, old: "package a\n", new: "package a // new\n"}}
+	plan := []importRewire{{name: "a.go", mode: 0o664, old: "package a\n", new: "package a // new\n"}}
 	if _, err := applyImportRewire(dir, plan, false); err != nil {
 		t.Fatal(err)
 	}
@@ -626,6 +668,15 @@ func TestApplyImportRewireReplacesWhole(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "a.go")); string(got) != "package a // new\n" {
 		t.Fatalf("a.go = %q", got)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(dir, "a.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != plan[0].mode {
+			t.Errorf("a.go mode = %04o, want %04o", got, plan[0].mode)
+		}
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Fatalf("left %d entries, want a.go alone", len(entries))
@@ -642,5 +693,32 @@ func TestApplyImportRewireReplacesWhole(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
 		t.Fatalf("left %d entries, want a.go and d.go: the temporary file stayed", len(entries))
+	}
+}
+
+func TestApplyImportRewireRefusesLeafSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.go")
+	clitest.WriteTestFile(t, target, "package a\n")
+	name := filepath.Join(dir, "a.go")
+	clitest.WriteTestFile(t, name, "package a\n\nimport _ \"old.example/pkg\"\n")
+	plan, err := planImportRewire(dir, "ignored", "old.example/pkg", "new.example/pkg")
+	if err != nil || len(plan) != 1 {
+		t.Fatalf("rewrite plan = %+v, %v", plan, err)
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("target.go", name); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := applyImportRewire(dir, plan, false); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("rewire error = %v, want symlink refusal", err)
+	}
+	if got, err := os.Readlink(name); err != nil || got != "target.go" {
+		t.Fatalf("leaf link = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "package a\n" {
+		t.Fatalf("target = %q, %v", got, err)
 	}
 }

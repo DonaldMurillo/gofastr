@@ -106,9 +106,7 @@ func driveHungHandlerScenario(t *testing.T, enqueue func(context.Context, Job) e
 	case <-okRan:
 		// The handler budget freed the worker despite the hang: contract holds.
 	case <-time.After(3 * time.Second):
-		t.Fatalf("SECURITY: [queue] an unrelated job was never processed while a handler that ignores its " +
-			"cancelled context hung for 3s (timeout 100ms): runHandler/awaitHandler invoke the handler inline, " +
-			"so one non-cooperative handler wedges the default single-worker queue forever — the outbox relay " +
-			"stops waiting at the deadline (relay.go runHandler), the queue must too")
+		t.Fatalf("SECURITY: [queue] the test did not receive the unrelated job's handler signal within 3s. " +
+			"The worker should stop waiting for the hung handler when its 100ms budget expires and run the unrelated job.")
 	}
 }

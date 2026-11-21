@@ -266,13 +266,28 @@ func localPath(rel string) (string, error) {
 
 // Apply writes every suggested fix in the report to disk, through an
 // os.Root at the report root, and returns the diagnostics it resolved. It
-// refuses a path outside the root, an out-of-range edit, an edit whose Old
-// text no longer matches, overlapping edits, and a Go edit that breaks a
-// file that parsed. Go output is gofmt'd, keeping CRLF line endings.
+// refuses cross-file fixes, paths outside the root, out-of-range, stale or
+// overlapping edits, and edits that break Go syntax. Go output keeps CRLF.
 func (r *Report) Apply() ([]Diagnostic, error) {
 	byFile := map[string][]Diagnostic{}
 	for _, d := range r.Fixable() {
-		byFile[d.File] = append(byFile[d.File], d)
+		name, err := localPath(d.File)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range d.Fix.Edits {
+			if e.File == "" {
+				continue
+			}
+			target, err := localPath(e.File)
+			if err != nil {
+				return nil, err
+			}
+			if target != name {
+				return nil, fmt.Errorf("apply fixes to %s: cross-file edit targets %s", d.File, e.File)
+			}
+		}
+		byFile[name] = append(byFile[name], d)
 	}
 	files := make([]string, 0, len(byFile))
 	for f := range byFile {
@@ -290,11 +305,7 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 	}
 	defer rt.Close()
 	for _, rel := range files {
-		name, err := localPath(rel)
-		if err != nil {
-			return applied, err
-		}
-		body, err := rt.ReadFile(name)
+		body, err := rt.ReadFile(rel)
 		if err != nil {
 			return applied, fmt.Errorf("apply fixes to %s: %w", rel, err)
 		}
@@ -336,12 +347,12 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 				return applied, fmt.Errorf("apply fixes to %s: the edit produces Go that no longer parses: the file changed since analysis, re-run verify", rel)
 			}
 		}
-		info, err := rt.Stat(name)
+		info, err := rt.Stat(rel)
 		mode := os.FileMode(0o644)
 		if err == nil {
 			mode = info.Mode().Perm()
 		}
-		if err := rt.WriteFile(name, out, mode); err != nil {
+		if err := rt.WriteFile(rel, out, mode); err != nil {
 			return applied, fmt.Errorf("write %s: %w", rel, err)
 		}
 		applied = append(applied, owners...)

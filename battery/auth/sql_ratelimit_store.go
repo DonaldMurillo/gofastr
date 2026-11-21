@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,14 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
-
-// escapeLikeLiteral escapes the LIKE wildcards (%, _) and the escape char
-// itself so a string can be used as a literal prefix in a `LIKE ... ESCAPE
-// '\'` clause. Scope names contain '_' (e.g. login_ip), which would
-// otherwise match any character and over-delete across scopes.
-func escapeLikeLiteral(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
-}
 
 // RateLimitStore is the optional shared backend for RateLimiter. When
 // RateLimiterConfig.Store is set, every replica consults the same
@@ -177,10 +168,9 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 	}
 	s.mu.Unlock()
 	if sweep {
-		// Escape LIKE metacharacters in the (host-settable) scope so a scope
-		// containing '_' or '%' can't over-match into a sibling scope's keys.
-		scopePrefix := escapeLikeLiteral(ratelimit.NamespaceScope(cfg.Scope)) + "|%"
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND attempted_at_ms <= $2`, attempts), scopePrefix, cutoffMs); err != nil {
+		scopePrefix := ratelimit.NamespaceScope(cfg.Scope) + "|"
+		const inScope = "substr(a.rl_key, 1, length(CAST($1 AS TEXT))) = $1"
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND attempted_at_ms <= $2`, attempts, inScope), scopePrefix, cutoffMs); err != nil {
 			return false, 0, err
 		}
 		// An expired block goes with the attempts it covered, as on the
@@ -189,10 +179,10 @@ func (s *SQLRateLimitStore) Allow(ctx context.Context, key string, cfg RateLimit
 		// them still in the window and was blocked again, where the
 		// in-memory limiter admits it. Attempts made after the block
 		// expired are fresh and stay.
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE a.rl_key LIKE $1 ESCAPE '\' AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, blocks), scopePrefix, nowMs); err != nil {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND EXISTS (SELECT 1 FROM %s b WHERE b.rl_key = a.rl_key AND b.blocked_until_ms <= $2 AND a.attempted_at_ms < b.blocked_until_ms)`, attempts, inScope, blocks), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE rl_key LIKE $1 ESCAPE '\' AND blocked_until_ms <= $2`, blocks), scopePrefix, nowMs); err != nil {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s AS a WHERE %s AND blocked_until_ms <= $2`, blocks, inScope), scopePrefix, nowMs); err != nil {
 			return false, 0, err
 		}
 	}

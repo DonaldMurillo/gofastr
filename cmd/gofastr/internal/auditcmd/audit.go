@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -17,22 +18,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
-// AuditFinding is one call site of a tracked init-time registration
-// API. The Kind is the "pkg.Func" name (e.g. "style.Contribute") of the
-// API being called.
+// AuditFinding is one candidate call site of a tracked global registration API.
 type AuditFinding struct {
-	Pkg  string // Go import path of the calling package
+	Pkg  string // Package label derived from the selected root
 	Kind string // "style.Contribute", "render.RegisterComponent", …
 	File string // relative path from the audited root
 	Line int
 }
 
-// trackedKinds is the set of (importPath, packageAlias, functionName)
-// tuples that the audit reports. Each entry says: when a file imports
-// `importPath`, calls to `alias.FunctionName(...)` are init-time
-// global-registration side effects worth flagging in an audit.
-//
-// Extend this list as the framework grows new init-time hooks.
+// trackedKinds lists the global registration APIs the audit matches by import and call syntax.
 var trackedKinds = []struct {
 	ImportPath  string
 	PackageName string // the import alias most callers use
@@ -48,10 +42,6 @@ var trackedKinds = []struct {
 
 // auditDeps walks non-test .go files under root, skipping vendor,
 // node_modules, dist, bin, build, tmp, and hidden/underscore descendants.
-// It returns one AuditFinding per tracked init-time registration call.
-//
-// The root must contain a go.mod so package import paths can be
-// computed; modules without go.mod fall back to relative paths.
 func auditDeps(root string) ([]AuditFinding, error) {
 	modulePath := contracts.ReadModulePath(root)
 	var findings []AuditFinding
@@ -66,15 +56,17 @@ func auditDeps(root string) ([]AuditFinding, error) {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		fs, perr := parseFile(path)
-		if perr != nil {
-			// Parse errors aren't fatal. We want the audit to keep
-			// going even when the project is mid-edit.
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		parsed, err := parseFile(path, source)
+		if err != nil {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, path)
 		pkgPath := contracts.ImportPathFor(modulePath, root, filepath.Dir(path))
-		findings = append(findings, scanFile(fs, pkgPath, rel)...)
+		findings = append(findings, scanFile(parsed, pkgPath, rel)...)
 		return nil
 	})
 	if err != nil {
@@ -101,9 +93,9 @@ type parsedFile struct {
 	f    *ast.File
 }
 
-func parseFile(path string) (*parsedFile, error) {
+func parseFile(path string, source []byte) (*parsedFile, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, path, source, parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +112,10 @@ func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
 	// missed cuistyle.Contribute and a dot-imported Contribute.
 	want := make(map[[2]string]string)
 	for _, imp := range pf.f.Imports {
-		ipath := strings.Trim(imp.Path.Value, `"`)
+		ipath, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
 		for _, tk := range trackedKinds {
 			if ipath != tk.ImportPath {
 				continue
@@ -179,12 +174,11 @@ func scanFile(pf *parsedFile, pkg, rel string) []AuditFinding {
 // pointers. Quiet when findings is empty.
 func formatAuditReport(findings []AuditFinding) string {
 	if len(findings) == 0 {
-		return "No init-time global registrations found.\n"
+		return "No candidate global registration call sites found.\n"
 	}
 
 	var b strings.Builder
-	b.WriteString("Init-time global registrations\n")
-	b.WriteString("(packages whose init() can mutate framework-wide state)\n\n")
+	b.WriteString("Candidate global registration call sites\n\n")
 
 	// Group: pkg → kind → []findings
 	type group map[string][]AuditFinding
@@ -228,21 +222,20 @@ func RunAudit(args []string) {
 		fmt.Println("Usage: gofastr audit <subcommand>")
 		fmt.Println()
 		fmt.Println("Subcommands:")
-		fmt.Println("  deps    List packages that perform init-time global registrations")
-		fmt.Println("  lint    Scan for AI-typical mistakes (ignored Exec, missing CSRF, render.HTML concat, t.Skip, …)")
-		fmt.Println("          SUPERSEDED by `gofastr verify security data`: see below")
+		fmt.Println("  deps    Find candidate global registration calls in a source tree")
 		fmt.Println("  a11y    Accessibility audit: static lint of core-ui/html usage, or a full")
 		fmt.Println("          axe-core scan of a running app with --url (see `gofastr audit a11y --help`)")
 		fmt.Println()
-		fmt.Println("`gofastr verify` covers the lint rules and the static half of a11y, with a")
+		fmt.Println("`gofastr verify` covers the source rules and the static half of a11y, with a")
 		fmt.Println("reason and a fix attached to every finding, a config file, and per-line")
 		fmt.Println("suppression. `audit` remains for what verify does not do: the runtime")
-		fmt.Println("browser scan (`a11y --url`) and the dependency report (`deps`).")
+		fmt.Println("browser scan (`a11y --url`) and the registration report (`deps`).")
 	}
-	// `audit --help` (or a help flag on deps/lint) prints the usage and
+	// `audit --help` (or a help flag on deps) prints the usage and
 	// exits 0. Asking for help is not a usage error. a11y owns its
-	// flags and prints its own richer help.
-	if len(args) > 0 && args[0] != "a11y" {
+	// flags and prints its own richer help, and an unknown subcommand
+	// exits 2 even with a help flag.
+	if len(args) > 0 && (args[0] == "deps" || args[0] == "--help" || args[0] == "-h") {
 		for _, a := range args {
 			if a == "--help" || a == "-h" {
 				auditUsage()
@@ -275,29 +268,6 @@ func RunAudit(args []string) {
 			for _, e := range entries {
 				cli.Printf("  %s\n", project.DescribeUnmounted(e))
 			}
-		}
-	case "lint":
-		root := "."
-		if len(args) > 1 {
-			root = args[1]
-		}
-		findings, err := auditLint(root)
-		if err != nil {
-			cli.Fprintf(os.Stderr, "audit lint: %v\n", err)
-			cli.OsExit(1)
-		}
-		// `audit lint` predates the contract system and knows nothing
-		// about gofastr.settings.yml or //gofastr:allow, so it reports
-		// findings verify deliberately exempts. A project running both
-		// gets two answers to the same question. Say which one is
-		// authoritative rather than leaving that to be discovered.
-		cli.Warn("`gofastr audit lint` is superseded by `gofastr verify security data`.")
-		cli.Info("verify covers these rules with a reason, a fix, and an example per finding,")
-		cli.Info("and honours gofastr.settings.yml + //gofastr:allow, which this scan does not.")
-		fmt.Println()
-		cli.Print(formatLintReport(findings))
-		if len(findings) > 0 {
-			cli.OsExit(1)
 		}
 	case "a11y":
 		runAuditA11y(args[1:])

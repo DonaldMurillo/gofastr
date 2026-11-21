@@ -18,6 +18,7 @@ func TestLintKeyGuardEscape(t *testing.T) {
 		{"helper guard", `function composing(e) { return e.isComposing || e.keyCode === 229; } el.onkeydown = e => { if (composing(e)) return; if (e.key === 'Escape') close(); };`, 0},
 		{"helper key", `function escape(e) { return e.key === 'Escape'; } el.onkeydown = e => { if (escape(e)) close(); };`, 1},
 		{"named", `function key(e) { if (e.key === 'Escape') close(); } el.addEventListener('keydown', key);`, 1},
+		{"named arrow", `const onKey = e => { if (e.key === 'Escape') close(); }; el.addEventListener('keydown', onKey);`, 1},
 		{"keyup", `el.addEventListener('keyup', e => { if (e.key === 'Escape') close(); });`, 0},
 		{"hint", `el.onkeydown = e => { say('Escape to close'); };`, 0},
 		{"allow", "//gofastr:allow(keyguard) native numeric control\nel.onkeydown = e => { if (e.key === 'Escape') close(); };", 0},

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 )
 
 // postFormFinding is a custom_form that POSTs to a screen route.
@@ -31,7 +32,8 @@ func (f postFormFinding) Message() string {
 // for the author to point at a handler written after generation.
 // An action on another host, or one matching no screen, is left alone.
 func LintPostFormsOnScreens(bp appspec.AppSpec) []postFormFinding {
-	screens := appspec.AppSpecSynthesizeCRUDScreens(bp).Screens
+	bp = appspec.AppSpecSynthesizeCRUDScreens(bp)
+	router := appSpecScreenProbeRouter(bp)
 	var out []postFormFinding
 	var walk func(screen appspec.AppSpecScreen, blocks []appspec.AppSpecBlock)
 	walk = func(screen appspec.AppSpecScreen, blocks []appspec.AppSpecBlock) {
@@ -48,15 +50,12 @@ func LintPostFormsOnScreens(bp appspec.AppSpec) []postFormFinding {
 			if !ok {
 				continue
 			}
-			for _, s := range screens {
-				if screenRouteMatches(s.Route, path) {
-					out = append(out, postFormFinding{Screen: screen.Name, Action: action, Route: s.Route})
-					break
-				}
+			if target, _, ok := router.Resolve(app.RoutePath(path)); ok {
+				out = append(out, postFormFinding{Screen: screen.Name, Action: action, Route: target.Component.(screenRouteProbe).route})
 			}
 		}
 	}
-	for _, s := range screens {
+	for _, s := range bp.Screens {
 		walk(s, s.Body)
 	}
 	return out
@@ -74,28 +73,5 @@ func formActionPath(route, action string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return base.ResolveReference(ref).Path, true
-}
-
-// screenRouteMatches reports whether path is a URL the screen route
-// serves: literal segments match exactly, a {param} or :param segment
-// matches any one non-empty segment.
-func screenRouteMatches(route, path string) bool {
-	rs := strings.Split(strings.Trim(route, "/"), "/")
-	ps := strings.Split(strings.Trim(path, "/"), "/")
-	if len(rs) != len(ps) {
-		return false
-	}
-	for i, seg := range rs {
-		if strings.HasPrefix(seg, ":") || (strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}")) {
-			if ps[i] == "" {
-				return false
-			}
-			continue
-		}
-		if seg != ps[i] {
-			return false
-		}
-	}
-	return true
+	return base.ResolveReference(ref).EscapedPath(), true
 }

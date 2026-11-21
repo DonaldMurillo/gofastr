@@ -114,7 +114,7 @@ func TestInitAdviceWorksOnInitApp(t *testing.T) {
 	// The scaffolds' refusal on this layout names it and the way
 	// forward, not `gofastr pack` (which cannot read an init app).
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { appgen.GenerateScaffoldScreen([]string{"about"}) })
 	})
 	if code != 1 || strings.Contains(out, "gofastr pack") || !strings.Contains(out, "gofastr init") {

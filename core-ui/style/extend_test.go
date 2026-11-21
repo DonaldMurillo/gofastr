@@ -107,6 +107,28 @@ func TestExtendCollisionAcrossExtensions(t *testing.T) {
 	}
 }
 
+func TestOptionalTokenDefaultsCountAsCollisions(t *testing.T) {
+	th := style.DefaultTheme()
+	th.Strokes.Thin = style.Stroke{}
+	extra := &struct{ Thin style.Stroke }{style.Stroke{Name: "thin", Value: "3px"}}
+	const key = "--stroke-thin"
+	if !strings.Contains(th.CSSCustomProperties(), key+":") {
+		t.Fatalf("theme CSS did not emit the default for %s", key)
+	}
+	t.Run("Extend", func(t *testing.T) {
+		msg := panicText(t, func() { th.Extend(extra) })
+		if !strings.Contains(msg, key) || !strings.Contains(msg, "Theme.Strokes.Thin") {
+			t.Fatalf("Extend should report the default field's collision, got %q", msg)
+		}
+	})
+	t.Run("Validate", func(t *testing.T) {
+		th.Extensions = []any{extra}
+		if err := th.Validate(); err == nil || !strings.Contains(err.Error(), key) {
+			t.Fatalf("Validate should report the default field's collision, got %v", err)
+		}
+	})
+}
+
 func TestExtendRefusesNonTokenInput(t *testing.T) {
 	for name, in := range map[string]any{
 		"string":    "brand",

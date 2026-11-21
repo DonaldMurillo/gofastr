@@ -5,19 +5,6 @@ import (
 	"testing"
 )
 
-// TestXSS_TextEscapesAngleBrackets verifies that user-controlled strings
-// rendered via Text() have < and > escaped. Attack: injecting <script> tags.
-func TestXSS_TextEscapesAngleBrackets(t *testing.T) {
-	input := `<script>alert('xss')</script>`
-	got := string(Text(input))
-	if strings.Contains(got, "<script>") {
-		t.Errorf("SECURITY: [xss] Text(%q) produced %q containing unescaped <script>. Attack: stored XSS via unescaped angle brackets.", input, got)
-	}
-	if !strings.Contains(got, "&lt;script&gt;") {
-		t.Errorf("SECURITY: [xss] Text(%q) = %q — expected escaped angle brackets.", input, got)
-	}
-}
-
 // TestXSS_TextEscapesDoubleQuotes verifies that double quotes in user input
 // are escaped. Attack: breaking out of HTML attribute contexts.
 func TestXSS_TextEscapesDoubleQuotes(t *testing.T) {

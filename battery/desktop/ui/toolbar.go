@@ -13,8 +13,8 @@ import (
 //
 // It composes the framework component instead of forking it, the
 // wrapper-variant shape the desktop plan settled on: ui.Toolbar keeps
-// its semantics (role=toolbar, labelled groups, separators) and its
-// runtime behavior; this stylesheet restyles only the chrome (surface,
+// its labelled group semantics, separators and runtime behavior.
+// This stylesheet restyles only the chrome (surface,
 // border, radius) inside the wrapper's scope, at higher specificity
 // than ui-toolbar's own rules.
 //

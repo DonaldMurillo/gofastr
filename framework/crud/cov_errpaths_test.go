@@ -104,21 +104,47 @@ func dbFromCh(ch *CrudHandler) DBExecutor { return ch.DB }
 func TestEagerLoad_ManyToManyInvalidIdentifiers(t *testing.T) {
 	db := setupDB(t, `CREATE TABLE p (id TEXT PRIMARY KEY)`)
 	ent := entity.Define("p", entity.EntityConfig{Name: "p", Table: "p"}.WithTimestamps(false))
-	ctx := context.Background()
-	// Invalid through table.
-	r := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "bad table!", LocalKey: "lk", ForeignKeyTarget: "fkt"}
-	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r}, []string{"1"}); err == nil {
-		t.Error("invalid through table should error")
+	for _, tc := range []struct {
+		name string
+		rel  entity.Relation
+		want string
+	}{
+		{"through table", entity.ManyToMany("t", "x", "bad table!", "lk", "fkt"), `eager load t: invalid through table "bad table!": query: unsafe SQL identifier "bad table!"`},
+		{"local key", entity.ManyToMany("t", "x", "pivot", "bad key!", "fkt"), `eager load t: invalid local key "bad key!": query: unsafe SQL identifier "bad key!"`},
+		{"FK target", entity.ManyToMany("t", "x", "pivot", "lk", "bad!"), `eager load t: invalid FK target "bad!": query: unsafe SQL identifier "bad!"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EagerLoad(context.Background(), db, ent, []entity.Relation{tc.rel}, []string{"1"})
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("EagerLoad error = %v, want %q", err, tc.want)
+			}
+		})
 	}
-	// Invalid local key.
-	r2 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "pivot", LocalKey: "bad key!", ForeignKeyTarget: "fkt"}
-	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r2}, []string{"1"}); err == nil {
-		t.Error("invalid local key should error")
-	}
-	// Invalid FK target.
-	r3 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "pivot", LocalKey: "lk", ForeignKeyTarget: "bad!"}
-	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r3}, []string{"1"}); err == nil {
-		t.Error("invalid FK target should error")
+}
+
+func TestEagerLoad_InvalidTargetKey(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE x (id TEXT PRIMARY KEY, p_id TEXT)`)
+	ent := entity.Define("p", entity.EntityConfig{Name: "p", Table: "p"}.WithTimestamps(false))
+	target := entity.Define("x", entity.EntityConfig{Name: "x", Table: "x"}.WithTimestamps(false))
+	target.Config.PrimaryKey = []string{"bad pk!"}
+	pivot := entity.Define("pivot", entity.EntityConfig{Name: "pivot", Table: "app.pivot"}.WithTimestamps(false))
+	reg := stubRegistry{byName: map[string]*entity.Entity{"x": target, "pivot": pivot}}
+	for _, tc := range []struct {
+		name string
+		rel  entity.Relation
+	}{
+		{"HasOne", entity.HasOne("t", "x", "p_id")},
+		{"HasMany", entity.HasMany("t", "x", "p_id")},
+		{"BelongsTo", entity.BelongsTo("t", "x", "x_id")},
+		{"ManyToMany before pivot resolution", entity.ManyToMany("t", "x", "pivot", "p_id", "x_id")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EagerLoad(context.Background(), db, ent, []entity.Relation{tc.rel}, []string{"1"}, reg)
+			want := `eager load t: invalid key column: invalid column "bad pk!": query: unsafe SQL identifier "bad pk!"`
+			if err == nil || err.Error() != want {
+				t.Errorf("EagerLoad error = %v, want %q", err, want)
+			}
+		})
 	}
 }
 

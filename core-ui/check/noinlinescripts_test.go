@@ -18,6 +18,21 @@ func writeFixture(t *testing.T, dir, name, body string) {
 	}
 }
 
+// requireNoInlineScripts writes one fixture file into a fresh dir, lints
+// the dir, and fails the test unless the result is clean.
+func requireNoInlineScripts(t *testing.T, name, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	writeFixture(t, dir, name, body)
+	res, err := LintNoInlineScripts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("expected no violations, got:\n%s", res.Error())
+	}
+}
+
 func TestLintNoInlineScripts_FlagsInlineBlock(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x
@@ -32,20 +47,11 @@ var x = render.HTML(`+"`<script>alert(1)</script>`"+`)
 		t.Fatal("expected violation for inline <script> block")
 	}
 }
-
 func TestLintNoInlineScripts_AllowsExternalSrc(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "ok.go", `package x
+	requireNoInlineScripts(t, "ok.go", `package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var x = render.HTML(`+"`<script src=\"/x.js\"></script>`"+`)
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("external <script src=…> must pass:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_FlagsTagCallWithChildren(t *testing.T) {
@@ -64,48 +70,24 @@ var _ = render.Tag("script", nil, render.HTML("alert(1)"))
 }
 
 func TestLintNoInlineScripts_AllowsTagCallWithSrc(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "ok.go", `package x
+	requireNoInlineScripts(t, "ok.go", `package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.Tag("script", map[string]string{"src": "/x.js"})
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("script tag with src should pass:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_AllowsInertJSONType(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "ok.go", `package x
+	requireNoInlineScripts(t, "ok.go", `package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.Tag("script", map[string]string{"type": "application/json"}, render.HTML("{\"x\":1}"))
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("application/json script must pass — browsers don't execute it:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_AllowsInertJSONLiteral(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "ok.go", `package x
+	requireNoInlineScripts(t, "ok.go", `package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script type=\"application/json\">{\"x\":1}</script>`"+`)
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("inert application/json script literal must pass:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_FlagsExecutableType(t *testing.T) {
@@ -124,52 +106,28 @@ var _ = render.Tag("script", map[string]string{"type": "text/javascript"}, rende
 }
 
 func TestLintNoInlineScripts_SkipsTestFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "bad_test.go", `package x
+	requireNoInlineScripts(t, "bad_test.go", `package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("test file violations should be ignored:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_HonorsIgnoreDirective(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "bad.go", `//check-csp:ignore-file
+	requireNoInlineScripts(t, "bad.go", `//check-csp:ignore-file
 package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("//check-csp:ignore-file directive must suppress:\n%s", res.Error())
-	}
 }
 
 func TestLintNoInlineScripts_HonorsGofmtSpacedDirective(t *testing.T) {
-	dir := t.TempDir()
 	// gofmt rewrites //check-csp:… to "// check-csp:…" (hyphenated names
 	// don't qualify as Go directives), so the spaced form must work too.
-	writeFixture(t, dir, "bad.go", `// check-csp:ignore-file
+	requireNoInlineScripts(t, "bad.go", `// check-csp:ignore-file
 package x
 import "github.com/DonaldMurillo/gofastr/core/render"
 var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 `)
-	res, err := LintNoInlineScripts(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("gofmt-spaced ignore directive must suppress:\n%s", res.Error())
-	}
 }
 
 func TestCSPIgnoreDirectiveCRLF(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -464,9 +465,9 @@ func TestDiffSchema_DiffEntityError(t *testing.T) {
 	db, m := mock(t)
 	expectSQLiteDialect(m)
 	m.ExpectQuery("PRAGMA table_info").WillReturnRows(sqlmock.NewRows([]string{"cid", "name", "type", "notnull", "dflt_value", "pk"}))
-	// No-fields entity → diffEntityFromLive returns a buildCreateTableSQL error.
-	if _, err := DiffSchema(ctxB(), db, testReg{"e": rawEnt("e", "e", nil, nil, "")}); err == nil {
-		t.Error("expected DiffSchema diffEntity error")
+	// An invalid column name → diffEntity returns a buildCreateTableSQL error.
+	if _, err := DiffSchema(ctxB(), db, testReg{"e": rawEnt("e", "e", []schema.Field{{Name: "bad col", Type: schema.String}}, nil, "")}); err == nil || !strings.HasPrefix(err.Error(), `diff e: entity e: invalid column name "bad col":`) {
+		t.Fatalf("expected DiffSchema to wrap the invalid column error, got %v", err)
 	}
 }
 
@@ -485,9 +486,9 @@ func TestGeneratePlan_Errors(t *testing.T) {
 	if _, _, _, err := GeneratePlan(Plan{Registry: testReg{"p": bad}}, SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite); err == nil {
 		t.Error("expected GeneratePlan topo-sort error")
 	}
-	// diffEntityFromLive error (no-fields entity, table absent from snapshot).
-	if _, _, _, err := GeneratePlan(Plan{Registry: testReg{"e": rawEnt("e", "e", nil, nil, "")}}, SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite); err == nil {
-		t.Error("expected GeneratePlan diffEntity error")
+	// diffEntity error (invalid column name, table absent from snapshot).
+	if _, _, _, err := GeneratePlan(Plan{Registry: testReg{"e": rawEnt("e", "e", []schema.Field{{Name: "bad col", Type: schema.String}}, nil, "")}}, SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite); err == nil || !strings.HasPrefix(err.Error(), `generate e: entity e: invalid column name "bad col":`) {
+		t.Fatalf("expected GeneratePlan to wrap the invalid column error, got %v", err)
 	}
 }
 

@@ -116,7 +116,8 @@ stats use the single-document contract without needing an output flag.
   unknown flag is an error. A `<name>_handler.go` symlinked out of the
   directory is refused, dangling or not. `new handler` writes
   `<name>_handler.go` into the current directory in the package its Go
-  files already declare (`package main` when there are none). It refuses
+  files already declare (`package main` when there are none);
+  `-overwrite` rewrites an existing file and keeps its package. It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
   predeclared name such as `string`, a name imported by the generated
   handler or any existing Go file in that package (including in-package
@@ -223,8 +224,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 ## App specs
 
 - `gofastr validate <yml>`: validate an app spec without generating
-  (exit 0 = valid; includes the unscoped-PII lint). One app spec per run:
-  a second path or a flag is a usage error, exit 2.
+  (exit 0 = valid, exit 1 = failed validation, including the unscoped-PII
+  lint). A missing path, a first argument starting with `--`, or an extra
+  path or flag exits 2. `--help` or `-h` in any position prints help and
+  exits 0.
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
@@ -236,6 +239,9 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   A configured `styles` entry watches both `.style.css` and `.tokens.css`
   files under its package patterns, including additions and removals;
   generated Go siblings are outputs, not watch inputs.
+  Argument parsing errors exit 2 for `generate`, `generate --watch`, and
+  the `app`, `entity`, `screen`, `package`, `cli`, and `sdk` generators.
+  Use `--out=<dir>` when the path starts with a dash.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,
@@ -271,8 +277,13 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr remount <package> [--force] [--dry-run]`: rewire the imports
   back to the framework's package, delete the copy and its entry.
   Refuses a copy that changed since unmount unless `--force`.
-- `gofastr pack [app-dir]`: snapshot a generated app into a
-  best-effort `gofastr.yml`. Lossy; not an inverse of `generate`.
+- `gofastr pack [app-dir] [-o out.yml]`: snapshot a generated app into a
+  best-effort `gofastr.yml` from its Go source. The snapshot is lossy.
+  The one optional app directory defaults to the current directory. YAML
+  goes to stdout unless `-o` or `--out` (also `-o=` / `--out=`) names a
+  file. The CLI version check reads the selected app's project. An
+  unknown option, missing output name or second app directory exits 2.
+  Packing failures exit 1.
 
 ### Owned styles (`generate styles`)
 
@@ -308,6 +319,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   name that becomes an invalid or colliding Go identifier is a
   generator error, never a mangled name.
 
+  Generation refuses a sheet whose custom media query is invalid
+  against the default theme's breakpoint vocabulary. Verify reports the
+  same source problem under GOFASTR1814.
+
   `ownstyle.Must` compiles the sheet against the default theme, and
   `App.WithTheme` compiles every registered sheet against the app's
   theme (`ownstyle.CheckTheme`): a theme that renames or drops a
@@ -316,13 +331,18 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   the request: the sheet ships empty under that theme and the error
   is logged.
 
-  The sheets are checked against the built-in tokens plus every app
-  token, so `gofastr gen styles` and `gofastr verify` report the same
-  findings. After the last sheet, a literal written in two or more
-  sheets for the same token type is a GOFASTR1822 warning. A
-  `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives that rule on
-  its line (or the next line with code); a marker with no reason waives
-  nothing.
+  `gofastr gen styles` and `gofastr verify` share owned-style checks
+  and group sheets by program and target platform. Each group sees the
+  built-in tokens and its own app tokens. Generation reports parse and
+  model diagnostics before writing Go. Verify reports shared diagnostics
+  with GOFASTR rule IDs and also checks for upstream candidates,
+  kit-root styling, and handle leaks. Repeating a literal for the same
+  token type in two or more sheets produces a GOFASTR1822 warning.
+  A `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule
+  IDs it lists, separated by commas or whitespace, and requires a
+  reason. A waiver on a line of its own covers from its first line
+  through the next line with code; one after code covers its first
+  line. Use `gofastr:allow-file` for a file-wide waiver.
 
   The command also writes `.gofastr/tokens.css`: every theme and app
   token as `--name: <light value>; /* dark: <value> */` under `:root`,
@@ -365,7 +385,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr test [flags] [packages]`: run the project's tests (`./...`
   when no packages are named). Flags: `--run`, `--bench`, `--timeout`
   (each as `--run=X` or `--run X`), `--race`, `--cover`, `--short`; an
-  unknown flag is an error.
+  unknown flag is an error. If test output exceeds the per-line limit,
+  the command stops the test process, reports truncation and exits 1.
 - `gofastr docs [topic]`: these docs, offline, versioned with the
   binary (`--list` every topic, `--grep <term>` or `--grep=<term>` to search).
 - `gofastr docs serve`: the docs website on `127.0.0.1:8083`, for
@@ -382,7 +403,8 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (Go toolchain and network on first run, `--refresh` to rebuild) and
   starts the live site, so every demo works; it needs a fixed `--port`,
   refuses one that is already taken, and serves v0.82.0 or later. A local or `@main` build has
-  no release, so it needs `--release` or `--dir`.
+  no release, so it needs `--release` or `--dir`. Help goes to stdout.
+  Usage errors print to stderr and exit 2.
 
 ## Ship
 
@@ -484,9 +506,9 @@ notes:
 The retired-markup check that test binaries and `gofastr dev` run over
 rendered pages reads a table generated from this registry, not the
 registry itself, so a release-note edit does not re-run every package
-that serves markup. The table lists every kit class and attribute
-(`ui-*`, `fui-*`, `data-cui-*`, `data-fui-*`, `data-hui-*`) a breaking
-note's `find:` names, with that note's version and `change:` text; the
+that serves markup. The table lists kit classes (`ui-*`, `fui-*`, `cui-*`) and attributes
+(`data-cui-*`, `data-fui-*`, `data-hui-*`) named by a breaking note's
+`find:` block, along with that note's version and `change:` text. The
 note above names `ui-site-header`. So run `go generate ./internal/retired`
 and commit `internal/retired/retired_table.gen.go` whenever you add,
 drop or rename such a name, edit the `change:` text of a note that names
@@ -639,7 +661,7 @@ class read from the database) never appears there, but the rendered
 HTML can't hide it. So in Go test binaries and under `gofastr dev`, the
 framework scans each markup response it serves (pages, island RPC
 answers, widget chrome, HTML carried in JSON signal values) for the
-registry's retired classes and `data-cui-*` attributes, read the way a
+registry's retired kit classes and attributes, read the way a
 browser reads them (nothing inside comments or raw-text elements such
 as `script`, `iframe` and `noscript`; character references decoded;
 the first of duplicate attributes only):
@@ -675,25 +697,22 @@ the registry — the check has no serving cost and no link on
 
 ## Audit
 
-The `audit` subcommands predate `verify` and remain for the two things it
-does not cover: a runtime browser scan, and the dependency report.
+The `audit` subcommands run a browser accessibility scan against a
+running app and report global registration calls.
 
 - `gofastr audit a11y --url <base>`: axe-core scan of a running app in
-  both color schemes (`--email`/`--password` log in first). The
-  password takes the `-` marker and is then read from
+  both color schemes. With no `--pages` list, the browser discovers pages
+  from `/sitemap.xml`, including split sitemaps. Pass `--email` and
+  `--password` together with `--url` to log in before discovery.
+  The password takes the `-` marker and is then read from
   `GOFASTR_AUDIT_PASSWORD` or piped stdin; a literal value still
   works but warns that argv is visible to every local process via
   ps. The *static* accessibility rules are part of
   `gofastr verify accessibility`.
-- `gofastr audit lint`: the original AI-mistake scanner. Superseded by
-  `gofastr verify security data`, which covers the same rules with a
-  reason and a fix attached to each. The legacy scanner still reports
-  malformed test files, unannotated skips, and discarded Exec results
-  (including bare, deferred, and goroutine calls). Explicit test-lane
-  boundaries remain accepted. A `// safe-sql: <why>` comment suppresses
-  that line's SQL heuristic, and comments preserve diagnostic line numbers.
-- `gofastr audit deps`: list dependencies that perform init-time
-  global registrations, then the [unmounted](unmount.md) packages.
+- `gofastr audit deps [root]`: list candidate global registration calls
+  in the selected source tree (default the current directory), then the
+  [unmounted](unmount.md) packages. See
+  [Auditing global registration call sites](audit-deps.md).
 
 Static audit, sandbox, recursive CSP, behavior discovery, and provenance
 walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but
@@ -706,19 +725,27 @@ root or another I/O failure still fails the check.
 
 `gofastr deploy <user@host>` puts the app on one Linux server over SSH
 as a systemd service: it builds for the server's CPU, copies the binary,
-starts it, and waits for the health check. A release that does not pass
-is replaced by the one before it. See [Deployment](deploy.md).
+starts it, and waits for the health check. If activation or the check
+fails, it tries to restore the previous release. With no earlier
+release, the failed release stays in place. See [Deployment](deploy.md).
 
-- `gofastr deploy <user@host>`: build, copy, start, check. `--name`
-  (service, user and directory; default this directory's name), `--pkg`,
-  `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
+- `gofastr deploy <user@host>` builds, copies, starts, and checks the app. `--name`
+  names the service, user, and directory. It defaults to the lowercased
+  directory basename. Set `--name` explicitly if that default is invalid.
+  Names have 1 to 31 characters, start with a lower-case ASCII letter, and
+  use only lower-case ASCII letters, digits, and hyphens. Other flags are
+  `--pkg`, `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
   `--port` (default 8080) and `--health` (default `/healthz`) for the
-  check, `--wait <seconds>` (default 30), `--keep <n>` earlier releases
-  (default 5), `--ssh-port`, `-i <identity file>`.
-- `gofastr deploy rollback <user@host>`: start the release before the
-  running one.
-- `gofastr deploy status <user@host>`: the release running, whether the
-  service is active, whether it answers, and the releases kept.
+  check, `--wait <seconds>` for each release's health check (default 30),
+  `--keep <n>` earlier releases (default 5), `--ssh-port`, `-i <identity file>`.
+- `gofastr deploy rollback <user@host>` starts the release before the
+  running one, using its own environment and health settings.
+- `gofastr deploy status <user@host>` shows the release in place, the
+  service state, and the releases kept. It checks health only when the
+  service is active.
+
+For releases without saved health settings, `rollback` and `status`
+use the invocation's `--port` and `--health` values.
 
 ## Telemetry
 

@@ -16,11 +16,14 @@ myapp/
 ├── screens_auth.go     # /login and /register over battery/auth (wired in main.go)
 ├── entities/           # Go entity declarations: the source of truth
 │   └── entities.go     # app.Entity(...) registrations (sample: posts, at /api/posts)
-├── migrations/         # versioned SQL (reversible)
-├── static/             # empty placeholder; serve it with uihost.WithStaticDir("static")
-├── gofastr.settings.yml   # project settings: isolation, codegen, contracts
-├── go.mod
-└── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding
+├── migrations/.gitkeep # placeholder for versioned SQL migrations
+├── static/.gitkeep     # placeholder for files served with uihost.WithStaticDir("static")
+├── gofastr.settings.yml # enables worktree isolation and sets its port defaults
+├── go.mod              # sets Go requirements and pins GoFastr to the CLI version when available
+├── .env                # DATABASE_URL, JWT_SECRET, PORT=localhost:8080 (0600, gitignored)
+├── .gitignore          # ignores gen/, .gofastr/, *.db, *.db-shm, *.db-wal, .env, bin/
+├── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding
+└── .claude/skills/gofastr-host/SKILL.md        # Claude Code skill
 ```
 
 That's the whole thing. One `main.go`, your declarations, and the generated

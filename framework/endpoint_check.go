@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/openapi"
 )
 
 // EndpointRouteError is the error for the endpoint at Index whose route
@@ -46,7 +47,7 @@ func ValidateEntityEndpointRoutes(mount string, opts crud.CrudRouteOptions, with
 		}
 	}
 	for i, ep := range endpoints {
-		pattern := strings.ToUpper(strings.TrimSpace(ep.Method)) + " " + ep.Path
+		pattern := openapi.EntityEndpointMethod(ep.Method) + " " + ep.Path
 		if !muxAccepts(http.NewServeMux(), pattern) {
 			return &EndpointRouteError{Index: i, Err: fmt.Errorf("endpoint %q has malformed route %q: use a valid absolute ServeMux path and method", ep.Path, pattern)}
 		}

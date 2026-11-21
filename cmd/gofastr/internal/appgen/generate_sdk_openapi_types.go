@@ -126,7 +126,11 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 	if schema == nil {
 		return oaRaw, false, nil
 	}
-	if ref, isRef := schema["$ref"].(string); isRef {
+	if raw, isRef := schema["$ref"]; isRef {
+		ref, ok := raw.(string)
+		if !ok {
+			return nil, false, fmt.Errorf("$ref: want a string, got %T", raw)
+		}
 		if name, seen := ts.byRef[ref]; seen {
 			return &oaType{Kind: "struct", Name: name}, ts.refNullable[ref], nil
 		}

@@ -1,33 +1,11 @@
 package sdk
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
-
-// zzRound2Registry is a slice-backed entity.Registry that preserves Version,
-// mirroring framework.Registry's (name, version) keying.
-type zzRound2Registry struct{ ents []*entity.Entity }
-
-func (r *zzRound2Registry) All() map[string]*entity.Entity {
-	m := make(map[string]*entity.Entity, len(r.ents))
-	for _, e := range r.ents {
-		m[e.Config.Name] = e
-	}
-	return m
-}
-func (r *zzRound2Registry) AllSorted() []*entity.Entity { return r.ents }
-func (r *zzRound2Registry) Get(name string) (*entity.Entity, error) {
-	for _, e := range r.ents {
-		if e.Config.Name == name {
-			return e, nil
-		}
-	}
-	return nil, fmt.Errorf("entity %q not found", name)
-}
 
 func zzRound2PostsConfig() entity.EntityConfig {
 	return entity.EntityConfig{
@@ -72,7 +50,7 @@ func TestNoDriftForGroupMountedEntity(t *testing.T) {
 	// Serving half, one entity, mounted via app.GroupEntity(app.Group("/api/v1"), ...).
 	v1 := entity.Define("posts", zzRound2PostsConfig())
 	v1.Version = "/api/v1"
-	reg := &zzRound2Registry{ents: []*entity.Entity{v1}}
+	reg := &versionedTestRegistry{ents: []*entity.Entity{v1}}
 	liveHash := hashOf(RegistryNamedConfigs(reg, []string{"posts"}))
 
 	if liveHash != manifestHash {

@@ -1,10 +1,24 @@
 package auditcmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestDependencyAuditReportsUnreadableSource(t *testing.T) {
+	root := t.TempDir()
+	brokenLink := filepath.Join(root, "missing.go")
+	if err := os.Symlink(filepath.Join(root, "missing-target"), brokenLink); err != nil {
+		t.Fatal(err)
+	}
+	_, err := auditDeps(root)
+	var pathErr *os.PathError
+	if !errors.Is(err, os.ErrNotExist) || !errors.As(err, &pathErr) || pathErr.Path != brokenLink {
+		t.Fatalf("auditDeps error = %v, want read failure for %s", err, brokenLink)
+	}
+}
 
 func TestDependencyAuditFollowsLinkedPackages(t *testing.T) {
 	root := t.TempDir()

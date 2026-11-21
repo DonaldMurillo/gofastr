@@ -58,6 +58,11 @@ open. One of the user's own that group or others can reach is
 tightened back to 0700. A record holds no secret: a name, a
 URL, a pid, its start value and two paths.
 
+`localrun.Register` checks the URL, MCP path and 16 KiB record size limit
+before writing either file. Its unregister function removes the record
+and sidecar from the original directory even if `GOFASTR_RUNS_DIR`
+changes later.
+
 ## Reading the registry
 
 ```go
@@ -136,11 +141,14 @@ children inherit too.
 
 - **Treating a record as proof the port is this app.** Any process of
   the same OS user can write a file into the directory, and a pid freed
-  by a crash can be reused by an unrelated process, which keeps the old
-  record listed until that process exits. A run that exited but was
-  never reaped by its parent (a zombie) still answers the pid check, so
-  its record stays listed until the parent reaps it. Use the record to
-  find a run, then talk to it.
+  by a crash can be reused by an unrelated process: a record with no
+  readable `.start` value (the compatibility fallback) stays listed
+  until that process exits, while a start-value mismatch deletes the
+  record. On Linux and macOS, a run that exited but was never reaped
+  by its parent (a zombie) reads as gone when the process state is
+  available, so the registry deletes its record. If the state cannot
+  be read, or on other Unix targets, liveness relies on signal zero
+  alone. Use the record to find a run, then talk to it.
 - **Expecting a record from an embedded router.** Only `App.Start`
   writes one. An app mounted inside another server, or a test serving
   `App.Router()` through `httptest`, is not in the registry.

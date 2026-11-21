@@ -58,8 +58,12 @@ Field names are lowercase snake_case. The field types a browser record
 can hold are `String`, `Text`, `Int`, `Float`, `Bool`, `Enum`, `Date`
 and `Timestamp`; `Relation`, `JSON`, `Decimal`, `UUID`, `Image` and
 `File` are refused. `Required`, `Min`, `Max` (numeric bounds, or string
-length), `Pattern`, `Values` and `Default` are honored. Any mistake is
-a panic at startup.
+length), `Pattern`, `Values` and `Default` are honored. `Define` checks a
+default's type, bounds, allowed values and pattern, and panics at startup
+with the field name if the default is invalid. A required field cannot
+have an empty string default. `Timestamp` defaults use RFC 3339 with a
+time zone and a period before any fractional seconds. They normalize to
+UTC with milliseconds and must land within years 0000 through 9999.
 
 ## The form
 

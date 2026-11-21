@@ -1,0 +1,11 @@
+primitive: search
+summary: Keyword search documents and exact field filters across memory, SQLite and Postgres.
+code:
+  - battery/search/
+docs:
+  - framework/docs/content/search.md
+invariants:
+  - id: reject-nul-in-fields-and-filters
+    rule: The built-in search backends refuse NUL bytes in encoded document field keys and string values and in exact field filter keys and values before indexing or searching.
+    enforced_by:
+      - test: battery/search.TestSearchFieldNULParity

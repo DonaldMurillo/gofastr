@@ -26,10 +26,11 @@ func TestRedisStartNegativeIntervalPanics(t *testing.T) {
 	q.Start(context.Background(), -time.Second)
 }
 
-func TestRedisStartZeroIntervalKeepsDefault(t *testing.T) {
+func TestRedisStartZeroIntervalDoesNotPanic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	q := &RedisQueue{}
-	// Must not panic; the ticker goroutine exits on ctx cancel.
+	// Must not panic; the ticker goroutine exits on ctx cancel. The 30s
+	// default lands inside Start's goroutine and is not observable here.
 	q.Start(ctx, 0)
 }

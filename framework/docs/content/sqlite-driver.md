@@ -183,9 +183,13 @@ automatically, configure `.OnDeleteCascade()` (or `.OnDeleteAction(entity.OnDele
 on the relation. ManyToMany pivot tables always cascade automatically. (Note: `.Cascade()`
 enables nested cascade writes, not delete cascading.)
 
-The delete action is written when the table is created or rebuilt. Adding or changing
-`.OnDeleteAction(...)` on an existing table emits no schema diff or warning. Rebuild
-the table with a versioned migration to change the action on an existing database.
+The delete action is written when the table is created or rebuilt. For an
+existing table, `DiffSchema` reports a change to `.OnDeleteAction(...)`.
+`ApplySchemaDiffWithOptions` with `AllowDestructive` applies it by rebuilding
+the table because SQLite cannot alter a constraint. Boot leaves existing
+foreign keys in place, and `gofastr migrate generate` skips their comparison
+because the snapshot records no constraint names. To track the change in a
+versioned migration, write the table rebuild by hand.
 
 **Removing `_time_format=sqlite` from a DSN you build yourself.** The
 readers in `battery/auth` and `framework/outbox` accept either RFC3339 or

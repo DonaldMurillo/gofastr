@@ -177,6 +177,12 @@ limit, or a payload cap the socket cannot carry is a construction-time
 programmer error, not a runtime
 condition to limp along with.
 
+`Config.Path` defaults to `/__gofastr/rtc`. Use a literal absolute path
+such as `/calls/signaling` to change it. `rtc.New` rejects paths containing
+ServeMux metacharacters (`{`, `}`, or `$`), the bare `/__gofastr` namespace
+root, and reserved framework routes such as `/__gofastr/sse` and their
+subpaths.
+
 `Authorize` is required for `Init`, `Mount`, and `ServeHTTP` (a mounted
 endpoint with no gate is a bug, so `Mount` panics on a nil hook). A
 returned error refuses the upgrade with 403, or the status carried by a

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +16,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
+	"github.com/DonaldMurillo/gofastr/evals/internal/codexlog"
+	"github.com/DonaldMurillo/gofastr/evals/internal/mdtext"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 const ginVersion = "v1.11.0"
@@ -65,7 +69,7 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		return nil, err
 	}
-	cliPath := filepath.Join(runDir, "tools", executableName("gofastr"))
+	cliPath := filepath.Join(runDir, "tools", proctree.ExecutableName("gofastr"))
 	if contains(cfg.Frameworks, "gofastr") {
 		if err := os.MkdirAll(filepath.Dir(cliPath), 0o700); err != nil {
 			return nil, err
@@ -83,20 +87,22 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 		framework  string
 		repetition int
 	}
+	// Errors ride the same channel as results: a separate buffered
+	// errs channel deadlocks once failures exceed cfg.Concurrency,
+	// because workers block before the main loop ever drains it.
+	type trialOutcome struct {
+		result TrialResult
+		err    error
+	}
 	jobs := make(chan job)
-	results := make(chan TrialResult)
-	errs := make(chan error, cfg.Concurrency)
+	outcomes := make(chan trialOutcome)
 	var workers sync.WaitGroup
 	for range cfg.Concurrency {
 		workers.Go(func() {
 			for current := range jobs {
 				result, runErr := runTrial(ctx, cfg, runDir, cliPath, version,
 					current.framework, current.repetition)
-				if runErr != nil {
-					errs <- runErr
-					continue
-				}
-				results <- result
+				outcomes <- trialOutcome{result: result, err: runErr}
 			}
 		})
 	}
@@ -108,17 +114,17 @@ func Run(ctx context.Context, cfg Config) (*Aggregate, error) {
 		}
 		close(jobs)
 		workers.Wait()
-		close(results)
-		close(errs)
+		close(outcomes)
 	}()
 
-	for result := range results {
-		aggregate.Trials = append(aggregate.Trials, result)
-		_ = writeJSON(filepath.Join(runDir, "results.partial.json"), aggregate)
-	}
 	var runErrors []string
-	for runErr := range errs {
-		runErrors = append(runErrors, runErr.Error())
+	for outcome := range outcomes {
+		if outcome.err != nil {
+			runErrors = append(runErrors, outcome.err.Error())
+			continue
+		}
+		aggregate.Trials = append(aggregate.Trials, outcome.result)
+		_ = writeJSON(filepath.Join(runDir, "results.partial.json"), aggregate)
 	}
 	sort.Slice(aggregate.Trials, func(i, j int) bool {
 		if aggregate.Trials[i].Repetition != aggregate.Trials[j].Repetition {
@@ -217,7 +223,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	}
 	//gofastr:allow(rootread) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 	if log, err := os.ReadFile(initialLog); err == nil {
-		initial.Tokens = ParseTokenUsage(log)
+		initial.Tokens = codexlog.ParseTokenUsage(log)
 	}
 	trial.Initial = initial
 	if err := writeJSON(filepath.Join(cellDir, "initial-grade.json"), initial); err != nil {
@@ -243,7 +249,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 		}
 		//gofastr:allow(rootread) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 		if log, err := os.ReadFile(maintenanceLog); err == nil {
-			maintenance.Tokens = ParseTokenUsage(log)
+			maintenance.Tokens = codexlog.ParseTokenUsage(log)
 		}
 		trial.Maintenance = &maintenance
 		if err := writeJSON(filepath.Join(cellDir, "maintenance-grade.json"), maintenance); err != nil {
@@ -360,8 +366,7 @@ func runCodex(ctx context.Context, cfg Config, workspace, logPath, finalPath, fr
 	args = append(args, "-")
 	runCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, cfg.Codex, args...)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(cfg.Codex, args...)
 	cmd.Dir = workspace
 	cmd.Env = codexEnvironment(
 		cfg.CodexHome,
@@ -370,7 +375,7 @@ func runCodex(ctx context.Context, cfg Config, workspace, logPath, finalPath, fr
 	)
 	cmd.Stdin = strings.NewReader(agentPrompt(framework, maintenance))
 	cmd.Stdout, cmd.Stderr = logFile, logFile
-	err = cmd.Run()
+	err = proctree.Run(runCtx, cmd)
 	if runCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("Codex timed out after %s", cfg.Timeout)
 	}
@@ -412,19 +417,7 @@ func cfgDurationText(duration time.Duration) string {
 }
 
 func codexEnvironment(codexHome, toolDir, workspace string) []string {
-	env := make([]string, 0, len(os.Environ())+1)
-	for _, entry := range os.Environ() {
-		name, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		upper := strings.ToUpper(name)
-		if strings.HasPrefix(upper, "CODEX_") || upper == "PATH" || upper == "GOCACHE" ||
-			upper == "GOFLAGS" || looksCredentialBearing(upper) {
-			continue
-		}
-		env = append(env, entry)
-	}
+	env := childenv.AgentEnvironment([]string{"PATH", "GOCACHE", "GOFLAGS"}, nil)
 	env = append(env,
 		"CODEX_HOME="+codexHome,
 		"GOCACHE="+filepath.Join(workspace, ".cache", "go-build"),
@@ -433,13 +426,6 @@ func codexEnvironment(codexHome, toolDir, workspace string) []string {
 	)
 	sort.Strings(env)
 	return env
-}
-
-// looksCredentialBearing delegates to the shared list. The rule used to
-// be hand-copied here and in ui-quality's runner, and the two had
-// already drifted apart.
-func looksCredentialBearing(name string) bool {
-	return childenv.LooksCredentialBearing(name)
 }
 
 func normalizeConfig(cfg *Config) error {
@@ -547,39 +533,13 @@ func RenderMarkdown(aggregate *Aggregate) string {
 			for _, check := range phase.result.Checks {
 				if !check.Passed {
 					fmt.Fprintf(&b, "- `%s` %s: **%s** — %s\n",
-						trial.ID, phase.name, check.ID, escapeMarkdownText(truncateText(check.Evidence, 220)))
+						trial.ID, phase.name, check.ID, mdtext.Escape(truncateText(check.Evidence, 220)))
 				}
 			}
 		}
 	}
 	return b.String()
 }
-
-// markdownTextEscapes neutralises candidate-controlled text on its way
-// into the committed RESULTS.md. Evidence bytes come from the thing
-// being evaluated (HTTP bodies via %q, compiler output raw), so an
-// image reference or a leading "# " would otherwise plant a beacon
-// every renderer of the committed report fetches, or rewrite the
-// document structure the operator reads scores from. Markdown-
-// significant bytes become HTML entities (renderers show the literal
-// character, never structure) and embedded newlines are flattened so
-// candidate output cannot add lines to the report.
-var markdownTextEscapes = strings.NewReplacer(
-	"&", "&amp;",
-	"<", "&lt;",
-	">", "&gt;",
-	"!", "&#33;",
-	"[", "&#91;",
-	"]", "&#93;",
-	"#", "&#35;",
-	"*", "&#42;",
-	"`", "&#96;",
-	"\n", " ",
-	"\r", " ",
-)
-
-// escapeMarkdownText applies markdownTextEscapes to one field.
-func escapeMarkdownText(s string) string { return markdownTextEscapes.Replace(s) }
 
 func writeJSON(path string, value any) error {
 	data, err := json.MarshalIndent(value, "", "  ")

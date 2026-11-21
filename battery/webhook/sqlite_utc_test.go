@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
 // SQLite stores a timestamp as text with its offset, and the claim
@@ -201,7 +203,9 @@ func TestSQLiteStoreRewritesZonedDueTimes(t *testing.T) {
 
 	// Another process claimed the row between the read and the rewrite:
 	// the rewrite of the text it read must not move the lease back.
-	if err := s2.rewriteDueTime("old", "2026-10-30 22:00:00+10:00", utcBase); err != nil {
+	if err := rewriteSQLiteTime(db, s2.delTable, "old", query.TimeFix{
+		Col: "next_attempt_at", Read: "2026-10-30 22:00:00+10:00", At: utcBase,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if again, err := s2.ClaimDueDeliveries(ctx, utcBase.Add(2*time.Second), 10, time.Minute); err != nil || len(again) != 0 {

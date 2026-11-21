@@ -31,21 +31,9 @@ var Route = struct {
 	Path:    routePathSlice,
 	Pattern: routePatternSlice,
 	Title:   routeTitleSlice,
-	Param:   func(name string) *Slice[string] { return routeParam(name) },
-	Query:   func(key string) *Slice[string] { return routeQuery(key) },
+	Param:   routeParam,
+	Query:   routeQuery,
 }
-
-// RouteSlices is Route as methods; both address the same slices.
-type RouteSlices struct{}
-
-// Path returns the route.path slice (the decoded request path).
-func (RouteSlices) Path() *Slice[string] { return routePathSlice }
-
-// Pattern returns the route.pattern slice, the matched route's pattern.
-func (RouteSlices) Pattern() *Slice[string] { return routePatternSlice }
-
-// Title returns the route.title slice (the effective post-Load title).
-func (RouteSlices) Title() *Slice[string] { return routeTitleSlice }
 
 var (
 	routeParamMu    sync.Mutex
@@ -55,8 +43,7 @@ var (
 	routeQueryNames []string
 )
 
-// Param declares and returns the route.params.<name> slice.
-func (RouteSlices) Param(name string) *Slice[string] {
+func routeParam(name string) *Slice[string] {
 	routeParamMu.Lock()
 	defer routeParamMu.Unlock()
 	if sl, ok := routeParamSli[name]; ok {
@@ -68,8 +55,7 @@ func (RouteSlices) Param(name string) *Slice[string] {
 	return sl
 }
 
-// Query declares and returns the route.query.<key> slice.
-func (RouteSlices) Query(key string) *Slice[string] {
+func routeQuery(key string) *Slice[string] {
 	routeParamMu.Lock()
 	defer routeParamMu.Unlock()
 	if sl, ok := routeQuerySli[key]; ok {
@@ -80,10 +66,6 @@ func (RouteSlices) Query(key string) *Slice[string] {
 	routeQueryNames = append(routeQueryNames, key)
 	return sl
 }
-
-func routeParam(name string) *Slice[string] { return RouteSlices{}.Param(name) }
-
-func routeQuery(key string) *Slice[string] { return RouteSlices{}.Query(key) }
 
 // IsRouteName reports whether a signal name belongs to the family.
 func IsRouteName(name string) bool {

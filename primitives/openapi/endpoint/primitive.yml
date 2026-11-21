@@ -11,11 +11,16 @@ invariants:
       - test: framework.TestAPIPrefixAppliesToRelativeEntityEndpoints
       - test: framework.TestAPIPrefixSkipsAbsoluteEntityEndpoints
       - test: framework/openapi.TestVersionedSpecDoubleAPIPrefix
+  - id: grouped-endpoint-uses-published-path
+    rule: Grouped endpoints use EntityEndpointRoutePath in the router and OpenAPI. An absolute path bypasses the group prefix and keeps the group middleware.
+    enforced_by:
+      - test: framework.TestGroupAbsoluteEndpointMatchesPublishedOpenAPI
   - id: path-is-literal
     rule: An endpoint path drops "." and ".." segments and spells ":name" as "{name}".
     enforced_by:
       - test: framework/openapi.TestEndpointPathRejectsDotSegments
       - test: framework/openapi.TestColonInputStaysInPath
+      - test: framework.TestCovGroupEndpointsHappy
   - id: tool-names-stay-distinct
     rule: DefaultEndpointToolName maps distinct routes to distinct names ("/" to "_", a {param} to -param-, hyphens kept).
     enforced_by:

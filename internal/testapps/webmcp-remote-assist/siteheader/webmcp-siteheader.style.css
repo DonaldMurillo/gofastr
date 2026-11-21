@@ -43,3 +43,5 @@
 }
 .links a:hover,
 .links a[aria-current="page"] { color: var(--color-text); }
+.brand:focus-visible,
+.links a:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }

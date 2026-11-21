@@ -107,6 +107,44 @@ func TestValidRegistryIsClean(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads primitives/ *.go *.md
+func TestREADMEExampleLints(t *testing.T) {
+	repo := filepath.Join("..", "..")
+	readme, err := os.ReadFile(filepath.Join(repo, "primitives", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rest, opened := strings.Cut(string(readme), "```yaml\n")
+	example, _, closed := strings.Cut(rest, "\n```")
+	if !opened || !closed {
+		t.Fatal("the registry README needs a fenced YAML example")
+	}
+	root := t.TempDir()
+	write(t, root, "primitives/crud/primitive.yml", "primitive: crud\nsummary: Serves rows.\ncode:\n  - framework/crud/\n")
+	write(t, root, "primitives/crud/include/primitive.yml", example+"\n")
+	for _, rel := range []string{
+		"go.mod",
+		"framework/crud/eager.go",
+		"framework/crud/eager_security_test.go",
+		"framework/crud/include.go",
+		"framework/docs/content/includes.md",
+		"framework/imagefield/imagefield.go",
+		"framework/image/image.go",
+		"internal/analyzers/mapwriter/mapwriter.go",
+		"internal/analyzers/suite/suite.go",
+		"framework/contracts/catalog.go",
+	} {
+		src, err := os.ReadFile(filepath.Join(repo, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, root, rel, string(src))
+	}
+	if got := lint(t, root); len(got) != 0 {
+		t.Fatalf("README example has findings:\n%s", strings.Join(got, "\n"))
+	}
+}
+
 func TestLintRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name, old, new, want string
@@ -115,6 +153,7 @@ func TestLintRefuses(t *testing.T) {
 		{"missing summary", "summary: Keeps rows.\n", "", "missing summary"},
 		{"id does not match directory", "primitive: store", "primitive: shop", `the directory makes it "store"`},
 		{"code matches nothing", "pkg/store/\n", "pkg/gone/\n", `code "pkg/gone/" matches no file`},
+		{"code file with a trailing slash", "pkg/store/\n", "go.mod/\n", `code "go.mod/" matches no file`},
 		{"docs missing", "docs/store.md", "docs/gone.md", `docs "docs/gone.md" is not a file`},
 		{"deny is no package", "deny: pkg/heavy", "deny: pkg/gone", `deny "pkg/gone" is not a Go package`},
 		{"from is no package", "from: [pkg/store]", "from: [pkg/gone]", `from "pkg/gone" is not a Go package`},
@@ -140,6 +179,7 @@ func TestLintRefuses(t *testing.T) {
 		{"twin site missing", "path: pkg/heavy/heavy.go", "path: pkg/heavy/gone.go", `site "pkg/heavy/gone.go" is not a file`},
 		{"twin site without note", "        note: sorts on export\n", "", "missing note"},
 		{"applies matches nothing", "      - pkg/heavy/\n", "      - pkg/gone/\n", `applies "pkg/gone/" matches no file`},
+		{"applies file with a trailing slash", "      - pkg/heavy/\n", "      - go.mod/\n", `applies "go.mod/" matches no file`},
 		{"applies only to own files", "      - pkg/heavy/\n", "      - pkg/store/*.go\n", `applies "pkg/store/*.go" matches only files store owns`},
 		{"applies is not a list", "    applies:\n      - pkg/heavy/\n", "    applies: pkg/heavy/\n", "applies must be a list"},
 		{"rejected without why", "        why: It was slow.\n", "", "missing why"},
@@ -162,6 +202,44 @@ func TestUnregisteredAnalyzerIsRefused(t *testing.T) {
 	write(t, root, "internal/analyzers/suite/suite.go", "package suite\n")
 	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, `analyzer "orderly" is not registered`) {
 		t.Fatalf("got:\n%s", got)
+	}
+}
+
+func TestCommentsDoNotRegisterEnforcers(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	write(t, root, "internal/analyzers/suite/suite.go", "package suite\n\n// import _ \"example.test/m/internal/analyzers/orderly\"\n")
+	write(t, root, "framework/contracts/catalog.go", "package contracts\n\n// const Rule = \"RULE1\"\n")
+	got := strings.Join(lint(t, root), "\n")
+	for _, want := range []string{`analyzer "orderly" is not registered`, `contract rule "RULE1" is not in`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want a finding containing %q, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestImportRulesRequireLiteralGoPackages(t *testing.T) {
+	for _, tc := range []struct {
+		name, old, new, want string
+	}{
+		{"from wildcard", "from: [pkg/store]", "from: [pkg/st*]", `from "pkg/st*" must name a literal Go package directory`},
+		{"deny wildcard", "deny: pkg/heavy", "deny: pkg/hea?y", `deny "pkg/hea?y" must name a literal Go package directory`},
+		{"from test-only package", "from: [pkg/store]", "from: [pkg/tests]", `from "pkg/tests" must contain non-test Go source`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := fixture(t, strings.Replace(validPrimitive, tc.old, tc.new, 1))
+			write(t, root, "pkg/tests/only_test.go", "package tests\n")
+			c, findings, err := Load(root)
+			if err != nil || len(findings) != 0 {
+				t.Fatal(err, findings)
+			}
+			t.Cleanup(c.Close)
+			if got := c.Lint(); !slices.ContainsFunc(got, func(f Finding) bool { return strings.Contains(f.Msg, tc.want) }) {
+				t.Errorf("lint want a finding containing %q, got %v", tc.want, got)
+			}
+			if _, err := c.Generate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("generation want an error containing %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 
