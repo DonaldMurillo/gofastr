@@ -27,7 +27,7 @@ Run `gofastr help` for an overview or `gofastr <command> --help` for every flag.
 ## Scaffold
 
 - **`gofastr init <name>`** (or `gofastr init .`): scaffold a flat GoFastr app—`main.go`, `screens.go`, `DESIGN.md`, `gofastr.settings.yml`, `.env`, git, and agent onboarding files (`AGENTS.md`, `CLAUDE.md`, `.agents/`).
-  - `--no-entity`: skip the sample `posts` entity and auth screens for a barebones start.
+  - `--no-entity`: skip the sample `posts` entity, auth screens, and database wiring for a barebones start.
   - `--db=sqlite|postgres`: pick the database driver (default `sqlite`).
   - `--module=<path>`: set the Go module path.
   - `--reinit`: refresh agent onboarding files in an existing project without touching Go code (`--force` overwrites edits).
@@ -51,7 +51,7 @@ Run `gofastr help` for an overview or `gofastr <command> --help` for every flag.
 - **`gofastr verify [capability...]`**: check your app against the contract rules covering routing, permissions, security, data, entities, architecture, rendering, accessibility, performance, testing, and AI ([contracts](contracts.md)).
   - `--list` / `--explain <rule>`: inspect rules, rationale, and worked fixes.
   - `--fix` / `--rule <id> --fix`: apply mechanical fixes and re-verify.
-  - `--changed[=<ref>]`: report only findings in touched files (great for pre-commit and PRs).
+  - `--changed[=<ref>]`: report only findings in touched files (for pre-commit hooks and PR checks).
   - `--strict --baseline-write`: baseline existing debt so only new findings fail.
   - `--json` / `--sarif <file>`: machine-readable output (each JSON finding includes its full rule text).
   - `--analyzer <name>`, `--config <file>`, `--no-vet`.

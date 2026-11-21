@@ -46,7 +46,7 @@ app.Router().Get("/api/agent-feed", http.HandlerFunc(func(w http.ResponseWriter,
 Signature rules:
 - Ed25519 (`alg="ed25519"`), `tag="web-bot-auth"`, valid `created`/`expires` window bounded by `MaxValidity` (default 5 minutes), `keyid` matching the JWK thumbprint, covering `@authority` or `@target-uri` plus `Signature-Agent`.
 - **Observe mode (`Require: false`, default):** never blocks traffic; populates `VerifiedAgent(ctx)` when valid and logs invalid signatures.
-- **Require mode (`Require: true`):** rejects unverified requests with `403` and an `Accept-Signature` header (use only on agent-only endpoints, never browser routes).
+- **Require mode (`Require: true`):** `framework.WithWebBotAuth` installs verification middleware on the **root router** (app-wide, not per-route). Enabling `Require: true` on a mixed browser/agent app blocks unsigned browser traffic with `403` and an `Accept-Signature` header — use `Require: true` only on dedicated agent-only apps (or check `framework.VerifiedAgent(ctx)` on specific routes in observe mode). The key directory (`/.well-known/http-message-signatures-directory`) stays exempt, and retryable key-fetch verification failures return `503` rather than `403`.
 
 ## Per-agent rate limits
 

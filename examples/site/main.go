@@ -189,7 +189,7 @@ func setupServer() *framework.App {
 		// ContentNegotiation field below.
 		uihost.WithPublicLLMMD(),
 		uihost.WithAppIcon(brand.IconPNG()),
-		uihost.WithDescription("Go from idea to a full-stack app, fastr. Simple for humans to understand, optimized for agents and the agentic ecosystem. Stay barebones or turn on SSR UI, auth, SQLite or Postgres, and MCP in one Go binary."),
+		uihost.WithDescription("Go from idea to a full-stack app, fastr. Simple for humans to understand. Optimized for agents and the agentic ecosystem. Stay barebones or turn on SSR UI, auth, SQLite or Postgres, and MCP in one Go binary."),
 		uihost.WithOpenGraph(uihost.OG{
 			Title: "GoFastr",
 			URL:   siteOrigin,
@@ -209,7 +209,7 @@ func setupServer() *framework.App {
 		// discovery URLs.
 		uihost.WithAgentReady(uihost.AgentReadyConfig{
 			Title:   "GoFastr",
-			Summary: "Go from idea to a full-stack app, fastr. Simple for humans to understand, optimized for agents and the agentic ecosystem. Stay as barebones as a stdlib router or turn on server-rendered UI, auth, SQLite or Postgres, and MCP in one binary of plain Go you own. Docs and tools at /mcp.",
+			Summary: "Go from idea to a full-stack app, fastr. Simple for humans to understand. Optimized for agents and the agentic ecosystem. Stay as barebones as a stdlib router or turn on server-rendered UI, auth, SQLite or Postgres, and MCP in one binary of plain Go you own. Docs and tools at /mcp.",
 			// Tiered docs index (llmstxt.org): every embedded framework
 			// doc as a raw-markdown link, grouped by the /docs/ reading
 			// intents; /llms-full.txt is the whole corpus in one file.

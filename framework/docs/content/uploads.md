@@ -38,15 +38,27 @@ POST or PATCH the entity with `multipart/form-data`: GoFastr validates the file,
 - **Content sniffing, not filenames:** uploaded bytes are inspected (`http.DetectContentType` / magic bytes) against allowed MIME types. A `.png` containing HTML or script is rejected.
 - **SVG restriction:** `schema.Image` rejects `image/svg+xml` by default because inline SVG can execute JavaScript.
 - **Size caps:** per-file (default 32 MiB) and total multipart body caps (default 64 MiB) apply before buffering into storage.
-- **Safe serving:** `upload.ServeHandler` sets `X-Content-Type-Options: nosniff`, `Content-Disposition: attachment` for non-safe types, and refuses path traversal or directory keys.
-- **Access control:** file downloads respect the owning entity's read access and scopes (owner, tenant, soft delete) rather than exposing a flat public bucket for private entities.
+- **Safe serving:** `upload.ServeHandler(store)` sets `X-Content-Type-Options: nosniff`, forces `Content-Disposition: attachment` for scriptable types (`html`, `svg`, `xml`, etc.), supports `Range`, and refuses path traversal or directory keys.
+- **Access control on downloads:** `framework.WithFileStorage` assigns the storage backend; it does **not** mount a download route or inherit entity access checks. `upload.ServeHandler` streams objects directly by key without looking up an entity row. Mount your download route explicitly, and for private files wrap it with an object-level authorization check (verifying the signed-in caller can read the owning entity/row before delegating to `upload.ServeHandler`):
+
+```go
+serve := upload.ServeHandler(store)
+app.Router().Get("/files/{key...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	if !callerCanReadFile(r.Context(), r.PathValue("key")) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	serve(w, r)
+}))
+```
+
 - **Cleanup:** deleting a record (or erasing a user via `App.EraseUserData`) removes associated stored objects.
 
 ## Storage keys on JSON and in-process writes
 
 Multipart requests upload new bytes and mint a fresh storage key. JSON requests (`application/json`) and in-process Go writes (`CreateOne` / `UpdateOne`) cannot carry raw file streams — instead they accept an existing storage key string (or `""` to clear an optional field):
 
-- Every key supplied via JSON is validated against the storage key grammar (`DefaultKeyValidator`: no leading `/`, no `..`, no control bytes, canonical clean path) and checked so one caller cannot reference another user's or another entity's private storage key.
+- Valid key syntax alone (`DefaultKeyValidator`: no leading `/`, no `..`, no control bytes) does **not** authorize attaching an arbitrary existing storage key over HTTP. GoFastr's media provenance checks enforce that callers can only attach keys already owned by that record/caller (or uploaded through a verified upload flow) rather than stealing another user's or entity's private storage key.
 - Replacing a file or clearing the field schedules deletion of the previous object after the database transaction commits.
 
 ## Multipart vs. direct-to-S3 presigned uploads

@@ -65,6 +65,8 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 | `Referrer-Policy` | `no-referrer` |
 | `X-Frame-Options` | `DENY` |
 | `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
+| `Cross-Origin-Opener-Policy` | `same-origin` (can isolate OAuth popups; override if your flow uses `window.opener`) |
+| `Cross-Origin-Resource-Policy` | `same-origin` (blocks cross-origin `<img>`/asset embeds; set `cross-origin` on public asset routes if needed) |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
 
 If you supply a custom `ContentSecurityPolicy`, it replaces the default whole. Keep `object-src 'none'`, `form-action 'self'`, `worker-src 'self'`, and `base-uri 'none'`—`default-src` does not cover `form-action` or `object-src`.
@@ -139,7 +141,7 @@ Entity MCP write tools and A2A skills re-dispatch writes through your router wit
 
 ## Cross-site form guard (Fetch Metadata)
 
-For plain server-rendered form routes mounted via `app.Router().HandleFunc` where you don't want full CSRF tokens, wrap the handler with `handler.RefuseCrossSite`:
+CRUD and declared entity endpoints refuse forged cross-site writes automatically, but routes you mount directly with `app.Router().HandleFunc` get **no** automatic CSRF check. Wrap hand-mounted mutating routes with `handler.RefuseCrossSite` (or mount `middleware.CSRF`):
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/handler"
@@ -157,7 +159,7 @@ It returns `403` for non-GET/HEAD/OPTIONS requests with a form-forgeable content
 
 ## Secret rotation
 
-Both `GOFASTR_SECRET` (uihost session tokens) and `AuthConfig.JWTSecret` (auth JWTs) rotate without mass logouts: sign with the new key, verify against new **or** previous keys for one TTL, then remove the old key.
+Both `GOFASTR_SECRET` (uihost session tokens) and `AuthConfig.JWTSecret` (auth JWTs) rotate without mass logouts: sign with the new key, verify against new **or** previous keys for one TTL, then remove the old key. Every secret passed to `GOFASTR_SECRET` or `WithSecretRotation` must be at least 32 characters (`WithSecretRotation` panics on shorter values).
 
 ```go
 // uihost sessions (or env: GOFASTR_SECRET + GOFASTR_SECRET_PREVIOUS)

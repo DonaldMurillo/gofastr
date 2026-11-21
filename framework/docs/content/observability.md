@@ -13,7 +13,7 @@ app := framework.NewApp(
 )
 ```
 
-Wire an OpenTelemetry `TracerProvider` (via `battery/telemetry` for OTLP export or your own OpenTelemetry SDK setup — see [Telemetry](telemetry.md)). Every incoming HTTP request starts a root span named by method and matched route pattern (never raw paths with high-cardinality IDs).
+Configure an OpenTelemetry `TracerProvider` for external OTLP export (or register the [`battery/telemetry`](telemetry.md) plugin for zero-infra local files on disk). Every incoming HTTP request starts a root span named by method and matched route pattern (never raw paths with high-cardinality IDs).
 
 ## Trace-correlated logs
 
@@ -21,10 +21,10 @@ When `framework.WithTracing()` is enabled alongside [`battery/log`](log.md), eve
 
 ## Spans for SQL, jobs, and outbound calls
 
-Passing `ctx` through GoFastr's primitives automatically creates child spans under the active trace:
+Passing `ctx` through GoFastr's primitives creates child spans under the active trace:
 
 - **HTTP requests:** root server span with method, route template, status code, and error recording on 5xx.
-- **SQL queries:** instrumented queries record operation, table/entity context, and latency (SQL literals/parameters are never put in span attributes to avoid leaking PII or secrets). Pair with `framework/slowquery` to log slow queries above a threshold.
+- **SQL queries:** open your DB with `tracing.OpenDB` or wrap its driver with `tracing.WrapConnector` (`core/tracing`) to record operation, table/entity context, and latency (SQL literals/parameters are never put in span attributes to avoid leaking PII or secrets). Pair with `framework/slowquery` to log slow queries above a threshold.
 - **Background jobs (`battery/queue`):** `Enqueue` injects trace context into job metadata and workers extract it as a linked/child span when executing, preserving end-to-end causality from HTTP request to worker execution.
 - **Cron jobs (`framework.Scheduler`):** each firing starts a root trace named `cron <job name>` and marks the span failed on returned error or panic.
 - **Outbound HTTP / webhooks:** propagate `traceparent` headers on outbound calls using `otelhttp` or your configured propagator.
@@ -32,7 +32,7 @@ Passing `ctx` through GoFastr's primitives automatically creates child spans und
 ## Health, metrics, and runtime stats
 
 - **Probes:** `/healthz` (liveness) and `/readyz` (parallel dependency checks with 5s deadline; see [Health checks](health-checks.md)).
-- **Prometheus metrics:** expose `battery/log` drop/delivery counters via `logp.MetricsHandler()` and `battery/telemetry` runtime/HTTP histograms on an internal ops route.
+- **Prometheus metrics:** enable app HTTP RED metrics with `framework.WithMetrics()` (and expose `battery/log` drop/delivery counters via `logp.MetricsHandler()`) on an internal ops route. (`battery/telemetry` writes local log/trace files on disk and does not mount Prometheus or OTLP exporters.)
 - **Dev & admin introspection:** `AppConfig.DebugEndpoints` mounts `/.debug/stats` and `/.debug/goroutineleak` (admin-gated), and `framework.WithMCPIntrospection()` lets connected agents inspect routes, readiness, and recent logs via `/mcp`.
 
 ## Common mistakes

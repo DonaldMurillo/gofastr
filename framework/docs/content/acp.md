@@ -21,19 +21,21 @@ Server → client updates during a turn:
 Implement `Agent` and `Session`, then serve stdio:
 
 ```go
-type echoAgent struct{}
+type echoAgent struct {
+	seq atomic.Uint64
+}
 
-func (echoAgent) Info() acp.Implementation {
+func (a *echoAgent) Info() acp.Implementation {
 	return acp.Implementation{Name: "my-agent", Version: "1.0.0"}
 }
 
-func (echoAgent) NewSession(ctx context.Context, cwd string) (acp.Session, error) {
-	return &echoSession{}, nil
+func (a *echoAgent) NewSession(ctx context.Context, cwd string) (acp.Session, error) {
+	return &echoSession{id: fmt.Sprintf("sess_%d", a.seq.Add(1))}, nil
 }
 
-type echoSession struct{}
+type echoSession struct{ id string }
 
-func (s *echoSession) ID() string { return "sess_1" }
+func (s *echoSession) ID() string { return s.id }
 
 func (s *echoSession) Prompt(ctx context.Context, prompt []acp.ContentBlock, out *acp.Client) (string, error) {
 	_ = out.Update(acp.AgentMessageChunk("m1", "you said: "+acp.PromptText(prompt)))
@@ -41,7 +43,7 @@ func (s *echoSession) Prompt(ctx context.Context, prompt []acp.ContentBlock, out
 }
 
 func main() {
-	srv := acp.NewServer(echoAgent{}, nil)
+	srv := acp.NewServer(&echoAgent{}, nil)
 	if err := srv.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 		log.Fatal(err)
 	}

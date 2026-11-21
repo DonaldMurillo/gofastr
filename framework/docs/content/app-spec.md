@@ -112,16 +112,16 @@ entities:
       - name: author_id
         type: relation
         to: users
+    search_fields: [title]
     display:
-      title_field: title
+      title_fields: [title]
       columns: [title, status, created_at]
       facets: [status]
-      search_fields: [title]
 ```
 
 ### Composite keys (`primary_key:`)
 
-Set `primary_key:` to a single column name (for natural keys like `code`) or a list of column names for a composite primary key:
+Set `primary_key:` to a YAML list—one column name for a custom single key (such as `primary_key: [code]`) or multiple column names for a composite primary key:
 
 ```yaml
 entities:
@@ -179,37 +179,38 @@ By default, `gofastr generate app` writes a flat `package main` at the module ro
 
 ## Custom endpoints (`endpoints:`)
 
-Declare non-CRUD routes under `endpoints:` (top-level or on an entity) to scaffold typed handler stubs, request/response structs, OpenAPI entries, and optional MCP tools:
+Declare non-CRUD routes under the top-level `endpoints:` list (entity-nested `endpoints:` keys are rejected) to wire custom entity routes, OpenAPI entries, and optional MCP tools. Paths must be relative to the entity (no leading `/`), and `entity` and `handler` are required:
 
 ```yaml
 endpoints:
   - name: publish_digest
+    entity: digests
     method: POST
-    path: /api/digests/publish
+    path: publish
+    handler: entities/digests.go#PublishDigest
+    description: Publish the current digest draft.
     mcp: true
-    auth: required
-    roles: [editor]
 ```
 
-See [Custom endpoints](endpoints.md) for implementing the generated handler stub, configuring `MCPGate`, and adding MCP tool hints.
+Allowed keys per endpoint: `name`, `entity`, `method`, `path`, `handler`, `description`, `mcp`, `public`, and `hints`. See [Custom endpoints](endpoints.md) for implementing the handler, configuring `MCPGate`, and setting MCP tool hints.
 
 ## Additive generation (`--add`)
 
-To scaffold new entities or screens into an app you have already edited, pass `--add` with a partial YAML file containing only the new items:
+To scaffold new entities, screens, or endpoints into an app you have already edited, pass `--add` with a partial YAML file containing the additions:
 
 ```bash
 gofastr generate app new-billing.yml --add
 ```
 
-`--add` writes only new files and refuses to touch any existing owned file, printing the one-line registration call to wire in `entities/register.go` or `screens_register.go` if needed.
+`--add` merges new `endpoints:` into `gofastr.settings.yml`, writes new entity/screen files, and rebuilds derived generated files without clobbering your existing hand-edited files.
 
 ## Quick scaffolds (`generate entity`/`screen`)
 
-For small additions without writing YAML at all, scaffold a single entity or screen directly from the CLI:
+For small additions without writing YAML at all, scaffold a single entity or screen directly from the CLI (supported flags: `--out`, `--dry-run`, `--json`, and `--from-a11y=<file>` on `screen`):
 
 ```bash
-gofastr generate entity invoices --fields title:string:required,amount:decimal,status:enum:draft:sent:paid
-gofastr generate screen reports --route /reports
+gofastr generate entity invoices
+gofastr generate screen reports
 ```
 
 ## Common mistakes

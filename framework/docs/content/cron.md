@@ -2,8 +2,8 @@
 
 `framework.Scheduler` is a lightweight in-process cron runner for periodic maintenance, digests, and polling.
 
-- **Cron decides *when*; `battery/queue` decides *how reliably*.** For durable retries and dead-letter handling, either have a cron tick enqueue a `DBQueue` job or use `queue.Scheduler.Cron(spec)` (which shares the same `cron.Parse` engine).
-- **Single vs. multi-replica:** by default every replica fires every tick. On multiple replicas, install leader election (`Scheduler.WithLeaderElection(cron.NewPostgresAdvisoryLease(db, key))`), run a single `GOFASTR_ROLE=worker` replica, or enqueue idempotent `DBQueue` jobs.
+- **Cron decides *when*; `battery/queue` decides *how reliably*.** Plain `queue.Scheduler.Cron(spec)` keeps its schedule watermarks in memory even when backed by `DBQueue`. For durable retries, restart continuity, and cross-replica occurrence deduplication, use `queue.DurableScheduler.Cron(id, spec)` backed by `DBQueue`.
+- **Single vs. multi-replica:** by default every replica running an in-process scheduler fires every tick. On multiple replicas, install leader election (`Scheduler.WithLeaderElection(cron.NewPostgresAdvisoryLease(db, key))`), run a single `GOFASTR_ROLE=worker` replica, or use `queue.DurableScheduler.Cron(id, spec)`.
 
 ## Quickstart
 
@@ -51,7 +51,7 @@ Standard 5-field cron (`minute hour day-of-month month day-of-week`, supporting 
 
 ## Common mistakes
 
-- **Running `framework.Scheduler` on multiple replicas without leader election:** runs every job N times. Use `WithLeaderElection`, a single `GOFASTR_ROLE=worker`, or `DBQueue`.
+- **Running `framework.Scheduler` on multiple replicas without leader election:** runs every job N times. Use `WithLeaderElection`, a single `GOFASTR_ROLE=worker`, or `queue.DurableScheduler.Cron(id, spec)`.
 - **Scheduling a slow job every minute without an overlap guard:** a 2-minute job on `* * * * *` runs concurrently with itself.
 - **Forgetting to set `OnError`:** errors fall back to `slog.Default()` instead of your metrics/alerting pipeline.
 - **Expecting sub-minute precision or crash persistence:** `framework.Scheduler` is minute-aligned and in-memory; use `battery/queue` for durable work.

@@ -34,7 +34,7 @@ A background ticker uses the same `PresenceSessions(topic)` + `PushUpdate` loopâ
 
 - **Never put high-frequency numbers in `aria-live`.** Rapidly changing `StatCard` numbers flood screen readers; put `role="status"` only on bounded activity feeds or status transitions.
 - **Coalesce bursts & pause hidden work:** Fold multiple server updates into one `PushUpdate`, coalesce custom DOM listeners with `requestAnimationFrame`, pause client timers on `visibilitychange`, and disconnect custom observers on `gofastr:navigate`.
-- **Reconcile on reconnect:** The runtime's `sse` module reconnects after 3s and dispatches `gofastr:sse-status` (`{connected, lastEventAt, retryCount}`), which `ui.NetworkRetryBanner` listens to automatically (`HealthEndpoint` must be a relative path or `http(s)` URL). Because SSE does not replay missed frames, listen for reconnects and refetch authoritative island HTML when needed:
+- **Reconcile on reconnect:** The runtime's `sse` module reconnects with jittered exponential backoff (capped at 60s) and dispatches `gofastr:sse-status` (`{connected, lastEventAt, retryCount}`), which `ui.NetworkRetryBanner` listens to automatically (`HealthEndpoint` must be a relative path or `http(s)` URL). Because SSE does not replay missed frames, listen for reconnects and refetch authoritative island HTML when needed:
 
 ```js
 document.addEventListener('gofastr:sse-status', (ev) => {

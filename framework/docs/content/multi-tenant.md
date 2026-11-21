@@ -4,12 +4,12 @@ GoFastr supports shared-database, column-scoped multi-tenancy: every query, crea
 
 ## Enabling multi-tenancy
 
-1. **Resolve the tenant per request** with middleware (from the authenticated session, JWT claim, subdomain, or organization header — never blindly from an unverified request body):
+1. **Resolve the tenant per request** with `tenant.ResolveMiddleware` (recommended — derives and verifies the tenant from the authenticated session or membership) or `framework.TenantMiddleware("X-Tenant-ID")` (only behind a trusted proxy that strips and sets the header):
 
 ```go
-// Register your tenant resolver middleware on the app or route group so
-// every request carries the verified tenant ID in context before entity
-// handlers run.
+app.Use(tenant.ResolveMiddleware(func(ctx context.Context) string {
+	return verifiedTenantForUser(ctx)
+}))
 ```
 
 2. **Mark each tenant-scoped entity** with `Scope.MultiTenant: true`:
@@ -29,7 +29,7 @@ You can combine `MultiTenant: true` with `Scope.OwnerField` (per-user rows insid
 
 ## What multi-tenancy enforces
 
-- **Schema:** GoFastr adds the tenant ID column (`tenant_id` by default) and indexes it.
+- **Schema:** GoFastr adds the tenant ID column (`tenant_id` by default, override via `Scope.TenantField`). Add composite indexes starting with `tenant_id` yourself for query performance.
 - **Create:** stamps `tenant_id` from the request context, ignoring any client-supplied value.
 - **Read / List / Update / Delete / Batch / Transitions:** appends `WHERE tenant_id = <active_tenant>` so cross-tenant IDs return `404`.
 - **Includes & relation filters:** `?include=` and `?rel.field=` enforce the target entity's tenant scope too.
@@ -38,7 +38,7 @@ You can combine `MultiTenant: true` with `Scope.OwnerField` (per-user rows insid
 
 ## Background jobs and cross-tenant admin tasks
 
-Background workers and CLI jobs do not have an HTTP request. Pass the target tenant explicitly in the job payload and attach it to the `context.Context` before querying multi-tenant entities. For cross-tenant operational reports, use an explicit admin bypass only in trusted server-side code.
+Background workers and CLI jobs do not have an HTTP request. Pass the target tenant explicitly in the job payload and attach it with `framework.SetTenantID(ctx, tenantID)` before querying multi-tenant entities. For trusted server-side operational reports that intentionally span tenants, wrap the context with `tenant.AllowCrossTenant(ctx)`.
 
 ## Common mistakes
 

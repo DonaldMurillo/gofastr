@@ -88,7 +88,7 @@ func heroSection() render.HTML {
 		ShowCopy: true,
 	})
 	agents := html.Paragraph(html.TextConfig{},
-		render.Text("Simple for humans to understand, optimized for agents. During development, "),
+		render.Text("During development, "),
 		ui.InlineCode("gofastr dev"),
 		render.Text(" gives Claude Code or Codex your app's routes, config, and logs over MCP; in production, user agents call "),
 		ui.InlineCode("/mcp"),
@@ -102,8 +102,8 @@ func heroSection() render.HTML {
 		Eyebrow: "early · " + versionLabel(),
 		Title:   "Go from idea to a full-stack app, fastr.",
 		Lede: render.Join(
-			html.Strong(html.TextConfig{}, render.Text("GoFastr")),
-			render.Text(" is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router, or turn on "),
+			html.Strong(html.TextConfig{}, render.Text("Simple for humans to understand. Optimized for agents and the agentic ecosystem.")),
+			render.Text(" Stay as barebones as a stdlib router, or turn on "),
 			html.Strong(html.TextConfig{}, render.Text("server-rendered UI")),
 			render.Text(", auth, SQLite or Postgres, and MCP—in one binary of plain Go you own."),
 		),
@@ -117,8 +117,8 @@ func heroSection() render.HTML {
 	})
 }
 
-// The three hero programs: core-only (stdlib primitives), framework +
-// one entity, and the fuller "Donald's Way" (screens + SEO + MCP + auth).
+// The three hero programs: core-only (stdlib primitives), framework (UI +
+// typed route + MCP), and full-stack (screens + SEO + llm.md + MCP + auth).
 // All three are byte-identical to the README Quickstart programs, which
 // CI extracts, compiles, boots, and curls
 // (cmd/gofastr/readme_quickstart_test.go), so the homepage never teaches
@@ -232,12 +232,13 @@ func (s *HomeScreen) Render() render.HTML {
 func main() {
 	db, _ := sql.Open("sqlite3", "notes.db")
 
-	// Server-rendered screens. Each also serves an auto llm.md.
+	// Server-rendered screens.
 	ui := app.NewApp("Notes")
 	ui.Register("/", &HomeScreen{}, nil)
 
-	// SEO for those pages.
+	// SEO and per-screen llm.md for those pages.
 	host := uihost.New(ui,
+		uihost.WithPublicLLMMD(),
 		uihost.WithDescription("A tiny notes app."),
 		uihost.WithOpenGraph(uihost.OG{Title: "Notes", Type: "website"}),
 		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://notes.example"}),
@@ -273,12 +274,25 @@ func main() {
 }`
 
 func heroCodeTabs() render.HTML {
-	return ui.CodeTabs(
+	tabs := ui.CodeTabs(
 		ui.CodeTabsConfig{Name: "hero-examples", Label: "Example apps", LineNumbers: true},
 		ui.CodeSample{Label: "core only", Language: "go", Filename: "main.go", Code: heroCoreSrc},
 		ui.CodeSample{Label: "framework", Language: "go", Filename: "main.go", Code: heroFrameworkSrc},
 		ui.CodeSample{Label: "full-stack app", Language: "go", Filename: "main.go", Code: heroDonaldSrc},
 	)
+	caption := html.Paragraph(html.TextConfig{}, ui.Muted(render.Join(
+		render.Text("Three tiers, one repo: "),
+		ui.InlineCode("core/"),
+		render.Text(" alone → "),
+		ui.InlineCode("framework"),
+		render.Text(" + UI + MCP → "),
+		ui.InlineCode("gofastr init"),
+		render.Text(" with "),
+		ui.InlineCode("battery/"),
+		render.Text(". Mix them in one app — "),
+		html.Link(html.LinkConfig{Href: "/docs/overview", Text: "see the overview →"}),
+	)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapSM, TrimMargins: true}, tabs, caption)
 }
 
 // -----------------------------------------------------------------------------
@@ -354,8 +368,8 @@ func numberClaims() []numberClaim {
 	return []numberClaim{
 		{measuredRuntimeGz(), "of client JavaScript, gzipped",
 			"The core runtime, measured from this running binary. Feature modules load on demand; a size-budget test fails the build if any of them grows."},
-		{embeddedDocCount(), "docs embedded in every binary",
-			"gofastr docs reads them offline. This site serves the same files under /docs and /llms.txt; agents query them over MCP."},
+		{embeddedDocCount(), "docs embedded in the CLI and docs site",
+			"gofastr docs reads them offline. This site serves raw Markdown at /docs/<name>.md indexed by /llms.txt; agents query them over MCP."},
 		{contractRuleCount(), "contract rules in gofastr verify",
 			"Static and semantic checks covering routing, permissions, security, rendering, and accessibility—built to catch human and agent mistakes early."},
 		{"2", "databases",

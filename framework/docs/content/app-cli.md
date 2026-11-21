@@ -47,7 +47,7 @@ gofastr generate cli --binary=myapp --api-prefix=api
 gofastr generate cli --from-openapi openapi.json --binary=barc
 ```
 
-Generates a self-contained CLI (with its own `internal/client`) directly from OpenAPI 3.x `operationId`s, scalar/array parameters, JSON/binary bodies, and bearer/header `apiKey` security schemes.
+Generates a self-contained CLI (with its own `internal/client`) directly from OpenAPI 3.x `operationId`s, scalar and string-array parameters, JSON/binary bodies, and bearer/header `apiKey` security schemes.
 
 ## Extending and regenerating
 

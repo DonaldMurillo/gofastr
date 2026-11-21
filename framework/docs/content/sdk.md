@@ -40,11 +40,11 @@ For an OpenAPI-driven SDK, set `from_openapi: openapi.json` in the generator con
 
 ## Authentication
 
-Generated clients authenticate with `Authorization: Bearer <token>` (matching `auth.TokenMiddleware` and scoped API tokens from `auth.NewTokensPlugin`) or custom headers configured on the client. Redirects are refused by default on authenticated requests so bearer tokens are never forwarded to another host.
+Generated clients authenticate with `Authorization: Bearer <token>` (matching `auth.TokenMiddleware` and scoped API tokens from `auth.NewTokensPlugin`) or custom headers configured on the client. The Go SDK and OpenAPI-generated JS/TS SDK refuse redirects by default (`redirect: "manual"`) so bearer tokens are never forwarded to another host; note that the entity-generated JS client uses Fetch's default redirect mode, so avoid serving untrusted 3xx redirects on entity API endpoints.
 
 ## Common mistakes
 
 - **Editing generated SDK files by hand:** `gofastr generate` overwrites derived files. Wrap the generated client or add helpers in a separate file.
-- **Mismatched `APIPrefix`:** make sure the SDK's `--api-prefix` matches `AppConfig.APIPrefix` (default `/api`), or every request will 404.
+- **Mismatched `APIPrefix`:** know the three defaults: a handwritten `framework.NewApp()` mounts entity routes at the root (`""`) unless you pass `WithAPIPrefix`, app specs default to `api_prefix: api` (`/api`), and `gofastr generate sdk` uses an explicit `--api-prefix` flag or setting, then the app spec's prefix, and otherwise `""`. Pass a remote client base URL that includes whatever prefix your server mounts (or match `--api-prefix`), or every request will 404.
 - **Passing `InProcessHandler()` to `http.ListenAndServe`:** `InProcessHandler()` is strictly for trusted in-process Go calls; use `app.Start` or `app.Serve` for network traffic.
 - **Expecting `Hidden` fields in SDK structs:** hidden columns are never exposed on the wire or in generated clients.

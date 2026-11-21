@@ -22,7 +22,7 @@ Simple for humans to understand. Optimized for agents and the agentic ecosystem.
 
 ---
 
-GoFastr is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router and HTML helper, or turn on the whole stack—server-rendered UI with interactive islands (no React or Node), auth, SQLite or Postgres, background jobs, search, and MCP—in one binary of plain Go you own.
+GoFastr is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router and HTML helper. Or turn on the whole stack—server-rendered UI with interactive islands (no React or Node), auth, SQLite or Postgres, background jobs, search, and MCP—in one binary of plain Go you own.
 
 It is designed so both you and your coding agents can move fast without creating a mess: plain Go on disk, live app introspection during development, automated contract checks before you ship, and built-in MCP and `llm.md` support for the agents your users bring.
 
@@ -44,7 +44,7 @@ cd myapp
 gofastr dev
 ```
 
-`gofastr init` scaffolds plain Go you own—server-rendered screens, auth, SQLite, hot reload, and onboarding files for coding agents. Prefer declaring an entire app in one file first? Scaffold it with `gofastr generate` ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)), then keep and edit the generated Go.
+`gofastr init` scaffolds plain Go you own—server-rendered screens, auth, SQLite, hot reload, and onboarding files for coding agents. Prefer declaring an entire app in one file first? Scaffold it with `gofastr generate app gofastr.yml` ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)), then keep and edit the generated Go.
 
 ## As barebones or as productive as you want
 
@@ -142,9 +142,9 @@ func main() {
 }
 ```
 
-### Donald's Way
+### Full stack
 
-Turn on the full stack in one binary: server-rendered screens with SEO and `llm.md`, an owner-scoped API, MCP tools for user agents, and login + sessions:
+Turn on the full stack in one binary: server-rendered screens with SEO and per-screen `llm.md`, an owner-scoped API, MCP tools for user agents, and login + sessions:
 
 ```go
 package main
@@ -175,12 +175,13 @@ func (s *HomeScreen) Render() render.HTML {
 func main() {
 	db, _ := sql.Open("sqlite3", "notes.db")
 
-	// Server-rendered screens. Each also serves an auto llm.md.
+	// Server-rendered screens.
 	ui := app.NewApp("Notes")
 	ui.Register("/", &HomeScreen{}, nil)
 
-	// SEO for those pages.
+	// SEO and per-screen llm.md for those pages.
 	host := uihost.New(ui,
+		uihost.WithPublicLLMMD(),
 		uihost.WithDescription("A tiny notes app."),
 		uihost.WithOpenGraph(uihost.OG{Title: "Notes", Type: "website"}),
 		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://notes.example"}),
@@ -223,7 +224,7 @@ func main() {
 - **Simple to read, easy to drop down.** Everything stays plain Go on disk—no reflection discovery, no black-box runtime, no split frontend/backend repo. Start flat and grow into `internal/<domain>/` when boundaries appear ([project structure](framework/docs/content/project-structure.md)).
 - **Interactive UI without a JS framework.** Write screens and components in Go (`core-ui/` and `framework/ui`). Pages server-render on first load and hydrate with a small JS runtime for client-side navigation, server islands, signals, polling, and SSE ([reactivity](framework/docs/content/reactivity.md)). No React, Vue, or bundler required.
 - **Optimized for coding agents.** `gofastr dev` gives Claude Code or Codex live access to your app's routes, config, docs, and logs over MCP. `gofastr verify` checks your app against 86 contract rules covering routing, permissions, security, rendering, and accessibility ([contracts](framework/docs/content/contracts.md)), catching agent mistakes early.
-- **Ready for the agentic web.** Ship `/mcp` tools behind the same sessions, RBAC, and owner/tenant scopes as your HTTP API, along with automatic `llm.md`, `llms.txt`, and discovery endpoints ([agent-ready](framework/docs/content/agent-ready.md)).
+- **Ready for the agentic web.** Ship `/mcp` tools behind the same sessions, RBAC, and owner/tenant scopes as your HTTP API, along with opt-in per-screen `llm.md`, `/llms.txt`, and discovery endpoints ([agent-ready](framework/docs/content/agent-ready.md)).
 - **Opt-in batteries, one binary.** Pull in `battery/` packages only as you need them—auth, queues, search, email, storage, admin UI, webhooks, notifications, telemetry—backed by SQLite (pure Go, `CGO_ENABLED=0`) or Postgres.
 - **Grow beyond a web server when needed.** Generate typed Go/TS SDKs or a customer CLI from your app, run headless in-process with `framework.ServicesHost()`, or package as a local OS service or pure-Go desktop app (experimental).
 

@@ -10,13 +10,13 @@ A single GoFastr replica works out of the box with zero external services becaus
 | 2FA enrollment | `MemoryTwoFAStore` | `auth.NewEntityTwoFAStore(db, "auth_twofa", ...)` |
 | Magic-link / reset / verify tokens | In-memory token store | `auth.NewSQLMagicLinkTokenStore(db)` |
 | Rate limits | In-process `RateLimiter` | `auth.NewSQLRateLimitStore(db, "auth_rate_limits")` |
-| Cron scheduler | Ticks on every replica | `GOFASTR_ROLE=worker`, `WithLeaderElection`, or `DBQueue` |
+| Cron scheduler | Ticks on every replica | `GOFASTR_ROLE=worker`, `WithLeaderElection`, or `queue.DurableScheduler` ([Cron](cron.md)) |
 | Job queue | `MemoryQueue` | `queue.DBQueue` (`FOR UPDATE SKIP LOCKED`) |
 | SSE / island push / presence | In-process `EventBus` | `framework.WithFanout(fanout.NewPostgres(dsn, db))` or `core/fanout.NewRedis`, OR poll with `data-cui-poll` |
 | Cache | `MemoryCache` | `cache.NewRedisCache(client)` (or accept per-replica cache for derived data) |
 | File uploads | `storage.NewLocalStorage` | `storage.NewS3Storage(...)` or shared volume |
 | Runtime RBAC grants | In-memory `RolePolicy` | `framework.WithGrantStore(store)` + `framework.WithFanout(...)` |
-| Idempotency keys | `NewMemoryIdempotencyStore` | `middleware.NewSQLIdempotencyStore(db)` |
+| Idempotency keys | `NewMemoryIdempotencyStore` | `middleware.NewSQLIdempotencyStore(db, middleware.WithSQLIdempotencyInFlightTTL(45*time.Second))` ([Idempotency](idempotency.md)) |
 
 In production (`DevMode: false`), `battery/auth` refuses to boot with in-memory session/2FA/token stores unless you explicitly acknowledge a single-node deploy with `AuthConfig.AllowInMemoryStores: true`.
 

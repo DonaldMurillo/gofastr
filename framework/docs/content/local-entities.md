@@ -39,8 +39,29 @@ Supported field types: `String`, `Text`, `Int`, `Float`, `Bool`, `Enum`, `Date`,
 
 ## Forms and lists
 
-- **Form:** wrap a normal `ui.Form` with `Members.Form("team-form", ...)`, matching each input's `Name` to its `schema.Field` name. Validation, locale-aware number parsing, type conversion, and edit/reset behavior run automatically in the `localentity-form` runtime module. Works inside `battery/embed` frames too.
-- **List:** render `Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})` with `team.Row(func(r localentity.Row) render.HTML { ... })` and `team.Empty(...)`. Use `r.Text(field)`, `r.Edit(formID, btn)`, `r.Delete(btn)`, and `Members.Count()`.
+- **Form:** wrap a normal `ui.Form` (with its required `Action`) in `Members.Form("team-form", ...)`, matching each input's `Name` to its `schema.Field` name. Validation, locale-aware number parsing, type conversion, and edit/reset behavior run automatically in the `localentity-form` runtime module (and work inside `framework/embed` frames too).
+- **List:** configure `team := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})`, build row and empty templates with `team.Row(...)` and `team.Empty(...)`, and emit the list carrier with `team.Render(row, empty)`:
+
+```go
+form := Members.Form("team-form", ui.Form(ui.FormConfig{Action: "#"},
+	ui.Input(ui.InputConfig{Name: "nickname", Label: "Nickname", Required: true}),
+	ui.Button(ui.ButtonConfig{Label: "Save", Type: "submit"}),
+))
+
+team := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})
+list := team.Render(
+	team.Row(func(r localentity.Row) render.HTML {
+		return html.Div(html.DivConfig{},
+			r.Text("nickname"),
+			r.Edit("team-form", ui.Button(ui.ButtonConfig{Label: "Edit"})),
+			r.Delete(ui.Button(ui.ButtonConfig{Label: "Remove"})),
+		)
+	}),
+	team.Empty(html.Paragraph(html.TextConfig{}, render.Text("No members yet."))),
+)
+```
+
+Use `Members.Count()` to render a live record count.
 - **Safety:** values populate via `textContent` only (never `innerHTML`), and undeclared or prototype keys (`id`, `created_at`, `__proto__`) are ignored on save. Customize messages with `localentity.WithMessages(...)`.
 
 ## Common mistakes

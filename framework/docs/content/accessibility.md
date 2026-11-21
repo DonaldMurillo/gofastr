@@ -24,13 +24,14 @@ Both `gofastr dev` and `gofastr build` run this lint automatically and block bui
 ```bash
 gofastr audit a11y --url http://localhost:8080
 
-# Authenticated pages (submits the /login form first):
-gofastr audit a11y --url http://localhost:8080 \
-  --email admin@example.com --password "$ADMIN_PASSWORD" \
+# Authenticated pages (submits the /login form first; set GOFASTR_AUDIT_PASSWORD in your environment or pipe on stdin so the password never appears in process arguments):
+gofastr audit a11y \
+  --url http://localhost:8080 \
+  --email admin@example.com --password - \
   --pages /admin,/admin/entities/products
 ```
 
-Drives headless Chromium with vendored axe-core (zero CDN calls) across **both light and dark color schemes**, discovering routes from `/sitemap.xml` (or `--pages`). Unreachable/redirected pages fail the run so a silent `/login` redirect never reports a false pass.
+Drives headless Chromium with vendored axe-core (zero CDN calls) across **both light and dark color schemes**, discovering routes from `/sitemap.xml` (falling back to `/` when no sitemap exists) or `--pages`. Unreachable/redirected pages fail the run so a silent `/login` redirect never reports a false pass.
 
 ## Pinning axe in `go test` (`framework/testkit/axetest`)
 
@@ -42,11 +43,17 @@ func TestAxeAllPagesClean(t *testing.T) {
 	for _, page := range pages {
 		tab, done := axetest.NewTab(t, browser)
 		if err := chromedp.Run(tab, chromedp.Navigate(base+page), axetest.WaitReady()); err != nil {
+			done()
 			t.Fatalf("load %s: %v", page, err)
 		}
 		violations, err := axetest.ScanSchemes(tab, axetest.Schemes, allowlist)
-		// fail on err or violations
 		done()
+		if err != nil {
+			t.Fatalf("scan %s: %v", page, err)
+		}
+		if len(violations) > 0 {
+			t.Errorf("%s: %s", page, axetest.FormatViolations(violations))
+		}
 	}
 }
 ```

@@ -1,39 +1,49 @@
 # A2A: Agent-to-Agent protocol
 
-`framework.WithA2A` adds an Agent-to-Agent (A2A) JSON-RPC endpoint (default `/a2a`) and Agent Card discovery (`/.well-known/agent-card.json`) so external AI agents can discover your app's capabilities, submit long-running tasks, stream progress, and fetch artifacts over a standard protocol.
+`framework.WithA2A` mounts an Agent2Agent (A2A) v1.0 JSON-RPC task exchange (default `/a2a`), paired with `uihost.WithAgentCard` (or `uihost.WithAgentReady`) to publish the Agent Card at `/.well-known/agent-card.json`.
 
 ## Quickstart
 
+Configure discovery metadata on the UI host (`uihost.WithAgentCard`), and configure the task exchange and skills on `framework.WithA2A`:
+
 ```go
-app := framework.NewApp(
-	framework.WithDB(db),
-	framework.WithA2A(framework.A2AConfig{
+host := uihost.New(site,
+	uihost.WithAgentCard(uihost.AgentCardConfig{
 		Name:        "Support Triage Agent",
 		Description: "Classifies and routes customer support tickets.",
-		URL:         "https://app.example.com/a2a",
+		A2AEndpoint: "/a2a",
+	}),
+)
+
+app := framework.NewUIHostApp(host,
+	framework.WithDB(db),
+	framework.WithA2A(framework.A2AConfig{
+		Path:   "/a2a",
+		Skills: []a2a.Skill{triageSkill}, // or enable entity MCP tools for derived entity skills
 	}),
 )
 ```
 
-In a role-split deployment (`GOFASTR_ROLE=agent`), GoFastr serves `/a2a` alongside `/mcp`, `/healthz`, and `/readyz` without exposing browser pages or entity CRUD routes (see [Agent host](agent-host.md) and [Horizontal scaling](scaling.md)).
+`App.Start` fails if neither hand-written `Skills` nor entity-derived skills are present. In a role-split deployment (`GOFASTR_ROLE=agent`), GoFastr serves `/a2a` alongside `/mcp`, `/healthz`, and `/readyz` without exposing browser pages or entity CRUD routes (see [Agent host](agent-host.md) and [Horizontal scaling](scaling.md)).
 
 ## Tasks and lifecycle
 
-A2A organizes asynchronous agent work around tasks (`tasks/send`, `tasks/sendSubscribe`, `tasks/get`, `tasks/cancel`):
+A2A v1.0 organizes asynchronous agent work around JSON-RPC methods `SendMessage`, `SendStreamingMessage`, `GetTask`, and `CancelTask` (plus `GetExtendedAgentCard` when `ExtendedCard` is configured):
 - **States:** `submitted` → `working` → `input-required` / `completed` / `failed` / `canceled`.
-- **Streaming:** `tasks/sendSubscribe` streams status updates and partial artifacts over SSE.
+- **Streaming:** `SendStreamingMessage` streams status updates and partial artifacts over SSE.
+- **Persistence:** `A2AConfig.Store` defaults to an SQL store on `App.DB` (or an in-memory store when no DB is configured).
 - **Graceful shutdown:** `App.Shutdown` cancels in-flight A2A task contexts and waits for them to drain before closing batteries and the database.
 
 ## Auth and owner scoping
 
-`/a2a` forwards through your app's router middleware chain, so `Cookie`, `Authorization`, and `X-API-Key` authentication plus owner scoping and tenant scoping apply automatically:
-- **Fail-closed task isolation:** every A2A task is bound to the caller's owner ID (and tenant ID when multi-tenant). One caller cannot read (`tasks/get`), subscribe to, or cancel another caller's task ID — foreign task IDs return not-found.
-- **Require authentication:** never expose `/a2a` anonymously on a public listener unless every skill and underlying entity is intentionally public.
+`/a2a` runs through your app's router middleware chain (`Cookie`, `Authorization`, `X-API-Key`) with automatic owner scoping and tenant scoping, and **rejects anonymous callers before dispatch** — even for skills backed by public entities:
+- **Fail-closed task isolation:** every A2A task is bound by owner scoping to the caller's owner ID (and tenant ID when multi-tenant). One caller cannot read (`GetTask`), subscribe to, or cancel (`CancelTask`) another caller's task ID — foreign task IDs return not-found.
 - **Scoped tokens:** restrict service-to-service agent callers with scoped API tokens rather than admin credentials.
 
 ## Common mistakes
 
-- **Exposing `/a2a` without authentication middleware:** lets unauthenticated callers invoke skills and consume compute/LLM quota.
-- **Ignoring `ctx.Done()` inside custom A2A skill handlers:** prevents `tasks/cancel` and `App.Shutdown` from stopping runaway work cleanly.
-- **Treating task IDs as capability secrets without owner scoping:** always rely on GoFastr's owner and tenant scoping so callers can only access their own tasks.
-- **Forgetting to set `URL` to your canonical public origin in `A2AConfig`:** the Agent Card advertises `URL` to discovering agents; a localhost URL breaks remote clients.
+- **Configuring `Name`/`Description`/`URL` on `framework.A2AConfig`:** Agent Card metadata belongs on `uihost.WithAgentCard` (or `uihost.WithAgentReady`), not `A2AConfig`.
+- **Starting `WithA2A` with zero skills:** supply at least one `a2a.Skill` in `A2AConfig.Skills` or register an entity with `Exposure.MCP: true` (unless `DisableEntitySkills: true`).
+- **Ignoring `ctx.Done()` inside custom A2A skill handlers:** prevents `CancelTask` and `App.Shutdown` from stopping runaway work cleanly.
+- **Treating task IDs as capability secrets without owner scoping:** rely on GoFastr's owner scoping and authentication so callers can only access their own tasks (anonymous requests are rejected before skill dispatch).
+- **Forgetting to set `BaseURL` on `uihost.WithAgentReady` / `WithSitemap`:** the Agent Card advertises your canonical origin to discovering agents; a localhost origin breaks remote clients.

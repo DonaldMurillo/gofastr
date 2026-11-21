@@ -12,13 +12,16 @@ if err != nil {
 	return err
 }
 
-thumb, err := img.Resize(400, 400).JPEG(85).Bytes()
+thumb, err := img.Resize(400, 400).JPEG(image.JPEGOptions{Quality: 85}).Bytes()
 ```
 
 Generate a branded gradient placeholder (useful with `uihost.WithAppIcon` before you have a logo):
 
 ```go
 placeholder, err := image.NewGradient(512, 512, "#4338CA", "#0E7C86")
+if err != nil {
+	return err
+}
 pngBytes, err := placeholder.PNG().Bytes()
 ```
 
@@ -26,7 +29,7 @@ pngBytes, err := placeholder.PNG().Bytes()
 
 - **Decode & normalize:** reads JPEG, PNG, GIF, and WebP, automatically rotating JPEG pixels according to their EXIF orientation tag and stripping EXIF metadata (including GPS coordinates) on re-encode.
 - **Resize & crop:** `Resize` (fit within bounds preserving aspect ratio), center-crop / cover thumbnails for avatars and square icons.
-- **Encode:** `.JPEG(quality)`, `.PNG()`, and WebP output to `[]byte` or an `io.Writer`.
+- **Encode:** `.JPEG(image.JPEGOptions{Quality: 85})`, `.PNG()`, and WebP output to `[]byte` or an `io.Writer`.
 
 ## Safety limits (image bombs)
 

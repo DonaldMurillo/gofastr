@@ -6,23 +6,35 @@
 
 ```go
 import (
+	"context"
+	"fmt"
 	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/service"
 	"github.com/DonaldMurillo/gofastr/framework"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func main() {
 	svc := service.New(service.Config{
 		ID:   "dev.example.syncd",
-		Name: "Sync Daemon",
+		Name: "syncd", // executable base name: letters, digits, ., _, - (no spaces)
 	})
-	app := framework.NewApp(svc.AppOptions()...)
-	// Register entities, cron/queue jobs, and uihost screens...
-	app.RegisterBattery(svc)
 
 	// Dispatches `syncd service <verb>` or runs the app:
-	os.Exit(svc.Main(app, os.Args[1:]))
+	err := svc.Run(context.Background(), os.Args[1:], func(rt service.Runtime) (*framework.App, error) {
+		opts, err := rt.AppOptions()
+		if err != nil {
+			return nil, err
+		}
+		app := framework.NewApp(opts...)
+		// Register entities, cron/queue jobs, and uihost screens...
+		return app, nil
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 ```
 
@@ -30,7 +42,7 @@ Like `battery/desktop`, `battery/service` opens an owner-only state directory (`
 
 ## Verbs
 
-`svc.Main` adds a `service` subcommand to your binary:
+`svc.Run` adds a `service` subcommand to your binary:
 
 | Command | Action |
 | --- | --- |
@@ -56,5 +68,5 @@ Because the daemon's HTTP `/mcp` route sits behind its browser session gate, dia
 
 - **Dialing the daemon's HTTP `/mcp` URL directly from an agent:** returns `401` by design. Use `<app> service mcp` (or read `mcp_command` from `localrun.List()`).
 - **Running `service install` with `sudo`:** `battery/service` targets per-user OS service managers (`launchd` user agents, `systemd --user`). Installing as root splits the state directory and permissions.
-- **Forgetting `svc.AppOptions()`:** without it the app won't inherit the service's persistent state dir, SQLite DB, and session secret.
+- **Forgetting `rt.AppOptions()` inside the builder:** without it the app won't inherit the service's persistent state dir, SQLite DB, and session secret.
 - **Expecting `service uninstall` to wipe `app.db`:** uninstall stops and removes the service registration while preserving user data.

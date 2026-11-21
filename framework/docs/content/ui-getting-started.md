@@ -15,7 +15,7 @@ gofastr dev
 
 `gofastr dev` watches your Go, CSS, JS, and HTML files, rebuilds on save, reloads the browser, and exposes dev MCP tools to your coding agent. (Plain `go run .` works for one-shot runs, but does not hot-reload.)
 
-Open <http://localhost:8080> to see the scaffolded home screen from `screens.go`. If you kept the default sample entity, `/api/posts` returns `401` until you create an account at `/register` and sign in at `/login` (pass `--no-entity` to `gofastr init` to skip both).
+Open <http://localhost:8080> to see the scaffolded home screen from `screens.go`. If you kept the default full-stack scaffold, `/api/posts` returns `401` until you create an account at `/register` and sign in at `/login` (pass `--no-entity` to `gofastr init` to skip the entity, auth screens, and database wiring).
 
 What `gofastr init` writes:
 
@@ -50,7 +50,7 @@ Prefer the typed `core-ui/html` builders (`html.Div`, `html.Heading`, `html.Para
 <!-- gofastr:compile
 -->
 ```go
-package screens
+package main
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func (a *AboutScreen) ScreenType() app.ScreenType                   { return app
 Register it in `main.go`:
 
 ```go
-site.Register("/about", &screens.AboutScreen{}, nil)
+site.Register("/about", &AboutScreen{}, nil)
 ```
 
 Cross-page links navigate client-side automatically with no full page reload once `runtime.js` is loaded.
@@ -186,7 +186,7 @@ For navigation shells:
 
 ---
 
-## Routing & path space
+## Reference: routing & path space
 
 ### Path space
 
@@ -236,9 +236,9 @@ One `RenderCtx` serves both views. Inside an overlay, `app.OverlayOriginFromCont
 
 ---
 
-## Core primitives & `ExtraAttrs`
+## Reference: core primitives & `ExtraAttrs`
 
-Ten small primitives in `framework/ui` cover everyday layout and controls (each loads its own CSS on demand):
+Small primitives in `framework/ui` cover everyday layout and controls (each loads its own CSS on demand):
 
 - **Layout:** `Stack`, `Cluster`, `Grid`, `Center`, `Spacer`, `Box`
 - **Surfaces & media:** `Card`, `Divider`, `OptimizedImage` (`Width` + `Height` required to prevent layout shift)

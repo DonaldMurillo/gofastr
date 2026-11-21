@@ -9,31 +9,34 @@
 3. `.env.<APP_ENV>` (only when `APP_ENV` is set, e.g. `.env.production`)
 4. `.env` (committed shared defaults)
 
-Missing files are skipped; malformed files fail fast with file name and line number (never printing the line's text so secrets don't leak into logs).
+Missing files are skipped. Calling `dotenv.LoadAndApply` directly fails fast on a malformed file (returning file name and line number without printing the line's text so secrets don't leak); note that `framework.NewApp()` discards the `LoadAndApply` error, so call `dotenv.LoadAndApply` explicitly and check the error if you want malformed dotfiles to abort startup.
 
 ## File format and `${VAR}` expansion
 
 ```dotenv
 # comments and blank lines are allowed
-FOO=bar                       # bareword value
+FOO=bar
 QUOTED="hello world"          # double-quoted: \n \t \" \\ and ${VAR} expanded
 LITERAL='hello\nworld'        # single-quoted: verbatim, no escapes or expansion
-export PORT=8080              # optional export prefix
+# optional export prefix (keep comments off unquoted lines)
+export PORT=8080
 DSN="postgres://${DB_HOST}/app"
 ESCAPED="\${not expanded}"    # \$ prevents expansion
 ```
 
 Rules:
 - Keys match `[A-Za-z_][A-Za-z0-9_]*`. Multi-line values are not supported (use `\n` in double quotes).
-- Inline `#` comments after **unquoted** values become part of the value — quote values when appending comments.
+- Inline `#` comments after **unquoted** values become part of the value — quote values when appending comments, or put comments on their own line.
 - Only bracketed `${VAR}` inside double quotes expands (bare `$VAR` is left literal). Lookup checks `os.Environ`, earlier files in the precedence chain, then earlier keys in the same file, without re-expanding substituted values (no cycles or double-expansion).
 
 ## Reading env vars before `NewApp`
 
-If `main.go` opens a database before calling `framework.NewApp`, load the exact same file list first using `framework.DefaultDotEnvPaths()`:
+If `main.go` opens a database before calling `framework.NewApp` (or wants fail-fast validation on malformed `.env` files), load the exact same file list first using `framework.DefaultDotEnvPaths()` and check the error:
 
 ```go
-_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+if err := dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...); err != nil {
+	log.Fatal(err)
+}
 db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
 ```
 

@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | `search.NewMemory()` | No | Term frequency | No | In-process; call `Close()` or register via `search.NewBattery` |
 | `search.NewPostgres(db, cfg)` | Yes | `ts_rank` | Yes (`'A'`..`'D'`) | Auto-managed GIN indexes + unstemmed prefix column |
-| `search.NewSQLiteFTS(db, cfg)` | Yes | BM25 | No | Requires `-tags sqlite_fts5` with `mattn/go-sqlite3` |
+| `search.NewSQLiteFTS(db, cfg)` | Yes | BM25 | No | Works out of the box with GoFastr's pure-Go SQLite driver (`-tags sqlite_fts5` needed only with `mattn/go-sqlite3`) |
 
 ## Quickstart
 
@@ -69,5 +69,5 @@ Register with `app.Batteries.Register(search.NewBattery(idx))` so other batterie
 - **Using `search.NewMemory()` in production:** drops the entire index on restart and scans `O(n)`.
 - **Forgetting `Document.Owner` on user-owned documents:** `App.EraseUserData` won't know which search documents belong to an erased user.
 - **Post-filtering results in Go instead of using `Query.FieldEquals`:** returns fewer than `Limit` results and wastes work; filter in the query.
-- **Building `SQLiteFTS` without `-tags sqlite_fts5`:** `EnsureSchema` fails until FTS5 is enabled at compile time.
+- **Building `SQLiteFTS` with `mattn/go-sqlite3` without `-tags sqlite_fts5`:** `EnsureSchema` fails unless FTS5 is enabled at compile time (GoFastr's default pure-Go SQLite driver ships with FTS5 enabled automatically).
 - **Forgetting to pass request `ctx` into `Index` / `Search`:** prevents cancellation propagation on client disconnects.

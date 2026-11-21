@@ -21,7 +21,10 @@ app := framework.NewApp(framework.WithDB(db))
 
 adminStep, complete := setup.AdminStep(authManager, db, "auth_users")
 runner := setup.New(setup.Config{
-	Steps:    []setup.Step{adminStep, setup.HealthStep(app)},
+	// Run HealthStep before AdminStep so a failed readiness check aborts
+	// before creating the admin user (otherwise `complete` would already be
+	// true on the next restart and skip setup).
+	Steps:    []setup.Step{setup.HealthStep(app), adminStep},
 	Complete: complete,
 })
 app.SetSetup(runner)
@@ -42,7 +45,7 @@ app.SetSetup(runner)
 
 ## Custom steps
 
-Declare steps with `setup.Step{Name, Title, Fields, Run}` using `i18n.Define` phrases so the wizard localizes automatically. Mark sensitive fields `Secret: true` (rendered as password inputs, never prefilled, logged, or space-trimmed). Include `setup.HealthStep(app)` to verify DB, storage, and email readiness before completing setup.
+Declare steps with `setup.Step{Name, Title, Fields, Run}` using `i18n.Define` phrases so the wizard localizes automatically. Mark sensitive fields `Secret: true` (rendered as password inputs, never prefilled, logged, or space-trimmed). Include `setup.HealthStep(app)` to verify the app's registered readiness probes (`App.RegisterReadiness` — DB is registered automatically; register readiness probes for storage or email if you want `HealthStep` to verify them too).
 
 ## Common mistakes
 

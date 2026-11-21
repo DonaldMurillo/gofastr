@@ -77,7 +77,7 @@ p.Revoke("editor", "teams:write")
 
 - `access.Wildcard` (`"*"`) is the global superuser grant (import `github.com/DonaldMurillo/gofastr/framework/access`).
 - Resource wildcards like `"teams:*"` expand against registered capabilities at `Grant`/`Revoke` time; `Can` always does exact matching (or `"*"`). Always call `Register` before granting resource wildcards.
-- Strict rejections return `*access.UnknownCapabilityError` (`Grant`, `Nearest`) so admin UIs can return `400`.
+- Strict rejections return `*access.UnknownCapabilityError` (struct fields `e.Grant` and `e.Nearest`) so admin UIs can return `400`.
 - Read-only inspection helpers (defensive copies): `p.Roles()`, `p.PermissionsOf(role)`, `p.Capabilities()`.
 
 ### Checking in handlers & caching role lookups

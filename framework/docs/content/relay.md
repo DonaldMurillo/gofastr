@@ -1,6 +1,6 @@
 # First-party relay (`battery/relay`)
 
-`battery/relay` is a locked-down reverse proxy plugin that serves allowlisted third-party endpoints (analytics, error tracking, scripts) from your own origin (`/ __gofastr/t/...`) so your strict `default-src 'self'` CSP stays intact and user cookies never reach third-party vendors.
+`battery/relay` is a locked-down reverse proxy plugin that serves allowlisted third-party endpoints (analytics, error tracking, scripts) from your own origin (`/__gofastr/t/...`) so your strict `default-src 'self'` CSP stays intact and user cookies never reach third-party vendors.
 
 ## Quickstart
 
@@ -19,12 +19,12 @@ app := framework.NewApp(
 r := relay.New(relay.Config{
 	Routes: []relay.Route{
 		{
-			Prefix:   "e/", // subtree: POST /__gofastr/t/e/{rest} → plausible.io/api/event/{rest}
+			Prefix:   "e", // exact endpoint: POST /__gofastr/t/e → plausible.io/api/event
 			Upstream: "https://plausible.io/api/event",
 			Methods:  []string{"POST"},
 		},
 		{
-			Prefix:   "js/", // GET /__gofastr/t/js/{rest} → plausible.io/js/{rest}
+			Prefix:   "js/", // subtree: GET /__gofastr/t/js/{rest} → plausible.io/js/{rest}
 			Upstream: "https://plausible.io/js",
 			Methods:  []string{"GET"},
 			CacheOK:  true,

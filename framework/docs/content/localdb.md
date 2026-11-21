@@ -56,7 +56,7 @@ await db.tx(['members', 'tags'], 'readwrite', async (t) => {
 const stop = db.watch('members', (e) => refreshTeam());
 ```
 
-Methods: `get`, `put`, `add`, `delete`, `clear`, `count`, `list` (`index`, `only`/`lower`/`upper`, `direction`, `offset`, `limit`, `keys`), `tx`, `watch`, plus `__gofastr.localdb.persist()` and `estimate()`. Rejections are `LocalDBError` with a closed `code` (`unsupported`, `unknown-db`, `invalid`, `constraint`, `quota`, `schema`, `aborted`, `failed`).
+Methods: `get`, `put`, `add`, `delete`, `clear`, `count`, `list` (`index`, `only`/`lower`/`upper`, `direction`, `offset`, `limit`, `keys`), `tx`, `watch`, plus `__gofastr.localdb.persist()` and `estimate()`. Rejections are `LocalDBError` with a closed `code` (`unsupported`, `unknown-db`, `unknown-store`, `unknown-index`, `invalid`, `constraint`, `quota`, `schema`, `version`, `closed`, `aborted`, `failed`).
 
 ## Schema evolution
 

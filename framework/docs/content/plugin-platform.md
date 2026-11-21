@@ -10,14 +10,21 @@ GoFastr keeps its core browser runtime tiny (~14 KB gzip). Heavy client-side fea
 
 ## Mounting a plugin
 
-Official plugins live in the sibling `gofastr-plugins` repository as ordinary Go modules (`go get` + `app.RegisterPlugin(...)` — no runtime plugin marketplace downloads):
+Official plugins live in the sibling `gofastr-plugins` repository as ordinary Go modules (`go get` + `app.RegisterPlugin(...)` — no runtime plugin marketplace downloads). Register the plugin on your `framework.App` and render its sandboxed frame marker in a screen using `framework/pluginhost`:
 
 ```go
-// Add the plugin module with `go get`, then register it on your app:
-// app.RegisterPlugin(myplugin.New(myplugin.Config{...}))
+// Register the plugin at startup:
+app.RegisterPlugin(myplugin.New(myplugin.Config{}))
+
+// Render the sandboxed plugin mount inside a screen:
+pluginhost.MountMarker(pluginhost.MountConfig{
+	Plugin:    "myplugin",
+	DocID:     "doc-42",
+	MinHeight: "420px",
+})
 ```
 
-Each plugin declares whether it runs in an opaque-origin sandboxed iframe (the default) or requires host-page access (explicitly called out in its docs and manifest).
+Every plugin mounted through `framework/pluginhost` runs inside an opaque-origin sandboxed iframe (`sandbox="allow-scripts"`). `pluginhost` **rejects `allow-same-origin` in manifests** — it is not a manifest opt-out from opaque isolation.
 
 ## Building a custom UI plugin
 

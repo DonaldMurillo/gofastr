@@ -1,10 +1,10 @@
 # Overview
 
-GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: **go from idea to a full-stack app, fastr.** It is built to stay simple for humans to understand and optimized for coding agents and the agentic ecosystem.
+GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: **go from idea to a full-stack app, fastr.** Simple for humans to understand. Optimized for agents and the agentic ecosystem.
 
 You decide how barebones or batteries-included you want to be. Start with a stdlib-first router and HTML builder, or turn on server-rendered screens with interactive islands (no React or Node), auth, SQLite or Postgres, background jobs, search, and MCP—all in plain Go you own, compiling to one binary.
 
-## Pick your altitude
+## Barebones or full stack
 
 GoFastr is split into clean layers, and you can mix them in the same app.
 
@@ -61,7 +61,7 @@ fw := framework.NewUIHostApp(uihost.New(pages),
 fw.Start(":8080")
 ```
 
-### 3. Full-stack batteries included (`gofastr init` + `battery/`)
+### 3. Full stack (`gofastr init` + `battery/`)
 
 When you want to move as fast as possible, `gofastr init myapp` scaffolds a working app on disk—plain Go you read, edit, and commit—with SQLite or Postgres, auth screens, hot reload (`gofastr dev`), and onboarding files for your coding agent. Add optional `app.Entity(...)` declarations when you want auto-wired tables, REST CRUD, OpenAPI, and MCP tools, or drop to `net/http` and `database/sql` whenever a route needs custom logic.
 
@@ -84,7 +84,7 @@ SQLite (pure Go, `CGO_ENABLED=0`) and Postgres out of the box, plus opt-in `batt
 
 - **[Backend capability map](/docs/backend-capability-map)**: find the exact package for any backend job.
 - **[Entity declarations](/docs/entity-declarations)**, **[Migrations](/docs/migrations)**, **[Hooks & transactions](/docs/hooks-and-transactions)**, and **[Query DSL](/docs/query-dsl)**: opt-in data layer when CRUD saves you time.
-- **[Auth](/docs/auth)**, **[Access control](/docs/access-control)**, **[Security defaults](/docs/security)**, and **[Multi-tenant scoping](/docs/multi-tenant)**: fail-closed security baked in.
+- **[Auth](/docs/auth)**, **[Access control](/docs/access-control)**, **[Security defaults](/docs/security)**, and **[Multi-tenant scoping](/docs/multi-tenant)**: fail-closed by default.
 - **[Queue](/docs/queue)**, **[Cron](/docs/cron)**, **[Email](/docs/email)**, **[Search](/docs/search)**, **[Storage](/docs/storage)**, **[Webhooks](/docs/webhooks)**, and **[Admin UI](/docs/admin)**: import only what you use.
 
 ### Built for coding agents and the agentic web
@@ -92,7 +92,7 @@ SQLite (pure Go, `CGO_ENABLED=0`) and Postgres out of the box, plus opt-in `batt
 Agents work with GoFastr on both sides of deployment:
 
 - **While building:** `gofastr dev` hands Claude Code or Codex your app's routes, config, docs, and logs over MCP; `gofastr verify` runs static and semantic contract checks ([contracts](/docs/contracts)) to catch security, routing, and UI bugs before they ship.
-- **In production:** your app serves `/mcp` tools behind the same auth and permissions as your HTTP API, along with automatic `llm.md`, `llms.txt`, and discovery endpoints ([agent-ready](/docs/agent-ready), [MCP server](/docs/mcp)).
+- **In production:** opt-in options serve `/mcp` tools behind the same auth and permissions as your HTTP API, along with per-screen `llm.md` (via `uihost.WithPublicLLMMD()`), `/llms.txt`, and discovery endpoints ([agent-ready](/docs/agent-ready), [MCP server](/docs/mcp)).
 
 ### Shipping & growing
 

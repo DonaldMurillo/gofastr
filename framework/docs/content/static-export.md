@@ -10,7 +10,7 @@ gofastr export --base /docs _site    # deploy under a subpath (e.g. GitHub Pages
 ## What gets exported
 
 - **Every registered static screen** (for example `/`, `/pricing`, `/about`), rendered through the exact same SSR pipeline and layouts as the live server.
-- **Dynamic screens** (`/docs/:slug`, `/posts/:slug`) whose component implements `StaticPathsProvider` (`StaticPaths(ctx) ([]string, error)`). Dynamic routes without `StaticPathsProvider` are skipped with a warning.
+- **Dynamic screens** (`/docs/:slug`, `/posts/:slug`) whose component implements `StaticPathsProvider` (`StaticPaths(ctx context.Context) []map[string]string`). Dynamic routes without `StaticPathsProvider` are skipped with a warning.
 - **Locale-prefixed trees** when `framework.WithLocalePrefixes` is enabled (`/es/...` alongside the default locale).
 - **Assets & metadata:** `/__gofastr/app.css`, per-component CSS, runtime JS, icons from `WithAppIcon`, `/sitemap.xml`, `/robots.txt`, `/llms.txt` + per-page `llm.md`, static files from `WithStaticDir`, PWA files (`WithPWA`), and `battery/sitesearch` shards.
 - **Custom contributors:** any battery implementing `static.Contributor` (`ExportStart`, `ExportPage`, `ExportFiles`) can write additional files alongside exported pages.
@@ -18,11 +18,11 @@ gofastr export --base /docs _site    # deploy under a subpath (e.g. GitHub Pages
 ## What gets skipped
 
 - **Auth-gated or redirected screens:** every page is evaluated as an anonymous `GET` (`PagePolicy`). Screens that redirect to `/login`, return non-200 (such as `app.SetStatus(ctx, 404)`), or fail access checks are skipped automatically so private chrome never leaks into a static bundle.
-- **Server-only features:** API CRUD routes, SSE (`/ __gofastr/sse`), server-action RPCs, and live form POSTs do not run on a static host. Static exports support client-side navigation, theme switching, headless disclosure/tabs/modals, `core-ui/localdb` / `localentity`, and `battery/sitesearch`.
+- **Server-only features:** API CRUD routes, SSE (`/__gofastr/sse`), server-action RPCs, and live form POSTs do not run on a static host. Static exports support client-side navigation, theme switching, headless disclosure/tabs/modals, `core-ui/localdb` / `localentity`, and `battery/sitesearch`.
 
 ## Subpath hosting (`--base`)
 
-Pass `--base /my-project` (or `BasePath: "/my-project"` in `ExportStatic`) when hosting below a domain root:
+Pass `--base /my-project` (or pass `"/my-project"` as the third argument to `app.ExportStatic(ctx, dir, "/my-project")`) when hosting below a domain root:
 - Rewrites internal links, asset URLs, sitemap `<loc>` URLs, robots `Sitemap:`, PWA manifest `start_url`/`scope`/icons, and site-search shard paths cleanly without double-prefixing.
 - Preserves trailing-slash compatibility for static hosts (`dir/index.html`).
 

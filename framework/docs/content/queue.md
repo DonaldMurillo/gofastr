@@ -25,11 +25,12 @@ Pick `MemoryQueue` for tests and quick prototypes, `DBQueue` for most production
 ```go
 import "github.com/DonaldMurillo/gofastr/battery/queue"
 
-q := queue.NewDBQueue(db, queue.DBQueueConfig{
-	Concurrency: 4,
-})
+q, err := queue.NewDBQueue(db, queue.WithWorkers(4))
+if err != nil {
+	return err
+}
 
-q.Handle("send_welcome", func(ctx context.Context, job queue.Job) error {
+q.RegisterHandler("send_welcome", func(ctx context.Context, job queue.Job) error {
 	var payload struct{ UserID string }
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return queue.Permanent(err) // dead-letter immediately, do not retry
@@ -62,10 +63,11 @@ err := q.Enqueue(ctx, queue.Job{
 
 ## Inspecting jobs (`Browsable`)
 
-All three backends implement `queue.Browsable`:
+All three backends implement `queue.Browsable` (call the methods directly on a concrete `*DBQueue`, or assert when holding a `queue.Queue` interface):
 
 ```go
-if b, ok := q.(queue.Browsable); ok {
+var qIface queue.Queue = q
+if b, ok := qIface.(queue.Browsable); ok {
 	jobs, _ := b.ListJobs(ctx, "failed", 50, 0)
 	stats, _ := b.Stats(ctx)
 	fmt.Println("failed:", stats["failed"])
@@ -74,11 +76,11 @@ if b, ok := q.(queue.Browsable); ok {
 
 ## Scheduler
 
-`queue.NewScheduler(q)` enqueues recurring jobs on intervals (`Every`) or standard 5-field cron specs (`Cron(spec)`), reusing GoFastr's cron parser (`cron.Parse`) with vixie-cron DST semantics. Use it when you want durable retries and dead-letter visibility for scheduled tasks (see [Cron](cron.md)).
+`queue.NewScheduler(q)` enqueues recurring jobs on intervals (`Every`) or standard 5-field cron specs (`Cron(spec)`), reusing GoFastr's cron parser (`cron.Parse`) with vixie-cron DST semantics. For restart continuity and cross-replica occurrence deduplication, use `queue.DurableScheduler.Cron(id, spec)` (see [Cron](cron.md)).
 
 ## Redis backend and optional interfaces
 
-`queue.NewRedisQueue(client, cfg)` accepts any client implementing `queue.RedisClient` (no hardcoded Redis driver dependency). Adapters **must** translate their driver's empty-list sentinel (such as `redis.Nil`) to `queue.ErrRedisEmpty` so worker loops distinguish an empty queue from a backend outage.
+`queue.NewRedisQueue(client, queueName, opts...)` accepts a queue name string and any client implementing `queue.RedisClient` (no hardcoded Redis driver dependency). Adapters **must** translate their driver's empty-list sentinel (such as `redis.Nil`) to `queue.ErrRedisEmpty` so worker loops distinguish an empty queue from a backend outage.
 
 ### Optional: `ListLengther`
 

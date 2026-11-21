@@ -69,7 +69,7 @@ Relations and `many_to_many` pivots (`entity.ResolveTarget`, `entity.PivotEntity
 import "github.com/DonaldMurillo/gofastr/framework/experimental/apiversions"
 
 v1 := apiversions.Version(app.Router(), "v1",
-	apiversions.WithDeprecation(time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), "/api/v2"),
+	apiversions.WithDeprecation(time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), "/v2"),
 )
 v1.Use(v1.DeprecationMiddleware()) // emits Deprecation, Sunset, and Link headers
 

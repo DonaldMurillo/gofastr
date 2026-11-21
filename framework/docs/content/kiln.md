@@ -48,7 +48,7 @@ Notes on freezing:
 
 ## Security boundary
 
-Kiln is **local-development only**. Its loopback bind (`127.0.0.1`) and Host/Origin checks are the security boundary; `.kiln.session.jsonl` is written `0600` inside a `0700` directory, and every agent turn runs in its own isolated temp directory and process group (killed cleanly on cancel or shutdown). Do not bind `--addr 0.0.0.0` without an external auth and network boundary.
+Kiln is **local-development only**. Its loopback bind (`127.0.0.1`) and Host/Origin checks are the security boundary, and `.kiln.session.jsonl` is written `0600` inside a `0700` directory. In browser panel mode, a per-turn working directory is only created when the adapter has a configured directory; the turnkey `kiln agent` path runs in its chosen working directory and inherits the environment. **Neither path is an OS sandbox** (child processes still run with your user's privileges, though they run in their own process group for clean cancel/shutdown). Do not bind `--addr 0.0.0.0` without an external auth and network boundary.
 
 ## Common mistakes
 

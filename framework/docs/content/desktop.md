@@ -12,24 +12,33 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 func main() {
+	opts, err := desktop.AppOptions("dev.gofastr.notes")
+	if err != nil {
+		log.Fatal(err)
+	}
+	site := app.NewApp("Notes")
+	site.Register("/", &HomeScreen{}, nil)
+
+	fwApp := framework.NewUIHostApp(uihost.New(site), opts...)
+	// Register entities and routes BEFORE RegisterBattery.
 	d := native.New(desktop.Config{
 		ID:              "dev.gofastr.notes",
 		Title:           "Notes",
 		RememberWindows: true,
 	})
-	app := framework.NewApp(d.AppOptions()...)
-	// Register entities, screens, and uihost BEFORE RegisterBattery:
-	// app.Mount(uihost.New(site))
-	app.RegisterBattery(d)
-	log.Fatal(d.Run(app)) // Run owns app.Start and graceful Shutdown
+	fwApp.RegisterBattery(d)
+	log.Fatal(d.Run(fwApp)) // Run owns app.Start and graceful Shutdown
 }
 ```
 
-Use `d.AppOptions()` to wire the per-app data directory (`app.db`, `secret`, `identity` via `framework/localapp`). Never call both `app.Start` and `d.Run` (`d.Run` owns the full lifecycle).
+Use `desktop.AppOptions(id)` to wire the per-app data directory (`app.db`, `secret`, `identity` via `framework/localapp`). Never call both `app.Start` and `d.Run` (`d.Run` owns the full lifecycle).
 
 For a server-only Linux image (Alpine / `scratch`) that shares code with a desktop app, build with `-tags gofastr_nodesktop` so no GTK dynamic loader dependency is linked.
 

@@ -5,7 +5,7 @@ Every CRUD-enabled entity mounts batch routes at `/<table>/_batch` so callers ca
 | Method & path | Action | Request body |
 | --- | --- | --- |
 | `POST /<table>/_batch` | Bulk create | `{"items": [ {...}, ... ]}` |
-| `PUT /<table>/_batch` | Bulk update | `{"items": [ {"id": ..., ...}, ... ]}` |
+| `PATCH /<table>/_batch` | Bulk update | `{"items": [ {"id": ..., ...}, ... ]}` |
 | `DELETE /<table>/_batch` | Bulk delete | `{"ids": [ ... ]}` |
 
 ## Transaction and validation semantics

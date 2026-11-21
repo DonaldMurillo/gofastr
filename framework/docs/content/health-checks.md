@@ -7,7 +7,7 @@ Every `framework.App` exposes two built-in probes during `Start` with `Cache-Con
 | `/healthz` | Liveness | Always returns `200 ok` while the HTTP server is accepting connections (even during shutdown drain) |
 | `/readyz` | Readiness | Runs registered dependency checks in parallel (default 5s timeout); returns `200` (`status: "ready"`) or `503` (`status: "not_ready"` / `"draining"`) |
 
-Both endpoints run through the **root middleware chain** (default middleware plus every `app.Use` middleware) regardless of registration order. Scope authentication middleware to **route groups** (or explicitly exempt `/healthz` and `/readyz`) so orchestrator probes stay reachable.
+In `all` and `serve` roles, both endpoints run through the **root middleware chain** (default middleware plus every `app.Use` middleware) regardless of registration order — scope authentication middleware to **route groups** (or explicitly exempt `/healthz` and `/readyz`) so orchestrator probes stay reachable. In `worker` and `agent` roles (`GOFASTR_ROLE=worker|agent`), probes mount on dedicated muxes **without** root `app.Use` middleware, so keep those listeners on a private network or behind upstream access controls (especially if enabling `WithVerboseReadiness()`).
 
 ## Registering readiness checks
 

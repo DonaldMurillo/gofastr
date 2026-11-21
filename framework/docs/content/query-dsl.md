@@ -1,6 +1,6 @@
 # Query DSL
 
-Every CRUD list route (`GET /<table>`, `GET /<table>?_stream=true`, and the generated `<table>_list` MCP tool) supports filtering, full-text search, sorting, field selection, and pagination through URL query parameters — all evaluated server-side in SQL.
+Every CRUD list route (`GET /<table>`, `GET /<table>?stream=true`, and the generated `<table>_list` MCP tool) supports filtering, full-text search, sorting, field selection, and pagination through URL query parameters — all evaluated server-side in SQL.
 
 ## Filter operators
 
@@ -12,11 +12,8 @@ Pass column names directly for equality, or append an operator suffix (`<field>_
 | `_ne` | Not equal | `?status_ne=archived` |
 | `_gt`, `_gte` | Greater than / or equal | `?amount_gte=100` |
 | `_lt`, `_lte` | Less than / or equal | `?created_at_lt=2026-01-01T00:00:00Z` |
-| `_contains` | Case-insensitive substring | `?title_contains=invoice` |
-| `_starts` | Prefix match | `?code_starts=INV-` |
-| `_ends` | Suffix match | `?email_ends=@example.com` |
-| `_in`, `_nin` | Comma-separated set / not in set | `?status_in=draft,sent` |
-| `_null` | `IS NULL` (`true`) or `IS NOT NULL` (`false`) | `?deleted_at_null=true` |
+| `_like` | Substring / pattern match (`LIKE`) | `?title_like=invoice` |
+| `_in` | Comma-separated set | `?status_in=draft,sent` |
 
 Multiple query parameters combine with `AND`. Repeating the same parameter or using `_in` matches any listed value. Unknown fields, `Hidden` fields, and `NoQuery` fields are rejected with `400`.
 
@@ -32,7 +29,7 @@ Relation filters enforce the target entity's read access, `OwnerField`, `MultiTe
 
 ## Search (`?q=`)
 
-`?q=term` searches every column listed in `EntityConfig.SearchFields` (case-insensitive substring match, combined with `OR` across search columns and `AND` with other filters). Entities without `SearchFields` ignore `?q=` (or treat `q` as a normal column filter if the entity declares a queryable `q` column).
+`?q=term` searches every column listed in `EntityConfig.SearchFields` (case-insensitive substring match, combined with `OR` across search columns and `AND` with other filters). Sending a non-blank `?q=` on an entity without `SearchFields` returns `400 search_not_configured`.
 
 ## Sorting (`?sort=`)
 
@@ -44,7 +41,7 @@ GET /api/tickets?sort=-priority,created_at
 
 When `?sort=` is omitted, the handler falls back to primary key order. Sorting on `Hidden` or `NoQuery` fields is rejected with `400`.
 
-When cursor pagination is active, `?sort=` must match `EntityConfig.Pagination.CursorFields` (in order); see [Cursor pagination](cursor-pagination.md).
+When cursor pagination is active, `?sort=` is validated and then ignored—cursor walks always order by `EntityConfig.Pagination.CursorFields` (see [Cursor pagination](cursor-pagination.md)).
 
 ## Pagination and streaming
 
@@ -55,6 +52,17 @@ When cursor pagination is active, `?sort=` must match `EntityConfig.Pagination.C
 ## Sparse fieldsets (`?fields=`)
 
 Request a subset of columns with `?fields=id,title,status` (primary key fields are always included when needed for links/cursors; `Hidden` fields remain excluded).
+
+## Programmatic DSL (`framework/dsl`)
+
+For saved views or server-side query strings (such as `DisplayConfig.Views`), `framework/dsl` parses and compiles chained DSL expressions against your entity registry:
+
+```go
+parsed, err := dsl.ParseDSL(`tickets.where(status="open").order(-created_at).limit(20)`)
+qb, err := dsl.BuildDSLQuery(app.Registry, `tickets.where(status="open").order(-created_at).limit(20)`)
+```
+
+> **Security warning:** `dsl.BuildDSLQuery` checks field names, `Hidden`, and `NoQuery`, but it applies **no** `OwnerField`, `MultiTenant`, `ReadScope`, or `SoftDelete` scoping. Always append your caller/tenant/soft-delete predicates to `qb` before executing it on behalf of a user.
 
 ## MCP tool arguments
 

@@ -115,20 +115,38 @@ app.Entity("notes", framework.EntityConfig{
 })
 ```
 
-Save the file — `gofastr dev` rebuilds and restarts automatically. Because `auth.enabled` wired `battery/auth`, GoFastr already has an owner extractor registered:
+Wire a `RolePolicy` and `access.Middleware` in `app.go` (after `auth.SessionMiddleware`) so roles such as `admin` or `editor` actually hold `notes:delete` (without a policy, every delete returns `403`):
+
+```go
+policy := framework.NewRolePolicy()
+policy.Grant("admin", "notes:delete")
+policy.Grant("editor", "notes:delete")
+fwApp.Use(access.Middleware(policy, func(ctx context.Context) []string {
+	if u := auth.GetCurrentUser(ctx); u != nil {
+		return u.GetRoles()
+	}
+	return nil
+}))
+```
+
+Save the files — `gofastr dev` rebuilds and restarts automatically. Because `auth.enabled` wired `battery/auth`, GoFastr already has an owner extractor registered:
 - Anonymous `GET /api/notes` now returns `401`.
 - Creating a note while signed in stamps `user_id` automatically from the session.
 - A second signed-in user sees an empty list and gets `404` when requesting the first user's note ID.
 - Deleting a note returns `403` unless the caller holds `notes:delete`.
 
-Verify with a cookie jar:
+Verify with a cookie jar (`/auth/register` returns `202 {"accepted":true}` without setting a session cookie, so follow it with `/auth/login`):
 
 ```bash
 # Anonymous is rejected
 curl -i http://localhost:8080/api/notes   # 401
 
-# Sign up and create a note
-curl -c cookies.txt -X POST http://localhost:8080/auth/register \
+# Sign up, then log in to receive a session cookie
+curl -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"correct-horse-battery-staple"}'
+
+curl -c cookies.txt -X POST http://localhost:8080/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"ada@example.com","password":"correct-horse-battery-staple"}'
 
@@ -139,7 +157,7 @@ curl -b cookies.txt -X POST http://localhost:8080/api/notes \
 
 ## 3. Keep going in plain Go
 
-Adding a hand-written page takes one file and one line in `screens_register.go`. Create `screen_about.go`:
+Adding a hand-written page takes one file and one registration call (the same pattern used in `examples/meridian/screen_about.go`). Create `screen_about.go`:
 
 ```go
 package main
@@ -147,25 +165,31 @@ package main
 import (
 	"context"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-func aboutScreen(ctx context.Context) ui.Component {
+type AboutScreen struct{ component.ContextOnly }
+
+func (s *AboutScreen) ScreenTitle(context.Context) string { return "About Notes" }
+func (s *AboutScreen) ScreenType() app.ScreenType         { return app.ScreenPage }
+
+func (s *AboutScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Container(ui.ContainerConfig{},
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:       "About Notes",
-			Description: "Plain Go screen rendered right beside generated ones.",
+			Title:    "About Notes",
+			Subtitle: "Plain Go screen rendered right beside generated ones.",
 		}),
 	)
 }
 ```
 
-Register it in `screens_register.go`:
+Register it alongside your generated screens in `screens_register.go`:
 
 ```go
-app.Screen("/about", func(c *framework.Context) ui.Component {
-	return aboutScreen(c.Request.Context())
-})
+site.Register("/about", &AboutScreen{}, nil)
 ```
 
 Visit `http://localhost:8080/about` — it shares the app's layout, navigation, theme, and client-side router automatically.

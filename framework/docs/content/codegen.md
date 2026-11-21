@@ -51,7 +51,15 @@ codegen:
 Security & protocol rules for command extensions:
 - **Explicit opt-in:** auto-discovered settings files do not execute arbitrary commands automatically — pass `--config <path>` or set `GOFASTR_CODEGEN_ALLOW_COMMANDS=1`.
 - **Allowlisted env:** child processes receive only `PATH`, `HOME`, temp dir, locale, and Go toolchain vars (never `GOFASTR_SECRET` or `DATABASE_URL`). Pass custom values via `extension.config`.
-- **Strict JSON stdin/stdout protocol (`protocol_version: 1`):** runs phases `load` → `validate` → `render` → `finalize`; `severity: error` diagnostics fail generation; `clean: true` removes only files listed in `.codegen-manifest.json`.
+- **Strict JSON stdin/stdout protocol (`protocol_version: 1`):** runs phases `load` → `validate` → `render` → `finalize`; `severity: error` diagnostics fail generation; `clean: true` removes only files listed in `.codegen-manifest.json`. Each phase sends an `ExtensionRequest` on stdin and reads an `ExtensionResponse` on stdout:
+
+```json
+// stdin (request)
+{"protocol_version":1,"phase":"render","project_dir":".","generator":{"name":"custom/reports"},"source":{"reports":[]}}
+
+// stdout (response)
+{"protocol_version":1,"files":[{"path":"reports/index.gen.go","content":"package reports\n"}],"diagnostics":[]}
+```
 
 ## Provenance markers
 

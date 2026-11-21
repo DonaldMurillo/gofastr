@@ -1,6 +1,6 @@
 # Agent-readiness
 
-GoFastr apps participate in the agentic ecosystem out of the box—both for **coding agents** while you build (`gofastr dev` MCP + embedded docs) and for **user agents** once you ship (`/mcp`, `/llms.txt`, per-screen `llm.md`, markdown content negotiation, and standard `.well-known` discovery endpoints).
+One option mounts `/mcp`; one more serves `/llms.txt`, an agent card, per-screen `llm.md`, markdown content negotiation, and `.well-known` discovery. During development, `gofastr dev` also wires dev MCP tools and embedded docs for your coding agent automatically.
 
 Every production discovery surface is opt-in and additive: enable the full bundle in one call, or wire individual options.
 
@@ -125,15 +125,16 @@ uihost.WithOrganization(uihost.OrganizationConfig{
 
 ### Gating MCP tools & resources
 
-Entity CRUD tools dispatch through the app router, inheriting session/JWT auth, RBAC, and `OwnerField`/tenant scoping automatically—and `tools/list` hides tools a caller cannot invoke.
+Entity CRUD tools run through the same router as your HTTP API, so an agent passes the same session/JWT auth, RBAC, and `OwnerField`/tenant checks a user does—and `tools/list` hides tools a caller cannot invoke.
 
 For directly registered tools, `Endpoint.MCPHandler` twins, or private `/mcp` endpoints:
 
 - **Per-tool gate:** prefer `mcp.WithToolGate(gate)` over the older `mcp.Gated` wrapper so unauthorized callers don't even see the tool schema in `tools/list`:
-  ```go
-  app.MCP.RegisterTool("orders_refund", "Refund an order", schema, refundHandler,
-  	mcp.WithToolGate(auth.MCPRole("support")))
-  ```
+
+```go
+app.MCP.RegisterTool("orders_refund", "Refund an order", schema, refundHandler,
+	mcp.WithToolGate(auth.MCPRole("support")))
+```
 - **Whole-endpoint gate:** close the entire MCP data surface (`tools/*`, `resources/*`, `prompts/*`, keeping `initialize` and `ping` open) in one option:
 
 <!-- gofastr:compile

@@ -58,7 +58,7 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 const (
 	readmeCoreHeading       = "### Core only"
 	readmeEntityHeading     = "### Framework"
-	readmeDonaldsWayHeading = "### Donald's Way"
+	readmeDonaldsWayHeading = "### Full stack"
 )
 
 // readmeProgram extracts the complete Go program (the first ```go fence
@@ -181,6 +181,16 @@ func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "My notes") {
 		t.Fatalf("GET / = %d — want 200 with the server-rendered screen (body %q)\n%s", resp.StatusCode, body, output.String())
+	}
+
+	llmResp, err := http.Get(baseURL + "/llm.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	llmBody, _ := io.ReadAll(llmResp.Body)
+	llmResp.Body.Close()
+	if llmResp.StatusCode != http.StatusOK || !strings.Contains(string(llmBody), "My notes") {
+		t.Fatalf("GET /llm.md = %d — want 200 with page markdown (body %q)\n%s", llmResp.StatusCode, llmBody, output.String())
 	}
 
 	apiResp, err := http.Get(baseURL + "/api/notes")

@@ -70,6 +70,6 @@ Live demos comparing bare headless beside themed `framework/ui` across five them
 - **Arming `data-hui-*` hooks manually.** The kernel already runs every module's scanner on load, island insertion, and SPA navigation—never add a second `MutationObserver` or `gofastr:navigate` scanner.
 - **Querying components by CSS class from JS.** Behavior modules bind exclusively to `data-hui-*` hooks so class maps can rename any class freely.
 - **Hardcoding English copy in a headless component or JS module.** Put user-visible strings in `Strings` and pass them through `data-hui-*` attributes so localization works everywhere.
-- **Passing `data-cui-*` attributes via `ExtraAttrs` or `Parts.Attrs`.** Both strip `data-cui-*` and `data-hui-*` keys; use `Action`, `Island`, or `Parts.Binds`.
+- **Passing `data-cui-*` attributes via `Parts.Attrs` on bare headless components.** `Parts.Attrs` strips `data-cui-*` and `data-hui-*` keys on headless primitives; use `Action`, `Island`, or `Parts.Binds` instead. (By design, the themed `ui.Button` wrapper accepts typed runtime action attributes via `ExtraAttrs`.)
 - **Hand-building field/hint IDs instead of using `headless.FieldControl`.** Let `Field` pass IDs and `aria-describedby` down to the control so label associations never drift.
 - **Passing empty values to `Attrs` for boolean/presence attributes.** `Attrs` drops empty values; use `Flag` for HTML booleans and `Mark` for presence hooks.

@@ -1,6 +1,6 @@
 # Comparison: where GoFastr sits
 
-GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: plain Go you own, from barebones `core/` primitives up to server-rendered UI, auth, SQLite/Postgres, batteries, and MCP in one binary. Several great tools cover parts of that job. This page compares them honestly—including where they beat GoFastr—so you can pick the right one.
+GoFastr is a full-stack Go framework for prototypes and small-to-medium apps: plain Go you own, from barebones `core/` primitives up to server-rendered UI, auth, SQLite/Postgres, batteries, and MCP in one binary. Several great tools cover parts of that job. This page compares them—including where they beat GoFastr—so you can pick the right one.
 
 ## What actually makes GoFastr different
 

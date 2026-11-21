@@ -20,8 +20,16 @@ Built-in test guards active automatically in Go test binaries:
 ## Browser-free and headless-Chrome quality gates
 
 - **Accessibility (`framework/testkit/axetest`):** headless Chromium + vendored axe-core across light and dark schemes (`axetest.ScanSchemes`); see [Accessibility](accessibility.md).
-- **Works without JavaScript (`framework/testkit/nojstest`):** loads pages in Chrome with script disabled to catch empty `<main>`, dead `#`/`javascript:` links, forms with no enabled submit button, and 4xx/5xx responses.
-- **CSS weight budget (`framework/testkit/cssweight`):** measures total and gzipped `<style>` + linked stylesheet bytes per page over plain HTTP (no browser required) so CSS bloat fails CI.
+- **Works without JavaScript (`framework/testkit/nojstest`):** loads pages in Chrome with script disabled to catch empty `<main>`, dead `#`/`javascript:` links, forms with no enabled submit button, and 4xx/5xx responses:
+  ```go
+  tab, done := nojstest.NewTab(t, browser)
+  defer done()
+  problems, err := nojstest.Check(tab, baseURL+"/pricing")
+  ```
+- **CSS weight budget (`framework/testkit/cssweight`):** measures total and gzipped `<style>` + linked stylesheet bytes per page over plain HTTP (no browser required) so CSS bloat fails CI:
+  ```go
+  w, err := cssweight.Measure(srv.Client(), srv.URL+"/")
+  ```
 
 ## Isolated Postgres databases (`testkit.NewIsolatedDB`)
 

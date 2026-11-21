@@ -44,14 +44,17 @@ html.Div(html.DivConfig{
 )
 ```
 
-Invoke from an external script (`uihost.WithExtraScripts("/compute-client.js")`):
+Invoke from an external classic script (`uihost.WithExtraScripts("/compute-client.js")` — wrap `await` inside an `async` handler since classic scripts do not allow top-level `await`):
 
 ```js
-await window.__gofastr.loadModule('compute');
-const result = await window.__gofastr.compute.task('sum-worker', 'sum', {
-  wasmURL: window.__gofastr.compute.wasmURL('sum'),
-  a: 19,
-  b: 23,
+document.getElementById('run-sum')?.addEventListener('click', async () => {
+  await window.__gofastr.loadModule('compute');
+  const result = await window.__gofastr.compute.task('sum-worker', 'sum', {
+    wasmURL: window.__gofastr.compute.wasmURL('sum'),
+    a: 19,
+    b: 23,
+  });
+  document.getElementById('sum-result').textContent = String(result);
 });
 ```
 
@@ -60,6 +63,14 @@ const result = await window.__gofastr.compute.task('sum-worker', 'sum', {
 Every worker implements a tiny structured-clone request/response contract (no generated shim):
 - **Incoming:** `{ id, fn, payload }`
 - **Reply:** `{ id, ok: true, result }` or `{ id, ok: false, error: "message" }`
+
+```js
+// web/sum-worker.js
+self.onmessage = ({ data: { id, fn, payload } }) => {
+  if (fn === 'sum') self.postMessage({ id, ok: true, result: payload.a + payload.b });
+  else self.postMessage({ id, ok: false, error: 'unknown fn: ' + fn });
+};
+```
 
 Workers reuse one instance per name across SPA navigations, time out silent tasks after 30 seconds (terminating the hung worker), and reject pending tasks on uncaught errors.
 

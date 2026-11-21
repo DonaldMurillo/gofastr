@@ -37,7 +37,7 @@ type docEntry struct {
 	Desc  string
 }
 
-// docIntent groups entries under one of the six reading intents.
+// docIntent groups entries under one of the reading intents.
 type docIntent struct {
 	Num   string
 	Slug  string
@@ -57,11 +57,12 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"overview", "Overview", "How the layers fit together, from barebones core/ to a full-stack app."},
 			{"ui-getting-started", "Getting started (UI)", "Scaffold an app, run gofastr dev, customize the theme, and build screens."},
+			{"tutorial-app-spec", "Tutorial: app spec app", "Optional one-file scaffolder: gofastr.yml to plain Go you own."},
 			{"project-structure", "Project structure", "Start flat; extract domain packages only when real boundaries appear."},
 			{"cli", "The gofastr CLI", "Install, scaffold, dev loop, verification, migrations, deploy, and releases."},
 			{"backend-capability-map", "Backend capability map", "Pick a backend job and jump straight to the package, check, and doc."},
 			{"ui-capability-map", "UI capability map", "Pick a UI shape and see state ownership, delivery tier, and live examples."},
-			{"comparison", "Comparison", "Honest trade-offs vs PocketBase, Encore, Wasp, and hand-rolled Go."},
+			{"comparison", "Comparison", "Trade-offs vs PocketBase, Encore, Wasp, and hand-rolled Go."},
 			{"stability", "API stability", "Pre-v1 breaking-change policy, deprecation rules, and the v1 promise."},
 			{"upgrading", "Upgrading", "Move your app and CLI to a newer release with gofastr upgrade."},
 		},
@@ -112,10 +113,11 @@ var docIntents = []docIntent{
 			{"rate-limit", "Rate limiting", "Sliding-window and lockout HTTP rate limiting."},
 			{"idempotency", "Idempotency", "Safe mutation retries with Idempotency-Key headers."},
 			{"health-checks", "Health checks", "/healthz and /readyz probes with plugin readiness hooks."},
-			{"cache", "Cache", "Pluggable caching backends with TTLs."},
+			{"cache", "Cache", "Memoize expensive reads behind a small Cache interface with TTLs."},
 			{"endpoints", "Custom endpoints", "Hand-written typed HTTP routes wired into clients and SDKs."},
-			{"queue", "Job queue", "Durable background jobs with retries and dead-letter replay."},
-			{"cron", "Cron", "Scheduled in-process jobs with retry and jitter."},
+			{"api-versioning", "API prefix & versioning", "URL version prefixes via WithAPIPrefix, plus experimental projections and deprecation headers."},
+			{"queue", "Job queue", "Durable background jobs with retries, jitter, and dead-letter replay."},
+			{"cron", "Cron", "Scheduled jobs via in-process Scheduler or restart-safe DurableScheduler."},
 			{"email", "Email", "SMTP and dev log senders plus template rendering."},
 			{"notifications", "Notifications", "Multi-channel notification delivery with per-channel templates."},
 			{"webhooks", "Webhooks", "Signed outbound webhook delivery with backoff and dead-lettering."},
@@ -140,7 +142,7 @@ var docIntents = []docIntent{
 			{"entity-declarations", "Entity declarations", "Opt-in declarations that wire tables, REST CRUD, validation, OpenAPI, and MCP."},
 			{"migrations", "Migrations", "Versioned, checksum-guarded SQL migrations plus dev auto-migrate."},
 			{"hooks-and-transactions", "Hooks & transactions", "Before/After lifecycle hooks, TxFromContext, and App.InTx."},
-			{"query-dsl", "Filter DSL", "Query-string filtering and sorting parsed into typed SQL conditions."},
+			{"query-dsl", "Filter DSL", "?status=published&views_gte=10&sort=-created_at parses to a typed Where."},
 			{"includes", "Eager loading", "Nested ?include= preloading without N+1 queries."},
 			{"cursor-pagination", "Cursor pagination", "Opt-in keyset pagination with composite cursors."},
 			{"batch-endpoints", "Batch endpoints", "Atomic multi-record POST, PATCH, and DELETE in one transaction."},
@@ -151,7 +153,7 @@ var docIntents = []docIntent{
 			{"uploads", "Uploads", "Multipart file and image uploads with automatic image renditions."},
 			{"sqlite-driver", "The SQLite driver", "Pure-Go SQLite (CGO_ENABLED=0) defaults and :memory: rules."},
 			{"audit-log", "Audit log", "Transactional audit rows for Create, Update, and Delete writes."},
-			{"data-export", "Data export & import", "Portable user data export, validated import, and erasure helpers."},
+			{"data-export", "Data export & import", "Privileged NDJSON archive export/import and user erasure helpers."},
 			{"backups", "Backups and restore", "SQLite and Postgres backup commands and restore verification."},
 			{"dotenv", "Env / .env", "Automatic .env loading via core/dotenv."},
 			{"core-packages", "Core packages", "Standalone core/* building blocks you can use without framework/."},
@@ -175,8 +177,21 @@ var docIntents = []docIntent{
 		},
 	},
 	{
-		Num: "05", Slug: "shipping", Title: "Testing, ops & shipping",
-		Lede: "Dev loop, tests, codegen, SDKs, customer CLIs, single-binary deploys, and horizontal scaling.",
+		Num: "05", Slug: "generators", Title: "Generators & SDKs",
+		Lede: "One-shot app scaffolding, config-driven codegen, typed Go/TS SDKs, branded CLIs, and package unmounting.",
+		Path: []string{"App specs", "Code generation", "Ship your API as SDKs"},
+		Docs: []docEntry{
+			{"app-spec", "App specs", "YAML schema reference for one-shot app scaffolding."},
+			{"codegen", "Code generation", "Config-driven generators and --watch mode from gofastr.settings.yml."},
+			{"sdk", "Ship your API as SDKs", "Generate typed Go and JS/TS clients plus live SDK docs."},
+			{"app-cli", "Ship your API as a CLI", "Generate a branded customer CLI with scoped API-token auth."},
+			{"settings", "Project settings", "gofastr.settings.yml for codegen, contracts, and isolation."},
+			{"unmount", "Unmounting a package", "Copy a GoFastr package into your repo to customize it, or remount."},
+		},
+	},
+	{
+		Num: "06", Slug: "shipping", Title: "Testing, ops & shipping",
+		Lede: "Dev loop, tests, single-binary deploys, horizontal scaling, and headless/local hosts.",
 		Path: []string{"Deployment", "Horizontal scaling", "Testkit"},
 		Docs: []docEntry{
 			{"deploy", "Deployment", "Single-binary SSH deploys with systemd and automatic health rollback."},
@@ -189,20 +204,13 @@ var docIntents = []docIntent{
 			{"dev-livereload", "Dev livereload", "Rebuild-on-save, browser reload, and dev MCP under gofastr dev."},
 			{"strict-mode", "Strict mode", "Fail boot on missing SEO metadata or missing per-screen axe coverage."},
 			{"isolation", "Worktree isolation", "Per-worktree ports and local databases for parallel coding agents."},
-			{"settings", "Project settings", "gofastr.settings.yml for codegen, contracts, and isolation."},
-			{"tutorial-app-spec", "Tutorial: app spec app", "Optional one-file scaffolder: gofastr.yml to plain Go you own."},
-			{"app-spec", "App specs", "YAML schema reference for one-shot app scaffolding."},
-			{"codegen", "Code generation", "Config-driven generators and watch mode."},
-			{"sdk", "Ship your API as SDKs", "Generate typed Go and JS/TS clients plus live SDK docs."},
-			{"app-cli", "Ship your API as a CLI", "Generate a branded customer CLI with scoped API-token auth."},
 			{"release", "Release downloads", "Cross-built archives, checksums.txt, and install.sh / install.ps1."},
-			{"unmount", "Unmounting a package", "Copy a GoFastr package into your repo to customize it, or remount."},
 			{"application-hosts", "Application hosts", "Run an App headless with ServicesHost or plug in custom transports."},
 			{"local-apps", "Local apps", "Per-user local state directory (SQLite, secret, identity) for local hosts."},
 		},
 	},
 	{
-		Num: "06", Slug: "experimental", Title: "Experimental & hosts",
+		Num: "07", Slug: "experimental", Title: "Experimental & hosts",
 		Lede: "Provisional hosts, agent protocols, and isolation layers—usable today, APIs still evolving.",
 		Path: []string{"Desktop host", "OS service host", "Kiln overview"},
 		Docs: []docEntry{
@@ -212,13 +220,12 @@ var docIntents = []docIntent{
 			{"kiln", "Kiln overview", "Experimental: live agent-driven app builder that freezes to plain Go."},
 			{"acp", "ACP server", "Experimental: Agent Client Protocol server behind kiln acp."},
 			{"webmcp", "WebMCP bridge", "Experimental: expose server tools to in-browser agents via modelContext."},
-			{"api-versioning", "API prefix & versioning", "Experimental: URL version prefixes, projections, and deprecation headers."},
-			{"plugin-platform", "Plugin platform", "Sandboxed opaque-origin iframe host for heavy third-party JS plugins."},
-			{"process-modules", "Process modules", "Out-of-process isolated third-party modules with capability brokering."},
+			{"plugin-platform", "Plugin platform", "Experimental: sandboxed opaque-origin iframe host for heavy third-party JS plugins."},
+			{"process-modules", "Process modules", "Experimental: out-of-process isolated third-party modules with capability brokering."},
 		},
 	},
 	{
-		Num: "07", Slug: "reference", Title: "Reference, releases & internals",
+		Num: "08", Slug: "reference", Title: "Reference, releases & internals",
 		Lede: "Benchmarks, release migration guides, and internal contributor docs.",
 		Path: []string{"Benchmarks", "Performance results"},
 		Docs: []docEntry{

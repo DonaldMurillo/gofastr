@@ -22,13 +22,13 @@ myapp/
 
 Everything generated is plain Go you commit and edit. There is no `gen/` folder and no `DO NOT EDIT` scaffold lock-in. Run `gofastr dev` from the root for hot reload while iterating (use `go run .` only for quick one-off runs).
 
-If you want a completely barebones start without the sample entity or auth screens, run `gofastr init myapp --no-entity`—or skip `init` altogether and import `core/` packages in a single `main.go`.
+If you want a completely barebones start without the sample entity, auth screens, or database wiring, run `gofastr init myapp --no-entity`—or skip `init` altogether and import `core/` packages in a single `main.go`.
 
 ## How an app grows
 
 ### 1. Flat `package main` (prototypes and small apps)
 
-Most prototypes and small apps stay flat at the module root: `main.go`, a few `screen_*.go` files, custom routes or handlers, and optional `entities/`.
+Most prototypes and small apps stay flat at the module root: `main.go`, `screens.go` (and `screens_auth.go` when auth is enabled), custom routes or handlers, and optional `entities/`.
 
 If you scaffold from a [`gofastr.yml` app spec](app-spec.md) with `gofastr generate app gofastr.yml`, it writes into this same flat layout (`--out=<dir>` puts it in a subpackage if you're inside a monorepo). Generation is one-shot—it refuses to overwrite existing files unless you pass `--force`—and the running app never reads `gofastr.yml`, so you can delete the YAML once the code is yours.
 

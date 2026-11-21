@@ -43,16 +43,19 @@ html, err := doc.HTML()
 if err != nil {
 	log.Fatal(err)
 }
-opt := framework.WithMCPApp(mcp.AppConfig{
-	Name:        "studio",
-	Description: "Open the studio widget.",
-	InputSchema: map[string]any{"type": "object"},
-	Handler:     studioTool,
-	ResourceURI: "ui://myapp/studio.html",
-	HTML:        html,
-	CSP:         mcp.AppCSP{ConnectDomains: []string{"https://api.example.com"}},
-})
-_ = opt
+fwApp := framework.NewApp(
+	framework.WithMCP(), // mounts /mcp; required to publish MCP App widgets
+	framework.WithMCPApp(mcp.AppConfig{
+		Name:        "studio",
+		Description: "Open the studio widget.",
+		InputSchema: map[string]any{"type": "object"},
+		Handler:     studioTool,
+		ResourceURI: "ui://myapp/studio.html",
+		HTML:        html,
+		CSP:         mcp.AppCSP{ConnectDomains: []string{"https://api.example.com"}},
+	}),
+)
+_ = fwApp
 ```
 
 `Title`, `Lang`, and `RootID` are HTML-escaped; `Body` and `Script` pass verbatim, except `HTML()` rejects `</script` or `<!--` inside `Script` (escape as `"<\/script>"` inside a raw Go backtick string).

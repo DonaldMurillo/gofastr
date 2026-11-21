@@ -19,7 +19,7 @@ When the catalog genuinely lacks a primitive, add a component or token upstream 
 
 ## 3. Chat-host widgets: MCP Apps
 
-`framework.WithMCPApp` publishes a `ui://` HTML widget and its launching tool on `/mcp` for chat hosts (Claude, ChatGPT):
+`framework.WithMCPApp` (passed to `framework.NewApp` alongside `framework.WithMCP()`) registers a `ui://` HTML widget and its launching tool on `/mcp` for chat hosts (Claude, ChatGPT):
 - **The chat host owns the styling:** follow the host's `HostContext` theme signals rather than shipping your app's brand CSS (the one intentional exception to the app styling surface).
 - **Behavior still flows through `/mcp`:** every interactive call re-enters your server through MCP tools so auth, owner scoping, and rate limits apply unchanged.
 

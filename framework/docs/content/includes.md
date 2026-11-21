@@ -24,19 +24,20 @@ Every included relation runs through the target entity's full read pipeline:
 ## Caps and limits
 
 Includes are bounded to keep queries predictable:
-- **Depth cap:** nested chains deeper than the configured maximum (default `2`) return `400`.
-- **Per-relation row cap:** `has_many` and `many_to_many` includes cap how many child rows are loaded per parent batch so a single list request cannot blow up memory.
+- **Depth cap:** nested chains deeper than `4` levels return `400`.
+- **Path & row caps:** a single request is capped at `32` include paths and a `20,000`-row total include budget so one list request cannot blow up memory.
 - **Unknown relations:** requesting a name not declared in `EntityConfig.Relations` returns `400`.
 - **Batching:** GoFastr collects parent keys per level and fetches each included entity in one batched `IN (...)` query (composite keys use tuple comparisons).
 
 ## Eager loading from Go
 
-In-process Go code can run the same batched loader directly without HTTP serialization, and can include `CRUD: false` entities that HTTP callers cannot reach:
+In-process Go code can run the batched loader directly with `framework.EagerLoad`:
 
 ```go
-// Use the entity's CRUD handler or generated repository helpers to eager-load
-// declared relations in Go, applying the caller's context and scopes.
+related, err := framework.EagerLoad(ctx, db, postsEnt, postsEnt.Config.Relations, postIDs, app.Registry)
 ```
+
+> **Always pass `app.Registry`:** calling `EagerLoad` without a registry returns unscoped raw rows, including `Hidden` columns and rows outside the target entity's owner/tenant/soft-delete scopes.
 
 See [Entity declarations](entity-declarations.md#relations-and-composite-keys) for declaring relations and composite foreign keys, and [Query DSL](query-dsl.md) for filtering across relations (`?author.role=editor`).
 

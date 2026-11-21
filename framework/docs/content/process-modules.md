@@ -18,9 +18,11 @@ When registered on `framework.App`, the host manages the child process lifecycle
 
 ## macOS sandbox posture
 
-On macOS, process modules can run inside an OS sandbox profile (`sandbox-exec`) to restrict filesystem and network access. Understand what the macOS sandbox protects against and its explicit boundaries:
-- Blocks access to **P2 (host secrets in temporary directories)** and **P5 (host files such as `/etc/passwd`)** outside the module's granted workspace/runtime paths.
-- Keeps network egress denied unless explicitly permitted by the module's policy.
+On macOS, `TrustUntrusted` process modules run inside a `sandbox-exec` profile, and registration **refuses to proceed (panics with `*UntrustedNoSandboxError`)** if the sandbox is unavailable or fails conformance — it never silently falls back to an unsandboxed child.
+
+Understand the explicit boundaries of the macOS profile (`framework/processmodule_sandbox_darwin.go`):
+- Denies writes outside the module's granted paths and denies network egress unless explicitly permitted.
+- **Known read gaps:** to let macOS binaries and runtimes execute, the profile allows reads under standard system and temp paths (`/usr`, `/bin`, `/sbin`, `/System`, `/Library`, `/dev`, `/etc`, `/private/etc`, `/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders`, `/var/tmp`, `/private/var/tmp`). As a result, it does **not** block **P2 (host secrets in temporary directories)** or **P5 (host files such as `/etc/passwd`)** — do not rely on the macOS profile to hide secrets placed in `/tmp` or readable files under `/etc`.
 - Treat OS sandboxing as defense-in-depth alongside narrow protocol permissions, strict input validation, and minimal environment variables — for hostile multi-tenant code execution, combine with container/VM isolation (Linux namespaces/seccomp or microVMs).
 
 ## Common mistakes

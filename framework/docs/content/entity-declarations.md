@@ -40,7 +40,7 @@ In Go, `EntityConfig` always uses the grouped sub-configs: `Scope` (`*framework.
 Omitting `Exposure` does **not** hide the entity — `Exposure.CRUD` is a `*bool` where `nil` means **on**. Registering `"posts"` mounts:
 
 - `GET /posts`, `GET /posts/{id}`, `POST /posts`, `PUT /posts/{id}`, `PATCH /posts/{id}`, `DELETE /posts/{id}`
-- `POST /posts/_batch`, `PUT /posts/_batch`, `DELETE /posts/_batch` (see [Batch endpoints](batch-endpoints.md))
+- `POST /posts/_batch`, `PATCH /posts/_batch`, `DELETE /posts/_batch` (see [Batch endpoints](batch-endpoints.md))
 - `POST /posts/{id}/transitions/{key}` when `States` declares a non-system transition (see [States](states.md))
 - `GET /posts/_events` (SSE stream; see [Entity events](events.md))
 - `GET /posts/llm.md` (machine-readable route guide matching the mounted surface, wire casing, and limits)
@@ -74,30 +74,30 @@ Declare columns with `[]schema.Field`. Core field types (`schema.FieldTypeLabel`
 | String / Text | `schema.String`, `schema.Text` | Short strings (`VARCHAR`) and long bodies (`TEXT`) |
 | Numbers | `schema.Int`, `schema.Float`, `schema.Decimal` | Decimals travel on the wire as strings to avoid float drift |
 | Boolean | `schema.Bool` | `true`/`false` |
-| Time | `schema.Time` | RFC 3339 timestamps |
+| Time / Date | `schema.Timestamp`, `schema.Date` | RFC 3339 timestamps and calendar dates (`2006-01-02`) |
 | Enum | `schema.Enum` | Requires `Values: []string{...}` |
 | JSON | `schema.JSON` | Arbitrary JSON values; equality filters compare as JSON |
 | Media | `schema.File`, `schema.Image` | Stored keys / URLs (see [Uploads](uploads.md) and [Image processing](image.md)) |
 | Relation | `schema.Relation` | Foreign key pointing to `To: "other_entity"` |
 | UUID | `schema.UUID` | Auto-generated or caller-supplied UUIDs |
 
-Useful `schema.Field` options: `Required`, `Unique`, `Default`, `Min`, `Max`, `MinLength`, `MaxLength`, `Pattern`, `WireName` (override JSON key; defaults to camelCase), `Hidden` (omitted from HTTP responses), `NoQuery` (masked from filters/sorts/activity diffs), `ReadOnly` (server-owned), and `AutoGenerate`.
+Useful `schema.Field` options: `Required`, `Unique`, `Default`, `Min`, `Max` (numeric bounds or string min/max length), `Pattern`, `WireName` (override JSON key; defaults to camelCase), `Hidden` (omitted from HTTP responses and queries), `NoQuery` (masked from filters/sorts/activity diffs), `ReadOnly` (server-owned), and `AutoGenerate` (`schema.AutoUUID`, `schema.AutoTimestamp`, `schema.AutoIncrement`).
 
 ## Record ids
 
-By default, every entity gets an auto-increment integer `id` primary key. Override it with `PrimaryKey`:
+By default, every entity gets a generated UUID `id` primary key (`schema.UUID` + `schema.AutoUUID`). Override it with `PrimaryKey`:
 
-- **Single caller-assigned or UUID key:** declare the column in `Fields` (e.g., `code` with `Required: true` or `id` with `Type: schema.UUID`, `AutoGenerate: true`) and set `PrimaryKey: []string{"code"}`.
+- **Single caller-assigned or custom key:** declare the column in `Fields` (e.g., `code` with `Required: true`, or `id` with `Type: schema.Int`, `AutoGenerate: schema.AutoIncrement`) and set `PrimaryKey: []string{"code"}`.
 - **Composite primary key:** pass multiple column names (`PrimaryKey: []string{"student_id", "course_id"}`; in YAML, [`primary_key:`](app-spec.md#composite-keys-primary_key)). Routes match one path segment per key column and join them with `entity.JoinKey` in Go.
 - **No synthetic `id`:** when `PrimaryKey` is set, GoFastr does not add an extra `id` column.
 
 ## Relations and composite keys
 
-Declare relationships in `Relations: []entity.Relation{...}` alongside foreign-key fields:
+Declare relationships in `Relations: []entity.Relation{...}` alongside foreign-key fields, setting `Type`, `Name`, `Entity` (the target entity/table name), and `ForeignKey []string`:
 
-- `belongs_to` (`ForeignKey` lives on this entity pointing at `Target`)
-- `has_many` / `has_one` (`ForeignKey` lives on `Target`)
-- `many_to_many` (uses a join table)
+- `entity.RelManyToOne` (`belongs_to` in YAML — `ForeignKey` lives on this entity pointing at `Entity`)
+- `entity.RelHasMany` / `entity.RelHasOne` (`has_many` / `has_one` — `ForeignKey` lives on `Entity`)
+- `entity.RelManyToMany` (`many_to_many` — uses a `Through` pivot table)
 
 For composite keys, `Relation.ForeignKey` and the target's `PrimaryKey` pair column-for-column in declaration order. Foreign keys are validated on write against the target entity's active scopes (owner, tenant, soft delete, `ReadScope`, and `Before` hooks); an inaccessible target returns `404` rather than revealing existence.
 
@@ -121,7 +121,7 @@ What `OwnerField` enforces automatically:
 - **Create:** stamps the column from the authenticated caller's ID, overwriting any client-supplied value.
 - **List / Count / Stream / Events:** appends `WHERE <owner_field> = <caller_id>`.
 - **Get / Update / Delete / Transitions:** scopes the lookup to the caller's ID so another user's row returns `404`.
-- **Fail-closed:** if `OwnerField` is set, every request fails with **401 until an owner extractor is registered**. Importing `battery/auth` registers the extractor automatically; custom auth middleware can register one via `framework/owner`.
+- **Fail-closed:** if `OwnerField` is set, every request fails with **401 until an owner extractor is registered** and auth middleware (such as `auth.SessionMiddleware`) attaches the signed-in user to the request context. Importing `battery/auth` registers the extractor automatically; custom auth middleware can register one via `framework/owner`.
 
 ### Default CRUD authentication
 
@@ -141,7 +141,6 @@ Set `Scope.SoftDelete: true` to mark deletions with `deleted_at` instead of remo
 Configure list behavior via `Pagination: &framework.PaginationConfig{...}`:
 - `MaxListLimit`: caps `?limit=` (default `100`, hard ceiling `1000`). Default page size is `20` (or `MaxListLimit` if smaller).
 - `CursorFields`: allowlist of columns valid for cursor pagination (see [Cursor pagination](cursor-pagination.md)).
-- `DefaultSort`: default ordering when `?sort=` is omitted.
 
 Offset pagination is bounded to prevent deep-scan DoS: requests whose `?offset=` or `(page - 1) * limit` exceeds `CrudHandler.MaxOffset` (default `MaxListLimit * 1000`, i.e., `100,000`; configurable via `WithMaxOffset`) fail with `400 offset_too_large`, including integer-overflow page values. An explicit `?offset=` overrides `?page=`, and the response `page` reflects `offset/limit + 1`.
 
@@ -149,13 +148,15 @@ Offset pagination is bounded to prevent deep-scan DoS: requests whose `?offset=`
 
 `Display` (`*framework.DisplayConfig`) tells `framework/entityui`, `battery/admin`, and generated screens how to render an entity without coupling schema to HTML:
 
-- `TitleField` / `SubtitleField` / `BadgeField`: record title, mobile card subtitle, and status badge
+- `TitleFields`: ordered column names joined with ` · ` to label a record
+- `Card` (`*entity.CardFields`): mobile card layout (`Subtitle`, `Badge`, etc.)
 - `Columns`: ordered list of table columns
 - `Facets`: enum, bool, or relation columns rendered as one-click filter chips above the list
-- `SearchFields`: columns searched by `?q=` and the list search box
 - `Form`: field grouping, sections, help text, and conditional visibility
-- `Views`: named filter presets rendered as tabs above the list
-- `Actions`: record and bulk actions
+- `Views`: named filter/sort presets rendered as tabs above the list
+- `PageSizes`, `NoDuplicate`, `NoBulk`: page-size choices and row/bulk action toggles
+
+(`SearchFields` sits directly on `EntityConfig`, not on `Display`.)
 
 See [Entity screens (entityui)](entityui.md) for how `Display` renders into list, create, and record pages, [Generated screen files](app-spec.md#generated-screen-files) for how `gofastr generate app` lays out screens, [Additive generation](app-spec.md#additive-generation---add) for adding new entities later, and [Quick scaffolds](app-spec.md#quick-scaffolds-generate-entityscreen) for single-entity scaffolding.
 
@@ -171,7 +172,7 @@ See [Codegen](codegen.md) and [App specs](app-spec.md) for generating typed pack
 
 ## Custom endpoints and MCP hints
 
-Entities can declare custom HTTP + MCP actions in `Endpoints: []entity.Endpoint{...}` alongside generated CRUD routes. Each endpoint can carry MCP tool annotations (`Hints`) and an independent `MCPGate`; see [Custom endpoints](endpoints.md#mcp-tool-hints).
+Entities can declare custom HTTP + MCP actions in `Endpoints: []entity.Endpoint{...}` alongside generated CRUD routes. Each endpoint can carry MCP tool annotations (`MCPAnnotations` in Go, or `hints:` in `gofastr.settings.yml`) and an independent `MCPGate`; see [Custom endpoints](endpoints.md#mcp-tool-hints).
 
 ## Common mistakes
 

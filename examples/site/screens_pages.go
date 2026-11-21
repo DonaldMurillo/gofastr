@@ -97,9 +97,9 @@ func (s *GetStartedScreen) Render() render.HTML {
 var gsPath = []struct{ ID, Title string }{
 	{"s1", "Install"},
 	{"s2", "Scaffold"},
-	{"s3", "First entity"},
-	{"s4", "Run it"},
-	{"s5", "First page"},
+	{"s3", "Run it"},
+	{"s4", "First page"},
+	{"s5", "First entity (optional)"},
 	{"s6", "What you have"},
 }
 
@@ -126,7 +126,7 @@ func gsHero() render.HTML {
 		ui.Hero(ui.HeroConfig{
 			Eyebrow:   "Get started · v" + siteVersion,
 			Title:     "From zero to a running app in four minutes.",
-			Subtitle:  "Install the CLI, scaffold plain Go you own, run gofastr dev, and add your first screen. Prefer barebones? Pass --no-entity or import core/ directly.",
+			Subtitle:  "Install the CLI, scaffold plain Go you own, run gofastr dev, and add your first screen. Prefer barebones? Pass --no-entity (skips the entity, auth screens, and database) or import core/ directly.",
 			AriaLabel: "Get started",
 		}),
 		ui.DetailList(ui.DetailListConfig{Inline: true, Items: []ui.DetailItem{
@@ -176,7 +176,7 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step(2, "~45s",
-		p(t("Scaffold a flat project in plain Go: main.go, a home screen in screens.go, auth screens, a sample entity (skip with --no-entity), DESIGN.md, and agent onboarding files (AGENTS.md, CLAUDE.md, .agents/).")),
+		p(t("Scaffold a flat project in plain Go: main.go, a home screen in screens.go, DESIGN.md, agent onboarding files (AGENTS.md, CLAUDE.md, .agents/), plus auth screens, SQLite, and a sample entity (pass --no-entity to skip the entity, auth screens, and database).")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
 			ok("✓ Created project blog in ./blog/: main.go, screens.go, screens_auth.go, entities/entities.go, gofastr.settings.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
@@ -186,21 +186,6 @@ func gsBody() render.HTML {
 	)
 
 	step3 := step(3, "~60s",
-		p(t("Need CRUD right away? The scaffold includes a sample entity in "), codeText("entities/entities.go"), t(". One declaration wires the table, REST API, validation, OpenAPI, and MCP tools—optional, and removable anytime:")),
-		codeBlock("blog/entities/entities.go", []render.HTML{
-			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
-			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
-			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"title"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("String"), pn(","), render.Text(" Required"), pn(":"), render.Text(" "), kw("true"), pn("},")),
-			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"body"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Text"), pn("},")),
-			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"published"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Bool"), pn("},")),
-			ln(render.Text("  "), pn("},")),
-			ln(render.Text("  Exposure"), pn(":"), render.Text(" &entity."), ty("ExposureConfig"), pn("{"), render.Text("CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn(")},")),
-			ln(pn("})")),
-		}),
-		p(t("The matching versioned migration is next to it in the same file. "), codeText("gofastr docs migrations"), t(" covers how those run.")),
-	)
-
-	step4 := step(4, "~60s",
 		p(t("Resolve dependencies once, then start the dev server. It rebuilds on save, reloads the browser, and hands your coding agent the app over MCP.")),
 		termBlock("$ run",
 			render.Text("$ go mod tidy\n"),
@@ -208,15 +193,10 @@ func gsBody() render.HTML {
 			ok("→ Watching . for changes (.go, .js, .css, .html, .md)...\n"),
 			ok("→ blog server ready: http://localhost:8080\n"),
 		),
-		p(t("Open "), codeText("localhost:8080"), t(". The scaffolded home screen renders. Then hit the API from a second terminal:")),
-		termBlock("$ probe",
-			o("$ curl -s http://localhost:8080/api/posts\n"),
-			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
-		),
-		p(t("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), t(" to the entity, save, and the dev server rebuilds. The same curl now answers "), codeText("{\"data\":[]}"), t(". Or keep the gate and sign in: the scaffold already wires the auth battery, so create an account at "), codeText("/register"), t(", sign in at "), codeText("/login"), t(", and the browser session reaches the same route ("), codeText("gofastr docs auth"), t(").")),
+		p(t("Open "), codeText("localhost:8080"), t(" to see the scaffolded home screen. Everything works with or without "), codeText("--no-entity"), t(".")),
 	)
 
-	step5 := step(5, "~60s",
+	step4 := step(4, "~60s",
 		p(t("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup. The scaffolded home screen in "), codeText("screens.go"), t(" is the pattern:")),
 		codeBlock("blog/about.go", []render.HTML{
 			ln(kw("type"), render.Text(" "), ty("AboutScreen"), render.Text(" "), kw("struct"), pn("{}")),
@@ -227,7 +207,28 @@ func gsBody() render.HTML {
 			ln(pn("}")),
 		}),
 		p(t("Register it in "), codeText("main.go"), t(" next to the home screen: "), codeText(`site.Register("/about", &AboutScreen{}, nil)`), t(". Save, and the dev server serves it.")),
-		callout("Tip", "Run `gofastr docs` to browse all embedded docs offline, including entity-declarations, query-dsl, and hooks."),
+		callout("Tip", "Run `gofastr docs` to browse all embedded docs offline, including ui-getting-started, entity-declarations, and hooks-and-transactions."),
+	)
+
+	step5 := step(5, "~60s",
+		callout("Used --no-entity?", "You can skip straight to step 6—entities, auth screens, and database wiring are all opt-in."),
+		p(t("If you kept the full-stack scaffold, "), codeText("entities/entities.go"), t(" holds a sample entity. One declaration wires the table, REST API, validation, OpenAPI, and MCP tools:")),
+		codeBlock("blog/entities/entities.go", []render.HTML{
+			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
+			ln(render.Text("  Fields"), pn(":"), render.Text(" []schema."), ty("Field"), pn("{")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"title"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("String"), pn(","), render.Text(" Required"), pn(":"), render.Text(" "), kw("true"), pn("},")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"body"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Text"), pn("},")),
+			ln(render.Text("    "), pn("{"), render.Text("Name"), pn(":"), render.Text(" "), str_(`"published"`), pn(","), render.Text(" Type"), pn(":"), render.Text(" schema."), ty("Bool"), pn("},")),
+			ln(render.Text("  "), pn("},")),
+			ln(render.Text("  Exposure"), pn(":"), render.Text(" &entity."), ty("ExposureConfig"), pn("{"), render.Text("CRUD"), pn(":"), render.Text(" boolPtr("), kw("true"), pn(")},")),
+			ln(pn("})")),
+		}),
+		p(t("Hit the API from a second terminal:")),
+		termBlock("$ probe",
+			o("$ curl -s http://localhost:8080/api/posts\n"),
+			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
+		),
+		p(t("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), t(" to the entity, save, and the dev server rebuilds—the same curl now answers "), codeText("{\"data\":[]}"), t(". Or keep the gate and sign in: create an account at "), codeText("/register"), t(", sign in at "), codeText("/login"), t(", and the browser session reaches the same route ("), codeText("gofastr docs auth"), t("). The matching versioned migration lives next to the entity ("), codeText("gofastr docs migrations"), t(").")),
 	)
 
 	li := func(s string) render.HTML { return html.ListItem(html.ListItemConfig{}, render.Text(s)) }
@@ -236,8 +237,8 @@ func gsBody() render.HTML {
 		ui.Card(ui.CardConfig{Heading: "Running, on disk, yours", Variant: ui.CardOutlined},
 			html.UnorderedList(html.ListConfig{},
 				li("Server-rendered home and about screens in plain Go"),
-				li("Sign-in and registration at /login and /register over battery/auth"),
-				li("A session-gated sample entity at /api/posts with a versioned migration (skip with --no-entity)"),
+				li("Sign-in and registration at /login and /register over battery/auth (skipped with --no-entity)"),
+				li("A session-gated sample entity at /api/posts with a versioned migration (skipped with --no-entity)"),
 				li("An OpenAPI 3 spec at /openapi.json and interactive reference at /api/docs/"),
 				li("Dev MCP tools under gofastr dev so Claude Code or Codex can read routes, logs, and framework docs"),
 				li("AGENTS.md, .agents/, and DESIGN.md ready for your coding agent"),
@@ -743,7 +744,7 @@ type PhilosophyScreen struct{}
 
 func (s *PhilosophyScreen) ScreenTitle(ctx context.Context) string { return "Philosophy" }
 func (s *PhilosophyScreen) ScreenDescription(ctx context.Context) string {
-	return "The convictions behind GoFastr: what we say no to, and why."
+	return "The convictions behind GoFastr: layered plain Go you own, server-rendered UI, agent rails, and what we deliberately leave out."
 }
 func (s *PhilosophyScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -758,7 +759,7 @@ func phHero() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.Hero(ui.HeroConfig{
 			Eyebrow:   "Philosophy",
-			Title:     "Simple for humans. Built for agents.",
+			Title:     "Simple for humans. Optimized for agents.",
 			Subtitle:  "Go from idea to a full-stack app, fastr—without locking yourself into a black box. GoFastr stays plain Go on disk so you can be as barebones or as batteries-included as the app needs, and your coding agents can work in the same repo without leaving a mess.",
 			AriaLabel: "Philosophy",
 		}),
@@ -770,10 +771,10 @@ func phHero() render.HTML {
 // the ids ui.Markdown derives from the heading text.
 var phSections = []ui.TOCItem{
 	{ID: "why-this-exists", Label: "Why this exists"},
-	{ID: "the-two-layers", Label: "The two layers"},
+	{ID: "layers-not-lock-in", Label: "Layers, not lock-in"},
 	{ID: "convictions", Label: "Convictions"},
 	{ID: "where-agents-fit", Label: "Where agents fit"},
-	{ID: "whats-next", Label: "What's next"},
+	{ID: "where-it-stands", Label: "Where it stands"},
 	{ID: "a-note-on-this-site", Label: "A note on this site"},
 	{ID: "notes-references", Label: "Notes & references"},
 }
@@ -792,21 +793,21 @@ func phTOC() render.HTML {
 const phEssay = "## Why this exists\n\n" +
 	"Building a prototype or a small-to-medium web app shouldn't require stitching together a React SPA, a Node build pipeline, a separate backend repo, hand-rolled auth, and a pile of glue code before you ship your first screen. And when coding agents help write that glue, opaque frameworks and magic conventions turn messy fast.\n\n" +
 	"GoFastr takes the opposite bet: one Go binary, plain Go files you own on disk, server-rendered UI with interactive islands (no JS build step), and built-in rails for both humans and agents.\n\n" +
-	"> The right abstraction makes the simple case fast and the custom case plain Go. The wrong abstraction traps you in both.\n\n" +
-	"## The two layers\n\n" +
+	"> The right abstraction makes the simple case fast and the custom case plain Go. The wrong abstraction makes you fight it in both.\n\n" +
+	"## Layers, not lock-in\n\n" +
 	"GoFastr doesn't force an all-or-nothing buy-in. `core/` and `core-ui/` are stdlib-first building blocks—router, typed handlers, HTML rendering, SQL query builder, schema, migrations, MCP, signals—that work completely standalone. `framework/` and `battery/` compose them when you want full-stack speed: UI components, auth, queues, search, optional CRUD entities, and contract checks.\n\n" +
-	"You pick your altitude per feature. Use `framework/` where it saves hours; drop down to `core/`, `net/http`, or `database/sql` anywhere in the same app.\n\n" +
+	"Stay barebones or go full stack per feature. Use `framework/` where it saves hours; drop down to `core/`, `net/http`, or `database/sql` anywhere in the same app.\n\n" +
 	"## Convictions\n\n" +
 	"1. **Barebones or batteries-included, your call.** Start with a 30-line `core/` server or `gofastr init` a full app; mix both freely.\n" +
 	"2. **Plain Go you own.** No reflection magic, no hidden runtime schema store, no `DO NOT EDIT` scaffold lock-in. Even `gofastr generate app` scaffolds once and gets out of the way.\n" +
 	"3. **Server-rendered UI without a JS framework.** Go renders HTML on first load; a tiny runtime handles client-side navigation, server islands, signals, polling, and SSE.\n" +
 	"4. **Batteries are opt-in packages.** Auth, queues, search, email, storage, admin, webhooks—narrow interfaces, import only what you use.\n" +
-	"5. **Optimized for agents on both sides.** `gofastr dev` and `gofastr verify` keep coding agents grounded while building; `/mcp` and `llm.md` serve user agents in production under the same permissions.\n" +
-	"6. **One static binary to ship.** SQLite (`CGO_ENABLED=0`) or Postgres, `go build`, deploy anywhere.\n\n" +
+	"5. **Optimized for agents on both sides.** `gofastr dev` and `gofastr verify` keep coding agents grounded while building; opt-in `/mcp`, `llm.md`, and `/llms.txt` serve user agents in production under the same permissions.\n" +
+	"6. **Sharp boundaries on what we leave out.** SQLite (`CGO_ENABLED=0`) and Postgres only—no MySQL, no MongoDB, no hosted cloud platform, and no Node/npm build step.\n\n" +
 	"## Where agents fit\n\n" +
 	"While you build, `gofastr dev` exposes your running app's routes, config, docs, and logs to Claude Code or Codex over MCP, and `gofastr verify` runs static and semantic contract checks so security, routing, and UI mistakes fail loudly instead of slipping into main.\n\n" +
-	"Once you ship, your app participates in the agentic ecosystem out of the box: `/mcp` tools share the exact same sessions, RBAC, and owner/tenant scopes as your HTTP API, alongside automatic `llm.md` and `llms.txt` discovery.\n\n" +
-	"## What's next\n\n" +
+	"Once you ship, opt-in options expose `/mcp` tools behind the same sessions, RBAC, and owner/tenant scopes as your HTTP API, alongside per-screen `llm.md`, `/llms.txt`, and `.well-known` discovery.\n\n" +
+	"## Where it stands\n\n" +
 	"| Area | Focus | Status |\n" +
 	"| --- | --- | --- |\n" +
 	"| Core + UI + Batteries | Layered Go stack, SSR + islands, auth, SQLite/Postgres | ✓ shipped |\n" +
