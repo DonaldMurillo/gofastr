@@ -802,6 +802,12 @@ few lines, and link the PR or the docs page for the rest.
   queue job spans: the error's Go type under `%w` wrappers, or
   `tracing.ErrorTypePanic` for a panic. The status still holds the
   error's text.
+- **A not-found page no longer advertises the route's markdown doc.**
+  `ServeNotFound`, `decide.NotFound()` and a `Load` or resolver answering
+  `app.ErrNotFound` now send the same `Link` header as a URL no route
+  matches, with no `rel="alternate"` `/llm.md` entry, so a hidden route no
+  longer shows up in its headers (#844). See
+  [Agent-ready](framework/docs/content/agent-ready.md).
 
 ### Security
 

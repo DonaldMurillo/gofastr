@@ -230,7 +230,7 @@ func TestSweepAgentLinkHeaderAppends(t *testing.T) {
 	ds := newAgentReadyHost(WithAgentReady(AgentReadyConfig{BaseURL: "https://ex.com", Title: "T"}))
 	rec := httptest.NewRecorder()
 	rec.Header().Set("Link", `</style.css>; rel="preload"`)
-	ds.writeAgentLinkHeaders(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	ds.writeAgentLinkHeaders(context.Background(), rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	link := rec.Header().Get("Link")
 	if !strings.HasPrefix(link, `</style.css>; rel="preload", `) || !strings.Contains(link, `rel="llms-txt"`) {
 		t.Errorf("Link = %q", link)
