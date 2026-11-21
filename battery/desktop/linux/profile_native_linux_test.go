@@ -497,7 +497,7 @@ return seeded && !document.cookie.includes('profile-deleted=');`)
 		if err != nil || fileperm.WriteOwnerOnly(filepath.Join(root, "credentials.json"), data) != nil {
 			return errors.New("could not save private credential witness")
 		}
-		if _, err := evaluator.EvalAsync(ctx, `await navigator.serviceWorker.register('/__profile/sw.js', {scope:'/'}); await navigator.serviceWorker.ready; return true;`); err != nil {
+		if _, err := evaluator.EvalAsync(ctx, `const G = window.__gofastr, u = '/__profile/sw.js'; await navigator.serviceWorker.register(G && G._scriptURL ? G._scriptURL(u) : u, {scope:'/'}); await navigator.serviceWorker.ready; return true;`); err != nil {
 			return errors.New("service-worker registration prerequisite failed")
 		}
 		if err := pollProfile(ctx, func() bool {
