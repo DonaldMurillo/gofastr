@@ -46,6 +46,10 @@ few lines, and link the PR or the docs page for the rest.
   failed returned an error quoting the temp file's absolute path, which
   the CRUD handlers echo into a 400 body. The rename error is now
   scrubbed like every other `LocalStorage` error.
+- **semantic: every answer of `semantic.Handler` is `Cache-Control: no-store`.**
+  The 204 of `DELETE /doc` and the 404 and 405 of an unserved path or
+  method went out without it. See
+  [Semantic search](framework/docs/content/semantic-search.md#http-routes).
 
 ## [0.97.0] - 2026-11-19
 

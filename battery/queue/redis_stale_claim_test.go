@@ -177,3 +177,28 @@ func TestRedisCurrentClaimAckStillWorks(t *testing.T) {
 		t.Fatalf("StaleClaimCount = %d after double ack, want 0", got)
 	}
 }
+
+type hgetFailingRedis struct{ *mockRedis }
+
+func (hgetFailingRedis) HGet(context.Context, string, string) (string, error) {
+	return "", errors.New("connection refused")
+}
+
+func TestRedisSettleOfUnclaimedJobIsANoOp(t *testing.T) {
+	ctx := context.Background()
+	gone := Job{ID: "gone", Type: "t", ClaimToken: "tok", MaxAttempts: 3}
+	q := NewRedisQueue(newMockRedis(), "jobs")
+	if err := q.Ack(ctx, gone); err != nil {
+		t.Errorf("Ack of an unclaimed job = %v, want nil", err)
+	}
+	if err := q.Nack(ctx, gone); err != nil {
+		t.Errorf("Nack of an unclaimed job = %v, want nil", err)
+	}
+	broken := NewRedisQueue(hgetFailingRedis{newMockRedis()}, "jobs")
+	if err := broken.Ack(ctx, gone); err == nil {
+		t.Error("Ack hid a backend failure as a missing claim")
+	}
+	if err := broken.Nack(ctx, gone); err == nil {
+		t.Error("Nack hid a backend failure as a missing claim")
+	}
+}

@@ -1157,6 +1157,12 @@ through unchanged turns every empty poll into a backend error, and a
 worker loop that only branches on `ErrNoJob` will fall through and handle
 a zero-valued `Job`.
 
+**`HGet` must report a missing hash or field as `queue.ErrRedisEmpty`
+too.** `Ack` and `Nack` of a job nobody holds a claim on (already
+settled, or its lease expired and another worker took it) read the claim
+with `HGet` and take `ErrRedisEmpty` to mean there is nothing to do. Any
+other error goes back to the caller as a backend failure.
+
 ## Sentinel errors
 
 ```go
@@ -1166,7 +1172,7 @@ queue.ErrDuplicateJob // Enqueue, Replay: a live job of the same type holds the 
 queue.ErrUniqueUnsupported // Enqueue: the backend cannot hold a UniqueKey (RedisQueue)
 queue.ErrSequenceUnsupported // Enqueue: the backend cannot order a SequenceKey (MemoryQueue, RedisQueue)
 queue.ErrPermanent   // returned by a handler: dead-letter now, no retry
-queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
+queue.ErrRedisEmpty  // RedisClient.RPop, HGet: nothing there (adapters MUST
                      // map their driver's nil-sentinel onto this)
 ```
 

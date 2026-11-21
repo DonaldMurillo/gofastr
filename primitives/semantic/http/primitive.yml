@@ -8,12 +8,15 @@ docs:
   - framework/docs/content/semantic-search.md
 invariants:
   - id: unconfigured-auth-fails-closed
-    rule: With no token and no insecure opt-in every route answers 401, an empty or any bearer included, and with a token the bearer must match it in constant time.
+    rule: With no token and no insecure opt-in every route answers 401, an empty or any bearer included, and with a token the bearer must match it.
     enforced_by:
       - test: battery/semantic.TestHandler_EmptyBearerWithNoTokenRefused
       - test: battery/semantic.TestHandler_WrongBearerTokenRejected
       - test: battery/semantic.TestHTTPStats_RequiresAuthentication
       - test: battery/semantic.TestHTTPDelete_RequiresAuthentication
+  - id: bearer-compare-is-constant-time
+    rule: requireAuth compares the SHA-256 digests of the presented bearer and the configured token with subtle.ConstantTimeCompare, so the time it takes depends on neither the token's bytes nor its length.
+    judge: Does requireAuth compare the bearer and the token in any other way, raw bytes through ConstantTimeCompare included, so a guess's timing can show how much of it, or its length, is right?
   - id: bodies-are-json-and-capped
     rule: /index and /query refuse a Content-Type other than application/json with 415 and a body past 1 MiB with 413, a body of unknown length included.
     enforced_by:
@@ -28,9 +31,10 @@ invariants:
     enforced_by:
       - test: battery/semantic.TestHTTPDelete_UnstorableIDNeverReachesIndex
   - id: answers-are-no-store
-    rule: Every answer the handler writes carries Cache-Control no-store.
+    rule: Every answer the handler writes carries Cache-Control no-store, a 204 and the mux's own 404 and 405 included.
     enforced_by:
       - test: battery/semantic.TestHandlerAnswersAreNoStore
+      - analyzer: nostore
 decisions:
   - id: shape-checks-before-auth
     date: 2026-11-20
@@ -39,3 +43,13 @@ decisions:
     rejected:
       - option: Authenticate first.
         why: A 401 for a malformed request would let a probe learn which routes exist.
+  - id: hash-both-sides-before-comparing
+    date: 2026-11-21
+    status: accepted
+    decision: requireAuth hashes the bearer and the token to 32 bytes each and compares the digests in constant time.
+    rejected:
+      - option: subtle.ConstantTimeCompare on the raw bearer and token.
+        why: It returns at once when the lengths differ, so the answer time tells a caller the token's length.
+      - option: hmac.Equal on the raw values.
+        why: It is the same compare with the same length short-circuit.
+    upholds: [bearer-compare-is-constant-time]

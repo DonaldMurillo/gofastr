@@ -31,7 +31,10 @@ func Handler(idx Index, opts ...HandlerOption) http.Handler {
 	mux.Handle("GET /stats", auth(statsHandler(idx)))
 	mux.Handle("DELETE /doc/{id}", auth(deleteHandler(idx)))
 	mux.Handle("DELETE /doc", auth(deleteHandler(idx)))
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func requireAuth(cfg handlerConfig) func(http.Handler) http.Handler {

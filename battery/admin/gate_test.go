@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -131,6 +132,19 @@ func TestGateRefusesAnEmbedGrant(t *testing.T) {
 	}
 }
 
+func TestAuthorizeCannotLiftAScopelessToken(t *testing.T) {
+	open := &Battery{cfg: Config{Authorize: func(context.Context) bool { return true }}}
+	for _, scopes := range [][]string{{"customers:read"}, {}} {
+		ctx := auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), scopes)
+		if open.authorized(ctx) {
+			t.Errorf("Authorize lifted the refusal of a %v token", scopes)
+		}
+	}
+	if !open.authorized(auth.WithTokenScopes(handler.SetUser(context.Background(), theAdmin), []string{AdminScope})) {
+		t.Error("Authorize refused a token holding AdminScope")
+	}
+}
+
 func TestGateHonorsADeciderDeny(t *testing.T) {
 	deny := func(context.Context, []string, access.Permission, access.Ref) access.Decision {
 		return access.DecisionDeny
@@ -204,9 +218,16 @@ func TestGateRefusesEveryForgeableCrossSiteShape(t *testing.T) {
 	sibling := newPost("/admin/_palette", url.Values{"q": {"a"}})
 	sibling.Header.Set("Sec-Fetch-Site", "same-site")
 	sibling.Header.Set("Origin", "https://other.example.com")
-	for name, req := range map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling} {
-		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden {
-			t.Errorf("a %s cross-site post = %d, want 403", name, rr.Code)
+	shapes := map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling}
+	for _, m := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(m, "/admin/api/posts/1", strings.NewReader("title=x"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		shapes[m] = req
+	}
+	for name, req := range shapes {
+		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "cross-site") {
+			t.Errorf("a %s cross-site request = %d %q, want the cross-site 403", name, rr.Code, rr.Body.String())
 		}
 	}
 }

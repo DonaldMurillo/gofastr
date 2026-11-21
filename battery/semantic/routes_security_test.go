@@ -311,10 +311,25 @@ func TestHTTPIndex_RejectsOversizedChunkedBody(t *testing.T) {
 
 func TestHandlerAnswersAreNoStore(t *testing.T) {
 	idx, _ := Open(Options{Embedder: NewStubEmbedder(16)})
-	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
-	rec := httptest.NewRecorder()
-	Handler(idx, WithInsecureDisabledAuth()).ServeHTTP(rec, req)
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("Cache-Control = %q, want no-store", got)
+	open := Handler(idx, WithInsecureDisabledAuth())
+	for _, c := range []struct {
+		h            http.Handler
+		method, path string
+		want         int
+	}{
+		{open, http.MethodGet, "/stats", http.StatusOK},
+		{open, http.MethodDelete, "/doc/gone", http.StatusNoContent},
+		{open, http.MethodGet, "/nowhere", http.StatusNotFound},
+		{open, http.MethodPut, "/stats", http.StatusMethodNotAllowed},
+		{Handler(idx), http.MethodGet, "/stats", http.StatusUnauthorized},
+	} {
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
+		if rec.Code != c.want {
+			t.Errorf("%s %s = %d, want %d", c.method, c.path, rec.Code, c.want)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s %s Cache-Control = %q, want no-store", c.method, c.path, got)
+		}
 	}
 }

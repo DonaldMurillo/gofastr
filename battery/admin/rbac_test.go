@@ -331,6 +331,28 @@ func TestGrantRevokeRequireCallerTier(t *testing.T) {
 	}
 }
 
+func TestTierIgnoresContextRoles(t *testing.T) {
+	r := newRBACEnv(t, Config{AdminRole: "support"})
+	support := roleUser{id: "sup-1", roles: []string{"support"}}
+	inner := r.as(support)
+	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		inner.ServeHTTP(w, req.WithContext(access.WithRoles(req.Context(), []string{"admin"})))
+	})
+	if c := rpc(h, "/admin/rbac/_grant", map[string]any{"role": "support", "permission": string(access.Wildcard)}).Code; c != http.StatusForbidden {
+		t.Errorf("SECURITY: context roles let support grant Wildcard: %d", c)
+	}
+	fresh, err := r.mgr.UserStore().CreateUser(context.Background(), "ctx@example.com", "$2a$10$hash", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := rpc(h, "/admin/rbac/_assign", map[string]any{"user_id": fresh.GetID(), "roles": "user,admin"}).Code; c != http.StatusForbidden {
+		t.Errorf("SECURITY: context roles let support assign admin: %d", c)
+	}
+	if slices.Contains(r.policy.PermissionsOf("support"), access.Wildcard) || slices.Contains(r.rolesOf(fresh.GetID()), "admin") {
+		t.Fatal("SECURITY: a refused change was written")
+	}
+}
+
 func TestUsersPageListsRoles(t *testing.T) {
 	var asked []string
 	r := newRBACEnv(t, Config{EffectiveRoles: func(_ context.Context, id string) []access.RoleWithOrigin {

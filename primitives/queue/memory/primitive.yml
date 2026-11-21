@@ -16,6 +16,10 @@ invariants:
     rule: A panicking gate on MemoryQueue is recovered through gateAllows and defers the job instead of killing the process.
     enforced_by:
       - test: battery/queue.TestMemoryQueueGatePanicIsolated
+  - id: dead-letter-list-is-bounded
+    rule: MemoryQueue keeps at most 1000 dead-letter jobs and evicts the oldest on overflow.
+    enforced_by:
+      - test: battery/queue.TestMemoryDeadLetterListIsBounded
   - id: memory-refuses-sequence-keys
     rule: MemoryQueue refuses a job with a SequenceKey with ErrSequenceUnsupported.
     enforced_by:

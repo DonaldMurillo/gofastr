@@ -20,6 +20,10 @@ invariants:
     rule: Opening the WAL tightens an existing file to owner-only.
     enforced_by:
       - test: battery/semantic.TestOpenWALTightensExistingFile
+  - id: persist-dirs-are-owner-only
+    rule: A directory Snapshot or the WAL creates for its file is created owner-only (0700).
+    enforced_by:
+      - test: battery/semantic.TestPersistDirsAreOwnerOnly
   - id: torn-append-is-cut
     rule: A failed append truncates its torn bytes and stops the WAL until a snapshot rewrites it.
     enforced_by:

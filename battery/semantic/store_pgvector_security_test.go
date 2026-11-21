@@ -44,7 +44,7 @@ func TestPgVectorFilterNoInjection(t *testing.T) {
 	s := newPgStore(t, 3)
 	ctx := context.Background()
 	if err := s.Add(ctx, []Chunk{
-		{ID: "a", DocID: "d1", Source: "real", Text: "x", Vec: vec3(1, 0, 0)},
+		{ID: "a", DocID: "d1", Source: "real", Text: "x", Vec: vec3(1, 0, 0), Metadata: map[string]any{"kind": "real"}},
 	}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -56,15 +56,17 @@ func TestPgVectorFilterNoInjection(t *testing.T) {
 		"x' UNION SELECT 1--",
 	}
 	for _, val := range hostile {
-		hits, err := s.Candidates(ctx, vec3(1, 0, 0), Filter{Source: val}, 10)
-		if err != nil {
-			t.Errorf("Candidates with hostile Source=%q errored: %v", val, err)
-			continue
-		}
-		// None of the payloads equal "real", so zero hits must come back,
-		// proving the value was treated as a literal, not as SQL.
-		if len(hits) != 0 {
-			t.Errorf("hostile Source=%q returned %d hits, want 0", val, len(hits))
+		for field, f := range map[string]Filter{"Source": {Source: val}, "Kind": {Kind: val}} {
+			hits, err := s.Candidates(ctx, vec3(1, 0, 0), f, 10)
+			if err != nil {
+				t.Errorf("Candidates with hostile %s=%q errored: %v", field, val, err)
+				continue
+			}
+			// None of the payloads equal "real", so zero hits must come back,
+			// proving the value was treated as a literal, not as SQL.
+			if len(hits) != 0 {
+				t.Errorf("hostile %s=%q returned %d hits, want 0", field, val, len(hits))
+			}
 		}
 	}
 	// Sanity: the real value still matches.
@@ -93,6 +95,8 @@ func TestPgVectorMetaMatchNoInjection(t *testing.T) {
 		{"tenant": "' OR '1'='1"},
 		{"tenant": "acme\" OR true"},
 		{"tenant OR true": "x"},
+		{"tenant' IS NOT NULL OR meta -> 'tenant": "x"},
+		{"x'; DROP TABLE embed_chunks; --": "x"},
 		{"tenant": "acme'; --"},
 	}
 	for _, m := range hostile {

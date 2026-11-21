@@ -8,6 +8,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
+func TestPG_CommitNeedsTheSameFenceAndAnUnexpiredLease(t *testing.T) {
+	assertCommitRechecksLease(t, pgtest.DB)
+}
+
 func TestPG_DurableSchedulerVersionCASIgnoresTimestampRoundTrip(t *testing.T) {
 	db := pgtest.DB(t)
 	q := newDurableTestQueue(t, db)

@@ -11,6 +11,8 @@ invariants:
     rule: Ack, Nack and every settle match the row only while it is claimed under the presenting claim's token, so a stale claim never deletes or moves the claim that replaced it.
     enforced_by:
       - test: battery/queue.TestDBStaleClaimCannotSettleTheNewOne
+      - test: battery/queue.TestDBStaleNackLosesARaceToANewClaim
+      - test: battery/queue.TestDBReleaseCannotTouchReclaimant
   - id: failure-follows-the-retry-policy
     rule: A failed claim dead-letters at once on ErrPermanent, waits a RetryAfterError's delay instead of the backoff, and dead-letters when its next retry falls past CreatedAt+MaxAge.
     enforced_by:
