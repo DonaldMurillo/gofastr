@@ -246,7 +246,9 @@ island push both work regardless of which replica holds the connection.
 Backends: `framework/fanout.NewPostgres` (uses the DB you already have;
 payloads over the NOTIFY size limit spill to a small fallback table)
 and `core/fanout.NewRedis` (bring-your-own client, mirroring
-`cache.RedisClient`). The fanout is caller-owned: close it after the
+`cache.RedisClient`). With PostgreSQL, `fanout.WithTableName` sets both
+the fallback table and the LISTEN/NOTIFY channel. Both names use ASCII
+lowercase. The fanout is caller-owned: close it after the
 app shuts down, and close the Postgres one before its `*sql.DB`. Its
 `Close` cancels a fallback-row fetch in flight and returns once the
 LISTEN dispatcher has stopped and released its pool connection.
@@ -443,7 +445,9 @@ handler)` + `ob.StartRelay(ctx)`.
   because both claims counted. After `MaxAttempts` (default 10) the
   delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default 100) and
   `WithPollInterval` (default 1s) keep their defaults when
-  given zero or less. `Replay(rowID)` resets all dead/abandoned
+  given zero or less. The relay compares the attempt budget as a 64-bit
+  integer. SQLite applies large claims in chunks within a single write
+  transaction. `Replay(rowID)` resets all dead/abandoned
   deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
   delivery's age starts over, so the handler grace below runs again from
   the replay.
@@ -490,7 +494,26 @@ handler)` + `ob.StartRelay(ctx)`.
   separate integer type).
 - **Table creation.** `WithOutbox` creates its tables on demand at
   `NewApp` time (framework-owned bookkeeping tables;
-  `WithoutAutoMigrate` does not suppress them). If your policy forbids
+  `WithoutAutoMigrate` does not suppress them). `outbox.WithTable` accepts
+  a parent name of up to 63 bytes per identifier, including the schema
+  name when supplied. The delivery table sits in the same schema and uses
+  the parent name plus `_delivery` when it fits. Both engines use
+  `query.FitIdent` on that name when it exceeds 63 bytes. If the fitted
+  name equals the parent, the last character is dropped. Older releases
+  named the delivery table `<parent>_delivery` with no fitting, and
+  Postgres cut that name to its first 63 bytes. Before you start the
+  upgraded app, rename an old delivery table whose name no longer matches
+  to the fitted name: on SQLite, one named `<parent>_delivery` over 63
+  bytes; on Postgres, a parent name of 55 to 62 bytes, whose old delivery
+  table is `left('<parent>_delivery', 63)`. Otherwise the app creates an
+  empty delivery table, delivers every pending row again, and leaves the
+  old dead letters out of counts and replay. Older releases also accepted
+  a SQLite parent name over 63 bytes, which `NewApp` now refuses. To move
+  one, pick a new parent name of 63 bytes or fewer, then rename both
+  tables before you start the upgraded app: the parent to the new name,
+  and `<old parent>_delivery` to the delivery name the new parent gets
+  under the rule above. Pass the new parent name to `outbox.WithTable`.
+  If your policy forbids
   unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
   and create them yourself before the app stages any event. The schema:
 
@@ -499,13 +522,20 @@ handler)` + `ob.StartRelay(ctx)`.
       id              TEXT PRIMARY KEY NOT NULL,
       type            TEXT NOT NULL,
       payload         TEXT,
+      owner           TEXT NOT NULL DEFAULT '',
       status          TEXT NOT NULL DEFAULT 'pending',  -- pending|dispatched
-      created_at      TIMESTAMPTZ NOT NULL,             -- DATETIME on SQLite
-      dispatched_at   TIMESTAMPTZ
-      -- (attempts/last_error/next_attempt_at/claimed_until are vestigial;
-      --  per-attempt state lives in event_outbox_delivery below)
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      last_error      TEXT,
+      created_at      TIMESTAMPTZ NOT NULL,              -- DATETIME on SQLite
+      dispatched_at   TIMESTAMPTZ,
+      next_attempt_at TIMESTAMPTZ,
+      claimed_until   TIMESTAMPTZ
   );
   CREATE INDEX event_outbox_status_created_idx ON event_outbox (status, created_at);
+
+  -- List and data export still read the parent attempts and last_error.
+  -- The parent next_attempt_at and claimed_until are vestigial.
+  -- Per-attempt state lives in event_outbox_delivery.
 
   CREATE TABLE event_outbox_delivery (
       row_id          TEXT NOT NULL,                       -- FK event_outbox.id

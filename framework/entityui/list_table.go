@@ -271,9 +271,10 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		})
 	}
-	val := fieldtext.Cell(m.rowValue(row, name))
+	raw := m.rowValue(row, name)
+	val := fieldtext.Cell(raw)
 	if f.Type == schema.Relation {
-		if val == "" || labels.refused(name) {
+		if val == "" {
 			return muted()
 		}
 		if t, ok := labels.title(name, val); ok {
@@ -284,34 +285,19 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		}
 		return render.Text(val)
 	}
-	switch f.Type {
-	case schema.Bool:
-		if val == "" {
-			return muted()
-		}
-		if fieldtext.Truthy(val) {
-			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityYes.Text(ctx), Variant: ui.StatusSuccess})
-		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityNo.Text(ctx), Variant: ui.StatusNeutral})
-	case schema.Enum:
-		if val == "" {
-			return muted()
-		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: m.valueLabel(ctx, name, val), Variant: enumVariant(val), Dot: true})
-	default:
-	}
-	if val == "" {
+	text := m.fieldText(ctx, f, raw)
+	if text == "" {
 		return muted()
 	}
 	switch f.Type {
-	case schema.Decimal, schema.Float:
-		return render.Text(decimal(ctx, f, val))
-	case schema.Int:
-		return render.Text(integer(ctx, val))
-	case schema.Date:
-		return render.Text(formatDate(ctx, m.rowValue(row, name), false))
-	case schema.Timestamp:
-		return render.Text(formatDate(ctx, m.rowValue(row, name), true))
+	case schema.Bool:
+		variant := ui.StatusNeutral
+		if fieldtext.Truthy(val) {
+			variant = ui.StatusSuccess
+		}
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: variant})
+	case schema.Enum:
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: text, Variant: enumVariant(val), Dot: true})
 	case schema.Image, schema.File:
 		if t := u.fileValue(f, m.label(ctx, name), val, ui.ThumbnailSM); t != "" {
 			return t
@@ -319,7 +305,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		return muted()
 	default:
 	}
-	return render.Text(val)
+	return render.Text(text)
 }
 
 func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any, name string) string {
@@ -333,9 +319,9 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		})
 	}
 	raw := m.rowValue(row, name)
-	val := fieldtext.Cell(raw)
 	if f.Type == schema.Relation {
-		if val == "" || labels.refused(name) {
+		val := fieldtext.Cell(raw)
+		if val == "" {
 			return ""
 		}
 		if t, ok := labels.title(name, val); ok {
@@ -343,29 +329,28 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		}
 		return val
 	}
+	return m.fieldText(ctx, f, raw)
+}
+
+// fieldText is a non-relation value as plain text: localized yes/no, the
+// enum label, a formatted number or date, or the raw text; "" when empty.
+// List cells, exports and record views decorate this one mapping.
+func (m *meta) fieldText(ctx context.Context, f schema.Field, raw any) string {
+	val := fieldtext.Cell(raw)
+	if val == "" {
+		return ""
+	}
 	switch f.Type {
 	case schema.Bool:
-		if val == "" {
-			return ""
-		}
 		if fieldtext.Truthy(val) {
 			return i18nui.EntityYes.Text(ctx)
 		}
 		return i18nui.EntityNo.Text(ctx)
 	case schema.Enum:
-		if val == "" {
-			return ""
-		}
-		return m.valueLabel(ctx, name, val)
+		return m.valueLabel(ctx, f.Name, val)
 	case schema.Decimal, schema.Float:
-		if val == "" {
-			return ""
-		}
 		return decimal(ctx, f, val)
 	case schema.Int:
-		if val == "" {
-			return ""
-		}
 		return integer(ctx, val)
 	case schema.Date:
 		return formatDate(ctx, raw, false)

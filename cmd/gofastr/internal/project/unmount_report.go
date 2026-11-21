@@ -2,6 +2,7 @@ package project
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"golang.org/x/mod/semver"
@@ -28,12 +29,14 @@ func DescribeUnmounted(e settings.Unmounted) string {
 }
 
 // UnmountedSettings reads the unmounted section of the settings file that
-// governs root. A missing file is no copies.
-func UnmountedSettings(root string) (settings.File, []settings.Unmounted, error) {
+// governs root, returning the path it came from; with no file it answers
+// no copies and the path root's settings file would have, for the caller
+// that writes one back.
+func UnmountedSettings(root string) (string, []settings.Unmounted, error) {
 	f, ok, err := settings.Find(root, "unmounted")
 	if err != nil || !ok {
-		return settings.File{}, nil, err
+		return filepath.Join(root, settings.FileName), nil, err
 	}
 	entries, err := f.Unmounted()
-	return f, entries, err
+	return f.Path, entries, err
 }

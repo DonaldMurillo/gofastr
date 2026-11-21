@@ -1,11 +1,13 @@
 package buildcmd
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
@@ -16,16 +18,30 @@ func TestBuildExtRefusalOffersRealRemedy(t *testing.T) {
 	// The opt-in bypasses the refusal this test exercises: a runner that
 	// exports it must not turn the test vacuous.
 	t.Setenv("GOFASTR_CODEGEN_ALLOW_COMMANDS", "")
-	dir := covT_tinyModule(t)
-	clitest.WriteFileAll(t, filepath.Join(dir, "gofastr.settings.yml"), `version: 1
+	covT_tinyModule(t)
+	if err := os.Mkdir("app's source", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir("app's source")
+	clitest.WriteSettings(t, ".", `version: 1
 codegen:
   output: gen
   extensions:
     - name: report
       command: ["./tools/report-generator"]
+endpoints:
+  - name: feature_post
+    entity: posts
+    method: POST
+    path: "{id}/feature"
+    handler: entities/featured.go#FeaturePost
 `)
+	configPath, err := filepath.Abs("gofastr.settings.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunBuild([]string{"--no-a11y"}) })
 	})
 	if code != 1 {
@@ -34,7 +50,13 @@ codegen:
 	if strings.Contains(out, "Run it with --config") {
 		t.Errorf("the refusal tells build to take --config, which it refuses:\n%s", out)
 	}
-	for _, want := range []string{"GOFASTR_CODEGEN_ALLOW_COMMANDS=1", "gofastr generate --config", "--no-generate", "report: ./tools/report-generator"} {
+	if strings.Contains(out, "Generating code") || strings.Contains(out, "Running go vet") {
+		t.Errorf("the build continued after refusal:\n%s", out)
+	}
+	if _, err := os.Stat(appgen.AppEndpointsPath); !os.IsNotExist(err) {
+		t.Errorf("endpoints were generated before refusal: stat error = %v", err)
+	}
+	for _, want := range []string{"GOFASTR_CODEGEN_ALLOW_COMMANDS=1", "gofastr generate --config " + shellWord(configPath) + " and then gofastr build --no-generate", "report: ./tools/report-generator"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refusal lacks %q:\n%s", want, out)
 		}

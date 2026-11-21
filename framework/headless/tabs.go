@@ -210,6 +210,13 @@ func cleanTabHref(href string) string {
 	return urlsafe.CleanAnchor(href)
 }
 
+func safeHref(href string) string {
+	if h := cleanTabHref(href); h != "" {
+		return h
+	}
+	return "#"
+}
+
 func init() {
 	Register(Spec{
 		Name:    "Tabs",

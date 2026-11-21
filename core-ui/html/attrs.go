@@ -42,16 +42,20 @@ func Classes(classes map[string]bool) Attrs {
 // SafeExtraAttrs returns a copy of a component config's ExtraAttrs with the keys the component owns
 // removed, ready to forward to the component's root element.
 func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
+	return safeAttrs(attrs, protected, func(k string) bool {
+		lk := strings.ToLower(k)
+		//gofastr:allow(layerprefix) the refusal filter names the framework prefix to bar it from extra attrs
+		return strings.HasPrefix(lk, "data-cui-") || strings.HasPrefix(lk, "data-fui-")
+	})
+}
+
+func safeAttrs(attrs Attrs, protected []string, wiring func(k string) bool) Attrs {
 	if len(attrs) == 0 {
 		return nil
 	}
 	out := make(Attrs, len(attrs))
 	for k, v := range attrs {
-		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") {
-			continue
-		}
-		//gofastr:allow(layerprefix) the refusal filter names the framework prefix to bar it from extra attrs
-		if lk := strings.ToLower(k); strings.HasPrefix(lk, "data-cui-") || strings.HasPrefix(lk, "data-fui-") {
+		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") || wiring(k) {
 			continue
 		}
 		drop := false
@@ -76,31 +80,9 @@ func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 // documented attachment point for runtime wiring (interactive.Action.Attrs(), data-cui-open, …) and
 // that emit no data-cui-* wiring of their own.
 func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
-	if len(attrs) == 0 {
-		return nil
-	}
-	out := make(Attrs, len(attrs))
-	for k, v := range attrs {
-		if strings.EqualFold(k, "class") || strings.EqualFold(k, "id") ||
-			strings.EqualFold(k, "data-cui-comp") {
-			continue
-		}
-		drop := false
-		for _, p := range protected {
-			if strings.EqualFold(k, p) {
-				drop = true
-				break
-			}
-		}
-		if drop {
-			continue
-		}
-		out[k] = v
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return safeAttrs(attrs, protected, func(k string) bool {
+		return strings.EqualFold(k, "data-cui-comp")
+	})
 }
 
 // DataAttrs converts a map of key-value pairs into data-* attributes.

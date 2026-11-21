@@ -223,8 +223,10 @@ session is still signed in as the local user, so the app's own pages
 keep calling `/api` as before; one without a session reaches the app
 with no user. Everything else stays behind the sign-in.
 
-The match is on whole segments of the clean, unescaped path: `/apix`,
-`/api//x`, `/api/../admin` and `/api%2Fx` all stay gated. `New`
+The match is on whole segments of the cleaned, decoded path: `/apix`,
+`/api//x`, `/api/../admin` and `/api%2Fx` all stay gated, while a bare
+trailing slash (`/api/`) matches and canonically-escaped paths
+(`/api/caf%C3%A9`) are matched decoded. `New`
 refuses `/` (there is no switch that turns the sign-in off for the
 whole app) and anything under `/__gofastr/`. Each start logs the open
 prefixes as a warning.

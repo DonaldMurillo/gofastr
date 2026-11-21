@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 	"strings"
 	"sync"
 	"testing"
@@ -439,4 +440,50 @@ func TestEntityOAuthLinks_CustomTableNameDerives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derived link table not created: %v", err)
 	}
+}
+
+func TestUnlinkNullPasswordParity(t *testing.T) {
+	check := func(t *testing.T, db *sql.DB) {
+		ctx := context.Background()
+		if _, err := db.Exec(`CREATE TABLE users (
+			id TEXT PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT NOT NULL, password_set BOOLEAN
+		)`); err != nil {
+			t.Fatal(err)
+		}
+		store := NewEntityUserStore(db, "users")
+		if err := store.EnsureSchema(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec("INSERT INTO users (id, email, password_hash) VALUES ('user', 'alice@example.test', '')"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.LinkOAuth(ctx, "user", "google", "remote-user"); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err := store.UnlinkOAuthGuarded(ctx, "user", "google")
+		if outcome != UnlinkRefusedLast || err != nil {
+			t.Errorf("unlink with NULL password flag = %v, %v; want refusal", outcome, err)
+		}
+		accounts, err := store.ListAccounts(ctx, "user")
+		if err != nil || len(accounts) != 1 || accounts[0].Provider != "google" {
+			t.Fatalf("accounts after refusal = %+v, %v", accounts, err)
+		}
+		if _, err := db.Exec("UPDATE users SET password_set = TRUE WHERE id = 'user'"); err != nil {
+			t.Fatal(err)
+		}
+		outcome, err = store.UnlinkOAuthGuarded(ctx, "user", "google")
+		if outcome != UnlinkRemoved || err != nil {
+			t.Errorf("unlink with password flag = %v, %v; want removed", outcome, err)
+		}
+	}
+	t.Run("sqlite", func(t *testing.T) {
+		db, err := sql.Open("sqlite3", ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		t.Cleanup(func() { db.Close() })
+		check(t, db)
+	})
+	t.Run("postgres", func(t *testing.T) { check(t, pgtest.DB(t)) })
 }

@@ -165,6 +165,13 @@ invariants:
       - test: framework/contracts/analyzers.TestIgnoredExecRespectsBestEffortAnnotation
       - test: framework/contracts/analyzers.TestCheckedOrAnnotatedBareExecIsQuiet
 decisions:
+  - id: audit-lint-deleted
+    date: 2026-11-20
+    status: accepted
+    decision: gofastr verify is the only source scan for these rules; gofastr audit lint and its adapter were deleted, and its tests run through verify in framework/contracts/analyzers (audit_rules_test.go).
+    rejected:
+      - option: Keep audit lint as a thin wrapper over verify's detectors.
+        why: Two commands gave two answers to one question, because audit lint ignored gofastr.settings.yml and //gofastr:allow, and it reported every bare t.SkipNow where GOFASTR1105 reports deferred-work skips only.
   - id: sql-taint-marker-gate
     date: 2026-11-17
     status: accepted

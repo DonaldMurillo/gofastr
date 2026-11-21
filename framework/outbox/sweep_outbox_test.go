@@ -190,8 +190,9 @@ func TestRelayStartRewritesTimeTextToBindLayout(t *testing.T) {
 func TestMetricsCollectorOrdersConsumersAndHidesErrors(t *testing.T) {
 	db, o := openOutbox(t)
 	ctx := context.Background()
-	if pending, dead, err := o.DeliveryCounts(ctx); err != nil || pending == nil || dead == nil {
-		t.Fatalf("DeliveryCounts on an empty table = %v, %v, %v; want two non-nil maps", pending, dead, err)
+	pending, dead, err := o.DeliveryCounts(ctx)
+	if err != nil || pending == nil || dead == nil || len(pending) != 0 || len(dead) != 0 {
+		t.Fatalf("DeliveryCounts on an empty table = %v, %v, %v; want two empty non-nil maps", pending, dead, err)
 	}
 	for _, c := range []string{"zeta", "alpha", "mid", "beta", "omega"} {
 		insertDelivery(t, db, o, "r", c, "pending", 0, "")

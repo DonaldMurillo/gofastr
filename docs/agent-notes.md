@@ -1,5 +1,22 @@
 # Implementation regression notes
 
+## 2026-11-20 - Recheck the lease recovery handshake in isolation
+
+- Scope: framework process-module supervisor.
+- Trigger: child handshake timeouts during the cleanup race run.
+- Approach: run `go test -race -count=3 ./framework/ -run '^TestLeaseRedRecoversAfterOutage$'`. The fixture uses SQLite in-process with a real child.
+- Next time: if the rerun fails, compare the same command on the base revision before assigning the failure to supervisor changes.
+- Status: active
+
+## 2026-11-19 - Test cached Postgres DSNs in a fresh process
+
+- Scope: internal/pgtest, testdb, and auth fixtures.
+- Trigger: the required-mode canary cached a live DSN before the selector regression could set its own DSN.
+- Approach: run the assertion in the current test binary with an explicit child environment and require a log marker after the assertions.
+- Evidence: `TestUnusedDSNDropsCompetingDBNameSelector` catches both retained selectors with the old implementation, even after the canary runs first.
+- Next time: verify URL and keyword/value fixtures against the same live server with a startup option set, and check that a scoped pool can close before the admin connection drops its schema.
+- Status: active
+
 ## 2026-11-13 - Reserve stdout once for JSON commands
 - Scope: gofastr command registry, cli JSON sessions, appgen, verify and semantic output
 - Trigger: unknown and removed generator names bypassed the JSON-aware failure path.
@@ -16,6 +33,7 @@
 - Approach: call runtime-owned exposure, endpoint-route and sitemap checks; lint nav against the screen router and known generated routes; warn because owned routes/static inputs cannot be fully known.
 - Evidence: `TestRenderPanicParity` catches a removed callout check; `TestBootRefusalParity` catches a removed exposure call (both proved with Go overlays).
 - Pitfall: endpoint grammar already refuses leading underscores; keep that gate while checking own-route collisions. Check endpoint shape before one complete group call (siblings can overlap). Emit `view_stubs_<entity>_init.go` registrations (avoid both Go suffix constraints and screen filenames). Keep stale registrations inert by checking the live registry through `withViewStubs(fwApp, appExtensions)`; never infer file deletion from a partial spec, packed declarations or source substrings. Compare framework route patterns to actual registrations through a socket-free Host. Keep callbacks in owned `extensions.go`; the owned `app.go` call passes fwApp into the wrapper.
+- Route checks: compare mounted screen shapes for `--add`, including synthesized screens. Feed the mounted patterns to the app router for form and nav probes, and preserve HTTP methods for nav links.
 - Next time: add a case or a reason for every catalog kind, and mutate each independent validator before trusting its parity table.
 - Status: active
 
@@ -310,8 +328,16 @@
 - Trigger: a supported data table packs successfully but its rows become strings and cannot validate/regenerate.
 - Approach: build a fresh CLI under /tmp and exercise validate → generate → pack → validate → generate, with a no-row control.
 - Evidence: [C11 fix](reviews/2026-11-07-fixes-codegen.md); nested lists now use empty/scalar-flow/complex-block forms. Coordinator passed full packcmd and public generate→pack→load→regenerate regressions, including quoted cells and nested maps.
-- Next time: parse and validate the exact serialized YAML during round-trip checks, not just the pre-serialization spec.
+- Pack now decodes the emitted YAML before comparing regenerated Go or writing output. The regression fixtures include an out-of-range float spelling stored as text and a quoted property key.
+- Next time: run pack through its CLI entry point and decode its stdout when testing YAML fidelity. For source recovery, exercise both screen layouts and keep the file selection aligned with the fidelity check.
 - Status: active
+
+## 2026-11-19 - Preserve declared field names when form IDs change
+
+- Scope: appgen and packcmd create forms
+- Trigger: form-specific control IDs caused pack to write the form prefix into the YAML field names.
+- Evidence: `TestPackFormKeepsMultiWordFields` compares regenerated screens. `TestEntityFormControlFieldIDs` covers scoped IDs, a legacy name that resembles a scoped ID, and the wire-name fallback.
+- Next time: update the pack reader when changing generated form markup, and run the generate–pack–generate checks against both the union spec and the committed ecommerce fixture.
 
 ## 2026-11-07 - Separate signal-store retention from post-swap DOM rendering
 - Scope: core-ui/runtime

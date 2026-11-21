@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -48,42 +47,13 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 		defaultLabel = i18nui.ThemeDefault.Text(ctx)
 	}
 
-	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
-	if rootAttrs == nil {
-		rootAttrs = map[string]string{}
-	}
-	for k := range rootAttrs {
-		if strings.HasPrefix(strings.ToLower(k), "data-hui-theme-") {
-			delete(rootAttrs, k)
-		}
-	}
-	rootAttrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class)
-	rootAttrs["data-hui-theme-picker"] = ""
-	rootAttrs["role"] = "radiogroup"
-	rootAttrs["aria-label"] = i18nui.ThemePicker.Text(ctx)
-	if cfg.ID != "" {
-		rootAttrs["id"] = cfg.ID
-	}
-
-	option := func(label, class string) render.HTML {
-		checked, tab := "false", "-1"
-		if class == "" {
-			checked, tab = "true", "0"
-		}
-		return render.Tag("button", map[string]string{
-			"type":                "button",
-			"class":               "fui-theme-toggle__option",
-			"data-cui-internal":   "",
-			"data-hui-theme-pick": class,
-			"aria-checked":        checked,
-			"tabindex":            tab,
-			"role":                "radio",
-		}, render.Text(label))
-	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
+	rootAttrs := themeControlAttrs(extra, cfg.ID, i18nui.ThemePicker.Text(ctx), "data-hui-theme-picker")
+	const hook = "data-hui-theme-pick"
 	opts := make([]render.HTML, 0, len(cfg.Themes)+1)
-	opts = append(opts, option(defaultLabel, ""))
+	opts = append(opts, themeRadioOption(defaultLabel, hook, "", true))
 	for _, c := range cfg.Themes {
-		opts = append(opts, option(c.Label.Text(ctx), c.Theme.Class()))
+		opts = append(opts, themeRadioOption(c.Label.Text(ctx), hook, c.Theme.Class(), false))
 	}
-	return themeToggleStyle.WrapHTML(render.Tag("div", rootAttrs, opts...))
+	return themeRadioGroup(rootAttrs, cfg.Class, cfg.Fill, opts...)
 }

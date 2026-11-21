@@ -18,6 +18,7 @@ func TestBareThemeLiteralsAreReported(t *testing.T) {
 		css, want string
 	}{
 		{".a { border: 1px solid var(--color-border); }", "--stroke-thin"},
+		{".a { BORDER: 1px solid var(--color-border); }", "--stroke-thin"},
 		{".a { border-block-end: 2px dashed red; }", "--stroke-"},
 		{".a { border-inline-start-width: 3px; }", "--stroke-"},
 		{".a { outline: 2px solid var(--color-text-subtle); }", "--stroke-focus"},
@@ -48,7 +49,7 @@ func TestBareThemeLiteralsAreReported(t *testing.T) {
 
 func TestBareThemeLiteralInSetPairIsReported(t *testing.T) {
 	ds := designFixture(t, "core-ui/widget/page.go",
-		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".card\").Set(\"border\", \"1px solid {colors.border}\").End()\n}\n")
+		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".card\").Set(\"BORDER\", \"1px solid {colors.border}\").End()\n}\n")
 	if found := countRule(t, ds, contracts.RuleBareThemeLiteral); len(found) != 1 {
 		t.Fatalf("want 1 GOFASTR1823 on the Set pair, got %d: %v", len(found), found)
 	}

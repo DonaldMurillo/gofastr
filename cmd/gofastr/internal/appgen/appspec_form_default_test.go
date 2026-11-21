@@ -49,8 +49,8 @@ func TestEntityFormStartsAtDefaults(t *testing.T) {
 		"price":    `ui.Control(ui.ControlConfig{Field: c, Type: "number", Name: "price", Value: "12.5", Step: "0.0001"})`,
 		"status":   `Required: false, Selected: "live"})`,
 		"category": `Required: false, Selected: "3", ExtraAttrs: html.Attrs{"data-rel-entity": "categories"}})`,
-		"notes":    `ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: "notes", Label: i18nui.FieldLabel(ctx, nil, "items", "notes", "Notes"), ID: "field-notes", Required: false, Value: "hello"})`,
-		"due":      `ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: "due", Label: i18nui.FieldLabel(ctx, nil, "items", "due", "Due"), ID: "field-due", Required: false, Value: "2026-01-02"})`,
+		"notes":    `ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: "notes", Label: i18nui.FieldLabel(ctx, nil, "items", "notes", "Notes"), ID: "field-entity_form_home-notes", Required: false, Value: "hello"})`,
+		"due":      `ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: "due", Label: i18nui.FieldLabel(ctx, nil, "items", "due", "Due"), ID: "field-entity_form_home-due", Required: false, Value: "2026-01-02"})`,
 		"starts":   `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "starts", Value: "2026-01-02T09:30"})`,
 		"opens":    `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "opens", Value: "2026-01-02T09:30:15", Step: "1"})`,
 		"ends":     `ui.Control(ui.ControlConfig{Field: c, Type: "datetime-local", Name: "ends", Value: "2026-01-02T09:30:15.250", Step: "0.001"})`,
@@ -76,7 +76,7 @@ func TestEntityFormRelationMountKeepsDefaultOption(t *testing.T) {
 	js := appSpecEntityFormClientJS(appspec.AppSpecBlock{Kind: "entity_form", Entity: "items"}, map[string]framework.EntityDeclaration{
 		"categories": {Name: "categories", Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
 		"items":      {Name: "items", Fields: []framework.FieldDeclaration{{Name: "category", Type: "relation", To: "categories", Default: "3"}}},
-	}, "/api")
+	}, "/api", "entity_form_items_0")
 	probe := `const option = (value, textContent) => ({ value, textContent });
 const sel = {
   options: [option("", "Select"), option("3", "3")],

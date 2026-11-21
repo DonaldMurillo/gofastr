@@ -49,7 +49,7 @@ func scanJSFileForVar(path string, result *Result) error {
 		return nil
 	}
 
-	sanitized := stripJSCommentsAndStrings(string(raw))
+	sanitized := stripJS(string(raw), blankJSLiterals)
 	scanner := bufio.NewScanner(strings.NewReader(sanitized))
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
 	line := 0
@@ -138,117 +138,145 @@ func templateExprEnd(src string, i int) (body string, end int) {
 	return src[start:], len(src)
 }
 
-func stripJSCommentsAndStrings(src string) string {
-	out := make([]byte, 0, len(src))
-	i := 0
-	for i < len(src) {
-		c := src[i]
-		if c == '/' && i+1 < len(src) && src[i+1] == '/' {
-			out, i = blankJSLineComment(out, src, i)
+type jsLiteralMode bool
+
+const (
+	keepJSLiterals  jsLiteralMode = false
+	blankJSLiterals jsLiteralMode = true
+)
+
+func stripJS(src string, mode jsLiteralMode) string {
+	out := []byte(src)
+	prev := -1
+	afterLiteral := false
+	for i := 0; i < len(src); {
+		if next := skipSpace(src, i); next != i {
+			i = next
 			continue
 		}
-		if c == '/' && i+1 < len(src) && src[i+1] == '*' {
-			out, i = blankJSBlockComment(out, src, i)
+		if end := jsCommentEnd(src, i); end > i {
+			blankJSBytes(out[i:end])
+			i = end
 			continue
 		}
-		if c == '/' && regexLiteralStartsAt(out) {
-			out = append(out, ' ')
+		switch c := src[i]; {
+		case c == '/' && !afterLiteral && regexLiteralStartsAt(src, prev):
+			end := regexLiteralEnd(src, i)
+			for end < len(src) && src[end] >= 'a' && src[end] <= 'z' {
+				end++
+			}
+			if mode == blankJSLiterals {
+				blankJSBytes(out[i:end])
+			} else {
+				for j := i + 1; j < end; j++ {
+					if src[j] == '\n' {
+						out[j-1] = ' '
+					}
+				}
+			}
+			i, afterLiteral = end, true
+		case c == '\'' || c == '"' || c == '`':
+			i, afterLiteral = stripJSQuoted(src, out, i, mode), true
+		default:
+			prev, afterLiteral = i, false
 			i++
-			inClass := false
-			for i < len(src) && src[i] != '\n' {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, ' ', ' ')
-					}
-					i += 2
-					continue
-				}
-				if src[i] == '[' {
-					inClass = true
-				} else if src[i] == ']' {
-					inClass = false
-				} else if src[i] == '/' && !inClass {
-					out = append(out, ' ')
-					i++
-					break
-				}
-				out = append(out, ' ')
-				i++
-			}
-			for i < len(src) && (src[i] >= 'a' && src[i] <= 'z') {
-				out = append(out, ' ')
-				i++
-			}
-			continue
 		}
-		if c == '\'' || c == '"' || c == '`' {
-			quote := c
-			out = append(out, ' ') // replace opening quote
-			i++
-			for i < len(src) {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, ' ', ' ')
-					}
-					i += 2
-					continue
-				}
-				if src[i] == quote {
-					out = append(out, ' ')
-					i++
-					break
-				}
-				if quote == '`' && src[i] == '$' && i+1 < len(src) && src[i+1] == '{' {
-					out = append(out, ' ', ' ')
-					i += 2
-					body, end := templateExprEnd(src, i)
-					out = append(out, stripJSCommentsAndStrings(body)...)
-					i = end
-					if i < len(src) && src[i] == '}' {
-						out = append(out, ' ')
-						i++
-					}
-					continue
-				}
-				if src[i] == '\n' {
-					out = append(out, '\n')
-				} else {
-					out = append(out, ' ')
-				}
-				i++
-			}
-			continue
-		}
-		out = append(out, c)
-		i++
 	}
 	return string(out)
 }
 
-func regexLiteralStartsAt(out []byte) bool {
-	j := len(out) - 1
-	for j >= 0 && (out[j] == ' ' || out[j] == '\t' || out[j] == '\n' || out[j] == '\r') {
-		j--
+func jsCommentEnd(src string, start int) int {
+	switch {
+	case strings.HasPrefix(src[start:], "//"):
+		if end := strings.IndexByte(src[start+2:], '\n'); end >= 0 {
+			return start + 2 + end
+		}
+		return len(src)
+	case strings.HasPrefix(src[start:], "/*"):
+		if end := strings.Index(src[start+2:], "*/"); end >= 0 {
+			return start + 2 + end + 2
+		}
+		return len(src)
+	default:
+		return start
 	}
-	if j < 0 {
+}
+
+func blankJSBytes(out []byte) {
+	for i, c := range out {
+		if c != '\n' {
+			out[i] = ' '
+		}
+	}
+}
+
+func stripJSQuoted(src string, out []byte, start int, mode jsLiteralMode) int {
+	quote := src[start]
+	segmentStart, i := start, start+1
+	for i < len(src) {
+		if src[i] == '\\' && i+1 < len(src) {
+			if src[i+1] == '\n' {
+				out[i] = ' '
+			}
+			i += 2
+			continue
+		}
+		if src[i] == quote {
+			i++
+			break
+		}
+		if quote == '`' && strings.HasPrefix(src[i:], "${") {
+			i += 2
+			if mode == blankJSLiterals {
+				blankJSBytes(out[segmentStart:i])
+			}
+			body, end := templateExprEnd(src, i)
+			copy(out[i:end], stripJS(body, mode))
+			segmentStart, i = end, min(end+1, len(src))
+			continue
+		}
+		i++
+	}
+	if mode == blankJSLiterals {
+		blankJSBytes(out[segmentStart:i])
+	}
+	return i
+}
+
+func regexLiteralStartsAt(src string, prev int) bool {
+	if prev < 0 {
 		return true
 	}
-	prev := out[j]
-	isWord := prev == '_' || prev == '$' || (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') || (prev >= '0' && prev <= '9')
-	if !isWord {
-		return prev != ')' && prev != ']' && prev != '\'' && prev != '"' && prev != '`'
+	c := src[prev]
+	if !isJSIdentChar(c) {
+		return c != ')' && c != ']'
 	}
-	k := j
-	for k >= 0 && (out[k] == '_' || out[k] == '$' || (out[k] >= 'a' && out[k] <= 'z') || (out[k] >= 'A' && out[k] <= 'Z') || (out[k] >= '0' && out[k] <= '9')) {
-		k--
-	}
-	switch string(out[k+1 : j+1]) {
+	switch wordBefore(src, prev+1) {
 	case "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await":
 		return true
 	}
 	return false
+}
+
+func regexLiteralEnd(s string, start int) int {
+	inClass := false
+	i := start + 1
+	for i < len(s) && s[i] != '\n' {
+		switch s[i] {
+		case '\\':
+			if i+1 < len(s) {
+				i++
+			}
+		case '[':
+			inClass = true
+		case ']':
+			inClass = false
+		case '/':
+			if !inClass {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return i
 }

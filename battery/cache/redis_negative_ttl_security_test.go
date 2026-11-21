@@ -73,34 +73,61 @@ func (c *goRedisLikeClient) FlushDB(context.Context) error { return nil }
 func TestRedisCache_NegativeTTLNotImmortal(t *testing.T) {
 	ctx := context.Background()
 	cl := newGoRedisLikeClient()
-	c := NewRedisCache(cl, WithPrefix("t"))
+	c := NewRedisCache(cl, WithPrefix("app"))
 
-	if err := c.Set(ctx, "neg", "v", -time.Second); err != nil {
-		t.Fatalf("Set(neg): %v", err)
-	}
-	var got string
-	if err := c.Get(ctx, "neg", &got); !errors.Is(err, ErrCacheMiss) {
-		t.Errorf("a negative TTL stored a live entry (Get = %q, err %v); it must store nothing", got, err)
-	}
+	// -1 is KEEPTTL in go-redis, the shape a plain -time.Second does not
+	// cover: over a live key it would keep the old expiry, so both
+	// negative durations take the same "already expired" path.
+	for _, ttl := range []time.Duration{-time.Second, -1} {
+		if err := c.Set(ctx, "neg", "v", ttl); err != nil {
+			t.Fatalf("Set(neg, %v): %v", ttl, err)
+		}
+		var got string
+		if err := c.Get(ctx, "neg", &got); !errors.Is(err, ErrCacheMiss) {
+			t.Errorf("ttl=%v: a negative TTL stored a live entry (Get = %q, err %v); it must store nothing", ttl, got, err)
+		}
 
-	// Over an existing entry: the negative lifetime retires it.
-	if err := c.Set(ctx, "over", "old", time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Set(ctx, "over", "new", -time.Second); err != nil {
-		t.Fatalf("Set(over, neg): %v", err)
-	}
-	if err := c.Get(ctx, "over", &got); !errors.Is(err, ErrCacheMiss) {
-		t.Errorf("a negative-TTL Set left the key live (Get = %q, err %v); it must drop it", got, err)
+		if err := c.Set(ctx, "over", "old", time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Set(ctx, "over", "new", ttl); err != nil {
+			t.Fatalf("Set(over, %v): %v", ttl, err)
+		}
+		if err := c.Get(ctx, "over", &got); !errors.Is(err, ErrCacheMiss) {
+			t.Errorf("ttl=%v: a negative-TTL Set left the key live (Get = %q, err %v); it must drop it", ttl, got, err)
+		}
+
+		if err := GetOrSet(ctx, c, "gos", ttl, new(string), func(context.Context) (any, error) {
+			return "loaded", nil
+		}); !errors.Is(err, ErrCacheMiss) {
+			t.Errorf("ttl=%v: GetOrSet returned %v, want ErrCacheMiss", ttl, err)
+		}
+		if ok, err := c.Exists(ctx, "gos"); err != nil || ok {
+			t.Errorf("ttl=%v: Exists after GetOrSet = (%t, %v), want false, nil", ttl, ok, err)
+		}
 	}
 
 	// A negative default from WithTTL takes the same path.
-	cd := NewRedisCache(cl, WithPrefix("d"), WithTTL(-time.Minute))
+	cd := NewRedisCache(cl, WithTTL(-time.Minute))
 	if err := cd.Set(ctx, "k", "v", 0); err != nil {
 		t.Fatal(err)
 	}
+	var got string
 	if err := cd.Get(ctx, "k", &got); !errors.Is(err, ErrCacheMiss) {
 		t.Errorf("a negative default TTL stored a live entry (Get = %q, err %v)", got, err)
+	}
+	if ok, err := cd.Exists(ctx, "k"); err != nil || ok {
+		t.Errorf("Exists after Set with a negative default TTL = (%t, %v), want false, nil", ok, err)
+	}
+
+	// Control: a positive ttl still stores.
+	cp := NewRedisCache(cl)
+	if err := cp.Set(ctx, "k", "v", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var ctrl string
+	if err := cp.Get(ctx, "k", &ctrl); err != nil || ctrl != "v" {
+		t.Errorf("positive ttl: Get = (%q, %v), want the stored value", ctrl, err)
 	}
 
 	cl.mu.Lock()

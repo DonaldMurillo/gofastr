@@ -1,7 +1,7 @@
 // Package rwcall answers one question for the response-lifecycle
-// analyzers (recoverwrite, doublewrite): does this call write an HTTP
-// response, and to which writer? It decides nothing about when a write
-// is wrong; the analyzers pick that.
+// analyzers (recoverwrite, doublewrite, statusrange): does this call
+// write an HTTP response, and to which writer? It decides nothing
+// about when a write is wrong; the analyzers pick that.
 //
 // A call writes a response when it is:
 //   - x.WriteHeader(...) or x.Write(...) on a value x that is an

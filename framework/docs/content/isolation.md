@@ -52,7 +52,9 @@ use most, so a boot that "hangs" from a worktree is almost always this.
   directory exists and chmod is refused with a permission error (for
   example, it belongs to another user), isolation logs a warning and uses it with
   its current mode, so it may stay readable by others.
-- Postgres URL database names get a stable `_{id}` suffix while query params
+- The effective database in a Postgres URL gets a stable `_{id}` suffix,
+  including a database supplied by `dbname` or `database` in the query.
+  The isolated name goes in the URL path and all other query parameters
   are preserved. The result stays within Postgres's 63-byte identifier
   limit: a long base name is cut on a character boundary, and an id longer
   than 62 bytes (so `_` plus the id passes 63) becomes `_wt_` plus 16 hex

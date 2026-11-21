@@ -28,3 +28,20 @@ func TestLevenshtein(t *testing.T) {
 		}
 	}
 }
+
+func TestLevenshteinRunes(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"é", "", 1},
+		{"", "é", 1},
+		{"né", "ne", 1},
+		{"é", "élan", 3},
+		{"\xff", "\uFFFD", 0},
+	} {
+		if got := LevenshteinRunes(c.a, c.b); got != c.want {
+			t.Errorf("LevenshteinRunes(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
+	}
+}

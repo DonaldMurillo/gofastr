@@ -54,6 +54,11 @@ invariants:
       - test: framework.TestMatViewWithDependentReboots
       - test: framework/migrate.TestPGViewKindChangeAtBoot
       - test: framework/migrate.TestBootReplacesViewWhoseColumnsChanged
+      - test: framework/migrate.TestPGReplaceViewRecreatesAfterCleanRollback
+  - id: postgres-view-recreate-requires-clean-rollback
+    rule: Boot only attempts to drop and recreate a plain Postgres view after its replace statement fails and its first savepoint rolls back and releases successfully.
+    enforced_by:
+      - test: framework/migrate.TestPGReplaceViewDoesNotRecreateAfterSavepointError
 decisions:
   - id: routine-ledger-does-not-gate
     date: 2026-11-17

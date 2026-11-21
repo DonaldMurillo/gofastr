@@ -220,5 +220,7 @@ still delivered to `WithErrorCallback`) instead of crashing the process.
   `notify: no template for ("order.shipped", "log")` after the email
   went out.
 - **Don't forget the templater.** Without one, every `Send` returns
-  `ErrNoTemplater` unless you supply `Data["_rendered_*"]` per
-  channel.
+  `ErrNoTemplater` unless you supply `Data["_rendered_<channel>"]`
+  for that channel or a shared `Data["_rendered"]`. The selected
+  pre-rendered payload must be a `notify.Rendered`. A value of any
+  other type returns a rendering error for the channel.

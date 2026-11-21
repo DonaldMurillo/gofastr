@@ -106,17 +106,13 @@ beside it.
 
 ## Configuration
 
-`TenantConfig` / `DefaultTenantConfig()` carry the tenant column and
-`AutoScope`. The tenant ID always comes from the authenticated
-server-side context, never from a request header. The defaults are:
-
-| Field        | Default       |
-|--------------|---------------|
-| `Field`      | `tenant_id`   |
-| `AutoScope`  | `true`        |
-
-`AutoScope=false` lets you read across tenants from admin routes
-while still writing scoped, which is handy for support/admin tooling.
+`TenantConfig` / `DefaultTenantConfig()` carry the tenant column
+(`Field`, `tenant_id` by default). For an entity marked `MultiTenant`,
+CRUD scopes queries using the tenant ID in the authenticated server-side
+context, never a request header. Admin routes that must see across tenants
+use a context with an empty tenant ID and mark it with
+`tenant.AllowCrossTenant`, as described in
+[Cross-tenant access](#cross-tenant-access) below.
 
 ## Helpers
 
@@ -143,8 +139,8 @@ See [audit-log](audit-log.md) for the schema and query examples.
 ## Cross-tenant access
 
 **Secure by default (since the tenant-gate change).** A `MultiTenant`
-entity served over HTTP with **no tenant id in the request context is
-refused with `401`**: on every operation (list, get, create, update,
+entity requires a tenant ID by default. An unmarked request with an
+empty tenant ID is **refused with `401`** on every operation (list, get, create, update,
 delete, batch, stream, SSE) and through the in-process CRUD API. A
 missing tenant context can no longer silently return or mutate every
 tenant's rows.
@@ -155,9 +151,10 @@ tenant's rows.
 > now opt in explicitly (below). Auto-scope by tenant id is unchanged
 > for the normal request path.
 
-To read or write across tenants deliberately (admin tooling), mark the
-context with `tenant.AllowCrossTenant`; **server-side only**, never
-from a client-controlled header:
+For deliberate cross-tenant access in admin tooling, use a context with
+an empty tenant ID and mark it with `tenant.AllowCrossTenant` on the
+server. Requests with a tenant ID stay scoped to that tenant, even with
+the marker.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/tenant"
@@ -165,11 +162,10 @@ import "net/http"
 var r *http.Request
 -->
 ```go
-// inside an admin-gated handler / middleware, AFTER your own role check:
-ctx := tenant.AllowCrossTenant(r.Context())
+// Inside an admin-gated handler or middleware, after your role check.
+ctx := tenant.SetTenantID(r.Context(), "")
+ctx = tenant.AllowCrossTenant(ctx)
 r = r.WithContext(ctx)
-// CRUD on this request now spans every tenant (scope helpers no-op on
-// the empty tenant id) instead of being refused with 401.
 ```
 
 There is no built-in role check linking permissions to tenant scope.
@@ -195,8 +191,11 @@ every read.
 ## Common mistakes
 
 - **Adding `MultiTenant: true` to an existing entity without
-  backfilling `tenant_id`.** Existing rows have empty string and
-  match every tenant. Backfill before flipping the flag.
+  backfilling `tenant_id`.** Rows keep the column default (empty string
+  above), and a tenant-scoped read filters `tenant_id = $1` against the
+  request's tenant: until backfilled, those rows are invisible to every
+  tenant — they match no one, not everyone. Backfill before flipping
+  the flag.
 - **Setting the tenant from a client-controlled value.** A request
   body field, a plain header, anything the caller sends is trivially
   spoofable. Resolve the tenant server-side (a verified JWT claim, a

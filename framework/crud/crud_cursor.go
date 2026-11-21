@@ -39,10 +39,9 @@ func (ch *CrudHandler) cursorFields() []string {
 
 // serveCursorList serves a keyset page ordered by cursorFields. extraWhere
 // is every clause the page applies; hookWhere is its BeforeList part.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere, hookWhere []hook.WhereClause) {
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, limit int, extraWhere, hookWhere []hook.WhereClause) {
 	w.Header().Set("Cache-Control", "no-store")
 	cursor, direction := q.Get("cursor"), q.Get("direction")
-	_, limit := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 	if !directionParamValid(q["direction"]) {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return

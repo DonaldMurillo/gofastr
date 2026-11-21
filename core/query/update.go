@@ -10,7 +10,7 @@ import (
 type UpdateBuilder struct {
 	table     string
 	sets      []setClause
-	wheres    []whereClause
+	wheres    whereClauses
 	returning []string
 }
 
@@ -32,11 +32,7 @@ func (ub *UpdateBuilder) Set(column string, value any) *UpdateBuilder {
 
 // Where appends a WHERE condition (ANDed with previous conditions).
 func (ub *UpdateBuilder) Where(condition string, args ...any) *UpdateBuilder {
-	ub.wheres = append(ub.wheres, whereClause{
-		connector: "AND",
-		condition: condition,
-		args:      slices.Clone(args),
-	})
+	ub.wheres.add("AND", condition, args...)
 	return ub
 }
 
@@ -48,11 +44,7 @@ func (ub *UpdateBuilder) Returning(cols ...string) *UpdateBuilder {
 
 // Matching builds the SELECT of cols from the rows this UPDATE would change.
 func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
-	var args []any
-	for _, w := range ub.wheres {
-		args = append(args, w.args...)
-	}
-	return buildFiltered(selectVerb(cols), ub.table, ub.wheres, args)
+	return buildFiltered(selectVerb(cols), ub.table, ub.wheres)
 }
 
 func selectVerb(cols []string) string {
@@ -72,7 +64,7 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 
 	sb.WriteString(" SET ")
 	paramIdx := 1
-	args := make([]any, 0, len(ub.sets))
+	args := make([]any, 0, len(ub.sets)+len(ub.wheres.args))
 	for i, s := range ub.sets {
 		if i > 0 {
 			sb.WriteString(", ")
@@ -82,12 +74,10 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		args = append(args, s.value)
 	}
 
-	if len(ub.wheres) > 0 {
+	if len(ub.wheres.clauses) > 0 {
 		sb.WriteString(" WHERE ")
-		appendWhereClauses(&sb, ub.wheres, paramIdx)
-		for _, w := range ub.wheres {
-			args = append(args, w.args...)
-		}
+		appendWhereClauses(&sb, ub.wheres.clauses, paramIdx)
+		args = append(args, ub.wheres.args...)
 	}
 
 	if len(ub.returning) > 0 {

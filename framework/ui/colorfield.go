@@ -20,6 +20,8 @@ type ColorFieldConfig struct {
 	Value string
 	// TextID is the text input's id; a Field's id wins over it.
 	TextID string
+	// Required marks the submitted text input as required.
+	Required bool
 	// SwatchLabel is required, and names the text input when TextLabel
 	// is empty; the swatch is named by PickColor plus Name.
 	SwatchLabel string
@@ -81,6 +83,7 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 	return colorFieldStyle.WrapHTML(headless.Color(headless.ColorProps{
 		Name:        cfg.Name,
 		Value:       cfg.Value,
+		Required:    cfg.Required || cfg.Field.Required,
 		Invalid:     cfg.Field.Invalid,
 		ID:          id,
 		DescribedBy: cfg.Field.DescribedBy,

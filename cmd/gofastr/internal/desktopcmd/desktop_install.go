@@ -21,12 +21,14 @@ func runDesktopInstall(args []string, uninstall bool, targetOS string) {
 		flag = "--id"
 	}
 	value, err := desktopInstallArgument(args, flag)
-	if err == nil {
-		if uninstall {
-			err = uninstallLinuxBundle(value)
-		} else {
-			err = installLinuxBundle(value)
-		}
+	if err != nil {
+		cli.UsageFail("Desktop installation: %v", err)
+		return
+	}
+	if uninstall {
+		err = uninstallLinuxBundle(value)
+	} else {
+		err = installLinuxBundle(value)
 	}
 	if err != nil {
 		cli.Fail("Desktop installation: %v", err)

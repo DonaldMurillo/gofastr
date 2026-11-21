@@ -203,27 +203,28 @@ func sidebarClasses(variant SidebarVariant) headless.Classes {
 	}
 }
 
+// withDefaults fills the empty Variant and DrawerName, so a trigger, a
+// body and the mounted drawer resolve the same widget name.
+func (c SidebarConfig) withDefaults() SidebarConfig {
+	if c.Variant == "" {
+		c.Variant = SidebarPersistent
+	}
+	if c.DrawerName == "" {
+		c.DrawerName = "ui-sidebar-drawer"
+	}
+	return c
+}
+
 // Sidebar renders the inline nav column and the hamburger that opens the MountSidebar drawer.
 func Sidebar(cfg SidebarConfig) component.Component {
-	if cfg.Variant == "" {
-		cfg.Variant = SidebarPersistent
-	}
-	if cfg.DrawerName == "" {
-		cfg.DrawerName = "ui-sidebar-drawer"
-	}
-	return sidebarComponent{cfg: cfg}
+	return sidebarComponent{cfg: cfg.withDefaults()}
 }
 
 var rolesExtractor func(ctx context.Context) []string
 
 // SidebarDrawerTrigger renders the hamburger alone, for a header beside SuppressDrawerTrigger.
 func SidebarDrawerTrigger(cfg SidebarConfig) render.HTML {
-	if cfg.Variant == "" {
-		cfg.Variant = SidebarPersistent
-	}
-	if cfg.DrawerName == "" {
-		cfg.DrawerName = "ui-sidebar-drawer"
-	}
+	cfg = cfg.withDefaults()
 	checkSidebarVariant(cfg.Variant)
 	checkStackBreakpoint(cfg.DrawerBreakpoint)
 	classes := drawerTriggerClasses(cfg.Variant)
@@ -458,12 +459,7 @@ func sidebarActive(currentPath string, it SidebarItem) bool {
 
 // SidebarBody renders the navigation content alone, for a host's own drawer, without a request.
 func SidebarBody(cfg SidebarConfig) render.HTML {
-	if cfg.Variant == "" {
-		cfg.Variant = SidebarPersistent
-	}
-	if cfg.DrawerName == "" {
-		cfg.DrawerName = "ui-sidebar-drawer"
-	}
+	cfg = cfg.withDefaults()
 	checkSidebarGroupMarkup(cfg.GroupMarkup)
 	return sidebarBodyRegion(context.Background(), cfg, cfg.DrawerName+"-body", "fui-sidebar fui-sidebar__body")
 }
@@ -604,12 +600,7 @@ func MountSidebarFunc(r WidgetMounter, build func(ctx context.Context) SidebarCo
 }
 
 func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context) SidebarConfig, pages []string) widget.Definition {
-	if cfg.Variant == "" {
-		cfg.Variant = SidebarPersistent
-	}
-	if cfg.DrawerName == "" {
-		cfg.DrawerName = "ui-sidebar-drawer"
-	}
+	cfg = cfg.withDefaults()
 	title := cfg.DrawerTitle
 	if title == "" {
 		title = cfg.Title

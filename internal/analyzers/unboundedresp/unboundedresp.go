@@ -73,9 +73,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/readsrc"
 	"golang.org/x/tools/go/analysis"
 )
@@ -93,7 +93,7 @@ func run(pass *analysis.Pass) (any, error) {
 	// limited reader: handing the response to one first is credit.
 	cappingHelpers := map[*types.Func]int{} // fn → index of the rebound parameter
 	for _, f := range pass.Files {
-		if isTest(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		aliases := readsrc.SingleBindings(pass, f)
@@ -115,7 +115,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	for _, f := range pass.Files {
-		if isTest(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		// Response variables that are program-constructed, not fetched.
@@ -499,8 +499,4 @@ func qualified(pass *analysis.Pass, fun ast.Expr) string {
 		return ""
 	}
 	return pkg.Imported().Name() + "." + sel.Sel.Name
-}
-
-func isTest(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
 }

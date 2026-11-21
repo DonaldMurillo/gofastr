@@ -82,8 +82,8 @@ func Analyzers() []*Analyzer {
 
 // RunOptions narrows a run. An empty filter means everything.
 type RunOptions struct {
-	// Capabilities restricts the run to analyzers covering at least one
-	// of these. Empty runs them all.
+	// Capabilities restricts rule findings to these capabilities and meta.
+	// Empty includes all capabilities.
 	Capabilities []Capability
 	// Analyzers restricts the run by analyzer name. Empty runs them all.
 	Analyzers []string
@@ -104,17 +104,11 @@ func (o RunOptions) wants(a *Analyzer) bool {
 			return false
 		}
 	}
-	if len(o.Capabilities) == 0 {
-		return true
-	}
-	for _, want := range o.Capabilities {
-		for _, have := range a.Capabilities() {
-			if have == want {
-				return true
-			}
-		}
-	}
-	return false
+	return len(o.Capabilities) == 0 || slices.ContainsFunc(a.Capabilities(), o.includesCapability)
+}
+
+func (o RunOptions) includesCapability(cap Capability) bool {
+	return cap == CapMeta || len(o.Capabilities) == 0 || slices.Contains(o.Capabilities, cap)
 }
 
 // AnalyzerTiming records how long one analyzer took and what it found.
@@ -164,6 +158,7 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 
 	start := time.Now()
 	raw, timings := runAll(p, selected, opts.Parallel)
+	sup := collectSuppressions(p)
 
 	report := &Report{
 		Root:         p.Root,
@@ -180,11 +175,10 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 		}
 	}
 
-	sup := collectSuppressions(p)
 	raw = append(raw, sup.issues...)
 
 	active := func(r Rule) bool {
-		if !p.Config.Enabled(r) {
+		if !opts.includesCapability(r.Capability) || !p.Config.Enabled(r) {
 			return false
 		}
 		for _, a := range selected {
@@ -205,16 +199,19 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 				fmt.Sprintf("diagnostic references unknown rule %q at %s", d.RuleID, d.Location()))
 			continue
 		}
-		sev := p.Config.SeverityFor(rule)
-		if sev == SeverityOff {
+		if !opts.includesCapability(rule.Capability) {
 			continue
 		}
-		if p.Config.ExemptFor(rule, d.File) {
-			continue
-		}
-		if sup.suppressed(d, rule) {
-			report.noteSuppressed(rule.ID, d.File)
-			continue
+		sev := rule.Severity
+		if !d.Unwaivable {
+			sev = p.Config.SeverityFor(rule)
+			if sev == SeverityOff || p.Config.ExemptFor(rule, d.File) {
+				continue
+			}
+			if sup.suppressed(d, rule) {
+				report.noteSuppressed(rule.ID, d.File)
+				continue
+			}
 		}
 		d.Slug = rule.Slug
 		d.Capability = rule.Capability
@@ -230,32 +227,29 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 		kept = append(kept, d)
 	}
 
-	// Two passes: the first consumes GOFASTR0002 waivers, the second
-	// reports the stale directives that survive.
-	for _, d := range sup.stale(p) {
-		if rule, ok := LookupRule(d.RuleID); ok && p.Config.Enabled(rule) && !p.Config.ExemptFor(rule, d.File) {
-			sup.suppressed(d, rule)
+	staleRule, _ := LookupRule(RuleSuppressionStale)
+	if p.Config.Enabled(staleRule) {
+		stale := sup.stale(active)
+		// Consume GOFASTR0002 waivers before reporting the survivors.
+		for _, s := range stale {
+			if !p.Config.ExemptFor(staleRule, s.File) {
+				sup.suppressed(Diagnostic{File: s.File, Line: s.Comment.Line}, staleRule)
+			}
 		}
-	}
-	for _, d := range sup.stale(p) {
-		rule, _ := LookupRule(d.RuleID)
-		if !p.Config.Enabled(rule) {
-			continue
+		for _, s := range stale {
+			if s.used || p.Config.ExemptFor(staleRule, s.File) {
+				continue
+			}
+			d := s.staleDiagnostic(p)
+			if sup.suppressed(d, staleRule) {
+				report.noteSuppressed(staleRule.ID, d.File)
+				continue
+			}
+			d.Slug, d.Capability, d.Severity = staleRule.Slug, staleRule.Capability, p.Config.SeverityFor(staleRule)
+			d.Rule = &staleRule
+			d.Fix = s.deletion(p)
+			kept = append(kept, d)
 		}
-		if p.Config.ExemptFor(rule, d.File) {
-			continue
-		}
-		if sup.suppressed(d, rule) {
-			report.noteSuppressed(rule.ID, d.File)
-			continue
-		}
-		if !staleReportable(sup, d, active) {
-			continue
-		}
-		d.Slug, d.Capability, d.Severity = rule.Slug, rule.Capability, p.Config.SeverityFor(rule)
-		ruleCopy := rule
-		d.Rule = &ruleCopy
-		kept = append(kept, d)
 	}
 
 	kept = dedupe(kept)
@@ -264,21 +258,6 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	report.Duration = time.Since(start)
 	report.summarize()
 	return report, nil
-}
-
-func staleReportable(sup *suppressionSet, d Diagnostic, active func(Rule) bool) bool {
-	for _, s := range sup.byFile[d.File] {
-		if s.Line != d.Line || s.used {
-			continue
-		}
-		for _, name := range s.Rules {
-			r, ok := LookupRule(name)
-			if !ok || !active(r) {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func runAll(p *Pass, selected []*Analyzer, parallel int) ([]Diagnostic, []AnalyzerTiming) {

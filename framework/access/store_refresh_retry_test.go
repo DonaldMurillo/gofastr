@@ -37,6 +37,7 @@ func TestGrantRefreshRetriesAfterOutage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stop()
+	attachment := s.attachment
 
 	exec := func(q string) {
 		t.Helper()
@@ -58,7 +59,7 @@ func TestGrantRefreshRetriesAfterOutage(t *testing.T) {
 		}
 	}
 	exec(`INSERT INTO access_grants (role, permission) VALUES ('editor', 'posts:read')`)
-	s.markDirty("editor")
+	attachment.markDirty("editor")
 	waitFor("the editor grant never loaded", func() bool { return can("editor") })
 
 	// The grants table is unreachable while both refreshes run: editor is
@@ -66,10 +67,10 @@ func TestGrantRefreshRetriesAfterOutage(t *testing.T) {
 	// One wake for both, so nothing but the worker's own retry wakes it
 	// again.
 	exec(`ALTER TABLE access_grants RENAME TO access_grants_away`)
-	s.dirtyMu.Lock()
-	s.dirty["editor"] = true
-	s.dirtyMu.Unlock()
-	s.markDirty("viewer")
+	attachment.dirtyMu.Lock()
+	attachment.dirty["editor"] = true
+	attachment.dirtyMu.Unlock()
+	attachment.markDirty("viewer")
 	time.Sleep(200 * time.Millisecond)
 	exec(`DELETE FROM access_grants_away WHERE role = 'editor'`)
 	exec(`INSERT INTO access_grants_away (role, permission) VALUES ('viewer', 'posts:read')`)

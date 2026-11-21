@@ -147,9 +147,9 @@ func TestUIHost404(t *testing.T) {
 // typed html.Link vocabulary dressed in framework/ui's button class
 // vocabulary (fui-button fui-button--primary) — the primary-action
 // look every composed surface uses — instead of a bare unstyled
-// anchor. The BARE-document fallbacks (no root layout) keep plain
-// HTML: no chrome is injected there, so no sheet exists to compose
-// with.
+// anchor. The BARE-document fallbacks (no root layout, and the
+// problem-JSON worker's HTML arm) carry the same classes: the styling
+// is on the anchor, so it survives with or without chrome.
 func TestDefaultErrorPagesStyleHomeLink(t *testing.T) {
 	styled := `<a class="fui-button fui-button--primary" href="/">Back to home</a>`
 
@@ -180,6 +180,39 @@ func TestDefaultErrorPagesStyleHomeLink(t *testing.T) {
 	}
 	if !strings.Contains(w405.Body.String(), styled) {
 		t.Errorf("default 405 body must carry the styled home action:\n%s", w405.Body.String())
+	}
+
+	// The bare fallbacks: no root layout, so renderNotFoundDocument and
+	// renderErrorDocument give up and the inline 404/500 bodies render.
+	bare := New(app.NewApp("x"))
+	w404Bare := httptest.NewRecorder()
+	bare.serveNotFound(w404Bare, httptest.NewRequest(http.MethodGet, "/nope", nil), "/nope")
+	if w404Bare.Code != http.StatusNotFound {
+		t.Fatalf("bare 404: want 404, got %d", w404Bare.Code)
+	}
+	if !strings.Contains(w404Bare.Body.String(), styled) {
+		t.Errorf("bare 404 body must carry the styled home action:\n%s", w404Bare.Body.String())
+	}
+
+	w500Bare := httptest.NewRecorder()
+	bare.serveError(w500Bare, httptest.NewRequest(http.MethodGet, "/boom", nil), "/boom")
+	if w500Bare.Code != http.StatusInternalServerError {
+		t.Fatalf("bare 500: want 500, got %d", w500Bare.Code)
+	}
+	if !strings.Contains(w500Bare.Body.String(), styled) {
+		t.Errorf("bare 500 body must carry the styled home action:\n%s", w500Bare.Body.String())
+	}
+
+	w500JSONArm := httptest.NewRecorder()
+	bare.serveServerError(w500JSONArm, httptest.NewRequest(http.MethodGet, "/boom", nil), "/boom")
+	if w500JSONArm.Code != http.StatusInternalServerError {
+		t.Fatalf("server-error 500: want 500, got %d", w500JSONArm.Code)
+	}
+	if ct := w500JSONArm.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Fatalf("server-error 500 Content-Type = %q, want the HTML arm", ct)
+	}
+	if !strings.Contains(w500JSONArm.Body.String(), styled) {
+		t.Errorf("server-error 500 HTML body must carry the styled home action:\n%s", w500JSONArm.Body.String())
 	}
 }
 

@@ -104,27 +104,7 @@ func TestDurableSchedulerMigratesExistingSchedulesTableVersion(t *testing.T) {
 	if _, err := NewDurableScheduler(q, DurableSchedulerConfig{}); err != nil {
 		t.Fatalf("upgrade scheduler schema: %v", err)
 	}
-	rows, err := db.Query("PRAGMA table_info(" + q.schedulerSchedulesTable() + ")")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	found := false
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			t.Fatal(err)
-		}
-		if name == "version" {
-			found = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate rows: %v", err)
-	}
-	if !found {
+	if !scanForColumn(t, db, q.schedulerSchedulesTable(), "version") {
 		t.Fatal("existing schedules table was not upgraded with version column")
 	}
 }

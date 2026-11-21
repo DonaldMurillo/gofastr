@@ -6,9 +6,6 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
-
-	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 const (
@@ -65,24 +62,4 @@ func hasSetupCookie(r *http.Request, expected string) bool {
 		return false
 	}
 	return tokenEqual(c.Value, expected)
-}
-
-// rejectCrossSiteForm refuses a cross-site POST to the wizard. The gate
-// is handler.IsForgeableRequest (the wizard's forms are urlencoded,
-// CORS-simple) and handler.IsCrossSiteRequest, the repo's one cross-site
-// predicate: Sec-Fetch-Site first, where "same-site" is NOT proof of
-// same-origin — a page on a sibling subdomain (evil.example.com →
-// app.example.com) is same-site while its Origin names another host, and
-// the SameSite=Strict setup cookie still attaches — so it falls through
-// to the Origin-host comparison, as does any unknown value. Non-browser
-// clients (curl, tests) send neither header and pass.
-func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !handler.IsForgeableRequest(r) {
-		return false
-	}
-	if handler.IsCrossSiteRequest(r) {
-		i18n.HTTPError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
-		return true
-	}
-	return false
 }

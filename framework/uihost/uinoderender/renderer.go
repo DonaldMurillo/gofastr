@@ -80,10 +80,10 @@ func (r *Renderer) renderNode(n uinodev1.Node) (render.HTML, error) {
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: p.Text, Variant: badgeTone(p.Tone)}), nil
 	case uinodev1.CompDetailList:
 		p := n.Props.(uinodev1.DetailListProps)
-		return renderDetailList(p.Items, false), nil
+		return renderDetailList(p.Items), nil
 	case uinodev1.CompKeyValue:
 		p := n.Props.(uinodev1.KeyValueProps)
-		return renderDetailList(kvItems(p.Items), true), nil
+		return renderDetailList(kvItems(p.Items)), nil
 	case uinodev1.CompStatCard:
 		p := n.Props.(uinodev1.StatCardProps)
 		return ui.StatCard(ui.StatCardConfig{
@@ -199,7 +199,7 @@ func (r *Renderer) renderChildren(nodes []uinodev1.Node) ([]render.HTML, error) 
 	return out, nil
 }
 
-func renderDetailList(items []uinodev1.DetailItem, _ bool) render.HTML {
+func renderDetailList(items []uinodev1.DetailItem) render.HTML {
 	rows := make([]ui.DetailItem, len(items))
 	for i, it := range items {
 		rows[i] = ui.DetailItem{
@@ -293,6 +293,8 @@ func (r *Renderer) renderLink(n uinodev1.Node) (render.HTML, error) {
 	}), nil
 }
 
+// resolveActionRef resolves ref through the installed resolver; an
+// unresolved ref is an error, never an improvised URL.
 func (r *Renderer) resolveActionRef(ref string) (string, error) {
 	if ref == "" {
 		return "", errActionRef("empty action_ref")

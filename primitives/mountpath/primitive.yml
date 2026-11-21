@@ -1,0 +1,35 @@
+primitive: mountpath
+summary: Literal mount-path validation for batteries and path-only prefix normalization for App CRUD and route groups.
+code:
+  - internal/mountpath/
+twins:
+  - job: Refuse a battery mount path or route prefix that is not a literal, absolute path clear of the reserved /__gofastr routes.
+    why: battery/relay stays unmountable, and unmount refuses a package that imports a gofastr internal/ package; relay keeps validatePath and validateSegments, pinned to mountpath by a parity test.
+    sites:
+      - path: internal/mountpath/mountpath.go
+        note: Validate and ValidateSegments, used by rtc.
+      - path: battery/relay/relay.go
+        note: validatePath, validateSegments and reservedGoFastrSegments.
+invariants:
+  - id: mount-paths-are-literal
+    rule: "Validate refuses a mount path that is not absolute, is the root /, ends in a slash, carries a control byte or space, a ServeMux metacharacter ({, } or $), %, #, ? or a backslash, an empty or traversal segment, the bare reserved root /__gofastr, or a reserved /__gofastr segment; ValidateSegments carries the per-character and per-segment half for route prefixes."
+    enforced_by:
+      - test: internal/mountpath.TestValidateRefusesNonLiteralMounts
+      - test: internal/mountpath.TestValidateAcceptsLiteralMounts
+      - test: internal/mountpath.TestValidateSegmentsRefusesBadPrefixes
+      - test: battery/relay.TestRouteConfigRequiresLiteralPaths
+      - test: battery/relay.TestPathRulesMatchMountpath
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountableBatteriesImportNoInternal
+      - test: battery/rtc.TestNewPanicsOnBadConfig
+    applies:
+      - battery/relay/relay.go
+      - battery/rtc/rtc.go
+decisions:
+  - id: one-mount-path-validator
+    date: 2026-11-19
+    status: accepted
+    decision: rtc wraps internal/mountpath.Validate and prefixes its battery name onto the error text; relay, which must stay unmountable, keeps its own copy and TestPathRulesMatchMountpath fails the moment the two disagree.
+    rejected:
+      - option: Copy relay's metacharacter and reserved-segment refusals into rtc's validatePath.
+        why: The two copies had already drifted apart; one job belongs in one implementation.
+    upholds: [mount-paths-are-literal]

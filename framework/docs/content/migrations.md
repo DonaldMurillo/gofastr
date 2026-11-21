@@ -366,7 +366,11 @@ migration put on a column the entity leaves optional is not removed.
 > next snapshot directly (write them with `migrate.RenderMigrationFileChecked` /
 > `SaveSnapshot`).
 
-It then updates the snapshot. The typical loop:
+For custom Go registries, boot, `DiffSchema`, and `GeneratePlan` skip table
+and column changes for an entity with no fields. `GeneratePlan` carries
+forward any table it already recorded for that entity.
+
+After generation, the CLI updates the snapshot. The typical loop:
 
 1. Edit an entity in the app spec (add a field, add an entity, …).
 2. `gofastr migrate generate <name> --from=gofastr.yml` → review the generated `.sql`.
@@ -892,9 +896,14 @@ log, outbox, queue, webhooks, idempotency keys, feature flags, the auth
 stores and the rest) follow the same rule: a new one refuses a `NULL` key
 on SQLite, and one that already exists is left as it was. For a `CREATE
 TABLE` you write by hand, `gofastr verify` reports a primary-key column
-with no `NOT NULL` (`GOFASTR1418`): write `id TEXT PRIMARY KEY NOT NULL`,
-and `NOT NULL` on each column a `PRIMARY KEY (a, b)` names. The rule reads
-SQL written in Go strings; a `.sql` migration file is yours to check.
+that can store NULL on SQLite (`GOFASTR1418`). Write
+`id TEXT PRIMARY KEY NOT NULL` and add `NOT NULL` to each column a
+`PRIMARY KEY (a, b)` names. A rowid table fills a single `INTEGER` key
+automatically with either `id INTEGER PRIMARY KEY` or
+`id INTEGER, PRIMARY KEY (id)`. Inline `INTEGER PRIMARY KEY DESC` can
+store NULL unless you add `NOT NULL`. In `STRICT` and `WITHOUT ROWID`
+tables, primary-key columns refuse NULL or, for a rowid alias, fill
+themselves. The rule reads SQL written in Go strings.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's
@@ -1207,8 +1216,9 @@ app.View(migrate.View{
   `GET /active_users/_events` — and no write routes. The view's
   `/active_users/llm.md` lists exactly those (no write, batch, or
   Create/Update columns), and the `/api/llm.md` index counts the same
-  three, labelled `read-only`. The query layer is not one of them: it is
-  a Go surface, not an HTTP route, so it never appears in either count.
+  three, labelled `read-only`. Register `BeforeList` and `BeforeGet` hooks
+  under the view's name to scope the list and record routes. The query
+  layer is a Go surface, so it never appears in either HTTP route count.
   The event stream uses the app event bus and the view's own resource
   name. It does not infer view changes from writes to underlying tables;
   without events published for the view it remains open and quiet.

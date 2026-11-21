@@ -72,8 +72,5 @@ func TestTagInputExtraAttrsOnRoot(t *testing.T) {
 	h := TagInput(TagInputConfig{
 		Name: "tags", Label: "Tags", ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("wrapper div missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "wrapper div")
 }

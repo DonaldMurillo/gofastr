@@ -35,6 +35,16 @@ func EscapeRoutePath(p string) string {
 	return strings.Join(segs, "/")
 }
 
+// RouteHasParams reports whether a route pattern has a parameter segment.
+func RouteHasParams(pattern string) bool {
+	for segment := range strings.SplitSeq(normalizeRoutePath(pattern), "/") {
+		if isParamSeg(segment) {
+			return true
+		}
+	}
+	return false
+}
+
 // PatternPath substitutes params into a route pattern and returns the routing-form path: each
 // ":name" segment takes params[name] (see [ParamName]), a param params lacks stays as written.
 func PatternPath(pattern string, params map[string]string) string {

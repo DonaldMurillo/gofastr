@@ -76,7 +76,7 @@ func TestCLIRefusesWrapperNameClash(t *testing.T) {
 	}
 	opts := CliOptions{Binary: "myapp", OutDir: t.TempDir(), dryRun: true}
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { emitCLIFiles(opts, spec) })
 	})
 	if code != 1 || !strings.Contains(out, "runOrdersMarkPaid") {

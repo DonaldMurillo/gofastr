@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"golang.org/x/tools/go/packages"
 )
@@ -489,7 +490,7 @@ func (e *engine) fieldIndexHit(rel string, p *packages.Package, ix *ast.IndexExp
 	}
 	for _, sym := range e.objectSymbols(obj) {
 		for _, w := range e.fieldWantIdx[sym] {
-			if w.fm.Key == "" || !attrNameEqual(key, w.fm.Key) {
+			if w.fm.Key == "" || !asciicase.EqualFold(key, w.fm.Key) {
 				continue
 			}
 			pos := p.Fset.Position(unparenExpr(ix.Index).Pos())
@@ -537,7 +538,7 @@ func (e *engine) fieldValueHit(rel string, p *packages.Package, value ast.Expr, 
 				continue
 			}
 			key, ok := constStringOf(info, ikv.Key)
-			if !ok || !attrNameEqual(key, w.fm.Key) {
+			if !ok || !asciicase.EqualFold(key, w.fm.Key) {
 				continue
 			}
 			pos := p.Fset.Position(ikv.Key.Pos())
@@ -571,28 +572,6 @@ func (e *engine) fieldValueHit(rel string, p *packages.Package, value ast.Expr, 
 		e.addGo(w.n, Hit{File: rel, Line: pos.Line, Col: pos.Column,
 			Why: "field " + w.fm.Field.String() + why})
 	}
-}
-
-// attrNameEqual compares HTML attribute names the way the HTML parser
-// does: ASCII case folds, nothing else does (strings.EqualFold would
-// also fold the long s U+017F onto "s", a different attribute).
-func attrNameEqual(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca, cb := a[i], b[i]
-		if 'A' <= ca && ca <= 'Z' {
-			ca += 'a' - 'A'
-		}
-		if 'A' <= cb && cb <= 'Z' {
-			cb += 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
 }
 
 // followVarExpr resolves expr — a variable or constant, bare or

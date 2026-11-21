@@ -1,0 +1,55 @@
+primitive: bodylimit
+summary: The repo's inbound JSON request body cap and standard body-refusal status and phrase, in internal/bodylimit.
+code:
+  - internal/bodylimit/
+  - internal/analyzers/unboundedbody/
+twins:
+  - job: Map a refused auth request body (over the cap, unreadable, undecodable, bad form) to its status and phrase, and cap it at 1 MiB.
+    why: battery/auth stays unmountable, and unmount refuses a package that imports a gofastr internal/ package; auth keeps a copy pinned to bodylimit by a parity test.
+    sites:
+      - path: internal/bodylimit/bodylimit.go
+        note: MaxJSONBodyBytes, ReadRefusal, DecodeRefusal, FormRefusal.
+      - path: battery/auth/json_limit.go
+        note: maxAuthBodyBytes and decodeJSONLimited.
+      - path: battery/auth/form_decode.go
+        note: parseAuthFormOrRefuse.
+      - path: battery/webhook/inbound.go
+        note: IngestHandler's read refusal; webhook stays unmountable too.
+invariants:
+  - id: raw-body-mount-cap-precedes-dispatch
+    rule: Unboundedbody credits a raw-body mount only for a returned http.HandlerFunc that wraps the dispatched request body with a constant http.MaxBytesReader limit immediately before its sole dispatch. Form parsing requires a local or caller-side cap.
+    enforced_by:
+      - test: internal/analyzers/unboundedbody.TestUnboundedBody
+  - id: body-refusal-mapping-is-one
+    rule: Bodylimit supplies the standard status and phrase for a refused request body (413 with the status phrase for overflow, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, and 400 invalid_form for a failed form parse), with exceptions for the pinned copies under twins and the admin ops envelope, which answers overflow with a 303 redirect and result=body-too-large for a plain form post or a 413 with the localized admin body-too-large message for a form RPC.
+    enforced_by:
+      - test: battery/auth.TestBodyRefusalsMatchBodylimit
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountableBatteriesImportNoInternal
+
+      - test: framework/entityui.TestBulkBodyReadFailureNamesTheUnreadableBody
+      - test: battery/auth.TestDecodeJSONLimitedReadFailureNamesTheUnreadableBody
+      - test: battery/webhook.TestIngestBodyReadFailureNamesTheUnreadableBody
+      - test: framework/uihost.TestDecodeBoundedReadFailureNamesTheUnreadableBody
+      - test: framework/uihost.TestSweepEmbedExchangeMalformedBodyIsInvalidJSON
+      - test: battery/admin.TestOpsOversizeBodyAnswersTheOpsEnvelope
+      - test: framework/crud.TestJSONDecodeErrorsArePhrasedOverHTTP
+  - id: json-body-cap-is-one-constant
+    rule: Every inbound JSON request body cap is bodylimit.MaxJSONBodyBytes - crud's exported MaxJSONBodyBytes re-exports it, and the admin ops post, semantic routes and the desktop bridge take their value from it, and auth's own copy equals it (battery/auth.TestBodyRefusalsMatchBodylimit).
+    judge: Does a new inbound JSON request-body cap take bodylimit.MaxJSONBodyBytes instead of declaring its own 1 MiB?
+decisions:
+  - id: refusals-live-under-internal
+    date: 2026-11-19
+    status: accepted
+    decision: Common MaxBytesReader refusal mapping lives in internal/bodylimit, with pinned copies for unmountable batteries and a dedicated admin ops envelope for plain form redirects and localized form RPC errors.
+    rejected:
+      - option: core/handler or core/i18n, beside the phrases
+        why: Both directories are owned by open PRs, while every layer can import an internal package.
+    upholds: [body-refusal-mapping-is-one]
+  - id: json-cap-narrowed-to-request-bodies
+    date: 2026-11-19
+    status: accepted
+    decision: Only inbound JSON request-body caps share MaxJSONBodyBytes; the oauth2 and OIDC JWKS response caps, the generated client templates, the urlencoded form caps (setup, the CSRF middleware) and webhook's outbound MaxPayloadBytes stay their own knobs.
+    rejected:
+      - option: one constant for every 1 MiB in the repo
+        why: A response cap and a request cap change for different reasons, and the generated clients are emitted text.
+    upholds: [json-body-cap-is-one-constant]

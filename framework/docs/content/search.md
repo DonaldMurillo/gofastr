@@ -43,6 +43,10 @@ Wire it into a custom endpoint such as `GET /posts/search?q=...`.
 | `Fields` | `map[string]any` | Optional structured fields returned with hits.   |
 | `Owner`  | `string`         | Optional. User id the document belongs to.       |
 
+The bundled backends require `Fields` to encode as JSON. `Index` rejects
+JSON keys or string values containing NUL bytes, including nested fields,
+before replacing any existing document.
+
 `Owner` is a storage tag, not a search filter: scope searches through
 `Fields` and `FieldEquals`. Its job is erasure. The SQLite and Postgres
 backends register a data eraser and `search.Memory` a store eraser, so
@@ -58,6 +62,9 @@ or fields carry one user's data, or erasure leaves that copy behind.
 | `Limit`  | `int`              | Max hits. `0` means no limit (engine default).   |
 | `Offset` | `int`              | Skip first N hits, useful for pagination.       |
 | `FieldEquals` | `map[string]string` | Optional. Exact-match filter on `Document.Fields`: the scope hook (see below). |
+
+`Search` rejects `FieldEquals` keys and values with invalid UTF-8 or NUL
+bytes, including on empty-text queries.
 
 ### `Result`
 
@@ -201,8 +208,9 @@ idx, _ := search.NewPostgres(db, search.PostgresConfig{
 })
 ```
 
-A field configured in `WeightedFields` is indexed only when its value is a
-string; non-string values are skipped. The default `ts_rank` weight multipliers
+A field configured in `WeightedFields` is indexed when its value is a string;
+a configured field present with a non-string value makes `Index` return an
+error instead of indexing the document. The default `ts_rank` weight multipliers
 (`D` < `C` < `B` < `A`) mean a weight-`'A'` hit scores higher than a weight-`'C'` hit.
 
 ### Scoping with `FieldEquals`
@@ -309,7 +317,7 @@ so the default `go test ./...` stays green.
 |---------|----------|----------------------------------------------------|
 | `Table` | `string` | Destination FTS5 virtual table. Defaults to `search_documents`. |
 
-The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_each`.
+The schema is fixed: `CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, type UNINDEXED, fields UNINDEXED, owner UNINDEXED, text, tokenize='porter unicode61')`. Only `Document.Text` is tokenised; structured fields are stored (UNINDEXED) for `FieldEquals` filtering via `json_each`.
 
 Beside it `EnsureSchema` keeps `<table>_prefix`, a contentless FTS5 table over
 the same text with the `unicode61` tokenizer and no stemming. The porter

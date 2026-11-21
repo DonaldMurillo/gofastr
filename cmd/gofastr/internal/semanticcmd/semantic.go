@@ -61,7 +61,7 @@ func RunSemantic(args []string) {
 	default:
 		cli.Fail("unknown semantic subcommand: %s", sub)
 		printSemanticHelp()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -81,6 +81,13 @@ func printSemanticHelp() {
                       (refused while an index or watch holds it)
 
 %s:
+  -k N                Hits a query prints (default 5); -k 5 or -k=5,
+                      before or after the query text
+  --hybrid            Blend keyword and vector hits in a query
+  --mmr <lambda>      Rerank query hits by maximal marginal relevance
+                      (--mmr 0.4 or --mmr=0.4)
+
+%s:
   GOFASTR_URL=...     If set, query/stats hit the running server's
                       /semantic/* endpoints instead of opening a local
                       index. index/watch/clear are always local.
@@ -92,12 +99,11 @@ func printSemanticHelp() {
                       to override defaults (localhost:11434 +
                       nomic-embed-text). EMBED_BACKEND is read as a
                       deprecated fallback.
-
 %s:
   gofastr semantic index .
   gofastr semantic watch ./src ./docs
   gofastr semantic query "authentication middleware"
-`, cli.Bold("gofastr semantic"), cli.Bold("Usage"), cli.Bold("Subcommands"), cli.Bold("Environment"), cli.Bold("Examples"))
+`, cli.Bold("gofastr semantic"), cli.Bold("Usage"), cli.Bold("Subcommands"), cli.Bold("Flags"), cli.Bold("Environment"), cli.Bold("Examples"))
 }
 
 // localSnapshotDir returns ~/.gofastr/semantic/<cwd-hash>. Distinct cwds
@@ -274,7 +280,7 @@ func embedQuery(args []string) {
 	q, err := parseQueryArgs(args)
 	if err != nil {
 		failSemanticJSON(err)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 

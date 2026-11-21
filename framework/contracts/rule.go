@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
 // Example is a bad/good pair shown under a rule. Both halves are required.
@@ -272,25 +274,5 @@ func suggestByDistance(needle string) []string {
 }
 
 func editDistance(a, b string) int {
-	ar, br := []rune(a), []rune(b)
-	if len(ar) == 0 {
-		return len(br)
-	}
-	prev := make([]int, len(br)+1)
-	curr := make([]int, len(br)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(ar); i++ {
-		curr[0] = i
-		for j := 1; j <= len(br); j++ {
-			cost := 1
-			if ar[i-1] == br[j-1] {
-				cost = 0
-			}
-			curr[j] = min(min(curr[j-1]+1, prev[j]+1), prev[j-1]+cost)
-		}
-		prev, curr = curr, prev
-	}
-	return prev[len(br)]
+	return fuzzy.LevenshteinRunes(a, b)
 }

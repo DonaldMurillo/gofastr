@@ -84,9 +84,7 @@ func TestEndpointMCPTwinSingleSegmentStaysStrict(t *testing.T) {
 	}
 }
 
-// The grouped entity's endpoints register their twins at the second
-// site (registerGroupEndpoints), under the group's prefix: the twin
-// follows the catch-all there too, with the same refusals.
+// A grouped endpoint's twin follows the catch-all under the group's prefix.
 func TestGroupEndpointMCPTwinFollowsCatchAll(t *testing.T) {
 	type fileInput struct {
 		Path string `path:"path"`

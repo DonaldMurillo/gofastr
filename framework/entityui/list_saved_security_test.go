@@ -128,6 +128,30 @@ func TestSavedViewsCrossSiteRefused(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("a cross-site save answered %d, want 403", w.Code)
 	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"error":"forbidden","reason":"forbidden"}`; got != want {
+		t.Errorf("the cross-site refusal changed body: got %s, want %s", got, want)
+	}
+}
+
+// The JSON body a browser could only send after a preflight is refused
+// like a form post, with the one refusal the write handlers share.
+func TestSavedViewsCrossSiteJSONRefused(t *testing.T) {
+	x, store := savedUI(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/orders/_views", strings.NewReader(`{"name":"Evil","filter":"status = \"open\"","back":"/orders"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r = withUserRequest(r, "u1")
+	w := httptest.NewRecorder()
+	savedViewsMux(x).ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("a cross-site JSON save answered %d (%s), want 403", w.Code, w.Body.String())
+	}
+	if got, want := strings.TrimSpace(w.Body.String()), `{"error":"forbidden","reason":"forbidden"}`; got != want {
+		t.Errorf("the refusal is not the one the saved-views handler answers: got %s, want %s", got, want)
+	}
+	if views, _ := store.List(asUser(context.Background(), "u1"), "orders"); len(views) != 0 {
+		t.Fatalf("a cross-site JSON save stored %v", views)
+	}
 }
 
 // An open saved view's filter is not in the query the export and

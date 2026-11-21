@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/ancestor"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -33,22 +34,22 @@ const loadMode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledG
 // first ancestor holding a go.mod. os.Root.Stat confines each probe to the
 // directory it names.
 func findModuleRoot(dir string) (string, error) {
-	for {
+	moduleRoot, found, err := ancestor.Find(dir, func(dir string) (bool, error) {
 		r, err := os.OpenRoot(dir)
 		if err != nil {
-			return "", fmt.Errorf("open %s: %w", dir, err)
+			return false, fmt.Errorf("open %s: %w", dir, err)
 		}
 		_, statErr := r.Stat("go.mod")
 		r.Close()
-		if statErr == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("scan: no go.mod at or above %s", dir)
-		}
-		dir = parent
+		return statErr == nil, nil
+	})
+	if err != nil {
+		return "", err
 	}
+	if !found {
+		return "", fmt.Errorf("scan: no go.mod at or above %s", moduleRoot)
+	}
+	return moduleRoot, nil
 }
 
 // loadPackages loads the app's packages once: one packages.Load against

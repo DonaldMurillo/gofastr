@@ -449,30 +449,14 @@ func (w *darwinWindow) applyReduced(on bool) {
 // sidebar zone. The capability has already bounded the value; the
 // bound is re-checked because in-process callers skip it.
 func (w *darwinWindow) SetSidebarWidth(points int) error {
-	if points < 0 || points > desktop.MaxSidebarWidth {
-		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+	if err := desktop.ValidateSidebarWidth(points); err != nil {
+		return err
 	}
-	if win, _ := w.ids(); win == 0 {
-		return errWindowClosed()
-	}
-	closed := false
-	err := w.shell.onMain(func() {
-		win, _ := w.ids()
-		if win == 0 {
-			closed = true
-			return
-		}
+	return w.withLiveWindow(func(win objc.ID) {
 		w.mu.Lock()
 		w.chrome.setSidebarWidth(win, points)
 		w.mu.Unlock()
 	})
-	if err != nil {
-		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if closed {
-		return errWindowClosed()
-	}
-	return nil
 }
 
 // reapplyTrafficInset re-applies the traffic-light geometry after a
@@ -502,15 +486,4 @@ func (s *darwinShell) reportWindowActivity(w *darwinWindow, focus bool) {
 	if !focus && blurCB != nil {
 		deliverOnGoroutine(func() { blurCB(id) })
 	}
-}
-
-// snapshotWindows copies the live window list under the lock.
-func (s *darwinShell) snapshotWindows() []*darwinWindow {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	wins := make([]*darwinWindow, 0, len(s.windows))
-	for _, w := range s.windows {
-		wins = append(wins, w)
-	}
-	return wins
 }

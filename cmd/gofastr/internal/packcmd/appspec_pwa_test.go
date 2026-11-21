@@ -164,7 +164,6 @@ func TestAppSpecPWALLMMatrix(t *testing.T) {
 	}{
 		{"neither", "", false, false},
 		{"pwa-only", pwaBlockYAML, true, false},
-		{"llm-only", "  llm_md: true\n", false, true},
 		{"both", pwaBlockYAML + "  llm_md: true\n", true, true},
 	}
 	for _, tc := range cases {

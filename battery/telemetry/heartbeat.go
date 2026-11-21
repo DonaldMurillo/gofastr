@@ -18,9 +18,10 @@ import (
 // Stack's heartbeats, a cron monitor of your own). Config.Heartbeat is
 // that URL.
 
-// heartbeatClient sends the ping: a deadline, and no following a
+// outboundClient is how the plugin talks to the outside on its own, a
+// heartbeat ping or an alert webhook: a deadline, and no following a
 // redirect to wherever a response points, since the URL is the secret.
-var heartbeatClient = &http.Client{
+var outboundClient = &http.Client{
 	Timeout:       10 * time.Second,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
@@ -69,7 +70,7 @@ func ping(ctx context.Context, u *url.URL) error {
 	if err != nil {
 		return errors.New("the URL could not be asked")
 	}
-	resp, err := heartbeatClient.Do(req)
+	resp, err := outboundClient.Do(req)
 	if err != nil {
 		// Not err's own text: it quotes the URL, which is the secret.
 		return errors.New("no answer")

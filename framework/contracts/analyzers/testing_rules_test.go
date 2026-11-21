@@ -44,6 +44,35 @@ func TestConcatenatedSkipReasons(t *testing.T) {
 	}
 }
 
+func TestPermissionCoverageUsesResolvedAccessChecks(t *testing.T) {
+	source := `package app
+import "github.com/DonaldMurillo/gofastr/framework/access"
+
+const edit = "orders:" + "edit"
+type foreign struct{}
+func (foreign) Can(any, string) bool { return true }
+
+func check(other foreign) {
+	access.CanResource(nil, "orders:read", access.Ref{})
+	access.Can(nil, edit)
+	access.CanResourceExact(nil, "orders:view", access.Ref{})
+	other.Can(nil, "orders:unrelated")
+}
+`
+	diagnostics := testingRun(t, contracts.DefaultConfig(), map[string]string{
+		"app.go":                          source,
+		".gofastr/semantic-coverage.json": `{"version":1,"permissions":["orders:view"]}`,
+	})
+	findings := countRule(t, diagnostics, contracts.RulePermissionNotExercised)
+	var names []string
+	for _, finding := range findings {
+		names = append(names, finding.Evidence["permission"])
+	}
+	if got := strings.Join(names, ", "); got != "orders:read, orders:edit" {
+		t.Fatalf("want uncovered resource and named permissions in source order, got %q (%+v)", got, diagnostics)
+	}
+}
+
 func TestLaneFixtureRunsOutsideShortMode(t *testing.T) {
 	source, err := os.ReadFile("testdata/review/debt_test.go.txt")
 	if err != nil {

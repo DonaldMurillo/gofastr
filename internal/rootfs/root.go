@@ -130,6 +130,43 @@ func (f fileSystem) Stat(name string) (fs.FileInfo, error) {
 // the unexported type.
 var dirFSType = reflect.TypeOf(os.DirFS(""))
 
+// DiskFS reports whether fsys is a disk-backed filesystem this package
+// recognizes: os.DirFS directly, or such a value wrapped in any depth
+// of fs.Sub. dir is the directory os.DirFS was built with; a Sub
+// view's own prefix is not included, so a caller that needs the
+// effective directory opens "." on fsys. ConfineDirFS deliberately
+// confines only the plain os.DirFS shape, not a Sub-wrapped one.
+func DiskFS(fsys fs.FS) (dir string, ok bool) {
+	return diskFS(reflect.ValueOf(fsys))
+}
+
+// diskFS walks value in reflect only: the io/fs.subFS fields it reads
+// are unexported, so their values never cross Interface.
+func diskFS(v reflect.Value) (string, bool) {
+	if dir, ok := dirFSPath(v); ok {
+		return dir, true
+	}
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return "", false
+	}
+	elem := v.Type().Elem()
+	if elem.PkgPath() != "io/fs" || elem.Name() != "subFS" || elem.Kind() != reflect.Struct {
+		return "", false
+	}
+	inner := v.Elem().FieldByName("fsys")
+	if !inner.IsValid() || inner.Kind() != reflect.Interface || inner.IsNil() {
+		return "", false
+	}
+	return diskFS(inner.Elem())
+}
+
+func dirFSPath(v reflect.Value) (string, bool) {
+	if v.IsValid() && v.Type() == dirFSType {
+		return v.String(), true
+	}
+	return "", false
+}
+
 // ConfineDirFS returns fsys unchanged unless it is an os.DirFS value, in
 // which case it returns the kernel-contained [Root.FS] view over the
 // same directory: a symlink inside the directory pointing outside it is
@@ -138,10 +175,10 @@ var dirFSType = reflect.TypeOf(os.DirFS(""))
 // reason, since reads from a directory that could not be verified are
 // the worse failure. embed.FS and every other fs.FS pass through.
 func ConfineDirFS(fsys fs.FS) fs.FS {
-	if fsys == nil || reflect.TypeOf(fsys) != dirFSType {
+	dir, ok := dirFSPath(reflect.ValueOf(fsys))
+	if !ok {
 		return fsys
 	}
-	dir := reflect.ValueOf(fsys).String()
 	root, err := Open(dir)
 	if err != nil {
 		return failClosedFS{err: fmt.Errorf("directory FS rooted at an unopenable directory: %w", err)}

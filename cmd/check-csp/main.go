@@ -33,12 +33,7 @@ func main() {
 	if len(os.Args) > 1 {
 		root = os.Args[1]
 	}
-	scriptRes, err := check.LintNoInlineScriptsRecursive(root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "check-csp: %v\n", err)
-		os.Exit(2)
-	}
-	styleRes, err := check.LintNoInlineStylesRecursive(root)
+	scriptRes, styleRes, err := check.LintNoInlineRecursive(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-csp: %v\n", err)
 		os.Exit(2)

@@ -16,7 +16,7 @@ Like `generate cli`, the entity set comes from your project source
 document instead generates with `--from-openapi` (see From an OpenAPI
 document). SDK output is **generator-owned and
 regenerates in place**: when the docs site warns that downloads drifted
-from the live schema, the fix is re-running the command.
+from the live schema, regenerate the SDKs and redeploy or remount the site.
 
 ## What gets generated
 
@@ -28,11 +28,13 @@ gen/sdk/
   dist/        sdk-go.zip  client.js  client.d.ts  manifest.json
 ```
 
-`dist/` is what the app serves: the Go SDK zipped (entries under
-`<app>-sdk/`), the two JS files verbatim, and a `manifest.json` recording
-sizes, sha256 hashes, the entity set, and a schema hash (see Drift
-detection). Archives are deterministic: regenerating an unchanged schema
-produces byte-identical output.
+`dist/` is what the app serves: the zipped Go SDK, the two JS files
+verbatim, and a `manifest.json` recording sizes, SHA-256 hashes, the
+entity set, and a schema hash (see Drift detection). The Go artifact's
+`directory` field records the archive's top-level directory for both
+install guides. Regenerate SDKs whose manifests lack that field.
+Archives are deterministic: regenerating an unchanged schema produces
+byte-identical output.
 
 Hidden fields never appear in any generated file: the SDKs are public
 downloads, and a hidden column's name is schema the API deliberately
@@ -589,8 +591,9 @@ Serving), and shows the drift banner when that document's hash differs.
 Responses are camelCase (the server default). Request bodies accept snake
 or camel. **Filter/sort query parameters use snake_case column names;
 error `fields` and `field_reasons` keys use the response wire keys
-(camelCase by default, or an explicit `WireName`).** The generated READMEs
-repeat this so consumers stop guessing.
+(camelCase by default, with the configured response casing and any
+explicit `WireName` overrides applied).** Both maps appear for field-level
+refusals. The generated READMEs repeat the casing convention.
 
 Custom RPC forms must name their controls by the same wire keys as their
 handler's `fields` map. Inline errors match control names exactly; the runtime
@@ -686,8 +689,10 @@ reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
 The quickstart lists records without an assumed sort column, so entities
-without timestamps work too. To sort, use a filterable/sortable column from
-that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
+without timestamps work too. The entity reference uses a filter value
+suited to the column's type and shows an unfiltered list when no suitable
+column is available. To sort, use a sortable column from the fields table.
+Hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
@@ -711,7 +716,8 @@ publishes a reference page, and an SDK download, for paths that answer
 404. A columned view registered with `App.View` counts as mounted — it
 serves read routes. Also pass `ReadOnlyMounted: fwApp.EntityReadOnlyMounted`
 to omit create, update, delete, batch and state-move routes and create
-examples for those views. Explicit custom endpoints remain documented.
+examples for those views. Custom endpoints with HTTP handlers remain
+documented.
 Leaving `CRUDMounted` nil keeps the older `Exposure`-only behaviour for
 callers that document a registry without an App; leaving `ReadOnlyMounted`
 nil assumes writable routes.
@@ -727,7 +733,11 @@ nonexistent one. Opt in with an explicit `Entities` allow-list or
 the mobile section-menu drawer's `/chrome` and `/state` routes) with
 `Policy`. A redirecting policy refuses the drawer's fetches with 403;
 the runtime fetches them, so a redirect has nowhere to land. Hidden
-fields never render.
+fields never render. Give each mount on a shared router a distinct
+`BasePath`. Each mount serves its own drawer.
+
+`sdk.ExampleHost` removes trailing slashes from the example origin and
+supplies `https://your-app.example.com` when the origin is empty.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
@@ -772,10 +782,13 @@ downloads are withheld, and one WARN names the entities at fault.
 Both halves compute the same schema hash over the covered entities
 (`framework/sdk.SchemaHash`). The generator records it in the manifest;
 the site recomputes it from the live registry. A mismatch logs one WARN
-and shows a banner on every docs page; downloads keep working (a stale
-SDK beats none), and re-running `gofastr generate sdk` clears it. A
-manifest from a different gofastr version downgrades the check to an
-"unknown provenance" note instead of a false stale warning.
+and shows a banner on every docs page. Downloads keep working. The site
+caches the first check per mount. Regenerate with `gofastr generate sdk`
+and redeploy or remount the site to check the new artifacts.
+
+Artifacts with a missing or unreadable manifest, or a different
+manifest `schemaVersion`, show an "unknown provenance" banner.
+`gofastrVersion` records the generator version for display.
 
 The hash covers what changes a generated client: each entity's name,
 table, primary-key columns in their declared order (keyed calls take the
@@ -799,12 +812,22 @@ the reader does not know is refused.
 ### Static export
 
 Docs pages export through `App.ExportStatic` like any screens (entity
-pages expand via `StaticPaths`). To ship the artifacts in a static tree,
-point the builder's generic `ExtraDirs` at the dist directory:
+pages expand via `StaticPaths`). The live download route names the Go
+archive `go.zip`, while the generator writes `sdk-go.zip` in `dist/`.
+Stage the archive under its public name and copy the other files as
+written. For a build with both SDK targets:
+
+```sh
+mkdir -p gen/sdk/export
+cp gen/sdk/dist/sdk-go.zip gen/sdk/export/go.zip
+cp gen/sdk/dist/client.js gen/sdk/dist/client.d.ts gen/sdk/dist/manifest.json gen/sdk/export/
+```
+
+Point the builder's `ExtraDirs` at the staged directory:
 
 ```go
 b := &static.Builder{Host: host, OutDir: out,
-    ExtraDirs: map[string]fs.FS{"/docs/api/sdk": os.DirFS("gen/sdk/dist")}}
+    ExtraDirs: map[string]fs.FS{"/docs/api/sdk": os.DirFS("gen/sdk/export")}}
 ```
 
 Files the export already produced (or the user static dir) always win.

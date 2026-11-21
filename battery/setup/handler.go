@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -188,7 +189,10 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 	// replica ran the wizard and this one never issued a cookie): the
 	// same rate-limited re-check the app paths use.
 	if r.tokenEnabled {
-		if !hasSetupCookie(req, r.cookieSecret) {
+		r.mu.Lock()
+		cookieSecret := r.cookieSecret
+		r.mu.Unlock()
+		if !hasSetupCookie(req, cookieSecret) {
 			if r.recheckElsewhere(req.Context()) {
 				r.renderCompletionPage(w, req)
 				return
@@ -216,7 +220,7 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 		r.renderStep(w, req)
 	case http.MethodPost:
 		// CSRF: reject cross-site form posts (login-CSRF convention).
-		if rejectCrossSiteForm(w, req) {
+		if auth.RejectCrossSiteForm(w, req) {
 			return
 		}
 		r.handleSubmit(w, req)
@@ -282,9 +286,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Run the step under the mutex and advance currentStep in the same
-	// critical section so a racing POST on an intermediate step can't
-	// re-run it between the run and the advance.
+	// Keep the claim through currentStep advancement to serialize racing POSTs.
 	if err := r.runStepSerialized(req.Context(), stepIdx, step, values); err != nil {
 		msg, _ := i18n.ErrorText(req.Context(), err, i18n.Phrase{})
 		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": msg}, values)
@@ -372,23 +374,19 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 	}
 	// Another request is running this step right now (it released the
 	// mutex to do so): treat as already-advanced.
-	if r.stepInFlight {
+	if r.stepInFlight != nil {
 		r.mu.Unlock()
 		return nil
 	}
 
-	r.stepInFlight = true
+	r.stepInFlight = make(chan struct{})
 	r.mu.Unlock()
 
 	// The deferred clear also runs when the step PANICS: the claim is
 	// released while the panic unwinds to the net/http recover net,
 	// exactly as it did before the step left the lock, so the wizard
 	// is never stuck treating the step as in-flight.
-	defer func() {
-		r.mu.Lock()
-		r.stepInFlight = false
-		r.mu.Unlock()
-	}()
+	defer r.releaseStepClaim()
 
 	// Run outside the lock: a slow or panicking step holds nothing.
 	err = step.Run(ctx, values)
@@ -450,7 +448,7 @@ func (r *Runner) wizardFinished() bool {
 	if r.currentStep >= len(r.cfg.Steps) {
 		return true
 	}
-	return r.currentStep == 0 && !r.stepInFlight && !isForceMode()
+	return r.currentStep == 0 && r.stepInFlight == nil && !isForceMode()
 }
 
 // completeRecheckInterval bounds how often requests without the setup

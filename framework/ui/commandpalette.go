@@ -9,7 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -225,8 +224,8 @@ func shortcutGlyphs(chord string) string {
 }
 
 // PaletteResults renders the option rows a palette search endpoint
-// answers for the palette named name; with no commands it renders one
-// disabled row reading empty, or "No results" when empty is "".
+// answers for the named palette. A safe Href renders a link.
+// With no commands it renders one disabled row with a localized default.
 func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, empty string) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
@@ -234,35 +233,18 @@ func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, emp
 	if name == "" {
 		name = "command-palette"
 	}
-	if len(cmds) == 0 {
+	opts := paletteCommandsToOptions(cmds)
+	if len(opts) == 0 {
 		if empty == "" {
 			empty = i18nui.HuiComboboxNoResults.Text(ctx)
 		}
-		return render.Tag("li", map[string]string{
-			"role":          "option",
-			"aria-disabled": "true",
-			"class":         "fui-cmd-palette__option",
-		}, render.Text(empty))
+		opts = []headless.ComboboxOption{{Label: empty, Disabled: true}}
 	}
-	prefix := name + "-input-listbox-res-"
-	rows := make([]render.HTML, 0, len(cmds))
-	for i, c := range cmds {
-		attrs := map[string]string{
-			"role":       "option",
-			"id":         prefix + strconv.Itoa(i),
-			"class":      "fui-cmd-palette__option",
-			"data-value": c.Label,
-		}
-		if href := urlsafe.Clean(c.Href, urlsafe.Anchor); href != "" {
-			attrs["data-cui-push-state"] = href
-		}
-		kids := []render.HTML{html.Span(html.TextConfig{Class: "fui-cmd-palette__option-label", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(c.Label))}
-		if c.Meta != "" {
-			kids = append(kids, html.Span(html.TextConfig{Class: "fui-cmd-palette__option-meta", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(c.Meta)))
-		}
-		rows = append(rows, render.Tag("li", attrs, kids...))
+	listboxID := name + "-input-listbox"
+	for i := range opts {
+		opts[i].ID = listboxID + "-res-" + strconv.Itoa(i)
 	}
-	return render.Join(rows...)
+	return headless.ComboboxRows(listboxID, opts, paletteComboboxClasses)
 }
 
 func paletteCommandsToOptions(cmds []PaletteCommand) []headless.ComboboxOption {
@@ -274,6 +256,18 @@ func paletteCommandsToOptions(cmds []PaletteCommand) []headless.ComboboxOption {
 		opts = append(opts, headless.ComboboxOption{Label: c.Label, Value: c.Label, Href: c.Href, Meta: c.Meta})
 	}
 	return opts
+}
+
+var paletteComboboxClasses = headless.Classes{
+	headless.PartRoot:            "fui-cmd-palette__field",
+	headless.PartLabel:           "fui-visually-hidden",
+	headless.PartComboboxInput:   "fui-cmd-palette__input",
+	headless.PartComboboxForm:    "fui-cmd-palette__combobox",
+	headless.PartComboboxListbox: "fui-cmd-palette__listbox",
+	headless.PartComboboxOption:  "fui-cmd-palette__option",
+	headless.PartText:            "fui-cmd-palette__option-label",
+	headless.PartComboboxMeta:    "fui-cmd-palette__option-meta",
+	headless.PartComboboxStatus:  "fui-visually-hidden",
 }
 
 type commandPaletteSlot struct {
@@ -351,17 +345,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		Inline:         true,
 		Parts:          parts,
 		Strings:        s.words,
-	}, headless.Classes{
-		headless.PartRoot:            "fui-cmd-palette__field",
-		headless.PartLabel:           "fui-visually-hidden",
-		headless.PartComboboxInput:   "fui-cmd-palette__input",
-		headless.PartComboboxForm:    "fui-cmd-palette__combobox",
-		headless.PartComboboxListbox: "fui-cmd-palette__listbox",
-		headless.PartComboboxOption:  "fui-cmd-palette__option",
-		headless.PartText:            "fui-cmd-palette__option-label",
-		headless.PartComboboxMeta:    "fui-cmd-palette__option-meta",
-		headless.PartComboboxStatus:  "fui-visually-hidden",
-	})
+	}, paletteComboboxClasses)
 
 	closeBtn := render.Tag("button", map[string]string{
 		"class":           "fui-cmd-palette__close",

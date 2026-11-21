@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"unicode/utf16"
 )
 
 // ─── Gate A: RFC 8785 reference suite (cyberphone testdata) ─────────
@@ -118,20 +117,24 @@ func runNumberVectors(t *testing.T, path string) {
 	}
 }
 
-// TestRFC8785SortExample pins the property-sorting example from
-// RFC 8785 §3.2.3: the expected order of the sample keys. The input
-// arrives scrambled (a derangement of want), so the comparator must
-// actually reorder; an already-sorted input would pass unchanged even
-// with a comparator that never moves anything. \u0080 is written as an
-// escape because the raw control character is invisible in source.
+// TestRFC8785SortExample checks the canonical key order of the RFC 8785 §3.2.3 object.
 func TestRFC8785SortExample(t *testing.T) {
-	keys := []string{"€", "דּ", "1", "\U0001F600", "\r", "ö", "\u0080"}
-	sortKeysByUTF16(keys)
-	want := []string{"\r", "1", "\u0080", "ö", "€", "\U0001F600", "דּ"}
-	for i := range keys {
-		if keys[i] != want[i] {
-			t.Fatalf("position %d: got %q want %q", i, keys[i], want[i])
-		}
+	in := `{
+		"\u20ac": "Euro Sign",
+		"\r": "Carriage Return",
+		"\ufb33": "Hebrew Letter Dalet With Dagesh",
+		"1": "One",
+		"\ud83d\ude00": "Emoji: Grinning Face",
+		"\u0080": "Control",
+		"\u00f6": "Latin Small Letter O With Diaeresis"
+	}`
+	got, err := CanonicalizeJSON([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"\r":"Carriage Return","1":"One","` + "\u0080" + `":"Control","ö":"Latin Small Letter O With Diaeresis","€":"Euro Sign","😀":"Emoji: Grinning Face","דּ":"Hebrew Letter Dalet With Dagesh"}`
+	if string(got) != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
@@ -139,15 +142,6 @@ func TestRFC8785SortExample(t *testing.T) {
 // UTF-8 byte order: U+10000+ keys (surrogate pairs 0xD800–0xDBFF) sort
 // BEFORE U+E000–U+FFFF even though their UTF-8 bytes sort after.
 func TestUTF16SortDivergence(t *testing.T) {
-	if utf16.Encode([]rune("😀"))[0] != 0xD83D {
-		t.Fatal("test premise broken")
-	}
-	keys := []string{"\ue000", "😀"}
-	sortKeysByUTF16(keys)
-	if keys[0] != "😀" {
-		t.Fatalf("UTF-16 order must put the emoji first, got %q", keys[0])
-	}
-	// Via the full parser: keys are emitted in sorted position.
 	in := []byte("{\"\uE000\":\"after-bytes\",\"😀\":\"first-bytes\"}")
 	got, err := CanonicalizeJSON(in)
 	if err != nil {

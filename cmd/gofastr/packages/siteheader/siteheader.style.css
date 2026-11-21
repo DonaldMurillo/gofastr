@@ -82,7 +82,6 @@
 }
 .toggle::-webkit-details-marker { display: none; }
 .toggle:hover { background: var(--color-surface-soft); }
-.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 /* The three bars turn into the cross: both icons share one cell and
    swap with a quarter turn. */
 .icon-open,
@@ -125,6 +124,10 @@
   text-decoration: none;
 }
 .panel-links a[aria-current="page"] { color: var(--color-text); }
+.brand:focus-visible,
+.links a:focus-visible,
+.panel-links a:focus-visible,
+.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 .panel-cta { display: flex; flex-direction: column; }
 
 /* Opening: the panel unrolls down from the bar while it fades in, then

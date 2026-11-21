@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"image"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"net/http"
@@ -64,6 +65,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 	out := make([]byte, 0, len(data))
 	out = append(out, data[0], data[1])
 	i, inScan, scans := 2, false, 0
+	sawEOI := false
 	for i < len(data) {
 		if inScan {
 			if data[i] != 0xFF {
@@ -97,6 +99,7 @@ func stripJPEG(data []byte) ([]byte, error) {
 		}
 		if marker == 0xD9 {
 			out = append(out, data[i], data[i+1])
+			sawEOI = true
 			break
 		}
 		if marker == 0xD8 {
@@ -132,6 +135,9 @@ func stripJPEG(data []byte) ([]byte, error) {
 			out = append(out, data[i:segLenAt+segLen]...)
 		}
 		i = segLenAt + segLen
+	}
+	if !sawEOI {
+		return nil, errors.New("jpeg: missing EOI marker")
 	}
 	if orient >= 2 && orient <= 8 {
 		if scans > stripMaxJPEGScans {
@@ -174,6 +180,7 @@ func stripPNG(data []byte) ([]byte, error) {
 	orient, hasMeta, animated := 0, false, false
 	iendEnd := 0
 	pos := 8
+chunks:
 	for pos+8 <= len(data) {
 		length := binary.BigEndian.Uint32(data[pos : pos+4])
 		typ := string(data[pos+4 : pos+8])
@@ -192,15 +199,15 @@ func stripPNG(data []byte) ([]byte, error) {
 			animated = true
 		case "IEND":
 			iendEnd = pos + 12 + int(length)
-			pos = len(data)
-			continue
+			break chunks
 		}
 		pos += 12 + int(length)
 	}
+	if iendEnd == 0 {
+		return nil, errors.New("png: missing IEND chunk")
+	}
+	data = data[:iendEnd]
 	if !hasMeta {
-		if iendEnd > 0 && iendEnd < len(data) {
-			return data[:iendEnd], nil
-		}
 		return data, nil
 	}
 	if animated {
@@ -368,81 +375,56 @@ func minimalOrientationTIFF(orientation int) []byte {
 }
 
 func applyOrientation(img image.Image, orient int) image.Image {
+	if orient < 2 || orient > 8 {
+		return img
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	rect := image.Rect(0, 0, w, h)
+	if orient >= 5 {
+		rect = image.Rect(0, 0, h, w)
+	}
+	dst := newOrientedRaster(img, rect)
+	for y := range h {
+		for x := range w {
+			dx, dy := orientedCoordinates(orient, x, y, w, h)
+			dst.Set(dx, dy, img.At(b.Min.X+x, b.Min.Y+y))
+		}
+	}
+	return dst
+}
+
+func newOrientedRaster(src image.Image, bounds image.Rectangle) draw.Image {
+	switch src.(type) {
+	case *image.Gray16:
+		return image.NewGray16(bounds)
+	case *image.NRGBA, *image.Paletted:
+		return image.NewNRGBA(bounds)
+	case *image.NRGBA64:
+		return image.NewNRGBA64(bounds)
+	case *image.RGBA64:
+		return image.NewRGBA64(bounds)
+	default:
+		return image.NewRGBA(bounds)
+	}
+}
+
+func orientedCoordinates(orient, x, y, w, h int) (int, int) {
 	switch orient {
 	case 2:
-		return flopImage(img)
+		return w - 1 - x, y
 	case 3:
-		return rotate180(img)
+		return w - 1 - x, h - 1 - y
 	case 4:
-		return flipImage(img)
+		return x, h - 1 - y
 	case 5:
-		return flopImage(rotate90(img))
+		return y, x
 	case 6:
-		return rotate90(img)
+		return h - 1 - y, x
 	case 7:
-		return flopImage(rotate270(img))
+		return h - 1 - y, w - 1 - x
 	case 8:
-		return rotate270(img)
+		return y, w - 1 - x
 	}
-	return img
-}
-
-func rotate90(img image.Image) *image.RGBA {
-	b := img.Bounds()
-	sw, sh := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, sh, sw))
-	for y := range sh {
-		for x := range sw {
-			dst.Set(sh-1-y, x, img.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
-}
-
-func rotate180(img image.Image) *image.RGBA {
-	b := img.Bounds()
-	sw, sh := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, sw, sh))
-	for y := range sh {
-		for x := range sw {
-			dst.Set(sw-1-x, sh-1-y, img.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
-}
-
-func rotate270(img image.Image) *image.RGBA {
-	b := img.Bounds()
-	sw, sh := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, sh, sw))
-	for y := range sh {
-		for x := range sw {
-			dst.Set(y, sw-1-x, img.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
-}
-
-func flipImage(img image.Image) *image.RGBA {
-	b := img.Bounds()
-	sw, sh := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, sw, sh))
-	for y := range sh {
-		for x := range sw {
-			dst.Set(x, sh-1-y, img.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
-}
-
-func flopImage(img image.Image) *image.RGBA {
-	b := img.Bounds()
-	sw, sh := b.Dx(), b.Dy()
-	dst := image.NewRGBA(image.Rect(0, 0, sw, sh))
-	for y := range sh {
-		for x := range sw {
-			dst.Set(sw-1-x, y, img.At(b.Min.X+x, b.Min.Y+y))
-		}
-	}
-	return dst
+	return x, y
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // MaxMultipartMemory is how much of a multipart body is held in memory
@@ -35,7 +36,7 @@ const MaxMultipartMemory = 32 << 20 // 32 MiB
 const MaxMultipartBodyBytes int64 = 64 << 20 // 64 MiB
 
 // MaxJSONBodyBytes caps the size of a JSON write body; a larger body answers 413.
-const MaxJSONBodyBytes int64 = 1 << 20 // 1 MiB
+const MaxJSONBodyBytes = bodylimit.MaxJSONBodyBytes
 
 var errStorageNotConfigured = errors.New("server has no file storage configured")
 
@@ -91,11 +92,11 @@ func writeMediaType(r *http.Request) (string, error) {
 }
 
 func writeContentTypeError(w http.ResponseWriter, r *http.Request, err error) {
-	status := http.StatusUnsupportedMediaType
 	if errors.Is(err, errCrossSiteForm) {
-		status = http.StatusForbidden
+		writeJSONError(w, r, http.StatusForbidden, handler.ReasonCrossSiteRefused)
+		return
 	}
-	writeJSONError(w, r, status, i18n.StatusPhrase(status))
+	writeJSONError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 }
 
 func limitRequestBody(w http.ResponseWriter, r *http.Request) {
@@ -129,9 +130,9 @@ func readBodyBytes(r *http.Request) ([]byte, error) {
 	return data, nil
 }
 
-// bodyDecodeError is an invalid_body error with a phrased detail.
+// bodyDecodeError is an invalid_json error with a phrased detail.
 func bodyDecodeError(err error) error {
-	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
+	return &i18n.Error{Reason: handler.ReasonInvalidJSON, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 }
 
 func bodyReadError(err error) error {
@@ -408,7 +409,8 @@ func (e *storageSaveError) Unwrap() error { return e.err }
 // storage failure, or 400.
 func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errBodyTooLarge) {
-		writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		status, phrase := bodylimit.TooLargeRefusal()
+		writeJSONError(w, r, status, phrase)
 		return
 	}
 	if _, ok := errors.AsType[*storageSaveError](err); ok {

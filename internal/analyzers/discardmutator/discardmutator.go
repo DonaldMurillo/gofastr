@@ -66,7 +66,7 @@ var receiverRe = regexp.MustCompile(`(?i)(store|session|token|verifier|manager|r
 
 func run(pass *analysis.Pass) (any, error) {
 	rw := responseWriterIface(pass)
-	for _, b := range astx.AllBodies(pass) {
+	for _, b := range astx.AllBodies(pass.Files...) {
 		scanBody(pass, b, rw)
 	}
 	return nil, nil

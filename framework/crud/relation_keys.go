@@ -16,12 +16,11 @@ import (
 // the record ids, numbered from start; an id that does not split into the
 // key columns is skipped, and false means none survived.
 func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
-	safe := make([]string, len(cols))
-	for i, c := range cols {
-		s, err := query.SafeIdent(c)
-		if err != nil {
-			return "", nil, false, fmt.Errorf("invalid key column %q: %w", c, err)
-		}
+	safe, err := query.SafeColumns(cols, "key column")
+	if err != nil {
+		return "", nil, false, err
+	}
+	for i, s := range safe {
 		safe[i] = query.QuoteKeyword(s)
 	}
 	var tuples []string
@@ -52,18 +51,6 @@ func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 	return lhs + " IN (" + strings.Join(tuples, ", ") + ")", args, true, nil
 }
 
-func safeColumns(cols []string) ([]string, error) {
-	out := make([]string, len(cols))
-	for i, c := range cols {
-		s, err := query.SafeIdent(c)
-		if err != nil {
-			return nil, fmt.Errorf("invalid column %q: %w", c, err)
-		}
-		out[i] = s
-	}
-	return out, nil
-}
-
 // oneFK is rel's foreign-key column, or "" unless it has exactly one.
 func oneFK(rel entity.Relation) string {
 	if len(rel.ForeignKey) != 1 {
@@ -77,7 +64,7 @@ func relationFKs(rel entity.Relation) ([]string, error) {
 	if len(fks) == 0 {
 		return nil, fmt.Errorf("relation %q names no foreign key", rel.Name)
 	}
-	cols, err := safeColumns(fks)
+	cols, err := query.SafeColumns(fks, "column")
 	if err != nil {
 		return nil, fmt.Errorf("relation %q has an invalid FK: %w", rel.Name, err)
 	}
@@ -110,7 +97,7 @@ func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols, fks []
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid parent table %q: %w", table, err)
 	}
-	safeFKs, err := safeColumns(fks)
+	safeFKs, err := query.SafeColumns(fks, "column")
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid FK: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
 // Strings are the words the components say, one field per string; nil or an
@@ -254,7 +255,7 @@ var defaultStrings = Strings{
 	DismissTitled:  "Dismiss: {{title}}",
 	RemoveLabelled: "Remove {{label}}",
 
-	ActionFailed: "Could not save. Try again.",
+	ActionFailed: uiaction.DefaultFailedText,
 
 	PickColor: "Pick {{name}}",
 

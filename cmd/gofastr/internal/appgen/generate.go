@@ -44,7 +44,7 @@ func GenerateScaffoldEntity(args []string) {
 	}
 	name, opts, ok := ParseScaffoldArgs(args, "entity")
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	bp := appspec.AppSpec{
@@ -72,7 +72,7 @@ func GenerateScaffoldScreen(args []string) {
 	}
 	name, opts, ok := ParseScaffoldArgs(args, "screen")
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	title := appspec.ToDisplayName(name)
@@ -141,8 +141,8 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 			opts.outputDir = strings.TrimPrefix(arg, "--out=")
 			opts.outputSet = true
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), scaffoldUsage(kind))
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				failGenerateArgs(args, cli.NeedsValue("--out"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
@@ -178,13 +178,8 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 	return positionals[0], opts, true
 }
 
-// GenerateProject is plain `gofastr generate`: it runs the derived
-// generators and extensions the `codegen:` section of gofastr.settings.yml
-// lists. `gofastr build` calls it on every build, which
-// is why the config may not list a scaffold generator (see
-// checkConfigGenerators). Generating an app from an app spec is the
-// explicit `gofastr generate app`, never discovered: a project may hold a
-// gofastr.yml it already generated from.
+// GenerateProject runs plain `gofastr generate` for derived generators and
+// extensions. App scaffolding runs through `gofastr generate app`.
 func GenerateProject(args []string) {
 	const usage = "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`."
 	if showGenerateHelp(args, usage) {
@@ -193,14 +188,52 @@ func GenerateProject(args []string) {
 	options, err := ParseGenerateOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
-	discovered, err := DiscoverGenerateConfig(options)
+	plan, err := PlanGenerate(options)
 	if err != nil {
 		failGenerate(options.json, fmt.Errorf("Failed to load codegen config: %v", err))
 		cli.OsExit(1)
+		return
 	}
+	if !plan.HasWork() {
+		failGenerate(options.json, fmt.Errorf("Nothing to generate: no codegen config found."))
+		cli.Fprintf(os.Stderr, "Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+		cli.OsExit(1)
+		return
+	}
+	plan.Run()
+}
+
+// GeneratePlan carries the resolved inputs for plain generate and build.
+type GeneratePlan struct {
+	Discovery codegen.Discovery
+	options   GenerateOptions
+	hasWork   bool
+}
+
+// PlanGenerate discovers codegen once and checks whether derived files need work.
+func PlanGenerate(options GenerateOptions) (GeneratePlan, error) {
+	discovery, err := DiscoverGenerateConfig(options)
+	plan := GeneratePlan{Discovery: discovery, options: options}
+	if err == nil {
+		plan.hasWork = discovery.Found || AppEndpointsWanted(".") || AppClientPresent(".")
+	}
+	return plan, err
+}
+
+// HasWork reports whether a successfully resolved plan has generation work.
+func (p GeneratePlan) HasWork() bool {
+	return p.hasWork
+}
+
+// Run executes a successfully resolved plan with generation work.
+func (p GeneratePlan) Run() {
+	if !p.HasWork() {
+		return
+	}
+	discovered, options := p.Discovery, p.options
 	if discovered.Found {
 		files := generateFromCodegenConfig(options, discovered)
 		// Discovery's project dir is absolute and the writer takes only a
@@ -218,16 +251,7 @@ func GenerateProject(args []string) {
 		}
 		return
 	}
-	// entities/endpoints.gen.go and entities/client need no config entry:
-	// an app with settings endpoints or a client gets them rebuilt by
-	// every plain generate and build.
-	if AppEndpointsWanted(".") || AppClientPresent(".") {
-		rebuildAppClient(options, true)
-		return
-	}
-	failGenerate(options.json, fmt.Errorf("Nothing to generate: no codegen config found."))
-	cli.Fprintf(os.Stderr, "Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
-	cli.OsExit(1)
+	rebuildAppClient(options, true)
 }
 
 // rebuildAppClient runs refreshAppEndpoints and then refreshAppClient,
@@ -282,11 +306,11 @@ func ParseGenerateOptions(args []string) (GenerateOptions, error) {
 		arg := args[i]
 		// Space form for the value-taking flags: `--config x` ≡ `--config=x`.
 		nextValue := func() (string, error) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], nil
 			}
-			return "", fmt.Errorf("%s requires a value", arg)
+			return "", cli.NeedsValue(arg)
 		}
 		switch {
 		case arg == "--dry-run":
@@ -339,12 +363,12 @@ func RunGenerateApp(args []string) {
 	options, err := parseAppGenerateArgs(args)
 	if err != nil {
 		failGenerateArgs(args, err, appUsage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if options.add && options.force {
 		failGenerateArgs(args, fmt.Errorf("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)"))
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	GenerateFromAppSpec(options)
@@ -368,8 +392,8 @@ func parseAppGenerateArgs(args []string) (GenerateOptions, error) {
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
 			options.outputSet = true
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return options, fmt.Errorf("--out requires a directory argument")
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				return options, cli.NeedsValue("--out")
 			}
 			i++
 			options.outputDir = args[i]
@@ -415,10 +439,7 @@ func DiscoverGenerateConfig(options GenerateOptions) (codegen.Discovery, error) 
 	// `command` extension: that binary is chosen by whoever wrote the
 	// file, which may be a cloned repo or a teammate's branch, and
 	// generate executes it as the developer.
-	if err := codegen.CheckCommandExtensions(d); err != nil {
-		return codegen.Discovery{}, err
-	}
-	return d, nil
+	return d, codegen.CheckCommandExtensions(d)
 }
 
 func applyGenerateOverrides(cfg *codegen.Config, options GenerateOptions) {
@@ -739,35 +760,15 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			piiFlagged[f.Entity] = true
 			cli.Warn("%s", f.Message())
 		}
-		// Broader net: any unscoped auto-exposed entity lets every OTHER
-		// authenticated user read/write its rows; warn even when no
-		// field name looks like PII (the token list can't know
-		// "journal_entry" is private). Auto-CRUD already requires a
-		// session by default (issue #65), so this is cross-user
-		// exposure, not anonymous access.
+		// Warn when reads are unscoped, even without PII-shaped fields.
 		for _, f := range lintUnscopedEntities(bp) {
 			if piiFlagged[f.Entity] {
 				continue // already carried the stronger PII warning
 			}
 			cli.Warn("%s", f.Message())
 		}
-		// public: true is a full, deliberate opt-out of the session
-		// requirement: the ACTUAL anonymous-access surface. Always
-		// surfaced (never suppressed by the PII/unscoped warnings above)
-		// so a generated app's open surface is never silent.
+		// Explicitly public entities always get a warning about open writes.
 		for _, f := range lintPublicEntities(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintOwnerScopedUnique(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintSignedOutScreens(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintPostFormsOnScreens(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintUploadFields(bp) {
 			cli.Warn("%s", f.Message())
 		}
 		// The app's static dir sits under the directory the app is
@@ -776,17 +777,8 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if navRoot == "" {
 			navRoot = "."
 		}
-		for _, f := range LintNavHrefs(bp, navRoot) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintLocaleRoutes(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		// Surfaced before the "Next steps" block below, which would otherwise
-		// print `go mod init <colliding path>` as the remedy for a build that
-		// the collision makes impossible.
-		for _, f := range LintModuleCollision(bp) {
-			cli.Warn("%s", f.Message())
+		for _, msg := range CommonLintFindings(bp, navRoot) {
+			cli.Warn("%s", msg)
 		}
 		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT
 		// secret) because a fresh generated app has no HTTPS. Loudly say
@@ -871,7 +863,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		bp.Entities = merged
 		// The project's endpoints join the fragment's the same way: the
 		// settings section is rewritten whole, so it must hold both.
-		projectEndpoints, eerr := ExistingEndpoints(writeRoot)
+		projectEndpoints, _, eerr := ExistingEndpoints(writeRoot)
 		if eerr != nil {
 			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", eerr))
 			cli.OsExit(1)
@@ -900,14 +892,15 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// shared file already exists would be skipped with that file and
 		// never written: refuse it instead of dropping it.
 		taken := registeredScreenRoutes(writeRoot)
-		for _, s := range bp.Screens {
+		for _, s := range appspec.AppSpecSynthesizeCRUDScreens(bp).Screens {
 			file, declared, dropped := addScreenTarget(writeRoot, s)
-			if dropped && !taken[s.Route] {
+			shape := appspec.RouteShape(appSpecScreenPattern(bp, s))
+			if dropped && !taken[shape] {
 				cerr := fmt.Errorf("screen %q would be written to %s, which the project already has and which does not hold it. --add writes only new files and never edits one, so the screen would be left out. Write the screen into %s by hand (a type, a mount func and its line in init), or merge the fragment into the app spec and regenerate with --force", s.Name, file, file)
 				failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", cerr))
 				cli.OsExit(1)
 			}
-			if !taken[s.Route] || declared {
+			if !taken[shape] || declared {
 				continue // a new route, or the same screen being re-added (skip-existing)
 			}
 			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project. Pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
@@ -2661,7 +2654,7 @@ func readLegacyRegisterUnder(writeRoot string) ([]framework.EntityDeclaration, e
 	return packReadLegacyRegister(root, "entities/register.go")
 }
 
-// registeredScreenRoutes returns the set of routes actually mounted by the
+// registeredScreenRoutes returns the set of route shapes actually mounted by the
 // generated app under writeRoot, scanned from every `site.Register(route, …)`
 // and `app.NewScreen(route, …)` (the arg to site.RegisterScreen) call in its
 // *.go files. Unlike packReadScreens, which reconstructs only the AUTHORED
@@ -2710,7 +2703,7 @@ func registeredScreenRoutes(writeRoot string) map[string]bool {
 			// NewScreen so scanning NewScreen covers it.
 			if sel.Sel.Name == "Register" || sel.Sel.Name == "NewScreen" {
 				if r := appspec.AstString(call.Args[0]); strings.HasPrefix(r, "/") {
-					routes[r] = true
+					routes[appspec.RouteShape(r)] = true
 				}
 			}
 			return true
@@ -2751,10 +2744,10 @@ func maxExistingEntityOrder(writeRoot string) int {
 	skip := map[string]bool{"register.go": true, "events.go": true, "shared.go": true, "doc.go": true}
 	maxOrder := -1
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
+		if entry.IsDir() || !IsProductionGoSource(entry.Name()) || skip[entry.Name()] {
 			continue
 		}
-		src, rerr := root.ReadFile("entities/" + entry.Name())
+		src, rerr := ReadRegularSource(root, "entities/"+entry.Name())
 		if rerr != nil {
 			continue // unreadable leaf (symlink outside the root): skip
 		}
@@ -2788,13 +2781,10 @@ func maxExistingScreenOrder(writeRoot string) int {
 	maxOrder := -1
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if entry.IsDir() || !IsPerScreenSource(name) {
 			continue
 		}
-		if name == "screen_shared.go" || name == "screens_register.go" || !strings.HasPrefix(name, "screen_") {
-			continue
-		}
-		src, rerr := root.ReadFile(name)
+		src, rerr := ReadRegularSource(root, name)
 		if rerr != nil {
 			continue // unreadable leaf (symlink outside the root): skip
 		}
@@ -2802,9 +2792,9 @@ func maxExistingScreenOrder(writeRoot string) int {
 		if perr != nil {
 			continue
 		}
-		for _, o := range packScreenFileOrders(file) {
-			if o > maxOrder {
-				maxOrder = o
+		for _, reg := range ScreenRegistrars(file) {
+			if reg.HasOrder && reg.Order > maxOrder {
+				maxOrder = reg.Order
 			}
 		}
 	}

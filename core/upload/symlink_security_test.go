@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // Pins symlink-escape refusal at every LocalStorage surface, found by the
@@ -50,7 +51,7 @@ func TestLocalStorageRefusesSymlinkEscape(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	store := newTestLocalStorage(t, base)
+	store := teststorage.New(t, base)
 	ctx := context.Background()
 
 	// Sweep: every surface, both escape shapes. A surface that follows

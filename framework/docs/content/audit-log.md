@@ -200,7 +200,7 @@ LIMIT 50;
 
 The admin battery's own audit surfaces apply this rule themselves: when
 the admin context carries a tenant id, `GET <prefix>/audit` and the
-overview's audit-entries tile both filter with `WHERE tenant_id = $1`.
+overview's Recent activity card both filter with `WHERE tenant_id = $1`.
 Rows with a `NULL` tenant (system writes, single-tenant apps) are NOT
 visible to a tenant-scoped admin — the predicate is strict equality, so
 one tenant can never infer another's (or the platform's) write activity.

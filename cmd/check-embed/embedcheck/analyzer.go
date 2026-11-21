@@ -17,17 +17,13 @@
 // before "(", then reports the canonical spelling instead of allowing a dead
 // call to ship.
 //
-// component.Server(...) and ActionDef.Server look like the marker but are dead
-// API: Server(...) has one call site in the whole repo (a unit test), and On()
-// never sets ActionDef.Server nor does the compiler read it. Keying on either
-// would record a *declaration* rather than the property. That is the exact
-// failure mode issue #150 rejected a marker interface for, so they are
-// not matched.
+// The analyzer checks the call in ClientJS itself. Issue #150 rejected
+// marker interfaces because they can drift from the code that runs.
 //
 // # Reachability, and where each step gives up
 //
 // embed.Surface now carries the screen value, so the link from a surface to the
-// component tree it renders is a Go value graph. findFindings resolves as much
+// component tree it renders is a Go value graph. analyze resolves as much
 // of it as go/analysis + go/types honestly can, per package:
 //
 //  1. embed.Surface{...} composite literals, identified by resolved type, so a
@@ -89,6 +85,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/actionscan"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // renderWrapperPackages hold components that WRAP another component rather
@@ -108,7 +105,7 @@ const (
 
 // Analyzer is the go/analysis pass. analysistest exercises it directly, and a
 // future `go vet` attachment would run it; the cmd/check-embed CLI and the
-// `gofastr build` gate both call the same findFindings core via Check.
+// `gofastr build` gate both call the same analyze core via Check.
 var Analyzer = &analysis.Analyzer{
 	Name: "check_embed",
 	Doc:  "report embeddable surfaces whose screen's component registers a G.serverAction, which is refused inside a frame",
@@ -180,13 +177,6 @@ func (f Finding) Format() string {
 			"G.serverAction(...), with no whitespace before '('. Use an island RPC, "+
 			"a form POST, or polling instead: all three work in a frame.",
 		f.Surface, f.Component, f.Action)
-}
-
-// findFindings returns the violations alone. Kept as the name the CLI, the
-// build gate and the tests already use.
-func findFindings(pkg *types.Package, info *types.Info, files []*ast.File) []Finding {
-	findings, _ := analyze(pkg, info, files)
-	return findings
 }
 
 // analyze resolves every embed.Surface in the package to the component TREE its
@@ -1067,32 +1057,12 @@ func (r *resolver) funcDeclForMethod(named *types.Named, methodName string) *ast
 			if !ok || fd.Recv == nil || fd.Name == nil || fd.Name.Name != methodName || len(fd.Recv.List) == 0 {
 				continue
 			}
-			if receiverTypeName(fd.Recv.List[0].Type) == typeName {
+			if astbase.RecvBaseNameGeneric(fd) == typeName {
 				return fd
 			}
 		}
 	}
 	return nil
-}
-
-func receiverTypeName(e ast.Expr) string {
-	for {
-		star, ok := e.(*ast.StarExpr)
-		if !ok {
-			break
-		}
-		e = star.X
-	}
-	// strip generic instantiation if present: Foo[T] → Foo
-	if idx, ok := e.(*ast.IndexExpr); ok {
-		e = idx.X
-	} else if ix, ok := e.(*ast.IndexListExpr); ok {
-		e = ix.X
-	}
-	if id, ok := e.(*ast.Ident); ok {
-		return id.Name
-	}
-	return ""
 }
 
 func stringLitValue(e ast.Expr, def string) string {

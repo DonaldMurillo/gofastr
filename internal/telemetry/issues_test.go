@@ -79,7 +79,7 @@ func TestIssueIDTellsIssuesApart(t *testing.T) {
 func TestIssuesAreBounded(t *testing.T) {
 	dir := t.TempDir()
 	var traces []byte
-	for i := range maxIssues + 50 {
+	for i := range MaxIssues + 50 {
 		at := day0.Add(time.Duration(i) * time.Second)
 		// A different route each time: a different issue each time.
 		traces = AppendTrace(traces, Trace{Time: at, TraceID: fmt.Sprintf("%032x", i+1), Route: fmt.Sprintf("GET /r/%c%c%c", 'a'+i%26, 'a'+i/26%26, 'a'+i/676%26), Status: 500, Error: true, Err: "boom"})
@@ -97,8 +97,8 @@ func TestIssuesAreBounded(t *testing.T) {
 	}
 	defer s.Close()
 	issues, leftOut, err := s.Issues(time.Time{}, time.Time{}, 1<<30)
-	if err != nil || len(issues) != maxIssues || leftOut != 51 {
-		t.Fatalf("%d issues, %d left out, %v; want %d and 51", len(issues), leftOut, err, maxIssues)
+	if err != nil || len(issues) != MaxIssues || leftOut != 51 {
+		t.Fatalf("%d issues, %d left out, %v; want %d and 51", len(issues), leftOut, err, MaxIssues)
 	}
 	if issues[0].Route != "GET /newest" || issues[0].Count != 3 {
 		t.Fatalf("the newest issue: %+v", issues[0])

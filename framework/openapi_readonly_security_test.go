@@ -6,8 +6,8 @@ import (
 	coreopenapi "github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	frameworkopenapi "github.com/DonaldMurillo/gofastr/framework/openapi"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 // TestFieldToSchema_MarksReadOnly pins that any field the runtime

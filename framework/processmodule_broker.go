@@ -221,21 +221,28 @@ func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, ca
 	return p.Entity, p.Caller, nil
 }
 
+// gateView denies a view whose grants do not satisfy required, or that holds
+// a non-grantable scope, before any host surface is reached.
+func gateView(view ModuleGrantView, required access.Permission) error {
+	if !access.ScopeMatch(view.Grants, required) {
+		return brokerDeny("module grant does not satisfy %q", required)
+	}
+	for _, g := range view.Grants {
+		if reason := nonGrantableReason(g); reason != "" {
+			return brokerDeny("non-grantable scope in view (%s)", reason)
+		}
+	}
+	return nil
+}
+
 func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleGrantView, caller moduleproto.CallerRef) (*entity.Entity, context.Context, error) {
 	ent := b.lookupEntity(entityName)
 	if ent == nil {
 		return nil, nil, brokerDeny("entity %q is not a host resource", entityName)
 	}
 
-	required := access.Permission(entityName + ":" + verb)
-	if !access.ScopeMatch(view.Grants, required) {
-		return nil, nil, brokerDeny("module grant does not satisfy %q", required)
-	}
-
-	for _, g := range view.Grants {
-		if reason := nonGrantableReason(g); reason != "" {
-			return nil, nil, brokerDeny("non-grantable scope in view (%s)", reason)
-		}
+	if err := gateView(view, access.Permission(entityName+":"+verb)); err != nil {
+		return nil, nil, err
 	}
 
 	rctx, entry, err := b.resolveCaller(ctx, caller, view)
@@ -363,13 +370,8 @@ func (b *Broker) searchHandler(view ModuleGrantView) moduleproto.Handler {
 		if err := unmarshalParams(params, &p); err != nil {
 			return nil, err
 		}
-		if !access.ScopeMatch(view.Grants, access.Permission("search:query")) {
-			return nil, brokerDeny("module grant does not satisfy %q", "search:query")
-		}
-		for _, g := range view.Grants {
-			if reason := nonGrantableReason(g); reason != "" {
-				return nil, brokerDeny("non-grantable scope in view (%s)", reason)
-			}
+		if err := gateView(view, access.Permission("search:query")); err != nil {
+			return nil, err
 		}
 		if b.searchEndpoint == nil {
 			return nil, brokerDeny("no search surface configured")
@@ -393,14 +395,8 @@ func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 		if err := unmarshalParams(params, &p); err != nil {
 			return nil, err
 		}
-		required := access.Permission(p.Topic + ":emit")
-		if !access.ScopeMatch(view.Grants, required) {
-			return nil, brokerDeny("module grant does not satisfy %q", required)
-		}
-		for _, g := range view.Grants {
-			if reason := nonGrantableReason(g); reason != "" {
-				return nil, brokerDeny("non-grantable scope in view (%s)", reason)
-			}
+		if err := gateView(view, access.Permission(p.Topic+":emit")); err != nil {
+			return nil, err
 		}
 		if b.events == nil {
 			return nil, brokerDeny("no event bus configured")

@@ -106,7 +106,14 @@ func TestE2ETemplatePostgresProvisionsDB(t *testing.T) {
 	clitest.AssertContains(t, got, `os.Getenv("TEST_POSTGRES_DSN")`)
 	clitest.AssertContains(t, got, `t.Skip("TEST_POSTGRES_DSN unset; skipping postgres e2e")`)
 	clitest.AssertContains(t, got, `DATABASE_URL="+dbURL, "DB_DRIVER=postgres`)
-	clitest.AssertContains(t, got, `"database/sql"`)
+	if !strings.Contains(got, `testkit.NewIsolatedDBDSN(t, adminDSN)`) {
+		t.Error("generated e2e does not use testkit database provisioning")
+	}
+	for _, duplicate := range []string{"CREATE DATABASE", "DROP DATABASE", "pg_terminate_backend", "url.Parse(adminDSN)"} {
+		if strings.Contains(got, duplicate) {
+			t.Errorf("generated e2e duplicates Postgres provisioning: %s", duplicate)
+		}
+	}
 	clitest.AssertContains(t, got, `"context"`)
 	if strings.Contains(got, "DATABASE_URL=file:") {
 		t.Error("postgres e2e test must not use a SQLite file DSN")

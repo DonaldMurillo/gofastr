@@ -391,3 +391,46 @@ func earlyCheck(v string) error { // want earlyCheck:`check=1 `
 	db.ExecContext(context.Background(), "INSERT INTO t (v) VALUES ($1)", v)
 	return nil
 }
+
+func rejectedMembership(r *http.Request) {
+	v := r.PathValue("v")
+	if _, member := sorts[v]; !member {
+		db.ExecContext(r.Context(), "SELECT $1", v) // want `request text reaches a SQL bind with no storable-text check`
+	}
+}
+
+func ignoredMembership(r *http.Request, enabled bool) {
+	v := r.PathValue("v")
+	if _, member := sorts[v]; enabled {
+		_ = member
+		db.ExecContext(r.Context(), "SELECT $1", v) // want `request text reaches a SQL bind with no storable-text check`
+	}
+}
+
+func invertedMembership(r *http.Request) {
+	v := r.PathValue("v")
+	_, member := sorts[v]
+	if member {
+		return
+	}
+	db.ExecContext(r.Context(), "SELECT $1", v) // want `request text reaches a SQL bind with no storable-text check`
+}
+
+func overwrittenMembership(r *http.Request, enabled bool) {
+	v := r.PathValue("v")
+	_, member := sorts[v]
+	member = enabled
+	if !member {
+		return
+	}
+	db.ExecContext(r.Context(), "SELECT $1", v) // want `request text reaches a SQL bind with no storable-text check`
+}
+
+func guardedMembership(r *http.Request, enabled bool) {
+	v := r.PathValue("v")
+	_, member := sorts[v]
+	if !member || !enabled {
+		return
+	}
+	db.ExecContext(r.Context(), "SELECT $1", v)
+}

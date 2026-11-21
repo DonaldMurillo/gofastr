@@ -132,18 +132,6 @@ func waitWatchIdle(t *testing.T, w *devContractWatch) {
 	}
 }
 
-func TestDevBaselinePathJoins(t *testing.T) {
-	if got := devBaselinePath("."); got != contracts.BaselineFileName {
-		t.Errorf("devBaselinePath(.) = %q", got)
-	}
-	if got := devBaselinePath("/tmp/app/"); got != "/tmp/app/"+contracts.BaselineFileName {
-		t.Errorf("a trailing slash produced %q", got)
-	}
-	if got := devBaselinePath("/tmp/app"); got != "/tmp/app/"+contracts.BaselineFileName {
-		t.Errorf("devBaselinePath(/tmp/app) = %q", got)
-	}
-}
-
 // captureWatch runs one synchronous analysis pass with stdout captured.
 // analyse is called directly rather than through Run: the goroutine and
 // the in-flight guard are covered above; here the reporting is under
@@ -219,16 +207,32 @@ func TestWatcherReportsAnUnreadableTree(t *testing.T) {
 
 func TestWatcherReportsACorruptBaseline(t *testing.T) {
 	dir := writeWatchTree(t, map[string]string{
-		".gofastr-contracts-baseline.json": "{ not json",
+		contracts.BaselineFileName: "{ not json",
 	})
-	out := captureWatch(t, NewDevContractWatch(dir))
-	if !strings.Contains(out, "baseline") {
-		t.Errorf("a corrupt baseline was skipped without a word — the loop would flood with the debt it records; output:\n%s", out)
-	}
-	// Matching `gofastr verify`: an unreadable baseline fails the pass
-	// rather than reporting findings against a state nobody chose.
-	if strings.Contains(out, "GOFASTR1002") {
-		t.Errorf("findings were reported despite the unreadable baseline:\n%s", out)
+	relativeRoot := "./" + filepath.Base(dir)
+	for _, tc := range []struct {
+		name string
+		cwd  string
+		root string
+		path string
+	}{
+		{"current directory", dir, ".", contracts.BaselineFileName},
+		{"absolute root", "", dir, filepath.Join(dir, contracts.BaselineFileName)},
+		{"trailing slash", "", dir + "/", filepath.Join(dir, contracts.BaselineFileName)},
+		{"explicit relative root", filepath.Dir(dir), relativeRoot, relativeRoot + "/" + contracts.BaselineFileName},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.cwd != "" {
+				t.Chdir(tc.cwd)
+			}
+			out := captureWatch(t, NewDevContractWatch(tc.root))
+			if !strings.Contains(filepath.ToSlash(out), "parse baseline "+filepath.ToSlash(tc.path)) {
+				t.Errorf("expected a corrupt baseline error for %s, got:\n%s", tc.path, out)
+			}
+			if strings.Contains(out, "GOFASTR1002") {
+				t.Errorf("findings were reported despite the unreadable baseline:\n%s", out)
+			}
+		})
 	}
 }
 

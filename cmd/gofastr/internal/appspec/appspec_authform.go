@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	AuthLoginSegment    = "login"
+	AuthRegisterSegment = "register"
+)
+
 // validateAuthFormActions refuses a login_form or signup_form whose
 // explicit action is not the auth battery's mounted route. The renderer
 // defaults the action to <base_path>/login or /register, and an explicit
@@ -33,9 +38,9 @@ func validateAuthFormActions(bp AppSpec, errs *schemaErrors) {
 			var kind, want string
 			switch {
 			case AppSpecBlockKindIs(b, "login_form"):
-				kind, want = "login_form", base+"/login"
+				kind, want = "login_form", base+"/"+AuthLoginSegment
 			case AppSpecBlockKindIs(b, "signup_form"):
-				kind, want = "signup_form", base+"/register"
+				kind, want = "signup_form", base+"/"+AuthRegisterSegment
 			default:
 				continue
 			}

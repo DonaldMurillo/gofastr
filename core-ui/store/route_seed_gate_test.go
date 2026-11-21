@@ -28,8 +28,12 @@ func TestRouteSeedDueGatesTheWriters(t *testing.T) {
 			t.Fatalf("partial seed carries %q with no read, no area, no computed dep", k)
 		}
 	}
-	if len(global) > 0 && strings.HasPrefix(global["x"].(string), "route.") {
-		t.Fatal("unreachable")
+	// Route slices are page-scoped: a route.* name must never land in
+	// the global half of the split.
+	for k := range global {
+		if strings.HasPrefix(k, "route.") {
+			t.Fatalf("partial global seed carries %q — route slices are page-scoped", k)
+		}
 	}
 
 	// The computed-deps mention.

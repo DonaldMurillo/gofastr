@@ -48,10 +48,11 @@ var (
 )
 
 var (
-	AdminRefused  = i18n.Define("ui.admin.refused", "You may not do that.")
-	AdminFailed   = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
-	AdminBadInput = i18n.Define("ui.admin.badInput", "Fill in every field the form asks for.")
-	AdminDone     = i18n.Define("ui.admin.done", "Done.")
+	AdminRefused      = i18n.Define("ui.admin.refused", "You may not do that.")
+	AdminFailed       = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
+	AdminBadInput     = i18n.Define("ui.admin.badInput", "Fill in every field the form asks for.")
+	AdminBodyTooLarge = i18n.Define("ui.admin.bodyTooLarge", "The request body was too large.")
+	AdminDone         = i18n.Define("ui.admin.done", "Done.")
 )
 
 var (
@@ -135,6 +136,8 @@ var (
 	AdminReplayedAll      = i18n.Define("ui.admin.replayedAll", "Failed jobs queued again.")
 	AdminReplayedSome     = i18n.Define("ui.admin.replayedSome", "Failed jobs queued again, except those whose unique key a newer job holds.")
 	AdminReplayDuplicate  = i18n.Define("ui.admin.replayDuplicate", "A newer job with the same unique key is already queued.")
+	AdminReplayNothing    = i18n.Define("ui.admin.replayNothing", "That job is no longer failed. Nothing was queued.")
+	AdminReplayAllNothing = i18n.Define("ui.admin.replayAllNothing", "No failed jobs were queued again.")
 )
 
 var (

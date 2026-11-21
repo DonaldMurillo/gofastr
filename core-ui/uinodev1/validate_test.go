@@ -1,6 +1,9 @@
 package uinodev1
 
-import "testing"
+import (
+	"strconv"
+	"testing"
+)
 
 // TestValidateAcceptsMinimal checks the simplest valid tree decodes.
 func TestValidateAcceptsMinimal(t *testing.T) {
@@ -119,13 +122,13 @@ func TestValidateUsesDefaultsOnZeroLimits(t *testing.T) {
 // TestValidateRejectsHeadingLevelOutOfRange checks the 1-6 range bound.
 func TestValidateRejectsHeadingLevelOutOfRange(t *testing.T) {
 	for _, level := range []int{0, 7, -1, 100} {
-		j := `{"component":"heading","props":{"level":` + itoa(level) + `,"text":"x"}}`
+		j := `{"component":"heading","props":{"level":` + strconv.Itoa(level) + `,"text":"x"}}`
 		if _, err := Validate([]byte(j), DefaultLimits()); err == nil {
 			t.Fatalf("level %d should reject, got nil", level)
 		}
 	}
 	for _, level := range []int{1, 2, 3, 4, 5, 6} {
-		j := `{"component":"heading","props":{"level":` + itoa(level) + `,"text":"x"}}`
+		j := `{"component":"heading","props":{"level":` + strconv.Itoa(level) + `,"text":"x"}}`
 		if _, err := Validate([]byte(j), DefaultLimits()); err != nil {
 			t.Fatalf("level %d should accept, got: %v", level, err)
 		}
@@ -172,29 +175,6 @@ func TestValidateRejectsChildrenOnTextComponent(t *testing.T) {
 	if err == nil {
 		t.Fatalf("heading with children must reject")
 	}
-}
-
-// itoa is a tiny strconv.Itoa replacement to keep imports minimal here.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [12]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
 
 // TestValidateRejectsDupColumnKeys: the host renderer matches cells to

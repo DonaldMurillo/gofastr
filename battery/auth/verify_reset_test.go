@@ -275,6 +275,15 @@ func TestPasswordReset_Flow(t *testing.T) {
 		t.Fatalf("reset-password: %d (body=%s)", resetW.Code, resetW.Body.String())
 	}
 
+	for _, header := range []string{"Cache-Control", "Pragma", "Expires"} {
+		if got := resetW.Header().Get(header); got != "" {
+			t.Errorf("reset response %s = %q, want no credential header", header, got)
+		}
+	}
+	if got := resetW.Body.String(); got != "{\"updated\":true}\n" {
+		t.Errorf("reset response = %q, want updated JSON", got)
+	}
+
 	if !CheckPassword("newpw123", store.byID[user.ID].hash) {
 		t.Fatalf("password not updated")
 	}

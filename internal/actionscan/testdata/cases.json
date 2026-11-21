@@ -42,5 +42,11 @@
   {"js": "if (ok) (G).serverAction('save')", "want": true, "why": "a receiver after a condition is not governed by regex disambiguation"},
   {"js": "while (ok) ((G))?.serverAction?.('save')", "want": true, "why": "a loop body may begin with a parenthesized receiver"},
   {"js": "if (ok) '(G).serverAction(\"save\")'", "want": false, "why": "a quoted loop or condition body is still text"},
-  {"js": "factory(G).serverAction('save')", "want": false, "why": "a function argument is not a parenthesized receiver"}
+  {"js": "factory(G).serverAction('save')", "want": false, "why": "a function argument is not a parenthesized receiver"},
+  {"js": "if (ok) /G.serverAction(x)/.test(text)", "want": false, "why": "a regex literal after an if header is skipped, not read as code"},
+  {"js": "if (ready()) /G.serverAction(x)/.test(text)", "want": false, "why": "an inner call does not close the control header"},
+  {"js": "while (ready(check(x))) /G.serverAction(x)/.test(text)", "want": false, "why": "each nested call has its own closing parenthesis"},
+  {"js": "obj.if(ready) / G.serverAction(x) / 2", "want": true, "why": "a member named if produces a value followed by division"},
+  {"js": "obj?. /* trivia */ while(ready()) / G.serverAction(x) / 2", "want": true, "why": "an optional member call stays in expression context"},
+  {"js": "class C { #if() { return 8 } run() { return this.#if() / G.serverAction(x) / 2 } }", "want": true, "why": "a keyword-named private method call is followed by division"}
 ]

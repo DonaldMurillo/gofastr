@@ -135,7 +135,7 @@ func recordHookMask(ctx context.Context, m *meta, id string) map[string]bool {
 		}
 		return all
 	}
-	masked := rewrittenFields(m, raw, row)
+	masked := changedFields(m, raw, row, nil)
 	maps.Copy(masked, hookMaskedFields(ctx, m, id, raw))
 	return masked
 }

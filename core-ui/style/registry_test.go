@@ -71,7 +71,7 @@ func TestApplyNilSheetNoOp(t *testing.T) {
 	Apply(nil) // must not panic
 }
 
-func TestApplyIsIdempotentPerSheet(t *testing.T) {
+func TestApplyTwiceDuplicatesRules(t *testing.T) {
 	t.Cleanup(ResetRegistryForTest)
 	ResetRegistryForTest()
 
@@ -84,7 +84,7 @@ func TestApplyIsIdempotentPerSheet(t *testing.T) {
 	Apply(ss) // calling again duplicates rules, documented behaviour
 
 	css := ss.CSS()
-	if strings.Count(css, ".only-once") != 2 {
-		t.Logf("note: Apply(ss) twice does duplicate rules — host should call it once per sheet:\n%s", css)
+	if n := strings.Count(css, ".only-once"); n != 2 {
+		t.Errorf("Apply(ss) twice emitted .only-once %d times, want 2 (Apply duplicates rules; call it once per sheet):\n%s", n, css)
 	}
 }

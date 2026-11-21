@@ -35,6 +35,14 @@ func otherWritersAreQuiet(w http.ResponseWriter, out io.Writer, r *http.Request)
 	_ = fmt.Sprintf("%s", r.URL.Path)
 }
 
+// streamWrite: the terminal stream written directly, without fmt —
+// WriteString/Write on os.Stdout/os.Stderr themselves.
+func streamWrite(r *http.Request) {
+	os.Stderr.WriteString("path=" + r.URL.Path + "\n") // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+	os.Stdout.WriteString(r.Host)                      // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+	os.Stderr.Write([]byte(r.URL.Path))                // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+}
+
 // stdStreamLocals: the terminal stream through a local bound to it.
 func stdStreamLocals(r *http.Request) {
 	errW := os.Stderr

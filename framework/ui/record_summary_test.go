@@ -164,10 +164,7 @@ func TestRecordSummaryExtraAttrsOnRoot(t *testing.T) {
 		Title:      "Deploy",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("article missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "article")
 }
 
 func TestMetricBandExtraAttrsOnRoot(t *testing.T) {

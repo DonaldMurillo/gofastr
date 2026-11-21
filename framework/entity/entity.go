@@ -15,7 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 // EntityConfig is an entity's declaration. Define sets Name, defaults Table to
@@ -198,6 +198,20 @@ func (c EntityConfig) TenantColumn() string {
 		return c.Scope.TenantField
 	}
 	return "tenant_id"
+}
+
+// TenantColumnField returns the implicit tenant column Define injects
+// for name: a String that is never generated, read-only and hidden.
+// WithMultiTenant (framework/tenant) declares the same field and
+// recognizes one Define injected through this constructor.
+func TenantColumnField(name string) schema.Field {
+	return schema.Field{
+		Name:         name,
+		Type:         schema.String,
+		AutoGenerate: schema.AutoNone,
+		ReadOnly:     true,
+		Hidden:       true,
+	}
 }
 
 // WithTimestamps returns a copy with timestamp columns enabled or disabled.
@@ -448,13 +462,7 @@ func (c EntityConfig) systemFields() []schema.Field {
 			}
 		}
 		if !hasTenantID {
-			c.Fields = append(c.Fields, schema.Field{
-				Name:         tenantCol,
-				Type:         schema.String,
-				AutoGenerate: schema.AutoNone,
-				ReadOnly:     true,
-				Hidden:       true,
-			})
+			c.Fields = append(c.Fields, TenantColumnField(tenantCol))
 		}
 	}
 

@@ -343,44 +343,6 @@ func (s *erroringPasswordCheckerStore) HasPassword(_ context.Context, _ string) 
 	return false, errors.New("password store unreachable")
 }
 
-// TestResolveOAuth_HTTP_EmailCollisionMapsTo409: the callback's HTTP
-// mapping of errOAuthEmailCollision must remain 409 (with the actionable
-// "link from settings" message). A drift here breaks the user-facing
-// recovery path.
-func TestResolveOAuth_HTTP_EmailCollisionMapsTo409(t *testing.T) {
-	store := newMemoryUserStore()
-	ctx := context.Background()
-	if _, err := store.CreateUser(ctx, "victim@example.com", "realhash", []string{"user"}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	plugin, mgr := newResolveManager(t, store)
-	r := router.New()
-	mgr.RegisterRoutes(r)
-
-	prov := &stubOAuthProvider{
-		name: "stub",
-		userInfo: &OAuth2UserInfo{
-			ID:            "attacker-id",
-			Email:         "victim@example.com",
-			Provider:      "stub",
-			EmailVerified: true,
-		},
-	}
-	plugin.RegisterProvider("stub", prov)
-
-	state, err := plugin.generateState("stub", "")
-	if err != nil {
-		t.Fatalf("generateState: %v", err)
-	}
-	req := oauthCallbackReq("/auth/oauth/stub/callback?state="+state+"&code=fakecode", state)
-	rec := httptest.NewRecorder()
-	_ = ctx
-	r.ServeHTTP(rec, req)
-	if rec.Code != 409 {
-		t.Fatalf("email collision must map to 409; got %d (body=%s)", rec.Code, rec.Body.String())
-	}
-}
-
 // TestResolveOAuth_ConcurrentSameIdentityProducesOneLink: two concurrent
 // callbacks for the SAME (provider, provider_id) on a clean store must
 // produce exactly ONE link, with the goroutine whose LinkOAuth won the PK

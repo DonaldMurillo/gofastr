@@ -140,7 +140,7 @@ func (ds *UIHost) handleActionsJS(w http.ResponseWriter, r *http.Request) {
 
 func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
+		methodNotAllowed(w, r)
 		return
 	}
 	if rejectCrossOrigin(w, r) {

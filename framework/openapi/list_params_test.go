@@ -34,7 +34,7 @@ func TestListParamsDocumentOffsetPerPageStream(t *testing.T) {
 		{"per_page", "limit"},
 		{"offset", "rows to skip"},
 		{"offset", "offset mode"},
-		{"offset", "before cursor mode is chosen"},
+		{"offset", "ignored with ?cursor"},
 		{"stream", "stream"},
 	} {
 		p := findParam(listOp["parameters"], tc.name)

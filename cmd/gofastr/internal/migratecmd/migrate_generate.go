@@ -27,25 +27,20 @@ import (
 func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
-		cli.Fail("Usage: gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
 	}
 	if opts.from == "" {
-		cli.Fail("An app spec is required: pass --from=<gofastr.yml>.")
-		cli.OsExit(1)
+		cli.UsageFail("An app spec is required: pass --from=<gofastr.yml>.")
 	}
 	if opts.group != "" {
 		if err := migrate.ValidateGroupName(opts.group); err != nil {
-			cli.Fail("%v", err)
-			cli.OsExit(1)
+			cli.UsageFail("%v", err)
 		}
 	}
 
 	dialect, err := generateDialect(opts.driver)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
+		cli.UsageFail("%v", err)
 	}
 
 	bp, err := appspec.LoadAppSpec(opts.from)
@@ -72,16 +67,9 @@ func runMigrateGenerate(args []string) {
 		cli.OsExit(1)
 	}
 	reg := framework.NewRegistry()
-	for _, decl := range decls {
-		cfg, err := decl.Config()
-		if err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
-		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
+	if err := registerSpecEntities(reg, decls); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
 	}
 
 	// Both generation paths, this CLI and a host binary calling
@@ -320,6 +308,21 @@ func generateDialect(driver string) (framework.Dialect, error) {
 		return framework.DialectPostgres, nil
 	}
 	return "", fmt.Errorf("migrate generate writes SQLite or Postgres DDL; --db=%q is neither (use sqlite or postgres)", driver)
+}
+
+// registerSpecEntities defines and registers the app spec's entities in
+// declaration order, qualifying a failure with the entity's name.
+func registerSpecEntities(reg *framework.Registry, decls []framework.EntityDeclaration) error {
+	for _, decl := range decls {
+		cfg, err := decl.Config()
+		if err != nil {
+			return fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
+			return fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+	}
+	return nil
 }
 
 // specDriver is the driver an app spec names for its database: its

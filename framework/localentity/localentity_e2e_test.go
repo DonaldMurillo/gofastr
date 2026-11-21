@@ -477,6 +477,36 @@ func TestUntouchedDateTimeKeepsSeconds(t *testing.T) {
 	}
 }
 
+// A checked box saves true whatever its value attribute says, the rule
+// the guide states: a box whose value is the literal "false" reads its
+// checked state, not the submitted string.
+func TestCheckedBoxWithValueFalseSavesTrue(t *testing.T) {
+	base := startHost(t)
+	tab := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(tab,
+		chromedp.Navigate(base+"/"),
+		countIs(0),
+		chromedp.Evaluate(`document.querySelector('#`+noteForm+` form').noValidate = true`, nil),
+		chromedp.SetValue(`#f-title`, "cf", chromedp.ByQuery),
+		chromedp.Evaluate(`const c = document.querySelector('#f-starred'); c.value = 'false'; c.checked = true;`, nil),
+		submit(),
+		poll(`document.querySelector('[data-fui-local-count]').textContent === '1' || !!document.querySelector('#f-starred[aria-invalid="true"]')`),
+	); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	var invalid bool
+	if err := chromedp.Run(tab, chromedp.Evaluate(`!!document.querySelector('#f-starred[aria-invalid="true"]')`, &invalid)); err != nil {
+		t.Fatal(err)
+	}
+	if invalid {
+		t.Fatal("the form refused the save")
+	}
+	r := records(t, tab)[0]
+	if r["starred"] != true {
+		t.Fatalf("starred = %v, want true", r["starred"])
+	}
+}
+
 // A number typed in a text control reads in the page's language, the
 // one formatNumber writes in: "3,5" is 3.5 on a Spanish page, not a
 // refusal. A stored number fills the control the same way, so an edit

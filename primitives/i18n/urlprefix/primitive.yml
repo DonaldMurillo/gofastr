@@ -10,7 +10,7 @@ on_change:
   - A URL a handler writes into a JSON body or an SSE push is not rewritten; code that writes one reads i18n.PathPrefix itself.
 invariants:
   - id: path-prefixes-root-relative-only
-    rule: Path prefixes a root-relative URL or one on a listed origin, and leaves alone an empty rule, an external, protocol-relative, relative, query-only or fragment URL, the runtime's /__gofastr paths, a path whose first segment, percent-decoded as the router reads it, already names a locale or the prefix itself, and a path Keep claims, its query and fragment cut off for the question.
+    rule: Path prefixes a root-relative URL or one on a listed origin, and leaves alone an empty rule, an external, protocol-relative, relative, query-only or fragment URL, the runtime's /__gofastr paths, a path whose first segment, percent-decoded and cut at a decoded / as the router reads it (/%65s/ and /es%2Fpricing are both /es/), already names a locale or the prefix itself, and a path Keep claims, its query and fragment cut off for the question.
     enforced_by:
       - test: core-ui/urlprefix.TestPathRule
       - test: core-ui/urlprefix.TestPathKeep

@@ -38,7 +38,6 @@ invariants:
       - test: core/i18n.TestHTTPErrorZeroPhraseUsesStatusText
       - test: core/i18n.TestSweepI18nHTTPErrorWritesOwnPhraseUntranslated
       - test: core/i18n.TestHTTPErrorNilRequest
-      - test: core/i18n.TestStatusPhraseCoversRefusals
       - test: core/i18n.TestStatusPhraseEveryNamedError
   - id: no-bare-http-error
     rule: Framework code writes a plain-text refusal through i18n.HTTPError, never a bare http.Error.

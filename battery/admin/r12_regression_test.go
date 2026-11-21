@@ -347,6 +347,39 @@ func TestReplayAllAuditsOnlyWhatItQueued(t *testing.T) {
 	}
 }
 
+func TestReplayAllRefusesWhenNothingWasQueued(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		jobs []queue.Job
+		err  error
+	}{
+		{name: "empty"},
+		{name: "stale", jobs: failedJobs("j1")},
+		{name: "held key", jobs: failedJobs("j1"), err: queue.ErrDuplicateJob},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			q := struct {
+				*fakeQueue
+				queue.ReplayReporter
+			}{&fakeQueue{jobs: c.jobs}, reporterFunc(func(context.Context, string) (bool, error) {
+				return false, c.err
+			})}
+			x := queueEnv(t, q)
+			h := x.as(theAdmin)
+			const path = "/admin/queue/_replay_all"
+			if rr := rpc(h, path, map[string]any{}); rr.Code != http.StatusConflict {
+				t.Errorf("Replay all RPC = %d, want 409", rr.Code)
+			}
+			if got := resultOf(t, post(h, path, nil)); got != "replay-all-nothing" {
+				t.Errorf("Replay all result = %q, want replay-all-nothing", got)
+			}
+			if ops := x.auditOps("queue"); len(ops) != 0 {
+				t.Errorf("Replay all queued nothing and audited %v", ops)
+			}
+		})
+	}
+}
+
 type reporterFunc func(context.Context, string) (bool, error)
 
 func (f reporterFunc) ReplayJob(ctx context.Context, id string) (bool, error) { return f(ctx, id) }

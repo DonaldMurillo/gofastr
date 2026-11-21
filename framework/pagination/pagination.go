@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const (
@@ -30,31 +31,12 @@ func stripControls(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			continue
-		}
-		if isUnicodeInvisible(r) {
+		if r < 0x20 || r == 0x7f || textsafe.IsInvisible(r) {
 			continue
 		}
 		b.WriteRune(r)
 	}
 	return b.String()
-}
-
-func isUnicodeInvisible(r rune) bool {
-	switch r {
-	case 0x200B, 0x200C, 0x200D,
-		0x200E, 0x200F,
-		0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-		0x2066, 0x2067, 0x2068, 0x2069,
-		0x061C,
-		0x180E,
-		0xFEFF,
-		0x2061, 0x2062, 0x2063, 0x2064,
-		0x202F:
-		return true
-	}
-	return false
 }
 
 // DefaultPageSize is the default number of items per page.
@@ -88,20 +70,15 @@ type cursorToken struct {
 // ParsePagination reads cursor, a limit clamped to 1..MaxPageSize, and
 // the page's offset, which is 0 when a cursor is sent.
 func ParsePagination(r *http.Request) (cursor string, limit int, offset int) {
-	cursor = r.URL.Query().Get("cursor")
-	limit = parseIntDefault(r, "limit", DefaultPageSize)
-	if limit < 1 {
-		limit = DefaultPageSize
-	}
-	if limit > MaxPageSize {
-		limit = MaxPageSize
-	}
+	q := r.URL.Query()
+	cursor = q.Get("cursor")
+	limit = ParseLimit(q.Get("limit"), DefaultPageSize, MaxPageSize)
 
 	if cursor != "" {
 		return cursor, limit, 0
 	}
 
-	page := max(parseIntDefault(r, "page", 1), 1)
+	page := ParsePositiveInt(q.Get("page"), 1)
 	offset = OffsetForPage(page, limit)
 	return cursor, limit, offset
 }
@@ -121,16 +98,10 @@ func OffsetForPage(page, limit int) int {
 // ParseCursorPagination reads cursor, a clamped limit, and a direction
 // of "forward" or "backward", anything else read as "forward".
 func ParseCursorPagination(r *http.Request) (cursor string, limit int, direction string) {
-	cursor = r.URL.Query().Get("cursor")
-	limit = parseIntDefault(r, "limit", DefaultPageSize)
-	if limit < 1 {
-		limit = DefaultPageSize
-	}
-	if limit > MaxPageSize {
-		limit = MaxPageSize
-	}
-
-	direction = stripControls(r.URL.Query().Get("direction"))
+	q := r.URL.Query()
+	cursor = q.Get("cursor")
+	limit = ParseLimit(q.Get("limit"), DefaultPageSize, MaxPageSize)
+	direction = stripControls(q.Get("direction"))
 
 	if direction != "forward" && direction != "backward" {
 		direction = "forward"
@@ -290,32 +261,47 @@ func isNullKey(v any) bool {
 
 // NewOffsetPage builds an OffsetPage, TotalPages rounded up.
 func NewOffsetPage(data []map[string]any, page, pageSize, total int) OffsetPage {
-	totalPages := 0
-	if pageSize > 0 {
-		totalPages = total / pageSize
-		if total%pageSize > 0 {
-			totalPages++
-		}
-	}
 	return OffsetPage{
 		Data:       data,
 		Page:       page,
 		PageSize:   pageSize,
 		Total:      total,
-		TotalPages: totalPages,
+		TotalPages: TotalPages(total, pageSize),
 	}
 }
 
-func parseIntDefault(r *http.Request, key string, def int) int {
-	v := r.URL.Query().Get(key)
-	if v == "" {
-		return def
+// TotalPages rounds total/pageSize up for a nonnegative total and returns zero for pageSize < 1.
+func TotalPages(total, pageSize int) int {
+	if pageSize < 1 {
+		return 0
 	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
+	pages := total / pageSize
+	if total%pageSize > 0 {
+		pages++
+	}
+	return pages
+}
+
+// ParsePositiveInt returns the positive decimal value of raw or fallback.
+func ParsePositiveInt(raw string, fallback int) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return fallback
 	}
 	return n
+}
+
+// ParseLimit parses a positive page size, substitutes fallback if needed and applies the cap.
+func ParseLimit(raw string, fallback, limitCap int) int {
+	return ClampLimit(ParsePositiveInt(raw, fallback), limitCap)
+}
+
+// ClampLimit caps a selected page size. A nonpositive cap leaves the size as given.
+func ClampLimit(size, limitCap int) int {
+	if limitCap > 0 {
+		return min(size, limitCap)
+	}
+	return size
 }
 
 // KeysetString is the text a cursor carries for keyset value v.

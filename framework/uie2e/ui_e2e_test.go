@@ -20,7 +20,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -257,12 +256,14 @@ func renderLogList(items []string) string {
 
 // ---- chromedp helpers ----
 
-func newE2EChrome(t *testing.T) context.Context {
+func newE2EChrome(t *testing.T, timeout ...time.Duration) context.Context {
 	t.Helper()
-	execPath := browserExecutable(t)
-	return chromedptest.Context(t,
-		chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)),
-	)
+	execPath := chromedptest.BrowserPath(t)
+	opts := []chromedptest.Option{chromedptest.AllocatorOptions(chromedp.ExecPath(execPath))}
+	if len(timeout) > 0 {
+		opts = append(opts, chromedptest.Timeout(timeout[0]))
+	}
+	return chromedptest.Context(t, opts...)
 }
 
 // ---- TESTS ----
@@ -346,9 +347,6 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 	if strings.Contains(bobLogText, "alice-secret-log") {
 		t.Errorf("CROSS-USER LEAK in browser: bob's dashboard shows alice's log: %q", bobLogText)
 	}
-	if bobLogText != "" && !strings.HasPrefix(strings.TrimSpace(bobLogText), "") {
-		// Empty is fine, bob has no logs yet. Just guard the assertion above.
-	}
 }
 
 // TestUIE2E_OwnerScope_AnonymousBypassRejected pins the security P0 fix
@@ -395,29 +393,6 @@ func TestUIE2E_OwnerScope_AnonymousBypassRejected(t *testing.T) {
 func awaitPromise(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
 	p.AwaitPromise = true
 	return p
-}
-
-// waitURLContains polls the browser's current URL up to 5 seconds,
-// returning success the moment it contains the given substring.
-// Avoids the race between a runtime-driven location.assign and any
-// subsequent WaitVisible, chromedp's WaitVisible doesn't always
-// notice the renavigation.
-func waitURLContains(needle string) chromedp.Action {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			var loc string
-			if err := chromedp.Location(&loc).Do(ctx); err == nil && strings.Contains(loc, needle) {
-				return nil
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
-		return fmt.Errorf("waitURLContains(%q): timeout", needle)
-	})
 }
 
 // TestUIE2E_AuthForm_LoginRedirectFollowed pins the form-encoded auth
@@ -648,8 +623,3 @@ func TestUIE2E_CSRF_FormHiddenFieldRoundtrip(t *testing.T) {
 		t.Errorf("CSRF-stripped POST status = %d, want 403", status)
 	}
 }
-
-// ---- shared mutex prevents two chromedp tests trashing the same DB ----
-var uie2eMu sync.Mutex
-
-func init() { _ = &uie2eMu } // suppress unused warning until tests below grow (take addr, copying a Mutex is a vet warning)

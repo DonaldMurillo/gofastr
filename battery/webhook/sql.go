@@ -186,54 +186,60 @@ func (s *SQLStore) ensureTables() error {
 	if s.dialect == "postgres" {
 		return nil
 	}
-	return s.utcDueTimes()
+	return normalizeSQLiteTimes(s.db, s.delTable, "next_attempt_at", "created_at", "updated_at")
 }
 
-// utcDueTimes rewrites in UTC the due times an earlier release stored in
-// the writer's zone. SQLite keeps a timestamp as text with its offset and
-// the claim compares that text, so a pending row written ten hours east of
-// UTC read as due ten hours late. Only a pending row's due time is read by
-// the claim. Each rewrite is fenced on the text it read, so a claim
-// another process made in between keeps its lease.
-func (s *SQLStore) utcDueTimes() error {
-	rows, err := s.db.Query(fmt.Sprintf(`SELECT id, next_attempt_at, CAST(next_attempt_at AS TEXT) FROM %s
-		WHERE status = ? AND next_attempt_at IS NOT NULL AND CAST(next_attempt_at AS TEXT) NOT LIKE '%%+00:00'`,
-		s.delTable), string(StatusPending))
+func normalizeSQLiteTimes(db *sql.DB, table string, columns ...string) error {
+	layout := query.ProbeSQLiteBindLayout(context.Background(), db)
+	reads := []string{"id"}
+	stored := make([]query.StoredTime, len(columns))
+	var id string
+	dest := []any{&id}
+	for i, column := range columns {
+		reads = append(reads, "CAST("+column+" AS TEXT)")
+		stored[i].Col = column
+		dest = append(dest, &stored[i].Raw)
+	}
+	rows, err := db.Query(fmt.Sprintf("SELECT %s FROM %s", strings.Join(reads, ", "), table))
 	if err != nil {
 		return err
 	}
-	type zoned struct {
-		id, text string
-		at       time.Time
+	type rewrite struct {
+		id  string
+		fix query.TimeFix
 	}
-	var todo []zoned
+	var todo []rewrite
 	for rows.Next() {
-		var z zoned
-		if err := rows.Scan(&z.id, &z.at, &z.text); err != nil {
+		if err := rows.Scan(dest...); err != nil {
 			rows.Close()
 			return err
 		}
-		if _, off := z.at.Zone(); off != 0 {
-			todo = append(todo, z)
+		fixes, err := query.SQLiteTimeFixes(layout, stored)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("normalize times in %s: %w", table, err)
+		}
+		for _, fix := range fixes {
+			todo = append(todo, rewrite{id, fix})
 		}
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return err
+	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for _, z := range todo {
-		if err := s.rewriteDueTime(z.id, z.text, z.at); err != nil {
+	for _, change := range todo {
+		if err := rewriteSQLiteTime(db, table, change.id, change.fix); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// rewriteDueTime stores at in UTC as the row's due time, only while the
-// row still holds the text read.
-func (s *SQLStore) rewriteDueTime(id, read string, at time.Time) error {
-	_, err := s.db.Exec(fmt.Sprintf(`UPDATE %s SET next_attempt_at = ? WHERE id = ? AND next_attempt_at = ?`,
-		s.delTable), at.UTC(), id, read)
+func rewriteSQLiteTime(db *sql.DB, table, id string, fix query.TimeFix) error {
+	_, err := db.Exec(fmt.Sprintf(`UPDATE %[1]s SET %[2]s = ? WHERE id = ? AND CAST(%[2]s AS TEXT) = ?`,
+		table, fix.Col), fix.At, id, fix.Read)
 	return err
 }
 
@@ -438,8 +444,7 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 }
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limit int) ([]Delivery, error) {
-	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s`, s.delTable)
+	q := fmt.Sprintf("SELECT %s FROM %s", deliveryColumns, s.delTable)
 	var args []any
 	if subscriberID != "" {
 		q += " WHERE subscriber_id = " + s.placeholder(1)
@@ -460,9 +465,8 @@ func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limi
 // ListDeadDeliveries implements [ReplayableStore]: terminally-failed
 // (StatusDead) deliveries, newest-first.
 func (s *SQLStore) ListDeadDeliveries(ctx context.Context, limit int) ([]Delivery, error) {
-	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
-		WHERE status = %s ORDER BY created_at DESC`, s.delTable, s.placeholder(1))
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE status = %s ORDER BY created_at DESC",
+		deliveryColumns, s.delTable, s.placeholder(1))
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
@@ -488,11 +492,10 @@ func (s *SQLStore) ResetDelivery(ctx context.Context, id string) error {
 }
 
 func (s *SQLStore) DueDeliveries(ctx context.Context, now time.Time, limit int) ([]Delivery, error) {
-	q := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
+	q := fmt.Sprintf(`SELECT %s FROM %s AS d
 		WHERE status = %s AND (next_attempt_at IS NULL OR next_attempt_at <= %s)
-		ORDER BY next_attempt_at ASC`,
-		s.delTable, s.placeholder(1), s.placeholder(2))
+		ORDER BY %s`,
+		deliveryColumns, s.delTable, s.placeholder(1), s.placeholder(2), s.dueOrder())
 	if limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", limit)
 	}
@@ -526,7 +529,7 @@ func (s *SQLStore) ClaimDueDeliveries(ctx context.Context, now time.Time, limit 
 		limit = 32
 	}
 	// SQLite keeps a timestamp as text with its offset and compares the
-	// text, so every bind is UTC (see utcDueTimes); the lease written here
+	// text, so every bind is UTC (see normalizeSQLiteTimes); the lease written here
 	// is also the value the settle and release fences match.
 	now = now.UTC()
 	if s.dialect == "postgres" {
@@ -590,17 +593,20 @@ func (s *SQLStore) claimPostgres(ctx context.Context, now time.Time, limit int, 
 	// the attempt it is about to make, and the settle paths never need to
 	// write the counter (an absolute settle write from a stale snapshot is
 	// the lost-update that under-counted overlapping runners).
-	q := fmt.Sprintf(`UPDATE %s SET next_attempt_at = $1, updated_at = $1, attempts = attempts + 1
-		WHERE id IN (
-			SELECT id FROM %s
-			WHERE status = $2 AND (next_attempt_at IS NULL OR next_attempt_at <= $3)
-			ORDER BY next_attempt_at ASC
-			LIMIT %d
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING id, subscriber_id, event, payload, attempts, status,
-			last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body`,
-		s.delTable, s.delTable, limit)
+	order := s.dueOrder()
+	q := fmt.Sprintf(`WITH due AS (
+		SELECT id, next_attempt_at FROM %s AS d
+		WHERE status = $2 AND (next_attempt_at IS NULL OR next_attempt_at <= $3)
+		ORDER BY %s
+		LIMIT %d
+		FOR UPDATE SKIP LOCKED
+	), claimed AS (
+		UPDATE %s SET next_attempt_at = $1, updated_at = $1, attempts = attempts + 1
+		WHERE id IN (SELECT id FROM due)
+		RETURNING %s
+	)
+	SELECT claimed.* FROM claimed JOIN due AS d USING (id) ORDER BY %s`,
+		s.delTable, order, limit, s.delTable, deliveryColumns, order)
 	rows, err := s.db.QueryContext(ctx, q, now.Add(leasePeriod), string(StatusPending), now)
 	if err != nil {
 		return nil, err
@@ -653,10 +659,9 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 		return err
 	}
 
-	selQ := fmt.Sprintf(`SELECT id, subscriber_id, event, payload, attempts, status,
-		last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body FROM %s
+	selQ := fmt.Sprintf(`SELECT %s FROM %s AS d
 		WHERE status = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-		ORDER BY next_attempt_at ASC LIMIT %d`, s.delTable, limit)
+		ORDER BY %s LIMIT %d`, deliveryColumns, s.delTable, s.dueOrder(), limit)
 	rows, err := conn.QueryContext(ctx, selQ, string(StatusPending), now)
 	if err != nil {
 		return nil, err
@@ -755,40 +760,42 @@ func scanDeliveries(rows *sql.Rows) ([]Delivery, error) {
 	return out, rows.Err()
 }
 
+const deliveryColumns = "id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body"
+
+func (s *SQLStore) dueOrder() string {
+	idCollation := "BINARY"
+	if s.dialect == "postgres" {
+		idCollation = `"C"`
+	}
+	return "d.next_attempt_at ASC NULLS FIRST, d.id COLLATE " + idCollation
+}
+
+func placeholderList(count int, placeholder func(int) string) string {
+	markers := make([]string, count)
+	for i := range markers {
+		markers[i] = placeholder(i + 1)
+	}
+	return strings.Join(markers, ", ")
+}
+
 // subUpsert aliases its target: a subscribers table named excluded
 // otherwise collides with the EXCLUDED pseudo-row (Postgres refuses the
 // reference as ambiguous; SQLite reads the target row and the update keeps
 // the old values).
 func (s *SQLStore) subUpsert() string {
-	if s.dialect == "postgres" {
-		return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created, auth)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
-			ON CONFLICT (id) DO UPDATE SET
-				url     = EXCLUDED.url,
-				secret  = EXCLUDED.secret,
-				events  = EXCLUDED.events,
-				active  = EXCLUDED.active,
-				auth    = EXCLUDED.auth`, s.subTable)
-	}
 	return fmt.Sprintf(`INSERT INTO %s AS t (id, url, secret, events, active, created, auth)
-		VALUES (?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET
-			url     = excluded.url,
-			secret  = excluded.secret,
-			events  = excluded.events,
-			active  = excluded.active,
-			auth    = excluded.auth`, s.subTable)
+		VALUES (%s)
+		ON CONFLICT (id) DO UPDATE SET
+			url     = EXCLUDED.url,
+			secret  = EXCLUDED.secret,
+			events  = EXCLUDED.events,
+			active  = EXCLUDED.active,
+			auth    = EXCLUDED.auth`, s.subTable, placeholderList(7, s.placeholder))
 }
 
 func (s *SQLStore) deliveryInsert() string {
-	if s.dialect == "postgres" {
-		return fmt.Sprintf(`INSERT INTO %s
-			(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, s.delTable)
-	}
-	return fmt.Sprintf(`INSERT INTO %s
-		(id, subscriber_id, event, payload, attempts, status, last_error, next_attempt_at, created_at, updated_at, owner, response_status, response_body)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.delTable)
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		s.delTable, deliveryColumns, placeholderList(13, s.placeholder))
 }
 
 func (s *SQLStore) deliveryUpdate(unclaimed bool) string {
@@ -801,16 +808,12 @@ func (s *SQLStore) deliveryUpdate(unclaimed bool) string {
 	if unclaimed {
 		bump = ", attempts = attempts + 1"
 	}
-	if s.dialect == "postgres" {
-		return fmt.Sprintf(`UPDATE %s SET
-			status = $1, last_error = $2, next_attempt_at = $3, updated_at = $4,
-			response_status = $5, response_body = $6%s
-			WHERE id = $7`, s.delTable, bump)
-	}
 	return fmt.Sprintf(`UPDATE %s SET
-		status = ?, last_error = ?, next_attempt_at = ?, updated_at = ?,
-		response_status = ?, response_body = ?%s
-		WHERE id = ?`, s.delTable, bump)
+		status = %s, last_error = %s, next_attempt_at = %s, updated_at = %s,
+		response_status = %s, response_body = %s%s
+		WHERE id = %s`, s.delTable,
+		s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4),
+		s.placeholder(5), s.placeholder(6), bump, s.placeholder(7))
 }
 
 func (s *SQLStore) placeholder(n int) string {

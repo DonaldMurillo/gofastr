@@ -241,11 +241,15 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Content == "" {
 		return render.Tag("textarea", attrs)
 	}
-	content := cfg.Content
+	return render.Tag("textarea", attrs, render.Text(TextAreaContent(cfg.Content)))
+}
+
+// TextAreaContent adds one LF before content that opens on a line break, for the parser to drop.
+func TextAreaContent(content string) string {
 	if strings.HasPrefix(content, "\n") || strings.HasPrefix(content, "\r") {
-		content = "\n" + content
+		return "\n" + content
 	}
-	return render.Tag("textarea", attrs, render.Text(content))
+	return content
 }
 
 // ButtonGroup produces a <div> with role="group" containing buttons.

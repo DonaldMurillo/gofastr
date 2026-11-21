@@ -167,7 +167,6 @@ func TestRenderEventHelpersSeamIdenticalForAnyEntityCount(t *testing.T) {
 		"return onEntityEvent[Solo](app, \"solo\", framework.EntityCreated, fn)",
 		"return onEntityEvent[Solo](app, \"solo\", framework.EntityUpdated, fn)",
 		"return onEntityDeleted(app, \"solo\", fn)",
-		"return extractEntityRecord[Solo](ev, entityName)",
 	} {
 		if !strings.Contains(solo, want) {
 			t.Fatalf("solo.go missing one-line wrapper %q:\n%s", want, solo)

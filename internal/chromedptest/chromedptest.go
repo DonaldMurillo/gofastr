@@ -9,13 +9,18 @@
 // behaviorBrowserCtx; framework/uihost's
 // newEmbedBrowserCtx, newE2EChromeForUIHost, and the PWA Chrome boot;
 // cmd/gofastr's devE2EBrowserCtx; examples/meridian's e2eBrowser;
-// framework/uie2e's newE2EChrome;
-// framework/static's PWA Chrome boot; framework/ui's image-placeholder and
-// srcset browser boots; kiln/integration's newChrome; and
-// battery/print/chromepdf's host-resolver browser boot), each of which
+// framework/uie2e's newE2EChrome; framework/static's PWA Chrome boot;
+// framework/ui's image-placeholder and srcset browser boots;
+// kiln/integration's newChrome; and battery/print/chromepdf's
+// host-resolver browser boot; the browserExecutable resolve-and-skip
+// helpers framework/uie2e, framework/uihost and framework/static carried,
+// now BrowserPath; cmd/gofastr/internal/themecmd's themeBrowserCtx;
+// internal/testapps/layoutlab's labBrowserCtx; and
+// internal/testapps/webmcp-remote-assist's assistBrowserCtx), each of which
 // repeated the same allocator flags, lazy startup watchdog, and per-test
-// deadline. It depends only on chromedp, cdproto, and the standard library
-// so core-ui packages (which must not import framework) can use it.
+// deadline. It depends only on chromedp, cdproto, internal/browserpath, and
+// the standard library so core-ui packages (which must not import
+// framework) can use it.
 //
 // The boot contract: allocator options are chromedp's defaults plus
 // headless, disable-gpu, no-sandbox, force-prefers-no-reduced-motion, a 90s
@@ -35,9 +40,8 @@
 // with no sh, or for an option set that installs a func or writer (see
 // AllocatorOptions), every call gets a private Chrome that closes with its
 // window, as before sharing. The returned context carries the per-test
-// deadline. Cleanup registration order is BrowserContext disposal and
-// release of the Chrome, window close, deadline cancel — teardown runs
-// deadline-first.
+// deadline by default. Teardown cancels any deadline, closes the window,
+// then disposes the BrowserContext and releases Chrome.
 package chromedptest
 
 import (
@@ -76,6 +80,7 @@ type config struct {
 	windowW      int
 	windowH      int
 	timeout      time.Duration
+	noDeadline   bool
 	startTimeout time.Duration
 	extra        []chromedp.ExecAllocatorOption
 }
@@ -95,6 +100,12 @@ func WindowSize(w, h int) Option {
 // It replaces each former helper's local context.WithTimeout call.
 func Timeout(d time.Duration) Option {
 	return func(c *config) { c.timeout = d }
+}
+
+// WithoutDeadline leaves child tabs free to set independent deadlines.
+// Startup watchdogs and test cleanup still apply.
+func WithoutDeadline() Option {
+	return func(c *config) { c.noDeadline = true }
 }
 
 // StartTimeout overrides the default 90s startup patience for the DevTools
@@ -131,7 +142,7 @@ func newConfig(opts ...Option) config {
 }
 
 // Context opens an isolated window in the test binary's headless Chrome for a
-// chromedp-driven test and returns a context carrying the per-test deadline.
+// chromedp-driven test and returns a context with a deadline by default.
 // It replaces the duplicated browser boot helpers listed in this package's
 // documentation. Chrome starts on first use under the startup watchdog; the
 // window lives in its own BrowserContext, and all cancels are registered on t.
@@ -167,7 +178,7 @@ func Context(t testing.TB, opts ...Option) context.Context {
 var openWindowFault func(b *browser) error
 
 // openWindow creates a BrowserContext and a window in it on b, and returns
-// the window's context with the per-test deadline. Its cleanups, which end
+// the window's context. Its cleanups, which end
 // with releasing b, are registered on t only once the window is open; on
 // error it has already disposed of what it made, and b is still the
 // caller's to release.
@@ -238,6 +249,9 @@ func openWindow(t testing.TB, b *browser, cfg config) (context.Context, error) {
 		b.release()
 	})
 	t.Cleanup(tabCancel)
+	if cfg.noDeadline {
+		return tab, nil
+	}
 	ctx, cancel := context.WithTimeout(tab, cfg.timeout)
 	t.Cleanup(cancel)
 	return ctx, nil

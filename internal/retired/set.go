@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/retired/names"
 )
 
@@ -57,7 +58,7 @@ func New(entries []names.Entry) *Set {
 			set.classes[e.Name] = e.Note
 			continue
 		}
-		lower := strings.ToLower(e.Name)
+		lower := asciicase.Lower(e.Name)
 		if strings.HasSuffix(lower, "-") {
 			// The trailing dash is part of the prefix: data-cui-toggle-
 			// retires data-cui-toggle-open, not data-cui-togglex.
@@ -72,9 +73,7 @@ func New(entries []names.Entry) *Set {
 	return set
 }
 
-// matchClass resolves one class token to the note that retired it, or
-// nil. The registry rule: the token equals the name, or is the name
-// wearing a BEM suffix (name--modifier, name__element).
+// matchClass resolves a token to the most specific matching retired class.
 func (s *Set) matchClass(token string) *names.Note {
 	if len(s.classes) == 0 {
 		return nil
@@ -82,8 +81,8 @@ func (s *Set) matchClass(token string) *names.Note {
 	if note, ok := s.classes[token]; ok {
 		return note
 	}
-	for _, sep := range [...]string{"--", "__"} {
-		if i := strings.Index(token, sep); i > 0 {
+	for i := len(token) - 2; i > 0; i-- {
+		if names.IsBEMSuffix(token[i:]) {
 			if note, ok := s.classes[token[:i]]; ok {
 				return note
 			}
@@ -99,7 +98,7 @@ func (s *Set) matchAttr(name []byte) *names.Note {
 	if !s.nonEmpty {
 		return nil
 	}
-	lower := strings.ToLower(string(name))
+	lower := asciicase.Lower(string(name))
 	if note, ok := s.attrs[lower]; ok {
 		return note
 	}
@@ -116,7 +115,7 @@ func (s *Set) matchAttr(name []byte) *names.Note {
 // never match: a kept marker like data-cui-comp="ui-sidebar" is a name
 // in a value slot, not a class or an attribute name.
 func (s *Set) Check(html []byte) []Finding {
-	if !s.nonEmpty {
+	if s == nil || !s.nonEmpty {
 		return nil
 	}
 	var out []Finding
@@ -148,13 +147,8 @@ func (s *Set) Check(html []byte) []Finding {
 	return out
 }
 
-// checkBody reads a recorded response body by its kind. Markup is
-// scanned whole. JSON is walked string by string, and only strings
-// holding a tag are scanned: a record whose text reads "ui-button" is
-// data, while an html-mode signal value is markup. A body sniffed as
-// text that is in fact JSON (an RPC that set no Content-Type) is walked
-// the same way, since its markup sits behind escaped quotes the tag
-// scanner cannot read.
+// checkBody scans markup whole and JSON string values individually.
+// It also recognizes valid JSON objects and arrays sniffed as text.
 func (s *Set) checkBody(kind bodyKind, body []byte) []Finding {
 	if kind == kindMarkup && !looksLikeJSON(body) {
 		return s.Check(body)
@@ -162,10 +156,25 @@ func (s *Set) checkBody(kind bodyKind, body []byte) []Finding {
 	var out []Finding
 	seen := make(map[Finding]bool)
 	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var objectStack []bool
 	for {
+		if len(objectStack) > 0 && objectStack[len(objectStack)-1] && dec.More() {
+			if _, err := dec.Token(); err != nil {
+				return out
+			}
+		}
 		tok, err := dec.Token()
 		if err != nil {
 			return out
+		}
+		if d, ok := tok.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				objectStack = append(objectStack, d == '{')
+			} else {
+				objectStack = objectStack[:len(objectStack)-1]
+			}
+			continue
 		}
 		str, ok := tok.(string)
 		if !ok || !strings.Contains(str, "<") {

@@ -548,8 +548,9 @@ configured at all, so a gate would only lock the dev loop out of its own
 app. Its exposure is bounded on the other axis instead: dev **refuses
 to register the control tools when the listener is not loopback**. Bind
 to `localhost`, or set `GOFASTR_DEV_MCP_EXPOSE=1` to accept the risk.
-The same applies to the `app_*` introspection tools and `contracts_verify`
-when dev turned them on; an explicit `WithMCPIntrospection()` keeps them.
+On the same bind, the guard withdraws the dev-implied `app_*` and
+`contracts_*` tools. An explicit `WithMCPIntrospection()` keeps the
+`app_*` introspection tools and the read-only contract catalog.
 The check reads the address the server actually binds: `Start("")`,
 `":8080"` and a bare `"8080"` all listen on every interface (`Start("")`
 binds `:http`, port 80), so each counts as exposed. A listener handed to

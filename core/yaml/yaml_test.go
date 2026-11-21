@@ -2,6 +2,37 @@ package yaml
 
 import "testing"
 
+func TestMappingScalarColumnUsesValuePosition(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		yaml   string
+		column int
+	}{
+		{"map", "name: name", 7},
+		{"list item", "- name: name", 9},
+		{"list item with extra spaces", "-   name: \t name", 13},
+		{"quoted key with colon", `"name: name": name`, 15},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root, err := Parse(tt.yaml)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if root.Kind == List {
+				root = root.List[0]
+			}
+			if len(root.Map) != 1 {
+				t.Fatalf("got %d mapping values, want 1", len(root.Map))
+			}
+			for _, value := range root.Map {
+				if value.Column != tt.column {
+					t.Errorf("value column = %d, want %d", value.Column, tt.column)
+				}
+			}
+		})
+	}
+}
+
 func TestParseSubsetMapsListsAndScalars(t *testing.T) {
 	node, err := Parse(`
 app:

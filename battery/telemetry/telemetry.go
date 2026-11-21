@@ -87,10 +87,8 @@ type Config struct {
 	// told the app is down, which the app itself cannot tell you.
 	// Empty sends nothing. The URL is a secret: it is never logged.
 	Heartbeat string
-	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
-	// and telemetry_logs, so a connected agent can read what the files
-	// hold. Off by default; `gofastr dev` turns them on for a loopback
-	// listener.
+	// EnableMCP adds the five telemetry MCP tools. With it off, gofastr dev
+	// enables them for loopback listeners unless GOFASTR_DEV_MCP=0.
 	EnableMCP bool
 	// MCPGate replaces the precondition every tool runs behind,
 	// framework.MCPRequireRole("admin") by default: the tools hand out
@@ -188,16 +186,18 @@ func (p *Plugin) Init(app *framework.App) error {
 	p.heartbeat = beat
 	dir := p.cfg.Dir
 	if dir == "" {
-		state, err := stateDir(app.Config.Name)
+		dir, err = DefaultDir(app.Config.Name)
 		if err != nil {
 			return fmt.Errorf("telemetry: %w", err)
 		}
-		dir = filepath.Join(state, "telemetry")
 	}
-	cfg := itel.Config{
+	cfg, err := itel.Config{
 		Dir: dir, Retention: p.cfg.Retention, MaxDiskBytes: p.cfg.MaxDiskBytes,
 		SampleRate: p.cfg.SampleRate, KeepNoOrdinary: p.cfg.KeepNoOrdinary,
 		SlowThreshold: p.cfg.SlowThreshold, MaxMemoryBytes: p.cfg.MaxMemoryBytes,
+	}.Resolve()
+	if err != nil {
+		return err
 	}
 	w, err := itel.NewWriter(cfg)
 	if err != nil {
@@ -225,12 +225,8 @@ func (p *Plugin) Init(app *framework.App) error {
 	}
 	counts := itel.NewRollup()
 	c.WatchStats(counts)
-	if resolved, err := cfg.Resolve(); err == nil {
-		p.readHost = itel.NewHostSampler(resolved.Dir).Read
-	}
-	if resolved, err := cfg.Resolve(); err == nil {
-		p.slow.Store(int64(resolved.SlowThreshold))
-	}
+	p.readHost = itel.NewHostSampler(cfg.Dir).Read
+	p.slow.Store(int64(cfg.SlowThreshold))
 	p.store.Store(store)
 	p.writer.Store(w)
 	p.collector.Store(c)
@@ -281,18 +277,20 @@ func (p *Plugin) Init(app *framework.App) error {
 	return nil
 }
 
-func stateDir(appName string) (string, error) {
+// DefaultDir returns $XDG_STATE_HOME/<app>/telemetry or ~/.local/state/<app>/telemetry.
+// It requires an app name and either XDG_STATE_HOME or a resolvable home directory.
+func DefaultDir(appName string) (string, error) {
 	if appName == "" {
-		return "", fmt.Errorf("set Config.Dir or framework.AppConfig.Name: the default directory is named after the app")
+		return "", errors.New("set Config.Dir or framework.AppConfig.Name: the default directory is named after the app")
 	}
 	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
-		return filepath.Join(x, appName), nil
+		return filepath.Join(x, appName, "telemetry"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "state", appName), nil
+	return filepath.Join(home, ".local", "state", appName, "telemetry"), nil
 }
 
 // Stats returns the counters. They are zero before Init.

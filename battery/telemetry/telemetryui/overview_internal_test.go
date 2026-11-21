@@ -45,8 +45,8 @@ func TestPercentilesAreShownAsRoughAsTheyAre(t *testing.T) {
 		683500 * time.Microsecond: 680 * ms, 59700 * time.Microsecond: 60 * ms,
 		4300 * time.Microsecond: 4300 * time.Microsecond, 10 * time.Second: 10 * time.Second,
 	} {
-		if got := twoDigits(in); got != want {
-			t.Errorf("twoDigits(%v) = %v, want %v", in, got, want)
+		if got := itel.RoundDuration(in); got != want {
+			t.Errorf("RoundDuration(%v) = %v, want %v", in, got, want)
 		}
 	}
 	ctx := context.Background()

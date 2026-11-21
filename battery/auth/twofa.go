@@ -376,11 +376,7 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/2fa/verify", http.HandlerFunc(p.verifyHandler))
 	r.Post(basePath+"/2fa/challenge", http.HandlerFunc(p.challengeHandler))
 	r.Post(basePath+"/2fa/disable", http.HandlerFunc(p.disableHandler))
-	// POST, not GET: this route REGENERATES the code set, invalidating the
-	// previous one. csrf.go exempts safe methods by design, so as a GET no
-	// token was ever checked — and a SameSite=Lax session, which is what
-	// OAuth and magic-link logins leave behind, rides a plain top-level
-	// cross-site link. A hidden <img> was enough to burn a user's codes.
+	// Regenerating backup codes invalidates the previous set.
 	r.Post(basePath+"/2fa/backup-codes", http.HandlerFunc(p.backupCodesHandler))
 }
 
@@ -634,13 +630,6 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// the 303 back to its page with ?error=, and success as the 303 to
 	// its next; a JSON client gets the JSON answers.
 	isForm := isFormRequest(r)
-	fail := func(status int, reason i18n.Phrase) {
-		if isForm {
-			writeFormAuthError(w, r, status, reason)
-			return
-		}
-		writeAuthError(w, r, status, reason)
-	}
 	verified := func(backupCode bool) {
 		if isForm {
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
@@ -659,7 +648,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// requireStepUpSession.
 	sess, err := p.mgr.requestSession(r, true)
 	if err != nil {
-		fail(http.StatusUnauthorized, reasonNotAuthenticated)
+		refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonNotAuthenticated)
 		return
 	}
 	userID := sess.UserID
@@ -677,13 +666,13 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Code == "" {
-		fail(http.StatusBadRequest, reasonCodeRequired)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reasonCodeRequired)
 		return
 	}
 
 	state, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil || state == nil || !state.Enabled {
-		fail(http.StatusBadRequest, reason2faNotEnabled)
+		refuseAuth(w, r, isForm, http.StatusBadRequest, reason2faNotEnabled)
 		return
 	}
 
@@ -698,12 +687,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
 			w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
-			fail(http.StatusServiceUnavailable, reasonTryAgainShortly)
+			refuseAuth(w, r, isForm, http.StatusServiceUnavailable, reasonTryAgainShortly)
 			return
 		}
 		if !allowed {
 			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
-				fail(http.StatusInternalServerError, reasonCouldNotEndTheSignIn)
+				refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonCouldNotEndTheSignIn)
 				return
 			}
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -711,7 +700,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 				UserID: userID,
 				Remote: remoteHost(r),
 			})
-			fail(http.StatusUnauthorized, reasonTooManyAttempts)
+			refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonTooManyAttempts)
 			return
 		}
 	}
@@ -747,7 +736,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// Fallback to backup code.
 	consumed, err := p.store.ConsumeBackupCode(r.Context(), userID, body.Code)
 	if err != nil {
-		fail(http.StatusInternalServerError, reasonBackupCodeCheckFailed)
+		refuseAuth(w, r, isForm, http.StatusInternalServerError, reasonBackupCodeCheckFailed)
 		return
 	}
 	if consumed {
@@ -769,7 +758,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		UserID: userID,
 		Remote: remoteHost(r),
 	})
-	fail(http.StatusUnauthorized, reasonInvalidCode)
+	refuseAuth(w, r, isForm, http.StatusUnauthorized, reasonInvalidCode)
 }
 
 // HasTwoFactorEnabled implements TwoFactorChecker. Returns true when the

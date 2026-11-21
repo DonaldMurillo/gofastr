@@ -25,14 +25,14 @@ func TestEntityFormUsesWireNames(t *testing.T) {
 		fields = append(fields, framework.FieldDeclaration{Name: field.name, Type: field.kind, To: "postal_addresses", Values: []string{"home", "work"}})
 	}
 	expression := appSpecEntityFormExpr(appspec.AppSpec{}, appspec.AppSpecScreen{Name: "home"},
-		appspec.AppSpecBlock{Kind: "entity_form", Entity: "addresses"}, nil,
+		appspec.AppSpecBlock{Kind: "entity_form", Entity: "addresses"}, []int{0},
 		map[string]framework.EntityDeclaration{"addresses": {Name: "addresses", Fields: fields}}, "/api")
 	for _, field := range fields {
 		wire := appspec.WireKey(field.Name)
 		if !strings.Contains(expression, `Name: "`+wire+`"`) || strings.Contains(expression, `Name: "`+field.Name+`"`) {
 			t.Errorf("%s control must use wire key %q, not column %q:\n%s", field.Type, wire, field.Name, expression)
 		}
-		if !strings.Contains(expression, `"field-`+field.Name+`"`) || !strings.Contains(expression, `"addresses", "`+field.Name+`",`) {
+		if !strings.Contains(expression, `"field-entity_form_home_0-`+field.Name+`"`) || !strings.Contains(expression, `"addresses", "`+field.Name+`",`) {
 			t.Errorf("%s control lost its column-based ID or label lookup", field.Type)
 		}
 	}

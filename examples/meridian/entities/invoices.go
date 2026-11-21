@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=273b8ae83ad2a8d4
+//gofastr:generated generator=app kind=scaffold version=dev sum=3304c625096abbd3
 
 package entities
 
@@ -289,13 +289,6 @@ func OnInvoicesUpdated(app *framework.App, fn func(ctx context.Context, row *Inv
 // has been removed (or soft-deleted).
 func OnInvoicesDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return onEntityDeleted(app, "invoices", fn)
-}
-
-// extractInvoicesRecord unmarshals an event payload's "record" field into a
-// *Invoices, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extractInvoicesRecord(ev framework.Event, entityName string) (*Invoices, bool) {
-	return extractEntityRecord[Invoices](ev, entityName)
 }
 
 // registerInvoices registers the "invoices" entity with app.

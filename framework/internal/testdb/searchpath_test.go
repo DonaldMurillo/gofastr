@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // backendPID is the connection's own server process, the one to kill.
@@ -106,9 +107,9 @@ func TestWithSearchPathRewritesBothDSNForms(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := withSearchPath(tc.dsn, "t_x_1")
+			got, err := pgtest.DSNWithSearchPath(tc.dsn, "t_x_1")
 			if err != nil {
-				t.Fatalf("withSearchPath: %v", err)
+				t.Fatalf("pgtest.DSNWithSearchPath: %v", err)
 			}
 			if !strings.Contains(got, tc.want) {
 				t.Errorf("got %q, want it to contain %q", got, tc.want)
@@ -173,9 +174,9 @@ func TestWithSearchPathPreservesQuotedValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := withSearchPath(tc.dsn, "t_new_1")
+			got, err := pgtest.DSNWithSearchPath(tc.dsn, "t_new_1")
 			if err != nil {
-				t.Fatalf("withSearchPath: %v", err)
+				t.Fatalf("pgtest.DSNWithSearchPath: %v", err)
 			}
 			if !strings.Contains(got, tc.keep) {
 				t.Errorf("got %q, want it to keep %q intact", got, tc.keep)
@@ -262,9 +263,9 @@ func TestRewrittenKeywordValueDSNStillConnects(t *testing.T) {
 	}
 	defer admin.Exec("DROP SCHEMA " + sn + " CASCADE")
 
-	rewritten, err := withSearchPath(kv, sn)
+	rewritten, err := pgtest.DSNWithSearchPath(kv, sn)
 	if err != nil {
-		t.Fatalf("withSearchPath: %v", err)
+		t.Fatalf("pgtest.DSNWithSearchPath: %v", err)
 	}
 	db, err := sql.Open("postgres", rewritten)
 	if err != nil {
@@ -298,8 +299,8 @@ func TestWithSearchPathRefusesMalformedDSNs(t *testing.T) {
 		"host=localhost password='", // unterminated quote
 		"=novalue dbname=db",        // empty key
 	} {
-		if got, err := withSearchPath(bad, "t_x_1"); err == nil {
-			t.Errorf("withSearchPath(%q) returned %q, want an error", bad, got)
+		if got, err := pgtest.DSNWithSearchPath(bad, "t_x_1"); err == nil {
+			t.Errorf("pgtest.DSNWithSearchPath(%q) returned %q, want an error", bad, got)
 		}
 	}
 }
@@ -308,11 +309,11 @@ func TestWithSearchPathRefusesMalformedDSNs(t *testing.T) {
 // NewSchemaName emits is refused rather than passed through.
 func TestWithSearchPathRefusesUnsafeSchemaNames(t *testing.T) {
 	for _, bad := range []string{"", "has space", "quote'", "UPPER", "semi;colon", "amp&sand"} {
-		if got, err := withSearchPath("postgres://h/db", bad); err == nil {
-			t.Errorf("withSearchPath(%q) returned %q, want an error", bad, got)
+		if got, err := pgtest.DSNWithSearchPath("postgres://h/db", bad); err == nil {
+			t.Errorf("pgtest.DSNWithSearchPath(%q) returned %q, want an error", bad, got)
 		}
 	}
-	if _, err := withSearchPath("postgres://h/db", "t_ok_123_4"); err != nil {
+	if _, err := pgtest.DSNWithSearchPath("postgres://h/db", "t_ok_123_4"); err != nil {
 		t.Errorf("a NewSchemaName-shaped name was refused: %v", err)
 	}
 }

@@ -315,6 +315,11 @@ on an un-wired (anonymous) request. Permission checks should still go
 through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
 branching where the permission grant map isn't the right granularity.
 
+`access.RequestUserRoles(ctx)` reads roles from the user in the request
+context. It returns `nil` when there is no user or the user does not
+implement `GetRoles() []string`. Generated apps use it as the role
+callback for `access.Middleware` and `ui.SetRolesExtractor`.
+
 ### Caching role resolution
 
 `access.NewCachedResolver` wraps the role lookup function passed to
@@ -645,6 +650,11 @@ Set the interval with `access.WithReconcileInterval(d)`; zero or negative
 turns the reconcile off. The timer starts with `SetFanout` and stops with
 the stop function it returns, so a store without a fanout runs none.
 
+Calling `SetFanout` again with a new fanout stops the previous attachment
+once the new subscription succeeds. If subscription fails, the previous
+attachment stays active. Each returned stop function applies to its own
+attachment and can be called repeatedly.
+
 ### Revocation tombstones
 
 A `Revoke` does more than delete the grant row: it also inserts a
@@ -713,9 +723,9 @@ keeps every revoke of a permission the code declares. Restart after
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,
 unknown concrete grants remain persisted for compatibility. The admin roles
-screen uses `Policy.Capabilities()` as a datalist when the registry is
-non-empty and marks existing non-global grants outside the registry as
-`unknown/dead`.
+screen offers the values from `Policy.Capabilities()` in a select when the
+registry is non-empty and marks existing non-global grants outside the
+registry with a “Not declared” badge.
 
 ### Security
 
@@ -945,3 +955,12 @@ home. Use `access.ValidScope(s)` to reject malformed scope strings at
 mint/install time under the same closed vocabulary. New capability gates
 that hold `[]Permission` should call `access.ScopeMatch` directly rather
 than reimplementing a weaker string matcher.
+
+`access.SplitScope(s)` is the one parser of the `resource:verb` shape
+the matcher reads; ok is false when the colon is missing, leading or
+trailing.
+
+`access.UserID(ctx)` returns the signed-in user's id as a string — ""
+when the context carries no user or the user type has none — so code
+that keys data or audit rows on the caller shares one extractor
+instead of each spelling the `GetID` assertion.

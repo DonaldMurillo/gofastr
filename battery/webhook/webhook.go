@@ -262,7 +262,10 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 // 10s per-request timeout, no redirect following, and a dial-time SSRF
 // guard (net.Dialer.Control re-checks the resolved IP at connect time
 // to defeat DNS rebinding) unless AllowPrivateNetworks is set. A
-// caller-supplied client is used as-is, it gets no dial-time guard.
+// caller-supplied client gets a dial-time guard when it uses the default
+// transport or when its transport can be cloned with a guarded dialer.
+// Other transports get a resolved-IP check on the request target before
+// the transport runs.
 //
 // PollInterval controls how often the worker looks for due deliveries.
 // Default 1 second.
@@ -1090,8 +1093,10 @@ func (m *Manager) saveDelivery(d Delivery) {
 	}
 }
 
-// settleTimeout bounds a delivery's state write and a claim release
-// after the worker detaches them from its own context.
+// settleTimeout bounds a delivery's state write, a claim release and an
+// inbound envelope's outcome write after the work detaches them from its
+// own context. It equals internal/settle.Timeout; webhook keeps its own
+// copy so it stays unmountable (TestSettleTimeoutMatchesSettle).
 const settleTimeout = 10 * time.Second
 
 // schedule sets NextAttemptAt or marks the delivery dead when the

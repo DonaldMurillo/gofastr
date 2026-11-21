@@ -32,18 +32,22 @@ type GrantStore struct {
 
 	baseline map[string][]Permission
 
-	fanoutMu  sync.Mutex
-	nodeID    string
-	send      func([]byte) // PublishQueue enqueue; nil when no fanout
-	stopQueue func()       // stops the PublishQueue drainer
-
-	dirtyMu  sync.Mutex
-	dirty    map[string]bool // "" reloads every role
-	wake     chan struct{}   // buffered(1); worker wakeups
-	stopWork chan struct{}   // closed by stop() to end the worker
-	workerWG sync.WaitGroup
+	fanoutMu   sync.Mutex
+	attachment *grantFanout
 
 	reconcileEvery time.Duration
+}
+
+type grantFanout struct {
+	nodeID string
+	send   func([]byte)
+	stop   func()
+
+	dirtyMu    sync.Mutex
+	dirty      map[string]bool // "" reloads every role
+	wake       chan struct{}
+	stopWork   chan struct{}
+	workerDone chan struct{}
 }
 
 const reloadTimeout = 5 * time.Second
@@ -331,67 +335,67 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	return nil
 }
 
-// SetFanout propagates grants and revokes to other replicas over f and reloads
-// roles they change. A nil f is a no-op. Call stop at shutdown.
+// SetFanout propagates grants and revokes over f and reloads roles peers change.
+// A successful attachment stops its predecessor. A nil f is a no-op.
+// The returned stop shuts down this attachment and is safe to call repeatedly.
 func (s *GrantStore) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	if f == nil {
 		return func() {}, nil
 	}
-	s.fanoutMu.Lock()
-	s.nodeID = fanout.NewNodeID()
-	s.send, s.stopQueue = fanout.PublishQueue(f, accessFanoutTopic, 0)
-	s.dirty = make(map[string]bool)
-	s.wake = make(chan struct{}, 1)
-	s.stopWork = make(chan struct{})
-	wake := s.wake
-	stopWork := s.stopWork
-	stopQueue := s.stopQueue
-	s.fanoutMu.Unlock()
-
-	cancel, subErr := f.Subscribe(accessFanoutTopic, func(payload []byte) {
-		s.handleRemote(payload)
-	})
+	a := &grantFanout{
+		nodeID:     fanout.NewNodeID(),
+		dirty:      make(map[string]bool),
+		wake:       make(chan struct{}, 1),
+		stopWork:   make(chan struct{}),
+		workerDone: make(chan struct{}),
+	}
+	cancel, subErr := f.Subscribe(accessFanoutTopic, a.handleRemote)
 	if subErr != nil {
-		s.fanoutMu.Lock()
-		s.send = nil
-		s.stopQueue = nil
-		s.dirty = nil
-		s.nodeID = ""
-		s.fanoutMu.Unlock()
-		stopQueue()
 		return func() {}, fmt.Errorf("access: subscribe fanout: %w", subErr)
 	}
 
-	s.workerWG.Add(1)
-	go s.refreshWorker(wake, stopWork, s.reconcileEvery)
+	send, stopQueue := fanout.PublishQueue(f, accessFanoutTopic, 0)
+	a.send = send
+	a.stop = sync.OnceFunc(func() {
+		s.fanoutMu.Lock()
+		if s.attachment == a {
+			s.attachment = nil
+		}
+		s.fanoutMu.Unlock()
 
-	var once sync.Once
-	stop = func() {
-		cancel()                            // stop delivery first
-		once.Do(func() { close(stopWork) }) // end the worker (safe on repeat)
-		s.workerWG.Wait()                   // drain the in-flight reload
-		stopQueue()                         // stop the publish queue
+		a.dirtyMu.Lock()
+		a.dirty = nil
+		close(a.stopWork)
+		a.dirtyMu.Unlock()
+		cancel()
+		<-a.workerDone
+		stopQueue()
+	})
+	go s.refreshWorker(a)
+
+	s.fanoutMu.Lock()
+	previous := s.attachment
+	s.attachment = a
+	s.fanoutMu.Unlock()
+	if previous != nil {
+		previous.stop()
 	}
-	return stop, nil
+	return a.stop, nil
 }
 
 func (s *GrantStore) publish(role string) {
 	s.fanoutMu.Lock()
-	send := s.send
-	nodeID := s.nodeID
+	a := s.attachment
 	s.fanoutMu.Unlock()
-	if send == nil {
+	if a == nil {
 		return
 	}
 	payload, _ := json.Marshal(accessInvalidateMsg{Role: role})
-	send(fanout.Wrap(nodeID, payload))
+	a.send(fanout.Wrap(a.nodeID, payload))
 }
 
-func (s *GrantStore) handleRemote(raw []byte) {
-	s.fanoutMu.Lock()
-	ownNode := s.nodeID
-	s.fanoutMu.Unlock()
-	_, body, ok := fanout.UnwrapForeign(ownNode, raw)
+func (a *grantFanout) handleRemote(raw []byte) {
+	_, body, ok := fanout.UnwrapForeign(a.nodeID, raw)
 	if !ok {
 		return
 	}
@@ -399,68 +403,72 @@ func (s *GrantStore) handleRemote(raw []byte) {
 	if err := json.Unmarshal(body, &msg); err != nil {
 		return
 	}
-	s.markDirty(msg.Role)
+	a.markDirty(msg.Role)
 }
 
-func (s *GrantStore) markDirty(role string) {
-	s.dirtyMu.Lock()
-	if s.dirty == nil {
-		s.dirtyMu.Unlock()
+func (a *grantFanout) markDirty(role string) {
+	a.dirtyMu.Lock()
+	if a.dirty == nil {
+		a.dirtyMu.Unlock()
 		return
 	}
-	s.dirty[role] = true
-	wake := s.wake
-	s.dirtyMu.Unlock()
+	a.dirty[role] = true
+	a.dirtyMu.Unlock()
 	select {
-	case wake <- struct{}{}:
+	case a.wake <- struct{}{}:
 	default:
 	}
 }
 
-func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}, reconcile time.Duration) {
-	defer s.workerWG.Done()
+func (s *GrantStore) refreshWorker(a *grantFanout) {
+	defer close(a.workerDone)
 	var tick <-chan time.Time
-	if reconcile > 0 {
-		t := time.NewTicker(reconcile)
+	if s.reconcileEvery > 0 {
+		t := time.NewTicker(s.reconcileEvery)
 		defer t.Stop()
 		tick = t.C
 	}
 	for {
 		select {
-		case <-stopWork:
+		case <-a.stopWork:
 			return
-		case <-wake:
+		case <-a.wake:
 		case <-tick:
-			s.markDirty("") // "" reloads every role
+			a.markDirty("") // "" reloads every role
 		}
-		if failed := s.drainDirty(); failed {
+		if failed := s.drainDirty(a); failed {
 			select {
-			case <-stopWork:
+			case <-a.stopWork:
 				return
 			case <-time.After(reloadTimeout):
-				s.markDirty("") // "" reloads everything still owed
+				a.markDirty("") // "" reloads everything still owed
 			}
 		}
 	}
 }
 
-func (s *GrantStore) drainDirty() (anyFailed bool) {
-	s.dirtyMu.Lock()
-	roles := slices.Sorted(maps.Keys(s.dirty))
-	clear(s.dirty)
-	s.dirtyMu.Unlock()
+func (s *GrantStore) drainDirty(a *grantFanout) (anyFailed bool) {
+	a.dirtyMu.Lock()
+	roles := slices.Sorted(maps.Keys(a.dirty))
+	clear(a.dirty)
+	a.dirtyMu.Unlock()
 	for _, role := range roles {
+		select {
+		case <-a.stopWork:
+			return false
+		default:
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
 		err := s.reloadRole(ctx, role)
 		cancel()
 		if err != nil {
 			slog.Warn("access: fanout role reload failed: will retry",
 				slog.String("role", role), slog.Any("err", err))
-			s.dirtyMu.Lock()
-			if s.dirty != nil {
-				s.dirty[role] = true
+			a.dirtyMu.Lock()
+			if a.dirty != nil {
+				a.dirty[role] = true
 			}
-			s.dirtyMu.Unlock()
+			a.dirtyMu.Unlock()
 			anyFailed = true
 		}
 	}

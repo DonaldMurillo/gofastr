@@ -7,17 +7,9 @@ docs:
   - internal/analyzers/README.md
 on_change:
   - A new lint here is run by a test over the live tree (a _RepoIsClean or _Repo test) and listed in internal/analyzers/README.md.
-twins:
-  - job: Parse the //gofastr:allow(<name>) <why> marker, live only as a comment's first text and void without a reason.
-    why: internal/analyzers/allow needs go/analysis, which core-ui/check must not import; the merge is a dependency-free parser both call.
-    sites:
-      - path: core-ui/check/allowmarker.go
-        note: reAllowMarker and allowedLines, for the JS and Go lints here.
-      - path: internal/analyzers/allow/allow.go
-        note: The marker grammar the vet analyzers read.
 invariants:
   - id: ui-go-subset
-    rule: LintFile flags in a .ui.go file every goroutine, channel send, receive and make(chan), type switch, close and recover call, and import outside allowedImports and the gofastr module.
+    rule: LintFile flags in a .ui.go file every goroutine, channel send, receive and make(chan), type switch, close and recover call, and import outside allowedImports, which holds eight standard-library packages plus core/render, core-ui/html, core-ui/component, core-ui/interactive and core-ui/style, not the whole gofastr module.
     enforced_by:
       - test: core-ui/check.TestLintGoroutine
       - test: core-ui/check.TestLintChannel
@@ -40,9 +32,8 @@ invariants:
       - test: core-ui/check.TestLintA11yAliasedImport
       - test: core-ui/check.TestLintA11ySkipsShadowedAlias
       - test: core-ui/check.TestLintA11ySkipsLocalFunctions
-      - test: core-ui/check.TestLintA11yStillFlagsQualifiedConfig
   - id: allow-marker-grammar
-    rule: A //gofastr:allow(name) marker counts only as a comment's first text with a reason that is more than separator punctuation, covering its own line when trailing and its line and the next when alone.
+    rule: A //gofastr:allow(name) marker, parsed by names.ParseMarker like the vet analyzers' marker, counts only as a comment's first text with a reason that is more than separator punctuation, covering its own line when trailing and its line and the next when alone.
     enforced_by:
       - test: core-ui/check.TestTrailingProseMarkerOwnLineOnly
       - test: core-ui/check.TestTrailingLayerMarkerOwnLineOnly

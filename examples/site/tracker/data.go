@@ -1,6 +1,6 @@
 package tracker
 
-// The in-memory model behind Acme Tracker: four projects, six people,
+// The in-memory model behind Acme Tracker: four projects,
 // twenty-five issues with real descriptions and per-issue activity.
 // No database, no auth — every screen computes from these tables, so
 // counts, charts, and feeds stay honest (they are derived, never
@@ -14,31 +14,6 @@ import (
 
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
-
-// Person is one teammate. The avatar derives initials from Name.
-type Person struct {
-	Name string
-}
-
-// people is the whole team.
-var people = []Person{
-	{Name: "Mina Fischer"},
-	{Name: "Otis Vance"},
-	{Name: "Priya Nandi"},
-	{Name: "Jonas Weber"},
-	{Name: "Alba Cruz"},
-	{Name: "Theo Ito"},
-}
-
-// personByName finds a teammate; unknown names render unassigned.
-func personByName(name string) (Person, bool) {
-	for _, p := range people {
-		if p.Name == name {
-			return p, true
-		}
-	}
-	return Person{}, false
-}
 
 // Project is one tracker project.
 type Project struct {

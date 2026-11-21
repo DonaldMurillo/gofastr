@@ -13,7 +13,7 @@ import (
 //   - output is non-empty
 //   - output is strictly smaller than input
 //   - the minifier is idempotent: Minify(Minify(x)) == Minify(x)
-//   - well-known anchor strings survive (sanity that we didn't truncate)
+//   - selected modules keep representative anchors (sanity against truncation)
 //
 // We deliberately do NOT compare raw punct counts against the input,
 // comments and string literals contain `[`, `(`, `{` characters that
@@ -28,13 +28,12 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 		t.Fatalf("repoRoot: %v", err)
 	}
 
-	type file struct {
-		path    string
-		anchors []string
+	anchors := map[string]string{
+		"envelope.js": "runtime.load_failed_status",
+		"rpc.js":      "data-cui-rpc-body",
+		"sse.js":      "gofastr:sse-status",
 	}
-	// The composed bundle is covered by core-ui/runtime's
-	// TestMinifiedBundle, which can compose it.
-	var files []file
+	var files []string
 	srcDir := filepath.Join(root, "core-ui/runtime/src")
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
@@ -44,16 +43,17 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 		if !strings.HasSuffix(e.Name(), ".js") {
 			continue
 		}
-		files = append(files, file{path: filepath.Join(srcDir, e.Name())})
+		files = append(files, e.Name())
 	}
 	if len(files) == 0 {
 		t.Fatalf("no .js modules under %s: the corpus would check nothing", srcDir)
 	}
 
-	for _, f := range files {
-		name := filepath.Base(f.path)
+	for _, name := range files {
+		anchor := anchors[name]
+		delete(anchors, name)
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile(f.path)
+			raw, err := os.ReadFile(filepath.Join(srcDir, name))
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
@@ -68,12 +68,13 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 			if out2 := Minify(out); out2 != out {
 				t.Errorf("%s: not idempotent (len1=%d len2=%d)", name, len(out), len(out2))
 			}
-			for _, a := range f.anchors {
-				if !strings.Contains(out, a) {
-					t.Errorf("%s: anchor %q missing from minified output", name, a)
-				}
+			if anchor != "" && !strings.Contains(out, anchor) {
+				t.Errorf("%s: anchor %q missing from minified output", name, anchor)
 			}
 		})
+	}
+	for name := range anchors {
+		t.Errorf("no corpus module %s for anchor check", name)
 	}
 }
 

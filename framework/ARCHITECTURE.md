@@ -72,16 +72,13 @@ authority. `migrate diff` was deleted not because it read the app spec,
 but because it *applied* it, reconciling the live database to the
 app spec. Reading is fine; applying-as-source-of-truth is not.
 
-### The IR is the hub
+### The in-memory app spec
 
-`generate` and `pack` both pivot on one primitive: **extract the
-declarable shape (entities, screens, nav, access, seed) from a
-compiled/live app → in-memory IR.** `generate` goes IR → files (forward);
-`pack` goes app → IR → YAML (backward). Build "app → IR" once and both
-land. Kiln already maintains an in-memory world IR; that extraction
-primitive is a reuse candidate, not net-new. (`migrate generate` is a
-separate concern, covered below, though it could *optionally* take its
-schema from that same IR one day; it is not load-bearing for this hub.)
+App generation loads YAML into an `appspec.AppSpec` and emits owned Go.
+Pack reads the Go AST, the app's `.env` and its endpoint settings to
+recover an `appspec.AppSpec`, then serializes it to YAML. Its fidelity
+check decodes that YAML and regenerates into memory for comparison
+with the original Go files.
 
 ### Schema migration is a separate action, not part of the app spec's authority
 
@@ -264,8 +261,6 @@ framework/
 │                    must not link every image decoder, so the dependency is
 │                    inverted through an interface and only apps that opt in
 │                    (framework.WithImagePipeline) pay for the codecs.
-├── internal/casing/ snake↔camel helpers (private to the framework
-│                    module, not part of the public API)
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── internal/jpegcost/ reads a JPEG's frame header for what image/jpeg
@@ -394,6 +389,10 @@ The root package `framework/` itself contains:
 
 ## Layering rules (top imports bottom, reverse is forbidden)
 
+The module-root `internal/casing` package is a stdlib-only leaf. The
+framework and the app generator use its snake↔camel helpers to share the
+default JSON wire-key conversion.
+
 ```
 L1  internal/casing, internal/exif,           (no internal deps; exif is the
     internal/jpegcost, internal/jsonexact
@@ -436,9 +435,7 @@ Today's intra-L3 edges: `slowquery → db`, `softdelete → db`, `outbox → eve
 `event → db` (EmitAsync masks the emitter's transaction with `db.WithoutTx`),
 `embed → db + migrate + tenant`, `imagefield → file + image`,
 `contracts → agentsinv`, `headless → agentsinv`, `localapp → owner` (the
-fallback extractor it installs), `contracts/analyzers → access` (the one
-Levenshtein, `access.EditDistance`, behind both the capability
-suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
+fallback extractor it installs), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
@@ -785,8 +782,9 @@ Why a registry instead of file globs:
 - `cmd/gofastr/internal/agentscmd` blank-imports the batteries it
   inventories, then walks `agentsinv.All()` to write `AGENTS.md` (see
   `framework/agentsinv/inventory.go`).
-- An empty `agents.md` panics at init: the file is missing or the
-  `//go:embed` directive is stale.
+- An empty `agents.md` is filed under `MissingMarkdown`; `gofastr agents`
+  prints it as a nonfatal warning. A file the `//go:embed` directive
+  names but that is missing is a Go build error before init ever runs.
 
 Per-battery `agents.md` content lives next to the code it documents.
 Treat it as a short "use this when / shape / don't reinvent" reference

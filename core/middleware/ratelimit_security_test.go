@@ -185,7 +185,7 @@ func TestRateLimit_HeaderSplitKeyCollision(t *testing.T) {
 	got := allowed.Load()
 	// Both use key "1.2.3.4", first-hop extraction, so only 2 should pass
 	if got != 2 {
-		t.Logf("SECURITY: [ratelimit] XFF comma-split gave %d allowed (want 2). Attack: multi-value XFF header may create unexpected buckets.", got)
+		t.Errorf("SECURITY: [ratelimit] XFF comma-split gave %d allowed (want 2). Attack: multi-value XFF header may create unexpected buckets.", got)
 	}
 }
 

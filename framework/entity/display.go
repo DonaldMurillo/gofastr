@@ -105,13 +105,19 @@ type FieldDisplay struct {
 	Input string `json:"input,omitempty"`
 }
 
+// decodeStrictJSON decodes data into dst with unknown fields refused, so a
+// config's UnmarshalJSON keeps its local aliasing and assignment boundary.
+func decodeStrictJSON(data []byte, dst any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(dst)
+}
+
 // UnmarshalJSON decodes strictly: an unknown key is an error.
 func (d *DisplayConfig) UnmarshalJSON(data []byte) error {
 	type plain DisplayConfig
 	var p plain
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := decodeStrictJSON(data, &p); err != nil {
 		return err
 	}
 	*d = DisplayConfig(p)

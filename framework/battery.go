@@ -36,7 +36,6 @@ type BatteryLifecycle interface {
 type batteryEntry struct {
 	battery     Battery
 	deps        []string
-	config      any
 	initOrder   int
 	initialized bool
 }

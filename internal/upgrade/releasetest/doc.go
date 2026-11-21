@@ -4,8 +4,8 @@
 // its Go-API matchers resolve against a stub kit at the real import
 // paths. This package covers v0.86.0 onward, one file (or a few) per
 // release, and a new release's note tests go here. The releases before
-// it are frozen eras in subpackages: old (v0.3.0–v0.55.0) and mid
-// (v0.56.0–v0.85.0).
+// it live in subpackages: old (v0.3.0–v0.55.0) and mid (v0.56.0–v0.85.0).
+// The v0.96.0 llm.md index test also lives in mid, reusing its v0.78.0 CRUD fixture.
 //
 // Why these tests are not in internal/upgrade: each scans fixture apps
 // with the go tool, while the registry package's own tests are parser unit

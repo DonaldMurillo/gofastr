@@ -13,7 +13,7 @@ import (
 // desktop_types_example_test.go (it compiles the real example).
 
 func TestDesktopHelpIsCommandSpecific(t *testing.T) {
-	out := clitest.CovT_capStdout(t, func() { dispatch([]string{"desktop", "--help"}) })
+	out := clitest.CovT_capOutput(t, func() { dispatch([]string{"desktop", "--help"}) })
 	if want := "Usage: gofastr desktop"; !strings.Contains(out, want) {
 		t.Fatalf("desktop --help missing %q:\n%s", want, out)
 	}
@@ -29,11 +29,11 @@ func TestDesktopHelpIsCommandSpecific(t *testing.T) {
 
 func TestDesktopNoVerbPrintsUsageAndExits(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { dispatch([]string{"desktop"}) })
 	})
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
 	}
 	if !strings.Contains(out, "Usage: gofastr desktop") {
 		t.Fatalf("no usage printed:\n%s", out)
@@ -42,7 +42,7 @@ func TestDesktopNoVerbPrintsUsageAndExits(t *testing.T) {
 
 func TestDispatchPassesDesktopBuildVersionToBuilder(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			dispatch([]string{"desktop", "build", "--id", "no-dot", "--version", "1.2.3"})
 		})

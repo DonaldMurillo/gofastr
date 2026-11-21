@@ -79,6 +79,13 @@ drive the one stored state, and a toggle takes effect before the call
 returns. Enabling after `App.Start` spawns the child. Disable, grant
 revoke, and upgrade (artifact change) are all live and propagate across
 replicas through the SQL-backed `ProcessModuleStore`.
+
+`app.ProcessModules().Info(name)` and `app.ProcessModules().List()` report
+the store's `DesiredGeneration` and the last generation reconciled by the
+local replica, `ObservedGeneration`. `List()` reads desired rows together.
+If the desired row is missing or unreadable, `DesiredGeneration` is zero
+and the local snapshot, including lease health, remains available.
+
 `RevokeGrants(ctx, name, grants)` takes the named grants out of the
 module's effective set, keeps the rest and bumps the generation; it
 refuses an empty `grants` or a revoke pattern covering no held grant.
@@ -219,7 +226,8 @@ module with no probe-passing backend does not run**; there is no silent
 downgrade to the trusted runner.
 
 The backends are per-OS wrapper commands (Linux: `bwrap` + `prlimit`;
-macOS: `sandbox-exec`; Windows: AppContainer + Job Object). **Linux is the
+macOS: `sandbox-exec`; Windows: none in v1 — the backend is a stub that
+refuses every untrusted spawn, fail-closed). **Linux is the
 platform where an untrusted module runs**: the bwrap backend passes every
 probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
 namespaces. Some probe properties are **structurally unreachable on a
@@ -360,7 +368,7 @@ ALTER ROLE module_billing_role SET search_path = module_billing;
 REVOKE ALL ON SCHEMA public FROM module_billing_role;
 ```
 
-Three load-bearing points:
+Four load-bearing points:
 
 1. **`search_path` is a convenience, NOT the fence.** It is session-mutable;
    the `REVOKE` on `public` is the real boundary: the role holds no
@@ -382,13 +390,12 @@ Three load-bearing points:
    would bound each to the other's objects.
 
 The short-lived **migration coordinator** (`App.NewModuleMigrationCoordinator`)
-loads approved SQL from the digest-verified artifact, validates it against
-the group rules (every migration's group == the descriptor's group; default-
-group migrations are rejected; duplicate `(group, version)` and digest
-mismatches are rejected), runs a non-authoritative **lint** (flags anything
-beyond plain `CREATE TABLE` / `ALTER TABLE ADD COLUMN` / `CREATE INDEX` for
-review; the role is the real boundary, there is no SQL parse-allowlist),
-then provisions the schema+role, runs `Up` under the advisory lock
+loads approved SQL from the digest-verified artifact. Its plan requires a
+non-empty descriptor migration group, non-empty migration names, unique
+versions within the group, and matching digests where a digest is supplied.
+The **lint** flags SQL beyond plain `CREATE TABLE`, `ALTER TABLE ADD COLUMN`,
+and `CREATE INDEX` for review. The role enforces the boundary. The coordinator
+then provisions the schema and role, runs `Up` under the advisory lock
 authenticated as the role, and stamps `MigrationsAppliedAt` so the
 supervisor lets the module reach Ready.
 
@@ -624,7 +631,7 @@ if err := peer.FatalError(); err != nil {
 }
 ```
 
-Three contracts the child MUST honor (the host enforces them; violation is
+Four contracts the child MUST honor (the host enforces them; violation is
 terminal `Failed` or a per-call 503):
 
 - **The descriptor is authoritative.** Routes, tools, requested grants, and

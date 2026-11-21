@@ -23,7 +23,6 @@ var (
 	symAllocClassPair    uintptr // objc_allocateClassPair
 	symClassAddMethod    uintptr // class_addMethod
 	symRegisterClassPair uintptr // objc_registerClassPair
-	symObjectGetClass    uintptr // object_getClass
 	symConcreteGlobalBlk uintptr // _NSConcreteGlobalBlock
 	symDispatchMainQ     uintptr // _dispatch_main_q (the queue object itself)
 	symDispatchAsyncF    uintptr // dispatch_async_f
@@ -70,7 +69,6 @@ var runtimeSymbols = map[string]*uintptr{
 	"objc_allocateClassPair": &symAllocClassPair,
 	"class_addMethod":        &symClassAddMethod,
 	"objc_registerClassPair": &symRegisterClassPair,
-	"object_getClass":        &symObjectGetClass,
 	"_NSConcreteGlobalBlock": &symConcreteGlobalBlk,
 	"_dispatch_main_q":       &symDispatchMainQ,
 	"dispatch_async_f":       &symDispatchAsyncF,
@@ -316,14 +314,6 @@ func RegisterClass(name string, super ID, methods []Method) ID {
 	}
 	ffi.Call(symRegisterClassPair, []uintptr{cls}, nil)
 	return ID(cls)
-}
-
-// ObjectGetClass returns the class of an instance (object_getClass),
-// for instanceMethodSignatureForSelector: in Invoke.
-func ObjectGetClass(obj ID) ID {
-	ensureRuntime()
-	r1, _, _ := ffi.Call(symObjectGetClass, []uintptr{uintptr(obj)}, nil)
-	return ID(r1)
 }
 
 // escapeSink is written by cBytes for one reason: to force the buffer

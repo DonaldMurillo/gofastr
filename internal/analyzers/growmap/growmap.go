@@ -56,9 +56,12 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -70,7 +73,7 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (any, error) {
 	var files []*ast.File
 	for _, f := range pass.Files {
-		if !strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if !pathflow.IsTestFile(pass, f) {
 			files = append(files, f)
 		}
 	}
@@ -216,24 +219,13 @@ func isIdentityType(t types.Type) bool {
 	if t == nil {
 		return false
 	}
-	if isNamed(t, "context", "Context") {
+	if astx.IsNamed(types.Unalias(t), "context", "Context") {
 		return true
 	}
-	if p, ok := t.(*types.Pointer); ok && isNamed(p.Elem(), "net/http", "Request") {
+	if p, ok := t.(*types.Pointer); ok && astx.IsNamed(types.Unalias(p.Elem()), "net/http", "Request") {
 		return true
 	}
 	return false
-}
-
-func isNamed(t types.Type, pkg, name string) bool {
-	n, ok := t.(*types.Named)
-	if !ok {
-		if a, ok := t.(*types.Alias); ok {
-			return isNamed(types.Unalias(a), pkg, name)
-		}
-		return false
-	}
-	return n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == pkg && n.Obj().Name() == name
 }
 
 // checkBody walks one function body; nested literals inherit the
@@ -445,7 +437,7 @@ func timeDriven(pass *analysis.Pass, body *ast.BlockStmt) bool {
 // unsubscribe that stamps time.Now() — is not a sweep: the attacker
 // never sends it.
 func markSweeps(pass *analysis.Pass, body *ast.BlockStmt, swept map[*types.Var]bool) {
-	parent := parentsOf(body)
+	parent := dominance.Parents(body)
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
@@ -472,32 +464,6 @@ func markSweeps(pass *analysis.Pass, body *ast.BlockStmt, swept map[*types.Var]b
 		return true
 	})
 }
-
-// parentsOf maps every node in body to its parent.
-func parentsOf(body *ast.BlockStmt) map[ast.Node]ast.Node {
-	out := map[ast.Node]ast.Node{}
-	var stack []ast.Node
-	var v ast.Visitor
-	v = visitorFunc(func(n ast.Node) ast.Visitor {
-		if n == nil {
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-			return nil
-		}
-		if len(stack) > 0 {
-			out[n] = stack[len(stack)-1]
-		}
-		stack = append(stack, n)
-		return v
-	})
-	ast.Walk(v, body)
-	return out
-}
-
-type visitorFunc func(ast.Node) ast.Visitor
-
-func (f visitorFunc) Visit(n ast.Node) ast.Visitor { return f(n) }
 
 // timeDrivenAt: walking node's ancestors up to the body root reaches a
 // guard or driver that ties the delete to the clock.

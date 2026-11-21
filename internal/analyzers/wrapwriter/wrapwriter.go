@@ -100,9 +100,9 @@
 //     next writer's ReadFrom.
 //   - (c) an observing WriteHeader that sets a bool to true before the
 //     top-level statement that forwards WriteHeader, when that field is
-//     read inside a deferred function literal that calls recover() in
-//     the same package. Reported at the assignment. The fix is to latch
-//     after the forwarded call returns.
+//     read inside a deferred function literal, function or method that
+//     calls recover() in the same package. Reported at the assignment.
+//     The fix is to latch after the forwarded call returns.
 //
 // Silent postures, deliberately (arm three):
 //   - Hijack: it sends no status through the writer (recoveryWriter
@@ -167,6 +167,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"iter"
 
 	"golang.org/x/tools/go/analysis"
 
@@ -188,12 +189,18 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	dispatched := dispatchedTypes(pass)
-	checkLatch(pass, rw, dispatched, indexMethods(pass))
+	methods := indexMethods(pass)
+	recoverReads := recoverReadFields(pass)
+	reported := map[ast.Node]bool{}
+	for name, named := range dispatchedWrappers(pass, rw, dispatched) {
+		mset := types.NewMethodSet(types.NewPointer(named))
+		checkLatch(pass, name.Name, mset, methods, recoverReads, reported)
+		checkUnwrap(pass, name, named, mset)
+	}
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		checkTypes(pass, f, rw, dispatched)
 		for _, fn := range astx.AllFuncs(f) {
 			checkBody(pass, astx.BodyOf(fn), rw)
 		}
@@ -230,44 +237,43 @@ func responseWriterType(pass *analysis.Pass) *types.Interface {
 
 // ---- arm one: wrappers with no Unwrap ---------------------------------
 
-func checkTypes(pass *analysis.Pass, f *ast.File, rw *types.Interface, dispatched map[*types.Named]bool) {
-	ast.Inspect(f, func(n ast.Node) bool {
-		ts, ok := n.(*ast.TypeSpec)
-		if !ok {
-			return true
+func dispatchedWrappers(pass *analysis.Pass, rw *types.Interface, dispatched map[*types.Named]bool) iter.Seq2[*ast.Ident, *types.Named] {
+	return func(yield func(*ast.Ident, *types.Named) bool) {
+		for _, f := range pass.Files {
+			if pathflow.IsTestFile(pass, f) {
+				continue
+			}
+			for node := range ast.Preorder(f) {
+				ts, ok := node.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				tn, ok := pass.TypesInfo.Defs[ts.Name].(*types.TypeName)
+				if !ok || tn.IsAlias() {
+					continue
+				}
+				named, ok := tn.Type().(*types.Named)
+				if !ok || !dispatched[named] {
+					continue
+				}
+				st, ok := named.Underlying().(*types.Struct)
+				if !ok || !wrapsWriter(st, rw) {
+					continue
+				}
+				if types.Implements(types.NewPointer(named), rw) && !yield(ts.Name, named) {
+					return
+				}
+			}
 		}
-		tn, ok := pass.TypesInfo.Defs[ts.Name].(*types.TypeName)
-		if !ok || tn.IsAlias() {
-			return true
-		}
-		named, ok := tn.Type().(*types.Named)
-		if !ok {
-			return true
-		}
-		st, ok := named.Underlying().(*types.Struct)
-		if !ok || !wrapsWriter(st, rw) {
-			return true
-		}
-		var mset *types.MethodSet
-		switch {
-		case types.Implements(named, rw):
-			mset = types.NewMethodSet(named)
-		case types.Implements(types.NewPointer(named), rw):
-			mset = types.NewMethodSet(types.NewPointer(named))
-		default:
-			return true
-		}
-		if !declaresIntercept(named) || !dispatched[named] {
-			return true
-		}
-		if hasUnwrap(mset) || hasUnwrap(types.NewMethodSet(types.NewPointer(named))) {
-			return true
-		}
-		pass.Reportf(ts.Name.Pos(),
+	}
+}
+
+func checkUnwrap(pass *analysis.Pass, name *ast.Ident, named *types.Named, mset *types.MethodSet) {
+	if declaresIntercept(named) && !hasUnwrap(mset) {
+		pass.Reportf(name.Pos(),
 			"wrapwriter: %s wraps http.ResponseWriter and intercepts Write/WriteHeader with no Unwrap() http.ResponseWriter; http.ResponseController cannot reach Flush, Hijack or SetWriteDeadline through it, so SSE eviction, streaming and websocket upgrades behind it fail (add Unwrap, and decide streaming explicitly if it buffers)",
-			ts.Name.Name)
-		return true
-	})
+			name.Name)
+	}
 }
 
 // dispatchedTypes collects the named types that reach a dispatch's
@@ -280,16 +286,7 @@ func checkTypes(pass *analysis.Pass, f *ast.File, rw *types.Interface, dispatche
 // r)`).
 func dispatchedTypes(pass *analysis.Pass) map[*types.Named]bool {
 	assigned := map[types.Object][]types.Type{}
-	decls := map[*types.Func]*ast.FuncDecl{}
-	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
-				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
-					decls[fn] = fd
-				}
-			}
-		}
-	}
+	decls := astx.FuncDecls(pass)
 	var args []ast.Expr
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {

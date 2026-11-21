@@ -110,20 +110,73 @@ func TestParseVerifyArgsAcceptsDirectoryAsRoot(t *testing.T) {
 // intercepted, returning the output and the requested exit code.
 func captureVerify(t *testing.T, args []string) (string, int) {
 	t.Helper()
+	return captureVerifyStream(t, args, &os.Stdout)
+}
+
+// captureVerifyBoth is captureVerify with stderr joined after stdout in
+// one run: the report and help go to stdout, the ✗ verdict line to
+// stderr (cli.Fail), and a failing run asserts either.
+func captureVerifyBoth(t *testing.T, args []string) (string, int) {
+	t.Helper()
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
+	origExit, origStdout, origStderr := cli.OsExit, os.Stdout, os.Stderr
+	code := 0
+	cli.OsExit = func(c int) { code = c }
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout, os.Stderr = outW, errW
+	defer func() {
+		cli.OsExit, os.Stdout, os.Stderr = origExit, origStdout, origStderr
+	}()
+	read := func(r *os.File) chan string {
+		done := make(chan string, 1)
+		go func() {
+			var b strings.Builder
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := r.Read(buf)
+				b.Write(buf[:n])
+				if readErr != nil {
+					break
+				}
+			}
+			done <- b.String()
+		}()
+		return done
+	}
+	outDone, errDone := read(outR), read(errR)
+	RunVerify(args)
+	outW.Close()
+	errW.Close()
+	out, errOut := <-outDone, <-errDone
+	outR.Close()
+	errR.Close()
+	return out + errOut, code
+}
+
+func captureVerifyStream(t *testing.T, args []string, stream **os.File) (string, int) {
+	t.Helper()
 	// cmd/affected sets it for the sweep, and verify would read the repo's
 	// semantic-coverage manifest instead of the fixture's.
 	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
 	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
-	origExit, origStdout := cli.OsExit, os.Stdout
+	origExit, origStream := cli.OsExit, *stream
 	code := 0
 	cli.OsExit = func(c int) { code = c }
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = w
+	*stream = w
 	defer func() {
-		cli.OsExit, os.Stdout = origExit, origStdout
+		cli.OsExit, *stream = origExit, origStream
 	}()
 
 	done := make(chan string, 1)
@@ -535,7 +588,7 @@ func TestVerifyJSONFixFailureCarriesPartialWrites(t *testing.T) {
 func TestVerifySarifModeStatesTheVerdictOnFailure(t *testing.T) {
 	dir := unguardedModule(t)
 	sarif := filepath.Join(dir, "out.sarif")
-	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--strict", "--sarif", sarif})
+	out, code := captureVerifyBoth(t, []string{"--root", dir, "--no-vet", "--strict", "--sarif", sarif})
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1\n%s", code, out)
 	}
@@ -611,7 +664,7 @@ func wireB(r *router.Router) {
 	// Discovery reads the linked source; Apply refuses it after a.go.
 	contractstest.ObstructApply(t, filepath.Join(dir, "b.go"))
 
-	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--fix"})
+	out, code := captureVerifyBoth(t, []string{"--root", dir, "--no-vet", "--fix"})
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, out)
 	}
@@ -684,7 +737,7 @@ func TestVerifyRuleFilterNarrowsReportAndExitCode(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyFixture(t, dir)
 
-	all, allCode := captureVerify(t, []string{"--root", dir, "--no-vet"})
+	all, allCode := captureVerifyBoth(t, []string{"--root", dir, "--no-vet"})
 	if !strings.Contains(all, "GOFASTR1002") || !strings.Contains(all, "GOFASTR1005") {
 		t.Fatalf("fixture does not produce both rules:\n%s", all)
 	}
@@ -692,7 +745,7 @@ func TestVerifyRuleFilterNarrowsReportAndExitCode(t *testing.T) {
 		t.Fatalf("unfiltered run exited %d, want 1", allCode)
 	}
 
-	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR1005"})
+	out, code := captureVerifyBoth(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR1005"})
 	if strings.Contains(out, "GOFASTR1002") {
 		t.Errorf("--rule leaked another rule's finding:\n%s", out)
 	}
@@ -707,7 +760,7 @@ func TestVerifyRuleFilterNarrowsReportAndExitCode(t *testing.T) {
 	}
 
 	// Narrowing to a rule this tree does not violate is a genuine pass.
-	clean, cleanCode := captureVerify(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR1404"})
+	clean, cleanCode := captureVerifyBoth(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR1404"})
 	if cleanCode != 0 {
 		t.Errorf("narrowing to a clean rule exited %d, want 0:\n%s", cleanCode, clean)
 	}
@@ -716,7 +769,7 @@ func TestVerifyRuleFilterNarrowsReportAndExitCode(t *testing.T) {
 func TestVerifyRuleFilterRejectsAnUnknownRule(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyFixture(t, dir)
-	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR9999"})
+	out, code := captureVerifyBoth(t, []string{"--root", dir, "--no-vet", "--rule", "GOFASTR9999"})
 	if code != 2 {
 		t.Errorf("unknown rule exited %d, want 2:\n%s", code, out)
 	}

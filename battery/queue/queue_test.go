@@ -707,9 +707,6 @@ func TestRedisNackMovesToDLQ(t *testing.T) {
 	}
 
 	var dlqJob Job
-	if err := json.Unmarshal([]byte(dlqJob.ID), &dlqJob); err != nil {
-		// Unmarshal from the actual string
-	}
 	if err := json.Unmarshal([]byte(dlq[0]), &dlqJob); err != nil {
 		t.Fatalf("Unmarshal DLQ job: %v", err)
 	}

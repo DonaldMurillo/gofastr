@@ -20,6 +20,14 @@ func TestGenerationCellUsesLocaleDigits(t *testing.T) {
 	}
 }
 
+func TestGenerationCellShowsUnknownDesiredGeneration(t *testing.T) {
+	ar := i18n.WithContext(context.Background(), i18n.Locale{Tag: "ar-EG"})
+	info := framework.ProcessModuleInfo{ObservedGeneration: 3}
+	if got := string(moduleGenerationCell(ar, info)); got != "— / ٣" {
+		t.Errorf("ar-EG generation = %q, want — / ٣ as plain text", got)
+	}
+}
+
 // The attention panel skipped an empty view only when its count read
 // "0", so under ar-EG (٠) every empty watch drew an empty preview
 // instead of the all-clear line (2026-10-27 A35).

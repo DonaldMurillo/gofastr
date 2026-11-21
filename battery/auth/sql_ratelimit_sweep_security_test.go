@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"strings"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 	"testing"
 	"time"
 
@@ -24,8 +24,8 @@ func TestSQLRateLimitSweepClearsAttemptsUnderExpiredBlock(t *testing.T) {
 }
 
 func TestSQLRateLimitSweepClearsAttemptsUnderExpiredBlockPostgres(t *testing.T) {
-	dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN"))
-	if dsn == "" {
+	dsn, _, err := pgtest.ResolveEnv()
+	if err != nil {
 		t.Skip("TEST_POSTGRES_DSN not set")
 	}
 	db, err := sql.Open("postgres", dsn)
@@ -93,4 +93,52 @@ func checkSweepClearsCoveredAttempts(t *testing.T, s *SQLRateLimitStore, db *sql
 	if left != 1 {
 		t.Errorf("sweep left %d attempts for the other key, want 1 (only the post-expiry attempt)", left)
 	}
+}
+
+func TestRateLimitScopeCaseParity(t *testing.T) {
+	check := func(t *testing.T, db *sql.DB) {
+		ctx := context.Background()
+		const table = "auth_rate_limits"
+		store := NewSQLRateLimitStore(db, table)
+		if err := store.EnsureSchema(ctx); err != nil {
+			t.Fatal(err)
+		}
+		scope := "login_é%|"
+		keys := []string{
+			ratelimit.NamespaceScope(scope) + "|covered",
+			ratelimit.NamespaceScope("Login_é%|") + "|covered",
+		}
+		now := time.Now()
+		for _, key := range keys {
+			for _, at := range []time.Time{now.Add(-time.Hour), now.Add(-20 * time.Second), now.Add(-time.Second)} {
+				if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ($1, $2)", key, at.UnixMilli()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := db.Exec("INSERT INTO auth_rate_limits (rl_key, blocked_until_ms) VALUES ($1, $2)", key, now.Add(-10*time.Second).UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg := RateLimiterConfig{Scope: scope, MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Minute}
+		if ok, _, err := store.Allow(ctx, ratelimit.NamespaceScope(scope)+"|sweep", cfg); !ok || err != nil {
+			t.Fatalf("sweeping Allow = %v, %v", ok, err)
+		}
+		for i, key := range keys {
+			var attempts, blocks int
+			if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits_attempts WHERE rl_key = $1", key).Scan(&attempts); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits WHERE rl_key = $1", key).Scan(&blocks); err != nil {
+				t.Fatal(err)
+			}
+			if want := 1 + 2*i; attempts != want || blocks != i {
+				t.Errorf("%q kept %d attempts and %d blocks; want %d and %d", key, attempts, blocks, want, i)
+			}
+		}
+	}
+	t.Run("sqlite", func(t *testing.T) {
+		_, db := newRLStore(t)
+		check(t, db)
+	})
+	t.Run("postgres", func(t *testing.T) { check(t, pgtest.DB(t)) })
 }

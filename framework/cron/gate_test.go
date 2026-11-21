@@ -26,6 +26,7 @@ func TestSetGateSkipsDisabledJob(t *testing.T) {
 	})
 
 	s.RunOnce(context.Background(), time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	s.Stop()
 
 	if ran {
 		t.Fatal("gated job ran despite gate returning false")

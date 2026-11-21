@@ -123,10 +123,8 @@ type Runner struct {
 	// wizard state, protected by mu
 	mu          sync.Mutex
 	currentStep int
-	// stepInFlight is set while a step runs OUTSIDE the mutex (see
-	// runStepSerialized): it preserves exactly-once step execution
-	// across the lock release.
-	stepInFlight bool
+	// stepInFlight is closed when the current setup claim is released.
+	stepInFlight chan struct{}
 
 	// token is the one-time URL token; zeroed after the first
 	// successful exchange so it can't be replayed from access logs.
@@ -208,8 +206,10 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 // same reason it is there: a setup step that did not run is
 // recoverable, one that ran twice is not.
 func (r *Runner) RunSteps(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	if err := r.claimSteps(ctx); err != nil {
+		return err
+	}
+	defer r.releaseStepClaim()
 
 	if r.cfg.Complete != nil {
 		done, err := r.cfg.Complete(ctx)
@@ -233,6 +233,33 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runner) claimSteps(ctx context.Context) error {
+	r.mu.Lock()
+	for r.stepInFlight != nil {
+		inFlight := r.stepInFlight
+		r.mu.Unlock()
+		select {
+		case <-inFlight:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		r.mu.Lock()
+	}
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.stepInFlight = make(chan struct{})
+	return nil
+}
+
+func (r *Runner) releaseStepClaim() {
+	r.mu.Lock()
+	close(r.stepInFlight)
+	r.stepInFlight = nil
+	r.mu.Unlock()
+}
+
 // SetupURL returns the operator-facing setup URL for the startup banner.
 // scheme is the one the app serves ("https" under TLS), so the token
 // never rides a link that sends it in the clear.
@@ -241,10 +268,13 @@ func (r *Runner) SetupURL(scheme, addr string) string {
 	if host == "" {
 		host = addr
 	}
-	if !r.tokenEnabled || r.token == "" {
+	r.mu.Lock()
+	token := r.token
+	r.mu.Unlock()
+	if !r.tokenEnabled || token == "" {
 		return scheme + "://" + host + "/setup"
 	}
-	return scheme + "://" + host + "/setup?token=" + r.token
+	return scheme + "://" + host + "/setup?token=" + token
 }
 
 // ─── env resolution helpers ─────────────────────────────────────────

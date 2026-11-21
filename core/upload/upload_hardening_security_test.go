@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // TestSanitize_StripsControlBytes verifies CR, LF, TAB, and other
@@ -56,7 +57,7 @@ func TestSanitize_NotHiddenAfterSanitize(t *testing.T) {
 func TestLocalStorage_PartialWriteCleanup(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
+	s := teststorage.New(t, dir)
 
 	// Reader that errors after a chunk to force a torn write.
 	r := io.MultiReader(
@@ -82,7 +83,7 @@ func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
 func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
+	s := teststorage.New(t, dir)
 
 	_, err := s.Get(context.Background(), "does/not/exist.bin")
 	if err == nil {
@@ -104,7 +105,7 @@ func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 func TestLocalStorage_DeleteMissingIsNotExist(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
+	s := teststorage.New(t, dir)
 	ctx := context.Background()
 	if err := s.Save(ctx, "a/b.bin", strings.NewReader("x")); err != nil {
 		t.Fatal(err)
@@ -137,7 +138,7 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	store := newTestLocalStorage(t, base)
+	store := teststorage.New(t, base)
 	ctx := context.Background()
 
 	sub := filepath.Join(base, "sub")
@@ -177,7 +178,7 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 func saveAndStatPerm(t *testing.T, key, rel string) os.FileMode {
 	t.Helper()
 	dir := t.TempDir()
-	s := newTestLocalStorage(t, dir)
+	s := teststorage.New(t, dir)
 
 	if err := s.Save(context.Background(), key, strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)

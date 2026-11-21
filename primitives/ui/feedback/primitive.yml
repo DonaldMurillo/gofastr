@@ -138,11 +138,13 @@ invariants:
       - test: framework/ui.TestTooltipsGetDistinctIDs
       - test: framework/ui.TestTooltipsWithoutAScopeGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
-    rule: The aria-describedby splice goes into the trigger's first open tag past leading whitespace and comments, before a self-closing slash, ignores a > inside quotes, and is skipped only when that tag already carries the attribute.
+    rule: Tooltip uses registry.InjectAttribute to splice aria-describedby into the trigger's first open tag, past leading comments and before a self-closing slash, leaving text-only triggers and an existing root attribute intact and ignoring tag delimiters and attribute-like text inside quotes.
     enforced_by:
       - test: framework/ui.TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy
       - test: framework/ui.TestTooltipSplicesPastAGtInsideAQuotedValue
       - test: framework/ui.TestTooltipIdempotentWhenRootCarriesDescribedBy
+      - test: framework/ui.TestTooltipWiresTriggerWithDescribedByInTitle
+      - test: framework/ui.TestTooltipKeepsTextOnlyTrigger
       - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
       - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
 decisions:

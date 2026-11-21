@@ -15,8 +15,8 @@ import (
 
 const maxDepth = 512
 
-// Canonicalize returns the RFC 8785 canonical form of any value encoding/json can marshal.
-// Invalid UTF-8 in strings becomes U+FFFD; NaN and ±Infinity return an error.
+// Canonicalize marshals v with encoding/json and passes the result to [CanonicalizeJSON].
+// Encoding replaces invalid UTF-8 in strings with U+FFFD and rejects NaN and ±Infinity.
 func Canonicalize(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -476,23 +476,6 @@ func abs(v int) int {
 		return -v
 	}
 	return v
-}
-
-func sortKeysByUTF16(keys []string) {
-	type keyAndUnits struct {
-		key string
-		u16 []uint16
-	}
-	pairs := make([]keyAndUnits, len(keys))
-	for i, k := range keys {
-		pairs[i] = keyAndUnits{key: k, u16: utf16.Encode([]rune(k))}
-	}
-	sort.SliceStable(pairs, func(i, j int) bool {
-		return utf16Less(pairs[i].u16, pairs[j].u16)
-	})
-	for i := range pairs {
-		keys[i] = pairs[i].key
-	}
 }
 
 func utf16Less(a, b []uint16) bool {

@@ -269,12 +269,11 @@ each key must be present in the chunk's metadata with a value equal to the
 filter's, compared as JSON. `5` equals `5.0` (a Go `int` stored, a JSON number
 queried), `[]` matches only an empty array (never "any array"), and `null`
 matches a stored null, not a missing key. Numbers compare exactly, past
-float64 precision too: tenant `2^53+1` never matches a filter on `2^53`. On
-`PgVectorStore` the hybrid keyword leg checks the filter in SQL, as the vector
-leg does, rather than on metadata decoded to float64. The HTTP routes keep
-that precision: `/index` and `/query` decode JSON numbers exactly, so a
-document indexed over HTTP with tenant `2^53+1` matches only that tenant. Hit
-metadata `PgVectorStore` returns still decodes numbers as float64.
+float64 precision too. Tenant `2^53+1` never matches a filter on `2^53`.
+`PgVectorStore` checks the filter in SQL for both the keyword and vector
+legs. The HTTP routes `/index` and `/query` preserve large integers when
+decoding JSON. In the Go API, `PgVectorStore` returns integers of magnitude
+`2^53` or greater in hit metadata as `json.Number`.
 
 A document whose embedding is the zero vector (text with no tokens) scores 0
 on every store, and both stores rank it at score 0: above a negative match,
@@ -291,8 +290,8 @@ duplicates do not participate. Metadata validation follows encoded JSON,
 including custom encoders, every nested string value and key, and duplicate
 object members. Omitted fields do not participate. Ordinary Go strings with
 invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
-PgVectorStore also binds it raw to a text column, so that string must itself
-be valid UTF-8 without NUL bytes. An escape for half a surrogate pair
+PgVectorStore also binds it raw to a text column, so it must be a Go string
+that is itself valid UTF-8 without NUL bytes. An escape for half a surrogate pair
 (`"\ud800"` in a `json.RawMessage`) is refused too: Go would decode it to
 U+FFFD, but Postgres's jsonb input rejects it. A metadata number outside
 jsonb's numeric range (more than 131072 digits before the decimal point or

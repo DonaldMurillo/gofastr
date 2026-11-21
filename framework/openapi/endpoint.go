@@ -8,6 +8,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
+// EntityEndpointMethod returns a custom endpoint's trimmed, uppercase HTTP method.
+func EntityEndpointMethod(method string) string {
+	return strings.ToUpper(strings.TrimSpace(method))
+}
+
 // EntityEndpointPath builds the absolute path of an entity's custom
 // Endpoint: a relative path joins the entity's table path, ":id" becomes
 // "{id}" and dot segments are dropped.

@@ -124,7 +124,7 @@ type winShell struct {
 	onSettings  func(context.Context)
 	onClosed    func(string)
 	allowNav    func(string) bool
-	onFrame     func(string, desktop.Frame)
+	onFrame     func(desktop.Window, desktop.Frame)
 	onFocus     func(string)
 	onBlur      func(string)
 	onDeepLink  func(string)
@@ -214,7 +214,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.onSettings = cfg.OnSettings
 	s.onClosed = cfg.OnWindowClosed
 	s.allowNav = cfg.AllowNavigation
-	s.onFrame = cfg.OnWindowFrame
+	s.onFrame = cfg.WindowFrameReporter()
 	s.onFocus = cfg.OnWindowFocus
 	s.onBlur = cfg.OnWindowBlur
 	s.onDeepLink = cfg.OnDeepLink
@@ -270,9 +270,11 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 		win32.FrameChanged(main.hwnd)
 	}
 	if cfg.Tray != nil {
+		s.mu.Lock()
 		if s.trayTitle == "" {
 			s.trayTitle = cfg.Tray.Title
 		}
+		s.mu.Unlock()
 		s.installTray(cfg.Tray)
 	}
 	showNativeWindow(main)
@@ -545,7 +547,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		return 0
 	}
 	if msg == wmDPIChanged && lparam != 0 {
-		rect := (*win32Rect)(unsafe.Pointer(lparam))
+		rect := (*win32Rect)(win32.NativePtr(lparam))
 		_ = win32.SetWindowPos(hwnd, rect.Left, rect.Top, rect.Right-rect.Left, rect.Bottom-rect.Top, win32.SWP_NOZORDER|win32.SWP_NOACTIVATE)
 		if value, ok := activeWindows.Load(hwnd); ok {
 			w := value.(*winWindow)
@@ -566,7 +568,7 @@ func wndProc(hwnd uintptr, msg uint32, wparam, lparam uintptr) uintptr {
 		w := value.(*winWindow)
 		if w.customFrame() {
 			if msg == wmNCCalcSize && wparam != 0 {
-				params := (*nccalcSizeParams)(unsafe.Pointer(lparam))
+				params := (*nccalcSizeParams)(win32.NativePtr(lparam))
 				if win32.IsZoomed(hwnd) {
 					// Let Windows retain the maximized monitor insets and native
 					// menu band. Only menu-less windows extend into the caption.
@@ -1217,8 +1219,8 @@ func (w *winWindow) reportFrame() {
 	f := frameFromWindowRect(w.hwnd, l, t, r, b)
 	w.frame = f
 	if w.shell.onFrame != nil {
-		onFrame, id := w.shell.onFrame, w.id
-		deliverOnGoroutine(func() { onFrame(id, f) })
+		onFrame := w.shell.onFrame
+		deliverOnGoroutine(func() { onFrame(w, f) })
 	}
 }
 
@@ -1245,7 +1247,7 @@ func (s *winShell) openWebViewWindow(id string, spec desktop.WindowSpec, url str
 		}
 		title := spec.Title
 		if title == "" {
-			title = s.trayTitle
+			title = s.trayTitleSnapshot()
 		}
 		opened, createErr = s.createNativeWindow(id, title, width, height, spec.Style, spec.Frame, spec.SidebarWidth, windowStyleBits(spec.Style))
 		if createErr != nil || opened == nil {

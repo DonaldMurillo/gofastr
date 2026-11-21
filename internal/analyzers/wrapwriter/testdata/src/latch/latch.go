@@ -130,7 +130,7 @@ func Recovery(next http.Handler) http.Handler {
 
 // The 39de7827 spelling with a deferred METHOD guard: recoverSend calls
 // recover() itself (recover works when called directly by the deferred
-// function) and reads started, so the early latch is covered — quiet.
+// function) and reads started, so the early latch is reported.
 type methodGuardWriter struct {
 	http.ResponseWriter
 	started bool

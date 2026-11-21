@@ -1,12 +1,35 @@
 package siteheader_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages/siteheader"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
+
+func TestHeaderLinksUseThemeFocusRing(t *testing.T) {
+	entry, ok := registry.Lookup(siteheader.Style.Name())
+	if !ok {
+		t.Fatal("header stylesheet is not registered")
+	}
+	css := entry.CSSFor(style.DefaultTheme())
+	ring := regexp.MustCompile(`([^{}]+)\{\s*outline:\s*var\(--stroke-focus\) solid var\(--color-text-subtle\);\s*outline-offset:\s*var\(--stroke-focus-offset\)\s*;?\s*\}`)
+	selectors := make(map[string]bool)
+	for _, rule := range ring.FindAllStringSubmatch(css, -1) {
+		for selector := range strings.SplitSeq(rule[1], ",") {
+			selectors[strings.TrimSpace(selector)] = true
+		}
+	}
+	for _, selector := range []string{".toggle", ".brand", ".links a", ".panel-links a"} {
+		if !selectors[selector+":focus-visible"] {
+			t.Errorf("%s lacks the theme focus ring", selector)
+		}
+	}
+}
 
 // testMark stands in for the app's logo: a monochrome currentColor SVG,
 // the shape .mark colours with the theme's primary.

@@ -5,6 +5,10 @@ package processmoduletest
 //
 //	newTestStore / newStoreDB   framework/processmodule_test.go
 //	broker* helpers             framework/processmodule_broker_test.go
+//	newTestSupervisor, newBareTestSupervisor, safeLogf, envRunner,
+//	  descriptorForChild        framework/processmodule_supervisor_test.go
+//	newGateSupervisor, gateSafeLogf, waitForStateTB
+//	                           framework/processmodule_gate_test.go
 
 import (
 	"context"

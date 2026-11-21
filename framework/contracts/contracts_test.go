@@ -322,6 +322,21 @@ func g() { trip() }
 	_ = p
 }
 
+func TestTrailingCSSSuppressionCoversItsOwnLine(t *testing.T) {
+	_, sup := probePass(t, map[string]string{
+		"app.css": `.quoted { content: "/* gofastr:allow(GOFASTR1806) literal */"; }
+.legacy { color: var(--vendor-ink); } /* gofastr:allow(GOFASTR1806) vendor widget sets this */
+.other { color: var(--vendor-ink); }
+`,
+	})
+	rule, _ := LookupRule(RuleUnknownThemeToken)
+	for line, want := range []bool{false, true, false} {
+		if got := sup.suppressed(Diagnostic{File: "app.css", Line: line + 1}, rule); got != want {
+			t.Errorf("line %d waived = %v, want %v", line+1, got, want)
+		}
+	}
+}
+
 // A block-comment directive with code after it on the same line trails
 // that code. It does not cover the next line. Classifying any line that
 // STARTS with a comment as standalone waived the wrong line and then
@@ -394,13 +409,13 @@ func TestSuppressionRejectsUnknownRule(t *testing.T) {
 // filter, so the contracts pipeline neither reports it unknown nor
 // counts it stale when no contracts rule matches it.
 func TestSuppressionAcceptsAnalyzerName(t *testing.T) {
-	p, sup := probePass(t, map[string]string{
+	_, sup := probePass(t, map[string]string{
 		"a.go": "package a\n\n//gofastr:allow(mapwriter) one-entry map, order is fixed\nfunc f() {}\n",
 	})
 	if len(sup.issues) != 0 {
 		t.Fatalf("analyzer marker reported as a suppression issue: %+v", sup.issues)
 	}
-	if st := sup.stale(p); len(st) != 0 {
+	if st := sup.stale(func(Rule) bool { return true }); len(st) != 0 {
 		t.Fatalf("analyzer marker reported stale: %+v", st)
 	}
 }
@@ -1064,6 +1079,31 @@ func TestCapabilityBlockFormsParse(t *testing.T) {
 		if got := cfg.SeverityFor(sqlConcat); got != c.want {
 			t.Errorf("%q gave severity %v, want %v", c.body, got, c.want)
 		}
+	}
+}
+
+func TestDisabledSettingWinsOverSeverityInTheSameMap(t *testing.T) {
+	cases := []struct {
+		name, section string
+		want          Severity
+	}{
+		{"capability", "  security:\n    enabled: false\n    severity: warn\n", SeverityOff},
+		{"rule", "  rules:\n    GOFASTR1401:\n      severity: warn\n      enabled: false\n", SeverityOff},
+		{"enabled rule", "  rules:\n    GOFASTR1401:\n      enabled: true\n      severity: warn\n", SeverityWarn},
+	}
+	rule, _ := LookupRule(RuleSQLStringConcat)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n"+c.section)
+			cfg, err := LoadConfig(dir, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.SeverityFor(rule); got != c.want {
+				t.Errorf("severity = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 

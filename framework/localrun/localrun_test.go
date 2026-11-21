@@ -46,6 +46,60 @@ func TestRegisterThenUnregister(t *testing.T) {
 	}
 }
 
+// Register refuses metadata a later List would skip: the reader's URL
+// and MCP path rules and the 16 KiB size cap run before either file is
+// written, so a caller never sees success for a run no tool can list.
+func TestRegisterRefusesMetadataListSkips(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvDir, dir)
+	for _, rec := range []Record{
+		{Name: "no-scheme", URL: "localhost:8080"},
+		{Name: "offsite", URL: "ftp://127.0.0.1:1/x"},
+		{Name: "bad-mcp-path", URL: "http://127.0.0.1:1", MCPPath: "mcp"},
+		{Name: "oversize", URL: "http://127.0.0.1:1", MCPCommand: []string{strings.Repeat("x", maxRecordBytes)}},
+	} {
+		if _, err := Register(rec); err == nil {
+			t.Errorf("Register accepted a record List would skip: %+v", rec)
+		}
+	}
+	left, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("a refused Register wrote files: %v", left)
+	}
+}
+
+// The unregister func removes the record it registered even after
+// GOFASTR_RUNS_DIR points elsewhere: the registration's directory is
+// captured once, not re-resolved from the environment at removal time.
+func TestUnregisterRemovesAfterEnvChange(t *testing.T) {
+	a := t.TempDir()
+	t.Setenv(EnvDir, a)
+	unregister, err := Register(Record{Name: "a", URL: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := t.TempDir()
+	t.Setenv(EnvDir, b)
+	unregister()
+	left, err := os.ReadDir(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("record or sidecar survived unregister: %v", left)
+	}
+	leaked, err := os.ReadDir(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leaked) != 0 {
+		t.Fatalf("unregister wrote into the new directory: %v", leaked)
+	}
+}
+
 // A run that died without unregistering leaves its file; List drops
 // the record and deletes the file.
 func TestListDropsDeadRun(t *testing.T) {

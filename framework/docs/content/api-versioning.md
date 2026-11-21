@@ -38,9 +38,11 @@ import "github.com/DonaldMurillo/gofastr/framework"
 framework.NewApp(framework.WithConfig(framework.AppConfig{APIPrefix: "/api/v1"}))
 ```
 
-Input is normalised: `"api"`, `"/api"`, and `"/api/"` all become
-`"/api"`. An empty prefix (the default) keeps the historical bare
-`/posts` mount, so this is fully backward-compatible.
+The app-wide prefix and route group prefixes both remove control bytes,
+convert backslashes to slashes, add a leading slash, and clean repeated
+separators and dot segments. For example, `"api//v1/"` becomes
+`"/api/v1"`. An empty prefix or one that resolves to the root keeps the
+bare `/posts` mount.
 
 ### What the prefix touches
 
@@ -86,35 +88,35 @@ and MCP namespace, so the two versions are independently gated and
 independently described. Register each entity into a version with
 `app.GroupEntity(group, name, config)`.
 
+A relative custom `Endpoint.Path` resolves under the group's table path.
+An absolute path bypasses the group prefix and keeps the group's
+middleware and access policy. Both forms use the same path in the router
+and in OpenAPI. An MCP endpoint without a `Name` takes its tool name from
+that path under the group's namespace, so `GET /health/posts` in a group
+`/v1` with namespace `v1` is `v1.posts_get_health_posts`. Set
+`Endpoint.Name` to choose the name; the namespace still prefixes it.
+For a custom router registration, `Router.HandleAbsolute`
+likewise takes the full path and keeps the router's middleware and resource.
+
 ### What you must set for versioned entities
 
-Two things do **not** auto-disambiguate when the same entity name lives
-under two groups. You must configure them per group:
+If both versions expose MCP tools, give each group a namespace. Two
+groups without namespaces both try to register `posts_list`, and the
+second registration panics with a duplicate-tool error.
 
-1. **MCP tool names.** Without a namespace, both versions try to
-   register `posts_list` → the second panics with a duplicate-tool
-   error. Give each group an MCP namespace so tools are named
-   `v1.posts.list` / `v2.posts.list`:
+```go
+v1 := app.Group("/api/v1", routegroup.WithMCPNamespace("v1"))
+v2 := app.Group("/api/v2", routegroup.WithMCPNamespace("v2"))
+```
 
-   ```go
-   v1 := app.Group("/api/v1", routegroup.WithMCPNamespace("v1"))
-   v2 := app.Group("/api/v2", routegroup.WithMCPNamespace("v2"))
-   ```
+`v1.MCPToolName("posts", "list")` returns the registered tool name
+`v1.posts.list`. With no namespace, the helper returns `posts_list`,
+the same spelling used by entities registered via `App.Entity`.
 
-   Entities registered via `App.Entity` (no group) keep the historical
-   flat `posts_list` names. The namespace only applies inside a group
-   that sets one.
-
-2. **OpenAPI tags (optional but recommended).** Without a tag, both
-   versions' operations land under the same schema-component name and
-   tag in `/openapi.json`. Set a per-version tag so the spec stays
-   organized:
-
-   ```go
-   v1 := app.Group("/api/v1",
-       routegroup.WithMCPNamespace("v1"),
-       routegroup.WithOpenAPITag("v1"))
-   ```
+OpenAPI derives schema component names and default tags from the version
+prefix, such as `posts_api_v1` and `posts_api_v2`. Use
+`routegroup.WithOpenAPITag("v1")` when you want a custom display label for
+the group's operations. Schema component names still derive from the version.
 
 ### What the registry does for you
 

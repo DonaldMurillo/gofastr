@@ -180,8 +180,8 @@ func New(opts ...Option) *Notifier {
 // nil); use WithErrorCallback to observe per-channel failures.
 //
 // Notifications with no selected channel return ErrNoChannels.
-// Notifications without a templater (and no pre-rendered payload in
-// Data["_rendered"]) return ErrNoTemplater.
+// A channel without a templater or a pre-rendered payload returns ErrNoTemplater.
+// A present pre-rendered payload must have type Rendered.
 func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	n.mu.RLock()
 	chanNames := append([]string(nil), n.chanOrder...)
@@ -301,14 +301,16 @@ func (n *Notifier) renderFor(ctx context.Context, t Templater, msg Notification,
 			r, err = Rendered{}, fmt.Errorf("notify: templater panicked: %v", v)
 		}
 	}()
-	if msg.Data != nil {
-		// Per-channel pre-rendered payload short-circuit.
-		if pre, ok := msg.Data["_rendered_"+channel].(Rendered); ok {
-			return pre, nil
+	for _, key := range []string{"_rendered_" + channel, "_rendered"} {
+		value, present := msg.Data[key]
+		if !present {
+			continue
 		}
-		if pre, ok := msg.Data["_rendered"].(Rendered); ok {
-			return pre, nil
+		pre, ok := value.(Rendered)
+		if !ok {
+			return Rendered{}, fmt.Errorf("notify: %s must be notify.Rendered, got %T", key, value)
 		}
+		return pre, nil
 	}
 	if t == nil {
 		return Rendered{}, ErrNoTemplater

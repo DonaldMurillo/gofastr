@@ -1,46 +1,16 @@
 package entity
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// Cursor columns are a declared query surface exactly like SearchFields
-// and ReadScope: they reach ORDER BY and the keyset WHERE, and the
-// emitted cursor token carries the stored value verbatim. The property
-// family pinned here: a column named by the cursor configuration must
-// be a DECLARED, non-Hidden, non-NoQuery field, checked at Define,
-// across every spelling of the configuration (CursorField, CursorFields
-// composite, and the implicit primary-key default / auto tiebreak).
-//
-// The Hidden/NoQuery halves of this family are implemented in Define
-// (entity.go, cursorCols loop) but had no test. The declared-half is
-// NOT implemented: a CursorField naming an unknown column is silently
-// accepted and surfaces as a per-request "no such column" 500 — the
-// exact failure mode the SearchFields and ReadScope checks exist to
-// prevent. Those tests live in define_validation_test.go; this file
-// extends the same property to the cursor surface.
-
-// expectCursorPanic asserts Define panics with wantSubstr, reusing the
-// shape of expectDefinePanic from define_validation_test.go.
-func expectCursorPanic(t *testing.T, wantSubstr string, config EntityConfig) {
-	t.Helper()
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatalf("Define did not panic (want %q)", wantSubstr)
-		}
-		if msg, ok := r.(string); !ok || !strings.Contains(msg, wantSubstr) {
-			t.Fatalf("panic = %v, want substring %q", r, wantSubstr)
-		}
-	}()
-	Define("bad", config)
-}
+// Define requires cursor columns to be declared, queryable, and visible,
+// including composite members and implicit primary-key columns.
 
 func TestCursorFieldHiddenPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"internal_key\" is Hidden", EntityConfig{
+	expectDefinePanic(t, "cursor field \"internal_key\" is Hidden", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 			{Name: "internal_key", Type: schema.String, Hidden: true},
@@ -50,7 +20,7 @@ func TestCursorFieldHiddenPanics(t *testing.T) {
 }
 
 func TestCursorFieldNoQueryPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"slug\" is NoQuery", EntityConfig{
+	expectDefinePanic(t, "cursor field \"slug\" is NoQuery", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 			{Name: "slug", Type: schema.String, NoQuery: true},
@@ -63,7 +33,7 @@ func TestCursorFieldNoQueryPanics(t *testing.T) {
 // a NoQuery id used to leak its stored value through the emitted token
 // while every filter and sort refused it.
 func TestCursorDefaultKeysetNoQueryPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"id\" is NoQuery", EntityConfig{
+	expectDefinePanic(t, "cursor field \"id\" is NoQuery", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String, NoQuery: true},
 			{Name: "title", Type: schema.String},
@@ -74,7 +44,7 @@ func TestCursorDefaultKeysetNoQueryPanics(t *testing.T) {
 // A composite cursor silently gains the primary key as its tiebreak;
 // only validating the declared members missed a NoQuery id entirely.
 func TestCursorCompositeTiebreakNoQueryPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"id\" is NoQuery", EntityConfig{
+	expectDefinePanic(t, "cursor field \"id\" is NoQuery", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String, NoQuery: true},
 			{Name: "title", Type: schema.String},
@@ -85,7 +55,7 @@ func TestCursorCompositeTiebreakNoQueryPanics(t *testing.T) {
 }
 
 func TestCursorCompositeMemberHiddenPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"votes\" is Hidden", EntityConfig{
+	expectDefinePanic(t, "cursor field \"votes\" is Hidden", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "votes", Type: schema.Int, Hidden: true},
 			{Name: "title", Type: schema.String},
@@ -114,14 +84,14 @@ func TestCursorCleanColumnsDefine(t *testing.T) {
 // skipped. A cursor column must be a key column, Required, or
 // framework-generated (AutoGenerate).
 func TestCursorNullableColumnPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"published_at\" can hold NULL", EntityConfig{
+	expectDefinePanic(t, "cursor field \"published_at\" can hold NULL", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 			{Name: "published_at", Type: schema.Timestamp},
 		},
 		Pagination: &PaginationConfig{CursorFields: []string{"published_at"}},
 	})
-	expectCursorPanic(t, "cursor field \"rank\" can hold NULL", EntityConfig{
+	expectDefinePanic(t, "cursor field \"rank\" can hold NULL", EntityConfig{
 		Fields:     []schema.Field{{Name: "rank", Type: schema.Int}},
 		Pagination: &PaginationConfig{CursorField: "rank"},
 	})
@@ -147,17 +117,9 @@ func TestCursorNonNullColumnsDefine(t *testing.T) {
 	}
 }
 
-// TestCursorFieldUndeclaredPanics: a CursorField naming a column the
-// entity does not declare must fail Define, mirroring SearchFields
-// ("is not a declared field") and ReadScope ("is not a declared
-// field"). Today it is silently accepted and every keyset request
-// fails at query time with "no such column" — a per-request 500 that
-// nothing at definition time reported. The cursor column is
-// developer-declared, but so are SearchFields entries, and Define
-// already treats THOSE as fail-loud misconfiguration. The parity, not
-// the threat model, is the contract being pinned.
+// Like SearchFields and ReadScope, CursorField must name a declared column.
 func TestCursorFieldUndeclaredPanics(t *testing.T) {
-	expectCursorPanic(t, "is not a declared field", EntityConfig{
+	expectDefinePanic(t, "is not a declared field", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 		},
@@ -169,7 +131,7 @@ func TestCursorFieldUndeclaredPanics(t *testing.T) {
 // composite spelling — every member must be declared, including when
 // other members are fine.
 func TestCursorCompositeMemberUndeclaredPanics(t *testing.T) {
-	expectCursorPanic(t, "is not a declared field", EntityConfig{
+	expectDefinePanic(t, "is not a declared field", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String},
 			{Name: "created_at", Type: schema.Timestamp},
@@ -182,7 +144,7 @@ func TestCursorCompositeMemberUndeclaredPanics(t *testing.T) {
 // the key is the tiebreak behind it, so a Hidden key column reaches the
 // token on this spelling too (round 3 review of D33).
 func TestCursorFieldHiddenKeyPanics(t *testing.T) {
-	expectCursorPanic(t, "cursor field \"id\" is Hidden", EntityConfig{
+	expectDefinePanic(t, "cursor field \"id\" is Hidden", EntityConfig{
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String, Hidden: true},
 			{Name: "name", Type: schema.String, Required: true},
@@ -194,7 +156,7 @@ func TestCursorFieldHiddenKeyPanics(t *testing.T) {
 // A composite naming one column twice is refused: its token would carry
 // the name twice and the decoder refuses that, so page two answered 400.
 func TestCursorFieldsListedTwicePanics(t *testing.T) {
-	expectCursorPanic(t, "is listed twice", EntityConfig{
+	expectDefinePanic(t, "is listed twice", EntityConfig{
 		Fields:     []schema.Field{{Name: "body", Type: schema.Text, Required: true}},
 		Pagination: &PaginationConfig{CursorFields: []string{"body", "body"}},
 	})

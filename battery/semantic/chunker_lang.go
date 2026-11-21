@@ -77,14 +77,19 @@ func (l *LangAware) bound(in []Chunk) ([]Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		for j := range parts {
-			parts[j].Offset[0] += c.Offset[0]
-			parts[j].Offset[1] += c.Offset[0]
-			parts[j].ID = chunkID(parts[j].DocID, parts[j].Offset[0], parts[j].Offset[1])
-		}
+		rebaseChunks(parts, c.Offset[0])
 		out = append(out, parts...)
 	}
 	return out, nil
+}
+
+func rebaseChunks(parts []Chunk, delta int) {
+	for i := range parts {
+		part := &parts[i]
+		part.Offset[0] += delta
+		part.Offset[1] += delta
+		part.ID = chunkID(part.DocID, part.Offset[0], part.Offset[1])
+	}
 }
 
 // chunkSafely invokes one host-supplied Chunker under a recover net:
@@ -250,12 +255,7 @@ func (l *LangAware) flatten(in []Chunk) ([]Chunk, error) {
 		if sub, err = l.bound(sub); err != nil {
 			return nil, err
 		}
-		// Re-base sub-chunk offsets against the parent chunk's start.
-		for i := range sub {
-			sub[i].Offset[0] += c.Offset[0]
-			sub[i].Offset[1] += c.Offset[0]
-			sub[i].ID = chunkID(sub[i].DocID, sub[i].Offset[0], sub[i].Offset[1])
-		}
+		rebaseChunks(sub, c.Offset[0])
 		out = append(out, sub...)
 	}
 	return out, nil

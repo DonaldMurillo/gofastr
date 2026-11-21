@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -135,6 +136,15 @@ func TestPageClampsToLast(t *testing.T) {
 
 // The clamp's other arm, pinned at the unit: an unknown total may not
 // move the reader's page — a failed count is not a run of zero pages.
+func TestPagesForLargeCount(t *testing.T) {
+	if got, want := pagesFor(math.MaxInt, 2), math.MaxInt/2+1; got != want {
+		t.Fatalf("pagesFor(MaxInt, 2) = %d, want %d", got, want)
+	}
+	if got := pagesFor(0, 2); got != 1 {
+		t.Fatalf("pagesFor(0, 2) = %d, want 1", got)
+	}
+}
+
 func TestClampPageKeepsPageWhenCountUnknown(t *testing.T) {
 	if got := clampPage(7, 0, 10, false); got != 7 {
 		t.Errorf("clampPage(known=false) = %d, want the requested page 7", got)

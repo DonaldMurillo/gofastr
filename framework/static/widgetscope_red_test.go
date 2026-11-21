@@ -39,7 +39,7 @@ func TestRedStaticExportKeepsWidgetPageScope(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots Chrome")
 	}
-	execPath := browserExecutable(t)
+	execPath := chromedptest.BrowserPath(t)
 
 	a := coreapp.NewApp("Scoped Widget Export")
 	a.Register("/", &homeScreen{}, nil)

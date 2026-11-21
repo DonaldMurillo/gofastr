@@ -18,6 +18,7 @@ import (
     "net/http"
     "time"
 
+    "github.com/DonaldMurillo/gofastr/core/router"
     "github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
@@ -28,7 +29,8 @@ checkoutLimit := ratelimit.NewLimiter(ratelimit.Config{
     BlockDuration: 5 * time.Minute,
 })
 
-mux.Handle("POST /api/checkout", checkoutLimit.Middleware()(checkoutHandler))
+mux := router.New()
+mux.Handle(http.MethodPost, "/api/checkout", checkoutLimit.Middleware()(checkoutHandler))
 ```
 
 `Middleware()` keys on the client IP by default. Over-limit responses are
@@ -217,11 +219,11 @@ keeps the limiter fail-closed.
 - **Counting on a fleet-wide budget with the in-memory store.** With no `Store`,
   each replica admits the full `MaxAttempts` independently. Plug in a shared
   `Store` when the budget must hold across replicas.
-- **Keying a public limiter on attacker-chosen input without a cap.** This
-  package bounds its key map (idle keys are reclaimed, then soonest-expiring
-  blocks under flood), but a custom key func over untrusted input (raw email,
-  URL) still widens the key space; prefer stable identities (user id, hashed
-  API key).
+- **Keying a public limiter on attacker-chosen input without a cap.** The
+  in-memory limiter reclaims idle keys and, at capacity, evicts unblocked
+  keys first. If it needs more room, it evicts the active blocks with the
+  latest expiry first, breaking ties by newest creation. For custom keys,
+  prefer stable identities such as user IDs or hashed API keys.
 - **Expecting budget headers.** This limiter emits only `Retry-After` by design
   (see [Two limiters, two jobs](#two-limiters-two-jobs)). If a client needs
   `RateLimit-Remaining` to self-pace, that route wants the token bucket.

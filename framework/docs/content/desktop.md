@@ -126,8 +126,9 @@ macOS), created 0700. Four files live there:
 The first three are [`framework/localapp`](local-apps.md)'s, the same
 set every one-person host opens.
 
-`GOFASTR_DESKTOP_DATA_DIR` overrides the base directory (absolute
-paths only); tests and CI use it to avoid touching a real profile.
+`GOFASTR_DESKTOP_DATA_DIR` overrides the base directory and requires an
+absolute path. Go code can refer to the variable name as
+`desktop.DataDirEnv`. Tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.
 
 ### Persistent browser profiles on Linux
@@ -308,8 +309,10 @@ the local user. The window keeps its JS bridge, because it never leaves
 the app's origin. The listener stays on `127.0.0.1`; a caller in a
 container needs `battery/service` and its `BindAddress`.
 
-The match is on whole segments of the clean, unescaped path, so
-`/apix`, `/api//x`, `/api/../admin` and `/api%2Fx` stay gated. `New`
+The match is on whole segments of the cleaned, decoded path: `/apix`,
+`/api//x`, `/api/../admin` and `/api%2Fx` stay gated, while a bare
+trailing slash (`/api/`) matches and canonically-escaped paths
+(`/api/caf%C3%A9`) are matched decoded. `New`
 panics on `/`, on anything under `/__gofastr/` (the bridge, the runtime,
 the handshake) and on a malformed entry. `Run` logs the open prefixes
 as a warning.
@@ -641,7 +644,7 @@ synthesizes the app menu's "Settings…" item (cmd+, on macOS), the
 `RoleSettings` menu role works in `Config.Menu` and in the tray menu,
 and the page can call `__gofastr.desktop.windows.openSettings()`.
 
-On the Go side, `d.OpenSettings()` opens (or focuses) that window and
+On the Go side, `d.OpenSettings(ctx)` opens or focuses that window and
 `d.OpenWindow(desktop.WindowSpec{Path: "/notes/new"})` opens any other
 screen; a window with the same path that is already open is focused,
 so the call is idempotent per path. `d.Windows()` lists them, the main
@@ -764,9 +767,8 @@ type WindowStyle struct {
 - `ChromeNone` is borderless: no title bar, no close button, no resize
   box. A borderless window is moved by dragging the page (below).
 - `Panel` creates an `NSPanel` with the non-activating style on
-  darwin: clicking the window does not steal focus from the frontmost
-  app, and the shell never makes it the key window. A panel implies
-  `Float`.
+  darwin. A main or secondary panel opens without taking key status
+  or activating the app. A panel implies `Float`.
 - `Transparent` clears the window background AND stops the web view
   drawing its own (`drawsBackground` through KVC), so the page's own
   surface (a `ui.Card`, say) is the whole visual. Note the page still
@@ -782,9 +784,12 @@ type WindowStyle struct {
 The zero `WindowStyle` is the standard window; nothing changes for
 apps that never mention styles.
 
+`New` validates the paths in `Config.Widgets` and `Config.Settings`
+using the same-origin absolute path rules of `OpenWindow`.
+
 ### The page can style its own windows
 
-`windows.open` accepts a `style` object, validated the same way:
+`windows.open` accepts an optional `style` object.
 
 ```js
 await __gofastr.desktop.windows.open({
@@ -795,11 +800,12 @@ await __gofastr.desktop.windows.open({
 })
 ```
 
-The style applies when the window is CREATED. An already-open path is
-only focused; its style is whatever it was opened with. `chrome` is
-one of `default`, `hiddenTitle`, `none`; `resizable` is a boolean
-(omit for the default true); `x`/`y` must be sent together and are
-bounded to ±100000.
+The style applies when the window is created. Opening the same path
+again focuses the existing window. The style accepts `chrome` with
+`default`, `hiddenTitle` or `none`, the boolean fields `float`, `panel`,
+`transparent`, `resizable` and `allSpaces`, and the integer fields `x`
+and `y`. Omit `resizable` for the default true. Send `x` and `y`
+together, each between −100000 and 100000.
 
 ### Dragging a borderless window
 
@@ -887,7 +893,7 @@ and the live window is proven by the native e2e step
 titled bit, floating level, `isOpaque` NO, the `NSPanel` class, the
 panel never becoming key, and the page learning its own window id
 (every window carries its own `WKUserContentController` with its own
-`BootstrapJS(id)` user script while sharing the main window's
+`BootstrapJS(id, reduceTransparency)` user script while sharing the main window's
 `WKWebsiteDataStore`, so the cookie still crosses).
 
 On Windows, `ChromeHiddenTitle` and `ChromeUnified` use a custom frame
@@ -944,15 +950,17 @@ d := native.New(desktop.Config{
   `__gofastr.desktop.window.setChrome({sidebarWidth})`, which applies
   to the calling window only; a ResizeObserver on the sidebar element
   is the intended caller. Go code calls `Window.SetSidebarWidth`.
+  Shell implementations can validate the range with `desktop.ValidateSidebarWidth`.
 - `WindowStyle.TrafficLightInset` (`*desktop.Inset`, points from the
   system position, both values `>= 0`) moves the three window buttons.
   nil keeps the system position.
 - Every titled chrome carries the miniaturizable mask bit, so the
   yellow button renders enabled. `ChromeNone` stays borderless.
 
-`New` panics on an unknown material, a negative inset, or a sidebar
-width out of range; `windows.open` refuses the same values with
-`invalid_input`.
+Set `Material`, `TrafficLightInset` and the initial `SidebarWidth`
+through Go configuration or a Go `WindowSpec`. `New` panics on an
+unknown material, a negative inset or a sidebar width out of range.
+`OpenWindow` returns `invalid_input` for the same values.
 
 A material only shows where the page paints transparent. The desktop
 layout below paints `html` and `body` transparent; a page that paints
@@ -1007,8 +1015,10 @@ a page that wants the current state reads `document.hasFocus()`.
 `battery/desktop/ui` (package `desktopui`) is the page half: one theme,
 three layouts, and a few components, registered through the design
 system's own machinery (`style.Theme`, `registry.RegisterStyle`,
-`app.NewLayout`). Its token values are per platform; Windows and Linux
-will swap values, never fields.
+`app.NewLayout`). `ThemeFor` uses the same token fields on each
+platform. Windows uses Segoe UI and Fluent palettes with light accent
+`#0078D4`. Linux uses the Adwaita Sans stack and palettes with light
+accent `#0461BE`.
 
 ```go
 import (
@@ -1033,7 +1043,7 @@ layout := desktopui.Layout(
 site.Register("/", screen, layout)
 ```
 
-What the theme changes from the framework theme, and nothing else:
+The macOS preset changes the following framework theme tokens.
 
 | Token | Value |
 |---|---|
@@ -1052,7 +1062,7 @@ user's settings, but the design system's color grammar refuses them
 in. Values marked `// measured, unverified` in `theme.go` came from
 captures, not from Apple sources.
 
-The primary stays `#0071E3` on purpose. A filled button's label is 13px
+The macOS primary is `#0071E3`. A filled button's label is 13px
 regular, and WCAG only relaxes the floor to 3:1 for large text (24px, or
 18.66px bold), so a large-text exception would not cover desktop buttons.
 The system blue stays on Accent, where no white text sits on it.
@@ -1190,7 +1200,7 @@ to window.
 ### Every window knows its id
 
 The one script a native shell injects at document start
-(`desktop.BootstrapJS(windowID)`) carries the id of the window the page
+(`desktop.BootstrapJS(windowID, reduceTransparency)`) carries the id of the window the page
 lives in; every window gets its own copy of the script with its own id
 ("main" for the first window, "settings" for the settings window,
 "w2", "w3", ... in opening order). The runtime exposes it:
@@ -1277,14 +1287,16 @@ those take an explicit `id` and check it against the open windows.
 
 The harness records events per window: `h.Events()` stays the main
 window's, and `h.Window(id).Events()` is any window's.
-`h.Call(cap, method, input)` plays the main window's page and now
-sends `X-Gofastr-Window: main`; `h.CallFrom(windowID, cap, method,
-input)` plays any other window's page, id included. To run the pages'
-JavaScript for real, open one Chrome tab per window: each tab gets the
-session cookie, its own `desktop.BootstrapJS(id)` document-start
-script, and its fake window's eval hook
-(`battery/desktop/browser_harness_e2e_test.go`'s two-window test is
-the reference).
+`h.Call(cap, method, input)` plays the main window's page and sends
+`X-Gofastr-Window: main`. `h.CallFrom(windowID, cap, method, input)`
+plays another window's page and sends its id. See
+`battery/desktop/crosswindow_test.go` for fake-shell coverage.
+
+To run each page's JavaScript inside WKWebView, use the `desktop_e2e`
+suite with `desktoptest.NativePhase`. Each window gets its own
+`desktop.BootstrapJS(windowID, reduceTransparency)` script and shares
+the session cookie. See `battery/desktop/native_e2e_test.go` and
+`battery/desktop/shell_darwin_e2e_test.go`.
 
 ## Deep links
 
@@ -1454,9 +1466,6 @@ acceptance, not completed navigation. URI input is limited to 2048 bytes, with a
 most 16 pending native deliveries (plus one callback in flight); oldest pending
 items are dropped on overflow. Shutdown discards queued work; a callback already
 running is not forcibly interrupted.
-
-Darwin/amd64 has no native shell; the mapping, queue and event run against the
-test double on every OS.
 
 ### Testing
 
@@ -1678,8 +1687,8 @@ capped downloads, zip extraction, and the OS apply step behind one
 interface, implemented for darwin and windows and refusing everywhere
 else).
 
-**EXPERIMENTAL**, like the rest of `battery/desktop`: darwin/arm64 and
-windows/amd64 only, and the contracts below may change. An unbundled
+**EXPERIMENTAL**, like the rest of `battery/desktop`. The updater
+supports darwin/arm64, darwin/amd64 and windows/amd64. An unbundled
 run (a development `go run`, `gofastr desktop run`) never updates:
 there is no bundle to swap. On Windows, "bundled" means the running
 executable carries the version resource `gofastr desktop build` embeds
@@ -1709,7 +1718,7 @@ manifest bytes, base64-encoded in the `.sig` file.
 ```
 
 - The platform key is `GOOS-GOARCH` of the target machine
-  (`darwin-arm64` or `windows-amd64` today).
+  (`darwin-arm64`, `darwin-amd64` or `windows-amd64`).
 - The version is semver (`major.minor.patch`, an optional
   `-prerelease`; build metadata is refused).
 - `expires` is an RFC 3339 time, signed with the rest. From that
@@ -1767,11 +1776,12 @@ the update, and the log warns at start and at each install. Setting
 both fields is a config error. Windows needs no field: it holds an
 update to the running executable's Authenticode publisher (below).
 
-The battery checks the feed on a schedule: the first check 30 seconds
-after the window opens, then every `Interval` (6 hours by default;
-negative disables scheduled checks while `CheckForUpdates` and
-`updates.install` keep working). When a scheduled check finds a newer
-version, every open page gets the `update_available` event:
+The battery schedules the first check 30 seconds after the app's
+loopback listener reports ready, before the shell starts opening the
+main window. It checks every `Interval` after that (6 hours by default).
+A negative interval disables scheduled checks. `CheckForUpdates` and
+`updates.install` still work. When a scheduled check finds a newer
+version, every open page gets the `update_available` event.
 
 ```js
 __gofastr.desktop.on("update_available", ({ version, notes }) => {
@@ -1784,11 +1794,12 @@ window is open or a window refuses delivery, the next interval retries
 that version; pages that already received a partial broadcast may see it
 again. Concurrent checks share one in-flight delivery.
 
-Failures are logged (Warn) and retried next interval; an unbundled or
-unsupported host logs once and stops. So does a bundle whose
-`CFBundleShortVersionString` is not semver (`1.0`): the check answers
-`unsupported` with "this app's version is not major.minor.patch"
-instead of blaming the feed. Log lines never carry the feed URL or a
+The updater checks the local bundle and version before contacting the
+feed. An unbundled or unsupported host logs once and stops scheduled
+checks. A malformed running version such as `1.0` also stops scheduled
+checks and returns `unsupported` with "this app's version is not
+major.minor.patch". Feed failures are logged at Warn and retried on the
+next scheduled interval. Log lines never carry the feed URL or a
 filesystem path. A failed file operation logs the operation and the OS
 error (`rename: permission denied`), and `codesign` or `open` output
 names files relative to the bundle (`Notes.app: invalid signature`).
@@ -2079,15 +2090,20 @@ type Frame struct{ X, Y, Width, Height int }
 
 WindowConfig.Frame *Frame                 // initial main-window frame
 WindowConfig.OnWindowFrame func(id string, f Frame)
+WindowConfig.OnWindowFrameFrom func(w Window, f Frame)
 WindowSpec.Frame  *Frame                  // initial secondary frame
 Window.Frame() (Frame, error)             // live frame, top-left points
 Window.SetFrame(Frame) error
 ```
 
-`OnWindowFrame` fires on a goroutine whenever the user moves or
-resizes the main window or a secondary window, including one opened
-after the shell starts, unthrottled; the battery debounces. On macOS the
-window delegate's `windowDidMove:` and `windowDidEndLiveResize:` (the
+`WindowConfig.WindowFrameReporter()` returns the callback to call on a
+goroutine for every main or secondary window move or resize. It prefers
+`OnWindowFrameFrom`, which identifies the instance by its comparable
+`Window` handle, and
+adapts `OnWindowFrame` when that is the only callback configured. The
+battery debounces writes and ignores frame reports from replaced
+instances. On macOS the window delegate's `windowDidMove:` and
+`windowDidEndLiveResize:` (the
 resize reports once, at the end of the drag) feed it, and a
 programmatic `SetFrame` reports through the same path. The top-left to
 bottom-left coordinate flip happens once, in the darwin shell, against
@@ -2095,13 +2111,12 @@ the primary screen's height: `[NSScreen mainScreen]` is whichever
 screen holds the key window and moves under the user, so the origin
 screen (`[NSScreen screens]` index 0) is the only stable base.
 
-Hosts without a native layer ignore `Frame` and never fire
-`OnWindowFrame`; the flag is then inert.
+Hosts without a native layer ignore `Frame` and leave both callbacks idle.
 
 ### Testing seams
 
 - `desktoptest.Harness.MoveWindow(id, frame)` plays the user dragging a
-  window: the fake window's frame changes and `OnWindowFrame` fires
+  window. The fake window's frame changes and the frame callback fires
   the way the native delegate does. `Harness.BootRedirect()` is the
   Location the boot handshake answered with.
 - `desktoptest.NativeHarness.MoveWindow` and `WindowFrame` drive the
@@ -2127,7 +2142,7 @@ want to agree on. The battery ships one store for that,
 ```json
 {
   "entries": {
-    "page.theme": "\"dark\"",
+    "page.theme": "dark",
     "windows": {"main": {"frame": {"X": 140, "Y": 90, "Width": 800, "Height": 600}, "path": "/notes/42"}},
     "settings": {"work_minutes": 50, "sound": "bell"}
   }
@@ -2139,13 +2154,15 @@ reads back through another without ever being re-encoded through
 `any`. Keys match `^[a-z][a-z0-9_.-]{0,63}$` (at most 64 characters);
 the leading dotted segments are namespaces. The battery owns `windows`
 (the remembered window state) and `settings` (the preferences); the
-page owns `page.`. One value is capped at 64 KiB of encoded JSON
-(`appstate.MaxValueBytes`).
+page owns `page.`. One value is capped at 64 KiB of compact JSON
+(`appstate.MaxValueBytes`). The store encodes it with HTML escaping
+disabled and measures the result before the state file is indented.
 
 Writes are debounced 500 ms (one timer, rescheduled per write, so a
 burst lands once), the file is written whole with sorted keys at mode
-0600, and `Flush` forces a write now and waits for any in-flight one,
-so a clean exit never loses the last change (`Run` flushes on quit).
+0600, and `Flush` forces a write now and waits for any in-flight one.
+On quit, `Run` drains HTTP requests and stop hooks before flushing
+state. A failed final flush is returned with any shutdown error.
 Each write lands through a fresh temp file renamed onto `state.json`:
 a crash mid-write leaves the previous whole file, never a torn one,
 and a symlink planted at the path is replaced, not followed. A
@@ -2210,8 +2227,7 @@ await __gofastr.desktop.state.delete({key: "page.theme"})
 - `get {key}` answers `{value}`: the stored JSON, or `null` when the
   key is absent.
 - `set {key, value}` stores any JSON value (a missing `value` stores
-  `null`), capped at 64 KiB of compact JSON, measured on the compact
-  form so whitespace cannot smuggle the difference.
+  `null`). The store applies its 64 KiB compact JSON limit to the value.
 - `delete {key}` removes the key.
 - `keys {prefix}` answers the stored page keys that start with
   `page.` + `prefix`, sorted.
@@ -2585,8 +2601,9 @@ for a deep-link scheme). On Windows, put `WebView2Loader.dll` beside the
 Microsoft.Web.WebView2 NuGet package, version 1.0.4258.31, the one
 `build` pins, after checking the package's SHA-256 is
 `56f7f4b8bf9aee4b8efefbbdd4f67d5f74ebd1b100ed0806da71bf76af481aa9`.
-Without the DLL the window cannot open. A plain
-`go build` has no version resource or icon; those come from `build`.
+Set `GOFASTR_WEBVIEW2_LOADER` to the full path to a
+`WebView2Loader.dll` to try that file before the copy beside the executable.
+The window needs the DLL to open. A plain `go build` has no version resource or icon; those come from `build`.
 For a universal macOS executable, build once with `GOARCH=arm64` and
 once with `GOARCH=amd64`, then merge the two with
 `lipo -create -output <Name> <arm64> <amd64>` before signing.
@@ -2937,7 +2954,7 @@ native shell, not the authenticated browser bridge or every desktop's portal.
 
 ## What does not work yet
 
-darwin/amd64 has no native shell yet. Linux draws GTK's own title bar for
+Linux draws GTK's own title bar for
 unified and hidden chrome, and blurs behind materials only under KWin on X11.
 Linux tray icons require a compatible StatusNotifierItem host; no-host operation
 keeps ordinary visible-window and close behavior. Linux defaults to an ephemeral WebKit
@@ -3068,14 +3085,19 @@ CGO_ENABLED=0 go test -count=1 -tags desktop_e2e ./battery/desktop/ ./internal/t
 On an Apple silicon Mac, put `GOARCH=amd64` in front of the same command
 to run the Intel build of the shell under Rosetta.
 
+To run just the main panel launch and live window operations test:
+
+```bash
+CGO_ENABLED=0 go test -count=1 -tags desktop_e2e -run '^$' ./battery/desktop/ -args -desktop-main-panel
+```
+
 The tagged suites run the page half inside the real WKWebView through
 `desktoptest.NativeMain` (the battery's own suite runs its unit tests
 first, in the pre-Run world its lazy-loading pin needs, then drives
 the same machinery through `desktoptest.NativePhase`). CI, the
-pre-commit hook, and `scripts/test-all.sh` never run that tag; the
-unit tests against the fake shell in `battery/desktop/desktoptest`
-carry the coverage floor, and the chromedp suite in `core-ui/runtime`
-still tests the browser runtime itself.
+pre-commit hook, and `scripts/test-all.sh` run the ordinary tests,
+including the fake shell in `battery/desktop/desktoptest`. The
+chromedp suite in `core-ui/runtime` tests the browser runtime.
 
 ## Common mistakes
 

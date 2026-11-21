@@ -22,7 +22,7 @@ func TestForceNamesHandEditedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp}) })
+	clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp}) })
 
 	edited := filepath.Join(dir, "app.go")
 	orig, err := os.ReadFile(edited)
@@ -33,7 +33,7 @@ func TestForceNamesHandEditedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
+	out := clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
 
 	if !strings.Contains(out, "edited since they were generated") {
 		t.Errorf("--force did not warn about discarded hand edits:\n%s", out)
@@ -57,8 +57,8 @@ func TestForceQuietWhenNothingEdited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp}) })
-	out := clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
+	clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp}) })
+	out := clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
 
 	if strings.Contains(out, "edited since they were generated") {
 		t.Errorf("--force warned on an unmodified tree:\n%s", out)
@@ -78,7 +78,7 @@ func TestForceRemovesRetiredGeneratedResourceTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clitest.CovT_capStdout(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
+	clitest.CovT_capOutput(t, func() { RunGenerate([]string{"app", bp, "--force"}) })
 	if _, err := os.Stat(retired); !os.IsNotExist(err) {
 		t.Fatalf("retired generated resource_test.go still exists after --force: %v", err)
 	}

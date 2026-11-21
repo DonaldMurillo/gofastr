@@ -192,3 +192,22 @@ func TestTokensFileStroke(t *testing.T) {
 		t.Errorf("generated file is missing %q\n%s", want, out)
 	}
 }
+func TestParseTokensRefusesInvalidDarkBlockShape(t *testing.T) {
+	const properties = `@property --color-alpha { syntax: "<color>"; inherits: true; initial-value: #111; }
+@property --color-beta { syntax: "<color>"; inherits: true; initial-value: #222; }
+`
+	for _, tc := range []struct {
+		name, body, want string
+		line             int
+	}{
+		{"second dark block", "@media ( --dark ) { :root { --color-alpha: #aaa; } }\n@media (--dark) { :root { --color-beta: #bbb; } }", "at most one @media (--dark) block", 4},
+		{"nested rule", "@media (--dark) { :root { --color-alpha: #aaa;\n  .nested { --color-beta: #bbb; } } }", "only dark colour declarations", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ds := ParseTokens(properties + tc.body)
+			if len(ds) != 1 || ds[0].Severity != SeverityError || ds[0].Line != tc.line || !strings.Contains(ds[0].Message, tc.want) {
+				t.Errorf("want error on line %d containing %q, got %v", tc.line, tc.want, ds)
+			}
+		})
+	}
+}

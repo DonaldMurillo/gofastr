@@ -157,13 +157,6 @@ func (r *registry) isFrozen() bool {
 	return r.frozen
 }
 
-// names returns the registered capability names, sorted.
-func (r *registry) names() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Sorted(maps.Keys(r.caps))
-}
-
 // build renders the deterministic Manifest. host version comes from
 // the build info when present.
 func (r *registry) build() Manifest {

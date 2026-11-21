@@ -14,10 +14,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-var decimalRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
+// DecimalRegexp matches a decimal literal with an optional sign and exponent.
+var DecimalRegexp = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 
 func validateField(f Field, value any) error {
 	if value == nil {
@@ -25,6 +27,16 @@ func validateField(f Field, value any) error {
 			return violate(ReasonRequired, nil)
 		}
 		return nil
+	}
+	if f.Required {
+		if s, ok := value.(string); ok && s == "" {
+			switch f.Type {
+			case Int, Float, Bool, Enum, UUID, Timestamp, Date, JSON, Relation, Image, File:
+				return violate(ReasonRequired, nil)
+			case String, Text, Decimal:
+				// Their validators check for empty strings after conversion.
+			}
+		}
 	}
 
 	switch f.Type {
@@ -148,7 +160,7 @@ func validateDecimal(f Field, value any) error {
 	if s == "" {
 		return nil
 	}
-	if !decimalRe.MatchString(s) {
+	if !DecimalRegexp.MatchString(s) {
 		return violate(ReasonNotDecimal, nil)
 	}
 	if !DecimalExponentFits(s) {
@@ -306,29 +318,25 @@ func validateJSON(value any) error {
 }
 
 func validateRelation(value any) error {
-	s, ok := toString(value)
-	if !ok {
-		return violate(ReasonNotReference, nil)
-	}
-	if !textsafe.Storable(s) {
-		return violate(ReasonInvalidText, nil)
-	}
-	if s == "" {
-		return violate(ReasonEmptyReference, nil)
-	}
-	return nil
+	return validateStorableString(value, ReasonNotReference, ReasonEmptyReference)
 }
 
 func validateImageOrFile(value any) error {
+	return validateStorableString(value, ReasonNotPath, ReasonEmptyPath)
+}
+
+// validateStorableString is the shared rule of Relation, Image and File
+// values: a string, storable as text, and non-empty.
+func validateStorableString(value any, notString, empty i18n.Phrase) error {
 	s, ok := toString(value)
 	if !ok {
-		return violate(ReasonNotPath, nil)
+		return violate(notString, nil)
 	}
 	if !textsafe.Storable(s) {
 		return violate(ReasonInvalidText, nil)
 	}
 	if s == "" {
-		return violate(ReasonEmptyPath, nil)
+		return violate(empty, nil)
 	}
 	return nil
 }

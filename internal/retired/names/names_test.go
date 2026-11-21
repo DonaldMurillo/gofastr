@@ -23,6 +23,7 @@ func TestKeep(t *testing.T) {
 		{Kind: "attr", Name: "DATA-FUI-TOGGLE-", Note: form},
 		{Kind: "class", Name: "card", Note: generic},
 		{Kind: "class", Name: "fui-old", Note: generic},
+		{Kind: "class", Name: "cui-pos-center", Note: generic},
 		{Kind: "attr", Name: "data-placeholder", Note: generic},
 		{Kind: "attr", Name: "data-when-name", Note: generic},
 		{Kind: "attr", Name: "Data-Hui-Old", Note: generic},
@@ -37,12 +38,23 @@ func TestKeep(t *testing.T) {
 	want := []string{
 		"v9.0.0 class ui-button", "v9.0.0 attr data-fui-signal", "v9.0.0 attr data-fui-toggle-",
 		"v9.0.0 class ui-hero", "v9.1.0 class ui-form", "v9.1.0 class fui-old",
-		"v9.1.0 attr Data-Hui-Old", "v9.1.0 attr data-cui-old",
+		"v9.1.0 class cui-pos-center", "v9.1.0 attr Data-Hui-Old", "v9.1.0 attr data-cui-old",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("Keep() =\n%q\nwant\n%q", got, want)
 	}
 	if again := Keep(Keep(in)); !slices.Equal(again, Keep(in)) {
 		t.Errorf("Keep is not idempotent: %v", again)
+	}
+}
+
+func TestKeepFoldsOnlyASCIIAttributeCase(t *testing.T) {
+	entries := []Entry{
+		{Kind: "attr", Name: "data-fui-toast-stacK"},
+		{Kind: "attr", Name: "DATA-FUI-TOAST-STACK"},
+		{Kind: "attr", Name: "data-fui-toast-stack"},
+	}
+	if got := Keep(entries); !slices.Equal(got, entries[:2]) {
+		t.Errorf("Keep() = %v, want %v", got, entries[:2])
 	}
 }

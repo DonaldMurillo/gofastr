@@ -69,6 +69,15 @@ func scrubTitleInvisibles(page string) string {
 	return page[:start+len(openTag)] + textsafe.StripInvisible(inner) + rest[end:]
 }
 
+// suffixTitle appends " — <app name>" unless the title already ends
+// with it.
+func suffixTitle(title, appName string) string {
+	if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
+		return title + suffix
+	}
+	return title
+}
+
 // ServeHTTP serves the host on a private router of its own, for tests and
 // embedded use without a framework.App; production mounts the host instead.
 func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -215,9 +224,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	}
 	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
-	if widgets != "" {
-		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
-	}
+	out = injectWidgetSSR(out, widgets)
 
 	ds.writeAgentLinkHeaders(ctx, w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -227,12 +234,11 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	fmt.Fprint(w, out)
 }
 
-func injectWidgetSSR(page string, r *http.Request) string {
-	html, _ := widgetSSRHTML(r)
-	if html == "" {
+func injectWidgetSSR(page, widgets string) string {
+	if widgets == "" {
 		return page
 	}
-	return replaceChromeMarker(page, "</body>", html+"</body>", "widget chrome")
+	return replaceChromeMarker(page, "</body>", widgets+"</body>", "widget chrome")
 }
 
 func widgetSSRHTML(r *http.Request) (string, []string) {
@@ -287,10 +293,6 @@ func replaceChromeMarker(page, marker, replacement, what string) string {
 
 func (ds *UIHost) injectChrome(ctx context.Context, page, pagePath, sessionID, presenceTopic string) string {
 	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, nil)
-}
-
-func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
-	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
 func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {

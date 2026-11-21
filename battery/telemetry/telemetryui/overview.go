@@ -97,10 +97,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 		}
 		return page(s.tabNav(ctx, tabOverview), ui.PageHeader(header), problem(ctx, i18nui.TelemetryLoadFailed))
 	}
-	wkey := sp.key
-	if wkey == defaultWindow {
-		wkey = ""
-	}
+	wkey := windowParam(sp.key)
 	// The machine is read on its own clock, traffic or none. A window
 	// it cannot be read for costs the page that section, not the rest.
 	var machine render.HTML
@@ -166,22 +163,11 @@ func share(ctx context.Context, part, whole int64) string {
 // within writes a percentile. One at the last bucket's edge is that
 // long or longer: the counts do not say how much longer.
 func within(ctx context.Context, d time.Duration) string {
-	text := ui.DurationText(ctx, twoDigits(d))
+	text := ui.DurationText(ctx, itel.RoundDuration(d))
 	if d >= itel.StatsCeiling {
 		return i18nui.TelemetryOrMore.Text(ctx, map[string]any{"duration": text})
 	}
 	return text
-}
-
-// twoDigits rounds d to two significant digits: a percentile read from
-// buckets is right to within its bucket, and "683.5 ms" says more than
-// the counts know.
-func twoDigits(d time.Duration) time.Duration {
-	unit := time.Duration(1)
-	for d/unit >= 100 {
-		unit *= 10
-	}
-	return (d + unit/2) / unit * unit
 }
 
 func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) render.HTML {
@@ -207,14 +193,13 @@ func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) re
 	}})
 }
 
-// byteText writes a size the way a machine's are read: whole megabytes
-// under a gigabyte, gigabytes to one decimal over it.
+// byteText writes a size the way a machine's are read.
 func byteText(ctx context.Context, n int64) string {
-	const mb, gb = 1 << 20, 1 << 30
-	if n < gb {
-		return i18nui.TelemetryBytesMB.Text(ctx, map[string]any{"n": i18n.Number(ctx, (n+mb/2)/mb)})
+	v, unit := itel.ByteSize(n)
+	if unit == "GB" {
+		return i18nui.TelemetryBytesGB.Text(ctx, map[string]any{"n": i18n.Number(ctx, v, i18n.MaxFraction(1))})
 	}
-	return i18nui.TelemetryBytesGB.Text(ctx, map[string]any{"n": i18n.Number(ctx, float64(n)/gb, i18n.MaxFraction(1))})
+	return i18nui.TelemetryBytesMB.Text(ctx, map[string]any{"n": i18n.Number(ctx, v)})
 }
 
 // diskWarnAt is how full a disk is drawn as trouble, whatever the
@@ -251,13 +236,7 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 			disk.Trend = i18nui.TelemetryDiskNearlyFull.Text(ctx, map[string]any{"used": disk.Trend})
 		}
 	}
-	// What this process holds: the kernel's count where there is one,
-	// else the Go heap.
-	held := l.RSSBytes
-	if held == 0 {
-		held = l.HeapBytes
-	}
-	proc := ui.StatCardConfig{Label: i18nui.TelemetryProcess.Text(ctx), Value: byteText(ctx, held), Plain: true,
+	proc := ui.StatCardConfig{Label: i18nui.TelemetryProcess.Text(ctx), Value: byteText(ctx, l.HeldBytes()), Plain: true,
 		Trend: i18nui.TelemetryGoroutines.Text(ctx, map[string]any{"n": i18n.Number(ctx, l.Goroutines)})}
 	strip := ui.StatStrip(ui.StatStripConfig{Label: i18nui.TelemetryMachineStats.Text(ctx), Cells: []render.HTML{
 		ui.StatCard(cpu), ui.StatCard(mem), ui.StatCard(disk), ui.StatCard(proc)}})

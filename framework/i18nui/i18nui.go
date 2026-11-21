@@ -456,14 +456,7 @@ func EntityDescription(ctx context.Context, tr *i18n.Translator, entityName, dis
 // FieldLabel returns entity.<entity>.fields.<field>.label, else display,
 // else the humanized field name.
 func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
-	key := "entity." + entityName + ".fields." + fieldName + ".label"
-	if got, ok := catalogString(ctx, tr, key); ok {
-		return got
-	}
-	if display != "" {
-		return fallback(ctx, tr, display)
-	}
-	return fallback(ctx, tr, humanize(fieldName))
+	return displayLabel(ctx, tr, "entity."+entityName+".fields."+fieldName+".label", display, humanize(fieldName))
 }
 
 // RelationLabel is FieldLabel for a Relation field, whose humanized

@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/uploads.md
 invariants:
   - id: bad-config-fails-at-wiring
-    rule: New refuses a config that derives nothing, half a BlurHash or components outside 1..9, more than MaxVariantsPerSet variants, a variant without width or format, and colliding variant names.
+    rule: New refuses a config that derives nothing, half a BlurHash or components outside 1..9, and any variant list CheckVariants refuses.
     enforced_by:
       - test: framework/imagefield.TestNewRejectsBadConfig
       - test: framework/imagefield.TestSweepImagefieldNewRefusesTooManyVariants

@@ -321,10 +321,6 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 	return id, true
 }
 
-func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
-	return ch.sessionGate(r.Context()).pass(w, r)
-}
-
 func (ch *CrudHandler) sessionGated() bool {
 	cfg := ch.Entity.Config
 	return cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public

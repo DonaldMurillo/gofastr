@@ -766,17 +766,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 			status = http.StatusInternalServerError
 		}
 	}
-	md := res.MD
-	if res.Allowed {
-		title := res.Title
-		if title == "" {
-			title = screen.Title
-		}
-		seo := ds.localizeSEO(ctx, routePath(r), resolveScreenSEOFor(ctx, screen, res.Component))
-		if fm := screenSEOFrontMatter(title, seo); fm != "" {
-			md = fm + "\n" + md
-		}
-	}
+	md := ds.LLMMDWithSEO(ctx, routePath(r), screen, res)
 	w.Header().Add("Vary", "Accept")
 	setPageMarkdownHeaders(w)
 	if status != 0 {

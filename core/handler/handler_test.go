@@ -723,11 +723,13 @@ func TestBindNoBodyGET(t *testing.T) {
 func TestBindNonStructPointer(t *testing.T) {
 	var s string
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	err := Bind(req, &s)
-	// Non-struct pointer with no body should be fine (no-op)
-	// But binding to a non-pointer should fail
-	if err != nil {
-		t.Logf("bind non-struct pointer: %v (acceptable)", err)
+	// A non-struct pointer with no body is a no-op; the non-pointer
+	// case is TestBindNonPointerReturnsError below.
+	if err := Bind(req, &s); err != nil {
+		t.Fatalf("Bind(&string) with no body: %v", err)
+	}
+	if s != "" {
+		t.Errorf("s = %q, want the zero value unchanged", s)
 	}
 }
 

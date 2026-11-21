@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // The field trigger is a visible link to the fallback that opens the
@@ -67,8 +68,8 @@ func TestPaletteResultsRows(t *testing.T) {
 		{Label: "Evil", Href: "javascript:alert(1)"},
 	}, ""))
 	for _, want := range []string{
-		`role="option"`,
-		`id="admin-palette-input-listbox-res-0"`,
+		`<li role="none"><a class="fui-cmd-palette__option"`,
+		`href="/admin/entities/customers/1" id="admin-palette-input-listbox-res-0" role="option" tabindex="-1"`,
 		`id="admin-palette-input-listbox-res-1"`,
 		`data-cui-push-state="/admin/entities/customers/1"`,
 		"&lt;b&gt;Ada&lt;/b&gt;",
@@ -93,6 +94,13 @@ func TestPaletteResultsEmptyRow(t *testing.T) {
 	}
 	if h := string(PaletteResults(context.Background(), "", nil, "")); !strings.Contains(h, "No matches") {
 		t.Fatalf("empty results default = %s", h)
+	}
+	ctx := makeCtxWithLocale(i18nui.HuiComboboxNoResults, "Aucun résultat")
+	h = string(PaletteResults(ctx, "", nil, ""))
+	for _, want := range []string{`aria-disabled="true"`, `id="command-palette-input-listbox-res-0"`, "Aucun résultat"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("empty result missing %q: %s", want, h)
+		}
 	}
 }
 

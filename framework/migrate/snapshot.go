@@ -59,6 +59,10 @@ func SnapshotFromRegistry(reg entity.Registry, dialect Dialect) SchemaSnapshot {
 
 // SnapshotFromPlan is the snapshot a full Plan describes for dialect.
 func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
+	return snapshotFromPlan(plan, dialect, nil)
+}
+
+func snapshotFromPlan(plan Plan, dialect Dialect, prev *SchemaSnapshot) SchemaSnapshot {
 	snap := SchemaSnapshot{Tables: map[string]map[string]string{}}
 	if plan.Registry != nil {
 		all := UnionEntities(plan.Registry)
@@ -66,8 +70,13 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 			if ent.Config.Unmanaged {
 				continue
 			}
+			fields := ent.GetFields()
+			if len(fields) == 0 && prev != nil {
+				retainSnapshotTable(&snap, *prev, ent.GetTable())
+				continue
+			}
 			cols := map[string]string{}
-			for _, f := range ent.GetFields() {
+			for _, f := range fields {
 				cols[f.Name] = columnSQLType(ent, f, all, dialect)
 			}
 			snap.Tables[ent.GetTable()] = cols
@@ -151,6 +160,40 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 	return snap
 }
 
+func retainSnapshotTable(next *SchemaSnapshot, prev SchemaSnapshot, table string) {
+	cols := lookupTableCols(prev.Tables, table)
+	if len(cols) == 0 {
+		return
+	}
+	next.Tables[table] = maps.Clone(cols)
+	copySnapshotTableEntry(&next.TableDDL, prev.TableDDL, table, nil)
+	copySnapshotTableEntry(&next.Indices, prev.Indices, table, slices.Clone[[]string])
+	copySnapshotTableEntry(&next.PrimaryKeys, prev.PrimaryKeys, table, slices.Clone[[]string])
+	copySnapshotTableEntry(&next.UniqueColumns, prev.UniqueColumns, table, slices.Clone[[]string])
+}
+
+func copySnapshotTableEntry[V any](next *map[string]V, prev map[string]V, table string, clone func(V) V) {
+	entry, ok := prev[table]
+	if !ok {
+		for name, value := range prev {
+			if strings.EqualFold(name, table) {
+				entry, ok = value, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return
+	}
+	if clone != nil {
+		entry = clone(entry)
+	}
+	if *next == nil {
+		*next = make(map[string]V)
+	}
+	(*next)[table] = entry
+}
+
 func recordDeferredNotNull(all map[string]*entity.Entity, next SchemaSnapshot, dialect Dialect, deferred map[string][]string) error {
 	for table, cols := range deferred {
 		ent := entityForTable(all, table)
@@ -223,7 +266,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	var changes []SchemaChange
 	env := &fkDiffEnv{tables: prev.Tables, uniques: snapshotUniques(prev), tableDDL: prev.TableDDL}
 	for _, ent := range ordered {
-		if ent.Config.Unmanaged {
+		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 {
 			continue
 		}
 		prevCols := lookupTableCols(prev.Tables, ent.GetTable())
@@ -451,7 +494,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	changes = dedupedChanges
 
-	next = SnapshotFromPlan(plan, dialect)
+	next = snapshotFromPlan(plan, dialect, &prev)
 	if err := recordDeferredNotNull(all, next, dialect, env.deferredNotNull); err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}

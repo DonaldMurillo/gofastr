@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
 type cancelRefusedRunner struct {
@@ -27,7 +29,7 @@ type cancelAwareBulkStore struct {
 func (store *cancelAwareBulkStore) check(ctx context.Context) error {
 	_, bounded := ctx.Deadline()
 	store.bounded = append(store.bounded, bounded)
-	store.owners = append(store.owners, userID(ctx))
+	store.owners = append(store.owners, access.UserID(ctx))
 	return ctx.Err()
 }
 

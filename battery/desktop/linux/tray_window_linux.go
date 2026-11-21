@@ -15,7 +15,6 @@ type trayWindowState struct {
 	broker *trayBroker
 	window *linuxWindow
 	hidden atomic.Bool
-	about  uintptr // GTK thread only; reset by its destroy signal
 }
 
 var trayShells sync.Map // *linuxShell -> *trayWindowState, removed before window destruction
@@ -65,7 +64,7 @@ func (state *trayWindowState) action(action trayAction) {
 			s.cfg.OnSettings(s.text())
 		}
 	case desktop.RoleAbout:
-		_ = w.withMain(state.showAboutMain)
+		_ = w.withMain(w.showAboutMain)
 	default:
 		if action.id != "" {
 			if s.cfg.OnTrayMenu != nil {
@@ -77,30 +76,30 @@ func (state *trayWindowState) action(action trayAction) {
 	}
 }
 
-func (state *trayWindowState) showAboutMain() {
-	if state.about != 0 {
-		call(gtk.Sym.GtkWindowPresent, state.about)
+func (w *linuxWindow) showAboutMain() {
+	if w.about != 0 {
+		call(gtk.Sym.GtkWindowPresent, w.about)
 		return
 	}
-	title, body := desktop.AboutText(state.window.shell.text())
+	title, body := desktop.AboutText(w.shell.text())
 	withString("%s", func(format uintptr) {
 		withString(body, func(text uintptr) {
-			state.about = call(gtk.Sym.GtkMessageDialogNew, state.window.handle, 2, 0, 2, format, text)
+			w.about = call(gtk.Sym.GtkMessageDialogNew, w.handle, 2, 0, 2, format, text)
 		})
 	})
-	withString(title, func(p uintptr) { call(gtk.Sym.GtkWindowSetTitle, state.about, p) })
-	connect(state.about, "response", aboutResponse, 0)
-	connect(state.about, "destroy", trayAboutDestroyed, state.window.handle)
-	call(gtk.Sym.GtkWidgetShowAll, state.about)
+	withString(title, func(p uintptr) { call(gtk.Sym.GtkWindowSetTitle, w.about, p) })
+	connect(w.about, "response", aboutResponse, 0)
+	connect(w.about, "destroy", aboutDestroyed, w.handle)
+	call(gtk.Sym.GtkWidgetShowAll, w.about)
 }
 
-var trayAboutDestroyed = ffi.NewCallback(func(a *ffi.Args) uintptr {
+var aboutResponse = ffi.NewCallback(func(a *ffi.Args) uintptr { call(gtk.Sym.GtkWidgetDestroy, a.Int[0]); return 0 })
+
+var aboutDestroyed = ffi.NewCallback(func(a *ffi.Args) uintptr {
 	if value, ok := nativeWindows.Load(a.Int[1]); ok {
-		if value, ok := trayShells.Load(value.(*linuxWindow).shell); ok {
-			state := value.(*trayWindowState)
-			if state.about == a.Int[0] {
-				state.about = 0
-			}
+		w := value.(*linuxWindow)
+		if w.about == a.Int[0] {
+			w.about = 0
 		}
 	}
 	return 0

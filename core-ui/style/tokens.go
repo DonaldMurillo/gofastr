@@ -114,6 +114,21 @@ func TokenCategory(key string) string {
 	return key
 }
 
+// BareKeyword reports whether v contains none of the characters the token
+// lints reject here: ASCII digits, #, comma, (, single quote or double quote.
+func BareKeyword(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
+			return false
+		}
+	}
+	return true
+}
+
 // ResolveColor returns `var(--color-<name>)` for a named color.
 func (t Theme) ResolveColor(name string) string {
 	return "var(--color-" + name + ")"
@@ -135,10 +150,11 @@ func (t Theme) CSSCustomProperties() string {
 	if knobs := knobsCSS(t.Knobs); knobs != "" {
 		css += "\n" + knobs
 	}
-	if compiled := t.compiledOptionsCSS(); compiled != "" {
+	opts := componentOptionDecls(withDefaultOptions(t.Components))
+	if compiled := compiledOptionsCSS(opts); compiled != "" {
 		css += "\n" + compiled
 	}
-	return css + "\n" + schemeCSS(t, componentOptionDecls(withDefaultOptions(t.Components)))
+	return css + "\n" + schemeCSS(t, opts)
 }
 
 func (t Theme) tokenCSS() string {
@@ -150,8 +166,7 @@ func (t Theme) tokenCSS() string {
 	return css
 }
 
-func (t Theme) compiledOptionsCSS() string {
-	opts := componentOptionDecls(withDefaultOptions(t.Components))
+func compiledOptionsCSS(opts []string) string {
 	if len(opts) == 0 {
 		return ""
 	}
@@ -213,11 +228,11 @@ func CSSCustomPropertiesOf(theme any) string {
 	return b.String()
 }
 
-type tokenKV struct {
-	Key, Value string
+type tokenField struct {
+	Key, Value, Path string
 }
 
-func walkTokens(v reflect.Value, out *[]tokenKV) {
+func walkTokens(v reflect.Value, path string, out *[]tokenField) {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return
@@ -226,7 +241,12 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	}
 	if v.Kind() == reflect.Slice {
 		for i := range v.Len() {
-			walkTokens(v.Index(i), out)
+			item := v.Index(i)
+			itemPath := ""
+			if path != "" {
+				itemPath = extensionPath(item)
+			}
+			walkTokens(item, itemPath, out)
 		}
 		return
 	}
@@ -235,14 +255,18 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	}
 	v = withOptionalDefaults(v)
 	if key, val, ok := tokenPair(v); ok {
-		*out = append(*out, tokenKV{key, val})
+		*out = append(*out, tokenField{Key: key, Value: val, Path: path})
 		return
 	}
-	for _, f := range v.Fields() {
+	for sf, f := range v.Fields() {
 		if !f.CanInterface() {
 			continue
 		}
-		walkTokens(f, out)
+		fieldPath := ""
+		if path != "" {
+			fieldPath = path + "." + sf.Name
+		}
+		walkTokens(f, fieldPath, out)
 	}
 }
 
@@ -338,8 +362,8 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 }
 
 func collectTokenDecls(v reflect.Value, out *[]string) {
-	var pairs []tokenKV
-	walkTokens(v, &pairs)
+	var pairs []tokenField
+	walkTokens(v, "", &pairs)
 	for _, p := range pairs {
 		*out = append(*out, "--"+p.Key+": "+p.Value+";")
 	}

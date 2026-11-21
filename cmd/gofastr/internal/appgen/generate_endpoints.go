@@ -9,7 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // AppEndpointsPath is where the endpoints generator writes the registration
@@ -194,7 +193,7 @@ func AppEndpointsWanted(dir string) bool {
 	if fileExistsUnder(dir, AppEndpointsPath) {
 		return true
 	}
-	f, err := settings.Load(filepath.Join(dir, settings.FileName))
+	f, err := loadAppSettings(dir)
 	return err == nil && f.Section("endpoints") != nil
 }
 
@@ -213,7 +212,7 @@ func runGenerateEndpoints(args []string) {
 			asJSON = true
 		default:
 			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), usage)
-			cli.OsExit(1)
+			cli.OsExit(2)
 			return
 		}
 	}

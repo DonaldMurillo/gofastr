@@ -237,7 +237,7 @@ func runEraseMid(t *testing.T, c func(*testing.T) scriptClient) {
 	for _, tc := range eraseMidCases {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEraseMid(c(t))
-			name := "mid-" + redisRandomID()
+			name := "mid-" + randomID()
 			q, now := midQueue(t, e, name)
 			tc.run(t, e, q, now, name)
 			if n, err := q.eraseUser(context.Background(), "u1", true); err != nil || n != 0 {

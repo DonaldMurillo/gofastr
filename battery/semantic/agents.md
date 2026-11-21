@@ -18,7 +18,7 @@ idx, err := semantic.Open(semantic.Options{
         Model: "nomic-embed-text", // ollama pull nomic-embed-text
     }),
     Keyword: semantic.NewMemoryKeyword(), // hybrid keyword+vector fusion
-    Path:    "~/.gofastr/semantic/myapp", // persist across restarts
+    Path:    "./.gofastr/semantic/myapp", // persist across restarts
 })
 if err != nil { return err }
 defer idx.Close()
@@ -38,6 +38,8 @@ hits, err := idx.Query(ctx, semantic.Query{
 })
 ```
 
+The library uses `Path` as written, including any leading `~`.
+
 **Shape (offline / test: stub embedder, no persistence):**
 ```go
 idx, _ := semantic.Open(semantic.Options{
@@ -47,10 +49,14 @@ idx, _ := semantic.Open(semantic.Options{
 
 **Mount HTTP routes on a GoFastr app:**
 ```go
-app.RegisterPlugin(semantic.NewPlugin(idx))
+app.RegisterPlugin(semantic.NewPlugin(idx).
+    WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))
 // exposes POST /semantic/index, POST /semantic/query, GET /semantic/stats,
 // DELETE /semantic/doc/{id}
 ```
+
+The handler fails closed with HTTP 401 when no token is configured.
+Send `Authorization: Bearer <token>` with each request.
 
 **AI-typical anti-pattern.** If you're about to write any of these,
 stop and use `battery/semantic` instead:

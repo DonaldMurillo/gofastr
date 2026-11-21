@@ -813,27 +813,28 @@ func moduleIs(root, module string) (bool, error) {
 		}
 		return false, err
 	}
-	for line := range strings.SplitSeq(string(body), "\n") {
+	return moduleLine(body) == module, nil
+}
+
+// moduleLine reads the module path a go.mod line declares: the one
+// parser moduleIs and the chromium-shard rule share. `module<TAB>path`
+// and a trailing `// comment` are valid go.mod, and both once made the
+// module never match, silently disabling every rule scoped to it — a
+// gate that disables itself is worse than no gate. Surrounding quotes
+// are stripped; "" when the line declares no module path.
+func moduleLine(goMod []byte) string {
+	for line := range strings.SplitSeq(string(goMod), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "module") {
+		rest, ok := strings.CutPrefix(trimmed, "module")
+		if !ok || rest == "" || (rest[0] != ' ' && rest[0] != '\t') {
 			continue
 		}
-		rest := strings.TrimSpace(trimmed[len("module"):])
-		// `module<TAB>path` is valid go.mod. Requiring a space made the
-		// module never match, silently disabling every rule scoped to it.
-		if rest == "" || rest == trimmed {
-			continue
-		}
-		// `module path // comment` is valid go.mod. Comparing the whole
-		// remainder made the comment part of the path, so the module never
-		// matched and every rule scoped to it silently stopped running. A
-		// gate that disables itself is worse than no gate.
 		if i := strings.Index(rest, "//"); i >= 0 {
 			rest = rest[:i]
 		}
-		return strings.TrimSpace(rest) == module, nil
+		return strings.Trim(strings.TrimSpace(rest), `"`)
 	}
-	return false, nil
+	return ""
 }
 
 // goLexState carries the lexical context that survives a newline in Go source:

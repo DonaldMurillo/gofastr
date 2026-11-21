@@ -10,9 +10,14 @@ on_change:
   - fieldSpec's JSON tags are what localentity.js and localform.js read; change them with the scripts.
 invariants:
   - id: define-refuses-bad-declarations
-    rule: Define panics on a nil db, a negative MaxRecords, no fields, a field name that is not lowercase snake_case of 1 to 61 bytes or is constructor or prototype, a built-in or repeated name, a type other than String, Text, Int, Float, Bool, Enum, Date or Timestamp, an Enum with no Values, and a Pattern checkPattern refuses.
+    rule: Define panics on a nil db, a negative MaxRecords, no fields, a field name that is not lowercase snake_case of 1 to 61 bytes or is constructor or prototype, a built-in or repeated name, a type other than String, Text, Int, Float, Bool, Enum, Date or Timestamp, an Enum with no Values, a Pattern checkPattern refuses, and a Default the form would refuse for the field (its type, bounds, choice or format).
     enforced_by:
       - test: framework/localentity.TestRefusals
+  - id: timestamp-default-round-trips
+    rule: Define accepts Timestamp defaults in zoned RFC 3339 with dot fractions and stores them in UTC with milliseconds and an unsigned four-digit year from 0000 through 9999.
+    enforced_by:
+      - test: framework/localentity.TestDefineRefusesUnreadableTimestampDefaults
+      - test: framework/localentity.TestDefineNormalizesTimestampDefault
   - id: indexed-must-be-required
     rule: An Indexed field must be a declared, Required, non-Bool field; created_at and updated_at are always indexed.
     enforced_by:
@@ -68,3 +73,11 @@ decisions:
       - option: Translate patterns between engines.
         why: \s and the dot differ in which characters they match, so one side would accept what the other refuses.
     upholds: [pattern-is-the-shared-subset]
+  - id: validate-defaults-at-define
+    date: 2026-11-19
+    status: accepted
+    decision: A Default is validated and normalized in Define, the way coerce validates a submitted value, not copied into records unchecked at save time.
+    rejected:
+      - option: Validate defaults in localform.js when saving.
+        why: The save path copies a default straight into the record, and IndexedDB omits an invalid index key, so a bad default hides the record from lists ordered by the field.
+    upholds: [define-refuses-bad-declarations, timestamp-default-round-trips]

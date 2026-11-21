@@ -235,15 +235,20 @@ func (f SignatureFormat) setHeaders(h http.Header, secret string, unixTimestamp 
 	h.Set(f.Header, f.Sign(secret, unixTimestamp, event, deliveryID, body))
 }
 
-// Verify reports whether a request carrying headers h and body is a delivery
-// signed in this format with secret, inside tolerance of now. It reads the
-// timestamp from the signature value when Prefix holds {timestamp} (and then
-// requires TimestampHeader, when set, to carry the same value), else from
-// TimestampHeader, and compares the whole signature value with hmac.Equal.
+// Verify reports whether a request carrying headers h and body is a
+// delivery signed in this format with secret, inside tolerance of now.
+// It reads the timestamp from the signature value when Prefix holds
+// {timestamp} (and then requires TimestampHeader, when set, to carry the
+// same value), else from TimestampHeader. It compares the entire
+// signature value with hmac.Equal.
 //
 // It rejects an invalid format, an empty or whitespace-only secret, a
 // non-positive tolerance and a missing header, as VerifyTimestamped does.
 func (f SignatureFormat) Verify(secret string, h http.Header, body []byte, tolerance time.Duration) bool {
+	return f.verify(secret, h, body, tolerance, false)
+}
+
+func (f SignatureFormat) verify(secret string, h http.Header, body []byte, tolerance time.Duration, gofastrFields bool) bool {
 	if f.Validate() != nil || strings.TrimSpace(secret) == "" || tolerance <= 0 {
 		return false
 	}
@@ -251,13 +256,18 @@ func (f SignatureFormat) Verify(secret string, h http.Header, body []byte, toler
 	if got == "" {
 		return false
 	}
-	tsRaw, ok := f.timestampFrom(got, h)
-	if !ok || !allDigits(tsRaw) {
-		return false
+	var tsRaw string
+	if gofastrFields {
+		tsRaw, got = gofastrSignatureFields(got)
+	} else {
+		tsRaw = f.timestampFrom(got, h)
+		if !allDigits(tsRaw) {
+			return false
+		}
 	}
-	// Digits only, so ts is non-negative and now - ts cannot overflow.
 	ts, err := strconv.ParseInt(tsRaw, 10, 64)
-	if err != nil {
+	// Reject negative timestamps before subtracting to avoid overflow.
+	if err != nil || ts < 0 {
 		return false
 	}
 	delta := time.Now().Unix() - ts
@@ -268,29 +278,55 @@ func (f SignatureFormat) Verify(secret string, h http.Header, body []byte, toler
 		return false
 	}
 	want := f.Sign(secret, ts, h.Get(f.eventHeader()), h.Get(f.deliveryIDHeader()), body)
+	if gofastrFields {
+		want = want[len(want)-hex.EncodedLen(sha256.Size):]
+	}
 	return hmac.Equal([]byte(got), []byte(want))
 }
 
-// timestampFrom reads the signed timestamp's digits.
-func (f SignatureFormat) timestampFrom(sig string, h http.Header) (string, bool) {
+// timestampFrom reads the timestamp from the exact custom wire format.
+func (f SignatureFormat) timestampFrom(sig string, h http.Header) string {
 	before, after, inPrefix := strings.Cut(f.Prefix, placeTimestamp)
 	if !inPrefix {
-		v := h.Get(f.TimestampHeader)
-		return v, v != ""
+		return h.Get(f.TimestampHeader)
 	}
-	// The value is before, the timestamp, after, then a fixed-length hex
-	// MAC, so the timestamp is what lies between before and after+MAC. A
-	// digit scan would run into a MAC that starts with a digit when after
-	// is empty.
+	// Locate the timestamp relative to the end of the fixed-length MAC.
+	// The suffix can be empty or occur in the timestamp itself.
 	end := len(sig) - hex.EncodedLen(sha256.Size) - len(after)
 	if !strings.HasPrefix(sig, before) || end <= len(before) || sig[end:end+len(after)] != after {
-		return "", false
+		return ""
 	}
 	ts := sig[len(before):end]
 	if f.TimestampHeader != "" && h.Get(f.TimestampHeader) != ts {
-		return "", false
+		return ""
 	}
-	return ts, true
+	return ts
+}
+
+// gofastrSignatureFields reads the built-in comma-list wire format.
+// Unknown fields can occur anywhere, but repeated t or v1 fields make
+// the signature ambiguous for a reader that takes the first or last.
+func gofastrSignatureFields(sig string) (timestamp, mac string) {
+	var timestampSeen, macSeen bool
+	for part := range strings.SplitSeq(sig, ",") {
+		key, value, found := strings.Cut(strings.TrimSpace(part), "=")
+		if !found {
+			continue
+		}
+		switch key {
+		case "t":
+			if timestampSeen {
+				return "", ""
+			}
+			timestamp, timestampSeen = value, true
+		case "v1":
+			if macSeen {
+				return "", ""
+			}
+			mac, macSeen = value, true
+		}
+	}
+	return timestamp, mac
 }
 
 // Verifier is Verify as an InboundVerifier for IngestHandler: a GoFastr app

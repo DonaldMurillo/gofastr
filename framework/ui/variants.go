@@ -128,9 +128,7 @@ var buttonClasses = headless.Classes{
 }
 
 func buttonClassTokens(variant ButtonVariant, size ButtonSize) string {
-	if variant == "" {
-		variant = ButtonPrimary
-	}
+	variant = orPrimary(variant)
 	classes := []string{buttonClasses.Class(headless.PartRoot)}
 	if c := buttonClasses.Variant(headless.PartRoot, string(variant)); c != "" {
 		classes = append(classes, c)
@@ -291,6 +289,22 @@ func validVariantName(name string) bool {
 		return false
 	}
 	return name[0] != '-'
+}
+
+// orPrimary is the one default every button family uses for an empty variant.
+func orPrimary(v ButtonVariant) ButtonVariant {
+	if v == "" {
+		return ButtonPrimary
+	}
+	return v
+}
+
+// buttonVariant resolves an empty variant to primary and panics on an
+// unregistered one.
+func buttonVariant(component string, v ButtonVariant) ButtonVariant {
+	v = orPrimary(v)
+	checkButtonVariant(component, v)
+	return v
 }
 
 func checkButtonVariant(component string, v ButtonVariant) {

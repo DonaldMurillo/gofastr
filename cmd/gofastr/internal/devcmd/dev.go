@@ -21,6 +21,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/gates"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
@@ -83,7 +84,7 @@ func RunDev(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDevUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
@@ -174,25 +175,7 @@ func RunDev(args []string) {
 	// keeps every directory the build imports from, gen/ included; its
 	// graph is read after the first build, which fetched the modules.
 	watch := NewWatch(watchCtx, dir, pkg, nil)
-	go func() {
-		poll := watch.Poller(before, since)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				if poll.Changed() {
-					select {
-					case reload <- struct{}{}:
-					default: // already queued
-					}
-				}
-			}
-		}
-	}()
+	go watch.Notify(before, since, stop, reload)
 
 	// Contract findings arrive with each reload, scoped to what changed.
 	// Constructed once so it can suppress an unchanged report rather than
@@ -302,16 +285,6 @@ func checkDevDir(dir string) error {
 		return fmt.Errorf("--dir %s is not a directory", dir)
 	}
 	return nil
-}
-
-// SplitFlagEqual splits "--name=value" into ("--name", "value", true). A bare
-// "--name" (no '=') returns ("--name", "", false) so the caller can take the
-// value from the next argument.
-func SplitFlagEqual(arg string) (name, value string, hasValue bool) {
-	if idx := strings.IndexByte(arg, '='); idx >= 0 {
-		return arg[:idx], arg[idx+1:], true
-	}
-	return arg, "", false
 }
 
 func resolveDevIsolation(dir, addr string) (*isolation.Runtime, string, error) {
@@ -443,7 +416,10 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 		// go build -o writes a non-main package's archive without
 		// complaint, and the exec of it fails with "permission denied":
 		// say what is wrong instead.
-		if name := packageName(dir, pkg); name != "" && name != "main" {
+		listCtx, cancel := context.WithTimeout(context.Background(), listTimeout)
+		name, err := project.PackageName(listCtx, dir, pkg, 5*time.Second)
+		cancel()
+		if err == nil && name != "" && name != "main" {
 			msg = fmt.Sprintf("%s is package %s, not a main package. gofastr dev runs a command: pass --pkg ./cmd/<name> when main lives below the project root", pkg, name)
 		}
 		cli.Fail("%s", msg)
@@ -477,21 +453,6 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	}(os.Stdout)
 
 	return true
-}
-
-// packageName is the Go package name of pkg, listed in dir, or "" when
-// go list cannot say.
-func packageName(dir, pkg string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
-	defer cancel()
-	list := exec.CommandContext(ctx, "go", "list", "-buildvcs=false", "-f", "{{.Name}}", pkg)
-	list.Dir = dir
-	list.WaitDelay = 5 * time.Second
-	out, err := list.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // buildGatesAndBinary runs the rebuild's gates and go build, copying
@@ -865,6 +826,27 @@ type Poller struct {
 func (w *Watch) Poller(before map[string]time.Time, since time.Time) *Poller {
 	graph := w.graph.Load()
 	return &Poller{w: w, prev: FirstSnapshot(before, w.Scan(), since), since: since, graph: graph}
+}
+
+// Notify polls the watch every 500ms until stop closes and queues a
+// reload for each change; a reload already queued absorbs the next.
+func (w *Watch) Notify(before map[string]time.Time, since time.Time, stop <-chan struct{}, reload chan<- struct{}) {
+	poll := w.Poller(before, since)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if poll.Changed() {
+				select {
+				case reload <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
 }
 
 // Changed scans the watch and reports whether the tree changed since the

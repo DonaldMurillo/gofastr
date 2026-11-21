@@ -99,6 +99,44 @@ func TestPostgres_PublishSubscribeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPostgresListenUsesCanonicalFallbackTableName(t *testing.T) {
+	dsn := pgtest.FreshDatabaseDSN(t)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE SCHEMA app`); err != nil {
+		t.Fatal(err)
+	}
+	publisher, err := NewPostgres(dsn, db, WithTableName("app.msgs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = publisher.Close() })
+	listener, err := NewPostgres(dsn, db, WithTableName("App.Msgs"), WithoutEnsureTable())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	r := &recv{}
+	cancel, err := listener.Subscribe("posts", r.add)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	const payload = "canonical channel"
+	if err := publisher.Publish(context.Background(), "posts", []byte(payload)); err != nil {
+		t.Fatal(err)
+	}
+	r.waitN(t, 1, "app.msgs must notify the listener configured as App.Msgs")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.got[0] != payload {
+		t.Errorf("payload = %q, want %q", r.got[0], payload)
+	}
+}
+
 // TestPostgres_TopicIsolation: a message on topicB does not reach topicA.
 func TestPostgres_TopicIsolation(t *testing.T) {
 	f, _ := pgFanout(t)

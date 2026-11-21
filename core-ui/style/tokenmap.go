@@ -16,8 +16,8 @@ import (
 // identifier WITHOUT the leading "--".
 func ThemeToTokens(t Theme) map[string]string {
 	out := make(map[string]string, 96)
-	var pairs []tokenKV
-	walkTokens(reflect.ValueOf(t), &pairs)
+	var pairs []tokenField
+	walkTokens(reflect.ValueOf(t), "", &pairs)
 	for _, p := range pairs {
 		out[p.Key] = p.Value
 	}

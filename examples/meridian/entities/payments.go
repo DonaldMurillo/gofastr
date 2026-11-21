@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0c4f7e2996160e6f
+//gofastr:generated generator=app kind=scaffold version=dev sum=19a1569039dd5362
 
 package entities
 
@@ -273,13 +273,6 @@ func OnPaymentsUpdated(app *framework.App, fn func(ctx context.Context, row *Pay
 // has been removed (or soft-deleted).
 func OnPaymentsDeleted(app *framework.App, fn func(ctx context.Context, id string) error) func() {
 	return onEntityDeleted(app, "payments", fn)
-}
-
-// extractPaymentsRecord unmarshals an event payload's "record" field into a
-// *Payments, returning ok=false if the event is for a different entity or
-// the payload shape doesn't match.
-func extractPaymentsRecord(ev framework.Event, entityName string) (*Payments, bool) {
-	return extractEntityRecord[Payments](ev, entityName)
 }
 
 // registerPayments registers the "payments" entity with app.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,10 +137,12 @@ func (e2eChrome) Render() render.HTML {
 // e2eHandlerRan receives the menu Handler item's context error.
 var e2eHandlerRan chan error
 
+var nativeMainPanel = flag.Bool("desktop-main-panel", false, "run only the native main-panel test")
+
 // e2eDataDir is the app's data dir under the phase's temp base
 // (NativePhase points GOFASTR_DESKTOP_DATA_DIR at one when unset).
 func e2eDataDir() string {
-	return filepath.Join(os.Getenv("GOFASTR_DESKTOP_DATA_DIR"), e2eAppID)
+	return filepath.Join(os.Getenv(desktop.DataDirEnv), e2eAppID)
 }
 
 // buildNativeApp assembles the app the whole e2e build runs against:
@@ -170,7 +173,7 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 	}))
 
 	e2eHandlerRan = make(chan error, 1)
-	b := native.New(desktop.Config{
+	cfg := desktop.Config{
 		ID:      e2eAppID,
 		Title:   e2eTitle,
 		DataDir: e2eDataDir(),
@@ -214,7 +217,13 @@ func buildNativeApp() (*framework.App, *desktop.Battery, error) {
 		// asserts state.json picked it up, and opens a framed
 		// secondary window.
 		RememberWindows: true,
-	})
+	}
+	if *nativeMainPanel {
+		cfg.Style = desktop.WindowStyle{Panel: true, Float: true}
+		cfg.Widgets = nil
+		cfg.Tray = nil
+	}
+	b := native.New(cfg)
 	fwApp.RegisterBattery(b)
 	return fwApp, b, nil
 }
@@ -226,9 +235,46 @@ func TestMain(m *testing.M) {
 	// needs DlopenCount 0, so m.Run must finish before AppKit loads).
 	code := m.Run()
 	if code == 0 {
-		code = desktoptest.NativePhase(buildNativeApp, runNativePhase)
+		phase := runNativePhase
+		if *nativeMainPanel {
+			phase = func(h *desktoptest.NativeHarness) bool {
+				return runPhaseTest(h, "MainPanelLaunch", phaseMainPanelLaunch)
+			}
+		}
+		code = desktoptest.NativePhase(buildNativeApp, phase)
 	}
 	os.Exit(code)
+}
+
+func phaseMainPanelLaunch(t desktoptest.TB, h *desktoptest.NativeHarness) {
+	w, ok := h.Battery.Window()
+	if !ok {
+		t.Fatalf("main window did not open")
+	}
+	st, err := h.WindowState(w.ID())
+	if err != nil || st.Class != "NSPanel" || !st.Visible || st.Key {
+		t.Fatalf("main panel state = %+v, err = %v, want visible, non-key NSPanel", st, err)
+	}
+	frame, err := w.Frame()
+	if err != nil || frame.Width != st.Width || frame.Height != st.Height {
+		t.Fatalf("Frame = %+v, err = %v, want OS dimensions %d×%d", frame, err, st.Width, st.Height)
+	}
+	if err := w.SetFrame(frame); err != nil {
+		t.Fatalf("SetFrame: %v", err)
+	}
+	const title = "Updated panel title"
+	if err := w.SetTitle(title); err != nil {
+		t.Fatalf("SetTitle: %v", err)
+	}
+	if st, err := h.WindowState(w.ID()); err != nil || st.Title != title {
+		t.Fatalf("native title = %q, err = %v, want %q", st.Title, err, title)
+	}
+	if err := w.SetSidebarWidth(160); err != nil {
+		t.Fatalf("SetSidebarWidth: %v", err)
+	}
+	if err := w.Focus(); err != nil {
+		t.Fatalf("Focus: %v", err)
+	}
 }
 
 // runNativePhase drives the native tests and the scenario, in this

@@ -99,9 +99,6 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 			continue
 		}
 		dst := filepath.Join(b.OutDir, f.relFile)
-		if err := b.ensureContained(dst); err != nil {
-			return err
-		}
 		if err := writeUnder(b.OutDir, dst, f.body); err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package uinoderender
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -473,7 +474,7 @@ func TestRenderAllComponentsNoPanic(t *testing.T) {
 		node(uinodev1.CompImage, uinodev1.ImageProps{Src: "/x.png", Alt: "x"}),
 	}
 	for i, n := range nodes {
-		t.Run(string(n.Component)+"#"+itoa(i), func(t *testing.T) {
+		t.Run(string(n.Component)+"#"+strconv.Itoa(i), func(t *testing.T) {
 			// If a framework/ui primitive panics on a minimal-but-valid
 			// node, this test fails, surfacing the bug rather than
 			// masking it. The datatable empty-columns case is the
@@ -498,28 +499,4 @@ func tree(root uinodev1.Node) *uinodev1.Tree { return &uinodev1.Tree{Root: root}
 
 func node(c uinodev1.Component, p uinodev1.Props) uinodev1.Node {
 	return uinodev1.Node{Component: c, Props: p}
-}
-
-// itoa keeps the test file free of strconv for parity with the validator's
-// own test helper.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [12]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

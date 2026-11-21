@@ -9,6 +9,9 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/types/typeutil"
 )
 
@@ -172,7 +175,7 @@ func (a *analyzer) collectAudits(fns []*ast.FuncDecl) {
 			if !ok {
 				continue
 			}
-			params := ctxParams(a.pass.TypesInfo, fn)
+			params := ctxParams(a.pass, fn)
 			if len(params) == 0 {
 				continue
 			}
@@ -209,19 +212,11 @@ func (a *analyzer) collectAudits(fns []*ast.FuncDecl) {
 }
 
 // ctxParams maps fn's context parameters to their argument indexes.
-func ctxParams(info *types.Info, fn *ast.FuncDecl) map[types.Object]int {
-	params := map[types.Object]int{}
-	i := 0
-	for _, field := range fn.Type.Params.List {
-		if len(field.Names) == 0 {
-			i++
-			continue
-		}
-		for _, id := range field.Names {
-			if po := info.Defs[id]; po != nil && isContext(po.Type()) {
-				params[po] = i
-			}
-			i++
+func ctxParams(pass *analysis.Pass, fn *ast.FuncDecl) map[types.Object]int {
+	params := pathflow.ParamIndexes(pass, fn)
+	for obj := range params {
+		if !isContext(obj.Type()) {
+			delete(params, obj)
 		}
 	}
 	return params
@@ -246,7 +241,7 @@ func isRequest(obj types.Object) bool {
 // uncancellable context with no bound handed to a host interface
 // (d799883c).
 func (a *analyzer) checkAudit(r *resolver, body *ast.BlockStmt) {
-	if strings.HasSuffix(a.pass.Fset.Position(body.Pos()).Filename, "_test.go") {
+	if pathflow.InTestFile(a.pass, body) {
 		return
 	}
 	info := a.pass.TypesInfo

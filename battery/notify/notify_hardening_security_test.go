@@ -100,10 +100,9 @@ func TestMapTemplater_CapsInterpolatedOutput(t *testing.T) {
 
 // The rendered Extra.headers map is the one place notification data can
 // smuggle custom headers into an outgoing email, so every shape that
-// could forge the envelope or the MIME structure is refused before the
-// sender is invoked: CR/LF in the header name or value (header
-// injection), and overrides of the reserved Bcc, Content-Type, From and
-// Reply-To headers. Each row is pinned as its own subtest.
+// could forge the envelope, the MIME structure or the header display is
+// refused before the sender is invoked. The checks cover SMTP custom
+// header validation and notify's reserved reply-routing fields.
 func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -148,6 +147,54 @@ func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 			rejectedAs: "reserved Reply-To header override was accepted. Attack: reply-hijack / phishing through rendered Extra.headers.",
 			despite:    "reserved Reply-To header override",
 		},
+		{
+			name:       "esc_header_value",
+			header:     map[string]string{"X-Trace": "total:\x1b]0;pwned\x07"},
+			rejectedAs: "custom header value with an ESC control byte was accepted. Attack: terminal-title spoofing, the byte pair the SMTP battery's header rule refuses.",
+			despite:    "ESC control byte in custom header value",
+		},
+		{
+			name:       "bidi_header_value",
+			header:     map[string]string{"X-Trace": "user\u202Eadmin.com"},
+			rejectedAs: "custom header value with a bidi override (U+202E) was accepted. Attack: display spoofing — the value reads as another in every MUA.",
+			despite:    "bidi override in custom header value",
+		},
+		{
+			name:       "reserved_resent_bcc_override",
+			header:     map[string]string{"Resent-Bcc": "attacker@example.com"},
+			rejectedAs: "reserved Resent-Bcc header override was accepted. Attack: blind-recipient smuggling through the resent copy of the message.",
+			despite:    "reserved Resent-Bcc header override",
+		},
+		{
+			name:       "empty_header_name",
+			header:     map[string]string{"": "custom"},
+			rejectedAs: "an empty header name was accepted",
+			despite:    "an empty header name",
+		},
+		{
+			name:       "space_in_header_name",
+			header:     map[string]string{" X-Trace": "custom"},
+			rejectedAs: "a header name with a leading space was accepted",
+			despite:    "a header name with a leading space",
+		},
+		{
+			name:       "non_ascii_header_name",
+			header:     map[string]string{"X-Café": "custom"},
+			rejectedAs: "a non-ASCII header name was accepted",
+			despite:    "a non-ASCII header name",
+		},
+		{
+			name:       "duplicate_header_name",
+			header:     map[string]string{"X-Trace": "first", "x-trace": "second"},
+			rejectedAs: "case-insensitive duplicate headers were accepted",
+			despite:    "case-insensitive duplicate headers",
+		},
+		{
+			name:       "unfoldable_header_value",
+			header:     map[string]string{"X-Trace": strings.Repeat("x", 998)},
+			rejectedAs: "an overlong header with no fold point was accepted",
+			despite:    "an overlong header with no fold point",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,6 +212,9 @@ func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 			})
 			if err == nil {
 				t.Fatalf("SECURITY: [notify-email] %s", tc.rejectedAs)
+			}
+			if !errors.Is(err, notify.ErrUnsafeHeader) {
+				t.Fatalf("SECURITY: [notify-email] %s refused with %v, want ErrUnsafeHeader", tc.despite, err)
 			}
 			if len(sender.last.To) != 0 || sender.last.Subject != "" || len(sender.last.Headers) != 0 {
 				t.Fatalf("SECURITY: [notify-email] sender invoked despite %s: %#v", tc.despite, sender.last)

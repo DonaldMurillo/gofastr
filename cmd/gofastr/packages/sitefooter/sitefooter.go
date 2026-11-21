@@ -1,9 +1,9 @@
 // Package sitefooter is the app's colophon, built the way siteheader
 // builds the top bar: plain html elements composed here, the look in
 // sitefooter.style.css (an owned style; `gofastr gen styles` writes the
-// class methods in sitefooter_style.gen.go), and every dimension a
-// theme token. Its content sits on the page measure the header and
-// main share, so the three line up at every width.
+// class methods in sitefooter_style.gen.go). Spacing and shared sizes
+// use theme tokens. The tagline measure and grid tracks use literal
+// sizes. The footer sits on the page measure the header and main share.
 //
 // The footer is the page's contentinfo landmark. This package is the
 // app's own code: edit it freely.

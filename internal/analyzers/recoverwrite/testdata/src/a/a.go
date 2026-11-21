@@ -168,7 +168,8 @@ func Metrics(next http.Handler) http.Handler {
 	})
 }
 
-// A deferred write with no recover: not this rule (doublewrite's).
+// A deferred write with no recover, spelled as a non-literal defer:
+// neither this rule nor doublewrite (which reads literals only).
 func NoRecover(w http.ResponseWriter) { // want NoRecover:`writesResponse\[0\]`
 	defer w.WriteHeader(http.StatusOK)
 }

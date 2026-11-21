@@ -31,7 +31,7 @@ func TestGenerateRejectsInvalidEntities(t *testing.T) {
 			}
 			clitest.WriteTestFile(t, spec, valid+"        default: "+value+"\n")
 			var code int
-			output := clitest.CovT_capStdout(t, func() {
+			output := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() { RunMigrate([]string{"generate", "bad", "--from=" + spec}) })
 			})
 			if code != 1 {

@@ -80,9 +80,9 @@ var destroyCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 var configureCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 	if value, ok := nativeWindows.Load(a.Int[0]); ok {
 		w := value.(*linuxWindow)
-		if cb := w.shell.cfg.OnWindowFrame; cb != nil {
+		if cb := w.shell.onFrame; cb != nil {
 			f := w.frameMain()
-			go cb(w.id, f)
+			go cb(w, f)
 		}
 	}
 	return 0
@@ -156,6 +156,7 @@ type linuxShell struct {
 	uiThread      atomic.Int64
 	done          chan struct{}
 	cfg           desktop.WindowConfig
+	onFrame       func(desktop.Window, desktop.Frame)
 	textCtx       context.Context
 	windows       map[string]*linuxWindow
 	webContext    uintptr
@@ -175,6 +176,7 @@ type linuxWindow struct {
 	titleMu    sync.RWMutex
 	title      string
 	menuTokens []uintptr // UI thread only
+	about      uintptr   // UI thread only
 	effect     windowEffect
 	press      buttonPress // UI thread only
 }
@@ -192,6 +194,7 @@ func (s *linuxShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready fu
 	}
 	s.started = true
 	s.cfg = cfg
+	s.onFrame = cfg.WindowFrameReporter()
 	s.mu.Unlock()
 	// Registered first so it runs last: ownership passes to the next shell
 	// only after this one's profile, launch and done channel are released.
@@ -590,13 +593,13 @@ func (w *linuxWindow) Close() error {
 	return closeNativeWindow(w.closed.Load, w.shell.Main, func() { call(gtk.Sym.GtkWindowClose, w.handle) })
 }
 func (w *linuxWindow) SetSidebarWidth(points int) error {
-	if points < 0 || points > desktop.MaxSidebarWidth {
-		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "invalid sidebar width"}
+	if err := desktop.ValidateSidebarWidth(points); err != nil {
+		return err
 	}
 	if w.closed.Load() {
 		return errClosed()
 	}
-	return nil // no compositor material on Linux
+	return nil // GTK materials cover the whole window.
 }
 func (w *linuxWindow) Frame() (desktop.Frame, error) {
 	var f desktop.Frame

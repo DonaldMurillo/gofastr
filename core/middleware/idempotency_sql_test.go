@@ -115,16 +115,11 @@ func TestSQLIdempotency_UnsafeTableNameRejected(t *testing.T) {
 	}
 }
 
-// Simulates the race where two concurrent transactions both see "no row"
-// and both attempt INSERT; the second must surface as ErrInFlight, not a
-// raw PK-violation error that the middleware would interpret as fail-open.
 func TestSQLIdempotency_DoubleInsertIsErrInFlightNotRawError(t *testing.T) {
 	db, s := openSQLIdemStore(t)
 	ctx := context.Background()
-	// Stand in for the "first writer" tx: directly insert an in-flight
-	// row outside Begin. Begin's own insert path must now see that row
-	// instead of crashing with a UNIQUE constraint failure.
-	now := time.Now()
+	// Seed the first writer's claim in UTC, as Begin does.
+	now := time.Now().UTC()
 	_, err := db.Exec(
 		"INSERT INTO idempotency_keys (key, fingerprint, expires_at, created_at) VALUES (?, ?, ?, ?)",
 		"k-concurrent", "fp1", now.Add(30*time.Second), now,
@@ -139,17 +134,13 @@ func TestSQLIdempotency_DoubleInsertIsErrInFlightNotRawError(t *testing.T) {
 	}
 }
 
-// A stored response whose headers column no longer parses is corrupt:
-// replaying it would answer a cached request with silently-dropped
-// headers (content-type, security headers), so Begin must refuse the
-// replay with an error instead of marching on with a zero http.Header.
 func TestSQLIdempotency_CorruptStoredHeadersRefuseReplay(t *testing.T) {
 	db, s := openSQLIdemStore(t)
 	ctx := context.Background()
 	if _, ok, err := s.Begin(ctx, "k-corrupt", "fp1"); err != nil || ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	if _, err := db.Exec(
 		"UPDATE idempotency_keys SET status = 200, headers = ?, body = ?, expires_at = ? WHERE key = ?",
 		`{not json`, []byte("ok"), now.Add(time.Minute), "k-corrupt",

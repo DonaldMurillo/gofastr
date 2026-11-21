@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // On a case-insensitive filesystem "tenanta/report.txt" opens the file
@@ -18,7 +19,7 @@ import (
 // way, as battery/storage's local backend does.
 func TestFoldedReadRefused(t *testing.T) {
 	base := t.TempDir()
-	ls := newTestLocalStorage(t, base)
+	ls := teststorage.New(t, base)
 	ctx := context.Background()
 	if err := ls.Save(ctx, "TenantA/report.txt", strings.NewReader("tenant-a secret")); err != nil {
 		t.Fatal(err)

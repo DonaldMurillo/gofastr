@@ -23,14 +23,19 @@ These run entirely in the browser. No network request is made.
 
 ### Signal state
 
-Signals are named string values stored in the DOM. The runtime
-provides three mutation primitives triggered by click:
+Signals hold named values in the browser's runtime signal store.
+The click-time mutation attributes write the following values:
 
 | Attribute | Effect |
 |---|---|
-| `data-cui-signal-set="name:value"` | Sets signal `name` to `value` |
-| `data-cui-signal-inc="name"` | Increments signal `name` by 1, or use `"name:delta"` for another step |
-| `data-cui-signal-toggle="name"` | Flips signal `name` between `"true"` and `"false"` |
+| `data-cui-signal-set="name:value"` | Stores the string `value` in `name`. |
+| `data-cui-signal-inc="name[:delta]"` | Coerces the current value to a number, starts from 0 if it cannot be converted, and stores the sum. The default delta is 1. |
+| `data-cui-signal-toggle="name"` | Stores the Boolean `true` or `false` in `name`. |
+
+`getSignal`, subscriptions, and computed reducers read the stored value
+with its type. Text bindings display the value as text. Attribute
+bindings write strings, or set and remove presence-based Boolean
+attributes such as `disabled`.
 
 Any element carrying a `data-cui-signal` attribute renders the current
 value of that signal as its text content. The runtime updates it on
@@ -100,9 +105,10 @@ byte-identical):
 
 ### Toggle switch
 
-`framework/ui.SignalToggle` renders a `role=switch` with
-`aria-checked` bound to a boolean signal. Clicking toggles the signal
-between `"true"` and `"false"`.
+`framework/ui.SignalToggle` renders a `type="button"` switch with
+`aria-checked` bound to a Boolean signal. Clicking flips the stored
+Boolean without submitting the enclosing form. The ARIA attribute
+reads `"true"` or `"false"` in the DOM.
 
 ### Collapsible
 
@@ -248,21 +254,18 @@ Attributes injected: `data-cui-rpc`, `data-cui-rpc-method`,
 
 ### OnSubmit (form → server → signal)
 
-`interactive.OnSubmit(form, action)` wraps a `<form>` so submission
-fires via `fetch()` instead of a full-page reload. The response body
-writes into the named signal.
-
-Attributes injected: `data-cui-rpc` (on the form element),
-`data-cui-rpc-trigger="submit"`.
+`interactive.OnSubmit(form, action)` attaches `data-cui-rpc` to the
+`<form>`. The runtime intercepts the form's regular submit event and
+sends the request with `fetch()`. Add `OnSuccess(interactive.SetSignal(name))`
+to write the successful response into that signal. This effect emits
+`data-cui-rpc-signal` on the form.
 
 ### Live Search (debounced input → RPC)
 
 `interactive.LiveSearch(form, action, debounceMs)` wraps a search form
-so typing fires debounced RPCs. The input event triggers the fetch
-after the specified debounce interval (default 300ms).
-
-Attributes injected: `data-cui-rpc-trigger="input"`,
-`data-cui-rpc-debounce-ms` (milliseconds; default 300).
+so typing fires debounced RPCs. It writes `data-cui-rpc-trigger="input"`
+and `data-cui-rpc-debounce-ms` on the form. Pass 0 for the default of
+250 ms, or supply a delay in milliseconds.
 
 ### Dropdown (click-toggle panel)
 
@@ -278,9 +281,9 @@ Knob: `--ui-dropdown-min-width` (11rem).
 Action's RPC endpoint and method. An Action carrying confirmation, a body,
 toasts, or success effects panics at render time rather than discarding
 those options. Use `interactive.OnClick` for an Action needing that wiring.
-It renders a button
-that immediately flips to its success visual on click, then fires the
-RPC in the background. On failure the button shakes and reverts.
+It renders a button that immediately flips to its success visual on
+click, then fires the RPC in the background. On failure the button
+shakes, reverts, and announces the failure through a status element.
 
 Uses the kernel's `action` module through the `data-hui-action*`
 hooks `interactive.OptimisticUpdate` (and `framework/ui.OptimisticAction`)
@@ -443,10 +446,11 @@ interactive.Delete("/api/invoices/42").
 
 Attributes injected: `data-cui-rpc-success-toast="title"` and
 `data-cui-rpc-success-action` (JSON: the label and next's attributes).
-The button carries next's `data-cui-rpc*` wiring and nothing else:
-`OnSuccessToastAction` panics on a confirm, a signal or any other key,
-and the runtime drops any such key from the JSON it reads. entityui's
-`Undo()` on a soft delete is built on it.
+The button carries the next action's `data-cui-rpc` and `data-cui-rpc-*`
+attributes, including `data-cui-rpc-signal` for a response signal.
+`OnSuccessToastAction` panics on preflight confirmation and standalone
+signal-mutation attributes. The browser copies only RPC attributes
+onto the toast button. entityui's `Undo()` on a soft delete uses this hook.
 
 A server answer offers the same button: `interactive.NewToastAction(label,
 next)` builds it under the same rules, and `ui.ToastTrigger.Action`
@@ -926,9 +930,9 @@ size it; on a phone it fills the screen.
 A palette with `RPCPath` searches on the server. The endpoint reads `q`
 from the form body and answers option rows built by
 `ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
-palette's `Name`. Each row navigates to its command's `Href` on pick;
-an href that is not a safe link (a `javascript:` URL) renders no
-navigation. With no commands it answers one disabled row reading
+palette's `Name`. A command with a safe `Href` renders an anchor,
+so readers can also use the browser's usual link actions.
+With no commands it answers one disabled row reading
 `empty`, or the localized "No matches" when `empty` is `""`.
 
 A palette with `Search: true` searches the pages instead: the
@@ -1112,11 +1116,10 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   owns that logic; the client's job is to fire the RPC and swap the
   returned HTML. Duplicated math drifts from the server's the first
   time either changes.
-- **Treating signals as typed values.** Signals are strings stored in
-  the DOM: `data-cui-signal-toggle` flips between the strings `"true"`
-  and `"false"`, and `data-cui-signal-inc` parses-then-stringifies.
-  Compare against string values (in CSS attribute selectors too), not
-  booleans or numbers.
+- **Comparing a stored signal to the wrong type.** Compare the result of
+  `getSignal` using the type its producer writes. Increment writes a number,
+  toggle writes a Boolean, and set writes a string. CSS attribute selectors
+  compare the rendered attribute text.
 - **Using SSE to deliver an action's response.** SSE is push-only.
   It carries background events for *other* clients. The result of a user action
   arrives in the RPC response itself (`data-cui-rpc-signal`, island

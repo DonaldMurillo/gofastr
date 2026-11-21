@@ -32,7 +32,7 @@ func TestThemeEditTakesSpaceSeparatedAddr(t *testing.T) {
 	// A non-loopback address is refused before anything binds, so the
 	// refusal proves --addr's value was read.
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runThemeEdit([]string{"--addr", "192.0.2.1:0", "--no-open"}) })
 	})
 	if code != 1 || !strings.Contains(out, `refusing to bind the theme editor to "192.0.2.1:0"`) {
@@ -42,7 +42,7 @@ func TestThemeEditTakesSpaceSeparatedAddr(t *testing.T) {
 
 func TestThemeEditRefusesMissingAddrValue(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runThemeEdit([]string{"--addr", "--no-open"}) })
 	})
 	if code != 1 || !strings.Contains(out, "--addr needs a value") {

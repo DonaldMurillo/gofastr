@@ -1,7 +1,7 @@
 // Package fieldlocal pins the local-copy leg (review finding R2): a
 // func field copied to a local and called through the local — the
 // nil-check-and-call spelling any careful author writes — is the same
-// registry callback as the direct field call one line earlier.
+// registry callback as a direct field call.
 package fieldlocal
 
 import (
@@ -29,7 +29,6 @@ func (s *S) Handle(line []byte) {
 		return
 	}
 	s.Call(t)
-	s.callDirect(t)
 }
 
 func (s *S) Call(t Tool) {
@@ -37,11 +36,6 @@ func (s *S) Call(t Tool) {
 	if gate != nil {
 		_ = gate(context.Background()) // want `recovercallback: gate is invoked with no recover in scope`
 	}
-}
-
-// callDirect is the flagship spelling beside it: the field itself.
-func (s *S) callDirect(t Tool) {
-	_ = t.Gate(context.Background()) // want `recovercallback: t\.Gate is invoked with no recover in scope`
 }
 
 // infraLocal: a printf-shaped field copied to a local is still

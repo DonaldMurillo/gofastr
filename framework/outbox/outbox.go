@@ -16,6 +16,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 // Row is a snapshot of one parent outbox row. Status is "pending" until every
@@ -71,7 +73,7 @@ func leaseFloor(handlerTimeout, settleTimeout time.Duration) time.Duration {
 type Option func(*Outbox)
 
 // WithTable overrides the default "event_outbox" table name. [New] errors on a
-// name that is not a safe SQL identifier.
+// name with an unsafe identifier or a part longer than 63 bytes.
 func WithTable(name string) Option {
 	return func(o *Outbox) { o.table = name }
 }
@@ -158,7 +160,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 		consumers:      map[string]map[string]event.EventHandler{},
 		handlerGrace:   15 * time.Minute,
 		handlerTimeout: 30 * time.Second,
-		settleTimeout:  10 * time.Second,
+		settleTimeout:  settle.Timeout,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -167,10 +169,12 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 	if _, err := query.SafeIdent(o.table); err != nil {
 		return nil, fmt.Errorf("outbox: invalid table name %q: %w", o.table, err)
 	}
-	o.deliveryTable = o.table + "_delivery"
-	if _, err := query.SafeIdent(o.deliveryTable); err != nil {
-		return nil, fmt.Errorf("outbox: invalid delivery table name %q: %w", o.deliveryTable, err)
+	for part := range strings.SplitSeq(o.table, ".") {
+		if len(part) > query.MaxIdentBytes {
+			return nil, fmt.Errorf("outbox: table name part %q exceeds %d bytes", part, query.MaxIdentBytes)
+		}
 	}
+	o.deliveryTable = deliveryTableName(o.table)
 	o.dialect = detectDialect(db)
 	if o.dialect == dialectPostgres {
 		if err := query.RefuseCaseKeptTables(context.Background(), db, o.table, o.deliveryTable); err != nil {
@@ -184,6 +188,16 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 	}
 	o.registerData()
 	return o, nil
+}
+
+func deliveryTableName(table string) string {
+	i := strings.LastIndexByte(table, '.') + 1
+	base := table[i:]
+	delivery := query.FitIdent(base + "_delivery")
+	if asciicase.EqualFold(delivery, base) {
+		delivery = delivery[:len(delivery)-1]
+	}
+	return table[:i] + delivery
 }
 
 type dialect int

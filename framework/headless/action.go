@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
 // Action parts: the idle label and the done label.
@@ -217,14 +218,7 @@ func ToggleAction(p ToggleActionProps, s Classes) render.HTML {
 }
 
 func renderAction(a action, s Classes) render.HTML {
-	own := Merge(safeActionExtras(a.extra), Attrs(map[string]string{
-		"id":                       a.id,
-		"type":                     "button",
-		"data-hui-action-endpoint": a.endpoint,
-	}))
-	if a.method != "" {
-		own["data-hui-action-method"] = a.method
-	}
+	own := Merge(safeActionExtras(a.extra), Attrs(map[string]string{"id": a.id}))
 	if a.group != "" {
 		own["data-hui-action-group"] = a.group
 	}
@@ -241,15 +235,12 @@ func renderAction(a action, s Classes) render.HTML {
 	if a.allowUntoggle {
 		own["data-hui-action-untoggle"] = a.untoggle
 	}
-	own["data-state"] = a.state
 	if a.pressed != "" {
 		own["aria-pressed"] = a.pressed
 		if _, ok := own["aria-label"]; !ok {
 			own["aria-label"] = a.idleLabel
 		}
 	}
-	own["data-hui-action-failed"] = orDefault(a.failedText, a.strings.Resolve().ActionFailed)
-	Mark(own, "data-hui-action")
 	Flag(own, "disabled", a.disabled)
 	if cls := s.Variant(PartRoot, a.variant); cls != "" {
 		own["class"] = cls
@@ -258,35 +249,27 @@ func renderAction(a action, s Classes) render.HTML {
 		own["class"] = joinClasses(own["class"], cls)
 	}
 
-	kids := []render.HTML{
-		actionSpan(b, PartActionIdle, a.state == "committed", a.idleLabel, a.idleIcon),
-		actionSpan(b, PartActionDone, a.state != "committed", a.doneLabel, a.doneIcon),
-		b.El("span", PartVisuallyHidden, Internal(Mark(Attrs(map[string]string{
-			"role": "status",
-		}), "data-hui-action-status"))),
+	button := uiaction.Button{
+		Endpoint: a.endpoint, Method: a.method, State: a.state,
+		FailedText: orDefault(a.failedText, a.strings.Resolve().ActionFailed),
+		Idle:       actionLabel(b, a.idleLabel, a.idleIcon),
+		Done:       actionLabel(b, a.doneLabel, a.doneIcon),
 	}
-	return b.El("button", PartRoot, own, kids...)
+	return button.Render(own, func(tag, name string, attrs map[string]string, children ...render.HTML) render.HTML {
+		part := Part(name)
+		if part == PartVisuallyHidden || part == PartActionIdle && a.idleIcon == "" || part == PartActionDone && a.doneIcon == "" {
+			attrs = Internal(attrs)
+		}
+		return b.El(tag, part, attrs, children...)
+	})
 }
 
-func actionSpan(b Box, part Part, hidden bool, label string, icon render.HTML) render.HTML {
-	hook := "data-hui-action-idle"
-	if part == PartActionDone {
-		hook = "data-hui-action-done"
-	}
-	attrs := html.Attrs{hook: ""}
-	if hidden {
-		Mark(attrs, "hidden")
-	}
+func actionLabel(b Box, label string, icon render.HTML) render.HTML {
+	text := render.Text(label)
 	if icon == "" {
-		attrs = Internal(attrs)
+		return text
 	}
-	kids := make([]render.HTML, 0, 2)
-	if icon != "" {
-		kids = append(kids, b.El("span", PartIcon,
-			Attrs(map[string]string{"aria-hidden": "true"}), icon))
-	}
-	kids = append(kids, render.Text(label))
-	return b.El("span", part, attrs, kids...)
+	return b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), icon) + text
 }
 
 func init() {

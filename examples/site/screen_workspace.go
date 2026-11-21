@@ -47,7 +47,7 @@ const wsPaneParam = "pane"
 
 // wsTicket / wsCustomer are the in-memory demo records. Package-level
 // slices, read both at render time (to build the list) and in the RPC
-// handlers (to look one up by id), the demoCompany placement idiom.
+// handlers (to look one up by id), the gallery.DemoCompany placement idiom.
 type wsTicket struct {
 	ID, Subject, Requester, Priority, Body, CustomerID string
 	Status                                             ui.StatusVariant

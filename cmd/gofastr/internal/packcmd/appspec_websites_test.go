@@ -59,8 +59,11 @@ func TestAppSpec_APIPrefixAndSeedWiring(t *testing.T) {
 	if !strings.Contains(main, "CountAll(ctx, framework.ListOptions{})") {
 		t.Error("seed hook is not idempotent (no CountAll gate)")
 	}
-	if !strings.Contains(main, "appBaseCSS()") {
-		t.Error("main.go does not mount appBaseCSS")
+	if !strings.Contains(main, `uihost.WithStaticDir("static"), uihost.WithCustomCSS(fontFaceCSS)`) {
+		t.Error("main.go does not mount the configured static directory and generated font CSS")
+	}
+	if strings.Contains(main, "appBaseCSS") || strings.Contains(main, "ReadCustomCSSFile") {
+		t.Error("main.go still mounts legacy app CSS")
 	}
 }
 
@@ -75,13 +78,13 @@ func TestAppSpec_AppConstsAndRoutes(t *testing.T) {
 	if !strings.Contains(screens, `site.Register("/items/:id"`) {
 		t.Errorf("detail screen route not converted {id}->:id for the screen router:\n%s", screens)
 	}
-	if !strings.Contains(app, "func appBaseCSS() string") {
-		t.Error("app.go missing appBaseCSS function")
+	if strings.Contains(app, "appBaseCSS") {
+		t.Error("app.go still generates the appBaseCSS hook")
 	}
 	// The generator ships ZERO bespoke CSS: every surface composes framework/ui
 	// components + core-ui/app layouts that own their styling.
 	if strings.Contains(app, ".gofastr-entity") || strings.Contains(app, ".gofastr-auth") {
-		t.Error("appBaseCSS must ship no bespoke CSS — components own their styling")
+		t.Error("app.go emits bespoke entity or auth CSS")
 	}
 }
 

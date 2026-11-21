@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // GOFASTR1415: a user-data table the erase and export planes never reach.
@@ -195,7 +196,7 @@ func eraseCoverPackage(p *contracts.Pass, dir string) *ecPkg {
 			switch v := d.(type) {
 			case *ast.FuncDecl:
 				if v.Recv != nil {
-					if t := ecRecvType(v); t != "" {
+					if t := astbase.RecvBaseNameGeneric(v); t != "" {
 						pk.methods[t+"."+v.Name.Name] = v
 					}
 					pk.methodNames[v.Name.Name] = append(pk.methodNames[v.Name.Name], v)
@@ -865,7 +866,7 @@ func (pk *ecPkg) typeOfIdent(name string, fn *ast.FuncDecl) string {
 	if fn.Recv != nil && len(fn.Recv.List) > 0 {
 		for _, n := range fn.Recv.List[0].Names {
 			if n.Name == name {
-				return ecRecvType(fn)
+				return astbase.RecvBaseNameGeneric(fn)
 			}
 		}
 	}
@@ -953,27 +954,8 @@ func ecBaseType(e ast.Expr) string {
 	return ""
 }
 
-func ecRecvType(fn *ast.FuncDecl) string {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
-		return ""
-	}
-	t := fn.Recv.List[0].Type
-	if s, ok := t.(*ast.StarExpr); ok {
-		t = s.X
-	}
-	switch v := t.(type) {
-	case *ast.Ident:
-		return v.Name
-	case *ast.IndexExpr:
-		return ecBaseType(v.X)
-	case *ast.IndexListExpr:
-		return ecBaseType(v.X)
-	}
-	return ""
-}
-
 func ecFuncKey(fn *ast.FuncDecl) string {
-	if t := ecRecvType(fn); t != "" {
+	if t := astbase.RecvBaseNameGeneric(fn); t != "" {
 		return t + "." + fn.Name.Name
 	}
 	return fn.Name.Name

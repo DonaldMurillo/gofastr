@@ -247,6 +247,56 @@ func TestValidateRejectsFatProp(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsFatEnumProp proves MaxPropString bounds every prop
+// string, the enum-valued ones included (Limits.MaxPropString claims
+// "any single string field in any prop struct"): a two-byte cap refuses
+// a valid enum value the old length checks skipped.
+func TestValidateRejectsFatEnumProp(t *testing.T) {
+	lim := Limits{MaxPropString: 2}
+	cases := []string{
+		`{"component":"stack","props":{"direction":"vertical"}}`,
+		`{"component":"stack","props":{"align":"center"}}`,
+		`{"component":"cluster","props":{"align":"start"}}`,
+		`{"component":"card","props":{"title":"x","elevation":"high"}}`,
+		`{"component":"badge","props":{"text":"x","tone":"positive"}}`,
+		`{"component":"stat-card","props":{"label":"x","value":"1","trend":"flat"}}`,
+		`{"component":"button","props":{"label":"x","variant":"primary"},"action_ref":"a"}`,
+	}
+	for _, j := range cases {
+		_, err := Validate([]byte(j), lim)
+		if err == nil {
+			t.Errorf("enum prop over MaxPropString must reject: %s", j)
+			continue
+		}
+		if !strings.Contains(err.Error(), "too long") {
+			t.Errorf("error should be the string cap, got: %v (%s)", err, j)
+		}
+	}
+}
+
+func TestValidatePropErrorPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		json string
+		want string
+	}{
+		{"badge tone before text cap", `{"component":"badge","props":{"text":"long","tone":"bad"}}`, `uinodev1: enum: badge.tone="bad" is not a permitted value`},
+		{"button variant before label cap", `{"component":"button","props":{"label":"long","variant":"bad"},"action_ref":"a"}`, `uinodev1: enum: button.variant="bad" is not a permitted value`},
+		{"link URL before text cap", `{"component":"link","props":{"text":"long","to":"https://example.com"}}`, `uinodev1: url: link.to="https://example.com" is not a host-relative same-origin path`},
+		{"image source cap before alt cap", `{"component":"image","props":{"src":"/source.png","alt":"long"}}`, `uinodev1: cap: image too long: got 11 bytes, max 2`},
+		{"image required alt before source cap", `{"component":"image","props":{"src":"/source.png"}}`, `uinodev1: required: image.alt is required`},
+		{"image source URL before required alt", `{"component":"image","props":{"src":"https://example.com"}}`, `uinodev1: url: image.src="https://example.com" is not a host-relative same-origin path`},
+		{"link required text before URL", `{"component":"link","props":{"to":"https://example.com"}}`, `uinodev1: required: link.text is required`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Validate([]byte(tc.json), Limits{MaxPropString: 2})
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("Validate error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 // TestValidateRejectsTotalTextBomb proves the total-text cap fires at
 // MaxTotalText+1 bytes. Default is 256 KiB. We use 65 headings with
 // 4096 bytes each = 266240 bytes > 262144, but each prop stays under
@@ -413,17 +463,22 @@ func TestValidateRejectsTrailingJSON(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsInputBytesCap proves the raw-input cap fires.
+// TestValidateRejectsInputBytesCap proves the raw-input cap fires on an
+// otherwise-valid tree, with exterior whitespace carrying the size: the
+// at-cap input accepts, one byte over rejects at the cap itself.
 func TestValidateRejectsInputBytesCap(t *testing.T) {
-	// 1 KiB cap; payload is >1 KiB.
-	lim := Limits{MaxInputBytes: 1024}
-	big := strings.Repeat(" ", 1025)
-	// Even an otherwise-valid tree rejects when the raw bytes overflow.
-	j := `{"component":"divider","ignored":"` + big + `"}`
-	// Note: this also has an unknown field "ignored" but the byte cap
-	// fires first (it's the earliest check).
-	if _, err := Validate([]byte(j), lim); err == nil {
-		t.Fatalf(">MaxInputBytes payload must reject")
+	const tree = `{"component":"divider"}`
+	pad := func(n int) string { return strings.Repeat(" ", n) + tree }
+	lim := Limits{MaxInputBytes: len(tree) + 1}
+	if _, err := Validate([]byte(pad(1)), lim); err != nil {
+		t.Fatalf("at-cap input must accept, got: %v", err)
+	}
+	_, err := Validate([]byte(pad(2)), lim)
+	if err == nil {
+		t.Fatalf("one byte over MaxInputBytes must reject")
+	}
+	if !strings.Contains(err.Error(), "input bytes") {
+		t.Fatalf("error should be the input-bytes cap, got: %v", err)
 	}
 }
 

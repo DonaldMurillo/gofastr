@@ -412,9 +412,7 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	if len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
 	}
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	q := make([]float32, len(qv))
 	copy(q, qv)
 	normalize(q)
@@ -435,12 +433,12 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	// number: ranked raw, it fell behind negative matches and a LIMIT cut
 	// it. The ORDER BY ranks it at distance 1 (score 0), as the scan below
 	// scores it.
-	stmt := fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner,
+	stmt := fmt.Sprintf(`SELECT %s,
 		embedding <=> $1::vector AS distance
 	FROM %s
 	WHERE %s
 	ORDER BY COALESCE(NULLIF(embedding <=> $1::vector, 'NaN'::float8), 1) ASC, id ASC
-	LIMIT $%d`, s.quotedTable, where.String(), limitIdx)
+	LIMIT $%d`, pgChunkColumns, s.quotedTable, where.String(), limitIdx)
 
 	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
@@ -449,26 +447,11 @@ func (s *PgVectorStore) Candidates(ctx context.Context, qv []float32, filter Fil
 	defer rows.Close()
 	var hits []Hit
 	for rows.Next() {
-		var (
-			c         Chunk
-			metaBytes []byte
-			embText   string
-			distance  float64
-		)
-		if err := rows.Scan(
-			&c.ID, &c.DocID, &c.Source, &c.Text,
-			&c.Offset[0], &c.Offset[1], &metaBytes, &embText, &c.Owner, &distance,
-		); err != nil {
-			return nil, fmt.Errorf("semantic: pgvector scan: %w", err)
-		}
-		if err := unmarshalMeta(metaBytes, &c.Metadata); err != nil {
-			return nil, fmt.Errorf("semantic: pgvector unmarshal meta: %w", err)
-		}
-		vec, err := parseVector(embText)
+		var distance float64
+		c, err := scanChunkRow(rows, &distance)
 		if err != nil {
-			return nil, fmt.Errorf("semantic: pgvector parse embedding: %w", err)
+			return nil, err
 		}
-		c.Vec = vec
 		// A zero vector (text with no tokens) has no direction: pgvector's
 		// cosine distance to it is NaN. Score it 0, as FlatStore's dot over
 		// a normalized query does; a NaN score fails JSON encoding.
@@ -564,7 +547,7 @@ func (s *PgVectorStore) chunksByIDMatching(ctx context.Context, ids []string, fi
 	defer rows.Close()
 	out := make(map[string]Chunk, len(ids))
 	for rows.Next() {
-		c, err := scanChunkRow(rows)
+		c, err := scanChunkRow(rows, nil)
 		if err != nil {
 			return nil
 		}
@@ -625,7 +608,7 @@ func (s *PgVectorStore) allChunks(ctx context.Context) ([]Chunk, error) {
 	defer rows.Close()
 	var out []Chunk
 	for rows.Next() {
-		c, err := scanChunkRow(rows)
+		c, err := scanChunkRow(rows, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -643,37 +626,50 @@ func (s *PgVectorStore) scanOne(ctx context.Context, whereClause string, args ..
 	if !rows.Next() {
 		return Chunk{}, sql.ErrNoRows
 	}
-	c, err := scanChunkRow(rows)
+	c, err := scanChunkRow(rows, nil)
 	if err != nil {
 		return Chunk{}, err
 	}
 	return c, rows.Err()
 }
 
+const pgChunkColumns = "id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner"
+
 func (s *PgVectorStore) selectAll(tail string) string {
-	return fmt.Sprintf(`SELECT id, doc_id, source, text, offset_start, offset_end, meta, embedding, owner FROM %s %s`, s.quotedTable, tail)
+	return fmt.Sprintf("SELECT %s FROM %s %s", pgChunkColumns, s.quotedTable, tail)
 }
 
-// scanChunkRow scans the canonical 9-column chunk projection. It closes
-// nothing; the caller owns rows.
-func scanChunkRow(rows *sql.Rows) (Chunk, error) {
+// scanChunkRow reads the chunk projection. Candidate rows include a distance
+// column and report the stage that failed when decoding a row.
+func scanChunkRow(rows *sql.Rows, distance *float64) (Chunk, error) {
 	var (
 		c         Chunk
 		metaBytes []byte
 		embText   string
 	)
-	if err := rows.Scan(
+	var dests [10]any
+	columns := append(dests[:0],
 		&c.ID, &c.DocID, &c.Source, &c.Text,
 		&c.Offset[0], &c.Offset[1], &metaBytes, &embText, &c.Owner,
-	); err != nil {
-		return Chunk{}, err
+	)
+	if distance != nil {
+		columns = append(columns, distance)
+	}
+	rowError := func(stage string, err error) error {
+		if distance != nil {
+			return fmt.Errorf("semantic: pgvector %s: %w", stage, err)
+		}
+		return err
+	}
+	if err := rows.Scan(columns...); err != nil {
+		return Chunk{}, rowError("scan", err)
 	}
 	if err := unmarshalMeta(metaBytes, &c.Metadata); err != nil {
-		return Chunk{}, err
+		return Chunk{}, rowError("unmarshal meta", err)
 	}
 	vec, err := parseVector(embText)
 	if err != nil {
-		return Chunk{}, err
+		return Chunk{}, rowError("parse embedding", err)
 	}
 	c.Vec = vec
 	return c, nil

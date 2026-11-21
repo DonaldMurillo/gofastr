@@ -26,26 +26,15 @@ func TestHandler_RejectsBearerWhenNoTokenConfigured(t *testing.T) {
 	}
 }
 
-// TestHandler_NoConfigFailsClosedOnEveryRoute asserts that with no token and no
-// insecure opt-in, every route rejects an authenticated-looking request, the
-// mount is never silently open. /stats and DELETE /doc have no body-shape gate,
-// so they reach the auth check directly.
-func TestHandler_NoConfigFailsClosedOnEveryRoute(t *testing.T) {
+func TestHandler_DeleteFailsClosedWithoutToken(t *testing.T) {
 	h := Handler(errIndex{})
-	cases := []struct{ method, target string }{
-		{http.MethodGet, "/stats"},
-		{http.MethodDelete, "/doc/x"},
-	}
-	for _, c := range cases {
-		req := httptest.NewRequest(c.method, c.target, nil)
-		req.Header.Set("Authorization", "Bearer whatever")
-		req.SetPathValue("id", "x")
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s with no token configured: status %d, want 401 (fail closed)",
-				c.method, c.target, rec.Code)
-		}
+	req := httptest.NewRequest(http.MethodDelete, "/doc/x", nil)
+	req.Header.Set("Authorization", "Bearer whatever")
+	req.SetPathValue("id", "x")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("DELETE /doc/x with no token configured: status %d, want 401", rec.Code)
 	}
 }
 

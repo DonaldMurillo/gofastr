@@ -3,7 +3,9 @@ package buildcmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
@@ -82,13 +84,21 @@ func TestAllowUnverifiedStillFailsOnFinding(t *testing.T) {
 func TestRunBuildCallsEmbedGate(t *testing.T) {
 	dir, output := embedGateModule(t)
 	clitest.CovT_chdir(t, dir)
-	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() {
-			RunBuild([]string{"--no-generate", "--no-a11y", "--output=" + output})
+	if out, err := exec.CommandContext(t.Context(), "go", "mod", "tidy").CombinedOutput(); err != nil {
+		t.Fatalf("prepare embed test module: %v\n%s", err, out)
+	}
+
+	var code int
+	var stdout string
+	stderr := clitest.CovT_capStderr(t, func() {
+		stdout = clitest.CovT_capStdout(t, func() {
+			code = clitest.CovT_capExit(t, func() {
+				RunBuild([]string{"--no-generate", "--no-a11y", "--output=" + output})
+			})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("runBuild exit = %d, want 1 from embed gate", code)
+	if code != 1 || !strings.Contains(stderr, "check-embed: 1 embed surface(s) register a server action") {
+		t.Fatalf("runBuild exit = %d, want 1 with an embed finding:\n%s\n%s", code, stdout, stderr)
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatalf("runBuild produced a binary after embed gate failure: %v", err)

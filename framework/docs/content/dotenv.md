@@ -13,8 +13,9 @@ Files are probed in this order (earlier wins on conflict):
    (e.g. `.env.production`).
 3. `.env`: committed defaults shared by all environments.
 
-Missing files are silently skipped; a malformed file fails fast with
-the file name and line number.
+`NewApp` skips missing files. If loading fails, `NewApp` panics before
+applying any file values or running app options. The error names the file
+and includes the line number for malformed assignments.
 
 ## Precedence
 
@@ -29,12 +30,17 @@ A strict subset of the de facto dotenv spec:
 
 ```
 # comments and blank lines are allowed
-FOO=bar                       # bareword value
-QUOTED="hello world"          # double-quoted: \n \t \" \\ interpreted
-LITERAL='hello\nworld'        # single-quoted: VERBATIM, no escapes
-export PORT=8080              # optional `export` prefix tolerated
-PATH_TPL="${HOME}/bin"        # ${VAR} expansion (double-quoted only)
-ESCAPED="\${not expanded}"    # \$ blocks expansion at that position
+FOO=bar
+# Double quotes interpret \n, \t, \" and \\.
+QUOTED="hello world"
+# Single quotes keep the value verbatim.
+LITERAL='hello\nworld'
+# The export prefix is optional.
+export PORT=8080
+# Double quotes expand ${VAR}.
+PATH_TPL="${HOME}/bin"
+# \$ blocks expansion at that position.
+ESCAPED="\${not expanded}"
 ```
 
 Hard rules:
@@ -91,10 +97,11 @@ environment value holding `${x}` goes in as the text `${x}`:
 
 ```
 PW='a${b}c'
-DSN="postgres://u:${PW}@h/db"   # postgres://u:a${b}c@h/db
+# Expands to postgres://u:a${b}c@h/db.
+DSN="postgres://u:${PW}@h/db"
 ```
 
-- **No cycles.** `A=${A}` reads A before this line sets it (empty the
+- **No cycles.** `A="${A}"` reads A before this line sets it (empty the
   first time). Since a looked-up value is never re-expanded, no chain
   can loop or compound through lookups.
 - **`\${...}` escape.** Escapes and `${...}` are read in one pass, so
@@ -157,7 +164,9 @@ before constructing the app, has to load them first, and must load the **same
 set in the same order**:
 
 ```go
-_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+if err := dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...); err != nil {
+    log.Fatal(err)
+}
 
 db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
 ```
@@ -171,4 +180,4 @@ lower-precedence file's value, and `NewApp`'s later load of
 `.env.<APP_ENV>` can no longer win: a deployment using tiered env files
 silently gets its base `.env` value.
 
-The scaffold `gofastr init` emits does exactly this.
+The scaffold `gofastr init` emits uses the same file order.
