@@ -304,20 +304,24 @@ Pass a function to handle reports yourself:
 <!-- gofastr:compile
 stmt: _ = app
 import "github.com/DonaldMurillo/gofastr/framework"
-import "github.com/DonaldMurillo/gofastr/core/middleware"
+import "github.com/DonaldMurillo/gofastr/core/handler"
 import "net/http"
 import "log/slog"
 -->
 ```go
-app := framework.NewApp(framework.WithCSPReports(func(r *http.Request, rep middleware.CSPReport) {
+app := framework.NewApp(framework.WithCSPReports(func(r *http.Request, rep handler.CSPReport) {
     slog.WarnContext(r.Context(), "csp", "directive", rep.EffectiveDirective, "blocked", rep.BlockedURL)
 }))
 ```
 
 The sink reads both report formats (`application/reports+json` and
 `application/csp-report`) and passes each violation as one
-`middleware.CSPReport`. It takes at most 64 KiB and 16 reports per
-request. Each field has control bytes escaped and is cut to 256 bytes.
+`handler.CSPReport`. It takes at most 64 KiB and 16 reports per
+request, and decodes them with `handler.UnmarshalStrict`, so a body that
+repeats a key or spells one in another case is refused (400). Each field
+has control bytes escaped and is cut to 256 bytes. Mount
+`handler.CSPReportHandler(fn)` yourself to serve the sink at another
+path.
 URLs lose their query and fragment, because page URLs can carry tokens.
 Anyone can post to the sink, so treat a report as a hint, not a fact.
 The built-in logger writes at most 20 reports a minute and then one line
@@ -811,8 +815,6 @@ in the gateway / docs pipeline.
 - `SecurityHeaders(SecurityHeadersConfig)`: defensive headers above.
 - `TrustedTypesDirectives(names...)`: the default policy's Trusted
   Types directives, for a policy you write yourself.
-- `CSPReportHandler(fn)`: the violation report sink
-  ([Violation reports](#violation-reports)).
 - `CORS(CORSConfig)`: cross-origin headers + preflight. A preflight is
   `OPTIONS` carrying both `Origin` and `Access-Control-Request-Method`;
   it answers `204` for an allowed origin and `403` otherwise. Any other

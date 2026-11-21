@@ -3,6 +3,7 @@ summary: SecurityHeaders, the strict default set of browser security headers wit
 code:
   - core/middleware/security.go
   - core/middleware/cspreport.go
+  - core/handler/cspreport.go
 docs:
   - framework/docs/content/security.md
 on_change:
@@ -37,9 +38,10 @@ invariants:
       - test: core/middleware.TestReportingEndpointsKeepsOuterEndpoints
       - test: core/middleware.TestCSPReportURIRefusesHeaderBreakers
   - id: report-sink-is-bounded
-    rule: CSPReportHandler takes only a POST of application/reports+json or application/csp-report up to 64 KiB, passes at most 16 csp-violation entries per request, cuts URLs at their query, and escapes control bytes in every field before capping it at 256 bytes.
+    rule: handler.CSPReportHandler takes only a POST of application/reports+json or application/csp-report up to 64 KiB, decodes it with UnmarshalStrict so a duplicate or case-folded key is a 400, passes at most 16 csp-violation entries per request, cuts URLs at their query, and escapes control bytes in every field before capping it at 256 bytes.
     enforced_by:
-      - test: core/middleware.TestCSPReportHandler
+      - test: core/handler.TestCSPReportHandler
+      - test: core/handler.TestCSPReportHandlerRefusesSmuggledKeys
   - id: xss-auditor-disabled
     rule: "SecurityHeaders sends X-XSS-Protection: 0."
     enforced_by:

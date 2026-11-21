@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
@@ -22,8 +23,8 @@ func postCSPReport(app *App) int {
 }
 
 func TestWithCSPReportsMountsSinkAndPointsPolicyAtIt(t *testing.T) {
-	var got []middleware.CSPReport
-	app := NewApp(WithCSPReports(func(_ *http.Request, r middleware.CSPReport) { got = append(got, r) }))
+	var got []handler.CSPReport
+	app := NewApp(WithCSPReports(func(_ *http.Request, r handler.CSPReport) { got = append(got, r) }))
 	app, cleanup := startApp(t, app)
 	defer cleanup()
 

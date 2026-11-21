@@ -285,7 +285,7 @@ type App struct {
 	isolateAllow     func(*http.Request) bool
 
 	cspReports  bool
-	cspReportFn func(*http.Request, middleware.CSPReport)
+	cspReportFn func(*http.Request, handler.CSPReport)
 	cspLog      cspLogLimit
 
 	mcpIntrospection           bool
@@ -733,10 +733,10 @@ func WithResourceIsolation(allow func(*http.Request) bool) AppOption {
 	}
 }
 
-// WithCSPReports mounts middleware.CSPReportHandler at middleware.CSPReportPath
+// WithCSPReports mounts handler.CSPReportHandler at middleware.CSPReportPath
 // and, unless SecurityHeaders.CSPReportURI is set, points the default chain's
 // policy at it. fn gets each violation; nil logs it at warn level.
-func WithCSPReports(fn func(*http.Request, middleware.CSPReport)) AppOption {
+func WithCSPReports(fn func(*http.Request, handler.CSPReport)) AppOption {
 	return func(a *App) {
 		a.cspReports = true
 		a.cspReportFn = fn
@@ -2458,7 +2458,7 @@ func (l *cspLogLimit) take(now time.Time) (ok bool, droppedBefore int) {
 	return true, droppedBefore
 }
 
-func (a *App) logCSPReport(r *http.Request, rep middleware.CSPReport) {
+func (a *App) logCSPReport(r *http.Request, rep handler.CSPReport) {
 	ok, dropped := a.cspLog.take(time.Now())
 	if dropped > 0 {
 		a.Logger().WarnContext(r.Context(), "content security policy violations not logged", "dropped", dropped, "limit_per_minute", cspLogPerWindow)
@@ -2500,7 +2500,7 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 		if fn == nil {
 			fn = a.logCSPReport
 		}
-		a.router.Handle("POST", middleware.CSPReportPath, middleware.CSPReportHandler(fn))
+		a.router.Handle("POST", middleware.CSPReportPath, handler.CSPReportHandler(fn))
 	}
 
 	hasLLMMD = a.MountLLMMDAndDebugRoutes()
