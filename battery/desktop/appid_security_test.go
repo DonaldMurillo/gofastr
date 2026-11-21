@@ -61,7 +61,7 @@ func TestAppIDRejectsDotSegments(t *testing.T) {
 // stay inside the base.
 func TestDataDirStaysUnderItsBase(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv(dataDirEnv, base)
+	t.Setenv(DataDirEnv, base)
 
 	resolvedBase, err := filepath.EvalSymlinks(base)
 	if err != nil {

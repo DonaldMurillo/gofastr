@@ -75,13 +75,31 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 		if err != nil {
 			return fmt.Errorf("eager filtered: %w", err)
 		}
-		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, rel, node.Target, node.Filters, node.ReadScopes, scope, ids, result, softDeleteFilter, served, budget)
+		safeTargetKey, err := query.SafeColumns(targetKey, "column")
+		if err != nil {
+			return fmt.Errorf("eager filtered: invalid target key: %w", err)
+		}
+		if len(safeTargetKey) != len(safeFKs) {
+			return fmt.Errorf("eager filtered: relation %q: %w: %s is keyed on (%s)", rel.Name, entity.ErrForeignKeyShape, node.Target.GetName(), strings.Join(safeTargetKey, ", "))
+		}
+		return loadBelongsToFiltered(ctx, db, safeParentTable, parentKey, safeEntity, safeFKs, safeTargetKey, rel, node.Target, node.Filters, node.ReadScopes, scope, ids, result, softDeleteFilter, served, budget)
 	case entity.RelManyToMany:
 		mtmSoftDelete := softDeleteFilter
 		if mtmSoftDelete != "" {
 			mtmSoftDelete = " AND " + query.QuoteKeyword(safeEntity) + ".deleted_at IS NULL"
 		}
-		return loadManyToManyFiltered(ctx, db, safeEntity, rel, node, scope, ids, result, mtmSoftDelete, served, budget)
+		targetPK, err := node.Target.KeyColumn()
+		if err != nil {
+			return err
+		}
+		if targetPK, err = query.SafeIdent(targetPK); err != nil {
+			return fmt.Errorf("eager filtered: invalid target key %q: %w", targetPK, err)
+		}
+		pivotKeys, err := validatePivotIdentifiers(rel)
+		if err != nil {
+			return fmt.Errorf("eager filtered: %w", err)
+		}
+		return loadManyToManyFiltered(ctx, db, safeEntity, targetPK, pivotKeys, node, scope, ids, result, mtmSoftDelete, served, budget)
 	}
 	return nil
 }
@@ -211,14 +229,7 @@ func loadHasManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, 
 	return rows.Err()
 }
 
-func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
-	targetKey, err := safeColumns(target.KeyColumns())
-	if err != nil {
-		return fmt.Errorf("eager filtered: invalid target key: %w", err)
-	}
-	if len(targetKey) != len(safeFKs) {
-		return fmt.Errorf("eager filtered: relation %q: %w: %s is keyed on (%s)", rel.Name, entity.ErrForeignKeyShape, target.GetName(), strings.Join(targetKey, ", "))
-	}
+func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable string, parentKey []string, safeEntity string, safeFKs, targetKey []string, rel entity.Relation, target *entity.Entity, filters, readScopes []filter.ParsedFilter, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
 	sourceToFK, unique, err := belongsToFKs(ctx, db, parentTable, parentKey, safeFKs, ids)
 	if err != nil || len(unique) == 0 {
 		return err
@@ -284,28 +295,30 @@ func loadBelongsToFiltered(ctx context.Context, db DBExecutor, parentTable strin
 	return nil
 }
 
-func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, node *IncludeNode, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+type pivotIdentifiers struct {
+	through, localKey, foreignKeyTarget string
+}
+
+func validatePivotIdentifiers(rel entity.Relation) (pivotIdentifiers, error) {
+	through, err := query.SafeIdent(rel.Through)
+	if err != nil {
+		return pivotIdentifiers{}, fmt.Errorf("invalid through table %q: %w", rel.Through, err)
+	}
+	localKey, err := query.SafeIdent(rel.LocalKey)
+	if err != nil {
+		return pivotIdentifiers{}, fmt.Errorf("invalid local key %q: %w", rel.LocalKey, err)
+	}
+	foreignKeyTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
+	if err != nil {
+		return pivotIdentifiers{}, fmt.Errorf("invalid FK target %q: %w", rel.ForeignKeyTarget, err)
+	}
+	return pivotIdentifiers{through: through, localKey: localKey, foreignKeyTarget: foreignKeyTarget}, nil
+}
+
+func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity, targetPK string, pivotKeys pivotIdentifiers, node *IncludeNode, scope hookScope, ids []string, result map[string]map[string]any, softDeleteFilter string, served servedCols, budget *includeBudget) error {
+	rel := node.Relation
 	target, filters, readScopes := node.Target, node.Filters, node.ReadScopes
-	targetPK, err := target.KeyColumn()
-	if err != nil {
-		return err
-	}
-	if targetPK, err = query.SafeIdent(targetPK); err != nil {
-		return fmt.Errorf("eager filtered: invalid target key %q: %w", targetPK, err)
-	}
-	safeThrough, err := query.SafeIdent(rel.Through)
-	if err != nil {
-		return fmt.Errorf("eager filtered: invalid through table %q: %w", rel.Through, err)
-	}
-	safeLocalKey, err := query.SafeIdent(rel.LocalKey)
-	if err != nil {
-		return fmt.Errorf("eager filtered: invalid local key %q: %w", rel.LocalKey, err)
-	}
-	safeFKTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
-	if err != nil {
-		return fmt.Errorf("eager filtered: invalid FK target %q: %w", rel.ForeignKeyTarget, err)
-	}
-	pivotHook, pivotHookArgs := pivotHookScope(node.Pivot, safeThrough, node.PivotHookScopes)
+	pivotHook, pivotHookArgs := pivotHookScope(node.Pivot, pivotKeys.through, node.PivotHookScopes)
 	scope = scope.also(hookScope{sql: pivotHook, args: pivotHookArgs})
 
 	placeholders := make([]string, len(ids))
@@ -321,14 +334,14 @@ func loadManyToManyFiltered(ctx context.Context, db DBExecutor, safeEntity strin
 	if readClause != "" {
 		readClause = " AND " + readClause
 	}
-	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, safeThrough, len(args)+len(extraArgs)+len(readArgs)+1)
+	pivotWhere, pivotArgs := pivotClause(node.Pivot, node.PivotScopes, pivotKeys.through, len(args)+len(extraArgs)+len(readArgs)+1)
 	q := fmt.Sprintf(
 		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s%s.%s IN (%s)%s%s%s%s",
 		query.QuoteKeyword(safeEntity),
-		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
-		query.QuoteKeyword(safeEntity), query.QuoteKeyword(safeThrough),
-		query.QuoteKeyword(safeEntity), query.QuoteKeyword(targetPK), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeFKTarget),
-		scope.and(""), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
+		query.QuoteKeyword(pivotKeys.through), query.QuoteKeyword(pivotKeys.localKey),
+		query.QuoteKeyword(safeEntity), query.QuoteKeyword(pivotKeys.through),
+		query.QuoteKeyword(safeEntity), query.QuoteKeyword(targetPK), query.QuoteKeyword(pivotKeys.through), query.QuoteKeyword(pivotKeys.foreignKeyTarget),
+		scope.and(""), query.QuoteKeyword(pivotKeys.through), query.QuoteKeyword(pivotKeys.localKey),
 		strings.Join(placeholders, ", "),
 		extra,
 		readClause,

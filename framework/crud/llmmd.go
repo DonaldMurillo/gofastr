@@ -179,10 +179,9 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("| Suffix | Operator | Applies to | Example |\n")
 		b.WriteString("|--------|----------|------------|----------|\n")
 		spell := filter.SpellerFor(fields)
-		writeLLMOpRow(&b, "", filter.OpEq, "equals", "active", visibleFields, spell)
+		writeLLMOpRow(&b, "", filter.OpEq, filterOpLabel(filter.OpEq), llmOpSample(filter.OpEq), visibleFields, spell)
 		for _, s := range filter.FilterSuffixes {
-			label, sample := llmOpLabelSample(s.Op)
-			writeLLMOpRow(&b, s.Suffix, s.Op, label, sample, visibleFields, spell)
+			writeLLMOpRow(&b, s.Suffix, s.Op, filterOpLabel(s.Op), llmOpSample(s.Op), visibleFields, spell)
 		}
 		b.WriteString("\n")
 		b.WriteString("Or name the operator by word in brackets after the whole field name: `?<field>[op]=value`, op one of `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `like`, `in`.\n")
@@ -559,25 +558,18 @@ func relationTypeLabel(t entity.RelationType) string {
 	}
 }
 
-// llmOpLabelSample is an operator's label and its text sample value.
-func llmOpLabelSample(op filter.FilterOp) (label, sample string) {
+// llmOpSample is an operator's text sample value for the llm.md table;
+// writeLLMOpRow retypes it for the field the example names.
+func llmOpSample(op filter.FilterOp) string {
 	switch op {
-	case filter.OpNe:
-		return "not equal", "active"
-	case filter.OpGt:
-		return "greater than", "100"
-	case filter.OpGte:
-		return "greater than or equal", "100"
-	case filter.OpLt:
-		return "less than", "100"
-	case filter.OpLte:
-		return "less than or equal", "100"
+	case filter.OpGt, filter.OpGte, filter.OpLt, filter.OpLte:
+		return "100"
 	case filter.OpLike:
-		return "LIKE (contains)", "search"
+		return "search"
 	case filter.OpIn:
-		return "IN (comma-separated)", "a,b,c"
+		return "a,b,c"
 	}
-	return "equals", "active"
+	return "active"
 }
 
 // llmFilterSample is a sample value of type t that filter.CoerceValue accepts.

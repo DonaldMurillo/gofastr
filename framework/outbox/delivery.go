@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -192,22 +193,37 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 			return err
 		}
 	}
-	args := []any{now, cutoff}
-	var covered strings.Builder
-	for _, c := range o.declaredPairs() {
-		args = append(args, c.eventType, c.name)
-		fmt.Fprintf(&covered, "\n\t\t\t  AND (p.type <> $%d OR EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.consumer = $%d))",
-			len(args)-1, o.qd(), len(args))
-	}
+	condition, args := o.parentCompletionCondition([]any{now, cutoff}, nil)
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
-			WHERE p.status='pending'
-			  AND p.created_at <= $2
-			  AND EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id)
-			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')%s`,
-			o.qt(), o.qd(), o.qd(), covered.String()),
+			WHERE %s
+			  AND EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id)`,
+			o.qt(), condition, o.qd()),
 		args...)
 	return err
+}
+
+// parentCompletionCondition expects the grace cutoff as the last bound argument.
+func (o *Outbox) parentCompletionCondition(args []any, eventType *string) (string, []any) {
+	table := o.qd()
+	const deliveryExists = "EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.consumer = $%d)"
+	var condition strings.Builder
+	fmt.Fprintf(&condition, `p.status='pending'
+			  AND p.created_at <= $%d
+			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')`,
+		len(args), table)
+	if eventType != nil {
+		for _, name := range o.declaredFor(*eventType) {
+			args = append(args, name)
+			fmt.Fprintf(&condition, "\n\t\t\t  AND "+deliveryExists, table, len(args))
+		}
+	} else {
+		for _, c := range o.declaredPairs() {
+			args = append(args, c.eventType, c.name)
+			fmt.Fprintf(&condition, "\n\t\t\t  AND (p.type <> $%d OR "+deliveryExists+")", len(args)-1, table, len(args))
+		}
+	}
+	return condition.String(), args
 }
 
 func joinPlaceholders(ph []string) string {
@@ -249,19 +265,10 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 
 func (o *Outbox) completeParent(ctx context.Context, rowID, eventType string) {
 	now := o.now().UTC()
-	args := []any{now, rowID, now.Add(-o.handlerGrace)}
-	var covered strings.Builder
-	for _, c := range o.declaredFor(eventType) {
-		args = append(args, c)
-		fmt.Fprintf(&covered, "\n\t\t\t  AND EXISTS (SELECT 1 FROM %s WHERE row_id=$2 AND consumer=$%d)", o.qd(), len(args))
-	}
+	condition, args := o.parentCompletionCondition([]any{now, rowID, now.Add(-o.handlerGrace)}, &eventType)
 	if _, err := o.db.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='dispatched', dispatched_at=$1
-			WHERE id=$2 AND status='pending'
-			  AND created_at <= $3
-			  AND NOT EXISTS (
-			      SELECT 1 FROM %s WHERE row_id=$2 AND status='pending'
-			  )%s`, o.qt(), o.qd(), covered.String()),
+		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
+			WHERE p.id=$2 AND %s`, o.qt(), condition),
 		args...); err != nil {
 		slog.Default().Error("outbox: complete parent failed; relay will retry the pending row",
 			"row_id", rowID, "error", err)
@@ -294,7 +301,7 @@ func (o *Outbox) deadLetterExpiredExhaustedClaims(ctx context.Context) error {
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='dead', last_error=$1, claimed_until=NULL, next_attempt_at=NULL
-			WHERE status='pending' AND attempts >= $2 AND claimed_until IS NOT NULL AND claimed_until <= $3`,
+			WHERE status='pending' AND attempts >= CAST($2 AS BIGINT) AND claimed_until IS NOT NULL AND claimed_until <= $3`,
 			o.qd()),
 		"claim budget exhausted without a settle (relay died between claim and settle)",
 		o.maxAttempts, o.now().UTC())
@@ -311,10 +318,10 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 			JOIN %s p ON p.id = d.row_id
 			WHERE d.status = 'pending'
 			  AND (d.claimed_until IS NULL OR d.claimed_until <= $2)
-			  AND (d.attempts < $4 OR d.claimed_until IS NULL)
+			  AND (d.attempts < CAST($3 AS BIGINT) OR d.claimed_until IS NULL)
 			  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $2)
 			ORDER BY p.created_at ASC
-			LIMIT $3
+			LIMIT $4
 			FOR UPDATE OF d SKIP LOCKED
 		)
 		RETURNING row_id, consumer, attempts
@@ -324,7 +331,7 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 	JOIN %s p ON p.id = c.row_id
 	ORDER BY p.created_at ASC`,
 		o.qd(), o.qd(), o.qt(), o.qt())
-	rows, err := o.db.QueryContext(ctx, q, claimUntil, now, o.batchSize, o.maxAttempts)
+	rows, err := o.db.QueryContext(ctx, q, claimUntil, now, o.maxAttempts, o.batchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +374,7 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		FROM %s d JOIN %s p ON p.id = d.row_id
 		WHERE d.status = 'pending'
 		  AND (d.claimed_until IS NULL OR d.claimed_until <= $1)
-		  AND (d.attempts < $2 OR d.claimed_until IS NULL)
+		  AND (d.attempts < CAST($2 AS BIGINT) OR d.claimed_until IS NULL)
 		  AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= $1)
 		ORDER BY p.created_at ASC LIMIT $3`, o.qd(), o.qt())
 	rows, err := tx.QueryContext(ctx, pick, now, o.maxAttempts, o.batchSize)
@@ -375,7 +382,6 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		return nil, err
 	}
 	var out []claimedDelivery
-	var pairs [][2]string
 	for rows.Next() {
 		d, err := scanClaimedDelivery(rows)
 		if err != nil {
@@ -384,27 +390,25 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		}
 		d.ClaimedUntil = claimUntil
 		out = append(out, d)
-		pairs = append(pairs, [2]string{d.RowID, d.Consumer})
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(pairs) == 0 {
-		err := tx.Commit(ctx)
-		committed = err == nil
-		return nil, err
-	}
-	var clauses []string
-	args := []any{claimUntil}
-	for _, pr := range pairs {
-		clauses = append(clauses, fmt.Sprintf("(row_id=$%d AND consumer=$%d)", len(args)+1, len(args)+2))
-		args = append(args, pr[0], pr[1])
-	}
-	upd := fmt.Sprintf(`UPDATE %s SET claimed_until = $1, attempts = attempts + 1 WHERE %s`,
-		o.qd(), strings.Join(clauses, " OR "))
-	if _, err := tx.ExecContext(ctx, upd, args...); err != nil {
-		return nil, err
+	const pairsPerUpdate = 256
+	for batch := range slices.Chunk(out, pairsPerUpdate) {
+		clauses := make([]string, 0, len(batch))
+		args := make([]any, 1, 1+2*len(batch))
+		args[0] = claimUntil
+		for _, d := range batch {
+			clauses = append(clauses, fmt.Sprintf("(row_id=$%d AND consumer=$%d)", len(args)+1, len(args)+2))
+			args = append(args, d.RowID, d.Consumer)
+		}
+		upd := fmt.Sprintf(`UPDATE %s SET claimed_until = $1, attempts = attempts + 1 WHERE %s`,
+			o.qd(), strings.Join(clauses, " OR "))
+		if _, err := tx.ExecContext(ctx, upd, args...); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

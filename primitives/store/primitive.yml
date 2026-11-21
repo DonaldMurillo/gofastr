@@ -62,7 +62,7 @@ invariants:
   - id: route-slices-are-text-only
     rule: BindHTML panics on a route.* slice.
     enforced_by:
-      - test: core-ui/store.TestRouteSlicesRefuseBindHTML
+      - test: core-ui/store.TestRouteFamilyRefusesBindHTML
   - id: computed-binds-wire-the-module
     rule: Every bind of a Computed slice stamps data-cui-computed with its reducer and data-cui-computed-deps with its dependencies comma-joined, and a computed slice is never seeded while its dependencies are.
     enforced_by:

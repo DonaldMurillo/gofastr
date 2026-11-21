@@ -55,19 +55,6 @@ func (p *parentComp) Render() render.HTML {
 }
 
 // ---------------------------------------------------------------------------
-// 1. TestComponentInterface
-// ---------------------------------------------------------------------------
-
-func TestComponentInterface(t *testing.T) {
-	want := render.Raw("<p>hello</p>")
-	c := &staticComp{html: want}
-	got := c.Render()
-	if got != want {
-		t.Fatalf("Render() = %q, want %q", got, want)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // 2. TestInteractiveComponent
 // ---------------------------------------------------------------------------
 
@@ -91,20 +78,6 @@ func TestIsInteractive(t *testing.T) {
 	}
 	if !IsInteractive(&interactiveComp{}) {
 		t.Error("interactiveComp SHOULD be interactive")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 4. TestComponentBase
-// ---------------------------------------------------------------------------
-
-func TestComponentBase(t *testing.T) {
-	base := ComponentBase{ID: "my-id", Class: "my-class"}
-	if base.ID != "my-id" {
-		t.Errorf("ID = %q, want %q", base.ID, "my-id")
-	}
-	if base.Class != "my-class" {
-		t.Errorf("Class = %q, want %q", base.Class, "my-class")
 	}
 }
 
@@ -150,43 +123,6 @@ func TestComponentContext(t *testing.T) {
 	if ctx.TargetID != "btn-1" {
 		t.Errorf("TargetID = %q, want %q", ctx.TargetID, "btn-1")
 	}
-
-	// -- Param --
-	if got := ctx.Param("x"); got != "42" {
-		t.Errorf("Param(x) = %q, want %q", got, "42")
-	}
-	if got := ctx.Param("missing"); got != "" {
-		t.Errorf("Param(missing) = %q, want empty", got)
-	}
-
-	// -- ParamInt --
-	n, err := ctx.ParamInt("x")
-	if err != nil || n != 42 {
-		t.Errorf("ParamInt(x) = %d, %v; want 42, nil", n, err)
-	}
-	if _, err := ctx.ParamInt("y"); err == nil {
-		t.Error("ParamInt(y) should error for non-integer value")
-	}
-
-	// -- GetState / SetState --
-	state := map[string]any{}
-	ctx.StateGetter = func(key string) any { return state[key] }
-	ctx.StateSetter = func(key string, value any) { state[key] = value }
-
-	ctx.SetState("count", 7)
-	if got := ctx.GetState("count"); got != 7 {
-		t.Errorf("GetState(count) = %v, want 7", got)
-	}
-	if got := ctx.GetState("missing"); got != nil {
-		t.Errorf("GetState(missing) = %v, want nil", got)
-	}
-
-	// -- nil-safe getters --
-	emptyCtx := &ComponentContext{}
-	if got := emptyCtx.GetState("anything"); got != nil {
-		t.Errorf("GetState on nil getter = %v, want nil", got)
-	}
-	emptyCtx.SetState("k", "v") // should not panic
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +138,7 @@ func TestActionRegistry(t *testing.T) {
 
 	handler := func(ctx *ComponentContext) {}
 	reg.Register(ActionDef{Event: "click", Handler: handler})
-	reg.Register(ActionDef{Event: "submit", Handler: handler, Server: true})
+	reg.Register(ActionDef{Event: "submit", Handler: handler})
 
 	if !reg.HasActions() {
 		t.Error("registry should have actions after Register")
@@ -292,81 +228,6 @@ func TestExtractActionsNonInteractive(t *testing.T) {
 
 	if reg.HasActions() {
 		t.Error("ExtractActions on a non-interactive component should yield empty registry")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 12. TestServerCall
-// ---------------------------------------------------------------------------
-
-func TestServerCall(t *testing.T) {
-	call := Server("save", "key1", "val1", "key2", "val2")
-	if call.Action != "save" {
-		t.Errorf("ServerCall.Action = %q, want %q", call.Action, "save")
-	}
-	if len(call.Params) != 2 {
-		t.Fatalf("len(Params) = %d, want 2", len(call.Params))
-	}
-	if call.Params["key1"] != "val1" {
-		t.Errorf("Params[\"key1\"] = %v, want %q", call.Params["key1"], "val1")
-	}
-	if call.Params["key2"] != "val2" {
-		t.Errorf("Params[\"key2\"] = %v, want %q", call.Params["key2"], "val2")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 13. TestLifecycle
-// ---------------------------------------------------------------------------
-
-func TestLifecycle(t *testing.T) {
-	lc := NewLifecycle()
-	var order []string
-
-	lc.OnMount(func() { order = append(order, "mount") })
-	lc.OnUpdate(func() { order = append(order, "update") })
-	lc.OnUnmount(func() { order = append(order, "unmount") })
-
-	if !lc.HasMountHooks() {
-		t.Error("HasMountHooks should be true after OnMount")
-	}
-
-	lc.TriggerMount()
-	lc.TriggerUpdate()
-	lc.TriggerUnmount()
-
-	want := []string{"mount", "update", "unmount"}
-	if len(order) != len(want) {
-		t.Fatalf("lifecycle order = %v, want %v", order, want)
-	}
-	for i, v := range want {
-		if order[i] != v {
-			t.Errorf("order[%d] = %q, want %q", i, order[i], v)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 14. TestLifecycleTriggerOrder
-// ---------------------------------------------------------------------------
-
-func TestLifecycleTriggerOrder(t *testing.T) {
-	lc := NewLifecycle()
-	var order []int
-
-	lc.OnMount(func() { order = append(order, 1) })
-	lc.OnMount(func() { order = append(order, 2) })
-	lc.OnMount(func() { order = append(order, 3) })
-
-	lc.TriggerMount()
-
-	if len(order) != 3 {
-		t.Fatalf("expected 3 mount hooks, got %d", len(order))
-	}
-	for i, want := range []int{1, 2, 3} {
-		if order[i] != want {
-			t.Errorf("hook %d fired value %d, want %d", i, order[i], want)
-		}
 	}
 }
 

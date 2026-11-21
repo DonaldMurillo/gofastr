@@ -16,6 +16,10 @@ invariants:
     rule: Mount trims slashes off BasePath and prefixes one, and an empty or "/" BasePath mounts the site at /docs/api.
     enforced_by:
       - test: framework/sdkdocs.TestSweepMountNormalizesPaths
+  - id: each-base-path-owns-a-drawer
+    rule: Distinct normalized BasePaths on the same router have distinct drawer routes and each trigger opens the drawer for its own mount.
+    enforced_by:
+      - test: framework/sdkdocs.TestSDKDocsMountsUseIndependentDrawers
   - id: documents-public-by-default
     rule: The site documents Public entities when Config.Entities is empty, every entity with IncludeGated, and with Entities exactly those whose name or table matches an entry after trimming and ASCII lowercasing.
     enforced_by:
@@ -51,6 +55,11 @@ invariants:
     rule: Artifacts without a readable manifest, or a manifest of another SchemaVersion, read as unknown provenance and never as drift, and an artifact directory with neither manifest nor artifacts reads as neither.
     enforced_by:
       - test: framework/sdkdocs.TestSweepProvenance
+      - test: framework/docs.TestSDKDriftDocsDescribeMountLifetimeAndSchemaVersion
+  - id: static-export-keeps-download-paths
+    rule: The static export recipe stages SDK artifacts under the same public names as a live docs mount, including go.zip for the Go archive.
+    enforced_by:
+      - test: framework/docs.TestSDKStaticExportStagesDownloadURLs
   - id: stale-downloads-still-serve
     rule: Drift shows a banner and does not withhold the downloads.
     enforced_by:

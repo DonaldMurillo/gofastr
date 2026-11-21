@@ -214,12 +214,6 @@ func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) e
 	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "BIGINT NOT NULL DEFAULT 0")
 }
 
-// sqliteHasColumn reports whether the store's table has the named column,
-// via PRAGMA table_info (SQLite-only).
-func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
-	return sqliteTableHasColumn(ctx, s.db, s.table, col)
-}
-
 // addColumnIfMissing adds column col (typ is its type and constraints,
 // "TEXT NOT NULL DEFAULT ”") to a table an older build created without
 // it. Postgres uses ADD COLUMN IF NOT EXISTS, resolved through the

@@ -1,7 +1,6 @@
 package widget
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -221,6 +220,26 @@ func serveRuntime(w http.ResponseWriter, r *http.Request) {
 // ServeWidgetList serves the /__gofastr/widgets catalog.
 func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w, r) }
 
+type catalogEntry struct {
+	Cfg    catalogConfig `json:"cfg"`
+	Hidden bool          `json:"hidden"`
+}
+
+type catalogConfig struct {
+	Backdrop       bool     `json:"backdrop"`
+	ChromePath     string   `json:"chromePath"`
+	CloseOnClick   bool     `json:"closeOnClick"`
+	CloseOnEscape  bool     `json:"closeOnEscape"`
+	DeepLinkKey    string   `json:"deepLinkKey"`
+	DeepLinkParams []string `json:"deepLinkParams"`
+	DeepLinkValue  string   `json:"deepLinkValue"`
+	Name           string   `json:"name"`
+	PollMS         int      `json:"pollMs,omitempty"`
+	Position       Position `json:"position"`
+	StatePath      string   `json:"statePath,omitempty"`
+	StylePath      string   `json:"stylePath"`
+}
+
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Cookie")
@@ -235,43 +254,35 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	} else {
 		defs = allWidgets()
 	}
-	out := make([]map[string]any, 0, len(defs))
+	out := make([]catalogEntry, 0, len(defs))
 	for _, d := range defs {
 		if !d.OfferedTo(r) {
 			continue
 		}
-		cfg := map[string]any{
-			"name":           d.Name,
-			"position":       string(d.Position),
-			"backdrop":       d.Backdrop,
-			"closeOnEscape":  d.CloseOnEscape,
-			"closeOnClick":   d.CloseOnClickOutside,
-			"stylePath":      d.StyleURL(),
-			"chromePath":     d.ChromeURL(),
-			"deepLinkKey":    d.DeepLinkKey,
-			"deepLinkValue":  d.DeepLinkValue,
-			"deepLinkParams": d.DeepLinkParams,
+		cfg := catalogConfig{
+			Name:           d.Name,
+			Position:       d.Position,
+			Backdrop:       d.Backdrop,
+			CloseOnEscape:  d.CloseOnEscape,
+			CloseOnClick:   d.CloseOnClickOutside,
+			StylePath:      d.StyleURL(),
+			ChromePath:     d.ChromeURL(),
+			DeepLinkKey:    d.DeepLinkKey,
+			DeepLinkValue:  d.DeepLinkValue,
+			DeepLinkParams: d.DeepLinkParams,
 		}
 		if len(d.Signals) > 0 {
-			cfg["statePath"] = d.StateURL()
-			if d.PollMS > 0 {
-				cfg["pollMs"] = d.PollMS
-			}
+			cfg.StatePath = d.StateURL()
+			cfg.PollMS = max(d.PollMS, 0)
 		}
-		out = append(out, map[string]any{
-			"hidden": d.Hidden,
-			"cfg":    cfg,
-		})
-	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(out); err != nil {
-		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonEncodeFailed)
-		return
+		out = append(out, catalogEntry{Cfg: cfg, Hidden: d.Hidden})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(buf.Bytes())
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(out); err != nil {
+		slog.DebugContext(r.Context(), "widget catalog write failed", "err", err)
+	}
 }
 
 func chromePathFor(d *Definition) string {
@@ -368,10 +379,6 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	if err := json.NewEncoder(w).Encode(out); err != nil {
 		slog.Default().Debug("widget: state write", "widget", s.def.Name, "err", err)
 	}
-}
-
-func (s *server) renderSkeleton() render.HTML {
-	return s.renderSkeletonCtx(context.Background())
 }
 
 func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
@@ -634,7 +641,7 @@ func widgetCSS(def Definition) string {
 			"will-change", "transform",
 		).
 		End()
-	ss.Rule(`[data-cui-widget][data-cui-drag-handle="true"]`).
+	ss.Rule(`[data-cui-widget][data-cui-dragging] [data-cui-drag-handle="true"]`).
 		Set("cursor", "grabbing").
 		End()
 

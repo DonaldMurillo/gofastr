@@ -7,7 +7,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 )
 
@@ -345,18 +348,27 @@ func TestNestedGroupMiddlewareOrder(t *testing.T) {
 }
 
 func TestMCPToolName(t *testing.T) {
-	r := router.New()
-
-	// No namespace
-	g := routegroup.New(r, "/api")
-	if got := g.MCPToolName("users", "list"); got != "users.list" {
-		t.Errorf("no namespace: got %q, want %q", got, "users.list")
-	}
-
-	// With namespace
-	g2 := routegroup.New(r, "/admin", routegroup.WithMCPNamespace("admin"))
-	if got := g2.MCPToolName("users", "list"); got != "admin.users.list" {
-		t.Errorf("with namespace: got %q, want %q", got, "admin.users.list")
+	for _, tc := range []struct {
+		label, namespace, registered string
+	}{
+		{"no namespace", "", "users_list"},
+		{"with namespace", "admin", "admin.users.list"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			g := routegroup.New(router.New(), "/api", routegroup.WithMCPNamespace(tc.namespace))
+			server := mcp.NewServer()
+			ch := crud.NewCrudHandler(entity.Define("users", entity.EntityConfig{}), nil)
+			ch.MCPNamespace = g.MCPNamespace()
+			if err := crud.RegisterEntityMCPTools(server, ch, g.Router()); err != nil {
+				t.Fatal(err)
+			}
+			if !server.HasTool(tc.registered) {
+				t.Fatalf("expected CRUD to register %q", tc.registered)
+			}
+			if got := g.MCPToolName("users", "list"); got != tc.registered {
+				t.Errorf("MCPToolName = %q, want registered tool %q", got, tc.registered)
+			}
+		})
 	}
 }
 

@@ -25,13 +25,16 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/markdown"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // appSpecHasEntityAccess reports whether any entity declares an `access:`
@@ -99,18 +102,6 @@ func appSpecLoginRoute(bp appspec.AppSpec) string {
 	return "/login"
 }
 
-// appSpecAppHome returns the post-login landing route: the first app-layout
-// screen, defaulting to "/". Used for the auth-aware header's "Dashboard" link
-// and to bounce already-signed-in visitors off the login/signup screens.
-func appSpecAppHome(bp appspec.AppSpec) string {
-	for _, s := range bp.Screens {
-		if s.Layout == "app" {
-			return s.Route
-		}
-	}
-	return "/"
-}
-
 // appSpecMarketingLink is one entry of the marketing chrome's canonical
 // link table. The header nav and the footer columns both project out of it,
 // so the two surfaces cannot drift apart again.
@@ -141,7 +132,7 @@ var appSpecMarketingLinkTable = []appSpecMarketingLink{
 func appSpecRegisteredMarketingLinks(bp appspec.AppSpec) []appSpecMarketingLink {
 	registered := make(map[string]bool, len(bp.Screens))
 	for _, s := range bp.Screens {
-		registered[appSpecScreenRoutePath(s.Route)] = true
+		registered[app.CanonicalRoutePattern(s.Route)] = true
 	}
 	var out []appSpecMarketingLink
 	for _, l := range appSpecMarketingLinkTable {
@@ -510,7 +501,7 @@ func assertAppSpecDeclsUnique(files []parsedGoFile) error {
 			case *ast.FuncDecl:
 				name, what := d.Name.Name, "func"
 				if d.Recv != nil && len(d.Recv.List) > 0 {
-					name, what = goRecvTypeName(d.Recv.List[0].Type)+"."+name, "method"
+					name, what = astbase.RecvBaseNameGeneric(d)+"."+name, "method"
 				}
 				if err := claim(name, what); err != nil {
 					return err
@@ -568,27 +559,6 @@ func goImportName(imp *ast.ImportSpec) string {
 		last = elems[len(elems)-2]
 	}
 	return last
-}
-
-// goRecvTypeName is a method receiver's base type name: T for T, *T, T[K]
-// and *T[K].
-func goRecvTypeName(e ast.Expr) string {
-	for {
-		switch t := e.(type) {
-		case *ast.StarExpr:
-			e = t.X
-		case *ast.IndexExpr:
-			e = t.X
-		case *ast.IndexListExpr:
-			e = t.X
-		case *ast.ParenExpr:
-			e = t.X
-		case *ast.Ident:
-			return t.Name
-		default:
-			return ""
-		}
-	}
 }
 
 // appSpecGitignore keeps the generated .env (and local overrides), the dev
@@ -730,7 +700,7 @@ func authPolicy(loginPath, role string) app.Policy {
 // Dynamic routes are exercised by the CRUD lifecycle, which has a real id.
 func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 	for _, s := range bp.Screens {
-		route := appSpecScreenRoutePath(s.Route)
+		route := app.CanonicalRoutePattern(s.Route)
 		if strings.ContainsAny(route, "{:") {
 			continue
 		}
@@ -773,7 +743,7 @@ func appSpecE2ERoleSplit(bp appspec.AppSpec, gated []string) (open, locked []str
 	lockedRoute := map[string]bool{}
 	for _, s := range bp.Screens {
 		if s.Access.Auth && s.Access.Role != "" && !slices.Contains(held, s.Access.Role) {
-			lockedRoute[appSpecScreenRoutePath(s.Route)] = true
+			lockedRoute[app.CanonicalRoutePattern(s.Route)] = true
 		}
 	}
 	for _, r := range gated {
@@ -1297,9 +1267,6 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
 	imports := []string{"context", "io", "net", "net/http", "os", "os/exec", "path/filepath", "runtime", "strings", "testing", "time"}
-	if isPostgres {
-		imports = append(imports, "crypto/rand", "database/sql", "encoding/hex", "net/url")
-	}
 	if needsAuthClient {
 		imports = append(imports, "net/http/cookiejar", "net/url")
 	}
@@ -1320,6 +1287,9 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	if adminSeeded {
 		b.WriteString("\n\t\"github.com/DonaldMurillo/gofastr/core/dotenv\"\n")
 		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
+	}
+	if isPostgres {
+		b.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/testkit\"\n")
 	}
 	b.WriteString(")\n\n")
 	b.WriteString("func TestE2E(t *testing.T) {\n")
@@ -1363,19 +1333,12 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("\t// The server serves its static directory relative to where it runs.\n")
 		b.WriteString(fmt.Sprintf("\tif err := os.CopyFS(filepath.Join(dir, %q), os.DirFS(%q)); err != nil { t.Fatalf(\"copy static dir: %%v\", err) }\n", staticDir, staticDir))
 	}
+	b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"GOFASTR_SEMANTIC_COVERAGE=1\")\n")
 	if isPostgres {
-		b.WriteString("\t// postgres app spec: carve a throwaway DB from TEST_POSTGRES_DSN\n")
-		b.WriteString("\t// (skips when Postgres is unreachable). DATABASE_URL + DB_DRIVER point\n")
-		b.WriteString("\t// the child at the carved DB so its postgres driver opens cleanly.\n")
 		b.WriteString("\tdbURL := e2ePostgresDSN(t)\n")
-		b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"DATABASE_URL=\"+dbURL, \"DB_DRIVER=postgres\")\n")
+		b.WriteString("\tsrv.Env = append(srv.Env, \"DATABASE_URL=\"+dbURL, \"DB_DRIVER=postgres\")\n")
 	} else {
-		// GOFASTR_SEMANTIC_COVERAGE makes the server record which routes,
-		// entities, hooks, and events this run actually exercised. Without
-		// it the e2e suite drives a subprocess that never touches the test
-		// harness, so `gofastr verify` reports every route it covers as
-		// unreached.
-		b.WriteString("\tsrv.Env = append(os.Environ(), \"PORT=\"+addr, \"GOFASTR_SEMANTIC_COVERAGE=1\", \"DATABASE_URL=file:\"+filepath.Join(dir, \"e2e.db\"))\n")
+		b.WriteString("\tsrv.Env = append(srv.Env, \"DATABASE_URL=file:\"+filepath.Join(dir, \"e2e.db\"))\n")
 	}
 	b.WriteString("\te2eCaptureServerLog(t, srv, dir)\n")
 	b.WriteString("\tif err := srv.Start(); err != nil { t.Fatalf(\"start: %v\", err) }\n")
@@ -1553,35 +1516,16 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("func e2eExtractID(body string) string {\n\tif m := e2eIDRe.FindStringSubmatch(body); len(m) == 2 { return m[1] }\n\treturn \"\"\n}\n")
 	}
 	if isPostgres {
-		b.WriteString("\n// e2ePostgresDSN provisions a throwaway Postgres database from an\n")
-		b.WriteString("// env-provided admin DSN (TEST_POSTGRES_DSN) so the e2e flow exercises the\n")
-		b.WriteString("// real postgres driver instead of a SQLite file that driver can't open. It\n")
-		b.WriteString("// t.Skips when Postgres is unreachable, keeping driverless CI green-by-skip\n")
-		b.WriteString("// instead of timing out with a misleading \"server did not become ready\".\n")
-		b.WriteString("func e2ePostgresDSN(t *testing.T) string {\n")
-		b.WriteString("\tt.Helper()\n")
-		b.WriteString("\tadminDSN := os.Getenv(\"TEST_POSTGRES_DSN\")\n")
-		b.WriteString("\tif adminDSN == \"\" {\n\t\tt.Skip(\"TEST_POSTGRES_DSN unset; skipping postgres e2e\")\n\t}\n")
-		b.WriteString("\tadmin, err := sql.Open(\"postgres\", adminDSN)\n")
-		b.WriteString("\tif err != nil {\n\t\tt.Skipf(\"postgres e2e: open admin: %v\", err)\n\t}\n")
-		b.WriteString("\tprobeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)\n")
-		b.WriteString("\tdefer probeCancel()\n")
-		b.WriteString("\tif err := admin.PingContext(probeCtx); err != nil {\n\t\t_ = admin.Close()\n\t\tt.Skipf(\"postgres e2e: admin unreachable: %v\", err)\n\t}\n")
-		b.WriteString("\tbuf := make([]byte, 6)\n")
-		b.WriteString("\tif _, err := rand.Read(buf); err != nil {\n\t\t_ = admin.Close()\n\t\tt.Fatalf(\"postgres e2e: rand: %v\", err)\n\t}\n")
-		b.WriteString("\tname := \"e2e_\" + hex.EncodeToString(buf)\n")
-		b.WriteString("\tif _, err := admin.ExecContext(probeCtx, \"CREATE DATABASE \\\"\"+name+\"\\\"\"); err != nil {\n\t\t_ = admin.Close()\n\t\tt.Skipf(\"postgres e2e: CREATE DATABASE %q failed (role needs CREATEDB): %v\", name, err)\n\t}\n")
-		b.WriteString("\tt.Cleanup(func() {\n")
-		b.WriteString("\t\tdctx, dcancel := context.WithTimeout(context.Background(), 10*time.Second)\n\t\tdefer dcancel()\n")
-		b.WriteString("\t\t_, _ = admin.ExecContext(dctx, \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1\", name)\n")
-		b.WriteString("\t\tif _, derr := admin.ExecContext(dctx, \"DROP DATABASE IF EXISTS \\\"\"+name+\"\\\"\"); derr != nil {\n\t\t\tt.Errorf(\"postgres e2e: DROP DATABASE %q: %v\", name, derr)\n\t\t}\n")
-		b.WriteString("\t\t_ = admin.Close()\n")
-		b.WriteString("\t})\n")
-		b.WriteString("\tu, err := url.Parse(adminDSN)\n")
-		b.WriteString("\tif err != nil {\n\t\tt.Fatalf(\"postgres e2e: parse admin DSN: %v\", err)\n\t}\n")
-		b.WriteString("\tu.Path = \"/\" + name\n")
-		b.WriteString("\treturn u.String()\n")
-		b.WriteString("}\n")
+		fmt.Fprintf(&b, `
+func e2ePostgresDSN(t *testing.T) string {
+	t.Helper()
+	adminDSN := os.Getenv(%q)
+	if adminDSN == "" {
+		t.Skip("TEST_POSTGRES_DSN unset; skipping postgres e2e")
+	}
+	return testkit.NewIsolatedDBDSN(t, adminDSN)
+}
+`, pgtest.DSNEnv)
 	}
 	return b.String()
 }
@@ -2076,9 +2020,6 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 		sb.WriteString("\t\treturn nil\n")
 		sb.WriteString("\t})\n")
 	}
-	// appBaseCSS ships first so the user's static/app.css (loaded
-	// after) overrides it; it gives the generated entity blocks modern,
-	// responsive defaults out of the box (scrollable tables, form rhythm).
 	// Opt-in host surfaces (PWA, public LLM markdown) append to the same
 	// uihost.New call. Independent by design: enabling one never emits
 	// the other.
@@ -2118,11 +2059,12 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 		extraUIOpts += ", uihost.WithPublicLLMMD()"
 	}
 	extraUIOpts += ", uihost.WithStrict()"
+	staticOpt := ""
 	if staticDir != "" {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithStaticDir(%q), uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile(%q))%s))\n", staticDir, staticDir+"/app.css", extraUIOpts))
-	} else {
-		sb.WriteString(fmt.Sprintf("\tfwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS())%s))\n", extraUIOpts))
+		staticOpt = fmt.Sprintf("uihost.WithStaticDir(%q), ", staticDir)
 	}
+	sb.WriteString("\t// Add app styles in owned .style.css sheets with gofastr gen styles.\n")
+	fmt.Fprintf(&sb, "\tfwApp.Mount(uihost.New(site, %suihost.WithCustomCSS(fontFaceCSS)%s))\n", staticOpt, extraUIOpts)
 	if bp.App.Admin.Enabled {
 		// Auto-generated back-office over every CRUD entity. Registered as a
 		// battery so it Inits after Mount and discovers the UI host. Gated by
@@ -2184,10 +2126,7 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("}\n\n")
-	sb.WriteString("func getEnv(key, fallback string) string {\n")
-	sb.WriteString("\tif v := os.Getenv(key); v != \"\" {\n\t\treturn v\n\t}\n")
-	sb.WriteString("\treturn fallback\n")
-	sb.WriteString("}\n\n")
+	sb.WriteString(project.GetEnvSource + "\n")
 	iconFrom, iconTo := appSpecIconStops(bp)
 	sb.WriteString("// appIconPNG generates the app's icon source at startup: a diagonal\n")
 	sb.WriteString("// gradient in the app spec's primary color. uihost.WithAppIcon derives\n")
@@ -2728,7 +2667,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 		case screen.Access.Auth:
 			policy = fmt.Sprintf(".WithPolicy(authPolicy(%q, %q))", appSpecLoginRoute(bp), screen.Access.Role)
 		case guestRedirect && screenHasAuthForm(screen):
-			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appSpecAppHome(bp))
+			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appspec.AppHome(bp.Screens))
 		}
 		return fmt.Sprintf("\trecord := %s%s\n%s\tsite.RegisterScreen(record, %s)", build, policy, intercept, layoutExpr)
 	}
@@ -2736,7 +2675,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	case screen.Access.Auth:
 		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(authPolicy(%q, %q)), %s)", build, appSpecLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appSpecAppHome(bp), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appspec.AppHome(bp.Screens), layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}
@@ -2992,7 +2931,7 @@ func screenRecordBase(bp appspec.AppSpec, screen appspec.AppSpecScreen) string {
 // the screen router's colon style, with the record param expanded to one
 // segment per key column when the record has a composite key.
 func appSpecScreenPattern(bp appspec.AppSpec, screen appspec.AppSpecScreen) string {
-	route := appSpecScreenRoutePath(screen.Route)
+	route := app.CanonicalRoutePattern(screen.Route)
 	keys := appspec.ScreenRecordKeys(bp, screen)
 	if keys == nil {
 		return route
@@ -3279,7 +3218,7 @@ func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec)
 	if len(apis) == 0 {
 		return ""
 	}
-	selector := appSpecScreenRoutePath(screen.Route)
+	selector := app.CanonicalRoutePattern(screen.Route)
 	if screenNeedsParams(screen) {
 		selector = "*"
 	}
@@ -3397,9 +3336,10 @@ func screenActions(screen appspec.AppSpecScreen, entityMap map[string]framework.
 				// fetch <select> options; submission itself is wired via
 				// data-cui-rpc on the form element (no component action).
 				if appSpecFormHasRelation(block, entityMap) {
+					name := appSpecEntityFormActionName(screen, blockPath)
 					actions = append(actions, appspec.AppSpecAction{
-						Name:     appSpecEntityFormActionName(screen, block, blockPath),
-						ClientJS: appSpecEntityFormClientJS(block, entityMap, apiBase),
+						Name:     name,
+						ClientJS: appSpecEntityFormClientJS(block, entityMap, apiBase, name),
 					})
 				}
 			}
@@ -3807,10 +3747,6 @@ func renderAppSpecBlockForScreen(bp appspec.AppSpec, screen appspec.AppSpecScree
 	}
 }
 
-func renderAppSpecNodeExpression(block appspec.AppSpecBlock) string {
-	return renderAppSpecNodeExpressionForScreen(appspec.AppSpec{}, appspec.AppSpecScreen{}, block, nil, nil, "")
-}
-
 // appSpecNodeTextProps are the node props a reader sees or hears: the
 // node renderer's text and the attributes assistive technology reads.
 var appSpecNodeTextProps = map[string]bool{
@@ -3933,6 +3869,8 @@ func appSpecBlockRendersH1(b appspec.AppSpecBlock) bool {
 		return true
 	case "heading":
 		return appSpecHeadingLevel(b) == 1
+	case "markdown":
+		return appSpecMarkdownHasH1(b.Text)
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		// type: hN renders at level: when one is set (an h1 at level 3 is
 		// an <h3>), else at N.
@@ -3970,13 +3908,11 @@ func appSpecHeadingLevel(b appspec.AppSpecBlock) int {
 // AppSpecScreenDrawsH1 reports whether any block on a screen, at any
 // depth, renders an <h1>: one appSpecBlockRendersH1 counts, an entity
 // list (its title is level 1 unless an earlier <h1> drops it), a
-// synthesized create screen's form, or markdown with a level-1 heading.
+// or a synthesized create screen's form.
 func AppSpecScreenDrawsH1(blocks []appspec.AppSpecBlock) bool {
 	for _, b := range appspec.AppSpecBlocksDeep(blocks) {
 		switch {
 		case appSpecBlockRendersH1(b), appspec.IsEntityListBlock(b), appspec.IsEntityCreateBlock(b), appspec.IsEditFormBlock(b):
-			return true
-		case appspec.AppSpecBlockKindIs(b, "markdown") && appSpecMarkdownHasH1(b.Text):
 			return true
 		}
 	}
@@ -4061,7 +3997,7 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = appSpecAuthBase(bp) + "/register"
+		action = appSpecAuthBase(bp) + "/" + appspec.AuthRegisterSegment
 	}
 	next := propStr("next")
 	if next == "" {
@@ -4081,7 +4017,7 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = appSpecAuthBase(bp) + "/login"
+		action = appSpecAuthBase(bp) + "/" + appspec.AuthLoginSegment
 	}
 	next := propStr("next")
 	if next == "" {
@@ -4093,22 +4029,6 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	}
 	nextExpr := fmt.Sprintf(`handler.SafeRelativePathOr(app.QueryFromContext(ctx).Get("next"), %q)`, next)
 	return appSpecAuthFormExpr(bp, heading, action, nextExpr, "Sign in", "current-password", 0, propStr("forgot_href"), propStr("register_href"), "Create an account")
-}
-
-// appSpecScreenRoutePath converts an app spec screen route's framework-style
-// path params ("/patients/{id}") to the colon style the core-ui screen router
-// matches ("/patients/:id"). Static routes pass through unchanged.
-func appSpecScreenRoutePath(route string) string {
-	if !strings.Contains(route, "{") {
-		return route
-	}
-	segs := strings.Split(route, "/")
-	for i, seg := range segs {
-		if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
-			segs[i] = ":" + strings.TrimSuffix(strings.TrimPrefix(seg, "{"), "}")
-		}
-	}
-	return strings.Join(segs, "/")
 }
 
 // appSpecAPIBase returns the URL path prefix entity CRUD mounts at:
@@ -4202,8 +4122,9 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		fmt.Sprintf("\"data-entity-form\": %q", entity),
 		`"data-entity-mode": "create"`,
 	}
+	formID := appSpecEntityFormActionName(screen, path)
 	if appSpecFormHasRelation(block, entityMap) {
-		markerParts = append(markerParts, fmt.Sprintf("\"data-action-mount\": %q", appSpecEntityFormActionName(screen, block, path)))
+		markerParts = append(markerParts, fmt.Sprintf("\"data-action-mount\": %q", formID))
 	}
 	markers := "html.Attrs{" + strings.Join(markerParts, ", ") + "}"
 	actionExpr := fmt.Sprintf("interactive.Post(%q).OnSuccess(interactive.ResetForm())", rpcPath)
@@ -4222,7 +4143,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		// display name when the catalog has none: the same lookup the
 		// entityui forms make.
 		label := fmt.Sprintf("i18nui.FieldLabel(ctx, nil, %q, %q, %q)", entity, field.Name, appspec.ToDisplayName(field.Name))
-		fieldID := "field-" + field.Name
+		fieldID := "field-" + formID + "-" + field.Name
 		inputName := appspec.WireKey(field.Name)
 		req := fmt.Sprintf("%t", field.Required)
 		// value and selected are the config fragments that start a
@@ -4322,22 +4243,8 @@ func appSpecFormDefault(field framework.FieldDeclaration) (value, step string) {
 // generated entity_form (system columns, hidden/auto/readonly fields, or
 // fields excluded by an explicit block.fields allowlist).
 func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []string) bool {
-	switch field.Name {
-	case "id", "created_at", "updated_at", "deleted_at":
-		return true
-	}
-	if field.Hidden || appspec.FieldAutoGenerated(field) || field.ReadOnly {
-		return true
-	}
-	if len(filterFields) > 0 {
-		for _, f := range filterFields {
-			if f == field.Name {
-				return false
-			}
-		}
-		return true
-	}
-	return false
+	return appspec.CreateFormFieldOmission(field) != appspec.CreateFormFieldDrawn ||
+		(len(filterFields) > 0 && !slices.Contains(filterFields, field.Name))
 }
 
 // appSpecEntityFormClientJS populates the form's relation <select>s on
@@ -4347,7 +4254,7 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 // row.currencyCode, and one on its own table is fetched there. A target
 // with a multi-column key has no single value a relation can hold, so it
 // gets no entry and its select stays empty.
-func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]framework.EntityDeclaration, apiBase, mountAction string) string {
 	name := strings.Trim(block.Entity, "/")
 	type relTarget struct {
 		Key  string `json:"key"`
@@ -4370,10 +4277,9 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
 	if err != nil {
 		targetsJSON = []byte("{}")
 	}
-	//gofastr:allow(emitident) block.Entity is checked against the entities map in appspec validation
 	return fmt.Sprintf(`(async () => {
   const targets = %s;
-  const form = document.querySelector('[data-entity-form="%s"]');
+  const form = document.querySelector('form[data-action-mount="%s"]');
   if (!form) return;
   const labelFor = (row) => String(row.name ?? row.title ?? row.label ?? row.email ?? row.code ?? row.id ?? '');
   for (const sel of form.querySelectorAll('select[data-rel-entity]')) {
@@ -4401,18 +4307,15 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       sel.dataset.relLoaded = '1';
     } catch (_) {}
   }
-})();`, targetsJSON, name)
+})();`, targetsJSON, mountAction)
 }
 
-func appSpecEntityFormActionName(screen appspec.AppSpecScreen, block appspec.AppSpecBlock, path []int) string {
-	parts := []string{"entity_form"}
-	if screen.Name != "" {
-		parts = append(parts, appspec.ToCamelJSON(screen.Name))
+func appSpecEntityFormActionName(screen appspec.AppSpecScreen, path []int) string {
+	parts := []string{"entity_form", appspec.ToCamelJSON(screen.Name)}
+	for _, index := range path {
+		parts = append(parts, strconv.Itoa(index))
 	}
-	if block.Entity != "" {
-		parts = append(parts, appspec.ToCamelJSON(block.Entity))
-	}
-	return strings.NewReplacer("-", "_", " ", "_", "/", "_").Replace(strings.Join(parts, "_"))
+	return strings.Join(parts, "_")
 }
 
 // appSpecSeedFieldIsDecimal reports whether the named field on the given
@@ -4699,7 +4602,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// screens); every build fn is func(ctx context.Context, l
 	// *app.LayoutTree) render.HTML, so the three imports below follow it.
 	hasShell := len(bp.Nav) > 0 || hasMarketing
-	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect || rbac || authSidebar || hasShell {
+	if adminSeed || hasAccess || authHeader || guestRedirect || authSidebar || hasShell {
 		sb.WriteString("\t\"context\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
@@ -4757,7 +4660,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	if rbac || roleNav || authHeader || guestRedirect || authSidebar {
+	if authHeader || guestRedirect || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -4767,7 +4670,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		// appTheme seeds the dark palette from the framework theme.
 		sb.WriteString("\tuitheme \"github.com/DonaldMurillo/gofastr/framework/ui/theme\"\n")
 	}
-	if rbac {
+	if rbac || roleNav {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/access\"\n")
 	}
 	if bp.App.Auth.Enabled || hasAccess {
@@ -4786,7 +4689,6 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	sb.WriteString(fmt.Sprintf("\tstaticDir = %q\n", appSpecEffectiveStaticDir(bp)))
 	sb.WriteString(fmt.Sprintf("\tapiPrefix = %q\n", bp.App.APIPrefix))
 	sb.WriteString(")\n\n")
-	sb.WriteString(appSpecBaseCSSFunc())
 	if hasAccess {
 		sb.WriteString(appSpecAuthPolicyFunc())
 	}
@@ -4826,7 +4728,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			// Pricing/About, and it collapses into the phone menu like them); the
 			// single auth action, Sign out when signed in and Sign in when not, is the
 			// one button, sized to match. No "Sign in" loop for users already past it.
-			appHome := appSpecAppHome(bp)
+			appHome := appspec.AppHome(bp.Screens)
 			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
 			// links holds only registered chrome links; with none it starts
 			// empty (valid Go for the Dashboard append below).
@@ -5231,14 +5133,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			// Role-aware nav: the sidebar/drawer filter role-restricted items
 			// (e.g. an admin-only link) by the signed-in user's roles, so a
 			// link the user can't use never appears.
-			sb.WriteString("\t\tui.SetRolesExtractor(func(ctx context.Context) []string {\n")
-			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
-			sb.WriteString("\t\t\t\t}\n")
-			sb.WriteString("\t\t\t}\n")
-			sb.WriteString("\t\t\treturn nil\n")
-			sb.WriteString("\t\t})\n")
+			sb.WriteString("\t\tui.SetRolesExtractor(access.RequestUserRoles)\n")
 		}
 		if appSpecHasEntityAccess(bp) {
 			adminRole := bp.App.Admin.Role
@@ -5253,14 +5148,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\t\t// now that rolePolicy is package-level. Without this, every write 403s.\n")
 			sb.WriteString("\t\trolePolicy = access.NewRolePolicy()\n")
 			sb.WriteString(fmt.Sprintf("\t\trolePolicy.Grant(%q, access.Wildcard)\n", adminRole))
-			sb.WriteString("\t\tfwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {\n")
-			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
-			sb.WriteString("\t\t\t\t}\n")
-			sb.WriteString("\t\t\t}\n")
-			sb.WriteString("\t\t\treturn nil\n")
-			sb.WriteString("\t\t}))\n")
+			sb.WriteString("\t\tfwApp.Use(access.Middleware(rolePolicy, access.RequestUserRoles))\n")
 		}
 		sb.WriteString("\t\t// auth.CSRF is intentionally NOT mounted: this generated surface\n")
 		sb.WriteString("\t\t// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s\n")
@@ -5310,25 +5198,6 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		sb.WriteString("}\n")
 	}
 	return appSpecChromeWithPhrases(sb.String(), bp.PhraseCollector())
-}
-
-// appSpecBaseCSSFunc emits the appBaseCSS() function. It returns the
-// empty string: every generated surface, marketing, app, entity list/detail,
-// entity forms, auth, composes framework/ui components and core-ui/app layouts
-// that ship their own CSS (auto-injected by the UI host). The generator ships
-// ZERO bespoke styling, which is the proof the design system is cohesive and
-// composable. This owned function stays as an extension point: an app can add
-// its own base CSS here (or, preferably, in static/app.css).
-func appSpecBaseCSSFunc() string {
-	var sb strings.Builder
-	sb.WriteString("// appBaseCSS is an owned extension point for app-specific base CSS.\n")
-	sb.WriteString("// It's empty by default: every generated surface composes framework/ui\n")
-	sb.WriteString("// components and core-ui/app layouts that ship their own CSS, so the\n")
-	sb.WriteString("// generated app ships no bespoke styling. Add app CSS here or in static/app.css.\n")
-	sb.WriteString("func appBaseCSS() string {\n")
-	sb.WriteString("\treturn \"\"\n")
-	sb.WriteString("}\n\n")
-	return sb.String()
 }
 
 func renderNavItemGo(bp appspec.AppSpec, sb *strings.Builder, item appspec.AppSpecNavItem, indent string) {

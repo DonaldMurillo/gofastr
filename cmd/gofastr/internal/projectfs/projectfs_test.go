@@ -84,6 +84,39 @@ func TestReplaceOwnerOnlyTightensAnExistingFile(t *testing.T) {
 	}
 }
 
+func TestRegularLeafResolvesLinkedParentLikeLstat(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustSymlink(t, filepath.Join("a", "b"), filepath.Join(dir, "ab"))
+	if err := os.WriteFile(filepath.Join(dir, "a", "secret"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "secret"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	const name = "ab/../secret"
+	ordinary, err := Lstat(root, name)
+	if err != nil || !ordinary.Mode().IsRegular() {
+		t.Fatalf("Lstat(%q) = %v, %v, want a regular file", name, ordinary, err)
+	}
+	got, err := RegularLeaf(root, name)
+	if err != nil {
+		t.Fatalf("RegularLeaf(%q): %v", name, err)
+	}
+	leaf, err := root.Lstat(filepath.FromSlash(got))
+	if err != nil || !os.SameFile(ordinary, leaf) {
+		t.Fatalf("RegularLeaf(%q) resolved to %q (%v, %v), want the file Lstat found", name, got, leaf, err)
+	}
+}
+
 func TestReplaceRefusesAReadOnlyFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits")

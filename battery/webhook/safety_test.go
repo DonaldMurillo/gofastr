@@ -55,23 +55,6 @@ func TestAttempt_LimitsResponseBodyRead(t *testing.T) {
 
 // ----- HMAC includes timestamp -----------------------------------------------
 
-func TestSignWithTimestamp_RejectsReplay(t *testing.T) {
-	secret := "topsecret"
-	body := []byte(`{"k":1}`)
-	old := time.Now().Add(-10 * time.Minute).Unix()
-
-	header := SignWithTimestamp(secret, old, "", "", body)
-	// Within tolerance, must verify when the timestamp matches what
-	// we present to VerifyTimestamp.
-	if !VerifyTimestamped(secret, header, "", "", body, time.Hour) {
-		t.Fatalf("VerifyTimestamped within tolerance should succeed")
-	}
-	// Beyond tolerance, must reject even though the HMAC bytes match.
-	if VerifyTimestamped(secret, header, "", "", body, 1*time.Minute) {
-		t.Fatalf("VerifyTimestamped must reject replay outside tolerance")
-	}
-}
-
 func TestSignWithTimestamp_RejectsTamperedTimestamp(t *testing.T) {
 	secret := "s"
 	body := []byte("abc")

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	num "strconv"
 	"strings"
 )
 
@@ -68,6 +69,19 @@ func selfInequality(s string) (int, bool) {
 		return 0, false
 	}
 	return int(f), true
+}
+
+// aliasedStore: the same bind through an aliased strconv import — the
+// sink is the package's ParseFloat, whatever the file calls it.
+func aliasedStore(v reflect.Value, s string) error {
+	if v.Kind() == reflect.Float64 {
+		f, err := num.ParseFloat(s, 64) // want `strconv\.ParseFloat result stored with no math\.IsNaN/math\.IsInf gate`
+		if err != nil {
+			return err
+		}
+		v.SetFloat(f)
+	}
+	return nil
 }
 
 // validatorHopFn passes the parsed value to a same-package validator

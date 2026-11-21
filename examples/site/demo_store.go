@@ -32,14 +32,13 @@ type demoEntry struct {
 }
 
 type demoSessionStore struct {
-	mu       sync.Mutex
-	items    map[string]*list.Element // key -> *list.Element (Value = *demoEntry)
-	order    *list.List               // front = most-recently-used, back = LRU
-	max      int
-	ttl      time.Duration
-	clock    func() time.Time
-	stop     chan struct{}
-	stopOnce sync.Once
+	mu    sync.Mutex
+	items map[string]*list.Element // key -> *list.Element (Value = *demoEntry)
+	order *list.List               // front = most-recently-used, back = LRU
+	max   int
+	ttl   time.Duration
+	clock func() time.Time
+	stop  chan struct{}
 }
 
 // newDemoSessionStoreBare builds the store WITHOUT starting the janitor. The
@@ -169,5 +168,3 @@ func (s *demoSessionStore) janitor(every time.Duration) {
 		}
 	}
 }
-
-func (s *demoSessionStore) close() { s.stopOnce.Do(func() { close(s.stop) }) }

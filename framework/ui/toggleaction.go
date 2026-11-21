@@ -61,11 +61,7 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 	if cfg.CommittedLabel == "" {
 		panic("ui: ToggleAction requires CommittedLabel")
 	}
-	tv := cfg.Variant
-	if tv == "" {
-		tv = ButtonPrimary
-	}
-	checkButtonVariant("ToggleAction", tv)
+	tv := buttonVariant("ToggleAction", cfg.Variant)
 	checkButtonSize("ToggleAction", cfg.Size)
 
 	parts := headless.Parts{}
@@ -87,7 +83,7 @@ func ToggleAction(cfg ToggleActionConfig) render.HTML {
 		Group:            cfg.Group,
 		AllowUntoggle:    cfg.AllowUntoggle,
 		UntoggleEndpoint: cfg.UntoggleEndpoint,
-		Variant:          string(cfg.Variant),
+		Variant:          string(tv),
 		Size:             string(cfg.Size),
 		Disabled:         cfg.Disabled,
 		FailedText:       cfg.FailedText,

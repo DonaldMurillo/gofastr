@@ -6,7 +6,12 @@
 //
 // The shell supports native windows, menus, clipboard, permission and file
 // dialogs, shared-session secondary windows, JavaScript evaluation and PNG
-// snapshots. Tray icons, compositor materials and OS deep-link registration
-// are not implemented. GTK/window-manager restrictions apply to placement
-// and always-on-top requests, especially under Wayland.
+// snapshots. GTK/window-manager restrictions apply to placement and
+// always-on-top requests, especially under Wayland.
+//
+// The tray needs a compatible StatusNotifierItem host. Window materials
+// use blur under KWin on X11 when the blur effect is enabled.
+//
+// The shell handles deep-link activation. The installer registers the
+// OS URL handler.
 package linux

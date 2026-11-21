@@ -6,6 +6,8 @@ import (
 	"go/token"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
 // jsQuote spells s as a JavaScript string literal: JSON's escapes, which
@@ -337,7 +339,7 @@ func renderOASDKJSReadme(spec oaSDKSpec) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s JS/TS SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	fmt.Fprintf(&sb, "Two plain files, zero dependencies, no build step: `client.js` (ESM) and\n`client.d.ts` (types), generated from the %s OpenAPI document. Drop them\ninto your project, or import the client straight from the running app:\n\n", spec.App)
-	fmt.Fprintf(&sb, "```js\nimport { Client, APIPrefix } from %q;\n// or, served by the app itself:\n// import { Client, APIPrefix } from %q;\n\nconst api = new Client({ baseURL: %q + APIPrefix, token: process.env.API_TOKEN });\n```\n\n", "./client.js", sdkExampleHost(spec.sdkSpec)+"/docs/api/sdk/client.js", sdkExampleHost(spec.sdkSpec))
+	fmt.Fprintf(&sb, "```js\nimport { Client, APIPrefix } from %q;\n// or, served by the app itself:\n// import { Client, APIPrefix } from %q;\n\nconst api = new Client({ baseURL: %q + APIPrefix, token: process.env.API_TOKEN });\n```\n\n", "./client.js", sdk.ExampleHost(spec.BaseURL)+"/docs/api/sdk/client.js", sdk.ExampleHost(spec.BaseURL))
 	sb.WriteString("## Operations\n\n")
 	for _, op := range spec.Ops {
 		fmt.Fprintf(&sb, "- `%s`: %s `%s`\n", op.JSName, op.Method, oaMarkdownPath(op.PathTemplate))

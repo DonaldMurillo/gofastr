@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
@@ -19,17 +18,7 @@ import (
 // BuildSandboxGateTo is buildSandboxGate writing to the given streams,
 // so `gofastr dev` can also show the report on its hold page.
 func BuildSandboxGateTo(root string, stdout, stderr io.Writer) bool {
-	findings, err := auditSandbox(root)
-	if err != nil {
-		cli.Fprintf(stderr, ".ui.go sandbox lint: %v\n", err)
-		return false
-	}
-	if len(findings) == 0 {
-		return true
-	}
-	// The report names project files: scrubbed, as every CLI print is.
-	cli.Fprintf(stdout, "%s", formatSandboxReport(findings))
-	return false
+	return lintGate(root, stdout, stderr, ".ui.go sandbox lint", auditSandbox, formatSandboxReport)
 }
 
 // SandboxFinding is one .ui.go sandbox violation reported by the build gate.

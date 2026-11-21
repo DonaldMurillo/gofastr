@@ -24,7 +24,8 @@ type TimePickerConfig struct {
 	Required bool
 	Disabled bool
 	Help     string
-	// Error replaces Help and marks the input invalid.
+	// Error shows below Help (which stays visible), marks the input
+	// invalid, and leads its aria-describedby: "<id>-error <id>-hint".
 	Error string
 	ID    string
 	Class string

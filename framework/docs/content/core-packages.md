@@ -723,6 +723,12 @@ letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
 tag run, one behind a black flag included, is stripped or refused. Start
 at `core/textsafe/textsafe.go`.
 
+`IsControlByte(c byte) bool` recognizes ASCII C0 (0x00–0x1F) and DEL
+(0x7F). `AppendPercentByte(dst []byte, c byte) []byte` appends a percent
+sign and two lowercase hexadecimal digits for any byte and returns the
+resulting slice. Log and SMTP header scrubs use this encoding for the bytes
+each chooses to escape.
+
 `ScrubTerminal(s string) string` is the one scrub for text this process
 did not write and is about to print to an operator's terminal: a child
 process's stderr, a log line, tool output. It removes every character
@@ -765,10 +771,9 @@ verify outside a GoFastr app. Start at `core/webbotauth/webbotauth.go`:
 
 ### fuzzy
 
-Shared string-similarity helpers, currently `Levenshtein` edit distance
-(bytewise, two rolling rows). Dependency-free so both the framework and
-the CLI import it. Indirect; used for "did you mean …" suggestions. Start
-at `core/fuzzy/fuzzy.go`: `Levenshtein`.
+Shared edit distance for "did you mean …" suggestions. `Levenshtein`
+counts byte edits, and `LevenshteinRunes` counts Unicode code point edits.
+Both size their two working rows to the shorter input.
 
 ## Common mistakes
 

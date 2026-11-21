@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
 // The dev loop's go list and go build stamped version control info, so
@@ -58,8 +60,8 @@ func TestDevGoCommandsRunNoGit(t *testing.T) {
 		t.Fatalf("listDeps: %v", err)
 	}
 	noGit("the watch's go list -deps")
-	if name := packageName(root, "."); name != "main" {
-		t.Fatalf("packageName = %q", name)
+	if name, err := project.PackageName(context.Background(), root, ".", 0); err != nil || name != "main" {
+		t.Fatalf("PackageName = %q, %v", name, err)
 	}
 	noGit("the package-name go list")
 	var cmd *exec.Cmd

@@ -6,14 +6,8 @@ import (
 	"testing"
 )
 
-// BenchmarkLevenshteinScaling measures the matcher's cost curve on growing
-// inputs. Levenshtein is inherently O(len(a)×len(b)) — that is the
-// algorithm, not a bug — but the DoS question for this package is whether
-// an attacker-controlled string of unbounded length reaches it. The two
-// call sites: framework/filter's nearestField (query-param names, capped at
-// 64 bytes by maxSuggestionKeyLen and pinned by TestUnknownFilterKeyIsBounded)
-// and the CLI's did-you-mean (argv only). This benchmark is the measured
-// evidence for that audit record.
+// BenchmarkLevenshteinScaling measures cost on growing inputs. The RBAC admin grant POST (default /admin/rbac/_grant)
+// can pass a Wildcard caller's submitted permission to CheckGrant, with a 1 MiB request body limit.
 func BenchmarkLevenshteinScaling(b *testing.B) {
 	for _, sz := range []int{256, 512, 1024, 2048, 4096} {
 		xa := strings.Repeat("a", sz)

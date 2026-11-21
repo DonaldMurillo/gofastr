@@ -2,7 +2,6 @@ package headless
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -94,44 +93,18 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 }
 
 func formRequestAttrs(a html.Attrs) html.Attrs {
-	out := html.Attrs{}
-	for k, v := range a {
-		k = strings.ToLower(k)
-		if _, twice := out[k]; twice {
-			panic("headless: Form Request repeats " + k + " under two spellings")
-		}
+	out := rpcAttrs("Form Request", "a Form Request", a, func(out html.Attrs, k, v string) {
 		switch k {
-		case "data-cui-rpc":
-			if v == "" {
-				panic("headless: Form Request carries an empty data-cui-rpc — a request with no endpoint")
-			}
-			checkSameOrigin("a Form Request", "data-cui-rpc", v)
-			out[k] = v
-		case "data-cui-rpc-method":
-			switch v {
-			case "GET", "POST", "PUT", "PATCH", "DELETE":
-			default:
-				panic("headless: Form Request carries data-cui-rpc-method " + strconv.Quote(v) + ", which is not a method the runtime sends")
-			}
-			out[k] = v
 		case "data-cui-rpc-signal":
 			if v == "" {
 				panic("headless: Form Request carries an empty data-cui-rpc-signal — a success with nowhere to land")
 			}
 			checkSignalName(v)
 			out[k] = v
-		case "data-cui-rpc-navigate":
-			if v == "" {
-				panic("headless: Form Request carries an empty data-cui-rpc-navigate — a success with nowhere to go")
-			}
-			checkSameOrigin("a Form Request", "data-cui-rpc-navigate", v)
-			out[k] = v
 		case "data-cui-rpc-open", "data-cui-rpc-refresh":
 			if v == "" {
 				panic("headless: Form Request carries an empty " + k + " — it names a widget, and empty names nothing")
 			}
-			out[k] = v
-		case "data-cui-rpc-close", "data-cui-rpc-reset":
 			out[k] = v
 		case "data-cui-rpc-trigger":
 			if v != "input" {
@@ -153,16 +126,10 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Form Request carries an empty data-cui-rpc-success-toast — say the title or leave the toast off")
 			}
 			out[k] = v
-		case "data-cui-rpc-success-action":
-			checkToastAction("Form Request", v)
-			out[k] = v
 		case "data-cui-confirm":
 			if v == "" {
 				panic("headless: Form Request carries an empty data-cui-confirm — a confirmation with no message confirms nothing")
 			}
-			out[k] = v
-		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
-			checkConfirmWording("Form Request", a, k, v)
 			out[k] = v
 		case "data-action-mount":
 			if v == "" {
@@ -180,7 +147,7 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 		default:
 			panic("headless: Form Request carries " + k + ", which is not a request attribute a form admits (the wiring vocabulary lives on FormProps.Request; decoration belongs in ExtraAttrs)")
 		}
-	}
+	})
 	checkToastActionRides("Form Request", out)
 	return out
 }

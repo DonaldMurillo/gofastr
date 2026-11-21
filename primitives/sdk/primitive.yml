@@ -10,12 +10,22 @@ on_change:
   - A change to the Manifest's JSON shape must be written by cmd/gofastr/internal/appgen and read by framework/sdkdocs in the same change.
 invariants:
   - id: manifest-is-complete
-    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no artifacts, an artifact without file or sha256, an unknown source, no entities for the entity source or any for the openapi source; a different SchemaVersion is not an error.
+    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no artifacts, an artifact without file or sha256, a Go artifact without a safe directory, an unknown source, no entities for the entity source or any for the openapi source; a different SchemaVersion is not an error.
     enforced_by:
       - test: framework/sdk.TestReadManifestSources
       - test: framework/sdk.TestReadManifestValidates
       - test: framework/sdk.TestReadManifestRejectsEmptyEntities
       - test: framework/sdk.TestReadManifestRefusesEachMissingPart
+      - test: framework/sdk.TestReadManifestRequiresSafeGoArchiveDirectory
+  - id: go-archive-directory-is-shared
+    rule: The Go artifact's directory is one shell-safe path component used verbatim in the zip, generated README and served install guide.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestSDKGoArchiveAndInstallGuidesShareDirectory
+      - test: framework/sdk.TestReadManifestRequiresSafeGoArchiveDirectory
+  - id: example-host-is-shared
+    rule: SDK examples use ExampleHost to supply the placeholder host for an empty origin and trim trailing slashes before appending API or docs paths.
+    enforced_by:
+      - test: framework/sdk.TestExampleHost
   - id: zip-is-deterministic
     rule: PackZip writes entries in sorted path order with zero timestamps and mode 0644, so the same files always pack to the same bytes.
     enforced_by:
@@ -31,10 +41,10 @@ decisions:
   - id: unknown-version-is-unknown-provenance
     date: 2026-11-17
     status: accepted
-    decision: A manifest with another SchemaVersion reads as unknown provenance, not stale; SchemaVersion went to 2 when the mount point left the hash.
+    decision: A readable manifest with another SchemaVersion reports unknown provenance. Version 3 requires the top-level Go archive directory.
     rejected:
       - option: Compare the hashes anyway.
-        why: An older manifest's hash encodes the version prefix, so it would report drift for a schema that did not change.
+        why: An older manifest can use a different hash format and report drift for a schema that did not change.
     revisit_if: The hash algorithm changes again.
     upholds: [manifest-is-complete]
   - id: no-npm-package

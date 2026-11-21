@@ -7,6 +7,14 @@ import (
 	"unicode/utf8"
 )
 
+// ServedJS returns JavaScript as it goes on the wire, applying Minify when Enabled.
+func ServedJS(src string) string {
+	if !Enabled() {
+		return src
+	}
+	return Minify(src)
+}
+
 // Minify returns src with comments and needless whitespace removed; it never panics.
 func Minify(src string) string {
 	if src == "" {

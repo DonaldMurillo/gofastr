@@ -5,7 +5,35 @@
 // importing the UI layer.
 package routeseg
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
+
+// constraints is every constraint the router enforces, in the order a
+// registration error lists them: its matcher and the constraints no
+// value satisfies together with it. There is deliberately no "string"
+// constraint: every param is a string, so it would be an unconstrained
+// no-op under a misleading name.
+var constraints = []struct {
+	name     string
+	match    func(string) bool
+	disjoint []string
+}{
+	{"int", isAllDigits, []string{"alpha", "uuid"}},
+	{"uuid", isUUID, []string{"int", "alpha", "alnum"}}, // uuid needs hyphens
+	{"alpha", isAllAlpha, []string{"int", "uuid"}},
+	{"alnum", isAllAlnum, []string{"uuid"}},
+}
+
+func lookup(name string) (int, bool) {
+	for i, c := range constraints {
+		if c.name == name {
+			return i, true
+		}
+	}
+	return 0, false
+}
 
 // Constraint returns the constraint name declared on a dynamic segment
 // ("" when none). ":id:int" → "int"; ":id" and ":path*" → "".
@@ -21,35 +49,42 @@ func Constraint(seg string) string {
 }
 
 // ConstraintOK reports whether val, a decoded path segment, satisfies the
-// constraint declared on seg.
-// Unknown / absent constraints pass (the value matches anything); only the
-// names in validConstraints are enforced. Unknown constraint names are
-// rejected at registration, so resolve never sees them.
+// constraint declared on seg. An absent or unknown constraint passes;
+// unknown names are refused at registration (Valid), so resolve never
+// sees them.
 func ConstraintOK(seg, val string) bool {
-	switch Constraint(seg) {
-	case "int":
-		return isAllDigits(val)
-	case "uuid":
-		return isUUID(val)
-	case "alpha":
-		return isAllAlpha(val)
-	case "alnum":
-		return isAllAlnum(val)
-	default:
-		return true
-	}
+	i, ok := lookup(Constraint(seg))
+	return !ok || constraints[i].match(val)
 }
 
 // Valid reports whether name is a constraint the router enforces: the
-// registration-time allowlist. There is deliberately no "string"
-// constraint, every param is a string, so it would be an unconstrained
-// no-op under a misleading name.
+// registration-time allowlist.
 func Valid(name string) bool {
-	switch name {
-	case "int", "uuid", "alpha", "alnum":
+	_, ok := lookup(name)
+	return ok
+}
+
+// Names lists the constraints the router enforces.
+func Names() []string {
+	out := make([]string, len(constraints))
+	for i, c := range constraints {
+		out[i] = c.name
+	}
+	return out
+}
+
+// Overlap reports whether one value can satisfy both constraints. An
+// empty name is unconstrained and overlaps every constraint.
+func Overlap(a, b string) bool {
+	if a == "" || b == "" || a == b {
 		return true
 	}
-	return false
+	i, okA := lookup(a)
+	j, okB := lookup(b)
+	if !okA || !okB {
+		return true
+	}
+	return !slices.Contains(constraints[i].disjoint, b) && !slices.Contains(constraints[j].disjoint, a)
 }
 
 // isAllAlpha reports whether s is one or more ASCII letters (the "alpha"

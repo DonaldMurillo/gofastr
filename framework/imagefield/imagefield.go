@@ -56,19 +56,7 @@ func New(cfg Config) (*Deriver, error) {
 	if len(cfg.Variants) == 0 && cfg.BlurHashX == 0 && cfg.Placeholder == nil {
 		return nil, fmt.Errorf("imagefield: Config derives nothing: set Variants, BlurHashX/Y, or Placeholder")
 	}
-	if len(cfg.Variants) > fwimage.MaxVariantsPerSet {
-		return nil, fmt.Errorf("imagefield: %d variants exceeds MaxVariantsPerSet=%d",
-			len(cfg.Variants), fwimage.MaxVariantsPerSet)
-	}
-	for i, v := range cfg.Variants {
-		if v.Width < 1 {
-			return nil, fmt.Errorf("imagefield: Variants[%d].Width must be >= 1", i)
-		}
-		if v.Format == fwimage.FormatUnknown {
-			return nil, fmt.Errorf("imagefield: Variants[%d].Format must be set", i)
-		}
-	}
-	if err := fwimage.CheckVariantNames(cfg.Variants); err != nil {
+	if err := fwimage.CheckVariants(cfg.Variants); err != nil {
 		return nil, fmt.Errorf("imagefield: %w", err)
 	}
 	return &Deriver{

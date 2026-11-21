@@ -43,6 +43,7 @@ invariants:
     enforced_by:
       - test: framework/headless.TestFieldsetAndSectionSlugIDsDifferForNonLatinTitles
       - test: framework/headless.TestTableCaptionIDsDifferForDifferentNonLatinCaptions
+      - test: internal/idslug.TestMakeKeepsEveryScript
   - id: derived-ids-unique-explicit-kept
     rule: A Section's or Carousel's derived id goes through render.UniqueID so a repeat on the page is suffixed, and an explicit ID or slide ID is reserved and never changed.
     enforced_by:

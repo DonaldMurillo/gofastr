@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -50,6 +51,32 @@ func TestRetryOutlastsAttemptCap(t *testing.T) {
 	if err != nil || calls != 40 {
 		t.Fatalf("busy retries stopped early: calls=%d err=%v", calls, err)
 	}
+}
+
+func TestRetryDoublesDelayUpTo100ms(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		limits := []time.Duration{5, 10, 20, 40, 80, 100, 100}
+		attempts := 0
+		previous := time.Now()
+		err := Retry(context.Background(), func(context.Context) error {
+			now := time.Now()
+			if attempts > 0 {
+				limit := limits[attempts-1] * time.Millisecond
+				if pause := now.Sub(previous); pause < limit/2 || pause > limit {
+					t.Fatalf("pause %d = %v, want %v to %v", attempts, pause, limit/2, limit)
+				}
+			}
+			previous = now
+			attempts++
+			if attempts <= len(limits) {
+				return codedError(5)
+			}
+			return nil
+		})
+		if err != nil || attempts != len(limits)+1 {
+			t.Fatalf("Retry stopped after %d attempts: %v", attempts, err)
+		}
+	})
 }
 
 func TestRetryDeadlineKeepsBusyCause(t *testing.T) {

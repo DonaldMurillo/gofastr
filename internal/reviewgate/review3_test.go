@@ -159,8 +159,9 @@ func TestMixedLineTypesMerge(t *testing.T) {
 
 func TestFailuresNeverExitOne(t *testing.T) {
 	t.Run("codex will not start", func(t *testing.T) {
+		// Executable, so it is found; its interpreter is missing, so it cannot start.
 		script, codex, repo := setup(t, [3]string{block, block, block})
-		if err := os.Chmod(codex, 0o600); err != nil {
+		if err := os.WriteFile(codex, []byte("#!/nonexistent/interpreter\n"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		if got, out := run(t, script, codex, repo); got != 2 {
@@ -360,5 +361,41 @@ func TestNonExecutableClaudeIsNotFound(t *testing.T) {
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
 		t.Fatalf("err %v, want exit 3\n%s", err, out)
+	}
+}
+
+func TestNonExecutableCodexIsNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the executable mode check is POSIX-only")
+	}
+	dir := copyRunner(t)
+	script := filepath.Join(dir, "review3.py")
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(strings.Replace(string(src), `MAC_APPS = "/Applications"`, `MAC_APPS = "/nonexistent"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := place(t, filepath.Join(dir, "codex-stale"), 0o600)
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3")
+	}
+	for _, source := range []string{"--codex", "CODEX_BIN"} {
+		t.Run(source, func(t *testing.T) {
+			cmd := exec.Command(py, script, "--check")
+			cmd.Env = []string{"PATH=" + t.TempDir(), "HOME=" + t.TempDir()}
+			if source == "--codex" {
+				cmd.Args = append(cmd.Args, source, stale)
+			} else {
+				cmd.Env = append(cmd.Env, source+"="+stale)
+			}
+			out, err := cmd.CombinedOutput()
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+				t.Fatalf("err %v, want exit 3\n%s", err, out)
+			}
+		})
 	}
 }

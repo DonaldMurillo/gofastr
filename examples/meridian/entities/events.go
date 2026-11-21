@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=73f2b1f54cb0aded
+//gofastr:generated generator=app kind=scaffold version=dev sum=21542bf32e71c241
 
 package entities
 
@@ -43,8 +43,7 @@ func onEntityDeleted(app *framework.App, entity string, fn func(ctx context.Cont
 
 // extractEntityRecord unmarshals an event payload's "record" field for entity
 // into a *T, returning ok=false if the event is for a different entity or the
-// payload shape doesn't match. Shared body behind every generated
-// extract<Camel>Record wrapper.
+// payload shape doesn't match. Called by onEntityEvent.
 func extractEntityRecord[T any](ev framework.Event, entity string) (*T, bool) {
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["entity"] != entity {

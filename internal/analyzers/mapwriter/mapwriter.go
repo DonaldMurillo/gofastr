@@ -61,6 +61,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -83,8 +84,7 @@ var writeFuncs = map[string]bool{
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		filename := pass.Fset.Position(f.Pos()).Filename
-		if strings.HasSuffix(filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		guarded := singleEntryGuards(pass, f)
@@ -97,15 +97,8 @@ func run(pass *analysis.Pass) (any, error) {
 			if !rangesInMapOrder(pass, rng.X, bound, 0) {
 				return true
 			}
-			// A range inside `if len(m) == 1 { ... }` over the same m
-			// iterates once: order cannot be observed. "Same m" is the
-			// same VARIABLE, not the same spelling: a shadowing
-			// declaration inside the guard keeps the text identical
-			// while the ranged map is a different, unbounded one.
-			for _, g := range guarded {
-				if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
-					return true
-				}
+			if singleEntryRange(pass, rng, guarded) {
+				return true
 			}
 			ast.Inspect(rng.Body, func(inner ast.Node) bool {
 				call, ok := inner.(*ast.CallExpr)
@@ -138,10 +131,8 @@ func checkJoined(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Objec
 		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) {
 			return true
 		}
-		for _, g := range guarded {
-			if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
-				return true
-			}
+		if singleEntryRange(pass, rng, guarded) {
+			return true
 		}
 		reported := map[types.Object]bool{}
 		ast.Inspect(rng.Body, func(inner ast.Node) bool {
@@ -369,6 +360,15 @@ type guardRange struct {
 	expr     string
 }
 
+func singleEntryRange(pass *analysis.Pass, rng *ast.RangeStmt, guarded []guardRange) bool {
+	for _, g := range guarded {
+		if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
+			return true
+		}
+	}
+	return false
+}
+
 // matches reports whether x is the guarded expression: the same
 // variable when the guard named one (so a shadowing declaration inside
 // the guard does not inherit the exemption), else the same spelling.
@@ -488,10 +488,8 @@ func checkReturned(pass *analysis.Pass, f *ast.File, bound map[types.Object]ast.
 		if !ok || !rangesInMapOrder(pass, rng.X, bound, 0) || !wireShaped(pass, rng.X, bound, 0) && !mapLiteral(rng.X, bound, pass, f, rng.Pos()) {
 			return true
 		}
-		for _, g := range guarded {
-			if rng.Pos() >= g.from && rng.Pos() <= g.to && g.matches(pass, rng.X) {
-				return true
-			}
+		if singleEntryRange(pass, rng, guarded) {
+			return true
 		}
 		tainted := entryLocals(pass, rng)
 		if len(tainted) == 0 {

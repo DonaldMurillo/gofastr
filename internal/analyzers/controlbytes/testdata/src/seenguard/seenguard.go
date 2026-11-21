@@ -102,3 +102,13 @@ func elseArmEcho(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Rejected-Origin", origin) // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
 	}
 }
+
+func continueInsideLoop(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	for i := 0; i < 1; i++ {
+		if !allowed[origin] {
+			continue
+		}
+	}
+	w.Header().Set("X-Origin", origin) // want `controlbytes: request-derived value reaches http.Header.Set/Add unscrubbed`
+}

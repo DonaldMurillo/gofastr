@@ -55,7 +55,7 @@ func TestPartialRedirect_RuntimeFollowsXGofastrLocation(t *testing.T) {
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 
 	var finalURL, body string
 	var beforeShot, afterShot []byte
@@ -111,7 +111,7 @@ func TestPartialRedirect_ExternalLoadsPage(t *testing.T) {
 	srv := httptest.NewServer(New(application))
 	t.Cleanup(srv.Close)
 
-	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`[data-text="landing"]`, chromedp.ByQuery),

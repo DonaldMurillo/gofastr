@@ -522,7 +522,7 @@ func TestLinuxDesktopInstallCommands(t *testing.T) {
 		}
 	}
 	for _, target := range []string{"windows", "darwin"} {
-		output := clitest.CovT_capStdout(t, func() {
+		output := clitest.CovT_capOutput(t, func() {
 			if code := clitest.CovT_capExit(t, func() { runDesktopInstall([]string{"--bundle=missing"}, false, target) }); code != 1 {
 				t.Errorf("unsupported %s exit %d", target, code)
 			}
@@ -621,7 +621,7 @@ func TestLinuxInstallCacheFailureWarning(t *testing.T) {
 	paths := linuxInstallTestHome(t)
 	source, m := linuxInstallFixture(t, "")
 	t.Setenv("PATH", t.TempDir())
-	output := clitest.CovT_capStdout(t, func() {
+	output := clitest.CovT_capOutput(t, func() {
 		if err := installLinuxBundle(source); err != nil {
 			t.Fatal(err)
 		}

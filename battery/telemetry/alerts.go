@@ -16,20 +16,20 @@ import (
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
-// AlertKind is what an alert rule counts.
-type AlertKind string
+// AlertKind is what an alert rule counts; one declaration, in
+// internal/telemetry.
+type AlertKind = itel.AlertKind
 
 const (
 	// AlertFailed counts requests that failed: a 5xx, a panic, a job
 	// that returned an error.
-	AlertFailed AlertKind = "failed"
+	AlertFailed = itel.AlertFailed
 	// AlertSlow counts requests at or over Config.SlowThreshold.
-	AlertSlow AlertKind = "slow"
+	AlertSlow = itel.AlertSlow
 	// AlertDisk watches how full the disk holding the telemetry
 	// directory is. Its rule's AtLeast is a percentage from 1 to 100,
-	// and it takes no Within and no Route. It resolves five points
-	// below its line.
-	AlertDisk AlertKind = "disk"
+	// and it takes no Within and no Route.
+	AlertDisk = itel.AlertDisk
 )
 
 // AlertRule fires when at least AtLeast requests of its Kind finished
@@ -102,7 +102,7 @@ const alertEvery = 15 * time.Second
 
 func fromEvent(e itel.AlertEvent) Alert {
 	return Alert{
-		Rule:   AlertRule{Name: e.Rule.Name, Kind: AlertKind(e.Rule.Kind), AtLeast: e.Rule.AtLeast, Within: e.Rule.Within, Route: e.Rule.Route},
+		Rule:   AlertRule{Name: e.Rule.Name, Kind: e.Rule.Kind, AtLeast: e.Rule.AtLeast, Within: e.Rule.Within, Route: e.Rule.Route},
 		Firing: e.Firing, Count: e.Count, At: e.At, Since: e.Since,
 	}
 }
@@ -119,7 +119,7 @@ func (p *Plugin) newAlerts() (*itel.Alerts, error) {
 	}
 	internal := make([]itel.AlertRule, len(rules))
 	for i, r := range rules {
-		internal[i] = itel.AlertRule{Name: r.Name, Kind: itel.AlertKind(r.Kind), AtLeast: r.AtLeast, Within: r.Within, Route: r.Route}
+		internal[i] = itel.AlertRule{Name: r.Name, Kind: r.Kind, AtLeast: r.AtLeast, Within: r.Within, Route: r.Route}
 	}
 	return itel.NewAlerts(internal)
 }
@@ -251,13 +251,6 @@ func (p *Plugin) Firing() []Alert {
 	return out
 }
 
-// webhookClient posts alerts: a deadline, and no following a redirect
-// to wherever a response points.
-var webhookClient = &http.Client{
-	Timeout:       10 * time.Second,
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-}
-
 // WebhookNotifier returns a Config.Notify that posts each alert to
 // target as JSON: {"text": ..., "content": ..., "alert": {...}}. Slack,
 // Mattermost and Teams incoming webhooks read "text" and Discord reads
@@ -285,7 +278,7 @@ func WebhookNotifier(target string) func(context.Context, Alert) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := webhookClient.Do(req)
+		resp, err := outboundClient.Do(req)
 		if err != nil {
 			// The URL of a chat webhook is its secret: say which host
 			// refused, not the whole of it.

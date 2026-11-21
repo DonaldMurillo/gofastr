@@ -14,7 +14,7 @@ import (
 // go.mod requires, for an entry whose directory holds no files, and for
 // a file marked as a copy of a package the settings file does not list.
 func reportUnmounted(root string, marked []provenanceEntry, note, noteWarn func(string, ...any)) {
-	f, entries, err := project.UnmountedSettings(root)
+	settingsPath, entries, err := project.UnmountedSettings(root)
 	if err != nil {
 		noteWarn("could not read the unmounted packages: %v", err)
 		return
@@ -30,7 +30,7 @@ func reportUnmounted(root string, marked []provenanceEntry, note, noteWarn func(
 		if !replaced && project.UnmountedBehind(e.Version, required) {
 			noteWarn("%s was copied at %s and go.mod requires gofastr %s: fixes since then do not reach the copy. Diff: %s", e.Source, e.Version, required, project.UnmountedCompareURL(e.Version, required))
 		}
-		if dirEntries, err := os.ReadDir(filepath.Join(f.Dir, filepath.FromSlash(e.Path))); err != nil || len(dirEntries) == 0 {
+		if dirEntries, err := os.ReadDir(filepath.Join(filepath.Dir(settingsPath), filepath.FromSlash(e.Path))); err != nil || len(dirEntries) == 0 {
 			noteWarn("%s lists %s at %s, but that directory holds no files: run `gofastr remount %s` to drop the entry", settings.FileName, e.Source, e.Path, e.Path)
 		}
 	}

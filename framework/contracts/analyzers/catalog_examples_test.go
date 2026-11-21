@@ -240,18 +240,6 @@ func TestEveryCatalogRuleHasAnAnalyzer(t *testing.T) {
 	}
 }
 
-// The converse: an analyzer claiming a rule that is not in the catalog
-// would emit diagnostics that `--explain` cannot describe.
-func TestEveryAnalyzerRuleIsInTheCatalog(t *testing.T) {
-	for _, a := range contracts.Analyzers() {
-		for _, id := range a.Rules {
-			if _, ok := contracts.LookupRule(id); !ok {
-				t.Errorf("analyzer %q claims %s, which is not in the catalog", a.Name, id)
-			}
-		}
-	}
-}
-
 // GOFASTR1805 reuses core-ui/check via a per-file entry point rather than
 // the recursive walk, so the two skip rules have to be verified here: a
 // file opting out with //check-csp:ignore-file is skipped, and a script

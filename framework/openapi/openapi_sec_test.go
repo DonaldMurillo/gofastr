@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -125,7 +126,7 @@ func hasResponse(op map[string]any, status string) bool {
 	if ok {
 		// pre-Build form: responses keyed by int
 		for code := range resps {
-			if itoa(code) == status {
+			if strconv.Itoa(code) == status {
 				return true
 			}
 		}
@@ -137,28 +138,6 @@ func hasResponse(op map[string]any, status string) bool {
 	}
 	_, ok = rm[status]
 	return ok
-}
-
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	var b [20]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
 }
 
 func TestOwnerScopedOpsDeclare401(t *testing.T) {

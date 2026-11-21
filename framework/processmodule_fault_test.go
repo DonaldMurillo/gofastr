@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // A child whose frames fault the host peer kept running in Ready while
@@ -15,12 +16,12 @@ import (
 // The fault now kills the child, so the exit watcher records a crash and
 // the supervise loop starts a new instance.
 func TestSupervisorRestartsFaultedModule(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	store := newTestStore(t)
-	sup := newTestSupervisor(t, store, childModeFault)
-	d := descriptorForChild(t, childModeFault)
+	sup := newTestSupervisor(t, store, pmtestkit.ModeFault)
+	d := descriptorForChild(t, pmtestkit.ModeFault)
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -28,7 +29,7 @@ func TestSupervisorRestartsFaultedModule(t *testing.T) {
 	if err := sup.Enable(context.Background(), d.Name); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	waitForState(t, sup, d.Name, StateReady, 5*time.Second)
+	waitForStateTB(t, sup, d.Name, StateReady, 5*time.Second)
 
 	sl := sup.Slot(d.Name)
 	sl.mu.RLock()

@@ -5,6 +5,10 @@ code:
 docs:
   - framework/docs/content/auth.md
 invariants:
+  - id: an-unset-password-keeps-the-last-oauth-link
+    rule: The entity user store treats a NULL password flag as unset on SQLite and Postgres and refuses to remove the last link from that account.
+    enforced_by:
+      - test: battery/auth.TestUnlinkNullPasswordParity
   - id: cross-site-arrival-reloads-same-site
     rule: SessionMiddleware answers a cookieless document navigation (GET or HEAD) that handler.IsCrossSiteRequest calls cross-site and that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
     enforced_by:
@@ -87,6 +91,11 @@ invariants:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
+  - id: backup-code-regeneration-requires-post
+    rule: Backup-code regeneration runs on POST because it invalidates the previous set and CSRF middleware exempts safe methods such as GET.
+    enforced_by:
+      - test: battery/auth.TestBackupCodesRejectsGetRequests
+      - test: battery/auth.TestTwoFA_BackupCodesRefresh
   - id: init-refuses-non-idempotent-canonicalizer
     rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass, and every ingestion refuses an address the override moves on a second pass.
     enforced_by:

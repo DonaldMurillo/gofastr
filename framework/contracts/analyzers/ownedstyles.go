@@ -164,7 +164,7 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	}
 	checks := CheckStylePrograms(p, inputs, tokensFiles)
 
-	var out []contracts.Diagnostic
+	out := checkExemptStyleMedia(p, tokensFiles)
 	seenTokenFinding := map[ownstyle.FileDiagnostic]bool{}
 	for _, g := range checks.Groups {
 		for _, d := range g.TokenFindings {
@@ -183,6 +183,10 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 
 	for _, s := range sheets {
 		for _, d := range checks.SheetFindings[s.rel] {
+			if d.Rule == ownstyle.RuleInvalidMedia {
+				out = append(out, invalidMediaDiagnostic(s.rel, d))
+				continue
+			}
 			if !strings.HasPrefix(d.Rule, "GOFASTR") {
 				continue
 			}
@@ -202,6 +206,47 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	out = append(out, checkKitRootStyles(p, idx, sheets)...)
 	out = append(out, checkOwnedHandleLeaks(p, idx)...)
 	return out
+}
+
+func checkExemptStyleMedia(p *contracts.Pass, tokensFiles []SheetInput) []contracts.Diagnostic {
+	var inputs []SheetInput
+	for _, f := range p.ExemptStyleFiles() {
+		if !isOwnedStylePath(f.Rel) {
+			continue
+		}
+		if body, ok := p.Source(f.Rel); ok {
+			inputs = append(inputs, SheetInput{Path: f.Rel, Src: string(body)})
+		}
+	}
+	if len(inputs) == 0 {
+		return nil
+	}
+	groups := OwnedStyleGroups(p, inputs, tokensFiles)
+	sources := make(map[string]string, len(inputs))
+	for _, input := range inputs {
+		sources[input.Path] = input.Src
+	}
+	var out []contracts.Diagnostic
+	for file, findings := range sheetFindings(groups, sources) {
+		for _, d := range findings {
+			if d.Rule == ownstyle.RuleInvalidMedia {
+				out = append(out, invalidMediaDiagnostic(file, d))
+			}
+		}
+	}
+	return out
+}
+
+func invalidMediaDiagnostic(file string, d ownstyle.Diagnostic) contracts.Diagnostic {
+	return contracts.Diagnostic{
+		RuleID:     contracts.RuleStaleStyleSource,
+		File:       file,
+		Line:       d.Line,
+		Column:     d.Col,
+		Message:    d.Message,
+		Suggestion: "Fix the custom media query and rerun `gofastr gen styles`.",
+		Unwaivable: true,
+	}
 }
 
 func checkUpstreamCandidates(sheets []*ownedSheet) []contracts.Diagnostic {

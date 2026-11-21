@@ -17,21 +17,27 @@ var (
 // LintNoInlineStyles scans every .go file in dir (non-recursive) for inline style attributes in
 // HTML, and for "style" keys passed as attrs to render.Tag / html.Attrs literals.
 func LintNoInlineStyles(dir string) (*Result, error) {
-	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
-		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
-		for index, line := range strings.Split(string(raw), "\n") {
-			if allowed[index+1] && strings.TrimSpace(line) == "" {
-				allowed[index+2] = true
-			}
+	res, err := lintGoDir(dir, lintInlineStyles)
+	if err != nil {
+		return nil, err
+	}
+	return res[0], nil
+}
+
+func lintInlineStyles(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
+	allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
+	for index, line := range strings.Split(string(raw), "\n") {
+		if allowed[index+1] && strings.TrimSpace(line) == "" {
+			allowed[index+2] = true
 		}
-		sub := &Result{}
-		scanInlineStyles(fset, file, filename, sub)
-		for _, v := range sub.Violations {
-			if !allowed[v.Line] {
-				result.Violations = append(result.Violations, v)
-			}
+	}
+	sub := &Result{}
+	scanInlineStyles(fset, file, filename, sub)
+	for _, v := range sub.Violations {
+		if !allowed[v.Line] {
+			result.Violations = append(result.Violations, v)
 		}
-	})
+	}
 }
 
 // ScanInlineStylesIn runs the inline-style detector over one parsed file, for a contracts pass.

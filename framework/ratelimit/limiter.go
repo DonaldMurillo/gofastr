@@ -65,6 +65,14 @@ type rlState struct {
 	blockOrder   uint64
 }
 
+func (s *rlState) expireBlock(now time.Time) {
+	if !s.blockedUntil.IsZero() && !now.Before(s.blockedUntil) {
+		s.blockedUntil = time.Time{}
+		s.attempts = s.attempts[:0]
+		s.blockOrder = 0
+	}
+}
+
 // NewLimiter constructs a Limiter, filling zero Config fields with their defaults.
 func NewLimiter(cfg Config) *Limiter {
 	if cfg.MaxAttempts <= 0 {
@@ -134,13 +142,9 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 		rl.states[key] = state
 	}
 
+	state.expireBlock(now)
 	if !state.blockedUntil.IsZero() {
-		if now.Before(state.blockedUntil) {
-			return false, state.blockedUntil.Sub(now), nil
-		}
-		state.blockedUntil = time.Time{}
-		state.attempts = state.attempts[:0]
-		state.blockOrder = 0
+		return false, state.blockedUntil.Sub(now), nil
 	}
 
 	cutoff := now.Add(-rl.cfg.Window)
@@ -166,13 +170,8 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 func (rl *Limiter) evictLocked(now time.Time) {
 	cutoff := now.Add(-rl.cfg.Window)
 	for key, st := range rl.states {
-		if !st.blockedUntil.IsZero() && !now.Before(st.blockedUntil) {
-			st.blockedUntil = time.Time{}
-			st.attempts = st.attempts[:0]
-			st.blockOrder = 0
-		}
-		blockActive := !st.blockedUntil.IsZero() && now.Before(st.blockedUntil)
-		if blockActive {
+		st.expireBlock(now)
+		if !st.blockedUntil.IsZero() {
 			continue
 		}
 		hasRecent := false

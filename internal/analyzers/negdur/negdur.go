@@ -89,6 +89,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -132,7 +135,7 @@ func run(pass *analysis.Pass) (any, error) {
 	var funcs []*ast.FuncDecl
 	funcByObj := map[types.Object]*ast.FuncDecl{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -541,7 +544,7 @@ func (fc *funcCtx) classify(be *ast.BinaryExpr) (key, name string, c cmpclass, d
 	}
 	if v, ok := constInt(fc.pass, be.X); ok {
 		if k, n, ok := fc.resolveKey(be.Y); ok {
-			return k, n, classifyOp(reverse(be.Op), v), be.Y
+			return k, n, classifyOp(astx.FlipComparison(be.Op), v), be.Y
 		}
 	}
 	return "", "", cmpNone, nil
@@ -584,20 +587,6 @@ func classifyOp(op token.Token, v int64) cmpclass {
 		}
 	}
 	return cmpNone
-}
-
-func reverse(op token.Token) token.Token {
-	switch op {
-	case token.LEQ:
-		return token.GEQ
-	case token.GEQ:
-		return token.LEQ
-	case token.LSS:
-		return token.GTR
-	case token.GTR:
-		return token.LSS
-	}
-	return op
 }
 
 // substKind classifies a substituted value: only a positive duration

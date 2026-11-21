@@ -12,18 +12,25 @@ integrations endpoint, "POST to a customer URL", retry on failure.
 
 **Shape:**
 ```go
-store := webhook.NewSQLStore(db)
+codec, err := webhook.NewAESGCMSecretCodec(key) // key: 16/24/32 bytes, from your secret store
+if err != nil {
+    return err
+}
+store, err := webhook.NewSQLStore(db, webhook.WithSQLSecretCodec(codec))
+if err != nil {
+    return err
+}
 mgr := webhook.New(store, webhook.Options{
-    MaxAttempts:        6,
-    PollInterval:       2 * time.Second,
-    SignatureTolerance: 5 * time.Minute,
+    MaxAttempts:  6,
+    PollInterval: 2 * time.Second,
     // AllowPrivateNetworks left false on purpose, the SSRF guard.
 })
 mgr.Start()
-defer mgr.Stop(context.Background()) // bounds the drain; returns error
+defer mgr.Stop(context.Background()) // cancels the worker and waits for it to exit
 
-n, err := mgr.Publish(ctx, "order.shipped", payload)
-_, _ = n, err // n = number of subscribers the event fanned out to
+if _, err := mgr.Publish(ctx, "order.shipped", payload); err != nil {
+    return err
+}
 
 // Optional: fan EventBus events to webhook subscribers automatically.
 cancel := webhook.Bridge(app.Events(), mgr, "order.shipped", "user.deleted")
@@ -54,7 +61,7 @@ in a custom transport.
 **Security:**
 - Leave `AllowPrivateNetworks: false`. Setting it true allows
   subscribers to point at internal addresses → classic SSRF.
-- Use `AESGCMSecretCodec` to encrypt subscriber secrets at rest in
-  the store. The plaintext secret never leaves memory after that.
+- Use `NewAESGCMSecretCodec` to encrypt subscriber secrets at rest in
+  the store (dev may acknowledge plaintext with `WithSQLAllowPlaintext`).
 - HMAC signatures are timestamped; receivers MUST check the timestamp
   is within tolerance to defeat replay.

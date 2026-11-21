@@ -1,7 +1,6 @@
 package entityui
 
 import (
-	"bytes"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -18,15 +17,6 @@ type screensHost struct {
 
 func (h screensHost) HasScreen(path string) (has, known bool) { return h.screens[path], true }
 
-func captureWarnings(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	var buf bytes.Buffer
-	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(old) })
-	return &buf
-}
-
 // #503: a list's row links point at <base>/<id>, and until the app
 // registers a record screen there every one of them 404s with nothing
 // said. The list logs one warning per base naming the missing route.
@@ -37,7 +27,7 @@ func TestListWarnsWhenRecordScreenMissing(t *testing.T) {
 	)
 	const warning = "no screen serves"
 
-	logs := captureWarnings(t)
+	logs := captureLogs(t, slog.LevelWarn)
 	ui, err := New(screensHost{testHost: x.host, screens: map[string]bool{}}, Extensions{})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +83,7 @@ func TestNoLinksListDoesNotWarn(t *testing.T) {
 		map[string]entity.EntityConfig{"orders": ordersConfig()},
 		map[string][]map[string]any{"orders": ordersRows()},
 	)
-	logs := captureWarnings(t)
+	logs := captureLogs(t, slog.LevelWarn)
 	ui, err := New(screensHost{testHost: x.host, screens: map[string]bool{}}, Extensions{})
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +101,7 @@ func TestRecordScreenCheckIsBounded(t *testing.T) {
 		map[string]entity.EntityConfig{"orders": ordersConfig()},
 		map[string][]map[string]any{"orders": ordersRows()},
 	)
-	logs := captureWarnings(t)
+	logs := captureLogs(t, slog.LevelWarn)
 	calls := 0
 	ui, err := New(countingHost{testHost: x.host, calls: &calls}, Extensions{})
 	if err != nil {

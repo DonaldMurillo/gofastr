@@ -4,6 +4,7 @@ code:
   - framework/dev/livereload.go
   - framework/dev/htmlinject.go
   - framework/dev/mcp.go
+  - internal/devmode/devmode.go
 docs:
   - framework/docs/content/dev-livereload.md
 on_change:
@@ -15,6 +16,10 @@ invariants:
       - test: framework/dev.TestEnabledMatrix
       - test: framework/dev.TestEnabledRefusesProductionEnv
       - test: framework/dev.TestLayoutLayerGate
+  - id: minification-uses-the-dev-gate
+    rule: Runtime minification uses the shared base dev gate unless a manual minification override is truthy, with RUNTIME_NOMINIFY taking precedence.
+    enforced_by:
+      - test: core-ui/runtime/minify.TestEnabledEnvTable
   - id: opt-out-only-when-falsy
     rule: A feature's opt-out variable (GOFASTR_DEV_LIVERELOAD, GOFASTR_DEV_MCP, GOFASTR_DEV_LAYOUT) turns only that feature off, and only when it parses as false; an unparseable value leaves it on.
     enforced_by:

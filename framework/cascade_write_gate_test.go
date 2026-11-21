@@ -170,14 +170,7 @@ func TestCascadeOnlyUpdateUsesWriteScope(t *testing.T) {
 	})
 	policy := access.NewRolePolicy()
 	policy.Grant("auditor", "decks:read:all")
-	app.Use(access.Middleware(policy, func(ctx context.Context) []string {
-		if u, ok := handler.GetUser(ctx); ok && u != nil {
-			if rh, ok := u.(interface{ GetRoles() []string }); ok {
-				return rh.GetRoles()
-			}
-		}
-		return nil
-	}))
+	app.Use(access.Middleware(policy, access.RequestUserRoles))
 	stop := covStartAndStop(t, app)
 	defer stop()
 	for _, s := range []string{

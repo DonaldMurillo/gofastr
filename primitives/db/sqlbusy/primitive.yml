@@ -14,6 +14,7 @@ invariants:
     rule: Retry keeps retrying a busy error until the context ends, with no attempt cap, the pause doubling to at most 100ms.
     enforced_by:
       - test: framework/db/sqlbusy.TestRetryOutlastsAttemptCap
+      - test: framework/db/sqlbusy.TestRetryDoublesDelayUpTo100ms
   - id: retry-stops-on-anything-else
     rule: Retry returns at once on success or on a non-busy error, on the first call or a later one, and never calls fn on a context that has already ended.
     enforced_by:

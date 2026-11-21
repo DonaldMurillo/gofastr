@@ -59,7 +59,7 @@ func TestA2A_EntitySkillGroupingIgnoresCustomTools(t *testing.T) {
 			t.Fatalf("register %s: %v", name, err)
 		}
 	}
-	sets := env.app.entitySkillSets()
+	sets := env.app.entitySkillSetsFrom(env.app.MCP.ListTools())
 	var keys []string
 	for _, s := range sets {
 		key := s.entity

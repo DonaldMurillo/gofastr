@@ -25,8 +25,9 @@ app := framework.NewApp(framework.WithIdempotency(middleware.IdempotencyConfig{}
 So the request already carries what the app's middleware resolved. The
 default `Principal` is the authenticated user (the framework's owner
 extractor). A request with no resolved user keys on its credential
-instead (a hash of its `Authorization`, `X-API-Key` and `Cookie`
-headers), and a request with neither shares one `"anon"` namespace.
+instead (a hash of its `Authorization`, `X-API-Key`, `X-Gofastr-Embed`
+and `Cookie` headers), and a request with neither shares one `"anon"`
+namespace.
 The default `Tenant` is the resolved tenant id (`tenant.GetTenantID`),
 so one credential that switches its active tenant and resends the same
 key, path and body runs the write in the new tenant instead of getting

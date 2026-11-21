@@ -10,8 +10,6 @@ import (
 )
 
 var (
-	reBareDeclCSS  = regexp.MustCompile(`(?:^|[\s{;"` + "`" + `])(-{0,2}[a-z][a-z-]*)\s*:\s*([^;{}"` + "`" + `]+)`)
-	reBareDeclPair = regexp.MustCompile(`"([a-z][a-z-]*)",\s*"([^"]+)"`)
 	reBarePx       = regexp.MustCompile(`(?:^|[\s,(])(-?\d*\.?\d+)px\b`)
 	reBareTime     = regexp.MustCompile(`(?:^|[\s,])(\d*\.?\d+)(ms|s)\b`)
 	reBareRing     = regexp.MustCompile(`(?:^|[\s,])(?:inset\s+)?0\s+0\s+0\s+(\d*\.?\d+)px\b`)
@@ -266,16 +264,16 @@ func bareEasing(v string) (string, bool) {
 	return "", false
 }
 
-func checkBareThemeLiterals(rel string, lineNo int, scan, orig string, devSurface bool) []contracts.Diagnostic {
+func checkBareThemeLiterals(rel string, lineNo int, decls []cssDeclaration, orig string, devSurface bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	report := func(prop, value string) {
-		prop = strings.ToLower(prop)
+	for _, decl := range decls {
+		prop, value := decl.property, decl.value
 		if strings.HasPrefix(prop, "--") {
-			return
+			continue
 		}
 		lit, want, ok := bareThemeLiteral(prop, value, !devSurface)
 		if !ok {
-			return
+			continue
 		}
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RuleBareThemeLiteral,
@@ -285,16 +283,6 @@ func checkBareThemeLiterals(rel string, lineNo int, scan, orig string, devSurfac
 				prop, lit, want),
 			Snippet: strings.TrimSpace(orig),
 		})
-	}
-	if strings.Contains(scan, ":") {
-		for _, m := range reBareDeclCSS.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
-		}
-	}
-	if strings.Contains(scan, `",`) {
-		for _, m := range reBareDeclPair.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
-		}
 	}
 	return out
 }

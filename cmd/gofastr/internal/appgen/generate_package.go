@@ -53,7 +53,7 @@ func runGeneratePackage(args []string) {
 	}
 	name, outDir, dryRun, ok := parsePackageArgs(args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	infos, err := canonicalPackageInfos()
@@ -82,7 +82,7 @@ func runGeneratePackage(args []string) {
 		}
 		cli.Fail("unknown package %q; available: %s", name, strings.Join(names, ", "))
 		cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
@@ -119,7 +119,7 @@ func runGeneratePackage(args []string) {
 	// tree: same markers, same hook, same settings entry, so verify,
 	// upgrade and remount see it like any other copy.
 	source := CanonicalPackageImport + name
-	settingsPath, entries, err := UnmountedEntries(tgt.AnchorDir)
+	settingsPath, entries, err := project.UnmountedSettings(tgt.AnchorDir)
 	if err == nil {
 		err = CheckUnmountOverlap(settings.Unmounted{Source: source, Path: filepath.ToSlash(tgt.Root)}, entries, false)
 	}
@@ -353,8 +353,8 @@ func parsePackageArgs(args []string) (name, outDir string, dryRun, ok bool) {
 		case strings.HasPrefix(arg, "--out="):
 			outDir = strings.TrimPrefix(arg, "--out=")
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), packageUsage)
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				failGenerateArgs(args, cli.NeedsValue("--out"), packageUsage)
 				return "", "", false, false
 			}
 			i++

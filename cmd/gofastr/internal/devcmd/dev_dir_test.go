@@ -26,7 +26,7 @@ func TestDevRefusesMissingDir(t *testing.T) {
 		done := make(chan result, 1)
 		go func() {
 			var r result
-			r.out = clitest.CovT_capStdout(t, func() {
+			r.out = clitest.CovT_capOutput(t, func() {
 				r.code = clitest.CovT_capExit(t, func() { RunDev([]string{"--dir", dir, "-p", "0", "--no-a11y"}) })
 			})
 			done <- r

@@ -103,6 +103,36 @@ func TestScrubControlBytesStrayHighBytes(t *testing.T) {
 	}
 }
 
+// Outputs captured from the implementation before the shared
+// AppendPercentByte step; they pin byte-identity across C0, DEL, C1 runes,
+// invisible runes, valid and invalid UTF-8.
+func TestScrubControlBytesPinnedCorpus(t *testing.T) {
+	cases := map[string]string{
+		"":                        "",
+		"plain ascii 123":         "plain ascii 123",
+		"\x00nul":                 "%00nul",
+		"a\x01\x02\x1f b":         "a%01%02%1f b",
+		"cr lf\r\nnl":             "cr lf%0d%0anl",
+		"esc\x1b[31m del\x7f":     "esc%1b[31m del%7f",
+		"\u0080\u0085\u009b":      "%c2%80%c2%85%c2%9b",
+		"zw\u200bsp":              "zw%e2%80%8bsp",
+		"rlo \u202e":              "rlo %e2%80%ae",
+		"sep\u2028\u2029":         "sep%e2%80%a8%e2%80%a9",
+		"héllo 😀":                 "héllo 😀",
+		"日本語":                     "日本語",
+		"stray\x80\x9bhigh":       "stray%80%9bhigh",
+		"\xff\xfe raw":            "\xff\xfe raw",
+		"trunc\xc3ated":           "trunc\xc3ated",
+		"mix\x00\u009b\u200b\xff": "mix%00%c2%9b%e2%80%8b\xff",
+		"\xed\xa0\x80surrogate":   "\xed\xa0%80surrogate",
+	}
+	for in, want := range cases {
+		if got := ScrubControlBytes(in); got != want {
+			t.Errorf("ScrubControlBytes(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestScrubControlBytesCleanASCIIFastPath(t *testing.T) {
 	in := "GET /users/42?page=1 HTTP/1.1"
 	if got := ScrubControlBytes(in); got != in {

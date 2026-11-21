@@ -13,6 +13,7 @@ code:
   - framework/entityui/list_table.go
   - framework/entityui/list_views.go
   - framework/entityui/saved_views*.go
+  - internal/listfilter/
 invariants:
   - id: list-key-claimed-once-per-request
     rule: Two lists rendered for one request with the same key (two unkeyed lists included) fail the second slot, a render with no request allows every key, and the per-request key registry drains once its request is collected.
@@ -20,16 +21,24 @@ invariants:
       - test: framework/entityui.TestDuplicateListKeyFailsSecondSlot
       - test: framework/entityui.TestSweepListKeyRegistryDrains
   - id: url-state-never-fails-the-screen
-    rule: A filter text that does not parse, an undecodable own query pair, an unknown or Show-hidden view in the URL, a refused cols value or a stale saved view draws a warning or the default and still lists, while a builder naming an unknown view, column or heading level fails its slot.
+    rule: A filter text that does not parse, an unknown or Show-hidden view in the URL, a refused cols value or a stale saved view draws a warning or the default and still lists, while a builder naming an unknown view, column or heading level fails its slot.
     enforced_by:
       - test: framework/entityui.TestBadFilterWarnsAndStillLists
-      - test: framework/entityui.TestListWarnsUndecodableQuery
-      - test: framework/entityui.TestUndecodablePairWarnsItsOwnList
       - test: framework/entityui.TestSweepListURLHiddenViewShowsAll
       - test: framework/entityui.TestHiddenDefaultViewFallsBackToAll
       - test: framework/entityui.TestSweepListBuilderUnknownViewFailsSlot
       - test: framework/entityui.TestBadBuilderNamesFailSlot
       - test: framework/entityui.TestHeadingLevelOutOfRangeFailsSlot
+  - id: dropped-narrowing-warns
+    rule: Entity lists and the admin Audit, Jobs and Search pages use listfilter.DroppedNarrowing and listfilter.Warning for a dropped pair with an unreadable key or a key that narrows that screen.
+    enforced_by:
+      - test: framework/entityui.TestListWarnsUndecodableQuery
+      - test: framework/entityui.TestUndecodablePairWarnsItsOwnList
+      - test: battery/admin.TestUndecodablePairWarns
+    applies:
+      - battery/admin/audit.go
+      - battery/admin/queue.go
+      - battery/admin/palette.go
   - id: view-func-predicate-validated-every-time
     rule: A view Filter's predicate passes filter.ValidatePredicate against the entity's fields on every render before it reaches SQL.
     enforced_by:

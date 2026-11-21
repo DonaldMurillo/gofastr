@@ -83,6 +83,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 const Doc = "report validator enumeration arms that never appear in the package's test literals"
@@ -107,7 +109,7 @@ func run(pass *analysis.Pass) (any, error) {
 	dirs := map[string]bool{}
 	for _, f := range pass.Files {
 		filename := pass.Fset.Position(f.Pos()).Filename
-		if strings.HasSuffix(filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue // test files are corpus, never validators
 		}
 		prod = append(prod, f)

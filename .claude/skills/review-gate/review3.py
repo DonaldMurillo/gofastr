@@ -145,7 +145,7 @@ def codex_install_spots():
 def find_codex(explicit):
     """--codex, then CODEX_BIN, then PATH, then codex_install_spots."""
     for cand in (explicit, os.environ.get("CODEX_BIN")):
-        if cand and os.path.isfile(cand):
+        if cand and os.path.isfile(cand) and (os.name == "nt" or os.access(cand, os.X_OK)):
             return cand
     found = shutil.which("codex")
     if found:

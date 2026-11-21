@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // Claims represents the data embedded in a JWT token.
@@ -246,9 +244,4 @@ func claimsToUser(c Claims) User {
 		Email: c.Email,
 		Roles: c.Roles,
 	}
-}
-
-// userToContext stores the user derived from claims into the context.
-func userToContext(ctx context.Context, user User) context.Context {
-	return handler.SetUser(ctx, user)
 }

@@ -185,8 +185,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		} else {
 			mintSessionCookie(w, c.mgr.Config(), "", time.Time{})
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+		writeAuthJSON(w, r, http.StatusOK, map[string]any{"updated": true}, skipCredentialHeaders)
 	}
 }
 

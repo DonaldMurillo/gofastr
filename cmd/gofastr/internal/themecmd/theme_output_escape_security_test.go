@@ -47,7 +47,7 @@ func TestThemeCommandsPrintRepoPathsInert(t *testing.T) {
 		},
 	} {
 		var code int
-		printed := clitest.CovT_capStdout(t, func() { code = clitest.CovT_capExit(t, run) })
+		printed := clitest.CovT_capOutput(t, func() { code = clitest.CovT_capExit(t, run) })
 		if code != 1 {
 			t.Errorf("%s through a linked %q exited %d, want 1:\n%q", name, hostileDir, code, printed)
 		}

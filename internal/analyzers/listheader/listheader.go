@@ -121,7 +121,7 @@ func computeSplitters(pass *analysis.Pass) map[*types.Func][]int {
 			for _, field := range fd.Type.Params.List {
 				for _, name := range field.Names {
 					obj := pass.TypesInfo.Defs[name]
-					if obj != nil && isString(obj.Type()) && !contains(out[fn], i) &&
+					if obj != nil && astx.IsString(obj.Type()) && !contains(out[fn], i) &&
 						tokenUsed(pass, fd.Body, obj, out) {
 						out[fn] = append(out[fn], i)
 						changed = true
@@ -144,11 +144,6 @@ func contains(xs []int, x int) bool {
 		}
 	}
 	return false
-}
-
-func isString(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Kind() == types.String
 }
 
 // tokenUsed: obj is split or token-compared somewhere in body.

@@ -20,8 +20,8 @@ import (
 
 // EmailPreview is one mail the Emails page renders.
 type EmailPreview struct {
-	// Name is the mail's tab and URL key: lowercase letters, digits, "-"
-	// and "_", unique among EmailPreviews.
+	// Name is the mail's unique tab and URL key, 1–64 lowercase letters,
+	// digits, "-" or "_", starting with a letter or digit.
 	Name string
 
 	// Render builds the mail from sample data, the way the app builds it

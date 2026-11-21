@@ -3,8 +3,6 @@ package queue
 import (
 	"container/heap"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -665,17 +663,8 @@ func (q *MemoryQueue) enqueue(ctx context.Context, job Job, acquire bool) error 
 	if job.SequenceKey != "" {
 		return ErrSequenceUnsupported
 	}
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = q.now()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	if err := normalizeJob(&job, func(job *Job) { defaultCreatedAt(job, q.now) }); err != nil {
+		return err
 	}
 	q.pmu.Lock()
 	defer q.pmu.Unlock()
@@ -788,13 +777,6 @@ func (q *MemoryQueue) deferGated(job Job) {
 	q.pushLocked(job)
 }
 
-// randomID generates a 16-byte hex string ID.
-func randomID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // Ack confirms a manually-dequeued job is done, discarding any tracked
 // in-flight copy. For jobs processed by the automatic worker pool it is a
 // no-op (those are auto-acknowledged after successful handler execution).
@@ -806,7 +788,8 @@ func (q *MemoryQueue) Ack(_ context.Context, job Job) error {
 }
 
 // Nack marks a manually-dequeued job as failed: it increments the attempt
-// counter and re-enqueues the job when retries remain, otherwise drops it.
+// counter and re-enqueues the job when retries remain, otherwise retains it
+// as terminally failed in the dead-letter set.
 // The job must have been handed out by Dequeue (the in-flight set is consulted
 // by ID). Jobs processed by the automatic worker pool retry internally and are
 // never in the in-flight set; calling Nack for one is a harmless no-op.

@@ -98,7 +98,7 @@ func run(pass *analysis.Pass) (any, error) {
 	// Function bodies: FuncDecls and FuncLits alike — HTTP and tool
 	// handlers are often closures. Each is analyzed independently;
 	// nothing flows across function boundaries.
-	for _, b := range astx.AllBodies(pass) {
+	for _, b := range astx.AllBodies(pass.Files...) {
 		w := &walker{pass: pass, tainted: map[string]string{}}
 		w.block(b.List)
 	}

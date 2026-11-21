@@ -22,19 +22,24 @@ var (
 	demoSheetBody   = i18n.Define("gallery.bottomsheet.body", "Bottom-anchored sibling of Drawer. Drag the handle down past ~80px to dismiss; Escape and backdrop click also close it.")
 )
 
-// MountDemoWidgets registers the hidden overlays opened by catalog demos.
-// Call it once per router, before mounting its UIHost. sidebarPages optionally
-// limits the sidebar drawer to the routes that render the sidebar demo.
-func MountDemoWidgets(routes *router.Router, sidebarPages ...string) {
+// DemoWidgetPages lists the routes for each overlay. An empty list leaves that overlay global.
+type DemoWidgetPages struct {
+	Modal, Drawer, BottomSheet, Sidebar []string
+}
+
+// MountDemoWidgets registers the demo overlays with per-overlay page scopes.
+// Call it once per router before mounting its UIHost.
+func MountDemoWidgets(routes *router.Router, pages DemoWidgetPages) {
 	for _, demo := range []struct {
 		builder *widget.Builder
 		heading string
 		title   i18n.Phrase
 		body    i18n.Phrase
+		pages   []string
 	}{
-		{preset.Modal("site-demo-modal").DeepLink("modal", "user-edit").DeepLinkParam("user_id"), "site-demo-modal-heading", demoModalTitle, demoModalBody},
-		{preset.Drawer("site-demo-drawer"), "site-demo-drawer-heading", demoDrawerTitle, demoDrawerBody},
-		{preset.BottomSheet("site-demo-bottomsheet"), "site-demo-sheet-heading", demoSheetTitle, demoSheetBody},
+		{preset.Modal("site-demo-modal").DeepLink("modal", "user-edit").DeepLinkParam("user_id"), "site-demo-modal-heading", demoModalTitle, demoModalBody, pages.Modal},
+		{preset.Drawer("site-demo-drawer"), "site-demo-drawer-heading", demoDrawerTitle, demoDrawerBody, pages.Drawer},
+		{preset.BottomSheet("site-demo-bottomsheet"), "site-demo-sheet-heading", demoSheetTitle, demoSheetBody, pages.BottomSheet},
 	} {
 		widget.MountBuilder(routes, demo.builder.LabelledBy(demo.heading).
 			Slot("body", app.NewContextComponent(func(ctx context.Context) render.HTML {
@@ -42,9 +47,9 @@ func MountDemoWidgets(routes *router.Router, sidebarPages ...string) {
 					html.Heading(html.HeadingConfig{Level: 3, ID: demo.heading}, render.Text(demo.title.Text(ctx))),
 					html.Paragraph(html.TextConfig{}, render.Text(demo.body.Text(ctx))),
 				)
-			})).Hidden())
+			})).Hidden().Pages(demo.pages...))
 	}
 	widget.MountBuilder(routes, preset.Drawer(SidebarShowcaseConfig.DrawerName).
 		Slot("body", app.NewStaticComponent(ui.SidebarBody(SidebarShowcaseConfig))).
-		Hidden().Pages(sidebarPages...))
+		Hidden().Pages(pages.Sidebar...))
 }

@@ -197,7 +197,7 @@ dashboard that ticks once every 5–30 seconds should poll. See
 | Job | Source of truth | Lane | Reconnect behavior | Duplicate handling |
 |---|---|---|---|---|
 | Latest-state dashboard (throughput, gauge, badge count) | Server's current value | SSE with default `?buffer=N` (oldest-drop) | Refetch current island HTML; intermediate frames are gone. A future frame heals the miss. | Idempotent: same value applied twice is a no-op. |
-| Event feed / status timeline | Durable rows in your DB (the feed is a projection) | SSE for invalidation; the rows are source of truth | Authoritative refresh: refetch the rendered feed island, OR refetch the page slice and re-render. The runtime does not replay missed frames. | Idempotent if your feed renderer dedups by event id. Plan for duplicates anyway: at-least-once under fanout. |
+| Event feed / status timeline | Durable rows in your DB (the feed is a projection) | SSE for invalidation; the rows are source of truth | Authoritative refresh: refetch the rendered feed island, OR refetch the page slice and re-render. The runtime does not replay missed frames. | Fanout delivers best-effort. Deduplicate by event ID so the feed renderer is idempotent. |
 | Every-event-matters (billing, audit, workflow transition, ordered processing) | **Durable queue or transactional outbox** | SSE NOT used for delivery. SSE may be used to *invalidate* a view ("an event you care about arrived"), but the durable lane owns the side effect. | The outbox relay redelivers undelivered rows on restart. SSE reconnect changes nothing about durable delivery. | Consumers must be idempotent, keyed on `(consumer, Event.ID)`. |
 
 If the question is "did this exact event reach the browser?", the

@@ -218,48 +218,16 @@ func TestBuildDevChildEnvNoAddrLeavesPortUntouched(t *testing.T) {
 
 // ─── scanModTimes + changed ──────────────────────────────────────────
 
-func TestScanModTimesPicksUpGoFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
-	result := ScanModTimes(dir)
-	if len(result) != 1 {
-		t.Fatalf("scanModTimes found %d files, want 1: %+v", len(result), result)
-	}
-}
-
-func TestScanModTimesPicksUpJSFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeDevFile(t, filepath.Join(dir, "runtime.js"), "// JS")
-	result := ScanModTimes(dir)
-	if len(result) != 1 {
-		t.Fatalf("scanModTimes found %d files, want 1 (.js should be watched): %+v", len(result), result)
-	}
-}
-
-func TestScanModTimesPicksUpCSSFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeDevFile(t, filepath.Join(dir, "theme.css"), "/* CSS */")
-	result := ScanModTimes(dir)
-	if len(result) != 1 {
-		t.Fatalf("scanModTimes found %d files, want 1 (.css should be watched): %+v", len(result), result)
-	}
-}
-
-func TestScanModTimesPicksUpHTMLFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeDevFile(t, filepath.Join(dir, "index.html"), "<html></html>")
-	result := ScanModTimes(dir)
-	if len(result) != 1 {
-		t.Fatalf("scanModTimes found %d files, want 1 (.html should be watched): %+v", len(result), result)
-	}
-}
-
-func TestScanModTimesPicksUpMDFiles(t *testing.T) {
-	dir := t.TempDir()
-	writeDevFile(t, filepath.Join(dir, "llm.md"), "# doc")
-	result := ScanModTimes(dir)
-	if len(result) != 1 {
-		t.Fatalf("scanModTimes found %d files, want 1 (.md is embedded like .js/.css/.html): %+v", len(result), result)
+func TestScanModTimesPicksUpWatchedExtensions(t *testing.T) {
+	for _, ext := range []string{".go", ".js", ".css", ".html", ".md"} {
+		t.Run(ext, func(t *testing.T) {
+			dir := t.TempDir()
+			writeDevFile(t, filepath.Join(dir, "file"+ext), "watched")
+			result := ScanModTimes(dir)
+			if len(result) != 1 {
+				t.Fatalf("scanModTimes found %d files, want 1 (%s is watched): %+v", len(result), ext, result)
+			}
+		})
 	}
 }
 
@@ -272,16 +240,6 @@ func TestScanModTimesIgnoresVendorGitNodeModules(t *testing.T) {
 	result := ScanModTimes(dir)
 	if len(result) != 1 {
 		t.Fatalf("scanModTimes found %d files, want 1 (vendor/.git/node_modules ignored): %+v", len(result), result)
-	}
-}
-
-func TestChangedDetectsNewFile(t *testing.T) {
-	dir := t.TempDir()
-	prev := ScanModTimes(dir)
-	writeDevFile(t, filepath.Join(dir, "main.go"), "package main")
-	curr := ScanModTimes(dir)
-	if !Changed(prev, curr) {
-		t.Fatal("changed() = false, want true after adding a file")
 	}
 }
 

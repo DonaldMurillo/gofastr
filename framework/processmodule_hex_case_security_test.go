@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 func TestRunnerAcceptsHexDigestCase(t *testing.T) {
-	descriptor := descriptorForChild(t, childModeEcho)
+	descriptor := descriptorForChild(t, pmtestkit.ModeEcho)
 	descriptor.ArtifactSHA256 = strings.ToUpper(descriptor.ArtifactSHA256)
 	child, err := (&TrustedProcessRunner{}).Start(context.Background(), ChildSpec{Descriptor: descriptor, ScratchDir: t.TempDir()})
 	if err != nil {

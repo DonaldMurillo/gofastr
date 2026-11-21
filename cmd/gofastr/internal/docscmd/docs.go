@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
+	"github.com/DonaldMurillo/gofastr/internal/textcut"
 )
 
 // RunDocs implements `gofastr docs`. Four modes:
@@ -20,9 +21,10 @@ import (
 //	gofastr docs --grep <term>      search across every topic
 //	gofastr docs serve              browse the docs site on localhost
 //
-// The docs are embedded into the binary at build time, so this command
-// always speaks for the version of the framework you have installed.
-// No GitHub / module-cache fetch needed.
+// The list, topic and grep modes read docs embedded into the binary at
+// build time, so they always speak for the version of the framework you
+// have installed, with no GitHub or module-cache fetch. By default,
+// serve downloads and caches a static export of a release's site.
 func RunDocs(args []string) {
 	if len(args) > 0 && args[0] == "serve" {
 		runDocsServe(args[1:])
@@ -75,7 +77,7 @@ func RunDocs(args []string) {
 		cli.Fprintln(os.Stderr, err.Error())
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Run `gofastr docs` to see every available topic.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 	cli.Print(string(body))
 }
@@ -101,15 +103,7 @@ func runDocsList() {
 		}
 		// Trim long summaries to fit ~120-col terminals.
 		const lineCap = 100
-		if len(summary) > lineCap {
-			// Back off to a rune boundary. A byte slice can land mid-rune
-			// and emit invalid UTF-8 to the terminal.
-			cut := lineCap
-			for cut > 0 && !utf8.RuneStart(summary[cut]) {
-				cut--
-			}
-			summary = summary[:cut] + "…"
-		}
+		summary = textcut.Ellipsis(summary, lineCap)
 		cli.Printf("  "+cli.Green("%s")+"%s  %s\n",
 			t.Name,
 			strings.Repeat(" ", maxName-len(t.Name)),

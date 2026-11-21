@@ -15,7 +15,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	idx, err := Open(Options{
 		Embedder:      NewStubEmbedder(64),
 		Path:          dir,
-		SnapshotEvery: 0, // disable auto-snapshot
+		SnapshotEvery: 1 << 20,
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -28,15 +28,24 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if err := idx.Add(ctx, docs...); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
+	snap := filepath.Join(dir, "store.snap")
+	if _, err := os.Stat(snap); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no snapshot before Snapshot: stat error = %v", err)
+	}
 	if err := idx.Snapshot(); err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if err := idx.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "store.snap")); err != nil {
+	if _, err := os.Stat(snap); err != nil {
 		t.Fatalf("snapshot file missing: %v", err)
 	}
+	wal, err := os.Stat(filepath.Join(dir, "store.wal"))
+	if err != nil {
+		t.Fatalf("stat WAL: %v", err)
+	}
+	if wal.Size() != 0 {
+		t.Fatalf("WAL size after Snapshot = %d, want 0", wal.Size())
+	}
+	crash(idx) // release the writer lock without a second snapshot
 
 	// Reopen and verify state survived.
 	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
@@ -64,7 +73,7 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 	idx, err := Open(Options{
 		Embedder:      NewStubEmbedder(64),
 		Path:          dir,
-		SnapshotEvery: 0, // no auto-snapshot, simulate crash before flush
+		SnapshotEvery: 1 << 20,
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -77,8 +86,11 @@ func TestWALReplayRecoversUnsnapshottedWrites(t *testing.T) {
 	}
 	// Simulate a crash: close the WAL file handle without snapshotting.
 	crash(idx)
+	if _, err := os.Stat(filepath.Join(dir, "store.snap")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no snapshot before WAL replay: stat error = %v", err)
+	}
 
-	// Reopen: snapshot is missing/empty, WAL must carry the state.
+	// Reopen with the WAL as the only source of state.
 	idx2, err := Open(Options{Embedder: NewStubEmbedder(64), Path: dir})
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

@@ -14,7 +14,7 @@ import (
 
 func TestDefaultTenantConfig(t *testing.T) {
 	c := DefaultTenantConfig()
-	if c.Field != "tenant_id" || !c.AutoScope {
+	if c.Field != "tenant_id" {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 }

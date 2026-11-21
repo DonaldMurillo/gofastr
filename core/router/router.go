@@ -84,12 +84,18 @@ func ValidatePattern(method, pattern string) (err error) {
 // Handle registers handler for method and pattern (ServeMux syntax under r's prefix); middleware added later still wraps it.
 // It panics on a pattern conflict or a malformed pattern.
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
-	fullPath := r.prefix + pattern
+	r.HandleAbsolute(method, r.prefix+pattern, handler)
+}
+
+// HandleAbsolute registers a full ServeMux path without adding r's prefix.
+// The route still uses r's middleware chain and resource.
+func (r *Router) HandleAbsolute(method, fullPath string, handler http.Handler) {
 	if err := ValidatePattern(method, fullPath); err != nil {
 		panic(err)
 	}
 	fullPattern := method + " " + fullPath
 	route := newCachedRoute(handler, r, method, fullPath)
+	route.gateKey = fullPattern
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -177,7 +183,7 @@ type chainEntry struct {
 }
 
 func newCachedRoute(h http.Handler, r *Router, method, pattern string) *cachedRoute {
-	return &cachedRoute{raw: h, router: r, method: method, pattern: pattern, gateKey: method + " " + pattern}
+	return &cachedRoute{raw: h, router: r, method: method, pattern: pattern}
 }
 
 func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -185,7 +191,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	gate := c.router.root.routeGate
 	served := c.router.root.serveHook
 	c.router.root.mu.RUnlock()
-	if gate != nil {
+	if gate != nil && c.gateKey != "" {
 		if !routeGateSafely(req.Context(), gate, c.gateKey) {
 			http.NotFound(w, req)
 			return

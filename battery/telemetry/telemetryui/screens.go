@@ -183,6 +183,26 @@ func (s *Screens) pickWindow(q url.Values) (window, time.Time) {
 	return s.pickWindow(url.Values{})
 }
 
+// windowParam is the window a URL carries: nothing for the default
+// window, which every page reads anyway.
+func windowParam(key string) string {
+	if key == defaultWindow {
+		return ""
+	}
+	return key
+}
+
+// carriedWindow is the window parameter of q as a link carries it:
+// windowParam of the chosen key, and nothing for a key that is no
+// choice, which a link must not repeat.
+func carriedWindow(q url.Values) string {
+	key := choice(q, "window")
+	if !slices.ContainsFunc(windows, func(w window) bool { return w.key == key }) {
+		return ""
+	}
+	return windowParam(key)
+}
+
 // cursor is where a page sits in the list: before a time (older rows),
 // after one (newer rows), or neither, which is the newest page.
 type cursor struct{ before, after time.Time }
@@ -331,10 +351,7 @@ func (s *Screens) tabNav(ctx context.Context, current int) render.HTML {
 	// The time range chosen on one page holds on the next: someone
 	// looking at the last hour on the Overview means the last hour of
 	// requests too.
-	wkey := choice(query(ctx), "window")
-	if wkey == defaultWindow || !slices.ContainsFunc(windows, func(w window) bool { return w.key == wkey }) {
-		wkey = ""
-	}
+	wkey := carriedWindow(query(ctx))
 	to := func(path string) string { return link(path, "window", wkey) }
 	return ui.TabNav(ui.TabNavConfig{
 		Label: i18nui.TelemetryNav.Text(ctx),
@@ -458,11 +475,7 @@ func timeCell(ctx context.Context, now, t time.Time) render.HTML {
 func rangeLinks(ctx context.Context, choices []window, current string, href func(key string) string) render.HTML {
 	items := make([]ui.SegmentLink, len(choices))
 	for i, w := range choices {
-		key := w.key
-		if key == defaultWindow {
-			key = ""
-		}
-		items[i] = ui.SegmentLink{Text: w.label.Text(ctx), Href: href(key), Current: w.key == current}
+		items[i] = ui.SegmentLink{Text: w.label.Text(ctx), Href: href(windowParam(w.key)), Current: w.key == current}
 	}
 	return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.TelemetryWindow.Text(ctx), Items: items, Ctx: ctx})
 }
@@ -521,10 +534,7 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	traces, hasNewer, hasOlder := trim(cur, traces, requestsPerPage)
 
 	path := s.RequestsPath()
-	wkey := win.key
-	if wkey == defaultWindow {
-		wkey = ""
-	}
+	wkey := windowParam(win.key)
 	here := func(show, route string) string {
 		return link(path, "show", show, "route", route, "issue", issue, "window", wkey)
 	}
@@ -692,10 +702,7 @@ func (s *Screens) traceSearch(ctx context.Context, value string, carried ...ui.H
 func (s *Screens) request(ctx context.Context, id string, q url.Values) render.HTML {
 	// Back goes to the list this request was opened from: the link that
 	// led here carried the list's filters, and they ride back.
-	wkey := choice(q, "window")
-	if wkey == defaultWindow || !slices.ContainsFunc(windows, func(w window) bool { return w.key == wkey }) {
-		wkey = ""
-	}
+	wkey := carriedWindow(q)
 	show := choice(q, "show")
 	if show != "failed" && show != "slow" {
 		show = ""
@@ -778,8 +785,8 @@ func (s *Screens) request(ctx context.Context, id string, q url.Values) render.H
 			Total: tr.Dur, Steps: waterfallSteps(tr, i18nui.TelemetryFailed.Text(ctx)), Ctx: ctx,
 		}))
 
-	start := tr.Time.Add(-tr.Dur)
-	lines, err := store.LogsForTrace(tr.TraceID, start.Add(-time.Second), tr.Time.Add(time.Second))
+	from, to := tr.LogWindow()
+	lines, err := store.LogsForTrace(tr.TraceID, from, to)
 	var logs render.HTML
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: read request logs", "err", err)
@@ -817,65 +824,36 @@ func (s *Screens) request(ctx context.Context, id string, q url.Values) render.H
 		ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryRequestLogs.Text(ctx), Compact: true, Ctx: ctx}, logs))
 }
 
-// detailAttrs are the span attributes worth a line under a step's name,
-// first match wins: what was run, or what was called.
-var detailAttrs = []string{"db.query.text", "db.statement", "http.url", "url.full", "http.target", "messaging.destination.name"}
-
-// waterfallSteps orders a trace's spans as a tree, each under its
-// parent and siblings by start, and gives every one its depth. A span
-// whose parent is not in the trace hangs from the top.
+// waterfallSteps draws itel.Steps as the waterfall's bars: the one
+// root reads as the route, a nameless step as its span ID, and a
+// failed step is marked.
 func waterfallSteps(tr itel.Trace, failedNote string) []ui.WaterfallStep {
-	children := map[string][]int{}
-	known := map[string]bool{}
-	for _, sp := range tr.Spans {
-		known[sp.SpanID] = true
-	}
-	var roots []int
-	for i, sp := range tr.Spans {
-		if sp.ParentID != "" && known[sp.ParentID] && sp.ParentID != sp.SpanID {
-			children[sp.ParentID] = append(children[sp.ParentID], i)
-		} else {
-			roots = append(roots, i)
+	sts := itel.Steps(tr)
+	roots := 0
+	for _, s := range sts {
+		if s.Depth == 0 {
+			roots++
 		}
 	}
-	byStart := func(a, b int) int { return int(tr.Spans[a].Offset - tr.Spans[b].Offset) }
-	steps := make([]ui.WaterfallStep, 0, len(tr.Spans))
-	seen := make([]bool, len(tr.Spans))
-	var walk func(idx []int, depth int)
-	walk = func(idx []int, depth int) {
-		slices.SortStableFunc(idx, byStart)
-		for _, i := range idx {
-			if seen[i] {
-				continue // a parent loop in the data: draw each span once
-			}
-			seen[i] = true
-			sp := tr.Spans[i]
-			step := ui.WaterfallStep{Label: sp.Name, Start: sp.Offset, Dur: sp.Dur, Depth: depth}
-			// The request itself reads as its route: the span's own
-			// name says the method twice ("HTTP GET GET /orders/{id}").
-			if depth == 0 && len(roots) == 1 && tr.Route != "" {
-				step.Label = tr.Route
-			}
-			if step.Label == "" {
-				step.Label = sp.SpanID
-			}
-			if step.Label == "" {
-				step.Label = "?"
-			}
-			if sp.Error {
-				step.Tone, step.Note = ui.WaterfallDanger, failedNote
-			}
-			for _, want := range detailAttrs {
-				if j := slices.IndexFunc(sp.Attrs, func(a itel.Attr) bool { return a.Key == want }); j >= 0 {
-					step.Detail = sp.Attrs[j].Value
-					break
-				}
-			}
-			steps = append(steps, step)
-			walk(children[sp.SpanID], depth+1)
+	steps := make([]ui.WaterfallStep, 0, len(sts))
+	for _, s := range sts {
+		step := ui.WaterfallStep{Label: s.Name, Detail: s.Detail, Start: s.Offset, Dur: s.Dur, Depth: s.Depth}
+		// The request itself reads as its route: the span's own
+		// name says the method twice ("HTTP GET GET /orders/{id}").
+		if s.Depth == 0 && roots == 1 && tr.Route != "" {
+			step.Label = tr.Route
 		}
+		if step.Label == "" {
+			step.Label = s.SpanID
+		}
+		if step.Label == "" {
+			step.Label = "?"
+		}
+		if s.Error {
+			step.Tone, step.Note = ui.WaterfallDanger, failedNote
+		}
+		steps = append(steps, step)
 	}
-	walk(roots, 0)
 	return steps
 }
 
@@ -901,10 +879,7 @@ func (s *Screens) Issues(ctx context.Context) render.HTML {
 		slog.ErrorContext(ctx, "telemetry: list issues", "err", err)
 		return page(s.tabNav(ctx, tabIssues), header, problem(ctx, i18nui.TelemetryLoadFailed))
 	}
-	wkey := win.key
-	if wkey == defaultWindow {
-		wkey = ""
-	}
+	wkey := windowParam(win.key)
 	filters := rangeLinks(ctx, windows, win.key, func(key string) string { return link(s.IssuesPath(), "window", key) })
 	now := s.now()
 	cols := []ui.Column{
@@ -1023,10 +998,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	lines, hasNewer, hasOlder := trim(cur, lines, logsPerPage)
 
 	path := s.LogsPath()
-	wkey := win.key
-	if wkey == defaultWindow {
-		wkey = ""
-	}
+	wkey := windowParam(win.key)
 	here := func(level string) string { return link(path, "level", level, "q", text, "window", wkey, "all", all) }
 	quietNote, quietLink, quietHref := i18nui.TelemetryQuietHidden, i18nui.TelemetryQuietShow, link(path, "level", lv.key, "q", text, "window", wkey, "all", "1")
 	if all != "" {

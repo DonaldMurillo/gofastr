@@ -63,6 +63,33 @@ func TestDBQueue_EnqueueDequeueRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDBQueue_EnqueueRejectsNegativeMaxAgeBeforeClockRead(t *testing.T) {
+	const want = "queue: Job.MaxAge must not be negative"
+	var q DBQueue
+	var tx *sql.Tx
+	for _, tc := range []struct {
+		name    string
+		enqueue func(context.Context, Job) error
+	}{
+		{"direct", q.Enqueue},
+		{"durable_scheduler", func(ctx context.Context, job Job) error {
+			return q.enqueueWith(ctx, tx, job)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if value := recover(); value != nil {
+					t.Fatalf("enqueue panicked with %v, want error %q", value, want)
+				}
+			}()
+			err := tc.enqueue(t.Context(), Job{Type: "send-email", MaxAge: -time.Second})
+			if !errors.Is(err, errNegativeMaxAge) || err.Error() != want {
+				t.Fatalf("enqueue returned %v, want error %q", err, want)
+			}
+		})
+	}
+}
+
 // ============================================================================
 // Dequeue is empty after we drain the only job.
 // ============================================================================

@@ -20,6 +20,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	fwpagination "github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
 func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
@@ -105,7 +106,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		body = append(body, savedGoneWarning(ctx))
 	}
 	if s.filterBad {
-		body = append(body, filterWarning(ctx))
+		body = append(body, listfilter.Warning(ctx))
 	}
 	facets := b.facetControls(ctx, s)
 	if tb := b.toolbar(ctx, s, facets); tb != "" {
@@ -423,7 +424,7 @@ func (b *ListBuilder) state(ctx context.Context, m *meta) (*listState, crud.List
 	s.path = b.base
 	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
 		s.path = r.URL.Path
-		s.filterBad = s.ownPairUndecodable(r.URL.RawQuery)
+		s.filterBad = listfilter.DroppedNarrowing(r.URL.RawQuery, s.narrowsParam)
 	}
 	s.base = b.base
 	if s.base == "" {

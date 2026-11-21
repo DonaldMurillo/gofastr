@@ -10,11 +10,11 @@ invariants:
     enforced_by:
       - test: framework/static.TestWatchNegativeIntervalRejected
   - id: ignores-its-own-output
-    rule: The watch leaves OutDir and its page manifest out of every scan, so a rebuild never triggers the next one.
+    rule: Initial and later watch snapshots share the scan that excludes OutDir and its page manifest, so a rebuild never triggers the next one.
     enforced_by:
       - test: framework/static.TestWatchIgnoresItsOwnOutput
   - id: changes-and-errors
-    rule: A deleted file under a watched directory counts as a change, and a failed first build is handed to onError while the watch goes on.
+    rule: A change in the file names or modification times between watch snapshots triggers a rebuild, and a failed first build is handed to onError while the watch goes on.
     enforced_by:
       - test: framework/static.TestSweepStaticWatch
 decisions:

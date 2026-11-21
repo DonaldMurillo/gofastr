@@ -238,14 +238,8 @@ func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	if err := checkTwoFactorURL("oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL); err != nil {
 		return err
 	}
-	// The passkey and magic-link rule: every plugin is registered before
-	// any Init runs, so a 2FA plugin later in the list is already visible.
-	if p.twoFactorURL == "" {
-		for _, name := range mgr.order {
-			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
-				return fmt.Errorf("auth: oauth2 plugin: %q handles two-factor sign-in, so set OAuth2Config.TwoFactorURL to the page that finishes it: an OAuth sign-in of a 2FA account is pending until /2fa/challenge, and \"/\" would refuse it", name)
-			}
-		}
+	if err := requireTwoFactorURL(mgr, "oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL, "an OAuth sign-in", "\"/\""); err != nil {
+		return err
 	}
 	if mgr.UserStore() == nil {
 		// No user store at all, the callback already 500s on this. No
@@ -1441,15 +1435,6 @@ func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonc
 	return string(uidBytes), nonceB64, expiry, true
 }
 
-// purgeExpiredNonces is retained for explicit cleanup callers (e.g. a
-// future ticker goroutine). The hot validate path inlines its own
-// size-gated purge.
-func (p *OAuth2Plugin) purgeExpiredNonces() {
-	p.noncesMu.Lock()
-	defer p.noncesMu.Unlock()
-	p.purgeExpiredNoncesLocked(time.Now())
-}
-
 func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	for n, exp := range p.usedNonces {
 		if !now.Before(exp) {
@@ -1457,22 +1442,6 @@ func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 		}
 	}
 	p.lastNonceSweep = now
-}
-
-// randomPassword generates a random alphanumeric string of the given length.
-// Used as a placeholder hash input for OAuth-created users (they never log
-// in via password). Panics on entropy failure, the auth system can't
-// remain sound without crypto/rand.
-func randomPassword(n int) string {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("auth: crypto/rand failed: %v", err))
-	}
-	for i := range b {
-		b[i] = chars[int(b[i])%len(chars)]
-	}
-	return string(b)
 }
 
 // ─── Built-in providers ────────────────────────────────────────────────────
@@ -1490,12 +1459,47 @@ func randomPassword(n int) string {
 // TestProviderFetchRefusesRedirect and TestOIDCSec_TokenRedirectKeepsSecret.
 var defaultOAuthHTTPClient = oidcNoRedirect(&http.Client{Timeout: 10 * time.Second})
 
-// oauthProviderMaxBody caps the bytes decoded from any built-in provider
-// response (token exchange, refresh, userinfo, /user/emails). 1 MiB matches
-// the OIDC fetch convention (jwksMaxBody, fetchDiscovery, ExchangeCode,
-// fetchUserinfo); a bigger body is a misbehaving endpoint, not a payload to
-// buffer to EOF.
+// oauthProviderMaxBody caps OAuth and OIDC token, discovery and profile responses.
 const oauthProviderMaxBody = 1 << 20
+
+// Keep response structs anonymous to preserve JSON type-error messages.
+type tokenBody = struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+}
+
+func oauthToken(body tokenBody) *OAuth2Token {
+	return &OAuth2Token{
+		AccessToken:  body.AccessToken,
+		RefreshToken: body.RefreshToken,
+		Expiry:       tokenExpiry(body.ExpiresIn),
+	}
+}
+
+func postTokenRequest(ctx context.Context, client *http.Client, endpoint string, form url.Values, body any, prepare func(*http.Request), refuse func(*http.Response) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if prepare != nil {
+		prepare(req)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return refuse(resp)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(body)
+}
+
+func acceptTokenJSON(req *http.Request) {
+	req.Header.Set("Accept", "application/json")
+}
 
 // maxTokenLifetime caps expires_in so the Duration product cannot
 // overflow; ten years is past any real access token.
@@ -1583,38 +1587,14 @@ func (g *GoogleProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 	data.Set("redirect_uri", g.redirectURL)
 	data.Set("grant_type", "authorization_code")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body tokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, nil, func(resp *http.Response) error {
+		return fmt.Errorf("google: token exchange returned %d", resp.StatusCode)
+	})
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google: token exchange returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
-		return nil, err
-	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body), nil
 }
 
 // RefreshToken exchanges a Google refresh token for a fresh access token.
@@ -1627,38 +1607,14 @@ func (g *GoogleProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	data.Set("client_secret", g.clientSecret)
 	data.Set("grant_type", "refresh_token")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body tokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, nil, func(resp *http.Response) error {
+		return fmt.Errorf("google: token refresh returned %d", resp.StatusCode)
+	})
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google: token refresh returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
-		return nil, err
-	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body), nil
 }
 
 func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error) {
@@ -1692,12 +1648,10 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token string) (*OAut
 		return nil, err
 	}
 
-	// Google asserts email_verified on its userinfo response (bool). Older
-	// docs surface the same value as "verified_email", accept either, the
-	// newer name wins. When neither is present we default to false: a
-	// missing assertion is not a verified email.
-	emailVerified := parseGoogleEmailVerified(body.EmailVerified) ||
-		parseGoogleEmailVerified(body.VerifiedEmail)
+	// Google uses email_verified and verified_email. A true assertion in
+	// either field verifies the email.
+	emailVerified := emailVerifiedValue(body.EmailVerified) ||
+		emailVerifiedValue(body.VerifiedEmail)
 
 	return &OAuth2UserInfo{
 		ID:            body.ID,
@@ -1766,44 +1720,18 @@ func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 	data.Set("client_secret", g.clientSecret)
 	data.Set("redirect_uri", g.redirectURL)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
+	var body githubTokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, acceptTokenJSON, func(resp *http.Response) error {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("github: token exchange returned %d: %s", resp.StatusCode, detail)
+	})
 	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("github: token exchange returned %d: %s", resp.StatusCode, body)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		Error        string `json:"error"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
 		return nil, err
 	}
 	if err := githubTokenRefusal("token exchange", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
-
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+	return oauthToken(body.tokenBody), nil
 }
 
 // RefreshToken exchanges a GitHub refresh token for a fresh access token.
@@ -1816,47 +1744,24 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 	data.Set("client_secret", g.clientSecret)
 	data.Set("grant_type", "refresh_token")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.tokenEndpoint,
-		strings.NewReader(data.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// Don't fold the provider response body into the error: it flows to
-		// caller logs, and keeping upstream bytes out of error strings matches
-		// the Google path. Status code is enough to diagnose.
+	var body githubTokenBody
+	err := postTokenRequest(ctx, g.httpClient, g.tokenEndpoint, data, &body, acceptTokenJSON, func(resp *http.Response) error {
+		// Drain a bounded body and keep provider bytes out of caller logs.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
-	}
-
-	var body struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-		Error        string `json:"error"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
+		return fmt.Errorf("github: token refresh returned %d", resp.StatusCode)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := githubTokenRefusal("token refresh", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
+	return oauthToken(body.tokenBody), nil
+}
 
-	return &OAuth2Token{
-		AccessToken:  body.AccessToken,
-		RefreshToken: body.RefreshToken,
-		Expiry:       tokenExpiry(body.ExpiresIn),
-	}, nil
+type githubTokenBody = struct {
+	tokenBody
+	Error string `json:"error"`
 }
 
 // githubTokenRefusal reads a GitHub token response that arrived with
@@ -1984,22 +1889,6 @@ func (g *GitHubProvider) fetchPrimaryEmail(ctx context.Context, token string) (s
 		}
 	}
 	return "", false, nil
-}
-
-// parseGoogleEmailVerified coerces Google's `email_verified` /
-// `verified_email` JSON value into a strict bool. Accepts a JSON bool or
-// the strings "true"/"false" (case-insensitive). Anything else, including
-// the field's absence, resolves to false: a missing assertion is not a
-// verified email, and the OAuth callback must never bind an unverifiable
-// email to an existing account.
-func parseGoogleEmailVerified(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case string:
-		return strings.EqualFold(x, "true")
-	}
-	return false
 }
 
 // setPKCEChallenge adds an S256 code_challenge to an authorization query,

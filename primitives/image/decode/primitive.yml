@@ -109,7 +109,7 @@ invariants:
     enforced_by:
       - test: framework/image.TestFromImageHasNoOrientation
   - id: has-alpha-reads-visible-pixels
-    rule: Metadata.HasAlpha on an RGBA or NRGBA image scans every visible pixel, a sub-image's out-of-bounds bytes ignored.
+    rule: Metadata.HasAlpha detects any non-opaque pixel inside the image's visible bounds, including paletted and 16-bit images.
     enforced_by:
       - test: framework/image.TestHasAlphaDetectsInteriorPixel
       - test: framework/image.TestHasAlphaIgnoresOutOfBoundsForSubImage
@@ -176,9 +176,18 @@ decisions:
     upholds: [jpeg-orientation-read]
   - id: has-alpha-samples-other-types
     date: 2026-11-17
-    status: accepted
+    status: superseded
     decision: For image types other than RGBA and NRGBA, HasAlpha samples the corners and centre and can miss interior alpha.
     rejected:
       - option: Scan every pixel through At.
         why: It is a per-pixel interface call on every Metadata read.
+    upholds: [has-alpha-reads-visible-pixels]
+    superseded_by: has-alpha-checks-opacity
+  - id: has-alpha-checks-opacity
+    date: 2026-11-19
+    status: accepted
+    decision: HasAlpha uses the image's exact Opaque method when available and otherwise checks every visible pixel.
+    rejected:
+      - option: Sample the corners and centre.
+        why: An interior pixel away from the samples can be the only transparent one.
     upholds: [has-alpha-reads-visible-pixels]

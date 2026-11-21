@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
@@ -87,6 +88,45 @@ func TestMiddlewareAuthenticatesAGrantCarryingRequest(t *testing.T) {
 	}
 	if !p.hasGrant || !p.grant.HasScope("read") {
 		t.Fatalf("the grant did not reach the handler: %+v hasGrant=%v", p.grant, p.hasGrant)
+	}
+}
+
+type callbackOriginSource struct {
+	stubOriginSource
+	allows func() bool
+}
+
+func (s *callbackOriginSource) Allows(context.Context, string, string) (bool, error) {
+	return s.allows(), nil
+}
+
+func TestMiddlewareUsesTheSurfaceResolvedDuringVerification(t *testing.T) {
+	h := middlewareHost(t)
+	now := time.Now()
+	token, err := MintGrant(testGrantKey, Nonce{
+		Surface: "dashboard", Subject: "u-7", Origin: "https://custom.example",
+	}, time.Minute, now.Add(time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.originSource = &callbackOriginSource{allows: func() bool {
+		// The private map is immutable in use. This probe detects a second lookup.
+		delete(h.surfaces, "dashboard")
+		return true
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
+	req.Header.Set(GrantHeader, token)
+	p := &probe{}
+	serve := h.Middleware()(p.handler())
+	rec := httptest.NewRecorder()
+	serve.ServeHTTP(rec, req.Clone(req.Context()))
+	if rec.Code != http.StatusOK || !p.hasGrant {
+		t.Fatalf("status = %d, handler saw grant = %t, want 200 with a grant", rec.Code, p.hasGrant)
+	}
+	rec = httptest.NewRecorder()
+	serve.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status for an unknown surface at verification = %d, want 401", rec.Code)
 	}
 }
 

@@ -35,14 +35,14 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
+	_, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
+	if !ch.requireBoundedOffset(w, r, q, streamPerPage) {
+		return
+	}
 	ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, limit, extraWhere)
 }
 
 func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
-	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
-	if !ch.requireBoundedOffset(w, r, q, streamPage, streamPerPage) {
-		return
-	}
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
 	ch.ApplyTenantScopeCount(countQb, r)
@@ -134,13 +134,7 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 		logf("crud: stream rows failed: %v", err)
 		return
 	}
-	totalPages := 0
-	if limit > 0 {
-		totalPages = total / limit
-		if total%limit != 0 {
-			totalPages++
-		}
-	}
+	totalPages := pagination.TotalPages(total, limit)
 	fmt.Fprintf(w, `],"total":%d,"page":%d,"perPage":%d,"totalPages":%d}`, total, page, limit, totalPages)
 }
 

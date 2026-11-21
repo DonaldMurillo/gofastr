@@ -239,3 +239,68 @@ func TestModelDocStaysOnFirstCompound(t *testing.T) {
 		t.Errorf("over doc: %q", got)
 	}
 }
+func TestModelSharesGroupValuesAcrossBases(t *testing.T) {
+	for _, tc := range []struct {
+		name, css string
+		mismatch  bool
+	}{
+		{"equal sets", ".a.g--x {} .b.g--x {}", false},
+		{"unequal sets", ".a.g--x {} .a.g--y {} .b.g--x {}", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sheet, _ := Parse(tc.css)
+			model, diags := Model(sheet)
+			if tc.mismatch {
+				if len(diags) != 1 || diags[0].Rule != RuleGroupMismatch {
+					t.Fatalf("want a group mismatch, got %v", diags)
+				}
+				return
+			}
+			if len(diags) != 0 || len(model.Classes) != 2 {
+				t.Fatalf("classes = %v, diagnostics = %v", model.Classes, diags)
+			}
+			for _, class := range model.Classes {
+				if len(class.Groups) != 1 || class.Groups[0] != "g" {
+					t.Errorf(".%s groups = %v, want [g]", class.Name, class.Groups)
+				}
+			}
+			if len(model.Groups) != 1 || len(model.Groups[0].Values) != 1 {
+				t.Errorf("shared values were not deduplicated: %v", model.Groups)
+			}
+		})
+	}
+}
+
+func TestModelAllVariantsOnScope(t *testing.T) {
+	sheet, _ := Parse(":scope.selected.expanded.size--big.tone--quiet {}")
+	model, diags := Model(sheet)
+	if len(diags) != 0 || model.Root == nil {
+		t.Fatalf("root = %v, diagnostics = %v", model.Root, diags)
+	}
+	flags := model.Root.Flags
+	if len(flags) != 2 || flags[0].Name != "selected" || flags[1].Name != "expanded" {
+		t.Errorf("root flags = %v, want selected and expanded", flags)
+	}
+	if groups := model.Root.Groups; len(groups) != 2 || groups[0] != "size" || groups[1] != "tone" {
+		t.Errorf("root groups = %v, want [size tone]", groups)
+	}
+}
+
+func TestModelHasDescendantCompounds(t *testing.T) {
+	sheet, _ := Parse(".grid:has(.cell .leaf.active) {}")
+	model, diags := Model(sheet)
+	if len(diags) != 0 || len(model.Classes) != 3 {
+		t.Fatalf("want grid, cell and leaf bases, got %v, diagnostics %v", model.ClassNames(), diags)
+	}
+	for i, name := range []string{"grid", "cell", "leaf"} {
+		if model.Classes[i].Name != name {
+			t.Errorf("base %d = %s, want %s", i, model.Classes[i].Name, name)
+		}
+	}
+	if len(model.Classes[1].Flags) != 0 {
+		t.Errorf("cell flags = %v, want none", model.Classes[1].Flags)
+	}
+	if flags := model.Classes[2].Flags; len(flags) != 1 || flags[0].Name != "active" {
+		t.Errorf("leaf flags = %v, want active", flags)
+	}
+}

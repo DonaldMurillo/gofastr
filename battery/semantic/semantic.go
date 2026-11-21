@@ -72,6 +72,13 @@ type Query struct {
 	Rerank    bool    `json:"rerank,omitempty"`
 }
 
+func defaultTop(top int) int {
+	if top <= 0 {
+		return 10
+	}
+	return top
+}
+
 // Stats describes the current state of an [Index].
 type Stats struct {
 	Docs   int    `json:"docs"`

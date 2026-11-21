@@ -33,6 +33,28 @@ func TestChainedMediaRangeReportsBothBounds(t *testing.T) {
 	}
 }
 
+func TestCheckRawMediaWidthDirections(t *testing.T) {
+	for _, tc := range []struct {
+		query, want, reject string
+	}{
+		{"max-width: 768px", "(--below-md) if you mean below", "--above-"},
+		{"width < 768px", "(--below-md)", "--above-"},
+		{"768px >= width", "(--below-md) if you mean below", "--above-"},
+		{"width >= 768px", "(--above-md)", "--below-"},
+		{"768px < width", "(--above-md) if you mean at or above", "--below-"},
+		{"width = 768px", "no custom medium expresses equality", "--above-"},
+		{"max-width: 767.98px", "(--below-md)", "--above-"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			ds := Check("card.style.css", "@media ("+tc.query+") { .a { color: inherit; } }", KindScoped, defaultTokens(t))
+			if len(ds) != 1 || ds[0].Rule != RuleRawMediaWidth ||
+				!strings.Contains(ds[0].Message, tc.want) || strings.Contains(ds[0].Message, tc.reject) {
+				t.Errorf("want width diagnostic containing %q and no %q, got %v", tc.want, tc.reject, ds)
+			}
+		})
+	}
+}
+
 // The bad inbox file from the design walkthrough. 1817 is a Go+CSS
 // rule (slice 5); it is not expected here.
 const inboxCSS = `:scope { padding: 16px; color: #52525B; }
@@ -123,6 +145,15 @@ func TestCheckUnknownTokens(t *testing.T) {
 		if len(ds) == 1 && ds[0].Rule != RuleUnknownThemeToken {
 			t.Errorf("%q: rule %s", tc.src, ds[0].Rule)
 		}
+	}
+}
+
+func TestTokenSuggestionsKeepRuneDistanceAndCutoff(t *testing.T) {
+	if got, ok := closestToken("--radius-éé", []string{"--radius-aa"}); !ok || got != "--radius-aa" {
+		t.Errorf("closestToken = %q, %v, want --radius-aa at distance two", got, ok)
+	}
+	if got := editDistance("éééé", "", 2); got != 3 {
+		t.Errorf("editDistance = %d, want cutoff + 1", got)
 	}
 }
 

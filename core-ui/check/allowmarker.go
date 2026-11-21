@@ -3,11 +3,11 @@ package check
 import (
 	"go/ast"
 	"go/token"
-	"regexp"
+	"slices"
 	"strings"
-)
 
-var reAllowMarker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
+)
 
 type markerComment struct {
 	text      string
@@ -18,15 +18,8 @@ type markerComment struct {
 func allowedLines(comments []markerComment, name string) map[int]bool {
 	out := map[int]bool{}
 	for _, c := range comments {
-		m := reAllowMarker.FindStringSubmatch(c.text)
-		if m == nil || !markerNames(m[1], name) {
-			continue
-		}
-		rest := m[2]
-		if strings.HasPrefix(c.text, "/*") {
-			rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
-		}
-		if strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:")) == "" {
+		m, ok := names.ParseMarker(c.text)
+		if !ok || m.File || m.Reason == "" || !slices.Contains(m.Rules, name) {
 			continue
 		}
 		out[c.line] = true
@@ -35,15 +28,6 @@ func allowedLines(comments []markerComment, name string) map[int]bool {
 		}
 	}
 	return out
-}
-
-func markerNames(list, name string) bool {
-	for n := range strings.SplitSeq(list, ",") {
-		if strings.TrimSpace(n) == name {
-			return true
-		}
-	}
-	return false
 }
 
 func jsComments(f jsSource) []markerComment {

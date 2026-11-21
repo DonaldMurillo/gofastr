@@ -162,6 +162,14 @@ const (
 // of the contract (Config, WindowSpec, window.setChrome).
 const MaxSidebarWidth = 4096
 
+// ValidateSidebarWidth checks the sidebar zone width in screen points.
+func ValidateSidebarWidth(points int) *Error {
+	if points < 0 || points > MaxSidebarWidth {
+		return &Error{Code: CodeInvalidInput, Message: fmt.Sprintf("sidebarWidth must be between 0 and %d", MaxSidebarWidth)}
+	}
+	return nil
+}
+
 // WindowStyle describes the native chrome of a window beyond its
 // content. The zero value is the plain titled window. Hosts without a
 // native layer ignore it.
@@ -308,6 +316,9 @@ type WindowConfig struct {
 	// the user moves or resizes the main or a secondary window,
 	// unthrottled: the host debounces.
 	OnWindowFrame func(id string, f Frame)
+	// OnWindowFrameFrom identifies the exact window through its comparable handle.
+	// Shells should use WindowFrameReporter to support both callback forms.
+	OnWindowFrameFrom func(w Window, f Frame)
 	// SidebarWidth is the main window's initial sidebar zone in screen
 	// points (0 means no zone); the battery fills it from
 	// Config.SidebarWidth and the page updates it through
@@ -329,6 +340,19 @@ type WindowConfig struct {
 	// called before ready fired; the battery queues until the window is
 	// up.
 	OnDeepLink func(rawURL string)
+}
+
+// WindowFrameReporter returns the configured frame callback, or nil if neither
+// callback is set. Shells call it off the UI thread with the reporting window.
+func (cfg WindowConfig) WindowFrameReporter() func(Window, Frame) {
+	if cfg.OnWindowFrameFrom != nil {
+		return cfg.OnWindowFrameFrom
+	}
+	cb := cfg.OnWindowFrame
+	if cb == nil {
+		return nil
+	}
+	return func(w Window, f Frame) { cb(w.ID(), f) }
 }
 
 // Appearance is the accessibility and appearance state the page cannot

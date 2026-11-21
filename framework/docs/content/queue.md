@@ -95,6 +95,14 @@ durable scheduler's tables and indexes (`<table>_scheduler_schedules`,
 Postgres would make collides with another name; a cut that collides with
 nothing keeps that name, the one earlier releases created.
 
+On 64-bit Go builds, SQLite and Postgres both accept job priorities,
+attempt counts and attempt limits above the 32-bit range. The durable
+scheduler supports the same range for its priorities and attempt limits.
+When a Postgres table still has 32-bit columns for these fields, the
+corresponding queue or scheduler constructor widens them to `BIGINT`
+and preserves existing values and defaults. The widening takes a table
+lock during the upgrade.
+
 ## Quickstart: RedisQueue
 
 ```go
@@ -141,7 +149,7 @@ type Job struct {
     Payload     json.RawMessage // arbitrary JSON for the handler
     Priority    int             // higher = dequeued first (DBQueue + MemoryQueue)
     Lane        string          // capacity-reservation lane; "" = default (see Lanes)
-    Attempts    int             // incremented on each claim
+    Attempts    int             // DBQueue/RedisQueue bump at claim; MemoryQueue on failure or Nack
     MaxAttempts int             // auto-defaults to 3; 0 means 3
     CreatedAt   time.Time       // auto-filled if zero
     ScheduledAt time.Time       // auto-filled to now; set to delay execution
@@ -656,6 +664,9 @@ if err := sched.Cron("0 2 * * *").
 go sched.Start(ctx) // blocks until ctx is cancelled
 ```
 
+Each `Job` call replaces the previous job type and payload. Passing
+`nil` clears the in-memory schedule's payload.
+
 ```go
 // Lane / Priority / MaxAttempts on a schedule are carried verbatim into
 // every Job the scheduler fires; set them to tag the fired job's lane
@@ -701,11 +712,12 @@ in one scheduler.
 `Register()` returns an `error`, and registers nothing, when no job
 type was set (`Job` was not called, or was given `""`), when the
 payload given to `Job` cannot be encoded as JSON (a `NaN`, a channel),
-or when a `Cron` spec is invalid or has no firing in the next five
-years (`0 0 30 2 *`, February 30, which `DurableScheduler` refuses too).
-A cron schedule whose next firing
-lies past that search stops and logs a warning (February 29 after 2096,
-since 2100 is not a leap year). `RegisterAt(base)` is the deterministic
+or when a `Cron` spec is invalid or never fires (`0 0 30 2 *`,
+February 30, which `DurableScheduler` refuses too). The next-firing
+search covers [`framework/cron`](cron.md)'s full horizon of 401 years
+(`cron.HorizonYears`), so a rare spec — February 29 on a Sunday, up to
+40 years apart — still registers (see the durable section below).
+`RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
 which is handy for tests and replayed fixtures.
 

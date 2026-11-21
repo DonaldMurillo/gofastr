@@ -5,12 +5,11 @@ package routegroup
 
 import (
 	"net/http"
-	"path"
-	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/internal/mcpname"
+	"github.com/DonaldMurillo/gofastr/internal/mountpath"
 )
 
 type GroupOption func(*RouteGroup)
@@ -61,7 +60,7 @@ func WithAccess(mw router.Middleware) GroupOption {
 
 // New creates a RouteGroup on parent under the normalised prefix.
 func New(parent *router.Router, prefix string, opts ...GroupOption) *RouteGroup {
-	prefix = normalizePrefix(prefix)
+	prefix = mountpath.NormalizePrefix(prefix)
 	g := &RouteGroup{
 		prefix: prefix,
 		parent: parent,
@@ -145,26 +144,7 @@ func (g *RouteGroup) MCPNamespace() string {
 	return g.mcpNamespace
 }
 
-// MCPToolName returns "<namespace>.<entity>.<action>", or "<entity>.<action>" with no namespace.
+// MCPToolName returns the registered CRUD tool name: "<namespace>.<entity>.<action>" or "<entity>_<action>".
 func (g *RouteGroup) MCPToolName(entityName, action string) string {
-	if g.mcpNamespace == "" {
-		return entityName + "." + action
-	}
-	return g.mcpNamespace + "." + entityName + "." + action
-}
-
-func normalizePrefix(p string) string {
-	if p == "" {
-		return ""
-	}
-	p = textsafe.SanitizeControlBytes(p)
-	p = strings.ReplaceAll(p, "\\", "/")
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	p = path.Clean(p)
-	if p == "/" {
-		return ""
-	}
-	return p
+	return mcpname.EntityTool(g.mcpNamespace, entityName, action)
 }

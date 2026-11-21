@@ -9,7 +9,7 @@ import (
 )
 
 // The Logs screen hides a quiet path's access lines by the same rule the
-// collector calls a request quiet by (otelspan's under): the path itself
+// collector calls a request quiet by (Under): the path itself
 // and what is below it, never a longer name that starts with the same
 // letters.
 func TestLogsSkipPathsStopAtAPathSegment(t *testing.T) {

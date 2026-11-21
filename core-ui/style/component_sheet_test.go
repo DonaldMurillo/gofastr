@@ -6,6 +6,45 @@ import (
 	"testing"
 )
 
+func TestComponentSheetBuildCanBeRepeated(t *testing.T) {
+	ss := NewComponentSheet("modal", DefaultTheme())
+	ss.Rule(".body").Set("display", "block").Pseudo(":hover", "color", "red").
+		Media("(min-width: 30rem)", func(inner *ComponentSheet) {
+			inner.Rule(".body").Set("padding", "1rem")
+		}).End()
+	first := ss.MustBuild()
+	if second := ss.MustBuild(); second != first {
+		t.Fatalf("second Build changed CSS:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestStyleSheetNestedSelectorLists(t *testing.T) {
+	ss := NewStyleSheet(DefaultTheme())
+	ss.Rule(`.a:is(.x, .y), .b[data-name="x,y"], .c\,d/* comma, here */`).
+		Pseudo(":hover", "color", "red").
+		Child(".label", "color", "blue")
+	want := `.a:is(.x, .y):hover, .b[data-name="x,y"]:hover, .c\,d/* comma, here */:hover {
+  color: red;
+}
+.a:is(.x, .y) .label, .b[data-name="x,y"] .label, .c\,d/* comma, here */ .label {
+  color: blue;
+}
+`
+	if got := ss.CSS(); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestStyleSheetKeyframesRejectsUnpairedProperty(t *testing.T) {
+	defer func() {
+		msg, ok := recover().(string)
+		if !ok || !strings.Contains(msg, "Keyframes") || !strings.Contains(msg, "opacity") {
+			t.Fatalf("expected Keyframes to identify the unpaired opacity property, got %q", msg)
+		}
+	}()
+	NewStyleSheet(DefaultTheme()).Keyframes("fade", Step("from", "color", "red", "opacity"))
+}
+
 func TestComponentSheetScopesSimpleSelectors(t *testing.T) {
 	ss := NewComponentSheet("modal", DefaultTheme())
 	ss.Rule(".header").Set("font-weight", "700").End()

@@ -30,3 +30,20 @@ func TestConstraintOKByName(t *testing.T) {
 		t.Error(`Constraint: want "int" for ":id:int" and "" for ":path*"`)
 	}
 }
+
+func TestOverlapMatchesTheMatchers(t *testing.T) {
+	samples := []string{"42", "abc", "ab1", "AB", "0f8fad5b-d9cb-469f-a165-70867728950e", "ab-1"}
+	for _, a := range Names() {
+		for _, b := range Names() {
+			shared := false
+			for _, v := range samples {
+				if ConstraintOK(":x:"+a, v) && ConstraintOK(":x:"+b, v) {
+					shared = true
+				}
+			}
+			if Overlap(a, b) != shared {
+				t.Errorf("Overlap(%q, %q) = %v, samples say %v", a, b, Overlap(a, b), shared)
+			}
+		}
+	}
+}

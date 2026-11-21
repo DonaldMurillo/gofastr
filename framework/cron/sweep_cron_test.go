@@ -2,7 +2,6 @@ package cron
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -64,23 +63,6 @@ func TestPlainLeaseTickReturnsWhileItsJobRuns(t *testing.T) {
 	case <-lease.released:
 	case <-time.After(time.Second):
 		t.Fatal("plain lease not released after the tick's job ended")
-	}
-}
-
-func TestGateSkipsJobOnceJobsAreJoined(t *testing.T) {
-	s := NewScheduler()
-	var ran atomic.Bool
-	if err := s.Register(CronJob{Name: "gated", Spec: "* * * * *", Run: func(context.Context) error {
-		ran.Store(true)
-		return nil
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	s.SetGate(func(name string) bool { return name != "gated" })
-	s.RunOnce(context.Background(), time.Now())
-	s.Stop()
-	if ran.Load() {
-		t.Fatal("a job its gate refused ran")
 	}
 }
 

@@ -94,8 +94,5 @@ func TestFactBoxExtraAttrsOnRoot(t *testing.T) {
 		Value:      "Go",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("fact box root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "fact box root")
 }

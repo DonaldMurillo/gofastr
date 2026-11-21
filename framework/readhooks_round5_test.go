@@ -425,7 +425,7 @@ func TestIncludeSurvivesProjectingAndSortingChildHook(t *testing.T) {
 }
 
 // A many-to-many child shared by two parents arrives as two DISTINCT maps
-// carrying the same primary key, eagerLoadManyToMany builds a fresh map per
+// carrying the same primary key, loadManyToManyFiltered builds a fresh map per
 // JOIN row, which is what sharing means. Indexing the fold by id
 // single-valued kept only the last, so both redacted copies resolved to one
 // row and the second tripped the duplicate refusal: a documented hook shape

@@ -22,6 +22,20 @@ import (
 	"testing"
 )
 
+func TestNilStringsResolveFreshDefaults(t *testing.T) {
+	probe := stringsProbe
+	stringsProbe = nil
+	t.Cleanup(func() { stringsProbe = probe })
+	var missing *Strings
+	first := missing.Resolve()
+	want := first.Previous
+	t.Cleanup(func() { first.Previous = want })
+	first.Previous += " (edited)"
+	if got := missing.Resolve().Previous; got != want {
+		t.Fatalf("second Resolve().Previous = %q, want %q", got, want)
+	}
+}
+
 // TestEveryWordHasADefault: an empty field is a word nobody translated
 // and a render that says nothing where it said something yesterday.
 // Format fields must keep their placeholders, in order, in the probe,

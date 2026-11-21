@@ -43,13 +43,6 @@ invariants:
     enforced_by:
       - test: framework/axecov.TestSweepAxecovLinksNoBrowser
 decisions:
-  - id: write-then-rename
-    date: 2026-11-17
-    status: accepted
-    decision: Record writes a uniquely named temp file and renames it over the manifest, so a reader never sees a torn file.
-    rejected:
-      - option: One shared temp name.
-        why: A second writer could truncate the file the first was about to rename into place.
   - id: manifest-never-ships
     date: 2026-11-17
     status: accepted

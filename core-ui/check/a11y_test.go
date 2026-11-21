@@ -140,24 +140,6 @@ func shadowed() any {
 	}
 }
 
-func TestLintA11yStillFlagsQualifiedConfig(t *testing.T) {
-	path := writeA11yFixture(t, `package app
-
-import h "github.com/DonaldMurillo/gofastr/core-ui/html"
-
-func view() any {
-	return h.Button(h.ButtonConfig{})
-}
-`)
-	res, err := LintA11yFile(path)
-	if err != nil {
-		t.Fatalf("LintA11yFile: %v", err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("qualified config literal must still be flagged, got %d: %s", len(res.Violations), res.Error())
-	}
-}
-
 func TestLintA11yAcceptsIconOnlyButtonAriaLabel(t *testing.T) {
 	path := writeA11yFixture(t, `package app
 

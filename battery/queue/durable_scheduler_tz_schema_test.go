@@ -32,27 +32,7 @@ func TestDurableSchedulerMigratesExistingSchedulesTableTZ(t *testing.T) {
 	if _, err := NewDurableScheduler(q, DurableSchedulerConfig{}); err != nil {
 		t.Fatalf("upgrade scheduler schema: %v", err)
 	}
-	rows, err := db.Query("PRAGMA table_info(" + q.schedulerSchedulesTable() + ")")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	found := false
-	for rows.Next() {
-		var cid, notNull, pk int
-		var name, typ string
-		var dflt any
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
-			t.Fatal(err)
-		}
-		if name == "tz" {
-			found = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate rows: %v", err)
-	}
-	if !found {
+	if !scanForColumn(t, db, q.schedulerSchedulesTable(), "tz") {
 		t.Fatal("existing schedules table was not upgraded with tz column")
 	}
 	// Second construction must be a no-op (idempotent).
@@ -75,20 +55,21 @@ func TestDurableSchedulerFreshSchemaHasTZColumn(t *testing.T) {
 	if err := row.Scan(&found); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		// pragma_table_info's table-valued form may be unavailable; fall back
 		// to a structural scan.
-		found = scanForTZColumn(t, db, q.schedulerSchedulesTable())
+		found = scanForColumn(t, db, q.schedulerSchedulesTable(), "tz")
 	}
 	if !found {
 		t.Fatal("fresh schedules table missing tz column")
 	}
 }
 
-func scanForTZColumn(t *testing.T, db *sql.DB, table string) bool {
+func scanForColumn(t *testing.T, db *sql.DB, table, column string) bool {
 	t.Helper()
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
+	found := false
 	for rows.Next() {
 		var cid, notNull, pk int
 		var name, typ string
@@ -96,14 +77,12 @@ func scanForTZColumn(t *testing.T, db *sql.DB, table string) bool {
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
 			t.Fatal(err)
 		}
-		if name == "tz" {
-			return true
-		}
+		found = found || name == column
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate rows: %v", err)
 	}
-	return false
+	return found
 }
 
 // TestDurableSchedulerPersistsTZOnRegistration proves the tz name round-trips

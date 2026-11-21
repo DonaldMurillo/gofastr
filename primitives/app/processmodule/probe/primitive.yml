@@ -14,8 +14,6 @@ invariants:
     rule: The child's verdict is the first output line starting with PASS, BREACH or UNREACHABLE; a timeout is Unreachable, and a child that printed no such line is Fail, except P6, where it is Unreachable.
     enforced_by:
       - test: framework.TestParseProbeOutput_Contract
-      - test: framework.TestAuditParseProbeOutputKilledChildContract
-      - test: framework.TestAuditParseProbeOutputStderrShadowsResult
   - id: detail-scrubbed
     rule: Every child-supplied text in a ProbeResult Detail has its terminal control bytes removed, keeping only newline and tab.
     enforced_by:

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -52,4 +53,10 @@ func TestMountTwicePanics(t *testing.T) {
 	}()
 	again := def
 	Mount(r, &again)
+}
+
+func TestCatalogExportsNoSignalEncodingError(t *testing.T) {
+	if _, ok := i18n.Phrases()["widget.encode_failed"]; ok {
+		t.Fatal("the metadata-only widget catalog registers an unreachable signal encoding error")
+	}
 }

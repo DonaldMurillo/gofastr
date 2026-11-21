@@ -348,10 +348,3 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 	s.clearFilter(q)
 	return listHref(s.path, q)
 }
-
-func filterWarning(ctx context.Context) render.HTML {
-	return ui.Callout(ui.CalloutConfig{
-		Title:   i18nui.EntityFilterInvalidTitle.Text(ctx),
-		Variant: ui.StatusWarning,
-	}, render.Text(i18nui.EntityFilterInvalidBody.Text(ctx)))
-}

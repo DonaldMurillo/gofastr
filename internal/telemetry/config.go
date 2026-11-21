@@ -2,12 +2,11 @@
 // files, one file per kind per UTC day, and answers queries by reading
 // those files directly.
 //
-// This is the baseline with no index: every query is a scan, narrowed by
-// a binary search on the leading "time" field where a time window is
-// known. Its benchmark numbers decide which queries need the sealed,
-// indexed segments that come next. Nothing outside this module can
-// import it; the format and API move to a public package once the
-// writer is wired into battery/log.
+// A plain day is read as a scan, narrowed by a binary search on the
+// leading "time" field where a time window is known; a sealed day
+// (sealed.go) is read through its index. battery/telemetry wires the
+// Writer and Collector into an app, beside its log sink. The package
+// is internal: nothing outside this module can import it.
 //
 // File format. logs-YYYYMMDD.jsonl holds what battery/log already
 // writes: one slog JSON object per line, "time" first, plus "trace_id"
@@ -34,10 +33,10 @@ const (
 
 // Config holds the store's settings. The zero value of a field means
 // its default; Resolve fills those in and refuses values that make no
-// sense. Dir is read by Open today. The rest describe what the writer
-// keeps (SampleRate, SlowThreshold) and the budgets it and the sealer
-// will enforce (Retention, MaxDiskBytes, MaxMemoryBytes); until that
-// lands they drive the generator and the benchmark's pass marks.
+// sense. Open reads it to answer queries; NewWriter and NewCollector
+// enforce it: Retention and MaxDiskBytes on disk, MaxMemoryBytes in
+// memory, and SampleRate, KeepNoOrdinary and SlowThreshold deciding
+// which traces are kept.
 type Config struct {
 	// Dir is the directory holding the log and trace files.
 	Dir string
@@ -54,8 +53,8 @@ type Config struct {
 	KeepNoOrdinary bool
 	// SlowThreshold is the duration at which a trace counts as slow.
 	SlowThreshold time.Duration
-	// MaxMemoryBytes caps what the writer buffers; past it, data is
-	// dropped and counted, never queued.
+	// MaxMemoryBytes caps the collector's unfinished-trace buffer. Over the
+	// cap, the collector drops and counts the oldest waiting traces.
 	MaxMemoryBytes int64
 }
 

@@ -628,6 +628,6 @@ func (c *cappedBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// loggerBeforeInit is the pre-Init fallback so a Relay constructed but
+// discardLogger is the pre-Init fallback so a Relay constructed but
 // not yet Init'ed (unit tests driving handlers directly) never nil-d.
 func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }

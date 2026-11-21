@@ -242,7 +242,7 @@ func RunGenerateCLI(args []string) {
 	opts, err := parseCLIOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage, "--force only matters once, to replace an edited CLI written before the CLI became derived.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	used, err := ApplyCLIConfigDefaults(&opts)
@@ -500,13 +500,15 @@ func splitCommaList(v string) []string {
 
 func parseCLIOptions(args []string) (CliOptions, error) {
 	opts := CliOptions{ApiPrefix: "api", flagSet: map[string]bool{}}
+	var flagErr error
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], true
 			}
+			flagErr = cli.NeedsValue(arg)
 			return "", false
 		}
 		value := func(prefix string) (string, bool) {
@@ -545,6 +547,8 @@ func parseCLIOptions(args []string) (CliOptions, error) {
 			} else if v, ok := value("--from-openapi"); ok {
 				opts.FromOpenAPI = v
 				opts.flagSet["from-openapi"] = true
+			} else if flagErr != nil {
+				return opts, flagErr
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}
@@ -648,22 +652,37 @@ func cliAnyEntityMatches(decls []framework.EntityDeclaration, name string) bool 
 	return false
 }
 
+func selectDeclarations(decls []framework.EntityDeclaration, only, exclude []string, source func(string) string) ([]framework.EntityDeclaration, error) {
+	for _, sel := range []struct {
+		flag  string
+		names []string
+	}{{"only", only}, {"exclude", exclude}} {
+		for _, name := range sel.names {
+			if !cliAnyEntityMatches(decls, name) {
+				return nil, fmt.Errorf("%s: no entity named %q", source(sel.flag), name)
+			}
+		}
+	}
+	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
+		return slices.ContainsFunc(names, func(name string) bool { return cliEntityMatches(decl, name) })
+	}
+	var selected []framework.EntityDeclaration
+	for _, decl := range decls {
+		if (len(only) == 0 || matchesAny(decl, only)) && !matchesAny(decl, exclude) {
+			selected = append(selected, decl)
+		}
+	}
+	return selected, nil
+}
+
 func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientImport string) (cliSpec, error) {
 	globalVerbs, perEntityVerbs, err := parseVerbSelection(opts.verbs)
 	if err != nil {
 		return cliSpec{}, err
 	}
-	// Selection names must all resolve to a declared entity: a typo'd
-	// --only silently generating everything (or nothing) is a trap.
-	for _, sel := range []struct {
-		flag  string
-		names []string
-	}{{"only", opts.only}, {"exclude", opts.exclude}} {
-		for _, name := range sel.names {
-			if !cliAnyEntityMatches(decls, name) {
-				return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource(sel.flag), name)
-			}
-		}
+	selected, err := selectDeclarations(decls, opts.only, opts.exclude, opts.selectionSource)
+	if err != nil {
+		return cliSpec{}, err
 	}
 	// Sorted, so --verbs naming two unknown entities is refused naming
 	// the same one on every run.
@@ -704,26 +723,9 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 	if strings.ContainsFunc(apiPrefix, isControlByte) {
 		return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.ApiPrefix)
 	}
-	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
-		for _, name := range names {
-			if cliEntityMatches(decl, name) {
-				return true
-			}
-		}
-		return false
-	}
-	// Derived struct names must be unique across the selection (see the
-	// check inside the loop).
+	// Derived struct names must be unique across the selection.
 	structOwners := map[string]string{} // derived struct name → declaring entity name
-	var selected []framework.EntityDeclaration
-	for _, decl := range decls {
-		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
-			continue
-		}
-		if matchesAny(decl, opts.exclude) {
-			continue
-		}
-
+	for _, decl := range selected {
 		verbs := append([]string(nil), cliVerbs...)
 		if globalVerbs != nil {
 			verbs = globalVerbs
@@ -749,7 +751,6 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 		}
 		structOwners[ent.Struct] = decl.Name
 		spec.Entities = append(spec.Entities, ent)
-		selected = append(selected, decl)
 	}
 
 	if len(spec.Entities) == 0 {

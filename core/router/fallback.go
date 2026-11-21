@@ -65,7 +65,8 @@ func moreSpecific(groups []*Router, a, b int) bool {
 		return len(pa) > len(pb)
 	}
 	for i := range pa {
-		wa, wb := strings.HasPrefix(pa[i], "{"), strings.HasPrefix(pb[i], "{")
+		wa := pa[i] != "{$}" && strings.HasPrefix(pa[i], "{")
+		wb := pb[i] != "{$}" && strings.HasPrefix(pb[i], "{")
 		if wa != wb {
 			return !wa
 		}
@@ -118,6 +119,8 @@ func prefixCovers(prefix string, req *http.Request) bool {
 	}
 	for i, seg := range want {
 		switch {
+		case seg == "{$}":
+			return i == len(want)-1 && i == len(got)-1 && (got[i] == "" || unescapeSegment(got[i]) == "/")
 		case strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "...}"):
 			return true
 		case strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}"):
@@ -273,13 +276,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			r.mux.ServeHTTP(w, req)
 			return
 		}
-		var allowed bool
-		if strings.ContainsAny(pattern, " \t") {
-			allowed = r.gateAllows(req.Context(), pattern)
-		} else {
-			allowed = r.gateAllows(req.Context(), " "+pattern) && r.gateAllows(req.Context(), req.Method+" "+pattern)
-		}
-		if allowed {
+		if r.redirectAllowed(req, pattern) {
 			r.wrap(h).ServeHTTP(w, req)
 			return
 		}
@@ -311,6 +308,20 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)
 	})).ServeHTTP(w, req)
+}
+
+func (r *Router) redirectAllowed(req *http.Request, pattern string) bool {
+	if req.Method != http.MethodConnect {
+		return r.gateAllows(req.Context(), pattern)
+	}
+	// ServeMux reports the target path for CONNECT redirects. Look up its route on the URL host.
+	probe, target := *req, *req.URL
+	target.RawPath = req.URL.EscapedPath() + "/"
+	target.Path += "/"
+	probe.URL, probe.Host = &target, target.Host
+	h, _ := r.mux.Handler(&probe)
+	route, ok := h.(*cachedRoute)
+	return ok && r.gateAllows(req.Context(), route.gateKey)
 }
 
 func (r *Router) sharedOwner(req *http.Request, methods []string) *Router {

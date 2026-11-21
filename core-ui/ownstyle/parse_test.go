@@ -38,8 +38,9 @@ func TestParseStyleRuleDecls(t *testing.T) {
 	}
 	// The '!' sits at column 73.
 	if imp.ImpPos != (Pos{1, 73}) {
+		t.Errorf("priority position = %+v, want 1:73", imp.ImpPos)
 	}
-	// Value tokens exclude trivia and the !important pair.
+	// Value tokens exclude the !important pair.
 	if got := tokenRunText(imp.Value); got != "2px solid var( --color-primary )" && !strings.Contains(got, "var(") {
 		t.Errorf("value tokens: %q", got)
 	}
@@ -206,7 +207,45 @@ func TestParseValueSrcKeepsInteriorTrivia(t *testing.T) {
 	// ValueSrc is the raw source slice, outer whitespace trimmed; the
 	// newline and indent between the strings survive verbatim.
 	if r.Decls[0].ValueSrc != "\"summary summary\"\n  \"files   main\"" {
+		t.Errorf("value source = %q", r.Decls[0].ValueSrc)
 	}
+}
+
+func TestParseBOMSourceSlices(t *testing.T) {
+	r, diags := parseOne(t, "\ufeff.card { --accent: #abc; color: var(--accent); }")
+	if len(diags) != 0 {
+		t.Fatal(diags)
+	}
+	if r.Text != ".card" || r.Decls[0].ValueSrc != "#abc" || r.Decls[1].ValueSrc != "var(--accent)" {
+		t.Errorf("prelude = %q, values = %q and %q", r.Text, r.Decls[0].ValueSrc, r.Decls[1].ValueSrc)
+	}
+}
+
+func TestParseDeclarationTrivia(t *testing.T) {
+	t.Run("before colon", func(t *testing.T) {
+		r, diags := parseOne(t, ".a { color /* property */ : inherit; }")
+		if len(diags) != 0 || len(r.Decls) != 1 || r.Decls[0].ValueSrc != "inherit" {
+			t.Fatalf("want color declaration, got %v and %v", r.Decls, diags)
+		}
+	})
+	t.Run("inside priority", func(t *testing.T) {
+		const src = ".a { outline: 0 /* value */ solid ! /* priority */ IMPORTANT; }"
+		r, diags := parseOne(t, src)
+		if len(diags) != 0 || len(r.Decls) != 1 {
+			t.Fatalf("want outline declaration, got %v and %v", r.Decls, diags)
+		}
+		d := r.Decls[0]
+		if !d.Important || d.ImpPos != (Pos{1, 35}) || d.ValueSrc != "0 /* value */ solid" {
+			t.Errorf("priority = %t at %+v, value = %q", d.Important, d.ImpPos, d.ValueSrc)
+		}
+		found := false
+		for _, d := range Check("card.style.css", src, KindScoped, nil) {
+			found = found || d.Rule == RuleImportant && d.Col == 35
+		}
+		if !found {
+			t.Error("missing !important diagnostic at column 35")
+		}
+	})
 }
 
 func TestParsePositions(t *testing.T) {

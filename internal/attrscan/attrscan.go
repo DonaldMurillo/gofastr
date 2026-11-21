@@ -18,12 +18,15 @@ import (
 const prefix = "data-cui-"
 
 // Values yields, in document order, the value of every attribute named
-// "data-cui-"+n (n one of names, tried in order) that sits in an
-// attribute position: the byte before it is HTML whitespace or '/', so a
-// literal mention in text content never counts. The value is the
-// longest run of bytes valid accepts directly after `="`, at least one
-// byte long. With closed set, the run must end at a '"'; otherwise it
-// may end anywhere.
+// "data-cui-"+n (n one of names, tried in order). Attribute position is
+// a byte heuristic, not a parse: the byte before the "data-cui-"
+// spelling must be HTML whitespace or '/', so a spelling glued to
+// other text ("xdata-cui-comp=") never counts, but one that happens to
+// follow whitespace in text content ("<p>Example
+// data-cui-comp="ui-button"</p>") does yield its value, exactly like
+// the regexp this scan replaces. The value is the longest run of bytes
+// valid accepts directly after `="`, at least one byte long. With
+// closed set, the run must end at a '"'; otherwise it may end anywhere.
 //
 // The matching is the regexp
 //

@@ -38,10 +38,22 @@ func TestNewRouteValidatesPattern(t *testing.T) {
 func runRoute(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runNewRoute(args) })
 	})
 	return code, out
+}
+
+func TestNewRouteRefusesMalformedPattern(t *testing.T) {
+	for _, path := range []string{"things", "example.com/things/{rest...}", "/things/{id}/{id}", "/things/{rest...}/child"} {
+		code, out := runRoute(t, path)
+		if code != 1 || !strings.Contains(out, "invalid route") || strings.Contains(out, "app.Router()") {
+			t.Errorf("new route %q exited %d, want a route refusal without a snippet:\n%s", path, code, out)
+		}
+	}
+	if code, out := runRoute(t, "/things/{rest...}"); code != -1 || !strings.Contains(out, "app.Router()") {
+		t.Errorf("valid wildcard pattern exited %d:\n%s", code, out)
+	}
 }
 
 func TestNewRouteRefusesImportedHandler(t *testing.T) {

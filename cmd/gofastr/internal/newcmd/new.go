@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"golang.org/x/net/http/httpguts"
 )
 
 // validateScaffoldName rejects names that would escape the project root.
@@ -49,6 +50,8 @@ func newUsage() {
 	fmt.Println("Resources:")
 	fmt.Println("  handler  <Name> [--method=GET] [--path=/x] [-overwrite]   Scaffold an HTTP handler")
 	fmt.Println("  route    <path>  [--method=GET] [--handler=Name]   Print a route registration snippet")
+	fmt.Println("Use a handler name other than http. Overwriting a handler preserves its package.")
+	fmt.Println("Route paths use Go's http.ServeMux pattern syntax.")
 	fmt.Println("Flags:")
 	fmt.Println("  -overwrite   Rewrite the target file if it already exists")
 	fmt.Println("  -h, --help   Show this help")
@@ -67,7 +70,7 @@ func RunNew(args []string) {
 
 	if len(args) == 0 {
 		newUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 
 	resource := args[0]
@@ -88,7 +91,7 @@ func RunNew(args []string) {
 	default:
 		cli.Fail("Unknown resource: %s", resource)
 		cli.Info("Supported: handler, route")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -110,8 +113,7 @@ func extractOverwriteFlag(args []string) (bool, []string) {
 // runNewHandler is the CLI wrapper around scaffoldHandler.
 func runNewHandler(args []string, overwrite bool) {
 	if len(args) == 0 {
-		cli.Fail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
 	}
 
 	name := args[0]
@@ -120,19 +122,15 @@ func runNewHandler(args []string, overwrite bool) {
 	// Both --method POST and --method=POST: the usage line shows the
 	// space form, which this loop once ignored, scaffolding GET /<name>.
 	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--path": &path}, nil); err != nil {
+		cli.UsageFail("%v", err)
+		return
+	}
+	method, err := normalizeRouteMethod(method)
+	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
-	// so a non-ASCII method would pass as a different token.
-	if err := checkRouteMethod(method); err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
-	}
-	method = strings.ToUpper(method)
-
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
@@ -143,26 +141,22 @@ func runNewHandler(args []string, overwrite bool) {
 // runNewRoute is the CLI wrapper that prints a route registration snippet.
 func runNewRoute(args []string) {
 	if len(args) == 0 {
-		cli.Fail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
 	}
 
 	path := args[0]
 	method := "GET"
 	handler := "handler"
 	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--handler": &handler}, nil); err != nil {
+		cli.UsageFail("%v", err)
+		return
+	}
+	method, err := normalizeRouteMethod(method)
+	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
-	// so a non-ASCII method would pass as a different token.
-	if err := checkRouteMethod(method); err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
-	}
-	method = strings.ToUpper(method)
 	// The handler lands at an expression slot of the printed Go line: a
 	// name that is not an identifier, or a selector of them (h.List),
 	// prints a line that does not compile.
@@ -190,22 +184,12 @@ func runNewRoute(args []string) {
 	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
 }
 
-// checkRouteMethod refuses a method that is not an HTTP token (RFC 9110
-// section 5.6.2): the router builds a "METHOD /path" pattern from it, and
-// net/http's ServeMux panics on a pattern whose method is no token.
-// Extension methods such as PROPFIND are tokens and pass.
-func checkRouteMethod(method string) error {
-	if method == "" {
-		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
+func normalizeRouteMethod(method string) (string, error) {
+	// Validate before case folding, which maps some non-ASCII letters to ASCII.
+	if !httpguts.ValidHeaderFieldName(method) {
+		return "", fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
 	}
-	for i := 0; i < len(method); i++ {
-		c := method[i]
-		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0 {
-			continue
-		}
-		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
-	}
-	return nil
+	return strings.ToUpper(method), nil
 }
 
 // checkRouteHandler refuses a --handler that is not a Go identifier or a
@@ -224,7 +208,12 @@ func checkRouteHandler(handler string) error {
 		if reason := unusableFuncName(handler); reason != "" {
 			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
 		}
-		_, _, imports := dirPackage(".", "")
+		root, err := os.OpenRoot(".")
+		if err != nil {
+			return fmt.Errorf("open current directory: %w", err)
+		}
+		defer root.Close()
+		_, _, imports := dirPackage(root, "")
 		if conflict := imports[handler]; conflict != "" {
 			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, conflict)
 		}
@@ -313,7 +302,7 @@ func %s(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return fmt.Errorf("parse generated handler: %w", err)
 	}
-	pkg, declared, imports := dirPackage(realDir, filepath.Base(filename), f)
+	pkg, declared, imports := dirPackage(root, leaf, f)
 	if declared[name] {
 		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
 	}
@@ -344,10 +333,13 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage selects the package from non-test files (defaulting to main)
-// and collects declarations and imports, including in-package tests.
-// External tests, unparseable files and skip (the overwrite target) are omitted.
-func dirPackage(dir, skip string, generated ...*ast.File) (string, map[string]bool, map[string]string) {
+// dirPackage selects the package from non-test files (falling back to the
+// scaffold target's package clause, then main) and collects declarations
+// and imports, including in-package tests. External tests, unparseable
+// files, files go build ignores (leading "." or "_") and skip (the
+// overwrite target) are omitted.
+func dirPackage(root *os.Root, skip string, generated ...*ast.File) (string, map[string]bool, map[string]string) {
+	dir := root.Name()
 	pkg := ""
 	declared := map[string]bool{}
 	imports := map[string]string{}
@@ -359,7 +351,7 @@ func dirPackage(dir, skip string, generated ...*ast.File) (string, map[string]bo
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") {
+		if e.IsDir() || n == skip || !strings.HasSuffix(n, ".go") || strings.HasPrefix(n, ".") || strings.HasPrefix(n, "_") {
 			continue
 		}
 		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
@@ -372,7 +364,7 @@ func dirPackage(dir, skip string, generated ...*ast.File) (string, map[string]bo
 		files = append(files, sourceFile{n, f})
 	}
 	if pkg == "" {
-		pkg = "main"
+		pkg = scaffoldTargetPackage(root, skip)
 	}
 	var importFiles []sourceFile
 	for _, source := range files {
@@ -502,4 +494,20 @@ func assumedImportName(importPath string) string {
 		}
 	}
 	return name
+}
+
+func scaffoldTargetPackage(root *os.Root, leaf string) string {
+	info, err := root.Stat(leaf)
+	if err != nil || !info.Mode().IsRegular() {
+		return "main"
+	}
+	src, err := projectfs.Read(root, leaf)
+	if err != nil {
+		return "main"
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), leaf, src, parser.PackageClauseOnly)
+	if err != nil {
+		return "main"
+	}
+	return f.Name.Name
 }

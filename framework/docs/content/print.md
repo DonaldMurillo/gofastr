@@ -18,10 +18,13 @@ so the core battery never imports `chromedp`.
 import "github.com/DonaldMurillo/gofastr/battery/print"
 
 pb := print.New(print.Config{
-    // All optional; defaults shown.
+    // Fields with defaults; these are the values you get when omitted.
     PathPrefix:    "/print",
     DefaultPage:   print.A4Portrait(print.MM(12)),
     DefaultAccess: print.RequireAuth,        // per-user docs aren't public
+    // Opt-in, no default. Without it the print shell links no app
+    // stylesheet: documents render with the print base and the inlined
+    // component CSS, but no var(--*) tokens from your theme.
     AppCSSURL:     "/__gofastr/app.css",     // inherit host design tokens
     // PDFRenderer: nil,                      // nil → /pdf routes return 501
     // MaxConcurrentRenders: 4,               // render cap; see PDF output
@@ -30,9 +33,11 @@ pb := print.New(print.Config{
 app.RegisterBattery(pb)
 ```
 
-`AppCSSURL` links the host's single stylesheet into every print page so
-documents inherit your theme's `var(--*)` tokens. `runtime.js` is **never**
-linked; a print document is inert.
+`AppCSSURL` is an explicit opt-in with no default: set it to link the
+host's single stylesheet into every print page so documents inherit your
+theme's `var(--*)` tokens. Leave it empty and the shell carries only the
+print base plus inlined component CSS. `runtime.js` is **never** linked;
+a print document is inert.
 
 ### Component styles are preserved
 
@@ -200,11 +205,13 @@ a request it refuses never holds one and gets its `401` or `403`, not a
 `503`. Raise it only on hardware that can actually run
 that many Chromiums concurrently.
 
-**`Config.BaseURL` and PDF tokens.** The PDF document is `about:blank` to
-Chromium, with no origin of its own, so it can't resolve a relative
-`/__gofastr/app.css` link; design tokens would be missing from the PDF.
-Set `BaseURL` to your app's canonical origin and the battery makes the
-app.css link absolute against it on the PDF path only. The PDF
+**`Config.BaseURL` and PDF tokens.** Tokens reach a PDF only when
+`AppCSSURL` is set: that opt-in is what emits the app.css link at all.
+The PDF document is `about:blank` to Chromium, with no origin of its
+own, so it can't resolve a relative `AppCSSURL` link; design tokens
+would be missing from the PDF. Set `BaseURL` to your app's canonical
+origin and the battery makes the app.css link absolute against it on
+the PDF path only. The PDF
 document's CSP then adds that origin to `style-src` (its `'self'` matches
 nothing under an opaque origin); images, fonts and scripts stay
 `'self'`, and the HTML route's policy is unchanged. A `BaseURL` that is
@@ -225,7 +232,9 @@ This origin is taken from `BaseURL` and **never** from the request
 `Host` header; trusting `Host` would let a spoofed header point the
 server-side stylesheet fetch at an internal/arbitrary address (an SSRF).
 If `BaseURL` is unset, the PDF link stays relative (PDFs render with the
-print base + inlined component CSS, just without app.css tokens).
+print base + inlined component CSS, just without app.css tokens). If
+`AppCSSURL` is unset there is no app.css link at all, and `BaseURL` has
+nothing to make absolute.
 
 `chromepdf` is the only package in this feature that imports `chromedp`;
 apps that don't need PDF never pull it in. It is also its own Go module

@@ -24,11 +24,11 @@ import (
 // with the plain stdlib so it checks the FORMAT, not our own code
 // twice.
 
-// verbOutput runs fn capturing stdout and the requested exit code.
+// verbOutput runs fn capturing stdout, stderr and the requested exit code.
 func verbOutput(t *testing.T, fn func()) (string, int) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, fn)
 	})
 	return out, code
@@ -112,8 +112,8 @@ func TestDesktopKeygenWritesPair(t *testing.T) {
 
 func TestDesktopKeygenNeedsOutput(t *testing.T) {
 	_, code := verbOutput(t, func() { runDesktopKeygen(nil) })
-	if code != 1 {
-		t.Fatalf("keygen without -o exited %d, want 1", code)
+	if code != 2 {
+		t.Fatalf("keygen without -o exited %d, want 2", code)
 	}
 }
 
@@ -276,9 +276,9 @@ func TestDesktopFeedRefusesBadInputs(t *testing.T) {
 	if code != 1 {
 		t.Errorf("archive without a .app root accepted (exit %d)", code)
 	}
-	// A missing required flag exits 1 naming it.
+	// A missing required flag exits 2 naming it.
 	outStr, code := verbOutput(t, func() { runDesktopFeed([]string{"--key", key}) })
-	if code != 1 || !strings.Contains(outStr, "--version") {
+	if code != 2 || !strings.Contains(outStr, "--version") {
 		t.Fatalf("missing-flag feedback = %q, exit %d", outStr, code)
 	}
 }
@@ -290,14 +290,14 @@ func TestDesktopExtraVerbRouting(t *testing.T) {
 	if desktopExtraVerb([]string{"nope"}) {
 		t.Fatal("unknown verb claimed")
 	}
-	// keygen with no -o is handled (usage + exit 1), still true.
+	// keygen with no -o is handled (usage + exit 2), still true.
 	_, code := verbOutput(t, func() { desktopExtraVerb([]string{"keygen"}) })
-	if code != 1 {
-		t.Fatalf("keygen without -o exited %d, want 1", code)
+	if code != 2 {
+		t.Fatalf("keygen without -o exited %d, want 2", code)
 	}
 	_, code = verbOutput(t, func() { desktopExtraVerb([]string{"feed"}) })
-	if code != 1 {
-		t.Fatalf("feed without flags exited %d, want 1", code)
+	if code != 2 {
+		t.Fatalf("feed without flags exited %d, want 2", code)
 	}
 }
 

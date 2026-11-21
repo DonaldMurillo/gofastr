@@ -34,7 +34,7 @@ host := uihost.New(ui,
 | Site icon | the host | `WithAppIcon` (preferred: one source image derives the whole icon surface) or `WithFavicon` |
 | Sitemap | the host | `WithSitemap` with a valid `BaseURL`: a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
-| Internal links | the site chrome (every layout's header, sidebar, footer), **at boot** | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, or any registered HTTP path on the framework router once the route table is complete (the path-only probe also credits routes registered for other methods). A catch-all GET route (`/{path...}`) satisfies the check for every path it claims, so links under one are accepted, not verified |
+| Internal links | the site chrome (every layout's header, sidebar, footer), **at boot** | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, or a registered GET route on the framework router once the route table is complete. A catch-all GET route (`/{path...}`) satisfies the check for every path it claims, so links under one are accepted, not verified |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
 
 `uihost.InvalidSitemapBaseURL(base)` returns the reason an origin is
@@ -148,6 +148,11 @@ when that matters. Under `gofastr dev`, strict mode diffs that manifest against
 the app's page routes and fails boot for any route no axe test covered.
 Coverage follows the router, not string equality: a recorded scan of
 `/docs/install` covers the `/docs/:slug` pattern.
+
+Set `GOFASTR_SEMANTIC_COVERAGE_DIR` to put the [semantic coverage
+manifest](contracts.md#semantic-coverage) in a separate directory. Semantic
+coverage checks that variable first and falls back to
+`GOFASTR_AXE_COVERAGE_DIR`.
 
 The demand surface mirrors the sitemap's discovery surface: a dynamic
 route (`/orders/:id`) is only demanded when its screen's

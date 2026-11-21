@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
 // reverseNodeBlock reads the three spellings appgen's
@@ -109,7 +110,7 @@ func packScreenActions(file *ast.File) map[string][]packScreenAction {
 		if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 || fn.Name.Name != "Actions" || fn.Body == nil {
 			continue
 		}
-		recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+		recv := astbase.RecvBaseName(fn)
 		for _, stmt := range fn.Body.List {
 			es, ok := stmt.(*ast.ExprStmt)
 			if !ok {

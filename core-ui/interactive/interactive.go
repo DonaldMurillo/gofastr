@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
 // Action describes an RPC call triggered by click or submit.
@@ -29,26 +30,15 @@ type Action struct {
 
 // ToastAction is a toast's one button as the runtime reads it: its label and the RPC attributes it
 // carries.
-type ToastAction struct {
-	Label string            `json:"label"`
-	Attrs map[string]string `json:"attrs"`
-}
+type ToastAction uiaction.ToastAction
 
 // NewToastAction is a toast button labelled label that runs next.
 func NewToastAction(label string, next Action) *ToastAction {
-	if label == "" {
-		panic("interactive: a toast action needs a label")
+	action := uiaction.ToastAction{Label: label, Attrs: next.attrs()}
+	if err := action.Validate(); err != nil {
+		panic("interactive: " + err.Error())
 	}
-	attrs := next.attrs()
-	if attrs == nil {
-		panic("interactive: a toast action needs an RPC action to run")
-	}
-	for k := range attrs {
-		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
-			panic(fmt.Sprintf("interactive: a toast action carries %s; a toast's button carries RPC wiring only", k))
-		}
-	}
-	return &ToastAction{Label: label, Attrs: attrs}
+	return (*ToastAction)(&action)
 }
 
 // Post creates a POST action. Panics if path does not start with "/".
@@ -85,7 +75,9 @@ func newAction(method, path string) Action {
 
 // OnSuccess adds effects that run when the RPC returns 2xx.
 func (a Action) OnSuccess(effects ...Effect) Action {
-	a.effects = append(a.effects, effects...)
+	if len(effects) > 0 {
+		a.effects = slices.Concat(a.effects, effects)
+	}
 	return a
 }
 
@@ -276,7 +268,7 @@ func LiveSearch(form render.HTML, action Action, debounceMs int) render.HTML {
 	wrapped = injectAttr(wrapped, "data-cui-rpc-trigger", "input")
 	ms := debounceMs
 	if ms == 0 {
-		ms = 300
+		ms = 250
 	}
 	wrapped = injectAttr(wrapped, "data-cui-rpc-debounce-ms", fmt.Sprintf("%d", ms))
 	return wrapped
@@ -289,18 +281,29 @@ func Reveal(html render.HTML, animationType string) render.HTML {
 	if animationType == "" {
 		animationType = "fade-in"
 	}
+	const name = "cui-reveal"
 	out := injectAttr(html, "data-cui-reveal", animationType)
-	return revealStyle.WrapHTML(out)
+	if comp, hasComp, _ := registry.Attribute(out, "data-cui-comp"); !hasComp || comp == name {
+		return revealStyle.WrapHTML(out)
+	}
+	scope, hasScope, _ := registry.Attribute(out, "data-cui-scope")
+	if !hasScope || scope == name {
+		scoped, _ := registry.InjectAttribute(out, "data-cui-scope", name)
+		return scoped
+	}
+	return revealStyle.WrapHTML(render.Tag("div", map[string]string{"data-cui-reveal": animationType}, html))
 }
 
 func revealCSS(_ style.Theme) string {
-	return `[data-cui-comp="cui-reveal"]{opacity:1}` +
-		`[data-cui-comp="cui-reveal"].cui-hidden{opacity:0}` +
-		`[data-cui-comp="cui-reveal"][data-cui-reveal="fade-up"].cui-hidden{transform:translateY(24px)}` +
-		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-left"].cui-hidden{transform:translateX(24px)}` +
-		`[data-cui-comp="cui-reveal"][data-cui-reveal="slide-right"].cui-hidden{transform:translateX(-24px)}` +
-		`[data-cui-comp="cui-reveal"].cui-revealed{opacity:1;transform:none;transition:opacity .6s var(--easing-ease-in-out, ease),transform .6s var(--easing-ease-in-out, ease)}` +
-		`@media (prefers-reduced-motion:reduce){[data-cui-comp="cui-reveal"].cui-hidden{opacity:1;transform:none}[data-cui-comp="cui-reveal"].cui-revealed{transition:none}}`
+	const root = `:is([data-cui-comp="cui-reveal"],[data-cui-scope="cui-reveal"])`
+	const target = root + `[data-cui-reveal]`
+	return target + `{opacity:1}` +
+		target + `.cui-hidden{opacity:0}` +
+		root + `[data-cui-reveal="fade-up"].cui-hidden{transform:translateY(24px)}` +
+		root + `[data-cui-reveal="slide-left"].cui-hidden{transform:translateX(24px)}` +
+		root + `[data-cui-reveal="slide-right"].cui-hidden{transform:translateX(-24px)}` +
+		target + `.cui-revealed{opacity:1;transform:none;transition:opacity .6s var(--easing-ease-in-out, ease),transform .6s var(--easing-ease-in-out, ease)}` +
+		`@media (prefers-reduced-motion:reduce){` + target + `.cui-hidden{opacity:1;transform:none}` + target + `.cui-revealed{transition:none}}`
 }
 
 // SetLocal wraps an HTML element so clicking it sets a signal to a fixed value.
@@ -338,8 +341,8 @@ func Dropdown(trigger, panel render.HTML) render.HTML {
 		"data-cui-dropdown-panel": "",
 		"hidden":                  "",
 	}
-	wrappedTrigger := injectAttrs(trigger, triggerAttrs)
-	wrappedPanel := injectAttrs(panel, panelAttrs)
+	wrappedTrigger := registry.AppendAttributes(trigger, triggerAttrs)
+	wrappedPanel := registry.AppendAttributes(panel, panelAttrs)
 	wrap := render.Tag("div", map[string]string{
 		"data-cui-dropdown-wrap": "",
 	}, wrappedTrigger, wrappedPanel)
@@ -385,106 +388,21 @@ func OptimisticUpdate(action Action, idle, success render.HTML) render.HTML {
 			panic(fmt.Sprintf("interactive: OptimisticUpdate cannot carry %s; use OnClick for configured RPC actions", key))
 		}
 	}
-	attrs := map[string]string{
-		"type":                     "button",
-		"data-state":               "idle",
-		"data-hui-action":          "",
-		"data-hui-action-endpoint": action.path,
+	button := uiaction.Button{
+		Endpoint: action.path, Method: action.method, State: "idle", FailedText: uiaction.DefaultFailedText,
+		Idle: idle, Done: success,
 	}
-	if action.method != "" && action.method != "POST" {
-		attrs["data-hui-action-method"] = action.method
-	}
-	idleSpan := render.Tag("span", map[string]string{
-		"data-hui-action-idle": "",
-	}, idle)
-	successSpan := render.Tag("span", map[string]string{
-		"data-hui-action-done": "",
-		"hidden":               "",
-	}, success)
-	return render.Tag("button", attrs, idleSpan, successSpan)
+	return button.Render(map[string]string{}, func(tag, _ string, attrs map[string]string, children ...render.HTML) render.HTML {
+		return render.Tag(tag, attrs, children...)
+	})
 }
 
 func injectAttr(html render.HTML, key, value string) render.HTML {
-	s := string(html)
-	a := render.Attr(key, value)
-	if a == "" {
-		return html
-	}
-	idx := findUnquotedClose(s)
-	if idx == -1 {
-		return html
-	}
-	// safe-html: a is emitted by render.Attr, which validates the key and escapes the value.
-	return render.HTML(s[:idx] + " " + a + s[idx:])
-}
-
-func injectAttrs(html render.HTML, attrs map[string]string) render.HTML {
-	s := string(html)
-	idx := findUnquotedClose(s)
-	if idx == -1 {
-		return html
-	}
-	var buf strings.Builder
-	for _, k := range slices.Sorted(maps.Keys(attrs)) {
-		a := render.Attr(k, attrs[k])
-		if a == "" {
-			continue
-		}
-		buf.WriteByte(' ')
-		buf.WriteString(a)
-	}
-	if buf.Len() == 0 {
-		return html
-	}
-	// safe-html: every fragment in buf came from render.Attr.
-	return render.HTML(s[:idx] + buf.String() + s[idx:])
+	return registry.AppendAttributes(html, map[string]string{key: value})
 }
 
 func wrapWithAction(html render.HTML, action Action) render.HTML {
-	attrs := action.attrs()
-	if len(attrs) == 0 {
-		return html
-	}
-
-	s := string(html)
-	var attrStr strings.Builder
-	for _, k := range slices.Sorted(maps.Keys(attrs)) {
-		rendered := render.Attr(k, attrs[k])
-		if rendered == "" {
-			continue
-		}
-		attrStr.WriteByte(' ')
-		attrStr.WriteString(rendered)
-	}
-
-	idx := findUnquotedClose(s)
-	if idx == -1 {
-		return html
-	}
-
-	// safe-html: every fragment in attrStr came from render.Attr.
-	return render.HTML(s[:idx] + attrStr.String() + s[idx:])
-}
-
-func findUnquotedClose(s string) int {
-	quote := byte(0)
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		if c == '"' || c == '\'' {
-			quote = c
-			continue
-		}
-		if c == '>' {
-			return i
-		}
-	}
-	return -1
+	return registry.AppendAttributes(html, action.attrs())
 }
 
 func (a Action) attrs() map[string]string {
@@ -517,11 +435,11 @@ func (a Action) attrs() map[string]string {
 		m["data-cui-rpc-success-toast"] = *a.successToast
 	}
 	if a.successAction != nil {
-		if a.successToast == nil {
-			panic("interactive: OnSuccessToastAction needs OnSuccessToast — the action rides the success toast")
-		}
 		b, _ := json.Marshal(a.successAction)
 		m["data-cui-rpc-success-action"] = string(b)
+	}
+	if uiaction.MissingSuccessToast(m) {
+		panic("interactive: OnSuccessToastAction needs OnSuccessToast — the action rides the success toast")
 	}
 	for _, e := range a.effects {
 		maps.Copy(m, e.rpcAttrs())

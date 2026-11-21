@@ -70,7 +70,7 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
 	for _, ent := range ordered {
-		if ent.Config.Unmanaged {
+		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 {
 			continue
 		}
 		tables = append(tables, ent.GetTable())
@@ -108,7 +108,7 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		}
 	}
 	for _, ent := range ordered {
-		if ent.Config.Unmanaged || len(liveByTable[ent.GetTable()]) == 0 {
+		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 || len(liveByTable[ent.GetTable()]) == 0 {
 			continue
 		}
 		stale, err := readStaleUniques(ctx, db, ent, dialect)
@@ -123,7 +123,7 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		}
 	}
 	for _, ent := range ordered {
-		if ent.Config.Unmanaged {
+		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 {
 			continue
 		}
 		var lk *liveKey

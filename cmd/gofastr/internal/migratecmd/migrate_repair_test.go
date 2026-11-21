@@ -75,10 +75,21 @@ func repairT_legacyDB(t *testing.T, path string) {
 func repairT_run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunMigrate(args) })
 	})
 	return out, code
+}
+
+func TestMigrateRepairHelp(t *testing.T) {
+	out := clitest.CovT_capStdout(t, func() { RunMigrate([]string{"repair", "--help"}) })
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "repair ") &&
+			strings.Contains(line, "--from=<yml>") && strings.Contains(line, "--apply") {
+			return
+		}
+	}
+	t.Fatalf("migrate repair help is missing the repair entry with --from and --apply:\n%s", out)
 }
 
 func TestMigrateRepairCleanDBExitsZero(t *testing.T) {
@@ -161,8 +172,8 @@ func TestMigrateRepairAppliesAndIsClean(t *testing.T) {
 func TestMigrateRepairNeedsAppSpec(t *testing.T) {
 	_, dbPath := repairT_setup(t) // also chdirs into the scratch dir
 	out, code := repairT_run(t, "repair", "--db-url="+dbPath)
-	if code != 1 {
-		t.Fatalf("missing --from exited %d, want 1:\n%s", code, out)
+	if code != 2 {
+		t.Fatalf("missing --from exited %d, want 2:\n%s", code, out)
 	}
 	if !strings.Contains(out, "--from") {
 		t.Fatalf("missing --from error does not name the flag:\n%s", out)

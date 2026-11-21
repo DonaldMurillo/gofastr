@@ -76,6 +76,10 @@ invariants:
       - test: framework/isolation.TestPostgresDSNCutsOnRuneBoundary
       - test: framework/isolation.TestPostgresDSNLongIDStaysUnique
       - test: framework/isolation.TestPostgresDSNKeepsFittingIDName
+  - id: postgres-query-database-isolated
+    rule: Runtime.Database and Runtime.Env use postgresDSN to isolate the effective database in a Postgres URL including a query selector, preserving all other parameters.
+    enforced_by:
+      - test: framework/isolation.TestPostgresQueryDatabaseIsIsolated
 decisions:
   - id: settings-file-is-untrusted
     date: 2026-11-17
@@ -109,3 +113,11 @@ decisions:
       - option: Always use a digest suffix.
         why: Every existing worktree would lose its database.
     upholds: [postgres-name-fits]
+  - id: env-name-is-the-exported-const
+    date: 2026-11-19
+    status: accepted
+    decision: The GOFASTR_ISOLATION name is exported as isolation.EnvIsolation, and desktop, service, docscmd, desktoptest and the prefix check spell the const instead of the literal.
+    rejected:
+      - option: Keep the unexported const and five string literals.
+        why: A typo in any literal silently stops disabling isolation instead of failing to compile.
+    upholds: [active-only-in-a-linked-worktree]

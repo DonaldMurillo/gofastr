@@ -1,13 +1,11 @@
 package sdkdocs
 
 import (
-	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"golang.org/x/net/html"
 )
 
 func TestReadOnlyReferenceOmitsWrites(t *testing.T) {
@@ -18,7 +16,7 @@ func TestReadOnlyReferenceOmitsWrites(t *testing.T) {
 			posts.Config.States = &entity.StatesConfig{Field: "status", Initial: []string{"draft"}, Transitions: []entity.Transition{
 				{Key: "publish", From: []string{"draft"}, To: "live"},
 			}}
-			posts.Config.Endpoints = []entity.Endpoint{{Method: "POST", Path: "refresh", Description: "Refresh snapshot"}}
+			posts.Config.Endpoints = []entity.Endpoint{{Method: "POST", Path: "refresh", Description: "Refresh snapshot", Handler: http.NotFoundHandler()}}
 			cfg := Config{Registry: reg, CRUDMounted: func(*entity.Entity) bool { return true }}
 			if mode != "legacy" {
 				cfg.ReadOnlyMounted = func(*entity.Entity) bool { return mode == "readonly" }
@@ -28,18 +26,7 @@ func TestReadOnlyReferenceOmitsWrites(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("reference status = %d", resp.StatusCode)
 			}
-			var rendered strings.Builder
-			tokens := html.NewTokenizer(strings.NewReader(body))
-			for tokens.Next() != html.ErrorToken {
-				token := tokens.Token()
-				if token.Type == html.TextToken {
-					rendered.WriteString(token.Data)
-				}
-			}
-			if tokens.Err() != io.EOF {
-				t.Fatal(tokens.Err())
-			}
-			body = rendered.String()
+			body = renderedText(t, body)
 			for _, snippet := range []string{"Get one record", "List (offset or cursor pagination)", "/posts/_events", "c.ListPosts", "api.posts.list", "Refresh snapshot"} {
 				if !strings.Contains(body, snippet) {
 					t.Errorf("reference omitted %q", snippet)

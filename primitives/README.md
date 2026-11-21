@@ -18,12 +18,20 @@ reviewer instead (`judge`).
 ```
 go run ./cmd/primitives                 # the top-level primitives, one line each
 go run ./cmd/primitives for <path>...   # what governs these files
-go run ./cmd/primitives show <id>       # one primitive in full, and its children
+go run ./cmd/primitives show <id>       # one primitive's details and its children
 ```
 
-Run `primitives for` on the files you are about to change. It prints the chain
-of primitives that own them, outermost first, with every invariant and
-decision on that chain. That is all the registry holds for those files.
+Run `primitives for` on the files you are about to change. It prints the owner
+chain, outermost first, with its `on_change` notes, import bans, invariants and
+decision summaries. It also shows recorded twins for those files and rules
+other primitives apply to them.
+
+`primitives show` prints one primitive's summary, code and docs paths,
+`on_change` notes, import bans, invariants with their `applies` patterns,
+and decisions with their rejected options and revisit conditions. It lists
+the primitive's direct children.
+Read the primitive's `primitive.yml` for the complete entry.
+
 `AGENTS.md` still names the architecture documents to read before adding
 or moving code they cover.
 
@@ -37,21 +45,26 @@ several packages, and one package may be split across several primitives.
 ## primitive.yml
 
 ```yaml
-primitive: crud.include          # must match the directory
+# Must match the directory.
+primitive: crud.include
 summary: One sentence saying what this part does.
-code:                            # the files it owns
-  - framework/crud/eager.go      # a path.Match pattern, or
-  - framework/imagefield/        # a trailing slash for a whole tree
+code:
+  # A path.Match pattern, or a trailing slash for a whole tree.
+  - framework/crud/eager.go
+  - framework/imagefield/
 docs:
   - framework/docs/content/includes.md
-on_change:                       # one line each, shown when this part changes
+# Each line is shown when this part changes.
+on_change:
   - What a change here must also do, that no test can check.
-imports:                         # generated into primitives_imports_test.go
+# Generated into primitives_imports_test.go.
+imports:
   - deny: framework/image
     from: [framework/crud]
     why: One sentence on what the ban protects.
     instead: What to do when you need the banned package.
-twins:                           # one job done in more than one place
+# One job done in more than one place.
+twins:
   - job: What the sites all do.
     why: What keeps them from being one implementation today.
     sites:
@@ -63,22 +76,28 @@ invariants:
   - id: match-by-primary-key
     rule: One present-tense sentence that is either true or false of the code.
     enforced_by:
-      - test: framework/crud.TestName    # <package dir>.<TestName>
-      - analyzer: mapwriter              # a registered internal/analyzers package
-      - contract: GOFASTR1407            # a framework/contracts rule
+      # <package dir>.<TestName>
+      - test: framework/crud.TestEagerLoadScrubsSoftDeleteAndHidden
+      # A registered internal/analyzers package.
+      - analyzer: mapwriter
+      # A framework/contracts rule.
+      - contract: GOFASTR1407
     judge: A yes/no question where yes means a violation?
-    applies:                             # files outside code: this rule governs too
-      - framework/crud/eager.go          # same pattern form as code
+    # Files outside code that this rule also governs, using the same patterns.
+    applies:
+      - framework/crud/include.go
 decisions:
   - id: match-by-primary-key
     date: 2026-11-14
-    status: accepted                     # or superseded, with superseded_by
+    # Use superseded with superseded_by to name a successor.
+    status: accepted
     decision: One sentence saying what was chosen.
     rejected:
       - option: The alternative.
         why: The reason it lost.
     revisit_if: The condition that reopens this.
-    upholds: [match-by-primary-key]      # or <primitive>/<id>
+    # An invariant id or <primitive>/<id>.
+    upholds: [match-by-primary-key]
 ```
 
 Quote any string that holds `: ` or ` #`. Block scalars (`|`, `>`) are not
@@ -107,19 +126,19 @@ the primitive that lists it.
   file. It looks at what the working tree changed and, once per session,
   tells the agent about a changed file that is a twins site.
 - **`primitives stop`** runs when a session tries to finish. It checks
-  the registry and runs vet and the short tests of every package changed
-  since `origin/main`, leaving out a file whose only change is to its
-  comments. A package under a nested `go.mod` is run in that module, not
-  from the repo root. A testdata module is skipped: those trees exist to
+  the registry and generated import tests, then runs vet and the short
+  tests of every package changed since `origin/main`, leaving out a file
+  whose only change is to its comments. Packages under a nested `go.mod`
+  run in that module. A testdata module is skipped: those trees exist to
   be wrong, so `go build ./...` there is not a session failure. A failure sends the agent back once, with the
   output, as a block decision on stdout: the hook runs through `go run`,
   which cannot pass on the exit code Claude Code treats as blocking. A tree that already passed is not tested again. Once the
   code passes it asks, once per session, whether another code path does
   the same job and needs the same change. For each primitive whose code
   changed it shows the `on_change` lines, and names the `docs` when none
-  of them changed. For each changed file it shows, once per session,
-  every rule another primitive `applies` to it, with its `judge`
-  question.
+  of them changed. For each changed file, including test files, it shows
+  once per session every rule another primitive `applies` to it, with its
+  `judge` question.
 - **Deny rules** cover what cannot be taken back: a forced push, a push
   to `main`, discarding the whole working tree (`git reset --hard`,
   `git clean`, `git checkout .`, `git restore .`), and reading `.env`
@@ -138,6 +157,8 @@ the primitive that lists it.
 - A `docs` path that is not a file.
 - An `applies` entry that matches no file, or only files its own
   primitive already owns.
+- An `imports` entry whose `from` or `deny` uses a wildcard or names a
+  directory without non-test Go source.
 - A `twins` entry with no `why`, with fewer than two sites, or with a
   site that is not a file.
 - An `enforced_by` test that does not exist, an analyzer that is not

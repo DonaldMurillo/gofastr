@@ -36,7 +36,7 @@ type SignalToggleConfig struct {
 	Class string
 	// Ctx is the render context a Slice's first paint is read from.
 	Ctx context.Context
-	// ExtraAttrs land on the button; class, data-cui-*, role, aria-checked and aria-label are dropped.
+	// ExtraAttrs land on the button; class, data-cui-*, type, role, aria-checked and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -66,7 +66,7 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	escCls := render.Escape(cls)
 
 	extraAttrs := serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"role", "aria-checked", "aria-label"))
+		"type", "role", "aria-checked", "aria-label"))
 
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track" data-cui-internal=""><span class="fui-toggle__thumb"></span></span>`+
@@ -76,7 +76,7 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 
 	//gofastr:allow(GOFASTR1403) every operand is render.Escape output, render.Attr output or the fixed inner markup
 	return render.HTML(fmt.Sprintf(
-		`<button class="%s" data-cui-comp="fui-toggle"`+
+		`<button type="button" class="%s" data-cui-comp="fui-toggle"`+
 			` data-cui-signal-toggle="%s"`+
 			` data-cui-signal="%s" data-cui-signal-mode="attr" data-cui-signal-attr="aria-checked"`+
 			` role="switch" aria-checked="%s" aria-label="%s"%s>%s</button>`,

@@ -14,8 +14,8 @@ func (t Theme) Extend(tokens ...any) Theme {
 	out := t
 	out.Extensions = cloneExtensions(t.Extensions)
 	seen := map[string]string{}
-	var existing []tokenAt
-	walkTokenPaths(reflect.ValueOf(out), "Theme", &existing)
+	var existing []tokenField
+	walkTokens(reflect.ValueOf(out), "Theme", &existing)
 	for _, e := range existing {
 		if _, dup := seen[e.Key]; !dup {
 			seen[e.Key] = e.Path
@@ -24,8 +24,8 @@ func (t Theme) Extend(tokens ...any) Theme {
 	for _, in := range tokens {
 		p := copyTokenStruct(in)
 		autofillTokens(p.Elem(), nil)
-		var added []tokenAt
-		walkTokenPaths(p, extensionPath(p), &added)
+		var added []tokenField
+		walkTokens(p, extensionPath(p), &added)
 		if len(added) == 0 {
 			panic(fmt.Sprintf("style: Theme.Extend: %s has no typed token fields (style.Color, style.Size, …)", p.Elem().Type()))
 		}
@@ -56,7 +56,7 @@ type DarkTokens interface {
 	DarkTokens() map[string]string
 }
 
-func mergeDarkTokens(dark, values map[string]string, own []tokenAt, owner string) map[string]string {
+func mergeDarkTokens(dark, values map[string]string, own []tokenField, owner string) map[string]string {
 	if len(dark) == 0 || len(values) == 0 {
 		return dark
 	}
@@ -232,8 +232,8 @@ func extensionPath(v reflect.Value) string {
 }
 
 func duplicateTokenKey(t Theme) error {
-	var all []tokenAt
-	walkTokenPaths(reflect.ValueOf(t), "Theme", &all)
+	var all []tokenField
+	walkTokens(reflect.ValueOf(t), "Theme", &all)
 	seen := map[string]string{}
 	for _, a := range all {
 		if prev, ok := seen[a.Key]; ok {
@@ -242,36 +242,4 @@ func duplicateTokenKey(t Theme) error {
 		seen[a.Key] = a.Path
 	}
 	return nil
-}
-
-type tokenAt struct {
-	Key, Path string
-}
-
-func walkTokenPaths(v reflect.Value, path string, out *[]tokenAt) {
-	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return
-		}
-		v = v.Elem()
-	}
-	if v.Kind() == reflect.Slice {
-		for i := range v.Len() {
-			walkTokenPaths(v.Index(i), extensionPath(v.Index(i)), out)
-		}
-		return
-	}
-	if v.Kind() != reflect.Struct {
-		return
-	}
-	if key, _, ok := tokenPair(v); ok {
-		*out = append(*out, tokenAt{key, path})
-		return
-	}
-	for sf, f := range v.Fields() {
-		if !f.CanInterface() {
-			continue
-		}
-		walkTokenPaths(f, path+"."+sf.Name, out)
-	}
 }

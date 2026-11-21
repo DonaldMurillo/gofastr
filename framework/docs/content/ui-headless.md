@@ -248,7 +248,9 @@ every value the picker can show — the short `#abc` form included,
 expanded to `#aabbcc` for the swatch and never an error; a value the
 picker cannot show stays verbatim in the text while the swatch falls
 back to black and the shell is marked `data-invalid` — the theme
-editor's own sync was deleted for it).
+editor's own sync was deleted for it). Set `ColorFieldConfig.Required`
+or pass a required `Field` to enable native validation on the submitted
+text input. In headless code, set `ColorProps.Required`.
 
 The bespoke-behaviour family renders through headless too:
 `ui.FileUpload` is `headless.FileUpload` (the drop zone a label for
@@ -340,6 +342,11 @@ submit, carries a password field and an upload, and nests conditional
 regions two deep. Its browser proofs live in
 `examples/site/e2e_headless_dashboard_test.go`.
 
+`ui.Toolbar` and `ui.FilterChipBar` use labelled groups with ordinary
+Tab navigation. For `ui.FilterChipBar`, each dismiss action and Clear all
+target `RPCSignal` when set. Otherwise they target `SignalName`, or
+`"filter-bar"` when the bar has no signal binding.
+
 ## The spec and the harness
 
 Every component registers a `Spec` beside its code: its name, the
@@ -378,16 +385,20 @@ technology will be told.
 Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
 Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
-Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
+Section, Divider, Spacer, Spinner, Skeleton, Progress, Alert, SystemBanner,
 Badge, Tag, Selection, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
-StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
-Disclosure, Menu, Combobox, DatePicker (with DatePickerMonth, its
-island answer), Tabs, Carousel, PaneHost, Sidebar and SidebarRegion,
-and the two pure-render trees JSONTree and Gallery.
+StepWizard, BackToTop and SortableList with SortableItems, its
+reconciliation fragment. The navigation-behaviour members: Rail,
+TableOfContents, Breadcrumbs, Disclosure, Menu, Combobox, DatePicker
+(with DatePickerMonth, its island answer), Tabs, Carousel, PaneHost,
+Sidebar and SidebarRegion, and the two pure-render trees JSONTree and
+Gallery. LightboxViewer ships the overlay anatomy a zoom modal mounts;
+its hooks serve the host page or framework/ui, which write the viewer's
+behaviour.
 
 A stateful control with no `ID` builds its ids from its `Name`.
 `MultiSelect`, `NumberInput`, `Slider`, `RangeSlider`, `Rating` and

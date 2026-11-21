@@ -31,3 +31,19 @@ func TestSchedulePayloadMarshalError(t *testing.T) {
 		t.Fatalf("a builder whose last payload encodes was refused: %v", err)
 	}
 }
+
+// A second Job call with nil replaces the first call's payload: the builder
+// encodes each call, it does not merge them.
+func TestSecondJobCallWithNilPayloadClearsTheFirst(t *testing.T) {
+	s := NewScheduler()
+	b := s.Every(time.Minute).Job("report", map[string]int{"n": 1}).Job("cleanup", nil)
+	if err := b.RegisterAt(time.Now()); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	if len(s.schedules) != 1 {
+		t.Fatalf("%d schedules, want 1", len(s.schedules))
+	}
+	if p := s.schedules[0].Payload; len(p) != 0 {
+		t.Fatalf("payload = %q, want no payload", string(p))
+	}
+}

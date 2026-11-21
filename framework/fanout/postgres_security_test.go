@@ -9,11 +9,14 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	_ "github.com/lib/pq"
 )
 
@@ -235,5 +238,41 @@ func TestNewPostgresUnreachableFailsFast(t *testing.T) {
 	}
 	if elapsed > 3*time.Second {
 		t.Errorf("NewPostgres took %v to fail on an unreachable DSN, want ~the listen timeout", elapsed)
+	}
+}
+
+func TestPostgresPublishNotifiesInlineAndSpill(t *testing.T) {
+	cause := errors.New("notify refused")
+	for _, tc := range []struct {
+		name, payload, context string
+	}{
+		{"inline", "new post", "fanout: pg_notify: "},
+		{"spill", strings.Repeat("x", pgInlineThreshold), "fanout: pg_notify fallback pointer: "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			p := &PostgresFanout{db: db, table: "msgs", lastPurge: time.Now(), purgeEvery: time.Hour}
+			wrapped, err := json.Marshal(pgInlineMsg{Topic: "posts", Payload: tc.payload})
+			if err != nil {
+				t.Fatal(err)
+			}
+			arg := string(wrapped)
+			if tc.name == "spill" {
+				mock.ExpectQuery(`INSERT INTO "msgs" (payload, created_at) VALUES ($1, now()) RETURNING id`).
+					WithArgs(arg).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
+				arg = "t:42"
+			}
+			mock.ExpectExec(`SELECT pg_notify($1, $2)`).WithArgs("msgs", arg).WillReturnError(cause)
+			if err := p.Publish(context.Background(), "posts", []byte(tc.payload)); !errors.Is(err, cause) || err.Error() != tc.context+cause.Error() {
+				t.Errorf("Publish returned %v, want %s%v", err, tc.context, cause)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

@@ -79,12 +79,5 @@ func TestOAuthProtectedResource_RouteMounted(t *testing.T) {
 }
 
 func TestOAuthProtectedResource_NotMountedByDefault(t *testing.T) {
-	app, cleanup := startApp(t, NewApp())
-	defer cleanup()
-
-	rec := httptest.NewRecorder()
-	app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("without the option, route should be absent (404); got %d", rec.Code)
-	}
+	expectDefaultApp404(t, "/.well-known/oauth-protected-resource", "without the option, route should be absent (404);")
 }

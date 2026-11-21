@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/internal/textcut"
 )
 
 //go:embed content/*.md
@@ -92,7 +94,7 @@ const minSearchTermLen = 3
 const defaultSearchHitCap = 50
 
 // ErrSearchTermTooShort is returned for a term under three bytes.
-var ErrSearchTermTooShort = fmt.Errorf("docs: a search term needs at least %d characters", minSearchTermLen)
+var ErrSearchTermTooShort = fmt.Errorf("docs: a search term needs at least %d bytes", minSearchTermLen)
 
 // Search returns up to 50 case-insensitive matching lines across all
 // topics, the most relevant topics first and each topic's lines in order.
@@ -260,15 +262,7 @@ func extractSummary(body []byte) string {
 			para = append(para, t)
 		}
 	}
-	out := strings.Join(para, " ")
-	if len(out) > 200 {
-		cut := 200
-		for cut > 0 && !utf8.RuneStart(out[cut]) {
-			cut--
-		}
-		out = out[:cut] + "…"
-	}
-	return out
+	return textcut.Ellipsis(strings.Join(para, " "), 200)
 }
 
 func matchSpan(line, lower, needle string) (start, end int) {

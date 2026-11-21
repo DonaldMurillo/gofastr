@@ -46,9 +46,9 @@ func isTerminalInboundStatus(s string) bool {
 }
 
 // defaultInboundMaxBody is the cap applied when IngestConfig.MaxBodyBytes
-// is unset. Matches MaxPayloadBytes (1 MiB) so an inbound envelope is never
-// larger than what the outbound side would send.
-const defaultInboundMaxBody int64 = 1 << 20
+// is unset: MaxPayloadBytes, so an inbound envelope is never larger than
+// what the outbound side would send.
+const defaultInboundMaxBody int64 = MaxPayloadBytes
 
 // InboundEnvelope is a single persisted inbound webhook request.
 //
@@ -235,6 +235,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
@@ -472,7 +473,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		// The outcome is written on a detached, bounded context: a
 		// shutdown that lands as fn finishes must not leave the envelope
 		// "processing" for work that already happened.
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), inboundSettleTimeout)
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 		defer cancel()
 		if err != nil {
 			failed := *env
@@ -499,10 +500,6 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		return nil
 	}
 }
-
-// inboundSettleTimeout bounds the envelope's outcome write after the
-// business handler returns.
-const inboundSettleTimeout = 10 * time.Second
 
 // ProcessInboundOption configures ProcessInbound's operational logging.
 type ProcessInboundOption func(*processInboundOpts)

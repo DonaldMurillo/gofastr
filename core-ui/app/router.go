@@ -37,12 +37,17 @@ func NewRouter() *Router {
 
 // Screen registers a screen with an optional layout.
 func (r *Router) Screen(screen *Screen, layout *Layout) {
+	for segment := range strings.SplitSeq(screen.Path, "/") {
+		if segment == "{$}" {
+			panic(fmt.Sprintf("app: screen route %q does not support the {$} end marker", screen.Path))
+		}
+	}
 	r.layoutsGen.Add(1)
 	if layout != nil {
 		screen.Layout = layout
 	}
 
-	screen.Path = canonicalRoutePattern(screen.Path)
+	screen.Path = CanonicalRoutePattern(screen.Path)
 	if screen.Intercept != nil {
 		screen.Intercept = normalizeIntercept(screen.Intercept)
 	}
@@ -104,7 +109,8 @@ func normalizeRoutePath(path string) string {
 	return strings.Join(parts, "/")
 }
 
-func canonicalRoutePattern(path string) string {
+// CanonicalRoutePattern returns the pattern used to register and compare screen routes.
+func CanonicalRoutePattern(path string) string {
 	path = normalizeRoutePath(path)
 	if strings.Contains(path, ":") {
 		return "/" + strings.Trim(path, "/")
@@ -221,7 +227,7 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 			}
 			if !routeseg.Valid(c) {
 				panic("app: route " + pathLabel +
-					" has unknown constraint :" + c + " (supported: int, uuid, alpha, alnum)")
+					" has unknown constraint :" + c + " (supported: " + strings.Join(routeseg.Names(), ", ") + ")")
 			}
 		}
 		name := segParamName(p)
@@ -237,7 +243,7 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 // ScreenByPattern returns the screen registered under the given route pattern (either brace or
 // colon syntax; normalized before lookup).
 func (r *Router) ScreenByPattern(pattern string) (*Screen, bool) {
-	pattern = canonicalRoutePattern(pattern)
+	pattern = CanonicalRoutePattern(pattern)
 	if s, ok := r.screens[pattern]; ok {
 		return s, true
 	}

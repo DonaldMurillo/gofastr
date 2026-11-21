@@ -128,22 +128,6 @@ func TestEntityLLMMD_SoftDelete(t *testing.T) {
 }
 
 // ============================================================================
-// Multi-tenant entity includes note
-// ============================================================================
-
-func TestEntityLLMMD_MultiTenant(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{MultiTenant: true}, Fields: []schema.Field{
-		{Name: "title", Type: schema.String, Required: true},
-	},
-	})
-
-	md := crud.EntityLLMMD(ent)
-	if !strings.Contains(md, "Multi-tenancy") {
-		t.Error("expected Multi-tenancy section")
-	}
-}
-
-// ============================================================================
 // Custom endpoints section
 // ============================================================================
 

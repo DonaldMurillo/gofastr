@@ -37,19 +37,16 @@ type SortableListConfig struct {
 	Ctx        context.Context
 }
 
-// SortableList renders headless.SortableList: an <ol> reordered by drag
-// or keyboard, committed by the RPCPath round trip.
-func SortableList(cfg SortableListConfig) render.HTML {
+// sortableListParts is the props and part classes both sortable render
+// entry points share. The caller that renders the wrapper appends cfg.Class.
+func sortableListParts(cfg SortableListConfig) (headless.SortableListProps, headless.Classes) {
 	classes := headless.Classes{
 		headless.PartRoot:         "fui-sortablelist",
 		headless.PartSortableItem: "fui-sortablelist__item",
 		headless.PartSortableGrip: "fui-sortablelist__grip",
 		headless.PartLabel:        "fui-sortablelist__label",
 	}
-	if cfg.Class != "" {
-		classes[headless.PartRoot] += " " + cfg.Class
-	}
-	out := headless.SortableList(headless.SortableListProps{
+	return headless.SortableListProps{
 		Items:       cfg.Items,
 		Label:       cfg.Label,
 		RPCPath:     cfg.RPCPath,
@@ -60,30 +57,24 @@ func SortableList(cfg SortableListConfig) render.HTML {
 		ID:          cfg.ID,
 		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
 		Strings:     StringsFor(cfg.Ctx),
-	}, classes)
+	}, classes
+}
+
+// SortableList renders headless.SortableList: an <ol> reordered by drag
+// or keyboard, committed by the RPCPath round trip.
+func SortableList(cfg SortableListConfig) render.HTML {
+	props, classes := sortableListParts(cfg)
+	if cfg.Class != "" {
+		classes[headless.PartRoot] += " " + cfg.Class
+	}
+	out := headless.SortableList(props, classes)
 	return sortablelistStyle.WrapHTML(out)
 }
 
 // SortableListItems renders the rows alone, for a ConflictRPC response.
 func SortableListItems(cfg SortableListConfig) render.HTML {
-	classes := headless.Classes{
-		headless.PartRoot:         "fui-sortablelist",
-		headless.PartSortableItem: "fui-sortablelist__item",
-		headless.PartSortableGrip: "fui-sortablelist__grip",
-		headless.PartLabel:        "fui-sortablelist__label",
-	}
-	return headless.SortableItems(headless.SortableListProps{
-		Items:       cfg.Items,
-		Label:       cfg.Label,
-		RPCPath:     cfg.RPCPath,
-		Group:       cfg.Group,
-		Container:   cfg.Container,
-		Version:     cfg.Version,
-		ConflictRPC: cfg.ConflictRPC,
-		ID:          cfg.ID,
-		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
-		Strings:     StringsFor(cfg.Ctx),
-	}, classes)
+	props, classes := sortableListParts(cfg)
+	return headless.SortableItems(props, classes)
 }
 
 // RenewSortableVersion sends a versioned list the server's current

@@ -30,8 +30,7 @@ type Baseline struct {
 	Counts map[string]map[string]int `json:"counts"`
 }
 
-// NewBaseline records the report's diagnostics at or above its fail-on
-// severity as accepted; findings below it are left out.
+// NewBaseline accepts waivable diagnostics at or above the report's fail-on severity.
 func NewBaseline(r *Report, now time.Time, note string) *Baseline {
 	b := &Baseline{
 		Schema:    BaselineSchemaVersion,
@@ -40,7 +39,7 @@ func NewBaseline(r *Report, now time.Time, note string) *Baseline {
 		Counts:    map[string]map[string]int{},
 	}
 	for _, d := range r.Diagnostics {
-		if d.Severity < r.FailOn {
+		if d.Unwaivable || d.Severity < r.FailOn {
 			continue
 		}
 		if b.Counts[d.RuleID] == nil {
@@ -169,7 +168,7 @@ func (r *Report) ApplyBaseline(b *Baseline) BaselineResult {
 
 	kept := r.Diagnostics[:0]
 	for _, d := range r.Diagnostics {
-		if files, ok := remaining[d.RuleID]; ok && files[d.File] > 0 {
+		if files := remaining[d.RuleID]; !d.Unwaivable && files[d.File] > 0 {
 			files[d.File]--
 			res.Accepted++
 			continue

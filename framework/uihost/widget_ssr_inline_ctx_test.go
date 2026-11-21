@@ -50,7 +50,8 @@ func registerSSRCtxWidgets(t *testing.T) {
 func injectFor(t *testing.T, url string) string {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
-	return injectWidgetSSR(`<!doctype html><html><body><main>x</main></body></html>`, req)
+	widgets, _ := widgetSSRHTML(req)
+	return injectWidgetSSR(`<!doctype html><html><body><main>x</main></body></html>`, widgets)
 }
 
 // TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch pins the inline

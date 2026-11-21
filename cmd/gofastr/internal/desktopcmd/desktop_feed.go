@@ -34,8 +34,7 @@ func parseDesktopFeedFlags(args []string) desktopFeedFlags {
 		"--valid-days": &f.validDays,
 		"-o":           &f.out, "--o": &f.out, "-out": &f.out, "--out": &f.out,
 	}, map[string]*bool{"--help": &help, "-h": &help}); err != nil {
-		cli.Fail("feed: %v", err)
-		cli.OsExit(1)
+		cli.UsageFail("feed: %v", err)
 		return f
 	}
 	if help {
@@ -71,7 +70,7 @@ func runDesktopFeed(args []string) {
 	if len(missing) > 0 {
 		cli.Fail("feed is missing %s", strings.Join(missing, " "))
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	validFor, err := feedLifetime(f.validDays)

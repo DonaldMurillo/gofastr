@@ -33,7 +33,7 @@ type ToolbarConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// Toolbar renders a role="toolbar" strip of control groups.
+// Toolbar renders a labelled group of controls in a horizontal strip.
 func Toolbar(cfg ToolbarConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Toolbar requires Label")
@@ -59,7 +59,7 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 	}
 	attrs := html.Attrs{
 		"class":      cls,
-		"role":       "toolbar",
+		"role":       "group",
 		"aria-label": cfg.Label,
 	}
 	if cfg.ID != "" {

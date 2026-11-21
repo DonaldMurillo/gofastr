@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -20,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"golang.org/x/net/html"
 )
 
 type fakeRegistry struct{ entities []*entity.Entity }
@@ -77,7 +79,7 @@ func testArtifacts(t *testing.T, reg *fakeRegistry, matchLive bool) fstest.MapFS
 		Entities:       []string{"posts"},
 		SchemaHash:     hash,
 		Artifacts: map[string]sdk.Artifact{
-			"go":       {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk"},
+			"go":       {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk", Directory: "testapp-sdk"},
 			"js":       {File: sdk.JSArtifact, SHA256: sdkSum("//js\n"), Bytes: 5},
 			"js-types": {File: sdk.JSTypesArtifact, SHA256: sdkSum("//ts"), Bytes: 4},
 		},
@@ -120,6 +122,21 @@ func get(t *testing.T, srv *httptest.Server, path string) (*http.Response, strin
 		t.Fatal(err)
 	}
 	return resp, string(body)
+}
+
+func renderedText(t *testing.T, markup string) string {
+	t.Helper()
+	var out strings.Builder
+	tokens := html.NewTokenizer(strings.NewReader(markup))
+	for kind := tokens.Next(); kind != html.ErrorToken; kind = tokens.Next() {
+		if kind == html.TextToken {
+			out.Write(tokens.Text())
+		}
+	}
+	if tokens.Err() != io.EOF {
+		t.Fatal(tokens.Err())
+	}
+	return out.String()
 }
 
 func TestMountRequiresRegistry(t *testing.T) {
@@ -338,8 +355,8 @@ func TestEndpointRowsNameTypedCalls(t *testing.T) {
 			Exposure: &entity.ExposureConfig{Public: true},
 			Fields:   []schema.Field{{Name: "title", Type: schema.String}},
 			Endpoints: []entity.Endpoint{
-				{Method: "POST", Path: "{id}/feature", Name: "feature_post", SDK: true},
-				{Method: "GET", Path: "stats", Name: "post_stats"},
+				{Method: "POST", Path: "{id}/feature", Name: "feature_post", SDK: true, Handler: http.NotFoundHandler()},
+				{Method: "GET", Path: "stats", Name: "post_stats", Handler: http.NotFoundHandler()},
 			},
 		}),
 	}}
@@ -348,6 +365,100 @@ func TestEndpointRowsNameTypedCalls(t *testing.T) {
 	for _, want := range []string{"Go c.FeaturePost, TypeScript api.blogPosts.featurePost", "Custom endpoint (post_stats): use the SDK&#39;s Do escape hatch"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("entity page lacks %q", want)
+		}
+	}
+}
+
+func TestEndpointRowsUseMountedPaths(t *testing.T) {
+	e := entity.Define("posts", entity.EntityConfig{
+		PrimaryKey: []string{"slug"},
+		Fields:     []schema.Field{{Name: "slug", Type: schema.String}},
+		Endpoints: []entity.Endpoint{
+			{Method: "GET", Path: " ./stats/:slug/ ", Handler: http.NotFoundHandler()},
+			{Method: "POST", Path: " /reports/:slug/ ", Handler: http.NotFoundHandler()},
+		},
+	})
+	sc := &entityScreen{site: &site{cfg: Config{APIPrefix: "/api"}}}
+	ref := sc.endpointsTable(e, "").String()
+	for _, want := range []string{"/api/posts/{id}", "/api/posts/stats/{slug}", "/reports/{slug}"} {
+		if !strings.Contains(ref, "<code>"+want+"</code>") {
+			t.Errorf("reference lacks mounted path %q", want)
+		}
+	}
+}
+
+func TestEndpointRowsTrimMethods(t *testing.T) {
+	e := entity.Define("posts", entity.EntityConfig{Endpoints: []entity.Endpoint{
+		{Method: " head ", Path: "stats", Handler: http.NotFoundHandler()},
+		{Method: " ", Path: "blank_method", Handler: http.NotFoundHandler()},
+	}})
+	ref := (&entityScreen{site: &site{}}).endpointsTable(e, "").String()
+	if !strings.Contains(ref, ">HEAD</span>") {
+		t.Error("reference lacks a HEAD label for the mounted HEAD route")
+	}
+	if strings.Contains(ref, "/posts/blank_method") {
+		t.Error("reference lists an endpoint with no HTTP method")
+	}
+}
+
+func TestEndpointRowsOmitMCPOnlyDeclarations(t *testing.T) {
+	e := entity.Define("posts", entity.EntityConfig{Endpoints: []entity.Endpoint{
+		{Method: "GET", Path: "visible_stats", Handler: http.NotFoundHandler()},
+		{Method: "POST", Path: "internal_stats", MCP: true, MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil }},
+	}})
+	ref := (&entityScreen{site: &site{}}).endpointsTable(e, "").String()
+	if !strings.Contains(ref, "/posts/visible_stats") {
+		t.Error("reference omits a custom HTTP route")
+	}
+	if strings.Contains(ref, "internal_stats") {
+		t.Error("reference advertises an MCP-only declaration as an HTTP route")
+	}
+}
+
+func TestErrorsGuideUsesResponseWireKeys(t *testing.T) {
+	srv := mountedServer(t, Config{Registry: testRegistry()})
+	resp, body := get(t, srv, "/docs/api/errors")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("errors guide status = %d", resp.StatusCode)
+	}
+	if strings.Count(body, "authorName") < 2 || strings.Contains(body, "author_name") {
+		t.Error("the example must use the default response wire key in fields and field_reasons")
+	}
+	for _, want := range []string{"response wire keys", "field-level refusals", "WireName"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("errors guide lacks %q", want)
+		}
+	}
+}
+
+func TestSDKDocsMountsUseIndependentDrawers(t *testing.T) {
+	coreApp := app.NewApp("Test App")
+	r := router.New()
+	uihost.New(coreApp).Mount(r)
+	basePaths := []string{"/docs/api", "/docs-api"}
+	for _, base := range basePaths {
+		if err := Mount(coreApp, r, Config{BasePath: base, Registry: testRegistry()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	drawer := regexp.MustCompile(`data-cui-open="(sdkdocs-section-menu[a-zA-Z0-9_-]*)"`)
+	drawers := map[string]bool{}
+	for _, base := range basePaths {
+		resp, body := get(t, srv, base)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: overview status = %d", base, resp.StatusCode)
+		}
+		match := drawer.FindStringSubmatch(body)
+		if len(match) == 0 || drawers[match[1]] {
+			t.Fatalf("%s: missing or duplicate drawer trigger %q", base, match)
+		}
+		drawers[match[1]] = true
+		path := "/core-ui/widget/" + match[1] + "/chrome"
+		resp, body = get(t, srv, path)
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, base+"/entities/posts") {
+			t.Errorf("%s: drawer %s returned %d without its entity link", base, path, resp.StatusCode)
 		}
 	}
 }

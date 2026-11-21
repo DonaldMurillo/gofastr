@@ -22,3 +22,14 @@ func TestAddRebuildsClient(t *testing.T) {
 		t.Fatalf("client after --add must cover old and new entities:\n%s", out)
 	}
 }
+
+// An unknown flag is bad usage, exit 2, the same status the rest of the
+// generate family answers; `generate client` used to exit 1.
+func TestGenerateClientUnknownFlagExitsTwo(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunGenerateClient([]string{"--zzz-unknown-flag=1"}) })
+	})
+	if code != 2 {
+		t.Fatalf("generate client --zzz exited %d, want 2", code)
+	}
+}

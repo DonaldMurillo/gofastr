@@ -10,7 +10,7 @@ import (
 )
 
 func TestPaletteTriggerRequestLocale(t *testing.T) {
-	french := frenchCtx(map[i18n.Phrase]string{
+	french := frenchWords(map[i18n.Phrase]string{
 		i18nui.CommandPaletteOpen:        "Ouvrir les commandes",
 		i18nui.CommandPalettePlaceholder: "Rechercher une commande",
 		i18nui.CommandPaletteTitle:       "Commandes",
@@ -50,7 +50,7 @@ func TestPaletteTriggerRequestLocale(t *testing.T) {
 }
 
 func TestPaletteTriggerKeepsOverrides(t *testing.T) {
-	ctx := frenchCtx(map[i18n.Phrase]string{i18nui.CommandPalettePlaceholder: "Rechercher"})
+	ctx := frenchWords(map[i18n.Phrase]string{i18nui.CommandPalettePlaceholder: "Rechercher"})
 	cfg := CommandPaletteConfig{FallbackHref: "/search", RPCPath: "/commands", Trigger: PaletteTriggerField,
 		TriggerLabel: "Find & open", TriggerText: "Search my workspace", Placeholder: "Find a page", Shortcut: "Alt+P"}
 	trigger := string(CommandPaletteTrigger(ctx, cfg))

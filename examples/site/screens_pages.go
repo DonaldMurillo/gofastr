@@ -34,13 +34,6 @@ func codeText(s string) render.HTML { return ui.InlineCode(s) }
 // em dashes for long-form prose; the index uses lighter sentence punctuation.
 func cardCopy(s string) string { return strings.ReplaceAll(s, " — ", ": ") }
 
-// boolPtr returns a pointer to b, used for *bool config fields like
-// ui.CalloutConfig.Landmark where nil means "default" and false must be
-// distinguishable from unset.
-//
-//go:fix inline
-func boolPtr(b bool) *bool { return new(b) }
-
 // tagAccent, the version pill used in multiple page heroes. Thin adapter
 // over the framework's ui.StatusPill (accent tone + dot).
 func tagAccent(label string) render.HTML {

@@ -5,11 +5,16 @@
 // The match is deliberately narrow. A path the router could resolve to
 // something other than what the gate saw is never open:
 //
-//   - a path that is not already clean ("/api/../admin", "/api//x"),
-//     because a router that cleans it serves a different route;
-//   - a path with any percent-encoded byte (r.URL.RawPath set:
-//     "/api%2Fx"), because a router that matches on the escaped path
-//     sees different segments than the decoded one;
+//   - a path that is not clean ("/api/../admin", "/api//x"), because a
+//     router that cleans it serves a different route — except a single
+//     trailing slash ("/api/"), whose clean form plus "/" is the path
+//     itself, so the gate matches it as the prefix;
+//   - a request whose URL carries a RawPath ("/api%2Fx", "/%61pi"),
+//     a percent-encoding that is not the canonical escaping of the
+//     decoded path, because a router that matches on the escaped path
+//     sees different segments than the decoded one. A canonical
+//     escaping leaves RawPath empty ("/api/caf%C3%A9") and is matched
+//     on its decoded form;
 //   - a prefix match that is not on a segment boundary ("/apix" is not
 //     under "/api").
 //

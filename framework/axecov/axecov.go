@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
-	"github.com/DonaldMurillo/gofastr/internal/filelock"
 )
 
 // FileName is the manifest's path under the coverage root.
@@ -35,18 +34,11 @@ func Record(dir, path, scheme string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	file := filepath.Join(dir, FileName)
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return fmt.Errorf("axecov: create %s: %w", filepath.Dir(file), err)
-	}
-	lock, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := coverageroot.LockManifest(filepath.Join(dir, lockName), "axecov")
 	if err != nil {
-		return fmt.Errorf("axecov: open lock: %w", err)
+		return err
 	}
 	defer lock.Close()
-	if err := filelock.Lock(lock); err != nil {
-		return fmt.Errorf("axecov: lock manifest: %w", err)
-	}
 
 	m, err := readLocked(dir)
 	if err != nil {
@@ -60,27 +52,7 @@ func Record(dir, path, scheme string) error {
 		slices.Sort(m.Pages[p])
 	}
 
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("axecov: encode manifest: %w", err)
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(file), "axe-coverage-*.tmp")
-	if err != nil {
-		return fmt.Errorf("axecov: write manifest: %w", err)
-	}
-	_, werr := tmp.Write(append(data, '\n'))
-	if cerr := tmp.Close(); werr == nil {
-		werr = cerr
-	}
-	if werr != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("axecov: write manifest: %w", werr)
-	}
-	if err := os.Rename(tmp.Name(), file); err != nil {
-		os.Remove(tmp.Name())
-		return fmt.Errorf("axecov: replace manifest: %w", err)
-	}
-	return nil
+	return coverageroot.WriteManifest(filepath.Join(dir, FileName), "axecov", m, nil)
 }
 
 // Read loads dir's manifest; a missing one is fs.ErrNotExist.
@@ -123,5 +95,5 @@ func normalizePath(raw string) string {
 // DefaultDir is GOFASTR_AXE_COVERAGE_DIR, else the nearest go.work or
 // go.mod directory above the working directory, else the working directory.
 func DefaultDir() string {
-	return coverageroot.Resolve("GOFASTR_AXE_COVERAGE_DIR")
+	return coverageroot.Resolve(coverageroot.AxeDirEnv)
 }

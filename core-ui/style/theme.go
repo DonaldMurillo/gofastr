@@ -185,20 +185,8 @@ func autofillTokens(v reflect.Value, path []string) {
 	if v.Kind() != reflect.Struct {
 		return
 	}
-	if v.Type() == reflect.TypeFor[CodeColor]() {
-		nameField := v.FieldByName("Name")
-		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
-			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(derivedTokenName(path[len(path)-1]))
-		}
-		return
-	}
-	if isOptionalStringToken(v.Type()) {
-		nameField := v.FieldByName("Name")
-		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
-			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(derivedTokenName(path[len(path)-1]))
-		}
+	if v.Type() == reflect.TypeFor[CodeColor]() || isOptionalStringToken(v.Type()) {
+		autofillName(v, path)
 		return
 	}
 	switch v.Type() {
@@ -231,6 +219,13 @@ func autofillTokens(v reflect.Value, path []string) {
 	}
 }
 
+func autofillName(v reflect.Value, path []string) {
+	nameField := v.FieldByName("Name")
+	if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
+		len(path) > 0 && nameField.CanSet() {
+		nameField.SetString(derivedTokenName(path[len(path)-1]))
+	}
+}
 func derivedTokenName(field string) string {
 	switch field {
 	case "XXL":

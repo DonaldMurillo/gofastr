@@ -1,9 +1,12 @@
-// Package queue provides a pluggable job queue with in-memory and Redis backends,
-// a goroutine pool for concurrent processing, and scheduled job support.
+// Package queue provides a pluggable job queue with in-memory, SQL
+// (DBQueue) and Redis backends, a goroutine pool for concurrent
+// processing, and scheduled job support.
 package queue
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -165,6 +168,35 @@ func pastMaxAge(job Job, next time.Time) bool {
 
 // errNegativeMaxAge refuses a job whose MaxAge is negative.
 var errNegativeMaxAge = errors.New("queue: Job.MaxAge must not be negative")
+
+// normalizeJob validates age and fills in the ID before setting timestamps
+// and defaulting the attempt limit.
+func normalizeJob(job *Job, setTimestamps func(*Job)) error {
+	if job.MaxAge < 0 {
+		return errNegativeMaxAge
+	}
+	if job.ID == "" {
+		job.ID = randomID()
+	}
+	setTimestamps(job)
+	if job.MaxAttempts == 0 {
+		job.MaxAttempts = 3
+	}
+	return nil
+}
+
+func defaultCreatedAt(job *Job, now func() time.Time) {
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now()
+	}
+}
+
+// randomID generates a 16-byte hex string ID.
+func randomID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 // Queue is the interface that every queue backend must implement.
 type Queue interface {

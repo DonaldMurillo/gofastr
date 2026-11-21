@@ -61,11 +61,6 @@ func deriveKey(secret []byte, purpose string) []byte {
 	return key
 }
 
-func sessionKeyForMount(secret []byte, fanoutAttached bool) ([]byte, error) {
-	current, _, err := sessionKeysForMount(secret, nil, fanoutAttached)
-	return current, err
-}
-
 func sessionKeysForMount(secret []byte, previous [][]byte, fanoutAttached bool) ([]byte, [][]byte, error) {
 	if len(secret) > 0 {
 		current := deriveKey(secret, uihostSessionPurpose)

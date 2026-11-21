@@ -11,7 +11,7 @@ import (
 )
 
 func TestBellTriggerRequestLocale(t *testing.T) {
-	french := frenchCtx(map[i18n.Phrase]string{
+	french := frenchWords(map[i18n.Phrase]string{
 		i18nui.HuiNotificationCount: "{{n}} notifications non lues", i18nui.NotificationEmpty: "Aucune notification",
 	})
 	cfg := NotificationBellConfig{Name: "inbox", Href: "/inbox", Label: "Inbox {{n}} & news", Ctx: french}
@@ -53,7 +53,7 @@ func TestBellTriggerRequestLocale(t *testing.T) {
 
 func TestBellTriggerKeepsCallerText(t *testing.T) {
 	cfg := NotificationBellConfig{Name: "inbox", Href: "/inbox", Label: "Delivery alerts", EmptyText: "All delivered"}
-	ctx := frenchCtx(map[i18n.Phrase]string{i18nui.NotificationEmpty: "Aucune notification"})
+	ctx := frenchWords(map[i18n.Phrase]string{i18nui.NotificationEmpty: "Aucune notification"})
 	_, body := NotificationBell(cfg)
 	if trigger := string(NotificationBellTrigger(ctx, cfg)); !strings.Contains(trigger, `aria-label="Delivery alerts: 0 unread notifications"`) {
 		t.Errorf("request trigger discarded the caller's label: %s", trigger)

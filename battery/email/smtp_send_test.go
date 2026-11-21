@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -29,12 +30,19 @@ func TestSendIgnoresQuitAfterAccept(t *testing.T) {
 // A refusal before acceptance is a failed send and wraps ErrSendFailed,
 // as the package promises.
 func TestSendRejectedDataWrapsErrSendFailed(t *testing.T) {
-	srv := newRecordingSMTP(t)
-	defer srv.ln.Close()
-	srv.dataReply = "554 rejected"
+	for _, reply := range []string{"rejected", "something went wrong"} {
+		t.Run(reply, func(t *testing.T) {
+			srv := newRecordingSMTP(t)
+			defer srv.ln.Close()
+			srv.dataReply = "554 " + reply
 
-	err := srv.senderFor().Send(context.Background(), simpleMail())
-	if !errors.Is(err, ErrSendFailed) {
-		t.Fatalf("Send with DATA refused returned %v, want an ErrSendFailed", err)
+			err := srv.senderFor().Send(context.Background(), simpleMail())
+			if !errors.Is(err, ErrSendFailed) {
+				t.Fatalf("Send with DATA refused returned %v, want an ErrSendFailed", err)
+			}
+			if !strings.Contains(err.Error(), "email: send failed") || !strings.Contains(err.Error(), reply) {
+				t.Errorf("Send error = %q, want the sentinel text and the relay's refusal", err)
+			}
+		})
 	}
 }

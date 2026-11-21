@@ -45,7 +45,7 @@ func TestStoreRefusesRoutePrefix(t *testing.T) {
 	if got := Route.Title.Name(); got != "route.title" {
 		t.Errorf("Route.Title.Name() = %q, want route.title", got)
 	}
-	p1, p2 := RouteSlices{}.Param("id"), RouteSlices{}.Param("id")
+	p1, p2 := Route.Param("id"), Route.Param("id")
 	if p1 != p2 || p1.Name() != "route.params.id" {
 		t.Errorf("Route.Param re-declaration must be idempotent, got %p/%p (%s)", p1, p2, p1.Name())
 	}

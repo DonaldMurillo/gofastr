@@ -878,10 +878,7 @@ func (i *index) Query(ctx context.Context, q Query) (hits []Hit, err error) {
 	if q.Text == "" {
 		return nil, nil
 	}
-	k := q.K
-	if k <= 0 {
-		k = 10
-	}
+	k := defaultTop(q.K)
 	if k > maxQueryK {
 		// Clamp attacker-controllable K so candidateWidth cannot drive an
 		// unbounded candidate allocation. Fail closed silently: a too-large

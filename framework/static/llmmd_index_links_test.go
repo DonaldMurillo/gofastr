@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,6 +22,66 @@ type goneScreen struct{}
 
 func (*goneScreen) ScreenStatusCode() int { return 404 }
 func (*goneScreen) Render() render.HTML   { return "<p>gone</p>" }
+
+func TestExpandLiteralColonRoute(t *testing.T) {
+	const route = "/a:b"
+	ctx := context.Background()
+	a := coreapp.NewApp("literal-colon")
+	a.Register(route, &homeScreen{}, nil)
+	if _, params, ok := a.Router.Resolve(route); !ok || len(params) != 0 {
+		t.Fatalf("router resolved %q = %t with params %v, want a literal route", route, ok, params)
+	}
+	paths, err := expandRoute(ctx, a, route)
+	if err != nil || !slices.Equal(paths, []string{route}) {
+		t.Fatalf("expandRoute(%q) = %v, %v, want [%s]", route, paths, err, route)
+	}
+}
+
+func TestBuildRefusesNonPortableRouteBeforeWriting(t *testing.T) {
+	for _, tc := range []struct {
+		name, route, slug, locale string
+		redirect                  bool
+	}{
+		{name: "colon", route: "/a:b"},
+		{name: "nested reserved name", route: "/posts/CoN.txt"},
+		{name: "trailing dot", route: "/posts/ending."},
+		{name: "reserved punctuation", route: "/has*star"},
+		{name: "question mark", route: "/posts/:slug", slug: "a?b"},
+		{name: "expanded path", route: "/posts/:slug", slug: "chapter/a:b"},
+		{name: "redirect", route: "/old/AUX", redirect: true},
+		{name: "locale prefix", route: "/", locale: "aux"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := coreapp.NewApp("portable-path")
+			a.Register("/", &homeScreen{}, nil)
+			switch {
+			case tc.redirect:
+				a.Redirect(tc.route, "/")
+			case tc.slug != "":
+				a.Register(tc.route, &keyedScreen{paths: []map[string]string{{"slug": tc.slug}}}, nil)
+			case tc.route != "/":
+				a.Register(tc.route, &homeScreen{}, nil)
+			}
+			host := uihost.New(a)
+			if tc.locale != "" {
+				host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{tc.locale}})
+			}
+			root := t.TempDir()
+			out := filepath.Join(root, "site")
+			_, err := (&Builder{Host: host, OutDir: out}).Build(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tc.route) || !strings.Contains(err.Error(), "portable filename") {
+				t.Errorf("Build = %v, want a portable filename error naming %q", err, tc.route)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("export touched the output before rejecting %q: %v", tc.route, entries)
+			}
+		})
+	}
+}
 
 // The exported page index links docs the export wrote: a StaticPaths
 // route linked /products/:slug/llm.md, a file no export writes, and

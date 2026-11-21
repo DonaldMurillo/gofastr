@@ -282,13 +282,11 @@ facts stay in view while a long form scrolls, and stacked under it
 empty `Side` leaves the main column full width, and an empty `Main`
 leaves the side column full width.
 
-Note that `ui.Form` caps its own measure at `--ui-form-max` (42rem by
-default), which sits below the split point: a record page that wants
-the rail widens the form (`--ui-form-max`) or draws the frame outside
-the capped form element.
+`ui.Form` defaults to a maximum width of 42rem. Set `FormConfig.Wide`
+to lift that cap so the frame can split when it has at least 48rem.
 
 ```go
-ui.Form(ui.FormConfig{Action: "/customers/42", ID: "customer"},
+ui.Form(ui.FormConfig{Action: "/customers/42", ID: "customer", Wide: true},
     ui.FormFrame(ui.FormFrameConfig{
         Main: []render.HTML{numberField, amountField, datesSection},
         Side: []render.HTML{statusField, customerField},
@@ -381,7 +379,8 @@ headless counterpart, so it ships as framework/ui's own module.
 
 ## Demo page
 
-`/components/forms` is a demo page showing every form component with live examples, validation round-trip, and accessible markup.
+In `examples/site`, each form component has a live demo on its own
+`/components/<slug>` page.
 
 ## Common mistakes
 

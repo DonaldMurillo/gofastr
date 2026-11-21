@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+import "github.com/DonaldMurillo/gofastr/evals/internal/proctree"
+
 func bash(cmd string) toolEvent { return toolEvent{Name: "Bash", Command: cmd} }
 
 func TestShimAttributesDevRebuildToGofastr(t *testing.T) {
@@ -283,12 +285,12 @@ func TestReapKillsDetachedServer(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	reapUnder(dir)
+	proctree.KillUnder(dir, reapGrace)
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
-		t.Fatal("detached process under the trial dir survived reapUnder")
+		t.Fatal("detached process under the trial dir survived KillUnder")
 	}
 }
 

@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"html"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,13 @@ type idOp struct {
 	children []string
 	reserve  bool
 	split    bool
+}
+
+func (r *regionLog) add(op idOp) int {
+	i := len(r.ops)
+	op.children = slices.Clone(op.children)
+	r.ops = append(r.ops, op)
+	return i
 }
 
 const tokenPrefix = "gofastr-idref-"
@@ -119,8 +127,8 @@ func UniqueID(ctx context.Context, id string, children ...string) string {
 	if s.rec != nil && tokenSafe(id, children) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children})
-		return s.rec.prefix + strconv.Itoa(len(s.rec.ops)-1) + "z"
+		i := s.rec.add(idOp{id: id, children: children})
+		return s.rec.prefix + strconv.Itoa(i) + "z"
 	}
 	pre, suf := s.split(id, children)
 	return pre + id + suf
@@ -129,8 +137,7 @@ func UniqueID(ctx context.Context, id string, children ...string) string {
 func (s *idScope) split(id string, children []string) (pre, suf string) {
 	s.mu.Lock()
 	if s.rec != nil {
-		k := strconv.Itoa(len(s.rec.ops))
-		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children, split: true})
+		k := strconv.Itoa(s.rec.add(idOp{id: id, children: children, split: true}))
 		s.mu.Unlock()
 		return s.rec.prefix + k + "p", s.rec.prefix + k + "s"
 	}
@@ -192,7 +199,7 @@ func ReserveID(ctx context.Context, id string, children ...string) {
 	s.mu.Lock()
 	s.take(id, children)
 	if s.rec != nil {
-		s.rec.ops = append(s.rec.ops, idOp{id: id, children: children, reserve: true})
+		s.rec.add(idOp{id: id, children: children, reserve: true})
 	}
 	outer := s.outer
 	s.mu.Unlock()

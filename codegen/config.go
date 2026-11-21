@@ -50,6 +50,21 @@ var ErrCommandExtensionNotAllowed = errors.New("codegen: discovered config decla
 // from a config nobody named on the command line.
 const commandOptInEnv = "GOFASTR_CODEGEN_ALLOW_COMMANDS"
 
+// CommandExtensionDetails describes the config path and its command extensions.
+// It returns an empty string when the config declares no commands.
+func (d Discovery) CommandExtensionDetails() string {
+	var named []string
+	for _, ext := range d.Config.Codegen.Extensions {
+		if len(ext.Command) > 0 {
+			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
+		}
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	return d.Path + " runs\n  " + strings.Join(named, "\n  ")
+}
+
 // CheckCommandExtensions refuses to run `command` extensions that came
 // from a DISCOVERED config unless the operator opted in.
 //
@@ -60,13 +75,8 @@ func CheckCommandExtensions(d Discovery) error {
 	if !d.Found || !d.Discovered {
 		return nil
 	}
-	var named []string
-	for _, ext := range d.Config.Codegen.Extensions {
-		if len(ext.Command) > 0 {
-			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
-		}
-	}
-	if len(named) == 0 {
+	details := d.CommandExtensionDetails()
+	if details == "" {
 		return nil
 	}
 	if v := os.Getenv(commandOptInEnv); v != "" {
@@ -74,8 +84,8 @@ func CheckCommandExtensions(d Discovery) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %s runs\n  %s\nRun it with --config %s, or set %s=1 to allow commands from a discovered config",
-		ErrCommandExtensionNotAllowed, d.Path, strings.Join(named, "\n  "), d.Path, commandOptInEnv)
+	return fmt.Errorf("%w: %s\nRun it with --config %s, or set %s=1 to allow commands from a discovered config",
+		ErrCommandExtensionNotAllowed, details, d.Path, commandOptInEnv)
 }
 
 // LoadConfig reads the codegen section of the settings file at path.
@@ -97,7 +107,7 @@ func decodeSettings(f settings.File) (Config, error) {
 
 // DecodeConfig decodes a parsed YAML node into Config.
 func DecodeConfig(node *coreyaml.Node) (Config, error) {
-	root, err := expectMap(node, "config")
+	root, err := coreyaml.ExpectMap(node, "config")
 	if err != nil {
 		return Config{}, err
 	}
@@ -124,7 +134,7 @@ func DecodeConfig(node *coreyaml.Node) (Config, error) {
 }
 
 func decodeCodegen(node *coreyaml.Node) (CodegenConfig, error) {
-	m, err := expectMap(node, "codegen")
+	m, err := coreyaml.ExpectMap(node, "codegen")
 	if err != nil {
 		return CodegenConfig{}, err
 	}
@@ -141,7 +151,7 @@ func decodeCodegen(node *coreyaml.Node) (CodegenConfig, error) {
 		cfg.Output = "gen"
 	}
 	if m["clean"] != nil {
-		v, err := requiredBoolValue(m["clean"], "codegen.clean")
+		v, err := coreyaml.BoolValue(m["clean"], "codegen.clean")
 		if err != nil {
 			return CodegenConfig{}, err
 		}
@@ -173,7 +183,7 @@ func decodeGenerators(node *coreyaml.Node) ([]GeneratorConfig, error) {
 	}
 	out := make([]GeneratorConfig, 0, len(list))
 	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("codegen.generators[%d]", i))
+		m, err := coreyaml.ExpectMap(item, fmt.Sprintf("codegen.generators[%d]", i))
 		if err != nil {
 			return nil, err
 		}
@@ -218,7 +228,7 @@ func decodeSource(node *coreyaml.Node, label string) (SourceConfig, error) {
 	if node == nil {
 		return SourceConfig{}, nil
 	}
-	m, err := expectMap(node, label)
+	m, err := coreyaml.ExpectMap(node, label)
 	if err != nil {
 		return SourceConfig{}, err
 	}
@@ -250,7 +260,7 @@ func decodeExtensions(node *coreyaml.Node) ([]ExtensionConfig, error) {
 	}
 	out := make([]ExtensionConfig, 0, len(list))
 	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("codegen.extensions[%d]", i))
+		m, err := coreyaml.ExpectMap(item, fmt.Sprintf("codegen.extensions[%d]", i))
 		if err != nil {
 			return nil, err
 		}
@@ -326,13 +336,6 @@ func validateConfig(cfg CodegenConfig, requireExtensionCommands bool) error {
 	return nil
 }
 
-func expectMap(node *coreyaml.Node, label string) (map[string]*coreyaml.Node, error) {
-	if node == nil || node.Kind != coreyaml.Map {
-		return nil, fmt.Errorf("%s must be a map", label)
-	}
-	return node.Map, nil
-}
-
 func expectList(node *coreyaml.Node, label string) ([]*coreyaml.Node, error) {
 	if node == nil || node.Kind != coreyaml.List {
 		return nil, fmt.Errorf("%s must be a list", label)
@@ -362,17 +365,6 @@ func optionalStringValue(node *coreyaml.Node, label string) (string, error) {
 		return "", fmt.Errorf("%s must be a string", label)
 	}
 	return value, nil
-}
-
-func requiredBoolValue(node *coreyaml.Node, label string) (bool, error) {
-	if node == nil || node.Kind != coreyaml.Scalar {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	v, ok := node.Value.(bool)
-	if !ok {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	return v, nil
 }
 
 func optionalIntValue(node *coreyaml.Node, label string) (int, error) {

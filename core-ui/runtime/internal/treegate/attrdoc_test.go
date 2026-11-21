@@ -118,6 +118,31 @@ func documentedAttrs(t *testing.T) map[string]struct{} {
 	return set
 }
 
+// tableRowAttrs returns the data-cui-* attributes named in the first
+// column of a markdown table row in doc. A mention in a description
+// cell or in prose is not a row.
+func tableRowAttrs(doc string) map[string]struct{} {
+	set := map[string]struct{}{}
+	for _, line := range strings.Split(doc, "\n") {
+		cells := strings.Split(strings.TrimSpace(line), "|")
+		if len(cells) < 3 || cells[0] != "" {
+			continue
+		}
+		for _, m := range AttrPattern.FindAllString(cells[1], -1) {
+			set[strings.TrimRight(m, "-")] = struct{}{}
+		}
+	}
+	return set
+}
+
+func TestProseMentionIsNotARow(t *testing.T) {
+	doc := "| `data-cui-a` | sets `data-cui-b` |\n|---|---|\nProse names `data-cui-c`.\n"
+	got := tableRowAttrs(doc)
+	if _, ok := got["data-cui-a"]; !ok || len(got) != 1 {
+		t.Fatalf("tableRowAttrs = %v, want only data-cui-a", got)
+	}
+}
+
 // goInteractiveAttrs scans the Go source files in core-ui/interactive for
 // literal "data-cui-*" string constants that the package emits as HTML
 // attributes. These are the names the Go side promises to the runtime contract
@@ -284,7 +309,11 @@ func TestGoInteractiveAttrs_F3NameAbsent(t *testing.T) {
 // via the camelCase `dataset` API, matched by CSS, or emitted by Go SSR, so a
 // literal doc→JS check would false-positive on legitimate markers.
 func TestRuntimeAttrsAreDocumented(t *testing.T) {
-	doc := documentedAttrs(t)
+	raw, err := os.ReadFile(filepath.Join(coreUI, "ARCHITECTURE.md"))
+	if err != nil {
+		t.Fatalf("read ARCHITECTURE.md: %v", err)
+	}
+	doc := tableRowAttrs(string(raw))
 	var missing []string
 	// The runtime's own sources and every registered behaviour's: a
 	// module that moved out of this package keeps hard rule 5 with it.

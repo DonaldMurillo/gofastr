@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 func redirects(w http.ResponseWriter, r *http.Request) {
@@ -49,3 +50,18 @@ func cleanedHelpers(w http.ResponseWriter, r *http.Request) {
 // since the email round-2 probe (quoteParamValue), a same-package name
 // buys nothing without the byte-level evidence, so this fires.
 func sanitizeIt(s string) string { return s }
+
+func scrubOctal(s string) string {
+	var b strings.Builder
+	for i := range len(s) {
+		if s[i] < 040 {
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func writeOctal(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Path", scrubOctal(r.URL.Path))
+}

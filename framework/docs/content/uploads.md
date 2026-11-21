@@ -145,7 +145,8 @@ not uploaded by this request"]}}`. An absolute `http(s)` URL is always
 accepted: it is an external link, and erasure never deletes it.
 `file.IsExternalURL(s)` is the check both sides use, and
 `file.VariantStorageRefs(raw)` reads the keys a `<field>_variants` value
-names.
+names. Its second result is true for a decoded array, including `[]`,
+and false for `null`.
 
 ```go
 ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
@@ -337,7 +338,7 @@ BlurHash-versus-LQIP trade-off.
 
 | Field            | Effect                                                      |
 |------------------|-------------------------------------------------------------|
-| `Variants`       | Renditions to produce and store. `Suffix` (or width) plus the format's extension names each file; `New` refuses two that name the same one. |
+| `Variants`       | Renditions to produce and store. `Suffix` (or width) plus the format's extension names each file. `imagefield.New` uses `image.CheckVariants` to check the count, widths, encodings and names at configuration time. `VariantSet.ProcessTo` runs the same checks before calling its sink. |
 | `BlurHashX/Y`    | BlurHash component counts, 1..9. Both zero = no hash; setting only one is an error. 4×3 landscape, 3×4 portrait. |
 | `Placeholder`    | Also store an LQIP data URL. Usually redundant next to a BlurHash; ~28 bytes versus a few hundred, and both render identically. |
 | `RejectAnimated` | Fail the upload on a multi-frame source instead of silently keeping frame one. Worth setting on avatars. |
@@ -508,7 +509,8 @@ Uploads are bounded and content-checked before anything is stored:
   those fields are echoed into `Content-Disposition`, HTML attributes,
   and log lines, each of which a CR/LF splits. `ProcessFileField` strips
   control bytes from the multipart filename, so the metadata it returns
-  always passes its own `Validate`.
+  always passes its own `Validate`. Primary and rendition MIME strings
+  share the `file.MaxFileFieldStringBytes` limit (8 KiB).
 - **Required** is enforced from the field declaration, like any other
   field.
 
@@ -560,7 +562,7 @@ What it removes:
 | Format | Removed | How |
 |--------|---------|-----|
 | JPEG | every APPn segment (EXIF, XMP, ICC, Photoshop data) and COM comments; anything after EOI. The Adobe APP14 colour marker stays, cut to its 12 bytes: a CMYK JPEG does not decode without it | segments spliced out; no re-encode unless a rotation is needed |
-| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks; anything after IEND | re-encoded (PNG is lossless, pixels unchanged); an animated PNG is spliced instead, every frame chunk kept; a PNG with only a trailer is cut at IEND |
+| PNG | `tEXt`, `zTXt`, `iTXt`, `eXIf` chunks; anything after IEND | still images with metadata are re-encoded losslessly, preserving 16-bit channels and straight alpha during rotation or mirroring. Animated images keep every frame chunk. A PNG with only a trailer is cut at IEND |
 | WebP | `EXIF` and `XMP ` chunks; anything past the RIFF size | container rewritten, image bytes untouched |
 
 An EXIF orientation of 2–8 is applied first so the stripped photo still
@@ -579,9 +581,9 @@ Behaviour worth knowing:
   unchanged, as does every non-JPEG/PNG/WebP upload (GIF included).
 - It runs before the image pipeline, so renditions and the BlurHash are
   derived from the stripped bytes, and `FileField.Size` reflects them.
-- It fails closed: a JPEG, PNG, or WebP whose structure cannot be
-  walked fails the upload rather than being stored unstripped. A WebP RIFF
-  size that omits the form tag or leaves no chunks is refused before storage.
+- The upload fails before storage if the JPEG, PNG or WebP structure
+  cannot be walked. JPEG needs an EOI marker and PNG needs an IEND chunk.
+  A WebP RIFF size must include the form tag and leave room for chunks.
 
 ## Storage backends
 
@@ -631,7 +633,7 @@ Built-in implementations:
   can't execute as script in a victim's browser (stored-XSS guard).
   Suitable for tests and single-host deployments.
 - `battery/storage`: local, S3, and in-memory backends behind the same
-  interface, plus a declarative factory registry.
+  interface.
 - (Add GCS / Azure adapters in your own code by implementing
   `Storage`.)
 

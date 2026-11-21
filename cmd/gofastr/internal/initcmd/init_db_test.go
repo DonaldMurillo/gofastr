@@ -14,18 +14,19 @@ import (
 func TestInitRejectsUnknownDBDriver(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
-	// osExit unwinds via panic (covT_capExit), and covT_capStdout reads its
-	// temp file only AFTER fn returns, so the read is skipped on the panic
-	// path. Swap os.Stdout ourselves and read inline once covT_capExit has
-	// recovered the panic (it returns normally, so execution continues here).
-	old := os.Stdout
-	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	// osExit unwinds via panic (covT_capExit), and the capture helpers read
+	// their temp file only AFTER fn returns, so the read is skipped on the
+	// panic path. Swap os.Stderr ourselves (the ✗ refusal goes there) and
+	// read inline once covT_capExit has recovered the panic (it returns
+	// normally, so execution continues here).
+	old := os.Stderr
+	f, err := os.CreateTemp(t.TempDir(), "stderr-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = f
+	os.Stderr = f
 	code := clitest.CovT_capExit(t, func() { RunInit([]string{"app", "--db=mysql"}) })
-	os.Stdout = old
+	os.Stderr = old
 	_ = f.Close()
 	captured, err := os.ReadFile(f.Name())
 	if err != nil {

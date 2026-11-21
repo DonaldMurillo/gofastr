@@ -21,6 +21,20 @@ func SafeIdent(s string) (string, error) {
 	return s, nil
 }
 
+// SafeColumns validates each column through SafeIdent and wraps the first
+// error as `invalid <label> "<name>": <why>`.
+func SafeColumns(cols []string, label string) ([]string, error) {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		s, err := SafeIdent(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s %q: %w", label, c, err)
+		}
+		out[i] = s
+	}
+	return out, nil
+}
+
 // MaxIdentBytes is the longest identifier Postgres keeps (NAMEDATALEN-1).
 const MaxIdentBytes = 63
 

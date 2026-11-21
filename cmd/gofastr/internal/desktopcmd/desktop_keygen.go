@@ -28,8 +28,7 @@ func parseDesktopKeygenFlags(args []string) desktopKeygenFlags {
 	if _, err := cli.ParseFlags(args, map[string]*string{
 		"-o": &f.out, "--o": &f.out, "-out": &f.out, "--out": &f.out,
 	}, map[string]*bool{"--help": &help, "-h": &help}); err != nil {
-		cli.Fail("keygen: %v", err)
-		cli.OsExit(1)
+		cli.UsageFail("keygen: %v", err)
 		return f
 	}
 	if help {
@@ -48,7 +47,7 @@ func runDesktopKeygen(args []string) {
 	if f.out == "" {
 		cli.Fail("keygen needs -o <path> (where the private key file goes)")
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)

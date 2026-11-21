@@ -72,6 +72,7 @@ func ParseTokens(src string) (*TokensFile, []Diagnostic) {
 		pos         Pos
 	}
 	var darks []darkDecl
+	hasDarkBlock := false
 	for _, r := range sheet.Rules {
 		switch {
 		case r.At && r.Name == "property" && r.Block:
@@ -86,10 +87,16 @@ func ParseTokens(src string) (*TokensFile, []Diagnostic) {
 			index[tk.Key] = len(f.Tokens)
 			f.Tokens = append(f.Tokens, tk)
 		case r.At && r.Name == "media" && r.Block:
-			if compactPrelude(r.Prel[1:]) != "(--dark)" {
+			query := significantTokens(mediaQueryTokens(r.Prel))
+			if !isCustomMedium(query) || query[1].Text != "--dark" {
 				bad(r.Pos, "a tokens file's only media block is @media (--dark), for dark colour values; found %s", r.Text)
 				continue
 			}
+			if hasDarkBlock {
+				bad(r.Pos, "a tokens file may contain at most one @media (--dark) block")
+				continue
+			}
+			hasDarkBlock = true
 			for _, d := range r.Decls {
 				bad(d.Pos, "write dark values inside :root { } in the @media (--dark) block")
 			}
@@ -97,6 +104,9 @@ func ParseTokens(src string) (*TokensFile, []Diagnostic) {
 				if n.At || n.Text != ":root" {
 					bad(n.Pos, "write dark values inside :root { } in the @media (--dark) block; found %s", n.Text)
 					continue
+				}
+				for _, nested := range n.Nested {
+					bad(nested.Pos, ":root in a tokens file's @media (--dark) block holds only dark colour declarations; found %s", nested.Text)
 				}
 				for _, d := range n.Decls {
 					darks = append(darks, darkDecl{strings.TrimPrefix(d.Name, "--"), strings.TrimSpace(d.ValueSrc), d.Pos})
@@ -201,16 +211,6 @@ func parseProperty(r *Rule, bad func(Pos, string, ...any)) (AppToken, bool) {
 		return AppToken{}, false
 	}
 	return AppToken{Key: key, Value: value, Light: initial, Doc: r.Doc, Pos: pos}, true
-}
-
-func compactPrelude(toks []Token) string {
-	var b strings.Builder
-	for _, t := range toks {
-		if significant(t) {
-			b.WriteString(t.Text)
-		}
-	}
-	return b.String()
 }
 
 type tokenGroup struct {
@@ -448,7 +448,7 @@ func DuplicateTokenValues(app []AppTokenAt, builtins map[string]string) []FileDi
 	type slot struct{ cat, value string }
 	owners := map[slot]string{}
 	for _, k := range slices.Sorted(maps.Keys(builtins)) {
-		if strings.Contains(k, ".") || bareKeyword(builtins[k]) {
+		if strings.Contains(k, ".") || style.BareKeyword(builtins[k]) {
 			continue
 		}
 		s := slot{style.TokenCategory(k), strings.ToLower(strings.TrimSpace(builtins[k]))}
@@ -459,7 +459,7 @@ func DuplicateTokenValues(app []AppTokenAt, builtins map[string]string) []FileDi
 	var out []FileDiagnostic
 	for _, a := range app {
 		v := strings.TrimSpace(a.Token.Light)
-		if bareKeyword(v) {
+		if style.BareKeyword(v) {
 			continue
 		}
 		s := slot{style.TokenCategory(a.Token.Key), strings.ToLower(v)}

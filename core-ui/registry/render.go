@@ -30,14 +30,6 @@ func (s *Style) WrapHTML(html render.HTML) render.HTML {
 
 var markerAttrs = []string{"comp", "scope"}
 
-func markerNameByte(c byte) bool {
-	switch {
-	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		return true
-	}
-	return c == '_' || c == ':' || c == '.' || c == '-'
-}
-
 // Scan returns the sorted sheet names the rendered html's markers reference, template content excluded.
 func Scan(html string) []string {
 	live, _ := ScanSplit(html)
@@ -56,7 +48,7 @@ func ScanSplit(html string) (live, held []string) {
 
 func scanNames(html string, skip []string) []string {
 	seen := map[string]struct{}{}
-	for n := range attrscan.Values(html, markerAttrs, markerNameByte, true) {
+	for n := range attrscan.Values(html, markerAttrs, isTagNameByte, true) {
 		seen[n] = struct{}{}
 	}
 	for _, n := range skip {

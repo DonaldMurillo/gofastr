@@ -42,7 +42,7 @@ func TestDesktopBuildRefusesMisplacedSigningFlags(t *testing.T) {
 
 			args := append([]string{"--id", "dev.gofastr.x", "--pkg", "./does/not/exist"}, tc.args...)
 			var code int
-			out := clitest.CovT_capStdout(t, func() {
+			out := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() { runDesktopBuildForOS(args, tc.targetOS) })
 			})
 			if code != 1 {

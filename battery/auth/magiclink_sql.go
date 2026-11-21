@@ -73,16 +73,22 @@ func (s *SQLMagicLinkTokenStore) ensureTable(ctx context.Context) error {
 	return err
 }
 
-// DeleteTokensForPayload removes every unredeemed token carrying payload.
-// Implements [MagicLinkTokenPurger].
-func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, payload string) (int, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE email = $1`, query.QuoteFolded(s.table))
-	res, err := s.db.ExecContext(ctx, q, payload)
+// execPurgeCount runs a DELETE that binds one identifier and answers how
+// many rows it removed.
+func execPurgeCount(ctx context.Context, db *sql.DB, q, id string) (int, error) {
+	res, err := db.ExecContext(ctx, q, id)
 	if err != nil {
 		return 0, err
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
+}
+
+// DeleteTokensForPayload removes every unredeemed token carrying payload.
+// Implements [MagicLinkTokenPurger].
+func (s *SQLMagicLinkTokenStore) DeleteTokensForPayload(ctx context.Context, payload string) (int, error) {
+	q := fmt.Sprintf(`DELETE FROM %s WHERE email = $1`, query.QuoteFolded(s.table))
+	return execPurgeCount(ctx, s.db, q, payload)
 }
 
 // CreateToken generates a cryptographically random token, persists it with the

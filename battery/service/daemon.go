@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
@@ -135,7 +136,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	if !mode.dev {
 		// The installed port is the contract (bookmarks, the
 		// definition's argv); worktree isolation must not remap it.
-		os.Setenv("GOFASTR_ISOLATION", "off")
+		os.Setenv(isolation.EnvIsolation, "off")
 	}
 
 	// The local run record (framework/localrun) tells agents to reach

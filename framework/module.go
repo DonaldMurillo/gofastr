@@ -481,9 +481,10 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 	if v, ok := state[msg.Name]; ok {
 		mm.enabled[msg.Name] = v
 	}
+	pc := mm.processCoordinator
 	mm.mu.Unlock()
-	if mm.processCoordinator != nil {
-		mm.processCoordinator.Reconcile(msg.Name)
+	if pc != nil {
+		pc.Reconcile(msg.Name)
 	}
 }
 
@@ -500,7 +501,8 @@ func (mm *ModuleManager) subscribeFanout() error {
 // List returns introspection info for every registered module.
 func (mm *ModuleManager) List() []ModuleInfo {
 	mm.mu.RLock()
-	defer mm.mu.RUnlock()
+	pc := mm.processCoordinator
+	process := maps.Clone(mm.process)
 	out := make([]ModuleInfo, 0, len(mm.order))
 	for _, name := range mm.order {
 		entry := mm.modules[name]
@@ -532,11 +534,7 @@ func (mm *ModuleManager) List() []ModuleInfo {
 		if _, ok := mm.enabled[name]; !ok {
 			enabled = true
 		}
-		if mm.process[name] {
-			pt, _ := mm.processCoordinator.(processModuleToggler)
-			enabled = pt != nil && pt.DesiredEnabled(name)
-		}
-		info := ModuleInfo{
+		out = append(out, ModuleInfo{
 			Name:           name,
 			Version:        m.Version,
 			Description:    m.Description,
@@ -546,24 +544,33 @@ func (mm *ModuleManager) List() []ModuleInfo {
 			EntityCount:    entities,
 			RouteCount:     routes,
 			ToolCount:      tools,
+		})
+	}
+	mm.mu.RUnlock()
+
+	pt, _ := pc.(processModuleToggler)
+	for i := range out {
+		info := &out[i]
+		if process[info.Name] {
+			info.Enabled = pt != nil && pt.DesiredEnabled(info.Name)
 		}
-		if mm.processCoordinator != nil {
-			if pi, ok := mm.processCoordinator.Info(name); ok {
-				info.ProcessState = pi.State.String()
-				info.RestartCount = pi.RestartCount
-				info.ObservedGeneration = pi.ObservedGeneration
-				info.InstanceID = pi.InstanceID
-				info.LastExit = pi.LastExit
-			}
+		if pc == nil {
+			continue
 		}
-		out = append(out, info)
+		if pi, ok := pc.LocalInfo(info.Name); ok {
+			info.ProcessState = pi.State.String()
+			info.RestartCount = pi.RestartCount
+			info.ObservedGeneration = pi.ObservedGeneration
+			info.InstanceID = pi.InstanceID
+			info.LastExit = pi.LastExit
+		}
 	}
 	return out
 }
 
 type processModuleCoordinator interface {
 	Reconcile(name string)
-	Info(name string) (ProcessModuleInfo, bool)
+	LocalInfo(name string) (ProcessModuleInfo, bool)
 }
 
 type processModuleToggler interface {

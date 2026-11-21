@@ -82,22 +82,21 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
 			return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 		}
-		targetKey, err := safeColumns(target.KeyColumns())
+		targetKey, err := query.SafeColumns(target.KeyColumns(), "column")
 		if err != nil {
 			return nil, fmt.Errorf("eager load %s: invalid key column: %w", rel.Name, err)
 		}
 
 		switch rel.Type {
 		case entity.RelHasOne, entity.RelHasMany:
-			if err := eagerLoadHasMany(ctx, db, safeRelEntity, safeFKs, rel, ids, result, softDeleteFilter, scopeFilters, readPreds, served, target); err != nil {
+			if err := loadHasManyFiltered(ctx, db, safeRelEntity, safeFKs, rel, target, scopeFilters, readPreds, hookScope{}, ids, result, softDeleteFilter, served, nil); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToOne:
-			if err := eagerLoadBelongsTo(ctx, db, tableName, keyCols, targetKey, safeRelEntity, safeFKs, rel, ids, result, softDeleteFilter, scopeFilters, readPreds, served, target); err != nil {
+			if err := loadBelongsToFiltered(ctx, db, tableName, keyCols, safeRelEntity, safeFKs, targetKey, rel, target, scopeFilters, readPreds, hookScope{}, ids, result, softDeleteFilter, served, nil); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		case entity.RelManyToMany:
-			targetPK := targetKey[0]
 			mtmSoftDelete := softDeleteFilter
 			if mtmSoftDelete != "" {
 				mtmSoftDelete = " AND " + query.QuoteKeyword(safeRelEntity) + ".deleted_at IS NULL"
@@ -106,7 +105,12 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			if err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
-			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, rel, ids, targetPK, result, mtmSoftDelete, scopeFilters, readPreds, pivot, pivotScopes(ctx, pivot), served, target); err != nil {
+			node := &IncludeNode{Relation: rel, Target: target, Filters: scopeFilters, ReadScopes: readPreds, Pivot: pivot, PivotScopes: pivotScopes(ctx, pivot)}
+			pivotKeys, err := validatePivotIdentifiers(rel)
+			if err != nil {
+				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
+			}
+			if err := loadManyToManyFiltered(ctx, db, safeRelEntity, targetKey[0], pivotKeys, node, hookScope{}, ids, result, mtmSoftDelete, served, nil); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
@@ -114,54 +118,6 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 	}
 
 	return result, nil
-}
-
-func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
-	where, args, ok, err := keyInClause(safeFKs, ids, 1)
-	if err != nil || !ok {
-		return err
-	}
-	scopeClause, scopeArgs := filterClause(scopeFilters, len(args)+1)
-	readClause, readArgs := renderReadScope(readPreds, "", len(args)+len(scopeArgs)+1)
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	q := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		query.QuoteKeyword(safeEntity), where, softDeleteFilter, scopeClause, readClause)
-	args = append(args, scopeArgs...)
-	args = append(args, readArgs...)
-
-	rows, err := db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
-
-	for rows.Next() {
-		vals := make([]any, len(cols))
-		valPtrs := make([]any, len(cols))
-		for i := range vals {
-			valPtrs[i] = &vals[i]
-		}
-		if err := rows.Scan(valPtrs...); err != nil {
-			return err
-		}
-
-		row := make(map[string]any, len(cols))
-		for i, c := range cols {
-			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
-		}
-		if parentID, ok := scannedKey(cols, vals, safeFKs); ok {
-			attachChildRow(rel, parentID, row, result)
-		}
-	}
-	return rows.Err()
 }
 
 // attachChildRow puts a child row under its parent: HasOne replaces the
@@ -179,160 +135,6 @@ func attachChildRow(rel entity.Relation, parentID string, row map[string]any, re
 			existing[rel.Name] = slice
 		}
 	}
-}
-
-func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCols, targetKey []string, safeEntity string, safeFKs []string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
-	sourceToFK, uniqueFKs, err := belongsToFKs(ctx, db, table, keyCols, safeFKs, ids)
-	if err != nil || len(uniqueFKs) == 0 {
-		return err
-	}
-	where, fkArgs, ok, err := keyInClause(targetKey, uniqueFKs, 1)
-	if err != nil || !ok {
-		return err
-	}
-
-	scopeClause, scopeArgs := filterClause(scopeFilters, len(fkArgs)+1)
-	readClause, readArgs := renderReadScope(readPreds, "", len(fkArgs)+len(scopeArgs)+1)
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	tgtQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s%s%s%s",
-		query.QuoteKeyword(safeEntity), where, softDeleteFilter, scopeClause, readClause)
-	fkArgs = append(fkArgs, scopeArgs...)
-	fkArgs = append(fkArgs, readArgs...)
-
-	tgtRows, err := db.QueryContext(ctx, tgtQuery, fkArgs...)
-	if err != nil {
-		return err
-	}
-	defer tgtRows.Close()
-
-	cols, err := tgtRows.Columns()
-	if err != nil {
-		return err
-	}
-	boolCols := databaseBoolColumnsForEntity(tgtRows, len(cols), entityFieldsOf(target), cols)
-
-	targetByID := make(map[string]map[string]any)
-	for tgtRows.Next() {
-		vals := make([]any, len(cols))
-		valPtrs := make([]any, len(cols))
-		for i := range vals {
-			valPtrs[i] = &vals[i]
-		}
-		if err := tgtRows.Scan(valPtrs...); err != nil {
-			return err
-		}
-		row := make(map[string]any, len(cols))
-		for i, c := range cols {
-			served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
-		}
-		if id, ok := scannedKey(cols, vals, targetKey); ok {
-			targetByID[id] = row
-		}
-	}
-	if err := tgtRows.Err(); err != nil {
-		return err
-	}
-
-	for srcID, fkVal := range sourceToFK {
-		if tgt, ok := targetByID[fkVal]; ok {
-			if entry, ok := result[srcID]; ok {
-				entry[rel.Name] = tgt
-			}
-		}
-	}
-
-	return nil
-}
-
-func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, ids []string, targetPK string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, pivot *entity.Entity, pivotPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
-	safeThrough, err := query.SafeIdent(rel.Through)
-	if err != nil {
-		return fmt.Errorf("invalid through table %q: %w", rel.Through, err)
-	}
-	safeLocalKey, err := query.SafeIdent(rel.LocalKey)
-	if err != nil {
-		return fmt.Errorf("invalid local key %q: %w", rel.LocalKey, err)
-	}
-	safeFKTarget, err := query.SafeIdent(rel.ForeignKeyTarget)
-	if err != nil {
-		return fmt.Errorf("invalid FK target %q: %w", rel.ForeignKeyTarget, err)
-	}
-
-	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids))
-	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args = append(args, id)
-	}
-
-	scopeClause, scopeArgs := filterClauseQualified(scopeFilters, safeEntity, len(ids)+1)
-	readClause, readArgs := renderReadScope(readPreds, safeEntity, len(ids)+len(scopeArgs)+1)
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	pivotWhere, pivotArgs := pivotClause(pivot, pivotPreds, safeThrough, len(ids)+len(scopeArgs)+len(readArgs)+1)
-	q := fmt.Sprintf(
-		"SELECT %s.*, %s.%s AS __parent_id FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s IN (%s)%s%s%s",
-		query.QuoteKeyword(safeEntity),
-		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
-		query.QuoteKeyword(safeEntity),
-		query.QuoteKeyword(safeThrough),
-		query.QuoteKeyword(safeEntity), query.QuoteKeyword(targetPK), query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeFKTarget),
-		query.QuoteKeyword(safeThrough), query.QuoteKeyword(safeLocalKey),
-		strings.Join(placeholders, ", "),
-		scopeClause,
-		readClause,
-		pivotWhere,
-	) + softDeleteFilter
-	args = append(args, scopeArgs...)
-	args = append(args, readArgs...)
-	args = append(args, pivotArgs...)
-
-	rows, err := db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	cols, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-	boolCols := databaseBoolColumnsForEntity(rows, len(cols), entityFieldsOf(target), cols)
-
-	for rows.Next() {
-		vals := make([]any, len(cols))
-		valPtrs := make([]any, len(cols))
-		for i := range vals {
-			valPtrs[i] = &vals[i]
-		}
-		if err := rows.Scan(valPtrs...); err != nil {
-			return err
-		}
-
-		row := make(map[string]any, len(cols)-1)
-		var parentID string
-		for i, c := range cols {
-			if c == "__parent_id" {
-				parentID = fmt.Sprintf("%v", vals[i])
-			} else {
-				served.set(row, c, convertDatabaseValue(vals[i], boolCols[i]))
-			}
-		}
-
-		if entry, ok := result[parentID]; ok {
-			var slice []map[string]any
-			if prev, ok := entry[rel.Name]; ok {
-				slice = prev.([]map[string]any)
-			}
-			slice = append(slice, row)
-			entry[rel.Name] = slice
-		}
-	}
-
-	return rows.Err()
 }
 
 // eagerScopeFilters builds a relation target's owner and tenant predicates.
@@ -367,4 +169,22 @@ func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.Pars
 		})
 	}
 	return out
+}
+
+// scopedTargetQuery builds a one-row target lookup: the caller's
+// equality conditions and args first, then the target's owner, tenant
+// and read scopes and its soft-delete guard.
+func scopedTargetQuery(ctx context.Context, target *entity.Entity, table, selectExpr string, conds []string, args []any) (string, []any) {
+	preds := eagerScopeFilters(ctx, target)
+	readPreds := readScopeFilters(ctx, target)
+	clause, scopeArgs := filterClause(preds, len(args)+1)
+	readClause, readArgs := renderReadScope(readPreds, "", len(args)+1+len(scopeArgs))
+	if readClause != "" {
+		readClause = " AND " + readClause
+	}
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s%s", selectExpr, query.QuoteKeyword(table), strings.Join(conds, " AND "), clause, readClause)
+	if target.Config.Scope.SoftDelete {
+		q += " AND deleted_at IS NULL"
+	}
+	return q, append(append(args, scopeArgs...), readArgs...)
 }

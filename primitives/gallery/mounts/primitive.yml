@@ -7,9 +7,19 @@ docs:
   - framework/docs/content/theming.md
 invariants:
   - id: demo-form-answers-303-to-its-demo
-    rule: A POST to DemoFormPath naming a catalog demo answers 303 to demoPage of that slug, and every POST form a catalog demo renders lands there.
+    rule: A POST to DemoFormPath naming a catalog demo answers 303 to demoPage of that slug, and every catalog POST form except StepWizard lands there.
     enforced_by:
       - test: framework/gallery.TestDemoFormsRedirectToDemo
+  - id: wizard-post-is-host-owned
+    rule: The catalog StepWizard posts to the host's /forms/wizard route and the theme editor renders the form in an inert preview.
+    enforced_by:
+      - test: framework/gallery.TestDemoFormsRedirectToDemo
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditGalleryPreviewRenders
+  - id: gallery-overlays-stay-on-their-pages
+    rule: Hosts pass DemoWidgetPages to MountDemoWidgets before mounting their UIHost. The docs site scopes overlays to their showcases and the theme editor scopes all four to /preview.
+    enforced_by:
+      - test: examples/site.TestArchSSR_ScopedWidgetsAbsentFromOtherPages
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditServeHTTPDelegatesPreviewToHost
   - id: unknown-demo-is-404
     rule: A POST to DemoFormPath whose demo query names no catalog entry answers 404 with no Location.
     enforced_by:
@@ -28,10 +38,10 @@ decisions:
   - id: one-route-redirects-every-demo-form
     date: 2026-11-17
     status: accepted
-    decision: Every catalog demo form posts to the one DemoFormPath route, which keeps nothing and answers 303 back to the demo.
+    decision: Stateless catalog forms share DemoFormPath and its 303 response, while the host handles StepWizard's transitions at /forms/wizard.
     rejected:
-      - option: Posting to the demo's own page or to a docs-site route.
+      - option: Posting stateless forms to the demo's own page or to a docs-site route.
         why: A screen answered 405 and a host other than the docs site answered 404.
       - option: A GET form.
         why: A password typed into a demo would land in the URL.
-    upholds: [demo-form-answers-303-to-its-demo]
+    upholds: [demo-form-answers-303-to-its-demo, wizard-post-is-host-owned]

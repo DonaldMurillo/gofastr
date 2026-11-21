@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"slices"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 func seedAggregateInvoices(t *testing.T) *CrudHandler {
@@ -45,6 +47,44 @@ func TestSumAllHonorsListScopes(t *testing.T) {
 	none := &filter.Predicate{Field: "status", Op: filter.OpEq, Value: "void"}
 	if got, err := ch.SumAll(ctx, "amount", ListOptions{Where: none}); err != nil || got != "0" {
 		t.Fatalf("SumAll over no rows = %q, %v; want 0", got, err)
+	}
+}
+
+func TestSumAllWideIntParity(t *testing.T) {
+	for _, dialect := range []struct {
+		name string
+		open func(*testing.T) *sql.DB
+	}{
+		{"sqlite", openBooleanReadDB},
+		{"postgres", pgtest.DB},
+	} {
+		t.Run(dialect.name, func(t *testing.T) {
+			db := dialect.open(t)
+			if _, err := db.Exec(`CREATE TABLE ledger (id TEXT PRIMARY KEY, kind TEXT, amount BIGINT)`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`INSERT INTO ledger (id, kind, amount) VALUES
+				('1', 'positive', 9223372036854775807), ('2', 'positive', 1),
+				('3', 'negative', -9223372036854775808), ('4', 'negative', -1),
+				('5', 'empty', NULL)`); err != nil {
+				t.Fatal(err)
+			}
+			e := entity.Define("ledger", entity.EntityConfig{
+				Fields: []schema.Field{{Name: "kind", Type: schema.String}, {Name: "amount", Type: schema.Int}},
+			}.WithTimestamps(false))
+			ch := NewCrudHandler(e, db)
+			for _, tc := range []struct{ kind, want string }{
+				{"positive", "9223372036854775808"},
+				{"negative", "-9223372036854775809"},
+				{"empty", "0"},
+				{"missing", "0"},
+			} {
+				opts := ListOptions{Where: &filter.Predicate{Field: "kind", Op: filter.OpEq, Value: tc.kind}}
+				if got, err := ch.SumAll(t.Context(), "amount", opts); err != nil || got != tc.want {
+					t.Errorf("SumAll over %s rows: got %q, %v; want %q", tc.kind, got, err, tc.want)
+				}
+			}
+		})
 	}
 }
 

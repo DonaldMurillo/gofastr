@@ -149,23 +149,28 @@ func splitSettingsFile(files []GeneratedFile) (rest []GeneratedFile, found bool)
 	return rest, len(rest) != len(files)
 }
 
-// ExistingEndpoints reads the endpoints section of the settings file in
-// dir; nil when there is no file.
-func ExistingEndpoints(dir string) ([]settings.Endpoint, error) {
+func loadAppSettings(dir string) (settings.File, error) {
 	f, err := settings.Load(filepath.Join(dir, settings.FileName))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return settings.File{}, nil
 	}
+	return f, err
+}
+
+// ExistingEndpoints returns the endpoint declarations and their settings file path.
+func ExistingEndpoints(dir string) ([]settings.Endpoint, string, error) {
+	f, err := loadAppSettings(dir)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return f.Endpoints()
+	endpoints, err := f.Endpoints()
+	return endpoints, f.Path, err
 }
 
 // endpointsConflict reports whether writing eps into dir's settings file
 // would replace a different endpoints section.
 func endpointsConflict(dir string, eps []settings.Endpoint) bool {
-	have, err := ExistingEndpoints(dir)
+	have, _, err := ExistingEndpoints(dir)
 	if err != nil {
 		return true
 	}

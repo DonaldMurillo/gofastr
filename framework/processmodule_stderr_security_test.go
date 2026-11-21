@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 func TestModuleFailuresLogScrubbedStderr(t *testing.T) {
@@ -46,7 +47,7 @@ func TestAppLogsModuleStderr(t *testing.T) {
 	db := newStoreDB(t)
 	defer db.Close()
 	app := NewApp(WithDB(db))
-	d := descriptorForChild(t, childModeEcho)
+	d := descriptorForChild(t, pmtestkit.ModeEcho)
 	app.RegisterProcessModule(d, ApprovedGrants{"articles:read"})
 	var logs bytes.Buffer
 	app.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))

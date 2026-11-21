@@ -44,7 +44,7 @@ invariants:
       - test: core/textsafe.TestUnsafeCoversEveryMandatoryLineBreak
       - test: core/textsafe.TestContainsUnsafe
   - id: control-bytes-are-ascii
-    rule: HasControlBytes is true only for a byte below 0x20 or 0x7F, and SanitizeControlBytes removes exactly those bytes and returns s itself when there are none.
+    rule: IsControlByte recognizes only bytes below 0x20 and DEL (0x7F), HasControlBytes detects their presence in a string, and SanitizeControlBytes removes exactly those bytes and returns s itself when there are none.
     enforced_by:
       - test: core/textsafe.TestHasControlBytesFlagsC0AndDEL
       - test: core/textsafe.TestHasControlBytesIgnoresPrintableAndUnicode
@@ -57,6 +57,13 @@ invariants:
       - test: core/textsafe.TestScrubControlBytesEncodesC1AndBidiRunes
       - test: core/textsafe.TestScrubControlBytesStrayHighBytes
       - test: core/textsafe.TestNeedsControlScrubIsSupersetOfEncoder
+  - id: scrubs-share-lowercase-byte-encoding
+    rule: The log scrub and SMTP header scrub emit a percent sign and two lowercase hexadecimal digits for each byte they escape.
+    enforced_by:
+      - test: core/textsafe.TestScrubControlBytesPinnedCorpus
+      - test: battery/email.TestScrubHeaderValuePinnedCorpus
+    applies:
+      - battery/email/smtp.go
   - id: recovered-is-scrubbed-and-capped
     rule: Recovered applies StripUnsafe to the rendered panic value, keeping a valid subdivision flag's tags and dropping every other IsUnsafe codepoint, then cuts it at 4 KiB on a rune boundary with the marker "…(truncated)", and LogPanic logs that value and the stack once per panic and nothing without one.
     enforced_by:
@@ -120,6 +127,14 @@ decisions:
     rejected:
       - option: Keep the private copies.
         why: They drifted into hand-maintained parity, and one probe omitted most of the C0 range so those bytes leaked.
+  - id: share-byte-encoding
+    date: 2026-11-19
+    status: accepted
+    decision: The log and SMTP header scrubs share IsControlByte and AppendPercentByte and each applies its own Unicode policy.
+    rejected:
+      - option: Share the entire scrub.
+        why: Logs encode unsafe runes byte by byte, while SMTP headers drop C1 and invisible runes and preserve Unicode line separators.
+    upholds: [scrubs-share-lowercase-byte-encoding]
 twins:
   - job: Cap a string bound for a log at a byte length and mark the cut.
     why: Recovered backs off to a rune boundary with the marker "…(truncated)" while Truncate cuts byte-aligned with " … (truncated)"; merging them needs one marker and one cut rule.

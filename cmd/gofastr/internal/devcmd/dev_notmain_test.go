@@ -33,7 +33,7 @@ func TestDevNamesANonMainPackage(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, true, nil, nil)
 	})
 	KillServer(&mu, &cmd)

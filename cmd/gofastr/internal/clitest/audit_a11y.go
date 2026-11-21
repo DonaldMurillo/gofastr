@@ -1,24 +1,11 @@
 package clitest
 
-import (
-	"os"
-	"path/filepath"
-	"testing"
-)
+import "testing"
 
+// WriteA11yTree lays down a throwaway tree of .ui.go fixtures.
 func WriteA11yTree(t *testing.T, files map[string]string) string {
 	t.Helper()
-	root := t.TempDir()
-	for rel, body := range files {
-		full := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return root
+	return writeTree(t, files)
 }
 
 const BadScreen = `package app

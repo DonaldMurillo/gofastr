@@ -1,5 +1,5 @@
 primitive: gallery
-summary: The importable component catalog behind the /components showcase and the theme editor - every design-system component as a self-contained demo, with its code snippet, category and package, looked up by slug.
+summary: The importable component catalog behind the /components showcase and the theme editor, with previews, wiring notes, code snippets, categories and package names looked up by slug.
 code:
   - framework/gallery/gallery.go
   - framework/gallery/catalog.go
@@ -56,11 +56,15 @@ invariants:
     enforced_by:
       - test: framework/gallery.TestAccessorsReturnRegisteredValues
       - test: framework/gallery.TestSweepGroupedKeepsCatalogOrder
+  - id: live-form-and-image-previews
+    rule: The theme preview includes the FormRepeater and Repeater forms and the pipeline image preview.
+    enforced_by:
+      - test: cmd/gofastr/internal/themecmd.TestThemeEditGalleryPreviewRenders
 decisions:
   - id: a-package-not-an-example
     date: 2026-11-17
     status: accepted
-    decision: The catalog is a framework package, lifted out of examples/site, so cmd/gofastr's theme editor can render every component against a theme.
+    decision: The catalog is a framework package so cmd/gofastr's theme editor can render component previews against a theme.
     rejected:
       - option: Keep the catalog in examples/site/components.go.
         why: cmd/gofastr cannot import examples/, so the theme editor could not show the components.

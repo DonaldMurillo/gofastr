@@ -84,8 +84,3 @@ decisions:
     status: accepted
     decision: DefaultDir also honours GOFASTR_AXE_COVERAGE_DIR, so an app that pinned its axe manifest per app gets the same isolation here without a second setting.
     upholds: [semantic-override-first]
-  - id: pid-temp-name
-    date: 2026-11-17
-    status: accepted
-    decision: The write-then-rename temp file carries the pid, a second guard beside the flush lock against parallel test processes renaming each other's half-written file.
-    revisit_if: The flush lock is trusted on every platform the tests run on.

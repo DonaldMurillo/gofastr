@@ -404,10 +404,7 @@ func validateUpstreamURL(raw string, lookup func(string) ([]net.IP, error)) erro
 	// Loopback: the one internal class that is allowed, so tests and
 	// local dev can point at httptest servers and localhost
 	// sidecars. http:// is restricted to exactly this class.
-	isLoopback := lower == "localhost" || strings.HasSuffix(lower, ".localhost")
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		isLoopback = true
-	}
+	isLoopback := isLoopbackHost(host)
 	if scheme == "http" && !isLoopback {
 		return fmt.Errorf("http:// upstream %q refused: plaintext is only allowed for loopback hosts; use https", u.Host)
 	}

@@ -6,76 +6,30 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/loopback"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
-var (
-	themeBrowserOnce sync.Once
-	themeBrowserRoot context.Context
-	themeBrowserErr  error
-	// themeBrowserKill and themeAllocKill close the shared browser when
-	// the package run ends.
-	themeBrowserKill context.CancelFunc
-	themeAllocKill   context.CancelFunc
-)
-
 func TestMain(m *testing.M) {
-	clitest.Main(m, func() {
-		if themeBrowserKill != nil {
-			themeBrowserKill()
-		}
-		if themeAllocKill != nil {
-			themeAllocKill()
-		}
-	})
+	clitest.Main(m)
 }
 
-// themeBrowserCtx returns a fresh foreground tab against the shared browser.
-// A shared process avoids chromedp's cold-launch flake (its 20s websocket-URL
-// deadline is intermittently exceeded across many sequential launches); a
-// fresh tab keeps DOM/JS state isolated per test. Mirrors examples/site.
+// themeBrowserCtx returns a fresh window in the test binary's shared
+// Chrome (chromedptest keeps one per allocator option set; every call
+// gets its own BrowserContext). The window is brought forward: Chrome
+// throttles rAF and timers on background tabs, and chromedp.Poll's
+// default "raf" mode would stall on one left behind about:blank.
 func themeBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
-	themeBrowserOnce.Do(func() {
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.Flag("headless", true),
-			chromedp.Flag("disable-gpu", true),
-			chromedp.Flag("no-sandbox", true),
-			chromedp.WSURLReadTimeout(90*time.Second),
-			chromedp.WindowSize(1280, 800),
-		)
-		allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-		browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-		if err := chromedp.Run(browserCtx); err != nil {
-			themeBrowserErr = err
-			browserCancel()
-			allocCancel()
-			return
-		}
-		themeBrowserRoot = browserCtx
-		themeBrowserKill = browserCancel
-		themeAllocKill = allocCancel
-	})
-	if themeBrowserErr != nil {
-		t.Fatalf("shared browser failed to start: %v", themeBrowserErr)
-	}
-	tabCtx, tabCancel := chromedp.NewContext(themeBrowserRoot)
-	t.Cleanup(tabCancel) // closes the tab, not the browser
-	ctx, cancel := context.WithTimeout(tabCtx, 60*time.Second)
-	t.Cleanup(cancel)
-	// Bring the tab forward: Chrome throttles rAF / timers on background
-	// tabs, and chromedp.Poll's default "raf" mode would stall on a tab
-	// left behind about:blank.
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800))
 	if err := chromedp.Run(ctx, page.BringToFront()); err != nil {
 		t.Fatalf("bring tab to front: %v", err)
 	}

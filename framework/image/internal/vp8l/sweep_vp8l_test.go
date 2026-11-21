@@ -17,6 +17,17 @@ func TestSweepVP8LOneLengthTreeWritesNoPerSymbolBits(t *testing.T) {
 	}
 }
 
+func TestUnusedSymbolForcesLengthBits(t *testing.T) {
+	lengths := []int{2, 2, 2, 2, 0}
+	var bw bitWriter
+	writeHuffmanTree(&bw, lengths)
+	const headerBits = 1 + 4 + 5*3 + 1
+	wantBits := headerBits + len(lengths)
+	if got := len(bw.buf)*8 + int(bw.n); got != wantBits {
+		t.Fatalf("tree wrote %d bits, want %d (header and one bit per length)", got, wantBits)
+	}
+}
+
 func TestSweepVP8LKeepsTheSmallestCandidate(t *testing.T) {
 	src := gradient(48, 32)
 	var all bytes.Buffer

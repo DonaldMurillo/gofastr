@@ -112,10 +112,7 @@ func sayParamN(params string) (string, bool) {
 }
 
 func isNPlaceholder(pattern string) bool {
-	if isJSStringLiteral(pattern) {
-		return pattern[1:len(pattern)-1] == "{{n}}"
-	}
-	return pattern == "`{{n}}`"
+	return isStaticJSStringLiteral(pattern) && pattern[1:len(pattern)-1] == "{{n}}"
 }
 
 var reNRegex = regexp.MustCompile(`^/.*\\?\{\\?\{(?:n|\(?\[[a-z]*n[a-z]*\]\)?)\\?\}\\?\}`)
@@ -126,7 +123,7 @@ var (
 )
 
 func numberFillBad(arg string, exact bool) bool {
-	if arg == "" || isJSStringLiteral(arg) || isJSNumericLiteral(arg) || strings.Contains(arg, "formatNumber") {
+	if arg == "" || isStaticJSStringLiteral(arg) || isJSNumericLiteral(arg) || strings.Contains(arg, "formatNumber") {
 		return false
 	}
 	return exact || strings.Contains(arg, "String(")

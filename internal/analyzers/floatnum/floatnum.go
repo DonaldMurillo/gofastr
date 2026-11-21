@@ -47,11 +47,11 @@ import (
 	"go/types"
 	"maps"
 	"slices"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/allow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -76,7 +76,7 @@ func (f *lossyParams) String() string { return fmt.Sprintf("lossyParams%v", f.In
 func run(pass *analysis.Pass) (any, error) {
 	var fns []*ast.FuncDecl
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

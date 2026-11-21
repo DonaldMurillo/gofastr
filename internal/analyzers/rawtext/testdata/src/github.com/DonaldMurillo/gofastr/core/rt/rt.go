@@ -299,3 +299,8 @@ type phrasedScreen struct{}
 
 func (phrasedScreen) ScreenTitle(ctx context.Context) string       { return pageHelpTitle.Text(ctx) }
 func (phrasedScreen) ScreenDescription(ctx context.Context) string { return "" }
+
+func numericLabelIndex(n int, attrs map[string]string) {
+	attrs["aria-label"] = strconv.Itoa(n) // want `strconv.Itoa writes a number into aria-label`
+	attrs["data-count"] = strconv.Itoa(n)
+}

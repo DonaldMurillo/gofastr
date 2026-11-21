@@ -349,8 +349,8 @@ func TestLintFrontDoor(t *testing.T) {
 
 	t.Run("README linking the site is clean", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
-		writeRepoFile(t, root, "README.md", "# Project\n\n[Docs]("+siteURL+"/)\n")
+		writeTestFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		writeTestFile(t, root, "README.md", "# Project\n\n[Docs]("+siteURL+"/)\n")
 		findings, err := lintFrontDoor(root)
 		if err != nil {
 			t.Fatal(err)
@@ -362,8 +362,8 @@ func TestLintFrontDoor(t *testing.T) {
 
 	t.Run("README without the site link is flagged", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
-		writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+		writeTestFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		writeTestFile(t, root, "README.md", "# Project\n\nNo link here.\n")
 		findings, err := lintFrontDoor(root)
 		if err != nil {
 			t.Fatal(err)
@@ -375,7 +375,7 @@ func TestLintFrontDoor(t *testing.T) {
 
 	t.Run("absent README is flagged, not skipped", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+		writeTestFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
 		findings, err := lintFrontDoor(root)
 		if err != nil {
 			t.Fatal(err)
@@ -421,7 +421,7 @@ func TestLintExampleOrigins(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), "package main\n\n"+tc.source+"\n")
+			writeTestFile(t, root, filepath.Join("examples", "demo", "main.go"), "package main\n\n"+tc.source+"\n")
 			findings, err := lintExampleOrigins(root)
 			if err != nil {
 				t.Fatal(err)
@@ -434,7 +434,7 @@ func TestLintExampleOrigins(t *testing.T) {
 
 	t.Run("test files are exempt", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("examples", "demo", "main_test.go"), "package main\n\nvar o = \"https://meridian.gofastr.dev\"\n")
+		writeTestFile(t, root, filepath.Join("examples", "demo", "main_test.go"), "package main\n\nvar o = \"https://meridian.gofastr.dev\"\n")
 		findings, err := lintExampleOrigins(root)
 		if err != nil {
 			t.Fatal(err)
@@ -443,17 +443,6 @@ func TestLintExampleOrigins(t *testing.T) {
 			t.Fatalf("test fixtures may name any host; got %v", findings)
 		}
 	})
-}
-
-func writeRepoFile(t *testing.T, root, rel, body string) {
-	t.Helper()
-	path := filepath.Join(root, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // The rule is about this repository's front door, so it must stay silent on
@@ -465,8 +454,8 @@ func writeRepoFile(t *testing.T, root, rel, body string) {
 // reason it should have reported a finding.
 func TestLintFrontDoorSurvivesACommentOnTheModuleLine(t *testing.T) {
 	root := t.TempDir()
-	writeRepoFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr // the framework\n\ngo 1.26.3\n")
-	writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+	writeTestFile(t, root, "go.mod", "module github.com/DonaldMurillo/gofastr // the framework\n\ngo 1.26.3\n")
+	writeTestFile(t, root, "README.md", "# Project\n\nNo link here.\n")
 	findings, err := lintFrontDoor(root)
 	if err != nil {
 		t.Fatal(err)
@@ -480,8 +469,8 @@ func TestLintFrontDoorSurvivesACommentOnTheModuleLine(t *testing.T) {
 // match, which silently disabled every rule scoped to this repository.
 func TestLintFrontDoorSurvivesATabAfterModule(t *testing.T) {
 	root := t.TempDir()
-	writeRepoFile(t, root, "go.mod", "module\tgithub.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
-	writeRepoFile(t, root, "README.md", "# Project\n\nNo link here.\n")
+	writeTestFile(t, root, "go.mod", "module\tgithub.com/DonaldMurillo/gofastr\n\ngo 1.26.3\n")
+	writeTestFile(t, root, "README.md", "# Project\n\nNo link here.\n")
 	findings, err := lintFrontDoor(root)
 	if err != nil {
 		t.Fatal(err)
@@ -491,9 +480,30 @@ func TestLintFrontDoorSurvivesATabAfterModule(t *testing.T) {
 	}
 }
 
+// moduleLine is the one go.mod parser (moduleIs and the chromium-shard
+// rule shared two, one behind): tab, trailing comment and quotes are
+// all valid spellings of the same module path.
+func TestModuleLine(t *testing.T) {
+	cases := map[string]string{
+		"module example.com/x\n":         "example.com/x",
+		"module\texample.com/x\n":        "example.com/x",
+		"module  example.com/x\n":        "example.com/x",
+		"module example.com/x // note\n": "example.com/x",
+		"module \"example.com/x\"\n":     "example.com/x",
+		"go 1.26\n":                      "",
+		"module\n":                       "",
+		"moduleexample.com/x\n":          "",
+	}
+	for body, want := range cases {
+		if got := moduleLine([]byte(body)); got != want {
+			t.Errorf("moduleLine(%q) = %q, want %q", body, got, want)
+		}
+	}
+}
+
 func TestLintFrontDoorIgnoresOtherModules(t *testing.T) {
 	root := t.TempDir()
-	writeRepoFile(t, root, "go.mod", "module example.com/other\n\ngo 1.26.3\n")
+	writeTestFile(t, root, "go.mod", "module example.com/other\n\ngo 1.26.3\n")
 	findings, err := lintFrontDoor(root)
 	if err != nil {
 		t.Fatal(err)
@@ -510,8 +520,8 @@ func TestLintFrontDoorIgnoresOtherModules(t *testing.T) {
 func TestLintCommandBinariesIgnored(t *testing.T) {
 	t.Run("a command with no ignore entry is flagged", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n/othertool\n")
+		writeTestFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n/othertool\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Fatal(err)
@@ -526,8 +536,8 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 
 	t.Run("a command with an ignore entry is clean", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n/newtool\n")
+		writeTestFile(t, root, filepath.Join("cmd", "newtool", "main.go"), "package main\n\nfunc main() {}\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n/newtool\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Fatal(err)
@@ -541,9 +551,9 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 		// e.g. cmd/kiln alongside a top-level kiln/ package: the existing
 		// `kiln` + `!kiln/` pair covers it and a duplicate entry would be noise.
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "kiln", "main.go"), "package main\n\nfunc main() {}\n")
-		writeRepoFile(t, root, filepath.Join("kiln", "doc.go"), "package kiln\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		writeTestFile(t, root, filepath.Join("cmd", "kiln", "main.go"), "package main\n\nfunc main() {}\n")
+		writeTestFile(t, root, filepath.Join("kiln", "doc.go"), "package kiln\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Fatal(err)
@@ -555,7 +565,7 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 
 	t.Run("no cmd directory is not an error", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -573,8 +583,8 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 	// checkout-turned-scratch-repo is in.
 	t.Run("a missing .gitignore flags every command", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n\nfunc main() {}\n")
-		writeRepoFile(t, root, filepath.Join("cmd", "two", "main.go"), "package main\n\nfunc main() {}\n")
+		writeTestFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n\nfunc main() {}\n")
+		writeTestFile(t, root, filepath.Join("cmd", "two", "main.go"), "package main\n\nfunc main() {}\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Fatal(err)
@@ -595,8 +605,8 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 			t.Skip("running as root: permission bits do not restrict reads")
 		}
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		writeTestFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n")
 		cmdDir := filepath.Join(root, "cmd")
 		filepermtest.MakeUnreadable(t, cmdDir)
 		if _, err := lintCommandBinariesIgnored(root); err == nil {
@@ -609,8 +619,8 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 			t.Skip("running as root: permission bits do not restrict reads")
 		}
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		writeTestFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n")
 		gi := filepath.Join(root, ".gitignore")
 		filepermtest.MakeUnreadable(t, gi)
 		if _, err := lintCommandBinariesIgnored(root); err == nil {
@@ -620,8 +630,8 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 
 	t.Run("a stray file under cmd is not a command", func(t *testing.T) {
 		root := t.TempDir()
-		writeRepoFile(t, root, filepath.Join("cmd", "README.md"), "# commands\n")
-		writeRepoFile(t, root, ".gitignore", "/dist\n")
+		writeTestFile(t, root, filepath.Join("cmd", "README.md"), "# commands\n")
+		writeTestFile(t, root, ".gitignore", "/dist\n")
 		findings, err := lintCommandBinariesIgnored(root)
 		if err != nil {
 			t.Fatal(err)
@@ -648,7 +658,7 @@ func TestExampleOriginsKeepsScanningPastAFalseBlockComment(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			body := "package main\n\n" + prelude + "\nvar origin = \"https://meridian.gofastr.dev/x\"\n"
-			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), body)
+			writeTestFile(t, root, filepath.Join("examples", "demo", "main.go"), body)
 			findings, err := lintExampleOrigins(root)
 			if err != nil {
 				t.Fatal(err)
@@ -684,7 +694,7 @@ func TestExampleOriginsRespectsMultiLineContexts(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			writeRepoFile(t, root, filepath.Join("examples", "demo", "main.go"), tc.body)
+			writeTestFile(t, root, filepath.Join("examples", "demo", "main.go"), tc.body)
 			findings, err := lintExampleOrigins(root)
 			if err != nil {
 				t.Fatal(err)

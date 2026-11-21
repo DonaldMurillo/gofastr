@@ -5,11 +5,11 @@ package codetext
 
 import "strings"
 
-// Comment is one comment and the 1-indexed line it starts on. Text keeps
-// its delimiters ("// …", "/* … */").
+// Comment is a comment's text, 1-based start line and half-open byte span.
 type Comment struct {
-	Line int
-	Text string
+	Line       int
+	Text       string
+	Start, End int
 }
 
 // Strip returns src with every // and /* */ comment removed, comments
@@ -26,13 +26,13 @@ func Strip(src string, script bool) string {
 // a string literal is not returned.
 func Comments(src string, script bool) []Comment {
 	var out []Comment
-	scan(src, script, nil, func(line int, text string) {
-		out = append(out, Comment{Line: line, Text: text})
+	scan(src, script, nil, func(line, start, end int) {
+		out = append(out, Comment{Line: line, Text: src[start:end], Start: start, End: end})
 	})
 	return out
 }
 
-func scan(src string, script bool, code func(byte), comment func(line int, text string)) {
+func scan(src string, script bool, code func(byte), comment func(line, start, end int)) {
 	emit := func(c byte) {
 		if code != nil {
 			code(c)
@@ -43,7 +43,7 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 	start, startLine := 0, 0
 	closeComment := func(end int) {
 		if comment != nil {
-			comment(startLine, src[start:end])
+			comment(startLine, start, end)
 		}
 	}
 	var quote byte
@@ -55,7 +55,11 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 		case inLine:
 			if c == '\n' {
 				inLine = false
-				closeComment(i)
+				end := i
+				if src[i-1] == '\r' {
+					end--
+				}
+				closeComment(end)
 				emit(c)
 			}
 		case inBlock:

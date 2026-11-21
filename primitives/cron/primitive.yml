@@ -41,7 +41,7 @@ invariants:
   - id: gate-decides-each-firing
     rule: A job whose gate answers false, or whose gate panics, does not run that tick; the gate is read once per tick and asked outside the scheduler's lock.
     enforced_by:
-      - test: framework/cron.TestGateSkipsJobOnceJobsAreJoined
+      - test: framework/cron.TestSetGateSkipsDisabledJob
       - test: framework/cron.TestGatePanicLoggedWithoutOnError
   - id: each-run-is-a-trace
     rule: Every job run is its own trace span named "cron <name>".

@@ -24,9 +24,10 @@ import (
 	"go/token"
 	"go/types"
 	"slices"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -47,7 +48,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if !ok || fn.Name() != "QuoteIdent" || fn.Pkg() == nil || fn.Pkg().Path() != queryPkg {
 			continue
 		}
-		if !strings.HasSuffix(pass.Fset.Position(id.Pos()).Filename, "_test.go") {
+		if !pathflow.InTestFile(pass, id) {
 			uses = append(uses, id.Pos())
 		}
 	}

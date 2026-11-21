@@ -57,7 +57,7 @@ func themeOptServer(t *testing.T, th style.Theme, body string) *httptest.Server 
 
 func themeOptContext(t *testing.T) context.Context {
 	t.Helper()
-	return chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	return chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(chromedptest.BrowserPath(t))))
 }
 
 // TestScopedDarkModeFollowsTheDocument is the browser half of the

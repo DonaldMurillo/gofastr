@@ -6,9 +6,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
+
+func TestPostgres_LongDeliveryTableHasClaimIndex(t *testing.T) {
+	const suffix = "_claim_idx"
+	resolved := strings.Repeat("e", query.MaxIdentBytes-1)
+	db, o := pgOutbox(t, WithTable(resolved))
+	if len(o.deliveryTable) != query.MaxIdentBytes {
+		t.Fatalf("delivery name = %q, want %d bytes", o.deliveryTable, query.MaxIdentBytes)
+	}
+	want := query.FitIdent(o.deliveryTable + suffix)
+	var def string
+	err := db.QueryRow(`SELECT indexdef FROM pg_indexes
+		WHERE schemaname = current_schema() AND tablename = $1 AND indexname = $2`,
+		o.deliveryTable, want).Scan(&def)
+	if err != nil {
+		t.Fatalf("claim index %q on %q: %v", want, o.deliveryTable, err)
+	}
+	if !strings.HasSuffix(def, "(status, next_attempt_at)") {
+		t.Errorf("claim index = %q, want status and next_attempt_at", def)
+	}
+}
 
 // A mixed-case outbox table folds on Postgres the way unquoted DDL would:
 // the parent and delivery tables are created as events and

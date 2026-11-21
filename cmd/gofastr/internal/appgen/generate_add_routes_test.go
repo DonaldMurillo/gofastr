@@ -60,7 +60,7 @@ func TestAddRefusesProjectMountRoutes(t *testing.T) {
 			t.Fatal(err)
 		}
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() {
 				GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true})
 			})

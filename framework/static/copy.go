@@ -97,9 +97,6 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 				return nil
 			}
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
-			if err := b.ensureContained(dst); err != nil {
-				return err
-			}
 			if own, ok := written.spelling(urlPath); ok && own != urlPath {
 				return caseTwinError(own, urlPath)
 			}

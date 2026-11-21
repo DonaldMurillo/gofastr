@@ -25,12 +25,15 @@ func ruleNullableKey(p *contracts.Pass, rel string, file *ast.File) []contracts.
 				if !ok {
 					continue
 				}
+				if reNotNullableTable.MatchString(text[open+len(body)+2:]) {
+					continue
+				}
 				bad := nkNullableKeys(text, open+1, body, holes, args)
 				if len(bad) == 0 {
 					continue
 				}
 				out = append(out, diag(p, contracts.RuleNullableKey, rel, ecPosIn(root, m[0]), fmt.Sprintf(
-					"table %s declares primary key column %s without NOT NULL: SQLite stores a NULL there, any number of times, where Postgres refuses the row — write NOT NULL on every key column (only a lone INTEGER PRIMARY KEY, the rowid, and a SERIAL key fill themselves), or annotate //gofastr:allow(GOFASTR1418) <why>",
+					"table %s declares primary key column %s without NOT NULL: SQLite stores a NULL there, any number of times, where Postgres refuses the row — write NOT NULL on every key column, or annotate //gofastr:allow(GOFASTR1418) <why>",
 					name, strings.Join(bad, ", "))))
 			}
 		})
@@ -39,11 +42,20 @@ func ruleNullableKey(p *contracts.Pass, rel string, file *ast.File) []contracts.
 }
 
 var (
-	reInlineKey  = regexp.MustCompile(`(?i)\bPRIMARY\s+KEY\b`)
-	reTableKey   = regexp.MustCompile(`(?is)^(?:CONSTRAINT\s+\S+\s+)?PRIMARY\s+KEY\s*\(([^)]*)\)`)
-	reNotNull    = regexp.MustCompile(`(?i)\bNOT\s+NULL\b`)
-	reSelfFilled = regexp.MustCompile(`(?i)^\s*(?:INTEGER|(?:SMALL|BIG)?SERIAL)\b`)
+	reInlineKey        = regexp.MustCompile(`(?i)\bPRIMARY\s+KEY\b`)
+	reDescendingKey    = regexp.MustCompile(`(?i)^\s+DESC\b`)
+	reTableKey         = regexp.MustCompile(`(?is)^(?:CONSTRAINT\s+\S+\s+)?PRIMARY\s+KEY\s*\(([^)]*)\)`)
+	reNotNull          = regexp.MustCompile(`(?i)\bNOT\s+NULL\b`)
+	reNotNullableTable = regexp.MustCompile(`(?i)^\s*(?:WITHOUT\s+ROWID|STRICT)\s*(?:[,;]|$)`)
+	reColumnConstraint = regexp.MustCompile(`(?i)\s+(?:CONSTRAINT|PRIMARY|NOT|NULL|UNIQUE|CHECK|DEFAULT|COLLATE|REFERENCES|GENERATED|AS)\b`)
 )
+
+func nkColumnType(def string) string {
+	if m := reColumnConstraint.FindStringIndex(def); m != nil {
+		def = def[:m[0]]
+	}
+	return strings.ToUpper(strings.Trim(strings.TrimSpace(def), "\"'`[]"))
+}
 
 func nkTableName(text string, at int) (string, int, bool) {
 	open := strings.IndexByte(text[at:], '(')
@@ -90,8 +102,16 @@ func nkNullableKeys(text string, base int, body string, holes, args []ast.Expr) 
 		id, shown := nkIdent(text, at, fs[0], holes, args)
 		def := item[len(fs[0]):]
 		defs[id] = column{shown, def}
-		if reInlineKey.MatchString(def) && !reNotNull.MatchString(def) && !reSelfFilled.MatchString(def) {
-			bad = append(bad, shown)
+		if m := reInlineKey.FindStringIndex(def); m != nil && !reNotNull.MatchString(def) {
+			switch nkColumnType(def) {
+			case "INTEGER":
+				if reDescendingKey.MatchString(def[m[1]:]) {
+					bad = append(bad, shown)
+				}
+			case "SERIAL", "SMALLSERIAL", "BIGSERIAL":
+			default:
+				bad = append(bad, shown)
+			}
 		}
 	}
 	for _, id := range tableKey {
@@ -99,6 +119,7 @@ func nkNullableKeys(text string, base int, body string, holes, args []ast.Expr) 
 		switch {
 		case !ok:
 			bad = append(bad, strings.TrimPrefix(id, "name:")+" (no column of that name is declared in the statement)")
+		case len(tableKey) == 1 && nkColumnType(c.def) == "INTEGER":
 		case !reNotNull.MatchString(c.def):
 			bad = append(bad, c.shown)
 		}

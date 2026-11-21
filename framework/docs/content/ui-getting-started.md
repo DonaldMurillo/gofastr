@@ -16,7 +16,7 @@ go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
 gofastr dev   # dev server with hot reload; edit a screen, the browser refreshes
 ```
 
-`gofastr dev` is the development loop: it watches `.go/.js/.css/.html`,
+`gofastr dev` is the development loop: it watches `.go/.js/.css/.html/.md`,
 rebuilds, and auto-refreshes the browser. Plain `go run .` also works but
 never reloads; use it for one-shot checks, not iteration.
 
@@ -35,13 +35,16 @@ myapp/
   screens_auth.go    # /login and /register over battery/auth's form endpoints
   DESIGN.md          # product intent, hierarchy, composition, and mobile direction
   entities/entities.go # Go-declared CRUD entities (served under /api)
-  migrations/
-  .env
+  migrations/.gitkeep # placeholder for versioned SQL migrations
+  static/.gitkeep    # placeholder for files you serve as-is
+  gofastr.settings.yml # enables worktree isolation and sets its port defaults
+  go.mod             # sets Go requirements and pins GoFastr to the CLI version when available
+  .env               # DATABASE_URL, JWT_SECRET, PORT=localhost:8080 (0600, gitignored)
   .gitignore
   CLAUDE.md          # AI-agent entry point (links to AGENTS.md + skill)
   AGENTS.md          # Framework feature TOC with trigger phrases
   .agents/           # Per-battery detail files linked from AGENTS.md
-  .claude/skills/    # Claude Code skill for framework conventions
+  .claude/skills/gofastr-host/SKILL.md # Claude Code skill for framework conventions
 ```
 
 `gofastr docs` lists every framework reference doc embedded in the

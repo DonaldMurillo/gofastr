@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -93,15 +92,11 @@ func (b *Battery) stateCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					data, derr := compactStateValue(req.Value)
-					if derr != nil {
-						return nil, derr
-					}
 					s := b.stateStore()
 					if s == nil {
 						return nil, b.stateNotOpen()
 					}
-					if err := s.Set(key, json.RawMessage(data)); err != nil {
+					if err := s.Set(key, req.Value); err != nil {
 						if errors.Is(err, appstate.ErrTooLarge) {
 							return nil, &Error{Code: CodeInvalidInput, Message: "value must be at most 64 KiB of compact JSON"}
 						}
@@ -181,23 +176,6 @@ func pageStateKey(key string) (string, *Error) {
 			Message: "key must start with \"page.\"; the app's own state keys are not reachable from the page"}
 	}
 	return key, nil
-}
-
-// compactStateValue normalizes a page-supplied value to compact JSON
-// and enforces the size cap, measured on the compact form (the
-// windows.post rule: whitespace cannot smuggle the difference).
-func compactStateValue(v json.RawMessage) (string, *Error) {
-	if len(v) == 0 {
-		return "null", nil
-	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, v); err != nil {
-		return "", &Error{Code: CodeInvalidInput, Message: "value must be valid JSON"}
-	}
-	if buf.Len() > appstate.MaxValueBytes {
-		return "", &Error{Code: CodeInvalidInput, Message: "value must be at most 64 KiB of compact JSON"}
-	}
-	return buf.String(), nil
 }
 
 // emitStateChanged announces one page-key change to every open window.

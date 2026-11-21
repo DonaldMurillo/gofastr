@@ -145,6 +145,10 @@ password (the auth battery's policy applies) fails the boot, loudly.
 Partially-set env is not headless: the wizard appears with the known
 values prefilled (secrets excepted, never echoed into HTML).
 
+If `Runner.RunSteps` is waiting on another setup run, it returns the
+context error on cancellation or deadline expiry before calling its own
+setup callbacks.
+
 ## Overrides
 
 - `GOFASTR_SETUP=off`: never enter setup mode; `Start` proceeds even

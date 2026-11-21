@@ -6,20 +6,21 @@ code:
 docs:
   - framework/docs/content/entity-declarations.md
   - framework/docs/content/i18n.md
-twins:
-  - job: Recognise a canonical decimal literal (optional sign, digits with an optional fraction or a bare fraction, optional base-10 exponent).
-    why: Both packages hold the same regexp unexported; nothing but work not yet done keeps them apart.
-    sites:
-      - path: core/schema/validate.go
-        note: decimalRe, the Decimal write check.
-      - path: framework/filter/typed.go
-        note: decimalLiteral, the Decimal filter value coercion.
 invariants:
   - id: decimal-canonical-text-only
     rule: A Decimal value is a string matching the canonical decimal form, so underscore separators, hex floats, Inf and NaN are refused before any parse.
     enforced_by:
       - test: core/schema.TestDecimalCanonicalForm
-      - test: core/schema.TestValidateDecimal
+      - test: core/schema.TestValidateDecimal_InvalidString
+      - test: core/schema.TestValidateDecimal_NonFiniteLiterals
+  - id: one-decimal-literal-grammar
+    rule: Decimal write validation and Decimal and Float filter coercion all match literals with schema.DecimalRegexp.
+    applies:
+      - framework/filter/typed.go
+    enforced_by:
+      - test: core/schema.TestDecimalCanonicalForm
+      - test: framework/filter.TestCoerceValueByType
+    judge: Do decimal literal checks use schema.DecimalRegexp?
   - id: decimal-fits-its-column
     rule: A Decimal write is refused when its exponent is past ±MaxDecimalExponent, or when its digits after or before the point exceed the scale or precision minus scale of the column DecimalColumn reports.
     enforced_by:

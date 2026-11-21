@@ -21,13 +21,22 @@ invariants:
       - test: framework/outbox.TestAppend_EmptyDataBecomesNull
       - test: framework/outbox.TestNonObjectDataReachesConsumer
   - id: unsafe-table-refused
-    rule: New errors on a table name, or the _delivery name derived from it, that query.SafeIdent refuses, before it runs any SQL.
+    rule: New refuses a parent table name that fails query.SafeIdent or has an identifier longer than 63 bytes before running SQL.
     enforced_by:
       - test: framework/outbox.TestNew_InvalidTable
+      - test: framework/outbox.TestLongOutboxTableParity
+  - id: portable-delivery-table-name
+    rule: New uses deliveryTableName on both engines to keep the delivery table name within 63 bytes and distinct from its parent in the same schema.
+    enforced_by:
+      - test: framework/outbox.TestLongOutboxTableParity
   - id: case-kept-table-refused
     rule: On Postgres New errors when an older build left the parent or delivery table under its case-kept name, instead of starting an empty table beside it.
     enforced_by:
       - test: framework/outbox.TestPostgres_CaseKeptTableRefused
+  - id: claim-index-fits-postgres
+    rule: New creates the delivery claim index with a fitted name even when the Postgres delivery table name already uses all 63 bytes.
+    enforced_by:
+      - test: framework/outbox.TestPostgres_LongDeliveryTableHasClaimIndex
   - id: non-positive-options-keep-defaults
     rule: WithPollInterval, WithBatchSize, WithMaxAttempts and WithHandlerTimeout keep their defaults (1s, 100, 10, 30s) for a value at or below zero.
     enforced_by:

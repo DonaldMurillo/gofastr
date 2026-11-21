@@ -8,8 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// DemoFormPath is the route every catalog demo form posts to, naming its
-// demo in the query (DemoFormPath + "?demo=<slug>").
+// DemoFormPath is the shared POST route for stateless catalog forms, with ?demo=<slug>.
+// The StepWizard demo instead posts to the host-owned /forms/wizard.
 const DemoFormPath = "/__gallery/demo-form"
 
 func demoFormAction(slug string) string { return DemoFormPath + "?demo=" + slug }
