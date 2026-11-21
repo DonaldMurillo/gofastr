@@ -34,7 +34,7 @@ invariants:
       - test: battery/admin.TestGateLoginRedirectKeepsQuery
       - test: battery/admin.TestGateRefusesNonAdmin
   - id: cross-site-forgeable-posts-refused
-    rule: The gate answers 403 to every request that handler.IsForgeableRequest calls forgeable and handler.IsCrossSiteRequest calls cross-site, a text/plain form, a bodyless post and a same-site sibling whose Origin names another host included, and lets GET, HEAD and OPTIONS through.
+    rule: The gate answers 403 to every request other than GET, HEAD and OPTIONS (PUT, PATCH and DELETE as well as POST) that handler.IsForgeableRequest calls forgeable and handler.IsCrossSiteRequest calls cross-site, a text/plain form, a bodyless post and a same-site sibling whose Origin names another host included.
     enforced_by:
       - test: battery/admin.TestGateRefusesCrossSitePosts
       - test: battery/admin.TestGateRefusesEveryForgeableCrossSiteShape

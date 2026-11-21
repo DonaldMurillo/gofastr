@@ -218,9 +218,16 @@ func TestGateRefusesEveryForgeableCrossSiteShape(t *testing.T) {
 	sibling := newPost("/admin/_palette", url.Values{"q": {"a"}})
 	sibling.Header.Set("Sec-Fetch-Site", "same-site")
 	sibling.Header.Set("Origin", "https://other.example.com")
-	for name, req := range map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling} {
-		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden {
-			t.Errorf("a %s cross-site post = %d, want 403", name, rr.Code)
+	shapes := map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling}
+	for _, m := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(m, "/admin/api/posts/1", strings.NewReader("title=x"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		shapes[m] = req
+	}
+	for name, req := range shapes {
+		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "cross-site") {
+			t.Errorf("a %s cross-site request = %d %q, want the cross-site 403", name, rr.Code, rr.Body.String())
 		}
 	}
 }

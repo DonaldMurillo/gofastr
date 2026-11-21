@@ -41,6 +41,10 @@ few lines, and link the PR or the docs page for the rest.
   panic that reaches the tracing middleware sets it to `"panic"`, the new
   `tracing.ErrorTypePanic` constant that queue job spans use too. See
   [Observability](framework/docs/content/observability.md).
+- **semantic: every answer of `semantic.Handler` is `Cache-Control: no-store`.**
+  The 204 of `DELETE /doc` and the 404 and 405 of an unserved path or
+  method went out without it. See
+  [Semantic search](framework/docs/content/semantic-search.md#http-routes).
 
 ## [0.97.0] - 2026-11-19
 
