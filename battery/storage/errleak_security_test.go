@@ -2,6 +2,8 @@ package storage_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,5 +72,28 @@ func TestStorageErrorsHideAbsRoot(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), base) {
 		t.Errorf("SECURITY: [storage-path-leak] Exists error discloses the absolute storage root: %q.", err.Error())
+	}
+}
+
+// A Save that fails on a temp dir quotes neither the storage root nor the temp dir.
+func TestSaveTempDirErrorsHidePaths(t *testing.T) {
+	base, outside := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "taken", "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, tempDir, key string
+	}{
+		{"missing temp dir under the root", filepath.Join(base, "missing"), "f.txt"},
+		{"rename from an outside temp dir onto a directory", outside, "taken"},
+	}
+	for _, tc := range cases {
+		err := newTestLocalStorage(t, base, storage.WithTempDir(tc.tempDir)).Save(context.Background(), tc.key, strings.NewReader("x"))
+		if err == nil {
+			t.Fatalf("%s: Save succeeded; test setup is wrong", tc.name)
+		}
+		if strings.Contains(err.Error(), base) || strings.Contains(err.Error(), outside) {
+			t.Errorf("SECURITY: [storage-path-leak] %s: Save error quotes an absolute path: %q", tc.name, err)
+		}
 	}
 }

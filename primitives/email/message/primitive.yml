@@ -12,6 +12,10 @@ invariants:
       - test: battery/email.TestEmail_HeaderInjection
       - test: battery/email.TestEmail_AttachmentFilenameHeaderInjection
       - test: battery/email.TestInvisibleHeaderCodepointIsAnError
+  - id: bcc-never-in-headers
+    rule: buildMessage writes no Bcc header and no Bcc address anywhere in the message; Bcc recipients reach the relay only as RCPT TO.
+    enforced_by:
+      - test: battery/email.TestBccIsNeverAHeader
   - id: headers-keys-are-field-names
     rule: A Headers key must be one printable-ASCII field name without a colon, no two keys may fold to one name, and none may name Content-Type, Content-Transfer-Encoding, MIME-Version, From, To, Cc, Bcc, Resent-Bcc or Subject.
     enforced_by:

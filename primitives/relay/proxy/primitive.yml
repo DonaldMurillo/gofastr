@@ -23,6 +23,7 @@ invariants:
       - test: battery/relay.TestInboundXForwardedHostNotRelayed
       - test: battery/relay.TestClientIPHeadersNotRelayedUpstream
       - test: battery/relay.TestForwardedProtoHTTPSOnTLSLeg
+      - test: battery/relay.TestInboundCredentialsStripped
   - id: referer-reduced-to-origin
     rule: The upstream gets the Referer reduced to its http or https origin with a trailing slash, and none for anything else.
     enforced_by:
@@ -41,12 +42,13 @@ invariants:
     rule: Each proxied request runs under min(the inherited context, 30s), and a deadline or timeout answers 504.
     enforced_by:
       - test: battery/relay.TestDeadlineExceededGives504
-    judge: Does this change let a proxied request outlive 30s when its inherited context has no shorter deadline?
+      - test: battery/relay.TestProxiedRequestGetsTheRequestDeadline
   - id: failures-are-plain
     rule: A transport failure answers 502 and a timeout 504 with a generic phrase; upstream detail goes to the log with the method percent-encoded.
     enforced_by:
       - test: battery/relay.TestTransportFailureHidesUpstreamDetail
       - test: battery/relay.TestTransportFailureGives502
+      - test: battery/relay.TestProxyErrorLogsMethodEscaped
       - test: battery/relay.TestDeadlineExceededGives504
   - id: redirects-become-502
     rule: An upstream 3xx with a Location is replaced by a plain 502 after its body is drained and closed, and a 3xx with no Location passes.

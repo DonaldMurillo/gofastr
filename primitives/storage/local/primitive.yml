@@ -14,7 +14,7 @@ twins:
         note: upload.LocalStorage.
 invariants:
   - id: key-is-its-clean-form
-    rule: Every LocalStorage operation refuses a key that is empty, holds "..", is absolute or volume-qualified, or is not its own clean slash-separated form, with upload.ErrInvalidKey.
+    rule: Every LocalStorage operation refuses an empty key, and with upload.ErrInvalidKey a key that holds "..", is absolute or volume-qualified, or is not its own clean slash-separated form.
     enforced_by:
       - test: battery/storage.TestTraversalRejectedOnEveryOperation
       - test: battery/storage.TestAliasKeysRefused
@@ -45,9 +45,10 @@ invariants:
       - test: battery/storage.TestFoldedKeyRaceRefusedOnBoth
     judge: Does this change add a LocalStorage operation that touches an object without upload.RefuseFoldedKey or CommitUnfolded?
   - id: errors-carry-no-absolute-path
-    rule: No LocalStorage error quotes the absolute storage root; wraps quote the key and pass syscall errors through scrubPathError.
+    rule: No LocalStorage error quotes the absolute storage root or a temp file's path; wraps quote the key and pass syscall errors, the rename's *os.LinkError among them, through scrubPathError.
     enforced_by:
       - test: battery/storage.TestStorageErrorsHideAbsRoot
+      - test: battery/storage.TestSaveTempDirErrorsHidePaths
   - id: canceled-save-keeps-the-object
     rule: Save checks the context after the copy and before the rename, on the root path and the resolve-then-open path alike, so a canceled save leaves the stored object as it was.
     enforced_by:

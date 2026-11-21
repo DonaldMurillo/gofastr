@@ -150,6 +150,12 @@ func scrubPathError(err error) error {
 		sc.Path = "<file>"
 		return &sc
 	}
+	var le *os.LinkError
+	if errors.As(err, &le) {
+		sc := *le
+		sc.Old, sc.New = "<file>", "<file>"
+		return &sc
+	}
 	return err
 }
 
@@ -267,7 +273,7 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		}
 		if err := upload.CommitUnfolded(key, root, rt, func() error {
 			if err := rt.Rename(tmpRel, rel); err != nil {
-				return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+				return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(scrubPathError(err).Error(), root, dstPath))
 			}
 			return nil
 		}); err != nil {
@@ -319,7 +325,7 @@ func (ls *LocalStorage) saveResolveThenOpen(ctx context.Context, key, dstPath, t
 	}
 	if err := upload.CommitUnfolded(key, root, nil, func() error {
 		if err := os.Rename(tmpPath, dstPath); err != nil {
-			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(scrubPathError(err).Error(), root, dstPath))
 		}
 		return nil
 	}); err != nil {

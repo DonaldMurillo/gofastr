@@ -21,6 +21,7 @@ invariants:
       - test: battery/cache.TestCacheSkipsAPIKeyRequests
       - test: battery/cache.TestCacheMiddleware_DoesNotCacheEmbedGrantResponses
       - test: battery/cache.TestCacheCredentialCanon
+      - test: battery/cache.TestCredentialedAndAnonymousNeverShareAnEntry
   - id: bypasses
     rule: Non-GET methods and runtime navigation fetches pass through with X-Cache BYPASS, and a request no-cache or no-store is never served a stored response.
     enforced_by:
@@ -41,7 +42,7 @@ invariants:
       - test: battery/cache.TestCacheMiddleware_DoesNotLeakAcrossHosts
       - test: battery/cache.TestCacheKeysEscapedSlashApart
   - id: only-full-shared-representations-store
-    rule: Only 2xx and 3xx responses other than 304 and 206 are stored, and never one with Set-Cookie (outer or inner), private, no-store or no-cache on any Cache-Control line, or Vary * on any line; a 304 read back from a backend is not replayed.
+    rule: Only 2xx and 3xx responses other than 304 and 206 are stored, and never one with Content-Range, one with Set-Cookie (outer or inner), private, no-store or no-cache on any Cache-Control line, or Vary * on any line; a 304 read back from a backend is not replayed.
     enforced_by:
       - test: battery/cache.TestCacheMiddleware_StoreableStatuses
       - test: battery/cache.TestCacheMiddleware_DoesNotCache304
@@ -50,6 +51,10 @@ invariants:
       - test: battery/cache.TestCacheMiddleware_DoesNotCachePrivateResponses
       - test: battery/cache.TestCacheMiddleware_DoesNotCacheNoCacheResponses
       - test: battery/cache.TestVaryStarOnSecondLineNotStored
+  - id: variant-keys-are-unambiguous
+    rule: A variant's key digests each captured field with its length, so two variants whose fields concatenate to the same string get two keys.
+    enforced_by:
+      - test: battery/cache.TestVariantKeysSeparateFields
   - id: vary-includes-outer-headers
     rule: The stored variant varies on every Vary line the handler and the middleware outside the cache set, the outer i18n Accept-Language among them.
     enforced_by:

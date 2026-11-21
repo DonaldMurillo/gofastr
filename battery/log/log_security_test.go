@@ -318,3 +318,19 @@ func TestSlogReporterScrubbedOfCtrlBytes(t *testing.T) {
 		}
 	}
 }
+
+// The access line logs the path the request arrived with, not one a handler rewrote.
+func TestAccessLogPathIsTakenBeforeTheHandler(t *testing.T) {
+	var buf bytes.Buffer
+	h := accessMiddleware(slog.New(slog.NewJSONHandler(&buf, nil)), false)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = "/rewritten"
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/original", nil))
+	var entry map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+		t.Fatalf("decode log entry: %v (%q)", err, buf.String())
+	}
+	if entry["path"] != "/original" {
+		t.Fatalf("logged path = %v, want /original", entry["path"])
+	}
+}

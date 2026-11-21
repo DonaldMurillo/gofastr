@@ -18,10 +18,14 @@ func TestDefaultKeyValidatorRefusesBackslash(t *testing.T) {
 }
 
 func TestMemorySaveRefusesOversizeBody(t *testing.T) {
+	const limit = 50 << 20
 	m := NewMemoryStorage()
-	err := m.Save(context.Background(), "big", io.LimitReader(zeroReader{}, maxMemoryFileSize+1))
+	err := m.Save(context.Background(), "big", io.LimitReader(zeroReader{}, limit+1))
 	if err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("Save of maxMemoryFileSize+1 bytes = %v, want a too-large error", err)
+		t.Fatalf("Save of 50 MiB + 1 bytes = %v, want a too-large error", err)
+	}
+	if err := m.Save(context.Background(), "full", io.LimitReader(zeroReader{}, limit)); err != nil {
+		t.Fatalf("Save of exactly 50 MiB = %v, want it stored", err)
 	}
 	if ok, _ := m.Exists(context.Background(), "big"); ok {
 		t.Fatal("an oversize body was stored")

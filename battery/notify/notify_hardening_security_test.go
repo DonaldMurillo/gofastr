@@ -148,6 +148,12 @@ func TestEmailChannel_RejectsUnsafeRenderedHeaders(t *testing.T) {
 			rejectedAs: "reserved Reply-To header override was accepted. Attack: reply-hijack / phishing through rendered Extra.headers.",
 			despite:    "reserved Reply-To header override",
 		},
+		{
+			name:       "reserved_sender_override",
+			header:     map[string]string{"sender": "ceo@company.example"},
+			rejectedAs: "reserved Sender header override was accepted. Attack: sender spoofing through rendered Extra.headers.",
+			despite:    "reserved Sender header override",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

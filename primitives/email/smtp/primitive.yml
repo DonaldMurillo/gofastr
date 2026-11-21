@@ -7,9 +7,10 @@ docs:
   - framework/docs/content/email.md
 invariants:
   - id: fails-closed-without-tls
-    rule: Without implicit TLS, a server that does not offer STARTTLS, or a failed STARTTLS, ends the send unless AllowCleartext is set.
+    rule: Without implicit TLS, a server that does not offer STARTTLS ends the send unless AllowCleartext is set, and a STARTTLS the server offers and then fails ends the send even when it is.
     enforced_by:
       - test: battery/email.TestSMTP_NoCleartextWhenSTARTTLSUnavailable
+      - test: battery/email.TestSMTP_FailedSTARTTLSEndsTheSend
   - id: exchange-is-bounded
     rule: The dial is bounded by DialTimeout, the same budget is the connection's deadline for the whole exchange, and cancelling the context closes the connection.
     enforced_by:

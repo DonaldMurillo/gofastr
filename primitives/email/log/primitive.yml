@@ -19,6 +19,7 @@ invariants:
       - test: battery/email.TestLogSender_DoesNotExposeLiveResetLinks
       - test: battery/email.TestRedactBodyEveryParam
       - test: battery/email.TestRedactBodyDropsBearerValue
+      - test: battery/email.TestRedactBodyNumericAmpersand
   - id: terminal-output-is-scrubbed
     rule: Every header line LogSender prints passes scrubHeaderValue and every body logText, so no control, C1 or invisible codepoint reaches the terminal.
     enforced_by:

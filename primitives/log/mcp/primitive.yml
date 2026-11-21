@@ -10,7 +10,7 @@ invariants:
     enforced_by:
       - test: battery/log.TestMCPMutationGated
   - id: host-gate-holds-in-dev
-    rule: A host MCPGate gates the read tools, and a dev-implied enable does not replace it with its own.
+    rule: A host that enabled MCP itself and set MCPGate keeps that gate on the read tools in dev; when dev is what turned MCP on, the read tools follow the set_level gate, which dev leaves open unless the host allowed mutation itself.
     enforced_by:
       - test: battery/log.TestLogMCPGateHoldsInDev
       - test: battery/log.TestLogMCPGateOverridesRole

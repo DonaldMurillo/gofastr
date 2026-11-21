@@ -36,6 +36,14 @@ func TestEmail_HeaderInjection(t *testing.T) {
 			name:  "bare_lf",
 			email: Email{From: "a@b.test", To: []string{"x@y.test\nBcc: victim@e.com"}, Subject: "hi", TextBody: "body"},
 		},
+		{
+			name:  "del_in_subject",
+			email: Email{From: "a@b.test", To: []string{"x@y.test"}, Subject: "hi\x7fthere", TextBody: "body"},
+		},
+		{
+			name:  "invalid_utf8_in_subject",
+			email: Email{From: "a@b.test", To: []string{"x@y.test"}, Subject: "hi\x9b\xffthere", TextBody: "body"},
+		},
 	}
 
 	for _, tc := range cases {

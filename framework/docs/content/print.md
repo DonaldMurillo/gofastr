@@ -126,7 +126,9 @@ Built-in CSS utilities available in your document components:
 On screen the document is a centred column `820px` wide; set
 `--ui-print-doc-max-width` in your app's style sheet to change it. The
 print base reads design tokens with fallbacks, so it looks right with or
-without `AppCSSURL`, and drops shadows and backgrounds under `@media print`.
+without `AppCSSURL`. Under `@media print` it drops box shadows, and it
+sets `print-color-adjust: exact` so backgrounds and colours print as
+they show on screen.
 
 ## Access control
 

@@ -14,6 +14,10 @@ invariants:
       - test: battery/log.TestForwardedHeaderCapped
       - test: battery/log.TestAccessLogAllForwardedLines
       - test: battery/log.TestAccessLogOmitsQueryString
+  - id: access-path-taken-before-the-handler
+    rule: The access line's method and path are read before the handler runs, so a handler that rewrites r.URL.Path does not change what is logged.
+    enforced_by:
+      - test: battery/log.TestAccessLogPathIsTakenBeforeTheHandler
   - id: remote-is-the-peer-by-default
     rule: The remote field is the connection's address unless TrustForwardedFor is set.
     enforced_by:

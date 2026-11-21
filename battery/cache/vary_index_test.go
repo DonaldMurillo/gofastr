@@ -65,3 +65,10 @@ func TestVariantKeysHideHeaderValues(t *testing.T) {
 		t.Errorf("variant entry = %#v, want the full response", recorder.values[0])
 	}
 }
+
+// Two variants whose captured fields concatenate to one string still get two keys.
+func TestVariantKeysSeparateFields(t *testing.T) {
+	if variantKey("k", "g", []string{"A:1B:2", "B:"}) == variantKey("k", "g", []string{"A:1", "B:2B:"}) {
+		t.Fatal("variants with different fields share a key")
+	}
+}
