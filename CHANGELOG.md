@@ -50,6 +50,10 @@ few lines, and link the PR or the docs page for the rest.
   The 204 of `DELETE /doc` and the 404 and 405 of an unserved path or
   method went out without it. See
   [Semantic search](framework/docs/content/semantic-search.md#http-routes).
+- **`tracing.Job` spans carry `error.type`** like SQL, HTTP client and
+  queue job spans: the error's Go type under `%w` wrappers, or
+  `tracing.ErrorTypePanic` for a panic. The status still holds the
+  error's text.
 
 ## [0.97.0] - 2026-11-19
 

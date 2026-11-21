@@ -357,8 +357,10 @@ err := tracing.Job(ctx, "import customers", func(ctx context.Context) error {
 })
 ```
 
-The span's status is the error's text, or the panic's value with the
-call stack as `exception.stacktrace`; a panic goes on to the caller.
+A failed job's span carries `error.type` (the error's Go type, or
+`tracing.ErrorTypePanic`) and, unlike the spans below, its status is the error's text,
+or the panic's value with the call stack as `exception.stacktrace`; a
+panic goes on to the caller.
 
 | Span | Attributes |
 |---|---|
@@ -385,7 +387,7 @@ It unwraps only `fmt.Errorf` wrappers using `%w` (following the first error
 when there are several `%w` operands), and returns `"<nil>"` for nil.
 `errors.Join` reports `*errors.joinError`; a wrapped `errors.New` sentinel
 reports `*errors.errorString`.
-SQL, HTTP client and queue job spans share this logic.
+SQL, HTTP client, queue job and `tracing.Job` spans share this logic.
 
 ### Exporting traces to a collector (OTLP)
 
