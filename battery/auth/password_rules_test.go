@@ -111,6 +111,18 @@ func TestForgotPasswordCrossSiteRefused(t *testing.T) {
 	}
 }
 
+func TestResetPasswordCrossSiteRefused(t *testing.T) {
+	h := newChangeHarness(t, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/reset-password", strings.NewReader("token=t&password=a-new-long-password-1"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	w := httptest.NewRecorder()
+	h.r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-site reset-password form = %d, want 403", w.Code)
+	}
+}
+
 func TestPasswordChangeDropsOutstandingResetLinks(t *testing.T) {
 	h := newChangeHarness(t, nil)
 	p, _ := h.mgr.Plugin("password-reset")

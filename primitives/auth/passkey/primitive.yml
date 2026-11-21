@@ -171,6 +171,7 @@ invariants:
       - test: battery/auth.TestPasskeySignCountMustAdvance
       - test: battery/auth.TestPasskeyZeroCounterSignsIn
       - test: battery/auth.TestPasskeyLostRaceIs409
+      - test: battery/auth.TestMemoryPasskeyStoreContract
       - test: battery/auth.TestPasskeyTwoFADownFailsClosed
       - test: battery/auth.TestPasskeyLoginOvertakenByReset
   - id: ceremonies-verified

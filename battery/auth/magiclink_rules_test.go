@@ -55,9 +55,12 @@ func TestMagicLinkVerifyCapsBody(t *testing.T) {
 }
 
 func TestMailQueueRecoversSenderPanic(t *testing.T) {
+	logs := captureDefaultLogger(t)
 	q := newMailQueue("test")
 	ran := make(chan struct{})
-	q.enqueue(context.Background(), "a@example.com", func(context.Context) { panic("sender exploded") })
+	q.enqueue(context.Background(), "a@example.com", func(context.Context) {
+		panic("sender exploded on https://app.example/auth/reset?token=takeover-secret-xyz")
+	})
 	q.enqueue(context.Background(), "b@example.com", func(context.Context) { close(ran) })
 	select {
 	case <-ran:
@@ -69,6 +72,9 @@ func TestMailQueueRecoversSenderPanic(t *testing.T) {
 	}
 	if q.enqueue(context.Background(), "a@example.com", func(context.Context) {}) {
 		t.Error("enqueue after stop was accepted")
+	}
+	if out := logs.String(); !strings.Contains(out, "email delivery panicked") || strings.Contains(out, "takeover-secret-xyz") {
+		t.Errorf("SECURITY: the panic backstop must log the panic without its value (which can hold the mailed link):\n%s", out)
 	}
 }
 

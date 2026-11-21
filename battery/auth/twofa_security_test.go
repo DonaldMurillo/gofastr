@@ -298,7 +298,7 @@ func (s *rendezvousTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*Tw
 // CompareAndSwapTwoFA on the state the handler read, so the second
 // concurrent presentation of the same step loses.
 func TestTwoFAChallengeCodeSingleUseConcurrent(t *testing.T) {
-	_, twofa, r := setupP17(t)
+	mgr, twofa, r := setupP17(t)
 
 	rendezvous := &rendezvousTwoFAStore{
 		MemoryTwoFAStore: twofa.store.(*MemoryTwoFAStore),
@@ -356,6 +356,19 @@ func TestTwoFAChallengeCodeSingleUseConcurrent(t *testing.T) {
 	}
 	if verified != 1 {
 		t.Errorf("one TOTP code presented concurrently to two pending sessions verified %d sessions; at most 1 is allowed (outcomes: %+v)", verified, got)
+	}
+
+	sessions := mgr.SessionStore().(*MemorySessionStore)
+	sessions.mu.RLock()
+	stored := 0
+	for _, s := range sessions.sessions {
+		if s.UserID == "u-1" && s.TwoFactorVerified {
+			stored++
+		}
+	}
+	sessions.mu.RUnlock()
+	if stored != 1 {
+		t.Errorf("SECURITY: one TOTP code presented concurrently left %d verified sessions in the store, want 1: the loser minted a verified session before its step consume failed (outcomes: %+v)", stored, got)
 	}
 }
 

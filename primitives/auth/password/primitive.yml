@@ -79,13 +79,15 @@ invariants:
       - test: battery/auth.TestForgotPasswordReturnsBeforeEmailDelivery
       - test: battery/auth.TestPasswordReset_DevModeDoesNotLogLiveURL
   - id: reset-spends-the-token-last
-    rule: Reset validates the new password (at most 128 bytes, the strength floor) before redeeming the single-use token, so a refused password keeps the link.
+    rule: Reset refuses a cross-site form, and validates the new password (at most 128 bytes, the strength floor) before redeeming the single-use token, so a refused password keeps the link.
     enforced_by:
+      - test: battery/auth.TestResetPasswordCrossSiteRefused
       - test: battery/auth.TestPasswordReset_TokenSurvivesBadPassword
       - test: battery/auth.TestPasswordResetRefusesOverlongPasswordKeepingToken
   - id: reset-evicts-everything
-    rule: A completed reset drops the user's other reset links, removes passkeys, unlinks every OAuth identity, revokes sessions, drops mailed sign-ins and revokes API tokens, running each step even after one fails and answering 500 when any failed; it then claims an unverified account and mails a notice.
+    rule: A completed reset drops the user's other reset links, removes passkeys, unlinks every OAuth identity and only then revokes sessions, drops mailed sign-ins and revokes API tokens, running each step even after one fails and answering 500 when any failed; it then claims an unverified account and mails a notice.
     enforced_by:
+      - test: battery/auth.TestResetRevokesIdPSessionMidUnlink
       - test: battery/auth.TestPasswordReset_KillsSiblingTokens
       - test: battery/auth.TestPasskeyResetPurgesBeforeRevoke
       - test: battery/auth.TestResetUnlinksOAuthOnVerified

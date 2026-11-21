@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 )
 
 func TestCSRF_GETSetsCookie(t *testing.T) {
@@ -306,4 +308,25 @@ func TestCSRF_SkipsBearerAuth(t *testing.T) {
 	if !called {
 		t.Error("Bearer-auth request blocked by CSRF — should have been skipped")
 	}
+}
+
+func TestCSRFTokensAreMaskedPerRender(t *testing.T) {
+	check := func(name, raw string, read func() string) {
+		t.Helper()
+		a, b := read(), read()
+		if a == "" || a == raw || b == raw || a == b {
+			t.Errorf("%s: renders %q and %q of token %q are not freshly masked", name, a, b, raw)
+		}
+		if !csrfMaskedEquals(a, raw) || !csrfMaskedEquals(b, raw) {
+			t.Errorf("%s: a masked render does not carry token %q", name, raw)
+		}
+	}
+	CSRF()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		raw := middleware.TokenFromContext(r.Context())
+		check("CSRFTokenFromCtx", raw, func() string { return CSRFTokenFromCtx(r.Context()) })
+		check("CSRFToken from ctx", raw, func() string { return CSRFToken(r) })
+	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "cookie-token"})
+	check("CSRFToken from cookie", "cookie-token", func() string { return CSRFToken(req) })
 }

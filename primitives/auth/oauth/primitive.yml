@@ -61,17 +61,19 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOAuthOverlongEmailRefused
   - id: link-flow-guards
-    rule: The authenticated link flow requires the session of the user the state names, refuses an identity bound to another user or a race it lost, stores the provider tokens, and takes the link and tokens back when the session or credential moved meanwhile.
+    rule: The authenticated link flow requires the session of the user the state names, refuses an identity bound to another user or a race it lost, stores the provider tokens before it re-checks the session and credential, and takes the link and tokens back when either moved meanwhile.
     enforced_by:
+      - test: battery/auth.TestLinkClaimAfterRecheckLeavesNoTokens
       - test: battery/auth.TestOAuth_AuthenticatedLinkRefusesSessionMismatch
       - test: battery/auth.TestOAuthLinkRefusesBoundIdentity
       - test: battery/auth.TestLinkFlowLosingBindingRaceIsRefused
       - test: battery/auth.TestLinkFlowStoresProviderTokens
       - test: battery/auth.TestLinkCallbackOvertakenByClaim
   - id: sign-in-rechecks-the-link
-    rule: After the session is stored the sign-in resolves the link again and drops the session when it no longer names the user; a pending session goes to TwoFactorURL.
+    rule: After the session and the provider tokens are stored the sign-in resolves the link again and drops both when it no longer names the user; a pending session goes to TwoFactorURL.
     enforced_by:
       - test: battery/auth.TestOAuthLoginOvertakenByClaim
+      - test: battery/auth.TestOAuthClaimAfterLinkRecheckLeavesNoTokens
       - test: battery/auth.TestOAuthPendingSignInGoesToTwoFactorURL
   - id: cross-site-return-hops
     rule: A sign-in or link callback reached by a cross-site navigation (or one with no Fetch Metadata) answers a same-origin hop page instead of a redirect, and the hop target never leaves the origin.
@@ -80,8 +82,9 @@ invariants:
       - test: battery/auth.TestOAuthLinkSurvivesStrictCookie
       - test: battery/auth.TestCrossSiteArrivalHopIsNoOpenRedirect
   - id: provider-fetches
-    rule: Built-in provider fetches use a 10-second client that follows no redirect, GitHub's 200 error documents are errors, an unconfirmed GitHub public email is unverified, and a token with no expires_in has no expiry.
+    rule: Built-in provider fetches use a 10-second client that follows no redirect and decode at most 1 MiB of a response, GitHub's 200 error documents are errors, an unconfirmed GitHub public email is unverified, and a token with no expires_in has no expiry.
     enforced_by:
+      - test: battery/auth.TestProviderResponseBodiesCapped
       - test: battery/auth.TestProviderFetchRefusesRedirect
       - test: battery/auth.TestOAuthProviders_DefaultClientHasTimeout
       - test: battery/auth.TestGitHubRefusedExchangeIsAnError
@@ -126,6 +129,11 @@ invariants:
     rule: A failed JWKS refresh with a stale set backs off a minute.
     enforced_by:
       - test: battery/auth.TestJWKSRefreshFailureBacksOff
+  - id: oidc-caches-bounded
+    rule: An OIDCProvider caches userinfo claims for at most the 1024 most recent access tokens, dropping the oldest, and the JWKS cache tracks at most 128 unknown kids for forced refetches before it starts the map over.
+    enforced_by:
+      - test: battery/auth.TestOIDCClaimsCacheBounded
+      - test: battery/auth.TestJWKSForcedKidsBounded
   - id: oidc-email-verified-is-about-email
     rule: email_verified vouches only for the email claim's own address, a userinfo flag counts only when the id_token carried none and names the same address, and userinfo must name the id_token's subject.
     enforced_by:

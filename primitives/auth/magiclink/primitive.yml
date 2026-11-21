@@ -73,7 +73,7 @@ invariants:
       - test: battery/auth.TestNonPeekingStoreRefusesResetTokenElsewhere
       - test: battery/auth.TestResetDropsMagicLinks
   - id: mail-queue-bounded
-    rule: The mail queue detaches sends from the request, gives each a 30-second deadline cancelled by stop, drops a send when full or stopped instead of blocking, and recovers a panicking sender.
+    rule: The mail queue detaches sends from the request, gives each a 30-second deadline cancelled by stop, drops a send when full or stopped instead of blocking, and recovers a panicking sender, logging the panic without its value because the value can hold the mailed link.
     enforced_by:
       - test: battery/auth.TestForgotPasswordReturnsBeforeEmailDelivery
       - test: battery/auth.TestDuplicateNoticeBoundedAndStopped
