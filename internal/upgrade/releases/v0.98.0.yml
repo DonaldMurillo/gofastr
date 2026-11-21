@@ -1,5 +1,5 @@
 version: v0.98.0
-title: Pending release
+title: Refreshed docs story, stricter CLI and validation gates, and battery hardening
 notes:
   - change: "BREAKING - the admin role editor saves a role change through auth.RoleSwapper, a compare-and-set on the roles it read; a custom auth.UserStore that does not implement it refuses every role edit"
     breaking: true
