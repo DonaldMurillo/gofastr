@@ -132,6 +132,28 @@ func TestSaveUserConfigRefusesSymlink(t *testing.T) {
 	if err := SaveUserConfig(filepath.Join(dir, "safe.yml"), UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("SECURITY: symlinked lockfile accepted: %v", err)
 	}
+
+	// Refuse a non-sticky group/world-writable ancestor directory even when the
+	// immediate directory and file are 0700/0600.
+	shared := filepath.Join(dir, "shared")
+	sub := filepath.Join(shared, "alice")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(shared, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(shared, 0o700) })
+	nested := filepath.Join(sub, "plugins.yml")
+	if err := os.WriteFile(nested, []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadUserConfig(nested); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: non-sticky world-writable ancestor accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(nested, UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: non-sticky world-writable ancestor accepted on save: %v", err)
+	}
 }
 
 func TestUpdateUserConfigSerialized(t *testing.T) {

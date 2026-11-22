@@ -147,6 +147,34 @@ func TestBuildProbeEnvExcludesCredentials(t *testing.T) {
 	}
 }
 
+func TestWindowsMixedCaseEnvPreservesPath(t *testing.T) {
+	parent := []string{
+		`Path=C:\Windows\System32;C:\Go\bin`,
+		`Temp=C:\Users\dev\AppData\Local\Temp`,
+		`SystemRoot=C:\Windows`,
+		`Android_Home=C:\Android\Sdk`,
+		`GoFastr_Secret=must-not-leak`,
+	}
+	probe := strings.Join(buildProbeEnv(parent, true), "\n")
+	if !strings.Contains(probe, `Path=C:\Windows\System32;C:\Go\bin`) || !strings.Contains(probe, `Temp=C:\Users\dev\AppData\Local\Temp`) {
+		t.Fatalf("Windows probe env dropped mixed-case Path/Temp:\n%s", probe)
+	}
+	if strings.Contains(probe, "must-not-leak") {
+		t.Fatalf("SECURITY: Windows probe env leaked mixed-case GOFASTR_SECRET:\n%s", probe)
+	}
+
+	execEnv := strings.Join(buildExecEnv(EnvOptions{
+		Environ:  parent,
+		AllowEnv: []string{"ANDROID_*"},
+	}, true), "\n")
+	if !strings.Contains(execEnv, `Path=C:\Windows\System32;C:\Go\bin`) || !strings.Contains(execEnv, `Android_Home=C:\Android\Sdk`) {
+		t.Fatalf("Windows exec env dropped mixed-case Path/Android_Home:\n%s", execEnv)
+	}
+	if strings.Contains(execEnv, "must-not-leak") {
+		t.Fatalf("SECURITY: Windows exec env leaked mixed-case GOFASTR_SECRET:\n%s", execEnv)
+	}
+}
+
 func TestBuildExecEnvFiltering(t *testing.T) {
 	parent := []string{
 		"PATH=/usr/bin:/bin",

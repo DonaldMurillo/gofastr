@@ -336,6 +336,7 @@ func TestJSONModeDecisions(t *testing.T) {
 		{"plugin", []string{"list", "--json"}, true},
 		{"plugin", []string{"doctor", "--json"}, true},
 		{"plugin", []string{"list"}, false},
+		{"plugin", []string{"add", "tool", "/bin/tool", "--", "--json"}, false},
 	} {
 		command := findCommand(fixture.command)
 		if got := command.json(fixture.args); got != fixture.want {

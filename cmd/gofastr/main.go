@@ -234,7 +234,7 @@ var commands = []commandSpec{
 	{names: []string{"remount"}, run: unmountcmd.RunRemount, ownsHelp: true, versionChecked: true},
 	{names: []string{"theme"}, run: themecmd.RunTheme, ownsHelp: true, versionChecked: true},
 	{names: []string{"plugin"}, run: plugincmd.RunPlugin, ownsHelp: true, json: func(args []string) bool {
-		return slices.Contains(args, "--json")
+		return cli.HasFlagBeforeTerminator(args, "--json")
 	}},
 	{names: []string{"version"}, run: func(args []string) {
 		for _, a := range args {

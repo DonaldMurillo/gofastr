@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -44,7 +43,7 @@ Examples:
 
 // RunPlugin dispatches `gofastr plugin ...`.
 func RunPlugin(args []string) {
-	jsonMode := slices.Contains(args, "--json")
+	jsonMode := cli.HasFlagBeforeTerminator(args, "--json")
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		cli.Print(pluginUsage)
 		return
@@ -118,9 +117,14 @@ func runPluginList(args []string, jsonMode bool) {
 		return
 	}
 
-	resolved, _, cfgPath, err := resolveFromEnv()
+	cfgPath, err := cliplugin.DefaultUserConfigPath()
 	if err != nil {
 		pluginRuntimeFail(jsonMode, "%v", err)
+		return
+	}
+	resolved, _, userErr, projErr := loadUserAndProject(false)
+	if userErr != nil {
+		pluginRuntimeFail(jsonMode, "%v", userErr)
 		return
 	}
 
@@ -129,6 +133,9 @@ func runPluginList(args []string, jsonMode bool) {
 			"config_path": cfgPath,
 			"plugins":     resolved,
 		}
+		if projErr != nil {
+			doc["project_error"] = projErr.Error()
+		}
 		if err := cli.EmitJSON(doc); err != nil {
 			cli.Fail("emit JSON: %v", err)
 			cli.OsExit(1)
@@ -136,6 +143,9 @@ func runPluginList(args []string, jsonMode bool) {
 		return
 	}
 
+	if projErr != nil {
+		cli.Warn("Project settings error (showing global plugins): %v", projErr)
+	}
 	if len(resolved) == 0 {
 		cli.Info("No CLI plugins registered.")
 		cli.Info("Register one with: gofastr plugin add <name> <executable>")
@@ -491,6 +501,15 @@ func runPluginTrust(args []string) {
 				}
 			}
 		}
+		for _, existing := range cfg.TrustedProjects {
+			if cliplugin.CanonicalProjectDir(existing.ProjectDir) == canonProj && existing.Name != name {
+				for _, ov := range allowOverrides {
+					if slices.Contains(existing.AllowOverrides, ov) {
+						return fmt.Errorf("built-in command %q is already overridden by project plugin %q", ov, existing.Name)
+					}
+				}
+			}
+		}
 		replaced := false
 		for i, existing := range cfg.TrustedProjects {
 			if cliplugin.CanonicalProjectDir(existing.ProjectDir) == canonProj && existing.Name == name {
@@ -609,9 +628,9 @@ func runPluginDoctor(args []string, jsonMode bool) {
 	}
 	_ = wantJSON
 
-	userCfg, projCfg, cfgPath, wd, err := loadConfigs()
-	if err != nil {
-		pluginRuntimeFail(jsonMode, "%v", err)
+	userCfg, projCfg, cfgPath, wd, userErr, projErr := loadConfigs()
+	if userErr != nil {
+		pluginRuntimeFail(jsonMode, "%v", userErr)
 		return
 	}
 	diags := cliplugin.Diagnose(context.Background(), cliplugin.ResolveOptions{
@@ -621,11 +640,15 @@ func runPluginDoctor(args []string, jsonMode bool) {
 	}, project.CliVersion(), wd, filterName)
 
 	if filterName != "" && len(diags) == 0 {
+		if projErr != nil {
+			pluginRuntimeFail(jsonMode, "Plugin %q not found in global registry and project settings failed to load: %v", filterName, projErr)
+			return
+		}
 		pluginRuntimeFail(jsonMode, "Plugin %q is not registered or declared in this project.", filterName)
 		return
 	}
 
-	hasError := false
+	hasError := projErr != nil
 	for _, d := range diags {
 		if d.Status != cliplugin.StatusReady {
 			hasError = true
@@ -640,6 +663,9 @@ func runPluginDoctor(args []string, jsonMode bool) {
 			"ok":               !hasError,
 			"plugins":          diags,
 		}
+		if projErr != nil {
+			doc["project_error"] = projErr.Error()
+		}
 		if err := cli.EmitJSON(doc); err != nil {
 			cli.Fail("emit JSON: %v", err)
 			cli.OsExit(1)
@@ -651,7 +677,10 @@ func runPluginDoctor(args []string, jsonMode bool) {
 		return
 	}
 
-	if len(diags) == 0 {
+	if projErr != nil {
+		cli.Fail("Project settings error (global plugins checked below): %v", projErr)
+	}
+	if len(diags) == 0 && projErr == nil {
 		cli.Info("No CLI plugins configured (registry: %s).", cfgPath)
 		return
 	}
@@ -790,47 +819,24 @@ func printAvailableInactiveCapabilities(m cliplugin.Manifest, activeHooks, activ
 	}
 }
 
-func loadConfigs() (cliplugin.UserConfig, cliplugin.ProjectConfig, string, string, error) {
+func loadConfigs() (cliplugin.UserConfig, cliplugin.ProjectConfig, string, string, error, error) {
 	cfgPath, err := cliplugin.DefaultUserConfigPath()
 	if err != nil {
-		return cliplugin.UserConfig{}, cliplugin.ProjectConfig{}, "", "", err
+		return cliplugin.UserConfig{}, cliplugin.ProjectConfig{}, "", "", err, nil
 	}
 	userCfg, err := cliplugin.LoadUserConfig(cfgPath)
 	if err != nil {
-		return cliplugin.UserConfig{}, cliplugin.ProjectConfig{}, cfgPath, "", err
+		return cliplugin.UserConfig{}, cliplugin.ProjectConfig{}, cfgPath, "", err, nil
 	}
 	wd, err := os.Getwd()
 	if err != nil {
-		return userCfg, cliplugin.ProjectConfig{}, cfgPath, "", err
+		return userCfg, cliplugin.ProjectConfig{}, cfgPath, "", err, nil
 	}
-	projCfg, err := cliplugin.DiscoverProjectConfig(wd)
-	if err != nil {
-		return userCfg, cliplugin.ProjectConfig{}, cfgPath, wd, err
+	projCfg, projErr := cliplugin.DiscoverProjectConfig(wd)
+	if projErr != nil {
+		return userCfg, cliplugin.ProjectConfig{}, cfgPath, wd, nil, projErr
 	}
-	return userCfg, projCfg, cfgPath, wd, nil
-}
-
-func resolveFromEnv() ([]cliplugin.ResolvedPlugin, string, string, error) {
-	userCfg, projCfg, cfgPath, wd, err := loadConfigs()
-	if err != nil {
-		return nil, "", cfgPath, err
-	}
-	resolved := cliplugin.Resolve(cliplugin.ResolveOptions{
-		UserConfig:    userCfg,
-		ProjectConfig: projCfg,
-		Builtins:      getHostBuiltins(),
-	})
-	projectRoot := projCfg.ProjectDir
-	if projectRoot == "" {
-		_, root := project.FindEnclosingGoMod(wd)
-		projectRoot = root
-	}
-	if projectRoot != "" {
-		if abs, err := filepath.Abs(projectRoot); err == nil {
-			projectRoot = abs
-		}
-	}
-	return resolved, projectRoot, cfgPath, nil
+	return userCfg, projCfg, cfgPath, wd, nil, nil
 }
 
 // CompanionHint describes a known first-party companion CLI plugin so users

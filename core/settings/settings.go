@@ -93,21 +93,14 @@ func Find(start, section string) (f File, ok bool, err error) {
 }
 
 // Load reads and checks the settings file at path. It refuses non-regular
-// files (such as devices or FIFOs) and caps reads at maxSettingsBytes so a
-// hostile symlink cannot exhaust memory.
+// files (such as devices or FIFOs) without blocking and caps reads at
+// maxSettingsBytes so a hostile symlink cannot hang or exhaust memory.
 func Load(path string) (File, error) {
-	f, err := os.Open(path)
+	f, err := openRegularReadOnly(path)
 	if err != nil {
 		return File{}, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return File{}, err
-	}
-	if !info.Mode().IsRegular() {
-		return File{}, fmt.Errorf("%s: settings file must be a regular file", path)
-	}
 	data, err := io.ReadAll(io.LimitReader(f, maxSettingsBytes+1))
 	if err != nil {
 		return File{}, err

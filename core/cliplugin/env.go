@@ -159,14 +159,22 @@ func ValidateEnvFlag(flagName string) error {
 // EnvPatternMatches reports whether env key matches pattern (exact or PREFIX_*).
 // Blocked secret keys and protocol-reserved keys never match.
 func EnvPatternMatches(pattern, key string) bool {
-	if IsBlockedEnvKey(key) || protocolEnvKeys[key] {
+	return envPatternMatches(pattern, key, runtime.GOOS == "windows")
+}
+
+func envPatternMatches(pattern, key string, caseInsensitive bool) bool {
+	if IsBlockedEnvKey(key) || isProtocolEnvKey(key, caseInsensitive) {
 		return false
+	}
+	matchKey := key
+	if caseInsensitive {
+		matchKey = strings.ToUpper(key)
 	}
 	if strings.HasSuffix(pattern, "*") {
 		prefix := strings.TrimSuffix(pattern, "*")
-		return len(prefix) >= 2 && strings.HasPrefix(key, prefix)
+		return len(prefix) >= 2 && strings.HasPrefix(matchKey, prefix)
 	}
-	return key == pattern
+	return matchKey == pattern
 }
 
 // EnvOptions configures environment construction for a plugin invocation.
@@ -182,6 +190,10 @@ type EnvOptions struct {
 // manifest handshake probe. It excludes Go toolchain variables (such as
 // GOPROXY) that may embed credentials.
 func BuildProbeEnv(environ []string) []string {
+	return buildProbeEnv(environ, runtime.GOOS == "windows")
+}
+
+func buildProbeEnv(environ []string, caseInsensitive bool) []string {
 	src := environ
 	if src == nil {
 		src = os.Environ()
@@ -189,10 +201,10 @@ func BuildProbeEnv(environ []string) []string {
 	selected := map[string]string{}
 	for _, kv := range src {
 		key, val, ok := strings.Cut(kv, "=")
-		if !ok || key == "" || protocolEnvKeys[key] || IsBlockedEnvKey(key) {
+		if !ok || key == "" || isProtocolEnvKey(key, caseInsensitive) || IsBlockedEnvKey(key) {
 			continue
 		}
-		if probeEnvAllowlist[key] || (runtime.GOOS == "windows" && baseEnvAllowlistWindows[strings.ToUpper(key)]) {
+		if isProbeAllowedEnv(key, caseInsensitive) {
 			selected[key] = val
 		}
 	}
@@ -212,6 +224,10 @@ func BuildProbeEnv(environ []string) []string {
 // non-blocked env vars referenced by approved AllowEnvFlag arguments, and
 // host-owned ProtocolVars are included.
 func BuildExecEnv(opts EnvOptions) []string {
+	return buildExecEnv(opts, runtime.GOOS == "windows")
+}
+
+func buildExecEnv(opts EnvOptions, caseInsensitive bool) []string {
 	src := opts.Environ
 	if src == nil {
 		src = os.Environ()
@@ -225,10 +241,11 @@ func BuildExecEnv(opts EnvOptions) []string {
 		if !ok || key == "" {
 			continue
 		}
-		if protocolEnvKeys[key] {
+		if isProtocolEnvKey(key, caseInsensitive) {
 			continue
 		}
-		if isBaseAllowedEnv(key) || matchesAnyPattern(opts.AllowEnv, key) || flagVars[key] {
+		flagMatch := flagVars[key] || (caseInsensitive && flagVars[strings.ToUpper(key)])
+		if isBaseAllowedEnv(key, caseInsensitive) || matchesAnyPattern(opts.AllowEnv, key, caseInsensitive) || flagMatch {
 			if !IsBlockedEnvKey(key) {
 				selected[key] = val
 			}
@@ -249,19 +266,38 @@ func BuildExecEnv(opts EnvOptions) []string {
 	return out
 }
 
-func isBaseAllowedEnv(key string) bool {
-	if baseEnvAllowlist[key] {
+func isProtocolEnvKey(key string, caseInsensitive bool) bool {
+	if protocolEnvKeys[key] {
 		return true
 	}
-	if runtime.GOOS == "windows" {
-		return baseEnvAllowlistWindows[strings.ToUpper(key)]
+	return caseInsensitive && protocolEnvKeys[strings.ToUpper(key)]
+}
+
+func isProbeAllowedEnv(key string, caseInsensitive bool) bool {
+	if probeEnvAllowlist[key] {
+		return true
+	}
+	if caseInsensitive {
+		upper := strings.ToUpper(key)
+		return probeEnvAllowlist[upper] || baseEnvAllowlistWindows[upper]
 	}
 	return false
 }
 
-func matchesAnyPattern(patterns []string, key string) bool {
+func isBaseAllowedEnv(key string, caseInsensitive bool) bool {
+	if baseEnvAllowlist[key] {
+		return true
+	}
+	if caseInsensitive {
+		upper := strings.ToUpper(key)
+		return baseEnvAllowlist[upper] || baseEnvAllowlistWindows[upper]
+	}
+	return false
+}
+
+func matchesAnyPattern(patterns []string, key string, caseInsensitive bool) bool {
 	for _, p := range patterns {
-		if EnvPatternMatches(p, key) {
+		if envPatternMatches(p, key, caseInsensitive) {
 			return true
 		}
 	}

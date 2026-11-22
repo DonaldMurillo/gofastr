@@ -520,6 +520,69 @@ func main() {
 	}
 }
 
+func TestJSONPreHookFailureEmitsJSONError(t *testing.T) {
+	isolatePluginEnv(t)
+	clitest.CovT_chdir(t, t.TempDir())
+
+	bin := buildMockPluginBinary(t, `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--gofastr-plugin-manifest" {
+		fmt.Print(`+"`"+`{"protocol_version":1,"name":"jhook","version":"v0.1.0","summary":"JSON pre-hook","hooks":[{"phase":"pre","command":"verify"}]}`+"`"+`)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "blocked by jhook")
+	os.Exit(9)
+}
+`, t.TempDir(), "jhook")
+
+	_, errOut, code := runDispatch(t, "plugin", "add", "jhook", bin, "--allow-hook", "pre:verify")
+	if code != 0 {
+		t.Fatalf("plugin add jhook failed: code=%d err=%q", code, errOut)
+	}
+
+	out, _, code := runDispatch(t, "verify", "--json")
+	if code != 9 {
+		t.Fatalf("verify --json pre-hook exit = %d, want 9", code)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || doc["error"] == nil {
+		t.Fatalf("pre-hook failure did not emit JSON error on stdout: err=%v out=%q", err, out)
+	}
+}
+
+func TestPluginAddPreservesJSONAfterTerminator(t *testing.T) {
+	cfgPath := isolatePluginEnv(t)
+	clitest.CovT_chdir(t, t.TempDir())
+
+	bin := buildMockPluginBinary(t, `package main
+import (
+	"fmt"
+	"os"
+)
+func main() {
+	args := os.Args[1:]
+	if os.Getenv("GOFASTR_PLUGIN_MANIFEST") == "1" && len(args) > 0 && args[len(args)-1] == "--gofastr-plugin-manifest" {
+		fmt.Print(`+"`"+`{"protocol_version":1,"name":"pref","version":"v0.1.0","summary":"Prefix args plugin"}`+"`"+`)
+		return
+	}
+	fmt.Println(args)
+}
+`, t.TempDir(), "pref")
+
+	_, errOut, code := runDispatch(t, "plugin", "add", "pref", bin, "--", "--json")
+	if code != 0 {
+		t.Fatalf("plugin add with -- --json failed: code=%d err=%q", code, errOut)
+	}
+	cfg, err := cliplugin.LoadUserConfig(cfgPath)
+	if err != nil || len(cfg.Plugins) != 1 || len(cfg.Plugins[0].Command) != 2 || cfg.Plugins[0].Command[1] != "--json" {
+		t.Fatalf("fixed --json prefix arg not preserved: err=%v cfg=%+v", err, cfg)
+	}
+}
+
 func TestTrustRequiresExplicitGrants(t *testing.T) {
 	isolatePluginEnv(t)
 	proj := t.TempDir()
@@ -549,6 +612,18 @@ func TestTrustRequiresExplicitGrants(t *testing.T) {
 	_, errOut, code = runDispatch(t, "plugin", "trust", "seamer", "--allow-hook", "pre:validate", "--allow-override", "validate")
 	if code != 0 {
 		t.Fatalf("explicit trust failed: code=%d err=%q", code, errOut)
+	}
+
+	// Trusting a second plugin in the same project with an overlapping override must fail.
+	bin2 := buildMockPluginBinary(t, strings.Replace(mockSeamPluginSrc, `"name":"seamer"`, `"name":"seamer2"`, 1), toolsDir, "seamer2")
+	relBin2 := "./tools/" + filepath.Base(bin2)
+	bothBody := settingsBody + "  - name: seamer2\n    command: [\"" + relBin2 + "\"]\n    overrides: [\"validate\"]\n"
+	if err := os.WriteFile(filepath.Join(proj, "gofastr.settings.yml"), []byte(bothBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code = runDispatch(t, "plugin", "trust", "seamer2", "--allow-override", "validate")
+	if code == 0 || !strings.Contains(errOut, "already overridden by project plugin") {
+		t.Fatalf("overlapping project override trust accepted: code=%d err=%q", code, errOut)
 	}
 }
 
@@ -588,6 +663,16 @@ func TestGlobalHookSurvivesHostileRepo(t *testing.T) {
 	_, errOut, code = runDispatch(t, "validate", specPath)
 	if code != 9 || !strings.Contains(errOut, "pre-hook rejected") {
 		t.Fatalf("SECURITY: malformed project settings suppressed global pre:validate hook: code=%d err=%q", code, errOut)
+	}
+
+	// 3. `gofastr plugin list` and `gofastr plugin doctor --json` still show global plugins.
+	listOut, _, listCode := runDispatch(t, "plugin", "list")
+	if listCode != 0 || !strings.Contains(listOut, "seamer") {
+		t.Fatalf("plugin list hid global plugin on malformed project settings: code=%d out=%q", listCode, listOut)
+	}
+	docOut, _, docCode := runDispatch(t, "plugin", "doctor", "--json")
+	if docCode != 1 || !strings.Contains(docOut, `"name":"seamer"`) || !strings.Contains(docOut, `"project_error"`) {
+		t.Fatalf("plugin doctor --json hid global plugin or project_error: code=%d out=%q", docCode, docOut)
 	}
 }
 

@@ -202,19 +202,24 @@ func DispatchNamespace(name string, args []string) bool {
 	}
 
 	wd, _ := os.Getwd()
+	if code := runVerifiedNamespace(rp, args, wd, projectRoot); code != 0 {
+		cli.OsExit(code)
+	}
+	return true
+}
+
+func runVerifiedNamespace(rp cliplugin.ResolvedPlugin, args []string, wd, projectRoot string) int {
 	execCmd, cleanup, err := cliplugin.PrepareVerifiedExec(rp)
 	if err != nil {
 		cli.Fail("Plugin %q cannot run: %v", rp.Name, err)
-		cli.OsExit(1)
-		return true
+		return 1
 	}
 	defer cleanup()
 
 	manifest, err := cliplugin.VerifyLiveCommand(context.Background(), execCmd, project.CliVersion(), wd)
 	if err != nil {
 		cli.Fail("Plugin %q cannot run: %v", rp.Name, err)
-		cli.OsExit(1)
-		return true
+		return 1
 	}
 
 	allowEnv, allowEnvFlags := cliplugin.EffectiveEnvGrants(rp, manifest)
@@ -236,13 +241,19 @@ func DispatchNamespace(name string, args []string) bool {
 	})
 	if err != nil {
 		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return true
+		return 1
 	}
-	if code != 0 {
-		cli.OsExit(code)
+	return code
+}
+
+func failBuiltinSeam(code int, format string, args ...any) {
+	if cli.InJSONSession() {
+		msg := textsafe.ScrubTerminal(fmt.Sprintf(format, args...))
+		_ = cli.EmitJSON(map[string]any{"error": msg, "exit_code": code})
+	} else {
+		cli.Fail(format, args...)
 	}
-	return true
+	cli.OsExit(code)
 }
 
 // DispatchBuiltin runs a built-in command with opt-in plugin overrides and
@@ -260,8 +271,7 @@ func DispatchBuiltin(canonical string, args []string, bypass bool, runBuiltin fu
 
 	resolved, projectRoot, userErr, projErr := loadUserAndProject(false)
 	if userErr != nil {
-		cli.Fail("Load CLI plugin registry (refusing to bypass configured plugins): %v", userErr)
-		cli.OsExit(1)
+		failBuiltinSeam(1, "Load CLI plugin registry (refusing to bypass configured plugins): %v", userErr)
 		return
 	}
 	if projErr != nil {
@@ -278,55 +288,15 @@ func DispatchBuiltin(canonical string, args []string, bypass bool, runBuiltin fu
 	// 1. Check for an explicitly authorized built-in command override.
 	override, err := cliplugin.ResolveOverride(resolved, canonical)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		failBuiltinSeam(1, "%v", err)
 		return
 	}
 	if override != nil {
-		execCmd, cleanup, err := cliplugin.PrepareVerifiedExec(*override)
-		if err != nil {
-			cli.Fail("Override plugin %q for %q cannot run: %v", override.Name, canonical, err)
-			cli.OsExit(1)
-			return
-		}
-		defer cleanup()
-
-		manifest, err := cliplugin.VerifyLiveCommand(context.Background(), execCmd, project.CliVersion(), wd)
-		if err != nil {
-			cli.Fail("Override plugin %q for %q cannot run: %v", override.Name, canonical, err)
-			cli.OsExit(1)
-			return
-		}
-		if !cliplugin.ManifestSupportsOverride(manifest, canonical) {
-			cli.Fail("Override plugin %q no longer declares override %q; remove or re-register it.", override.Name, canonical)
-			cli.OsExit(1)
-			return
-		}
-		allowEnv, allowEnvFlags := cliplugin.EffectiveEnvGrants(*override, manifest)
-		// Overrides own machine output on `--json` commands, so give them the
-		// reserved stdout handle instead of BeginJSON's redirected stderr.
-		code, err := cliplugin.Run(context.Background(), cliplugin.ExecRequest{
-			PluginName:    override.Name,
-			Command:       execCmd,
-			Args:          args,
-			WorkDir:       wd,
-			CLIVersion:    project.CliVersion(),
-			CLIBin:        cliBin,
-			ProjectRoot:   projectRoot,
-			Mode:          cliplugin.ModeOverride,
-			TargetCommand: canonical,
-			AllowEnv:      allowEnv,
-			AllowEnvFlags: allowEnvFlags,
-			Stdin:         os.Stdin,
-			Stdout:        cli.JSONWriter(),
-			Stderr:        os.Stderr,
-		})
-		if err != nil {
-			cli.Fail("%v", err)
-			cli.OsExit(1)
-			return
-		}
-		if code != 0 {
+		if code, errMsg := runVerifiedOverride(*override, canonical, args, wd, cliBin, projectRoot); code != 0 {
+			if errMsg != "" {
+				failBuiltinSeam(code, "%s", errMsg)
+				return
+			}
 			cli.OsExit(code)
 		}
 		return
@@ -336,6 +306,12 @@ func DispatchBuiltin(canonical string, args []string, bypass bool, runBuiltin fu
 	preHooks := cliplugin.ResolveHooks(resolved, cliplugin.HookPre, canonical)
 	for _, hp := range preHooks {
 		if code := runHook(hp, cliplugin.HookPre, canonical, args, wd, cliBin, projectRoot); code != 0 {
+			if cli.InJSONSession() {
+				_ = cli.EmitJSON(map[string]any{
+					"error":     fmt.Sprintf("pre:%s hook plugin %q exited with status %d", canonical, textsafe.ScrubTerminal(hp.Name), code),
+					"exit_code": code,
+				})
+			}
 			cli.OsExit(code)
 			return
 		}
@@ -354,6 +330,45 @@ func DispatchBuiltin(canonical string, args []string, bypass bool, runBuiltin fu
 			return
 		}
 	}
+}
+
+func runVerifiedOverride(override cliplugin.ResolvedPlugin, canonical string, args []string, wd, cliBin, projectRoot string) (int, string) {
+	execCmd, cleanup, err := cliplugin.PrepareVerifiedExec(override)
+	if err != nil {
+		return 1, fmt.Sprintf("Override plugin %q for %q cannot run: %v", override.Name, canonical, err)
+	}
+	defer cleanup()
+
+	manifest, err := cliplugin.VerifyLiveCommand(context.Background(), execCmd, project.CliVersion(), wd)
+	if err != nil {
+		return 1, fmt.Sprintf("Override plugin %q for %q cannot run: %v", override.Name, canonical, err)
+	}
+	if !cliplugin.ManifestSupportsOverride(manifest, canonical) {
+		return 1, fmt.Sprintf("Override plugin %q no longer declares override %q; remove or re-register it.", override.Name, canonical)
+	}
+	allowEnv, allowEnvFlags := cliplugin.EffectiveEnvGrants(override, manifest)
+	// Overrides own machine output on `--json` commands, so give them the
+	// reserved stdout handle instead of BeginJSON's redirected stderr.
+	code, err := cliplugin.Run(context.Background(), cliplugin.ExecRequest{
+		PluginName:    override.Name,
+		Command:       execCmd,
+		Args:          args,
+		WorkDir:       wd,
+		CLIVersion:    project.CliVersion(),
+		CLIBin:        cliBin,
+		ProjectRoot:   projectRoot,
+		Mode:          cliplugin.ModeOverride,
+		TargetCommand: canonical,
+		AllowEnv:      allowEnv,
+		AllowEnvFlags: allowEnvFlags,
+		Stdin:         os.Stdin,
+		Stdout:        cli.JSONWriter(),
+		Stderr:        os.Stderr,
+	})
+	if err != nil {
+		return 1, err.Error()
+	}
+	return code, ""
 }
 
 func runHook(rp cliplugin.ResolvedPlugin, phase cliplugin.HookPhase, canonical string, args []string, wd, cliBin, projectRoot string) int {

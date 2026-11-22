@@ -46,6 +46,11 @@ func JSONWriter() *os.File {
 	return os.Stdout
 }
 
+// InJSONSession reports whether BeginJSON is currently active.
+func InJSONSession() bool {
+	return currentJSON != nil
+}
+
 // EmitJSON marshals v before writing the session's only document. Without a
 // session it writes to stdout. A second document is refused without writing.
 func EmitJSON(v any) error {
