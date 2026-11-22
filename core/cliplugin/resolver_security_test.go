@@ -351,30 +351,26 @@ func TestSymlinkedCheckoutsDoNotBreakGlobalRegistryLoad(t *testing.T) {
 	}
 }
 
-func TestGlobalRelativeExtraArgsAreAbsolutizedOrRefused(t *testing.T) {
+func TestGlobalExtraArgsRequireFlagsOrAbsolutePaths(t *testing.T) {
 	dir := t.TempDir()
 	interp := makeDummyExecutable(t, filepath.Join(dir, "interp"), "#!/bin/sh\n")
 	script := makeDummyExecutable(t, filepath.Join(dir, "helper.py"), "#!/usr/bin/env python3\n")
-	realScript, err := filepath.EvalSymlinks(script)
+	absScript, err := filepath.Abs(script)
 	if err != nil {
-		realScript = script
+		t.Fatal(err)
 	}
 
-	// Registration-time absolutization turns cwd-relative script args into
-	// canonical absolute paths so later runs in untrusted repos cannot hijack them.
-	absCmd := AbsolutizeCommandArgs([]string{interp, "helper.py", "--flag"}, dir)
-	if len(absCmd) != 3 || absCmd[1] != realScript || absCmd[2] != "--flag" {
-		t.Fatalf("AbsolutizeCommandArgs = %#v, want [interp %q --flag]", absCmd, realScript)
-	}
-	resolved, _, err := ResolveExecutable(absCmd, dir, false)
-	if err != nil || resolved[1] != realScript {
-		t.Fatalf("ResolveExecutable(absCmd) = %#v, %v", resolved, err)
+	// Absolute script paths and flags are preserved verbatim without rewriting.
+	resolved, _, err := ResolveExecutable([]string{interp, absScript, "--flag", "--mode=strict"}, dir, false)
+	if err != nil || len(resolved) != 4 || resolved[1] != absScript || resolved[2] != "--flag" || resolved[3] != "--mode=strict" {
+		t.Fatalf("ResolveExecutable(valid global args) = %#v, %v", resolved, err)
 	}
 
-	// Explicit cwd-relative args stored in a global command must be refused.
-	for _, rel := range []string{"./helper.py", "../helper.py", "."} {
-		if _, _, err := ResolveExecutable([]string{interp, rel}, "", false); !errors.Is(err, ErrInvalidPath) {
-			t.Fatalf("SECURITY: global cwd-relative arg %q accepted: %v", rel, err)
+	// Every relative or bare non-flag argument (and explicit relative flag values)
+	// must be refused so running in an untrusted repo can never hijack it.
+	for _, bad := range []string{"helper.py", "scripts/run.py", "./helper.py", "../helper.py", ".", "--script=./helper.py", "--script=../helper.py"} {
+		if _, _, err := ResolveExecutable([]string{interp, bad}, dir, false); !errors.Is(err, ErrInvalidPath) {
+			t.Fatalf("SECURITY: global relative extra arg %q accepted: %v", bad, err)
 		}
 	}
 }

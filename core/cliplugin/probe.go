@@ -52,8 +52,10 @@ func ResolveExecutable(command []string, baseDir string, confineToBase bool) ([]
 		if strings.ContainsRune(arg, 0) {
 			return nil, false, fmt.Errorf("%w: command[%d] contains NUL byte", ErrInvalidPath, i+1)
 		}
-		if !confineToBase && isExplicitRelativePath(arg) {
-			return nil, false, fmt.Errorf("%w: command[%d] %q must be an absolute path, not a cwd-relative path", ErrInvalidPath, i+1, textsafe.ScrubTerminal(arg))
+		if !confineToBase {
+			if err := validateGlobalExtraArg(i+1, arg); err != nil {
+				return nil, false, err
+			}
 		}
 	}
 
@@ -135,40 +137,25 @@ func ResolveExecutable(command []string, baseDir string, confineToBase bool) ([]
 	return out, isProjectLocal, nil
 }
 
-// AbsolutizeCommandArgs resolves cwd-relative path arguments in command[1:]
-// against baseDir at registration time (for example, `python helper.py` or
-// `python ./helper.py` -> `python /abs/path/to/helper.py`) so later execution
-// inside an untrusted repository cannot resolve a relative script against the
-// repository's working directory.
-func AbsolutizeCommandArgs(command []string, baseDir string) []string {
-	if len(command) <= 1 || baseDir == "" {
-		return append([]string(nil), command...)
+// validateGlobalExtraArg ensures extra argv tokens stored on a global plugin
+// registration cannot hijack execution via a cwd-relative path when `gofastr`
+// runs inside an untrusted repository. Each extra argument must be an absolute
+// path or a flag (and flag values after '=' must not be cwd-relative paths).
+func validateGlobalExtraArg(index int, arg string) error {
+	if arg == "" {
+		return fmt.Errorf("%w: command[%d] must not be empty", ErrInvalidPath, index)
 	}
-	out := append([]string(nil), command...)
-	for i := 1; i < len(out); i++ {
-		arg := out[i]
-		if arg == "" || strings.HasPrefix(arg, "-") || filepath.IsAbs(arg) {
-			continue
+	if strings.HasPrefix(arg, "-") {
+		if _, val, hasEq := strings.Cut(arg, "="); hasEq && isExplicitRelativePath(val) {
+			return fmt.Errorf("%w: command[%d] %q must not contain a cwd-relative path", ErrInvalidPath, index, textsafe.ScrubTerminal(arg))
 		}
-		candidate := filepath.Join(baseDir, arg)
-		explicitRel := isExplicitRelativePath(arg)
-		realPath, evalErr := filepath.EvalSymlinks(candidate)
-		if !explicitRel && evalErr != nil {
-			continue
-		}
-		if evalErr == nil {
-			if abs, err := filepath.Abs(realPath); err == nil {
-				out[i] = abs
-			} else {
-				out[i] = realPath
-			}
-			continue
-		}
-		if abs, err := filepath.Abs(candidate); err == nil {
-			out[i] = abs
-		}
+		return nil
 	}
-	return out
+	if filepath.IsAbs(arg) {
+		return nil
+	}
+	return fmt.Errorf("%w: command[%d] %q must be a flag or an absolute path (use an absolute path or wrapper executable instead of a cwd-relative argument)",
+		ErrInvalidPath, index, textsafe.ScrubTerminal(arg))
 }
 
 func isExplicitRelativePath(arg string) bool {
