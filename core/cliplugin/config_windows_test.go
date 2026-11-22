@@ -68,4 +68,30 @@ func TestLoadUserConfigRefusesWorldWritableWindowsDACL(t *testing.T) {
 
 	// Ensure cleanup can remove the file regardless of ACL state.
 	_ = os.Remove(path)
+
+	// Refuse a writable ancestor directory even when the immediate config dir
+	// and file have owner-only DACLs.
+	shared := filepath.Join(t.TempDir(), "shared")
+	sub := filepath.Join(shared, "gofastr")
+	if err := os.MkdirAll(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(sub, "plugins.yml")
+	if err := SaveUserConfig(nested, UserConfig{Version: ConfigVersion}); err != nil {
+		t.Fatalf("SaveUserConfig nested: %v", err)
+	}
+	if err := windows.SetNamedSecurityInfo(
+		shared,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil,
+	); err != nil {
+		t.Fatalf("SetNamedSecurityInfo ancestor: %v", err)
+	}
+	if _, err := LoadUserConfig(nested); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: world-writable Windows ancestor accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(nested, UserConfig{Version: ConfigVersion}); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: world-writable Windows ancestor accepted on save: %v", err)
+	}
 }
