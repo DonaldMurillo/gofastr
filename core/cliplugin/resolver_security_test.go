@@ -360,15 +360,25 @@ func TestGlobalExtraArgsRequireFlagsOrAbsolutePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Absolute script paths and flags are preserved verbatim without rewriting.
-	resolved, _, err := ResolveExecutable([]string{interp, absScript, "--flag", "--mode=strict"}, dir, false)
-	if err != nil || len(resolved) != 4 || resolved[1] != absScript || resolved[2] != "--flag" || resolved[3] != "--mode=strict" {
+	// Absolute script paths, boolean flags, and --flag=<abs-path> are preserved verbatim.
+	resolved, _, err := ResolveExecutable([]string{interp, absScript, "--flag", "--script=" + absScript}, dir, false)
+	if err != nil || len(resolved) != 4 || resolved[1] != absScript || resolved[2] != "--flag" || resolved[3] != "--script="+absScript {
 		t.Fatalf("ResolveExecutable(valid global args) = %#v, %v", resolved, err)
 	}
 
-	// Every relative or bare non-flag argument (and explicit relative flag values)
+	// Every relative/bare non-flag argument and every non-absolute flag value
 	// must be refused so running in an untrusted repo can never hijack it.
-	for _, bad := range []string{"helper.py", "scripts/run.py", "./helper.py", "../helper.py", ".", "--script=./helper.py", "--script=../helper.py"} {
+	for _, bad := range []string{
+		"helper.py",
+		"scripts/run.py",
+		"./helper.py",
+		"../helper.py",
+		".",
+		"--script=helper.py",
+		"--script=scripts/run.py",
+		"--script=./helper.py",
+		"--script=../helper.py",
+	} {
 		if _, _, err := ResolveExecutable([]string{interp, bad}, dir, false); !errors.Is(err, ErrInvalidPath) {
 			t.Fatalf("SECURITY: global relative extra arg %q accepted: %v", bad, err)
 		}

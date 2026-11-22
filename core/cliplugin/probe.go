@@ -140,28 +140,27 @@ func ResolveExecutable(command []string, baseDir string, confineToBase bool) ([]
 // validateGlobalExtraArg ensures extra argv tokens stored on a global plugin
 // registration cannot hijack execution via a cwd-relative path when `gofastr`
 // runs inside an untrusted repository. Each extra argument must be an absolute
-// path or a flag (and flag values after '=' must not be cwd-relative paths).
+// path, a boolean flag (no path separators), or a `--flag=<absolute-path>` pair.
 func validateGlobalExtraArg(index int, arg string) error {
 	if arg == "" {
 		return fmt.Errorf("%w: command[%d] must not be empty", ErrInvalidPath, index)
 	}
-	if strings.HasPrefix(arg, "-") {
-		if _, val, hasEq := strings.Cut(arg, "="); hasEq && isExplicitRelativePath(val) {
-			return fmt.Errorf("%w: command[%d] %q must not contain a cwd-relative path", ErrInvalidPath, index, textsafe.ScrubTerminal(arg))
-		}
-		return nil
-	}
 	if filepath.IsAbs(arg) {
 		return nil
 	}
-	return fmt.Errorf("%w: command[%d] %q must be a flag or an absolute path (use an absolute path or wrapper executable instead of a cwd-relative argument)",
+	if strings.HasPrefix(arg, "-") {
+		if name, val, hasEq := strings.Cut(arg, "="); hasEq {
+			if len(name) < 2 || strings.ContainsAny(name, `/\`) || !filepath.IsAbs(val) {
+				return fmt.Errorf("%w: command[%d] %q flag value must be an absolute path", ErrInvalidPath, index, textsafe.ScrubTerminal(arg))
+			}
+			return nil
+		}
+		if len(arg) >= 2 && !strings.ContainsAny(arg, `/\`) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: command[%d] %q must be a boolean flag or an absolute path (use an absolute path or wrapper executable instead of a cwd-relative argument)",
 		ErrInvalidPath, index, textsafe.ScrubTerminal(arg))
-}
-
-func isExplicitRelativePath(arg string) bool {
-	return arg == "." || arg == ".." ||
-		strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
-		strings.HasPrefix(arg, `.\`) || strings.HasPrefix(arg, `..\`)
 }
 
 func withinDir(base, target string) bool {
