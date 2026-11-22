@@ -9,7 +9,7 @@ import (
 )
 
 func TestSweepSettingsIsSectionLeavesOutVersion(t *testing.T) {
-	for name, want := range map[string]bool{"version": false, "codegen": true, "endpoints": true, "unmounted": true, "nope": false} {
+	for name, want := range map[string]bool{"version": false, "codegen": true, "endpoints": true, "plugins": true, "unmounted": true, "nope": false} {
 		if got := IsSection(name); got != want {
 			t.Errorf("IsSection(%q) = %v, want %v", name, got, want)
 		}

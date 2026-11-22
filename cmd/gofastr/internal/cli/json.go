@@ -36,6 +36,16 @@ func BeginJSON() (end func()) {
 	}
 }
 
+// JSONWriter returns the reserved machine-output stdout handle while a JSON
+// session is active, or os.Stdout otherwise. Override plugins use this so
+// `--json` output reaches stdout instead of the redirected stderr stream.
+func JSONWriter() *os.File {
+	if currentJSON != nil && currentJSON.writer != nil {
+		return currentJSON.writer
+	}
+	return os.Stdout
+}
+
 // EmitJSON marshals v before writing the session's only document. Without a
 // session it writes to stdout. A second document is refused without writing.
 func EmitJSON(v any) error {

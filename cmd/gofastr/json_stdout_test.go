@@ -53,6 +53,13 @@ func TestJSONStdoutParity(t *testing.T) {
 			{name: "stats-success", args: []string{"stats", "--json"}},
 			{name: "stats-failure", args: []string{"stats", "--json"}, code: 1, setup: jsonParityBadHome},
 		},
+		"plugin": {
+			{name: "list-success", args: []string{"list", "--json"}},
+			{name: "doctor-success", args: []string{"doctor", "--json"}},
+			{name: "unknown-subcommand", args: []string{"frobnicate", "--json"}, code: 2},
+			{name: "list-unknown-flag", args: []string{"list", "--json", "--unknown-json-parity"}, code: 2},
+			{name: "doctor-missing", args: []string{"doctor", "missing-plugin", "--json"}, code: 1},
+		},
 	}
 	skipped := map[string]string{}
 	seen := map[string]bool{}
@@ -173,6 +180,8 @@ func jsonParitySandbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("GOFASTR_PLUGIN_CONFIG", "")
 	t.Setenv("GOFASTR_URL", "")
 	t.Setenv("SEMANTIC_BACKEND", "stub")
 	t.Setenv("EMBED_BACKEND", "")
@@ -244,6 +253,9 @@ func TestJSONHelpIsUsage(t *testing.T) {
 		{"verify", "--json", "--help"},
 		{"semantic", "query", "--help"},
 		{"semantic", "stats", "--json", "--help"},
+		{"plugin", "--json", "--help"},
+		{"plugin", "list", "--json", "--help"},
+		{"plugin", "doctor", "--json", "-h"},
 	}
 	for _, generator := range appgen.Generators {
 		for _, help := range []string{"--help", "-h"} {
@@ -321,6 +333,9 @@ func TestJSONModeDecisions(t *testing.T) {
 		{"semantic", []string{"index", "--json"}, false},
 		{"semantic", []string{"watch"}, false},
 		{"semantic", []string{"clear"}, false},
+		{"plugin", []string{"list", "--json"}, true},
+		{"plugin", []string{"doctor", "--json"}, true},
+		{"plugin", []string{"list"}, false},
 	} {
 		command := findCommand(fixture.command)
 		if got := command.json(fixture.args); got != fixture.want {

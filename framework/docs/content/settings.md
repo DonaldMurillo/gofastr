@@ -30,6 +30,11 @@ isolation:      # the running app and gofastr dev
   enabled: true
   mode: worktree
 
+plugins:        # expected global CLI plugins or repo-local CLI extensions
+  - name: native
+    description: "Build and run iOS/Android apps"
+    install: "go install github.com/DonaldMurillo/gofastr-native/cmd/gofastr-native@latest"
+
 unmounted:      # written by gofastr unmount and gofastr remount
   - source: "github.com/DonaldMurillo/gofastr/battery/auth"
     version: "v0.92.0"
@@ -43,6 +48,7 @@ unmounted:      # written by gofastr unmount and gofastr remount
 | `endpoints` | `gofastr generate`, `gofastr build`, `gofastr generate --watch`, `gofastr pack`; `gofastr generate app` writes it from an app spec | [Custom endpoints](endpoints.md) |
 | `contracts` | `gofastr verify`, `gofastr build`, `gofastr dev`, the MCP contracts tools | [Contracts](contracts.md) |
 | `isolation` | `framework/isolation`: `App.Start`, `gofastr dev`, generated `main.go` | [Worktree isolation](isolation.md) |
+| `plugins` | `gofastr plugin`, CLI plugin discovery and trust | [CLI plugins](cli-plugins.md) |
 | `unmounted` | `gofastr unmount`, `gofastr remount`, `gofastr verify`, `gofastr upgrade`, `gofastr audit deps` | [Unmounting a package](unmount.md) |
 
 Every section is optional. `gofastr init` writes the file with an
@@ -73,7 +79,7 @@ name a settings file directly instead.
 ## What is an error
 
 - A top-level key other than `version`, `codegen`, `endpoints`,
-  `contracts`, `isolation` or `unmounted`.
+  `contracts`, `isolation`, `plugins` or `unmounted`.
 - A `version` other than `1`.
 - A file the settings file replaced, found where the reader looks for
   settings: `gofastr.codegen.yml`, `gofastr.contracts.yml` or

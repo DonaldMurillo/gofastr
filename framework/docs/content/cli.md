@@ -86,6 +86,7 @@ Run `gofastr help` for an overview or `gofastr <command> --help` for every flag.
 
 - **`gofastr telemetry stats|logs|requests|issues|request`**: inspect on-disk logs and traces written by `battery/telemetry`, even when the app is stopped ([telemetry](telemetry.md)). Supports `--dir`, `--app`, `--since`, `--limit`, `--route`, `--level`, `--grep`, `--failed`, `--slow`, `--json`.
 - **`gofastr desktop build|install|uninstall`**: build pure-Go OS WebView binaries/bundles (`--format=tar.gz` on Linux) and manage per-user Linux installs ([desktop](desktop.md#the-gofastr-desktop-verbs)).
+- **`gofastr plugin list|add|remove|trust|untrust|doctor`**: register and verify external CLI plugins (such as `gofastr-native`), trust repo-declared extensions in `gofastr.settings.yml`, and opt into command hooks or built-in overrides ([CLI plugins](cli-plugins.md)). Pass `--builtin` (or `GOFASTR_NO_PLUGINS=1`) to run a built-in command directly without plugin hooks or overrides.
 - **`gofastr semantic index|watch|query|stats|clear`**: manage the local semantic search index ([semantic search](semantic-search.md)).
 - **`gofastr harness`**: experimental agent harness (`harness mcp`, `harness creds`).
 - **`gofastr version`** (`--version`, `-v`): print the installed CLI version.

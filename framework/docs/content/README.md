@@ -9,7 +9,7 @@ If you are new to GoFastr, start with the [Overview](overview.md), then jump to 
 - [Overview](overview.md): how the layers fit together, from barebones `core/` to a full-stack app.
 - [UI getting started](ui-getting-started.md): scaffold an app, run `gofastr dev`, customize the theme, and build screens.
 - [Project structure](project-structure.md): why apps start flat and when to introduce `internal/` or `cmd/`.
-- [The gofastr CLI](cli.md): install, scaffold, dev server, migrations, verification, and releases.
+- [The gofastr CLI](cli.md) and [CLI plugins](cli-plugins.md): install, scaffold, dev server, migrations, verification, releases, and extensible CLI commands.
 - [Backend capability map](backend-capability-map.md): pick a backend job and jump straight to the package and doc.
 - [UI capability map](ui-capability-map.md): pick a UI shape and see state ownership, delivery tier, and examples.
 - [Comparison](comparison.md): honest trade-offs vs PocketBase, Encore, Wasp, and hand-rolled Go.

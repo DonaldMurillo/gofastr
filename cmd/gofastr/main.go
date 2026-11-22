@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/migratecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/newcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/packcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/plugincmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/releasecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/semanticcmd"
@@ -37,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/upgradecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/validatecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/verifycmd"
+	"github.com/DonaldMurillo/gofastr/core/cliplugin"
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 )
 
@@ -131,12 +133,15 @@ func printHelp() {
   unmount [<package>]   Copy a gofastr package into the app and rewire its imports
                         to the copy; no package lists the copies. See "gofastr docs unmount"
   remount <package>     Go back to the framework's package and delete the copy
+  plugin <sub>          Manage external CLI plugins (list, add, remove, trust, untrust, doctor)
+                        See "gofastr docs cli-plugins"
   version               Print version info
   help [command]        This overview, or the command's own --help
 
 %s:
   --help, -h      Show this help message
   --version, -v   Print version and exit
+  --builtin       Run a built-in command directly, bypassing plugin hooks and overrides
 
 %s:
   gofastr init myapp
@@ -156,10 +161,29 @@ func printHelp() {
   gofastr agents init
   gofastr agents sync
   gofastr desktop run --pkg ./internal/testapps/desktop-notes
+  gofastr plugin list
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
 `, cli.Bold("GoFastr"), textsafe.ScrubTerminal(project.CliVersion()), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
+	if lines := plugincmd.HelpSummaryLines(); len(lines) > 0 {
+		fmt.Printf("\n%s:\n", cli.Bold("Plugins"))
+		for _, line := range lines {
+			cli.Println(line)
+		}
+		cli.Println("")
+	}
+}
+
+func init() {
+	builtins := make(map[string]string, len(commands))
+	for _, c := range commands {
+		canonical := c.names[0]
+		for _, n := range c.names {
+			builtins[n] = canonical
+		}
+	}
+	plugincmd.SetHostBuiltins(builtins)
 }
 
 func main() {
@@ -209,6 +233,9 @@ var commands = []commandSpec{
 	{names: []string{"unmount"}, run: unmountcmd.RunUnmount, ownsHelp: true, versionChecked: true},
 	{names: []string{"remount"}, run: unmountcmd.RunRemount, ownsHelp: true, versionChecked: true},
 	{names: []string{"theme"}, run: themecmd.RunTheme, ownsHelp: true, versionChecked: true},
+	{names: []string{"plugin"}, run: plugincmd.RunPlugin, ownsHelp: true, json: func(args []string) bool {
+		return slices.Contains(args, "--json")
+	}},
 	{names: []string{"version"}, run: func(args []string) {
 		for _, a := range args {
 			if cli.IsFlagToken(a) {
@@ -239,12 +266,25 @@ func dispatch(args []string) {
 		return
 	}
 
+	// Explicit plugin bypass (`gofastr --builtin <command> ...` or
+	// GOFASTR_NO_PLUGINS=1): skips plugin overrides, hooks, and namespaces so
+	// override/wrapper plugins can invoke the real built-in without recursion.
+	bypassPlugins := os.Getenv(cliplugin.EnvBypassPlugins) == "1"
+	if args[0] == "--builtin" {
+		bypassPlugins = true
+		args = args[1:]
+		if len(args) == 0 {
+			cli.UsageFail("--builtin requires a built-in command name.")
+			return
+		}
+	}
+
 	// Global flags. --version/-v prints the version in the command's
 	// place only; after a command it is that command's argument (verify's
 	// -v, a desktop build's --version, and `test -v`, which go test users
 	// type and which must be refused rather than answered with the version
-	// and exit 0). --help/-h is routed through to subcommands that own help,
-	// which implement it; for every other command it is intercepted
+	// and exit 0). --help/-h is routed through to subcommands (and external
+	// CLI plugins) that own help; for every other command it is intercepted
 	// anywhere in args (a side-effectful command like `dev --help` must
 	// never start a server because it lacks its own help path).
 	if isGlobalVersionFlag(args) {
@@ -252,7 +292,20 @@ func dispatch(args []string) {
 		return
 	}
 	command := findCommand(args[0])
-	if command == nil || !command.ownsHelp {
+	if command == nil {
+		if args[0] == "--help" || args[0] == "-h" {
+			printHelp()
+			return
+		}
+		if bypassPlugins || (!plugincmd.KnownCommand(args[0]) && !plugincmd.HasUserConfigError()) {
+			for _, a := range args {
+				if a == "--help" || a == "-h" {
+					printHelp()
+					return
+				}
+			}
+		}
+	} else if !command.ownsHelp {
 		for _, a := range args {
 			if a == "--help" || a == "-h" {
 				printHelp()
@@ -271,7 +324,7 @@ func dispatch(args []string) {
 			printHelp()
 			return
 		}
-		if findCommand(cmdArgs[0]) != nil {
+		if findCommand(cmdArgs[0]) != nil || (!bypassPlugins && plugincmd.KnownCommand(cmdArgs[0])) {
 			dispatch([]string{cmdArgs[0], "--help"})
 			return
 		}
@@ -285,16 +338,36 @@ func dispatch(args []string) {
 			return
 		}
 	}
-	warnVersionMismatch(cmd, cmdArgs)
 
 	if command != nil {
-		command.run(cmdArgs)
+		canonical := command.names[0]
+		if bypassPlugins && canonical == "migrate" &&
+			os.Getenv(cliplugin.EnvFilteredDB) == "1" &&
+			strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" &&
+			!cli.HasHelpFlagBeforeTerminator(cmdArgs) {
+			cli.Fail("Refusing `--builtin migrate`: caller's DATABASE_URL was stripped by plugin isolation and would silently fall back to .env. Use pre:migrate / post:migrate hooks instead of a migrate override.")
+			cli.OsExit(1)
+			return
+		}
+		plugincmd.DispatchBuiltin(canonical, cmdArgs, bypassPlugins, func(runArgs []string) {
+			warnVersionMismatch(cmd, runArgs)
+			command.run(runArgs)
+		})
 	} else {
+		if !bypassPlugins && plugincmd.DispatchNamespace(cmd, cmdArgs) {
+			return
+		}
 		cli.Fail("Unknown command: %s", cmd)
 		fmt.Println()
-		// Fuzzy suggestion: check if it's close to a known command
+		// Fuzzy suggestion: check if it's close to a known built-in or plugin command
+		candidates := make([]string, 0, len(commands))
 		for _, candidate := range commands {
-			s := candidate.names[0]
+			candidates = append(candidates, candidate.names[0])
+		}
+		if !bypassPlugins {
+			candidates = plugincmd.FuzzyCandidates(candidates)
+		}
+		for _, s := range candidates {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				cli.Printf("  Did you mean: "+cli.Bold("gofastr %s")+"?\n", s)
 			}
