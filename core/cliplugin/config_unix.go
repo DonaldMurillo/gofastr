@@ -31,7 +31,8 @@ func checkUserConfigReadSafety(path string) error {
 }
 
 // checkUserConfigDirSafety verifies the registry directory AND every ancestor
-// up to the filesystem root so another user cannot replace an intermediate
+// up to the filesystem root (along both the logical path and any symlink
+// target ancestor chains) so another user cannot replace an intermediate
 // directory component or plant an untrusted symlink along the path.
 func checkUserConfigDirSafety(dir string) error {
 	abs, err := filepath.Abs(dir)
@@ -39,10 +40,27 @@ func checkUserConfigDirSafety(dir string) error {
 		return err
 	}
 	euid := uint32(os.Geteuid())
+	visited := map[string]bool{}
+	if err := checkDirChain(abs, euid, false, visited); err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return err
+	}
+	if realDir != abs {
+		return checkDirChain(realDir, euid, false, visited)
+	}
+	return nil
+}
 
-	// Walk every ancestor of the logical path first so symlink components owned
-	// by untrusted accounts are caught before following them.
-	cur := abs
+func checkDirChain(start string, euid uint32, allowImmediateSymlink bool, visited map[string]bool) error {
+	if visited[start] {
+		return nil
+	}
+	visited[start] = true
+
+	cur := start
 	for i := 0; ; i++ {
 		linfo, err := os.Lstat(cur)
 		if err != nil {
@@ -52,11 +70,18 @@ func checkUserConfigDirSafety(dir string) error {
 			// Refuse any symlink at the immediate registry directory or any
 			// symlink not owned by root or the current user (OS system links
 			// like macOS /var -> private/var are root-owned).
-			if i == 0 {
+			if i == 0 && !allowImmediateSymlink {
 				return fmt.Errorf("refusing symlink plugin config directory %s", cur)
 			}
 			if st, ok := linfo.Sys().(*syscall.Stat_t); ok && st.Uid != 0 && st.Uid != euid {
 				return fmt.Errorf("refusing untrusted symlink ancestor %s for plugin config", cur)
+			}
+			// Also verify the symlink target's own ancestor chain so a trusted
+			// symlink pointing under a non-sticky writable directory is refused.
+			if resolved, err := filepath.EvalSymlinks(cur); err == nil && resolved != cur {
+				if err := checkDirChain(resolved, euid, true, visited); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -68,7 +93,7 @@ func checkUserConfigDirSafety(dir string) error {
 			return fmt.Errorf("%s: plugin config ancestor is not a directory", cur)
 		}
 		perm := info.Mode().Perm()
-		if i == 0 {
+		if i == 0 && !allowImmediateSymlink {
 			// The immediate registry directory must never be group/world-writable
 			// (even if sticky) and must belong to the current user or root.
 			if perm&0o022 != 0 {

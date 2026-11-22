@@ -154,6 +154,35 @@ func TestSaveUserConfigRefusesSymlink(t *testing.T) {
 	if err := SaveUserConfig(nested, UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "ancestor") {
 		t.Fatalf("SECURITY: non-sticky world-writable ancestor accepted on save: %v", err)
 	}
+
+	// Refuse a user-owned ancestor symlink whose resolved target sits under a
+	// non-sticky world-writable directory (e.g. ~/.config -> /shared/cfg).
+	symlinkHome := filepath.Join(dir, "home")
+	if err := os.MkdirAll(symlinkHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgLink := filepath.Join(symlinkHome, ".config")
+	if err := os.Symlink(sub, cfgLink); err != nil {
+		t.Fatal(err)
+	}
+	viaLink := filepath.Join(cfgLink, "plugins.yml")
+	if _, err := LoadUserConfig(viaLink); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("SECURITY: direct symlinked config dir accepted on load: %v", err)
+	}
+	gofastrSub := filepath.Join(sub, "gofastr")
+	if err := os.MkdirAll(gofastrSub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	viaAncestorLink := filepath.Join(cfgLink, "gofastr", "plugins.yml")
+	if err := os.WriteFile(filepath.Join(gofastrSub, "plugins.yml"), []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadUserConfig(viaAncestorLink); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: symlink target under world-writable ancestor accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(viaAncestorLink, UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "ancestor") {
+		t.Fatalf("SECURITY: symlink target under world-writable ancestor accepted on save: %v", err)
+	}
 }
 
 func TestUpdateUserConfigSerialized(t *testing.T) {
