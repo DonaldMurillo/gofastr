@@ -100,6 +100,13 @@ func checkUserConfigDirSafety(dir string) error {
 	return nil
 }
 
+func checkOpenConfigSafety(path string, _ *os.File, info fs.FileInfo) error {
+	if err := checkOwnerFileMode(path, info.Mode()); err != nil {
+		return err
+	}
+	return checkOwnerUID(path, info)
+}
+
 func checkOwnerFileMode(path string, mode fs.FileMode) error {
 	if perm := mode.Perm(); perm&0o022 != 0 {
 		return fmt.Errorf("refusing group/world-writable plugin config %s (mode %04o); run chmod 0600", path, perm)

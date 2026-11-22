@@ -126,7 +126,7 @@ func LoadUserConfig(path string) (UserConfig, error) {
 	if !info.Mode().IsRegular() {
 		return UserConfig{}, fmt.Errorf("%s: plugin config must be a regular file", path)
 	}
-	if err := checkOwnerFileMode(path, info.Mode()); err != nil {
+	if err := checkOpenConfigSafety(path, f, info); err != nil {
 		return UserConfig{}, err
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxConfigBytes+1))
@@ -199,7 +199,7 @@ func ParseUserConfig(path string, data []byte) (UserConfig, error) {
 			if err != nil {
 				return UserConfig{}, fmt.Errorf("%s: %w", path, err)
 			}
-			key := projectPluginKey{projectDir: tp.ProjectDir, name: tp.Name}
+			key := projectPluginKey{projectDir: CanonicalProjectDir(tp.ProjectDir), name: tp.Name}
 			if seen[key] {
 				return UserConfig{}, fmt.Errorf("%s: %w: project trust entry %q in %q", path, ErrDuplicatePlugin, tp.Name, tp.ProjectDir)
 			}
@@ -262,6 +262,9 @@ func UpdateUserConfig(path string, fn func(*UserConfig) error) error {
 		return err
 	}
 	body := FormatUserConfig(cfg)
+	if len(body) > maxConfigBytes {
+		return fmt.Errorf("%s: plugin config exceeds %d byte limit", path, maxConfigBytes)
+	}
 	if err := fileperm.ReplaceOwnerOnly(path, body); err != nil {
 		return fmt.Errorf("write plugin config: %w", err)
 	}

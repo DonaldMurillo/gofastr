@@ -259,19 +259,27 @@ func TestResolveGlobalAndProjectConflict(t *testing.T) {
 		t.Fatalf("SECURITY: untrusted repo disabled global build override: ov=%+v err=%v", ov, err)
 	}
 
-	// Two global plugins claiming override of "deploy" -> ErrDuplicateOverride.
+	// Two global plugins claiming override of "build" -> ErrDuplicateOverride on
+	// "build", while plugin alpha's non-conflicting "deploy" override stays ready.
 	res = Resolve(ResolveOptions{
 		UserConfig: UserConfig{
 			Version: 1,
 			Plugins: []RegisteredPlugin{
-				{Name: "alpha", Command: []string{globalBin}, AllowOverrides: []string{"deploy"}},
-				{Name: "beta", Command: []string{otherBin}, AllowOverrides: []string{"deploy"}},
+				{Name: "alpha", Command: []string{globalBin}, AllowOverrides: []string{"build", "deploy"}},
+				{Name: "beta", Command: []string{otherBin}, AllowOverrides: []string{"build"}},
 			},
 		},
 		Builtins: testBuiltins(),
 	})
-	if _, err := ResolveOverride(res, "deploy"); !errors.Is(err, ErrDuplicateOverride) {
-		t.Fatalf("expected ErrDuplicateOverride, got %v", err)
+	if _, err := ResolveOverride(res, "build"); !errors.Is(err, ErrDuplicateOverride) {
+		t.Fatalf("expected ErrDuplicateOverride for build, got %v", err)
+	}
+	ov, err := ResolveOverride(res, "deploy")
+	if err != nil || ov == nil || ov.Name != "alpha" {
+		t.Fatalf("non-conflicting override deploy failed: ov=%+v err=%v", ov, err)
+	}
+	if ov.Status != StatusReady {
+		t.Fatalf("non-conflicting override plugin status = %s, want ready", ov.Status)
 	}
 }
 

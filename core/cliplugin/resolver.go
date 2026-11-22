@@ -35,43 +35,45 @@ const (
 
 // ResolvedPlugin is the merged, validated view of one configured plugin.
 type ResolvedPlugin struct {
-	Name            string       `json:"name"`
-	Source          PluginSource `json:"source"`
-	Status          PluginStatus `json:"status"`
-	Summary         string       `json:"summary,omitempty"`
-	InstallHint     string       `json:"install_hint,omitempty"`
-	Command         []string     `json:"command,omitempty"`
-	ProjectDir      string       `json:"project_dir,omitempty"`
-	ProjectLocalBin bool         `json:"project_local_bin,omitempty"`
-	SHA256          string       `json:"sha256,omitempty"`
-	AllowEnv        []string     `json:"allow_env,omitempty"`
-	AllowEnvFlags   []string     `json:"allow_env_flags,omitempty"`
-	AllowHooks      []string     `json:"allow_hooks,omitempty"`
-	AllowOverrides  []string     `json:"allow_overrides,omitempty"`
-	Err             error        `json:"-"`
-	ErrorMessage    string       `json:"error,omitempty"`
+	Name                string       `json:"name"`
+	Source              PluginSource `json:"source"`
+	Status              PluginStatus `json:"status"`
+	Summary             string       `json:"summary,omitempty"`
+	InstallHint         string       `json:"install_hint,omitempty"`
+	Command             []string     `json:"command,omitempty"`
+	ProjectDir          string       `json:"project_dir,omitempty"`
+	ProjectLocalBin     bool         `json:"project_local_bin,omitempty"`
+	SHA256              string       `json:"sha256,omitempty"`
+	AllowEnv            []string     `json:"allow_env,omitempty"`
+	AllowEnvFlags       []string     `json:"allow_env_flags,omitempty"`
+	AllowHooks          []string     `json:"allow_hooks,omitempty"`
+	AllowOverrides      []string     `json:"allow_overrides,omitempty"`
+	ConflictedOverrides []string     `json:"conflicted_overrides,omitempty"`
+	Err                 error        `json:"-"`
+	ErrorMessage        string       `json:"error,omitempty"`
 }
 
 // Diagnostic is the full health check result produced by Diagnose for one
 // plugin (combining static resolution with a live manifest handshake).
 type Diagnostic struct {
-	Name            string        `json:"name"`
-	Source          PluginSource  `json:"source"`
-	Status          PluginStatus  `json:"status"`
-	Version         string        `json:"version,omitempty"`
-	ProtocolVersion int           `json:"protocol_version,omitempty"`
-	Summary         string        `json:"summary,omitempty"`
-	InstallHint     string        `json:"install_hint,omitempty"`
-	Command         []string      `json:"command,omitempty"`
-	ProjectDir      string        `json:"project_dir,omitempty"`
-	Subcommands     []CommandInfo `json:"subcommands,omitempty"`
-	AllowEnv        []string      `json:"allow_env,omitempty"`
-	AllowEnvFlags   []string      `json:"allow_env_flags,omitempty"`
-	AllowHooks      []string      `json:"allow_hooks,omitempty"`
-	AllowOverrides  []string      `json:"allow_overrides,omitempty"`
-	DeclaredHooks   []HookSpec    `json:"declared_hooks,omitempty"`
-	DeclaredOverr   []string      `json:"declared_overrides,omitempty"`
-	Error           string        `json:"error,omitempty"`
+	Name                string        `json:"name"`
+	Source              PluginSource  `json:"source"`
+	Status              PluginStatus  `json:"status"`
+	Version             string        `json:"version,omitempty"`
+	ProtocolVersion     int           `json:"protocol_version,omitempty"`
+	Summary             string        `json:"summary,omitempty"`
+	InstallHint         string        `json:"install_hint,omitempty"`
+	Command             []string      `json:"command,omitempty"`
+	ProjectDir          string        `json:"project_dir,omitempty"`
+	Subcommands         []CommandInfo `json:"subcommands,omitempty"`
+	AllowEnv            []string      `json:"allow_env,omitempty"`
+	AllowEnvFlags       []string      `json:"allow_env_flags,omitempty"`
+	AllowHooks          []string      `json:"allow_hooks,omitempty"`
+	AllowOverrides      []string      `json:"allow_overrides,omitempty"`
+	ConflictedOverrides []string      `json:"conflicted_overrides,omitempty"`
+	DeclaredHooks       []HookSpec    `json:"declared_hooks,omitempty"`
+	DeclaredOverr       []string      `json:"declared_overrides,omitempty"`
+	Error               string        `json:"error,omitempty"`
 }
 
 // ResolveOptions configures plugin resolution.
@@ -236,7 +238,9 @@ func Resolve(opts ResolveOptions) []ResolvedPlugin {
 	})
 	out = append(out, projectEntries...)
 
-	// 3. Enforce unique built-in override ownership across all ready plugins.
+	// 3. Record duplicate built-in override conflicts scoped per canonical
+	// command so an unrelated override, hook, or namespace on the same plugin
+	// stays usable while the conflicting command itself fails closed.
 	overrideOwners := map[string][]int{}
 	for i := range out {
 		if out[i].Status != StatusReady {
@@ -249,14 +253,14 @@ func Resolve(opts ResolveOptions) []ResolvedPlugin {
 	for _, cmdName := range slices.Sorted(maps.Keys(overrideOwners)) {
 		idxs := overrideOwners[cmdName]
 		if len(idxs) > 1 {
-			names := make([]string, len(idxs))
-			for j, idx := range idxs {
-				names[j] = out[idx].Name
-			}
 			for _, idx := range idxs {
-				out[idx].setError(StatusConflict, fmt.Errorf("%w: built-in command %q is overridden by multiple plugins (%s)",
-					ErrDuplicateOverride, cmdName, strings.Join(names, ", ")))
+				out[idx].ConflictedOverrides = append(out[idx].ConflictedOverrides, cmdName)
 			}
+		}
+	}
+	for i := range out {
+		if len(out[i].ConflictedOverrides) > 0 {
+			out[i].ConflictedOverrides = sortedUnique(out[i].ConflictedOverrides)
 		}
 	}
 
@@ -328,15 +332,10 @@ func ResolveOverride(plugins []ResolvedPlugin, canonicalBuiltin string) (*Resolv
 	}
 	var matches []ResolvedPlugin
 	for _, p := range plugins {
-		if !slices.Contains(p.AllowOverrides, canonicalBuiltin) {
+		if p.Status != StatusReady || !slices.Contains(p.AllowOverrides, canonicalBuiltin) {
 			continue
 		}
-		if p.Status == StatusConflict && errors.Is(p.Err, ErrDuplicateOverride) {
-			return nil, p.Err
-		}
-		if p.Status == StatusReady {
-			matches = append(matches, p)
-		}
+		matches = append(matches, p)
 	}
 	if len(matches) == 0 {
 		return nil, nil
@@ -346,8 +345,12 @@ func ResolveOverride(plugins []ResolvedPlugin, canonicalBuiltin string) (*Resolv
 		for i, m := range matches {
 			names[i] = m.Name
 		}
+		slices.Sort(names)
 		return nil, fmt.Errorf("%w: built-in command %q is overridden by multiple plugins (%s)",
 			ErrDuplicateOverride, canonicalBuiltin, strings.Join(names, ", "))
+	}
+	if slices.Contains(matches[0].ConflictedOverrides, canonicalBuiltin) {
+		return nil, fmt.Errorf("%w: built-in command %q is overridden by multiple plugins", ErrDuplicateOverride, canonicalBuiltin)
 	}
 	chosen := matches[0]
 	return &chosen, nil
@@ -443,18 +446,19 @@ func Diagnose(ctx context.Context, opts ResolveOptions, cliVersion, workDir, fil
 			continue
 		}
 		d := Diagnostic{
-			Name:           rp.Name,
-			Source:         rp.Source,
-			Status:         rp.Status,
-			Summary:        rp.Summary,
-			InstallHint:    rp.InstallHint,
-			Command:        rp.Command,
-			ProjectDir:     rp.ProjectDir,
-			AllowEnv:       rp.AllowEnv,
-			AllowEnvFlags:  rp.AllowEnvFlags,
-			AllowHooks:     rp.AllowHooks,
-			AllowOverrides: rp.AllowOverrides,
-			Error:          rp.ErrorMessage,
+			Name:                rp.Name,
+			Source:              rp.Source,
+			Status:              rp.Status,
+			Summary:             rp.Summary,
+			InstallHint:         rp.InstallHint,
+			Command:             rp.Command,
+			ProjectDir:          rp.ProjectDir,
+			AllowEnv:            rp.AllowEnv,
+			AllowEnvFlags:       rp.AllowEnvFlags,
+			AllowHooks:          rp.AllowHooks,
+			AllowOverrides:      rp.AllowOverrides,
+			ConflictedOverrides: slices.Clone(rp.ConflictedOverrides),
+			Error:               rp.ErrorMessage,
 		}
 		if rp.Status == StatusReady {
 			m, err := VerifyLiveManifest(ctx, rp, cliVersion, workDir)
@@ -474,6 +478,11 @@ func Diagnose(ctx context.Context, opts ResolveOptions, cliVersion, workDir, fil
 				d.Subcommands = m.Subcommands
 				d.DeclaredHooks = m.Hooks
 				d.DeclaredOverr = m.Overrides
+				if len(rp.ConflictedOverrides) > 0 {
+					d.Status = StatusConflict
+					d.Error = fmt.Sprintf("%s: built-in command(s) %s overridden by multiple plugins",
+						ErrDuplicateOverride, strings.Join(rp.ConflictedOverrides, ", "))
+				}
 			}
 		}
 		out = append(out, d)

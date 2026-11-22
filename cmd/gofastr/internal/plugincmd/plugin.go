@@ -166,6 +166,9 @@ func runPluginList(args []string, jsonMode bool) {
 		if len(p.AllowOverrides) > 0 {
 			cli.Printf("  %-14s  overrides: %s\n", "", strings.Join(p.AllowOverrides, ", "))
 		}
+		if len(p.ConflictedOverrides) > 0 {
+			cli.Printf("  %-14s  conflicted overrides: %s\n", "", strings.Join(p.ConflictedOverrides, ", "))
+		}
 	}
 	cli.Println("")
 }
@@ -587,17 +590,13 @@ func runPluginUntrust(args []string) {
 	}
 
 	err = cliplugin.UpdateUserConfig(cfgPath, func(cfg *cliplugin.UserConfig) error {
-		idx := -1
-		for i, tp := range cfg.TrustedProjects {
-			if cliplugin.CanonicalProjectDir(tp.ProjectDir) == canonProj && tp.Name == name {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
+		before := len(cfg.TrustedProjects)
+		cfg.TrustedProjects = slices.DeleteFunc(cfg.TrustedProjects, func(tp cliplugin.TrustedProjectPlugin) bool {
+			return cliplugin.CanonicalProjectDir(tp.ProjectDir) == canonProj && tp.Name == name
+		})
+		if len(cfg.TrustedProjects) == before {
 			return fmt.Errorf("no trust record found for project plugin %q in %s", name, canonProj)
 		}
-		cfg.TrustedProjects = slices.Delete(cfg.TrustedProjects, idx, idx+1)
 		return nil
 	})
 	if err != nil {

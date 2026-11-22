@@ -142,18 +142,11 @@ func withinDir(base, target string) bool {
 
 // HashFile computes the lowercase hex SHA-256 digest of the regular file at path.
 func HashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := openRegularReadOnly(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("%w: %q is not a regular file", ErrInvalidPath, textsafe.ScrubTerminal(path))
-	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -166,18 +159,14 @@ func HashFile(path string) (string, error) {
 // pass. Callers execute the returned snapshot path and invoke cleanup when done
 // so neither probing nor running can race against writes inside a checkout.
 func SnapshotExecutable(path string) (snapPath string, digest string, cleanup func(), err error) {
-	src, err := os.Open(path)
+	src, err := openRegularReadOnly(path)
 	if err != nil {
+		if errors.Is(err, ErrInvalidPath) {
+			return "", "", nil, err
+		}
 		return "", "", nil, fmt.Errorf("%w: open %q: %v", ErrInvalidPath, textsafe.ScrubTerminal(path), err)
 	}
 	defer src.Close()
-	info, err := src.Stat()
-	if err != nil {
-		return "", "", nil, fmt.Errorf("%w: stat %q: %v", ErrInvalidPath, textsafe.ScrubTerminal(path), err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", "", nil, fmt.Errorf("%w: %q is not a regular file", ErrInvalidPath, textsafe.ScrubTerminal(path))
-	}
 
 	tmpDir, err := os.MkdirTemp("", "gofastr-plugin-*")
 	if err != nil {

@@ -3,6 +3,7 @@ package cliplugin
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"regexp"
 	"runtime"
@@ -245,7 +246,12 @@ func buildExecEnv(opts EnvOptions, caseInsensitive bool) []string {
 			continue
 		}
 		flagMatch := flagVars[key] || (caseInsensitive && flagVars[strings.ToUpper(key)])
-		if isBaseAllowedEnv(key, caseInsensitive) || matchesAnyPattern(opts.AllowEnv, key, caseInsensitive) || flagMatch {
+		explicitMatch := matchesAnyPattern(opts.AllowEnv, key, caseInsensitive) || flagMatch
+		baseMatch := isBaseAllowedEnv(key, caseInsensitive)
+		if baseMatch && !explicitMatch && strings.EqualFold(key, "GOPROXY") && hasAuthenticatedProxyURL(val) {
+			continue
+		}
+		if baseMatch || explicitMatch {
 			if !IsBlockedEnvKey(key) {
 				selected[key] = val
 			}
@@ -298,6 +304,29 @@ func isBaseAllowedEnv(key string, caseInsensitive bool) bool {
 func matchesAnyPattern(patterns []string, key string, caseInsensitive bool) bool {
 	for _, p := range patterns {
 		if envPatternMatches(p, key, caseInsensitive) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasAuthenticatedProxyURL reports whether a GOPROXY value contains embedded
+// URL userinfo credentials (e.g. https://user:pass@proxy.example.com) or an
+// unparseable entry containing '@'.
+func hasAuthenticatedProxyURL(val string) bool {
+	for _, tok := range strings.FieldsFunc(val, func(r rune) bool { return r == ',' || r == '|' }) {
+		tok = strings.TrimSpace(tok)
+		if tok == "" || tok == "direct" || tok == "off" {
+			continue
+		}
+		u, err := url.Parse(tok)
+		if err != nil {
+			if strings.ContainsRune(tok, '@') {
+				return true
+			}
+			continue
+		}
+		if u.User != nil {
 			return true
 		}
 	}

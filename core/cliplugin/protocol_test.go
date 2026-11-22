@@ -154,6 +154,7 @@ func TestWindowsMixedCaseEnvPreservesPath(t *testing.T) {
 		`SystemRoot=C:\Windows`,
 		`Android_Home=C:\Android\Sdk`,
 		`GoFastr_Secret=must-not-leak`,
+		`GOFASTR_PLUGIN_Manifest=1`,
 	}
 	probe := strings.Join(buildProbeEnv(parent, true), "\n")
 	if !strings.Contains(probe, `Path=C:\Windows\System32;C:\Go\bin`) || !strings.Contains(probe, `Temp=C:\Users\dev\AppData\Local\Temp`) {
@@ -165,13 +166,44 @@ func TestWindowsMixedCaseEnvPreservesPath(t *testing.T) {
 
 	execEnv := strings.Join(buildExecEnv(EnvOptions{
 		Environ:  parent,
-		AllowEnv: []string{"ANDROID_*"},
+		AllowEnv: []string{"ANDROID_*", "GOFASTR_PLUGIN_*"},
 	}, true), "\n")
 	if !strings.Contains(execEnv, `Path=C:\Windows\System32;C:\Go\bin`) || !strings.Contains(execEnv, `Android_Home=C:\Android\Sdk`) {
 		t.Fatalf("Windows exec env dropped mixed-case Path/Android_Home:\n%s", execEnv)
 	}
 	if strings.Contains(execEnv, "must-not-leak") {
 		t.Fatalf("SECURITY: Windows exec env leaked mixed-case GOFASTR_SECRET:\n%s", execEnv)
+	}
+	if strings.Contains(execEnv, "GOFASTR_PLUGIN_Manifest") {
+		t.Fatalf("SECURITY: Windows exec env allowed mixed-case protocol var under wildcard:\n%s", execEnv)
+	}
+}
+
+func TestBuildExecEnvStripsAuthenticatedGOPROXYByDefault(t *testing.T) {
+	parentAuth := []string{
+		"PATH=/usr/bin:/bin",
+		"GOPROXY=https://user:s3cr3t@proxy.internal.example,direct",
+	}
+	defaultEnv := strings.Join(buildExecEnv(EnvOptions{Environ: parentAuth}, false), "\n")
+	if strings.Contains(defaultEnv, "s3cr3t") || strings.Contains(defaultEnv, "GOPROXY=") {
+		t.Fatalf("SECURITY: authenticated GOPROXY leaked via base allowlist:\n%s", defaultEnv)
+	}
+
+	approvedEnv := strings.Join(buildExecEnv(EnvOptions{
+		Environ:  parentAuth,
+		AllowEnv: []string{"GOPROXY"},
+	}, false), "\n")
+	if !strings.Contains(approvedEnv, "GOPROXY=https://user:s3cr3t@proxy.internal.example,direct") {
+		t.Fatalf("explicitly approved GOPROXY should be forwarded:\n%s", approvedEnv)
+	}
+
+	parentPublic := []string{
+		"PATH=/usr/bin:/bin",
+		"GOPROXY=https://proxy.golang.org,direct",
+	}
+	publicEnv := strings.Join(buildExecEnv(EnvOptions{Environ: parentPublic}, false), "\n")
+	if !strings.Contains(publicEnv, "GOPROXY=https://proxy.golang.org,direct") {
+		t.Fatalf("unauthenticated GOPROXY should stay in base allowlist:\n%s", publicEnv)
 	}
 }
 

@@ -210,6 +210,35 @@ func TestUpdateUserConfigSerialized(t *testing.T) {
 	}
 }
 
+func TestUpdateUserConfigRejectsOversizedWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plugins.yml")
+	initial := UserConfig{
+		Version: 1,
+		Plugins: []RegisteredPlugin{{Name: "alpha", Command: []string{"/bin/echo"}}},
+	}
+	if err := SaveUserConfig(path, initial); err != nil {
+		t.Fatal(err)
+	}
+	err := UpdateUserConfig(path, func(cfg *UserConfig) error {
+		cfg.Plugins = append(cfg.Plugins, RegisteredPlugin{
+			Name:    "huge",
+			Command: []string{"/bin/echo"},
+			Summary: strings.Repeat("x", maxConfigBytes),
+		})
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "byte limit") {
+		t.Fatalf("expected oversized config refusal, got: %v", err)
+	}
+	got, err := LoadUserConfig(path)
+	if err != nil {
+		t.Fatalf("previous config should remain readable after oversized update: %v", err)
+	}
+	if len(got.Plugins) != 1 || got.Plugins[0].Name != "alpha" {
+		t.Fatalf("previous config mutated: %+v", got.Plugins)
+	}
+}
+
 func TestParseUserConfigRejectsInvalidAndDuplicate(t *testing.T) {
 	cases := []struct {
 		name string
@@ -219,6 +248,7 @@ func TestParseUserConfigRejectsInvalidAndDuplicate(t *testing.T) {
 		{"unknown key", "version: 1\nbogus: true\n", nil},
 		{"bad version", "version: 2\n", nil},
 		{"duplicate plugin", "version: 1\nplugins:\n  - name: a\n    command: [\"/bin/true\"]\n  - name: a\n    command: [\"/bin/true\"]\n", ErrDuplicatePlugin},
+		{"canonical duplicate trusted project", "version: 1\ntrusted_projects:\n  - project_dir: \"/work/app\"\n    name: tool\n    command: [\"/work/app/tool\"]\n    sha256: \"abc\"\n  - project_dir: \"/work/./app\"\n    name: tool\n    command: [\"/work/app/tool\"]\n    sha256: \"abc\"\n", ErrDuplicatePlugin},
 		{"blocked secret env", "version: 1\nplugins:\n  - name: a\n    command: [\"/bin/true\"]\n    allow_env: [\"GOFASTR_SECRET\"]\n", nil},
 		{"protected override", "version: 1\nplugins:\n  - name: a\n    command: [\"/bin/true\"]\n    allow_overrides: [\"plugin\"]\n", ErrProtectedBuiltin},
 	}

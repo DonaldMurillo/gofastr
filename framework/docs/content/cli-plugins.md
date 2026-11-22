@@ -230,7 +230,8 @@ Plugins never inherit the full parent environment:
   (`PATH`, `HOME`, `TMPDIR`, locale, XDG dirs, Windows system vars), excluding
   Go toolchain vars such as `GOPROXY` that may carry credentials.
 - **Execution base allowlist:** Normal runs add terminal color hints and Go
-  toolchain variables.
+  toolchain variables. Credential-bearing `GOPROXY` URLs (containing userinfo)
+  are excluded by default unless explicitly approved via `--allow-env GOPROXY`.
 - **Approved passthrough:** Global `add` approves manifest `env_passthrough` and
   `env_from_flags` (disable with `--no-manifest-env`, or add patterns with
   `--allow-env` / `--allow-env-flag`). Project `trust` requires explicit flags
