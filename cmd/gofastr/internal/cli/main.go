@@ -205,6 +205,15 @@ func HasHelpFlagBeforeTerminator(args []string) bool {
 	return HasHelpFlag(args)
 }
 
+// HasFlagBeforeTerminator reports whether flag appears in args before the
+// first "--" argument terminator.
+func HasFlagBeforeTerminator(args []string, flag string) bool {
+	if end := slices.Index(args, "--"); end >= 0 {
+		args = args[:end]
+	}
+	return slices.Contains(args, flag)
+}
+
 func Min(vals ...int) int {
 	m := vals[0]
 	for _, v := range vals[1:] {

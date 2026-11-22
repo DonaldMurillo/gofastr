@@ -236,7 +236,7 @@ func main() {
 | `core-ui/` | Server-driven UI kernel: HTML primitives, islands, widgets, signals, browser-local IndexedDB, and the vanilla JS runtime. |
 | `framework/` | Opinionated full-stack layer (`App`, UI host, component kit, CRUD/hooks/migrations, access control, contracts). |
 | `battery/` | Opt-in infrastructure: auth, admin, cache, email, log, notify, print, queue, rtc, search, semantic, storage, webhook, plus experimental desktop/service/telemetry hosts. |
-| `cmd/gofastr` | CLI for scaffolding (`init`, `generate`), dev server (`dev`), verification (`verify`), migrations, SDK/CLI generation, releases, and offline docs (`docs`). |
+| `cmd/gofastr` | CLI for scaffolding (`init`, `generate`), dev server (`dev`), verification (`verify`), migrations, SDK/CLI generation, releases, extensible CLI plugins (`plugin`), and offline docs (`docs`). |
 | `examples/` | Reference apps: [`meridian`](examples/meridian) (flagship SaaS app) and [`site`](examples/site) (docs site and component gallery). |
 
 ## Live examples

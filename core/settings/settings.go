@@ -5,6 +5,7 @@ package settings
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
+
+const maxSettingsBytes = 4 << 20 // 4 MiB cap on gofastr.settings.yml
 
 // FileName is the settings file's name at the project root.
 const FileName = "gofastr.settings.yml"
@@ -23,6 +26,7 @@ var sections = map[string]bool{
 	"contracts": true,
 	"endpoints": true,
 	"isolation": true,
+	"plugins":   true,
 	"unmounted": true,
 }
 
@@ -88,11 +92,21 @@ func Find(start, section string) (f File, ok bool, err error) {
 	return File{}, false, nil
 }
 
-// Load reads and checks the settings file at path.
+// Load reads and checks the settings file at path. It refuses non-regular
+// files (such as devices or FIFOs) without blocking and caps reads at
+// maxSettingsBytes so a hostile symlink cannot hang or exhaust memory.
 func Load(path string) (File, error) {
-	data, err := os.ReadFile(path)
+	f, err := openRegularReadOnly(path)
 	if err != nil {
 		return File{}, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxSettingsBytes+1))
+	if err != nil {
+		return File{}, err
+	}
+	if len(data) > maxSettingsBytes {
+		return File{}, fmt.Errorf("%s: settings file exceeds %d byte limit", path, maxSettingsBytes)
 	}
 	return Parse(path, data)
 }

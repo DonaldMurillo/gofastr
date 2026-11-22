@@ -2,6 +2,8 @@ primitive: settings
 summary: gofastr.settings.yml, a project's one committed gofastr configuration file - finding it under the project root and checking its top-level sections, each of which one reader decodes.
 code:
   - core/settings/settings.go
+  - core/settings/regular_unix.go
+  - core/settings/regular_windows.go
 docs:
   - framework/docs/content/settings.md
 on_change:

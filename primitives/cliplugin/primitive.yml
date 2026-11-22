@@ -1,0 +1,78 @@
+primitive: cliplugin
+summary: "External CLI command plugin seam: versioned manifest handshake, user registry and project trust records, allowlisted env forwarding, and opt-in built-in hooks and overrides."
+code:
+  - core/cliplugin/
+  - cmd/gofastr/internal/plugincmd/
+docs:
+  - framework/docs/content/cli-plugins.md
+on_change:
+  - Update framework/docs/content/cli-plugins.md when changing the manifest schema, env filtering rules, or plugin subcommands.
+invariants:
+  - id: no-builtin-shadowing
+    rule: A plugin namespace name that collides with any built-in command name or alias is rejected during registration and resolution.
+    enforced_by:
+      - test: core/cliplugin.TestResolveRejectsBuiltinShadowing
+      - test: cmd/gofastr.TestNativePluginLifecycle
+  - id: project-plugins-fail-closed
+    rule: A project-declared command in gofastr.settings.yml must be a single direct executable inside the project root, never executes until explicitly trusted with explicit capability flags in the user registry, is snapshotted and digest-verified before probe and execution, and any change invalidates trust.
+    enforced_by:
+      - test: core/cliplugin.TestResolveProjectTrustAndTamperDetection
+      - test: core/cliplugin.TestResolveRejectsProjectLaunchers
+      - test: core/cliplugin.TestPrepareVerifiedExecPreventsTOCTOU
+      - test: cmd/gofastr.TestProjectPluginTrustAndTamper
+      - test: cmd/gofastr.TestTrustRequiresExplicitGrants
+  - id: project-paths-confined
+    rule: A project plugin path resolves inside the project root as a single direct executable, rejecting bare PATH launchers, traversal, and symlinks that escape it.
+    enforced_by:
+      - test: core/cliplugin.TestResolveRejectsProjectPathEscapeAndSymlinkEscape
+      - test: core/cliplugin.TestResolveRejectsProjectLaunchers
+  - id: no-secret-env-leakage
+    rule: Plugin subprocesses receive an allowlisted environment, manifest probes exclude toolchain credential vars, and protected secrets (GOFASTR_SECRET, DATABASE_URL, GOFASTR_HARNESS_*) never leak implicitly or via env_from_flags.
+    enforced_by:
+      - test: core/cliplugin.TestBuildExecEnvFiltering
+      - test: core/cliplugin.TestBuildProbeEnvExcludesCredentials
+      - test: core/cliplugin.TestProbeAndRunEndToEnd
+      - test: cmd/gofastr.TestNativePluginLifecycle
+  - id: hooks-and-overrides-require-opt-in
+    rule: Hooks and built-in command overrides remain inactive unless explicitly granted by the operator, protected meta-commands (help, version, plugin) cannot be hooked or overridden, at most one plugin may override a built-in command, and an untrusted or malformed project config can never disable a global hook or override.
+    enforced_by:
+      - test: core/cliplugin.TestManifestValidate
+      - test: core/cliplugin.TestResolveGlobalAndProjectConflict
+      - test: cmd/gofastr/internal/plugincmd.TestComputeApprovedGrantsEnforcesOptInAndManifestBounds
+      - test: cmd/gofastr.TestOptInHooksOverridesAndBuiltinBypass
+      - test: cmd/gofastr.TestGlobalHookSurvivesHostileRepo
+  - id: probe-bounded-and-scrubbed
+    rule: Manifest probing enforces protocol version 1, caps stdout and wait delay, and scrubs control bytes from stderr errors via textsafe.ScrubTerminal.
+    enforced_by:
+      - test: core/cliplugin.TestProbeRejectsProtocolMismatchAndScrubsStderr
+      - test: core/cliplugin.TestProbeWaitIsBoundedAndOversizedManifestRefused
+  - id: registry-locked-and-owner-only
+    rule: User registry updates run inside one lock-protected read-modify-write transaction and refuse symlinks or group/world-writable files and directories.
+    enforced_by:
+      - test: core/cliplugin.TestSaveUserConfigRefusesSymlink
+      - test: core/cliplugin.TestUpdateUserConfigSerialized
+decisions:
+  - id: explicit-registry-and-pinned-project-trust
+    date: 2026-11-21
+    status: accepted
+    decision: Global plugins live in an owner-only user registry (~/.config/gofastr/plugins.yml) and repo-declared commands in gofastr.settings.yml must be single direct executables inside the project root pinned by SHA-256 and snapshotted into a private temp file before probe and execution.
+    rejected:
+      - option: Auto-discover and execute arbitrary gofastr-* executables from PATH or allow interpreter launchers like sh/go in project settings.
+        why: Silent execution or hashing an interpreter while its script stays mutable defeats the SHA-256 trust pin.
+    upholds: [project-plugins-fail-closed, project-paths-confined]
+  - id: public-core-cliplugin-seam
+    date: 2026-11-21
+    status: accepted
+    decision: Publish the wire contract, manifest helper, env filter, registry, and runner in core/cliplugin (Provisional) rather than hiding them under cmd/gofastr/internal.
+    rejected:
+      - option: Keep all plugin code internal to cmd/gofastr and document only raw JSON.
+        why: External Go modules like gofastr-native and third-party extensions should import a typed, versioned seam directly.
+    upholds: [probe-bounded-and-scrubbed]
+  - id: opt-in-hooks-and-overrides-with-builtin-bypass
+    date: 2026-11-21
+    status: accepted
+    decision: Reject built-in namespace collisions unconditionally while providing an explicit opt-in hook and override seam with --builtin and GOFASTR_NO_PLUGINS=1 call-through.
+    rejected:
+      - option: Allow plugins to shadow built-in command names directly on registration.
+        why: "Implicit shadowing breaks user expectations and violates #881's collision-rejection requirement."
+    upholds: [no-builtin-shadowing, hooks-and-overrides-require-opt-in]

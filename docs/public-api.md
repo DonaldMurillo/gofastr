@@ -78,3 +78,13 @@ Underscore-prefixed runtime properties such as `_pushURL` and
 proposal tracks what is still open: acceptance of the guard on WebKit
 (its browser tests run Chromium only, with and without the Navigation
 API) and the consumer's migration.
+
+## CLI extension seams
+
+- **External CLI plugins** (`core/cliplugin`, Provisional): versioned manifest
+  handshake (`ProtocolVersion = 1`, `Manifest`, `MaybeServeManifest`),
+  environment allowlist/flag filtering (`BuildExecEnv`), user registry and
+  project trust records (`UserConfig`, `ProjectConfig`, `Resolve`), direct
+  subprocess runner (`Run`), and opt-in built-in command hooks/overrides with
+  recursion-safe `BuiltinCommand` call-through. See
+  [CLI plugins](../framework/docs/content/cli-plugins.md).
