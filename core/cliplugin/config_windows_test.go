@@ -4,12 +4,30 @@ package cliplugin
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
 )
+
+func TestIsTrustedWindowsSIDAcceptsTrustedInstaller(t *testing.T) {
+	ti, err := windows.StringToSid(windowsTrustedInstallerSID)
+	if err != nil {
+		t.Fatalf("StringToSid(TrustedInstaller): %v", err)
+	}
+	if !isTrustedWindowsSID(ti, nil) {
+		t.Fatal("TrustedInstaller SID must be trusted for Windows volume roots/ancestors")
+	}
+	everyone, err := windows.CreateWellKnownSid(windows.WinWorldSid)
+	if err != nil {
+		t.Fatalf("CreateWellKnownSid: %v", err)
+	}
+	if isTrustedWindowsSID(everyone, nil) {
+		t.Fatal("SECURITY: Everyone SID must never be trusted")
+	}
+}
 
 func TestLoadUserConfigRefusesWorldWritableWindowsDACL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plugins.yml")
@@ -93,5 +111,60 @@ func TestLoadUserConfigRefusesWorldWritableWindowsDACL(t *testing.T) {
 	}
 	if err := SaveUserConfig(nested, UserConfig{Version: ConfigVersion}); err == nil || !strings.Contains(err.Error(), "ancestor") {
 		t.Fatalf("SECURITY: world-writable Windows ancestor accepted on save: %v", err)
+	}
+}
+
+func makeJunction(t *testing.T, link, target string) {
+	t.Helper()
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+		t.Fatalf("mklink /J %s -> %s: %v\n%s", link, target, err, out)
+	}
+	t.Cleanup(func() { _ = os.Remove(link) })
+}
+
+func TestWindowsRefusesJunctionsAndReparsePoints(t *testing.T) {
+	base := t.TempDir()
+	targetDir := filepath.Join(base, "target")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveUserConfig(filepath.Join(targetDir, "plugins.yml"), UserConfig{Version: ConfigVersion}); err != nil {
+		t.Fatalf("SaveUserConfig target: %v", err)
+	}
+
+	// 1. Immediate config directory is a junction.
+	dirJunction := filepath.Join(base, "dir-junction")
+	makeJunction(t, dirJunction, targetDir)
+	viaDirJunction := filepath.Join(dirJunction, "plugins.yml")
+	if _, err := LoadUserConfig(viaDirJunction); err == nil || !strings.Contains(err.Error(), "junction") {
+		t.Fatalf("SECURITY: junction config dir accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(viaDirJunction, UserConfig{Version: ConfigVersion}); err == nil || !strings.Contains(err.Error(), "junction") {
+		t.Fatalf("SECURITY: junction config dir accepted on save: %v", err)
+	}
+
+	// 2. Config file path itself is a junction.
+	fileDir := filepath.Join(base, "file-case")
+	if err := os.MkdirAll(fileDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgJunction := filepath.Join(fileDir, "plugins.yml")
+	makeJunction(t, cfgJunction, targetDir)
+	if _, err := LoadUserConfig(cfgJunction); err == nil || !strings.Contains(err.Error(), "reparse") {
+		t.Fatalf("SECURITY: junction config file accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(cfgJunction, UserConfig{Version: ConfigVersion}); err == nil || !strings.Contains(err.Error(), "reparse") {
+		t.Fatalf("SECURITY: junction config file accepted on save: %v", err)
+	}
+
+	// 3. Lockfile path is a junction.
+	lockDir := filepath.Join(base, "lock-case")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lockJunction := filepath.Join(lockDir, "plugins.yml.lock")
+	makeJunction(t, lockJunction, targetDir)
+	if err := SaveUserConfig(filepath.Join(lockDir, "plugins.yml"), UserConfig{Version: ConfigVersion}); err == nil || !strings.Contains(err.Error(), "reparse") {
+		t.Fatalf("SECURITY: junction lockfile accepted on save: %v", err)
 	}
 }

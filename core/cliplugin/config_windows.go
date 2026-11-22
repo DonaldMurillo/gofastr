@@ -13,7 +13,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const fileDeleteChild = 0x00000040
+const (
+	fileDeleteChild = 0x00000040
+
+	// NT SERVICE\TrustedInstaller owns stock Windows roots such as C:\ and
+	// C:\Users (analogous to root on Unix).
+	windowsTrustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+)
 
 const (
 	windowsFileWriteRiskMask windows.ACCESS_MASK = windows.FILE_WRITE_DATA |
@@ -267,7 +273,9 @@ func isTrustedWindowsSID(sid, currentUser *windows.SID) bool {
 	if currentUser != nil && sid.Equals(currentUser) {
 		return true
 	}
-	return sid.IsWellKnown(windows.WinLocalSystemSid) || sid.IsWellKnown(windows.WinBuiltinAdministratorsSid)
+	return sid.IsWellKnown(windows.WinLocalSystemSid) ||
+		sid.IsWellKnown(windows.WinBuiltinAdministratorsSid) ||
+		sid.String() == windowsTrustedInstallerSID
 }
 
 func openLockFileNoFollow(lockPath string) (*os.File, error) {
