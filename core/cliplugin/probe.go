@@ -52,6 +52,9 @@ func ResolveExecutable(command []string, baseDir string, confineToBase bool) ([]
 		if strings.ContainsRune(arg, 0) {
 			return nil, false, fmt.Errorf("%w: command[%d] contains NUL byte", ErrInvalidPath, i+1)
 		}
+		if !confineToBase && isExplicitRelativePath(arg) {
+			return nil, false, fmt.Errorf("%w: command[%d] %q must be an absolute path, not a cwd-relative path", ErrInvalidPath, i+1, textsafe.ScrubTerminal(arg))
+		}
 	}
 
 	hasSep := strings.ContainsRune(rawExe, '/') || strings.ContainsRune(rawExe, '\\') || strings.HasPrefix(rawExe, ".")
@@ -130,6 +133,48 @@ func ResolveExecutable(command []string, baseDir string, confineToBase bool) ([]
 	out[0] = realExe
 	copy(out[1:], command[1:])
 	return out, isProjectLocal, nil
+}
+
+// AbsolutizeCommandArgs resolves cwd-relative path arguments in command[1:]
+// against baseDir at registration time (for example, `python helper.py` or
+// `python ./helper.py` -> `python /abs/path/to/helper.py`) so later execution
+// inside an untrusted repository cannot resolve a relative script against the
+// repository's working directory.
+func AbsolutizeCommandArgs(command []string, baseDir string) []string {
+	if len(command) <= 1 || baseDir == "" {
+		return append([]string(nil), command...)
+	}
+	out := append([]string(nil), command...)
+	for i := 1; i < len(out); i++ {
+		arg := out[i]
+		if arg == "" || strings.HasPrefix(arg, "-") || filepath.IsAbs(arg) {
+			continue
+		}
+		candidate := filepath.Join(baseDir, arg)
+		explicitRel := isExplicitRelativePath(arg)
+		realPath, evalErr := filepath.EvalSymlinks(candidate)
+		if !explicitRel && evalErr != nil {
+			continue
+		}
+		if evalErr == nil {
+			if abs, err := filepath.Abs(realPath); err == nil {
+				out[i] = abs
+			} else {
+				out[i] = realPath
+			}
+			continue
+		}
+		if abs, err := filepath.Abs(candidate); err == nil {
+			out[i] = abs
+		}
+	}
+	return out
+}
+
+func isExplicitRelativePath(arg string) bool {
+	return arg == "." || arg == ".." ||
+		strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") ||
+		strings.HasPrefix(arg, `.\`) || strings.HasPrefix(arg, `..\`)
 }
 
 func withinDir(base, target string) bool {

@@ -248,14 +248,21 @@ func validateWindowsSD(path string, sd *windows.SECURITY_DESCRIPTOR, riskMask wi
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return fmt.Errorf("read ACE %d for %s: %w", i, path, err)
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+		if ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 {
 			continue
 		}
-		if ace.Header.AceFlags&windows.INHERIT_ONLY_ACE != 0 {
+		if isWindowsDenyAceType(ace.Header.AceType) {
 			continue
 		}
 		if ace.Mask&riskMask == 0 {
 			continue
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+			// Fail closed on conditional/callback/object allow ACEs whose
+			// structure differs from ACCESS_ALLOWED_ACE (e.g.
+			// ACCESS_ALLOWED_CALLBACK_ACE_TYPE = 9) so they cannot grant
+			// write/takeover rights to an untrusted SID.
+			return fmt.Errorf("refusing plugin config %s with unsupported write-capable ACE type %d (mask 0x%x)", path, ace.Header.AceType, uint32(ace.Mask))
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 		if isTrustedWindowsSID(sid, userSID) || sid.IsWellKnown(windows.WinCreatorOwnerSid) {
@@ -264,6 +271,21 @@ func validateWindowsSD(path string, sd *windows.SECURITY_DESCRIPTOR, riskMask wi
 		return fmt.Errorf("refusing plugin config %s writable by untrusted SID %s (mask 0x%x)", path, sid.String(), uint32(ace.Mask))
 	}
 	return nil
+}
+
+// isWindowsDenyAceType reports whether aceType is a Windows DACL access-denied
+// ACE type (standard, object, callback, or callback-object). Deny ACEs never
+// grant permissions.
+func isWindowsDenyAceType(aceType uint8) bool {
+	switch aceType {
+	case windows.ACCESS_DENIED_ACE_TYPE, // 1
+		6,  // ACCESS_DENIED_OBJECT_ACE_TYPE
+		10, // ACCESS_DENIED_CALLBACK_ACE_TYPE
+		12: // ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE
+		return true
+	default:
+		return false
+	}
 }
 
 func isTrustedWindowsSID(sid, currentUser *windows.SID) bool {

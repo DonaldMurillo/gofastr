@@ -27,6 +27,16 @@ func TestIsTrustedWindowsSIDAcceptsTrustedInstaller(t *testing.T) {
 	if isTrustedWindowsSID(everyone, nil) {
 		t.Fatal("SECURITY: Everyone SID must never be trusted")
 	}
+	for _, deny := range []uint8{windows.ACCESS_DENIED_ACE_TYPE, 6, 10, 12} {
+		if !isWindowsDenyAceType(deny) {
+			t.Fatalf("deny ACE type %d not recognized", deny)
+		}
+	}
+	for _, allow := range []uint8{windows.ACCESS_ALLOWED_ACE_TYPE, 5, 9, 11} {
+		if isWindowsDenyAceType(allow) {
+			t.Fatalf("SECURITY: allow/callback ACE type %d misclassified as deny", allow)
+		}
+	}
 }
 
 func TestLoadUserConfigRefusesWorldWritableWindowsDACL(t *testing.T) {

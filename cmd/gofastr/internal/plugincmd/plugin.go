@@ -266,7 +266,7 @@ func runPluginAdd(args []string) {
 	}
 
 	wd, _ := os.Getwd()
-	resolvedCmd, _, err := cliplugin.ResolveExecutable(rawCmd, wd, false)
+	resolvedCmd, _, err := cliplugin.ResolveExecutable(cliplugin.AbsolutizeCommandArgs(rawCmd, wd), wd, false)
 	if err != nil {
 		cli.Fail("Invalid plugin command: %v", err)
 		cli.OsExit(1)

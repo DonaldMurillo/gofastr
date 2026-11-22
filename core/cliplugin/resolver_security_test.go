@@ -283,6 +283,102 @@ func TestResolveGlobalAndProjectConflict(t *testing.T) {
 	}
 }
 
+func TestSymlinkedCheckoutsDoNotBreakGlobalRegistryLoad(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on Windows")
+	}
+	base := t.TempDir()
+	globalBin := makeDummyExecutable(t, filepath.Join(base, "gbin"), "#!/bin/sh\n")
+	repoA := filepath.Join(base, "repo-a")
+	repoB := filepath.Join(base, "repo-b")
+	binA := makeDummyExecutable(t, filepath.Join(repoA, "tools", "helper"), "#!/bin/sh\necho a\n")
+	binB := makeDummyExecutable(t, filepath.Join(repoB, "tools", "helper"), "#!/bin/sh\necho b\n")
+	shaA, err := HashFile(binA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shaB, err := HashFile(binB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(base, "plugins.yml")
+	if err := SaveUserConfig(cfgPath, UserConfig{
+		Version: 1,
+		Plugins: []RegisteredPlugin{{Name: "globaltool", Command: []string{globalBin}}},
+		TrustedProjects: []TrustedProjectPlugin{
+			{ProjectDir: CanonicalProjectDir(repoA), Name: "helper", Command: []string{CanonicalProjectDir(binA)}, SHA256: shaA},
+			{ProjectDir: CanonicalProjectDir(repoB), Name: "helper", Command: []string{CanonicalProjectDir(binB)}, SHA256: shaB},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replace repoB with a symlink to repoA after approval.
+	if err := os.RemoveAll(repoB); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(repoA, repoB); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unrelated global plugins must still load cleanly.
+	loaded, err := LoadUserConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("symlinked checkout broke global registry load: %v", err)
+	}
+	if len(loaded.Plugins) != 1 || loaded.Plugins[0].Name != "globaltool" {
+		t.Fatalf("global plugin missing after checkout symlink: %+v", loaded.Plugins)
+	}
+
+	// Resolution isolates the conflict to the aliased project trust entry.
+	res := Resolve(ResolveOptions{
+		UserConfig: loaded,
+		ProjectConfig: ProjectConfig{
+			ProjectDir: repoA,
+			Found:      true,
+			Plugins:    []ProjectPlugin{{Name: "helper", Command: []string{"./tools/helper"}}},
+		},
+		Builtins: testBuiltins(),
+	})
+	gp, ok := FindResolved(res, "globaltool")
+	if !ok || gp.Status != StatusReady {
+		t.Fatalf("global plugin should stay ready: ok=%v gp=%+v", ok, gp)
+	}
+	pp, ok := FindResolved(res, "helper")
+	if !ok || pp.Status != StatusConflict || !errors.Is(pp.Err, ErrDuplicatePlugin) {
+		t.Fatalf("aliased project trust entry should conflict: ok=%v pp=%+v", ok, pp)
+	}
+}
+
+func TestGlobalRelativeExtraArgsAreAbsolutizedOrRefused(t *testing.T) {
+	dir := t.TempDir()
+	interp := makeDummyExecutable(t, filepath.Join(dir, "interp"), "#!/bin/sh\n")
+	script := makeDummyExecutable(t, filepath.Join(dir, "helper.py"), "#!/usr/bin/env python3\n")
+	realScript, err := filepath.EvalSymlinks(script)
+	if err != nil {
+		realScript = script
+	}
+
+	// Registration-time absolutization turns cwd-relative script args into
+	// canonical absolute paths so later runs in untrusted repos cannot hijack them.
+	absCmd := AbsolutizeCommandArgs([]string{interp, "helper.py", "--flag"}, dir)
+	if len(absCmd) != 3 || absCmd[1] != realScript || absCmd[2] != "--flag" {
+		t.Fatalf("AbsolutizeCommandArgs = %#v, want [interp %q --flag]", absCmd, realScript)
+	}
+	resolved, _, err := ResolveExecutable(absCmd, dir, false)
+	if err != nil || resolved[1] != realScript {
+		t.Fatalf("ResolveExecutable(absCmd) = %#v, %v", resolved, err)
+	}
+
+	// Explicit cwd-relative args stored in a global command must be refused.
+	for _, rel := range []string{"./helper.py", "../helper.py", "."} {
+		if _, _, err := ResolveExecutable([]string{interp, rel}, "", false); !errors.Is(err, ErrInvalidPath) {
+			t.Fatalf("SECURITY: global cwd-relative arg %q accepted: %v", rel, err)
+		}
+	}
+}
+
 func TestResolveInvalidPaths(t *testing.T) {
 	dir := t.TempDir()
 	nonExec := filepath.Join(dir, "notexec")

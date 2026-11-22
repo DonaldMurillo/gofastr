@@ -105,6 +105,9 @@ func DefaultUserConfigPath() (string, error) {
 // Symlinks, non-regular files, files exceeding maxConfigBytes, and
 // group/world-writable registry files or directories are refused.
 func LoadUserConfig(path string) (UserConfig, error) {
+	if err := rejectDotDotConfigPath(path); err != nil {
+		return UserConfig{}, err
+	}
 	if err := checkUserConfigReadSafety(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return UserConfig{Version: ConfigVersion}, nil
@@ -199,7 +202,7 @@ func ParseUserConfig(path string, data []byte) (UserConfig, error) {
 			if err != nil {
 				return UserConfig{}, fmt.Errorf("%s: %w", path, err)
 			}
-			key := projectPluginKey{projectDir: CanonicalProjectDir(tp.ProjectDir), name: tp.Name}
+			key := projectPluginKey{projectDir: cleanProjectDirKey(tp.ProjectDir), name: tp.Name}
 			if seen[key] {
 				return UserConfig{}, fmt.Errorf("%s: %w: project trust entry %q in %q", path, ErrDuplicatePlugin, tp.Name, tp.ProjectDir)
 			}
@@ -226,6 +229,9 @@ func SaveUserConfig(path string, cfg UserConfig) error {
 // mutation, and owner-only atomic replacement so concurrent add/remove/trust
 // operations cannot lose updates or resurrect revoked trust.
 func UpdateUserConfig(path string, fn func(*UserConfig) error) error {
+	if err := rejectDotDotConfigPath(path); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create plugin config dir: %w", err)
@@ -269,6 +275,25 @@ func UpdateUserConfig(path string, fn func(*UserConfig) error) error {
 		return fmt.Errorf("write plugin config: %w", err)
 	}
 	return nil
+}
+
+func rejectDotDotConfigPath(path string) error {
+	for _, seg := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return fmt.Errorf("%s: plugin config path must not contain '..' segments", path)
+		}
+	}
+	return nil
+}
+
+func cleanProjectDirKey(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
+	}
+	return filepath.Clean(dir)
 }
 
 func refuseSymlinkIfPresent(path, label string) error {

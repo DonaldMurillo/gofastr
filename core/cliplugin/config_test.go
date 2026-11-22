@@ -183,6 +183,16 @@ func TestSaveUserConfigRefusesSymlink(t *testing.T) {
 	if err := SaveUserConfig(viaAncestorLink, UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "ancestor") {
 		t.Fatalf("SECURITY: symlink target under world-writable ancestor accepted on save: %v", err)
 	}
+
+	// Refuse config paths containing ".." segments so symlink + ".." cannot
+	// cause filepath.Dir and os.Open to refer to different directories.
+	dotDotPath := filepath.Join(symlinkHome, ".config") + "/../plugins.yml"
+	if _, err := LoadUserConfig(dotDotPath); err == nil || !strings.Contains(err.Error(), "'..'") {
+		t.Fatalf("SECURITY: config path with '..' accepted on load: %v", err)
+	}
+	if err := SaveUserConfig(dotDotPath, UserConfig{Version: 1}); err == nil || !strings.Contains(err.Error(), "'..'") {
+		t.Fatalf("SECURITY: config path with '..' accepted on save: %v", err)
+	}
 }
 
 func TestUpdateUserConfigSerialized(t *testing.T) {

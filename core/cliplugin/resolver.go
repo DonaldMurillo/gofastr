@@ -127,7 +127,7 @@ func Resolve(opts ResolveOptions) []ResolvedPlugin {
 	// 2. Project declarations from gofastr.settings.yml.
 	if opts.ProjectConfig.Found {
 		canonProjDir := canonicalDir(opts.ProjectConfig.ProjectDir)
-		trustMap := indexTrust(opts.UserConfig.TrustedProjects)
+		trustMap, ambiguousTrust := indexTrust(opts.UserConfig.TrustedProjects)
 
 		for _, pp := range opts.ProjectConfig.Plugins {
 			// Declaration-only entry (documents expected global plugin + install hint).
@@ -203,7 +203,14 @@ func Resolve(opts ResolveOptions) []ResolvedPlugin {
 			rp.Command = resolvedCmd
 			rp.ProjectLocalBin = isLocal
 
-			trust, ok := trustMap[projectPluginKey{projectDir: canonProjDir, name: pp.Name}]
+			trustKey := projectPluginKey{projectDir: canonProjDir, name: pp.Name}
+			if ambiguousTrust[trustKey] {
+				rp.setError(StatusConflict, fmt.Errorf("%w: multiple trust records resolve to project directory %q for plugin %q; run `gofastr plugin untrust %s` and re-trust",
+					ErrDuplicatePlugin, canonProjDir, pp.Name, pp.Name))
+				projectEntries = append(projectEntries, rp)
+				continue
+			}
+			trust, ok := trustMap[trustKey]
 			if !ok {
 				rp.setError(StatusUntrusted, formatUntrustedError(pp))
 				projectEntries = append(projectEntries, rp)
@@ -515,12 +522,18 @@ type projectPluginKey struct {
 	name       string
 }
 
-func indexTrust(list []TrustedProjectPlugin) map[projectPluginKey]TrustedProjectPlugin {
+func indexTrust(list []TrustedProjectPlugin) (map[projectPluginKey]TrustedProjectPlugin, map[projectPluginKey]bool) {
 	out := make(map[projectPluginKey]TrustedProjectPlugin, len(list))
+	conflicts := map[projectPluginKey]bool{}
 	for _, tp := range list {
-		out[projectPluginKey{projectDir: canonicalDir(tp.ProjectDir), name: tp.Name}] = tp
+		k := projectPluginKey{projectDir: canonicalDir(tp.ProjectDir), name: tp.Name}
+		if _, exists := out[k]; exists {
+			conflicts[k] = true
+			continue
+		}
+		out[k] = tp
 	}
-	return out
+	return out, conflicts
 }
 
 func verifyProjectTrust(trust TrustedProjectPlugin, pp ProjectPlugin, resolvedCmd []string, checkDigest bool) error {
