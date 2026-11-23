@@ -268,8 +268,8 @@ func TestE2E_SortablePlainListWithoutScript(t *testing.T) {
 // which died with the module: these are the browser proofs of the
 // hard bounds on the 409 body (JSON content-type, ~4 KB read, the
 // {"error": "<message>"} envelope), the conflict refresh that replaces a
-// column with the server's own rows, and the DragEvent sequence the
-// pointer path runs — none of which the keyboard tests above touch.
+// column with the server's own rows, and the pointer drag that ends
+// in the same commit (sortabledrag_e2e_test.go drives it).
 
 // sortableColumn renders one linked column against /rpc.
 func sortableColumn(label, container, group string, items ...SortableItem) string {
@@ -403,39 +403,19 @@ func kbReorder(key string) chromedp.Action {
 	})()`, key), nil)
 }
 
-// dispatchDrag dispatches synthetic dragstart → dragover → drop →
-// dragend (the order a browser fires them in on a real drop), moving the row with srcKey so it lands after the row with destKey.
+// dispatchDrag drags the row with srcKey by its grip with a real mouse
+// and releases it on the lower half of the row with destKey, so it
+// lands after that row.
 func dispatchDrag(srcKey, destKey string) chromedp.Action {
-	return chromedp.Evaluate(fmt.Sprintf(`(function(){
-		var src = document.querySelector('[data-hui-sort-key=%q]');
-		var dest = document.querySelector('[data-hui-sort-key=%q]');
-		if (!src || !dest) return 'missing';
-		var dt = new DataTransfer();
-		src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
-		var rect = dest.getBoundingClientRect();
-		dest.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.bottom}));
-		dest.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
-		src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true}));
-		return 'ok';
-	})()`, srcKey, destKey), nil)
+	return pointerDrag("mouse", srcKey, lowerHalfOf(destKey))
 }
 
-// dispatchDragToColumn dispatches the same drag sequence, landing the srcKey
-// row on the empty list of the given container: with no row to
-// hit-test, the list element itself is the drop target.
+// dispatchDragToColumn drags the srcKey row onto the empty list of the
+// given container: with no row to hit-test, the list element itself
+// is the drop target. The page needs sortableLayout so the empty list
+// has a height to land on.
 func dispatchDragToColumn(srcKey, container string) chromedp.Action {
-	return chromedp.Evaluate(fmt.Sprintf(`(function(){
-		var src = document.querySelector('[data-hui-sort-key=%q]');
-		var col = document.querySelector('[data-hui-sortable-container=%q]');
-		if (!src || !col) return 'missing';
-		var dt = new DataTransfer();
-		src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
-		var rect = col.getBoundingClientRect();
-		col.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.top + rect.height/2}));
-		col.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
-		src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true}));
-		return 'ok';
-	})()`, srcKey, container), nil)
+	return pointerDrag("mouse", srcKey, middleOfColumn(container))
 }
 
 // waitLive polls until the live region contains want.
@@ -802,7 +782,7 @@ func TestE2E_SortableSameContainerDragWithContainer(t *testing.T) {
 // empty column — no row to hit-test, the list itself is the drop
 // target — moves the row across and commits the crossing.
 func TestE2E_SortableDragIntoEmptyColumn(t *testing.T) {
-	page := sortableColumn("Column A", "a", "g1", SortableItem{Key: "k1", Label: "A1"}) +
+	page := sortableLayout + sortableColumn("Column A", "a", "g1", SortableItem{Key: "k1", Label: "A1"}) +
 		sortableColumn("Column B", "b", "g1")
 	b, bodies := sortableBodyServer(t, page)
 	ctx := behaviorPage(t, b)
@@ -935,7 +915,7 @@ func TestE2E_SortableDataShapedKeysReorderAndCommit(t *testing.T) {
 const sortOrder = `Array.from(document.querySelectorAll('[data-hui-sortable-item]')).map(function (li) { return li.getAttribute('data-hui-sort-key'); }).join(',')`
 
 // A keyboard grab whose row loses focus (Tab away, a click elsewhere)
-// reverts the way Escape does: the row goes back, aria-grabbed goes,
+// reverts the way Escape does: the row goes back, the grabbed class goes,
 // nothing is POSTed, and a later grab-and-drop of another row commits
 // only its own move.
 func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
@@ -958,11 +938,11 @@ func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
 		sortKey("ArrowDown"),
 		sortKey("ArrowDown"),
 		chromedp.Sleep(50*time.Millisecond),
-		chromedp.Evaluate(sortOrder+` + (document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || '')`, &mid),
+		chromedp.Evaluate(sortOrder+` + (document.querySelector('[data-hui-sort-key="a"]').classList.contains('is-grabbed') ? 'true' : '')`, &mid),
 		chromedp.Evaluate(`document.getElementById('away').focus()`, nil),
 		chromedp.Sleep(50*time.Millisecond),
 		chromedp.Evaluate(sortOrder, &order),
-		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || ''`, &grabbed),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').classList.contains('is-grabbed') ? 'true' : ''`, &grabbed),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -973,7 +953,7 @@ func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
 		t.Fatalf("a grab that lost focus left the order %q, want a,b,c", order)
 	}
 	if grabbed != "" {
-		t.Fatalf("a grab that lost focus left aria-grabbed=%q", grabbed)
+		t.Fatalf("a grab that lost focus left the row grabbed (%q)", grabbed)
 	}
 	if err := chromedp.Run(ctx, kbReorder("b")); err != nil {
 		t.Fatal(err)
@@ -988,48 +968,6 @@ func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
 	}
 	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
 		t.Fatalf("the later drop of b committed %q, want exactly [a,c,b]", *commits)
-	}
-}
-
-// A drag that ends with no drop on the list (Escape mid-drag, or the
-// pointer released outside it) puts the row back and POSTs nothing,
-// even though dragover already moved the row live.
-func TestE2E_SortableCancelledDragReverts(t *testing.T) {
-	b, commits := sortableServer(t, sortablePage(
-		SortableItem{Key: "a", Label: "Alpha"},
-		SortableItem{Key: "b", Label: "Beta"},
-	), false)
-	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, sortableLoaded) {
-		t.Fatal("the sortable marker never loaded headless-sortablelist")
-	}
-	var moved, order string
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`(function(){
-			var src = document.querySelector('[data-hui-sort-key="a"]');
-			var dest = document.querySelector('[data-hui-sort-key="b"]');
-			var dt = new DataTransfer();
-			src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, cancelable:true, dataTransfer:dt}));
-			var rect = dest.getBoundingClientRect();
-			dest.dispatchEvent(new DragEvent('dragover', {bubbles:true, cancelable:true, dataTransfer:dt, clientY:rect.bottom}));
-			window.__mid = `+sortOrder+`;
-			document.body.dispatchEvent(new DragEvent('drop', {bubbles:true, cancelable:true, dataTransfer:dt}));
-			src.dispatchEvent(new DragEvent('dragend', {bubbles:true, cancelable:true, dataTransfer:dt}));
-		})()`, nil),
-		chromedp.Evaluate(`window.__mid`, &moved),
-		chromedp.Sleep(300*time.Millisecond),
-		chromedp.Evaluate(sortOrder, &order),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if moved != "b,a" {
-		t.Fatalf("dragover should move the row live; mid-drag order %q", moved)
-	}
-	if order != "a,b" {
-		t.Fatalf("a cancelled drag left the order %q, want a,b", order)
-	}
-	if len(*commits) != 0 {
-		t.Fatalf("a cancelled drag POSTed %q", *commits)
 	}
 }
 
@@ -1053,12 +991,12 @@ func TestE2E_SortableNewGrabCancelsTheOld(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		on("a", " "), on("a", "ArrowDown"),
 		on("b", " "), on("b", "ArrowDown"), on("b", " "),
-		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').getAttribute('aria-grabbed') || ''`, &grabbed),
+		chromedp.Evaluate(`document.querySelector('[data-hui-sort-key="a"]').classList.contains('is-grabbed') ? 'true' : ''`, &grabbed),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if grabbed != "" {
-		t.Fatalf("the first grab survived the second: aria-grabbed=%q", grabbed)
+		t.Fatalf("the first grab survived the second: grabbed=%q", grabbed)
 	}
 	for range 10 {
 		if len(*commits) > 0 {

@@ -58,6 +58,7 @@ func TestSweepContentBehaviorsRegisterTheirMarkersAndRequires(t *testing.T) {
 	}{
 		{TreeBehaviorName, "[data-hui-tree]", []string{"rpc"}},
 		{SortableListBehaviorName, "[data-hui-sortable]", nil},
+		{SortableDragBehaviorName, "[data-hui-sortable]", []string{SortableListBehaviorName}},
 		{CarouselBehaviorName, "[data-hui-carousel]", nil},
 		{WizardBehaviorName, "[data-hui-step-wizard]", nil},
 	} {
@@ -153,7 +154,9 @@ func TestSweepContentSelectionDrawsItsBar(t *testing.T) {
 func TestSweepContentSortableRowIsTheOnlyControl(t *testing.T) {
 	got := SortableList(SortableListProps{Label: "L", Items: []SortableItem{{Key: "a", Label: "A"}}}, nil)
 	hasNot(t, got, "<button", "a focusable row nests a button")
-	has(t, got, `<span aria-hidden="true"><svg`, "the grip is not a hidden decoration")
+	has(t, got, `<span aria-hidden="true" data-hui-sortable-grip=""><svg`, "the grip is not a hidden handle")
+	hasNot(t, got, "draggable", "a row is still an HTML drag source")
+	hasNot(t, got, "aria-grabbed", "a row carries the deprecated aria-grabbed")
 }
 
 func TestSweepContentRenewSortableVersionEscapesAndSkipsEmpty(t *testing.T) {
