@@ -206,7 +206,7 @@ func cardCSS(t style.Theme) string {
    the card by its ::after; the header action, the footer and the body's
    own controls sit above it and stay clickable. The ring is drawn on the
    card when the link has keyboard focus. */
-[data-cui-comp="ui-card"].fui-card--stretched { position: relative; }
+:where([data-cui-comp="ui-card"].fui-card--stretched) { position: relative; }
 [data-cui-comp="ui-card"].fui-card--stretched .fui-card__heading-link {
   color: inherit;
   text-decoration: none;

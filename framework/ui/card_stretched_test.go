@@ -26,7 +26,7 @@ func TestCardHeadingHrefStretchesTheHeadingLink(t *testing.T) {
 	}
 	css := cardCSS(style.DefaultTheme())
 	for _, want := range []string{
-		`.fui-card--stretched { position: relative; }`,
+		`:where([data-cui-comp="ui-card"].fui-card--stretched) { position: relative; }`,
 		`.fui-card--stretched .fui-card__heading-link::after {
   content: "";
   position: absolute;
