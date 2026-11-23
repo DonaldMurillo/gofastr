@@ -20,7 +20,7 @@ func TestTabsRendersRovingTabindexAndPanels(t *testing.T) {
 		`<a aria-selected="true" data-cui-signal-set="cfg:0" data-cui-tab-index="0" href="#cfg-panel-0" id="cfg-tab-0" role="tab" tabindex="0">General</a>`,
 		`<a aria-selected="false" data-cui-signal-set="cfg:1" data-cui-tab-index="1" href="#cfg-panel-1" id="cfg-tab-1" role="tab" tabindex="-1">Secrets</a>`,
 		`<div aria-labelledby="cfg-tab-0" data-cui-tab-index="0" id="cfg-panel-0" role="tabpanel" tabindex="0">The general panel.</div>`,
-		`<div aria-hidden="true" aria-labelledby="cfg-tab-1" data-cui-tab-index="1" hidden="until-found" id="cfg-panel-1" role="tabpanel" tabindex="-1">The secrets panel.</div>`,
+		`<div aria-labelledby="cfg-tab-1" data-cui-tab-index="1" hidden="until-found" id="cfg-panel-1" role="tabpanel" tabindex="-1">The secrets panel.</div>`,
 		`data-active="0" data-cui-signal="cfg" data-cui-signal-attr="data-active" data-cui-signal-mode="attr" data-hui-tabs=""`,
 	} {
 		if !strings.Contains(h, want) {
@@ -45,7 +45,7 @@ func TestTabsVacateStashAndState(t *testing.T) {
 		`data-hui-tabs-state="" data-hui-tabs-vacate=""`,
 		`data-state="inactive"`,
 		`data-state="active"`,
-		`<div aria-hidden="true" aria-labelledby="vac-tab-0" data-cui-internal="" data-cui-tab-index="0" hidden="until-found" id="vac-panel-0" role="tabpanel" tabindex="-1"></div>`,
+		`<div aria-labelledby="vac-tab-0" data-cui-internal="" data-cui-tab-index="0" hidden="until-found" id="vac-panel-0" role="tabpanel" tabindex="-1"></div>`,
 		`<div aria-labelledby="vac-tab-1" data-cui-tab-index="1" id="vac-panel-1" role="tabpanel" tabindex="0">Second</div>`,
 		`<script data-cui-internal="" data-hui-tabs-stash="true" type="application/json">`,
 	} {
@@ -125,7 +125,7 @@ func TestTabsDisabledPanelIsPlainlyHidden(t *testing.T) {
 		{Label: "Open", Panel: render.Text("open")},
 		{Label: "Locked", Panel: render.Text("locked"), Disabled: true},
 	}})
-	want := `<div aria-hidden="true" aria-labelledby="lk-tab-1" data-cui-tab-index="1" hidden="" id="lk-panel-1" role="tabpanel" tabindex="-1">locked</div>`
+	want := `<div aria-labelledby="lk-tab-1" data-cui-tab-index="1" hidden="" id="lk-panel-1" role="tabpanel" tabindex="-1">locked</div>`
 	if !strings.Contains(h, want) {
 		t.Errorf("the disabled tab's panel is not plainly hidden; want %s in:\n%s", want, h)
 	}

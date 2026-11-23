@@ -124,7 +124,10 @@
     for (const dot of dotsOf(root)) {
       dot.hidden = parseInt(dot.getAttribute('data-hui-carousel-goto'), 10) > last;
     }
+    // A layout change moves the last position, so the arrows' ends
+    // follow it (mark syncs them itself when it clamps).
     if (currentOf(root) > last) mark(root, last);
+    else syncEnds(root, currentOf(root));
   }
 
   // setActive clamps to the reachable positions, marks the slide and
@@ -441,7 +444,6 @@
     for (const el of within(scope, '[data-hui-carousel]')) {
       armRotation(el);
       syncDots(el);
-      syncEnds(el, currentOf(el));
       syncPause(el);
       if (resizer) {
         for (const box of [trackOf(el), slidesOf(el)[0]]) {

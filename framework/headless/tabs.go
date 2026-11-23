@@ -146,10 +146,9 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		if i != p.Active {
 			// until-found lets find-in-page and a fragment link reveal
 			// the panel; the module selects its tab on beforematch. A
-			// disabled tab's panel stays plainly hidden. aria-hidden
-			// keeps the empty-looking box out of the accessibility
-			// tree, where Chromium still lists an until-found panel.
-			own["aria-hidden"] = "true"
+			// disabled tab's panel stays plainly hidden. aria-hidden is
+			// the module's to add: a panel the browser reveals with no
+			// script must not stay hidden from assistive technology.
 			if tab.Disabled {
 				Mark(own, "hidden")
 			} else {

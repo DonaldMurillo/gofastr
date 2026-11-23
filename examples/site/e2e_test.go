@@ -675,7 +675,7 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	// Click the second tab.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelectorAll('.fui-tab')[1].click()`, nil),
-		waitFor(`document.querySelector('.fui-tabs').getAttribute('data-active') === '1' && document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]').checkVisibility()`),
+		waitFor(`document.querySelector('.fui-tabs').getAttribute('data-active') === '1' && !document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]').hasAttribute('hidden')`),
 	); err != nil {
 		t.Fatalf("click second tab: %v", err)
 	}
@@ -691,12 +691,17 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("data-active = %q, want 1", activeAttr)
 	}
 
-	// Second panel should now be visible and the first hidden until found
-	// (content-visibility, so checkVisibility rather than display).
+	// Second panel should now be visible and the first hidden until found.
+	// The browser hides an until-found panel's contents with
+	// content-visibility and keeps its box, so the probe reads the
+	// panel's first child, not the panel.
 	var panels struct{ Second, First bool }
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`({Second: document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]').checkVisibility(),
-			First: document.querySelector('.fui-tab-panel[data-cui-tab-index="0"]').checkVisibility()})`, &panels),
+		chromedp.Evaluate(`(() => {
+			const shown = i => { const p = document.querySelector('.fui-tab-panel[data-cui-tab-index="' + i + '"]');
+				return !p.hasAttribute('hidden') && (!p.firstElementChild || p.firstElementChild.checkVisibility()); };
+			return {Second: shown(1), First: shown(0)};
+		})()`, &panels),
 	); err != nil {
 		t.Fatalf("read panel visibility: %v", err)
 	}

@@ -219,7 +219,7 @@ func cardCSS(t style.Theme) string {
   border-radius: inherit;
 }
 [data-cui-comp="ui-card"].fui-card--stretched :is(.fui-card__action, .fui-card__footer),
-[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href], button, input, select, textarea, summary, label) {
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href], button, input, select, textarea, summary, label, iframe, video, audio, [tabindex], [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"])) {
   position: relative;
   z-index: 1;
 }

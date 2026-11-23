@@ -6,6 +6,7 @@ package headless
 // beforematch path find-in-page takes) selects its tab.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -72,5 +73,61 @@ func TestE2E_TabsFoundPanelSelectsItsTab(t *testing.T) {
 	}
 	if !stillHidden {
 		t.Fatal("a fragment link opened the disabled tab's panel")
+	}
+}
+
+// A fragment URL on first load reaches a hidden panel before the module
+// is listening: the browser fires beforematch to nobody and drops the
+// panel's hidden. The module must adopt that panel, not hide it again,
+// and a vacated panel must come back from its stash.
+func TestE2E_TabsFragmentOnLoadSelectsItsTab(t *testing.T) {
+	for _, tc := range []struct {
+		name, frag string
+		vacate     bool
+	}{
+		{"text in the panel", "#needle", false},
+		{"the panel itself", "#ld-panel-1", false},
+		{"a vacated panel", "#ld-panel-1", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			strip := Tabs(TabsProps{Name: "ld", VacateHidden: tc.vacate, Tabs: []Tab{
+				{Label: "General", Panel: render.Text("General panel")},
+				{Label: "Secrets", Panel: render.HTML(`<p id="needle">API key</p>`)},
+			}}, nil)
+			b := startBehaviorServer(t, string(strip))
+			ctx := behaviorBrowserCtx(t)
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(b.srv.URL+"/"+tc.frag),
+				chromedp.WaitVisible(`#ready`, chromedp.ByID),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, tabsLoaded) {
+				t.Fatal("the strip marker never loaded headless-tabs")
+			}
+			if !pollTrue(ctx, `document.querySelector('#ld-tab-1').getAttribute('aria-selected') === 'true' &&
+				document.querySelector('[data-hui-tabs]').getAttribute('data-active') === '1' &&
+				!document.querySelector('#ld-panel-1').hasAttribute('hidden') &&
+				!!document.querySelector('#needle') && document.querySelector('#needle').checkVisibility() &&
+				document.querySelector('#ld-panel-0').getAttribute('hidden') === 'until-found'`) {
+				var state string
+				_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({active: document.querySelector('[data-hui-tabs]').getAttribute('data-active'),
+					p1: document.querySelector('#ld-panel-1').getAttribute('hidden'), needle: !!document.querySelector('#needle')})`, &state))
+				t.Fatalf("loading onto %s did not select the second tab: %s", tc.frag, state)
+			}
+		})
+	}
+}
+
+// With no script, a panel the browser reveals must not stay hidden
+// from assistive technology: the server paints no aria-hidden, the
+// module adds it to inactive panels once it runs.
+func TestTabsServerPaintsNoAriaHidden(t *testing.T) {
+	h := string(Tabs(TabsProps{Name: "na", Tabs: []Tab{
+		{Label: "One", Panel: render.Text("one")},
+		{Label: "Two", Panel: render.Text("two")},
+	}}, nil))
+	if strings.Contains(h, "aria-hidden") {
+		t.Errorf("the server painted aria-hidden on a panel; a no-script reveal would leave it hidden from AT:\n%s", h)
 	}
 }

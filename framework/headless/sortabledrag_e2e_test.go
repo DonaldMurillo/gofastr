@@ -291,3 +291,116 @@ func TestE2E_SortablePointerDropOnItselfIsNoMove(t *testing.T) {
 		t.Fatalf("a drop on the row itself left %q and POSTed %q", got, *commits)
 	}
 }
+
+// sortableGapLayout spaces the rows 10px apart, so a pointer can rest
+// in the gap between two rows rather than on either.
+const sortableGapLayout = sortableLayout + `<style>[data-hui-sortable-item]{margin:0 0 10px}</style>`
+
+// gapBelow is the JS point in the 10px gap under key's row.
+func gapBelow(key string) string {
+	return fmt.Sprintf(`(function(){var r=document.querySelector('[data-hui-sort-key=%q]').getBoundingClientRect();return {x:r.left+r.width/2,y:r.bottom+5};})()`, key)
+}
+
+// The gap between rows lands by position: the gap right under the
+// dragged row is its own place (no move), and the gap under another row
+// lands before the next one.
+func TestE2E_SortablePointerDragInAGapLandsByPosition(t *testing.T) {
+	for _, c := range []struct {
+		name, to, want string
+		commit         bool
+	}{
+		{"the gap under the dragged row", gapBelow("a"), "a,b,c,d", false},
+		{"the gap between b and c", gapBelow("b"), "b,a,c,d", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, commits := sortableServer(t, sortableGapLayout+sortablePage(
+				SortableItem{Key: "a", Label: "Alpha"},
+				SortableItem{Key: "b", Label: "Beta"},
+				SortableItem{Key: "c", Label: "Gamma"},
+				SortableItem{Key: "d", Label: "Delta"},
+			), false)
+			ctx := behaviorPage(t, b)
+			if err := chromedp.Run(ctx, pointerDrag("mouse", "a", c.to), chromedp.Sleep(300*time.Millisecond)); err != nil {
+				t.Fatal(err)
+			}
+			if got := evalString(t, ctx, sortOrder); got != c.want {
+				t.Fatalf("a release in %s left %q, want %q", c.name, got, c.want)
+			}
+			for range 10 {
+				if len(*commits) > 0 || !c.commit {
+					break
+				}
+				chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
+			}
+			if c.commit && (len(*commits) != 1 || (*commits)[0] != c.want) {
+				t.Fatalf("the drop committed %q, want exactly [%s]", *commits, c.want)
+			}
+			if !c.commit && len(*commits) != 0 {
+				t.Fatalf("a release in %s POSTed %q", c.name, *commits)
+			}
+		})
+	}
+}
+
+// A board the page re-renders mid-drag (a poll, an island swap, a
+// conflict refresh) ends the drag: the release moves nothing, commits
+// nothing and leaves no second copy of the dragged row, in a single
+// list or across a linked board.
+func TestE2E_SortablePointerDragEndsWhenTheListIsReRendered(t *testing.T) {
+	board := string(SortableList(SortableListProps{
+		Label: "To do", Group: "board", Container: "todo", RPCPath: "/commit",
+		Items: []SortableItem{{Key: "a", Label: "Alpha"}, {Key: "b", Label: "Beta"}},
+	}, nil)) + string(SortableList(SortableListProps{
+		Label: "Doing", Group: "board", Container: "doing", RPCPath: "/commit",
+		Items: []SortableItem{{Key: "c", Label: "Gamma"}},
+	}, nil))
+	for _, c := range []struct{ name, body, to, want string }{
+		{"one list", sortablePage(SortableItem{Key: "a", Label: "Alpha"}, SortableItem{Key: "b", Label: "Beta"},
+			SortableItem{Key: "c", Label: "Gamma"}), lowerHalfOf("b"), "a,b,c"},
+		{"a linked board", board, lowerHalfOf("c"), "a,b,c"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, commits := sortableServer(t, sortableLayout+`<div id="board">`+c.body+`</div>`, false)
+			ctx := behaviorPage(t, b)
+			var keys string
+			if err := chromedp.Run(ctx,
+				pointerPress("mouse", gripOf("a"), c.to),
+				// The server's fresh rows: the same markup without the drag's classes.
+				chromedp.Evaluate(`(function(){var l=document.getElementById('board');l.innerHTML=l.innerHTML;
+					var c=['is-dragging','is-drop-before','is-drop-after','is-drop-target'];l.querySelectorAll('.'+c.join(',.')).forEach(function(e){e.classList.remove.apply(e.classList,c);});})()`, nil),
+				pointerRelease("mouse", c.to),
+				chromedp.Sleep(300*time.Millisecond),
+				chromedp.Evaluate(`Array.from(document.querySelectorAll('[data-hui-sort-key]')).map(function(r){return r.getAttribute('data-hui-sort-key')}).join(',')`, &keys),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if keys != c.want {
+				t.Fatalf("a drag over a re-rendered list left the rows %q, want %s", keys, c.want)
+			}
+			if len(*commits) != 0 {
+				t.Fatalf("a drag over a re-rendered list POSTed %q", *commits)
+			}
+			// The drag is over: a fresh one on the new rows works.
+			var left string
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.querySelectorAll('.is-dragging,.is-drop-before,.is-drop-after,.is-drop-target').length + ''`, &left),
+				pointerDrag("mouse", "b", lowerHalfOf("c")),
+				chromedp.Sleep(300*time.Millisecond),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if left != "0" {
+				t.Fatalf("%s drag classes survived the re-render", left)
+			}
+			for range 10 {
+				if len(*commits) > 0 {
+					break
+				}
+				chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
+			}
+			if len(*commits) != 1 {
+				t.Fatalf("a drag after the re-render committed %q; the first drag never ended", *commits)
+			}
+		})
+	}
+}

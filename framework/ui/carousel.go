@@ -226,8 +226,8 @@ func carouselCSS(_ style.Theme) string {
   transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   padding: 0;
   font: inherit;
-  /* The primitive's word ("Previous"/"Next") stays the accessible
-     name via aria-label; visually the control is its chevron, so the
+  /* The primitive's word ("Previous"/"Next") is the button's text and
+     so its accessible name; visually the control is its chevron, so the
      word collapses and the ::before glyph draws the arrow. */
   font-size: 0;
 }

@@ -257,9 +257,10 @@ invariants:
     enforced_by:
       - test: framework/headless.TestE2E_CopySaysWhatTheClipboardAnswered
   - id: copy-reads-a-field-value
-    rule: A copy whose target is an input or textarea copies the field's current value, not its markup's text.
+    rule: A copy whose target is an input or textarea copies the field's current value, not its markup's text, and a password field copies nothing.
     enforced_by:
       - test: framework/headless.TestE2E_CopyReadsAFieldsValue
+      - test: framework/headless.TestE2E_CopyNeverReadsAPasswordField
 decisions:
   - id: action-announces-its-own-failure
     date: 2026-11-16

@@ -1,8 +1,8 @@
 package headless
 
 import (
+	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -62,7 +62,7 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			panic("headless: Card TitleHref and Href together nest the title's link inside the card's link")
 		case p.Title == "" && p.TitleContent == "":
 			panic("headless: Card TitleHref needs a Title — the link's words are the title's")
-		case strings.Contains(strings.ToLower(string(p.TitleContent)), "<a"):
+		case anchorTagRe.MatchString(string(p.TitleContent)):
 			panic("headless: Card TitleHref with a TitleContent that holds a link nests one link in another")
 		}
 		titleHref = urlsafe.CleanAnchor(p.TitleHref)
@@ -71,6 +71,9 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 		}
 	}
 	b := p.Parts.Box(s, PartCardHeader)
+	if titleHref != "" && b.Filled(PartCardHeader) {
+		panic("headless: Card TitleHref with a filled header slot — the slot replaces the title, and its link with it")
+	}
 	mark := p.Href == ""
 	kids := make([]render.HTML, 0, 3)
 	if p.Title != "" || p.TitleContent != "" || p.Desc != "" || p.Action != "" || b.Filled(PartCardHeader) {
@@ -171,3 +174,7 @@ func init() {
 		},
 	})
 }
+
+// anchorTagRe matches an opening <a> tag in any letter case, and not
+// <abbr>, <area>, <article>, <aside> or <audio>.
+var anchorTagRe = regexp.MustCompile(`(?i)<a[\s>/]`)

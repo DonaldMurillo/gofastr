@@ -41,6 +41,8 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 		{"a refused URL", CardProps{Title: "x", TitleHref: "javascript:alert(1)"}},
 		{"a linked TitleContent", CardProps{TitleContent: render.HTML(`<A href="/x">x</A>`), TitleHref: "/b"}},
 		{"an article with Href", CardProps{Title: "x", Href: "/a", Article: true}},
+		{"a filled header slot", CardProps{Title: "x", TitleHref: "/b",
+			Parts: Parts{Slots: Slots{PartCardHeader: render.HTML(`<p>own header</p>`)}}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			defer func() {
@@ -50,5 +52,26 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 			}()
 			Card(c.p, nil)
 		})
+	}
+}
+
+// The nested-link check looks for an <a> tag, not every tag whose name
+// starts with a: <abbr>, <area>, <article>, <aside> and <audio> are not links.
+func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
+	for _, tag := range []string{"abbr", "aside", "article", "audio", "area"} {
+		got := string(Card(CardProps{TitleContent: render.HTML(`<` + tag + `>x</` + tag + `>`), TitleHref: "/b"}, nil))
+		if !strings.Contains(got, `href="/b"`) {
+			t.Errorf("a TitleContent holding <%s> lost its title link:\n%s", tag, got)
+		}
+	}
+	for _, link := range []string{`<a href="/x">x</a>`, `<A>x</A>`, "<a\thref=\"/x\">x</a>", `<a/>`} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("a TitleContent holding %q did not panic", link)
+				}
+			}()
+			Card(CardProps{TitleContent: render.HTML(link), TitleHref: "/b"}, nil)
+		}()
 	}
 }

@@ -31,7 +31,8 @@ func TestCardHeadingHrefCoversTheCardButNotItsControls(t *testing.T) {
 		HeadingHref: "/blog/0-98",
 		Article:     true,
 		Footer:      render.HTML(`<button id="share" type="button">Share</button>`),
-	}, render.HTML(`<p id="body">Breadcrumbs, copy and cards.</p>`))
+	}, render.HTML(`<p id="body">Breadcrumbs, copy and cards.</p>`+
+		`<p><span id="rb" role="button" tabindex="0">Pick</span> <span id="ce" contenteditable="true">Edit me</span> <span id="ti" tabindex="0">Focusable</span></p>`))
 	body := `<div style="width: 480px; padding: 16px">` + string(card) + `</div>`
 	srv := themeTestPageWithHead(t, head, body)
 	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(800, 600))
@@ -39,7 +40,8 @@ func TestCardHeadingHrefCoversTheCardButNotItsControls(t *testing.T) {
 	probe := `(() => {
 		const at = el => { const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return hit ? (hit.id || hit.className || hit.tagName) : 'none'; };
 		const share = document.getElementById('share');
-		return {body: at(document.getElementById('body')), share: at(share)};
+		return {body: at(document.getElementById('body')), share: at(share),
+			rb: at(document.getElementById('rb')), ce: at(document.getElementById('ce')), ti: at(document.getElementById('ti'))};
 	})()`
 	if err := chromedp.Run(ctx, chromedp.Evaluate(probe, &got)); err != nil {
 		t.Fatalf("probe: %v", err)
@@ -49,5 +51,12 @@ func TestCardHeadingHrefCoversTheCardButNotItsControls(t *testing.T) {
 	}
 	if got["share"] != "share" {
 		t.Errorf("a click on the footer button reaches %q, not the button", got["share"])
+	}
+	// The body's own controls, whatever element they are built on, sit
+	// above the stretched link.
+	for _, id := range []string{"rb", "ce", "ti"} {
+		if got[id] != id {
+			t.Errorf("a click on the body's #%s reaches %q, not the control", id, got[id])
+		}
 	}
 }

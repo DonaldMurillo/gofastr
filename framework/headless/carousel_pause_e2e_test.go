@@ -130,3 +130,31 @@ func TestE2E_CarouselArrowsDisableAtTheEnds(t *testing.T) {
 		t.Fatalf("at the last slide [prev, next] aria-disabled = %s, want [null,\"true\"]", evalString(t, ctx, state))
 	}
 }
+
+// The ends follow the layout: three slides all in view leave nowhere to
+// go, and a narrower slide width (a container query on a phone) opens
+// Next again, and the reverse closes it.
+func TestE2E_CarouselEndsFollowTheLayout(t *testing.T) {
+	style := `<style id="w">[data-hui-carousel-track]{display:flex;overflow-x:auto;inline-size:900px}[data-hui-carousel-track]>*{flex:0 0 300px}</style>`
+	b := startBehaviorServer(t, style+string(carouselHTML("lay", 3, false)))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, carouselLoaded) {
+		t.Fatal("module never loaded")
+	}
+	next := `document.querySelector('#lay [data-hui-carousel-next]').getAttribute('aria-disabled')`
+	if !pollTrue(ctx, next+` === 'true'`) {
+		t.Fatalf("with every slide in view Next aria-disabled = %s, want true", evalString(t, ctx, next))
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('w').textContent = document.getElementById('w').textContent.replace('flex:0 0 300px', 'flex:0 0 900px')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, next+` === null`) {
+		t.Fatalf("with one slide in view Next aria-disabled = %s, want none", evalString(t, ctx, next))
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('w').textContent = document.getElementById('w').textContent.replace('flex:0 0 900px', 'flex:0 0 300px')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, next+` === 'true'`) {
+		t.Fatalf("back to every slide in view Next aria-disabled = %s, want true", evalString(t, ctx, next))
+	}
+}

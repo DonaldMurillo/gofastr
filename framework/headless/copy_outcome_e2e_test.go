@@ -108,3 +108,24 @@ func TestE2E_CopyToastCrossesTheModuleSplit(t *testing.T) {
 		})
 	}
 }
+
+// A password field is never copied: its value would land in the
+// clipboard history. The click writes nothing.
+func TestE2E_CopyNeverReadsAPasswordField(t *testing.T) {
+	b := startBehaviorServer(t, `<input id="code" type="password" value="hunter2">`+
+		`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy">`+
+		`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CopyBehaviorName)) {
+		t.Fatal("module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__copied = null;
+		Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: (t) => { window.__copied = t; return Promise.resolve(); }}});
+		document.getElementById('cp').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := evalString(t, ctx, `String(window.__copied)`); got != "null" {
+		t.Fatalf("a password field was copied: %q", got)
+	}
+}

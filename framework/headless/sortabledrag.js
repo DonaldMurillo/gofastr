@@ -12,7 +12,8 @@
 // with no other row), and the release moves the row once. A release
 // off every list moves nothing and says nothing; a lost capture
 // (pointercancel, the grip removed) and Escape cancel the way Escape
-// cancels a keyboard grab. No inline style is ever written.
+// cancels a keyboard grab, and a row the page re-rendered away is never
+// moved. No inline style is ever written.
 (function () {
   'use strict';
   const NAME = 'headless-sortabledrag';
@@ -31,12 +32,15 @@
   }
 
   function end(keep) {
-    const p = pd, a = keep && p.at, S = NS._sortable;
+    const p = pd, S = NS._sortable;
+    // A row the page re-rendered mid-drag is gone: moving the detached
+    // node would put a second copy in the fresh list.
+    const live = p.item.isConnected, a = keep && live && p.at;
     mark(false);
     pd = null;
     p.item.classList.remove('is-dragging');
     try { p.grip.releasePointerCapture(p.id); } catch (_) {}
-    if (!a) { if (!keep) S.announce(S.listOf(p.item), 'data-hui-sortable-s-cancelled'); return; }
+    if (!a) { if (!keep && live) S.announce(S.listOf(p.item), 'data-hui-sortable-s-cancelled'); return; }
     const src = S.listOf(p.item), prev = S.rowsOf(src);
     if (!a[1]) a[0].append(p.item); else if (a[2]) a[1].after(p.item); else a[1].before(p.item);
     S.settle(p.item, src, prev);
@@ -55,6 +59,7 @@
 
   // aim marks where the row would land under the pointer at ev.
   function aim(ev) {
+    if (!pd.item.isConnected) { pd.at = null; return; }
     const S = NS._sortable, el = document.elementFromPoint(ev.clientX, ev.clientY);
     const list = el?.closest('[data-hui-sortable]'), src = S.listOf(pd.item);
     mark(false);
@@ -67,15 +72,25 @@
         const r = row.getBoundingClientRect();
         pd.at = [list, row, ev.clientY > r.top + r.height / 2];
       } else if (!rest.length) pd.at = [list, null];
-      // The gap between two rows keeps the mark the last row set.
-      else if (pd.at?.[0] !== list) pd.at = [list, rest[rest.length - 1], true];
+      else {
+        // A gap between rows (or the list's padding): land before the
+        // first row whose middle is below the pointer, else after the last.
+        const below = rest.find((x) => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+        pd.at = below ? [list, below, false] : [list, rest[rest.length - 1], true];
+      }
+      // A spot beside the row's own place is no move at all.
+      const a = pd.at;
+      if (a && a[1] && (a[2] ? a[1].nextElementSibling : a[1].previousElementSibling) === pd.item) pd.at = null;
     }
     mark(true);
   }
 
   document.addEventListener('pointermove', (ev) => { if (pd?.id === ev.pointerId) aim(ev); });
   document.addEventListener('pointerup', (ev) => { if (pd?.id === ev.pointerId) { aim(ev); end(true); } });
-  document.addEventListener('lostpointercapture', (ev) => { if (pd?.grip === ev.target) end(false); });
+  // A removed grip loses its capture at the document, not at the grip.
+  document.addEventListener('lostpointercapture', (ev) => {
+    if (pd && (pd.grip === ev.target || !pd.grip.isConnected)) end(false);
+  });
   document.addEventListener('keydown', (ev) => {
     if (pd && ev.key === 'Escape' && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); end(false); }
   });
