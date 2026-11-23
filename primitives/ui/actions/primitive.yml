@@ -238,6 +238,10 @@ invariants:
       - test: framework/ui.TestFilterChipBarRendersChips
     applies:
       - framework/ui/filterchipbar.go
+  - id: copy-failure-drawn-in-danger
+    rule: A labelled CopyButton renders an aria-hidden failed label (FailedLabel, else ui.copy.notCopied), and its sheet shows it in place of the label, over a danger tint, while the wrapper reads data-hui-copy-state failed.
+    enforced_by:
+      - test: framework/ui.TestCopyButtonShowsAFailure
 decisions:
   - id: action-strips-use-ordinary-tab-order
     date: 2026-11-19

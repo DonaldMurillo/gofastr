@@ -239,6 +239,7 @@ var adapterHooks = map[string]string{
 	"data-hui-copy-sentence":       "the status sentence shape with {name}, rendered by ui.CopyButton",
 	"data-hui-copy-failed":         "the status sentence said when the clipboard refuses the write, rendered by ui.CopyButton",
 	"data-hui-copy-status":         "the polite status region, rendered by ui.CopyButton",
+	"data-hui-copy-failed-label":   "an optional short label a host's own copy button shows in its data-hui-copy-label span while the copy reads failed; ui.CopyButton does not render it (its failed label swaps by CSS on data-hui-copy-state)",
 	"data-hui-theme-toggle":        "the scheme group wrapper, rendered by ui.ThemeToggle (a Button composition, no theme primitive by binding decision)",
 	"data-hui-theme-option":        "one scheme option control, rendered by ui.ThemeToggle",
 	"data-hui-theme-cycle":         "the single-button cycler, rendered by ui.ThemeToggle",

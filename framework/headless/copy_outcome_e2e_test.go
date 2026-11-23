@@ -11,17 +11,18 @@ import (
 
 const copyWrapper = `<pre id="code">npm i gofastr</pre>` +
 	`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy" ` +
-	`data-hui-copy-sentence="Copied {{name}}" data-hui-copy-failed="Could not copy {{name}}" data-hui-copy-name="the command">` +
+	`data-hui-copy-sentence="Copied {{name}}" data-hui-copy-failed="Could not copy {{name}}" data-hui-copy-failed-label="Not copied" data-hui-copy-name="the command">` +
 	`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`
 
 // A copy whose clipboard write is refused (a declined permission) or
 // impossible (no clipboard on an insecure origin) does not say it
-// copied: the label stays, the wrapper never reads done, and the
-// status says the failure sentence. A write that resolves says Copied.
+// copied: the wrapper reads failed, never done, the label shows the
+// failed label, and the status says the failure sentence. A write that
+// resolves says Copied.
 func TestE2E_CopySaysWhatTheClipboardAnswered(t *testing.T) {
 	for _, c := range []struct{ name, clipboard, want string }{
-		{"refused", `{writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError'))}`, "Copy|none|Could not copy the command"},
-		{"missing", `undefined`, "Copy|none|Could not copy the command"},
+		{"refused", `{writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError'))}`, "Not copied|failed|Could not copy the command"},
+		{"missing", `undefined`, "Not copied|failed|Could not copy the command"},
 		{"resolved", `{writeText: () => Promise.resolve()}`, "Copied|done|Copied the command"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -37,6 +38,35 @@ func TestE2E_CopySaysWhatTheClipboardAnswered(t *testing.T) {
 			got := evalString(t, ctx, `document.getElementById('cp').textContent + '|' + (document.querySelector('[data-hui-copy]').getAttribute('data-hui-copy-state') || 'none') + '|' + document.querySelector('[data-hui-copy-status]').textContent`)
 			if got != c.want {
 				t.Fatalf("[label|state|status] = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A form field is copied by its current value, which an edit changes
+// after the page rendered, not by its (empty) text content.
+func TestE2E_CopyReadsAFieldsValue(t *testing.T) {
+	for _, c := range []struct{ name, field string }{
+		{"input", `<input id="code" value="as rendered">`},
+		{"textarea", `<textarea id="code">as rendered</textarea>`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b := startBehaviorServer(t, c.field+
+				`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy">`+
+				`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`)
+			ctx := behaviorPage(t, b)
+			if !pollTrue(ctx, controlsLoadedExpr(CopyBehaviorName)) {
+				t.Fatal("module never loaded")
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__copied = null;
+				Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: (t) => { window.__copied = t; return Promise.resolve(); }}});
+				document.getElementById('code').value = 'as edited';
+				document.getElementById('cp').click()`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(200 * time.Millisecond)
+			if got := evalString(t, ctx, `String(window.__copied)`); got != "as edited" {
+				t.Fatalf("copied %q, want the field's current value", got)
 			}
 		})
 	}

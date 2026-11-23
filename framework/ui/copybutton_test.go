@@ -182,3 +182,23 @@ func TestCopyButtonTargetAcceptsID(t *testing.T) {
 		}
 	}
 }
+
+// A labelled button carries the failed label the module's failed state
+// shows, and its sheet draws that state in the danger colour, so a
+// refused clipboard is seen as well as announced.
+func TestCopyButtonShowsAFailure(t *testing.T) {
+	h := string(CopyButton(CopyButtonConfig{Target: "code"}))
+	if !strings.Contains(h, `class="fui-copy-btn__failed"`) || !strings.Contains(h, ">Not copied<") {
+		t.Errorf("no failed label in:\n%s", h)
+	}
+	css := copyButtonCSS(style.Theme{})
+	for _, want := range []string{
+		`[data-hui-copy-state="failed"] .fui-copy-btn { background: color-mix(in oklab, var(--color-danger`,
+		`[data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__label { display: none; }`,
+		`[data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__failed { display: inline;`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("copy sheet missing %q", want)
+		}
+	}
+}
