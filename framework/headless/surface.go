@@ -71,9 +71,6 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 		}
 	}
 	b := p.Parts.Box(s, PartCardHeader)
-	if titleHref != "" && b.Filled(PartCardHeader) {
-		panic("headless: Card TitleHref with a filled header slot — the slot replaces the title, and its link with it")
-	}
 	mark := p.Href == ""
 	kids := make([]render.HTML, 0, 3)
 	if p.Title != "" || p.TitleContent != "" || p.Desc != "" || p.Action != "" || b.Filled(PartCardHeader) {
@@ -94,7 +91,8 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			if p.ID != "" {
 				titleOwn = Attrs(map[string]string{"id": p.ID + "-title"})
 			}
-			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "", titleOwn), title))
+			// TitleContent is the caller's markup: a title holding it is never marked.
+			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "" && p.TitleContent == "", titleOwn), title))
 		}
 		if p.Desc != "" {
 			head = append(head, b.El("p", PartDesc, internalIf(mark && p.Action != "", nil), render.Text(p.Desc)))

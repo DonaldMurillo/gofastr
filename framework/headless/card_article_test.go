@@ -41,8 +41,6 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 		{"a refused URL", CardProps{Title: "x", TitleHref: "javascript:alert(1)"}},
 		{"a linked TitleContent", CardProps{TitleContent: render.HTML(`<A href="/x">x</A>`), TitleHref: "/b"}},
 		{"an article with Href", CardProps{Title: "x", Href: "/a", Article: true}},
-		{"a filled header slot", CardProps{Title: "x", TitleHref: "/b",
-			Parts: Parts{Slots: Slots{PartCardHeader: render.HTML(`<p>own header</p>`)}}}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			defer func() {

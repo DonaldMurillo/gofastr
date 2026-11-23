@@ -78,6 +78,9 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		cls = joinNonEmpty("fui-card--interactive", cls)
 	}
 	if cfg.HeadingHref != "" {
+		if cfg.Header != "" {
+			panic("ui: Card HeadingHref with Header — Header replaces the heading, and its link with it")
+		}
 		cls = joinNonEmpty("fui-card--interactive fui-card--stretched", cls)
 	}
 

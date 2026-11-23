@@ -655,7 +655,7 @@ var kitComponents = []kitComponent{
 	{name: "Callout", fn: Callout},
 	// Action and Href refuse each other, as do Href and HeadingHref or
 	// Article: the linked card is the second entry.
-	{name: "Card", fn: Card, prep: prepSet("Href", "")},
+	{name: "Card", fn: Card, prep: prepSet("Href", "", "Header", render.HTML(""))},
 	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""), "HeadingHref", "", "Article", false)},
 	{name: "Carousel", fn: Carousel, required: []string{"Content"}},
 	{name: "Center", fn: Center},

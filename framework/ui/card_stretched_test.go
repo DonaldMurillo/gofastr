@@ -40,3 +40,14 @@ func TestCardHeadingHrefStretchesTheHeadingLink(t *testing.T) {
 		}
 	}
 }
+
+// Header replaces the heading block, so with HeadingHref it would drop
+// the card's one link while the card still looks clickable.
+func TestCardHeadingHrefRefusesHeader(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("Card with HeadingHref and Header did not panic")
+		}
+	}()
+	Card(CardConfig{Heading: "x", HeadingHref: "/b", Header: render.HTML(`<p>own header</p>`)})
+}

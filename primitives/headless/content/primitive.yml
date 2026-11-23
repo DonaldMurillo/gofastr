@@ -357,7 +357,7 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
   - id: card-title-link-is-the-one-link
-    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding an <a> tag (and not on <abbr>, <aside> and the like), with a filled header slot that would replace the title and its link, or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
+    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding an <a> tag (and not on <abbr>, <aside> and the like), or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
     enforced_by:
       - test: framework/headless.TestCardArticleWithTitleLink
       - test: framework/headless.TestCardTitleLinkRefusals

@@ -17,7 +17,7 @@ guard by mutation on the merged tree.
 | 4 | major | A pointer released in the gap under the dragged row moved it to the end of the list | Fixed: a gap lands by position. `TestE2E_SortablePointerDragInAGapLandsByPosition` reproduces `b,c,d,a` with the old branch |
 | 5 | major | A board re-rendered mid-drag left the drag live (the removed grip loses capture at the document) and the release moved the detached row into the fresh list, duplicating it | Fixed: a lost capture on a detached grip ends the drag, and a detached row is never moved. `TestE2E_SortablePointerDragEndsWhenTheListIsReRendered` reproduces `a,b,c,a` with the guards removed |
 | 6 | minor | The carousel's `aria-disabled` ends did not follow a resize | Fixed: `syncDots` re-syncs the ends; `TestE2E_CarouselEndsFollowTheLayout` |
-| 7 | minor | `ui.Card` `HeadingHref` with `Header` silently dropped the link | Fixed: `headless.Card` panics on `TitleHref` with a filled header slot |
+| 7 | minor | `ui.Card` `HeadingHref` with `Header` silently dropped the link | Fixed: `ui.Card` panics on that pair. `headless.Card` keeps letting a filled header slot replace the title (the kit-wide render harnesses fill every slot at once), as its slot contract says |
 | 8 | minor | The nested-link refusal matched `<abbr>`, `<aside>` and other tags starting with a | Fixed: an `<a>` tag regexp; `TestCardTitleLinkAllowsTagsThatStartWithA` |
 | 9 | minor | The stretched card covered body controls not in a fixed tag list | Fixed: `[tabindex]`, `role=button`, `role=link`, `contenteditable`, `iframe`, `video` and `audio` are lifted too; the Chromium test clicks three of them |
 | 10 | minor | Meridian's Spanish catalog lacked `ui.copy.notCopied` and `ui.codeBlock.notCopied` | Fixed |
