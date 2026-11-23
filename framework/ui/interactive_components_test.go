@@ -105,10 +105,12 @@ func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 		if !strings.Contains(css, btnRule) {
 			t.Errorf("missing active-button rule for tab %d (highlight won't move):\n%s", i, btnRule)
 		}
-		panelRule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]`, i, i)
-		if !strings.Contains(css, panelRule) {
-			t.Errorf("missing visible-panel rule for tab %d:\n%s", i, panelRule)
-		}
+	}
+	// Panel visibility is the hidden attribute alone (headless.Tabs paints
+	// it, headless-tabs keeps it in step): a display rule on a panel would
+	// beat hidden="until-found" and stop find-in-page reaching it.
+	if strings.Contains(css, ".fui-tab-panel{display") || strings.Contains(css, ".fui-tab-panel[data-cui-tab-index") {
+		t.Errorf("the tabs sheet sets a panel's display:\n%s", css)
 	}
 }
 
@@ -117,9 +119,25 @@ func TestTabsActiveHighlightFollowsSignal(t *testing.T) {
 func TestTabsPanelRuleCoversManyTabs(t *testing.T) {
 	css := tabsStyle.Entry().CSSFor(style.Theme{})
 	last := tabsMaxPanels - 1
-	rule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]`, last, last)
+	rule := fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-nav>.fui-tab[data-cui-tab-index="%d"]`, last, last)
 	if !strings.Contains(css, rule) {
-		t.Errorf("CSS does not cover tab index %d (panels beyond the cap silently stay hidden):\n%s", last, css)
+		t.Errorf("CSS does not cover tab index %d (tabs beyond the cap never light up):\n%s", last, css)
+	}
+}
+
+// TestTabsStripScrollsRatherThanWraps: a long strip stays one row and
+// scrolls inside its box, as the tabs guide asks.
+func TestTabsStripScrollsRatherThanWraps(t *testing.T) {
+	css := tabsStyle.Entry().CSSFor(style.Theme{})
+	i := strings.Index(css, `.fui-tabs-nav{`)
+	if i < 0 {
+		t.Fatalf("no tab strip rule:\n%s", css)
+	}
+	rule := css[i : i+strings.Index(css[i:], "}")]
+	for _, want := range []string{"flex-wrap:nowrap", "overflow-x:auto", "max-inline-size:100%"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the tab strip lost %q: %s", want, rule)
+		}
 	}
 }
 

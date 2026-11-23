@@ -116,10 +116,10 @@ invariants:
     rule: A sort href is built through net/url on Path with the carried query, its sort and direction parameters set rather than appended.
     enforced_by:
       - test: framework/headless.TestTableSortReplacesTheSortAndCarriesTheQuery
-  - id: table-sort-is-three-state
-    rule: aria-sort is ascending or descending on the active column and none on every other sortable one, the active anchor flips the direction and every other sorts ascending.
+  - id: table-sort-marks-only-the-active-column
+    rule: aria-sort is ascending or descending on the active column and absent on every other one, the active anchor flips the direction and every other sorts ascending.
     enforced_by:
-      - test: framework/headless.TestTableSortIsThreeStateAndCycles
+      - test: framework/headless.TestTableSortMarksOnlyTheActiveColumn
   - id: table-path-is-configuration
     rule: Table panics on a Path that is not same-origin, that carries a query or fragment, or whose sort href the anchor policy refuses.
     enforced_by:

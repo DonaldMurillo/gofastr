@@ -185,6 +185,16 @@ invariants:
     rule: Only the active tab has tabindex 0; every other tab has -1.
     enforced_by:
       - test: framework/headless.TestTabsRendersRovingTabindexAndPanels
+  - id: tabs-panels-hide-until-found
+    rule: Every panel but the active one renders hidden="until-found", aria-hidden true and tabindex -1, a disabled tab's panel plain hidden instead of until-found, no tab carries aria-controls, and headless-tabs keeps all three in step with data-active.
+    enforced_by:
+      - test: framework/headless.TestTabsRendersRovingTabindexAndPanels
+      - test: framework/headless.TestTabsDisabledPanelIsPlainlyHidden
+      - test: framework/headless.TestE2E_TabsPanelsFollowSelection
+  - id: found-panel-selects-its-tab
+    rule: When find-in-page or a fragment link reveals a hidden="until-found" panel, headless-tabs selects its tab through the strip's signal on beforematch, and leaves a disabled tab's panel unselected.
+    enforced_by:
+      - test: framework/headless.TestE2E_TabsFoundPanelSelectsItsTab
   - id: disabled-tab-neither-selects-nor-links
     rule: A disabled tab renders aria-disabled with no data-cui-signal-set and no href.
     enforced_by:
@@ -247,6 +257,19 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSidebarButtonDialectGroups
 decisions:
+  - id: tab-panels-hide-until-found
+    date: 2026-11-23
+    status: accepted
+    decision: Inactive panels carry hidden="until-found", painted by the server and kept by headless-tabs, instead of a display none rule keyed on data-active, and tabs carry no aria-controls.
+    rejected:
+      - option: Hide inactive panels with a CSS display none rule.
+        why: display none keeps find-in-page and fragment links from reaching a panel's text (Modern Web Guidance, search-hidden-content), so a reader cannot search a settings page for a field on another tab.
+      - option: Keep aria-controls on each tab.
+        why: The tabs guide leaves it out; screen readers announce little or nothing for it, and the panel already names its tab through aria-labelledby.
+      - option: Tabs as buttons.
+        why: The tab anchors carry the fragment or deep-link href the strip works by without script (#710, recorded 2026-11-19).
+    revisit_if: A browser that lacks hidden="until-found" treats it as anything but plain hidden.
+    upholds: [tabs-panels-hide-until-found, found-panel-selects-its-tab]
   - id: toolbar-claims-no-role
     date: 2026-11-16
     status: accepted

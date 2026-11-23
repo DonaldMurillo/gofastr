@@ -214,13 +214,19 @@ invariants:
     enforced_by:
       - test: framework/ui.TestTabsSliceSelectsTheRequestSeed
   - id: tabs-css-lights-own-strip
-    rule: The active-tab rules reach tabs and panels through child combinators, so a strip's index never lights a strip nested in one of its panels.
+    rule: The active-tab rules reach tabs through child combinators, so a strip's index never lights a strip nested in one of its panels, and no rule sets a panel's display, which the hidden attribute owns.
     enforced_by:
       - test: framework/ui.TestTabsActiveHighlightFollowsSignal
+      - test: framework/ui.TestNestedTabsKeepTheirOwnPanel
   - id: tabs-css-covers-max-panels
     rule: The tabs sheet writes active rules for every index below headless.TabsMaxPanels.
     enforced_by:
       - test: framework/ui.TestTabsPanelRuleCoversManyTabs
+  - id: tab-strips-scroll-not-wrap
+    rule: The Tabs and CodeTabs strips stay on one row and scroll inline inside their box.
+    enforced_by:
+      - test: framework/ui.TestTabsStripScrollsRatherThanWraps
+      - test: framework/ui.TestCodeTabsCSSLeavesPanelsToHiddenAndUnderlinesTheActiveTab
   - id: tabs-data-active-owned
     rule: Tabs drops data-active from ExtraAttrs, the runtime's mirror of the signal.
     enforced_by:

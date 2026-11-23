@@ -675,7 +675,7 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	// Click the second tab.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelectorAll('.fui-tab')[1].click()`, nil),
-		waitFor(`document.querySelector('.fui-tabs').getAttribute('data-active') === '1' && getComputedStyle(document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]')).display !== 'none'`),
+		waitFor(`document.querySelector('.fui-tabs').getAttribute('data-active') === '1' && document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]').checkVisibility()`),
 	); err != nil {
 		t.Fatalf("click second tab: %v", err)
 	}
@@ -691,15 +691,17 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("data-active = %q, want 1", activeAttr)
 	}
 
-	// Second panel should now be visible.
-	var panel2Display string
+	// Second panel should now be visible and the first hidden until found
+	// (content-visibility, so checkVisibility rather than display).
+	var panels struct{ Second, First bool }
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]')).display`, &panel2Display),
+		chromedp.Evaluate(`({Second: document.querySelector('.fui-tab-panel[data-cui-tab-index="1"]').checkVisibility(),
+			First: document.querySelector('.fui-tab-panel[data-cui-tab-index="0"]').checkVisibility()})`, &panels),
 	); err != nil {
-		t.Fatalf("read panel2 display: %v", err)
+		t.Fatalf("read panel visibility: %v", err)
 	}
-	if panel2Display == "none" {
-		t.Fatal("second tab panel should be visible after clicking second tab")
+	if !panels.Second || panels.First {
+		t.Fatalf("after clicking the second tab: second panel visible=%v, first visible=%v", panels.Second, panels.First)
 	}
 
 	// Regression (frozen-highlight bug): the active indicator must MOVE to

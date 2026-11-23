@@ -107,7 +107,6 @@ func TestSweepMediaCodeTabsCSSCoversEveryPanelIndex(t *testing.T) {
 	css := codeTabsCSS(style.Theme{})
 	for i := range headless.TabsMaxPanels() {
 		for _, want := range []string{
-			fmt.Sprintf(`.fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-cui-tab-index="%d"]{display:block}`, i, i),
 			fmt.Sprintf(`.fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{`, i, i),
 		} {
 			if !strings.Contains(css, want) {

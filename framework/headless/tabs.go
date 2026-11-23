@@ -98,7 +98,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"data-cui-signal-set": p.Name + ":" + strconv.Itoa(i),
 			"data-cui-tab-index":  strconv.Itoa(i),
 		}
-		own["aria-controls"] = p.ID + "-panel-" + strconv.Itoa(i)
 		if tab.Disabled {
 			own["aria-disabled"] = "true"
 			delete(own, "data-cui-signal-set")
@@ -141,8 +140,21 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"role":               "tabpanel",
 			"id":                 p.ID + "-panel-" + strconv.Itoa(i),
 			"aria-labelledby":    p.ID + "-tab-" + strconv.Itoa(i),
-			"tabindex":           "0",
+			"tabindex":           tabTabIndex(i == p.Active),
 			"data-cui-tab-index": strconv.Itoa(i),
+		}
+		if i != p.Active {
+			// until-found lets find-in-page and a fragment link reveal
+			// the panel; the module selects its tab on beforematch. A
+			// disabled tab's panel stays plainly hidden. aria-hidden
+			// keeps the empty-looking box out of the accessibility
+			// tree, where Chromium still lists an until-found panel.
+			own["aria-hidden"] = "true"
+			if tab.Disabled {
+				Mark(own, "hidden")
+			} else {
+				own["hidden"] = "until-found"
+			}
 		}
 		vacated := p.VacateHidden && i != p.Active
 		rendersContent := tab.Panel != "" && !vacated
@@ -232,7 +244,7 @@ func init() {
 			s := k.Classes
 			return []Case{{
 				Name: "a signal tab strip",
-				Why:  "one tab is in the tab order and the rest are reached by the arrows; the panels are real content and the fragment hrefs land on them without script",
+				Why:  "one tab is in the tab order and the rest are reached by the arrows; the panels are real content, the inactive ones hidden until found so find-in-page and the fragment hrefs reach them without script",
 				HTML: Tabs(TabsProps{Name: "cfg", Tabs: []Tab{
 					{Label: "General", Panel: render.Text("The general panel.")},
 					{Label: "Secrets", Panel: render.Text("The secrets panel.")},

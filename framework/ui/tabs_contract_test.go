@@ -25,7 +25,7 @@ func TestTabsZeroValueOutputPinned(t *testing.T) {
 			{Label: "B", Content: render.Text("beta")},
 		},
 	}))
-	want := `<div class="fui-tabs" data-active="0" data-cui-signal="t" data-cui-signal-attr="data-active" data-cui-signal-mode="attr" data-hui-tabs="" data-cui-comp="fui-tabs"><nav class="fui-tabs-nav" data-cui-internal="" role="tablist"><a aria-controls="t-panel-0" aria-selected="true" class="fui-tab" data-cui-signal-set="t:0" data-cui-tab-index="0" href="#t-panel-0" id="t-tab-0" role="tab" tabindex="0">A</a><a aria-controls="t-panel-1" aria-selected="false" class="fui-tab" data-cui-signal-set="t:1" data-cui-tab-index="1" href="#t-panel-1" id="t-tab-1" role="tab" tabindex="-1">B</a></nav><div class="fui-tabs-content"><div aria-labelledby="t-tab-0" class="fui-tab-panel" data-cui-tab-index="0" id="t-panel-0" role="tabpanel" tabindex="0">alpha</div><div aria-labelledby="t-tab-1" class="fui-tab-panel" data-cui-tab-index="1" id="t-panel-1" role="tabpanel" tabindex="0">beta</div></div></div>`
+	want := `<div class="fui-tabs" data-active="0" data-cui-signal="t" data-cui-signal-attr="data-active" data-cui-signal-mode="attr" data-hui-tabs="" data-cui-comp="fui-tabs"><nav class="fui-tabs-nav" data-cui-internal="" role="tablist"><a aria-selected="true" class="fui-tab" data-cui-signal-set="t:0" data-cui-tab-index="0" href="#t-panel-0" id="t-tab-0" role="tab" tabindex="0">A</a><a aria-selected="false" class="fui-tab" data-cui-signal-set="t:1" data-cui-tab-index="1" href="#t-panel-1" id="t-tab-1" role="tab" tabindex="-1">B</a></nav><div class="fui-tabs-content"><div aria-labelledby="t-tab-0" class="fui-tab-panel" data-cui-tab-index="0" id="t-panel-0" role="tabpanel" tabindex="0">alpha</div><div aria-hidden="true" aria-labelledby="t-tab-1" class="fui-tab-panel" data-cui-tab-index="1" hidden="until-found" id="t-panel-1" role="tabpanel" tabindex="-1">beta</div></div></div>`
 	if got != want {
 		t.Errorf("zero-value Tabs output changed:\ngot:  %s\nwant: %s", got, want)
 	}
@@ -74,15 +74,15 @@ func TestTabsStateAttrsOnAndOff(t *testing.T) {
 	}
 }
 
-var ariaControlsRe = regexp.MustCompile(`aria-controls="([^"]+)"`)
+var labelledByRe = regexp.MustCompile(`aria-labelledby="([^"]+)"`)
 var idRe = regexp.MustCompile(` id="([^"]+)"`)
 
-// TestTabsAriaControlsPairsRoundTrip asserts the aria-controls contract: in a
-// single render, every aria-controls value names an id that exists on a
-// role=tabpanel element, every panel id is named by exactly one tab, and the
-// per-index naming pattern holds. This is the pairing a port's AT parity and
-// test locators lean on.
-func TestTabsAriaControlsPairsRoundTrip(t *testing.T) {
+// TestTabsPanelsNameTheirTabs asserts the pairing that survives without
+// aria-controls (Modern Web Guidance's tabs guide leaves it out): every
+// panel's aria-labelledby names a tab id in the same render, by index,
+// and no tab carries aria-controls. This is the pairing a port's AT
+// parity and test locators lean on.
+func TestTabsPanelsNameTheirTabs(t *testing.T) {
 	const idBase = "settings"
 	out := string(Tabs(TabsConfig{
 		SignalName: "c",
@@ -94,34 +94,22 @@ func TestTabsAriaControlsPairsRoundTrip(t *testing.T) {
 		},
 	}))
 
-	controls := ariaControlsRe.FindAllStringSubmatch(out, -1)
-	if len(controls) != 3 {
-		t.Fatalf("expected 3 aria-controls (one per tab), got %d:\n%s", len(controls), out)
+	if strings.Contains(out, "aria-controls") {
+		t.Errorf("a tab carries aria-controls:\n%s", out)
+	}
+	labels := labelledByRe.FindAllStringSubmatch(out, -1)
+	if len(labels) != 3 {
+		t.Fatalf("expected 3 aria-labelledby (one per panel), got %d:\n%s", len(labels), out)
 	}
 	ids := idRe.FindAllStringSubmatch(out, -1)
-	if len(ids) != 6 { // 3 buttons + 3 panels
+	if len(ids) != 6 { // 3 tabs + 3 panels
 		t.Fatalf("expected 6 id attributes (3 tabs + 3 panels), got %d:\n%s", len(ids), out)
 	}
-	present := map[string]bool{}
-	for _, m := range ids {
-		present[m[1]] = true
-	}
-	for _, m := range controls {
-		target := m[1]
-		if !present[target] {
-			t.Errorf("aria-controls=%q names no id in the same render:\n%s", target, out)
+	for i, m := range labels {
+		if want := idBase + "-tab-" + strconv.Itoa(i); m[1] != want {
+			t.Errorf("panel %d is labelled by %q, want %q:\n%s", i, m[1], want, out)
 		}
 	}
-	// Each aria-controls target must be a PANEL id, not a button id:
-	// panels are the elements the attribute is contractually allowed
-	// to reference.
-	for _, m := range controls {
-		target := m[1]
-		if !strings.HasPrefix(target, idBase+"-panel-") {
-			t.Errorf("aria-controls=%q must reference a panel id:\n%s", target, out)
-		}
-	}
-	// Per-index pattern for both families.
 	for i := range 3 {
 		tabID := idBase + "-tab-" + strconv.Itoa(i)
 		panelID := idBase + "-panel-" + strconv.Itoa(i)
@@ -170,7 +158,7 @@ func TestTabsVacateHiddenShipsStashOnly(t *testing.T) {
 	}
 	// Inactive panels are EMPTY shells.
 	for _, i := range []string{"1", "2"} {
-		if !strings.Contains(out, `data-cui-tab-index="`+i+`" id="v-panel-`+i+`" role="tabpanel" tabindex="0"></div>`) {
+		if !strings.Contains(out, `data-cui-tab-index="`+i+`" hidden="until-found" id="v-panel-`+i+`" role="tabpanel" tabindex="-1"></div>`) {
 			t.Errorf("inactive panel %s must ship empty:\n%s", i, out)
 		}
 	}
@@ -262,8 +250,8 @@ func TestTabsContractKnobsCompose(t *testing.T) {
 	if !strings.Contains(out, `data-hui-tabs=""`) {
 		t.Errorf("the strip must carry its own module marker:\n%s", out)
 	}
-	if !strings.Contains(out, `aria-controls="allthree-panel-1"`) {
-		t.Errorf("aria-controls must survive vacate:\n%s", out)
+	if !strings.Contains(out, `aria-labelledby="allthree-tab-1"`) {
+		t.Errorf("the panel's aria-labelledby must survive vacate:\n%s", out)
 	}
 	if !strings.Contains(out, `data-cui-tab-index="1" data-state="inactive" href="#allthree-panel-1" id="allthree-tab-1"`) {
 		t.Errorf("data-state must survive vacate:\n%s", out)

@@ -124,10 +124,10 @@ invariants:
       - test: framework/ui.TestHighlightPlainAndEscaping
       - test: framework/ui.TestSweepMediaHighlightDropsTrailingBlankLine
   - id: code-tabs-css-covers-every-panel
-    rule: The code-tabs sheet holds an active-tab and a visible-panel rule for every index up to headless.TabsMaxPanels.
+    rule: The code-tabs sheet holds an active-tab rule for every index up to headless.TabsMaxPanels and sets no panel's display, which the hidden attribute owns.
     enforced_by:
       - test: framework/ui.TestSweepMediaCodeTabsCSSCoversEveryPanelIndex
-      - test: framework/ui.TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab
+      - test: framework/ui.TestCodeTabsCSSLeavesPanelsToHiddenAndUnderlinesTheActiveTab
   - id: image-urls-pass-the-image-policy
     rule: OptimizedImage and PipelineImage replace a Src or Fallback the image policy refuses with /__gofastr/blank.png, drop a refused source, and keep an inline raster data URI.
     enforced_by:

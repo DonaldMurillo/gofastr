@@ -20,6 +20,11 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestStaticFSNonSeekingFile
       - test: framework/uihost.TestStaticFSPreconditionParity
+  - id: hidden-reset-spares-until-found
+    rule: The builtin sheet hides every [hidden] element with display none !important except hidden="until-found", which the browser hides itself so find-in-page and fragment links can reveal it.
+    enforced_by:
+      - test: framework/uihost.TestBuiltinCSSHidesHiddenAttribute
+      - test: framework/uihost.TestBuiltinCSSLeavesUntilFoundToTheBrowser
   - id: app-css-root-floor
     rule: app.css always begins with the theme's :root custom properties, the default theme's when App.Theme is unset, because component CSS references bare var(--*) tokens.
     enforced_by:
