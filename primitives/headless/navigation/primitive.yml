@@ -150,9 +150,10 @@ invariants:
       - test: framework/headless.TestBreadcrumbsDropsDangerousHrefs
       - test: framework/headless.TestSweepNavigationBreadcrumbRefusedHrefIsText
   - id: breadcrumb-separators-are-hidden
-    rule: Each breadcrumb separator is an aria-hidden span, and Breadcrumbs refuses an empty trail.
+    rule: Each breadcrumb separator is an aria-hidden span, none renders with SeparatorsInCSS, and Breadcrumbs refuses an empty trail.
     enforced_by:
       - test: framework/headless.TestBreadcrumbsRendersTheTrail
+      - test: framework/headless.TestBreadcrumbsSeparatorsInCSSRenderNone
       - test: framework/headless.TestBreadcrumbsRefusesBrokenConfiguration
   - id: static-rail-loads-no-module
     rule: A rail renders data-hui-rail, data-hui-rail-observe and data-hui-rail-target only when ObserveSelector is set.
@@ -401,3 +402,12 @@ decisions:
       - option: A trap and return focus in headless-sidebar.
         why: A second focus trap beside the widget runtime's would drift from it.
     upholds: [behaviours-declare-markers-and-requirements]
+  - id: current-crumb-is-text
+    date: 2026-11-23
+    status: accepted
+    decision: The current breadcrumb stays text carrying aria-current page, not a link to the page it is on.
+    rejected:
+      - option: A link with aria-current page, as the breadcrumbs guide and the ARIA practices example draw it.
+        why: A link to the page already shown adds a Tab stop whose activation only reloads the view, and both forms satisfy WCAG; aria-current names the page either way.
+    revisit_if: A screen reader is found that announces the current step only when it is a link.
+    upholds: [breadcrumbs-one-current-step]

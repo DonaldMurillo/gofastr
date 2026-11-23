@@ -255,6 +255,10 @@ invariants:
     rule: Thumbnail returns "" for an empty Src or one the image policy refuses.
     enforced_by:
       - test: framework/ui.TestThumbnailRefusesUnsafeSrc
+  - id: collapsible-chevron-motion-is-opt-in
+    rule: The collapsible chevron's turn transition sits only inside a prefers-reduced-motion no-preference block, so a reader who asked for reduced motion sees it flip without animating.
+    enforced_by:
+      - test: framework/ui.TestCollapsibleChevronTurnsOnlyWithoutReducedMotion
 decisions:
   - id: placeholder-is-an-img
     date: 2026-11-16
@@ -367,3 +371,13 @@ decisions:
     rejected:
       - option: One flat gap between every element.
         why: Headings would not bind to the text they introduce.
+  - id: lightbox-image-owns-its-gestures
+    date: 2026-11-23
+    status: accepted
+    decision: The lightbox's full image keeps touch-action none at every zoom, so the pinch-zoom module's pointer events see a pinch from its first finger.
+    rejected:
+      - option: touch-action pan-x pan-y while the image is at 1x.
+        why: A pinch begins as a scroll gesture in the browser, which would cancel the pointers and break pinch-zoom before the module can scale.
+      - option: Pan the zoomed image in a native scroll container.
+        why: It is the better model, but it replaces the pinch, pan and double-tap module and can only be judged on a real touch device.
+    revisit_if: The lightbox's zoom is rebuilt as a scroll container with native panning.

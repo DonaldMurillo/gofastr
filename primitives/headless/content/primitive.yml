@@ -353,6 +353,11 @@ invariants:
     rule: The current step's heading carries tabindex -1, so the behaviour can focus it after a swap.
     enforced_by:
       - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
+  - id: card-title-link-is-the-one-link
+    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding a link or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
+    enforced_by:
+      - test: framework/headless.TestCardArticleWithTitleLink
+      - test: framework/headless.TestCardTitleLinkRefusals
 decisions:
   - id: layout-sizes-are-named-steps
     date: 2026-11-16
@@ -606,3 +611,13 @@ decisions:
       - option: Back and Next in visible order alone.
         why: Implicit submission clicks the first submit control, so Enter in a field went Back.
     upholds: [wizard-enter-means-next]
+  - id: card-article-is-opt-in
+    date: 2026-11-23
+    status: accepted
+    decision: A card's root stays a div unless Article is set, and a card that should be clickable as a whole while holding its own controls links its title with TitleHref rather than wrapping in Href.
+    rejected:
+      - option: Make every card an <article>.
+        why: Most kit cards are panels of one page (a settings section, a chart, a form), not self-contained items, and an article landmark on each would crowd the outline a screen reader lists.
+      - option: Change Href to the stretched title link.
+        why: Existing callers pass Href for cards with no title, whose whole surface is the link's name, and a linked card with no heading has nothing to stretch.
+    upholds: [card-title-link-is-the-one-link]

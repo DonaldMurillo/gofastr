@@ -15,6 +15,7 @@ code:
   - framework/headless/disclosure.go
   - framework/headless/disclosure_behavior.go
   - framework/headless/copy_behavior.go
+  - framework/headless/copy.js
   - framework/headless/selectioncopy_behavior.go
 invariants:
   - id: action-endpoint-same-origin
@@ -251,6 +252,14 @@ invariants:
     rule: headless-feedback loads on data-hui-copy, data-hui-toast-stack, data-cui-toast-stack and data-hui-network-retry.
     enforced_by:
       - test: framework/headless.TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers
+  - id: copy-failure-is-shown
+    rule: A copy the clipboard refuses or cannot make sets data-hui-copy-state failed on the wrapper, never done, swaps data-hui-copy-failed-label into a data-hui-copy-label span when both exist, and says the failure sentence.
+    enforced_by:
+      - test: framework/headless.TestE2E_CopySaysWhatTheClipboardAnswered
+  - id: copy-reads-a-field-value
+    rule: A copy whose target is an input or textarea copies the field's current value, not its markup's text.
+    enforced_by:
+      - test: framework/headless.TestE2E_CopyReadsAFieldsValue
 decisions:
   - id: action-announces-its-own-failure
     date: 2026-11-16

@@ -202,6 +202,31 @@ func cardCSS(t style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
+/* HeadingHref: the heading's link is the card's one link, stretched over
+   the card by its ::after; the header action, the footer and the body's
+   own controls sit above it and stay clickable. The ring is drawn on the
+   card when the link has keyboard focus. */
+:where([data-cui-comp="ui-card"].fui-card--stretched) { position: relative; }
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__heading-link {
+  color: inherit;
+  text-decoration: none;
+  outline: none;
+}
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__heading-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+[data-cui-comp="ui-card"].fui-card--stretched :is(.fui-card__action, .fui-card__footer),
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href], button, input, select, textarea, summary, label) {
+  position: relative;
+  z-index: 1;
+}
+[data-cui-comp="ui-card"].fui-card--stretched:has(.fui-card__heading-link:focus-visible) {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
+}
 [data-cui-comp="ui-card"] .fui-card__inner {
   display: flex;
   flex-direction: column;
@@ -865,11 +890,19 @@ func spinnerCSS(_ style.Theme) string {
   35%           { opacity: 1;   transform: scale(1); }
 }
 
+/* Reduced motion stops the spin, the pulse and the ripple: every part
+   holds still and only its opacity breathes, so the spinner still says
+   "working" without anything moving. */
+@keyframes fui-spinner-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--opacity-faint, 0.2); }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-spinner"] .fui-spinner__ring,
   [data-cui-comp="ui-spinner"] .fui-spinner__dot,
   [data-cui-comp="ui-spinner"] .fui-spinner__cell {
-    animation-duration: 2.4s;
+    animation: fui-spinner-breathe 2.4s var(--easing-ease-in-out, ease-in-out) infinite both;
+    transform: none;
   }
 }
 

@@ -202,6 +202,11 @@ invariants:
     rule: Ago reads a time after now as now and writes a time past a month as its UTC date.
     enforced_by:
       - test: framework/ui.TestSweepChartsAgoFutureIsNowAndDatesAreUTC
+  - id: progress-indeterminate-sweeps
+    rule: A Progress with a negative Value renders a <progress> with no value attribute, whose :indeterminate rule sweeps a primary band across the track, and under prefers-reduced-motion reduce the band fills the track and only its opacity breathes.
+    enforced_by:
+      - test: framework/ui.TestProgressIndeterminateSweepsAndHoldsStillUnderReducedMotion
+      - test: framework/ui.TestProgressNegativeValueIsIndeterminate
 decisions:
   - id: empty-data-renders-a-placeholder
     date: 2026-11-16

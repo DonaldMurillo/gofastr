@@ -57,9 +57,33 @@
       } catch (_) {}
     }
   }
+  // A failure is shown as well as said: the wrapper reads
+  // data-hui-copy-state="failed" (the kit's sheet tints the button) and
+  // the failed label, when the wrapper carries one, swaps into the
+  // label span, for a little longer than a success so it can be read.
   function failed(wrap, id) {
     const name = wrap.getAttribute('data-hui-copy-name') || id || '';
     announce(wrap, (wrap.getAttribute('data-hui-copy-failed') || '').replaceAll('{{name}}', () => name));
+    wrap.setAttribute('data-hui-copy-state', 'failed');
+    const btn = wrap.querySelector('[data-hui-copy-label]');
+    const label = wrap.getAttribute('data-hui-copy-failed-label') || '';
+    if (btn && label) btn.textContent = label;
+    const back = wrap.getAttribute('data-hui-copy-back') || '';
+    clearTimeout(wrap.__huiCopyBack);
+    wrap.__huiCopyBack = setTimeout(() => {
+      wrap.removeAttribute('data-hui-copy-state');
+      if (btn && back && label) btn.textContent = back;
+    }, 3000);
+  }
+  // copyText is what the target holds: a form field's current value, a
+  // <pre>'s source text verbatim (its textContent, newlines included;
+  // innerText re-derives line breaks from the layout, doubling every
+  // break of a block per line and dropping a blank line's), else the
+  // rendered text.
+  function copyText(target) {
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return String(target.value || '');
+    if (target.tagName === 'PRE') return target.textContent || '';
+    return (target.innerText || target.textContent) || '';
   }
   document.addEventListener('click', (e) => {
     const t = e.target;
@@ -68,12 +92,7 @@
     const id = wrap.getAttribute('data-hui-copy-target');
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
-    // A <pre> holds its source text verbatim, newlines included, so its
-    // textContent is the copy. innerText re-derives line breaks from the
-    // layout: a block per line doubles every break, and an empty block
-    // (a blank source line) adds none.
-    const text = (target.tagName === 'PRE' ? target.textContent
-      : (target.innerText || target.textContent) || '').trim();
+    const text = copyText(target).trim();
     if (!text) return;
     let write = null;
     try {
