@@ -157,6 +157,11 @@ invariants:
     rule: Under prefers-reduced-motion reduce every spinner part (ring, dots, grid cells) runs fui-spinner-breathe, a keyframe that changes only opacity, so nothing spins, pulses in size or ripples.
     enforced_by:
       - test: framework/ui.TestSpinnerHoldsStillUnderReducedMotion
+  - id: card-heading-link-stretches
+    rule: A Card with HeadingHref renders its heading as fui-card__heading-link inside a fui-card--stretched root whose sheet stretches the link's ::after over the card, lifts the action, footer and body controls above it, and rings the card while the link has keyboard focus.
+    enforced_by:
+      - test: framework/ui.TestCardHeadingHrefStretchesTheHeadingLink
+      - test: framework/ui.TestCardHeadingHrefCoversTheCardButNotItsControls
 decisions:
   - id: form-field-input-is-a-builder
     date: 2026-11-16

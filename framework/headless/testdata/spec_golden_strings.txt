@@ -98,6 +98,10 @@ the footer is where the actions that apply to the whole card live
 a feed's way to its full list sits at the header's end, beside the title it belongs to, not in a footer under the last row
 <div><div><h3 data-cui-internal="">Recent activity</h3><div><a href="/audit">Audit log</a></div></div><div><p>Ada created INV-1.</p></div></div>
 
+=== Card / an article whose title is its link ===
+a card that is one item of a feed is an article, and its title carries the one link a styling layer stretches over the card, so the link's name is the title rather than every word on the card and the header action stays its own control
+<article><div><h3 data-cui-internal=""><a href="/blog/0-98">Release 0.98</a></h3><p data-cui-internal="">Nov 23</p><div><button type="button">Share</button></div></div><div><p>Breadcrumbs, copy and cards.</p></div></article>
+
 === Card / the whole card is the link ===
 an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer
 <a href="/apps/blog"><div><div><h3>blog</h3><p>2 vCPU, 4 GB</p></div><div><p>Deployed 3 days ago.</p></div></div></a>

@@ -31,7 +31,15 @@ type CardConfig struct {
 	// Action is a control beside the heading; it panics with Href.
 	Action render.HTML
 	// Href renders the whole card as one focusable link.
-	Href    string
+	Href string
+	// HeadingHref links the heading and stretches that link over the
+	// card, so the whole card is clickable while Action, the footer and
+	// any control in the body stay their own. Needs a Heading; refused
+	// with Href.
+	HeadingHref string
+	// Article renders the root as an <article>, for a card that stands
+	// on its own as one item of a feed or grid. Refused with Href.
+	Article bool
 	Variant CardVariant
 	// ID is the root's id; with a heading, the heading's id is "<ID>-title".
 	ID    string
@@ -41,14 +49,15 @@ type CardConfig struct {
 }
 
 var cardClasses = headless.Classes{
-	headless.PartRoot:       "fui-card",
-	headless.PartTitle:      "fui-card__heading",
-	headless.PartDesc:       "fui-card__description",
-	headless.PartCardHeader: "fui-card__header",
-	headless.PartCardAction: "fui-card__action",
-	headless.PartCardBody:   "fui-card__body",
-	headless.PartCardInner:  "fui-card__inner",
-	headless.PartFooter:     "fui-card__footer",
+	headless.PartRoot:          "fui-card",
+	headless.PartTitle:         "fui-card__heading",
+	headless.PartDesc:          "fui-card__description",
+	headless.PartCardHeader:    "fui-card__header",
+	headless.PartCardAction:    "fui-card__action",
+	headless.PartCardBody:      "fui-card__body",
+	headless.PartCardInner:     "fui-card__inner",
+	headless.PartCardTitleLink: "fui-card__heading-link",
+	headless.PartFooter:        "fui-card__footer",
 }
 
 // Card renders a content card: an optional header, the body and an
@@ -68,6 +77,9 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 	if cfg.Href != "" {
 		cls = joinNonEmpty("fui-card--interactive", cls)
 	}
+	if cfg.HeadingHref != "" {
+		cls = joinNonEmpty("fui-card--interactive fui-card--stretched", cls)
+	}
 
 	parts := rootClassParts(cls)
 	if cfg.Header != "" {
@@ -85,6 +97,8 @@ func Card(cfg CardConfig, body ...render.HTML) render.HTML {
 		Footer:       cfg.Footer,
 		Action:       cfg.Action,
 		Href:         cfg.Href,
+		TitleHref:    cfg.HeadingHref,
+		Article:      cfg.Article,
 		ID:           cfg.ID,
 		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "class", "id", "href"),
 		Parts:        parts,
