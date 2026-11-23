@@ -71,6 +71,11 @@ invariants:
     rule: Carousel clamps VisiblePerView into 1 to 8, so the emitted fui-carousel--cols-N class always has a rule in its sheet.
     enforced_by:
       - test: framework/ui.TestCarouselVisiblePerViewClampedAndApplied
+  - id: carousel-controls-need-script
+    rule: The carousel sheet hides the arrows, the dots and the rotation button under scripting none and closes the arrows' gutters, gives every control and the track touch-action manipulation, dims an aria-disabled arrow, and draws the rotation glyph from aria-pressed at the end of the dot row.
+    enforced_by:
+      - test: framework/ui.TestCarouselCSSControlsContract
+      - test: framework/ui.TestCarouselAutoRotateDrawsThePauseButton
   - id: carousel-ids-distinct-without-scope
     rule: A Carousel with no ID rendered outside an id scope takes a process-unique id, so two identical carousels never share one.
     enforced_by:
@@ -314,6 +319,16 @@ decisions:
       - option: Rely on the <ul> implicit role.
         why: list-style none drops list semantics in WebKit and VoiceOver, losing the depth a reader hears.
     upholds: [comment-thread-list-roles]
+  - id: carousel-controls-hidden-without-script
+    date: 2026-11-23
+    status: accepted
+    decision: The sheet hides the carousel's buttons with a scripting none media query, so a page with script on draws them at first paint.
+    rejected:
+      - option: Render the controls hidden and have the module show them.
+        why: Every carousel would shift its layout once the module loads.
+      - option: Draw them with no script too.
+        why: Nothing answers them there, so they would promise a step that never comes.
+    upholds: [carousel-controls-need-script]
   - id: carousel-autoid-outside-scope
     date: 2026-11-16
     status: accepted

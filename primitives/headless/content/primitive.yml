@@ -269,9 +269,28 @@ invariants:
     enforced_by:
       - test: framework/headless.TestCarouselHasALiveStatus
   - id: carousel-works-without-script
-    rule: Every dot is an anchor to its slide's id, and the track carries the status sentence and its format with the slide count.
+    rule: The track is a focusable scrollable list carrying the status sentence and its format with the slide count, and every arrow and dot is a type=button button, never a link.
     enforced_by:
       - test: framework/headless.TestCarouselRendersTrackControlsAndDots
+  - id: carousel-controls-order
+    rule: Prev and Next come before the track in the markup, the dots after it, and a rotating carousel's rotation control after the dots.
+    enforced_by:
+      - test: framework/headless.TestCarouselControlsBeforeTheTrack
+  - id: carousel-rotation-control
+    rule: A carousel with AutoRotateMS renders a rotation button named by Strings.CarouselPause with aria-pressed false, and one without renders none.
+    enforced_by:
+      - test: framework/headless.TestCarouselRotatingDrawsAPauseButton
+      - test: framework/headless.TestCarouselRendersTrackControlsAndDots
+  - id: carousel-pause-holds
+    rule: The rotation button's choice holds the rotation until it is pressed again, a carousel nobody chose for is held under reduced motion, and hover or focus on the button itself does not hold it; aria-pressed says whether it is held.
+    enforced_by:
+      - test: framework/headless.TestE2E_CarouselPauseButtonHolds
+      - test: framework/headless.TestE2E_CarouselReducedMotionStartsHeld
+  - id: carousel-ends-aria-disabled
+    rule: Without Loop, Prev is aria-disabled at the first position and Next at the last; the render marks Prev, and Next too for a lone slide, and the module keeps both in step.
+    enforced_by:
+      - test: framework/headless.TestCarouselArrowsStartDisabledAtTheEnds
+      - test: framework/headless.TestE2E_CarouselArrowsDisableAtTheEnds
   - id: gallery-refusals
     rule: Gallery panics without items or Label, on an item without Src or with an Alt that scrubs to empty, and on control bytes in the lightbox Name or Group.
     enforced_by:
@@ -505,6 +524,34 @@ decisions:
     status: accepted
     decision: A rotating carousel renders its live region off and the behaviour makes it polite while the rotation is paused (the APG carousel).
     upholds: [carousel-live-region]
+  - id: carousel-controls-are-buttons
+    date: 2026-11-23
+    status: accepted
+    decision: Prev, Next and the dots are buttons the behaviour answers, the arrows before the track and the dots after it, as the modern-web-guidance carousel guide lays them out. With no script the track still scrolls by touch, trackpad and keys, and the styled sheet does not draw the controls.
+    rejected:
+      - option: Fragment anchors to the slide ids.
+        why: Prev and Next pointed at the first and last slide rather than one step, a reader heard links for controls that never leave the page, and the no-script track already reaches every slide by scrolling.
+      - option: Controls after the track.
+        why: A keyboard reader tabbed through every slide's content before reaching the arrows.
+    upholds: [carousel-works-without-script, carousel-controls-order]
+  - id: carousel-rotation-control-ends-the-dot-row
+    date: 2026-11-23
+    status: accepted
+    decision: The rotation control comes after the dots and says its state with aria-pressed under one fixed name.
+    rejected:
+      - option: The rotation control first inside the carousel (the APG example).
+        why: Focus anywhere inside already holds the rotation, so the first Tab stop in stops the motion; drawn first it would cover slide content or put the tab order out of step with the screen.
+      - option: A name that flips between pause and play.
+        why: The kit's toggles say their state with aria-pressed (ui.SignalToggle), and one fixed name is one string to translate.
+    upholds: [carousel-rotation-control, carousel-pause-holds]
+  - id: carousel-ends-use-aria-disabled
+    date: 2026-11-23
+    status: accepted
+    decision: An arrow at a finite end is aria-disabled and stays focusable.
+    rejected:
+      - option: The disabled attribute.
+        why: A disabled button drops the focus of the reader who just pressed it to reach the end.
+    upholds: [carousel-ends-aria-disabled]
   - id: gallery-lightbox-is-a-typed-prop
     date: 2026-11-16
     status: accepted

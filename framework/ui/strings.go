@@ -80,6 +80,7 @@ var stringsKeys = map[string]i18n.Phrase{
 	"CarouselGoTo":      i18nui.HuiCarouselGoToSlide,
 	"CarouselRole":      i18nui.HuiCarouselRole,
 	"CarouselSlideRole": i18nui.HuiCarouselSlideRole,
+	"CarouselPause":     i18nui.HuiCarouselPause,
 	"PaneSecondary":     i18nui.HuiPaneSecondary,
 	"PaneTertiary":      i18nui.HuiPaneTertiary,
 	"SidebarOpenDrawer": i18nui.SidebarOpenDrawer,

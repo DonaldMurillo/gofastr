@@ -298,6 +298,7 @@ var (
 	HuiCarouselGoToSlide    = i18n.Define("ui.carousel.goToSlide", "Go to slide {{n}}")
 	HuiCarouselRole         = i18n.Define("ui.carousel.role", "carousel")
 	HuiCarouselSlideRole    = i18n.Define("ui.carousel.slideRole", "slide")
+	HuiCarouselPause        = i18n.Define("ui.carousel.pause", "Pause slides")
 	HuiPaneSecondary        = i18n.Define("ui.paneHost.secondary", "Secondary")
 	HuiPaneTertiary         = i18n.Define("ui.paneHost.tertiary", "Tertiary")
 

@@ -29,8 +29,10 @@ type CarouselConfig struct {
 	NoDots bool
 	// NoArrows hides the Prev/Next buttons.
 	NoArrows bool
-	// AutoRotateMs, when > 0, auto-advances every N ms, paused on hover,
-	// focus, a hidden tab and prefers-reduced-motion.
+	// AutoRotateMs, when > 0, auto-advances every N ms and draws a pause
+	// button after the dots. The rotation holds while the button says
+	// paused, on hover, focus and a hidden tab, and starts paused under
+	// prefers-reduced-motion until the reader presses play.
 	AutoRotateMs int
 	// Loop wraps Next on the last slide to the first, and Prev back.
 	Loop bool
@@ -66,6 +68,7 @@ func Carousel(cfg CarouselConfig) render.HTML {
 		headless.PartCarouselDot:    "fui-carousel__dot",
 		headless.PartCarouselPrev:   "fui-carousel__prev",
 		headless.PartCarouselNext:   "fui-carousel__next",
+		headless.PartCarouselPause:  "fui-carousel__pause",
 		headless.PartMarker:         "fui-carousel__dots",
 		headless.PartVisuallyHidden: "fui-visually-hidden",
 	}
@@ -120,7 +123,15 @@ func carouselCSS(_ style.Theme) string {
   /* Containment gives the carousel no width of its own, so as a flex
      item with an auto basis it collapsed to 0px. It fills its row. */
   inline-size: 100%;
+  /* The stage spans the row; under it the dots sit centred and the
+     rotation button at the end, in the order they come in the markup. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
 }
+[data-cui-comp="ui-carousel"] > .fui-carousel__stage { grid-column: 1 / -1; }
+[data-cui-comp="ui-carousel"] > .fui-carousel__dots { grid-column: 2; }
+[data-cui-comp="ui-carousel"] > .fui-carousel__pause { grid-column: 3; justify-self: end; }
 [data-cui-comp="ui-carousel"] .fui-carousel__stage {
   /* Positioning context for the overlaid prev/next arrows, so they
      centre on the track and cannot overlap the dot row below
@@ -146,6 +157,7 @@ func carouselCSS(_ style.Theme) string {
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  touch-action: manipulation;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__track::-webkit-scrollbar { display: none; }
 [data-cui-comp="ui-carousel"] .fui-carousel__slide {
@@ -210,8 +222,9 @@ func carouselCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   color: var(--color-text, #09090B);
   cursor: pointer;
+  touch-action: manipulation;
   transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
-  text-decoration: none;
+  padding: 0;
   font: inherit;
   /* The primitive's word ("Previous"/"Next") stays the accessible
      name via aria-label; visually the control is its chevron, so the
@@ -247,6 +260,16 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__next:active {
   box-shadow: var(--ui-carousel-arrow-active-shadow, var(--ui-press-active-shadow, var(--ui-carousel-arrow-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-xs)))));
   translate: var(--ui-carousel-arrow-active-translate, var(--ui-press-active-translate, var(--ui-carousel-arrow-hover-translate, var(--ui-press-hover-translate, none))));
+}
+/* At an end of a carousel without Loop the module marks the arrow
+   aria-disabled; it stays focusable and dims. Knob:
+   --ui-carousel-arrow-disabled-opacity (0.4). */
+[data-cui-comp="ui-carousel"] :is(.fui-carousel__prev, .fui-carousel__next)[aria-disabled="true"] {
+  opacity: var(--ui-carousel-arrow-disabled-opacity, 0.4);
+  cursor: default;
+  background: var(--color-surface, #FFFFFF);
+  box-shadow: var(--shadow-xs);
+  translate: none;
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev:focus-visible,
 [data-cui-comp="ui-carousel"] .fui-carousel__next:focus-visible {
@@ -288,7 +311,7 @@ func carouselCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   background: transparent;
   cursor: pointer;
-  text-decoration: none;
+  touch-action: manipulation;
   font-size: 0;
   color: transparent;
 }
@@ -315,6 +338,59 @@ func carouselCSS(_ style.Theme) string {
 [data-cui-comp="ui-carousel"] .fui-carousel__dot:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
+}
+/* The rotation button: a 24px target at the end of the dot row whose
+   glyph is two bars while the slides rotate and a play triangle once
+   aria-pressed says they are paused. The word stays its accessible
+   name. Knob: --ui-carousel-pause-size (10px), the glyph's square. */
+[data-cui-comp="ui-carousel"] .fui-carousel__pause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--spacing-xl, 24px);
+  block-size: var(--spacing-xl, 24px);
+  margin-block-start: var(--spacing-xs, 2px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radii-full, 9999px);
+  background: transparent;
+  color: var(--color-text-muted, #52525B);
+  cursor: pointer;
+  touch-action: manipulation;
+  font: inherit;
+  font-size: 0;
+}
+[data-cui-comp="ui-carousel"] .fui-carousel__pause:hover { color: var(--color-text, #09090B); }
+[data-cui-comp="ui-carousel"] .fui-carousel__pause:focus-visible {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
+}
+[data-cui-comp="ui-carousel"] .fui-carousel__pause::before {
+  content: "";
+  box-sizing: border-box;
+  inline-size: calc(var(--ui-carousel-pause-size, 10px) * 0.8);
+  block-size: var(--ui-carousel-pause-size, 10px);
+  border-inline: calc(var(--ui-carousel-pause-size, 10px) * 0.3) solid currentColor;
+}
+[data-cui-comp="ui-carousel"] .fui-carousel__pause[aria-pressed="true"]::before {
+  inline-size: var(--ui-carousel-pause-size, 10px);
+  border: 0;
+  background: currentColor;
+  clip-path: polygon(10% 0, 100% 50%, 10% 100%);
+}
+/* With no script the track still scrolls by touch, trackpad and keys,
+   but nothing would answer the arrows, the dots or the rotation
+   button, so they are not drawn and the arrows' gutters close. */
+@media (scripting: none) {
+  [data-cui-comp="ui-carousel"] :is(.fui-carousel__prev, .fui-carousel__next, .fui-carousel__dots, .fui-carousel__pause) { display: none; }
+  [data-cui-comp="ui-carousel"] .fui-carousel__stage:has(> .fui-carousel__prev) { padding-inline: 0; }
+}
+/* Forced colours drop backgrounds: the current dot and the play glyph
+   draw in system colours. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-carousel"] .fui-carousel__dot::after { forced-color-adjust: none; background: GrayText; }
+  [data-cui-comp="ui-carousel"] .fui-carousel__dot[aria-current="true"]::after { background: Highlight; }
+  [data-cui-comp="ui-carousel"] .fui-carousel__pause[aria-pressed="true"]::before { forced-color-adjust: none; background: ButtonText; }
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-carousel"] .fui-carousel__track { scroll-behavior: auto; }

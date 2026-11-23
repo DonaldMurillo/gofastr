@@ -5,3 +5,6 @@ notes:
     breaking: true
     guidance: "App JavaScript that assigns a plain string to innerHTML, outerHTML or insertAdjacentHTML, calls DOMParser.parseFromString or document.write, or sets a created script's src now throws in browsers that support Trusted Types. Build the DOM with textContent or createElement, or create your own Trusted Types policy and list its name in SecurityHeadersConfig.TrustedTypesPolicies; SecurityHeadersConfig.NoTrustedTypes turns the directives off."
     nodetect: "the sinks are in the app's own JavaScript, often inside Go strings or templates, and whether a given write ever runs on a page the default policy covers depends on the app"
+  - change: "a carousel's Prev, Next and dots are type=button buttons, Prev and Next come before the track, and a rotating carousel draws a pause button (Strings.CarouselPause, i18n key ui.carousel.pause) after its dots"
+    guidance: "An end-to-end selector such as a[data-hui-carousel-next] or a[href^='#'] inside a carousel matches nothing now: select [data-hui-carousel-next] or button[data-hui-carousel-goto]. A translation catalog that must hold every ui.* key adds ui.carousel.pause. With script off the styled carousel no longer draws its arrows and dots; the track still scrolls."
+    nodetect: "the selectors live in browser tests and catalogs outside the app's Go source"

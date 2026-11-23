@@ -17,6 +17,7 @@ const (
 	PartCarouselDot   Part = "carousel-dot"
 	PartCarouselPrev  Part = "carousel-prev"
 	PartCarouselNext  Part = "carousel-next"
+	PartCarouselPause Part = "carousel-pause"
 )
 
 // CarouselSlide is one entry.
@@ -140,22 +141,23 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		}
 		return a
 	}
-	stage := []render.HTML{b.El("div", PartCarouselTrack, trackAttrs, slides...)}
+	track := b.El("div", PartCarouselTrack, trackAttrs, slides...)
+	var stage []render.HTML
 	if !p.NoArrows {
-		last := len(p.Slides) - 1
+		prev := html.Attrs{"type": "button", "data-hui-carousel-prev": ""}
+		next := html.Attrs{"type": "button", "data-hui-carousel-next": ""}
+		if !p.Loop {
+			prev["aria-disabled"] = "true"
+			if len(p.Slides) == 1 {
+				next["aria-disabled"] = "true"
+			}
+		}
 		stage = append(stage,
-			b.El("a", PartCarouselPrev, arrowOwn(html.Attrs{
-				"href":                   "#" + p.Slides[0].ID,
-				"aria-label":             w.Previous,
-				"data-hui-carousel-prev": "",
-			}), render.Text(w.Previous)),
-			b.El("a", PartCarouselNext, arrowOwn(html.Attrs{
-				"href":                   "#" + p.Slides[last].ID,
-				"aria-label":             w.Next,
-				"data-hui-carousel-next": "",
-			}), render.Text(w.Next)),
+			b.El("button", PartCarouselPrev, arrowOwn(prev), render.Text(w.Previous)),
+			b.El("button", PartCarouselNext, arrowOwn(next), render.Text(w.Next)),
 		)
 	}
+	stage = append(stage, track)
 	stageOwn := html.Attrs(nil)
 	if !hasContent {
 		stageOwn = Internal(nil)
@@ -170,20 +172,27 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 
 	if !p.NoDots {
 		dots := make([]render.HTML, 0, len(p.Slides))
-		for i, sl := range p.Slides {
+		for i := range p.Slides {
 			own := html.Attrs{
-				"href":                   "#" + sl.ID,
+				"type":                   "button",
 				"aria-label":             w.fill(w.CarouselGoTo, "n", i+1),
 				"data-hui-carousel-goto": strconv.Itoa(i),
 			}
 			if i == 0 {
 				own["aria-current"] = "true"
 			}
-			dots = append(dots, b.El("a", PartCarouselDot, own, render.Text(w.Number(i+1))))
+			dots = append(dots, b.El("button", PartCarouselDot, own, render.Text(w.Number(i+1))))
 		}
 		children = append(children, b.El("nav", PartMarker, Internal(html.Attrs{
 			"aria-label": scrubControlBytes(p.Label),
 		}), dots...))
+	}
+	if p.AutoRotateMS > 0 {
+		children = append(children, b.El("button", PartCarouselPause, arrowOwn(html.Attrs{
+			"type":                    "button",
+			"aria-pressed":            "false",
+			"data-hui-carousel-pause": "",
+		}), render.Text(w.CarouselPause)))
 	}
 	return b.El("div", PartRoot, rootAttrs, children...)
 }
