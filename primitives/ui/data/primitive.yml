@@ -109,6 +109,10 @@ invariants:
     enforced_by:
       - test: framework/ui.TestEntryListKeepsListRole
       - test: framework/ui.TestSweepDataEntryListItemsKeepTheirMarker
+  - id: sortable-grip-takes-the-touch
+    rule: The sortable list sheet sets touch-action none on the grip rule alone, and draws every drag landing mark with a border or outline, never a background.
+    enforced_by:
+      - test: framework/ui.TestSortableListGripAloneTakesTheTouch
   - id: sortable-items-fragment-is-bare
     rule: SortableListItems returns the rows alone, with no list element and no component wrapper, for a conflict response to drop into an existing list.
     enforced_by:
