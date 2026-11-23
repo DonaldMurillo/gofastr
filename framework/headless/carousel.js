@@ -5,8 +5,9 @@
 // stepping (looping when the loop flag rides the root), the
 // keyboard (ArrowLeft/ArrowRight on the focused track, RTL-aware),
 // the status sentence re-said through the server's words, and the
-// auto-rotation with its pauses (hover, focus, hidden tab, reduced
-// motion). It replaces the retired core-ui/runtime carousel module.
+// auto-rotation with its pauses (the rotation button, hover, focus,
+// hidden tab, reduced motion). It replaces the retired core-ui/runtime
+// carousel module.
 (function () {
   'use strict';
   const NAME = 'headless-carousel';
@@ -38,8 +39,14 @@
     return track ? Array.from(track.children).filter(function (el) { return el.hasAttribute('aria-label'); }) : [];
   }
   function dotsOf(root) {
-    return Array.from(root.querySelectorAll('[data-hui-carousel-goto]'))
+    return ownAll(root, '[data-hui-carousel-goto]');
+  }
+  function ownAll(root, sel) {
+    return Array.from(root.querySelectorAll(sel))
       .filter(function (d) { return d.closest('[data-hui-carousel]') === root; });
+  }
+  function ownOne(root, sel) {
+    return ownAll(root, sel)[0] || null;
   }
 
   // scaleOf converts layout pixels (clientWidth, scrollLeft) to the
@@ -168,6 +175,7 @@
         dot.removeAttribute('aria-current');
       }
     }
+    syncEnds(root, idx);
     const track = trackOf(root);
     if (track) {
       // The status sentence: the format and total travel on the
@@ -185,18 +193,37 @@
           // when the rotation is paused or absent, so the reader's own
           // step is heard and a timer's is not. Written only when it
           // changed, so the boot pass's mark of slide one is silent.
-          let live = null;
-          for (const el of root.querySelectorAll('[data-hui-carousel-live]')) {
-            if (el.closest('[data-hui-carousel]') === root) { live = el; break; }
-          }
-          if (live) {
-            const rotates = root.hasAttribute('data-hui-carousel-rotate-ms') && !paused(root);
-            live.setAttribute('aria-live', rotates ? 'off' : 'polite');
-            if (live.textContent !== sentence) live.textContent = sentence;
-          }
+          const live = syncLive(root);
+          if (live && live.textContent !== sentence) live.textContent = sentence;
         }
       }
     }
+  }
+
+  // syncEnds marks Prev and Next aria-disabled at the ends of a carousel
+  // without the loop flag. aria-disabled, not disabled: a disabled button
+  // drops the focus of the reader who just pressed it to reach the end.
+  function syncEnds(root, idx) {
+    const loop = root.hasAttribute('data-hui-carousel-loop');
+    const last = lastIndexOf(root);
+    const ends = [[ownOne(root, '[data-hui-carousel-prev]'), idx <= 0],
+      [ownOne(root, '[data-hui-carousel-next]'), idx >= last]];
+    for (const [btn, atEnd] of ends) {
+      if (!btn) continue;
+      if (!loop && atEnd) btn.setAttribute('aria-disabled', 'true');
+      else btn.removeAttribute('aria-disabled');
+    }
+  }
+
+  // syncLive sets the live region's politeness and returns the region:
+  // quiet while the carousel rotates on its own, polite otherwise.
+  function syncLive(root) {
+    const live = ownOne(root, '[data-hui-carousel-live]');
+    if (live) {
+      const rotates = root.hasAttribute('data-hui-carousel-rotate-ms') && !paused(root);
+      live.setAttribute('aria-live', rotates ? 'off' : 'polite');
+    }
+    return live;
   }
 
   // ─── auto-rotation ───────────────────────────────────────────────
@@ -213,10 +240,33 @@
     return Number.isFinite(ms) && ms > 0 ? ms : 4000;
   }
 
+  // The rotation button's choice sticks: Pause holds until the reader
+  // presses it again. A carousel nobody chose for is held paused under
+  // reduced motion, and a reader who presses play there gets the
+  // rotation they asked for. The choice lives here, not in markup, so a
+  // carousel rendered with no button still follows reduced motion.
+  const choice = new WeakMap(); // root -> true (paused) | false (playing)
+  function pauseOf(root) { return ownOne(root, '[data-hui-carousel-pause]'); }
+  function heldPaused(root) {
+    if (choice.has(root)) return choice.get(root);
+    return !!(REDUCED && REDUCED.matches);
+  }
+  function syncPause(root) {
+    const btn = pauseOf(root);
+    if (btn) btn.setAttribute('aria-pressed', heldPaused(root) ? 'true' : 'false');
+    syncLive(root);
+  }
+
+  // Hover and focus pause for as long as they last. The rotation button
+  // itself is exempt: pressing play would otherwise leave the pointer
+  // and the focus on it, holding the rotation it just started.
   function paused(root) {
     if (document.hidden) return true;
-    if (REDUCED && REDUCED.matches) return true;
-    if (root.matches(':hover') || root.contains(document.activeElement)) return true;
+    if (heldPaused(root)) return true;
+    const btn = pauseOf(root);
+    if (root.matches(':hover') && !(btn && btn.matches(':hover'))) return true;
+    const a = document.activeElement;
+    if (a && a !== btn && root.contains(a)) return true;
     return false;
   }
 
@@ -289,6 +339,13 @@
     const prev = t.closest('[data-hui-carousel-prev]');
     const next = t.closest('[data-hui-carousel-next]');
     const dot = t.closest('[data-hui-carousel-goto]');
+    const pause = t.closest('[data-hui-carousel-pause]');
+    if (pause) {
+      e.preventDefault();
+      choice.set(root, !heldPaused(root));
+      syncPause(root);
+      return;
+    }
     if (prev) {
       e.preventDefault();
       const to = clampStep(root, currentOf(root) - 1);
@@ -384,6 +441,8 @@
     for (const el of within(scope, '[data-hui-carousel]')) {
       armRotation(el);
       syncDots(el);
+      syncEnds(el, currentOf(el));
+      syncPause(el);
       if (resizer) {
         for (const box of [trackOf(el), slidesOf(el)[0]]) {
           if (box && !sized.has(box)) { sized.add(box); resizer.observe(box); }
@@ -391,6 +450,14 @@
       }
     }
     syncDetachWatcher();
+  }
+
+  // Reduced motion switched on or off re-says the button of every
+  // rotating carousel nobody chose for.
+  if (REDUCED && REDUCED.addEventListener) {
+    REDUCED.addEventListener('change', function () {
+      for (const root of Array.from(rotating)) syncPause(root);
+    });
   }
 
   // A client navigation disarms the carousels it took away; one in the
