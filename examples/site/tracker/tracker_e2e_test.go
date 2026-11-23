@@ -992,8 +992,8 @@ func TestTrackerPhoneCrumbsSeparatorE2E(t *testing.T) {
 					visibleCount++;
 				}
 			}
-			const sep = firstVisible.querySelector('.fui-breadcrumbs__sep');
-			return {visibleCount, firstSepDisplay: sep ? getComputedStyle(sep).display : 'no-sep'};
+			const sep = getComputedStyle(firstVisible, '::before').content;
+			return {visibleCount, firstSepDisplay: sep === 'none' || sep === 'normal' ? 'none' : sep};
 		})()`, &m),
 	); err != nil {
 		t.Fatalf("crumbs: %v", err)

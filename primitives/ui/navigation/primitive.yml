@@ -234,6 +234,11 @@ invariants:
     enforced_by:
       - test: framework/ui.TestPaginationClassAppendsToTheList
       - test: framework/ui.TestPaginationLabelsResolveThroughI18n
+  - id: crumb-separators-are-generated
+    rule: ui.Breadcrumbs renders no separator element and its sheet draws each separator as ::before content "/" with empty alternative text, dropping it before the first crumb a compact phone trail shows.
+    enforced_by:
+      - test: framework/ui.TestBreadcrumbsSeparatorsAreGeneratedContent
+      - test: examples/site/tracker.TestTrackerPhoneCrumbsSeparatorE2E
 decisions:
   - id: sidebar-sheet-prewarm
     date: 2026-11-16

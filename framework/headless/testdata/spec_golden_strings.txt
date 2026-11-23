@@ -46,6 +46,10 @@ the ordered list is the hierarchy and the last step names the page as text with 
 a trail with no label of its own still names its navigation landmark — the default word is the one Strings carries, so a translated page says it in the reader's language
 <nav aria-label="&lt;BreadcrumbsLabel&gt;"><ol data-cui-internal=""><li><a href="/">Home</a></li><li><span aria-hidden="true">/</span><span aria-current="page">Here</span></li></ol></nav>
 
+=== Breadcrumbs / separators drawn by the styling layer ===
+with SeparatorsInCSS the list holds only the steps, and the kit's sheet draws each slash as generated content with empty alternative text, so a copied trail is its words and a screen reader hears no slash
+<nav aria-label="&lt;BreadcrumbsLabel&gt;"><ol data-cui-internal=""><li><a href="/">Home</a></li><li><a href="/docs/">Docs</a></li><li><span aria-current="page">Entities</span></li></ol></nav>
+
 === Breadcrumbs / a page linked inside its own trail ===
 Current turns a linked step into the page's name for itself — the href the caller supplied stays on the steps around it, and the trail still ends in text
 <nav aria-label="&lt;BreadcrumbsLabel&gt;"><ol data-cui-internal=""><li><a href="/settings">Settings</a></li><li><span aria-hidden="true">/</span><span aria-current="page">Profile</span></li></ol></nav>
