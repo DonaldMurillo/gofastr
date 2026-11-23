@@ -153,6 +153,10 @@ invariants:
     rule: The icon generator refuses a constant whose name any handwritten package file declares, whatever that file's build tags, and ignores the generated and test files.
     enforced_by:
       - test: framework/ui/icons/internal/generate.TestSweepBasicsReservesEveryHandwrittenName
+  - id: spinner-holds-still-under-reduced-motion
+    rule: Under prefers-reduced-motion reduce every spinner part (ring, dots, grid cells) runs fui-spinner-breathe, a keyframe that changes only opacity, so nothing spins, pulses in size or ripples.
+    enforced_by:
+      - test: framework/ui.TestSpinnerHoldsStillUnderReducedMotion
 decisions:
   - id: form-field-input-is-a-builder
     date: 2026-11-16

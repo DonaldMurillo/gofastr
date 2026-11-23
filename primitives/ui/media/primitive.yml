@@ -250,6 +250,10 @@ invariants:
     rule: Thumbnail returns "" for an empty Src or one the image policy refuses.
     enforced_by:
       - test: framework/ui.TestThumbnailRefusesUnsafeSrc
+  - id: collapsible-chevron-motion-is-opt-in
+    rule: The collapsible chevron's turn transition sits only inside a prefers-reduced-motion no-preference block, so a reader who asked for reduced motion sees it flip without animating.
+    enforced_by:
+      - test: framework/ui.TestCollapsibleChevronTurnsOnlyWithoutReducedMotion
 decisions:
   - id: placeholder-is-an-img
     date: 2026-11-16

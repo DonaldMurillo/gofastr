@@ -865,11 +865,19 @@ func spinnerCSS(_ style.Theme) string {
   35%           { opacity: 1;   transform: scale(1); }
 }
 
+/* Reduced motion stops the spin, the pulse and the ripple: every part
+   holds still and only its opacity breathes, so the spinner still says
+   "working" without anything moving. */
+@keyframes fui-spinner-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--opacity-faint, 0.2); }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-spinner"] .fui-spinner__ring,
   [data-cui-comp="ui-spinner"] .fui-spinner__dot,
   [data-cui-comp="ui-spinner"] .fui-spinner__cell {
-    animation-duration: 2.4s;
+    animation: fui-spinner-breathe 2.4s var(--easing-ease-in-out, ease-in-out) infinite both;
+    transform: none;
   }
 }
 

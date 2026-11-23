@@ -91,7 +91,36 @@ func progressCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 
+/* Indeterminate (no value): a primary band sweeps the track. The band
+   is the bar's own background image, so the engine's value pseudo
+   elements are cleared to let it show. */
+[data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate {
+  background-color: var(--color-border, #E4E4E7);
+  background-image: linear-gradient(90deg, transparent, var(--color-primary, #18181B), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: fui-progress-sweep 1.4s var(--easing-ease-in-out, ease-in-out) infinite;
+}
+[data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate::-webkit-progress-bar { background: transparent; }
+[data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate::-moz-progress-bar { background: transparent; }
+[data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate:dir(rtl) { animation-direction: reverse; }
+@keyframes fui-progress-sweep {
+  from { background-position: -70% 0; }
+  to   { background-position: 170% 0; }
+}
+/* Reduced motion: the band stops moving and fills the track, and only
+   its opacity breathes, so the bar still reads as working. */
+@keyframes fui-progress-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--opacity-disabled, 0.5); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value { transition: none; }
+  [data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate {
+    background-image: linear-gradient(90deg, color-mix(in oklab, var(--color-primary, #18181B) 45%, transparent), color-mix(in oklab, var(--color-primary, #18181B) 45%, transparent));
+    background-size: 100% 100%;
+    animation: fui-progress-breathe 2.4s var(--easing-ease-in-out, ease-in-out) infinite;
+  }
 }`
 }
