@@ -12,15 +12,42 @@ const (
 )
 
 //go:embed browser.js
-var browserChecks string
+var browserCheckSource string
 
-var jsonResponseCheck, htmlResponseCheck = func() (string, string) {
-	json, html, ok := strings.Cut(browserChecks, "\n"+htmlResponseCheckMarker+"\n")
-	if !ok {
-		panic("mediatype: missing HTML response check in browser.js")
+var (
+	browserChecks     = parseBrowserChecks(browserCheckSource)
+	jsonResponseCheck = browserCheck(jsonResponseCheckMarker)
+	htmlResponseCheck = strings.TrimSuffix(browserCheck(htmlResponseCheckMarker), "\n")
+)
+
+func parseBrowserChecks(source string) map[string]string {
+	checks := make(map[string]string)
+	var marker string
+	for line := range strings.Lines(source) {
+		key := strings.TrimRight(line, "\r\n")
+		if strings.HasPrefix(key, "/* gofastr:") && strings.HasSuffix(key, "-response-check */") {
+			if _, exists := checks[key]; exists {
+				panic("mediatype: duplicate " + key + " in browser.js")
+			}
+			marker = key
+			checks[marker] = ""
+		} else {
+			if marker == "" {
+				panic("mediatype: expected a response check marker at the start of browser.js")
+			}
+			checks[marker] += line
+		}
 	}
-	return json, strings.TrimSuffix(html, "\n")
-}()
+	return checks
+}
+
+func browserCheck(marker string) string {
+	check := browserChecks[marker]
+	if check == "" {
+		panic("mediatype: missing check for " + marker + " in browser.js")
+	}
+	return check
+}
 
 // WithJSONResponseCheck replaces the browser script's check marker with the shared predicate.
 // It panics unless the script has exactly one marker.
