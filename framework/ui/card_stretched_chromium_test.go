@@ -131,7 +131,7 @@ func TestCardHeadingHrefKeepsImageMapRegions(t *testing.T) {
 	if got["text"] != "/card" {
 		t.Errorf("a click on the body text reaches %q, want the heading link /card", got["text"])
 	}
-	if got["map"] == "/card" {
-		t.Errorf("a click on the image map reaches the heading link; its region must stay clickable (got %q)", got["map"])
+	if got["map"] != "/region" {
+		t.Errorf("a click on the image map reaches %q, want its region's link /region", got["map"])
 	}
 }
