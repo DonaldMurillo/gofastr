@@ -2266,7 +2266,7 @@ func RenderAppSpecScreens(bp appspec.AppSpec) string {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	apiBase := appSpecAPIBase(bp.App.APIPrefix)
+	apiBase := appSpecAPIBase(bp.RouteApp().APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), "screens", "screens"))
@@ -2695,7 +2695,7 @@ func appSpecScreenFiles(bp appspec.AppSpec, screenOrderOffset int) []GeneratedFi
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
 	}
-	apiBase := appSpecAPIBase(bp.App.APIPrefix)
+	apiBase := appSpecAPIBase(bp.RouteApp().APIPrefix)
 	var files []GeneratedFile
 	files = append(files, GeneratedFile{Name: "screens_register.go", Content: appSpecScreensRegisterGo})
 	if appSpecScreenImports(bp).node {
@@ -3208,7 +3208,7 @@ func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec)
 		}
 		for _, decl := range bp.Entities {
 			if name != "" && decl.Name == name {
-				api := appSpecEntityAPIPath(appSpecAPIBase(bp.App.APIPrefix), decl)
+				api := appSpecEntityAPIPath(appSpecAPIBase(bp.RouteApp().APIPrefix), decl)
 				if !slices.Contains(apis, api) {
 					apis = append(apis, api)
 				}
@@ -3234,7 +3234,7 @@ func appSpecScreenImports(bp appspec.AppSpec) screenImportNeeds {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	return appSpecScreensImportNeeds(bp, bp.Screens, entityMap, appSpecAPIBase(bp.App.APIPrefix))
+	return appSpecScreensImportNeeds(bp, bp.Screens, entityMap, appSpecAPIBase(bp.RouteApp().APIPrefix))
 }
 
 // appSpecScreensImportNeeds computes the import set for an arbitrary
