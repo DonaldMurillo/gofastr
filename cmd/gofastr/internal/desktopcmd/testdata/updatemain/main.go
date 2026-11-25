@@ -1,8 +1,9 @@
-// Command updatemain is the app TestLinuxDesktopUpdateEndToEnd installs:
-// a desktop battery on the desktoptest shell whose updater reads the
-// feed named by UPDATEMAIN_FEED. On start it checks the feed, installs
-// a newer release when there is one, and writes what it saw to
-// UPDATEMAIN_REPORTS/<pid>.json.
+// Command updatemain is the app the Linux update end-to-end tests
+// install: a desktop battery whose updater reads the feed named by
+// UPDATEMAIN_FEED, on the native shell when UPDATEMAIN_NATIVE=1 and the
+// desktoptest shell otherwise. Once its main window is open it checks
+// the feed, installs a newer release when there is one, and writes what
+// it saw to UPDATEMAIN_REPORTS/<pid>.json.
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/native"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -27,6 +29,7 @@ type report struct {
 	Predecessor string `json:"predecessor"`
 	Available   bool   `json:"available"`
 	FeedVersion string `json:"feed_version"`
+	Window      bool   `json:"window"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -42,7 +45,10 @@ func main() {
 	site.Register("/", screen{}, appui.NewLayout("public", appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {
 		return l.Primary()
 	}))
-	shell := desktoptest.NewShell()
+	var shell desktop.Shell = desktoptest.NewShell()
+	if os.Getenv("UPDATEMAIN_NATIVE") == "1" {
+		shell = native.Shell()
+	}
 	b := desktop.New(desktop.Config{
 		ID:     "dev.gofastr.updatee2e",
 		Title:  "UpdateE2E",
@@ -54,8 +60,11 @@ func main() {
 	app.RegisterBattery(b)
 	done := make(chan error, 1)
 	go func() { done <- b.Run(app) }()
-	for deadline := time.Now().Add(30 * time.Second); shell.Window("main") == nil && time.Now().Before(deadline); {
-		time.Sleep(20 * time.Millisecond)
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if _, ok := b.Window(); ok {
+			r.Window = true
+			break
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

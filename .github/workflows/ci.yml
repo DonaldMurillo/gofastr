@@ -600,13 +600,14 @@ jobs:
         # One process per suite, so a native crash names its suite, plus the
         # bus-only check.
         # Fail closed: an opt-in skip must never satisfy this blocking gate.
-        # The script tests battery/desktop/linux without cgo, so it runs
-        # when the change reaches that package or edits the script. sh -c
+        # The script tests battery/desktop/linux without cgo, and the
+        # installed-app update in desktopcmd, so it runs when the change
+        # reaches either package or edits the script. sh -c
         # drops the package list affected appends; a selection that fails
         # fails the step, as in every other affected step.
         run: |
           CGO_ENABLED=0 /tmp/gofastr-affected -all-if-changed scripts/test-linux-desktop.sh \
-            -match 'gofastr/battery/desktop/linux$' \
+            -match 'gofastr/(battery/desktop/linux|cmd/gofastr/internal/desktopcmd)$' \
             -- sh -c ./scripts/test-linux-desktop.sh
 
       - name: Prune the Go cache to what this run used (main only)

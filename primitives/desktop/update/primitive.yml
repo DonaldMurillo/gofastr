@@ -156,6 +156,7 @@ invariants:
       - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
       - test: battery/desktop/internal/update.TestLinuxRelaunchNamesThePredecessor
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateNative
   - id: linux-keeps-name-and-scheme
     rule: The Linux signature check refuses a staged update whose display name or embedded URL scheme differs from the running installation's, and the install then refuses with the archive error before anything is swapped.
     enforced_by:

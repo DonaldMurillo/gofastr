@@ -32,6 +32,7 @@ type updateE2EReport struct {
 	Predecessor string `json:"predecessor"`
 	Available   bool   `json:"available"`
 	FeedVersion string `json:"feed_version"`
+	Window      bool   `json:"window"`
 	Error       string `json:"error"`
 }
 
@@ -46,6 +47,21 @@ func TestLinuxDesktopUpdateEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the app twice")
 	}
+	runLinuxUpdateEndToEnd(t, false)
+}
+
+// TestLinuxDesktopUpdateNative is TestLinuxDesktopUpdateEndToEnd on the
+// GTK and WebKitGTK shell: both versions open a real window before the
+// update is installed, and the relaunched 2.0.0 opens its own. It runs
+// in scripts/test-linux-desktop.sh, under Xvfb and a session bus.
+func TestLinuxDesktopUpdateNative(t *testing.T) {
+	if os.Getenv("GOFASTR_LINUX_NATIVE") != "1" {
+		t.Skip("set GOFASTR_LINUX_NATIVE=1 in a graphical session")
+	}
+	runLinuxUpdateEndToEnd(t, true)
+}
+
+func runLinuxUpdateEndToEnd(t *testing.T, native bool) {
 	dist := t.TempDir()
 	archives := map[string]string{}
 	for _, version := range []string{"1.0.0", "2.0.0"} {
@@ -101,13 +117,16 @@ func TestLinuxDesktopUpdateEndToEnd(t *testing.T) {
 		"UPDATEMAIN_REPORTS="+reports,
 		"GOFASTR_DESKTOP_UPDATE_PREDECESSOR=",
 	)
+	if native {
+		cmd.Env = append(cmd.Env, "UPDATEMAIN_NATIVE=1")
+	}
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("1.0.0 exited with %v:\n%s", err, output.String())
 	}
 	first := readUpdateReport(t, reports, cmd.Process.Pid, &output)
-	if !first.Available || first.FeedVersion != "2.0.0" || first.Error != "" {
+	if !first.Available || first.FeedVersion != "2.0.0" || first.Error != "" || !first.Window {
 		t.Fatalf("1.0.0 saw %+v\n%s", first, output.String())
 	}
 
@@ -125,7 +144,7 @@ func TestLinuxDesktopUpdateEndToEnd(t *testing.T) {
 	if second.Predecessor != strconv.Itoa(first.PID) {
 		t.Fatalf("2.0.0 named predecessor %q, want 1.0.0's pid %d", second.Predecessor, first.PID)
 	}
-	if second.Available || second.FeedVersion != "2.0.0" || second.Error != "" {
+	if second.Available || second.FeedVersion != "2.0.0" || second.Error != "" || !second.Window {
 		t.Fatalf("2.0.0 saw %+v", second)
 	}
 	waitUntil(t, "2.0.0 to exit", func() bool { return !procalive.Alive(second.PID) })

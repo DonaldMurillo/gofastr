@@ -52,11 +52,14 @@ export GOFASTR_LINUX_TEST_OUTPUT="$output"
 # TestNativeGTKLifetimes alone proves several shell lifetimes share a process.
 # -count=1 also forbids a cached success from standing in for actual
 # graphical execution.
-for test in TestNativeGTKWebKit TestNativeGTKLifetimes TestNativeWindowEffects TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical TestNativeProfile TestNativeTray TestNativeTrayGraphical TestNativeNotifications TestNativeNotificationGraphical TestNativePickersAutomated; do
+for test in TestNativeGTKWebKit TestNativeGTKLifetimes TestNativeWindowEffects TestNativeGoFastrBridge TestNativeActivation TestNativeActivationGraphical TestNativeProfile TestNativeTray TestNativeTrayGraphical TestNativeNotifications TestNativeNotificationGraphical TestNativePickersAutomated TestLinuxDesktopUpdateNative; do
   log="$output/$test.log"
   timeout=90s
+  pkg=./battery/desktop/linux
   linker=()
   case "$test" in
+    # Builds the app twice, installs it, and lets it update and relaunch.
+    TestLinuxDesktopUpdateNative) timeout=300s pkg=./cmd/gofastr/internal/desktopcmd ;;
     TestNativeActivation) timeout=120s ;;
     TestNativeActivationGraphical) timeout=150s ;;
     TestNativeProfile) timeout=240s ;;
@@ -73,7 +76,7 @@ for test in TestNativeGTKWebKit TestNativeGTKLifetimes TestNativeWindowEffects T
     runner+=(xvfb-run --auto-servernum '--server-args=-screen 0 1280x800x24 -nolisten tcp')
   fi
   # bash 3.2 (macOS /bin/bash) reads an empty array as unbound under set -u.
-  "${runner[@]}" go test ./battery/desktop/linux -run "^${test}$" -count=1 -timeout="$timeout" -v ${linker[@]+"${linker[@]}"} \
+  "${runner[@]}" go test "$pkg" -run "^${test}$" -count=1 -timeout="$timeout" -v ${linker[@]+"${linker[@]}"} \
     2>&1 | tee "$log"
   # Missing/renamed tests and t.Skip both make go test exit zero. Require
   # this specific test to pass so CI cannot turn green without exercising it.
