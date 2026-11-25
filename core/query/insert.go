@@ -38,7 +38,12 @@ func (ib *InsertBuilder) Returning(cols ...string) *InsertBuilder {
 }
 
 // Build produces the final parameterized SQL and argument slice.
+// It panics if the number of columns and values differ.
 func (ib *InsertBuilder) Build() (string, []any) {
+	if len(ib.columns) != len(ib.values) {
+		panic(fmt.Sprintf("query: INSERT %s has mismatched Columns and Values counts (%d columns, %d values)", ib.table, len(ib.columns), len(ib.values)))
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("INSERT INTO ")

@@ -23,6 +23,14 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
+var rpcSource = func() string {
+	raw, err := modulesFS.ReadFile("src/rpc.js")
+	if err != nil {
+		panic(err)
+	}
+	return mediatype.WithJSONResponseCheck(string(raw))
+}()
+
 var (
 	bundleOnce  sync.Once
 	bundleData  string
@@ -248,16 +256,16 @@ func loadModules() {
 		if !strings.HasSuffix(n, ".js") {
 			continue
 		}
+		name := strings.TrimSuffix(n, ".js")
+		if name == "rpc" {
+			modulesData[name] = minify.ServedJS(rpcSource)
+			continue
+		}
 		raw, err := fs.ReadFile(modulesFS, "src/"+n)
 		if err != nil {
 			continue
 		}
-		name := strings.TrimSuffix(n, ".js")
-		source := string(raw)
-		if name == "rpc" {
-			source = mediatype.WithJSONResponseCheck(source)
-		}
-		modulesData[name] = minify.ServedJS(source)
+		modulesData[name] = minify.ServedJS(string(raw))
 	}
 }
 
