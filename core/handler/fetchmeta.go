@@ -134,14 +134,18 @@ func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target
 	}
-	path, query, _ := strings.Cut(target, "?")
+	beforeFragment, fragment := target, ""
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		beforeFragment, fragment = target[:i], target[i:]
+	}
+	path, query, _ := strings.Cut(beforeFragment, "?")
 	if values, err := url.ParseQuery(query); err == nil && values.Has(SameSiteHopParam) {
 		return target
 	}
 	if query == "" {
-		return path + "?" + SameSiteHopParam + "=1"
+		return path + "?" + SameSiteHopParam + "=1" + fragment
 	}
-	return target + "&" + SameSiteHopParam + "=1"
+	return beforeFragment + "&" + SameSiteHopParam + "=1" + fragment
 }
 
 type sessionRefusalKey struct{}

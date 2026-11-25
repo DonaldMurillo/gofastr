@@ -26,6 +26,10 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Same-site hops preserve URL fragments and stop after one reload.** For
+  clients without `Sec-Fetch-Site`, the hop marker now goes in the query
+  before the fragment, so the server sees it on the reload.
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
