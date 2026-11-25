@@ -134,6 +134,8 @@ func TestEntityFormDefaultsReadLikeEntityUI(t *testing.T) {
 		{framework.FieldDeclaration{Type: "timestamp", Default: day.Add(15250 * time.Millisecond)}, `Value: "2026-01-02T07:30:15.250", Step: "0.001"`},
 		{framework.FieldDeclaration{Type: "json", Default: map[string]any{"a": 1.0, "b": []any{"x"}}}, `Value: "{\"a\":1,\"b\":[\"x\"]}"`},
 		{framework.FieldDeclaration{Type: "json", Default: []any{1.0, "x"}}, `Value: "[1,\"x\"]"`},
+		{framework.FieldDeclaration{Type: "json", Default: map[string]string{"theme": "light"}}, `Value: "{\"theme\":\"light\"}"`},
+		{framework.FieldDeclaration{Type: "json", Default: []string{"light", "dark"}}, `Value: "[\"light\",\"dark\"]"`},
 		{framework.FieldDeclaration{Type: "string"}, ``},
 		{framework.FieldDeclaration{Type: "image", Default: "uploads/a.png"}, ``},
 	} {

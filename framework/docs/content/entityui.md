@@ -63,6 +63,7 @@ appUI = appUI.WithCreatePath(createPath)
 Returning `false` hides create links for that entity. Use `WithRecordPath` to customize record URLs and `WithAPIPath` to customize write endpoints.
 - **Missing route detection:** the first time a list renders record links pointing at an unregistered route, entityui logs a warning (`entityui: list rows link to a path no screen serves`). Pass `.NoLinks()` to disable row links.
 - **Form wire names:** form inputs submit using the CRUD handler's JSON wire key (`WireName` or default camelCase, e.g., `addressLine1` for `address_line_1`), so validation errors bind directly back to each field.
+- **JSON defaults:** create forms render JSON defaults as JSON text. They preserve pre-encoded JSON and serialize typed Go maps and slices.
 - **Server-owned columns:** `Scope.OwnerField`, `MultiTenant` tenant columns, auto-generated primary keys, and state/stamp fields never render as editable inputs. Caller-assigned primary keys (composite keys or required non-auto keys) render on Create, become read-only on Record, and clear on Duplicate.
 
 ## List screens
