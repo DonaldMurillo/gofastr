@@ -66,11 +66,13 @@ func resolvedWatchPath(path string) string {
 	if err != nil {
 		return path
 	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return abs
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
 	}
-	return resolved
+	if parent := filepath.Dir(abs); parent != abs {
+		return filepath.Join(resolvedWatchPath(parent), filepath.Base(abs))
+	}
+	return abs
 }
 
 func (m *mtimeMap) scan(dirs []string) map[string]time.Time {

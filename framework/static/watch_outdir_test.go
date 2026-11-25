@@ -101,3 +101,23 @@ func assertWatchIgnoresOutput(t *testing.T, mode string) {
 		t.Fatalf("rebuilds kept coming with no source edit (%d, then %d): Watch is reading its own OutDir as a source", settled, n)
 	}
 }
+
+// TestWatchSkipResolvesMissingOutDir: Watch computes its OutDir skip
+// once, and OutDir may not exist yet (the first Build failed before it
+// made the directory). The skip must still use the resolved spelling the
+// walk sees, or the later output reads as a source.
+func TestWatchSkipResolvesMissingOutDir(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "site-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resolvedWatchPath(filepath.Join(link, "_out", "nested"))
+	if want := filepath.Join(resolvedReal, "_out", "nested"); got != want {
+		t.Fatalf("resolvedWatchPath = %q, want %q", got, want)
+	}
+}
