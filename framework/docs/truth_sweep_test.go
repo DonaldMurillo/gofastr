@@ -11,6 +11,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
+func TestStaticExportDocsNameMarkdownIndex(t *testing.T) {
+	doc, err := Get("static-export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, assets, found := strings.Cut(string(doc), "**Assets & metadata:**")
+	assets, _, _ = strings.Cut(assets, "\n")
+	if !found || !strings.Contains(assets, "`/llm-pages.md`") || strings.Contains(assets, "`/llms.txt`") {
+		t.Fatalf("the generated asset list must name /llm-pages.md: %s", assets)
+	}
+}
+
 func TestSDKStaticExportStagesDownloadURLs(t *testing.T) {
 	doc := readDoc(t, "sdk.md")
 	_, recipe, found := strings.Cut(sectionAfter(t, doc, "### Static export", 2000), "```sh\n")
