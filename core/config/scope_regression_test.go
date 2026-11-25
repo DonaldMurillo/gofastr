@@ -47,47 +47,85 @@ func TestDocumentedValidationTags(t *testing.T) {
 	}
 }
 
-func TestRepeatedFloatBounds(t *testing.T) {
-	for _, order := range []struct {
-		name string
-		cfg  any
+func TestRepeatedBounds(t *testing.T) {
+	for _, kind := range []struct {
+		name                    string
+		strictFirst, strictLast any
+		below, min, max, above  string
+		minBound, maxBound      string
 	}{
-		{"strict-first", &struct {
-			Limit float64 `validate:"min=0.5,max=2.5,min=0,max=3"`
-		}{}},
-		{"strict-last", &struct {
-			Limit float64 `validate:"min=0,max=3,min=0.5,max=2.5"`
-		}{}},
+		{
+			name: "string",
+			strictFirst: &struct {
+				Limit string `validate:"min=2,max=3,min=1,max=4"`
+			}{},
+			strictLast: &struct {
+				Limit string `validate:"min=1,max=4,min=2,max=3"`
+			}{},
+			below: "é", min: "éé", max: "ééé", above: "éééé",
+			minBound: "2 characters", maxBound: "3 characters",
+		},
+		{
+			name: "int",
+			strictFirst: &struct {
+				Limit int `validate:"min=2,max=3,min=1,max=4"`
+			}{},
+			strictLast: &struct {
+				Limit int `validate:"min=1,max=4,min=2,max=3"`
+			}{},
+			below: "1", min: "2", max: "3", above: "4",
+			minBound: "2", maxBound: "3",
+		},
+		{
+			name: "duration",
+			strictFirst: &struct {
+				Limit time.Duration `validate:"min=2s,max=3s,min=1s,max=4s"`
+			}{},
+			strictLast: &struct {
+				Limit time.Duration `validate:"min=1s,max=4s,min=2s,max=3s"`
+			}{},
+			below: "1s", min: "2s", max: "3s", above: "4s",
+			minBound: "2s", maxBound: "3s",
+		},
+		{
+			name: "float",
+			strictFirst: &struct {
+				Limit float64 `validate:"min=0.5,max=2.5,min=0,max=3"`
+			}{},
+			strictLast: &struct {
+				Limit float64 `validate:"min=0,max=3,min=0.5,max=2.5"`
+			}{},
+			below: "0.25", min: "0.5", max: "2.5", above: "2.75",
+			minBound: "0.5", maxBound: "2.5",
+		},
 	} {
-		for _, tc := range []struct {
-			value string
-			want  string
+		for _, order := range []struct {
+			name string
+			cfg  any
 		}{
-			{"0.25", "must be at least 0.5"},
-			{"0.5", ""},
-			{"2.5", ""},
-			{"2.75", "must be at most 2.5"},
+			{"strict-first", kind.strictFirst},
+			{"strict-last", kind.strictLast},
 		} {
-			t.Run(order.name+"/"+tc.value, func(t *testing.T) {
-				err := Load(order.cfg, MapSource{"LIMIT": tc.value})
-				if tc.want == "" {
-					if err != nil {
-						t.Fatalf("Load() = %v, want success", err)
+			for _, tc := range []struct {
+				name, value, want string
+			}{
+				{"below", kind.below, "must be at least " + kind.minBound},
+				{"min", kind.min, ""},
+				{"max", kind.max, ""},
+				{"above", kind.above, "must be at most " + kind.maxBound},
+			} {
+				t.Run(kind.name+"/"+order.name+"/"+tc.name, func(t *testing.T) {
+					err := Load(order.cfg, MapSource{"LIMIT": tc.value})
+					if tc.want == "" {
+						if err != nil {
+							t.Fatalf("Load(%q) = %v, want success", tc.value, err)
+						}
+					} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+						t.Fatalf("Load(%q) = %v, want error containing %q", tc.value, err, tc.want)
 					}
-				} else if err == nil || !strings.Contains(err.Error(), tc.want) {
-					t.Fatalf("Load() = %v, want error containing %q", err, tc.want)
-				}
-			})
+				})
+			}
 		}
-	}
-}
-
-func TestRepeatedStringBoundsKeepLast(t *testing.T) {
-	var c struct {
-		Name string `validate:"min=4,max=2,min=1,max=5"`
-	}
-	if err := Load(&c, MapSource{"NAME": "abc"}); err != nil {
-		t.Fatalf("Load() = %v, want success under last string bounds", err)
 	}
 }
 
