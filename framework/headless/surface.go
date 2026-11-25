@@ -182,8 +182,8 @@ var interactiveTags = map[string]bool{
 }
 
 // holdsInteractiveContent reports whether markup opens an element an <a>
-// may not hold, or gives any element a tabindex or contenteditable
-// attribute, with a value or without one. It tokenizes the markup, so a
+// may not hold, an image with a usemap, or gives any element a tabindex
+// or contenteditable attribute, with a value or without one. It tokenizes the markup, so a
 // quoted ">" or an attribute value that names one of these does not
 // mislead it, and words in the text are only text.
 func holdsInteractiveContent(markup string) bool {
@@ -200,7 +200,10 @@ func holdsInteractiveContent(markup string) bool {
 			for hasAttr {
 				var key []byte
 				key, _, hasAttr = z.TagAttr()
-				if k := string(key); k == "tabindex" || k == "contenteditable" {
+				k := string(key)
+				// An image with a usemap is interactive content (HTML's
+				// content categories); a plain image is not.
+				if k == "tabindex" || k == "contenteditable" || (k == "usemap" && string(name) == "img") {
 					return true
 				}
 			}

@@ -58,7 +58,7 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 // ordinary phrasing through, <abbr> and <aside> included.
 func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
 	for _, text := range []string{`Set <code>tabindex</code> on it`, `The contenteditable attribute`,
-		`<span title="names tabindex here">x</span>`, `<abbr title="a > button">x</abbr>`} {
+		`<span title="names tabindex here">x</span>`, `<abbr title="a > button">x</abbr>`, `<img src="/i.png" alt="">`} {
 		got := string(Card(CardProps{TitleContent: render.HTML(text), TitleHref: "/b"}, nil))
 		if !strings.Contains(got, `href="/b"`) {
 			t.Errorf("a TitleContent naming an attribute in its text lost its title link:\n%s", got)
@@ -74,7 +74,7 @@ func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
 		`<button type="button">Details</button>`, `<input type="checkbox">`, `<span tabindex="0">x</span>`,
 		`<span contenteditable="true">x</span>`, `<audio controls src="/a.mp3"></audio>`,
 		`<span tabindex>x</span>`, `<span contenteditable>x</span>`, `<span tabindex/>`, "<span class=\"k\" tabindex\n>x</span>",
-		`<span title="1 > 0" tabindex="0">x</span>`, `<SPAN TabIndex="0">x</SPAN>`} {
+		`<span title="1 > 0" tabindex="0">x</span>`, `<SPAN TabIndex="0">x</SPAN>`, `<img src="/m.png" alt="map" usemap="#m">`} {
 		func() {
 			defer func() {
 				if recover() == nil {
