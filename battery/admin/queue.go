@@ -95,14 +95,18 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	}
 	_, canReplay := b.replayable()
 	if failed := stats["failed"]; canReplay && failed > 0 {
+		confirm := i18nui.AdminReplayAllConfirm.Text(ctx)
+		if failed > maxReplayAll {
+			confirm = i18nui.AdminReplayAllBounded.Text(ctx, map[string]any{"n": i18n.Number(ctx, maxReplayAll)})
+		}
 		header = ui.PageHeader(ui.PageHeaderConfig{
 			Title:    i18nui.AdminQueue.Text(ctx),
 			Subtitle: i18nui.AdminQueueSub.Text(ctx),
 			Actions: b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay_all", page: page,
-				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": failed}),
+				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": i18n.Number(ctx, min(failed, maxReplayAll))}),
 				variant: ui.ButtonSecondary,
-				confirm: i18nui.AdminReplayAllConfirm.Text(ctx),
+				confirm: confirm,
 			}),
 		})
 	}

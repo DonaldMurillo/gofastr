@@ -586,6 +586,7 @@
       "refused": "No puedes hacer eso.",
       "replay": "Repetir",
       "replayAll": "Repetir {{n}} fallidos",
+      "replayAllBounded": "¿Repetir {{n}} trabajos fallidos? Quedarán más trabajos fallidos.",
       "replayAllConfirm": "¿Repetir todos los trabajos fallidos?",
       "replayAllNothing": "No se volvió a poner en cola ningún trabajo fallido.",
       "replayDuplicate": "Ya hay en cola un trabajo más reciente con la misma clave única.",
