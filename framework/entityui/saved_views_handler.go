@@ -197,30 +197,13 @@ func writeSavedViewError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func withSavedParam(back, key, id string) string {
-	path, query := splitBack(back)
-	q := parseBackQuery(query)
-	q.Set(param(key, "saved"), id)
-	return listHref(path, q)
+	return handler.WithQuery(back, func(q url.Values) {
+		q.Set(param(key, "saved"), id)
+	})
 }
 
 func withoutSavedParam(back, key string) string {
-	path, query := splitBack(back)
-	q := parseBackQuery(query)
-	q.Del(param(key, "saved"))
-	return listHref(path, q)
-}
-
-func splitBack(back string) (path, query string) {
-	if i := strings.IndexByte(back, '?'); i >= 0 {
-		return back[:i], back[i+1:]
-	}
-	return back, ""
-}
-
-func parseBackQuery(query string) url.Values {
-	q, err := url.ParseQuery(query)
-	if err != nil {
-		return url.Values{}
-	}
-	return q
+	return handler.WithQuery(back, func(q url.Values) {
+		q.Del(param(key, "saved"))
+	})
 }

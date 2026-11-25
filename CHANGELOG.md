@@ -36,6 +36,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Redirect query parameters stay before URL fragments.** Added
+  `handler.WithQuery` and routed `battery/auth` form-error and policy
+  redirects (`SetDefaultLoginErrorPath`, `SetDefaultRegisterErrorPath`,
+  `WithRedirect`), `battery/admin` login redirects (`LoginPath`), and
+  `framework/entityui` saved-view redirects through it, so query parameters
+  are no longer appended inside `#fragment` or dropped
+  ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
+
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
   Correct or remove the conflicting bounds before upgrading
