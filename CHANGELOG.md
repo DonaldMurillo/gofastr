@@ -26,6 +26,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
+  honors an existing `csp-endpoint` on any line.
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject

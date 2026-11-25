@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,7 @@ func TestReportingEndpointsKeepsOuterEndpoints(t *testing.T) {
 	ours := CSPReportEndpoint + `="` + CSPReportPath + `"`
 	for _, tc := range []struct{ outer, want string }{
 		{"", ours},
+		{" \t ", ours},
 		{`nel="https://r.example/nel"`, `nel="https://r.example/nel", ` + ours},
 		{CSPReportEndpoint + `="https://r.example/csp"`, CSPReportEndpoint + `="https://r.example/csp"`},
 		// A comma inside a quoted URL is not a member boundary.
@@ -81,6 +83,32 @@ func TestReportingEndpointsKeepsOuterEndpoints(t *testing.T) {
 		if got := w.Header().Get("Reporting-Endpoints"); got != tc.want {
 			t.Errorf("outer %q: Reporting-Endpoints = %q, want %q", tc.outer, got, tc.want)
 		}
+	}
+}
+
+func TestReportingEndpointsKeepsLines(t *testing.T) {
+	const header = "Reporting-Endpoints"
+	const first = `nel="https://r.example/nel"`
+	ours := CSPReportEndpoint + `="` + CSPReportPath + `"`
+	for _, tc := range []struct {
+		name, second string
+		want         []string
+	}{
+		{"append when missing", `extra="https://r.example/a,csp-endpoint=x"`, []string{first, `extra="https://r.example/a,csp-endpoint=x"`, ours}},
+		{"keep later declaration", `extra="/extra", csp-endpoint="/custom"`, []string{first, `extra="/extra", csp-endpoint="/custom"`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := SecurityHeaders(SecurityHeadersConfig{CSPReportURI: CSPReportPath})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			w := httptest.NewRecorder()
+			w.Header().Add(header, first)
+			w.Header().Add(header, tc.second)
+			h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+			if got := w.Result().Header.Values(header); !slices.Equal(got, tc.want) {
+				t.Errorf("%s = %q, want %q", header, got, tc.want)
+			}
+		})
 	}
 }
 
