@@ -31,6 +31,10 @@ type BreadcrumbsProps struct {
 	Label string
 	// Items are the steps, shallowest first. Required.
 	Items []Breadcrumb
+	// SeparatorsInCSS renders no separator element: the styling layer
+	// draws the separators as generated content, so they stay out of the
+	// trail's text when it is selected and copied.
+	SeparatorsInCSS bool
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -65,7 +69,7 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 		current := c.Current || (c.Href == "" && i == len(p.Items)-1)
 		refused := !current && href == ""
 		kids := []render.HTML{}
-		if i > 0 {
+		if i > 0 && !p.SeparatorsInCSS {
 			kids = append(kids, b.El("span", PartBreadcrumbSeparator,
 				Attrs(map[string]string{"aria-hidden": "true"}), render.Text("/")))
 		}
@@ -120,6 +124,14 @@ func init() {
 				HTML: Breadcrumbs(BreadcrumbsProps{Items: []Breadcrumb{
 					{Text: "Home", Href: "/"},
 					{Text: "Here"},
+				}}, s),
+			}, {
+				Name: "separators drawn by the styling layer",
+				Why:  "with SeparatorsInCSS the list holds only the steps, and the kit's sheet draws each slash as generated content with empty alternative text, so a copied trail is its words and a screen reader hears no slash",
+				HTML: Breadcrumbs(BreadcrumbsProps{SeparatorsInCSS: true, Items: []Breadcrumb{
+					{Text: "Home", Href: "/"},
+					{Text: "Docs", Href: "/docs/"},
+					{Text: "Entities"},
 				}}, s),
 			}, {
 				Name: "a page linked inside its own trail",

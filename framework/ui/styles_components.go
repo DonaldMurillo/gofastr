@@ -1373,9 +1373,10 @@ func dataTableCSS(_ style.Theme) string {
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
    one source and cannot disagree. The markup carries no glyph. A
-   sortable column at rest shows the up-down chevrons, quiet; the
-   sorted one shows its arrow at full strength. */
-[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after {
+   sortable column at rest (a sort link, no aria-sort) shows the
+   up-down chevrons, quiet; the sorted one shows its arrow at full
+   strength. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table th .fui-data-table__sort::after {
   content: "";
   flex: none;
   inline-size: var(--ui-data-table-sort-icon-size, 14px);
@@ -1388,7 +1389,7 @@ func dataTableCSS(_ style.Theme) string {
 /* A mask icon is painted by its background, which forced colours turn
    to Canvas; opting out and painting CanvasText keeps it visible. */
 @media (forced-colors: active) {
-  [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after { forced-color-adjust: none; background: CanvasText; }
+  [data-cui-comp="ui-data-table"] .fui-data-table__table th .fui-data-table__sort::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   opacity: 1;

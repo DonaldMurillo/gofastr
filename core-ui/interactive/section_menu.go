@@ -308,7 +308,7 @@ func sectionMenuCSS(_ style.Theme) string {
   display: block;
   font-size: var(--text-sm, 0.875rem);
 }
-[data-cui-comp="cui-section-menu"] [hidden] { display: none !important; }
+[data-cui-comp="cui-section-menu"] [hidden]:not([hidden="until-found" i]) { display: none !important; }
 
 /* ── Body / groups / links (shared by the rail and the sheet) ─────── */
 [data-cui-comp="cui-section-menu"] .cui-section-menu__body { display: block; }

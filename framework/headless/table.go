@@ -232,7 +232,7 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 	if dir == "" {
 		dir = SortAsc
 	}
-	next, ariaSort := SortAsc, "none"
+	next, ariaSort := SortAsc, ""
 	if p.SortBy != "" && col.Key == p.SortBy {
 		if dir == SortDesc {
 			ariaSort, next = "descending", SortAsc
@@ -358,7 +358,7 @@ func init() {
 			s := k.Classes
 			return []Case{{
 				Name: "sorted, carrying a query, one header-less sortable column",
-				Why: "aria-sort on the active column and none on the rest, the href's sort and dir replaced rather than " +
+				Why: "aria-sort on the active column alone, the href's sort and dir replaced rather than " +
 					"appended so the query the screen carries survives a sort, and the header-less column's anchor named from " +
 					"Strings — an anchor with no text is a control with no name",
 				HTML: Table(TableProps{

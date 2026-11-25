@@ -1,12 +1,12 @@
 // headless-sortablelist: the behaviour module for this package's
-// sortable lists — drag-and-drop reorder plus the keyboard model
-// (Space grabs, Arrow Up/Down moves within the column, Arrow
-// Left/Right crosses to an adjacent column of the same group, the one
-// on screen to that side in RTL, Space drops, Escape or focus leaving
-// the row cancels, a new grab cancels the old) — and the server round
-// trip the pattern shipped, with the server authoritative: non-2xx
-// reverts the DOM to the last order the server confirmed, unless a
-// newer commit on the list has gone out since.
+// sortable lists: the keyboard model (Space grabs, Arrow Up/Down
+// moves within the column, Arrow Left/Right crosses to an adjacent
+// column of the same group, the one on screen to that side in RTL,
+// Space drops, Escape or focus leaving the row cancels, a new grab
+// cancels the old) and the server round trip every move ends in, the
+// pointer drag's too (headless-sortabledrag), with the server
+// authoritative: non-2xx reverts the DOM to the last order the server
+// confirmed, unless a newer commit on the list has gone out since.
 //
 // The commit contract:
 //   - a same-container reorder POSTs order=<comma-separated keys>,
@@ -34,7 +34,7 @@
 // attribute the component rendered from its Strings, so a translated
 // page announces in its own language; the {{label}}/{{list}}/{{position}}
 // tokens are written in when the move has happened. No inline style
-// is ever written; the grabbed and dragging states are classes.
+// is ever written; the grabbed, dragging and drop states are classes.
 (function () {
   'use strict';
   const NAME = 'headless-sortablelist';
@@ -279,66 +279,6 @@
     if (src && prev) prev.forEach((r) => src.appendChild(r));
   }
 
-  // ── Drag and drop ──────────────────────────────────────────────────
-  // dragPrev: the source list's rows at dragstart; dropped: a drop
-  // landed on a list this drag.
-  let dragSrc = null, dragPrev = null, dragSrcList = null, dropped = false;
-
-  document.addEventListener('dragstart', (ev) => {
-    const item = ev.target.closest?.('[data-hui-sortable-item]');
-    if (!item) return;
-    dragSrc = item;
-    dragSrcList = listOf(item);
-    dragPrev = rowsOf(dragSrcList);
-    dropped = false;
-    item.classList.add('is-dragging');
-    if (ev.dataTransfer) {
-      ev.dataTransfer.effectAllowed = 'move';
-      ev.dataTransfer.setData('text/plain', attr(item, 'data-hui-sort-key'));
-    }
-  });
-
-  // dropTarget: the list a drag over ev.target may land in, or null.
-  function dropTarget(ev) {
-    const t = ev.target.closest?.('[data-hui-sortable]');
-    const src = listOf(dragSrc);
-    return t && (t === src || canCross(t, src)) ? t : null;
-  }
-
-  document.addEventListener('dragover', (ev) => {
-    if (!dragSrc) return;
-    const overList = dropTarget(ev);
-    if (!overList) return;
-    ev.preventDefault();
-    const over = ev.target.closest('[data-hui-sortable-item]');
-    if (over === dragSrc) return;
-    if (over) {
-      const rect = over.getBoundingClientRect();
-      const after = (ev.clientY - rect.top) > rect.height / 2;
-      over.parentNode.insertBefore(dragSrc, after ? over.nextSibling : over);
-    } else {
-      // Empty column: no row to hit-test, the list itself takes it.
-      overList.appendChild(dragSrc);
-    }
-  });
-
-  // dragover moves the row live, so only a drop on a list keeps the
-  // move. Escape mid-drag, or a release anywhere else, fires dragend
-  // with no drop first, and the row goes back uncommitted.
-  document.addEventListener('drop', (ev) => {
-    if (!dragSrc || !dropTarget(ev)) return;
-    ev.preventDefault();
-    dropped = true;
-  });
-
-  document.addEventListener('dragend', () => {
-    if (!dragSrc) return;
-    dragSrc.classList.remove('is-dragging');
-    if (dropped) settle(dragSrc, dragSrcList, dragPrev);
-    else putBack(dragSrcList, dragPrev);
-    dragSrc = dragPrev = dragSrcList = null;
-  });
-
   // ── Keyboard ───────────────────────────────────────────────────────
   let kbGrab = null, kbPrev = null, kbSrcList = null; // kbPrev: the source list's rows at grab
 
@@ -346,7 +286,6 @@
   function kbEnd(commitIt) {
     const t = kbGrab;
     t.classList.remove('is-grabbed');
-    t.removeAttribute('aria-grabbed');
     if (commitIt) settle(t, kbSrcList, kbPrev);
     else putBack(kbSrcList, kbPrev);
     kbGrab = kbPrev = kbSrcList = null;
@@ -372,6 +311,9 @@
 
     if (ev.key === ' ' || ev.key === 'Spacebar') {
       ev.preventDefault();
+      // No grab starts under a held pointer drag: it would outlive the
+      // drop and its Escape would revert the committed move.
+      if (NS._sortable.dragging) return;
       if (kbGrab === t) { kbEnd(true); return; }
       // A grab still held on another row is cancelled first, so the
       // next drop commits only its own move.
@@ -380,7 +322,6 @@
       kbSrcList = listOf(t);
       kbPrev = rowsOf(kbSrcList);
       t.classList.add('is-grabbed');
-      t.setAttribute('aria-grabbed', 'true');
       announce(kbSrcList, 'data-hui-sortable-s-grabbed', { label: attr(t, 'aria-label') });
       return;
     }
@@ -426,6 +367,9 @@
   // per-root pass; the scanner exists because the kernel's contract
   // hands every inserted subtree to the module.
   function scan() {}
+  // The pointer drag (headless-sortabledrag, which requires this
+  // module) ends its drags through the same commit and announcements.
+  NS._sortable = { settle, canCross, announce, listOf, rowsOf, cancelGrab: () => kbGrab && kbEnd(false) };
   NS._moduleScanners = NS._moduleScanners || {};
   NS._moduleScanners[NAME] = scan;
 })();

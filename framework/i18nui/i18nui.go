@@ -198,6 +198,7 @@ var (
 	CopyCopy        = i18n.Define("ui.copy.copy", "Copy")
 	CopyCopied      = i18n.Define("ui.copy.copied", "Copied")
 	CopyFailed      = i18n.Define("ui.copy.failed", "Could not copy to the clipboard")
+	CopyNotCopied   = i18n.Define("ui.copy.notCopied", "Not copied")
 	CopyToClipboard = i18n.Define("ui.copy.toClipboard", "Copy to clipboard")
 	CopyLink        = i18n.Define("ui.copy.link", "Copy link")
 	DrawerOpenPage  = i18n.Define("ui.drawer.open_page", "Open as page")
@@ -298,6 +299,7 @@ var (
 	HuiCarouselGoToSlide    = i18n.Define("ui.carousel.goToSlide", "Go to slide {{n}}")
 	HuiCarouselRole         = i18n.Define("ui.carousel.role", "carousel")
 	HuiCarouselSlideRole    = i18n.Define("ui.carousel.slideRole", "slide")
+	HuiCarouselPause        = i18n.Define("ui.carousel.pause", "Pause slides")
 	HuiPaneSecondary        = i18n.Define("ui.paneHost.secondary", "Secondary")
 	HuiPaneTertiary         = i18n.Define("ui.paneHost.tertiary", "Tertiary")
 
@@ -349,6 +351,7 @@ var (
 	CodeBlockLines      = i18n.Define("ui.codeBlock.lines", "{{n}} lines")
 	CodeBlockCopy       = i18n.Define("ui.codeBlock.copy", "copy")
 	CodeBlockCopied     = i18n.Define("ui.codeBlock.copied", "copied")
+	CodeBlockNotCopied  = i18n.Define("ui.codeBlock.notCopied", "not copied")
 	CodeBlockCopyOf     = i18n.Define("ui.codeBlock.copyOf", "copy {{what}}")
 )
 
