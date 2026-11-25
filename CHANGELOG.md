@@ -36,9 +36,8 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
-- `App.SweepErasureRetention`, auto-migration, schema diffing and seeding now
-  stop probing the database dialect when their caller's context ends.
-  See [Migrations](framework/docs/content/migrations.md).
+- **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
+  honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
@@ -59,6 +58,9 @@ few lines, and link the PR or the docs page for the rest.
   screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
   longer emit a second synthesized `Article` JSON-LD block
   ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
+- `App.SweepErasureRetention`, auto-migration, schema diffing and seeding now
+  stop probing the database dialect when their caller's context ends.
+  See [Migrations](framework/docs/content/migrations.md).
 
 #### Fixes that may need a change in your app
 
