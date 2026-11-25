@@ -1,0 +1,7 @@
+version: v0.99.1
+title: Insert builder validation
+notes:
+  - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
+    breaking: true
+    guidance: "Pass one value per column in the same order, or leave both lists empty for DEFAULT VALUES."
+    nodetect: "the column and value counts may come from slices assembled at runtime"
