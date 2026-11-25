@@ -51,11 +51,12 @@
 
   const VERSION = 'data-hui-sortable-version';
 
-  // peers: the lists a move can cross between, the list alone when it
-  // has no group.
-  function peers(list) {
+  // peers: lists of the same group, excluding lists inside the moving row.
+  function peers(list, item) {
     const group = attr(list, 'data-hui-sortable-group');
-    return group ? Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(group) + '"]')) : [list];
+    if (!group) return [list];
+    const lists = Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(group) + '"]'));
+    return item ? lists.filter((peer) => !item.contains(peer)) : lists;
   }
 
   // renewed: the version a response says the server holds now, '' when
@@ -70,9 +71,8 @@
     return tpl.replace(/\{\{(label|list|position)\}\}/g, (_, k) => String(map[k] ?? ''));
   }
 
-  // canCross: over and src are different lists of the same group.
-  function canCross(overList, srcList) {
-    return !!overList && overList !== srcList && peers(srcList).includes(overList);
+  function canCross(overList, srcList, item) {
+    return !!overList && overList !== srcList && peers(srcList, item).includes(overList);
   }
 
   // CSRF: forward meta[name="csrf-token"] via X-CSRF-Token so the
@@ -354,7 +354,7 @@
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       ev.preventDefault();
       const list = listOf(t);
-      const cols = peers(list);
+      const cols = peers(list, t);
       const idx = cols.indexOf(list);
       if (idx < 0) return;
       // The columns run in document order along the inline axis: in a
