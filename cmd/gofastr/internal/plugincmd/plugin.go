@@ -576,9 +576,10 @@ func runPluginUntrust(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	projDir := wd
-	if projCfg, err := cliplugin.DiscoverProjectConfig(wd); err == nil && projCfg.ProjectDir != "" {
-		projDir = projCfg.ProjectDir
+	projCfg, _ := cliplugin.DiscoverProjectConfig(wd)
+	projDir := projCfg.ProjectDir
+	if projDir == "" {
+		projDir = wd
 	}
 	canonProj := cliplugin.CanonicalProjectDir(projDir)
 
