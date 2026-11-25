@@ -275,6 +275,8 @@ reports.WithLoading(&app.Loading{
 
 ### View transitions
 
+Set `Transitions` and `TransitionFor` on a primary or secondary outlet to pick a transition from a named set using the request context. An empty or unknown pick leaves that outlet without a transition.
+
 Declare typed transitions on `Primary` or outlets (`app.Slide(app.Right, d)`, `app.Crossfade(d)`, `app.FadeThrough(d)`, `app.Instant()`, or root `app.ViewTransitionPresetCSS("fade")`). Animations respect `prefers-reduced-motion` and are skipped gracefully if unsupported:
 
 <!-- gofastr:compile
