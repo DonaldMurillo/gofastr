@@ -597,7 +597,7 @@
   // shows inside the shell instead of toasting). Anything else cannot,
   // and its fetch throws so the toast names the status, a 200 too:
   // its text has no <main>, so it would swap in a blank screen.
-  const htmlOnly = (r) => { if (!(r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html')) throw new Error(`HTTP ${r.status}`); };
+  /* gofastr:html-response-check */
 
   /** Fetch page, swap at the deepest shared layer. Caches for instant back-nav.
       from names the origin route when the caller already moved the URL,
