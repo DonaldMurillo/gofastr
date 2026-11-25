@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/internal/mediatype"
 )
 
 //go:embed frag/*.js
@@ -21,6 +22,14 @@ var colorSchemeFS embed.FS
 
 //go:embed src/*.js
 var modulesFS embed.FS
+
+var rpcSource = func() string {
+	raw, err := modulesFS.ReadFile("src/rpc.js")
+	if err != nil {
+		panic(err)
+	}
+	return mediatype.WithJSONResponseCheck(string(raw))
+}()
 
 var (
 	bundleOnce  sync.Once
@@ -247,11 +256,15 @@ func loadModules() {
 		if !strings.HasSuffix(n, ".js") {
 			continue
 		}
+		name := strings.TrimSuffix(n, ".js")
+		if name == "rpc" {
+			modulesData[name] = minify.ServedJS(rpcSource)
+			continue
+		}
 		raw, err := fs.ReadFile(modulesFS, "src/"+n)
 		if err != nil {
 			continue
 		}
-		name := strings.TrimSuffix(n, ".js")
 		modulesData[name] = minify.ServedJS(string(raw))
 	}
 }

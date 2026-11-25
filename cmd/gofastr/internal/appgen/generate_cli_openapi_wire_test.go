@@ -23,6 +23,36 @@ type oaRecorder struct {
 	header []string
 }
 
+func TestOpenAPICLIMixedCaseJSONResponse(t *testing.T) {
+	bin := buildOAPets(t, oaTempModule(t), `{"openapi":"3.0.3","paths":{"/pets":{"get":{"operationId":"listPets"}}}}`)
+	for _, tc := range []struct {
+		contentType string
+		wantPretty  bool
+	}{
+		{"Application/JSON; charset=utf-8", true},
+		{"application/problem+JSON", true},
+		{"application/json charset=utf-8", true},
+		{"text/plain", false},
+		{"", false},
+	} {
+		t.Run(tc.contentType, func(t *testing.T) {
+			srv := newOARecorder(t, "", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				_, _ = w.Write([]byte(`{"id":7}`))
+			})
+			cmd := exec.Command(bin, "list-pets", "--url", srv.URL)
+			cmd.Env = oaCLIEnv(t)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if pretty := strings.Contains(string(out), `"id": 7`); pretty != tc.wantPretty {
+				t.Errorf("pretty = %v, want %v: %s", pretty, tc.wantPretty, out)
+			}
+		})
+	}
+}
+
 func newOARecorder(t *testing.T, header string, h http.HandlerFunc) *oaRecorder {
 	rec := &oaRecorder{}
 	rec.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -2,7 +2,7 @@ primitive: i18n.urlprefix
 summary: The response rewrite that keeps a reader in their locale - Path, Refresh and HTML put a locale prefix in front of the root-relative navigation URLs a response carries, and Middleware applies them to every response under a prefixed locale.
 code:
   - core-ui/urlprefix/
-  - internal/mediatype/
+  - internal/mediatype/html*.go
 docs:
   - framework/docs/content/i18n.md
   - core-ui/ARCHITECTURE.md

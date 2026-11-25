@@ -19,6 +19,11 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 - **Use:** Direct via `app.Router()`. Start at `core/router/router.go` (`Router`).
 - **Key contracts:** `Param` strips control chars, decoded `/`, and `..` traversal, and panics if the matched pattern declares no wildcard of that name (`handler.Bind` leaves undeclared `path` tags zero so one input struct can serve both `POST /users` and `PUT /users/{id}`). Pre-chain hooks (`SetRouteGate`, `SetServeHook`, `PreRoute`) recover panics themselves since `Recovery` middleware hasn't run yet.
 
+### `core/mediatype`
+- **What:** Case-insensitive media-type checks for HTTP headers.
+- **Use:** Direct when checking an `Accept` or `Content-Type` header. `Fold` lowercases the value without validating it or removing parameters.
+- **Key contracts:** `AcceptsAny` compares an `Accept` field to lowercase media types without ranking parameters or honoring quoted commas. `AcceptRanges` splits the field on commas outside quoted parameters.
+
 ## Real-time
 
 ### `core/stream`
@@ -74,6 +79,7 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 - **What:** Typed struct config loader (`config.Load(&cfg)`) reading `config:`, `default:`, `required:`, `sensitive:`, and `validate:` (`min`, `max`, `oneof`) tags from `EnvSource` or `MapSource`.
 - **Use:** Direct at startup. Start at `core/config/config.go` (`Load`).
 - **Key contracts:** Named nested structs get `SCREAMING_SNAKE_` prefixes; embedded structs promote keys without a prefix (like `encoding/json`); `encoding.TextUnmarshaler` fields bind via `UnmarshalText`; `sensitive` values are redacted from all error strings; integer overflow fails `Load`.
+- **Bounds validation:** Repeated `min` or `max` rules use the highest minimum and lowest maximum, regardless of tag order. Both endpoints are included. String bounds count Unicode code points, not bytes.
 
 ### `core/netguard`
 - **What:** Shared SSRF & origin checks: `IsInternal` (loopback, private, link-local, CGNAT, metadata, IPv4-mapped/NAT64/6to4/Teredo), `GuardedTransport` (ignores `HTTP_PROXY`/`HTTPS_PROXY` so dial-time checks aren't bypassed), `GuardPlainTransport`, `GuardRoundTripper`, `CheckOutboundURL`, `OriginAllowed`, and `IsLoopbackAuthority`.
