@@ -269,7 +269,7 @@ func parseMigration(r io.Reader, dialect Dialect) (*Migration, error) {
 		return nil, fmt.Errorf("migration %q (version %d) has no Up section: the -- +migrate Up directive is missing or misspelled (directives are case-sensitive); refusing a migration whose SQL would be silently discarded", name, version)
 	}
 	if len(splitStatementsWithCommentNesting(preamble.String(), dialect != DialectSQLite)) != 0 {
-		return nil, fmt.Errorf("migration %q (version %d) has SQL outside any section (it would be silently discarded); move it below the -- +migrate Up directive or into Down if it is rollback SQL", name, version)
+		return nil, fmt.Errorf("migration %q (version %d) has SQL outside any section; if not yet applied, move it below -- +migrate Up (or into Down for rollback SQL); if already applied, remove it from this file and put it in a new migration", name, version)
 	}
 
 	return &Migration{

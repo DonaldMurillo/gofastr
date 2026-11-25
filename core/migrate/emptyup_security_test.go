@@ -91,7 +91,8 @@ func TestMigrationRefusesUnsectionedSQL(t *testing.T) {
 			}
 			a, b, recorded := tableExists(t, db, "a"), tableExists(t, db, "b"), upRowRecorded(t, m, 1)
 			if regErr == nil || !strings.Contains(regErr.Error(), "outside any section") ||
-				!strings.Contains(regErr.Error(), "-- +migrate Up") || a || b || recorded {
+				!strings.Contains(regErr.Error(), "if not yet applied, move it below -- +migrate Up (or into Down for rollback SQL)") ||
+				!strings.Contains(regErr.Error(), "if already applied, remove it from this file and put it in a new migration") || a || b || recorded {
 				t.Fatalf("want actionable registration error, neither table, and no record; got register=%v, a=%t, b=%t, recorded=%t",
 					regErr, a, b, recorded)
 			}

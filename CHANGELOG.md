@@ -24,6 +24,16 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: Migration files with SQL before the first section are
+  rejected.** That SQL used to be skipped even when the migration was
+  recorded as applied. If the migration hasn't been applied, move the SQL
+  under `-- +migrate Up` (or `-- +migrate Down` for rollback SQL). If it
+  has already been applied, remove the stray SQL from that file and put
+  it in a new migration. See
+  [Migrations](framework/docs/content/migrations.md#sql-file-format).
+
 ## [0.99.0] - 2026-11-25
 
 ### Added
