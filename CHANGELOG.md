@@ -44,6 +44,8 @@ few lines, and link the PR or the docs page for the rest.
   are no longer appended inside `#fragment` or dropped
   ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
 
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
   panics on a nil interface or emits a `null` script for a typed-nil pointer
   ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
@@ -251,6 +253,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Media-type matching is case-insensitive** for auth login redirects,
+  MCP SSE framing, Kiln's HTML fallback, the dev hold page, OpenAPI CLI
+  JSON pretty-printing, and browser RPC JSON responses.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.

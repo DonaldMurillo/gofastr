@@ -13,6 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/loopback"
 	"github.com/DonaldMurillo/gofastr/core/config"
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
@@ -215,7 +216,7 @@ func (h *devHold) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Retry-After", "1")
 	w.Header().Set("X-Gofastr-Dev", phase)
 	var body string
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+	if strings.Contains(mediatype.Fold(r.Header.Get("Accept")), "text/html") {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		body = holdPage(title, lead, detail, h.idPrefix+fmt.Sprint(gen))
 	} else {

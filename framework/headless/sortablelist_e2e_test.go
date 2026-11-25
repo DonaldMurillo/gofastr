@@ -505,9 +505,19 @@ func TestE2E_Sortable409FiresConflictPath(t *testing.T) {
 // JSON error envelope surfaces its "error" message through the polite
 // live region AND still runs the authoritative refresh.
 func TestE2E_Sortable409ConflictMessageAnnounced(t *testing.T) {
+	t.Run("lowercase", func(t *testing.T) {
+		testSortable409ConflictMessageAnnounced(t, "application/json; charset=utf-8")
+	})
+	t.Run("mixed_case", func(t *testing.T) {
+		testSortable409ConflictMessageAnnounced(t, "Application/JSON; charset=utf-8")
+	})
+}
+
+func testSortable409ConflictMessageAnnounced(t *testing.T, contentType string) {
+	t.Helper()
 	msg := "Cannot move ORB-12 to Done because ORB-9 is incomplete."
 	body := conflictBody(msg)
-	b := conflict409Server(t, "application/json; charset=utf-8", body)
+	b := conflict409Server(t, contentType, body)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
 		t.Fatal("the sortable marker never loaded headless-sortablelist")
