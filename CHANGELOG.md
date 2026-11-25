@@ -27,7 +27,8 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
-  panics on a nil interface or emits a `null` script for a typed-nil pointer.
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
 
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
