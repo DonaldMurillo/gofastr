@@ -36,6 +36,10 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- `App.SweepErasureRetention`, auto-migration, schema diffing and seeding now
+  stop probing the database dialect when their caller's context ends.
+  See [Migrations](framework/docs/content/migrations.md).
+
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
 

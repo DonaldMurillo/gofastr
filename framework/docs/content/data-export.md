@@ -25,6 +25,8 @@ These tools complement — and do **not** replace — native database backups (`
 - Invokes every registered battery and store eraser: auth sessions/tokens/2FA/passkeys, audit log actor references, `featureflag` SQL allowlists, `idempotency` cached responses, `search` documents tagged with `Owner`, and uploaded files.
 - **Tenant caveat (`WithEraseTenant`):** `WithEraseTenant(tenantID)` scopes `MemberSeparator` erasers (such as allowlists), **not** entity rows — entity rows are matched by owner ID alone. Use globally unique user IDs (such as UUIDs) across tenants; if two tenants reuse the same local owner ID, erasing that ID matches rows in both.
 
+The app deletes expired erasure retry records at startup and once an hour. If you run `App.SweepErasureRetention(ctx)` from your own scheduler, cancelling `ctx` also stops the database dialect probe and its retry waits.
+
 ## Stores outside the database
 
 Not every piece of user data lives in a SQL entity table — search indexes (`battery/search`), uploaded blobs (`battery/storage`), Redis caches, or third-party SaaS tools can hold copies. Built-in batteries register their own store erasers automatically (`search.Memory`, SQL search backends, `featureflag`, `idempotency`), and you should register erasers for any custom stores your app introduces.
