@@ -865,6 +865,43 @@ func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 	})
 }
 
+func TestShutdownCanceledWithoutRetentionSweep(t *testing.T) {
+	for _, withStopError := range []bool{false, true} {
+		app := NewApp(WithoutDefaultMiddleware())
+		var want error
+		if withStopError {
+			want = errors.New("stop hook failed")
+			app.OnStop(func() error { return want })
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := app.Shutdown(ctx); !errors.Is(err, want) {
+			t.Errorf("Shutdown with no sweep: %v, want %v", err, want)
+		}
+	}
+}
+
+func TestShutdownCanceledAfterRetentionSweepFinished(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
+		db := sql.OpenDB(&probe)
+		defer db.Close()
+		app := NewApp(WithoutDefaultMiddleware())
+		app.DB = db
+
+		ctx, cancel := context.WithCancel(context.Background())
+		app.startRetentionSweep(ctx)
+		<-probe.entered
+		cancel()
+		close(probe.release)
+		synctest.Wait()
+
+		if err := app.Shutdown(ctx); err != nil {
+			t.Fatalf("Shutdown after the sweep finished: %v", err)
+		}
+	})
+}
+
 // No two source and name pairs share a retention key.
 func TestStoreKeyIsUnambiguous(t *testing.T) {
 	a := storeKey(datexport.StoreEraser{Source: "app", Name: "cache/profiles"})
