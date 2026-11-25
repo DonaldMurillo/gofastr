@@ -265,3 +265,50 @@ type titleOnlyComp struct{}
 
 func (titleOnlyComp) Render() render.HTML                    { return render.HTML("<p>gone</p>") }
 func (titleOnlyComp) ScreenTitle(ctx context.Context) string { return "Session expired" }
+
+func TestRecoveryLanguageMatchesPage(t *testing.T) {
+	for _, tc := range []struct {
+		name, declared, want string
+		option               Option
+	}{
+		{"screen override", " ar ", "ar", WithLang("en")},
+		{"host fallback", "", "fa", WithLang("fa")},
+		{"host route fallback", "", "he", WithLangFunc(func(path string) string {
+			if path == "/checkout" {
+				return "he"
+			}
+			return "en"
+		})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := New(newRecoverApp().WithLang("en"), tc.option)
+			calls := 0
+			screen := partialLangScreen{lang: func() string {
+				calls++
+				return tc.declared
+			}}
+			for _, mode := range []string{"full", "partial"} {
+				before := calls
+				req := httptest.NewRequest(http.MethodGet, "/checkout", nil)
+				attr := ""
+				if mode == "partial" {
+					req.Header.Set("X-Gofastr-Navigate", "1")
+					attr = "data-cui-"
+				}
+				rec := httptest.NewRecorder()
+				host.RenderScreen(rec, req, screen, ScreenResponse{Status: http.StatusGone})
+				if rec.Code != http.StatusGone {
+					t.Fatalf("%s status = %d, want 410", mode, rec.Code)
+				}
+				for _, want := range []string{attr + `lang="` + tc.want + `"`, attr + `dir="rtl"`} {
+					if !strings.Contains(rec.Body.String(), want) {
+						t.Errorf("%s recovery response is missing %s", mode, want)
+					}
+				}
+				if reads := calls - before; reads != 1 {
+					t.Errorf("%s recovery called ScreenLang %d times, want 1", mode, reads)
+				}
+			}
+		})
+	}
+}

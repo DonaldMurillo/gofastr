@@ -2465,6 +2465,10 @@ no screen matches carries no match; the guard falls through and the
 `WithNotFoundScreen` 404 stays truthful. See
 `framework/docs/content/ui-wiring.md` → "Guards on dynamic screens".
 
+`RenderScreen` uses the same resolved document language and direction on
+full loads and partials. A recovery screen's `ScreenLang` can override the
+host's document language for the route.
+
 ---
 
 ### Error pages that show (404 through the root layout)

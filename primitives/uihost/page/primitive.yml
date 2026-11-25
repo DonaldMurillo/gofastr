@@ -328,6 +328,10 @@ invariants:
       - test: framework/uihost.TestRenderScreenFullArmMintsPartialDoesNot
       - test: framework/uihost.TestRenderScreenPartialHonoursMarkupSkew
       - test: framework/uihost.TestSweepPageRenderScreenPartialTitleHasNoInvisibles
+  - id: recovery-document-language
+    rule: RenderScreen resolves its screen language once per response, uses the host's route language as fallback, and emits matching lang and dir for full loads and navigation partials.
+    enforced_by:
+      - test: framework/uihost.TestRecoveryLanguageMatchesPage
   - id: default-toast-stack-mounts-once
     rule: ensureToastStack mounts gofastr-toasts only when no preset-built toast stack is registered, and serves a registered stack's endpoints this router is missing.
     enforced_by:
