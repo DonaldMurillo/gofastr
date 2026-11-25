@@ -50,6 +50,29 @@ func TestParseColorSkipsWhatItCannotResolve(t *testing.T) {
 	}
 }
 
+func TestThemeValidatesOpaqueHexAlpha(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary.Value = "#FFFFFF"
+	th.Colors.PrimaryFg.Value = "#777F"
+	if err := th.Validate(); err == nil || !strings.Contains(err.Error(), "Theme.Colors: primary") {
+		t.Errorf("light primary with opaque short hex: got %v, want contrast error", err)
+	}
+
+	th.Colors.PrimaryFg.Value = "#000F"
+	th.DarkColors = map[string]string{"danger": "#777777fF", "danger-fg": "#FFFFFF"}
+	if err := th.Validate(); err == nil || !strings.Contains(err.Error(), "Theme.DarkColors: danger") {
+		t.Errorf("dark danger with opaque long hex: got %v, want contrast error", err)
+	}
+	if warnings := ContrastWarnings(th); len(warnings) != 0 {
+		t.Errorf("opaque hex contrast repeated as warnings: %v", warnings)
+	}
+
+	th.DarkColors["danger"] = "#777777FE"
+	if err := th.Validate(); err != nil {
+		t.Errorf("passing opaque ink and translucent fill: got %v", err)
+	}
+}
+
 // An oklch ink pair below AA is not refused (themes written that way
 // booted before the parser read oklch) but is reported as a warning.
 func TestContrastWarnings(t *testing.T) {

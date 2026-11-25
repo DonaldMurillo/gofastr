@@ -125,11 +125,11 @@ func cssHue(s string) (float64, bool) {
 }
 
 func isPlainHex(s string) bool {
-	h := trimHex(s)
-	if len(h) != 3 && len(h) != 6 || !strings.HasPrefix(strings.TrimSpace(s), "#") {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "#") {
 		return false
 	}
-	_, _, _, ok := hexRGB(h)
+	_, _, _, ok := hexRGB(s)
 	return ok
 }
 
