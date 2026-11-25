@@ -45,6 +45,26 @@ func TestInsertDefaultValues(t *testing.T) {
 	}
 }
 
+func TestUpdateWithoutAssignmentsPanics(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		builder *UpdateBuilder
+		want    string
+	}{
+		{"bare", Update("records"), "query: UPDATE records has no Set assignments"},
+		{"with clauses", Update("notes").Where("id = $1", 42).Returning("id"), "query: UPDATE notes has no Set assignments"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if got := recover(); got != tc.want {
+					t.Fatalf("Build panic = %#v, want %q", got, tc.want)
+				}
+			}()
+			tc.builder.Build()
+		})
+	}
+}
+
 func TestInsertMismatchedCountsPanics(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

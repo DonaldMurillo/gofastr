@@ -47,6 +47,12 @@ few lines, and link the PR or the docs page for the rest.
   [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
   ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
 
+- **BREAKING:** `UpdateBuilder.Build` panics when no `Set` assignments
+  were added instead of returning invalid SQL. Handle updates with no
+  fields before calling `Build`. See
+  [Programmatic updates](framework/docs/content/query-dsl.md#programmatic-updates)
+  ([#887](https://github.com/DonaldMurillo/gofastr/pull/887)).
+
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
