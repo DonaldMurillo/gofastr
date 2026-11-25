@@ -1,9 +1,74 @@
 package queue
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
+
+func TestSchedulerCopiesPayloadOnRegister(t *testing.T) {
+	const want = `{"value":"original"}`
+	for _, name := range []string{"bytes", "raw-message"} {
+		t.Run(name, func(t *testing.T) {
+			buf := []byte(want)
+			var payload any = buf
+			if name == "raw-message" {
+				payload = json.RawMessage(buf)
+			}
+			q := &recordQueue{}
+			s := NewScheduler(q)
+			t.Cleanup(func() { _ = s.Close() })
+			if err := s.Every(time.Minute).Job("email", payload).Register(); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			copy(buf, `{"value":"modified"}`)
+
+			s.dispatchDue(context.Background(), time.Now().Add(time.Minute))
+			if len(q.jobs) != 1 {
+				t.Fatalf("dispatched %d jobs, want 1", len(q.jobs))
+			}
+			if got := string(q.jobs[0].Payload); got != want {
+				t.Fatalf("dispatched payload = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestSchedulerAcceptsEmptyAndNonJSONPayloads(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload any
+		want    json.RawMessage
+	}{
+		{name: "nil"},
+		{name: "nil-bytes", payload: []byte(nil)},
+		{name: "nil-raw-message", payload: json.RawMessage(nil)},
+		{name: "empty-bytes", payload: []byte{}, want: json.RawMessage{}},
+		{name: "empty-raw-message", payload: json.RawMessage{}, want: json.RawMessage{}},
+		{name: "empty-string", payload: "", want: json.RawMessage{}},
+		{name: "non-json-bytes", payload: []byte("not JSON"), want: json.RawMessage("not JSON")},
+		{name: "non-json-raw-message", payload: json.RawMessage("not JSON"), want: json.RawMessage("not JSON")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &recordQueue{}
+			s := NewScheduler(q)
+			t.Cleanup(func() { _ = s.Close() })
+			base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+			if err := s.Every(time.Minute).Job("email", tc.payload).RegisterAt(base); err != nil {
+				t.Fatalf("RegisterAt: %v", err)
+			}
+
+			s.dispatchDue(context.Background(), base.Add(time.Minute))
+			if len(q.jobs) != 1 {
+				t.Fatalf("dispatched %d jobs, want 1", len(q.jobs))
+			}
+			if got := q.jobs[0].Payload; string(got) != string(tc.want) || (got == nil) != (tc.want == nil) {
+				t.Fatalf("dispatched payload = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
 
 // ROUND-2 REVIEW REPRO.
 //
@@ -56,4 +121,37 @@ func TestEmptyPayloadMeansNull(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSchedulerDispatchOwnsPayload(t *testing.T) {
+	first, second := &recordQueue{}, &recordQueue{}
+	s := NewScheduler(first, second)
+	t.Cleanup(func() { _ = s.Close() })
+
+	const want = `{"v":"A"}`
+	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	if err := s.Every(time.Minute).Job("email", want).RegisterAt(base); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	s.dispatchDue(t.Context(), base.Add(time.Minute))
+	if len(first.jobs) != 1 || len(second.jobs) != 1 {
+		t.Fatalf("first tick dispatched %d and %d jobs, want one per queue", len(first.jobs), len(second.jobs))
+	}
+	first.jobs[0].Payload[6] = 'Z'
+
+	t.Run("other-queue", func(t *testing.T) {
+		if got := string(second.jobs[0].Payload); got != want {
+			t.Fatalf("other queue's payload = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("next-tick", func(t *testing.T) {
+		s.dispatchDue(t.Context(), base.Add(2*time.Minute))
+		if len(first.jobs) != 2 {
+			t.Fatalf("two ticks dispatched %d jobs to the first queue, want 2", len(first.jobs))
+		}
+		if got := string(first.jobs[1].Payload); got != want {
+			t.Fatalf("next tick's payload = %q, want %q", got, want)
+		}
+	})
 }
