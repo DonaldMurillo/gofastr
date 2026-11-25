@@ -1,4 +1,4 @@
-//go:build !windows && (!darwin || (!arm64 && !amd64))
+//go:build !windows && !linux && (!darwin || (!arm64 && !amd64))
 
 package update
 

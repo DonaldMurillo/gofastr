@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -28,21 +27,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/appid"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
 )
 
-var reAppID = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
-
 func validateAppID(id string) error {
-	if !reAppID.MatchString(id) || !strings.Contains(id, ".") {
-		return fmt.Errorf("desktop: app id %q must be reverse-DNS: [A-Za-z0-9.-]+ with at least one dot", id)
-	}
-	if strings.Trim(id, ".-") == "" {
-		return fmt.Errorf("desktop: app id %q must not be a bare dot/dash sequence: "+
-			"it names a directory under the OS user config dir", id)
-	}
-	if len(id) > 253 {
-		return fmt.Errorf("desktop: app id %q is longer than 253 characters", id)
+	if err := appid.Check(id); err != nil {
+		return fmt.Errorf("desktop: app id %w", err)
 	}
 	return nil
 }

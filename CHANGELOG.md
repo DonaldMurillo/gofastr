@@ -35,6 +35,14 @@ few lines, and link the PR or the docs page for the rest.
   refuses requests from other origins for anything but a page load: a
   script tag, image, fetch or form post from another site gets 403.
   See [Security](framework/docs/content/security.md#resource-isolation).
+- **Linux desktop auto-update** (#648). An app installed with
+  `gofastr desktop install` now installs updates from its signed feed:
+  publish the `--format=tar.gz` archive with
+  `gofastr desktop feed --platform linux-<arch>`. The update swaps the
+  installed directory, writes a fresh install receipt so
+  `gofastr desktop uninstall` still works, and relaunches. An update
+  that renames the app or changes its URL scheme is refused. See
+  [Desktop](framework/docs/content/desktop.md).
 
 ### Changed
 

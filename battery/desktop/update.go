@@ -55,7 +55,7 @@ const (
 
 var (
 	errUpdateNotConfigured = &Error{Code: CodeUnsupported, Message: "auto-update is not configured"}
-	errUpdateNeedsBundle   = &Error{Code: CodeUnsupported, Message: "updates need an app bundle; run from gofastr desktop build output"}
+	errUpdateNeedsBundle   = &Error{Code: CodeUnsupported, Message: "updates need an app bundle; run from gofastr desktop build output, installed with gofastr desktop install on Linux"}
 	errUpdateFeedFetch     = &Error{Code: CodeInternal, Message: "the update feed could not be fetched"}
 	errUpdateFeedBad       = &Error{Code: CodeInternal, Message: "the update feed is invalid"}
 	errUpdateFeedExpired   = &Error{Code: CodeInternal, Message: "the update feed has expired"}
@@ -305,7 +305,7 @@ func (u *updater) install(ctx context.Context) error {
 		u.b.logger.Warn("desktop: update archive rejected", "error", err.Error())
 		return errUpdateArchive
 	}
-	newApp, err := update.ExtractZip(data, stage, name)
+	newApp, err := extractBundle(platform, data, stage, name)
 	if err != nil {
 		u.b.logger.Warn("desktop: update archive extraction refused", "error", err.Error())
 		return errUpdateArchive
@@ -341,6 +341,13 @@ func (u *updater) install(ctx context.Context) error {
 	u.b.logger.Info("desktop: update installed, relaunching",
 		"version", r.release.Version) // semver-validated: no control bytes
 	return nil
+}
+
+func extractBundle(platform update.Platform, data []byte, stage, name string) (string, error) {
+	if ex, ok := platform.(update.Extractor); ok {
+		return ex.Extract(data, stage)
+	}
+	return update.ExtractZip(data, stage, name)
 }
 
 func installLayout(platform update.Platform, name, bundleDir string) ([]update.Unit, func(string) (update.BundleInfo, error)) {

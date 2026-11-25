@@ -1,0 +1,35 @@
+primitive: desktop.linuxbundle
+summary: The Linux desktop bundle, the fixed five-file payload and manifest the tar.gz release carries, and its installed form with an install receipt, read and written the same way by desktop install, desktop uninstall and the Linux updater.
+code:
+  - internal/linuxbundle/
+  - cmd/gofastr/internal/desktopcmd/desktop_install_linux.go
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - A change to what Open accepts or Populate writes changes both what desktop install installs and what the Linux updater swaps in; run TestLinuxDesktopUpdateEndToEnd, which proves desktop uninstall still accepts an updated installation.
+invariants:
+  - id: open-verifies-the-fixed-payload
+    rule: Open refuses a bundle whose manifest is not strict JSON of this format, whose payload is not exactly the five expected files at their modes, sizes and sha256, that holds an unlisted file, link or directory, whose executable is not an ELF for the manifest's architecture with its entry in an executable segment, or whose icon is not a PNG of 1 to 4096 pixels a side.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallManifestRefusals
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallPayloadRefusals
+      - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
+  - id: installed-form-is-what-uninstall-accepts
+    rule: OpenInstalled accepts a directory only when Open does with installed set, the directory, bin, manifest and receipt are owned by this user at 0700, 0700, 0600 and 0600, and the receipt names the id and the manifest's sha256; Populate and WriteReceipt write exactly that form.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallRoundTrip
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
+      - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+decisions:
+  - id: one-package-for-the-format
+    date: 2026-11-25
+    status: accepted
+    decision: The bundle format, its verification and its installed form live in internal/linuxbundle, which the CLI and the desktop battery both import.
+    rejected:
+      - option: Keep verification in cmd/gofastr and give the updater its own copy.
+        why: The updater must write an installation uninstall accepts, and two copies of the receipt and mode rules would drift until an update leaves an app uninstall refuses to remove.
+      - option: Export the format from battery/desktop.
+        why: It is not an app-facing API, and an exported package would have to be documented and kept stable for callers that do not exist.
+    revisit_if: A third tool, such as a system-wide installer, needs a different installed form.
+    upholds: [installed-form-is-what-uninstall-accepts]

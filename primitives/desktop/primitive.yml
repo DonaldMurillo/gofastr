@@ -2,6 +2,7 @@ primitive: desktop
 summary: The desktop host that runs a GoFastr app inside the OS's own WebView on loopback, with a typed bridge to native capabilities and one native package per platform.
 code:
   - battery/desktop/
+  - internal/appid/
 docs:
   - framework/docs/content/desktop.md
 on_change:

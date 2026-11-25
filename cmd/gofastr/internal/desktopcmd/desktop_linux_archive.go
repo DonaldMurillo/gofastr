@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
 type linuxArchiveEntry struct {
@@ -30,24 +31,9 @@ type linuxArchiveEntry struct {
 	source string // only the staged executable; never a directory walk
 }
 
-type linuxBundleFile struct {
-	Path   string `json:"path"`
-	Mode   string `json:"mode"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-}
+type linuxBundleFile = linuxbundle.File
 
-type linuxBundleManifest struct {
-	SchemaVersion  int               `json:"schema_version"`
-	ID             string            `json:"id"`
-	Name           string            `json:"name"`
-	Version        string            `json:"version"`
-	Platform       string            `json:"platform"`
-	EntryPoint     string            `json:"entry_point"`
-	EmbeddedScheme string            `json:"embedded_scheme,omitempty"`
-	Runtime        []string          `json:"runtime"`
-	Files          []linuxBundleFile `json:"files"`
-}
+type linuxBundleManifest = linuxbundle.Manifest
 
 func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	if _, err := linuxDesktopLinkerFlags(f.scheme); err != nil {
@@ -62,20 +48,10 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	if !utf8.ValidString(name) {
 		return "", fmt.Errorf("--name must be valid UTF-8 for a desktop entry")
 	}
-	if !desktopVersionRe.MatchString(f.version) || len(f.version) > 64 {
+	if !linuxbundle.ValidVersion(f.version) {
 		return "", fmt.Errorf("--version must match %s and be at most 64 characters", desktopVersionRe.String())
 	}
-	if arch != "amd64" && arch != "arm64" {
-		return "", fmt.Errorf("unsupported Linux architecture %q", arch)
-	}
-	root := f.id + "-" + f.version + "-linux-" + arch
-	if len(root)+len(".tar.gz") > 255 {
-		return "", fmt.Errorf("app id and version make the Linux archive filename longer than 255 bytes")
-	}
-	if root == "." || !fs.ValidPath(root) || strings.ContainsAny(root, "/\\\x00") || path.Clean(root) != root {
-		return "", fmt.Errorf("unsafe Linux archive root")
-	}
-	return root, nil
+	return linuxbundle.RootName(f.id, f.version, arch)
 }
 
 func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
@@ -253,8 +229,11 @@ the string escaping layer, not Exec quoting. Never mark the template as
 trusted or install it without rendering and validating it first.
 
 This build writes release artifacts only: no menu installation, default
-protocol association, scheme registration, signing, or automatic update
-installation. The archive contains no GTK/WebKit/shared-library copies.
+protocol association, scheme registration or signing. An app installed
+with 'gofastr desktop install' whose Config.Update names a signed feed
+replaces its own installation when that feed offers this archive's
+successor; 'gofastr desktop feed --platform linux-<arch>' signs it.
+The archive contains no GTK/WebKit/shared-library copies.
 manifest.json inventories the payload files with SHA-256 checksums; these
 checksums detect changes, not publisher authenticity. It does not inventory
 itself. Preserve your application's own licenses and distribution notices.
@@ -302,11 +281,7 @@ compiled executable, so pin those separately for reproducible builds.
 	return entries, nil
 }
 
-// Desktop string values are not shell words. In particular, '%' and '$'
-// in Name are literal and must not use the separate Exec field-code rules.
-func escapeDesktopEntryString(value string) string {
-	return strings.NewReplacer("\\", "\\\\", " ", "\\s", "\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
-}
+func escapeDesktopEntryString(value string) string { return linuxbundle.EscapeDesktopString(value) }
 
 func copyLinuxArchiveEntry(dst io.Writer, entry linuxArchiveEntry) (int64, error) {
 	if entry.source == "" {

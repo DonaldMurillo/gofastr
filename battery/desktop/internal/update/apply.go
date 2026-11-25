@@ -65,9 +65,9 @@ type SignaturePolicy struct {
 // lives, what version it reports, how its replacement proves its
 // signature, and how the new copy is launched.
 type Platform interface {
-	// Version returns the running app's version (the bundle's CFBundleShortVersionString on darwin, the executable's ProductVersion on windows).
+	// Version returns the running app's version (the bundle's CFBundleShortVersionString on darwin, the executable's ProductVersion on windows, the installed manifest's version on linux).
 	Version() string
-	// Identifier returns the running app's CFBundleIdentifier.
+	// Identifier returns the running app's id (CFBundleIdentifier on darwin).
 	Identifier() string
 	// Bundle returns the running bundle's file name ("Notes.app") and its parent directory.
 	Bundle() (name, dir string, ok bool)
@@ -77,7 +77,7 @@ type Platform interface {
 	// CheckWindowsTrust on windows.
 	VerifySignature(appDir string) error
 	// Relaunch starts the newly installed copy (open -n on darwin, the
-	// new executable with PredecessorEnv set on windows) so the new
+	// new executable with PredecessorEnv set on windows and linux) so the new
 	// version starts before the current process quits.
 	Relaunch(appDir string) error
 }
@@ -212,4 +212,11 @@ type FileLayout interface {
 	Units() (units []Unit, ok bool)
 	// Inspect checks that the extracted root holds exactly the files Units names and returns the identity it declares.
 	Inspect(extracted string) (BundleInfo, error)
+}
+
+// Extractor is the optional Platform extension for a host whose release
+// archive is not the zip ExtractZip reads (Linux: a .tar.gz).
+type Extractor interface {
+	// Extract unpacks the verified archive under stage and returns the directory the units' Rel paths are relative to.
+	Extract(data []byte, stage string) (string, error)
 }

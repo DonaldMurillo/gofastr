@@ -591,7 +591,7 @@ func TestLinuxInstallCopyRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bundle.root.Close()
+	defer bundle.Close()
 	// Mutate after preflight: copying must recheck integrity and roll back every
 	// earlier copied file and the reserved app directory.
 	if err = os.WriteFile(filepath.Join(source, "launch.sh"), []byte("changed after validation"), 0700); err != nil {

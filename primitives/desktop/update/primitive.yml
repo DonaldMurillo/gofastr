@@ -144,6 +144,37 @@ invariants:
       - test: battery/desktop/internal/update.TestDarwinVerifyPinsTeamID
       - test: battery/desktop/internal/update.TestDarwinVerifyRefusesNoIdentity
       - test: battery/desktop/internal/update.TestDarwinUnreadableIdentityRefuses
+  - id: linux-needs-an-installation
+    rule: The Linux platform reports a bundle only when the running executable resolves to <apps>/<id>/bin/<id> of a directory linuxbundle.OpenInstalled accepts, and takes the app's version and id from that installation's manifest.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxPlatformReadsTheInstallation
+      - test: battery/desktop/internal/update.TestLinuxPlatformNeedsAnIntactInstallation
+  - id: linux-swaps-the-installation
+    rule: A Linux install swaps the whole <apps>/<id> directory for one staged from the verified archive in the installed form, with a receipt reissued for the new manifest that keeps the running installation's launcher and desktop entry digests, keeps the previous directory as .old until the next launch, and relaunches bin/<id> in its own session with PredecessorEnv naming the quitting process.
+    enforced_by:
+      - test: battery/desktop.TestLinuxInstallSwapsTheInstallation
+      - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
+      - test: battery/desktop/internal/update.TestLinuxRelaunchNamesThePredecessor
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+  - id: linux-keeps-name-and-scheme
+    rule: The Linux signature check refuses a staged update whose display name or embedded URL scheme differs from the running installation's, and the install then refuses with the archive error before anything is swapped.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxVerifyRefusesANameOrSchemeChange
+      - test: battery/desktop.TestLinuxInstallRefusesARenamedApp
+  - id: linux-archive-is-the-running-app
+    rule: A Linux install refuses an archive for another architecture, one whose payload is off its manifest, and one whose manifest names another app id.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
+      - test: battery/desktop/internal/update.TestLinuxInspectRefusesAnotherApp
+  - id: extract-tar-one-root
+    rule: ExtractTarGz refuses an entry that escapes the root, a second top-level name, a link, device, FIFO or other non-regular, non-directory entry, a repeated name, a regular file as the root, more than maxZipEntries entries and an entry past maxEntrySize, and drops group and other write, setuid, setgid and sticky.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestExtractTarGzRefusesUnsafeArchives
+      - test: battery/desktop/internal/update.TestExtractTarGzWritesOneRoot
+  - id: feed-writer-checks-linux-archives
+    rule: WriteFeed refuses a linux- platform archive that is not a tar.gz ExtractTarGz would accept, whose root is not the one gofastr desktop build writes for its manifest, or whose manifest names another platform or version.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestWriteFeedChecksALinuxArchive
   - id: windows-layout-is-closed
     rule: A Windows install swaps exactly the executable and WebView2Loader.dll, refuses a running layout where the loader is missing or not a regular file, and relaunches the new executable with PredecessorEnv naming the quitting process.
     enforced_by:
@@ -183,3 +214,23 @@ decisions:
       - option: Queue it behind the first.
         why: Two runs share <Name>.app.new and .old, and the second's RemoveAll of .old could delete the first's only copy of the running bundle between its renames.
     upholds: [one-install-at-a-time]
+  - id: linux-trusts-the-feed-signature
+    date: 2026-11-25
+    status: accepted
+    decision: A Linux update rests on the ed25519 feed signature, which pins the archive's sha256 and size, and on the archive's manifest, which pins every payload file; the executable carries no signature of its own.
+    rejected:
+      - option: A detached ed25519 signature over the ELF, with its own key.
+        why: It names the same publisher the feed key already pins, over bytes the feed already pins, and gives every publisher a second key to keep and rotate.
+      - option: GPG or distribution package signing.
+        why: Linux has no standard signature for a per-user ELF app, and either would add a runtime dependency and a keyring the app does not control.
+    revisit_if: Linux gains a standard per-app code signature the shell can check without a new dependency, or the feed and the archives come to be published by parties that do not share one key.
+    upholds: [linux-archive-is-the-running-app]
+  - id: linux-refuses-a-rename
+    date: 2026-11-25
+    status: accepted
+    decision: An update that changes the app's display name or URL scheme is refused, not applied by rewriting the desktop entry.
+    rejected:
+      - option: Rewrite the desktop entry during the update.
+        why: The entry lives outside the swapped directory, so the rewrite and the swap are two steps; a crash between them leaves a receipt that no longer matches the entry, and uninstall then refuses to remove the app.
+    revisit_if: A release needs to rename an installed app in place.
+    upholds: [linux-keeps-name-and-scheme]
