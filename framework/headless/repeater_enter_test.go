@@ -39,7 +39,7 @@ func TestRepeaterDefaultButtonCarriesNoOperation(t *testing.T) {
 // no case through a Remove.
 func TestE2E_RepeaterEnterSubmitsTheHostDefault(t *testing.T) {
 	body := `<form id="rf" method="post" action="/save">` + string(enterRepeater()) +
-		`<button id="save" type="submit" name="intent" value="save">Save</button></form>`
+		`<input type="hidden" name="requestSubmit" value="field"><button id="save" type="submit" name="intent" value="save">Save</button></form>`
 	got := enterInRepeaterRow(t, body, "l1", `(e.submitter ? (e.submitter.id || 'nameless') : 'none') +
 		'|remove=' + String(fd.getAll('remove')) + '|intent=' + String(fd.getAll('intent'))`)
 	if got != "save|remove=|intent=save" {

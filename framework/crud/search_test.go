@@ -185,6 +185,39 @@ func TestSearch_QColumnEdge(t *testing.T) {
 	}
 }
 
+func TestSearchQPreservesExplicitFilters(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		field  schema.Field
+		filter string
+	}{
+		{"integer", schema.Field{Name: "q", Type: schema.Int}, "q%5Beq%5D=9"},
+		{"wire alias", schema.Field{Name: "q", WireName: "query", Type: schema.String}, "query=9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDB(t, "CREATE TABLE items (id TEXT PRIMARY KEY, q INTEGER, title TEXT)")
+			seedRows(t, db, "items", []map[string]any{
+				{"id": "match", "q": 5, "title": "orchard"},
+				{"id": "other", "q": 9, "title": "garden"},
+			})
+			ent := entity.Define("items", entity.EntityConfig{
+				Fields:       []schema.Field{tc.field, {Name: "title", Type: schema.String}},
+				SearchFields: []string{"title"},
+			}.WithTimestamps(false))
+			ent.SetDB(db)
+			ch := NewCrudHandler(ent, db)
+			body := searchBody(t, ch, "/items?q=orchard")
+			if got := decodeListResponse(t, body).Total; got != 1 {
+				t.Errorf("search total = %d, want 1", got)
+			}
+			body = searchBody(t, ch, "/items?q=orchard&"+tc.filter)
+			if got := decodeListResponse(t, body).Total; got != 0 {
+				t.Errorf("search with field filter total = %d, want 0", got)
+			}
+		})
+	}
+}
+
 // TestSearch_MultiTokenAND: multiple tokens AND together.
 func TestSearch_MultiTokenAND(t *testing.T) {
 	installOwnerExtractor(t)

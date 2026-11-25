@@ -45,6 +45,8 @@ Omitting `Exposure` does **not** hide the entity — `Exposure.CRUD` is a `*bool
 - `GET /posts/_events` (SSE stream; see [Entity events](events.md))
 - `GET /posts/llm.md` (machine-readable route guide matching the mounted surface, wire casing, and limits)
 
+A JSON write body (`POST`, `PUT`, `PATCH`) must be an object: JSON `null` returns `400` and runs no hook. Send `{}` to create a record from its defaults. The generated MCP create tool sends `{}` when called without arguments.
+
 `GET /openapi.json` stays authenticated unless explicitly exposed, and documents the same pagination limits (`crud.ListLimits`), `409` conflict errors, `413`, and `415` responses.
 
 **MCP tools are off by default** in production (`Exposure.MCP: true` opts in). Under `gofastr dev`, every CRUD-enabled entity exposes its data tools automatically so local agents can inspect and mutate data without extra flags.
@@ -156,6 +158,8 @@ Configure list behavior via `Pagination: &framework.PaginationConfig{...}`:
 - `CursorFields`: allowlist of columns valid for cursor pagination (see [Cursor pagination](cursor-pagination.md)).
 
 Offset pagination is bounded to prevent deep-scan DoS: requests whose `?offset=` or `(page - 1) * limit` exceeds `CrudHandler.MaxOffset` (default `MaxListLimit * 1000`, i.e., `100,000`; configurable via `WithMaxOffset`) fail with `400 offset_too_large`, including integer-overflow page values. An explicit `?offset=` overrides `?page=`, and the response `page` reflects `offset/limit + 1`.
+
+Direct calls to `ServeStreamingList` use its `page` and `limit` arguments for this check. A valid request `?offset=` takes precedence.
 
 ## Screen hints (`display`)
 

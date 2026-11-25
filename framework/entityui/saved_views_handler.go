@@ -141,8 +141,7 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 	}
 	loc, locOK := scrubBackPath(withSavedParam(back, body.Key, v.ID))
 	if !locOK {
-		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
-		return
+		loc = back
 	}
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }
@@ -173,8 +172,7 @@ func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http
 	}
 	loc, locOK := scrubBackPath(withoutSavedParam(back, body.Key))
 	if !locOK {
-		writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
-		return
+		loc = back
 	}
 	http.Redirect(w, r, loc, http.StatusSeeOther)
 }

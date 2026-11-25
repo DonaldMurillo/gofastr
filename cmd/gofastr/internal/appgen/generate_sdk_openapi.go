@@ -41,8 +41,9 @@ type oaSDKOp struct {
 	Body         *oaType
 	BodyNullable bool
 	// Result is "", "json" or "binary"; ResultType types a JSON one.
-	Result     string
-	ResultType *oaType
+	Result         string
+	ResultType     *oaType
+	ResultNullable bool
 	// Accept is the Accept header the operation sends: the JSON type it
 	// reads, or the binary types it takes; "" sends none.
 	Accept string
@@ -234,7 +235,7 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 	}
 	sop.Result, sop.Accept = result, accept
 	if result == "json" {
-		if sop.ResultType, _, err = ts.typeOf(schema, op.GoName+"Response"); err != nil {
+		if sop.ResultType, sop.ResultNullable, err = ts.typeOf(schema, op.GoName+"Response"); err != nil {
 			return sop, fmt.Errorf("response: %w", err)
 		}
 	}
@@ -558,12 +559,14 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 		args = append(args, "body "+bodyType)
 	}
 	ret, zero := "error", ""
+	var jsonResultType string
 	switch op.Result {
 	case "json":
-		ret, zero = op.ResultType.goExpr(), oaGoZero(op.ResultType)
-		if op.ResultType.Kind == "struct" {
-			ret = "*" + ret
+		jsonResultType, zero = op.ResultType.goExpr(), oaGoZero(op.ResultType)
+		if op.ResultType.Kind == "struct" || (op.ResultNullable && op.ResultType.goPointer()) {
+			jsonResultType, zero = "*"+jsonResultType, "nil"
 		}
+		ret = jsonResultType
 	case "binary":
 		ret, zero = "io.ReadCloser", "nil"
 	}
@@ -648,7 +651,7 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 			fmt.Fprintf(sb, "\tif len(data) == 0 {\n\t\treturn nil, nil\n\t}\n\tvar out *%s\n\tif err := decodeBody(data, &out); err != nil {\n\t\treturn nil, err\n\t}\n\treturn out, nil\n}\n", op.ResultType.Name)
 			return
 		}
-		fmt.Fprintf(sb, "\tvar out %s\n\tif len(data) > 0 {\n\t\tif err := decodeBody(data, &out); err != nil {\n\t\t\t%s\n\t\t}\n\t}\n\treturn out, nil\n}\n", op.ResultType.goExpr(), fail("err"))
+		fmt.Fprintf(sb, "\tvar out %s\n\tif len(data) > 0 {\n\t\tif err := decodeBody(data, &out); err != nil {\n\t\t\t%s\n\t\t}\n\t}\n\treturn out, nil\n}\n", jsonResultType, fail("err"))
 	}
 }
 

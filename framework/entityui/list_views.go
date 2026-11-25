@@ -119,7 +119,7 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, known bool) render.HTML {
 	builtIn := s.savedID == ""
 	urlFilter := s.filterPred
-	if !s.q.Has(s.p.filter) {
+	if !s.hasURLFilter() {
 		urlFilter = nil
 	}
 	count := func(current bool, view, filt *filter.Predicate, deleted bool) string {

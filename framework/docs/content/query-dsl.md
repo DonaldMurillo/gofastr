@@ -31,6 +31,8 @@ Relation filters enforce the target entity's read access, `OwnerField`, `MultiTe
 
 `?q=term` searches every column listed in `EntityConfig.SearchFields` (case-insensitive substring match, combined with `OR` across search columns and `AND` with other filters). Sending a non-blank `?q=` on an entity without `SearchFields` returns `400 search_not_configured`.
 
+With `SearchFields` configured, use `q[eq]=value` or the column's distinct wire name to filter a column named `q` alongside the search.
+
 ## Sorting (`?sort=`)
 
 Pass a comma-separated list of columns; prefix with `-` for descending:

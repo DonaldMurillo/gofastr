@@ -265,3 +265,126 @@ type titleOnlyComp struct{}
 
 func (titleOnlyComp) Render() render.HTML                    { return render.HTML("<p>gone</p>") }
 func (titleOnlyComp) ScreenTitle(ctx context.Context) string { return "Session expired" }
+
+type recoveryQueryScreen struct {
+	component.ContextOnly
+	panicTitle bool
+}
+
+func (recoveryQueryScreen) RenderCtx(ctx context.Context) render.HTML {
+	return render.Text("Body step: " + app.QueryFromContext(ctx).Get("step"))
+}
+
+func (s recoveryQueryScreen) ScreenTitle(ctx context.Context) string {
+	if s.panicTitle {
+		panic("test title unavailable")
+	}
+	return "Step: " + app.QueryFromContext(ctx).Get("step")
+}
+
+func TestRecoveryTitleAndLayoutSeeRequest(t *testing.T) {
+	a := newRecoverApp()
+	a.SetDefaultLayout(headerLayout("recovery", recoveryQueryLayout{}))
+	host := New(a)
+	for _, tc := range []struct {
+		name, title string
+		panics      bool
+	}{
+		{"query", "Step: payment — recoverapp", false},
+		{"panic", "410: recoverapp", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, mode := range []string{"full", "partial"} {
+				t.Run(mode, func(t *testing.T) {
+					defer func() {
+						if p := recover(); p != nil {
+							t.Errorf("recovery let ScreenTitle panic escape: %v", p)
+						}
+					}()
+					req := httptest.NewRequest(http.MethodGet, "/checkout?step=payment", nil)
+					if mode == "partial" {
+						req.Header.Set("X-Gofastr-Navigate", "1")
+					}
+					rec := httptest.NewRecorder()
+					host.RenderScreen(rec, req, recoveryQueryScreen{panicTitle: tc.panics}, ScreenResponse{Status: http.StatusGone})
+					if rec.Code != http.StatusGone {
+						t.Fatalf("status = %d, want 410", rec.Code)
+					}
+					body := rec.Body.String()
+					if !strings.Contains(body, "Body step: payment") {
+						t.Error("recovery body did not see the request query")
+					}
+					if mode == "partial" {
+						title, _ := url.PathUnescape(rec.Header().Get("X-Gofastr-Title"))
+						if title != tc.title {
+							t.Errorf("partial title = %q, want %q", title, tc.title)
+						}
+						return
+					}
+					if !strings.Contains(body, "<title>"+tc.title+"</title>") {
+						t.Errorf("full title is missing %q", tc.title)
+					}
+					if !strings.Contains(body, "Layout path: /checkout") {
+						t.Error("full layout did not see the request path")
+					}
+				})
+			}
+		})
+	}
+}
+
+type recoveryQueryLayout struct{ component.ContextOnly }
+
+func (recoveryQueryLayout) RenderCtx(ctx context.Context) render.HTML {
+	if req := app.RequestFromContext(ctx); req != nil {
+		return render.Text("Layout path: " + req.URL.Path)
+	}
+	return ""
+}
+
+func TestRecoveryLanguageMatchesPage(t *testing.T) {
+	for _, tc := range []struct {
+		name, declared, want string
+		option               Option
+	}{
+		{"screen override", " ar ", "ar", WithLang("en")},
+		{"host fallback", "", "fa", WithLang("fa")},
+		{"host route fallback", "", "he", WithLangFunc(func(path string) string {
+			if path == "/checkout" {
+				return "he"
+			}
+			return "en"
+		})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := New(newRecoverApp().WithLang("en"), tc.option)
+			calls := 0
+			screen := partialLangScreen{lang: func() string {
+				calls++
+				return tc.declared
+			}}
+			for _, mode := range []string{"full", "partial"} {
+				before := calls
+				req := httptest.NewRequest(http.MethodGet, "/checkout", nil)
+				attr := ""
+				if mode == "partial" {
+					req.Header.Set("X-Gofastr-Navigate", "1")
+					attr = "data-cui-"
+				}
+				rec := httptest.NewRecorder()
+				host.RenderScreen(rec, req, screen, ScreenResponse{Status: http.StatusGone})
+				if rec.Code != http.StatusGone {
+					t.Fatalf("%s status = %d, want 410", mode, rec.Code)
+				}
+				for _, want := range []string{attr + `lang="` + tc.want + `"`, attr + `dir="rtl"`} {
+					if !strings.Contains(rec.Body.String(), want) {
+						t.Errorf("%s recovery response is missing %s", mode, want)
+					}
+				}
+				if reads := calls - before; reads != 1 {
+					t.Errorf("%s recovery called ScreenLang %d times, want 1", mode, reads)
+				}
+			}
+		})
+	}
+}

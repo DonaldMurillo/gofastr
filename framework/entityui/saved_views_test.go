@@ -423,6 +423,32 @@ func TestSaveViewStoresAndRedirects(t *testing.T) {
 	}
 }
 
+func TestSavedViewLongRedirectFallsBack(t *testing.T) {
+	x, store := savedUI(t)
+	ctx := asUser(context.Background(), "u1")
+	back := "/orders?q=" + strings.Repeat("x", 2048-len("/orders?q="))
+	w := postSavedViews(t, x, "u1", "/api/orders/_views", url.Values{
+		"name": {"Long return"}, "back": {back},
+	})
+	views, err := store.List(ctx, "orders")
+	if err != nil || len(views) != 1 {
+		t.Fatalf("saved views = %+v (%v), want one stored view", views, err)
+	}
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != back {
+		t.Errorf("save stored the view but answered %d, want 303 to the original path", w.Code)
+	}
+
+	back = "/orders?q=" + strings.Repeat(":", 800)
+	id := views[0].ID
+	w = postSavedViews(t, x, "u1", "/api/orders/_views/_delete?id="+id, url.Values{"back": {back}})
+	if _, err := store.Get(ctx, "orders", id); !errors.Is(err, ErrSavedViewNotFound) {
+		t.Fatalf("deleted view lookup = %v, want not found", err)
+	}
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != back {
+		t.Errorf("delete removed the view but answered %d, want 303 to the original path", w.Code)
+	}
+}
+
 // assertSaveViewRefused posts form to the saved-views API and proves the
 // save was refused (400) and nothing was stored.
 func assertSaveViewRefused(t *testing.T, x *testUI, store *memSavedViews, form url.Values, desc string) {

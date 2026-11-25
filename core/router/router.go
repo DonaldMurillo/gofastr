@@ -197,7 +197,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if served != nil {
+	if served != nil && c.gateKey != "" {
 		serveHookSafely(req.Context(), served, c.method, c.pattern)
 	}
 	if c.router.root.timeoutOverrides.Load() {

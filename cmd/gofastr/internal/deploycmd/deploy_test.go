@@ -49,16 +49,18 @@ func TestMain(m *testing.M) {
 // bash, here. The scripts themselves, the release directories, the
 // link swap and the health check are the real ones.
 type server struct {
-	t     *testing.T
-	dir   string
-	stubs string
-	port  int
-	arch  string
-	calls []string // what the command asked ssh to run
+	t        *testing.T
+	dir      string
+	stubs    string
+	port     int
+	arch     string
+	calls    []string // what the command asked ssh to run
+	sshReply func(command string) (string, string, int, error)
 	// unreachable makes ssh itself fail.
 	unreachable bool
 	// built is every package the command asked to build.
-	built []string
+	built    []string
+	buildErr error
 	// broken makes the next build produce a release that exits at once.
 	broken bool
 	// socketApp makes the next build produce a binary that can take a
@@ -158,32 +160,35 @@ func freePort(t *testing.T) int {
 
 // ssh runs command with bash as the server would, with the stubs first
 // on PATH.
-func (s *server) ssh(_ context.Context, o *options, command string, stdin io.Reader) (string, int, error) {
+func (s *server) ssh(_ context.Context, o *options, command string, stdin io.Reader) (string, string, int, error) {
 	s.calls = append(s.calls, command)
+	if s.sshReply != nil {
+		return s.sshReply(command)
+	}
 	if s.unreachable {
-		return "", 255, errors.New("ssh could not reach " + o.target + ": connection refused")
+		return "", "", 255, errors.New("ssh could not reach " + o.target + ": connection refused")
 	}
 	if strings.HasPrefix(command, "uname -m") {
 		dir, err := os.MkdirTemp(s.dir, "upload-")
 		if err != nil {
 			s.t.Fatal(err)
 		}
-		return s.arch + "\n" + dir + "\n", 0, nil
+		return s.arch + "\n" + dir + "\n", "", 0, nil
 	}
 	cmd := exec.Command("bash", "-c", strings.ReplaceAll(command, "sudo -n bash -s", "bash -s"))
 	cmd.Env = append(os.Environ(), "PATH="+s.stubs+":"+os.Getenv("PATH"))
 	cmd.Stdin = stdin
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
+	var out, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &stderr
 	err := cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return out.String(), exit.ExitCode(), nil
+		return out.String(), stderr.String(), exit.ExitCode(), nil
 	}
 	if err != nil {
 		s.t.Fatal(err)
 	}
-	return out.String(), 0, nil
+	return out.String(), stderr.String(), 0, nil
 }
 
 func (s *server) root() string { return s.dir }
@@ -192,6 +197,9 @@ func (s *server) root() string { return s.dir }
 // app, on the server's port.
 func (s *server) build(_ context.Context, pkg, arch, out string) error {
 	s.built = append(s.built, pkg+" "+arch)
+	if s.buildErr != nil {
+		return s.buildErr
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -497,6 +505,125 @@ func TestRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 }
 
+func TestDeployParsesOnlySSHStdout(t *testing.T) {
+	const warning = "Warning: Permanently added 'prod' to the list of known hosts.\n"
+	bin := filepath.Join(t.TempDir(), "shop")
+	if err := os.WriteFile(bin, []byte("app"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, sub, stdout, stderr, want string
+		warnDiscovery                   bool
+		code                            int
+	}{
+		{name: "discovery", warnDiscovery: true, stdout: "DEPLOYED release\n", want: "is running release release"},
+		{name: "install", stdout: "DEPLOYED release\n", stderr: warning, want: "is running release release"},
+		{name: "rollback", sub: "rollback", stdout: "DEPLOYED previous\n", stderr: warning, want: "is running release previous"},
+		{name: "status", sub: "status", stdout: "service: active\n", stderr: warning, want: "service: active"},
+		{name: "failed install", stderr: "service activation refused\n", code: 1, want: "service activation refused"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &server{t: t, sshReply: func(command string) (string, string, int, error) {
+				switch {
+				case strings.HasPrefix(command, "uname -m"):
+					stderr := ""
+					if tc.warnDiscovery {
+						stderr = warning
+					}
+					return "x86_64\n/tmp/upload\n", stderr, 0, nil
+				case command == asRoot:
+					return tc.stdout, tc.stderr, tc.code, nil
+				default:
+					return "", "", 0, nil
+				}
+			}}
+			args := []string{"prod", "--name", "shop", "--bin", bin}
+			if tc.sub != "" {
+				args = append([]string{tc.sub}, args...)
+			}
+			var out bytes.Buffer
+			err := Run(&out, args, t0, s)
+			if (err != nil) != (tc.code != 0) || !strings.Contains(out.String(), tc.want) {
+				t.Fatalf("deploy result: error %v, output %q, want %q", err, out.String(), tc.want)
+			}
+			if !strings.Contains(out.String(), tc.stderr) {
+				t.Errorf("missing SSH diagnostic %q in %q", tc.stderr, out.String())
+			}
+		})
+	}
+}
+
+func TestDeployCleansFailedUploads(t *testing.T) {
+	dir := t.TempDir()
+	bin, env := filepath.Join(dir, "shop"), filepath.Join(dir, "env")
+	for _, path := range []string{bin, env} {
+		if err := os.WriteFile(path, []byte("app"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	missing := filepath.Join(dir, "missing")
+	const (
+		binUpload = "umask 077 && cat > '/tmp/upload/bin'"
+		envUpload = "umask 077 && cat > '/tmp/upload/env'"
+		cleanup   = "rm -rf -- '/tmp/upload'"
+	)
+	for _, tc := range []struct {
+		name, bin, env, arch, failAt, wantErr string
+		buildErr                              error
+		wantCleanup                           bool
+	}{
+		{name: "missing env", bin: bin, env: missing, wantErr: missing},
+		{name: "env directory", bin: bin, env: dir, wantErr: "is a directory"},
+		{name: "missing bin", bin: missing, wantErr: missing, wantCleanup: true},
+		{name: "unsupported arch", bin: bin, arch: "riscv64", wantErr: "riscv64", wantCleanup: true},
+		{name: "build failure", buildErr: errors.New("build failed"), wantErr: "build failed", wantCleanup: true},
+		{name: "binary upload", bin: bin, failAt: binUpload, wantErr: "copying shop", wantCleanup: true},
+		{name: "env upload", bin: bin, env: env, failAt: envUpload, wantErr: "copying env", wantCleanup: true},
+		{name: "install refused", bin: bin, failAt: asRoot, wantErr: "server stopped part way", wantCleanup: true},
+		{name: "successful install", bin: bin, env: env},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			s := &server{t: t, buildErr: tc.buildErr, sshReply: func(command string) (string, string, int, error) {
+				switch {
+				case strings.HasPrefix(command, "uname -m"):
+					arch := tc.arch
+					if arch == "" {
+						arch = "x86_64"
+					}
+					return arch + "\n/tmp/upload\n", "", 0, nil
+				case command == tc.failAt:
+					return "", "remote command refused\n", 1, nil
+				case command == asRoot:
+					return "DEPLOYED release\n", "", 0, nil
+				default:
+					return "", "", 0, nil
+				}
+			}}
+			args := []string{"prod", "--name", "shop"}
+			if tc.bin != "" {
+				args = append(args, "--bin", tc.bin)
+			}
+			if tc.env != "" {
+				args = append(args, "--env-file", tc.env)
+			}
+			err := Run(&out, args, t0, s)
+			if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
+				t.Errorf("deploy error = %v, want %q", err, tc.wantErr)
+			}
+			if tc.wantCleanup && (len(s.calls) == 0 || s.calls[len(s.calls)-1] != cleanup) {
+				t.Errorf("SSH calls = %q, want final upload cleanup", s.calls)
+			}
+			if !tc.wantCleanup && tc.wantErr != "" && len(s.calls) != 0 {
+				t.Errorf("SSH calls = %q, want local validation before SSH", s.calls)
+			}
+			if !tc.wantCleanup && slices.Contains(s.calls, cleanup) {
+				t.Error("client tried to clean the upload after a successful install")
+			}
+		})
+	}
+}
+
 // A server that is not Linux on a CPU this builds for, one that cannot
 // be reached, and one that names an odd upload directory each stop the
 // deploy before anything is built or sent.
@@ -518,9 +645,9 @@ func TestServersThatCannotBeDeployedTo(t *testing.T) {
 
 type oddUpload struct{ *server }
 
-func (o oddUpload) ssh(ctx context.Context, opt *options, command string, stdin io.Reader) (string, int, error) {
+func (o oddUpload) ssh(ctx context.Context, opt *options, command string, stdin io.Reader) (string, string, int, error) {
 	if strings.HasPrefix(command, "uname -m") {
-		return "x86_64\n/tmp/x';reboot;'\n", 0, nil
+		return "x86_64\n/tmp/x';reboot;'\n", "", 0, nil
 	}
 	return o.server.ssh(ctx, opt, command, stdin)
 }
@@ -849,8 +976,8 @@ func TestLegacyReleaseUsesInvocationHealth(t *testing.T) {
 	if err := os.Symlink("releases/"+rel0, filepath.Join(app, "current")); err != nil {
 		t.Fatal(err)
 	}
-	if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader("systemctl restart shop\n")); err != nil || code != 0 || !s.serving() {
-		t.Fatalf("start legacy release: %v (exit %d)\n%s", err, code, out)
+	if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader("systemctl restart shop\n")); err != nil || code != 0 || !s.serving() {
+		t.Fatalf("start legacy release: %v (exit %d)\n%s", err, code, out+stderr)
 	}
 	if out, err := s.run(t0, "status", "prod", "--name", "shop", "--health", "/missing"); err != nil ||
 		!strings.Contains(out, fmt.Sprintf("health: no answer on port %d/missing", s.port)) {
@@ -975,10 +1102,10 @@ func TestWaitIsElapsedSeconds(t *testing.T) {
 	}
 	p := plan{root: s.dir, name: "shop", port: ln.Addr().(*net.TCPAddr).Port, health: "/healthz", wait: 1}
 	start := time.Now()
-	out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.preamble()+"read_health ''; healthy\n"))
+	out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.preamble()+"read_health ''; healthy\n"))
 	elapsed := time.Since(start)
 	if err != nil || code == 0 || elapsed < 800*time.Millisecond || elapsed > 2*time.Second {
-		t.Fatalf("one-second health deadline: exit %d after %s, err %v\n%s", code, elapsed, err, out)
+		t.Fatalf("one-second health deadline: exit %d after %s, err %v\n%s", code, elapsed, err, out+stderr)
 	}
 }
 
@@ -1002,8 +1129,8 @@ func TestRollbackFollowsServerOrderForEqualClientTimestamps(t *testing.T) {
 	second := "20261114T040000Z-000000000-AAAAAAAAAAAAAAAAAAAAAAAAAA"
 	for _, release := range []string{first, second} {
 		p := s.uploadPlan(release)
-		if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
-			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+		if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out+stderr)
 		}
 	}
 	if out, err := s.run(t0, "rollback", "prod", "--name", "shop"); err != nil || s.current() != first {
@@ -1021,8 +1148,8 @@ func TestRetentionFollowsServerOrderForEqualClientTimestamps(t *testing.T) {
 	for _, release := range releases {
 		p := s.uploadPlan(release)
 		p.keep = 1
-		if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
-			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+		if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+			t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out+stderr)
 		}
 	}
 	if got := s.releases(); !slices.Equal(got, releases[1:]) {
@@ -1052,8 +1179,8 @@ func TestDeployReconcilesUnrecordedReleases(t *testing.T) {
 			s := newServer(t)
 			for _, release := range []string{recorded, previous, running} {
 				p := s.uploadPlan(release)
-				if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
-					t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out)
+				if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+					t.Fatalf("deploy %s: exit %d, error %v\n%s", release, code, err, out+stderr)
 				}
 			}
 			order := filepath.Join(s.dir, "opt/shop/.release-order")
@@ -1070,8 +1197,8 @@ func TestDeployReconcilesUnrecordedReleases(t *testing.T) {
 			if tc.keep == 0 {
 				script = p.rollback
 			}
-			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script())); code != 0 || err != nil || s.current() != tc.wantLink {
-				t.Fatalf("%s: exit %d, error %v, current %q, want %q\n%s", tc.name, code, err, s.current(), tc.wantLink, out)
+			if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script())); code != 0 || err != nil || s.current() != tc.wantLink {
+				t.Fatalf("%s: exit %d, error %v, current %q, want %q\n%s", tc.name, code, err, s.current(), tc.wantLink, out+stderr)
 			}
 			gotOrder, err := os.ReadFile(order)
 			if want := strings.Join(tc.wantOrder, "\n") + "\n"; err != nil || string(gotOrder) != want {
@@ -1106,8 +1233,8 @@ func TestDeployRetainsLastActivatedReleaseAfterInterruption(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newServer(t)
 			p := s.uploadPlan(first)
-			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
-				t.Fatalf("first deploy: exit %d, error %v\n%s", code, err, out)
+			if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+				t.Fatalf("first deploy: exit %d, error %v\n%s", code, err, out+stderr)
 			}
 			p = s.uploadPlan(interrupted)
 			script := p.install()
@@ -1120,8 +1247,8 @@ func TestDeployRetainsLastActivatedReleaseAfterInterruption(t *testing.T) {
 				replacement = stop + tc.boundary
 			}
 			script = strings.Replace(script, tc.boundary, replacement, 1)
-			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script)); code != aborted || err != nil || s.current() != tc.wantCurrent {
-				t.Fatalf("interrupted deploy: exit %d, error %v, current %q, want %q\n%s", code, err, s.current(), tc.wantCurrent, out)
+			if out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script)); code != aborted || err != nil || s.current() != tc.wantCurrent {
+				t.Fatalf("interrupted deploy: exit %d, error %v, current %q, want %q\n%s", code, err, s.current(), tc.wantCurrent, out+stderr)
 			}
 			order := filepath.Join(s.dir, "opt/shop/.release-order")
 			if got, err := os.ReadFile(order); err != nil || string(got) != first+"\n" {
@@ -1259,10 +1386,10 @@ func TestInstallRefusesAnExistingReleaseDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := plan{root: s.dir, name: "shop", release: release, upload: upload, port: s.port, health: "/healthz", wait: 5}
-	out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install()))
+	out, stderr, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install()))
 	got, readErr := os.ReadFile(binary)
 	if err != nil || code == 0 || readErr != nil || !bytes.Equal(got, original) || s.current() != release {
-		t.Fatalf("colliding install: err %v, code %d, binary unchanged %v, current %q\n%s", err, code, bytes.Equal(got, original), s.current(), out)
+		t.Fatalf("colliding install: err %v, code %d, binary unchanged %v, current %q\n%s", err, code, bytes.Equal(got, original), s.current(), out+stderr)
 	}
 }
 

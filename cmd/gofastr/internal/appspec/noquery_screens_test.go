@@ -329,6 +329,29 @@ entities:
 	}
 }
 
+// entity.Define refuses a JSON keyset column; decode reports it first.
+func TestCursorFieldRejectsJSONColumn(t *testing.T) {
+	node, perr := coreyaml.Parse(`
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: cards
+    crud: true
+    cursor_field: meta
+    fields:
+      - name: meta
+        type: json
+        required: true
+`)
+	if perr != nil {
+		t.Fatalf("parse: %v", perr)
+	}
+	if _, err := DecodeAppSpec(node); err == nil || !strings.Contains(err.Error(), `cursor field "meta" is json`) {
+		t.Fatalf("json cursor column: err = %v, want a json refusal", err)
+	}
+}
+
 // The third framework-managed class appSpecColumn's own comment names: a FK
 // declared by a top-level relations: block rather than a type: relation field.
 

@@ -40,18 +40,24 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 			localeManifests = append(localeManifests, pwaFile{locales.Path(tag, "/manifest.webmanifest"), filepath.Join(tag, "manifest.webmanifest"), body})
 		}
 	}
-	generated := map[string]bool{"manifest.webmanifest": true, "service-worker.js": true}
+	const pwaDir = "__gofastr/pwa"
+	generated := map[string]bool{
+		"manifest.webmanifest":  true,
+		"service-worker.js":     true,
+		pwaDir + "/register.js": true,
+		pwaOfflineFile:          true,
+	}
 	for _, f := range localeManifests {
 		generated[filepath.ToSlash(f.relFile)] = true
 	}
-	const pwaDir = "__gofastr/pwa"
-	genPaths := append(slices.Sorted(maps.Keys(generated)), pwaDir+"/register.js", pwaDir+"/offline/index.html")
+	genPaths := slices.Sorted(maps.Keys(generated))
 	if err := respell(b.OutDir, genPaths); err != nil {
 		return err
 	}
 	var genFiles []fs.FileInfo
 	for _, g := range genPaths {
 		if b.staticSourceHas(g) {
+			delete(generated, g)
 			continue
 		}
 		if fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(g))); err == nil {
@@ -59,7 +65,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		}
 	}
 	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
-		if slices.Contains(genPaths, rel) {
+		if generated[rel] {
 			return true
 		}
 		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel))) //gofastr:allow(rootread) rel is enumerated from hashExportTree's own WalkDir of OutDir — nothing caller-controlled — and following a leaf alias is the point: os.SameFile detects generated-file links
@@ -90,11 +96,11 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
-		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
+		{pwaOfflinePath, filepath.FromSlash(pwaOfflineFile), []byte(offline)},
 	}
 	files = append(files, localeManifests...)
 	for _, f := range files {
-		if b.staticSourceHas(f.relFile) {
+		if !generated[filepath.ToSlash(f.relFile)] {
 			b.log("kept user-supplied %s", f.urlPath)
 			continue
 		}
@@ -117,7 +123,11 @@ func escapedURLs(paths []string) []string {
 	return out
 }
 
-const pwaRegisterJS = "/__gofastr/pwa/register.js"
+const (
+	pwaRegisterJS  = "/__gofastr/pwa/register.js"
+	pwaOfflinePath = "/__gofastr/pwa/offline"
+	pwaOfflineFile = "__gofastr/pwa/offline/index.html"
+)
 
 func hashExportTree(outDir string, skip func(string) bool) (string, error) {
 	h := sha256.New()

@@ -146,6 +146,48 @@ func TestTransitionPickCarriedOnPartialAnswer(t *testing.T) {
 	// kinds its kept shell declared — nothing to re-assert here.
 }
 
+func TestOutletMarksItsPickedTransition(t *testing.T) {
+	a := app.NewApp("t")
+	aside := app.NewOutlet("aside", app.OutletOptions{
+		Transitions: map[string]app.Transition{
+			"fade":  app.Crossfade(90 * time.Millisecond),
+			"slide": app.Slide(app.Right, 90*time.Millisecond),
+		},
+		TransitionFor: func(ctx context.Context) string {
+			match, _ := app.MatchFromContext(ctx)
+			return strings.TrimPrefix(match.Path(), "/")
+		},
+	})
+	layout := app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(l.Primary(), l.Place(aside))
+	})
+	a.SetDefaultLayout(layout)
+	for _, pick := range []string{"fade", "slide", "unknown"} {
+		t.Run(pick, func(t *testing.T) {
+			path := "/" + pick
+			a.Register(path, &stubComp{html: "HOME"}, nil)
+			page, err := a.RenderPageResult(context.Background(), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			markup := string(page.HTML)
+			if pick == "unknown" {
+				if strings.Contains(markup, `data-cui-vt="`) {
+					t.Error("unknown pick marked an outlet for a transition")
+				}
+				return
+			}
+			name := "vt-shell-aside-" + pick
+			if !strings.Contains(layout.TransitionCSS(), name) {
+				t.Fatalf("no compiled transition for %s", name)
+			}
+			if !strings.Contains(markup, `data-cui-vt="`+name+`"`) {
+				t.Errorf("outlet is missing its compiled transition marker %s", name)
+			}
+		})
+	}
+}
+
 // TestTransitionInnermostLayerWins pins the override rule when several
 // chain layers declare a keyed primary set: the innermost layer's pick
 // is the page's.

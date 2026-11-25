@@ -25,7 +25,7 @@ site.WithTheme(t)
 - **`gofastr theme init`** (`--out=theme/theme.go`): Writes the full adaptive theme as editable Go code you own.
 - **`style.DefaultTheme()`**: Lower-level light-only baseline (pair with `t.DarkColors = style.DefaultDarkColors()` if you want dark mode at this level).
 
-`WithTheme` validates the theme at boot and panics if any required token is empty or if a hex `primary`/`primary-fg` or `danger`/`danger-fg` pair falls below 4.5:1 contrast. `style.ContrastWarnings(t)` also logs boot warnings for non-hex contrast issues and form-control borders below 3:1 against `surface`.
+`WithTheme` validates the theme at boot and panics if any required token is empty or if an opaque hex `primary`/`primary-fg` or `danger`/`danger-fg` pair falls below 4.5:1 contrast. This check includes `#RGBA` and `#RRGGBBAA` with fully opaque alpha. `style.ContrastWarnings(t)` also logs boot warnings for non-hex contrast issues and form-control borders below 3:1 against `surface`.
 
 ## Token catalog
 

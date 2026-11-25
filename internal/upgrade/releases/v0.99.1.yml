@@ -1,5 +1,5 @@
 version: v0.99.1
-title: SQL builder and config bounds validation
+title: SQL builder and config bounds validation, JSON cursor refusal, nullable SDK results and export checks
 notes:
   - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
     breaking: true
@@ -13,3 +13,37 @@ notes:
     breaking: true
     guidance: "Call Set for each assignment. If there are no fields to update, handle that case before calling Build."
     nodetect: "the Set assignments may depend on fields supplied at runtime"
+  - change: "BREAKING - Define refuses a JSON field as a cursor column (CursorField, CursorFields, cursor_field, cursor_fields); gofastr.yml app specs are refused at decode"
+    breaking: true
+    guidance: "Page on a non-null scalar column instead: copy the JSON value you ordered by into its own Required column and name that column in CursorFields."
+    nodetect: "whether a cursor column is JSON depends on the field's Type in the same declaration, which no single spelling in the app shows"
+  - change: "BREAKING - regenerated OpenAPI SDKs return pointers for nullable scalar results and for nullable array or map members (*int64, []*int64, map[string]*bool); TypeScript members gain | null"
+    breaking: true
+    guidance: "Code that used the value directly, such as n, err := c.Read(ctx); total += n, no longer compiles after the SDK is regenerated: check for nil, then dereference."
+    nodetect: "the SDK is generated from the app's OpenAPI document, and which results are nullable depends on that document, not on a spelling in the app's source"
+  - change: "a static export fails when a Block-policy outlet's default loader returns an error, instead of exporting a blank outlet; live pages report the error through the ordinary fill-error path"
+    guidance: "Fix the default loader's error before exporting, or return app.ErrNoFill from it when the outlet should render empty on purpose."
+    nodetect: "whether a default loader errors depends on the app's data at export time"
+  - change: "a PWA export includes the document scripts scoped to the offline page, and fails when one cannot be fetched"
+    guidance: "Serve offline-scoped document scripts from the app router, or include their bytes in the static source, before exporting the PWA."
+    nodetect: "which scripts the offline page loads is decided at render time, not by a spelling in the app's source"
+  - change: "a theme color written as 4- or 8-digit hex with an opaque alpha (#RGBF, #RRGGBBFF) is held to the contrast floor like the same color without alpha"
+    guidance: "Theme validation now returns an error for such a pair below 4.5:1, which it skipped before: pick colors that meet the floor, as the 6-digit form already had to."
+    nodetect: "the contrast of a pair depends on both colors' values, which no single spelling shows"
+  - change: "a CopyButton whose target is a PasswordInput copies nothing, whether the password is hidden or revealed"
+    guidance: "A test that copied a revealed password through a CopyButton gets an empty clipboard now. Copy the value from another field if it must be copyable."
+    nodetect: "the copy happens in the browser, driven by tests outside the app's Go source"
+  - change: "BREAKING - entityui.UI.CountView returns (n int, ok bool, err error); ok is false for an undeclared, hidden or refused view and err is set when the count itself failed"
+    breaking: true
+    guidance: "A caller written n, ok := ui.CountView(ctx, entity, view) no longer compiles: write n, ok, err := ... and handle err, which used to be folded into ok == false."
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/entityui.UI.CountView
+          type: '^func\(ctx context\.Context, entityName string, view string\) \(int, bool\)$'
+  - change: "an entity registered with App.GroupEntity(app.Group(\"/\"), ...) is described in /openapi.json at its served path (/items), not under WithAPIPrefix (/api/items); CrudHandlerForEntity's BasePath and the startup banner match"
+    guidance: "Regenerate SDKs and clients built from /openapi.json: the old paths returned 404."
+    nodetect: "whether an entity is mounted through a root group depends on how the app wires its groups at run time"
+  - change: "MCP tools/call answers -32602 when arguments is present and is not an object, \"arguments\": null included"
+    guidance: "An MCP client that sent \"arguments\": null for a tool without arguments omits the member or sends {}."
+    nodetect: "the request comes from MCP clients outside the app's Go source"
