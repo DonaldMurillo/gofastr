@@ -45,6 +45,8 @@ Omitting `Exposure` does **not** hide the entity — `Exposure.CRUD` is a `*bool
 - `GET /posts/_events` (SSE stream; see [Entity events](events.md))
 - `GET /posts/llm.md` (machine-readable route guide matching the mounted surface, wire casing, and limits)
 
+A JSON write body (`POST`, `PUT`, `PATCH`) must be an object: JSON `null` returns `400` and runs no hook. Send `{}` to create a record from its defaults. The generated MCP create tool sends `{}` when called without arguments.
+
 `GET /openapi.json` stays authenticated unless explicitly exposed, and documents the same pagination limits (`crud.ListLimits`), `409` conflict errors, `413`, and `415` responses.
 
 **MCP tools are off by default** in production (`Exposure.MCP: true` opts in). Under `gofastr dev`, every CRUD-enabled entity exposes its data tools automatically so local agents can inspect and mutate data without extra flags.

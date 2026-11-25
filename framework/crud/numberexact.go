@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -126,6 +127,9 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": handler.JSONTrailingData()})
+	}
+	if body == nil {
+		return nil, bodyDecodeError(i18n.NewError(reasonEnvelopeNotObject))
 	}
 	normalizeJSONNumbers(body)
 	return body, nil

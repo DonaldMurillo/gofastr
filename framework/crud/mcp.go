@@ -264,6 +264,9 @@ func (ch *CrudHandler) getTool(router http.Handler) mcp.ToolHandler {
 
 func (ch *CrudHandler) createTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
+		if params == nil {
+			params = map[string]any{}
+		}
 		return unwrapToolData(runToolRequest(ctx, router, http.MethodPost, ch.mcpBase(), params))
 	}
 }
