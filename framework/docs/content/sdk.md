@@ -14,6 +14,8 @@ gofastr generate sdk --from-openapi api.json  # from an OpenAPI 3 document
 
 Wire format rules match [Entity declarations](entity-declarations.md): `Hidden` fields are omitted, `ReadOnly` fields appear only on read structs, and `States`-managed fields are omitted from patch structs.
 
+For OpenAPI schemas, nullable scalar responses and nullable scalar or object collection members use Go pointers, so `null` remains distinct from zero values. TypeScript includes `null` in the types of nullable array items and dictionary values.
+
 ## Typed repositories
 
 For server-side Go code that wants to call your own app through the exact same typed interface without spinning up a network socket, the generated Go SDK includes local repository constructors backed by `app.InProcessHandler()`:
