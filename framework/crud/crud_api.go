@@ -491,6 +491,9 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err != nil {
 		return 0, err
 	}
+	if _, err := buildIncludeNodesFromNames(ch.Entity, ch.Registry, opts.Includes); err != nil {
+		return 0, err
+	}
 	inner, args := qb.Build()
 	var total int
 	if err := ch.conn(ctx).QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+inner+") AS count_src", args...).Scan(&total); err != nil {
