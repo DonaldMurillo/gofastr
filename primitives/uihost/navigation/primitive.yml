@@ -111,11 +111,12 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestTransitionHeaderOnTheWire
   - id: partial-ends-with-head-carrier
-    rule: A partial body ends with the page-head template carrying the page's inert metadata, language, direction and skip-link label.
+    rule: A partial body ends with the page-head template carrying the page's inert metadata, resolved language, direction and skip-link label. The layout and head reuse one guarded, trimmed ScreenLang lookup.
     enforced_by:
       - test: framework/uihost.TestPartialCarriesInertPageMetadata
       - test: framework/uihost.TestPartialCarriesHostHeadDescription
       - test: framework/uihost.TestPartialCarriesSiteDescription
+      - test: framework/uihost.TestPartialScreenLanguageMatchesPage
   - id: partial-carries-runtime-strings
     rule: A partial for a reader whose runtime words differ from English carries them in data-cui-strings on the head carrier.
     enforced_by:

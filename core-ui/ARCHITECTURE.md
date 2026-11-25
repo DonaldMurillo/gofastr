@@ -189,6 +189,10 @@ not already end with that exact suffix. Full pages, not-found outlet
 outcomes, recovery screens, and partial-navigation title headers follow
 the same rule.
 
+Full pages and navigation partials resolve the screen's trimmed
+`ScreenLang` after `Load`. Empty values and panics use the route language.
+The layout and partial head use the same resolved language.
+
 Custom not-found screens can implement
 `uihost.NotFoundTitler.NotFoundTitle(context.Context, string)` to choose
 the title for the current request path, without storing that path on the

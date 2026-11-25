@@ -106,7 +106,9 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		w.Header().Set("X-Gofastr-Partial", "true")
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(textsafe.StripInvisible(title)))
 		if ds.App != nil {
-			body = render.Join(body, ds.partialHead(ctx, routePath(r), comp))
+			path := routePath(r)
+			lang := app.ScreenLanguage(comp, ds.App.LangFor(ctx, path))
+			body = render.Join(body, ds.partialHead(ctx, path, lang, comp))
 		}
 		w.WriteHeader(status)
 		fmt.Fprint(w, partialSeedIsland(ctx, string(body))+string(body))

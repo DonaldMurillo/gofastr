@@ -124,13 +124,18 @@ func (a *App) WithSkipLabelFunc(fn func(path string) string) *App {
 }
 
 func (a *App) docLangFor(ctx context.Context, path string, comp any) string {
-	lang := a.LangFor(ctx, path)
+	return ScreenLanguage(comp, a.LangFor(ctx, path))
+}
+
+// ScreenLanguage returns a screen's trimmed language override or fallback
+// when the screen supplies no language or its hook panics.
+func ScreenLanguage(comp any, fallback string) string {
 	if langer, ok := comp.(ScreenLanger); ok {
 		if l := strings.TrimSpace(safeScreenLang(langer)); l != "" {
-			lang = l
+			return l
 		}
 	}
-	return lang
+	return fallback
 }
 
 // SkipLabelFor returns the skip-link text for a route: SkipLabelFunc's answer when it gives one,
@@ -578,6 +583,8 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 				}
 				content = wrapArticle(nfScreen, nfComp, nfHTML)
 				comp = nfComp
+				lang = a.docLangFor(ctx, path, comp)
+				ctx = withDocShell(ctx, lang, skip, strings.Join(vtKinds, " "))
 				effectiveTitle = nfScreen.Title
 				if titler, ok := nfComp.(ScreenTitler); ok {
 					if t := safeScreenTitle(ctx, titler); t != "" {
@@ -660,7 +667,7 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 	}
 	htmlDoc := render.Tag("html", htmlAttrs, head, body)
 
-	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, Component: comp, FillFailures: fillFailures, NotFoundOutlet: notFoundOutcome, Transition: chainTransitionPick(ctx, chain)}
+	out := RenderResult{HTML: render.Join(doctype, htmlDoc), Title: effectiveTitle, DocumentLanguage: lang, Component: comp, FillFailures: fillFailures, NotFoundOutlet: notFoundOutcome, Transition: chainTransitionPick(ctx, chain)}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
 	} else {
@@ -748,14 +755,15 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 	}
 	if shared == 0 {
 		if len(tChain) == 0 && len(fChain) == 0 {
-			lang, skip := a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path)
+			lang, skip := res.DocumentLanguage, a.SkipLabelFor(ctx, path)
 			if lang != a.LangFor(ctx, fromPath) || skip != a.SkipLabelFor(ctx, fromPath) {
 				res.SwapLayer = docShellSwapPrefix + lang
 			}
 		}
 		return res, nil
 	}
-	ctx = withDocShell(ctx, a.docLangFor(ctx, path, res.Component), a.SkipLabelFor(ctx, path), strings.Join(chainVTKinds(tChain), " "))
+	skip, vtKinds := a.SkipLabelFor(ctx, path), strings.Join(chainVTKinds(tChain), " ")
+	ctx = withDocShell(ctx, res.DocumentLanguage, skip, vtKinds)
 	if _, ok := MatchFromContext(ctx); !ok {
 		ctx = WithMatch(ctx, newMatch(target.Path, path, params))
 	}
@@ -786,6 +794,8 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		}
 		res.HTML = wrapArticle(nfScreen, nfComp, nfHTML)
 		res.Component = nfComp
+		res.DocumentLanguage = a.docLangFor(ctx, path, nfComp)
+		ctx = withDocShell(ctx, res.DocumentLanguage, skip, vtKinds)
 		res.Title = nfScreen.Title
 		if titler, ok := nfComp.(ScreenTitler); ok {
 			if t := safeScreenTitle(ctx, titler); t != "" {
@@ -963,6 +973,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	}
 	ctx = withResolvePhase(ctx, resolvePhaseRegion)
 
+	lang := a.docLangFor(ctx, path, comp)
 	partialRouteTitle := registeredTitle(screen, decision.Kind)
 	markChainArea(ctx, chain)
 	seedRouteValues(ctx, path, screen.Path, partialRouteTitle, params, requestQuery(ctx))
@@ -985,7 +996,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 		}
 	}
 
-	out := RenderResult{HTML: body, Component: comp}
+	out := RenderResult{HTML: body, DocumentLanguage: lang, Component: comp}
 	if t, ok := comp.(ScreenTitler); ok {
 		out.Title = safeScreenTitle(ctx, t)
 	}
