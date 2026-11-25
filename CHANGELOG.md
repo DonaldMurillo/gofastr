@@ -24,6 +24,8 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-11-25
+
 ### Added
 
 - **CSP violation reports.** `framework.WithCSPReports` mounts a sink at

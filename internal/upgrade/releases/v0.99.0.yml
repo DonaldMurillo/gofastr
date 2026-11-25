@@ -1,5 +1,5 @@
 version: v0.99.0
-title: Pending release
+title: Trusted Types by default, CLI plugins, findable tabs and dependency security fixes
 notes:
   - change: "BREAKING - the default Content-Security-Policy enforces Trusted Types: require-trusted-types-for 'script'; trusted-types gofastr"
     breaking: true
