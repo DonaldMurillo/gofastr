@@ -24,6 +24,10 @@ twins:
       - path: framework/crud/conflict_fields.go
         note: Postgres diagnostic branches in conflictColumns and notNullColumn.
 invariants:
+  - id: typed-write-nil-body-is-empty
+    rule: CreateOne, UpsertOne, UpdateOne, BatchCreateMany and BatchUpdateMany treat a nil body as an empty map, so a nil body never panics and writes what an empty body writes.
+    enforced_by:
+      - test: framework/crud.TestTypedWritesTreatNilBodyAsEmpty
   - id: foreign-key-target-readable
     rule: A create or update whose BelongsTo foreign key names a row the caller cannot read answers 404, never 403, unless the context carries WithServerWrites or a cross-scope grant.
     enforced_by:

@@ -82,6 +82,7 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 - **Options:** Pass `framework.TxIsolation(sql.LevelSerializable)` or `framework.TxReadOnly()` on the outermost `App.InTx` (passing options on a nested `InTx` returns `framework.ErrTxOptionsNested`).
 - **Events on commit:** Lifecycle events emitted inside `App.InTx` are queued and published only after the outer transaction commits. If you manage a `*sql.Tx` manually instead of `App.InTx`, attach a commit queue with `ctx, q := db.WithTxQueue(ctx, tx)` and call `q.RunAfterCommit()` after `tx.Commit()`.
 - **Validation errors in process:** Check `var ve *crud.ValidationError; errors.As(err, &ve)` and read `ve.Fields()`.
+- **A nil body:** `CreateOne`, `UpsertOne`, `UpdateOne` and each body passed to `BatchCreateMany` or `BatchUpdateMany` treat a nil map as an empty one. Defaults, required-field checks and hooks still apply.
 
 ## Hook-skip & behavior matrix
 
