@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -842,5 +843,52 @@ func TestChromeIsPinned(t *testing.T) {
 	}
 	if len(versions) > 1 {
 		t.Errorf("setup-chrome steps install different versions; bump them together: %v", versions)
+	}
+}
+
+// A tag can be moved to other code after review; a commit SHA cannot. One
+// SHA per action across the workflows, so a bump reaches every use.
+func TestActionsArePinnedBySHA(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", ".github", "workflows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usesLine := regexp.MustCompile(`^\s*(?:-\s+)?uses:\s*(\S+)(.*)$`)
+	pinned := regexp.MustCompile(`^([^@\s]+)@([0-9a-f]{40})$`)
+	version := regexp.MustCompile(`^\s*#\s*v[0-9]`)
+	shas := map[string]map[string][]string{}
+	external := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		for i, line := range strings.Split(workflowSource(t, e.Name()), "\n") {
+			m := usesLine.FindStringSubmatch(line)
+			if m == nil || strings.HasPrefix(m[1], "./") {
+				continue
+			}
+			external++
+			at := e.Name() + ":" + strconv.Itoa(i+1)
+			p := pinned.FindStringSubmatch(m[1])
+			if p == nil {
+				t.Errorf("%s uses %s; pin it by full commit SHA", at, m[1])
+				continue
+			}
+			if !version.MatchString(m[2]) {
+				t.Errorf("%s pins %s with no `# vN` comment naming its release", at, m[1])
+			}
+			if shas[p[1]] == nil {
+				shas[p[1]] = map[string][]string{}
+			}
+			shas[p[1]][p[2]] = append(shas[p[1]][p[2]], at)
+		}
+	}
+	if external == 0 {
+		t.Fatal("found no external uses: line; the parser or the workflows changed shape")
+	}
+	for _, action := range slices.Sorted(maps.Keys(shas)) {
+		if len(shas[action]) > 1 {
+			t.Errorf("%s is pinned at %d SHAs; bump every use together: %v", action, len(shas[action]), shas[action])
+		}
 	}
 }

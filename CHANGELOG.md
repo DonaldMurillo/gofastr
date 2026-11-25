@@ -24,6 +24,16 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+
+- **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
+  `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
+  `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
+  `TestActionsArePinnedBySHA` holds every external `uses:` to one commit
+  SHA per action with a `# vN` comment. The Pages job no longer writes
+  `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
+  v5 leaves dotfiles out.
+
 ## [0.99.0] - 2026-11-25
 
 ### Added
