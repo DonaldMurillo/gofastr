@@ -14,6 +14,7 @@ import (
 	"time"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -205,6 +206,22 @@ func TestSweepStaticFillFailureIsScrubbed(t *testing.T) {
 	}
 	if strings.ContainsAny(err.Error(), "\u202e\x1b") {
 		t.Errorf("the refusal carries unscrubbed error text: %q", err)
+	}
+}
+
+func TestExportRejectsBlockedDefaultError(t *testing.T) {
+	a := coreapp.NewApp("Fill")
+	aside := coreapp.NewOutlet("aside", coreapp.OutletOptions{
+		Default: sweepBrokenFill{},
+		Policy:  coreapp.PolicyFunc(func(context.Context) coreapp.Decision { return decide.Block(403) }),
+	})
+	a.SetDefaultLayout(coreapp.NewLayout("shell", coreapp.LayoutSpec{Outlets: []*coreapp.Outlet{aside}}, func(_ context.Context, l *coreapp.LayoutTree) render.HTML {
+		return render.Join(l.Primary(), l.Place(aside))
+	}))
+	a.Register("/broken", &homeScreen{}, nil)
+	_, err := (&Builder{Host: uihost.New(a), OutDir: t.TempDir()}).Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "l:shell#aside") {
+		t.Fatalf("Build error = %v, want the blocked outlet's default failure", err)
 	}
 }
 

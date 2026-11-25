@@ -223,6 +223,7 @@ issue.Fill(aside, activity, app.FillPolicy(app.PolicyFunc(archivedGuard)))
 ```
 
 `RenderAlt` and `Block` apply to that region alone; `Redirect` and `decide.NotFound()` apply to the whole page.
+A blocked outlet loads only its `Default`, when present. `ErrNoFill` leaves the outlet empty, and a default load error goes through the outlet's usual error handling.
 
 ## Deferred outlets, loading states, transitions & owned styles
 
