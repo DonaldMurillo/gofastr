@@ -446,8 +446,9 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, including the event bridge drainer before OnStopFirst hooks."
     enforced_by:
+      - test: framework.TestEventBridgeShutdownDeadline
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
       - test: framework.TestShutdownReportsHostStopFailure

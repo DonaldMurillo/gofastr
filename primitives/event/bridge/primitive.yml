@@ -34,12 +34,25 @@ invariants:
     rule: A panic in the fanout's Publish is logged on the publisher goroutine, which goes on draining the queue.
     enforced_by:
       - test: framework/event.TestBridgePublishPanicContained
+  - id: drain-joins-publisher-until-deadline
+    rule: AttachFanoutDrainer detaches the bridge and applies app/worker-drains-honor-deadline to the publisher join, including when the drain context is already expired.
+    enforced_by:
+      - test: framework.TestEventBridgeShutdownDeadline
+      - test: framework/event.TestBridgeDrainerExpiredAfterStop
   - id: remote-data-round-trips-json
     rule: A remote event's Data arrives as decoded JSON through jsonexact, objects as map[string]any and integers past 2^53 with their digits.
     enforced_by:
       - test: framework/event.TestBridgeDataRoundTripsAsMap
       - test: framework/event.TestBridgeKeepsBigIntegers
 decisions:
+  - id: abandon-publisher-wait-at-deadline
+    date: 2026-11-25
+    status: accepted
+    decision: The drainer detaches the bridge before waiting and reports a context error if it stops waiting, since it cannot interrupt a fanout implementation that ignores its Publish context.
+    rejected:
+      - option: Wait for the publisher regardless of the deadline.
+        why: A stalled Publish would block Shutdown and delay the remaining stop hooks.
+    upholds: [drain-joins-publisher-until-deadline]
   - id: one-topic-for-the-bus
     date: 2026-11-17
     status: accepted

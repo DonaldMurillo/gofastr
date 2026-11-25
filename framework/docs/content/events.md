@@ -21,6 +21,8 @@ Delivery semantics:
 - **Non-blocking:** subscribers receive committed notifications without holding open the SQL transaction. Keep handlers fast or hand off heavy work to `battery/queue`.
 - **Multi-replica & durable delivery:** by default the event bus is in-process. Attach `framework.WithFanout(...)` to broadcast live events across replicas, or `framework.WithOutbox(...)` + `framework.WithOutboxConsumer(...)` for transactional, restart-safe delivery (see [Scaling](scaling.md), [Queue](queue.md), and [Webhooks](webhooks.md)).
 
+On shutdown, an app with fanout detaches the event bridge and waits for its publisher until the drain context ends. If the publisher is still blocked, shutdown reports the context error and continues with the remaining stop hooks. The blocked publish can outlive shutdown if the fanout backend ignores its publish context. When attaching a fanout to a standalone bus, use `event.AttachFanoutDrainer` for a context-bounded publisher wait.
+
 ## HTTP event stream (`GET /<table>/_events`)
 
 External consumers, CLIs, and local tools can subscribe to `GET /<table>/_events` (`text/event-stream`):

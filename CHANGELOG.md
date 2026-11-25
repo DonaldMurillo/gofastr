@@ -50,6 +50,9 @@ few lines, and link the PR or the docs page for the rest.
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
+- `App.Shutdown` stops waiting for a blocked event bridge publisher at the
+  drain deadline and reports the context error. (PR link pending)
+
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
 

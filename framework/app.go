@@ -1192,14 +1192,11 @@ func NewApp(opts ...AppOption) *App {
 	}
 
 	if a.fanout != nil {
-		stopBridge, err := event.AttachFanout(a.events, a.fanout)
+		drainBridge, err := event.AttachFanoutDrainer(a.events, a.fanout)
 		if err != nil {
 			panic("framework: WithFanout: " + err.Error())
 		}
-		a.OnStop(func() error {
-			stopBridge()
-			return nil
-		})
+		a.lc.PrependDrainer(lifecycle.DrainFunc(drainBridge))
 	}
 
 	a.modules = NewModuleManager(a.DB, a.fanout)
