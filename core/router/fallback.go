@@ -104,10 +104,12 @@ func prefixCovers(prefix string, req *http.Request) bool {
 	if prefix[0] != '/' {
 		host, rest, _ := strings.Cut(prefix, "/")
 		reqHost := req.Host
-		if h, _, err := net.SplitHostPort(reqHost); err == nil {
-			reqHost = h
+		if req.Method != http.MethodConnect {
+			if h, _, err := net.SplitHostPort(reqHost); err == nil {
+				reqHost = h
+			}
 		}
-		if !strings.EqualFold(host, reqHost) {
+		if host != reqHost {
 			return false
 		}
 		prefix = "/" + rest
@@ -124,7 +126,7 @@ func prefixCovers(prefix string, req *http.Request) bool {
 		case strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "...}"):
 			return true
 		case strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}"):
-			if got[i] == "" {
+			if got[i] == "" || unescapeSegment(got[i]) == "/" {
 				return false
 			}
 		case unescapeSegment(seg) != unescapeSegment(got[i]):
