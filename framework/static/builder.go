@@ -291,12 +291,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	frameworkAssetCount := len(res.Assets)
 
+	built := newFileSet()
+	for _, rel := range writtenPaths(&res, rendered, docs) {
+		built.add(rel)
+	}
 	if dir := b.Host.StaticDir(); dir != "" {
-		if err := copyDir(dir, b.OutDir, rendered, &res, b.log); err != nil {
+		if err := copyDir(dir, b.OutDir, built, &res, b.log); err != nil {
 			return res, err
 		}
 	} else if fsys := b.Host.StaticFS(); fsys != nil {
-		if err := copyFS(fsys, b.OutDir, rendered, &res, b.log); err != nil {
+		if err := copyFS(fsys, b.OutDir, built, &res, b.log); err != nil {
 			return res, err
 		}
 	}
