@@ -58,9 +58,10 @@ invariants:
       - test: core-ui/island.TestLeaveNotOvertakenByHeartbeat
       - test: core-ui/island.TestStopGoodbyeLandsLast
   - id: fanout-stop-honors-deadline
-    rule: "The contextual island fanout stop follows app/worker-drains-honor-deadline: it reports an ended context even if detach already completed, and starts no further goodbyes once the context ends."
+    rule: "The contextual island fanout stop follows app/worker-drains-honor-deadline: it reports an already-ended or interrupted drain even when the detach result is ready, and starts no further goodbyes once the context ends."
     enforced_by:
       - test: core-ui/island.TestFanoutStopContextAlreadyExpired
+      - test: core-ui/island.TestFanoutStopReportsInterruptedGoodbye
       - test: framework.TestShutdownBoundsIslandFanoutStop
   - id: cross-replica-convergence
     rule: Joins and leaves reach peers at once, joins made before SetFanout are announced on attach, a silent replica's members expire within the TTL, and an announcement carries only UserID and DisplayName.

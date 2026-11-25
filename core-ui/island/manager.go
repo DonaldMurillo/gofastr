@@ -327,7 +327,7 @@ func (m *Manager) SetFanout(f fanout.Fanout) (stop func(), err error) {
 		return nil, err
 	}
 	var once sync.Once
-	return func() { once.Do(func() { detach(context.Background()) }) }, nil
+	return func() { once.Do(func() { _ = detach(context.Background()) }) }, nil
 }
 
 // SetFanoutContext is [Manager.SetFanout] with a stop function that waits only
@@ -349,7 +349,7 @@ func (m *Manager) SetFanoutContext(f fanout.Fanout) (stop func(context.Context) 
 						stopErr = fmt.Errorf("island fanout stop panicked: %v", textsafe.Recovered(r))
 					}
 				}()
-				detach(ctx)
+				stopErr = detach(ctx)
 			}()
 		})
 		if err := ctx.Err(); err != nil {
@@ -364,7 +364,7 @@ func (m *Manager) SetFanoutContext(f fanout.Fanout) (stop func(context.Context) 
 	}, nil
 }
 
-func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context), error) {
+func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context) error, error) {
 	if f == nil {
 		return nil, errors.New("island: SetFanout: nil fanout")
 	}
@@ -444,7 +444,7 @@ func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context), error) {
 	go m.presenceHeartbeatLoop(presenceDone)
 	m.broadcastAllLocalTopics()
 
-	return func(ctx context.Context) {
+	return func(ctx context.Context) error {
 		m.mu.Lock()
 		done := m.presenceDone
 		m.presenceSend = nil
@@ -477,6 +477,7 @@ func (m *Manager) attachFanout(f fanout.Fanout) (func(context.Context), error) {
 		cb := m.presenceCallback()
 		m.mu.Unlock()
 		firePresenceChange(cb, changed)
+		return ctx.Err()
 	}, nil
 }
 
