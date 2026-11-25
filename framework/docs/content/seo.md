@@ -21,7 +21,7 @@ Other options: `WithRobotsMeta("noindex")` (staging), `WithFavicon`, `WithThemeC
 
 Implement individual interfaces (`ScreenTitle`, `ScreenDescription`, `ScreenCanonical`, `ScreenRobots`, `ScreenHreflangs`, `ScreenSchema`) or the combined `ScreenSEO(ctx) uihost.SEO` bundle on any screen component. Per-screen tags precede sitewide tags (and replace the sitewide `<meta name="description">`).
 
-- **Typed JSON-LD (`core-ui/seo`):** `NewArticle`, `NewBreadcrumbList`, `NewFAQPage`, `NewOrganization`, `NewPerson`, `NewWebSite`, `NewWebPage`, `NewProduct`/`Offer` — rendered as `<script type="application/ld+json">` with `</` neutralized.
+- **Typed JSON-LD (`core-ui/seo`):** `NewArticle`, `NewBreadcrumbList`, `NewFAQPage`, `NewOrganization`, `NewPerson`, `NewWebSite`, `NewWebPage`, `NewProduct`/`Offer` — rendered as `<script type="application/ld+json">` with `</` neutralized. `seo.Render` skips nil `Thing` entries, including typed-nil pointers.
 - **Browser Reader Mode:** register a screen with `app.AsArticle()` (or implement `ScreenArticle() app.ArticleMeta` for author, date, and cover image) to wrap content in `<article>`, emit `Article` JSON-LD, and set `og:type=article`.
 - **Page titles:** `<title>` appends ` — <AppName>` automatically unless already suffixed.
 - **Per-screen `llm.md`:** when `uihost.WithPublicLLMMD` is on, each route's `/llm.md` mirrors the exact same resolved SEO metadata as YAML front-matter.
