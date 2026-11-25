@@ -1178,7 +1178,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          # See the test job: setup-go's go.sum-keyed cache goes stale
+          # See the test job: setup-go's go.mod-keyed cache goes stale
           # between dependency bumps. This job restores the test job's
           # per-SHA cache instead.
           cache: false
