@@ -38,6 +38,7 @@
     const live = p.item.isConnected, a = keep && live && p.at;
     mark(false);
     pd = null;
+    S.dragging = false;
     p.item.classList.remove('is-dragging');
     try { p.grip.releasePointerCapture(p.id); } catch (_) {}
     if (!a) { if (!keep && live) S.announce(S.listOf(p.item), 'data-hui-sortable-s-cancelled'); return; }
@@ -54,6 +55,7 @@
     NS._sortable.cancelGrab();
     try { grip.setPointerCapture(ev.pointerId); } catch (_) {}
     pd = { item, grip, id: ev.pointerId, at: null };
+    NS._sortable.dragging = true;
     item.classList.add('is-dragging');
   });
 
@@ -65,7 +67,10 @@
     mark(false);
     if (!list || (list !== src && !S.canCross(list, src))) pd.at = null;
     else {
-      const row = el.closest('[data-hui-sortable-item]');
+      // Only a row of this list lands the drop: over a list nested in a
+      // row, closest() would find the outer row and drop beside it.
+      let row = el.closest('[data-hui-sortable-item]');
+      if (row && row.parentElement !== list) row = null;
       const rest = S.rowsOf(list).filter((r) => r !== pd.item);
       if (row === pd.item) pd.at = null;
       else if (row) {

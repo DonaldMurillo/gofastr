@@ -115,12 +115,28 @@ func progressCSS(_ style.Theme) string {
   50%      { opacity: var(--opacity-disabled, 0.5); }
 }
 
+/* Forced colours drop a background image, and with it the band; the
+   bar opts out and draws the band in Highlight over Canvas, flat
+   across the track under reduced motion (the last rule below). */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    background-image: linear-gradient(90deg, transparent, Highlight, transparent);
+    border: var(--stroke-thin, 1px) solid CanvasText;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value { transition: none; }
   [data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate {
     background-image: linear-gradient(90deg, color-mix(in oklab, var(--color-primary, #18181B) 45%, transparent), color-mix(in oklab, var(--color-primary, #18181B) 45%, transparent));
     background-size: 100% 100%;
     animation: fui-progress-breathe 2.4s var(--easing-ease-in-out, ease-in-out) infinite;
+  }
+}
+@media (forced-colors: active) and (prefers-reduced-motion: reduce) {
+  [data-cui-comp="ui-progress"] .fui-progress__bar:indeterminate {
+    background-image: linear-gradient(90deg, Highlight, Highlight);
   }
 }`
 }

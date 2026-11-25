@@ -204,7 +204,9 @@ func cardCSS(t style.Theme) string {
 }
 /* HeadingHref: the heading's link is the card's one link, stretched over
    the card by its ::after; the header action, the footer and the body's
-   own controls sit above it and stay clickable. The ring is drawn on the
+   own controls sit above it and stay clickable. A card nested in the
+   body is lifted whole, not its heading link, whose ::after must still
+   stretch over the inner card. The ring is drawn on the
    card when the link has keyboard focus. */
 :where([data-cui-comp="ui-card"].fui-card--stretched) { position: relative; }
 [data-cui-comp="ui-card"].fui-card--stretched .fui-card__heading-link {
@@ -219,7 +221,7 @@ func cardCSS(t style.Theme) string {
   border-radius: inherit;
 }
 [data-cui-comp="ui-card"].fui-card--stretched :is(.fui-card__action, .fui-card__footer),
-[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href], button, input, select, textarea, summary, label, iframe, video, audio, [tabindex], [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"])) {
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href]:not(.fui-card__heading-link), button, input, select, textarea, summary, label, iframe, video, audio, [tabindex], [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"]), .fui-card) {
   position: relative;
   z-index: 1;
 }

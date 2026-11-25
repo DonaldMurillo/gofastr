@@ -312,6 +312,9 @@
 
     if (ev.key === ' ' || ev.key === 'Spacebar') {
       ev.preventDefault();
+      // No grab starts under a held pointer drag: it would outlive the
+      // drop and its Escape would revert the committed move.
+      if (NS._sortable.dragging) return;
       if (kbGrab === t) { kbEnd(true); return; }
       // A grab still held on another row is cancelled first, so the
       // next drop commits only its own move.

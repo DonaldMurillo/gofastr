@@ -131,3 +131,36 @@ func TestTabsServerPaintsNoAriaHidden(t *testing.T) {
 		t.Errorf("the server painted aria-hidden on a panel; a no-script reveal would leave it hidden from AT:\n%s", h)
 	}
 }
+
+// A tab clicked before headless-tabs arrives moves data-active away from
+// the panel the server painted active, which is still shown. Wiring the
+// strip must keep that click, not mistake the server's panel for one the
+// browser revealed. The strip is inserted after load with data-active
+// already moved, the state an early click leaves.
+func TestE2E_TabsEarlyClickIsNotTakenForAReveal(t *testing.T) {
+	b := startBehaviorServer(t, string(tabsStrip("first", "A", "B")))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, tabsLoaded) {
+		t.Fatal("the module never loaded")
+	}
+	strip := string(Tabs(TabsProps{Name: "early", Tabs: []Tab{
+		{Label: "One", Panel: render.Text("one")},
+		{Label: "Two", Panel: render.Text("two")},
+	}}, nil))
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const d = document.createElement('div');
+		d.innerHTML = `+"`"+strip+"`"+`;
+		d.firstElementChild.setAttribute('data-active', '1');
+		document.body.appendChild(d.firstElementChild);
+	})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `(() => { const w = document.querySelector('[data-cui-signal="early"]');
+		return !!w && w.getAttribute('data-active') === '1' &&
+			document.getElementById('early-tab-1').getAttribute('aria-selected') === 'true' &&
+			!document.getElementById('early-panel-1').hasAttribute('hidden') &&
+			document.getElementById('early-panel-0').getAttribute('hidden') === 'until-found'; })()`) {
+		t.Fatalf("the early click was undone: active=%s", evalString(t, ctx,
+			`String(document.querySelector('[data-cui-signal="early"]').getAttribute('data-active'))`))
+	}
+}

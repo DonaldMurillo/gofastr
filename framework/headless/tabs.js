@@ -154,14 +154,17 @@
   // module was listening: a fragment URL on first load or a search
   // that ran before the module arrived fires beforematch with nobody
   // listening, drops the panel's hidden, and apply() would hide it
-  // again. Every inactive panel ships hidden, so an inactive one
-  // without it is the one the reader was sent to.
+  // again. Every inactive panel ships hidden with tabindex -1, and the
+  // browser's reveal drops only the hidden, so a panel without it but
+  // still at -1 is the one the reader was sent to. The panel the server
+  // painted active (tabindex 0) is not: a tab clicked before this module
+  // arrived moved data-active away from it, and that click stands.
   function adoptRevealed(w) {
     const idx = String(parseInt(w.getAttribute('data-active') || '0', 10));
     const tabs = own(w, '[role="tab"]');
     for (const panel of own(w, '[role="tabpanel"]')) {
       const i = panel.getAttribute('data-cui-tab-index');
-      if (i === idx || panel.hasAttribute('hidden')) continue;
+      if (i === idx || panel.hasAttribute('hidden') || panel.getAttribute('tabindex') !== '-1') continue;
       const tab = tabs.find(function (t) { return t.getAttribute('data-cui-tab-index') === i; });
       if (!tab || tab.getAttribute('aria-disabled') === 'true') continue;
       selectIndex(w, i);

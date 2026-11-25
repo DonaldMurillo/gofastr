@@ -126,9 +126,19 @@ func TestProgressIndeterminateSweepsAndHoldsStillUnderReducedMotion(t *testing.T
 	if !strings.Contains(keyframes(t, css, "fui-progress-sweep"), "background-position") {
 		t.Errorf("the sweep keyframe moves nothing")
 	}
+	// The forced-colors band has a reduced-motion block of its own, so
+	// one block holds the still band and none restarts the sweep.
 	inside, _ := mediaBlocks(css, "prefers-reduced-motion: reduce")
-	if len(inside) != 1 || !strings.Contains(inside[0], ":indeterminate") ||
-		!strings.Contains(inside[0], "animation: fui-progress-breathe") {
+	held := false
+	for _, blk := range inside {
+		if strings.Contains(blk, ":indeterminate") && strings.Contains(blk, "animation: fui-progress-breathe") {
+			held = true
+		}
+		if strings.Contains(blk, "fui-progress-sweep") {
+			t.Errorf("a reduced-motion block runs the sweep: %q", blk)
+		}
+	}
+	if !held {
 		t.Fatalf("reduced motion leaves the indeterminate sweep running: %q", inside)
 	}
 	if motionProps.MatchString(keyframes(t, css, "fui-progress-breathe")) {

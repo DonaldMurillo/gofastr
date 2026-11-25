@@ -53,16 +53,19 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 	}
 }
 
-// The nested-link check looks for an <a> tag, not every tag whose name
-// starts with a: <abbr>, <area>, <article>, <aside> and <audio> are not links.
+// An <a> may hold no interactive content: the check refuses a link, a
+// control, embedded media, a tabindex or contenteditable, and lets
+// ordinary phrasing through, <abbr> and <aside> included.
 func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
-	for _, tag := range []string{"abbr", "aside", "article", "audio", "area"} {
+	for _, tag := range []string{"abbr", "aside", "article", "area", "b", "em", "span"} {
 		got := string(Card(CardProps{TitleContent: render.HTML(`<` + tag + `>x</` + tag + `>`), TitleHref: "/b"}, nil))
 		if !strings.Contains(got, `href="/b"`) {
 			t.Errorf("a TitleContent holding <%s> lost its title link:\n%s", tag, got)
 		}
 	}
-	for _, link := range []string{`<a href="/x">x</a>`, `<A>x</A>`, "<a\thref=\"/x\">x</a>", `<a/>`} {
+	for _, link := range []string{`<a href="/x">x</a>`, `<A>x</A>`, "<a\thref=\"/x\">x</a>", `<a/>`,
+		`<button type="button">Details</button>`, `<input type="checkbox">`, `<span tabindex="0">x</span>`,
+		`<span contenteditable="true">x</span>`, `<audio controls src="/a.mp3"></audio>`} {
 		func() {
 			defer func() {
 				if recover() == nil {

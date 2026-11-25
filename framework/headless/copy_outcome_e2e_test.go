@@ -129,3 +129,52 @@ func TestE2E_CopyNeverReadsAPasswordField(t *testing.T) {
 		t.Fatalf("a password field was copied: %q", got)
 	}
 }
+
+// A field's value is copied exactly, leading spaces and a trailing
+// newline included; only other text is trimmed.
+func TestE2E_CopyKeepsAFieldsWhitespace(t *testing.T) {
+	b := startBehaviorServer(t, `<textarea id="code"></textarea>`+
+		`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy">`+
+		`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CopyBehaviorName)) {
+		t.Fatal("module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__copied = null;
+		Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: (t) => { window.__copied = t; return Promise.resolve(); }}});
+		document.getElementById('code').value = '  indented\n';
+		document.getElementById('cp').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := evalString(t, ctx, `JSON.stringify(window.__copied)`); got != `"  indented\n"` {
+		t.Fatalf("copied %s, want the field's value with its whitespace", got)
+	}
+}
+
+// A refused copy right after a successful one cancels the success's
+// restore timer, so it restores the label itself, even on a wrapper
+// with no failed label of its own.
+func TestE2E_CopyFailureAfterSuccessRestoresTheLabel(t *testing.T) {
+	b := startBehaviorServer(t, `<pre id="code">npm i gofastr</pre>`+
+		`<span data-hui-copy data-hui-copy-target="code" data-hui-copy-copied="Copied" data-hui-copy-back="Copy">`+
+		`<button id="cp" type="button" data-hui-copy-label>Copy</button><span data-hui-copy-status></span></span>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CopyBehaviorName)) {
+		t.Fatal("module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: () => Promise.resolve()}});
+		document.getElementById('cp').click();
+		setTimeout(() => {
+			Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError'))}});
+			document.getElementById('cp').click();
+		}, 200)`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(4 * time.Second)
+	got := evalString(t, ctx, `document.getElementById('cp').textContent + '|' + (document.querySelector('[data-hui-copy]').getAttribute('data-hui-copy-state') || 'none')`)
+	if got != "Copy|none" {
+		t.Fatalf("[label|state] = %q after a success then a failure, want Copy|none", got)
+	}
+}

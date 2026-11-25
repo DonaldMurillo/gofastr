@@ -194,10 +194,11 @@ invariants:
       - test: framework/headless.TestE2E_TabsPanelsFollowSelection
       - test: framework/headless.TestTabsServerPaintsNoAriaHidden
   - id: found-panel-selects-its-tab
-    rule: When find-in-page or a fragment link reveals a hidden="until-found" panel, headless-tabs selects its tab through the strip's signal, on beforematch or, for a panel the browser revealed before the module loaded (a fragment URL on first load), when it wires the strip, and leaves a disabled tab's panel unselected.
+    rule: When find-in-page or a fragment link reveals a hidden="until-found" panel, headless-tabs selects its tab through the strip's signal, on beforematch or, for a panel the browser revealed before the module loaded (a fragment URL on first load, which leaves it without hidden but still at tabindex -1), when it wires the strip; it leaves a disabled tab's panel unselected and never takes the panel the server painted active for a reveal, so a tab clicked before the module arrived stays selected.
     enforced_by:
       - test: framework/headless.TestE2E_TabsFoundPanelSelectsItsTab
       - test: framework/headless.TestE2E_TabsFragmentOnLoadSelectsItsTab
+      - test: framework/headless.TestE2E_TabsEarlyClickIsNotTakenForAReveal
   - id: disabled-tab-neither-selects-nor-links
     rule: A disabled tab renders aria-disabled with no data-cui-signal-set and no href.
     enforced_by:

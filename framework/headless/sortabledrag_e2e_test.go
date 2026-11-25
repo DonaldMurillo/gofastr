@@ -11,6 +11,7 @@ package headless
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,8 +159,8 @@ func TestE2E_SortablePointerDragMovesOnRelease(t *testing.T) {
 			if !waitLive(ctx, "Order saved.") {
 				t.Fatal("the drop never announced the save")
 			}
-			if len(*commits) != 1 || (*commits)[0] != "b,a,c" {
-				t.Fatalf("the drop committed %q, want exactly [b,a,c]", *commits)
+			if len(commits.get()) != 1 || (commits.get())[0] != "b,a,c" {
+				t.Fatalf("the drop committed %q, want exactly [b,a,c]", commits.get())
 			}
 		})
 	}
@@ -180,13 +181,13 @@ func TestE2E_SortablePointerDragUpperHalfLandsBefore(t *testing.T) {
 		t.Fatalf("a drop on b's upper half left %q, want a,c,b", got)
 	}
 	for range 10 {
-		if len(*commits) > 0 {
+		if len(commits.get()) > 0 {
 			break
 		}
 		chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
 	}
-	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
-		t.Fatalf("the drop committed %q, want exactly [a,c,b]", *commits)
+	if len(commits.get()) != 1 || (commits.get())[0] != "a,c,b" {
+		t.Fatalf("the drop committed %q, want exactly [a,c,b]", commits.get())
 	}
 }
 
@@ -230,8 +231,8 @@ func TestE2E_SortablePointerDragCancels(t *testing.T) {
 			if left != "0" {
 				t.Fatalf("%s drag classes survived the cancel", left)
 			}
-			if len(*commits) != 0 {
-				t.Fatalf("a cancelled drag POSTed %q", *commits)
+			if len(commits.get()) != 0 {
+				t.Fatalf("a cancelled drag POSTed %q", commits.get())
 			}
 		})
 	}
@@ -262,8 +263,8 @@ func TestE2E_SortableTouchOutsideTheGripIsNoDrag(t *testing.T) {
 	if dragging != "0" {
 		t.Fatal("a touch on the row's label started a drag")
 	}
-	if order != "a,b" || len(*commits) != 0 {
-		t.Fatalf("a touch outside the grip moved the list to %q and POSTed %q", order, *commits)
+	if order != "a,b" || len(commits.get()) != 0 {
+		t.Fatalf("a touch outside the grip moved the list to %q and POSTed %q", order, commits.get())
 	}
 }
 
@@ -287,8 +288,8 @@ func TestE2E_SortablePointerDropOnItselfIsNoMove(t *testing.T) {
 	if marks != "0" {
 		t.Fatalf("a row held over itself drew %s landing marks", marks)
 	}
-	if got := evalString(t, ctx, sortOrder); got != "a,b" || len(*commits) != 0 {
-		t.Fatalf("a drop on the row itself left %q and POSTed %q", got, *commits)
+	if got := evalString(t, ctx, sortOrder); got != "a,b" || len(commits.get()) != 0 {
+		t.Fatalf("a drop on the row itself left %q and POSTed %q", got, commits.get())
 	}
 }
 
@@ -327,16 +328,16 @@ func TestE2E_SortablePointerDragInAGapLandsByPosition(t *testing.T) {
 				t.Fatalf("a release in %s left %q, want %q", c.name, got, c.want)
 			}
 			for range 10 {
-				if len(*commits) > 0 || !c.commit {
+				if len(commits.get()) > 0 || !c.commit {
 					break
 				}
 				chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
 			}
-			if c.commit && (len(*commits) != 1 || (*commits)[0] != c.want) {
-				t.Fatalf("the drop committed %q, want exactly [%s]", *commits, c.want)
+			if c.commit && (len(commits.get()) != 1 || (commits.get())[0] != c.want) {
+				t.Fatalf("the drop committed %q, want exactly [%s]", commits.get(), c.want)
 			}
-			if !c.commit && len(*commits) != 0 {
-				t.Fatalf("a release in %s POSTed %q", c.name, *commits)
+			if !c.commit && len(commits.get()) != 0 {
+				t.Fatalf("a release in %s POSTed %q", c.name, commits.get())
 			}
 		})
 	}
@@ -377,8 +378,8 @@ func TestE2E_SortablePointerDragEndsWhenTheListIsReRendered(t *testing.T) {
 			if keys != c.want {
 				t.Fatalf("a drag over a re-rendered list left the rows %q, want %s", keys, c.want)
 			}
-			if len(*commits) != 0 {
-				t.Fatalf("a drag over a re-rendered list POSTed %q", *commits)
+			if len(commits.get()) != 0 {
+				t.Fatalf("a drag over a re-rendered list POSTed %q", commits.get())
 			}
 			// The drag is over: a fresh one on the new rows works.
 			var left string
@@ -393,14 +394,87 @@ func TestE2E_SortablePointerDragEndsWhenTheListIsReRendered(t *testing.T) {
 				t.Fatalf("%s drag classes survived the re-render", left)
 			}
 			for range 10 {
-				if len(*commits) > 0 {
+				if len(commits.get()) > 0 {
 					break
 				}
 				chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
 			}
-			if len(*commits) != 1 {
-				t.Fatalf("a drag after the re-render committed %q; the first drag never ended", *commits)
+			if len(commits.get()) != 1 {
+				t.Fatalf("a drag after the re-render committed %q; the first drag never ended", commits.get())
 			}
 		})
+	}
+}
+
+// Space on a focused row while a pointer drag is held starts no
+// keyboard grab: one would outlive the drop, and its Escape would put
+// the list back to the order from before the committed move.
+func TestE2E_SortableKeyboardGrabWaitsOutAPointerDrag(t *testing.T) {
+	b, commits := sortableServer(t, sortableLayout+sortablePage(
+		SortableItem{Key: "a", Label: "Alpha"},
+		SortableItem{Key: "b", Label: "Beta"},
+		SortableItem{Key: "c", Label: "Gamma"},
+	), false)
+	ctx := behaviorPage(t, b)
+	key := func(k string) chromedp.Action {
+		return chromedp.Evaluate(`(function(){var r=document.querySelector('[data-hui-sort-key="a"]');r.focus();
+			r.dispatchEvent(new KeyboardEvent('keydown',{key:'`+k+`',bubbles:true,cancelable:true}));})()`, nil)
+	}
+	if err := chromedp.Run(ctx,
+		pointerPress("mouse", gripOf("b"), lowerHalfOf("c")),
+		key(" "),
+		pointerRelease("mouse", lowerHalfOf("c")),
+		chromedp.Sleep(300*time.Millisecond),
+		key("Escape"),
+		chromedp.Sleep(300*time.Millisecond),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for range 10 {
+		if len(commits.get()) > 0 {
+			break
+		}
+		chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
+	}
+	got := commits.get()
+	if order := evalString(t, ctx, sortOrder); len(got) != 1 || got[0] != "a,c,b" || order != "a,c,b" {
+		t.Fatalf("after the drop and an Escape the list reads %q and the server holds %q, want both a,c,b", order, got)
+	}
+}
+
+// A list nested in another list's row takes a drop on its own padding:
+// the row closest() finds there is the outer one, which is not a row of
+// the list under the pointer.
+func TestE2E_SortableDropOnANestedListStaysInIt(t *testing.T) {
+	inner := string(SortableList(SortableListProps{
+		Label: "Inner", RPCPath: "/commit",
+		Items: []SortableItem{{Key: "i1", Label: "One"}, {Key: "i2", Label: "Two"}},
+	}, nil))
+	inner = `<div class="inner">` + inner + `</div>`
+	outer := string(SortableList(SortableListProps{
+		Label: "Outer", RPCPath: "/outer",
+		Items: []SortableItem{{Key: "x", Label: "Holder"}, {Key: "y", Label: "Other"}},
+	}, nil))
+	outer = strings.Replace(outer, ">Holder<", ">Holder"+inner+"<", 1)
+	style := `<style>.inner [data-hui-sortable]{padding-block-end:40px}</style>`
+	b, commits := sortableServer(t, sortableLayout+style+outer, false)
+	ctx := behaviorPage(t, b)
+	padding := `(function(){var r=document.querySelector('.inner [data-hui-sortable]').getBoundingClientRect();return {x:r.left+r.width/2,y:r.bottom-10};})()`
+	if err := chromedp.Run(ctx, pointerDrag("mouse", "i1", padding), chromedp.Sleep(300*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	inOrder := evalString(t, ctx, `Array.from(document.querySelectorAll('.inner [data-hui-sort-key]')).map(function(r){return r.getAttribute('data-hui-sort-key')}).join(',')`)
+	outOrder := evalString(t, ctx, `Array.from(document.querySelectorAll('[data-hui-sortable]')[0].children).filter(function(r){return r.hasAttribute('data-hui-sort-key')}).map(function(r){return r.getAttribute('data-hui-sort-key')}).join(',')`)
+	if inOrder != "i2,i1" || outOrder != "x,y" {
+		t.Fatalf("a drop on the nested list's padding left inner %q and outer %q, want i2,i1 and x,y", inOrder, outOrder)
+	}
+	for range 10 {
+		if len(commits.get()) > 0 {
+			break
+		}
+		chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond))
+	}
+	if got := commits.get(); len(got) != 1 || got[0] != "i2,i1" {
+		t.Fatalf("the nested drop committed %q, want exactly [i2,i1]", got)
 	}
 }

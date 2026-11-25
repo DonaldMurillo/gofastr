@@ -243,7 +243,7 @@ invariants:
       - test: framework/headless.TestSweepContentSortableRowIsTheOnlyControl
       - test: framework/headless.TestNoEnumeratedAttributeRendersEmpty
   - id: sortable-drag-moves-on-release
-    rule: A pointer drag starts only on a row's grip, moves no row while the pointer moves, marks the landing place with is-drop-before or is-drop-after on a row or is-drop-target on a list with no other row, moves the row once on release and commits it as a keyboard drop commits, lands a pointer in the gap between rows before the first row whose middle is below it (after the last when none is), and moves and commits nothing on a release off every list, over the dragged row or beside its own place, on Escape, when the pointer capture is lost, or when the page re-rendered the dragged row away.
+    rule: A pointer drag starts only on a row's grip, moves no row while the pointer moves, marks the landing place with is-drop-before or is-drop-after on a row or is-drop-target on a list with no other row, moves the row once on release and commits it as a keyboard drop commits, lands a pointer in the gap between rows before the first row whose middle is below it (after the last when none is), and moves and commits nothing on a release off every list, over the dragged row or beside its own place, on Escape, when the pointer capture is lost, or when the page re-rendered the dragged row away; a landing row must be a row of the list under the pointer, and no keyboard grab starts while a pointer drag is held.
     enforced_by:
       - test: framework/headless.TestE2E_SortablePointerDragMovesOnRelease
       - test: framework/headless.TestE2E_SortablePointerDragUpperHalfLandsBefore
@@ -253,6 +253,8 @@ invariants:
       - test: framework/headless.TestE2E_SortableDragIntoEmptyColumn
       - test: framework/headless.TestE2E_SortablePointerDragInAGapLandsByPosition
       - test: framework/headless.TestE2E_SortablePointerDragEndsWhenTheListIsReRendered
+      - test: framework/headless.TestE2E_SortableKeyboardGrabWaitsOutAPointerDrag
+      - test: framework/headless.TestE2E_SortableDropOnANestedListStaysInIt
   - id: sortable-wiring-as-given
     rule: An empty SortableList still renders its <ol> and wiring, SortableItems renders the rows without it, and Group, Container, Version and ConflictRPC render only when set.
     enforced_by:
@@ -357,7 +359,7 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
   - id: card-title-link-is-the-one-link
-    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding an <a> tag (and not on <abbr>, <aside> and the like), or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
+    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding interactive content (an <a>, a control, embedded media, a tabindex or contenteditable, and not <abbr>, <aside> and the like), or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
     enforced_by:
       - test: framework/headless.TestCardArticleWithTitleLink
       - test: framework/headless.TestCardTitleLinkRefusals

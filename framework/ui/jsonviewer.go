@@ -133,6 +133,10 @@ func jsonViewerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__key,
 [data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__colon { flex: none; }
+/* A root that is itself a string sits straight in the viewer, with no
+   row around it: it is one block line, cut the same way. */
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis > .fui-json-viewer__str { display: block; }
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis > .fui-json-viewer__str,
 [data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__str {
   min-inline-size: 0;
   overflow: hidden;

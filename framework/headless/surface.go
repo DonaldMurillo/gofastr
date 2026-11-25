@@ -62,8 +62,8 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			panic("headless: Card TitleHref and Href together nest the title's link inside the card's link")
 		case p.Title == "" && p.TitleContent == "":
 			panic("headless: Card TitleHref needs a Title — the link's words are the title's")
-		case anchorTagRe.MatchString(string(p.TitleContent)):
-			panic("headless: Card TitleHref with a TitleContent that holds a link nests one link in another")
+		case interactiveContentRe.MatchString(string(p.TitleContent)):
+			panic("headless: Card TitleHref with a TitleContent that holds a link, a control or a tabindex nests interactive content in the title's link")
 		}
 		titleHref = urlsafe.CleanAnchor(p.TitleHref)
 		if titleHref == "" {
@@ -173,6 +173,8 @@ func init() {
 	})
 }
 
-// anchorTagRe matches an opening <a> tag in any letter case, and not
-// <abbr>, <area>, <article>, <aside> or <audio>.
-var anchorTagRe = regexp.MustCompile(`(?i)<a[\s>/]`)
+// interactiveContentRe matches what an <a> may not hold: an opening
+// link, control or embedded-media tag in any letter case (and not
+// <abbr>, <article>, <aside> and the like, whose names only start the
+// same), or a tabindex or contenteditable attribute.
+var interactiveContentRe = regexp.MustCompile(`(?i)<(a|button|input|select|textarea|label|details|summary|iframe|embed|object|audio|video)[\s>/]|\s(tabindex|contenteditable)\s*=`)

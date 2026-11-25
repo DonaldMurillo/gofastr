@@ -275,12 +275,21 @@ func copyButtonCSS(_ style.Theme) string {
    adapts to light and dark schemes alike (--color-success-bg was never a real
    token; its light fallback always applied). */
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in oklab, var(--color-success, #166534) 14%, transparent); border-color: var(--color-success, #166534); }
-[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
+/* The label leaves the eye but not the accessible name while the
+   copied or failed word shows: that word is aria-hidden, so hiding
+   the label with display none left the button unnamed. */
+[data-cui-comp="ui-copy-btn"]:is([data-hui-copy-state="done"], [data-hui-copy-state="failed"]) .fui-copy-btn .fui-copy-btn__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #166534); }
 /* A refused clipboard is shown, not only announced: the danger tint and,
    on a labelled button, the short failed label for the module's window. */
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="failed"] .fui-copy-btn { background: color-mix(in oklab, var(--color-danger, #B91C1C) 12%, transparent); border-color: var(--color-danger, #B91C1C); }
-[data-cui-comp="ui-copy-btn"][data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__label { display: none; }
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__failed { display: inline; color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5); }
 /* Inline: the knobs set on the button itself, so the base rules draw

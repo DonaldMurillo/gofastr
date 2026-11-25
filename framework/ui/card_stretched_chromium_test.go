@@ -60,3 +60,38 @@ func TestCardHeadingHrefCoversTheCardButNotItsControls(t *testing.T) {
 		}
 	}
 }
+
+// A stretched card nested in another's body keeps its own link over its
+// own surface: a click on the inner card's body reaches the inner link,
+// and one on the outer card's body the outer link.
+func TestCardHeadingHrefNestedCardKeepsItsOwnLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	th := theme.Default()
+	var css strings.Builder
+	for _, e := range registry.All() {
+		css.WriteString(e.CSSFor(th))
+		css.WriteString("\n")
+	}
+	head := "<style>" + th.CSSCustomProperties() + "\n" + css.String() + "</style>"
+	inner := ui.Card(ui.CardConfig{Heading: "Inner", HeadingHref: "/inner"},
+		render.HTML(`<p id="inner-body">Inner body text that is long enough to click.</p>`))
+	outer := ui.Card(ui.CardConfig{Heading: "Outer", HeadingHref: "/outer"},
+		render.HTML(`<p id="outer-body">Outer body.</p>`), inner)
+	srv := themeTestPageWithHead(t, head, `<div style="width: 480px; padding: 16px">`+string(outer)+`</div>`)
+	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(800, 600))
+	var got map[string]string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const at = id => { const r = document.getElementById(id).getBoundingClientRect();
+			const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			const a = hit && hit.closest('a');
+			return a ? a.getAttribute('href') : (hit ? hit.tagName : 'none'); };
+		return {inner: at('inner-body'), outer: at('outer-body')};
+	})()`, &got)); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got["inner"] != "/inner" || got["outer"] != "/outer" {
+		t.Errorf("clicks on the two bodies reach %v, want inner /inner and outer /outer", got)
+	}
+}

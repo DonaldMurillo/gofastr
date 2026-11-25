@@ -194,11 +194,31 @@ func TestCopyButtonShowsAFailure(t *testing.T) {
 	css := copyButtonCSS(style.Theme{})
 	for _, want := range []string{
 		`[data-hui-copy-state="failed"] .fui-copy-btn { background: color-mix(in oklab, var(--color-danger`,
-		`[data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__label { display: none; }`,
+		`:is([data-hui-copy-state="done"], [data-hui-copy-state="failed"]) .fui-copy-btn .fui-copy-btn__label {
+  position: absolute;`,
 		`[data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__failed { display: inline;`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("copy sheet missing %q", want)
 		}
+	}
+}
+
+// The copied and failed words are aria-hidden, so the label must stay in
+// the accessible name while they show: hidden from sight, never with
+// display none, which would leave the button unnamed.
+func TestCopyButtonKeepsItsNameWhileAStateShows(t *testing.T) {
+	css := copyButtonCSS(style.Theme{})
+	for _, bad := range []string{
+		`[data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }`,
+		`[data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__label { display: none; }`,
+	} {
+		if strings.Contains(css, bad) {
+			t.Errorf("the copy sheet hides the label from the accessible name: %s", bad)
+		}
+	}
+	h := string(CopyButton(CopyButtonConfig{Target: "code"}))
+	if strings.Contains(h, `class="fui-copy-btn__label" aria-hidden`) || strings.Contains(h, `aria-hidden="true" class="fui-copy-btn__label"`) {
+		t.Errorf("the label is aria-hidden:\n%s", h)
 	}
 }

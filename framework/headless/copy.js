@@ -72,7 +72,9 @@
     clearTimeout(wrap.__huiCopyBack);
     wrap.__huiCopyBack = setTimeout(() => {
       wrap.removeAttribute('data-hui-copy-state');
-      if (btn && back && label) btn.textContent = back;
+      // A success's restore timer was just cancelled, so restore here
+      // whether or not this failure swapped its own label in.
+      if (btn && back) btn.textContent = back;
     }, 3000);
   }
   // copyText is what the target holds: a form field's current value
@@ -94,7 +96,11 @@
     const id = wrap.getAttribute('data-hui-copy-target');
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
-    const text = copyText(target).trim();
+    // A field's value is copied exactly as typed, its spaces and
+    // newlines included; other text is trimmed of layout whitespace.
+    const field = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+    const raw = copyText(target);
+    const text = field ? raw : raw.trim();
     if (!text) return;
     let write = null;
     try {

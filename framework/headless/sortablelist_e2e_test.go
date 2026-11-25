@@ -33,7 +33,21 @@ func sortKey(key string) chromedp.Action {
 
 // sortableServer serves a page with one list bound to a POST /commit
 // that records the order and answers ok or fail.
-func sortableServer(t *testing.T, body string, fail bool) (*behaviorServer, *[]string) {
+// commitLog is the orders the /commit handler recorded. The handler
+// appends under mu on the server's goroutine, so every read takes a
+// snapshot under the same lock.
+type commitLog struct {
+	mu  *sync.Mutex
+	got *[]string
+}
+
+func (c commitLog) get() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), *c.got...)
+}
+
+func sortableServer(t *testing.T, body string, fail bool) (*behaviorServer, commitLog) {
 	t.Helper()
 	var mu sync.Mutex
 	var got []string
@@ -54,7 +68,7 @@ func sortableServer(t *testing.T, body string, fail bool) (*behaviorServer, *[]s
 		})
 	}
 	b := startBehaviorServer(t, body, extra)
-	return b, &got
+	return b, commitLog{mu: &mu, got: &got}
 }
 
 func sortablePage(items ...SortableItem) string {
@@ -103,17 +117,17 @@ func TestE2E_SortableKeyboardReorderAnnouncesAndCommits(t *testing.T) {
 	// The commit is async: yield the page until the server has seen
 	// it, then read the recorded order.
 	for range 10 {
-		if len(*commits) > 0 {
+		if len(commits.get()) > 0 {
 			break
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(*commits) == 0 {
+	if len(commits.get()) == 0 {
 		t.Fatal("the drop never POSTed the order")
 	}
-	if got := (*commits)[len(*commits)-1]; got != "b,c,a" {
+	if got := (commits.get())[len(commits.get())-1]; got != "b,c,a" {
 		t.Fatalf("the commit sent order=%q, want b,c,a", got)
 	}
 }
@@ -173,8 +187,8 @@ func TestE2E_SortableEscapeCancels(t *testing.T) {
 	if live != "Cancelled." {
 		t.Fatalf("Escape should announce the cancellation, got %q", live)
 	}
-	if len(*commits) != 0 {
-		t.Fatalf("Escape must not commit; the server saw %d commits", len(*commits))
+	if len(commits.get()) != 0 {
+		t.Fatalf("Escape must not commit; the server saw %d commits", len(commits.get()))
 	}
 }
 
@@ -896,17 +910,17 @@ func TestE2E_SortableDataShapedKeysReorderAndCommit(t *testing.T) {
 		t.Fatalf("data-shaped keys should reorder under the keyboard model, got %q", orderAfter)
 	}
 	for range 30 {
-		if len(*commits) > 0 {
+		if len(commits.get()) > 0 {
 			break
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(*commits) == 0 {
+	if len(commits.get()) == 0 {
 		t.Fatal("the drop never POSTed the order")
 	}
-	if got := (*commits)[len(*commits)-1]; got != `x"y,a b` {
+	if got := (commits.get())[len(commits.get())-1]; got != `x"y,a b` {
 		t.Fatalf("the commit sent order=%q, want %q", got, `x"y,a b`)
 	}
 }
@@ -959,15 +973,15 @@ func TestE2E_SortableGrabRevertsOnBlur(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 10 {
-		if len(*commits) > 0 {
+		if len(commits.get()) > 0 {
 			break
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
-		t.Fatalf("the later drop of b committed %q, want exactly [a,c,b]", *commits)
+	if len(commits.get()) != 1 || (commits.get())[0] != "a,c,b" {
+		t.Fatalf("the later drop of b committed %q, want exactly [a,c,b]", commits.get())
 	}
 }
 
@@ -999,14 +1013,14 @@ func TestE2E_SortableNewGrabCancelsTheOld(t *testing.T) {
 		t.Fatalf("the first grab survived the second: grabbed=%q", grabbed)
 	}
 	for range 10 {
-		if len(*commits) > 0 {
+		if len(commits.get()) > 0 {
 			break
 		}
 		if err := chromedp.Run(ctx, chromedp.Sleep(100*time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if len(*commits) != 1 || (*commits)[0] != "a,c,b" {
-		t.Fatalf("the drop of b committed %q, want exactly [a,c,b]", *commits)
+	if len(commits.get()) != 1 || (commits.get())[0] != "a,c,b" {
+		t.Fatalf("the drop of b committed %q, want exactly [a,c,b]", commits.get())
 	}
 }

@@ -203,8 +203,9 @@ invariants:
     enforced_by:
       - test: framework/ui.TestSweepChartsAgoFutureIsNowAndDatesAreUTC
   - id: progress-indeterminate-sweeps
-    rule: A Progress with a negative Value renders a <progress> with no value attribute, whose :indeterminate rule sweeps a primary band across the track, and under prefers-reduced-motion reduce the band fills the track and only its opacity breathes.
+    rule: A Progress with a negative Value renders a <progress> with no value attribute, whose :indeterminate rule sweeps a primary band across the track, and under prefers-reduced-motion reduce the band fills the track and only its opacity breathes; under forced colours the bar keeps a Highlight band over Canvas.
     enforced_by:
+      - test: framework/ui.TestForcedColorsFallbacks
       - test: framework/ui.TestProgressIndeterminateSweepsAndHoldsStillUnderReducedMotion
       - test: framework/ui.TestProgressNegativeValueIsIndeterminate
 decisions:
