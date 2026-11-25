@@ -79,6 +79,7 @@ Concrete `/llm.md` URLs and negotiated Markdown use the page's error response wh
 Add `uihost.WithMarkdownNegotiation()` (or `AgentReadyConfig.ContentNegotiation`) alongside `WithPublicLLMMD()` so any page URL serves markdown directly when a client sends `Accept: text/markdown` with weight at least as high as HTML. Both HTML and markdown variants emit `Vary: Accept` so shared caches never mix them.
 
 Unmatched routes automatically return RFC 9457 `application/problem+json` for JSON clients, markdown recovery links for `Accept: text/markdown` (when enabled), or your HTML 404 for browsers.
+Markdown recovery includes sitemap and `llms.txt` links for the discovery routes you enable.
 
 ### A2A agent card & signed cards
 

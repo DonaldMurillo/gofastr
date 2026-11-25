@@ -263,6 +263,9 @@ Concrete `llm.md` URLs and negotiated Markdown use the same failure
 handling as HTML pages. Pattern documents can describe the route without
 loading a specific record.
 
+Markdown not-found responses list discovery links for the mounted
+sitemap and `llms.txt` routes.
+
 ---
 
 ## What is an island?

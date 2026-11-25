@@ -222,7 +222,7 @@ func TestNotFound_JSONProblemAcceptVariants(t *testing.T) {
 }
 
 func TestNotFound_MarkdownRecovery(t *testing.T) {
-	ds := newISOHost(WithMarkdownNegotiation())
+	ds := newISOHost(WithMarkdownNegotiation(), WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithLLMsTxt("Test Site", "", nil))
 	rec := doGet(ds, "/definitely-not-here", "text/markdown")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", rec.Code)
@@ -238,6 +238,41 @@ func TestNotFound_MarkdownRecovery(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("recovery link %q missing:\n%s", want, body)
 		}
+	}
+}
+
+func TestMarkdown404OnlyLinksMounted(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  Option
+		want string
+	}{
+		{name: "neither"},
+		{name: "sitemap", opt: WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), want: "/sitemap.xml"},
+		{name: "llms", opt: WithLLMsTxt("Test Site", "", nil), want: "/llms.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := []Option{WithPublicLLMMD(), WithMarkdownNegotiation()}
+			if tc.opt != nil {
+				opts = append(opts, tc.opt)
+			}
+			host := newISOHost(opts...)
+			rec := doGet(host, "/missing", "text/markdown")
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", rec.Code)
+			}
+			for _, path := range []string{"/sitemap.xml", "/llms.txt"} {
+				got := strings.Contains(rec.Body.String(), "]("+path+")")
+				if got != (path == tc.want) {
+					t.Errorf("404 links %s = %t, want %t", path, got, path == tc.want)
+				}
+				if got && path == tc.want {
+					if link := doGet(host, path, ""); link.Code != http.StatusOK {
+						t.Errorf("linked %s answered %d, want 200", path, link.Code)
+					}
+				}
+			}
+		})
 	}
 }
 

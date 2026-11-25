@@ -164,10 +164,11 @@ invariants:
       - test: framework/uihost.TestPanicProblemJSONArm
       - test: framework/uihost.TestSweepNavMethodNotAllowedProblemShape
   - id: markdown-not-found-is-opt-in-and-pathless
-    rule: The markdown 404 answers only with markdown negotiation on, and never carries the request path.
+    rule: The markdown 404 answers only with markdown negotiation on, never carries the request path, and links the sitemap and llms.txt only when those routes are mounted.
     enforced_by:
       - test: framework/uihost.TestSweepNavMarkdownNotFoundNeedsNegotiation
       - test: framework/uihost.TestNotFound_MarkdownNoReflectionGuard
+      - test: framework/uihost.TestMarkdown404OnlyLinksMounted
   - id: error-answers-vary-on-accept
     rule: Every arm of the 404 and 500 answers carries Vary Accept.
     enforced_by:
