@@ -39,6 +39,10 @@ func TestMigrationEntryPointsCancelDialectProbe(t *testing.T) {
 			_, err := DiffSchema(ctx, db, testReg{})
 			return err
 		},
+		"stale owner foreign keys": func(ctx context.Context, db *sql.DB) error {
+			_, err := FindStaleOwnerForeignKeys(ctx, db, testReg{})
+			return err
+		},
 		"seed": func(ctx context.Context, db *sql.DB) error {
 			reg := testReg{"posts": seededEnt("posts", func(context.Context, *sql.DB) error { return nil })}
 			return RunSeeds(ctx, db, reg)

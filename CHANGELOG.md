@@ -58,9 +58,9 @@ few lines, and link the PR or the docs page for the rest.
   screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
   longer emit a second synthesized `Article` JSON-LD block
   ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
-- `App.SweepErasureRetention`, auto-migration, schema diffing and seeding now
-  stop probing the database dialect when their caller's context ends.
-  See [Migrations](framework/docs/content/migrations.md).
+- `App.SweepErasureRetention`, auto-migration, schema diffing, seeding, and
+  the stale owner foreign key scan now stop probing the database dialect when
+  their caller's context ends ([#908](https://github.com/DonaldMurillo/gofastr/pull/908)).
 
 #### Fixes that may need a change in your app
 

@@ -7,7 +7,7 @@ GoFastr supports two complementary migration paths that share the same DDL type 
 
 Neither path migrates rows from another database; see [Data export & import](data-export.md#what-this-does-not-do) for one-off copy jobs.
 
-If you need to detect the dialect yourself, use `migrate.DetectDialectStrictContext(ctx, db)` from `framework/migrate`. It returns an error if the database stays unreachable and stops probing or waiting to retry when `ctx` ends. Auto-migration, schema diffing, and seeding use the same probe.
+If you need to detect the dialect yourself, use `migrate.DetectDialectStrictContext(ctx, db)` from `framework/migrate`. It returns an error if the database stays unreachable and stops probing or waiting to retry when `ctx` ends. Auto-migration, schema diffing, seeding, and the stale owner foreign key scan use the same probe.
 
 ## SQL file format
 
