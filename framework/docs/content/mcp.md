@@ -70,7 +70,7 @@ srv.RegisterTool(
 )
 ```
 
-- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
+- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. Omitted `arguments` reach the handler as a nil map; `"arguments": null`, or any value that is not an object, answers `-32602` before the tool is looked up. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
 - **Return values:** `mcp.ToolResult` (explicit content blocks and/or `Structured`, plus `IsError: true` for model-visible tool errors), `mcp.ImageResult`, `mcp.Content` / `[]mcp.Content` (`TextContent`, `ImageContent`, `AudioContent`, `ResourceContent`), `string`, or any JSON-marshalable value.
 - **Errors:** `*RPCError` passes through verbatim; 4xx `*handler.Error` becomes `-32602` with `code`, `reason`, and `fields` in `data`; plain errors, 5xx errors, and panics are logged server-side and answered with a generic `"internal tool error"`.
 - **Options:** `WithOutputSchema(schema)`, `WithToolMeta(meta)`, `WithToolGate(gate)`, `WithLaxArgs()`, `WithAnnotations(a)`.
