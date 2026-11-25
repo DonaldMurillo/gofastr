@@ -244,6 +244,8 @@ func carouselCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev::before { transform: rotate(-45deg); }
 [data-cui-comp="ui-carousel"] .fui-carousel__next::before { transform: rotate(135deg); }
+[data-cui-comp="ui-carousel"] .fui-carousel__prev:dir(rtl)::before { transform: rotate(45deg); }
+[data-cui-comp="ui-carousel"] .fui-carousel__next:dir(rtl)::before { transform: rotate(-135deg); }
 [data-cui-comp="ui-carousel"] .fui-carousel__prev { inset-inline-start: 0; }
 [data-cui-comp="ui-carousel"] .fui-carousel__next { inset-inline-end: 0; }
 /* Press knobs: --ui-carousel-arrow-{hover,active}-{translate,shadow}

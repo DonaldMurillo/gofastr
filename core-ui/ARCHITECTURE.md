@@ -3133,6 +3133,8 @@ CSS exposing `::details-content` preserves its nested Tab stops.
 
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
+The carousel's component sheet draws its arrows toward the previous and
+next slides in either text direction.
 Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
 Navigable combobox options are anchors with `role="option"` and
