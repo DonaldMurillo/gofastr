@@ -42,6 +42,11 @@ few lines, and link the PR or the docs page for the rest.
   `Shutdown` reports the deadline error unless an earlier step failed
   ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 
+- **BREAKING:** `config.Load` now rejects `validate` tags whose highest
+  `min` exceeds their lowest `max`, even in unset optional nested structs.
+  Correct or remove the conflicting bounds before upgrading
+  ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
+
 - **BREAKING:** `InsertBuilder.Build` panics on mismatched column and
   value counts instead of returning invalid SQL. Supply one value per
   column, or leave both lists empty for `DEFAULT VALUES`. See

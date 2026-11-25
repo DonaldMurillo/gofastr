@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,7 @@ func TestRepeatedBounds(t *testing.T) {
 		name                    string
 		strictFirst, strictLast any
 		below, min, max, above  string
+		belowBoth, aboveBoth    string
 		minBound, maxBound      string
 	}{
 		{
@@ -63,18 +65,20 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit string `validate:"min=1,max=4,min=2,max=3"`
 			}{},
 			below: "é", min: "éé", max: "ééé", above: "éééé",
+			belowBoth: "", aboveBoth: "ééééé",
 			minBound: "2 characters", maxBound: "3 characters",
 		},
 		{
 			name: "int",
 			strictFirst: &struct {
-				Limit int `validate:"min=2,max=3,min=1,max=4"`
+				Limit int `validate:"min=5,max=6,min=1,max=7"`
 			}{},
 			strictLast: &struct {
-				Limit int `validate:"min=1,max=4,min=2,max=3"`
+				Limit int `validate:"min=1,max=7,min=5,max=6"`
 			}{},
-			below: "1", min: "2", max: "3", above: "4",
-			minBound: "2", maxBound: "3",
+			below: "1", min: "5", max: "6", above: "7",
+			belowBoth: "0", aboveBoth: "8",
+			minBound: "5", maxBound: "6",
 		},
 		{
 			name: "duration",
@@ -85,6 +89,7 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit time.Duration `validate:"min=1s,max=4s,min=2s,max=3s"`
 			}{},
 			below: "1s", min: "2s", max: "3s", above: "4s",
+			belowBoth: "0s", aboveBoth: "5s",
 			minBound: "2s", maxBound: "3s",
 		},
 		{
@@ -96,6 +101,7 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit float64 `validate:"min=0,max=3,min=0.5,max=2.5"`
 			}{},
 			below: "0.25", min: "0.5", max: "2.5", above: "2.75",
+			belowBoth: "-0.5", aboveBoth: "3.5",
 			minBound: "0.5", maxBound: "2.5",
 		},
 	} {
@@ -109,10 +115,12 @@ func TestRepeatedBounds(t *testing.T) {
 			for _, tc := range []struct {
 				name, value, want string
 			}{
+				{"below-both", kind.belowBoth, "must be at least " + kind.minBound},
 				{"below", kind.below, "must be at least " + kind.minBound},
 				{"min", kind.min, ""},
 				{"max", kind.max, ""},
 				{"above", kind.above, "must be at most " + kind.maxBound},
+				{"above-both", kind.aboveBoth, "must be at most " + kind.maxBound},
 			} {
 				t.Run(kind.name+"/"+order.name+"/"+tc.name, func(t *testing.T) {
 					err := Load(order.cfg, MapSource{"LIMIT": tc.value})
@@ -127,6 +135,63 @@ func TestRepeatedBounds(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestContradictoryBounds(t *testing.T) {
+	for _, kind := range []struct {
+		name                         string
+		typ                          reflect.Type
+		low, max, min, high, atLimit string
+	}{
+		{"string", reflect.TypeFor[string](), "1", "2", "3", "4", "ééé"},
+		{"int", reflect.TypeFor[int](), "1", "2", "3", "4", "3"},
+		{"int64", reflect.TypeFor[int64](), "1", "9007199254740992", "9007199254740993", "9007199254740994", "9007199254740993"},
+		{"duration", reflect.TypeFor[time.Duration](), "1s", "9007199254740992ns", "9007199254740993ns", "9007199254740994ns", "9007199254740993ns"},
+		{"float", reflect.TypeFor[float64](), "0.5", "1.5", "2.5", "3.5", "2.5"},
+	} {
+		strict := "min=" + kind.min + ",max=" + kind.max
+		loose := "min=" + kind.low + ",max=" + kind.high
+		for _, tc := range []struct {
+			name, tag string
+			invalid   bool
+		}{
+			{"single", strict, true},
+			{"strict-first", strict + "," + loose, true},
+			{"strict-last", loose + "," + strict, true},
+			{"equal", loose + ",min=" + kind.min + ",max=" + kind.min, false},
+		} {
+			t.Run(kind.name+"/"+tc.name, func(t *testing.T) {
+				typ := reflect.StructOf([]reflect.StructField{{
+					Name: "Limit",
+					Type: kind.typ,
+					Tag:  reflect.StructTag(`validate:"` + tc.tag + `"`),
+				}})
+				err := Load(reflect.New(typ).Interface(), MapSource{"LIMIT": kind.atLimit})
+				if !tc.invalid {
+					if err != nil {
+						t.Fatalf("equal bounds refused: %v", err)
+					}
+					return
+				}
+				want := "config: field Limit: min=" + kind.min + " exceeds max=" + kind.max
+				if err == nil || err.Error() != want {
+					t.Fatalf("Load = %v, want %q", err, want)
+				}
+			})
+		}
+	}
+	t.Run("unbound-nested", func(t *testing.T) {
+		var cfg struct {
+			Optional *struct {
+				Limit int `validate:"min=3,max=2"`
+			}
+		}
+		err := Load(&cfg, MapSource{})
+		const want = "config: field Limit: min=3 exceeds max=2"
+		if err == nil || err.Error() != want {
+			t.Fatalf("Load = %v, want %q", err, want)
+		}
+	})
 }
 
 func TestValidationTagsCheckUnboundDefaults(t *testing.T) {
