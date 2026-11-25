@@ -13,7 +13,7 @@ invariants:
       - test: battery/auth.TestRolePolicyRedHonorsDecider
       - test: battery/auth.TestRolePolicy_BlocksMissingRole
   - id: failure-outcome
-    rule: "A failed policy renders the alt component if set, else redirects (appending ?next= before any #fragment with the escaped request path and noting a session refusal), else blocks with the status."
+    rule: "A failed policy renders the alt component if set, else redirects (setting ?next= before any #fragment with the escaped request path, replacing any existing next param, and noting a session refusal), else blocks with the status."
     enforced_by:
       - test: battery/auth.TestPolicyOptionPrecedenceAltFirst
       - test: battery/auth.TestSessionPolicy_RedirectsAnonWithNextPath

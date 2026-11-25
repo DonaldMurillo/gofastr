@@ -13,7 +13,7 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
   - `Bind` applies `header` → `query` → `path` → JSON body (1 MiB cap; returns `413` over cap), including promoted fields on embedded structs and any `encoding.TextUnmarshaler`. Empty query/header values (`?q=`) are treated as absent unless tagged `,empty` (`query:"q,empty"`).
   - Strict JSON decoding refuses duplicate keys, case-folded keys (`FoldJSONKey`), unknown struct fields, trailing data, and invalid UTF-8 with `400` and clean JSON-path messages (never leaking Go struct names). Pass `handler.UseNumber()` to preserve integers past 2^53.
   - `Respond` buffers JSON before writing headers (encoding errors return `500`, never a partial `200`). Returning `nil` or a nil pointer answers `204 No Content`; a nil slice/map answers `200 null`.
-  - `WithQuery` edits query parameters before any `#fragment` and keeps the fragment intact, skipping malformed percent-escapes rather than failing.
+  - `WithQuery` edits query parameters before any `#fragment` and keeps the fragment intact; it re-encodes the query via `url.Values.Encode` (sorting keys and dropping pairs `url.ParseQuery` rejects, including malformed percent-escapes and `;`-separated pairs).
 
 ### `core/router`
 - **What:** Method-based HTTP router over Go 1.22's `http.ServeMux` (`METHOD /pattern` with `{id}` captures), route groups (`Group`, `Prefix`, `Root`, `ResourceGroup` / `RouteResource`), middleware chaining (`Use` outside-in, `UseInner` innermost), `ValidatePattern`, and sanitized path params (`Param`, `SanitizePathParam`).

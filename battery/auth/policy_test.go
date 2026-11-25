@@ -199,7 +199,7 @@ func TestSessionPolicy_NextPathEdgeCases(t *testing.T) {
 			wantContains: "%2Fdash%3Fsort%3Dasc",
 		},
 		{
-			name:         "policy URL with existing query uses & separator",
+			name:         "policy URL with existing query keeps existing params sorted",
 			requestPath:  "/dash",
 			withRequest:  true,
 			policyURL:    "/login?x=1",

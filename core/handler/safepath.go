@@ -45,15 +45,23 @@ func SafeRelativePathOr(p, fallback string) string {
 	return fallback
 }
 
+// splitFragment splits target at the first '#' into the portion before the
+// fragment and the fragment itself (including the leading '#'), or (target, "")
+// when target has no fragment.
+func splitFragment(target string) (beforeFragment, fragment string) {
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		return target[:i], target[i:]
+	}
+	return target, ""
+}
+
 // WithQuery parses the query string of target before any #fragment, passes it
 // to edit, and reassembles target with the updated query before the unchanged
-// fragment. Malformed percent-escapes in an existing query are skipped rather
-// than failing.
+// fragment. The query is re-encoded via url.Values.Encode, which sorts keys
+// and drops pairs url.ParseQuery rejects (malformed percent-escapes and
+// semicolon-separated pairs).
 func WithQuery(target string, edit func(url.Values)) string {
-	beforeFrag, frag := target, ""
-	if i := strings.IndexByte(target, '#'); i >= 0 {
-		beforeFrag, frag = target[:i], target[i:]
-	}
+	beforeFrag, frag := splitFragment(target)
 	path, rawQuery, _ := strings.Cut(beforeFrag, "?")
 	q, _ := url.ParseQuery(rawQuery)
 	if q == nil {
