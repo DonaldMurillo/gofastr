@@ -97,6 +97,10 @@ invariants:
     rule: An INSERT with no columns and no values is written as INSERT INTO t DEFAULT VALUES.
     enforced_by:
       - test: core/query.TestInsertDefaultValues
+  - id: insert-column-and-value-counts-match
+    rule: InsertBuilder.Build panics if the number of columns differs from the number of values.
+    enforced_by:
+      - test: core/query.TestInsertMismatchedCountsPanics
 decisions:
   - id: renumber-by-position
     date: 2026-11-18
