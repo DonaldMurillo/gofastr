@@ -40,6 +40,11 @@ few lines, and link the PR or the docs page for the rest.
   A sweep can no longer open a SQLite connection while an `OnStop` hook
   closes the database and the caller removes its directory
   ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
+
+- **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
@@ -48,6 +53,13 @@ few lines, and link the PR or the docs page for the rest.
   registration and for each queue on every run, so changing the caller's
   buffer or a dispatched job no longer changes other jobs
   ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
 
 ## [0.99.0] - 2026-11-25
 

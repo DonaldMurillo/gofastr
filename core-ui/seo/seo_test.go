@@ -13,6 +13,26 @@ func TestEmptyReturnsNothing(t *testing.T) {
 	}
 }
 
+func TestRenderSkipsNilThings(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		item Thing
+	}{
+		{name: "nil interface"},
+		{name: "typed nil pointer", item: (*Article)(nil)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Render(tt.item); got != "" {
+				t.Errorf("Render(%#v) = %q, want empty output", tt.item, got)
+			}
+			page, article := NewWebPage(), NewArticle()
+			if got, want := Render(page, tt.item, &article), Render(page, &article); got != want {
+				t.Errorf("Render with a nil item = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestEmitsLDJSONScript(t *testing.T) {
 	got := string(Render(NewWebPage()))
 	if !strings.Contains(got, `<script type="application/ld+json">`) {
