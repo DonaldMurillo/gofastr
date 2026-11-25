@@ -10,13 +10,14 @@ invariants:
     enforced_by:
       - test: framework/static.TestBuildMarksPagesStaticAndInjectsNotice
   - id: base-path-prefixes-root-urls
-    rule: With BasePath set, every root-absolute but not protocol-relative src, href, action, data-cui-push-state and data-cui-match-prefix value, every srcset candidate, every quoted /__gofastr/ JSON value, every route-graph path and the locale set's base gain the prefix.
+    rule: With BasePath set, every root-absolute but not protocol-relative src, href, action, data-cui-push-state and data-cui-match-prefix value in any letter case, every srcset candidate, every quoted /__gofastr/ JSON value, every route-graph path and the locale set's base gain the prefix.
     enforced_by:
       - test: framework/static.TestBuildBasePathRewritesURLs
       - test: framework/static.TestRewriteBaseURLsPrefixesAction
       - test: framework/static.TestRewriteBaseURLs_PrefixesPushState
       - test: framework/static.TestRewriteBaseURLs_PrefixesMatchPrefix
       - test: framework/static.TestRewriteBaseURLs_PrefixesSrcset
+      - test: framework/static.TestRewriteBaseURLs_IgnoresAttrCase
       - test: framework/static.TestSweepStaticSrcsetCommaEndsCandidate
       - test: framework/static.TestRewriteBaseURLs_PrefixesCatalogJSON
       - test: framework/static.TestBuildBasePathRewritesRouteGraph

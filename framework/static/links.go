@@ -44,9 +44,9 @@ func stampStatic(page string) string {
 	return page
 }
 
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state|data-cui-match-prefix)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`(?i)([\s])(src|href|action|data-cui-push-state|data-cui-match-prefix)="/([^/])`)
 
-var pageLinkAttr = regexp.MustCompile(`([\s](?:href|action|data-cui-push-state)=")(/[^"?#]*)([?#][^"]*)?"`)
+var pageLinkAttr = regexp.MustCompile(`(?i)([\s](?:href|action|data-cui-push-state)=")(/[^"?#]*)([?#][^"]*)?"`)
 
 func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
 	return pageLinkAttr.ReplaceAllStringFunc(page, func(m string) string {
@@ -131,7 +131,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	return page
 }
 
-var baseSrcsetAttr = regexp.MustCompile(`([\s](?:srcset|imagesrcset)=")([^"]*)"`)
+var baseSrcsetAttr = regexp.MustCompile(`(?i)([\s](?:srcset|imagesrcset)=")([^"]*)"`)
 
 func prefixSrcset(v, base string) string {
 	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
