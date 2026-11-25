@@ -45,17 +45,22 @@ func TestInsertDefaultValues(t *testing.T) {
 	}
 }
 
-func TestUpdateWithoutAssignmentsBuildsNoStatement(t *testing.T) {
-	t.Run("bare", func(t *testing.T) {
-		got, args := Update("records").Build()
-		if got != "" || args != nil {
-			t.Fatalf("empty update SQL = %q, args = %#v; want empty SQL and nil args", got, args)
-		}
-	})
-	t.Run("with clauses", func(t *testing.T) {
-		got, args := Update("records").Where("id = $1", 42).Returning("id").Build()
-		if got != "" || args != nil {
-			t.Fatalf("empty update SQL = %q, args = %#v; want empty SQL and nil args", got, args)
-		}
-	})
+func TestUpdateWithoutAssignmentsPanics(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		builder *UpdateBuilder
+		want    string
+	}{
+		{"bare", Update("records"), "query: UPDATE records has no Set assignments"},
+		{"with clauses", Update("notes").Where("id = $1", 42).Returning("id"), "query: UPDATE notes has no Set assignments"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if got := recover(); got != tc.want {
+					t.Fatalf("Build panic = %#v, want %q", got, tc.want)
+				}
+			}()
+			tc.builder.Build()
+		})
+	}
 }

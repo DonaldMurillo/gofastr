@@ -24,6 +24,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+
+- **`query.UpdateBuilder.Build` requires at least one `Set` assignment.**
+  It now panics with a message naming the table instead of producing malformed
+  SQL. Handle updates with no fields before calling `Build`.
+
 ## [0.99.0] - 2026-11-25
 
 ### Added

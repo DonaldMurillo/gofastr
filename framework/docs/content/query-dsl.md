@@ -66,7 +66,7 @@ qb, err := dsl.BuildDSLQuery(app.Registry, `tickets.where(status="open").order(-
 
 ## SQL update builder (`core/query`)
 
-When building an update with `query.Update`, call `Set` for each assignment. If there are no assignments, `Build` returns an empty SQL string and nil arguments. Check for empty SQL and skip execution when building updates from optional fields.
+When building an update with `query.Update`, call `Set` for each assignment. With no assignments, `Build` panics with `query: UPDATE <table> has no Set assignments` instead of producing invalid SQL. When building updates from optional fields, handle the no-fields case before calling `Build`.
 
 ## MCP tool arguments
 
