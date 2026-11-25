@@ -22,6 +22,7 @@ invariants:
       - test: core-ui/check.TestLintDecodeURIRaw_FiresOnAttrDerived
       - test: core-ui/check.TestLintProtoKeyWrite_FiresOnAttrKey
       - test: core-ui/check.TestLintTrustedTypesSinks
+      - test: core-ui/check.TestTrustedTypesFlagsGlobalEval
   - id: fix-spellings-stay-quiet
     rule: Code-shaped text inside a string literal, comment or regex literal never fires, and every audited fix spelling - escaped or numeric operands, own-property guards, status gates, sanitizers - stays quiet.
     enforced_by:
