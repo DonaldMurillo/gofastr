@@ -1,12 +1,14 @@
 package mediatype
 
-import _ "embed"
+import (
+	_ "embed"
+	"strings"
+)
 
 //go:embed browser.js
 var jsonResponseCheck string
 
-// WithJSONResponseCheck makes the shared Content-Type check available locally
-// to a browser script, without requiring the page to load another asset.
+// WithJSONResponseCheck replaces the browser script's check marker with the shared predicate.
 func WithJSONResponseCheck(script string) string {
-	return "(() => {\n" + jsonResponseCheck + script + "\n})();\n"
+	return strings.Replace(script, "/* gofastr:json-response-check */", jsonResponseCheck, 1)
 }

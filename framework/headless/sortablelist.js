@@ -37,9 +37,11 @@
 // is ever written; the grabbed, dragging and drop states are classes.
 (function () {
   'use strict';
+  /* gofastr:json-response-check */
   const NAME = 'headless-sortablelist';
-  const NS = (window.__gofastr ||= {});
-  if (Object.hasOwn(NS.loadedModules ||= {}, NAME)) return;
+  const NS = window.__gofastr = window.__gofastr || {};
+  if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
+  NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
   const listOf = (item) => item?.closest?.('[data-hui-sortable]');

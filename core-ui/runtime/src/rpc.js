@@ -6,7 +6,9 @@
 // registers no document listeners; every entry comes through dispatchRPC.
 (() => {
   'use strict';
-  const NS = (window.__gofastr ||= {});
+  /* gofastr:json-response-check */
+  window.__gofastr = window.__gofastr || {};
+  const NS = window.__gofastr;
 
   // Per-signal abort controllers make rapid clicks last-write-wins. A new
   // dispatch aborts the prior request targeting the same signal so network
