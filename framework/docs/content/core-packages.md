@@ -7,17 +7,23 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 ## Request handling
 
 ### `core/handler`
-- **What:** Typed request handlers (`Handler[I, O]` + `HandlerAdapter`), request binding (`Bind`), strict JSON decoding (`DecodeStrict`, `UnmarshalStrict`, `CheckTopLevelKeys`, `CheckUTF8`), structured `*Error` / `WriteError`, and context identity accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`).
+- **What:** Typed request handlers (`Handler[I, O]` + `HandlerAdapter`), request binding (`Bind`), strict JSON decoding (`DecodeStrict`, `UnmarshalStrict`, `CheckTopLevelKeys`, `CheckUTF8`), structured `*Error` / `WriteError`, redirect-target helpers (`IsSafeRelativePath`, `SafeRelativePathOr`, `WithQuery`), and context identity accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`).
 - **Use:** Direct. Start at `core/handler/handler.go` (`HandlerAdapter`).
 - **Key contracts:**
   - `Bind` applies `header` → `query` → `path` → JSON body (1 MiB cap; returns `413` over cap), including promoted fields on embedded structs and any `encoding.TextUnmarshaler`. Empty query/header values (`?q=`) are treated as absent unless tagged `,empty` (`query:"q,empty"`).
   - Strict JSON decoding refuses duplicate keys, case-folded keys (`FoldJSONKey`), unknown struct fields, trailing data, and invalid UTF-8 with `400` and clean JSON-path messages (never leaking Go struct names). Pass `handler.UseNumber()` to preserve integers past 2^53.
   - `Respond` buffers JSON before writing headers (encoding errors return `500`, never a partial `200`). Returning `nil` or a nil pointer answers `204 No Content`; a nil slice/map answers `200 null`.
+  - `WithQuery` edits query parameters before any `#fragment` and keeps the fragment intact; it re-encodes the query via `url.Values.Encode` (sorting keys and dropping pairs `url.ParseQuery` rejects, including malformed percent-escapes and `;`-separated pairs).
 
 ### `core/router`
 - **What:** Method-based HTTP router over Go 1.22's `http.ServeMux` (`METHOD /pattern` with `{id}` captures), route groups (`Group`, `Prefix`, `Root`, `ResourceGroup` / `RouteResource`), middleware chaining (`Use` outside-in, `UseInner` innermost), `ValidatePattern`, and sanitized path params (`Param`, `SanitizePathParam`).
 - **Use:** Direct via `app.Router()`. Start at `core/router/router.go` (`Router`).
 - **Key contracts:** `Param` strips control chars, decoded `/`, and `..` traversal, and panics if the matched pattern declares no wildcard of that name (`handler.Bind` leaves undeclared `path` tags zero so one input struct can serve both `POST /users` and `PUT /users/{id}`). Pre-chain hooks (`SetRouteGate`, `SetServeHook`, `PreRoute`) recover panics themselves since `Recovery` middleware hasn't run yet.
+
+### `core/mediatype`
+- **What:** Case-insensitive media-type checks for HTTP headers.
+- **Use:** Direct when checking an `Accept` or `Content-Type` header. `Fold` lowercases the value without validating it or removing parameters.
+- **Key contracts:** `AcceptsAny` compares an `Accept` field to lowercase media types without ranking parameters or honoring quoted commas. `AcceptRanges` splits the field on commas outside quoted parameters.
 
 ## Real-time
 
@@ -74,6 +80,7 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 - **What:** Typed struct config loader (`config.Load(&cfg)`) reading `config:`, `default:`, `required:`, `sensitive:`, and `validate:` (`min`, `max`, `oneof`) tags from `EnvSource` or `MapSource`.
 - **Use:** Direct at startup. Start at `core/config/config.go` (`Load`).
 - **Key contracts:** Named nested structs get `SCREAMING_SNAKE_` prefixes; embedded structs promote keys without a prefix (like `encoding/json`); `encoding.TextUnmarshaler` fields bind via `UnmarshalText`; `sensitive` values are redacted from all error strings; integer overflow fails `Load`.
+- **Bounds validation:** Repeated `min` or `max` rules use the highest minimum and lowest maximum, regardless of tag order. Both endpoints are included. If the highest minimum exceeds the lowest maximum, `Load` reports the field and both bounds before reading any source, even for fields in unset optional nested structs. String bounds count Unicode code points, not bytes.
 
 ### `core/netguard`
 - **What:** Shared SSRF & origin checks: `IsInternal` (loopback, private, link-local, CGNAT, metadata, IPv4-mapped/NAT64/6to4/Teredo), `GuardedTransport` (ignores `HTTP_PROXY`/`HTTPS_PROXY` so dial-time checks aren't bypassed), `GuardPlainTransport`, `GuardRoundTripper`, `CheckOutboundURL`, `OriginAllowed`, and `IsLoopbackAuthority`.

@@ -415,10 +415,11 @@ invariants:
       - test: framework.TestServeRole_QueueDoesNotStart
       - test: framework.TestAgentRole_QueueDoesNotStart
   - id: worker-drains-honor-deadline
-    rule: The cron and queue drainers return at the Shutdown deadline even when a job ignores its cancelled context.
+    rule: The cron, queue and outbox relay drainers stop waiting when the Shutdown drain context ends, even when work ignores its cancelled context.
     enforced_by:
       - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
       - test: framework.TestAddQueueDrainHonorsShutdownDeadline
+      - test: framework.TestShutdownJoinsOutboxRelay
   - id: module-workers-gated-by-module
     rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
     enforced_by:
@@ -447,7 +448,7 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers. The outbox relay's drainer precedes the hooks registered before the relay started."
     enforced_by:
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
@@ -455,6 +456,7 @@ invariants:
       - test: framework.TestDrainClearsTheSlotBeforeBatteriesStop
       - test: framework.TestRunServicesHostLocalInstallation
       - test: framework.TestLifecycle_StartContextCancelledByStop
+      - test: framework.TestShutdownJoinsOutboxRelay
   - id: seeds-run-without-auto-migrate
     rule: Entity seeds run on boot under WithoutAutoMigrate too.
     enforced_by:
@@ -767,6 +769,11 @@ decisions:
       - option: Wait for Close however long it takes.
         why: A job handler that ignores its cancelled context would hang SIGTERM forever.
     revisit_if: schedulerStartStop gains a Close that takes a context.
+  - id: outbox-relay-stop-abandoned-at-deadline
+    date: 2026-11-25
+    status: accepted
+    decision: Like queue-close-abandoned-at-deadline, the outbox drainer reports that it stopped waiting; the relay can outlive Shutdown until the stuck call returns, and claims expire at claimed_until so another relay can reclaim them for at-least-once delivery.
+    upholds: [worker-drains-honor-deadline]
   - id: on-stop-hooks-ignore-context
     date: 2026-11-16
     status: accepted

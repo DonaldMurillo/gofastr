@@ -70,6 +70,16 @@ func TestRuntimeModule_RPC(t *testing.T) {
 	}
 }
 
+func TestEnvelopeUsesSharedHTMLCheck(t *testing.T) {
+	js, ok := Module("envelope")
+	if !ok {
+		t.Fatal("envelope module not embedded")
+	}
+	if got := strings.Count(js, "htmlOnly("); got != 2 {
+		t.Errorf("shared HTML check calls = %d, want 2", got)
+	}
+}
+
 func TestRuntimeSize(t *testing.T) {
 	size := RuntimeSize()
 	if size == 0 {

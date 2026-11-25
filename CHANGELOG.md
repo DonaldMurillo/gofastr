@@ -46,6 +46,13 @@ few lines, and link the PR or the docs page for the rest.
   (`/items`), not under `WithAPIPrefix` (`/api/items`).
   `CrudHandlerForEntity` and the startup banner report the same path.
   Regenerate clients built from the spec.
+- **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
+  `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
+  `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
+  `TestActionsArePinnedBySHA` holds every external `uses:` to one commit
+  SHA per action with a `# vN` comment. The Pages job no longer writes
+  `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
+  v5 leaves dotfiles out.
 
 ### Fixed
 
@@ -128,10 +135,63 @@ few lines, and link the PR or the docs page for the rest.
 - **Router:** group fallbacks match hosts and wildcard segments as
   `http.ServeMux` does, and custom NotFound and MethodNotAllowed handlers
   no longer call the serve hook.
+- **Redirect query parameters stay before URL fragments.** Added
+  `handler.WithQuery` and routed `battery/auth` form-error and policy
+  redirects (`SetDefaultLoginErrorPath`, `SetDefaultRegisterErrorPath`,
+  `WithRedirect`), `battery/admin` login redirects (`LoginPath`), and
+  `framework/entityui` saved-view redirects through it, so query parameters
+  are no longer appended inside `#fragment` or dropped
+  ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
+
+- **BREAKING:** `config.Load` now rejects `validate` tags whose highest
+  `min` exceeds their lowest `max`, even in unset optional nested structs.
+  Correct or remove the conflicting bounds before upgrading
+  ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
+
+- **BREAKING:** `InsertBuilder.Build` panics on mismatched column and
+  value counts instead of returning invalid SQL. Supply one value per
+  column, or leave both lists empty for `DEFAULT VALUES`. See
+  [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
+  ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
+
+- **BREAKING:** `UpdateBuilder.Build` panics when no `Set` assignments
+  were added instead of returning invalid SQL. Handle updates with no
+  fields before calling `Build`. See
+  [Programmatic updates](framework/docs/content/query-dsl.md#programmatic-updates)
+  ([#887](https://github.com/DonaldMurillo/gofastr/pull/887)).
+
+- **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
+  honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
+
+- `App.Shutdown` stops waiting for a stuck outbox relay when the drain
+  deadline expires and reports the deadline error. ([#907](https://github.com/DonaldMurillo/gofastr/pull/907))
+
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
+
+- **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
   ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+- **In-memory scheduler payloads.** The scheduler copies the payload at
+  registration and for each queue on every run, so changing the caller's
+  buffer or a dispatched job no longer changes other jobs
+  ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
+- **Article JSON-LD deduplication for `*seo.Article` pointers.** Article
+  screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
+  longer emit a second synthesized `Article` JSON-LD block
+  ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
 
 ## [0.99.0] - 2026-11-25
 
@@ -320,6 +380,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Media-type matching is case-insensitive** for auth login redirects,
+  MCP SSE framing, Kiln's HTML fallback, the dev hold page, OpenAPI CLI
+  JSON pretty-printing, and browser RPC JSON responses.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.

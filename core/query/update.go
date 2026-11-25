@@ -56,7 +56,12 @@ func selectVerb(cols []string) string {
 }
 
 // Build produces the SQL and arguments, every SET value before every WHERE argument.
+// Build panics if no assignments were added with Set.
 func (ub *UpdateBuilder) Build() (string, []any) {
+	if len(ub.sets) == 0 {
+		panic("query: UPDATE " + ub.table + " has no Set assignments")
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("UPDATE ")

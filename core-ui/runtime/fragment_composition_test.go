@@ -62,12 +62,12 @@ func fragmentSymbolIndex(t *testing.T) string {
 		if !strings.HasSuffix(e.Name(), ".js") {
 			continue
 		}
-		src, err := fs.ReadFile(fragFS, "frag/"+e.Name())
+		frag := strings.TrimSuffix(e.Name(), ".js")
+		src, err := readFragment(frag)
 		if err != nil {
 			t.Fatalf("read fragment %q: %v", e.Name(), err)
 		}
-		frag := strings.TrimSuffix(e.Name(), ".js")
-		for _, m := range fragmentSymbolDecl.FindAllStringSubmatch(string(src), -1) {
+		for _, m := range fragmentSymbolDecl.FindAllStringSubmatch(src, -1) {
 			lines = append(lines, frag+"\t"+strconv.Itoa(len(m[1]))+"\t"+m[2])
 		}
 	}
@@ -84,11 +84,11 @@ func TestEveryFragmentHasSymbols(t *testing.T) {
 		if !strings.HasSuffix(e.Name(), ".js") {
 			continue
 		}
-		src, err := fs.ReadFile(fragFS, "frag/"+e.Name())
+		src, err := readFragment(strings.TrimSuffix(e.Name(), ".js"))
 		if err != nil {
 			t.Fatalf("read fragment %q: %v", e.Name(), err)
 		}
-		if len(declaredSymbols(string(src))) == 0 {
+		if len(declaredSymbols(src)) == 0 {
 			t.Errorf("%s contributes no symbols, so the manifest gate would pass vacuously", e.Name())
 		}
 	}
@@ -197,11 +197,11 @@ func manifestLines(s string) []string {
 // the absence is real: not one of nav.js's top-level symbols may appear in the
 // embed bundle.
 func TestEmbedCompositionOmitsNav(t *testing.T) {
-	navSrc, err := fs.ReadFile(fragFS, "frag/nav.js")
+	navSrc, err := readFragment("nav")
 	if err != nil {
 		t.Fatalf("read nav fragment: %v", err)
 	}
-	navSymbols := iifeBodySymbols(string(navSrc))
+	navSymbols := iifeBodySymbols(navSrc)
 	if len(navSymbols) == 0 {
 		t.Fatal("no symbols parsed out of nav.js — the guard below would pass vacuously")
 	}
@@ -314,11 +314,11 @@ func TestCompositionsShareByteIdenticalFragments(t *testing.T) {
 
 	for name, order := range compositions {
 		for _, frag := range order {
-			data, err := fs.ReadFile(fragFS, "frag/"+frag+".js")
+			data, err := readFragment(frag)
 			if err != nil {
 				t.Fatalf("read fragment %q: %v", frag, err)
 			}
-			body := strings.TrimRight(string(data), "\n")
+			body := strings.TrimRight(data, "\n")
 			if !strings.Contains(built[name], body) {
 				t.Errorf("composition %q does not contain fragment %q verbatim — the bundles have started to diverge", name, frag)
 			}

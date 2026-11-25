@@ -684,7 +684,7 @@
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
   // core's rule (nav.js): an HTML answer applies, any status; any other
   // answer, a 200 included, throws so the toast names it.
-  const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
+  /* gofastr:html-response-check */
   const routeLayouts = (path) => {
     const m = routeInfo(path);
     return m?.entry.layouts?.map((k) => substTmpl(k, m.params)) || [];
@@ -943,7 +943,7 @@
         if (to === null) return;
         // Checked after the redirect: an X-Gofastr-Document answer is
         // bodiless and untyped. Any other non-HTML answer throws.
-        if (!respIsHTML(fr)) throw new Error(`HTTP ${fr.status}`);
+        htmlOnly(fr);
         const dest = to || path;
         if (to) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
         if (!(await cssWait(myEpoch, pdoc.body))) return;
@@ -1038,7 +1038,7 @@
       }
       // The redirect legs above read no body: a 200 X-Gofastr-Location
       // or -Document answer carries none and no Content-Type.
-      if (!respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
+      htmlOnly(resp);
       // Every response body is read with text(): Chrome keeps no body
       // for a fetch() read through a stream reader and reports the
       // request as net::ERR_ABORTED in DevTools even when the page

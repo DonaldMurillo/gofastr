@@ -66,6 +66,22 @@ qb, err := dsl.BuildDSLQuery(app.Registry, `tickets.where(status="open").order(-
 
 > **Security warning:** `dsl.BuildDSLQuery` checks field names, `Hidden`, and `NoQuery`, but it applies **no** `OwnerField`, `MultiTenant`, `ReadScope`, or `SoftDelete` scoping. Always append your caller/tenant/soft-delete predicates to `qb` before executing it on behalf of a user.
 
+## SQL builders (`core/query`)
+
+### Programmatic inserts
+
+When using `core/query`, pass one value per column to `Columns` and `Values`, in
+the same order. `InsertBuilder.Build` panics if the counts differ. If both lists
+are empty, the builder emits `INSERT INTO … DEFAULT VALUES`.
+
+### Programmatic updates
+
+When building an update with `query.Update`, call `Set` for each assignment.
+With no assignments, `UpdateBuilder.Build` panics with
+`query: UPDATE <table> has no Set assignments` instead of producing invalid
+SQL. When building updates from optional fields, handle the no-fields case
+before calling `Build`.
+
 ## MCP tool arguments
 
 The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas.

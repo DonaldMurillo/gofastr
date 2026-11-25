@@ -342,7 +342,7 @@ func (w *writer) settle() error {
 	}
 	ct := http.DetectContentType(held)
 	w.snap.Set("Content-Type", ct)
-	if strings.HasPrefix(ct, "text/html") {
+	if mediatype.IsHTML(ct) {
 		w.buffering = true
 		w.snap.Del("Content-Length")
 		return nil

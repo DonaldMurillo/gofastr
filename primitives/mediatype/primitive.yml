@@ -1,0 +1,63 @@
+primitive: mediatype
+summary: The shared case folding and range splitting used to recognize HTTP media types.
+code:
+  - core/mediatype/
+  - internal/mediatype/browser.go
+  - internal/mediatype/browser.js
+  - internal/mediatype/browser_test.go
+docs:
+  - framework/docs/content/app-cli.md
+  - framework/docs/content/core-packages.md
+  - framework/docs/content/runtime-contract.md
+twins:
+  - job: Case folding for media type detection.
+    why: The browser cannot call Go at runtime, so TestRPCMixedCaseJSONResponse checks the browser against mediatype.Fold.
+    sites:
+      - path: core/mediatype/fold.go
+        note: Fold, also emitted into standalone generated Go code.
+      - path: internal/mediatype/browser.js
+        note: The shared JSON and HTML Content-Type checks, embedded at their call sites.
+invariants:
+  - id: media-types-are-case-insensitive
+    rule: Media type checks ignore case, sharing Go's mediatype.Fold with the standalone generated CLI and using one browser Content-Type check, without changing each caller's existing exact or substring comparison.
+    enforced_by:
+      - test: battery/auth.TestRequireSessionMixedCaseHTML
+      - test: cmd/gofastr/internal/appgen.TestOpenAPICLIMixedCaseJSONResponse
+      - test: cmd/gofastr/internal/devcmd.TestDevHoldMixedCaseHTML
+      - test: core/mcp.TestSSEPostMixedCaseAccept
+      - test: core-ui/runtime.TestRPCMixedCaseJSONResponse
+      - test: core-ui/runtime.TestNavAcceptsMixedCaseHTMLAnswer
+      - test: framework/headless.TestE2E_Sortable409ConflictMessageAnnounced
+      - test: kiln/live.TestFallbackMixedCaseHTML
+    applies:
+      - battery/auth/session_middleware.go
+      - cmd/gofastr/internal/appgen/generate_cli_openapi_render.go
+      - cmd/gofastr/internal/devcmd/dev_hold.go
+      - core/mcp/transport.go
+      - core-ui/runtime/runtime.go
+      - core-ui/runtime/frag/nav.js
+      - core-ui/runtime/src/envelope.js
+      - core-ui/runtime/src/rpc.js
+      - framework/headless/sortablelist.js
+      - framework/headless/sortablelist_behavior.go
+      - kiln/live/live.go
+  - id: browser-check-has-one-marker
+    rule: Browser scripts that receive a shared Content-Type check contain exactly one matching marker (`/* gofastr:json-response-check */` or `/* gofastr:html-response-check */`), which comment sweeps must preserve.
+    enforced_by:
+      - test: internal/mediatype.TestWithJSONResponseCheckPanicsWithoutExactlyOneMarker
+      - test: internal/mediatype.TestWithHTMLResponseCheckPanicsWithoutExactlyOneMarker
+    applies:
+      - core-ui/runtime/frag/nav.js
+      - core-ui/runtime/src/envelope.js
+      - core-ui/runtime/src/rpc.js
+      - framework/headless/sortablelist.js
+  - id: accept-ranges-share-a-splitter
+    rule: Auth and Kiln match their own media ranges without ranking parameters and share the UI host's Accept splitter, keeping permissive comma splitting while the UI host honors quoted parameters.
+    enforced_by:
+      - test: battery/auth.TestRequireSessionMixedCaseHTML
+      - test: framework/uihost.TestMarkdownNegotiation_EndToEnd
+      - test: kiln/live.TestFallbackMixedCaseHTML
+    applies:
+      - battery/auth/session_middleware.go
+      - framework/uihost/agentready.go
+      - kiln/live/live.go

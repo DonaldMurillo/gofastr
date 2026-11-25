@@ -2126,13 +2126,17 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 }
 
 func drainQueueClose(ctx context.Context, q schedulerStartStop) error {
+	return drainWithDeadline(ctx, q.Close, "queue Close abandoned after the drain deadline (a job handler ignored its cancelled context)")
+}
+
+func drainWithDeadline(ctx context.Context, drain func() error, deadlineMessage string) error {
 	done := make(chan error, 1)
-	go func() { done <- q.Close() }()
+	go func() { done <- drain() }()
 	select {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("queue Close abandoned after the drain deadline (a job handler ignored its cancelled context): %w", ctx.Err())
+		return fmt.Errorf("%s: %w", deadlineMessage, ctx.Err())
 	}
 }
 

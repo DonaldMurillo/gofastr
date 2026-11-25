@@ -682,6 +682,30 @@ type valueRule struct {
 	choices  []string
 }
 
+func (r valueRule) less(other valueRule, exact bool) bool {
+	if exact {
+		return r.intBound < other.intBound
+	}
+	return r.bound < other.bound
+}
+
+func strictestBounds(rules []valueRule, exact bool) (min, max *valueRule) {
+	for i := range rules {
+		r := &rules[i]
+		switch r.key {
+		case "min":
+			if min == nil || min.less(*r, exact) {
+				min = r
+			}
+		case "max":
+			if max == nil || r.less(*max, exact) {
+				max = r
+			}
+		}
+	}
+	return min, max
+}
+
 func parseRules(t reflect.Type, tag string) ([]valueRule, error) {
 	if tag == "" {
 		return nil, nil
@@ -750,19 +774,24 @@ func validateTags(v reflect.Value, tag string) error {
 		value = v.Float()
 	}
 	for _, r := range rules {
-		switch {
-		case r.key == "oneof":
-			if !slices.Contains(r.choices, v.String()) {
-				return fmt.Errorf("must be one of %s", r.arg)
-			}
-		case isInt && r.key == "min" && v.Int() < r.intBound:
-			return fmt.Errorf("must be at least %s", r.arg)
-		case isInt && r.key == "max" && v.Int() > r.intBound:
-			return fmt.Errorf("must be at most %s", r.arg)
-		case !isInt && r.key == "min":
-			f.Min = &r.bound
-		case !isInt && r.key == "max":
-			f.Max = &r.bound
+		if r.key == "oneof" && !slices.Contains(r.choices, v.String()) {
+			return fmt.Errorf("must be one of %s", r.arg)
+		}
+	}
+	min, max := strictestBounds(rules, isInt)
+	if isInt {
+		if min != nil && v.Int() < min.intBound {
+			return fmt.Errorf("must be at least %s", min.arg)
+		}
+		if max != nil && v.Int() > max.intBound {
+			return fmt.Errorf("must be at most %s", max.arg)
+		}
+	} else {
+		if min != nil {
+			f.Min = &min.bound
+		}
+		if max != nil {
+			f.Max = &max.bound
 		}
 	}
 	return schema.Validate(f, value)
@@ -780,8 +809,15 @@ func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	}
 	for _, f := range fields {
 		if !f.nested {
-			if _, err := parseRules(f.sf.Type, f.sf.Tag.Get("validate")); err != nil {
+			rules, err := parseRules(f.sf.Type, f.sf.Tag.Get("validate"))
+			if err != nil {
 				return fmt.Errorf("config: field %s: %s", f.path, err)
+			}
+			kind := f.sf.Type.Kind()
+			exact := kind == reflect.Int || kind == reflect.Int64
+			min, max := strictestBounds(rules, exact)
+			if min != nil && max != nil && max.less(*min, exact) {
+				return fmt.Errorf("config: field %s: min=%s exceeds max=%s", f.path, min.arg, max.arg)
 			}
 			continue
 		}

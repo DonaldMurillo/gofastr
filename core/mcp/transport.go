@@ -16,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
@@ -317,7 +318,7 @@ func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ctx = context.WithValue(ctx, contextKey{}, r)
 
-	if wantsSSE(r) {
+	if mediatype.Fold(r.Header.Get("Accept")) == "text/event-stream" {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
@@ -453,10 +454,6 @@ func writeSSEComment(rc *http.ResponseController, ew *errWriter) bool {
 	}
 	_ = rc.SetWriteDeadline(time.Time{})
 	return true
-}
-
-func wantsSSE(r *http.Request) bool {
-	return r.Header.Get("Accept") == "text/event-stream"
 }
 
 type contextKey struct{}
