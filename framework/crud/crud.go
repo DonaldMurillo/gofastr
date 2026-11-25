@@ -420,13 +420,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
 			filterOpts = append(filterOpts, filter.Allow(extra...))
 		}
-		filters, err := filter.ParseFiltersValues(q, ch.queryFields(), filterOpts...)
+		filterQuery := q
+		if len(ch.Entity.Config.SearchFields) > 0 && q.Has("q") {
+			filterQuery = maps.Clone(q)
+			delete(filterQuery, "q")
+		}
+		filters, err := filter.ParseFiltersValues(filterQuery, ch.queryFields(), filterOpts...)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
 			return
 		}
-
-		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, q.Has("q"))
 
 		nested, err := parseNestedFiltersValues(q, ch.Entity, ch.Registry)
 		if err != nil {
@@ -679,22 +682,6 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 		return nil, p, nil
 	}
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
-}
-
-// stripQColumnEqFilter drops ?q=value as a filter on a q column when ?q= is
-// a search; ?q_like= and ?q[eq]= still filter the column.
-func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
-	if !hasSearchFields || !qPresent || len(filters) == 0 {
-		return filters
-	}
-	out := filters[:0]
-	for _, f := range filters {
-		if f.Op == filter.OpEq && f.Field == "q" && !filter.IsBracketKey(f.Key()) {
-			continue
-		}
-		out = append(out, f)
-	}
-	return out
 }
 
 // Get returns the handler that reads one record by id, with ?include=.
