@@ -37,8 +37,8 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 
 - **`App.Shutdown` waits for the erasure-retention sweep before stop hooks.**
-  A sweep can no longer open a SQLite connection while an `OnStop` hook
-  closes the database and the caller removes its directory
+  This prevents the sweep from racing SQLite cleanup during graceful shutdown.
+  If the shutdown context expires, teardown proceeds without waiting longer
   ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer

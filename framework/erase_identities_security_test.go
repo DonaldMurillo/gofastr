@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -760,20 +761,25 @@ func TestAppStartSweepsExpiredRetention(t *testing.T) {
 type retentionSweepProbe struct {
 	entered chan struct{}
 	release chan struct{}
+	once    sync.Once
 }
 
-func (p retentionSweepProbe) Connect(context.Context) (driver.Conn, error) {
-	close(p.entered)
-	<-p.release
-	return nil, errors.New("no such function: version")
+func (p *retentionSweepProbe) Connect(ctx context.Context) (driver.Conn, error) {
+	p.once.Do(func() { close(p.entered) })
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.release:
+		return nil, errors.New("no such function: version")
+	}
 }
 
-func (retentionSweepProbe) Driver() driver.Driver { return nil }
+func (*retentionSweepProbe) Driver() driver.Driver { return nil }
 
 func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
-		db := sql.OpenDB(probe)
+		db := sql.OpenDB(&probe)
 		defer db.Close()
 		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
 		app.WithSeed(func(context.Context) error {
@@ -811,6 +817,39 @@ func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
 		close(probe.release)
 		if err := <-stop; err != nil {
 			t.Fatalf("Shutdown: %v", err)
+		}
+		if err := <-run; err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{})}
+		db := sql.OpenDB(&probe)
+		defer db.Close()
+		defer time.Sleep(20 * time.Second)
+		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
+		app.WithSeed(func(context.Context) error {
+			app.DB = db
+			return nil
+		})
+
+		run := make(chan error, 1)
+		go func() { run <- app.Run(context.Background(), ServicesHost()) }()
+		<-app.ServicesReady()
+		<-probe.entered
+
+		const budget = time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		defer cancel()
+		start := time.Now()
+		if err := app.Shutdown(ctx); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed != budget {
+			t.Errorf("Shutdown spent %s waiting on retention sweep, want %s", elapsed, budget)
 		}
 		if err := <-run; err != nil {
 			t.Fatalf("Run: %v", err)

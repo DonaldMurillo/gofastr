@@ -2221,7 +2221,15 @@ func (a *App) shutdown(ctx context.Context) error {
 			firstErr = err
 		}
 	}
-	a.retentionSweep.Wait()
+	swept := make(chan struct{})
+	go func() {
+		a.retentionSweep.Wait()
+		close(swept)
+	}()
+	select {
+	case <-swept:
+	case <-ctx.Done():
+	}
 	if a.processModules != nil {
 		_ = a.processModules.Drain(ctx)
 	}
