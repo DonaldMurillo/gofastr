@@ -4,6 +4,7 @@ code:
   - core/mediatype/
   - internal/mediatype/browser.go
   - internal/mediatype/browser.js
+  - internal/mediatype/browser_test.go
 docs:
   - framework/docs/content/app-cli.md
   - framework/docs/content/runtime-contract.md
@@ -36,6 +37,13 @@ invariants:
       - framework/headless/sortablelist.js
       - framework/headless/sortablelist_behavior.go
       - kiln/live/live.go
+  - id: browser-check-has-one-marker
+    rule: Browser scripts that receive the shared JSON check contain exactly one `/* gofastr:json-response-check */` marker, which comment sweeps must preserve.
+    enforced_by:
+      - test: internal/mediatype.TestWithJSONResponseCheckPanicsWithoutExactlyOneMarker
+    applies:
+      - core-ui/runtime/src/rpc.js
+      - framework/headless/sortablelist.js
   - id: accept-ranges-share-a-splitter
     rule: Auth and Kiln match their own media ranges without ranking parameters and share the UI host's Accept splitter, keeping permissive comma splitting while the UI host honors quoted parameters.
     enforced_by:
