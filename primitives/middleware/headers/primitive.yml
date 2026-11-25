@@ -31,7 +31,7 @@ invariants:
       - test: core/middleware.TestDefaultCSPEnforcesTrustedTypes
       - test: core/middleware.TestTrustedTypesPolicyNameIsChecked
   - id: csp-reporting-opt-in
-    rule: With CSPReportURI set, SecurityHeaders defines CSPReportEndpoint in Reporting-Endpoints beside any endpoints an outer handler set, preserving multiple header lines and keeping an existing CSPReportEndpoint on any line. It adds report-to and report-uri to each comma-separated policy that names neither and leaves one that names either as written, adds 'report-sample' to the default policy's default-src, and panics on a URI holding a space, quote, comma, semicolon, backslash or control byte; with it unset no reporting header or directive is sent.
+    rule: With CSPReportURI set, SecurityHeaders defines CSPReportEndpoint in Reporting-Endpoints beside any endpoints an outer handler set, preserving multiple nonblank header lines, dropping blank lines and keeping an existing CSPReportEndpoint on any line. It adds report-to and report-uri to each comma-separated policy that names neither and leaves one that names either as written, adds 'report-sample' to the default policy's default-src, and panics on a URI holding a space, quote, comma, semicolon, backslash or control byte; with it unset no reporting header or directive is sent.
     enforced_by:
       - test: core/middleware.TestCSPReportingHeaders
       - test: core/middleware.TestCSPReportingKeepsHostDirectives

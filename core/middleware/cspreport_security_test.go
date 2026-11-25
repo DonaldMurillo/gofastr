@@ -91,19 +91,23 @@ func TestReportingEndpointsKeepsLines(t *testing.T) {
 	const first = `nel="https://r.example/nel"`
 	ours := CSPReportEndpoint + `="` + CSPReportPath + `"`
 	for _, tc := range []struct {
-		name, second string
-		want         []string
+		name        string
+		lines, want []string
 	}{
-		{"append when missing", `extra="https://r.example/a,csp-endpoint=x"`, []string{first, `extra="https://r.example/a,csp-endpoint=x"`, ours}},
-		{"keep later declaration", `extra="/extra", csp-endpoint="/custom"`, []string{first, `extra="/extra", csp-endpoint="/custom"`}},
+		{"append when missing", []string{first, `extra="https://r.example/a,csp-endpoint=x"`}, []string{first, `extra="https://r.example/a,csp-endpoint=x"`, ours}},
+		{"keep later declaration", []string{first, `extra="/extra", csp-endpoint="/custom"`}, []string{first, `extra="/extra", csp-endpoint="/custom"`}},
+		{"skip blank line", []string{"", first}, []string{first + ", " + ours}},
+		{"replace all blank lines", []string{" ", ""}, []string{ours}},
+		{"skip blank with existing endpoint", []string{`csp-endpoint="/custom"`, " "}, []string{`csp-endpoint="/custom"`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := SecurityHeaders(SecurityHeadersConfig{CSPReportURI: CSPReportPath})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			w := httptest.NewRecorder()
-			w.Header().Add(header, first)
-			w.Header().Add(header, tc.second)
+			for _, line := range tc.lines {
+				w.Header().Add(header, line)
+			}
 			h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 			if got := w.Result().Header.Values(header); !slices.Equal(got, tc.want) {
 				t.Errorf("%s = %q, want %q", header, got, tc.want)

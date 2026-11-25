@@ -170,7 +170,13 @@ func withCSPReporting(csp, uri string) string {
 
 func addReportingEndpoint(h http.Header, endpoint string) {
 	const header = "Reporting-Endpoints"
-	lines := h.Values(header)
+	values := h.Values(header)
+	lines := slices.DeleteFunc(values, func(line string) bool {
+		return strings.TrimSpace(line) == ""
+	})
+	if len(lines) != len(values) {
+		h[header] = lines
+	}
 	for _, line := range lines {
 		for _, member := range splitOutsideQuotes(line) {
 			name, _, _ := strings.Cut(strings.TrimSpace(member), "=")

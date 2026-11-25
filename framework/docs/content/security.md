@@ -96,7 +96,7 @@ Listing `default` only allows that name; your script still creates it with `trus
 
 ### Violation reports
 
-`framework.WithCSPReports(fn)` mounts `handler.CSPReportHandler` at `POST /__gofastr/csp-report` (`middleware.CSPReportPath`) and points the default chain's policy at it: a `Reporting-Endpoints: csp-endpoint="…"` header (beside any endpoints already set), `report-to csp-endpoint` and `report-uri`, and `'report-sample'` in the built-in policy. An existing `csp-endpoint` on any `Reporting-Endpoints` line takes precedence; multiple existing lines are preserved. A nil `fn` logs at most 20 reports a minute at warn level.
+`framework.WithCSPReports(fn)` mounts `handler.CSPReportHandler` at `POST /__gofastr/csp-report` (`middleware.CSPReportPath`) and points the default chain's policy at it: a `Reporting-Endpoints: csp-endpoint="…"` header (beside any endpoints already set), `report-to csp-endpoint` and `report-uri`, and `'report-sample'` in the built-in policy. An existing `csp-endpoint` on any `Reporting-Endpoints` line takes precedence. The middleware keeps existing endpoints and drops blank header lines. A nil `fn` logs at most 20 reports a minute at warn level.
 
 <!-- gofastr:compile
 stmt: _ = app
