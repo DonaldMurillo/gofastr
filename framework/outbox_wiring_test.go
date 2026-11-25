@@ -41,7 +41,7 @@ func (c *stalledRelayConnector) Connect(context.Context) (driver.Conn, error) {
 func (*stalledRelayConnector) Driver() driver.Driver { return nil }
 
 func TestShutdownJoinsOutboxRelay(t *testing.T) {
-	for _, name := range []string{"before deadline", "at deadline"} {
+	for _, name := range []string{"before deadline", "at deadline", "already-expired ctx"} {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				connector := &stalledRelayConnector{}
@@ -52,9 +52,13 @@ func TestShutdownJoinsOutboxRelay(t *testing.T) {
 					t.Fatal(err)
 				}
 				relay.Consume("witness", "example", func(context.Context, event.Event) error { return nil })
-				connector.entered = make(chan struct{}, 1)
-				connector.release = make(chan struct{})
-				release := sync.OnceFunc(func() { close(connector.release) })
+				expired := name == "already-expired ctx"
+				release := func() {}
+				if !expired {
+					connector.entered = make(chan struct{}, 1)
+					connector.release = make(chan struct{})
+					release = sync.OnceFunc(func() { close(connector.release) })
+				}
 
 				app := NewApp(WithRole(RoleWorker))
 				app.outbox = relay // Stall only the relay's DB, not the app's boot.
@@ -70,33 +74,47 @@ func TestShutdownJoinsOutboxRelay(t *testing.T) {
 				case err := <-run:
 					t.Fatalf("app did not start: %v", err)
 				}
-				select {
-				case <-connector.entered:
-				case <-time.After(time.Second):
-					t.Fatal("relay never entered Connect")
+				if !expired {
+					select {
+					case <-connector.entered:
+					case <-time.After(time.Second):
+						t.Fatal("relay never entered Connect")
+					}
 				}
 
 				const budget = time.Second
 				ctx, cancel := context.WithTimeout(t.Context(), budget)
 				defer cancel()
+				if expired {
+					synctest.Wait()
+					cancel()
+				}
 				shutdown := make(chan error, 1)
 				go func() { shutdown <- app.Shutdown(ctx) }()
 				synctest.Wait()
-				select {
-				case <-stopped:
-					t.Fatal("OnStop ran while the relay was still blocked and the deadline had not elapsed")
-				default:
+				if !expired {
+					select {
+					case <-stopped:
+						t.Fatal("OnStop ran while the relay was still blocked and the deadline had not elapsed")
+					default:
+					}
 				}
 				var want error
-				if name == "before deadline" {
+				switch name {
+				case "before deadline":
 					release()
-				} else {
+				case "at deadline":
 					want = context.DeadlineExceeded
+				case "already-expired ctx":
+					want = context.Canceled
 				}
 				select {
 				case err := <-shutdown:
 					if !errors.Is(err, want) {
 						t.Fatalf("Shutdown = %v, want %v", err, want)
+					}
+					if want != nil && !strings.Contains(err.Error(), "outbox relay stop abandoned") {
+						t.Fatalf("Shutdown did not report that it stopped waiting for the outbox relay: %v", err)
 					}
 				case <-time.After(budget + time.Second):
 					t.Fatal("Shutdown blocked past its deadline while the outbox relay was stuck")
