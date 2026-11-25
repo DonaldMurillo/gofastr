@@ -35,6 +35,10 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
     applies:
       - core-ui/app/router.go
+  - id: form-relation-keys-stay-exact
+    rule: A generated entity form reads its relation options through the SDK's parseJSON source (jsParseJSON), so an integer key past 2^53 keeps the digits the server sent.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
   - id: added-screens-use-the-project-api
     rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix (AppSpec.RouteApp), not the fragment's empty app section.
     enforced_by:

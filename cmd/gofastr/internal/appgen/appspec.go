@@ -4248,7 +4248,8 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 }
 
 // appSpecEntityFormClientJS populates the form's relation <select>s on
-// mount by fetching each related entity's collection. targets maps a
+// mount by fetching each related entity's collection, read with the SDK's
+// parseJSON so a big integer key stays exact. targets maps a
 // related entity to its route and the wire name of its key, the column a
 // relation stores: a target keyed on currency_code is read as
 // row.currencyCode, and one on its own table is fetched there. A target
@@ -4278,6 +4279,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
 		targetsJSON = []byte("{}")
 	}
 	return fmt.Sprintf(`(async () => {
+%s
   const targets = %s;
   const form = document.querySelector('form[data-action-mount="%s"]');
   if (!form) return;
@@ -4292,7 +4294,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       // falls back to fetch.
       const res = await ((window.__gofastr && window.__gofastr.fetch) || fetch)(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
       if (!res.ok) continue;
-      const payload = await res.json();
+      const payload = parseJSON(await res.text());
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
         if (row[t.key] == null) continue;
@@ -4307,7 +4309,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       sel.dataset.relLoaded = '1';
     } catch (_) {}
   }
-})();`, targetsJSON, mountAction)
+})();`, jsParseJSON, targetsJSON, mountAction)
 }
 
 func appSpecEntityFormActionName(screen appspec.AppSpecScreen, path []int) string {

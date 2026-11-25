@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,17 +70,43 @@ func TestEntityFormStartsAtDefaults(t *testing.T) {
 // own. The mount hook that loads the related rows names that option in
 // place; appending a second option for the same row listed it twice.
 func TestEntityFormRelationMountKeepsDefaultOption(t *testing.T) {
+	got := relationMountOptions(t, "3", `{"data":[{"id":3,"name":"Cat 3"},{"id":4,"name":"Cat 4"}]}`)
+	if want := `[["","Select"],["3","Cat 3"],["4","Cat 4"]]`; got != want {
+		t.Errorf("relation options after mount = %s; want %s", got, want)
+	}
+}
+
+// Response.json() rounds an integer key past 2^53, so the option named
+// a different record than the row it was drawn from.
+func TestEntityFormRelationKeepsBigIntKey(t *testing.T) {
+	got := relationMountOptions(t, "", `{"data":[{"id":9007199254740993,"name":"Big"}]}`)
+	if want := `[["","Select"],["9007199254740993","Big"]]`; got != want {
+		t.Errorf("relation options after mount = %s; want %s", got, want)
+	}
+}
+
+// relationMountOptions runs the generated mount hook of an items form,
+// whose category relation defaults to def, against a categories
+// collection answering body, and returns the select's options.
+func relationMountOptions(t *testing.T, def, body string) string {
+	t.Helper()
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not installed")
 	}
+	field := framework.FieldDeclaration{Name: "category", Type: "relation", To: "categories"}
+	options := `option("", "Select")`
+	if def != "" {
+		field.Default = def
+		options += `, option(` + strconv.Quote(def) + `, ` + strconv.Quote(def) + `)`
+	}
 	js := appSpecEntityFormClientJS(appspec.AppSpecBlock{Kind: "entity_form", Entity: "items"}, map[string]framework.EntityDeclaration{
 		"categories": {Name: "categories", Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
-		"items":      {Name: "items", Fields: []framework.FieldDeclaration{{Name: "category", Type: "relation", To: "categories", Default: "3"}}},
+		"items":      {Name: "items", Fields: []framework.FieldDeclaration{field}},
 	}, "/api", "entity_form_items_0")
 	probe := `const option = (value, textContent) => ({ value, textContent });
 const sel = {
-  options: [option("", "Select"), option("3", "3")],
+  options: [` + options + `],
   dataset: {},
   getAttribute: (name) => (name === "data-rel-entity" ? "categories" : null),
   appendChild(o) { this.options.push(o); },
@@ -89,7 +116,8 @@ globalThis.document = {
   querySelector: () => ({ querySelectorAll: () => [sel] }),
   createElement: () => option("", ""),
 };
-globalThis.fetch = async () => ({ ok: true, json: async () => ({ data: [{ id: 3, name: "Cat 3" }, { id: 4, name: "Cat 4" }] }) });
+const body = ` + strconv.Quote(body) + `;
+globalThis.fetch = async () => new Response(body, { headers: { "Content-Type": "application/json" } });
 await ` + strings.TrimSuffix(js, ";") + `;
 console.log(JSON.stringify(sel.options.map((o) => [o.value, o.textContent])));
 `
@@ -103,10 +131,7 @@ console.log(JSON.stringify(sel.options.map((o) => [o.value, o.textContent])));
 	if err != nil {
 		t.Fatalf("node: %v\n%s", err, output)
 	}
-	want := `[["","Select"],["3","Cat 3"],["4","Cat 4"]]`
-	if got := strings.TrimSpace(string(output)); got != want {
-		t.Errorf("relation options after mount = %s; want %s", got, want)
-	}
+	return strings.TrimSpace(string(output))
 }
 
 // The generator wrote a default with fmt.Sprint where entityui's create
