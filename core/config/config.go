@@ -774,19 +774,19 @@ func validateTags(v reflect.Value, tag string) error {
 		value = v.Float()
 	}
 	for _, r := range rules {
-		switch {
-		case r.key == "oneof":
-			if !slices.Contains(r.choices, v.String()) {
-				return fmt.Errorf("must be one of %s", r.arg)
-			}
-		case isInt && r.key == "min" && v.Int() < r.intBound:
-			return fmt.Errorf("must be at least %s", r.arg)
-		case isInt && r.key == "max" && v.Int() > r.intBound:
-			return fmt.Errorf("must be at most %s", r.arg)
+		if r.key == "oneof" && !slices.Contains(r.choices, v.String()) {
+			return fmt.Errorf("must be one of %s", r.arg)
 		}
 	}
-	if !isInt {
-		min, max := strictestBounds(rules, false)
+	min, max := strictestBounds(rules, isInt)
+	if isInt {
+		if min != nil && v.Int() < min.intBound {
+			return fmt.Errorf("must be at least %s", min.arg)
+		}
+		if max != nil && v.Int() > max.intBound {
+			return fmt.Errorf("must be at most %s", max.arg)
+		}
+	} else {
 		if min != nil {
 			f.Min = &min.bound
 		}

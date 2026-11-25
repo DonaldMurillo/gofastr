@@ -53,6 +53,7 @@ func TestRepeatedBounds(t *testing.T) {
 		name                    string
 		strictFirst, strictLast any
 		below, min, max, above  string
+		belowBoth, aboveBoth    string
 		minBound, maxBound      string
 	}{
 		{
@@ -64,18 +65,20 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit string `validate:"min=1,max=4,min=2,max=3"`
 			}{},
 			below: "é", min: "éé", max: "ééé", above: "éééé",
+			belowBoth: "", aboveBoth: "ééééé",
 			minBound: "2 characters", maxBound: "3 characters",
 		},
 		{
 			name: "int",
 			strictFirst: &struct {
-				Limit int `validate:"min=2,max=3,min=1,max=4"`
+				Limit int `validate:"min=5,max=6,min=1,max=7"`
 			}{},
 			strictLast: &struct {
-				Limit int `validate:"min=1,max=4,min=2,max=3"`
+				Limit int `validate:"min=1,max=7,min=5,max=6"`
 			}{},
-			below: "1", min: "2", max: "3", above: "4",
-			minBound: "2", maxBound: "3",
+			below: "1", min: "5", max: "6", above: "7",
+			belowBoth: "0", aboveBoth: "8",
+			minBound: "5", maxBound: "6",
 		},
 		{
 			name: "duration",
@@ -86,6 +89,7 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit time.Duration `validate:"min=1s,max=4s,min=2s,max=3s"`
 			}{},
 			below: "1s", min: "2s", max: "3s", above: "4s",
+			belowBoth: "0s", aboveBoth: "5s",
 			minBound: "2s", maxBound: "3s",
 		},
 		{
@@ -97,6 +101,7 @@ func TestRepeatedBounds(t *testing.T) {
 				Limit float64 `validate:"min=0,max=3,min=0.5,max=2.5"`
 			}{},
 			below: "0.25", min: "0.5", max: "2.5", above: "2.75",
+			belowBoth: "-0.5", aboveBoth: "3.5",
 			minBound: "0.5", maxBound: "2.5",
 		},
 	} {
@@ -110,10 +115,12 @@ func TestRepeatedBounds(t *testing.T) {
 			for _, tc := range []struct {
 				name, value, want string
 			}{
+				{"below-both", kind.belowBoth, "must be at least " + kind.minBound},
 				{"below", kind.below, "must be at least " + kind.minBound},
 				{"min", kind.min, ""},
 				{"max", kind.max, ""},
 				{"above", kind.above, "must be at most " + kind.maxBound},
+				{"above-both", kind.aboveBoth, "must be at most " + kind.maxBound},
 			} {
 				t.Run(kind.name+"/"+order.name+"/"+tc.name, func(t *testing.T) {
 					err := Load(order.cfg, MapSource{"LIMIT": tc.value})
