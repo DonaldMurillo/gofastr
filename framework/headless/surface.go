@@ -1,12 +1,13 @@
 package headless
 
 import (
-	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	xhtml "golang.org/x/net/html"
 )
 
 // Card parts.
@@ -62,7 +63,7 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			panic("headless: Card TitleHref and Href together nest the title's link inside the card's link")
 		case p.Title == "" && p.TitleContent == "":
 			panic("headless: Card TitleHref needs a Title — the link's words are the title's")
-		case interactiveContentRe.MatchString(string(p.TitleContent)):
+		case holdsInteractiveContent(string(p.TitleContent)):
 			panic("headless: Card TitleHref with a TitleContent that holds a link, a control or a tabindex nests interactive content in the title's link")
 		}
 		titleHref = urlsafe.CleanAnchor(p.TitleHref)
@@ -173,9 +174,36 @@ func init() {
 	})
 }
 
-// interactiveContentRe matches what an <a> may not hold: an opening
-// link, control or embedded-media tag in any letter case (and not
-// <abbr>, <article>, <aside> and the like, whose names only start the
-// same), or a tabindex or contenteditable attribute inside a tag, with
-// a value or without one (the words alone in the text are fine).
-var interactiveContentRe = regexp.MustCompile(`(?i)<(a|button|input|select|textarea|label|details|summary|iframe|embed|object|audio|video)[\s>/]|<[^>]*\s(tabindex|contenteditable)(\s*=|[\s>/])`)
+// interactiveTags are the elements an <a> may not hold: links,
+// controls and embedded media.
+var interactiveTags = map[string]bool{
+	"a": true, "button": true, "input": true, "select": true, "textarea": true, "label": true,
+	"details": true, "summary": true, "iframe": true, "embed": true, "object": true, "audio": true, "video": true,
+}
+
+// holdsInteractiveContent reports whether markup opens an element an <a>
+// may not hold, or gives any element a tabindex or contenteditable
+// attribute, with a value or without one. It tokenizes the markup, so a
+// quoted ">" or an attribute value that names one of these does not
+// mislead it, and words in the text are only text.
+func holdsInteractiveContent(markup string) bool {
+	z := xhtml.NewTokenizer(strings.NewReader(markup))
+	for {
+		switch z.Next() {
+		case xhtml.ErrorToken:
+			return false
+		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
+			name, hasAttr := z.TagName()
+			if interactiveTags[string(name)] {
+				return true
+			}
+			for hasAttr {
+				var key []byte
+				key, _, hasAttr = z.TagAttr()
+				if k := string(key); k == "tabindex" || k == "contenteditable" {
+					return true
+				}
+			}
+		}
+	}
+}
