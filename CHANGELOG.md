@@ -38,7 +38,7 @@ few lines, and link the PR or the docs page for the rest.
 
 - `App.Shutdown` no longer waits past its deadline for mounted island
   fanout to stop. Presence goodbyes still follow in-flight rosters when
-  time permits.
+  time permits. ([#910](https://github.com/DonaldMurillo/gofastr/pull/910))
 
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
