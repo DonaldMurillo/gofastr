@@ -6,8 +6,7 @@
 // registers no document listeners; every entry comes through dispatchRPC.
 (() => {
   'use strict';
-  window.__gofastr = window.__gofastr || {};
-  const NS = window.__gofastr;
+  const NS = (window.__gofastr ||= {});
 
   // Per-signal abort controllers make rapid clicks last-write-wins. A new
   // dispatch aborts the prior request targeting the same signal so network
@@ -443,8 +442,7 @@
 
       const toastHeader = r.headers.get('X-Gofastr-Toast');
       if (toastHeader) NS._dispatchToastHeader(toastHeader);
-      const ct = r.headers.get('content-type') || '';
-      const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
+      const data = isJSON(r) ? await r.json() : await r.text();
       if (responseSignal) NS.setSignal(responseSignal, data);
       // Checked after the body read and the signal broadcast: a newer
       // dispatch may have started during either, and a signal listener

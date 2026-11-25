@@ -49,6 +49,10 @@ gofastr generate cli --from-openapi openapi.json --binary=barc
 
 Generates a self-contained CLI (with its own `internal/client`) directly from OpenAPI 3.x `operationId`s, scalar and string-array parameters, JSON/binary bodies, and bearer/header `apiKey` security schemes.
 
+Operations pretty-print JSON responses even if the server capitalizes the `Content-Type` (for example, `Application/JSON` or `application/problem+JSON`). Other bodies are written as received.
+
+The standalone CLI emits the normalizer from `core/mediatype.StandaloneFold` so the generated program needs no framework import. `mediatype.Fold` changes case only; `AcceptsAny` matches a field against lowercase ranges without ranking parameters, and `AcceptRanges` splits a field while honoring quoted parameters.
+
 ## Extending and regenerating
 
 - `*.gen.go` files are regenerated on every run and carry `//gofastr:generated` markers.

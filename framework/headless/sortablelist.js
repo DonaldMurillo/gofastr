@@ -38,9 +38,8 @@
 (function () {
   'use strict';
   const NAME = 'headless-sortablelist';
-  const NS = window.__gofastr = window.__gofastr || {};
-  if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
-  NS.loadedModules = NS.loadedModules || {};
+  const NS = (window.__gofastr ||= {});
+  if (Object.hasOwn(NS.loadedModules ||= {}, NAME)) return;
   NS.loadedModules[NAME] = true;
 
   const listOf = (item) => item?.closest?.('[data-hui-sortable]');
@@ -144,7 +143,7 @@
   // ~300 chars; malformed/oversized/empty → cb('') so the caller falls
   // back to the generic copy.
   function conflictMessage(res, cb) {
-    if (!(res.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) return cb('');
+    if (!isJSON(res)) return cb('');
     readBounded(res, 4096, (txt) => {
       // An empty or malformed body throws in the parse: generic copy.
       try {

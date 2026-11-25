@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +15,26 @@ import (
 type sseEvent struct {
 	event string
 	data  string
+}
+
+func TestSSEPostMixedCaseAccept(t *testing.T) {
+	h := newSecurityTestServer(t).ServeSSE("/mcp")
+	for _, tc := range []struct{ accept, want string }{
+		{"Text/Event-Stream", "text/event-stream"},
+		{"text/event-stream", "text/event-stream"},
+		{"text/event-stream;q=1", "application/json"},
+		{"text/event-stream, application/json", "application/json"},
+		{"", "application/json"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", tc.accept)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Content-Type"); got != tc.want {
+			t.Errorf("Accept %q: Content-Type = %q, want %q", tc.accept, got, tc.want)
+		}
+	}
 }
 
 // parseSSEEvents parses an SSE byte stream per the HTML spec and returns

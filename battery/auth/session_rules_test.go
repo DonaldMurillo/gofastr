@@ -57,3 +57,26 @@ func TestRequestSessionPrefersRequestedKind(t *testing.T) {
 		t.Errorf("non-pending preference picked %+v, %v; want the full session", s, err)
 	}
 }
+
+func TestRequireSessionMixedCaseHTML(t *testing.T) {
+	h := RequireSession(WithRedirectOnFail("/login"))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, tc := range []struct {
+		accept string
+		want   int
+	}{
+		{"application/json, Text/HTML; charset=utf-8", http.StatusSeeOther},
+		{"Application/XHTML+XML", http.StatusSeeOther},
+		{"text/html;q=0", http.StatusSeeOther},
+		{`application/json; profile="unterminated, text/html`, http.StatusSeeOther},
+		{"", http.StatusUnauthorized},
+		{"*/*", http.StatusUnauthorized},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req.Header.Set("Accept", tc.accept)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("Accept %q: status = %d, want %d", tc.accept, rec.Code, tc.want)
+		}
+	}
+}
