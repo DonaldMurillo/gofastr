@@ -221,7 +221,7 @@ func cardCSS(t style.Theme) string {
   border-radius: inherit;
 }
 [data-cui-comp="ui-card"].fui-card--stretched :is(.fui-card__action, .fui-card__footer),
-[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href]:not(.fui-card__heading-link), button, input, select, textarea, summary, label, iframe, video, audio, [tabindex], [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"]), .fui-card) {
+[data-cui-comp="ui-card"].fui-card--stretched .fui-card__body :is(a[href]:not(.fui-card__heading-link), button, input, select, textarea, summary, label, iframe, video, audio, img[usemap], [tabindex], [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"]), .fui-card) {
   position: relative;
   z-index: 1;
 }

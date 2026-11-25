@@ -95,3 +95,43 @@ func TestCardHeadingHrefNestedCardKeepsItsOwnLink(t *testing.T) {
 		t.Errorf("clicks on the two bodies reach %v, want inner /inner and outer /outer", got)
 	}
 }
+
+// An image map in a stretched card's body keeps its regions: a click on
+// a mapped area follows the area's link, while plain body text still
+// follows the heading link.
+func TestCardHeadingHrefKeepsImageMapRegions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	th := theme.Default()
+	var css strings.Builder
+	for _, e := range registry.All() {
+		css.WriteString(e.CSSFor(th))
+		css.WriteString("\n")
+	}
+	head := "<style>" + th.CSSCustomProperties() + "\n" + css.String() + "</style>"
+	pixel := "data:image/gif;base64,R0lGODlhAQABAAAAACw="
+	card := ui.Card(ui.CardConfig{Heading: "Mapped", HeadingHref: "/card"},
+		render.HTML(`<p id="text">Plain text.</p>`+
+			`<img id="map-img" src="`+pixel+`" alt="choices" width="120" height="60" usemap="#choices">`+
+			`<map name="choices"><area shape="rect" coords="0,0,120,60" href="/region" alt="Region"></map>`))
+	srv := themeTestPageWithHead(t, head, `<div style="width: 480px; padding: 16px">`+string(card)+`</div>`)
+	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(800, 600))
+	var got map[string]string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const at = id => { const r = document.getElementById(id).getBoundingClientRect();
+			const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			const a = hit && hit.closest('a, area');
+			if (a) return a.getAttribute('href');
+			return hit ? (hit.id || hit.tagName) : 'none'; };
+		return {text: at('text'), map: at('map-img')};
+	})()`, &got)); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got["text"] != "/card" {
+		t.Errorf("a click on the body text reaches %q, want the heading link /card", got["text"])
+	}
+	if got["map"] == "/card" {
+		t.Errorf("a click on the image map reaches the heading link; its region must stay clickable (got %q)", got["map"])
+	}
+}

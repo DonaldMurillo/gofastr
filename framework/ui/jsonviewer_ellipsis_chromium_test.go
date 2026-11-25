@@ -34,7 +34,8 @@ func TestJSONViewerEllipsizesRootAndMemberStrings(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		const cut = sel => { const s = document.querySelector(sel + ' .fui-json-viewer__str');
 			const cs = getComputedStyle(s);
-			return cs.textOverflow === 'ellipsis' && cs.whiteSpace === 'nowrap' && s.scrollWidth > s.clientWidth && s.getClientRects().length === 1; };
+			return cs.textOverflow === 'ellipsis' && cs.whiteSpace === 'nowrap' && cs.overflowX === 'hidden' &&
+				s.scrollWidth > s.clientWidth && s.getClientRects().length === 1; };
 		return {root: cut('#root'), member: cut('#member')};
 	})()`, &got)); err != nil {
 		t.Fatalf("probe: %v", err)
