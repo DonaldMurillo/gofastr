@@ -81,11 +81,11 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 
 func docStatus(c any, recorded int) int {
 	if sc, ok := c.(uihost.ScreenStatusCode); ok {
-		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+		if code := sc.ScreenStatusCode(); code >= 100 && code <= 999 && code != http.StatusOK {
 			return code
 		}
 	}
-	if recorded == http.StatusOK {
+	if recorded < 100 || recorded > 999 || recorded == http.StatusOK {
 		return 0
 	}
 	return recorded

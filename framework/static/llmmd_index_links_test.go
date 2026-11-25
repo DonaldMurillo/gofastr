@@ -148,3 +148,31 @@ func TestExportIndexLinksUseBasePath(t *testing.T) {
 		}
 	}
 }
+
+type invalidDocStatus struct{ code int }
+
+func (s invalidDocStatus) ScreenStatusCode() int { return s.code }
+func (invalidDocStatus) Render() render.HTML     { return "<p>Exported page</p>" }
+
+func TestExportIgnoresInvalidDocStatus(t *testing.T) {
+	a := coreapp.NewApp("status")
+	a.Register("/below", invalidDocStatus{code: 99}, nil)
+	a.Register("/above", invalidDocStatus{code: 1000}, nil)
+	out := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	index := readOut(t, out, "llm-pages.md")
+	for _, route := range []string{"below", "above"} {
+		t.Run(route, func(t *testing.T) {
+			readOut(t, out, route+"/index.html")
+			doc := route + "/llm.md"
+			if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(doc))); err != nil {
+				t.Errorf("exported HTML lacks its Markdown document %s: %v", doc, err)
+			}
+			if !strings.Contains(index, "](/"+doc+")") {
+				t.Errorf("exported index does not link /%s", doc)
+			}
+		})
+	}
+}

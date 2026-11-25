@@ -5,6 +5,14 @@ code:
 docs:
   - framework/docs/content/agent-ready.md
   - framework/docs/content/static-export.md
+twins:
+  - job: Decide the status a page answers from its ScreenStatusCode and the recorded status, ignoring values outside 100-999.
+    why: uihost's rule reads a RenderResult (404 outlet included) and is unexported; the export reads the doc's component, so the two copies are kept in step by TestExportIgnoresInvalidDocStatus and uihost's TestPageStatusIgnoresOutOfRangeScreenCode.
+    sites:
+      - path: framework/uihost/page.go
+        note: pageStatus, for live HTML and Markdown.
+      - path: framework/static/llmmd.go
+        note: docStatus, for exported llm.md.
 invariants:
   - id: doc-per-exported-page
     rule: Each exported page gets its own llm.md rendered under the GET request its page renders under, and none is written for a NoLLMMD screen, an excluded route, a path a redirect takes or a page that answers a status other than 200.
@@ -16,6 +24,7 @@ invariants:
       - test: framework/static.TestStaticBuildSkipsSetStatusPage
       - test: framework/static.TestStaticBuildSkipsNotFoundOutlet
       - test: framework/static.TestSweepStaticDocStatus
+      - test: framework/static.TestExportIgnoresInvalidDocStatus
   - id: unresolved-path-gets-withheld-doc
     rule: An expanded path its route does not resolve gets the withheld doc, never the pattern doc with the screen's title and content.
     enforced_by:
