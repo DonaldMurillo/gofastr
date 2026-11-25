@@ -86,7 +86,7 @@ For counters, statuses, and dashboards that refresh on a cadence without holding
 
 ## Sortable list (single + kanban)
 
-`ui.SortableList` renders an HTML5 drag-and-drop + keyboard-accessible (`Space` to grab/drop, Arrow keys to move, `Esc` to cancel) `<ol>` that POSTs `order=<keys>` (plus `container=<id>` and `moved=<key>` for Kanban columns sharing a `Group`):
+`ui.SortableList` renders a pointer-draggable (by each row's grip, for mouse, pen and touch) and keyboard-accessible (`Space` to grab/drop, Arrow keys to move, `Esc` to cancel) `<ol>` that POSTs `order=<keys>` (plus `container=<id>` and `moved=<key>` for Kanban columns sharing a `Group`):
 
 ```go
 ui.SortableList(ui.SortableListConfig{

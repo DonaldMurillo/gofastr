@@ -24,6 +24,17 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
+
+## [0.99.0] - 2026-11-25
+
 ### Added
 
 - **CSP violation reports.** `framework.WithCSPReports` mounts a sink at
@@ -35,6 +46,12 @@ few lines, and link the PR or the docs page for the rest.
   refuses requests from other origins for anything but a page load: a
   script tag, image, fetch or form post from another site gets 403.
   See [Security](framework/docs/content/security.md#resource-isolation).
+- **CLI plugins.** `gofastr plugin add|list|remove` registers external
+  executables that speak the `core/cliplugin` protocol v1 as namespaced
+  commands (`gofastr native build ...`), with interactive I/O, forwarded
+  interrupts and exact exit codes. See
+  [CLI plugins](framework/docs/content/cli-plugins.md)
+  ([#882](https://github.com/DonaldMurillo/gofastr/pull/882)).
 
 ### Changed
 
@@ -47,15 +64,24 @@ few lines, and link the PR or the docs page for the rest.
   `SecurityHeadersConfig.TrustedTypesPolicies`; `NoTrustedTypes` turns
   the directives off. See
   [Security](framework/docs/content/security.md#trusted-types).
+- **Component semantics and keyboard (#710).** Inactive tab panels are
+  `hidden="until-found"`, so find-in-page and fragment links reach them
+  and select their tab; tabs drop `aria-controls` and strips scroll
+  instead of wrapping. Only the sorted table column carries `aria-sort`.
+  Carousel controls are buttons with a pause button for rotation.
+  Sortable lists drag by the grip with pointer events (mouse, pen,
+  touch) and move once on release. Smaller fixes cover copy buttons,
+  cards (`Article`, `HeadingHref`), breadcrumbs, the JSON viewer and
+  reduced motion
+  ([#883](https://github.com/DonaldMurillo/gofastr/pull/883)).
 
-### Fixed
+### Security
 
-#### Fixes that may need a change in your app
-
-- Config fields with repeated `min` or `max` tags now enforce the strictest
-  bounds. A float value or string length that passed only because a later tag
-  was looser now fails `Load`. Check the configured value against the strictest
-  bounds, or update the tags to match the range you intend to accept.
+- **Dependency advisories fixed.** OpenTelemetry moves to 1.47.0
+  (GO-2026-6975, baggage parsing; GO-2026-6974, attribute length) and
+  `github.com/gobwas/ws`, chromedp's websocket, to 1.5.0 (GO-2026-6940,
+  frame allocation)
+  ([#883](https://github.com/DonaldMurillo/gofastr/pull/883)).
 
 ## [0.98.0] - 2026-11-20
 

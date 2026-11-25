@@ -150,9 +150,10 @@ invariants:
       - test: framework/headless.TestBreadcrumbsDropsDangerousHrefs
       - test: framework/headless.TestSweepNavigationBreadcrumbRefusedHrefIsText
   - id: breadcrumb-separators-are-hidden
-    rule: Each breadcrumb separator is an aria-hidden span, and Breadcrumbs refuses an empty trail.
+    rule: Each breadcrumb separator is an aria-hidden span, none renders with SeparatorsInCSS, and Breadcrumbs refuses an empty trail.
     enforced_by:
       - test: framework/headless.TestBreadcrumbsRendersTheTrail
+      - test: framework/headless.TestBreadcrumbsSeparatorsInCSSRenderNone
       - test: framework/headless.TestBreadcrumbsRefusesBrokenConfiguration
   - id: static-rail-loads-no-module
     rule: A rail renders data-hui-rail, data-hui-rail-observe and data-hui-rail-target only when ObserveSelector is set.
@@ -185,6 +186,19 @@ invariants:
     rule: Only the active tab has tabindex 0; every other tab has -1.
     enforced_by:
       - test: framework/headless.TestTabsRendersRovingTabindexAndPanels
+  - id: tabs-panels-hide-until-found
+    rule: Every panel but the active one renders hidden="until-found" and tabindex -1, a disabled tab's panel plain hidden instead, no tab carries aria-controls, and headless-tabs keeps both in step with data-active and adds aria-hidden to every inactive panel, which the server never paints.
+    enforced_by:
+      - test: framework/headless.TestTabsRendersRovingTabindexAndPanels
+      - test: framework/headless.TestTabsDisabledPanelIsPlainlyHidden
+      - test: framework/headless.TestE2E_TabsPanelsFollowSelection
+      - test: framework/headless.TestTabsServerPaintsNoAriaHidden
+  - id: found-panel-selects-its-tab
+    rule: When find-in-page or a fragment link reveals a hidden="until-found" panel, headless-tabs selects its tab through the strip's signal, on beforematch or, for a panel the browser revealed before the module loaded (a fragment URL on first load, which leaves it without hidden but still at tabindex -1), when it wires the strip; it leaves a disabled tab's panel unselected and never takes the panel the server painted active for a reveal, so a tab clicked before the module arrived stays selected.
+    enforced_by:
+      - test: framework/headless.TestE2E_TabsFoundPanelSelectsItsTab
+      - test: framework/headless.TestE2E_TabsFragmentOnLoadSelectsItsTab
+      - test: framework/headless.TestE2E_TabsEarlyClickIsNotTakenForAReveal
   - id: disabled-tab-neither-selects-nor-links
     rule: A disabled tab renders aria-disabled with no data-cui-signal-set and no href.
     enforced_by:
@@ -247,6 +261,19 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSidebarButtonDialectGroups
 decisions:
+  - id: tab-panels-hide-until-found
+    date: 2026-11-23
+    status: accepted
+    decision: Inactive panels carry hidden="until-found", painted by the server and kept by headless-tabs, instead of a display none rule keyed on data-active, and tabs carry no aria-controls.
+    rejected:
+      - option: Hide inactive panels with a CSS display none rule.
+        why: display none keeps find-in-page and fragment links from reaching a panel's text (Modern Web Guidance, search-hidden-content), so a reader cannot search a settings page for a field on another tab.
+      - option: Keep aria-controls on each tab.
+        why: The tabs guide leaves it out; screen readers announce little or nothing for it, and the panel already names its tab through aria-labelledby.
+      - option: Tabs as buttons.
+        why: The tab anchors carry the fragment or deep-link href the strip works by without script (#710, recorded 2026-11-19).
+    revisit_if: A browser that lacks hidden="until-found" treats it as anything but plain hidden.
+    upholds: [tabs-panels-hide-until-found, found-panel-selects-its-tab]
   - id: toolbar-claims-no-role
     date: 2026-11-16
     status: accepted
@@ -378,3 +405,12 @@ decisions:
       - option: A trap and return focus in headless-sidebar.
         why: A second focus trap beside the widget runtime's would drift from it.
     upholds: [behaviours-declare-markers-and-requirements]
+  - id: current-crumb-is-text
+    date: 2026-11-23
+    status: accepted
+    decision: The current breadcrumb stays text carrying aria-current page, not a link to the page it is on.
+    rejected:
+      - option: A link with aria-current page, as the breadcrumbs guide and the ARIA practices example draw it.
+        why: A link to the page already shown adds a Tab stop whose activation only reloads the view, and both forms satisfy WCAG; aria-current names the page either way.
+    revisit_if: A screen reader is found that announces the current step only when it is a link.
+    upholds: [breadcrumbs-one-current-step]

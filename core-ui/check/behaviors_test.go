@@ -40,6 +40,7 @@ func TestRegisteredBehaviorSources_FindsTheTreesModules(t *testing.T) {
 		"framework/headless/behavior.js",
 		"framework/headless/tree.js",
 		"framework/headless/sortablelist.js",
+		"framework/headless/sortabledrag.js",
 		"framework/headless/multiselect.js",
 		"framework/headless/controls.js",
 		"framework/headless/collections.js",
