@@ -13,6 +13,10 @@ invariants:
     rule: The Replay failed button and its confirmation name the batch it will queue, at most maxReplayAll jobs, and the confirmation says more failed jobs will remain when there are more.
     enforced_by:
       - test: battery/admin.TestQueueReplayOffersBoundedBatch
+  - id: queue-keeps-page-when-counts-fail
+    rule: When the queue's Stats call fails, the Jobs page keeps the requested page offset, warns that counts and page navigation are unavailable, and draws no status counts or page links.
+    enforced_by:
+      - test: battery/admin.TestQueueKeepsPageWhenCountFails
   - id: admin-keeps-the-app-security-headers
     rule: Every answer under the admin prefix is no-store and carries every default security header, where a header the app's chain already set (its Content-Security-Policy included) keeps the app's value.
     enforced_by:

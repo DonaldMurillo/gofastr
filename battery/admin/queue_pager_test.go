@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"regexp"
@@ -57,6 +58,25 @@ func TestQueuePagesOlderJobs(t *testing.T) {
 	}
 	if href := html.UnescapeString(next[1]); !strings.Contains(href, "status=pending") || !strings.Contains(href, "p=3") {
 		t.Errorf("page 3's link %q drops the status or the page", href)
+	}
+}
+
+func TestQueueKeepsPageWhenCountFails(t *testing.T) {
+	q := &fakeQueue{
+		jobs:     []queue.Job{{ID: "q3", Status: "pending"}, {ID: "q2", Status: "pending"}, {ID: "q1", Status: "pending"}},
+		stats:    queue.JobStats{"pending": 10},
+		statsErr: errors.New("counts unavailable"),
+	}
+	x := setup(t, nil, Config{Queue: q, QueueListLimit: 2}, nil)
+	body := get(x.as(theAdmin), "/admin/queue?status=pending&p=2").Body.String()
+	if got := jobIDsShown(body); !slices.Equal(got, []string{"q1"}) {
+		t.Errorf("page 2 shows %v, want [q1]", got)
+	}
+	if !strings.Contains(body, "Job counts and page navigation are unavailable.") {
+		t.Error("jobs page did not warn that page navigation was unavailable")
+	}
+	if strings.Contains(body, `class="fui-seglinks__count"`) || strings.Contains(body, `class="fui-pagination`) {
+		t.Error("jobs page showed counts or page links from a failed count")
 	}
 }
 

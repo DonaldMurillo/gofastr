@@ -579,6 +579,7 @@
       "queueEmptyDesc": "Ningún trabajo coincide con este filtro.",
       "queueFailed": "Fallidos",
       "queueLoadFailed": "No se pudieron cargar los trabajos. Revisa los registros del servidor.",
+      "queueCountsFailed": "Los recuentos de trabajos y la navegación entre páginas no están disponibles.",
       "queuePending": "Pendientes",
       "queueStatus": "Estado",
       "queueSub": "Trabajos en segundo plano. Los fallidos agotaron sus reintentos y esperan una repetición.",

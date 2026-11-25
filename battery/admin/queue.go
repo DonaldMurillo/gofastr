@@ -73,11 +73,11 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		b.logger().Warn("admin: queue stats", "error", err)
 		stats = nil
 	}
-	pages := 1
+	pages := 0
 	if stats != nil {
 		pages = pageCount(queueTotal(stats, status), limit)
+		pageNo = min(pageNo, pages)
 	}
-	pageNo = min(pageNo, pages)
 	q := url.Values{}
 	for k, v := range carry {
 		q[k] = v
@@ -111,6 +111,10 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		})
 	}
 	pager := pagePager(ctx, b.cfg.PathPrefix+"/queue", carry, pageNo, pages)
+	var countsWarning render.HTML
+	if stats == nil {
+		countsWarning = ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(i18nui.AdminQueueCountsFailed.Text(ctx)))
+	}
 	var warning render.HTML
 	if unknownStatus || dropped {
 		warning = listfilter.Warning(ctx)
@@ -118,6 +122,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
+		countsWarning,
 		warning,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
