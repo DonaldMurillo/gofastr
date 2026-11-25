@@ -42,10 +42,10 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 	}
 	const pwaDir = "__gofastr/pwa"
 	generated := map[string]bool{
-		"manifest.webmanifest":         true,
-		"service-worker.js":            true,
-		pwaDir + "/register.js":        true,
-		pwaDir + "/offline/index.html": true,
+		"manifest.webmanifest":  true,
+		"service-worker.js":     true,
+		pwaDir + "/register.js": true,
+		pwaOfflineFile:          true,
 	}
 	for _, f := range localeManifests {
 		generated[filepath.ToSlash(f.relFile)] = true
@@ -96,7 +96,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		{"/manifest.webmanifest", "manifest.webmanifest", manifest},
 		{"/service-worker.js", "service-worker.js", []byte(sw)},
 		{pwaRegisterJS, filepath.Join("__gofastr", "pwa", "register.js"), []byte(b.Host.PWARegisterJS(b.BasePath))},
-		{"/__gofastr/pwa/offline", filepath.Join("__gofastr", "pwa", "offline", "index.html"), []byte(offline)},
+		{pwaOfflinePath, filepath.FromSlash(pwaOfflineFile), []byte(offline)},
 	}
 	files = append(files, localeManifests...)
 	for _, f := range files {
@@ -123,7 +123,11 @@ func escapedURLs(paths []string) []string {
 	return out
 }
 
-const pwaRegisterJS = "/__gofastr/pwa/register.js"
+const (
+	pwaRegisterJS  = "/__gofastr/pwa/register.js"
+	pwaOfflinePath = "/__gofastr/pwa/offline"
+	pwaOfflineFile = "__gofastr/pwa/offline/index.html"
+)
 
 func hashExportTree(outDir string, skip func(string) bool) (string, error) {
 	h := sha256.New()

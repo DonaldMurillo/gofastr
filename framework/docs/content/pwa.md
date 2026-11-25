@@ -22,6 +22,7 @@ Key `PWAConfig` fields: `Name`, `ShortName`, `Description`, `StartURL`, `Scope`,
 - **Hard deny list:** `/api/*`, `/auth/*`, `/__gofastr/sse`, `/__gofastr/session`, `/__gofastr/action`, `/__gofastr/widgets`, and `/core-ui/widget/*` (plus your `DenyPaths`) are never intercepted or precached.
 - **Static exports (full-site offline):** `gofastr export` emits a full-site service worker under a separate `gofastr-pwa-static-…` cache prefix that precaches every exported page and asset at install time so the whole site works offline after one visit (and rewrites paths for `--base` and `WithLocalePrefixes`).
   Changing a manifest, registration script, or offline page supplied by the static source rotates the generated worker's cache version.
+  `App.ExportStatic` also copies document scripts scoped to the offline route. Serve those scripts from the app router so the worker can precache them.
 - **Graceful updates:** new workers install in the background without calling `skipWaiting`, activating cleanly when old tabs close. Listen for `window.addEventListener("gofastr:pwa-update", ...)` in an external script (`WithExtraScripts`) if you want to show a "Reload for update" banner.
 
 ## Common mistakes
