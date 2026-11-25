@@ -252,26 +252,37 @@ func WithLinkKeep(ctx context.Context, keep func(path string) bool) context.Cont
 
 type exportedDocsKey struct{}
 
+type exportedDocs struct {
+	pages    map[string][]string
+	basePath string
+}
+
 // WithExportedDocs returns ctx for a static export's page index: docs maps each route pattern to
 // the pages, in routing form and without a locale prefix, whose llm.md the export wrote.
 func WithExportedDocs(ctx context.Context, docs map[string][]string) context.Context {
-	return context.WithValue(ctx, exportedDocsKey{}, docs)
+	return WithExportedDocsAt(ctx, docs, "")
+}
+
+// WithExportedDocsAt supplies the exported documents and the URL base path
+// that precedes any locale prefix in their index links.
+func WithExportedDocsAt(ctx context.Context, docs map[string][]string, basePath string) context.Context {
+	return context.WithValue(ctx, exportedDocsKey{}, exportedDocs{pages: docs, basePath: strings.TrimRight(basePath, "/")})
 }
 
 func rowLLMMDLink(ctx context.Context, path string) string {
-	if docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string); ok && !slices.Contains(docs[path], path) {
+	if docs, ok := ctx.Value(exportedDocsKey{}).(exportedDocs); ok && !slices.Contains(docs.pages[path], path) {
 		return ""
 	}
 	return pageLLMMDLink(ctx, path)
 }
 
 func dynamicPatternCell(ctx context.Context, pattern string) string {
-	docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string)
+	docs, ok := ctx.Value(exportedDocsKey{}).(exportedDocs)
 	if !ok {
 		return fmt.Sprintf("[%s](%s)", mdLinkText(pattern), mdLinkDest(pageLLMMDLink(ctx, pattern)))
 	}
 	cell := mdTableCell(pattern)
-	for i, p := range docs[pattern] {
+	for i, p := range docs.pages[pattern] {
 		sep := ", "
 		if i == 0 {
 			sep = ": "
@@ -282,12 +293,8 @@ func dynamicPatternCell(ctx context.Context, pattern string) string {
 }
 
 func pageLLMMDLink(ctx context.Context, path string) string {
-	pre := i18n.PathPrefix(ctx)
-	clean := strings.TrimRight(path, "/")
-	if clean == "" {
-		return pre + "/llm.md"
-	}
-	return pre + clean + "/llm.md"
+	docs, _ := ctx.Value(exportedDocsKey{}).(exportedDocs)
+	return docs.basePath + i18n.PathPrefix(ctx) + strings.TrimRight(path, "/") + "/llm.md"
 }
 
 // AppLLMMD generates a top-level LLM-friendly markdown index listing all screens/pages registered in the app.

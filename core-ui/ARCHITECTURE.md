@@ -266,6 +266,9 @@ loading a specific record.
 Markdown not-found responses list discovery links for the mounted
 sitemap and `llms.txt` routes.
 
+An exported `llm-pages.md` uses the export's base path before its locale
+prefix in each link to a written page document.
+
 ---
 
 ## What is an island?

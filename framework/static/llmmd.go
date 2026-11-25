@@ -68,7 +68,7 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 			b.log("wrote llm.md for %s -> %s", p, dst)
 		}
 	}
-	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
+	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocsAt(ctx, exported, b.BasePath), b.Host.App)
 	index := locale.path("/llm-pages.md")
 	if err := writeUnder(b.OutDir, filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
 		return err

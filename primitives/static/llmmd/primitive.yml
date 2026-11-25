@@ -21,9 +21,10 @@ invariants:
     enforced_by:
       - test: framework/static.TestSweepStaticUnresolvedDocIsWithheld
   - id: index-links-written-docs
-    rule: Each tree's llm-pages.md links only the docs that tree wrote.
+    rule: Each tree's llm-pages.md links only the docs that tree wrote, with the export base path before the locale prefix.
     enforced_by:
       - test: framework/static.TestExportIndexLinksWrittenDocs
+      - test: framework/static.TestExportIndexLinksUseBasePath
       - test: framework/static.TestSweepStaticExcludedRedirectAndDoc
 decisions:
   - id: withheld-doc-fallback

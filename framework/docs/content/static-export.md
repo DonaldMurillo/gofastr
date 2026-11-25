@@ -24,6 +24,7 @@ gofastr export --base /docs _site    # deploy under a subpath (e.g. GitHub Pages
 
 Pass `--base /my-project` (or pass `"/my-project"` as the third argument to `app.ExportStatic(ctx, dir, "/my-project")`) when hosting below a domain root:
 - Rewrites internal links, asset URLs, sitemap `<loc>` URLs, robots `Sitemap:`, PWA manifest `start_url`/`scope`/icons, and site-search shard paths cleanly without double-prefixing.
+- Adds the base path before any locale prefix in `llm-pages.md` links to exported page documents.
 - Preserves trailing-slash compatibility for static hosts (`dir/index.html`).
 
 ## Rebuilding locally

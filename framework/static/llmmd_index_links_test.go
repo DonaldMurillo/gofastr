@@ -119,3 +119,32 @@ func TestExportIndexLinksWrittenDocs(t *testing.T) {
 		}
 	}
 }
+
+func TestExportIndexLinksUseBasePath(t *testing.T) {
+	const base = "/repo"
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	a.Register("/products/:slug", &productScreen{}, nil)
+	overlay := coreapp.NewScreen("/details", &homeScreen{})
+	overlay.Type = coreapp.ScreenDrawer
+	a.RegisterScreen(overlay, nil)
+	host := uihost.New(a)
+	host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: base}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, locale := range []string{"", "/es"} {
+		index := strings.TrimPrefix(locale+"/llm-pages.md", "/")
+		md := readOut(t, out, index)
+		for _, path := range []string{"/llm.md", "/about/llm.md", "/products/alpha/llm.md", "/details/llm.md"} {
+			rel := locale + path
+			readOut(t, out, strings.TrimPrefix(rel, "/"))
+			link := base + rel
+			if !strings.Contains(md, "]("+link+")") {
+				t.Errorf("%s does not link %s", index, link)
+			}
+		}
+	}
+}
