@@ -48,6 +48,34 @@ func newEntry(t *testing.T, id string, ts time.Time, kind journal.Kind, op journ
 	return e
 }
 
+func TestFallbackMixedCaseHTML(t *testing.T) {
+	l, _ := newTestLive(t, journal.NewMemory())
+	const fallback = "<p>fallback</p>"
+	l.SetFallbackHTML(fallback)
+	for _, tc := range []struct {
+		method, accept string
+		want           bool
+	}{
+		{http.MethodGet, "application/json, Text/HTML; charset=utf-8", true},
+		{http.MethodHead, "Text/HTML", true},
+		{http.MethodGet, "", true},
+		{http.MethodGet, "*/*", true},
+		{http.MethodGet, "text/html;q=0", true},
+		{http.MethodGet, `application/json; profile="unterminated, text/html`, true},
+		{http.MethodGet, "application/json", false},
+		{http.MethodGet, "application/xhtml+xml", false},
+		{http.MethodPost, "text/html", false},
+	} {
+		req := httptest.NewRequest(tc.method, "/missing", nil)
+		req.Header.Set("Accept", tc.accept)
+		rec := httptest.NewRecorder()
+		l.ServeHTTP(rec, req)
+		if got := rec.Body.String() == fallback; got != tc.want {
+			t.Errorf("%s Accept %q: fallback = %v, want %v", tc.method, tc.accept, got, tc.want)
+		}
+	}
+}
+
 // --- Mutator tests ----------------------------------------------------
 
 func TestNewLiveReplaysJournal(t *testing.T) {

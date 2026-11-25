@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -70,5 +72,44 @@ func TestRPCRequestContentTypes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRPCMixedCaseJSONResponse(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, MustRuntimeJS())
+	})
+	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", r.URL.Query().Get("ct"))
+		fmt.Fprint(w, `{"v":1}`)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, `<!doctype html><button id="go" data-cui-rpc="/rpc?%s" data-cui-rpc-signal="result">Go</button>
+<script src="/__gofastr/runtime.js"></script>`, (url.Values{"ct": {r.URL.Query().Get("ct")}}).Encode())
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ctx := chromedptest.Context(t)
+	for _, ct := range []string{"Application/JSON; charset=utf-8", "application/json charset=utf-8", "text/plain", ""} {
+		want := "string"
+		if strings.Contains(mediatype.Fold(ct), "application/json") {
+			want = "object"
+		}
+		var got string
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(srv.URL+"/?"+url.Values{"ct": {ct}}.Encode()),
+			chromedp.Click("#go", chromedp.ByID),
+			chromedp.Poll(`window.__gofastr._signals.result?.value !== undefined`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+			chromedp.Evaluate(`typeof window.__gofastr._signals.result.value`, &got),
+		); err != nil {
+			t.Fatalf("Content-Type %q: %v", ct, err)
+		}
+		if got != want {
+			t.Errorf("Content-Type %q: signal type = %s, want %s", ct, got, want)
+		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/internal/mediatype"
 )
 
 //go:embed frag/*.js
@@ -252,7 +253,11 @@ func loadModules() {
 			continue
 		}
 		name := strings.TrimSuffix(n, ".js")
-		modulesData[name] = minify.ServedJS(string(raw))
+		source := string(raw)
+		if name == "rpc" {
+			source = mediatype.WithJSONResponseCheck(source)
+		}
+		modulesData[name] = minify.ServedJS(source)
 	}
 }
 

@@ -76,6 +76,25 @@ func TestDevHoldShowsBuildError(t *testing.T) {
 	}
 }
 
+func TestDevHoldMixedCaseHTML(t *testing.T) {
+	h := newTestHold(t)
+	for _, tc := range []struct {
+		accept string
+		want   bool
+	}{
+		{"Text/HTML; charset=utf-8", true},
+		{"text/html charset=utf-8", true},
+		{"text/html; charset", true},
+		{"", false},
+		{"application/json", false},
+	} {
+		res, _ := holdGet(t, h.addr, tc.accept)
+		if got := strings.HasPrefix(res.Header.Get("Content-Type"), "text/html"); got != tc.want {
+			t.Errorf("Accept %q: HTML = %v, want %v", tc.accept, got, tc.want)
+		}
+	}
+}
+
 func TestDevHoldReleaseFreesThePort(t *testing.T) {
 	h := newTestHold(t)
 	h.release()
