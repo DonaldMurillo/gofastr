@@ -121,12 +121,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	var res app.RenderResult
 	res, err := ds.App.RenderPageResult(ctx, path)
 	if err != nil {
-		var pe *app.PageError
-		if errors.As(err, &pe) {
-			ds.serveResolverError(w, r, path, pe)
-			return
-		}
-		ds.serveRenderError(w, r, path, err)
+		ds.servePageFailure(w, r, path, err)
 		return
 	}
 	switch res.Kind {
@@ -141,6 +136,14 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ds.finishPageDocument(w, r, withOutcome(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+func (ds *UIHost) servePageFailure(w http.ResponseWriter, r *http.Request, path string, err error) {
+	if pe, ok := errors.AsType[*app.PageError](err); ok {
+		ds.serveResolverError(w, r, path, pe)
+		return
+	}
+	ds.serveRenderError(w, r, path, err)
 }
 
 // negotiatesMarkdown reports whether a page answers text/markdown to a

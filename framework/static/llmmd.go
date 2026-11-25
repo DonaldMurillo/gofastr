@@ -37,7 +37,10 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 			}
 			var md string
 			sctx, recorded := coreapp.TrackStatus(withPageRequest(ctx, p))
-			if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
+			if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); doc.Err != nil {
+				slog.Warn("static: skipped llm.md after a screen failure", "path", p)
+				continue
+			} else if ok {
 				if st := docStatus(doc.Component, recorded()); st != 0 {
 					slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
 						"path", p, "status", st)

@@ -751,6 +751,11 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	}
 	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
+	if res.Err != nil {
+		setPageMarkdownHeaders(w)
+		ds.servePageFailure(w, r, routePath(r), res.Err)
+		return true
+	}
 	if !ok {
 		return false
 	}

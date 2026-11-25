@@ -135,6 +135,7 @@ type ScreenLLMMDResult struct {
 	Allowed   bool
 	Component component.Component
 	Decision  Decision
+	Err       error // A screen pipeline failure that prevented rendering the document.
 }
 
 // ScreenLLMMDForPath generates the per-screen llm.md for a CONCRETE URL of a (possibly dynamic) route.
@@ -156,6 +157,9 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if errors.Is(phase.err, ErrNotFound) {
 		return ScreenLLMMDResult{}, false
 	}
+	if phase.err != nil {
+		return ScreenLLMMDResult{Err: phase.err}, true
+	}
 	if phase.decision.Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: phase.decision}, true
 	}
@@ -163,39 +167,31 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if guardRedirect.Kind == DecisionRedirect {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: guardRedirect}, true
 	}
-	if phase.err != nil {
-		return ScreenLLMMDResult{MD: ScreenLLMMD(ctx, screen), Title: screen.Title, Allowed: true}, true
-	}
-
 	comp := screen.newInstance()
 	if len(params) > 0 {
 		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
 	}
-	loaded := true
 	if err := a.injectComponent(comp, path); err != nil {
-		loaded = false
+		return ScreenLLMMDResult{Err: err}, true
 	}
 	ctx = withResolvePhase(ctx, resolvePhaseLoad)
-	if loaded {
-		if loader, ok := comp.(ScreenLoader); ok {
-			if err := safeScreenLoad(loader, ctx); err != nil {
-				if errors.Is(err, ErrNotFound) {
-					return ScreenLLMMDResult{}, false
-				}
-				loaded = false
-			}
-		}
+	var loadErr error
+	if loader, ok := comp.(ScreenLoader); ok {
+		loadErr = safeScreenLoad(loader, ctx)
 	}
 	if pe := resolverPageError(ctx, path); pe != nil {
 		if errors.Is(pe, ErrNotFound) {
 			return ScreenLLMMDResult{}, false
 		}
-		loaded = false
+		return ScreenLLMMDResult{Err: pe}, true
 	}
-	if !loaded {
-		return ScreenLLMMDResult{MD: ScreenLLMMD(ctx, screen), Title: screen.Title, Allowed: true}, true
+	if errors.Is(loadErr, ErrNotFound) {
+		return ScreenLLMMDResult{}, false
+	}
+	if loadErr != nil {
+		return ScreenLLMMDResult{Err: fmt.Errorf("app: load failed for %q: %w", path, loadErr)}, true
 	}
 
 	title := screen.Title
@@ -215,14 +211,13 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
 	ctx = withResolvePhase(ctx, resolvePhaseRegion)
-	content, err := component.SafeRenderCtx(ctx, comp)
-	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
-		return ScreenLLMMDResult{}, false
-	}
+	content, err := renderScreen(ctx, comp)
 	if err != nil {
 		log.Printf("llm.md: render error for %s: %s", textsafe.ScrubControlBytes(path), textsafe.Recovered(err))
-		b.WriteString("_(error rendering content: see server logs)_\n")
-		return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
+		return ScreenLLMMDResult{Err: screenRenderPanicError(path, err)}, true
+	}
+	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
+		return ScreenLLMMDResult{}, false
 	}
 	if m := htmlToMarkdown(string(localizeLinks(ctx, content))); m != "" {
 		b.WriteString(m)

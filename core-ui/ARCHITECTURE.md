@@ -255,6 +255,10 @@ root layout. `Vary: Accept` on every arm, and no arm echoes the path or
 the panic. The embed content route answers the minimal document
 directly, since a frame must not receive the site's root layout.
 
+Concrete `llm.md` URLs and negotiated Markdown use the same failure
+handling as HTML pages. Pattern documents can describe the route without
+loading a specific record.
+
 ---
 
 ## What is an island?
