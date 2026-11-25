@@ -101,6 +101,10 @@ invariants:
     rule: 'InsertBuilder.Build panics before building SQL if the number of columns differs from the number of values, with the message "query: INSERT <table> has mismatched Columns and Values counts (<column count> columns, <value count> values)".'
     enforced_by:
       - test: core/query.TestInsertMismatchedCountsPanics
+  - id: empty-update-panics
+    rule: 'An UPDATE with no Set assignments panics before building SQL with the message "query: UPDATE <table> has no Set assignments", even when WHERE or RETURNING is present.'
+    enforced_by:
+      - test: core/query.TestUpdateWithoutAssignmentsPanics
 decisions:
   - id: renumber-by-position
     date: 2026-11-18

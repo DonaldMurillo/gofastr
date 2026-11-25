@@ -1,5 +1,5 @@
 version: v0.99.1
-title: Insert builder and config bounds validation
+title: SQL builder and config bounds validation
 notes:
   - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
     breaking: true
@@ -9,3 +9,7 @@ notes:
     breaking: true
     guidance: "Correct or remove conflicting min and max rules in your config struct tags. The highest min must be no greater than the lowest max, including on fields that your app does not currently bind."
     nodetect: "The upgrade matchers do not inspect and compare parsed bounds in struct tags."
+  - change: "BREAKING - UpdateBuilder.Build panics without Set assignments"
+    breaking: true
+    guidance: "Call Set for each assignment. If there are no fields to update, handle that case before calling Build."
+    nodetect: "the Set assignments may depend on fields supplied at runtime"
