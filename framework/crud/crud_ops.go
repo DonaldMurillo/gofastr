@@ -169,6 +169,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 
 // doUpdate patches record id on a tx-bound handler.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
+	if body == nil {
+		body = map[string]any{}
+	}
 	if ch.Entity != nil && ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
 		if err := ch.requireOwnerContext(ctx); err != nil {
 			return nil, err
