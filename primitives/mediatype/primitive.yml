@@ -7,6 +7,7 @@ code:
   - internal/mediatype/browser_test.go
 docs:
   - framework/docs/content/app-cli.md
+  - framework/docs/content/core-packages.md
   - framework/docs/content/runtime-contract.md
 twins:
   - job: Case folding for media type detection.
