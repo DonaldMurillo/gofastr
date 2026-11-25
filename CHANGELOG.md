@@ -34,12 +34,24 @@ few lines, and link the PR or the docs page for the rest.
   it in a new migration. See
   [Migrations](framework/docs/content/migrations.md#sql-file-format).
 
+- **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
+  `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
+  `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
+  `TestActionsArePinnedBySHA` holds every external `uses:` to one commit
+  SHA per action with a `# vN` comment. The Pages job no longer writes
+  `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
+  v5 leaves dotfiles out.
+
 ### Fixed
 
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
   ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+- **In-memory scheduler payloads.** The scheduler copies the payload at
+  registration and for each queue on every run, so changing the caller's
+  buffer or a dispatched job no longer changes other jobs
+  ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
 
 ## [0.99.0] - 2026-11-25
 

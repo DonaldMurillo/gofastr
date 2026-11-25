@@ -329,7 +329,6 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 		if now.After(sch.NextRun) || now.Equal(sch.NextRun) {
 			job := Job{
 				Type:        sch.Type,
-				Payload:     sch.Payload,
 				Lane:        sch.Lane,
 				Priority:    sch.Priority,
 				MaxAttempts: sch.MaxAttempts,
@@ -341,6 +340,7 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 			}
 
 			for _, q := range s.queues {
+				job.Payload = slices.Clone(sch.Payload)
 				if err := q.Enqueue(ctx, job); err != nil {
 					s.logger.Error("scheduler: enqueue failed",
 						"job_type", sch.Type,
