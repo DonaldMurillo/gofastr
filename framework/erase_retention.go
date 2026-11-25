@@ -456,7 +456,7 @@ func (a *App) startRetentionSweep(ctx context.Context) {
 			a.Logger().Warn("framework: sweeping expired erasure retention", "error", err)
 		}
 	}
-	go func() {
+	a.retentionSweep.Go(func() {
 		sweep()
 		t := time.NewTicker(retentionSweepEvery)
 		defer t.Stop()
@@ -468,7 +468,7 @@ func (a *App) startRetentionSweep(ctx context.Context) {
 				sweep()
 			}
 		}
-	}()
+	})
 }
 
 // foldsTo reports whether canonicalize maps v to want, and whether the

@@ -254,6 +254,8 @@ type App struct {
 	appCtx     context.Context
 	appCancel  context.CancelFunc
 
+	retentionSweep sync.WaitGroup
+
 	readyHooks []func(addr string)
 
 	seedHooks []func(ctx context.Context) error
@@ -2209,6 +2211,7 @@ func (a *App) shutdown(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
+	a.retentionSweep.Wait()
 	if a2aSrv != nil {
 		if err := a2aSrv.Shutdown(ctx); err != nil {
 			firstErr = fmt.Errorf("stopping a2a runs: %w", err)

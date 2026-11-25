@@ -3,10 +3,12 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
@@ -753,6 +755,63 @@ func TestAppStartSweepsExpiredRetention(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+type retentionSweepProbe struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p retentionSweepProbe) Connect(context.Context) (driver.Conn, error) {
+	close(p.entered)
+	<-p.release
+	return nil, errors.New("no such function: version")
+}
+
+func (retentionSweepProbe) Driver() driver.Driver { return nil }
+
+func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
+		db := sql.OpenDB(probe)
+		defer db.Close()
+		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
+		app.WithSeed(func(context.Context) error {
+			app.DB = db
+			return nil
+		})
+		started := make(chan struct{})
+		app.OnStart(func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		stopped := make(chan struct{})
+		app.OnStop(func() error {
+			close(stopped)
+			return db.Close()
+		})
+
+		run := make(chan error, 1)
+		go func() { run <- app.Run(context.Background(), ServicesHost()) }()
+		<-started
+		<-probe.entered
+		stop := make(chan error, 1)
+		go func() { stop <- app.Shutdown(context.Background()) }()
+		synctest.Wait()
+		select {
+		case <-stopped:
+			t.Error("OnStop closed the database while the retention sweep was still opening a connection")
+		default:
+		}
+		close(probe.release)
+		if err := <-stop; err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		if err := <-run; err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
 }
 
 // No two source and name pairs share a retention key.

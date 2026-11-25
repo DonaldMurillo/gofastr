@@ -76,7 +76,7 @@ Owner scoping, RBAC, and hooks apply identically to in-process calls. To call th
 ## Readiness and lifecycle rules
 
 - **`ServicesReady()` vs. `OnReady`:** `App.ServicesReady()` closes as soon as all boot phases succeed on *any* host. `OnReady(func(addr string))` requires an HTTP listener, so `App.Run` refuses apps with `OnReady` hooks (or interactive HTTP first-run setup) when running under a non-HTTP host.
-- **Stop order:** `Shutdown` marks `/readyz` `503` immediately, drains readiness, cancels A2A runs, calls `host.Stop`, stops process modules, stops batteries, and runs `OnStop` hooks — all bounded by the shutdown context.
+- **Stop order:** `Shutdown` marks `/readyz` `503` immediately, drains readiness, then cancels and waits for the erasure-retention sweep before teardown. It cancels A2A runs, calls `host.Stop`, stops process modules, stops batteries, and runs `OnStop` hooks. Hooks that own the database can close it without racing the sweep.
 - **Stop during boot:** cancels the lifecycle context, lets the active phase return, skips remaining phases, and runs teardown (`host.Stop` still runs even when `host.Run` never started).
 
 ## Writing a custom `framework.Host`
