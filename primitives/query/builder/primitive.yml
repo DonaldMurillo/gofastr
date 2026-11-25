@@ -98,7 +98,7 @@ invariants:
     enforced_by:
       - test: core/query.TestInsertDefaultValues
   - id: insert-column-and-value-counts-match
-    rule: InsertBuilder.Build panics if the number of columns differs from the number of values.
+    rule: 'InsertBuilder.Build panics before building SQL if the number of columns differs from the number of values, with the message "query: INSERT <table> has mismatched Columns and Values counts (<column count> columns, <value count> values)".'
     enforced_by:
       - test: core/query.TestInsertMismatchedCountsPanics
 decisions:
