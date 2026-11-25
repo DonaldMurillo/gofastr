@@ -84,8 +84,13 @@ invariants:
     enforced_by:
       - test: framework.TestServeRole_OutboxRelaySkipped
   - id: outbox-relay-drained-at-stop
-    rule: Shutdown waits for the outbox relay loop to exit before it returns.
-    judge: Does this change let Shutdown return, or the OnStop hooks registered before Start run, while the outbox relay loop may still be delivering a batch?
+    rule: While the drain context is live, Shutdown waits for the outbox relay loop to exit before running OnStop hooks registered before the relay started.
+    enforced_by:
+      - test: framework.TestShutdownJoinsOutboxRelay
+  - id: outbox-relay-stop-honors-deadline
+    rule: If the outbox relay is still running when the drain context ends, its drainer stops waiting, reports the context error, and leaves the relay to exit on its own.
+    enforced_by:
+      - test: framework.TestShutdownJoinsOutboxRelay
   - id: no-server-adopted-after-shutdown
     rule: The HTTP host adopts no server once a Shutdown has begun, and its Stop then closes a caller's listener instead.
     enforced_by:

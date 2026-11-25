@@ -3,12 +3,16 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -17,6 +21,98 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
 )
+
+type stalledRelayConnector struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *stalledRelayConnector) Connect(context.Context) (driver.Conn, error) {
+	if c.entered != nil {
+		select {
+		case c.entered <- struct{}{}:
+		default:
+		}
+		<-c.release
+	}
+	return nil, errors.New("connection unavailable")
+}
+
+func (*stalledRelayConnector) Driver() driver.Driver { return nil }
+
+func TestShutdownJoinsOutboxRelay(t *testing.T) {
+	for _, name := range []string{"before deadline", "at deadline"} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				connector := &stalledRelayConnector{}
+				db := sql.OpenDB(connector)
+				defer db.Close()
+				relay, err := outbox.New(db, outbox.WithoutEnsureTable())
+				if err != nil {
+					t.Fatal(err)
+				}
+				relay.Consume("witness", "example", func(context.Context, event.Event) error { return nil })
+				connector.entered = make(chan struct{}, 1)
+				connector.release = make(chan struct{})
+				release := sync.OnceFunc(func() { close(connector.release) })
+
+				app := NewApp(WithRole(RoleWorker))
+				app.outbox = relay // Stall only the relay's DB, not the app's boot.
+				stopped := make(chan struct{})
+				app.OnStop(func() error { close(stopped); return nil })
+				runCtx, cancelRun := context.WithCancel(t.Context())
+				defer cancelRun()
+				defer release()
+				run := make(chan error, 1)
+				go func() { run <- app.Run(runCtx, ServicesHost()) }()
+				select {
+				case <-app.ServicesReady():
+				case err := <-run:
+					t.Fatalf("app did not start: %v", err)
+				}
+				select {
+				case <-connector.entered:
+				case <-time.After(time.Second):
+					t.Fatal("relay never entered Connect")
+				}
+
+				const budget = time.Second
+				ctx, cancel := context.WithTimeout(t.Context(), budget)
+				defer cancel()
+				shutdown := make(chan error, 1)
+				go func() { shutdown <- app.Shutdown(ctx) }()
+				synctest.Wait()
+				select {
+				case <-stopped:
+					t.Fatal("OnStop ran while the relay was still blocked and the deadline had not elapsed")
+				default:
+				}
+				var want error
+				if name == "before deadline" {
+					release()
+				} else {
+					want = context.DeadlineExceeded
+				}
+				select {
+				case err := <-shutdown:
+					if !errors.Is(err, want) {
+						t.Fatalf("Shutdown = %v, want %v", err, want)
+					}
+				case <-time.After(budget + time.Second):
+					t.Fatal("Shutdown blocked past its deadline while the outbox relay was stuck")
+				}
+				select {
+				case <-stopped:
+				default:
+					t.Fatal("Shutdown returned without running the following OnStop hook")
+				}
+				if err := <-run; err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+			})
+		})
+	}
+}
 
 // outboxTestApp builds an app with the outbox enabled, one entity, a
 // declared durable witness consumer, and a relay running (tests drive the
