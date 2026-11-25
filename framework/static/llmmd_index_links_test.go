@@ -176,3 +176,25 @@ func TestExportIgnoresInvalidDocStatus(t *testing.T) {
 		})
 	}
 }
+
+type linkingScreen struct{}
+
+func (linkingScreen) Render() render.HTML { return `<p><a href="/about">About</a></p>` }
+
+func TestExportDocBodyLinksUseBasePath(t *testing.T) {
+	const base = "/repo"
+	a := coreapp.NewApp("t")
+	a.Register("/", linkingScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	host := uihost.New(a)
+	host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out, BasePath: base}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for doc, want := range map[string]string{"llm.md": base + "/about", "es/llm.md": base + "/es/about"} {
+		if md := readOut(t, out, doc); !strings.Contains(md, "]("+want+")") {
+			t.Errorf("%s does not link %s:\n%s", doc, want, md)
+		}
+	}
+}

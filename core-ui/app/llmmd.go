@@ -229,17 +229,33 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 }
 
 func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
-	prefix := i18n.PathPrefix(ctx)
-	if prefix == "" {
-		return content
-	}
-	set, _, _ := i18n.PathLocale(ctx)
-	rule := urlprefix.Rule{Prefix: prefix, Locales: set.All()}
-	rule.Keep, _ = ctx.Value(linkKeepKey{}).(func(string) bool)
+	var origins []string
 	if r := RequestFromContext(ctx); r != nil && r.Host != "" {
-		rule.Origins = []string{"http://" + r.Host, "https://" + r.Host}
+		origins = []string{"http://" + r.Host, "https://" + r.Host}
 	}
-	return render.HTML(urlprefix.HTML([]byte(content), rule))
+	if prefix := i18n.PathPrefix(ctx); prefix != "" {
+		set, _, _ := i18n.PathLocale(ctx)
+		rule := urlprefix.Rule{Prefix: prefix, Locales: set.All(), Origins: origins}
+		rule.Keep, _ = ctx.Value(linkKeepKey{}).(func(string) bool)
+		content = render.HTML(urlprefix.HTML([]byte(content), rule))
+	}
+	if base := linkBase(ctx); base != "" {
+		content = render.HTML(urlprefix.HTML([]byte(content), urlprefix.Rule{Prefix: base, Origins: origins}))
+	}
+	return content
+}
+
+type linkBaseKey struct{}
+
+// WithLinkBase returns ctx carrying a static export's mount path, which the markdown docs put
+// in front of every root-relative link, before any locale prefix.
+func WithLinkBase(ctx context.Context, basePath string) context.Context {
+	return context.WithValue(ctx, linkBaseKey{}, strings.TrimRight(basePath, "/"))
+}
+
+func linkBase(ctx context.Context) string {
+	base, _ := ctx.Value(linkBaseKey{}).(string)
+	return base
 }
 
 type linkKeepKey struct{}
@@ -253,20 +269,13 @@ func WithLinkKeep(ctx context.Context, keep func(path string) bool) context.Cont
 type exportedDocsKey struct{}
 
 type exportedDocs struct {
-	pages    map[string][]string
-	basePath string
+	pages map[string][]string
 }
 
 // WithExportedDocs returns ctx for a static export's page index: docs maps each route pattern to
 // the pages, in routing form and without a locale prefix, whose llm.md the export wrote.
 func WithExportedDocs(ctx context.Context, docs map[string][]string) context.Context {
-	return WithExportedDocsAt(ctx, docs, "")
-}
-
-// WithExportedDocsAt supplies the exported documents and the URL base path
-// that precedes any locale prefix in their index links.
-func WithExportedDocsAt(ctx context.Context, docs map[string][]string, basePath string) context.Context {
-	return context.WithValue(ctx, exportedDocsKey{}, exportedDocs{pages: docs, basePath: strings.TrimRight(basePath, "/")})
+	return context.WithValue(ctx, exportedDocsKey{}, exportedDocs{pages: docs})
 }
 
 func rowLLMMDLink(ctx context.Context, path string) string {
@@ -293,8 +302,7 @@ func dynamicPatternCell(ctx context.Context, pattern string) string {
 }
 
 func pageLLMMDLink(ctx context.Context, path string) string {
-	docs, _ := ctx.Value(exportedDocsKey{}).(exportedDocs)
-	return docs.basePath + i18n.PathPrefix(ctx) + strings.TrimRight(path, "/") + "/llm.md"
+	return linkBase(ctx) + i18n.PathPrefix(ctx) + strings.TrimRight(path, "/") + "/llm.md"
 }
 
 // AppLLMMD generates a top-level LLM-friendly markdown index listing all screens/pages registered in the app.

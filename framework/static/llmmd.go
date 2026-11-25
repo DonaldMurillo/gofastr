@@ -12,7 +12,7 @@ import (
 )
 
 func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]bool) error {
-	ctx := locale.ctx
+	ctx := coreapp.WithLinkBase(locale.ctx, b.BasePath)
 	if locale.rule.Locales != nil {
 		ctx = coreapp.WithLinkKeep(ctx, b.keepUnprefixed)
 	}
@@ -41,7 +41,7 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 				slog.Warn("static: skipped llm.md after a screen failure", "path", p)
 				continue
 			} else if ok {
-				if st := docStatus(doc.Component, recorded()); st != 0 {
+				if st := uihost.DocStatus(doc.Component, recorded()); st != 0 {
 					slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
 						"path", p, "status", st)
 					continue
@@ -68,7 +68,7 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 			b.log("wrote llm.md for %s -> %s", p, dst)
 		}
 	}
-	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocsAt(ctx, exported, b.BasePath), b.Host.App)
+	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
 	index := locale.path("/llm-pages.md")
 	if err := writeUnder(b.OutDir, filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
 		return err
@@ -77,18 +77,6 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 	docs[strings.TrimPrefix(index, "/")] = true
 	b.log("wrote %s index", index)
 	return nil
-}
-
-func docStatus(c any, recorded int) int {
-	if sc, ok := c.(uihost.ScreenStatusCode); ok {
-		if code := sc.ScreenStatusCode(); code >= 100 && code <= 999 && code != http.StatusOK {
-			return code
-		}
-	}
-	if recorded < 100 || recorded > 999 || recorded == http.StatusOK {
-		return 0
-	}
-	return recorded
 }
 
 func withPageRequest(ctx context.Context, p string) context.Context {

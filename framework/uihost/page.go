@@ -188,6 +188,12 @@ func screenOwns(ctx context.Context, screen *app.Screen, comp component.Componen
 	return comp == nil || reflect.TypeOf(comp) == reflect.TypeOf(screen.Component)
 }
 
+// DocStatus returns the status a page document answers from its component's ScreenStatusCode
+// and the recorded app.SetStatus value, or 0 for 200; a code outside 100-999 is ignored.
+func DocStatus(comp component.Component, recorded int) int {
+	return pageStatus(app.RenderResult{Component: comp}, recorded)
+}
+
 func pageStatus(res app.RenderResult, recorded int) int {
 	if res.NotFoundOutlet {
 		return http.StatusNotFound

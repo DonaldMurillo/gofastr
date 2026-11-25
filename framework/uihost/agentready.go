@@ -759,7 +759,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	if !ok {
 		return false
 	}
-	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
+	status := DocStatus(res.Component, recorded())
 	switch res.Decision.Kind {
 	case app.DecisionRedirect:
 		w.Header().Add("Vary", "Accept")

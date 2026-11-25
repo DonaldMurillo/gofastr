@@ -180,12 +180,6 @@ func TestSweepStaticUnresolvedDocIsWithheld(t *testing.T) {
 	}
 }
 
-func TestSweepStaticDocStatus(t *testing.T) {
-	if docStatus(nil, http.StatusOK) != 0 || docStatus(nil, 0) != 0 || docStatus(nil, http.StatusNotFound) != http.StatusNotFound {
-		t.Error("docStatus does not map 200 and unset to zero and keep other statuses")
-	}
-}
-
 type sweepBrokenFill struct{}
 
 func (sweepBrokenFill) Load(context.Context) error {
