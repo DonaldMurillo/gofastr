@@ -161,6 +161,8 @@ group.Screen(app.NewScreen("/projects/{project}/issues/{n}", &IssueScreen{}), ni
 site.Router.ScreenGroup(group)
 ```
 
+Typed prefixes such as `/projects/{project:int}` also use the captured parameter value in the layer key.
+
 - Pass `nil` layout to `SubGroup` to inherit the parent layout, attach group-wide policies as extra args to `NewScreenGroup`, and use `Layout.WithKey(...)` when one layout shape needs a distinct cache identity per context (e.g., per locale).
 - **Document-lifetime scripts:** Switching between pages whose `uihost.RegisterDocumentScript` sets differ triggers a real document navigation rather than a partial swap so removed scripts don't linger.
 
