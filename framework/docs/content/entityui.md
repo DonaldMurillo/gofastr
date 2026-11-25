@@ -84,6 +84,8 @@ Optional power-user controls (off by default on app screens, on in `battery/admi
 
 ## Record and create screens
 
+When a field's `ShowWhen` condition refers to the entity's state, the create screen uses the state field's default. The record screen uses the stored state.
+
 `appUI.Record(name, id)` renders:
 - **Header:** title, current state badge, timestamps, non-danger state transition buttons, primary Save button (`Mod+S`, idle until dirty), and an overflow menu (Copy link, Copy API URL, danger transitions with confirm dialog, Duplicate, Create another, Delete). Copy links trust `X-Forwarded-Proto` only from `AppConfig.TrustedProxies`.
 - **Tabs:**

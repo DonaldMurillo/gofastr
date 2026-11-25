@@ -443,8 +443,9 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 			current := ""
 			if fb.row != nil {
 				current = fieldtext.Cell(fb.m.rowValue(fb.row, fb.m.states.Field))
-			} else if fb.create && fb.values != nil {
-				current = fb.values[cond.field]
+			} else if fb.create {
+				state, _ := fb.m.field(cond.field)
+				current = fieldtext.Cell(state.Default)
 			}
 			if !slices.Contains(cond.values, current) {
 				return ""
