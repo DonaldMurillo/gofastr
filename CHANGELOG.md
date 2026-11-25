@@ -54,6 +54,10 @@ few lines, and link the PR or the docs page for the rest.
   registration and for each queue on every run, so changing the caller's
   buffer or a dispatched job no longer changes other jobs
   ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
+- **Article JSON-LD deduplication for `*seo.Article` pointers.** Article
+  screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
+  longer emit a second synthesized `Article` JSON-LD block
+  ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
 
 #### Fixes that may need a change in your app
 
