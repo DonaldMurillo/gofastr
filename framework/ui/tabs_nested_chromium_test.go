@@ -34,10 +34,21 @@ func TestNestedTabsKeepTheirOwnPanel(t *testing.T) {
 	head := "<style>" + th.CSSCustomProperties() + "\n" + css.String() + "</style>"
 	srv := themeTestPageWithHead(t, head, string(outer))
 	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(800, 600))
+	if !pollJS(ctx, `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-tabs'])`) {
+		t.Fatal("headless-tabs never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('[data-cui-signal="outer"]').setAttribute("data-active", "1")`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	// checkVisibility is false inside a hidden="until-found" panel, which
+	// the browser hides with content-visibility rather than display.
+	if !pollJS(ctx, `document.querySelector("#in0").checkVisibility()`) {
+		t.Fatal("the outer strip's second panel never showed")
+	}
 	var got map[string]any
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
-		document.querySelector('[data-cui-signal="outer"]').setAttribute("data-active", "1");
-		const shown = el => getComputedStyle(el.closest(".fui-tab-panel")).display !== "none";
+		const shown = el => el.checkVisibility();
 		const tab = document.querySelectorAll('[data-cui-signal="inner"] .fui-tab');
 		return {in0: shown(document.querySelector("#in0")), in1: shown(document.querySelector("#in1")),
 			raised0: getComputedStyle(tab[0]).boxShadow !== "none", raised1: getComputedStyle(tab[1]).boxShadow !== "none"};

@@ -8,13 +8,14 @@ func init() {
 	Register(Spec{
 		Name: "Carousel",
 		Anatomy: []Part{PartRoot, PartCarouselStage, PartCarouselTrack, PartCarouselSlide,
-			PartCarouselDot, PartCarouselPrev, PartCarouselNext, PartVisuallyHidden, PartMarker},
+			PartCarouselDot, PartCarouselPrev, PartCarouselNext, PartCarouselPause, PartVisuallyHidden, PartMarker},
 		Hooks: []string{"data-hui-carousel", "data-hui-carousel-rotate-ms",
 			"data-hui-carousel-loop", "data-hui-carousel-track",
 			"data-hui-carousel-status", "data-hui-carousel-status-fmt",
 			"data-hui-carousel-live",
 			"data-hui-carousel-goto",
-			"data-hui-carousel-prev", "data-hui-carousel-next"},
+			"data-hui-carousel-prev", "data-hui-carousel-next",
+			"data-hui-carousel-pause"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Carousel(CarouselProps{Label: "Highlights",
 				Slides: []CarouselSlide{
@@ -26,7 +27,7 @@ func init() {
 			s := k.Classes
 			return []Case{{
 				Name: "a carousel with every control",
-				Why:  "the track is a real scrollable list, the dots and arrows are fragment anchors to the slide ids, and the first slide is current — the whole thing works with no script",
+				Why:  "the track is a real scrollable list that works with no script; the arrows are buttons before it and the dots buttons after it, the first slide is current and Previous starts aria-disabled without Loop",
 				HTML: Carousel(CarouselProps{Label: "Featured work", Slides: []CarouselSlide{
 					{Content: render.Text("Slide one")},
 					{Content: render.Text("Slide two")},
@@ -34,7 +35,7 @@ func init() {
 				}}, s),
 			}, {
 				Name: "bare, rotating and looping",
-				Why:  "without dots or arrows the track and the status are the whole contract, and the rotation flags ride the root for the module to pause on hover, focus, hidden and reduced motion",
+				Why:  "without dots or arrows the track, the status and the rotation button are the whole contract; the button's aria-pressed says the rotation is held, and the flags ride the root for the module to pause on hover, focus, hidden and reduced motion",
 				HTML: Carousel(CarouselProps{Label: "Hero", NoDots: true, NoArrows: true, Loop: true, AutoRotateMS: 6000,
 					Slides: []CarouselSlide{{Content: render.Text("Only")}}}, s),
 			}}

@@ -154,7 +154,7 @@ func TestTableIsATableWithScopedColumnHeaders(t *testing.T) {
 	// Two substrings bind every role to its element: the head with
 	// both headers scoped, and the body row with both cells.
 	has(t, got, `<table role="table"><caption id="table-applications-caption">Applications</caption>`+
-		`<thead role="rowgroup"><tr role="row"><th aria-sort="none" role="columnheader" scope="col"><a href="?dir=asc&amp;sort=name">Name</a></th>`+
+		`<thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col"><a href="?dir=asc&amp;sort=name">Name</a></th>`+
 		`<th role="columnheader" scope="col">Environment</th></tr></thead>`,
 		"the head lost a role, a scope, or the caption that names the table")
 	has(t, got, `<tbody role="rowgroup"><tr role="row"><td data-label="Name" role="cell">blog</td><td data-label="Environment" role="cell">production</td></tr></tbody></table>`,

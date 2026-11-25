@@ -53,7 +53,7 @@ func TestIMEKeepsEscapeConsumers(t *testing.T) {
 				Label: "Trees", RPCPath: "/commit", Items: []headless.SortableItem{{Key: "birch", Label: "Birch"}},
 			}, nil)), module: "headless-sortablelist", selector: `[data-hui-sort-key="birch"]`,
 			setup: `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key: ' ', bubbles: true, cancelable: true}))`,
-			kept:  `document.activeElement.getAttribute('aria-grabbed') === 'true'`, closed: `document.querySelector('[data-hui-sort-key="birch"]').getAttribute('aria-grabbed') !== 'true'`,
+			kept:  `document.activeElement.classList.contains('is-grabbed')`, closed: `!document.querySelector('[data-hui-sort-key="birch"]').classList.contains('is-grabbed')`,
 		},
 	} {
 		for _, composition := range []string{`isComposing: true`, `isComposing: false, keyCode: 229`} {
