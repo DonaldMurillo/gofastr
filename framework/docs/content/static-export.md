@@ -26,6 +26,10 @@ Pass `--base /my-project` (or pass `"/my-project"` as the third argument to `app
 - Rewrites internal links, asset URLs, sitemap `<loc>` URLs, robots `Sitemap:`, PWA manifest `start_url`/`scope`/icons, and site-search shard paths cleanly without double-prefixing.
 - Preserves trailing-slash compatibility for static hosts (`dir/index.html`).
 
+## Rebuilding locally
+
+Use `static.Builder.Watch` to rebuild when files change under the watch roots. It ignores the export directory and its page manifest, including when the export directory or a watch root is a symlink.
+
 ## PWA and offline behavior
 
 When `WithPWA` is enabled, a static export emits a full-site service worker that precaches every exported page and asset at install time so the entire site works offline after one visit, using a separate `gofastr-pwa-static-…` cache prefix (see [PWA](pwa.md)).
