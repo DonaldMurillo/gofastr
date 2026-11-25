@@ -38,7 +38,8 @@ few lines, and link the PR or the docs page for the rest.
 
 - **`App.Shutdown` waits for the erasure-retention sweep before teardown.**
   A sweep can no longer open a SQLite connection while an `OnStop` hook
-  closes the database and the caller removes its directory.
+  closes the database and the caller removes its directory
+  ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
