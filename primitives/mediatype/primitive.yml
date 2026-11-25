@@ -16,7 +16,7 @@ twins:
       - path: core/mediatype/fold.go
         note: Fold, also emitted into standalone generated Go code.
       - path: internal/mediatype/browser.js
-        note: The shared JSON Content-Type check, embedded into each browser module that uses it.
+        note: The shared JSON and HTML Content-Type checks, embedded at their call sites.
 invariants:
   - id: media-types-are-case-insensitive
     rule: Media type checks ignore case, sharing Go's mediatype.Fold with the standalone generated CLI and using one browser Content-Type check, without changing each caller's existing exact or substring comparison.
@@ -26,6 +26,7 @@ invariants:
       - test: cmd/gofastr/internal/devcmd.TestDevHoldMixedCaseHTML
       - test: core/mcp.TestSSEPostMixedCaseAccept
       - test: core-ui/runtime.TestRPCMixedCaseJSONResponse
+      - test: core-ui/runtime.TestNavigationUsesSharedHTMLCheck
       - test: framework/headless.TestE2E_Sortable409ConflictMessageAnnounced
       - test: kiln/live.TestFallbackMixedCaseHTML
     applies:
@@ -34,15 +35,23 @@ invariants:
       - cmd/gofastr/internal/devcmd/dev_hold.go
       - core/mcp/transport.go
       - core-ui/runtime/runtime.go
+      - core-ui/runtime/frag/nav.js
+      - core-ui/runtime/src/envelope.js
       - core-ui/runtime/src/rpc.js
       - framework/headless/sortablelist.js
       - framework/headless/sortablelist_behavior.go
       - kiln/live/live.go
   - id: browser-check-has-one-marker
-    rule: Browser scripts that receive the shared JSON check contain exactly one `/* gofastr:json-response-check */` marker, which comment sweeps must preserve.
+    rule: Browser scripts that receive a shared Content-Type check contain exactly one matching marker (`/* gofastr:json-response-check */` or `/* gofastr:html-response-check */`), which comment sweeps must preserve.
     enforced_by:
       - test: internal/mediatype.TestWithJSONResponseCheckPanicsWithoutExactlyOneMarker
+      - test: internal/mediatype.TestWithHTMLResponseCheckPanicsWithoutExactlyOneMarker
+      - test: core-ui/runtime.TestNavigationUsesSharedHTMLCheck
+      - test: core-ui/runtime.TestRPCMixedCaseJSONResponse
+      - test: framework/headless.TestE2E_Sortable409ConflictMessageAnnounced
     applies:
+      - core-ui/runtime/frag/nav.js
+      - core-ui/runtime/src/envelope.js
       - core-ui/runtime/src/rpc.js
       - framework/headless/sortablelist.js
   - id: accept-ranges-share-a-splitter
