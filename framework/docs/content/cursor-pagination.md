@@ -4,16 +4,15 @@ Cursor (keyset) pagination gives stable, constant-time paging over large or chan
 
 ## Enabling cursor pagination
 
-Declare `Pagination.CursorFields` on your entity with the columns that form the deterministic sort order (always include a unique tie-breaker such as `id` as the last column):
+Declare `Pagination.CursorFields` with the columns that lead the sort order. GoFastr appends any primary-key column missing from the list as a tie-breaker. This example pages on the generated `created_at` column, then `id`:
 
 ```go
 app.Entity("events", framework.EntityConfig{
 	Fields: []schema.Field{
 		{Name: "title", Type: schema.String, Required: true},
-		{Name: "created_at", Type: schema.Timestamp},
 	},
 	Pagination: &framework.PaginationConfig{
-		CursorFields: []string{"created_at", "id"},
+		CursorFields: []string{"created_at"},
 		MaxListLimit: 100,
 	},
 })
@@ -23,7 +22,7 @@ In `gofastr.yml`:
 
 ```yaml
 pagination:
-  cursor_fields: [created_at, id]
+  cursor_fields: [created_at]
   max_list_limit: 100
 ```
 
@@ -59,16 +58,16 @@ When `hasMore` is `false`, `cursor` is empty and you have reached the end.
 ## Rules and guarantees
 
 - **Cursor column types:** every cursor column must be non-null and not JSON; `Define` panics on a JSON or nullable cursor column. To page by a value inside a JSON document, copy it into its own `Required` scalar column and name that column in `CursorFields`.
-- **Sort order:** cursor queries always order by `CursorFields`. If `?sort=` is supplied in cursor mode, it is validated (rejecting unknown/`Hidden`/`NoQuery` columns) and then ignored.
+- **Sort order:** cursor queries order by `CursorFields`, then any primary-key column missing from it. If `?sort=` is supplied in cursor mode, it is validated (rejecting unknown/`Hidden`/`NoQuery` columns) and then ignored.
 - **Opaque tokens:** treat cursors as opaque strings. Tampered, malformed, or column-mismatched tokens return `400`.
 - **Filters stay in the query string:** pass the same filter parameters (`?status=open&cursor=...`) on each subsequent page; the cursor encodes only the keyset position.
 - **Scopes apply on every page:** `Scope.OwnerField`, `Scope.MultiTenant`, `Scope.SoftDelete`, and `ReadScope` apply identically to cursor queries.
-- **Index your cursor columns:** add a composite SQL index matching `CursorFields` (for example `(created_at, id)`) so keyset seeks stay `O(log N)`.
+- **Index the full cursor order:** add a composite SQL index on `CursorFields` plus the appended key columns (for the example above, `(created_at, id)`) so keyset seeks stay `O(log N)`.
 
 ## Common mistakes
 
-- **Omitting a unique tie-breaker column from `CursorFields`:** if two rows share the same `created_at`, paging without `id` as the final column can skip or duplicate rows.
 - **Omitting `?cursor=` on the first page:** without `cursor=`, the endpoint uses offset pagination.
 - **Expecting `?sort=` to change cursor ordering:** cursor pagination validates `?sort=` and ignores it in favor of `CursorFields`.
 - **Confusing CRUD defaults with `framework/pagination`:** CRUD routes default to 20 rows (capped by `MaxListLimit`, 100 when unset), whereas `framework/pagination` uses `pagination.DefaultPageSize` (25) and `pagination.MaxPageSize = 100`.
-- **Forgetting a composite index on `CursorFields`:** without an index on `(created_at, id)`, the database still has to sort the table.
+- **Declaring your own nullable `created_at`:** a `created_at` field you declare replaces the generated one, and a cursor column that can hold `NULL` makes `Define` panic. Mark it `Required`, or leave it out and use the generated column.
+- **Forgetting the composite index:** without an index on `(created_at, id)`, the database still has to sort the table.
