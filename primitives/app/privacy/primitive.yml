@@ -275,7 +275,7 @@ invariants:
       - test: framework.TestExpiredRowDoesNotBlockANewFailure
       - test: framework.TestAppStartSweepsExpiredRetention
   - id: shutdown-joins-retention-sweep
-    rule: App shutdown cancels and joins the retention sweep before teardown, including when shutdown interrupts boot, so OnStop hooks can close the database without racing the sweep.
+    rule: App shutdown cancels the retention sweep, stops the host without waiting for the sweep, then joins it before OnStop hooks can close the database, even when shutdown interrupts boot.
     enforced_by:
       - test: framework.TestShutdownJoinsRetentionSweepDuringBoot
   - id: resolver-canonicalize-rewrites-value

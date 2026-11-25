@@ -793,12 +793,16 @@ func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
 		})
 
 		run := make(chan error, 1)
-		go func() { run <- app.Run(context.Background(), ServicesHost()) }()
+		host := &countingHost{}
+		go func() { run <- app.Run(context.Background(), host) }()
 		<-started
 		<-probe.entered
 		stop := make(chan error, 1)
 		go func() { stop <- app.Shutdown(context.Background()) }()
 		synctest.Wait()
+		if got := host.stops.Load(); got != 1 {
+			t.Errorf("host Stop ran %d times while the retention sweep was blocked, want 1", got)
+		}
 		select {
 		case <-stopped:
 			t.Error("OnStop closed the database while the retention sweep was still opening a connection")

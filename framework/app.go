@@ -2211,7 +2211,6 @@ func (a *App) shutdown(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
-	a.retentionSweep.Wait()
 	if a2aSrv != nil {
 		if err := a2aSrv.Shutdown(ctx); err != nil {
 			firstErr = fmt.Errorf("stopping a2a runs: %w", err)
@@ -2222,6 +2221,7 @@ func (a *App) shutdown(ctx context.Context) error {
 			firstErr = err
 		}
 	}
+	a.retentionSweep.Wait()
 	if a.processModules != nil {
 		_ = a.processModules.Drain(ctx)
 	}
