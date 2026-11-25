@@ -446,7 +446,7 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order. Mounted island fanout drains before hooks registered before the mount, subject to island.presence/fanout-stop-honors-deadline."
     enforced_by:
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
@@ -454,6 +454,7 @@ invariants:
       - test: framework.TestDrainClearsTheSlotBeforeBatteriesStop
       - test: framework.TestRunServicesHostLocalInstallation
       - test: framework.TestLifecycle_StartContextCancelledByStop
+      - test: framework.TestShutdownDetachesIslandFanoutInOrder
   - id: seeds-run-without-auto-migrate
     rule: Entity seeds run on boot under WithoutAutoMigrate too.
     enforced_by:

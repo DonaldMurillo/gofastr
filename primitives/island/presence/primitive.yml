@@ -57,6 +57,11 @@ invariants:
     enforced_by:
       - test: core-ui/island.TestLeaveNotOvertakenByHeartbeat
       - test: core-ui/island.TestStopGoodbyeLandsLast
+  - id: fanout-stop-honors-deadline
+    rule: "The contextual island fanout stop follows app/worker-drains-honor-deadline: it reports an ended context even if detach already completed, and starts no further goodbyes once the context ends."
+    enforced_by:
+      - test: core-ui/island.TestFanoutStopContextAlreadyExpired
+      - test: framework.TestShutdownBoundsIslandFanoutStop
   - id: cross-replica-convergence
     rule: Joins and leaves reach peers at once, joins made before SetFanout are announced on attach, a silent replica's members expire within the TTL, and an announcement carries only UserID and DisplayName.
     enforced_by:
@@ -67,6 +72,14 @@ invariants:
       - test: core-ui/island.TestPresenceFanoutAnnouncementCarriesNoSessionID
       - test: core-ui/island.TestPresenceFanoutNoFanoutByteIdentical
 decisions:
+  - id: fanout-detach-outlives-deadline
+    date: 2026-11-25
+    status: accepted
+    decision: Run detach once and stop joining it when the context ends, leaving it to finish cleaning up as in-flight work allows; a peer that misses the goodbye expires the roster by TTL.
+    rejected:
+      - option: Abandon detach itself or send a goodbye ahead of the stuck roster.
+        why: The former leaves subscriptions attached and the latter lets a late roster restore members who already left.
+    upholds: [fanout-stop-honors-deadline, rosters-queue-in-order]
   - id: full-rosters-not-deltas
     date: 2026-11-20
     status: accepted

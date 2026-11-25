@@ -864,9 +864,18 @@ func (a *App) Mount(m Mountable) *App {
 	}
 	m.Mount(a.router)
 	if a.fanout != nil {
-		if fm, ok := m.(interface {
+		switch fm := m.(type) {
+		case interface {
+			SetFanoutContext(fanout.Fanout) (func(context.Context) error, error)
+		}:
+			stop, err := fm.SetFanoutContext(a.fanout)
+			if err != nil {
+				panic("framework: WithFanout: wiring mounted host: " + err.Error())
+			}
+			a.lc.PrependDrainer(lifecycle.DrainFunc(stop))
+		case interface {
 			SetFanout(fanout.Fanout) (func(), error)
-		}); ok {
+		}:
 			stop, err := fm.SetFanout(a.fanout)
 			if err != nil {
 				panic("framework: WithFanout: wiring mounted host: " + err.Error())

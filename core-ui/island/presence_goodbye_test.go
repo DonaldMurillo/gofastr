@@ -3,12 +3,31 @@ package island
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 )
+
+func TestFanoutStopContextAlreadyExpired(t *testing.T) {
+	m := NewManager()
+	stop, err := m.SetFanoutContext(fanout.NewInProcess())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	for range 64 {
+		if err := stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("stop with an expired context = %v, want context.DeadlineExceeded", err)
+		}
+	}
+}
 
 // holdRoster holds the first non-empty presence roster inside Publish
 // until release closes, and records the member count of every presence

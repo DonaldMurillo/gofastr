@@ -77,6 +77,7 @@ Owner scoping, RBAC, and hooks apply identically to in-process calls. To call th
 
 - **`ServicesReady()` vs. `OnReady`:** `App.ServicesReady()` closes as soon as all boot phases succeed on *any* host. `OnReady(func(addr string))` requires an HTTP listener, so `App.Run` refuses apps with `OnReady` hooks (or interactive HTTP first-run setup) when running under a non-HTTP host.
 - **Stop order:** `Shutdown` marks `/readyz` `503` immediately, drains readiness, cancels A2A runs, calls `host.Stop`, stops process modules, stops batteries, and runs `OnStop` hooks — all bounded by the shutdown context.
+- **Mounted island fanout:** `App.Mount` registers the stop returned by `UIHost.SetFanoutContext` alongside the stop hooks. If the drain context ends before detach finishes, `Shutdown` reports the deadline or cancellation instead of waiting on the transport. Custom mounts exposing only `SetFanout` still stop through `OnStop`.
 - **Stop during boot:** cancels the lifecycle context, lets the active phase return, skips remaining phases, and runs teardown (`host.Stop` still runs even when `host.Run` never started).
 
 ## Writing a custom `framework.Host`

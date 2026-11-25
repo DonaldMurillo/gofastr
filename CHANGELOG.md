@@ -36,6 +36,10 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- `App.Shutdown` no longer waits past its deadline for mounted island
+  fanout to stop. Presence goodbyes still follow in-flight rosters when
+  time permits.
+
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
   Correct or remove the conflicting bounds before upgrading
