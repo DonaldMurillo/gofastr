@@ -174,3 +174,24 @@ func TestRecordFormBadBuilderFormFailsSlot(t *testing.T) {
 		}
 	}
 }
+
+// A builder Omit keeps the field out of the form whether the layout
+// places it or the unplaced-field fallback would append it.
+func TestRecordOmitKeepsFieldOutOfForm(t *testing.T) {
+	for _, layout := range []string{"fallback", "placed"} {
+		t.Run(layout, func(t *testing.T) {
+			entities := invoiceEntities()
+			if layout == "placed" {
+				inv := entities["invoices"]
+				inv.Display.Form = &entity.EntityForm{Main: []entity.FormItem{{Field: "memo"}}}
+				entities["invoices"] = inv
+			}
+			x := newTestUI(t, entities, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+			body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Omit("memo").
+				RenderCtx(x.userCtx("/rec/invoices/inv-1", "", "u1")))
+			if strings.Contains(body, `name="memo"`) {
+				t.Fatal("Omit(memo) left a memo control in the form")
+			}
+		})
+	}
+}
