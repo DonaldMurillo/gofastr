@@ -38,8 +38,9 @@ notes:
     guidance: "A caller written n, ok := ui.CountView(ctx, entity, view) no longer compiles: write n, ok, err := ... and handle err, which used to be folded into ok == false."
     hits: edit
     find:
-      uses:
-        - gofastr/framework/entityui.UI.CountView
+      shapes:
+        - symbol: gofastr/framework/entityui.UI.CountView
+          type: '^func\(ctx context\.Context, entityName string, view string\) \(int, bool\)$'
   - change: "an entity registered with App.GroupEntity(app.Group(\"/\"), ...) is described in /openapi.json at its served path (/items), not under WithAPIPrefix (/api/items); CrudHandlerForEntity's BasePath and the startup banner match"
     guidance: "Regenerate SDKs and clients built from /openapi.json: the old paths returned 404."
     nodetect: "whether an entity is mounted through a root group depends on how the app wires its groups at run time"
