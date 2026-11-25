@@ -13,3 +13,7 @@ invariants:
     rule: A leading "Subject:" line read from a CRLF file loses its trailing CR, so the subject passes the header check.
     enforced_by:
       - test: battery/email.TestLoadFromFSCRLFSubject
+  - id: inline-subject-is-template-metadata
+    rule: 'Both loaders strip a leading "Subject: " line from each body that has one and choose the first non-empty subject from the trimmed .subject file, .txt line, and .html line in that order.'
+    enforced_by:
+      - test: battery/email.TestLoadPairedTemplateSubjects
