@@ -157,16 +157,34 @@ func TestSortableIgnoresLateConflictRefresh(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		first, next chromedp.Action
+		nextStatus  int
+		cross       bool
+		pending     string
+		want        string
 	}{
-		{"keyboard conflict", kbReorder("a"), dispatchDrag("a", "c")},
-		{"pointer conflict", dispatchDrag("a", "b"), kbReorder("a")},
+		{"keyboard conflict", kbReorder("a"), dispatchDrag("a", "c"), http.StatusNoContent, false, "", "b,c,a@v2"},
+		{"pointer conflict", dispatchDrag("a", "b"), kbReorder("a"), http.StatusNoContent, false, "", "b,c,a@v2"},
+		{"pending move fails", kbReorder("a"), dispatchDrag("a", "c"), http.StatusInternalServerError, false, "b,c,a@v1", "c,b,a@v7"},
+		{"move fails before refresh", dispatchDrag("a", "b"), kbReorder("a"), http.StatusInternalServerError, false, "", "c,b,a@v7"},
+		{"pending move saves", dispatchDrag("a", "b"), kbReorder("a"), http.StatusNoContent, false, "b,c,a@v1", "b,c,a@v2"},
+		{"pending cross-list move fails", kbReorder("a"), kbCrossMove("a"), http.StatusInternalServerError, true, "b,c@v1", "c,b,a@v7"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			board := &versionBoard{cols: map[string][]string{"a": {"a", "b", "c"}}, version: 1}
-			stale := SortableItems(SortableListProps{Items: board.rows("a")}, nil)
+			page := sortableLayout + board.list("a", true, tc.cross)
+			if tc.cross {
+				board.cols["b"] = []string{"d"}
+				page += board.list("b", true, true)
+			}
+			if tc.nextStatus == http.StatusInternalServerError {
+				board.cols["a"], board.version = []string{"c", "b", "a"}, 7
+			}
+			refreshed := SortableItems(SortableListProps{Items: board.rows("a")}, nil)
 			refreshStarted, releaseRefresh := make(chan struct{}), make(chan struct{})
+			releaseNext := make(chan struct{})
 			release := sync.OnceFunc(func() { close(releaseRefresh) })
-			server := startBehaviorServer(t, sortableLayout+board.list("a", true, false), func(mux *http.ServeMux) {
+			finishNext := sync.OnceFunc(func() { close(releaseNext) })
+			server := startBehaviorServer(t, page, func(mux *http.ServeMux) {
 				mux.HandleFunc("/move", func(w http.ResponseWriter, r *http.Request) {
 					if r.FormValue("version") != "v1" {
 						http.Error(w, "unexpected version", http.StatusBadRequest)
@@ -175,9 +193,12 @@ func TestSortableIgnoresLateConflictRefresh(t *testing.T) {
 					switch r.FormValue("order") {
 					case "b,a,c":
 						w.WriteHeader(http.StatusConflict)
-					case "b,c,a":
-						RenewSortableVersion(w, "v2")
-						w.WriteHeader(http.StatusNoContent)
+					case "b,c,a", "d,a":
+						<-releaseNext
+						if tc.nextStatus == http.StatusNoContent {
+							RenewSortableVersion(w, "v2")
+						}
+						w.WriteHeader(tc.nextStatus)
 					default:
 						http.Error(w, "unexpected order", http.StatusBadRequest)
 					}
@@ -185,11 +206,12 @@ func TestSortableIgnoresLateConflictRefresh(t *testing.T) {
 				mux.HandleFunc("/conflict", func(w http.ResponseWriter, r *http.Request) {
 					close(refreshStarted)
 					<-releaseRefresh
-					RenewSortableVersion(w, "v1")
-					fmt.Fprint(w, stale)
+					RenewSortableVersion(w, board.token())
+					fmt.Fprint(w, refreshed)
 				})
 			})
 			defer release()
+			defer finishNext()
 			ctx := behaviorPage(t, server)
 			if !pollTrue(ctx, sortableLoaded) {
 				t.Fatal("sortable module never loaded")
@@ -205,15 +227,38 @@ func TestSortableIgnoresLateConflictRefresh(t *testing.T) {
 			if err := chromedp.Run(ctx, tc.next); err != nil {
 				t.Fatal(err)
 			}
-			if !pollTrue(ctx, `document.querySelector('[data-hui-sortable-version="v2"]') !== null`) {
-				t.Fatal("newer move never saved")
+			if tc.pending != "" {
+				release()
+			} else {
+				finishNext()
+			}
+			if !pollTrue(ctx, `document.querySelector('[data-hui-sortable]').__huiN === 1`) {
+				t.Fatal("the first response did not settle while the other was pending")
+			}
+			if tc.pending != "" {
+				if got := domOrder(t, ctx, "a"); got != tc.pending {
+					t.Fatalf("while the newer move is pending the list shows %q, want %s", got, tc.pending)
+				}
 			}
 			release()
+			finishNext()
 			if !pollTrue(ctx, `document.querySelector('[data-hui-sortable]').__huiN === 0`) {
 				t.Fatal("conflict refresh never settled")
 			}
-			if got := domOrder(t, ctx, "a"); got != "b,c,a@v2" {
-				t.Fatalf("after the stale refresh the list shows %q, want b,c,a@v2", got)
+			if got := domOrder(t, ctx, "a"); got != tc.want {
+				t.Fatalf("after both responses the list shows %q, want %s", got, tc.want)
+			}
+			if tc.cross {
+				if got := domOrder(t, ctx, "b"); got != "d@v1" {
+					t.Fatalf("after the failed cross-list move its destination shows %q, want d@v1", got)
+				}
+			}
+			if tc.nextStatus == http.StatusInternalServerError && !pollTrue(ctx, `(() => {
+				const list = document.querySelector('[data-hui-sortable]');
+				return document.getElementById('hui-sortable-live').textContent ===
+					list.getAttribute('data-hui-sortable-s-conflict-refreshed');
+			})()`) {
+				t.Fatal("the applied conflict refresh was not announced")
 			}
 		})
 	}

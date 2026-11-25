@@ -190,10 +190,26 @@
     const record = (ok) => lists.map((l, i) => {
       l.__huiN--;
       const latest = mine[i] === l.__huiSeq;
-      if (!ok && !latest) return false;
-      if (ok && mine[i] > (l.__huiOk || 0)) { l.__huiAck = sent[i]; l.__huiOk = mine[i]; }
-      if (!ok) l.__huiBad = mine[i];
-      if (l.__huiBad === l.__huiSeq) putBack(l, l.__huiAck);
+      if (ok && mine[i] > (l.__huiOk || 0)) {
+        l.__huiAck = sent[i];
+        l.__huiOk = mine[i];
+        if (l.__huiRefresh?.seq < mine[i]) delete l.__huiRefresh;
+      }
+      if (!ok && latest) l.__huiBad = mine[i];
+      if (l.__huiBad === l.__huiSeq) {
+        const r = l.__huiRefresh;
+        if (r) {
+          if (i) putBack(l, l.__huiAck);
+          delete l.__huiRefresh;
+          l.innerHTML = NS._html?.(r.html) ?? r.html;
+          if (r.next) l.setAttribute(VERSION, r.next);
+          l.__huiAck = rowsOf(l);
+          l.__huiOk = r.seq;
+          if (!r.msg || r.seq !== l.__huiSeq) announce(l, 'data-hui-sortable-s-conflict-refreshed', null, null, l.__huiSeq);
+          return false;
+        }
+        if (ok || latest) putBack(l, l.__huiAck);
+      }
       return latest;
     }).every(Boolean);
     const fail = (key) => { if (record(false) && key) announce(dest, key, null, null, mine[0]); };
@@ -215,16 +231,16 @@
       const is409 = res && res.status === 409;
       if (!is409 || !was) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
       const ownsDest = () => mine[0] === dest.__huiSeq;
-      if (!ownsDest()) return record(false);
+      const newerAck = () => dest.__huiOk > mine[0];
       conflictMessage(res, (msg) => {
-        if (!ownsDest()) return record(false);
+        if (newerAck()) return record(false);
         const crpc = attr(dest, 'data-hui-sortable-conflict');
         // A real server message is the announcement AND an error
         // toast — the live region is visually hidden, so without the
         // toast a sighted reader learns nothing of the conflict. The
         // generic copies never toast, and a message replaces them the
         // way the retired module's finishConflict did.
-        if (msg) { announce(dest, '', null, msg, mine[0]); fireToast(msg, ownsDest); }
+        if (msg && ownsDest()) { announce(dest, '', null, msg, mine[0]); fireToast(msg, ownsDest); }
         const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
         if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
         let next = '';
@@ -235,20 +251,13 @@
             // body reflects the request URL and would replace live page
             // markup with reflected output. A followed 3xx is another
             // URL's markup (a sign-in page), never the rows.
-            if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
+            if (!r.ok || r.redirected) throw 0;
             next = renewed(r);
             return r.text();
           })
           .then((html) => {
-            if (!ownsDest()) return record(false);
-            // The fresh rows are the server's order: the destination
-            // confirms them, and the record puts the source back.
-            dest.innerHTML = NS._html?.(html) ?? html;
-            if (next) dest.setAttribute(VERSION, next);
-            dest.__huiAck = rowsOf(dest);
-            dest.__huiOk = mine[0];
+            if (!newerAck() && !(dest.__huiRefresh?.seq > mine[0])) dest.__huiRefresh = { seq: mine[0], html, next, msg };
             record(false);
-            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed', null, null, mine[0]);
           }, () => fail(reverted));
       });
     }, () => fail('data-hui-sortable-s-reverted'));
