@@ -40,6 +40,11 @@ few lines, and link the PR or the docs page for the rest.
   `min` exceeds their lowest `max`, even in unset optional nested structs.
   Correct or remove the conflicting bounds before upgrading
   ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
+
+- **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
