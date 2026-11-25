@@ -273,6 +273,8 @@ gofastr generate app new-billing.yml --add
 
 `--add` merges new `endpoints:` into `gofastr.settings.yml`, writes new entity/screen files, and rebuilds derived generated files without clobbering your existing hand-edited files.
 
+If `--add` reports that an older `screens_register.go` lacks `invalidateScreensOnWrite`, generate the full app in a scratch directory. Copy that helper and its imports into your existing `screens_register.go`, then retry `--add`.
+
 ## Quick scaffolds (`generate entity`/`screen`)
 
 For small additions without writing YAML at all, scaffold a single entity or screen directly from the CLI (supported flags: `--out`, `--dry-run`, `--json`, and `--from-a11y=<file>` on `screen`):

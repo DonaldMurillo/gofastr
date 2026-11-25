@@ -970,6 +970,10 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			skipNames[i] = f.Name
 		}
 		sort.Strings(skipNames)
+		if err := checkAddScreenInvalidation(writeRoot, written, skipNames); err != nil {
+			failGenerate(options.json, err)
+			cli.OsExit(1)
+		}
 		if addsEndpoints {
 			if err := checkAddEndpoints(writeRoot, bp, written); err != nil {
 				failGenerate(options.json, err)
@@ -2558,6 +2562,29 @@ func addScreenTarget(writeRoot string, s appspec.AppSpecScreen) (file string, de
 	}
 	declared = strings.Contains(string(src), "func mount"+appspec.ToCamelCase(s.Name)+"Screen(")
 	return file, declared, !declared
+}
+
+func checkAddScreenInvalidation(writeRoot string, written []GeneratedFile, skipped []string) error {
+	const register = "screens_register.go"
+	const helper = "invalidateScreensOnWrite"
+	if !slices.Contains(skipped, register) {
+		return nil
+	}
+	dependent := slices.IndexFunc(written, func(f GeneratedFile) bool {
+		return IsPerScreenSource(f.Name) && strings.Contains(f.Content, "\t"+helper+"(fwApp, ")
+	})
+	if dependent < 0 {
+		return nil
+	}
+	src, err := readFileUnder(writeRoot, register)
+	if err == nil {
+		file, err := parser.ParseFile(token.NewFileSet(), register, src, parser.SkipObjectResolution)
+		if err == nil && slices.Contains(topLevelNames(file), helper) {
+			return nil
+		}
+	}
+	return fmt.Errorf("--add cannot write %s: %s lacks %s. Generate the full app in a scratch directory and copy the helper and its imports into %s, then retry --add",
+		written[dependent].Name, register, helper, register)
 }
 
 // readFileUnder reads rel under writeRoot through an *os.Root: a file
