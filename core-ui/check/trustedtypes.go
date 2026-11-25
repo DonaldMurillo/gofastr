@@ -10,7 +10,7 @@ var (
 	reTTAdjacent     = regexp.MustCompile(`\binsertAdjacentHTML\s*\(`)
 	reTTParse        = regexp.MustCompile(`\bparseFromString\s*\(`)
 	reTTWorker       = regexp.MustCompile(`\bnew\s+(?:Shared)?Worker\s*\(`)
-	reTTForbidden    = regexp.MustCompile(`\bdocument\s*\.\s*write(?:ln)?\s*\(|\bimportScripts\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$.])((?:(?:window|globalThis)\s*\.\s*)?eval)\s*\(|\bsetHTMLUnsafe\s*\(|\bcreateContextualFragment\s*\(`)
+	reTTForbidden    = regexp.MustCompile(`\bdocument\s*\.\s*write(?:ln)?\s*\(|\bimportScripts\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$.])((?:(?:window|globalThis|self)\s*\??\.\s*)?eval)\s*\(|\bsetHTMLUnsafe\s*\(|\bcreateContextualFragment\s*\(`)
 	reTTScriptVar    = regexp.MustCompile(`\b([A-Za-z_$][\w$]*)\s*=\s*document\s*\.\s*createElement\s*\(\s*['"]script['"]\s*\)`)
 	reTTHTMLCall     = regexp.MustCompile(`^(?:[\w$]+\s*(?:\?\.|\.)\s*)*_html\s*(?:\?\.)?\s*\(`)
 	reTTScriptURLArg = regexp.MustCompile(`^(?:[\w$]+\s*(?:\?\.|\.)\s*)*_scriptURL\s*(?:\?\.)?\s*\(`)

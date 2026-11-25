@@ -8,6 +8,10 @@ func TestTrustedTypesFlagsGlobalEval(t *testing.T) {
 	}{
 		{"window", "window.eval(source);", "window.eval is a sink"},
 		{"globalThis", "globalThis . eval(source);", "globalThis . eval is a sink"},
+		{"self", "self.eval(source);", "self.eval is a sink"},
+		{"optional window", "window?.eval(source);", "window?.eval is a sink"},
+		{"optional globalThis", "globalThis ?. eval(source);", "globalThis ?. eval is a sink"},
+		{"optional nested receiver", "sandbox?.window.eval(source);", ""},
 		{"other receiver", "sandbox.eval(source);", ""},
 		{"spaced receiver", "sandbox . eval(source);", ""},
 		{"nested receiver", "sandbox. window.eval(source);", ""},
