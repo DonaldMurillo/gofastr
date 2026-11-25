@@ -59,7 +59,8 @@ type server struct {
 	// unreachable makes ssh itself fail.
 	unreachable bool
 	// built is every package the command asked to build.
-	built []string
+	built    []string
+	buildErr error
 	// broken makes the next build produce a release that exits at once.
 	broken bool
 	// socketApp makes the next build produce a binary that can take a
@@ -196,6 +197,9 @@ func (s *server) root() string { return s.dir }
 // app, on the server's port.
 func (s *server) build(_ context.Context, pkg, arch, out string) error {
 	s.built = append(s.built, pkg+" "+arch)
+	if s.buildErr != nil {
+		return s.buildErr
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -544,6 +548,77 @@ func TestDeployParsesOnlySSHStdout(t *testing.T) {
 			}
 			if !strings.Contains(out.String(), tc.stderr) {
 				t.Errorf("missing SSH diagnostic %q in %q", tc.stderr, out.String())
+			}
+		})
+	}
+}
+
+func TestDeployCleansFailedUploads(t *testing.T) {
+	dir := t.TempDir()
+	bin, env := filepath.Join(dir, "shop"), filepath.Join(dir, "env")
+	for _, path := range []string{bin, env} {
+		if err := os.WriteFile(path, []byte("app"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	missing := filepath.Join(dir, "missing")
+	const (
+		binUpload = "umask 077 && cat > '/tmp/upload/bin'"
+		envUpload = "umask 077 && cat > '/tmp/upload/env'"
+		cleanup   = "rm -rf -- '/tmp/upload'"
+	)
+	for _, tc := range []struct {
+		name, bin, env, arch, failAt, wantErr string
+		buildErr                              error
+		wantCleanup                           bool
+	}{
+		{name: "missing env", bin: bin, env: missing, wantErr: missing},
+		{name: "env directory", bin: bin, env: dir, wantErr: "is a directory"},
+		{name: "missing bin", bin: missing, wantErr: missing, wantCleanup: true},
+		{name: "unsupported arch", bin: bin, arch: "riscv64", wantErr: "riscv64", wantCleanup: true},
+		{name: "build failure", buildErr: errors.New("build failed"), wantErr: "build failed", wantCleanup: true},
+		{name: "binary upload", bin: bin, failAt: binUpload, wantErr: "copying shop", wantCleanup: true},
+		{name: "env upload", bin: bin, env: env, failAt: envUpload, wantErr: "copying env", wantCleanup: true},
+		{name: "install refused", bin: bin, failAt: asRoot, wantErr: "server stopped part way", wantCleanup: true},
+		{name: "successful install", bin: bin, env: env},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			s := &server{t: t, buildErr: tc.buildErr, sshReply: func(command string) (string, string, int, error) {
+				switch {
+				case strings.HasPrefix(command, "uname -m"):
+					arch := tc.arch
+					if arch == "" {
+						arch = "x86_64"
+					}
+					return arch + "\n/tmp/upload\n", "", 0, nil
+				case command == tc.failAt:
+					return "", "remote command refused\n", 1, nil
+				case command == asRoot:
+					return "DEPLOYED release\n", "", 0, nil
+				default:
+					return "", "", 0, nil
+				}
+			}}
+			args := []string{"prod", "--name", "shop"}
+			if tc.bin != "" {
+				args = append(args, "--bin", tc.bin)
+			}
+			if tc.env != "" {
+				args = append(args, "--env-file", tc.env)
+			}
+			err := Run(&out, args, t0, s)
+			if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
+				t.Errorf("deploy error = %v, want %q", err, tc.wantErr)
+			}
+			if tc.wantCleanup && (len(s.calls) == 0 || s.calls[len(s.calls)-1] != cleanup) {
+				t.Errorf("SSH calls = %q, want final upload cleanup", s.calls)
+			}
+			if !tc.wantCleanup && tc.wantErr != "" && len(s.calls) != 0 {
+				t.Errorf("SSH calls = %q, want local validation before SSH", s.calls)
+			}
+			if !tc.wantCleanup && slices.Contains(s.calls, cleanup) {
+				t.Error("client tried to clean the upload after a successful install")
 			}
 		})
 	}

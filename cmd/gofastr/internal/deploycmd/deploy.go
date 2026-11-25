@@ -225,6 +225,22 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 const asRoot = `if [ "$(id -u)" = 0 ]; then bash -s; else sudo -n bash -s; fi`
 
 func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time, r runner) error {
+	var env *os.File
+	if o.envFile != "" {
+		f, err := os.Open(o.envFile)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return fmt.Errorf("open %s: is a directory", o.envFile)
+		}
+		env = f
+	}
 	// One round trip says what to build for and where to put it. The
 	// directory is the server's own choice of a fresh, private one.
 	out, stderr, code, err := r.ssh(ctx, o, `uname -m && umask 077 && mktemp -d`, nil)
@@ -235,13 +251,21 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if code != 0 || len(lines) != 2 {
 		return fmt.Errorf("the server did not answer as a Linux machine would (exit %d): %s", code, strings.TrimSpace(out+"\n"+stderr))
 	}
-	arch, ok := map[string]string{"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[lines[0]]
-	if !ok {
-		return fmt.Errorf("the server is a %s machine; this builds for x86_64 and aarch64", lines[0])
-	}
 	p.upload = lines[1]
 	if !uploadRe.MatchString(p.upload) {
 		return fmt.Errorf("the server named an upload directory this will not use: %q", p.upload)
+	}
+	removeUpload := true
+	defer func() {
+		if removeUpload {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			defer cancel()
+			_, _, _, _ = r.ssh(ctx, o, "rm -rf -- "+shellQuote(p.upload), nil)
+		}
+	}()
+	arch, ok := map[string]string{"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}[lines[0]]
+	if !ok {
+		return fmt.Errorf("the server is a %s machine; this builds for x86_64 and aarch64", lines[0])
 	}
 	p.release = fmt.Sprintf("%s-%09d-%s", now.UTC().Format("20060102T150405Z"), now.Nanosecond(), rand.Text())
 
@@ -266,11 +290,16 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if p.socket {
 		fmt.Fprintf(w, "  systemd holds port %d: restarts do not close it\n", o.port)
 	}
-	if err := send(ctx, o, r, bin, p.upload+"/bin"); err != nil {
+	f, err := os.Open(bin)
+	if err != nil {
 		return err
 	}
-	if o.envFile != "" {
-		if err := send(ctx, o, r, o.envFile, p.upload+"/env"); err != nil {
+	defer f.Close()
+	if err := send(ctx, o, r, f, p.upload+"/bin"); err != nil {
+		return err
+	}
+	if env != nil {
+		if err := send(ctx, o, r, env, p.upload+"/env"); err != nil {
 			return err
 		}
 		p.hasEnv = true
@@ -280,6 +309,8 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 	if err != nil {
 		return err
 	}
+	// The install script removes the upload before checking the service.
+	removeUpload = code != 0 && code != exitRolledBack && code != exitDown
 	return report(w, o, out, stderr, code)
 }
 
@@ -313,18 +344,13 @@ func takesSocket(path string) (bool, error) {
 
 // send copies a local file to path on the server through ssh's stdin:
 // one program to depend on, and the file is created private.
-func send(ctx context.Context, o *options, r runner, local, path string) error {
-	f, err := os.Open(local)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+func send(ctx context.Context, o *options, r runner, f *os.File, path string) error {
 	out, stderr, code, err := r.ssh(ctx, o, "umask 077 && cat > "+shellQuote(path), f)
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("copying %s to the server failed (exit %d): %s", filepath.Base(local), code, strings.TrimSpace(out+"\n"+stderr))
+		return fmt.Errorf("copying %s to the server failed (exit %d): %s", filepath.Base(f.Name()), code, strings.TrimSpace(out+"\n"+stderr))
 	}
 	return nil
 }
