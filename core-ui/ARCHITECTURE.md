@@ -382,6 +382,9 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 SearchInput's kit-owned scanner keeps its clear button in step with the
 input value on input and after a native form reset. The reset update runs
 on the next animation frame, after the browser restores default values.
+Clearing a submitted GET search calls the native form submission method
+through its prototype, so fields named `requestSubmit` or `submit` can
+still be cleared along with their search results.
 
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
