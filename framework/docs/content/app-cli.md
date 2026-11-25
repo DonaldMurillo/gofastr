@@ -51,7 +51,7 @@ Generates a self-contained CLI (with its own `internal/client`) directly from Op
 
 Operations pretty-print JSON responses even if the server capitalizes the `Content-Type` (for example, `Application/JSON` or `application/problem+JSON`). Other bodies are written as received.
 
-The standalone CLI emits the normalizer from `core/mediatype.StandaloneFold` so the generated program needs no framework import. `mediatype.Fold` changes case only; `AcceptsAny` matches a field against lowercase ranges without ranking parameters, and `AcceptRanges` splits a field while honoring quoted parameters.
+The standalone CLI emits the normalizer from `core/mediatype.StandaloneFold` so the generated program needs no framework import.
 
 ## Extending and regenerating
 
