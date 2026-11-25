@@ -187,7 +187,7 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 		}
 	}
 	e.Requires = deduped
-	sum := sha256.Sum256([]byte(js))
+	sum := sha256.Sum256([]byte(e.Source))
 	e.sourceHash = hex.EncodeToString(sum[:8])
 
 	mu.Lock()
