@@ -24,7 +24,24 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+
+- **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
+  `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
+  `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
+  `TestActionsArePinnedBySHA` holds every external `uses:` to one commit
+  SHA per action with a `# vN` comment. The Pages job no longer writes
+  `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
+  v5 leaves dotfiles out.
+
 ### Fixed
+
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
+
+- **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
 
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
@@ -38,6 +55,13 @@ few lines, and link the PR or the docs page for the rest.
   screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
   longer emit a second synthesized `Article` JSON-LD block
   ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
 
 ## [0.99.0] - 2026-11-25
 
@@ -226,6 +250,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Media-type matching is case-insensitive** for auth login redirects,
+  MCP SSE framing, Kiln's HTML fallback, the dev hold page, OpenAPI CLI
+  JSON pretty-printing, and browser RPC JSON responses.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.

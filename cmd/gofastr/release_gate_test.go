@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -842,5 +843,74 @@ func TestChromeIsPinned(t *testing.T) {
 	}
 	if len(versions) > 1 {
 		t.Errorf("setup-chrome steps install different versions; bump them together: %v", versions)
+	}
+}
+
+// A tag can be moved to other code after review; a commit SHA cannot. One
+// SHA per action across the workflows, so a bump reaches every use.
+func TestActionsArePinnedBySHA(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", ".github", "workflows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned := regexp.MustCompile(`^([^@\s]+)@([0-9a-f]{40})$`)
+	version := regexp.MustCompile(`^#\s*v[0-9]`)
+	shas := map[string]map[string][]string{}
+	external := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal([]byte(workflowSource(t, e.Name())), &doc); err != nil {
+			t.Fatalf("parse %s: %v", e.Name(), err)
+		}
+		// Every mapping key named uses, at any depth: step-level actions and
+		// job-level reusable workflows. A uses: inside a run script is a
+		// scalar's text, not a key, so it is not read.
+		var walk func(n *yaml.Node)
+		walk = func(n *yaml.Node) {
+			if n.Kind == yaml.MappingNode {
+				for i := 0; i+1 < len(n.Content); i += 2 {
+					k, v := n.Content[i], n.Content[i+1]
+					if k.Value != "uses" {
+						continue
+					}
+					at := e.Name() + ":" + strconv.Itoa(v.Line)
+					if v.Kind != yaml.ScalarNode {
+						t.Errorf("%s: uses is not a single value", at)
+						continue
+					}
+					if strings.HasPrefix(v.Value, "./") {
+						continue
+					}
+					external++
+					p := pinned.FindStringSubmatch(v.Value)
+					if p == nil {
+						t.Errorf("%s uses %s; pin it by full commit SHA", at, v.Value)
+						continue
+					}
+					if !version.MatchString(strings.TrimSpace(v.LineComment)) {
+						t.Errorf("%s pins %s with no `# vN` comment naming its release", at, v.Value)
+					}
+					if shas[p[1]] == nil {
+						shas[p[1]] = map[string][]string{}
+					}
+					shas[p[1]][p[2]] = append(shas[p[1]][p[2]], at)
+				}
+			}
+			for _, c := range n.Content {
+				walk(c)
+			}
+		}
+		walk(&doc)
+	}
+	if external == 0 {
+		t.Fatal("found no external uses: line; the parser or the workflows changed shape")
+	}
+	for _, action := range slices.Sorted(maps.Keys(shas)) {
+		if len(shas[action]) > 1 {
+			t.Errorf("%s is pinned at %d SHAs; bump every use together: %v", action, len(shas[action]), shas[action])
+		}
 	}
 }

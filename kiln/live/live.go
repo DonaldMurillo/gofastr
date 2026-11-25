@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -663,47 +664,5 @@ func wantsHTML(r *http.Request) bool {
 	if accept == "" {
 		return true // no header → browser-style default
 	}
-	for _, part := range splitComma(accept) {
-		t := part
-		if i := indexByte(t, ';'); i >= 0 {
-			t = t[:i]
-		}
-		t = trimSpace(t)
-		if t == "text/html" || t == "*/*" {
-			return true
-		}
-	}
-	return false
-}
-
-// minimal local helpers to avoid pulling strings just for these.
-func splitComma(s string) []string {
-	out := []string{}
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, s[start:])
-	return out
-}
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
-}
-func trimSpace(s string) string {
-	i, j := 0, len(s)
-	for i < j && (s[i] == ' ' || s[i] == '\t') {
-		i++
-	}
-	for j > i && (s[j-1] == ' ' || s[j-1] == '\t') {
-		j--
-	}
-	return s[i:j]
+	return mediatype.AcceptsAny(accept, "text/html", "*/*")
 }

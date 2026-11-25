@@ -760,12 +760,19 @@ func validateTags(v reflect.Value, tag string) error {
 		case isInt && r.key == "max" && v.Int() > r.intBound:
 			return fmt.Errorf("must be at most %s", r.arg)
 		case !isInt && r.key == "min":
-			f.Min = &r.bound
+			f.Min = tighter(f.Min, r.bound, math.Max)
 		case !isInt && r.key == "max":
-			f.Max = &r.bound
+			f.Max = tighter(f.Max, r.bound, math.Min)
 		}
 	}
 	return schema.Validate(f, value)
+}
+
+func tighter(current *float64, bound float64, pick func(float64, float64) float64) *float64 {
+	if current != nil {
+		bound = pick(*current, bound)
+	}
+	return &bound
 }
 
 func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {

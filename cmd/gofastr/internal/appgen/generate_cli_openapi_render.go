@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 )
 
 // renderCLISelfClient emits internal/client/client.gen.go for --from-openapi
@@ -98,11 +100,13 @@ func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
 	if oaHasJoined(spec.Ops) {
 		sb.WriteString(oaJoinHelpers)
 	}
+	sb.WriteString(mediatype.StandaloneFold())
+	sb.WriteByte('\n')
 	sb.WriteString(`// printResponse renders an operation response: JSON pretty-prints,
 // anything else (an image, CSV, plain text) streams raw to stdout so
 // redirects work: ` + "`" + spec.Binary + " <op> > out.png`" + `.
 func printResponse(data []byte, contentType string) int {
-	if strings.Contains(contentType, "json") {
+	if strings.Contains(foldMediaType(contentType), "json") {
 		var v any
 		if jsonErr := decodeJSON(data, &v); jsonErr == nil {
 			return printJSON(v)
