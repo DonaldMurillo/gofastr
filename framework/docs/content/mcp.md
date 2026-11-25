@@ -103,6 +103,7 @@ srv.RegisterTool("generate_barcode", "Generate a barcode image",
 ```
 
 - `SetAnnotationWarnings(true)` (enabled automatically in `gofastr dev`) warns once per non-dev-implied tool missing `readOnlyHint`, `destructiveHint`, or `openWorldHint`.
+- Generated entity item tools (`_get`, `_update`, `_delete`, transitions) take the record key as `id`. A composite key takes one argument per key column, named by its wire name, and so does a single key column other than `id` when another field is called `id`, so `_update` can still write that field.
 - Generated entity CRUD tools set annotations automatically: `_list`/`_get` are read-only + idempotent; `_create` is non-destructive; `_update`/`_delete` are destructive + idempotent; state transitions are destructive + non-idempotent. Set custom endpoint hints via `entity.Endpoint.MCPAnnotations` and app hints via `AppConfig.Annotations`.
 
 ### Request `_meta`

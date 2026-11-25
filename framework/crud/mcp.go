@@ -427,10 +427,11 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// toolKeyArgs names a record's key arguments: "id", or each composite key column's mcpFieldKey.
+// toolKeyArgs names a record's key arguments: "id", or each key column's
+// mcpFieldKey when the key is composite or another field is called "id".
 func (ch *CrudHandler) toolKeyArgs() []string {
 	cols := ch.keyCols()
-	if len(cols) <= 1 {
+	if len(cols) <= 1 && !ch.idNamesOtherField(cols) {
 		return []string{"id"}
 	}
 	args := slices.Clone(cols)
@@ -442,6 +443,20 @@ func (ch *CrudHandler) toolKeyArgs() []string {
 		}
 	}
 	return args
+}
+
+// idNamesOtherField reports whether a field outside the single key column
+// takes "id" as its MCP argument, so "id" cannot also name the key.
+func (ch *CrudHandler) idNamesOtherField(cols []string) bool {
+	if len(cols) != 1 {
+		return false
+	}
+	for _, f := range ch.Entity.GetFields() {
+		if f.Name != cols[0] && mcpFieldKey(f) == "id" {
+			return true
+		}
+	}
+	return false
 }
 
 func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string]string, error) {
