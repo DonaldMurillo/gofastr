@@ -45,6 +45,13 @@ few lines, and link the PR or the docs page for the rest.
   buffer or a dispatched job no longer changes other jobs
   ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
 
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
+
 ## [0.99.0] - 2026-11-25
 
 ### Added
