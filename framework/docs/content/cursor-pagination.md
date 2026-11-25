@@ -58,6 +58,7 @@ When `hasMore` is `false`, `cursor` is empty and you have reached the end.
 
 ## Rules and guarantees
 
+- **Cursor column types:** every cursor column must be non-null and not JSON; `Define` panics on a JSON or nullable cursor column. To page by a value inside a JSON document, copy it into its own `Required` scalar column and name that column in `CursorFields`.
 - **Sort order:** cursor queries always order by `CursorFields`. If `?sort=` is supplied in cursor mode, it is validated (rejecting unknown/`Hidden`/`NoQuery` columns) and then ignored.
 - **Opaque tokens:** treat cursors as opaque strings. Tampered, malformed, or column-mismatched tokens return `400`.
 - **Filters stay in the query string:** pass the same filter parameters (`?status=open&cursor=...`) on each subsequent page; the cursor encodes only the keyset position.

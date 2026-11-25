@@ -1126,6 +1126,9 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			if found.NoQuery {
 				return nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
 			}
+			if strings.EqualFold(strings.TrimSpace(found.Type), "json") {
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is json (keyset paging cannot compare a JSON document); page on a scalar column", decl.Name, cf)
+			}
 			// The rule entity.Define enforces, reported at spec time: a
 			// keyset column that can hold NULL skips those rows.
 			isKey := slices.Contains(decl.PrimaryKey, cf) || (len(decl.PrimaryKey) == 0 && cf == "id")
