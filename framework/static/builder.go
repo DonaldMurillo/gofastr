@@ -199,7 +199,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
+	if b.staticSourceHas("404.html") {
+		b.log("kept the static source 404.html")
+	} else if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
 		html := b.applyStaticMode(ctx, page)
 		dst := filepath.Join(b.OutDir, "404.html")
 		if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {

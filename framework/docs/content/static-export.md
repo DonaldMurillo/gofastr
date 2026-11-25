@@ -13,7 +13,7 @@ gofastr export --base /docs _site    # deploy under a subpath (e.g. GitHub Pages
 - **Dynamic screens** (`/docs/:slug`, `/posts/:slug`) whose component implements `StaticPathsProvider` (`StaticPaths(ctx context.Context) []map[string]string`). Dynamic routes without `StaticPathsProvider` are skipped with a warning.
 - **Locale-prefixed trees** when `framework.WithLocalePrefixes` is enabled (`/es/...` alongside the default locale).
 - **Assets & metadata:** `/__gofastr/app.css`, per-component CSS, runtime JS, icons from `WithAppIcon`, `/sitemap.xml`, `/robots.txt`, `/llm-pages.md` and per-page `llm.md`, static files from `WithStaticDir`, PWA files (`WithPWA`), and `battery/sitesearch` shards.
-- **Custom contributors:** any battery implementing `static.Contributor` (`ExportStart`, `ExportPage`, `ExportFiles`) can write additional files alongside exported pages. A contributor file takes precedence over a static source file at the same path.
+- **Custom contributors:** any battery implementing `static.Contributor` (`ExportStart`, `ExportPage`, `ExportFiles`) can write additional files alongside exported pages. A contributor file takes precedence over a static source file at the same path. A `404.html` in the static source replaces the generated not-found page.
 
 ## What gets skipped
 

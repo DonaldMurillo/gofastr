@@ -565,3 +565,22 @@ func TestExportFollowsTrustedTypesSettings(t *testing.T) {
 		t.Errorf("a configured policy was rewritten: %q", got)
 	}
 }
+
+func TestStaticSource404ReplacesBuiltPage(t *testing.T) {
+	a := coreapp.NewApp("Own404")
+	a.SetDefaultLayout(coreapp.NewLayout("shell", coreapp.LayoutSpec{}, func(ctx context.Context, l *coreapp.LayoutTree) render.HTML {
+		return l.Primary()
+	}))
+	a.Register("/", &homeScreen{}, nil)
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "404.html"), []byte("OWN-404"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if _, err := (&Builder{Host: uihost.New(a, uihost.WithStaticDir(src)), OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := readOut(t, out, "404.html"); got != "OWN-404" {
+		t.Errorf("404.html is the generated page (%d bytes), want the static source copy", len(got))
+	}
+}
