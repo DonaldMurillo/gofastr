@@ -89,6 +89,95 @@ func TestScreenArticleDoesNotDuplicateSchema(t *testing.T) {
 	}
 }
 
+type articleWithPointerSchemaComp struct {
+	article *seo.Article
+}
+
+func (*articleWithPointerSchemaComp) Render() render.HTML { return render.Raw("<p>x</p>") }
+func (*articleWithPointerSchemaComp) ScreenArticle() app.ArticleMeta {
+	return app.ArticleMeta{Headline: "From Meta"}
+}
+func (c *articleWithPointerSchemaComp) ScreenSchema(ctx context.Context) []seo.Thing {
+	return []seo.Thing{c.article}
+}
+
+type asArticleWithPointerBundleComp struct {
+	article *seo.Article
+}
+
+func (*asArticleWithPointerBundleComp) Render() render.HTML { return render.Raw("<p>x</p>") }
+func (*asArticleWithPointerBundleComp) ScreenTitle(ctx context.Context) string {
+	return "From Title"
+}
+func (c *asArticleWithPointerBundleComp) ScreenSEO(ctx context.Context) SEO {
+	return SEO{Schema: []seo.Thing{c.article}}
+}
+
+func TestScreenArticleDoesNotDuplicatePointerSchema(t *testing.T) {
+	explicit := seo.NewArticle()
+	explicit.Headline = "From Pointer Schema"
+
+	t.Run("ScreenArticle with ScreenSchema pointer", func(t *testing.T) {
+		a := app.NewApp("ptr-dup")
+		a.Register("/p", &articleWithPointerSchemaComp{article: &explicit}, nil)
+		ds := New(a)
+
+		req := httptest.NewRequest("GET", "/p", nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		body := withoutPageMetadataMarkers(w.Body.String())
+
+		if c := strings.Count(body, `"@type":"Article"`); c != 1 {
+			t.Errorf("expected exactly 1 Article JSON-LD (explicit *seo.Article wins), got %d", c)
+		}
+		if !strings.Contains(body, `"headline":"From Pointer Schema"`) {
+			t.Errorf("expected the explicit *seo.Article headline to win")
+		}
+		if strings.Contains(body, `"headline":"From Meta"`) {
+			t.Errorf("synthesized Article should NOT duplicate the explicit *seo.Article")
+		}
+	})
+
+	t.Run("AsArticle with ScreenSEO pointer", func(t *testing.T) {
+		a := app.NewApp("ptr-bundle-dup")
+		a.Register("/p", &asArticleWithPointerBundleComp{article: &explicit}, nil, app.AsArticle())
+		ds := New(a)
+
+		req := httptest.NewRequest("GET", "/p", nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		body := withoutPageMetadataMarkers(w.Body.String())
+
+		if c := strings.Count(body, `"@type":"Article"`); c != 1 {
+			t.Errorf("expected exactly 1 Article JSON-LD (explicit *seo.Article wins), got %d", c)
+		}
+		if !strings.Contains(body, `"headline":"From Pointer Schema"`) {
+			t.Errorf("expected the explicit *seo.Article headline to win")
+		}
+		if strings.Contains(body, `"headline":"From Title"`) {
+			t.Errorf("synthesized Article should NOT duplicate the explicit *seo.Article")
+		}
+	})
+
+	t.Run("typed nil *seo.Article still synthesizes", func(t *testing.T) {
+		a := app.NewApp("ptr-nil")
+		a.Register("/p", &articleWithPointerSchemaComp{article: nil}, nil)
+		ds := New(a)
+
+		req := httptest.NewRequest("GET", "/p", nil)
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, req)
+		body := withoutPageMetadataMarkers(w.Body.String())
+
+		if c := strings.Count(body, `"@type":"Article"`); c != 1 {
+			t.Errorf("expected 1 synthesized Article JSON-LD for typed-nil *seo.Article, got %d", c)
+		}
+		if !strings.Contains(body, `"headline":"From Meta"`) {
+			t.Errorf("expected synthesized Article headline for typed-nil *seo.Article")
+		}
+	})
+}
+
 // Explicit ScreenSEO OG values are preserved. The article synthesis only
 // fills empty fields (Type stays "website", Title stays custom).
 type articleWithOGComp struct{}

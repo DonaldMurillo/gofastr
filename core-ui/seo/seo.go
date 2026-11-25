@@ -218,14 +218,19 @@ type Offer struct {
 // NewOffer returns an Offer with the envelope pre-filled.
 func NewOffer() Offer { return Offer{base: newBase("Offer")} }
 
-// Render writes one <script type="application/ld+json"> block per item, dropping URL fields urlsafe.Resource refuses.
+// Render writes one <script type="application/ld+json"> block per non-nil item,
+// dropping URL fields urlsafe.Resource refuses.
 func Render(items ...Thing) render.HTML {
 	if len(items) == 0 {
 		return render.HTML("")
 	}
 	var b strings.Builder
 	for _, it := range items {
-		scrubbed, _ := scrubUnsafeURLs(reflect.ValueOf(it))
+		v := reflect.ValueOf(it)
+		if !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil()) {
+			continue
+		}
+		scrubbed, _ := scrubUnsafeURLs(v)
 		body, err := json.Marshal(scrubbed.Interface())
 		if err != nil {
 			continue

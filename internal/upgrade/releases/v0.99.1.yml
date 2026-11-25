@@ -1,0 +1,15 @@
+version: v0.99.1
+title: Insert builder and config bounds validation
+notes:
+  - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
+    breaking: true
+    guidance: "Pass one value per column in the same order, or leave both lists empty for DEFAULT VALUES."
+    nodetect: "the column and value counts may come from slices assembled at runtime"
+  - change: "config.Load rejects validate tags whose highest min exceeds their lowest max, even in unset optional nested structs"
+    breaking: true
+    guidance: "Correct or remove conflicting min and max rules in your config struct tags. The highest min must be no greater than the lowest max, including on fields that your app does not currently bind."
+    nodetect: "The upgrade matchers do not inspect and compare parsed bounds in struct tags."
+  - change: "BREAKING - migration files with SQL before the first Up or Down section are rejected"
+    breaking: true
+    guidance: "The runner used to skip that SQL and could still record the migration as applied. If the migration has not been applied, move the SQL under -- +migrate Up (or -- +migrate Down for rollback SQL). If it has already been applied, remove the stray SQL from that file and put it in a new migration."
+    nodetect: "the statements and directives are in .sql migration files, not Go source"

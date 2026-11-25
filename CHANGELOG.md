@@ -44,6 +44,27 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **BREAKING:** `config.Load` now rejects `validate` tags whose highest
+  `min` exceeds their lowest `max`, even in unset optional nested structs.
+  Correct or remove the conflicting bounds before upgrading
+  ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
+
+- **BREAKING:** `InsertBuilder.Build` panics on mismatched column and
+  value counts instead of returning invalid SQL. Supply one value per
+  column, or leave both lists empty for `DEFAULT VALUES`. See
+  [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
+  ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
+
+- **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
+  honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
+
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
+
+- **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
+  panics on a nil interface or emits a `null` script for a typed-nil pointer
+  ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
+
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
@@ -52,6 +73,17 @@ few lines, and link the PR or the docs page for the rest.
   registration and for each queue on every run, so changing the caller's
   buffer or a dispatched job no longer changes other jobs
   ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
+- **Article JSON-LD deduplication for `*seo.Article` pointers.** Article
+  screens that return `&article` from `ScreenSchema` or `ScreenSEO` no
+  longer emit a second synthesized `Article` JSON-LD block
+  ([#902](https://github.com/DonaldMurillo/gofastr/pull/902)).
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
 
 ## [0.99.0] - 2026-11-25
 
@@ -240,6 +272,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Media-type matching is case-insensitive** for auth login redirects,
+  MCP SSE framing, Kiln's HTML fallback, the dev hold page, OpenAPI CLI
+  JSON pretty-printing, and browser RPC JSON responses.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.

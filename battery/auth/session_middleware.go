@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -213,7 +213,7 @@ func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if o.failHTMLPath != "" && wantsHTML(r) {
+			if o.failHTMLPath != "" && mediatype.AcceptsAny(r.Header.Get("Accept"), "text/html", "application/xhtml+xml") {
 				handler.NoteSessionRefusal(r.Context())
 				http.Redirect(w, r, o.failHTMLPath, http.StatusSeeOther)
 				return
@@ -233,18 +233,4 @@ type requireSessionOptions struct {
 // WithRedirectOnFail sends refused HTML requests to path with a 303 instead of a 401.
 func WithRedirectOnFail(path string) RequireSessionOption {
 	return func(o *requireSessionOptions) { o.failHTMLPath = path }
-}
-
-func wantsHTML(r *http.Request) bool {
-	accept := r.Header.Get("Accept")
-	for part := range strings.SplitSeq(accept, ",") {
-		part = strings.TrimSpace(part)
-		if i := strings.IndexByte(part, ';'); i >= 0 {
-			part = part[:i]
-		}
-		if part == "text/html" || part == "application/xhtml+xml" {
-			return true
-		}
-	}
-	return false
 }

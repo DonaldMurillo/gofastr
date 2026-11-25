@@ -1,7 +1,0 @@
-version: v0.100.0
-title: Pending release
-notes:
-  - change: "BREAKING - migration files with SQL before the first Up or Down section are rejected"
-    breaking: true
-    guidance: "The runner used to skip that SQL and could still record the migration as applied. If the migration has not been applied, move the SQL under -- +migrate Up (or -- +migrate Down for rollback SQL). If it has already been applied, remove the stray SQL from that file and put it in a new migration."
-    nodetect: "the statements and directives are in .sql migration files, not Go source"
