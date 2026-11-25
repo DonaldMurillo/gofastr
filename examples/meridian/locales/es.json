@@ -440,6 +440,7 @@
       "assignRefused": "No puedes asignar un rol superior al tuyo.",
       "attention": "Requiere atención",
       "attentionClear": "Nada requiere atención.",
+      "attentionIncomplete": "No se pudieron revisar todas las vistas vigiladas.",
       "attentionList": "{{entity}} · {{view}}",
       "audit": "Registro de auditoría",
       "auditAnyEntity": "Cualquier entidad",

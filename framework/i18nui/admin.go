@@ -67,9 +67,10 @@ var (
 	AdminNoActivity   = i18n.Define("ui.admin.noActivity", "No activity yet.")
 	AdminViewAll      = i18n.Define("ui.admin.viewAll", "View all")
 
-	AdminAttention      = i18n.Define("ui.admin.attention", "Needs attention")
-	AdminAttentionClear = i18n.Define("ui.admin.attentionClear", "Nothing needs attention.")
-	AdminAttentionList  = i18n.Define("ui.admin.attentionList", "{{entity}} · {{view}}")
+	AdminAttention           = i18n.Define("ui.admin.attention", "Needs attention")
+	AdminAttentionClear      = i18n.Define("ui.admin.attentionClear", "Nothing needs attention.")
+	AdminAttentionIncomplete = i18n.Define("ui.admin.attentionIncomplete", "Could not check every watched view.")
+	AdminAttentionList       = i18n.Define("ui.admin.attentionList", "{{entity}} · {{view}}")
 
 	AdminActivityLine      = i18n.Define("ui.admin.activityLine", "{{actor}} {{verb}} {{record}}")
 	AdminActivityBulkLine  = i18n.Define("ui.admin.activityBulkLine", "{{actor}} {{verb}} {{count}} {{entity}} in bulk")

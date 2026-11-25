@@ -5,6 +5,10 @@ code:
 docs:
   - framework/docs/content/admin.md
 invariants:
+  - id: attention-warns-on-failed-count
+    rule: When a watched view's count fails, the attention card warns that it could not check every watched view instead of saying nothing needs attention.
+    enforced_by:
+      - test: battery/admin.TestAttentionReportsFailedViewCount
   - id: admin-keeps-the-app-security-headers
     rule: Every answer under the admin prefix is no-store and carries every default security header, where a header the app's chain already set (its Content-Security-Policy included) keeps the app's value.
     enforced_by:
