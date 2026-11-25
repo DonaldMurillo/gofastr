@@ -78,6 +78,8 @@ if b, ok := qIface.(queue.Browsable); ok {
 
 `queue.NewScheduler(q)` enqueues recurring jobs on intervals (`Every`) or standard 5-field cron specs (`Cron(spec)`), reusing GoFastr's cron parser (`cron.Parse`) with vixie-cron DST semantics. Each job gets its own payload copy, so changing a job's payload doesn't affect other queues or later runs. For restart continuity and cross-replica occurrence deduplication, use `queue.DurableScheduler.Cron(id, spec)` (see [Cron](cron.md)).
 
+The in-memory scheduler copies `[]byte` and `json.RawMessage` payloads on `Register` or `RegisterAt`. You can reuse or modify the caller's buffer after registration without changing the jobs that the schedule dispatches.
+
 ## Redis backend and optional interfaces
 
 `queue.NewRedisQueue(client, queueName, opts...)` accepts a queue name string and any client implementing `queue.RedisClient` (no hardcoded Redis driver dependency). Adapters **must** translate their driver's empty-list sentinel (such as `redis.Nil`) to `queue.ErrRedisEmpty` so worker loops distinguish an empty queue from a backend outage.
