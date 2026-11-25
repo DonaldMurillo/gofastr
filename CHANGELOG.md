@@ -36,6 +36,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
+  honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
+
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
 
