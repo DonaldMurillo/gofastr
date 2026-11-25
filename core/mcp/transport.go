@@ -199,19 +199,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(encodeResponse(resp))
 }
 
-// ServeStdio answers newline-delimited JSON-RPC from in to out; it returns at EOF or with ctx's error once ctx ends.
+// ServeStdio answers newline-delimited JSON-RPC from in to out; it returns at EOF, with ctx's error once ctx ends,
+// or with the error of a reply it could not write.
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxMCPBodyBytes+2)
 	encoder := json.NewEncoder(out)
-	tooLong := func() {
-		encoder.Encode(Response{
+	tooLong := func() error {
+		return errors.Join(bufio.ErrTooLong, encoder.Encode(Response{
 			JSONRPC: "2.0",
 			Error: &RPCError{
 				Code:    ErrInvalidParams,
 				Message: fmt.Sprintf("request line exceeds %d bytes", maxMCPBodyBytes),
 			},
-		})
+		}))
 	}
 
 	lines := make(chan []byte)
@@ -246,14 +247,15 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 			continue
 		}
 		if len(line) > maxMCPBodyBytes {
-			tooLong()
-			return bufio.ErrTooLong
+			return tooLong()
 		}
 
 		var req Request
 		notification, errResp := decodeEnvelope(line, &req)
 		if errResp != nil {
-			_, _ = out.Write(encodeResponse(*errResp))
+			if _, err := out.Write(encodeResponse(*errResp)); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -262,12 +264,14 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		}
 
 		resp := s.HandleRequest(ctx, req)
-		_, _ = out.Write(encodeResponse(resp))
+		if _, err := out.Write(encodeResponse(resp)); err != nil {
+			return err
+		}
 	}
 
 	err := scanner.Err()
 	if errors.Is(err, bufio.ErrTooLong) {
-		tooLong()
+		return tooLong()
 	}
 	return err
 }
