@@ -38,7 +38,8 @@ few lines, and link the PR or the docs page for the rest.
 
 - **`App.Shutdown` waits for the erasure-retention sweep before stop hooks.**
   This prevents the sweep from racing SQLite cleanup during graceful shutdown.
-  If the shutdown context expires, teardown proceeds without waiting longer
+  If the wait reaches the shutdown deadline, teardown proceeds and
+  `Shutdown` reports the deadline error unless an earlier step failed
   ([#903](https://github.com/DonaldMurillo/gofastr/pull/903)).
 
 - **BREAKING:** `InsertBuilder.Build` panics on mismatched column and

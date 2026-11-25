@@ -836,6 +836,11 @@ func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 			return nil
 		})
 
+		stopped := false
+		app.OnStop(func() error {
+			stopped = true
+			return nil
+		})
 		run := make(chan error, 1)
 		go func() { run <- app.Run(context.Background(), ServicesHost()) }()
 		<-app.ServicesReady()
@@ -845,11 +850,14 @@ func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), budget)
 		defer cancel()
 		start := time.Now()
-		if err := app.Shutdown(ctx); err != nil {
-			t.Errorf("Shutdown: %v", err)
+		if err := app.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "retention sweep join abandoned after the shutdown deadline") {
+			t.Errorf("Shutdown: %v, want retention sweep join abandoned after the shutdown deadline: context deadline exceeded", err)
 		}
 		if elapsed := time.Since(start); elapsed != budget {
 			t.Errorf("Shutdown spent %s waiting on retention sweep, want %s", elapsed, budget)
+		}
+		if !stopped {
+			t.Error("Shutdown skipped OnStop after the retention sweep wait expired")
 		}
 		if err := <-run; err != nil {
 			t.Fatalf("Run: %v", err)

@@ -2229,6 +2229,9 @@ func (a *App) shutdown(ctx context.Context) error {
 	select {
 	case <-swept:
 	case <-ctx.Done():
+		if firstErr == nil {
+			firstErr = fmt.Errorf("retention sweep join abandoned after the shutdown deadline: %w", ctx.Err())
+		}
 	}
 	if a.processModules != nil {
 		_ = a.processModules.Drain(ctx)
