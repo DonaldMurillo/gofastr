@@ -84,7 +84,7 @@
   // break of a block per line and dropping a blank line's), else the
   // rendered text.
   function copyText(target) {
-    if (target.tagName === 'INPUT' && String(target.type).toLowerCase() === 'password') return '';
+    if (target.tagName === 'INPUT' && (target.type === 'password' || target.hasAttribute('data-hui-password'))) return '';
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return String(target.value || '');
     if (target.tagName === 'PRE') return target.textContent || '';
     return (target.innerText || target.textContent || '').trim();
