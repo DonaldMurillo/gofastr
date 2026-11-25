@@ -90,7 +90,7 @@ app.GroupEntity(v2.Group(), "posts", apiversions.ApplyToEntityConfig(basePostsCo
 
 ## Common mistakes
 
-- **Mixing `WithAPIPrefix` and `App.Group`:** `App.GroupEntity` mounts at the group's exact prefix and ignores `WithAPIPrefix`. Spell the full prefix on the group (`app.Group("/api/v1")`).
+- **Mixing `WithAPIPrefix` and `App.Group`:** `App.GroupEntity` mounts at the group's exact prefix and ignores `WithAPIPrefix`, and so do its OpenAPI paths and `CrudHandlerForEntity`'s `BasePath`: an entity in `app.Group("/")` is at `/items`, not `/api/items`. Spell the full prefix on the group (`app.Group("/api/v1")`).
 - **Omitting `routegroup.WithMCPNamespace` on versioned groups:** causes a duplicate MCP tool name panic on the second registration.
 - **Declaring incompatible types or security settings across versions of one entity:** `v1` and `v2` share one table, so column SQL types, `MultiTenant`, `OwnerField`, `SoftDelete`, and `Access` must match.
 - **Calling `apiversions.WithDeprecation` without `v1.Use(v1.DeprecationMiddleware())`:** configuring deprecation metadata does not emit `Deprecation`/`Sunset`/`Link` headers until the middleware is attached.

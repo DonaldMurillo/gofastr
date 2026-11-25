@@ -297,9 +297,10 @@ invariants:
       - test: framework.TestSweepApp3CrudHandlerForEntityRefusesLookalike
       - test: framework.TestMultiVersionCrudHandlerForEntity
   - id: crud-handler-base-path-is-mount
-    rule: A handler from CrudHandlerForEntity or App.View has the BasePath its routes are mounted under, the version for a versioned entity and the API prefix otherwise.
+    rule: A handler from CrudHandlerForEntity or App.View has the BasePath its routes are mounted under, the group's prefix for an entity registered through GroupEntity (the root group's empty prefix included) and the API prefix otherwise.
     enforced_by:
       - test: framework.TestMultiVersionCrudHandlerForEntity
+      - test: framework.TestRootGroupEntityIgnoresAPIPrefix
       - test: framework.TestSweepApp3CrudHandlerForEntityTakesAPIPrefix
       - test: framework.TestLLMIndexLinksUnderAPIPrefix
   - id: view-needs-record-key
