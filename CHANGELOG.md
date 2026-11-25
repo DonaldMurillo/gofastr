@@ -36,6 +36,17 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **BREAKING:** `config.Load` now rejects `validate` tags whose highest
+  `min` exceeds their lowest `max`, even in unset optional nested structs.
+  Correct or remove the conflicting bounds before upgrading
+  ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
+
+- **BREAKING:** `InsertBuilder.Build` panics on mismatched column and
+  value counts instead of returning invalid SQL. Supply one value per
+  column, or leave both lists empty for `DEFAULT VALUES`. See
+  [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
+  ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
+
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 

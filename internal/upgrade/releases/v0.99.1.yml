@@ -1,0 +1,11 @@
+version: v0.99.1
+title: Insert builder and config bounds validation
+notes:
+  - change: "BREAKING - InsertBuilder.Build panics on mismatched column and value counts"
+    breaking: true
+    guidance: "Pass one value per column in the same order, or leave both lists empty for DEFAULT VALUES."
+    nodetect: "the column and value counts may come from slices assembled at runtime"
+  - change: "config.Load rejects validate tags whose highest min exceeds their lowest max, even in unset optional nested structs"
+    breaking: true
+    guidance: "Correct or remove conflicting min and max rules in your config struct tags. The highest min must be no greater than the lowest max, including on fields that your app does not currently bind."
+    nodetect: "The upgrade matchers do not inspect and compare parsed bounds in struct tags."
