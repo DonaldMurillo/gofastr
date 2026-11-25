@@ -37,7 +37,7 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 
 - `App.Shutdown` stops waiting for a stuck outbox relay when the drain
-  deadline expires and reports the deadline error.
+  deadline expires and reports the deadline error. ([#907](https://github.com/DonaldMurillo/gofastr/pull/907))
 
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
