@@ -46,31 +46,21 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// refuses a non-string label or endpoint and copies only string
 		// RPC hooks (+32). 3176 measured + 2.
 		"framework/headless/feedback.js": 3178,
-		// framework/headless's disclosure and sortable list, each at the
-		// walk's line before the 2026-11-05 IME Escape fix: an Escape or
-		// key handler ignores a composition event (`isComposing` or
-		// keyCode 229, Safari's), so the key that ends composition never
-		// closes a disclosure or moves a sortable row. sortablelist 3089
-		// measured (2 clearance), pinned by TestIMEKeepsEscapeConsumers.
-		// The disclosure trap also skips negative-tabindex controls
+		// framework/headless's disclosure, at the walk's line before the
+		// 2026-11-05 IME Escape fix: an Escape handler ignores a
+		// composition event (`isComposing` or keyCode 229, Safari's), so
+		// the key that ends composition never closes a disclosure. The
+		// trap also skips negative-tabindex controls
 		// (TestTrapSkipsNegativeControls): 3094 measured with both, plus
-		// 2. Each is one module loaded only on a page carrying that
+		// 2. It is one module loaded only on a page carrying that
 		// pattern.
 		// TestTrapKeepsNestedTabOrder retains nested stops: 3174 + 2.
-		// TestSortableVersionRenews: a versioned list renews its token
-		// from the X-Gofastr-Sortable-Version header on a 2xx move and
-		// on a conflict refresh, so sequential moves stop conflicting:
-		// 3189 measured + 2.
 		// TestE2E_TrapHiddenByBreakpointLetsGo: a trap disclosure its
 		// sheet stops drawing while open (the phone menu past its
 		// breakpoint) closes and lets the page go, watched by a
 		// ResizeObserver per armed trap and asked again at each Tab:
 		// 3255 measured + 2. The trap and its release are one posture.
 		"framework/headless/disclosure.js": 3257,
-		// TestLintTrustedTypesSinks_RepoIsClean: a refreshed list is written
-		// through the runtime's Trusted Types policy, which the default CSP
-		// requires at every HTML sink: 3200 measured + 2.
-		"framework/headless/sortablelist.js": 3202,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed

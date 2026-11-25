@@ -43,10 +43,10 @@ func TestSameSignalTabsGetUniqueIDs(t *testing.T) {
 	ctx := render.WithIDScope(context.Background())
 	cfg := TabsConfig{SignalName: "view", Tabs: []TabItem{{Label: "One"}, {Label: "Two"}}, Ctx: ctx}
 	a, b := string(Tabs(cfg)), string(Tabs(cfg))
-	if !strings.Contains(a, `id="view-tab-0"`) || !strings.Contains(a, `aria-controls="view-panel-0"`) {
+	if !strings.Contains(a, `id="view-tab-0"`) || !strings.Contains(a, `id="view-panel-0"`) {
 		t.Errorf("first strip:\n%s", a)
 	}
-	if !strings.Contains(b, `id="view-2-tab-0"`) || !strings.Contains(b, `aria-controls="view-2-panel-0"`) || !strings.Contains(b, `id="view-2-panel-0"`) {
+	if !strings.Contains(b, `id="view-2-tab-0"`) || !strings.Contains(b, `aria-labelledby="view-2-tab-0"`) || !strings.Contains(b, `id="view-2-panel-0"`) {
 		t.Errorf("second strip:\n%s", b)
 	}
 }

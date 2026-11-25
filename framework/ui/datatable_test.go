@@ -152,8 +152,8 @@ func TestDataTableSortableColumnRendersClickableLink(t *testing.T) {
 	if q.Get("sort") != "name" || q.Get("dir") != "asc" {
 		t.Errorf("expected default-asc sort=name&dir=asc, got %+v", q)
 	}
-	if !strings.Contains(h, `aria-sort="none"`) {
-		t.Errorf("expected aria-sort=none on inactive sortable column, got: %s", h)
+	if strings.Contains(h, `aria-sort`) {
+		t.Errorf("an unsorted table's sortable column carries aria-sort; only the sorted column may: %s", h)
 	}
 }
 

@@ -2,10 +2,12 @@ package headless
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	xhtml "golang.org/x/net/html"
 )
 
 // Card parts.
@@ -14,6 +16,8 @@ const (
 	PartCardBody   Part = "card-body"
 	PartCardInner  Part = "card-inner"
 	PartCardAction Part = "card-action"
+	// PartCardTitleLink is the link TitleHref wraps the title's words in.
+	PartCardTitleLink Part = "card-title-link"
 )
 
 // CardProps configures a card.
@@ -26,6 +30,17 @@ type CardProps struct {
 	Footer       render.HTML
 	Action       render.HTML // a control at the header's end; refused with Href
 
+	// TitleHref links the title's words, the card's one link, which the
+	// styling layer can stretch over the whole card while the card's
+	// other controls stay reachable. Refused with Href, without a title,
+	// with a TitleContent holding a link, or for a URL the anchor policy
+	// refuses.
+	TitleHref string
+	// Article renders the root as an <article>: a card that stands on its
+	// own, one of a feed or a grid of items. Refused with Href, whose root
+	// is the link.
+	Article bool
+
 	ID         string // with a title, the title's id is "<ID>-title"
 	ExtraAttrs html.Attrs
 
@@ -37,6 +52,24 @@ type CardProps struct {
 func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 	if p.Action != "" && p.Href != "" {
 		panic("headless: Card Action and Href together nest a control inside the card's link")
+	}
+	if p.Article && p.Href != "" {
+		panic("headless: Card Article and Href together — a linked card's root is the link; give an article its link with TitleHref")
+	}
+	var titleHref string
+	if p.TitleHref != "" {
+		switch {
+		case p.Href != "":
+			panic("headless: Card TitleHref and Href together nest the title's link inside the card's link")
+		case p.Title == "" && p.TitleContent == "":
+			panic("headless: Card TitleHref needs a Title — the link's words are the title's")
+		case holdsInteractiveContent(string(p.TitleContent)):
+			panic("headless: Card TitleHref with a TitleContent that holds a link, a control or a tabindex nests interactive content in the title's link")
+		}
+		titleHref = urlsafe.CleanAnchor(p.TitleHref)
+		if titleHref == "" {
+			panic("headless: Card TitleHref " + strconv.Quote(p.TitleHref) + " is not a URL the anchor policy allows")
+		}
 	}
 	b := p.Parts.Box(s, PartCardHeader)
 	mark := p.Href == ""
@@ -52,11 +85,15 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			if title == "" {
 				title = render.Text(p.Title)
 			}
+			if titleHref != "" {
+				title = b.El("a", PartCardTitleLink, Attrs(map[string]string{"href": titleHref}), title)
+			}
 			var titleOwn html.Attrs
 			if p.ID != "" {
 				titleOwn = Attrs(map[string]string{"id": p.ID + "-title"})
 			}
-			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "", titleOwn), title))
+			// TitleContent is the caller's markup: a title holding it is never marked.
+			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "" && p.TitleContent == "", titleOwn), title))
 		}
 		if p.Desc != "" {
 			head = append(head, b.El("p", PartDesc, internalIf(mark && p.Action != "", nil), render.Text(p.Desc)))
@@ -85,13 +122,17 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 		inner := b.El("div", PartCardInner, innerOwn, kids...)
 		return b.El("a", PartRoot, own, inner)
 	}
-	return b.El("div", PartRoot, own, kids...)
+	tag := "div"
+	if p.Article {
+		tag = "article"
+	}
+	return b.El(tag, PartRoot, own, kids...)
 }
 
 func init() {
 	Register(Spec{
 		Name:     "Card",
-		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardAction, PartCardBody, PartCardInner, PartFooter},
+		Anatomy:  []Part{PartRoot, PartTitle, PartCardTitleLink, PartDesc, PartCardHeader, PartCardAction, PartCardBody, PartCardInner, PartFooter},
 		Fillable: []Part{PartCardHeader},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Card(CardProps{Title: "Deployments", Parts: parts}, s, render.Text("body"))
@@ -118,6 +159,12 @@ func init() {
 				HTML: Card(CardProps{Title: "Recent activity", Action: Button(ButtonProps{Label: "Audit log", Href: "/audit", Variant: "ghost"}, k.For("Button"))}, s,
 					render.HTML("<p>Ada created INV-1.</p>")),
 			}, {
+				Name: "an article whose title is its link",
+				Why:  "a card that is one item of a feed is an article, and its title carries the one link a styling layer stretches over the card, so the link's name is the title rather than every word on the card and the header action stays its own control",
+				HTML: Card(CardProps{Title: "Release 0.98", Desc: "Nov 23", TitleHref: "/blog/0-98", Article: true,
+					Action: Button(ButtonProps{Label: "Share", Variant: "ghost"}, k.For("Button"))}, s,
+					render.HTML("<p>Breadcrumbs, copy and cards.</p>")),
+			}, {
 				Name: "the whole card is the link",
 				Why:  "an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer",
 				HTML: Card(CardProps{Title: "blog", Desc: "2 vCPU, 4 GB", Href: "/apps/blog"}, s,
@@ -125,4 +172,41 @@ func init() {
 			}}
 		},
 	})
+}
+
+// interactiveTags are the elements an <a> may not hold: links,
+// controls and embedded media.
+var interactiveTags = map[string]bool{
+	"a": true, "button": true, "input": true, "select": true, "textarea": true, "label": true,
+	"details": true, "summary": true, "iframe": true, "embed": true, "object": true, "audio": true, "video": true,
+}
+
+// holdsInteractiveContent reports whether markup opens an element an <a>
+// may not hold, an image with a usemap, or gives any element a tabindex
+// or contenteditable attribute, with a value or without one. It tokenizes the markup, so a
+// quoted ">" or an attribute value that names one of these does not
+// mislead it, and words in the text are only text.
+func holdsInteractiveContent(markup string) bool {
+	z := xhtml.NewTokenizer(strings.NewReader(markup))
+	for {
+		switch z.Next() {
+		case xhtml.ErrorToken:
+			return false
+		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
+			name, hasAttr := z.TagName()
+			if interactiveTags[string(name)] {
+				return true
+			}
+			for hasAttr {
+				var key []byte
+				key, _, hasAttr = z.TagAttr()
+				k := string(key)
+				// An image with a usemap is interactive content (HTML's
+				// content categories); a plain image is not.
+				if k == "tabindex" || k == "contenteditable" || (k == "usemap" && string(name) == "img") {
+					return true
+				}
+			}
+		}
+	}
 }

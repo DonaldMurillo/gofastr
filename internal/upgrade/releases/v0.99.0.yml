@@ -1,7 +1,22 @@
 version: v0.99.0
-title: Pending release
+title: Trusted Types by default, CLI plugins, findable tabs and dependency security fixes
 notes:
   - change: "BREAKING - the default Content-Security-Policy enforces Trusted Types: require-trusted-types-for 'script'; trusted-types gofastr"
     breaking: true
     guidance: "App JavaScript that assigns a plain string to innerHTML, outerHTML or insertAdjacentHTML, calls DOMParser.parseFromString or document.write, or sets a created script's src now throws in browsers that support Trusted Types. Build the DOM with textContent or createElement, or create your own Trusted Types policy and list its name in SecurityHeadersConfig.TrustedTypesPolicies; SecurityHeadersConfig.NoTrustedTypes turns the directives off."
     nodetect: "the sinks are in the app's own JavaScript, often inside Go strings or templates, and whether a given write ever runs on a page the default policy covers depends on the app"
+  - change: "a carousel's Prev, Next and dots are type=button buttons, Prev and Next come before the track, and a rotating carousel draws a pause button (Strings.CarouselPause, i18n key ui.carousel.pause) after its dots"
+    guidance: "An end-to-end selector such as a[data-hui-carousel-next] or a[href^='#'] inside a carousel matches nothing now: select [data-hui-carousel-next] or button[data-hui-carousel-goto]. A translation catalog that must hold every ui.* key adds ui.carousel.pause. With script off the styled carousel no longer draws its arrows and dots; the track still scrolls."
+    nodetect: "the selectors live in browser tests and catalogs outside the app's Go source"
+  - change: "tab panels other than the active one render hidden=\"until-found\" and tabindex=-1, the tabs module adds aria-hidden to them, and tabs no longer carry aria-controls"
+    guidance: "A test that checks a tab panel's display or reads a tab's aria-controls finds neither now: check the panel's hidden attribute, and pair a panel with its tab through the panel's aria-labelledby. App CSS that sets a display on [role=tabpanel] would stop find-in-page from revealing it; remove it."
+    nodetect: "the selectors and assertions live in browser tests and stylesheets outside the app's Go source"
+  - change: "a sortable table header carries aria-sort only on the sorted column; the other sortable columns no longer say aria-sort=\"none\""
+    guidance: "A selector or assertion on th[aria-sort=\"none\"] matches nothing now: select the sort link inside the header instead."
+    nodetect: "the selectors live in browser tests and stylesheets outside the app's Go source"
+  - change: "a sortable list row is no longer draggable and no longer carries aria-grabbed; a pointer drags it by its grip (data-hui-sortable-grip) and the row moves once on release"
+    guidance: "A browser test that drove HTML5 drag events (dragstart, drop) on a row, or read aria-grabbed, drives pointer events on the grip now and reads the is-grabbed class."
+    nodetect: "the drag events and attributes are driven from browser tests outside the app's Go source"
+  - change: "ui.Breadcrumbs draws its separators with CSS; the aria-hidden separator spans are gone from its markup (headless.Breadcrumbs keeps them unless SeparatorsInCSS is set)"
+    guidance: "A test or stylesheet that selected the separator span inside ui.Breadcrumbs finds nothing now: the separator is the item's ::before content now."
+    nodetect: "the selectors live in browser tests and stylesheets outside the app's Go source"
