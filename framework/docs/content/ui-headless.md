@@ -54,6 +54,9 @@ GoFastr draws a strict boundary between document state and in-page state:
 
 Each interactive family ships a demand-loaded runtime module registered via `registry.RegisterBehavior` and armed automatically by the kernel on initial load, island swaps, and SPA navigations (`headless`, `headless-when`, `headless-validity`, `headless-controls`, `headless-collections`, `headless-wizard`, `headless-copy`, `headless-feedback`, `headless-bell`, `headless-selection-copy`, `headless-navigation`, `headless-rail`, `headless-toc`, `headless-disclosure`, `headless-menu`, `headless-combobox`, `headless-datepicker`, `headless-tabs`, `headless-carousel`, `headless-panehost`, `headless-sidebar`). Native `<dialog>` modals retain Escape and Tab focus trapping even when opened above an intercepted pane, and focus restores automatically after repeater row removal or toast dismissal.
 
+A `Card` with `TitleHref` accepts audio and video in `TitleContent` when the
+media has no `controls` attribute. Interactive content belongs outside the title link.
+
 ## Spec harness & golden tests
 
 Every exported component registers a `Spec` declaring its anatomy, fillable parts, published hooks, and test cases. The harness checks determinism, zero stray classes/inline styles at nil `Classes`, resolved `aria-*` references, no hardcoded English outside `Strings`, and golden parity:
