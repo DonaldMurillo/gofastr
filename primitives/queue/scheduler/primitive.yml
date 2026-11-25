@@ -11,10 +11,11 @@ docs:
   - framework/docs/content/queue.md
 invariants:
   - id: in-memory-schedule-owns-its-payload
-    rule: The in-memory scheduler snapshots byte payloads at registration without normalizing or validating them, so later changes to the caller's buffer do not change dispatched jobs.
+    rule: The in-memory scheduler copies byte payloads at registration and for each queue on each run without normalizing or validating them, so changes to the caller's buffer or to a dispatched payload cannot affect other jobs.
     enforced_by:
       - test: battery/queue.TestSchedulerCopiesPayloadOnRegister
       - test: battery/queue.TestSchedulerAcceptsEmptyAndNonJSONPayloads
+      - test: battery/queue.TestSchedulerDispatchOwnsPayload
   - id: interval-has-a-millisecond-floor
     rule: Both schedulers refuse a negative interval and a positive one below one millisecond.
     enforced_by:
