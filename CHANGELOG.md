@@ -36,6 +36,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
+
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
   panics on a nil interface or emits a `null` script for a typed-nil pointer
   ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
