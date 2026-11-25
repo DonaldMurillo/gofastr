@@ -168,17 +168,16 @@ func templateFromFiles(files map[string]string) Template {
 }
 
 func stripSubjectLine(subject, body string) (string, string) {
-	if subject != "" {
-		return subject, body
-	}
 	lines := strings.SplitN(body, "\n", 2)
 	after, ok := strings.CutPrefix(lines[0], "Subject: ")
 	if !ok {
 		return subject, body
 	}
-	after = strings.TrimSuffix(after, "\r")
-	if len(lines) > 1 {
-		return after, lines[1]
+	if subject == "" {
+		subject = strings.TrimSuffix(after, "\r")
 	}
-	return after, ""
+	if len(lines) > 1 {
+		return subject, lines[1]
+	}
+	return subject, ""
 }

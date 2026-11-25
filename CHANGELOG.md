@@ -30,6 +30,13 @@ few lines, and link the PR or the docs page for the rest.
   It now panics with a message naming the table instead of producing malformed
   SQL. Handle updates with no fields before calling `Build`.
 
+### Fixed
+
+- **Paired email templates no longer include the leading `Subject: ` line
+  in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
+  when a `.subject` file sets the subject
+  ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+
 ## [0.99.0] - 2026-11-25
 
 ### Added
