@@ -70,6 +70,11 @@ func TestRegisterBehaviorDuplicates(t *testing.T) {
 	mustPanic(t, "duplicate name", func() { RegisterBehavior("dup", "(()=>{ /* other */ })()", Markers("[data-x]")) })
 	mustPanic(t, "duplicate name", func() { RegisterBehavior("dup", "(()=>{})()", Markers("[data-z]")) })
 	mustPanic(t, "duplicate name", func() { RegisterBehavior("dup", "(()=>{})()", Markers("[data-x]"), LoadIdle()) })
+	mustPanic(t, "duplicate name", func() {
+		RegisterBehavior("dup", "(()=>{})()", Markers("[data-x]"), func(e *BehaviorEntry) {
+			e.Source = "(()=>{ /* other */ })()"
+		})
+	})
 }
 
 // A reserved name (an embedded runtime module's) is refused where it

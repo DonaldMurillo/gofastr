@@ -195,6 +195,10 @@ It returns `403` for non-GET/HEAD/OPTIONS requests with a form-forgeable content
 
 **Same-site hop pages:** Because session cookies are `SameSite=Strict`, top-level links arriving from another site (email, chat) omit the cookie. Handlers that need the cookie on arrival (OAuth callbacks, email verification, guarded pages under `auth.SessionMiddleware`) return a tiny same-origin hop page (`Refresh: 0;url=...` + Continue link) using `handler.NeedsSameSiteHop` / `handler.SameSiteHopTarget` so the browser reloads same-site with the cookie attached. See [auth.md](auth.md#a-link-from-another-site-into-a-guarded-page).
 
+For clients without `Sec-Fetch-Site`, `handler.SameSiteHopTarget` puts
+`gofastr_hop=1` in the target's query, before any fragment, so the server
+can recognize the reload.
+
 ### Resource isolation
 
 Opt-in: `framework.WithResourceIsolation(allow)` refuses, with `403`, any request whose `Sec-Fetch-Site` names another origin (a same-site sibling included) unless it is a `GET`/`HEAD` navigation into a page or frame: a `<script>`, `<img>`, `fetch()`, form post or `<object>` from another site. Requests with no Fetch Metadata (curl, crawlers, older browsers) pass, the embed loader is always admitted, and every answer varies on the three `Sec-Fetch-*` headers so a shared cache cannot serve an allowed copy to a refused request. Admit CORS APIs, browser-called webhooks and OAuth `form_post` callbacks with `allow`:

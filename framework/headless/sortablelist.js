@@ -37,6 +37,7 @@
 // is ever written; the grabbed, dragging and drop states are classes.
 (function () {
   'use strict';
+  /* gofastr:json-response-check */
   const NAME = 'headless-sortablelist';
   const NS = window.__gofastr = window.__gofastr || {};
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
@@ -144,7 +145,7 @@
   // ~300 chars; malformed/oversized/empty → cb('') so the caller falls
   // back to the generic copy.
   function conflictMessage(res, cb) {
-    if (!(res.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) return cb('');
+    if (!isJSON(res)) return cb('');
     readBounded(res, 4096, (txt) => {
       // An empty or malformed body throws in the parse: generic copy.
       try {
