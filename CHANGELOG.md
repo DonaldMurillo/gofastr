@@ -26,6 +26,11 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Paired email templates no longer include the leading `Subject: ` line
+  in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
+  when a `.subject` file sets the subject
+  ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+
 #### Fixes that may need a change in your app
 
 - Config fields with repeated `min` or `max` tags now enforce the strictest
