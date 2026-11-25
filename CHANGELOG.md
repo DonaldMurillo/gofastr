@@ -38,7 +38,8 @@ few lines, and link the PR or the docs page for the rest.
 
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
-  Correct or remove the conflicting bounds before upgrading ([#PR](...)).
+  Correct or remove the conflicting bounds before upgrading
+  ([#904](https://github.com/DonaldMurillo/gofastr/pull/904)).
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
