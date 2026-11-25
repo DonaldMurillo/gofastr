@@ -234,7 +234,7 @@
     }
     if (!host) return;
     ev.preventDefault();
-    if (!host.disabled) form.requestSubmit(host);
+    if (!host.disabled) HTMLFormElement.prototype.requestSubmit.call(form, host);
   });
 
   // ─── the arrival pass ────────────────────────────────────────────
