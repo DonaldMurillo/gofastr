@@ -24,6 +24,16 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+
+- **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
+  `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
+  `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
+  `TestActionsArePinnedBySHA` holds every external `uses:` to one commit
+  SHA per action with a `# vN` comment. The Pages job no longer writes
+  `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
+  v5 leaves dotfiles out.
+
 ### Fixed
 
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
@@ -34,6 +44,17 @@ few lines, and link the PR or the docs page for the rest.
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
   ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+- **In-memory scheduler payloads.** The scheduler copies the payload at
+  registration and for each queue on every run, so changing the caller's
+  buffer or a dispatched job no longer changes other jobs
+  ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
+
+#### Fixes that may need a change in your app
+
+- Config fields with repeated `min` or `max` tags now enforce the strictest
+  bounds. A float value or string length that passed only because a later tag
+  was looser now fails `Load`. Check the configured value against the strictest
+  bounds, or update the tags to match the range you intend to accept.
 
 ## [0.99.0] - 2026-11-25
 
