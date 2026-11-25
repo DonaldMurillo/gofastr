@@ -106,7 +106,7 @@
   // Mirrors the feedback module's copy path: blank then set text after
   // ~30ms so AT re-reads. raw is a server-provided message (the bounded
   // 409 detail), said as it is; every other sentence is the list's own.
-  function announce(list, key, map, raw) {
+  function announce(list, key, map, raw, seq) {
     let live = document.getElementById('hui-sortable-live');
     if (!live) {
       live = document.createElement('div');
@@ -117,7 +117,7 @@
     }
     const msg = raw || fill(attr(list, key), map || {});
     live.textContent = '';
-    setTimeout(() => { live.textContent = msg; }, 30);
+    setTimeout(() => { if (!seq || seq === list.__huiSeq) live.textContent = msg; }, 30);
   }
 
   // readBounded: read at most `max` chars from res's body via the
@@ -189,12 +189,14 @@
     // outcome is announced.
     const record = (ok) => lists.map((l, i) => {
       l.__huiN--;
+      const latest = mine[i] === l.__huiSeq;
+      if (!ok && !latest) return false;
       if (ok && mine[i] > (l.__huiOk || 0)) { l.__huiAck = sent[i]; l.__huiOk = mine[i]; }
-      if (!ok && mine[i] === l.__huiSeq) l.__huiBad = mine[i];
+      if (!ok) l.__huiBad = mine[i];
       if (l.__huiBad === l.__huiSeq) putBack(l, l.__huiAck);
-      return mine[i] === l.__huiSeq;
+      return latest;
     }).every(Boolean);
-    const fail = (key) => { if (record(false) && key) announce(dest, key); };
+    const fail = (key) => { if (record(false) && key) announce(dest, key, null, null, mine[0]); };
     p.then((res) => {
       // A followed 3xx (an expired session sent the commit to the
       // sign-in page) is another URL's 200, not this commit's: the
@@ -212,14 +214,17 @@
       }
       const is409 = res && res.status === 409;
       if (!is409 || !was) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
+      const ownsDest = () => mine[0] === dest.__huiSeq;
+      if (!ownsDest()) return record(false);
       conflictMessage(res, (msg) => {
+        if (!ownsDest()) return record(false);
         const crpc = attr(dest, 'data-hui-sortable-conflict');
         // A real server message is the announcement AND an error
         // toast — the live region is visually hidden, so without the
         // toast a sighted reader learns nothing of the conflict. The
         // generic copies never toast, and a message replaces them the
         // way the retired module's finishConflict did.
-        if (msg) { announce(dest, '', 0, msg); fireToast(msg); }
+        if (msg) { announce(dest, '', null, msg, mine[0]); fireToast(msg, ownsDest); }
         const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
         if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
         let next = '';
@@ -235,14 +240,15 @@
             return r.text();
           })
           .then((html) => {
+            if (!ownsDest()) return record(false);
             // The fresh rows are the server's order: the destination
             // confirms them, and the record puts the source back.
             dest.innerHTML = NS._html?.(html) ?? html;
             if (next) dest.setAttribute(VERSION, next);
             dest.__huiAck = rowsOf(dest);
-            dest.__huiOk = dest.__huiSeq;
+            dest.__huiOk = mine[0];
             record(false);
-            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed');
+            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed', null, null, mine[0]);
           }, () => fail(reverted));
       });
     }, () => fail('data-hui-sortable-s-reverted'));
@@ -257,9 +263,9 @@
   // with no kernel (a bare test page): the live region stays the
   // always-on surface, this is the one a sighted reader sees. Never
   // called with the generic copy.
-  function fireToast(msg) {
+  function fireToast(msg, ownsDest) {
     NS.loadModule?.('headless-feedback').then(() => {
-      NS.toast?.({ variant: 'danger', title: msg, ttl: 6000 });
+      if (ownsDest()) NS.toast?.({ variant: 'danger', title: msg, ttl: 6000 });
     }, () => {});
   }
 

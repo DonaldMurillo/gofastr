@@ -153,6 +153,72 @@ func domOrder(t *testing.T, ctx context.Context, col string) string {
 	})()`, col))
 }
 
+func TestSortableIgnoresLateConflictRefresh(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		first, next chromedp.Action
+	}{
+		{"keyboard conflict", kbReorder("a"), dispatchDrag("a", "c")},
+		{"pointer conflict", dispatchDrag("a", "b"), kbReorder("a")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			board := &versionBoard{cols: map[string][]string{"a": {"a", "b", "c"}}, version: 1}
+			stale := SortableItems(SortableListProps{Items: board.rows("a")}, nil)
+			refreshStarted, releaseRefresh := make(chan struct{}), make(chan struct{})
+			release := sync.OnceFunc(func() { close(releaseRefresh) })
+			server := startBehaviorServer(t, sortableLayout+board.list("a", true, false), func(mux *http.ServeMux) {
+				mux.HandleFunc("/move", func(w http.ResponseWriter, r *http.Request) {
+					if r.FormValue("version") != "v1" {
+						http.Error(w, "unexpected version", http.StatusBadRequest)
+						return
+					}
+					switch r.FormValue("order") {
+					case "b,a,c":
+						w.WriteHeader(http.StatusConflict)
+					case "b,c,a":
+						RenewSortableVersion(w, "v2")
+						w.WriteHeader(http.StatusNoContent)
+					default:
+						http.Error(w, "unexpected order", http.StatusBadRequest)
+					}
+				})
+				mux.HandleFunc("/conflict", func(w http.ResponseWriter, r *http.Request) {
+					close(refreshStarted)
+					<-releaseRefresh
+					RenewSortableVersion(w, "v1")
+					fmt.Fprint(w, stale)
+				})
+			})
+			defer release()
+			ctx := behaviorPage(t, server)
+			if !pollTrue(ctx, sortableLoaded) {
+				t.Fatal("sortable module never loaded")
+			}
+			if err := chromedp.Run(ctx, tc.first); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-refreshStarted:
+			case <-time.After(4 * time.Second):
+				t.Fatal("conflict refresh never reached the server")
+			}
+			if err := chromedp.Run(ctx, tc.next); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, `document.querySelector('[data-hui-sortable-version="v2"]') !== null`) {
+				t.Fatal("newer move never saved")
+			}
+			release()
+			if !pollTrue(ctx, `document.querySelector('[data-hui-sortable]').__huiN === 0`) {
+				t.Fatal("conflict refresh never settled")
+			}
+			if got := domOrder(t, ctx, "a"); got != "b,c,a@v2" {
+				t.Fatalf("after the stale refresh the list shows %q, want b,c,a@v2", got)
+			}
+		})
+	}
+}
+
 // A versioned list saves move after move: each 2xx renews the token,
 // so the next commit sends the version the server holds. An
 // unversioned list is the control (it never sends one), and a server
