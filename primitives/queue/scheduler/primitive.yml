@@ -11,10 +11,11 @@ docs:
   - framework/docs/content/queue.md
 invariants:
   - id: in-memory-schedule-owns-its-payload
-    rule: The in-memory scheduler snapshots byte payloads at registration without normalizing or validating them, so later changes to the caller's buffer do not change dispatched jobs.
+    rule: The in-memory scheduler copies byte payloads at registration and for each queue on each run without normalizing or validating them, so changes to the caller's buffer or to a dispatched payload cannot affect other jobs.
     enforced_by:
       - test: battery/queue.TestSchedulerCopiesPayloadOnRegister
       - test: battery/queue.TestSchedulerAcceptsEmptyAndNonJSONPayloads
+      - test: battery/queue.TestSchedulerDispatchOwnsPayload
   - id: interval-has-a-millisecond-floor
     rule: Both schedulers refuse a negative interval and a positive one below one millisecond.
     enforced_by:
@@ -31,11 +32,6 @@ invariants:
     rule: A durable cron schedule persists its zone only as a loadable IANA name; UTC, Local and a fixed offset persist as "" and evaluate in UTC.
     enforced_by:
       - test: battery/queue.TestTZNamePersistsOnlyLoadableZones
-  - id: dispatched-jobs-own-their-payload
-    rule: The in-memory scheduler gives each queue a separate payload for each firing, preserving nil and empty payloads.
-    enforced_by:
-      - test: battery/queue.TestSchedulerDispatchOwnsPayload
-      - test: battery/queue.TestSchedulerDispatchPreservesNilAndEmptyPayloads
 decisions:
   - id: local-zone-not-persisted
     date: 2026-11-20

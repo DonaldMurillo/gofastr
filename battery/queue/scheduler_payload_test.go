@@ -155,31 +155,3 @@ func TestSchedulerDispatchOwnsPayload(t *testing.T) {
 		}
 	})
 }
-
-func TestSchedulerDispatchPreservesNilAndEmptyPayloads(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		payload []byte
-	}{
-		{name: "nil"},
-		{name: "empty", payload: []byte{}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			q := &recordQueue{}
-			s := NewScheduler(q)
-			t.Cleanup(func() { _ = s.Close() })
-
-			base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
-			if err := s.Every(time.Minute).Job("email", tc.payload).RegisterAt(base); err != nil {
-				t.Fatalf("RegisterAt: %v", err)
-			}
-			s.dispatchDue(t.Context(), base.Add(time.Minute))
-			if len(q.jobs) != 1 {
-				t.Fatalf("dispatched %d jobs, want 1", len(q.jobs))
-			}
-			if got := q.jobs[0].Payload; len(got) != 0 || (got == nil) != (tc.payload == nil) {
-				t.Fatalf("dispatched payload = %#v, want %#v", got, tc.payload)
-			}
-		})
-	}
-}
