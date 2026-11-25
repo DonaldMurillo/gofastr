@@ -79,6 +79,7 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 - **What:** Typed struct config loader (`config.Load(&cfg)`) reading `config:`, `default:`, `required:`, `sensitive:`, and `validate:` (`min`, `max`, `oneof`) tags from `EnvSource` or `MapSource`.
 - **Use:** Direct at startup. Start at `core/config/config.go` (`Load`).
 - **Key contracts:** Named nested structs get `SCREAMING_SNAKE_` prefixes; embedded structs promote keys without a prefix (like `encoding/json`); `encoding.TextUnmarshaler` fields bind via `UnmarshalText`; `sensitive` values are redacted from all error strings; integer overflow fails `Load`.
+- **Bounds validation:** Repeated `min` or `max` rules use the highest minimum and lowest maximum, regardless of tag order. Both endpoints are included. String bounds count Unicode code points, not bytes.
 
 ### `core/netguard`
 - **What:** Shared SSRF & origin checks: `IsInternal` (loopback, private, link-local, CGNAT, metadata, IPv4-mapped/NAT64/6to4/Teredo), `GuardedTransport` (ignores `HTTP_PROXY`/`HTTPS_PROXY` so dial-time checks aren't bypassed), `GuardPlainTransport`, `GuardRoundTripper`, `CheckOutboundURL`, `OriginAllowed`, and `IsLoopbackAuthority`.

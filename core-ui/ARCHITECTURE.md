@@ -3529,6 +3529,7 @@ core-ui/
                  at SSR; the server-declared reactive-value primitive
   island/      : runtime-side island manager
   seo/         : typed Schema.org structs → JSON-LD blocks for rich results
+                 (nil interfaces and typed-nil pointers emit no block)
   urlsafe/     : the single URL-scheme allow-list every URL sink runs through
   runtime/     : runtime.js (client) + Go embed wrapper
   runtime/src/ : code-split runtime modules (loaded on demand):
