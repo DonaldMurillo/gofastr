@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,6 +44,50 @@ func TestDocumentedValidationTags(t *testing.T) {
 		if Load(&c, src) == nil {
 			t.Fatalf("accepted %v", src)
 		}
+	}
+}
+
+func TestRepeatedFloatBounds(t *testing.T) {
+	for _, order := range []struct {
+		name string
+		cfg  any
+	}{
+		{"strict-first", &struct {
+			Limit float64 `validate:"min=0.5,max=2.5,min=0,max=3"`
+		}{}},
+		{"strict-last", &struct {
+			Limit float64 `validate:"min=0,max=3,min=0.5,max=2.5"`
+		}{}},
+	} {
+		for _, tc := range []struct {
+			value string
+			want  string
+		}{
+			{"0.25", "must be at least 0.5"},
+			{"0.5", ""},
+			{"2.5", ""},
+			{"2.75", "must be at most 2.5"},
+		} {
+			t.Run(order.name+"/"+tc.value, func(t *testing.T) {
+				err := Load(order.cfg, MapSource{"LIMIT": tc.value})
+				if tc.want == "" {
+					if err != nil {
+						t.Fatalf("Load() = %v, want success", err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("Load() = %v, want error containing %q", err, tc.want)
+				}
+			})
+		}
+	}
+}
+
+func TestRepeatedStringBoundsKeepLast(t *testing.T) {
+	var c struct {
+		Name string `validate:"min=4,max=2,min=1,max=5"`
+	}
+	if err := Load(&c, MapSource{"NAME": "abc"}); err != nil {
+		t.Fatalf("Load() = %v, want success under last string bounds", err)
 	}
 }
 

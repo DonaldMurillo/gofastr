@@ -759,13 +759,23 @@ func validateTags(v reflect.Value, tag string) error {
 			return fmt.Errorf("must be at least %s", r.arg)
 		case isInt && r.key == "max" && v.Int() > r.intBound:
 			return fmt.Errorf("must be at most %s", r.arg)
-		case !isInt && r.key == "min":
-			f.Min = &r.bound
-		case !isInt && r.key == "max":
-			f.Max = &r.bound
+		case !isInt:
+			applySchemaBound(&f, r)
 		}
 	}
 	return schema.Validate(f, value)
+}
+
+func applySchemaBound(f *schema.Field, r valueRule) {
+	minimum := r.key == "min"
+	bound := &f.Max
+	if minimum {
+		bound = &f.Min
+	}
+	if f.Type == schema.Float && *bound != nil && (minimum && r.bound < **bound || !minimum && r.bound > **bound) {
+		return
+	}
+	*bound = &r.bound
 }
 
 func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {

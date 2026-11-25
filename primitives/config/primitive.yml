@@ -108,6 +108,11 @@ invariants:
       - test: core/config.TestUnappliableValidationRulesRefused
       - test: core/config.TestSweepConfigUnknownRuleRefused
       - test: core/config.TestUnboundFieldRuleRefused
+      - test: core/config.TestRepeatedStringBoundsKeepLast
+  - id: strictest-float-bounds-win
+    rule: Repeated float bounds use the highest minimum and the lowest maximum, inclusive, regardless of tag order.
+    enforced_by:
+      - test: core/config.TestRepeatedFloatBounds
   - id: validator-hook-runs
     rule: A config that implements ConfigValidator has Validate called after binding, and its error fails Load and MustLoad.
     enforced_by:
