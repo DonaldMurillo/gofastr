@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +128,63 @@ func TestRepeatedBounds(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestContradictoryBounds(t *testing.T) {
+	for _, kind := range []struct {
+		name                         string
+		typ                          reflect.Type
+		low, max, min, high, atLimit string
+	}{
+		{"string", reflect.TypeFor[string](), "1", "2", "3", "4", "ééé"},
+		{"int", reflect.TypeFor[int](), "1", "2", "3", "4", "3"},
+		{"int64", reflect.TypeFor[int64](), "1", "9007199254740992", "9007199254740993", "9007199254740994", "9007199254740993"},
+		{"duration", reflect.TypeFor[time.Duration](), "1s", "9007199254740992ns", "9007199254740993ns", "9007199254740994ns", "9007199254740993ns"},
+		{"float", reflect.TypeFor[float64](), "0.5", "1.5", "2.5", "3.5", "2.5"},
+	} {
+		strict := "min=" + kind.min + ",max=" + kind.max
+		loose := "min=" + kind.low + ",max=" + kind.high
+		for _, tc := range []struct {
+			name, tag string
+			invalid   bool
+		}{
+			{"single", strict, true},
+			{"strict-first", strict + "," + loose, true},
+			{"strict-last", loose + "," + strict, true},
+			{"equal", loose + ",min=" + kind.min + ",max=" + kind.min, false},
+		} {
+			t.Run(kind.name+"/"+tc.name, func(t *testing.T) {
+				typ := reflect.StructOf([]reflect.StructField{{
+					Name: "Limit",
+					Type: kind.typ,
+					Tag:  reflect.StructTag(`validate:"` + tc.tag + `"`),
+				}})
+				err := Load(reflect.New(typ).Interface(), MapSource{"LIMIT": kind.atLimit})
+				if !tc.invalid {
+					if err != nil {
+						t.Fatalf("equal bounds refused: %v", err)
+					}
+					return
+				}
+				want := "config: field Limit: min=" + kind.min + " exceeds max=" + kind.max
+				if err == nil || err.Error() != want {
+					t.Fatalf("Load = %v, want %q", err, want)
+				}
+			})
+		}
+	}
+	t.Run("unbound-nested", func(t *testing.T) {
+		var cfg struct {
+			Optional *struct {
+				Limit int `validate:"min=3,max=2"`
+			}
+		}
+		err := Load(&cfg, MapSource{})
+		const want = "config: field Limit: min=3 exceeds max=2"
+		if err == nil || err.Error() != want {
+			t.Fatalf("Load = %v, want %q", err, want)
+		}
+	})
 }
 
 func TestValidationTagsCheckUnboundDefaults(t *testing.T) {

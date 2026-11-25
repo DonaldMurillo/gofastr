@@ -36,6 +36,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **BREAKING:** `config.Load` now rejects `validate` tags whose highest
+  `min` exceeds their lowest `max`, even in unset optional nested structs.
+  Correct or remove the conflicting bounds before upgrading ([#PR](...)).
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject

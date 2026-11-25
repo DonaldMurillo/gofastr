@@ -1,0 +1,7 @@
+version: v0.100.0
+title: Config bounds validation
+notes:
+  - change: "config.Load rejects validate tags whose highest min exceeds their lowest max, even in unset optional nested structs"
+    breaking: true
+    guidance: "Correct or remove conflicting min and max rules in your config struct tags. The highest min must be no greater than the lowest max, including on fields that your app does not currently bind."
+    nodetect: "The upgrade matchers do not inspect and compare parsed bounds in struct tags."
