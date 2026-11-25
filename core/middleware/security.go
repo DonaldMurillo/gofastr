@@ -100,7 +100,7 @@ func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 			h := w.Header()
 			h.Set("Content-Security-Policy", csp)
 			if reportingEndpoints != "" {
-				h.Set("Reporting-Endpoints", mergeReportingEndpoints(h.Get("Reporting-Endpoints"), reportingEndpoints))
+				addReportingEndpoint(h, reportingEndpoints)
 			}
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("Referrer-Policy", referrer)
@@ -168,20 +168,31 @@ func withCSPReporting(csp, uri string) string {
 	return strings.Join(parts, ", ")
 }
 
-// mergeReportingEndpoints adds ours to an endpoint list an outer handler set,
-// unless that list already defines CSPReportEndpoint.
-func mergeReportingEndpoints(existing, ours string) string {
-	existing = strings.TrimSpace(existing)
-	if existing == "" {
-		return ours
+func addReportingEndpoint(h http.Header, endpoint string) {
+	const header = "Reporting-Endpoints"
+	values := h.Values(header)
+	lines := slices.DeleteFunc(values, func(line string) bool {
+		return strings.TrimSpace(line) == ""
+	})
+	if len(lines) != len(values) {
+		h[header] = lines
 	}
-	for _, member := range splitOutsideQuotes(existing) {
-		name, _, _ := strings.Cut(strings.TrimSpace(member), "=")
-		if strings.TrimSpace(name) == CSPReportEndpoint {
-			return existing
+	for _, line := range lines {
+		for _, member := range splitOutsideQuotes(line) {
+			name, _, _ := strings.Cut(strings.TrimSpace(member), "=")
+			if strings.TrimSpace(name) == CSPReportEndpoint {
+				return
+			}
 		}
 	}
-	return existing + ", " + ours
+	if len(lines) == 1 {
+		if existing := strings.TrimSpace(lines[0]); existing != "" {
+			endpoint = existing + ", " + endpoint
+		}
+		h.Set(header, endpoint)
+		return
+	}
+	h.Add(header, endpoint)
 }
 
 // splitOutsideQuotes splits a structured-field dictionary at the commas
