@@ -28,7 +28,8 @@ few lines, and link the PR or the docs page for the rest.
 
 - **`query.UpdateBuilder.Build` requires at least one `Set` assignment.**
   It now panics with a message naming the table instead of producing malformed
-  SQL. Handle updates with no fields before calling `Build`.
+  SQL. Handle updates with no fields before calling `Build`
+  ([#887](https://github.com/DonaldMurillo/gofastr/pull/887)).
 
 ### Fixed
 
