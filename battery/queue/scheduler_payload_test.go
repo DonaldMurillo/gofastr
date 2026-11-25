@@ -122,3 +122,36 @@ func TestEmptyPayloadMeansNull(t *testing.T) {
 		})
 	}
 }
+
+func TestSchedulerDispatchOwnsPayload(t *testing.T) {
+	first, second := &recordQueue{}, &recordQueue{}
+	s := NewScheduler(first, second)
+	t.Cleanup(func() { _ = s.Close() })
+
+	const want = `{"v":"A"}`
+	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	if err := s.Every(time.Minute).Job("email", want).RegisterAt(base); err != nil {
+		t.Fatalf("RegisterAt: %v", err)
+	}
+	s.dispatchDue(t.Context(), base.Add(time.Minute))
+	if len(first.jobs) != 1 || len(second.jobs) != 1 {
+		t.Fatalf("first tick dispatched %d and %d jobs, want one per queue", len(first.jobs), len(second.jobs))
+	}
+	first.jobs[0].Payload[6] = 'Z'
+
+	t.Run("other-queue", func(t *testing.T) {
+		if got := string(second.jobs[0].Payload); got != want {
+			t.Fatalf("other queue's payload = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("next-tick", func(t *testing.T) {
+		s.dispatchDue(t.Context(), base.Add(2*time.Minute))
+		if len(first.jobs) != 2 {
+			t.Fatalf("two ticks dispatched %d jobs to the first queue, want 2", len(first.jobs))
+		}
+		if got := string(first.jobs[1].Payload); got != want {
+			t.Fatalf("next tick's payload = %q, want %q", got, want)
+		}
+	})
+}

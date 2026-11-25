@@ -30,6 +30,10 @@ few lines, and link the PR or the docs page for the rest.
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
   when a `.subject` file sets the subject
   ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+- **In-memory scheduler payloads.** The scheduler copies the payload at
+  registration and for each queue on every run, so changing the caller's
+  buffer or a dispatched job no longer changes other jobs
+  ([#896](https://github.com/DonaldMurillo/gofastr/pull/896)).
 
 #### Fixes that may need a change in your app
 
