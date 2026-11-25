@@ -44,3 +44,26 @@ func TestInsertDefaultValues(t *testing.T) {
 		t.Fatalf("default insert SQL = %s, args=%v", got, args)
 	}
 }
+
+func TestInsertMismatchedCountsPanics(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		builder *InsertBuilder
+		want    string
+	}{
+		{"columns only", Insert("users").Columns("a"), "query: INSERT users has mismatched Columns and Values counts (1 columns, 0 values)"},
+		{"values only", Insert("users").Values(1), "query: INSERT users has mismatched Columns and Values counts (0 columns, 1 values)"},
+		{"fewer values", Insert("users").Columns("a", "b").Values(1), "query: INSERT users has mismatched Columns and Values counts (2 columns, 1 values)"},
+		{"more values", Insert("users").Columns("a").Values(1, 2).Returning("id"), "query: INSERT users has mismatched Columns and Values counts (1 columns, 2 values)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sql string
+			defer func() {
+				if got := recover(); got != tc.want {
+					t.Fatalf("Build panic = %#v, want %q (SQL = %q)", got, tc.want, sql)
+				}
+			}()
+			sql, _ = tc.builder.Build()
+		})
+	}
+}
