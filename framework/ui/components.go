@@ -1005,6 +1005,7 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			Target:       "#" + bodyID,
 			Label:        i18nui.CodeBlockCopy.Text(ctx),
 			CopiedLabel:  i18nui.CodeBlockCopied.Text(ctx),
+			FailedLabel:  i18nui.CodeBlockNotCopied.Text(ctx),
 			AnnounceText: i18nui.CopyCopied.Text(ctx),
 			AriaLabel:    copyName,
 			Ctx:          ctx,

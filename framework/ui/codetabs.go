@@ -105,8 +105,13 @@ func codeTabsCSS(_ style.Theme) string {
 	b.WriteString(`
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {
   display: flex;
-  flex-wrap: wrap;
-  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  /* The rule is an inset shadow, not a border: a scroll container clips
+     what lies outside its padding box, so the selected tab's underline
+     could no longer overlap a border; it paints over this instead. */
+  box-shadow: inset 0 calc(-1 * var(--stroke-thin, 1px)) 0 var(--color-border, #E4E4E7);
   margin-bottom: 0;
 }
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__tab {
@@ -117,7 +122,6 @@ func codeTabsCSS(_ style.Theme) string {
   font-size: var(--text-base, 1rem);
   color: var(--color-text-muted, #52525B);
   border-bottom: var(--stroke-thick, 2px) solid transparent;
-  margin-bottom: -1px; /* overlap the strip's 1px border-bottom */
   transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   white-space: nowrap;
   text-decoration: none;
@@ -132,12 +136,10 @@ func codeTabsCSS(_ style.Theme) string {
   padding-top: var(--spacing-md, 8px);
   min-width: 0;
 }
-[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none; max-inline-size: 100%; }
+[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { max-inline-size: 100%; }
 `)
 	for i := range headless.TabsMaxPanels() {
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__tab[data-cui-tab-index="%d"]{color:var(--color-primary, #18181B);border-bottom-color:var(--color-primary, #18181B);font-weight:var(--font-weight-semibold)}`,
-			i, i))
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="%d"] .fui-code-tabs__panel[data-cui-tab-index="%d"]{display:block}`,
 			i, i))
 	}
 	b.WriteString("\n@media (prefers-reduced-motion: reduce) {\n" +

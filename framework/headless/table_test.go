@@ -134,12 +134,13 @@ func TestTableAnnouncementIsTranslated(t *testing.T) {
 	hasNot(t, got, "Sorted by", "the English default leaked past a translated Strings")
 }
 
-// aria-sort is the only sort indicator, and it is three-state:
-// ascending and descending on the active column, none on every other
-// sortable column, and absent on a column that cannot be sorted. The
-// active column's anchor flips the direction; every other sortable
+// aria-sort is the only sort indicator, and only the sorted column
+// carries it: ascending or descending there, absent on every other
+// column, sortable or not (ARIA: aria-sort goes on one header at a
+// time, and "none" on the rest is noise a screen reader reads out).
+// The active column's anchor flips the direction; every other sortable
 // column's sorts ascending.
-func TestTableSortIsThreeStateAndCycles(t *testing.T) {
+func TestTableSortMarksOnlyTheActiveColumn(t *testing.T) {
 	cols := []Column{
 		{Key: "name", Header: "Name", Sortable: true},
 		{Key: "env", Header: "Environment", Sortable: true},
@@ -148,12 +149,13 @@ func TestTableSortIsThreeStateAndCycles(t *testing.T) {
 	asc := Table(TableProps{Path: "/apps", Columns: cols, SortBy: "name", SortDir: SortAsc}, nil)
 	// The three headers in order bind each state to its column: the
 	// active one ascending with a descending anchor, the inactive
-	// sortable one none with an ascending anchor, the unsortable one
-	// with no aria-sort at all.
+	// sortable one with an ascending anchor and no aria-sort, the
+	// unsortable one with neither.
 	has(t, asc, `<th aria-sort="ascending" role="columnheader" scope="col"><a href="/apps?dir=desc&amp;sort=name">Name</a></th>`+
-		`<th aria-sort="none" role="columnheader" scope="col"><a href="/apps?dir=asc&amp;sort=env">Environment</a></th>`+
+		`<th role="columnheader" scope="col"><a href="/apps?dir=asc&amp;sort=env">Environment</a></th>`+
 		`<th role="columnheader" scope="col">Region</th>`,
-		"the three sort states did not land on their own columns")
+		"the sort state did not land on the active column alone")
+	hasNot(t, asc, `aria-sort="none"`, "an inactive column still says aria-sort none")
 	// Two anchors, in column order: the active one flips to desc, the
 	// inactive one sorts asc.
 	hrefs := sortHrefs(t, asc)
@@ -295,7 +297,7 @@ func TestTableEmptyBodyKeepsTheHead(t *testing.T) {
 		Columns: []Column{{Key: "name", Header: "Name", Sortable: true}, {Key: "env", Header: "Environment"}},
 		Empty:   render.HTML(`<p>Nothing yet.</p>`)}, nil)
 	has(t, got, `<thead`, "an empty table dropped the head")
-	has(t, got, `aria-sort="none"`, "an empty table dropped the sort controls")
+	has(t, got, `<a href="?dir=asc&amp;sort=name">Name</a>`, "an empty table dropped the sort controls")
 	has(t, got, `colspan="2"`, "the empty cell does not span the columns")
 	has(t, got, `<p>Nothing yet.</p>`, "the empty slot's content did not arrive")
 

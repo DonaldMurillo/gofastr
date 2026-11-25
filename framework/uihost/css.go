@@ -68,8 +68,11 @@ const frameworkBuiltinCSS = `
    UA's [hidden] { display: none } and left a server-rendered
    hidden="" button visible (a pixel check of desktop-focus caught all
    four timer buttons on screen at once). One reset here, so no
-   component needs its own [hidden] rule. */
-[hidden] { display: none !important; }
+   component needs its own [hidden] rule. hidden="until-found" is
+   exempt: the browser hides it with content-visibility so find-in-page
+   and fragment links can reveal it, and display: none would stop both
+   (a tab strip's inactive panels). */
+[hidden]:not([hidden="until-found" i]) { display: none !important; }
 /* Base surface + typography floor. The page picks up the theme background/text
    tokens (so it's readable on any OS canvas, light or dark) and the --font-body
    family. Headings use --font-heading (falls back to body). Without an explicit

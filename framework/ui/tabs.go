@@ -86,18 +86,16 @@ func Tabs(cfg TabsConfig) render.HTML {
 func tabsCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`:where([data-cui-comp="fui-tabs"]).fui-tabs{margin:0}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:inline-flex;flex-wrap:wrap;gap:0;padding:var(--spacing-sm, 4px);background:var(--fui-muted-bg, var(--color-surface-soft, #F4F4F5));border-radius:var(--radii-lg, 10px);margin-bottom:0}`)
+	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:inline-flex;flex-wrap:nowrap;max-inline-size:100%;overflow-x:auto;scrollbar-width:thin;gap:0;padding:var(--spacing-sm, 4px);background:var(--fui-muted-bg, var(--color-surface-soft, #F4F4F5));border-radius:var(--radii-lg, 10px);margin-bottom:0}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{display:inline-flex;align-items:center;justify-content:center;min-block-size:calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));padding:0 calc(var(--spacing-sm, 4px) * 3);background:transparent;border:var(--stroke-thin, 1px) solid transparent;border-radius:var(--radii-md, 8px);cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #52525B));transition:color var(--duration-fast, 150ms),background-color var(--duration-fast, 150ms),box-shadow var(--duration-fast, 150ms);text-decoration:none;white-space:nowrap}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #09090B))}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:var(--spacing-lg, 16px)}`)
-	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
 	// Forced colours drop the selected tab's background and shadow, so it
 	// takes a Highlight underline keyed on the state assistive technology reads.
 	b.WriteString(`@media (forced-colors: active){[data-cui-comp="fui-tabs"] .fui-tab{border-color:Canvas}[data-cui-comp="fui-tabs"] .fui-tab[aria-selected="true"]{border-color:Highlight;border-block-end-width:var(--stroke-thick, 2px)}}`)
 	for i := range tabsMaxPanels {
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-nav>.fui-tab[data-cui-tab-index="%d"]{color:var(--fui-foreground, var(--color-text, #09090B));background:var(--fui-surface, var(--color-surface, #FFFFFF));box-shadow:var(--shadow-xs)}`, i, i))
-		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]{display:block}`, i, i))
 	}
 	return b.String()
 }

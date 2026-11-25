@@ -117,10 +117,10 @@ func sortableRows(p SortableListProps, b Box, fragment bool) []render.HTML {
 			"data-hui-sort-key":    scrubControlBytes(it.Key),
 		})
 		Mark(attrs, "data-hui-sortable-item")
-		attrs["draggable"] = "true"
 		attrs["tabindex"] = "0"
 
 		gripOwn := Attrs(map[string]string{"aria-hidden": "true"})
+		Mark(gripOwn, "data-hui-sortable-grip")
 		liOwn := attrs
 		body := it.Content
 		switch {
@@ -146,7 +146,7 @@ func init() {
 		Name:    "SortableList",
 		Anatomy: []Part{PartRoot, PartSortableItem, PartSortableGrip, PartLabel},
 		Hooks: []string{
-			"data-hui-sortable", "data-hui-sortable-item", "data-hui-sort-key",
+			"data-hui-sortable", "data-hui-sortable-item", "data-hui-sortable-grip", "data-hui-sort-key",
 			"data-hui-sortable-rpc", "data-hui-sortable-group",
 			"data-hui-sortable-container", "data-hui-sortable-version",
 			"data-hui-sortable-conflict",
@@ -169,7 +169,7 @@ func init() {
 			s := k.Classes
 			return []Case{{
 				Name: "a single list",
-				Why:  "the rows are a plain ordered list a reader without script sees whole; the module owns the moves, the announcements and the commit the server stays authoritative over",
+				Why:  "the rows are a plain ordered list a reader without script sees whole; the row is the keyboard control and its grip the pointer handle, and the modules own the moves, the announcements and the commit the server stays authoritative over",
 				HTML: SortableList(SortableListProps{Label: "Priorities", RPCPath: "/api/reorder", Items: []SortableItem{
 					{Key: "a", Label: "First"},
 					{Key: "b", Label: "Second"},
@@ -195,7 +195,7 @@ func init() {
 	Register(Spec{
 		Name:    "SortableItems",
 		Anatomy: []Part{PartSortableItem, PartSortableGrip, PartLabel},
-		Hooks:   []string{"data-hui-sortable-item", "data-hui-sort-key"},
+		Hooks:   []string{"data-hui-sortable-item", "data-hui-sortable-grip", "data-hui-sort-key"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{

@@ -109,6 +109,10 @@ invariants:
     enforced_by:
       - test: framework/ui.TestEntryListKeepsListRole
       - test: framework/ui.TestSweepDataEntryListItemsKeepTheirMarker
+  - id: sortable-grip-takes-the-touch
+    rule: The sortable list sheet sets touch-action none on the grip rule alone, and draws every drag landing mark with a border or outline, never a background.
+    enforced_by:
+      - test: framework/ui.TestSortableListGripAloneTakesTheTouch
   - id: sortable-items-fragment-is-bare
     rule: SortableListItems returns the rows alone, with no list element and no component wrapper, for a conflict response to drop into an existing list.
     enforced_by:
@@ -165,6 +169,11 @@ invariants:
     rule: Selection draws the Copy CSV button only when Floating is set.
     enforced_by:
       - test: framework/ui.TestSweepDataSelectionCopyNeedsFloating
+  - id: json-viewer-ellipsis-keeps-the-value
+    rule: JSONViewer with EllipsizeStrings marks its root fui-json-viewer--ellipsis and cuts each row's string, and a root that is itself a string, in CSS with an ellipsis, the full value still in the markup; MaxStringLen stays the only server-side cut.
+    enforced_by:
+      - test: framework/ui.TestJSONViewerEllipsizeStringsKeepsTheFullValue
+      - test: framework/ui.TestJSONViewerEllipsizesRootAndMemberStrings
 decisions:
   - id: filter-toolbar-is-a-get-form
     date: 2026-11-16
@@ -230,3 +239,13 @@ decisions:
     rejected:
       - option: A class on every table part.
         why: Each row and cell would carry bytes no selector reads.
+  - id: json-viewer-cuts-strings-in-css
+    date: 2026-11-23
+    status: accepted
+    decision: JSONViewer shortens a long string in CSS when EllipsizeStrings is set, keeping the whole value in the page, and keeps MaxStringLen as an opt-in server-side cut for payloads too large to send.
+    rejected:
+      - option: Drop MaxStringLen and always send the whole string.
+        why: A log or webhook payload can hold megabyte strings, and MaxStringLen is how a caller bounds the bytes a page carries.
+      - option: Make the ellipsis the default.
+        why: A one-line value hides the rest of the text with no way to read it on screen, so wrapping stays the default and the cut is the caller's choice.
+    upholds: [json-viewer-ellipsis-keeps-the-value]

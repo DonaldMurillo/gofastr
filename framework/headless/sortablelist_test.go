@@ -30,7 +30,7 @@ func TestSortableListRendersTheRowsAndContract(t *testing.T) {
 		`data-hui-sortable-conflict="/api/conflict?col=todo"`,
 		`data-hui-sortable-item=""`,
 		`data-hui-sort-key="a"`,
-		`draggable="true"`,
+		`data-hui-sortable-grip=""`,
 		`tabindex="0"`,
 		`aria-roledescription="sortable item"`,
 		`aria-label="Drag First"`,
