@@ -853,35 +853,57 @@ func TestActionsArePinnedBySHA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	usesLine := regexp.MustCompile(`^\s*(?:-\s+)?uses:\s*(\S+)(.*)$`)
 	pinned := regexp.MustCompile(`^([^@\s]+)@([0-9a-f]{40})$`)
-	version := regexp.MustCompile(`^\s*#\s*v[0-9]`)
+	version := regexp.MustCompile(`^#\s*v[0-9]`)
 	shas := map[string]map[string][]string{}
 	external := 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
 			continue
 		}
-		for i, line := range strings.Split(workflowSource(t, e.Name()), "\n") {
-			m := usesLine.FindStringSubmatch(line)
-			if m == nil || strings.HasPrefix(m[1], "./") {
-				continue
-			}
-			external++
-			at := e.Name() + ":" + strconv.Itoa(i+1)
-			p := pinned.FindStringSubmatch(m[1])
-			if p == nil {
-				t.Errorf("%s uses %s; pin it by full commit SHA", at, m[1])
-				continue
-			}
-			if !version.MatchString(m[2]) {
-				t.Errorf("%s pins %s with no `# vN` comment naming its release", at, m[1])
-			}
-			if shas[p[1]] == nil {
-				shas[p[1]] = map[string][]string{}
-			}
-			shas[p[1]][p[2]] = append(shas[p[1]][p[2]], at)
+		var doc yaml.Node
+		if err := yaml.Unmarshal([]byte(workflowSource(t, e.Name())), &doc); err != nil {
+			t.Fatalf("parse %s: %v", e.Name(), err)
 		}
+		// Every mapping key named uses, at any depth: step-level actions and
+		// job-level reusable workflows. A uses: inside a run script is a
+		// scalar's text, not a key, so it is not read.
+		var walk func(n *yaml.Node)
+		walk = func(n *yaml.Node) {
+			if n.Kind == yaml.MappingNode {
+				for i := 0; i+1 < len(n.Content); i += 2 {
+					k, v := n.Content[i], n.Content[i+1]
+					if k.Value != "uses" {
+						continue
+					}
+					at := e.Name() + ":" + strconv.Itoa(v.Line)
+					if v.Kind != yaml.ScalarNode {
+						t.Errorf("%s: uses is not a single value", at)
+						continue
+					}
+					if strings.HasPrefix(v.Value, "./") {
+						continue
+					}
+					external++
+					p := pinned.FindStringSubmatch(v.Value)
+					if p == nil {
+						t.Errorf("%s uses %s; pin it by full commit SHA", at, v.Value)
+						continue
+					}
+					if !version.MatchString(strings.TrimSpace(v.LineComment)) {
+						t.Errorf("%s pins %s with no `# vN` comment naming its release", at, v.Value)
+					}
+					if shas[p[1]] == nil {
+						shas[p[1]] = map[string][]string{}
+					}
+					shas[p[1]][p[2]] = append(shas[p[1]][p[2]], at)
+				}
+			}
+			for _, c := range n.Content {
+				walk(c)
+			}
+		}
+		walk(&doc)
 	}
 	if external == 0 {
 		t.Fatal("found no external uses: line; the parser or the workflows changed shape")
