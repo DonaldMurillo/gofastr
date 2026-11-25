@@ -4044,12 +4044,13 @@ func appSpecAPIBase(apiPrefix string) string {
 }
 
 // appSpecAuthBase is where the auth battery mounts its routes:
-// app.auth.base_path, else the battery's default /auth. Validation keeps
-// base_path an absolute path with no trailing slash, so base + "/login"
-// is the battery's login route.
+// app.auth.base_path of the project (AppSpec.RouteApp, so a screen added
+// with --add posts to the project's battery), else the battery's default
+// /auth. Validation keeps base_path an absolute path with no trailing
+// slash, so base + "/login" is the battery's login route.
 func appSpecAuthBase(bp appspec.AppSpec) string {
-	if bp.App.Auth.BasePath != "" {
-		return bp.App.Auth.BasePath
+	if base := bp.RouteApp().Auth.BasePath; base != "" {
+		return base
 	}
 	return "/auth"
 }

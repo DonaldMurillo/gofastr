@@ -40,7 +40,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
   - id: added-screens-use-the-project-api
-    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix (AppSpec.RouteApp), not the fragment's empty app section.
+    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
   - id: add-preserves-distinct-mounted-routes
