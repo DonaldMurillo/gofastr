@@ -1,5 +1,5 @@
 primitive: uihost.seo.jsonld
-summary: The typed Schema.org values of core-ui/seo (Article, BreadcrumbList, FAQPage, Organization, Person, WebSite, WebPage, WebApplication, Product, Offer) and Render, which writes each as a <script type="application/ld+json"> block.
+summary: The typed Schema.org values of core-ui/seo (Article, BreadcrumbList, FAQPage, Organization, Person, WebSite, WebPage, WebApplication, Product, Offer) and Render, which writes each non-nil item as a <script type="application/ld+json"> block.
 code:
   - core-ui/seo/
 docs:
@@ -12,12 +12,16 @@ invariants:
       - test: core-ui/seo.TestBreadcrumbPositions
       - test: core-ui/seo.TestWebApplicationShape
   - id: one-inert-script-per-item
-    rule: Render writes one ld+json script per item and none for no items, and a script body holds no </ but its own closing tag.
+    rule: Render writes one ld+json script per non-nil item and none for no items, and a script body holds no </ but its own closing tag.
     enforced_by:
       - test: core-ui/seo.TestOneScriptPerItem
       - test: core-ui/seo.TestEmptyReturnsNothing
       - test: core-ui/seo.TestEscapesClosingTag
       - test: core-ui/seo.TestBodyHoldsNoCloseTagOpener
+  - id: render-skips-nil-items
+    rule: Render skips nil interfaces and typed-nil pointers without changing the scripts for other items.
+    enforced_by:
+      - test: core-ui/seo.TestRenderSkipsNilThings
   - id: url-fields-pass-the-head-gate
     rule: A string field whose JSON name is url, image, logo, item or target and that urlsafe.Resource refuses is rendered empty, at any depth of pointers, slices and structs, and the caller's value is never changed.
     enforced_by:
