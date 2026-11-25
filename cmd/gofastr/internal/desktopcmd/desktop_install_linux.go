@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -156,7 +155,7 @@ func uninstallLinuxBundle(id string) error {
 		mode fs.FileMode
 	}{{bin, id, 0700}, {applications, id + ".desktop", 0600}} {
 		if err = linuxbundle.VerifyInstalledMode(target.root, target.name, target.mode); err != nil {
-			return err
+			return fmt.Errorf("refusing uninstall: %w", err)
 		}
 	}
 	launcher, err := linuxbundle.ReadFile(bin, id, 64<<10)
@@ -178,22 +177,51 @@ func uninstallLinuxBundle(id string) error {
 	if err = bin.Remove(id); err != nil {
 		return errors.Join(err, linuxbundle.WriteFile(applications, id+".desktop", desktopEntry, 0600))
 	}
-	for _, entry := range bundle.Manifest.Files {
-		if err = bundle.Root.Remove(entry.Path); err != nil {
-			return fmt.Errorf("partial uninstall; retained remaining installation files: %w", err)
-		}
-	}
-	for _, name := range []string{"manifest.json", linuxInstallReceiptName, "bin"} {
-		if err = bundle.Root.Remove(name); err != nil {
-			return err
-		}
-	}
-	if err = apps.Remove(id); err != nil {
+	if err = removeLinuxInstallation(apps, id, bundle); err != nil {
 		return err
 	}
+	removeLinuxUpdateLeftovers(apps, filepath.Join(paths.apps, id), id)
 	cli.Success("Uninstalled %s; application data and default-handler preferences were not changed", id)
 	refreshLinuxDesktopDatabase(paths.applications)
 	return nil
+}
+
+// removeLinuxInstallation removes an opened installation's fixed
+// inventory, then its directory under apps; never RemoveAll.
+func removeLinuxInstallation(apps *os.Root, name string, bundle *linuxbundle.Bundle) error {
+	for _, entry := range bundle.Manifest.Files {
+		if err := bundle.Root.Remove(entry.Path); err != nil {
+			return fmt.Errorf("partial uninstall; retained remaining installation files: %w", err)
+		}
+	}
+	for _, entry := range []string{linuxbundle.ManifestName, linuxInstallReceiptName, "bin"} {
+		if err := bundle.Root.Remove(entry); err != nil {
+			return err
+		}
+	}
+	return apps.Remove(name)
+}
+
+// removeLinuxUpdateLeftovers removes the copies an update keeps beside
+// the installation at dir, <id>~old and <id>~new, each only when it is
+// an installation of id; anything else there is reported and kept.
+func removeLinuxUpdateLeftovers(apps *os.Root, dir, id string) {
+	for _, side := range []string{"old", "new"} {
+		name := id + linuxbundle.SideSep + side
+		if _, err := apps.Lstat(name); err != nil {
+			continue
+		}
+		bundle, _, err := linuxbundle.OpenInstalled(dir+linuxbundle.SideSep+side, id)
+		if err != nil {
+			cli.Warn("Kept %s beside the installation: it is not an unchanged installation of %s (%v)", name, id, err)
+			continue
+		}
+		err = removeLinuxInstallation(apps, name, bundle)
+		_ = bundle.Close()
+		if err != nil {
+			cli.Warn("Could not remove the previous version kept as %s: %v", name, err)
+		}
+	}
 }
 
 func linuxUserInstallPaths() (linuxInstallPaths, error) {
@@ -220,68 +248,12 @@ func linuxUserInstallPaths() (linuxInstallPaths, error) {
 	return linuxInstallPaths{data: data, bin: filepath.Join(home, ".local", "bin"), apps: filepath.Join(data, "gofastr", "apps"), applications: filepath.Join(data, "applications")}, nil
 }
 
-// Walk using root-relative handles, rejecting symlinks in the selected chain.
-// Existing directory modes are never changed. This does not defend against a
-// hostile process running as the same UID changing this user's files.
 func openLinuxInstallDirectory(name string, create bool) (*os.Root, error) {
-	if !filepath.IsAbs(name) {
-		return nil, fmt.Errorf("installation path must be absolute")
-	}
-	root, err := os.OpenRoot("/")
-	if err != nil {
-		return nil, err
-	}
-	parts := strings.Split(strings.TrimPrefix(filepath.Clean(name), "/"), "/")
-	for _, part := range parts {
-		st, e := root.Lstat(part)
-		if os.IsNotExist(e) && create {
-			if e = root.Mkdir(part, 0700); e == nil {
-				st, e = root.Lstat(part)
-			}
-		}
-		if e != nil {
-			root.Close()
-			return nil, e
-		}
-		if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-			root.Close()
-			return nil, fmt.Errorf("refusing non-directory or symlink in installation path %q", name)
-		}
-		stat, ok := st.Sys().(*syscall.Stat_t)
-		if !ok || !linuxInstallDirectoryPolicy(stat.Uid, st.Mode(), false) {
-			root.Close()
-			return nil, fmt.Errorf("refusing foreign-owned or writable ancestor in installation path %q", name)
-		}
-		next, e := root.OpenRoot(part)
-		root.Close()
-		if e != nil {
-			return nil, e
-		}
-		root = next
-	}
-	st, err := root.Stat(".")
-	if err != nil {
-		root.Close()
-		return nil, err
-	}
-	stat, ok := st.Sys().(*syscall.Stat_t)
-	if !ok || !linuxInstallDirectoryPolicy(stat.Uid, st.Mode(), true) {
-		root.Close()
-		return nil, fmt.Errorf("installation directory %q must be owned by the current user and not writable by group/others", name)
-	}
-	return root, nil
+	return linuxbundle.OpenDirectory(name, create)
 }
 
-// An owner can replace descendants even when mode is 0755. Every ancestor
-// must therefore belong to this user or root. A trusted sticky shared root
-// (such as /tmp) is allowed, but the final selected directory must be private
-// from other writers and belong to this user.
 func linuxInstallDirectoryPolicy(owner uint32, mode fs.FileMode, leaf bool) bool {
-	uid := uint32(os.Geteuid())
-	if leaf {
-		return owner == uid && mode.Perm()&0022 == 0
-	}
-	return (owner == uid || owner == 0) && (mode.Perm()&0022 == 0 || mode&os.ModeSticky != 0)
+	return linuxbundle.DirectoryPolicy(owner, mode, leaf)
 }
 
 func openLinuxInstallBundle(name string, installed, requireHost bool) (*linuxbundle.Bundle, error) {

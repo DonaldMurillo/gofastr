@@ -167,18 +167,64 @@ func OpenInstalled(dir, id string) (*Bundle, Receipt, error) {
 			return fail(err)
 		}
 	}
-	raw, err := ReadFile(b.Root, ReceiptName, MaxReceipt)
+	receipt, err := readReceipt(b.Root, b.Manifest, b.RawManifest, id)
 	if err != nil {
 		return fail(err)
 	}
+	return b, receipt, nil
+}
+
+func readReceipt(root *os.Root, m Manifest, rawManifest []byte, id string) (Receipt, error) {
+	raw, err := ReadFile(root, ReceiptName, MaxReceipt)
+	if err != nil {
+		return Receipt{}, err
+	}
 	var receipt Receipt
 	if err = handler.UnmarshalStrict(raw, &receipt); err != nil {
-		return fail(fmt.Errorf("invalid installation receipt: %w", err))
+		return Receipt{}, fmt.Errorf("invalid installation receipt: %w", err)
 	}
-	if receipt.SchemaVersion != receiptVersion || receipt.ID != id || b.Manifest.ID != id || receipt.ManifestSHA256 != Digest(b.RawManifest) {
-		return fail(fmt.Errorf("refusing uninstall: installation receipt does not match the bundle"))
+	if receipt.SchemaVersion != receiptVersion || receipt.ID != id || m.ID != id || receipt.ManifestSHA256 != Digest(rawManifest) {
+		return Receipt{}, fmt.Errorf("installation receipt does not match the bundle")
 	}
-	return b, receipt, nil
+	return receipt, nil
+}
+
+// ReadInstalled reads which app and version the installation directory
+// dir holds, without hashing its payload: a manifest ParseManifest
+// accepts, naming id, a receipt naming id and the manifest's sha256,
+// and a regular bin/<id>. It is for the running app to know itself;
+// Open and OpenInstalled are the checks of what is on disk.
+func ReadInstalled(dir, id string) (Manifest, Receipt, error) {
+	st, err := os.Lstat(dir)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	if !st.IsDir() {
+		return Manifest{}, Receipt{}, fmt.Errorf("the installation is not a directory")
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	defer root.Close()
+	raw, err := ReadFile(root, ManifestName, MaxManifest)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	m, err := ParseManifest(raw)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	receipt, err := readReceipt(root, m, raw, id)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	exe, err := OpenRegular(root, "bin/"+id)
+	if err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	_ = exe.Close()
+	return m, receipt, nil
 }
 
 // Populate copies src's payload and manifest into the empty directory
@@ -294,7 +340,76 @@ func VerifyInstalledMode(root *os.Root, name string, mode fs.FileMode) error {
 	}
 	stat, ok := st.Sys().(*syscall.Stat_t)
 	if !ok || stat.Uid != uint32(os.Geteuid()) || st.Mode().Perm() != mode || st.Mode()&(os.ModeSymlink|os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
-		return fmt.Errorf("refusing uninstall: owner or permissions changed for %q", name)
+		return fmt.Errorf("owner or permissions changed for %q", name)
 	}
 	return nil
+}
+
+// OpenDirectory opens the absolute directory name through root-relative
+// handles from /, creating missing parts owner-only when create is set.
+// It refuses a symlink or non-directory anywhere in the chain, an
+// ancestor DirectoryPolicy refuses, and a final directory not owned by
+// this user or writable by group or others. Existing modes are never
+// changed, and nothing here defends against a process running as this
+// user.
+func OpenDirectory(name string, create bool) (*os.Root, error) {
+	if !filepath.IsAbs(name) {
+		return nil, fmt.Errorf("installation path must be absolute")
+	}
+	root, err := os.OpenRoot("/")
+	if err != nil {
+		return nil, err
+	}
+	parts := strings.Split(strings.TrimPrefix(filepath.Clean(name), "/"), "/")
+	for _, part := range parts {
+		st, e := root.Lstat(part)
+		if os.IsNotExist(e) && create {
+			if e = root.Mkdir(part, 0700); e == nil {
+				st, e = root.Lstat(part)
+			}
+		}
+		if e != nil {
+			root.Close()
+			return nil, e
+		}
+		if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
+			root.Close()
+			return nil, fmt.Errorf("refusing non-directory or symlink in installation path %q", name)
+		}
+		stat, ok := st.Sys().(*syscall.Stat_t)
+		if !ok || !DirectoryPolicy(stat.Uid, st.Mode(), false) {
+			root.Close()
+			return nil, fmt.Errorf("refusing foreign-owned or writable ancestor in installation path %q", name)
+		}
+		next, e := root.OpenRoot(part)
+		root.Close()
+		if e != nil {
+			return nil, e
+		}
+		root = next
+	}
+	st, err := root.Stat(".")
+	if err != nil {
+		root.Close()
+		return nil, err
+	}
+	stat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || !DirectoryPolicy(stat.Uid, st.Mode(), true) {
+		root.Close()
+		return nil, fmt.Errorf("installation directory %q must be owned by the current user and not writable by group/others", name)
+	}
+	return root, nil
+}
+
+// DirectoryPolicy reports whether a directory with this owner and mode
+// may sit in an installation path: the final one must be this user's
+// and not group or other writable; an ancestor may also be root's, and
+// a sticky shared one such as /tmp is allowed. An owner can replace
+// descendants even under 0755, hence the ownership rule.
+func DirectoryPolicy(owner uint32, mode fs.FileMode, leaf bool) bool {
+	uid := uint32(os.Geteuid())
+	if leaf {
+		return owner == uid && mode.Perm()&0022 == 0
+	}
+	return (owner == uid || owner == 0) && (mode.Perm()&0022 == 0 || mode&os.ModeSticky != 0)
 }

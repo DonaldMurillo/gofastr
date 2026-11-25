@@ -43,15 +43,25 @@ const (
 	// MaxReceipt is the largest install receipt read back.
 	MaxReceipt = 64 << 10
 
+	// SideSep joins an installation's directory name to "old" and "new"
+	// for the copies an update keeps beside it. The app id grammar has no
+	// "~", so <id>~old never names another installed app.
+	SideSep = "~"
+
 	maxPayloadFile = 16 << 20
 	receiptVersion = 1
 )
 
 var (
-	// VersionPattern is the bundle version grammar.
-	VersionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9A-Za-z]+)*$`)
-	// SchemePattern is the embedded URL scheme grammar.
-	SchemePattern = regexp.MustCompile(`^[a-z][a-z0-9+.-]{0,31}$`)
+	versionPattern = regexp.MustCompile(VersionGrammar)
+	schemePattern  = regexp.MustCompile(SchemeGrammar)
+)
+
+const (
+	// VersionGrammar is the bundle version grammar, as a regular expression.
+	VersionGrammar = `^[0-9]+(\.[0-9A-Za-z]+)*$`
+	// SchemeGrammar is the embedded URL scheme grammar, as a regular expression.
+	SchemeGrammar = `^[a-z][a-z0-9+.-]{0,31}$`
 )
 
 // File is one inventory entry of a bundle manifest.
@@ -101,10 +111,13 @@ func ValidID(id string) bool { return appid.Check(id) == nil }
 // ValidName reports whether name is a display name (appid.CheckName) in valid UTF-8, as a desktop entry needs.
 func ValidName(name string) bool { return appid.CheckName(name) == nil && utf8.ValidString(name) }
 
-// ValidVersion reports whether version matches VersionPattern in at most 64 bytes.
+// ValidVersion reports whether version matches VersionGrammar in at most 64 bytes.
 func ValidVersion(version string) bool {
-	return VersionPattern.MatchString(version) && len(version) <= 64
+	return versionPattern.MatchString(version) && len(version) <= 64
 }
+
+// ValidScheme reports whether scheme matches SchemeGrammar.
+func ValidScheme(scheme string) bool { return schemePattern.MatchString(scheme) }
 
 // RootName is the archive's single top-level directory: <id>-<version>-linux-<arch>.
 func RootName(id, version, arch string) (string, error) {
@@ -148,24 +161,28 @@ func ParseManifest(raw []byte) (Manifest, error) {
 	if manifest.SchemaVersion != 1 || manifest.EntryPoint != EntryPoint || (manifest.Platform != "linux-amd64" && manifest.Platform != "linux-arm64") {
 		return Manifest{}, fmt.Errorf("unsupported bundle schema, entry point, or platform")
 	}
-	if err := checkIdentity(manifest); err != nil {
+	if err := CheckIdentity(manifest); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil
 }
 
-func checkIdentity(m Manifest) error {
-	if m.EmbeddedScheme != "" && !SchemePattern.MatchString(m.EmbeddedScheme) {
-		return fmt.Errorf("embedded scheme %q must match %s", m.EmbeddedScheme, SchemePattern.String())
+// CheckIdentity refuses a manifest whose embedded scheme, id, name or
+// version is off its grammar, or whose platform and id and version make
+// no safe archive root. gofastr desktop build checks its flags through
+// it too, so a bundle it writes is one Open accepts.
+func CheckIdentity(m Manifest) error {
+	if m.EmbeddedScheme != "" && !ValidScheme(m.EmbeddedScheme) {
+		return fmt.Errorf("embedded scheme %q must match %s", m.EmbeddedScheme, SchemeGrammar)
 	}
 	if !ValidID(m.ID) {
 		return fmt.Errorf("bundle id %q is not a reverse-DNS app id", m.ID)
 	}
 	if !ValidName(m.Name) {
-		return fmt.Errorf("bundle name must be 1 to 64 printable UTF-8 characters without a path separator")
+		return fmt.Errorf("bundle name must be 1 to 64 bytes of printable UTF-8 without a path separator")
 	}
 	if !ValidVersion(m.Version) {
-		return fmt.Errorf("bundle version must match %s and be at most 64 characters", VersionPattern.String())
+		return fmt.Errorf("bundle version must match %s and be at most 64 characters", VersionGrammar)
 	}
 	_, err := RootName(m.ID, m.Version, strings.TrimPrefix(m.Platform, "linux-"))
 	return err
@@ -209,6 +226,9 @@ func EscapeDesktopString(value string) string {
 func DesktopEntry(manifest Manifest, root, launcher string) ([]byte, error) {
 	if !textsafe.Storable(launcher) || strings.ContainsAny(launcher, "=\n\r\t") {
 		return nil, fmt.Errorf("desktop executable path contains unsupported characters")
+	}
+	if manifest.EmbeddedScheme != "" && !ValidScheme(manifest.EmbeddedScheme) {
+		return nil, fmt.Errorf("embedded scheme %q must match %s", manifest.EmbeddedScheme, SchemeGrammar)
 	}
 	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`", `$`, `\$`, `%`, `%%`).Replace(launcher) + `"`
 	// GIO checks Exec's executable before expanding %% into literal %. A

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 )
 
 // UpdateConfig enables the auto-updater.
@@ -65,6 +66,7 @@ var (
 	errUpdateNotAvailable  = &Error{Code: CodeInvalidInput, Message: "no newer version is available"}
 	errUpdateInProgress    = &Error{Code: CodeInvalidInput, Message: "an update install is already running"}
 	errUpdateInstalled     = &Error{Code: CodeInvalidInput, Message: "the update is installed; the app is restarting"}
+	errUpdateRestart       = &Error{Code: CodeInvalidInput, Message: "another window of this app installed an update; restart the app to use it"}
 
 	errUpdateRunningVersion = &Error{Code: CodeUnsupported, Message: "this app's version is not major.minor.patch; rebuild it with a semantic --version"}
 )
@@ -279,6 +281,15 @@ func (u *updater) install(ctx context.Context) error {
 	if !ok {
 		return errUpdateNeedsBundle
 	}
+	lock, locked, err := u.lockInstall()
+	if err != nil {
+		u.b.logger.Error("desktop: the update lock could not be taken", "error", update.LogDetail(err))
+		return errUpdateApply
+	}
+	if !locked {
+		return errUpdateInProgress
+	}
+	defer lock.Close()
 	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return err
@@ -306,6 +317,9 @@ func (u *updater) install(ctx context.Context) error {
 		return errUpdateArchive
 	}
 	newApp, err := extractBundle(platform, data, stage, name)
+	if errors.Is(err, update.ErrInstallationChanged) {
+		return errUpdateRestart
+	}
 	if err != nil {
 		u.b.logger.Warn("desktop: update archive extraction refused", "error", err.Error())
 		return errUpdateArchive
@@ -362,12 +376,12 @@ func installLayout(platform update.Platform, name, bundleDir string) ([]update.U
 func (u *updater) swap(newApp string, units []update.Unit) bool {
 	for _, unit := range units {
 		if _, err := os.Lstat(unit.Current); err != nil {
-			u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the .old copy beside it back", "error", update.LogDetail(err))
+			u.b.logger.Error("desktop: the app bundle is missing, so the update was not applied; rename the copy beside it ending in old back", "error", update.LogDetail(err))
 			return false
 		}
 	}
 	for _, unit := range units {
-		beside := unit.Current + ".new"
+		beside := unit.New()
 		if err := os.RemoveAll(beside); err != nil {
 			u.b.logger.Error("desktop: clearing the previous staged bundle failed", "error", update.LogDetail(err))
 			return false
@@ -378,13 +392,13 @@ func (u *updater) swap(newApp string, units []update.Unit) bool {
 		}
 	}
 	for _, unit := range units {
-		if err := os.RemoveAll(unit.Current + ".old"); err != nil {
+		if err := os.RemoveAll(unit.Old()); err != nil {
 			u.b.logger.Error("desktop: clearing the leftover old bundle failed", "error", update.LogDetail(err))
 			return false
 		}
 	}
 	for i, unit := range units {
-		old, beside := unit.Current+".old", unit.Current+".new"
+		old, beside := unit.Old(), unit.New()
 		if err := u.renameFile(unit.Current, old); err != nil {
 			u.b.logger.Error("desktop: moving the current bundle aside failed", "error", update.LogDetail(err))
 			u.rollback(units[:i])
@@ -393,7 +407,7 @@ func (u *updater) swap(newApp string, units []update.Unit) bool {
 		if err := u.renameFile(beside, unit.Current); err != nil {
 			u.b.logger.Error("desktop: moving the new bundle into place failed", "error", update.LogDetail(err))
 			if rb := u.renameFile(old, unit.Current); rb != nil {
-				u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .old copy beside it back", "error", update.LogDetail(rb))
+				u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the copy beside it ending in old back", "error", update.LogDetail(rb))
 				return false
 			}
 			u.rollback(units[:i])
@@ -406,27 +420,53 @@ func (u *updater) swap(newApp string, units []update.Unit) bool {
 func (u *updater) rollback(done []update.Unit) {
 	for i := len(done) - 1; i >= 0; i-- {
 		cur := done[i].Current
-		if err := u.renameFile(cur, cur+".new"); err != nil {
+		if err := u.renameFile(cur, done[i].New()); err != nil {
 			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is half updated", "error", update.LogDetail(err))
 			return
 		}
-		if err := u.renameFile(cur+".old", cur); err != nil {
-			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the .old copy beside it back", "error", update.LogDetail(err))
+		if err := u.renameFile(done[i].Old(), cur); err != nil {
+			u.b.logger.Error("desktop: ROLLBACK FAILED; the app bundle is missing, rename the copy beside it ending in old back", "error", update.LogDetail(err))
 			return
 		}
 	}
 }
 
+func (u *updater) dataDir() (string, error) {
+	if u.b.dataDir != "" {
+		return u.b.dataDir, nil
+	}
+	return DataDir(u.b.cfg.ID)
+}
+
 func (u *updater) stageDir() (string, error) {
-	dir := u.b.dataDir
-	if dir == "" {
-		var err error
-		dir, err = DataDir(u.b.cfg.ID)
-		if err != nil {
-			return "", err
-		}
+	dir, err := u.dataDir()
+	if err != nil {
+		return "", err
 	}
 	return os.MkdirTemp(dir, "update-") // 0700
+}
+
+// updateLockName is the file in the data directory every running
+// instance of the app locks for the length of an install.
+const updateLockName = "update.lock"
+
+// lockInstall takes the cross-process install lock without waiting;
+// false means another instance holds it.
+func (u *updater) lockInstall() (*os.File, bool, error) {
+	dir, err := u.dataDir()
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, updateLockName), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	ok, err := filelock.TryLock(f)
+	if err != nil || !ok {
+		_ = f.Close()
+		return nil, false, err
+	}
+	return f, true, nil
 }
 
 func (b *Battery) startUpdater(ctx context.Context) {
@@ -457,7 +497,7 @@ func (u *updater) removeStaleOld() {
 	units, _ := installLayout(platform, name, dir)
 	removed := false
 	for _, unit := range units {
-		old := unit.Current + ".old"
+		old := unit.Old()
 		if _, err := os.Lstat(old); err != nil {
 			continue
 		}

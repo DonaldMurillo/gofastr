@@ -10,17 +10,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
-// maxTarTotal caps the bytes a .tar.gz may expand to, across every entry.
-const maxTarTotal = 2 << 30
+// The caps a .tar.gz release is held to: entries, bytes in one entry
+// (an executable may be as large as desktop install accepts), and bytes
+// across every entry. Variables so a test can lower them.
+var (
+	maxTarEntries       = maxZipEntries
+	maxTarEntry   int64 = linuxbundle.MaxExecutable
+	maxTarTotal   int64 = 2 << 30
+)
 
 // walkTarGz reads a .tar.gz whose entries all sit under one top-level
 // directory and calls fn for each regular file or directory, with its
 // cleaned name, in archive order. It refuses an entry that escapes the
 // root, a second top-level name, a link, device, FIFO or any other
-// type, a repeated name, more than maxZipEntries entries, an entry past
-// maxEntrySize bytes and a total past maxTarTotal.
+// type, a repeated name, more than maxTarEntries entries, an entry past
+// maxTarEntry bytes and a total past maxTarTotal, each from its header
+// before reading its body.
 func walkTarGz(data []byte, fn func(name string, hdr *tar.Header, body io.Reader) error) (string, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
@@ -39,7 +48,7 @@ func walkTarGz(data []byte, fn func(name string, hdr *tar.Header, body io.Reader
 		if err != nil {
 			return "", fmt.Errorf("%w: not a tar archive", ErrBadArchive)
 		}
-		if count >= maxZipEntries {
+		if count >= maxTarEntries {
 			return "", fmt.Errorf("%w: too many entries", ErrBadArchive)
 		}
 		name, ok := cleanEntryName(hdr.Name)
@@ -63,7 +72,7 @@ func walkTarGz(data []byte, fn func(name string, hdr *tar.Header, body io.Reader
 			if name == root {
 				return "", fmt.Errorf("%w: the archive root is not a directory", ErrBadArchive)
 			}
-			if hdr.Size < 0 || hdr.Size > maxEntrySize {
+			if hdr.Size < 0 || hdr.Size > maxTarEntry {
 				return "", fmt.Errorf("%w: entry too large", ErrBadArchive)
 			}
 			total += hdr.Size

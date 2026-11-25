@@ -169,7 +169,7 @@ func TestLinuxArchiveRejectsPaths(t *testing.T) {
 	for _, name := range []string{"../escape", "/absolute", "a/../../escape", "a\\b", "a//b", ".", "a/./b"} {
 		t.Run(name, func(t *testing.T) {
 			var b bytes.Buffer
-			if err := writeLinuxArchive(&b, "bundle", []linuxArchiveEntry{{name: name, mode: 0644, data: []byte("x")}}); err == nil {
+			if err := writeLinuxArchive(&b, "bundle", []linuxArchiveEntry{{Name: name, Mode: 0644, Data: []byte("x")}}); err == nil {
 				t.Fatal("unsafe entry accepted")
 			}
 			if b.Len() != 0 {
@@ -183,7 +183,7 @@ func TestLinuxArchiveRejectsPaths(t *testing.T) {
 			t.Errorf("unsafe root %q accepted", root)
 		}
 	}
-	for _, entries := range [][]linuxArchiveEntry{{{name: "file", mode: 0777}}, {{name: "same", mode: 0644}, {name: "same", mode: 0644}}} {
+	for _, entries := range [][]linuxArchiveEntry{{{Name: "file", Mode: 0777}}, {{Name: "same", Mode: 0644}, {Name: "same", Mode: 0644}}} {
 		var b bytes.Buffer
 		if err := writeLinuxArchive(&b, "bundle", entries); err == nil {
 			t.Fatal("duplicate/mode accepted")
@@ -197,8 +197,8 @@ func TestLinuxArchiveRejectsSymlinkSource(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	for i := range entries {
-		if entries[i].source != "" {
-			entries[i].source = link
+		if entries[i].Source != "" {
+			entries[i].Source = link
 		}
 	}
 	var b bytes.Buffer
@@ -240,7 +240,7 @@ func TestLinuxArchiveLauncherQuotes(t *testing.T) {
 	// extraction directory cannot become shell syntax or corrupt the path.
 	root := filepath.Join(t.TempDir(), "space % '$HOME' `false` \\\n")
 	for _, entry := range entries {
-		name := filepath.Join(root, filepath.FromSlash(entry.name))
+		name := filepath.Join(root, filepath.FromSlash(entry.Name))
 		if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +248,7 @@ func TestLinuxArchiveLauncherQuotes(t *testing.T) {
 		if _, err := copyLinuxArchiveEntry(&b, entry); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(name, b.Bytes(), os.FileMode(entry.mode)); err != nil {
+		if err := os.WriteFile(name, b.Bytes(), os.FileMode(entry.Mode)); err != nil {
 			t.Fatal(err)
 		}
 	}

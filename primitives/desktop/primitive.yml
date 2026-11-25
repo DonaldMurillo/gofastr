@@ -15,6 +15,7 @@ invariants:
       - test: battery/desktop.TestDataDirStaysUnderItsBase
       - test: battery/desktop.TestDataDirRejectsBadID
       - test: battery/desktop.TestNewRefusesConfigEdges
+      - test: internal/appid.TestCheck
   - id: new-panics-on-bad-config
     rule: New panics on a Material outside the closed set, a negative TrafficLightInset, a SidebarWidth outside 0..MaxSidebarWidth on the main window, a widget or the settings window, a Settings.Path off the navigate grammar, and a DeepLink scheme unlike the one gofastr desktop build embedded.
     enforced_by:

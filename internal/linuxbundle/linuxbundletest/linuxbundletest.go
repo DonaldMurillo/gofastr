@@ -4,13 +4,8 @@
 package linuxbundletest
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
@@ -18,9 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
@@ -36,11 +29,7 @@ func Default(version string) Spec {
 }
 
 // Entry is one archive member.
-type Entry struct {
-	Name string
-	Mode int64
-	Data []byte
-}
+type Entry = linuxbundle.Entry
 
 // ELF is the smallest executable Open accepts for arch: one PT_LOAD R+X
 // segment holding the entry point, then marker.
@@ -86,27 +75,31 @@ func Entries(s Spec) []Entry {
 
 // EntriesWithExecutable is Entries with exe as bin/<id>.
 func EntriesWithExecutable(s Spec, exe []byte) []Entry {
-	entries := []Entry{
-		{"README.txt", 0o644, []byte("fixture " + s.Version + "\n")},
-		{"bin/" + s.ID, 0o755, exe},
-		{s.ID + ".desktop.in", 0o644, []byte("# TEMPLATE ONLY\n")},
-		{"icon.png", 0o644, PNG()},
-		{linuxbundle.EntryPoint, 0o755, []byte("#!/bin/sh\nexec \"${0%/*}/bin/" + s.ID + "\" \"$@\"\n")},
+	return entries(s, exe, PNG())
+}
+
+// EntriesWithIcon is Entries with icon as icon.png.
+func EntriesWithIcon(s Spec, icon []byte) []Entry {
+	return entries(s, ELF(s.Arch, s.Marker), icon)
+}
+
+func entries(s Spec, exe, icon []byte) []Entry {
+	payload := []Entry{
+		{Name: "README.txt", Mode: 0o644, Data: []byte("fixture " + s.Version + "\n")},
+		{Name: "bin/" + s.ID, Mode: 0o755, Data: exe},
+		{Name: s.ID + ".desktop.in", Mode: 0o644, Data: []byte("# TEMPLATE ONLY\n")},
+		{Name: "icon.png", Mode: 0o644, Data: icon},
+		{Name: linuxbundle.EntryPoint, Mode: 0o755, Data: []byte("#!/bin/sh\nexec \"${0%/*}/bin/" + s.ID + "\" \"$@\"\n")},
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 	m := linuxbundle.Manifest{SchemaVersion: 1, ID: s.ID, Name: s.Name, Version: s.Version, Platform: "linux-" + s.Arch, EntryPoint: linuxbundle.EntryPoint, EmbeddedScheme: s.Scheme, Runtime: []string{"GTK 3"}}
-	for _, e := range entries {
-		sum := sha256.Sum256(e.Data)
-		m.Files = append(m.Files, linuxbundle.File{Path: e.Name, Mode: fmt.Sprintf("%04o", e.Mode), Size: int64(len(e.Data)), SHA256: hex.EncodeToString(sum[:])})
-	}
-	raw, err := json.MarshalIndent(m, "", "  ")
+	out, err := linuxbundle.WithManifest(m, payload)
 	if err != nil {
 		panic(err)
 	}
-	return append(entries, Entry{linuxbundle.ManifestName, 0o644, append(raw, '\n')})
+	return out
 }
 
-// TarGz is the release archive of entries under the root directory build writes for s.
+// TarGz is the release archive of entries under the root directory build writes for s, through the build's own writer.
 func TarGz(t testing.TB, s Spec, entries []Entry) []byte {
 	t.Helper()
 	root, err := linuxbundle.RootName(s.ID, s.Version, s.Arch)
@@ -114,21 +107,7 @@ func TarGz(t testing.TB, s Spec, entries []Entry) []byte {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	for _, e := range entries {
-		hdr := &tar.Header{Name: path.Join(root, e.Name), Typeflag: tar.TypeReg, Mode: e.Mode, Size: int64(len(e.Data)), ModTime: time.Unix(0, 0), Format: tar.FormatPAX}
-		if err := tw.WriteHeader(hdr); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tw.Write(e.Data); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := gz.Close(); err != nil {
+	if err := linuxbundle.WriteArchive(&buf, root, entries); err != nil {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
@@ -171,4 +150,36 @@ func Install(t testing.TB, apps string, s Spec, launcher, desktopEntry []byte) s
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// WriteSource writes entries as the extracted release directory dir,
+// each at its archive mode, as tar extraction leaves them.
+func WriteSource(t testing.TB, dir string, entries []Entry) string {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, e := range entries {
+		if d := path.Dir(e.Name); d != "." {
+			if err := root.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := root.WriteFile(e.Name, e.Data, os.FileMode(e.Mode)); err != nil {
+			t.Fatal(err)
+		}
+		if err := root.Chmod(e.Name, os.FileMode(e.Mode)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// PNGSized is a w by h PNG.
+func PNGSized(w, h int) []byte {
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h)))
+	return buf.Bytes()
 }

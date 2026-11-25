@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -322,9 +323,9 @@ func parseDesktopBuildFlags(args []string) (desktopBuildFlags, error) {
 	return f, err
 }
 
-var desktopVersionRe = linuxbundle.VersionPattern
+var desktopVersionRe = regexp.MustCompile(linuxbundle.VersionGrammar)
 
-var desktopSchemeRe = linuxbundle.SchemePattern
+var desktopSchemeRe = regexp.MustCompile(linuxbundle.SchemeGrammar)
 
 func validateDesktopID(id string) error {
 	if err := appid.Check(id); err != nil {

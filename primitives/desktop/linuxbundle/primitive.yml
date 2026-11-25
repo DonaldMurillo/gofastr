@@ -13,14 +13,31 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallManifestRefusals
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallPayloadRefusals
+      - test: internal/linuxbundle.TestOpenRefusesABadPayload
       - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
   - id: installed-form-is-what-uninstall-accepts
     rule: OpenInstalled accepts a directory only when Open does with installed set, the directory, bin, manifest and receipt are owned by this user at 0700, 0700, 0600 and 0600, and the receipt names the id and the manifest's sha256; Populate and WriteReceipt write exactly that form.
     enforced_by:
+      - test: internal/linuxbundle.TestOpenInstalledRefusesAChangedInstallation
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxInstallRoundTrip
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
       - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
+  - id: uninstall-checks-what-it-wrote-outside
+    rule: Uninstall refuses, keeping every file, when the launcher or desktop entry is not this user's at 0700 and 0600 or its bytes differ from the receipt's digests.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRefusesAChangedLauncherOrEntryMode
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallRetainsChanges
+  - id: uninstall-clears-update-leftovers
+    rule: Uninstall also removes <id>~old and <id>~new when each opens as an installation of the same id, by their fixed inventory, and warns and keeps either otherwise.
+    enforced_by:
+      - test: cmd/gofastr/internal/desktopcmd.TestLinuxUninstallClearsUpdateLeftovers
+  - id: fixture-writes-through-the-build
+    rule: linuxbundletest writes bundles through WithManifest and WriteArchive, the manifest builder and archive writer gofastr desktop build uses, and differs from a release only in its payload's bytes.
+    judge: Does this change make linuxbundletest build a manifest or write an archive by any path but linuxbundle.WithManifest and linuxbundle.WriteArchive?
+  - id: build-identity-is-the-bundle-check
+    rule: gofastr desktop build checks a Linux bundle's id, name, version and scheme through CheckIdentity, the check Open applies to a manifest, and DesktopEntry refuses a scheme off SchemeGrammar.
+    judge: Does this change let gofastr desktop build or DesktopEntry accept an id, name, version or scheme that CheckIdentity refuses?
 decisions:
   - id: one-package-for-the-format
     date: 2026-11-25

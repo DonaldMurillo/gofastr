@@ -29,7 +29,11 @@ type linuxPlatform struct {
 	ok       bool
 
 	start func(exe string, env []string) error
+	warn  func(msg string)
 }
+
+// SideSep joins an installation's directory to "old" and "new" beside it (linuxbundle.SideSep).
+const SideSep = linuxbundle.SideSep
 
 // DefaultPlatform returns the Linux platform.
 func DefaultPlatform(onMain func(func()) error, runner CommandRunner) Platform {
@@ -42,6 +46,8 @@ func DefaultPlatform(onMain func(func()) error, runner CommandRunner) Platform {
 func NewInstalledPlatform(exe string, start func(exe string, env []string) error) Platform {
 	return &linuxPlatform{exe: exe, start: start}
 }
+
+func (p *linuxPlatform) SetWarn(fn func(string)) { p.warn = fn }
 
 func (p *linuxPlatform) load() {
 	p.once.Do(func() {
@@ -61,13 +67,26 @@ func (p *linuxPlatform) load() {
 		if filepath.Base(bin) != "bin" || filepath.Base(dir) != id || !linuxbundle.ValidID(id) {
 			return
 		}
-		b, receipt, err := linuxbundle.OpenInstalled(dir, id)
+		apps := filepath.Dir(dir)
+		root, err := linuxbundle.OpenDirectory(apps, false)
 		if err != nil {
+			p.warnf("the directory this app is installed in is not private to this user, so updates are off")
 			return
 		}
-		_ = b.Close()
-		p.apps, p.manifest, p.receipt, p.ok = filepath.Dir(dir), b.Manifest, receipt, true
+		_ = root.Close()
+		m, receipt, err := linuxbundle.ReadInstalled(dir, id)
+		if err != nil {
+			p.warnf("this installation's manifest or receipt is unreadable (" + bundleDetail(err) + "), so updates are off until it is reinstalled with gofastr desktop install")
+			return
+		}
+		p.apps, p.manifest, p.receipt, p.ok = apps, m, receipt, true
 	})
+}
+
+func (p *linuxPlatform) warnf(msg string) {
+	if p.warn != nil {
+		p.warn(msg)
+	}
 }
 
 func (p *linuxPlatform) Version() string {
@@ -93,17 +112,23 @@ func (p *linuxPlatform) Units() ([]Unit, bool) {
 	if !ok {
 		return nil, false
 	}
-	return []Unit{{Rel: id, Current: filepath.Join(apps, id)}}, true
+	return []Unit{{Rel: id, Current: filepath.Join(apps, id), Sep: SideSep}}, true
 }
 
-// Extract unpacks the release archive under stage, verifies it as a
+// Extract refuses with ErrInstallationChanged when the installation on
+// disk is no longer the one this process read at start, then unpacks
+// the release archive under stage, verifies it as a
 // bundle for this host, and stages its installed form in stage/bundle,
 // named by the id its manifest declares, with the running install's
 // launcher and desktop entry digests carried into a receipt for the
 // new manifest. It returns stage/bundle.
 func (p *linuxPlatform) Extract(data []byte, stage string) (string, error) {
-	if _, _, ok := p.Bundle(); !ok {
+	id, apps, ok := p.Bundle()
+	if !ok {
 		return "", ErrUnsupportedApply
+	}
+	if _, now, err := linuxbundle.ReadInstalled(filepath.Join(apps, id), id); err != nil || now.ManifestSHA256 != p.receipt.ManifestSHA256 {
+		return "", ErrInstallationChanged
 	}
 	unpacked := filepath.Join(stage, "archive")
 	if err := os.Mkdir(unpacked, 0o700); err != nil {

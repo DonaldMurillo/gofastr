@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +23,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
+	"golang.org/x/sys/unix"
 )
 
 type report struct {
@@ -30,7 +33,13 @@ type report struct {
 	Available   bool   `json:"available"`
 	FeedVersion string `json:"feed_version"`
 	Window      bool   `json:"window"`
-	Error       string `json:"error,omitempty"`
+	// Shell is the shell's Go type, so a test can tell GTK from desktoptest.
+	Shell string `json:"shell"`
+	// SessionLeader is whether this process leads its own session.
+	SessionLeader bool `json:"session_leader"`
+	// PredecessorAlive is whether the predecessor was still running once the window opened.
+	PredecessorAlive bool   `json:"predecessor_alive"`
+	Error            string `json:"error,omitempty"`
 }
 
 type screen struct{}
@@ -41,6 +50,9 @@ func (screen) Render() render.HTML {
 
 func main() {
 	r := report{PID: os.Getpid(), Predecessor: os.Getenv("GOFASTR_DESKTOP_UPDATE_PREDECESSOR")}
+	if sid, err := unix.Getsid(0); err == nil {
+		r.SessionLeader = sid == r.PID
+	}
 	site := appui.NewApp("UpdateE2E")
 	site.Register("/", screen{}, appui.NewLayout("public", appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {
 		return l.Primary()
@@ -55,6 +67,7 @@ func main() {
 		Shell:  shell,
 		Update: &desktop.UpdateConfig{FeedURL: os.Getenv("UPDATEMAIN_FEED"), PublicKey: os.Getenv("UPDATEMAIN_KEY"), Interval: -1},
 	})
+	r.Shell = fmt.Sprintf("%T", shell)
 	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "updatee2e"}))
 	app.Mount(uihost.New(site))
 	app.RegisterBattery(b)
@@ -65,6 +78,9 @@ func main() {
 			r.Window = true
 			break
 		}
+	}
+	if pid, err := strconv.Atoi(r.Predecessor); err == nil && pid > 0 {
+		r.PredecessorAlive = procalive.Alive(pid)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -77,7 +93,10 @@ func main() {
 		r.Error = err.Error()
 	}
 	out, _ := json.Marshal(r)
-	_ = os.WriteFile(filepath.Join(os.Getenv("UPDATEMAIN_REPORTS"), strconv.Itoa(r.PID)+".json"), out, 0o600)
+	final := filepath.Join(os.Getenv("UPDATEMAIN_REPORTS"), strconv.Itoa(r.PID)+".json")
+	if os.WriteFile(final+".tmp", out, 0o600) == nil {
+		_ = os.Rename(final+".tmp", final)
+	}
 	if !u.Available || err != nil {
 		shell.Quit()
 	}

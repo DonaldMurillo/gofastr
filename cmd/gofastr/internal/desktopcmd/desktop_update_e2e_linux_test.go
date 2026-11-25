@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -28,12 +29,15 @@ import (
 const updateE2EID = "dev.gofastr.updatee2e"
 
 type updateE2EReport struct {
-	PID         int    `json:"pid"`
-	Predecessor string `json:"predecessor"`
-	Available   bool   `json:"available"`
-	FeedVersion string `json:"feed_version"`
-	Window      bool   `json:"window"`
-	Error       string `json:"error"`
+	PID              int    `json:"pid"`
+	Predecessor      string `json:"predecessor"`
+	Available        bool   `json:"available"`
+	FeedVersion      string `json:"feed_version"`
+	Window           bool   `json:"window"`
+	Shell            string `json:"shell"`
+	SessionLeader    bool   `json:"session_leader"`
+	PredecessorAlive bool   `json:"predecessor_alive"`
+	Error            string `json:"error"`
 }
 
 // TestLinuxDesktopUpdateEndToEnd runs the whole Linux update path in
@@ -51,8 +55,8 @@ func TestLinuxDesktopUpdateEndToEnd(t *testing.T) {
 }
 
 // TestLinuxDesktopUpdateNative is TestLinuxDesktopUpdateEndToEnd on the
-// GTK and WebKitGTK shell: both versions open a real window before the
-// update is installed, and the relaunched 2.0.0 opens its own. It runs
+// GTK and WebKitGTK shell: 1.0.0 opens a real window before it installs
+// the update, and the relaunched 2.0.0 opens its own. It runs
 // in scripts/test-linux-desktop.sh, under Xvfb and a session bus.
 func TestLinuxDesktopUpdateNative(t *testing.T) {
 	if os.Getenv("GOFASTR_LINUX_NATIVE") != "1" {
@@ -110,7 +114,9 @@ func runLinuxUpdateEndToEnd(t *testing.T, native bool) {
 	}
 
 	reports := t.TempDir()
-	cmd := exec.Command(filepath.Join(paths.bin, updateE2EID))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(paths.bin, updateE2EID))
 	cmd.Env = append(os.Environ(),
 		"UPDATEMAIN_FEED="+srv.URL+"/manifest.json",
 		"UPDATEMAIN_KEY="+hex.EncodeToString(pub),
@@ -134,18 +140,36 @@ func runLinuxUpdateEndToEnd(t *testing.T, native bool) {
 	waitUntil(t, "the relaunched 2.0.0 to report", func() bool {
 		entries, _ := os.ReadDir(reports)
 		for _, e := range entries {
-			if e.Name() != strconv.Itoa(first.PID)+".json" {
+			if strings.HasSuffix(e.Name(), ".json") && e.Name() != strconv.Itoa(first.PID)+".json" {
 				second = readUpdateReport(t, reports, mustAtoi(t, e.Name()[:len(e.Name())-len(".json")]), &output)
 				return true
 			}
 		}
 		return false
 	})
+	t.Cleanup(func() {
+		if procalive.Alive(second.PID) {
+			if p, err := os.FindProcess(second.PID); err == nil {
+				_ = p.Kill()
+			}
+		}
+	})
 	if second.Predecessor != strconv.Itoa(first.PID) {
 		t.Fatalf("2.0.0 named predecessor %q, want 1.0.0's pid %d", second.Predecessor, first.PID)
 	}
 	if second.Available || second.FeedVersion != "2.0.0" || second.Error != "" || !second.Window {
 		t.Fatalf("2.0.0 saw %+v", second)
+	}
+	if second.PredecessorAlive {
+		t.Fatal("2.0.0 opened its window while 1.0.0 was still running")
+	}
+	if !second.SessionLeader {
+		t.Fatal("2.0.0 does not run in a session of its own")
+	}
+	for _, r := range []updateE2EReport{first, second} {
+		if onTestShell := strings.Contains(r.Shell, "desktoptest"); onTestShell == native {
+			t.Fatalf("pid %d ran on %s, native=%v", r.PID, r.Shell, native)
+		}
 	}
 	waitUntil(t, "2.0.0 to exit", func() bool { return !procalive.Alive(second.PID) })
 
@@ -157,7 +181,7 @@ func runLinuxUpdateEndToEnd(t *testing.T, native bool) {
 	if err := json.Unmarshal(manifest, &m); err != nil || m.Version != "2.0.0" {
 		t.Fatalf("installed manifest version %q (%v), want 2.0.0", m.Version, err)
 	}
-	if _, err := os.Lstat(filepath.Join(paths.apps, updateE2EID+".old")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(paths.apps, updateE2EID+"~old")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("2.0.0 did not clear the previous installation: %v", err)
 	}
 

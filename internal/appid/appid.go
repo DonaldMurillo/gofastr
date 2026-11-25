@@ -23,7 +23,7 @@ func Check(id string) error {
 	// ".", "..", "..." satisfy the grammar and the dot rule, and would
 	// name a directory above the data dir.
 	if strings.Trim(id, ".-") == "" {
-		return fmt.Errorf("%q must not be a bare dot/dash sequence: it names a directory under the OS user config dir", id)
+		return fmt.Errorf("%q must not be a bare dot/dash sequence: it names the bundle identifier and a directory under the OS user config dir", id)
 	}
 	if len(id) > 253 {
 		return fmt.Errorf("%q is longer than 253 characters", id)

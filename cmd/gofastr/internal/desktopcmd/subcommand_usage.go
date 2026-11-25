@@ -85,18 +85,23 @@ Linux/arm64).
         Refuses existing destinations; checksums are not signatures.
   uninstall --id=<reverse.dns> (Linux only)
         Removes only an unchanged installation and its recorded launcher
-        and menu entry. Preserves app data; refuses modified/unlisted
-        files. Upgrade by uninstalling then installing the new bundle.
+        and menu entry, and the previous version an update kept beside
+        it. Preserves app data; refuses modified/unlisted files. An app
+        with Config.Update installs its own updates; otherwise upgrade
+        by uninstalling, then installing the new bundle.
   keygen -o=<path>
         Mints the auto-update signing pair: <path> (private, 0600) and
         <path>.pub (the hex public key for desktop.UpdateConfig).
   feed --key=<path> --version=<x.y.z> --platform=<goos-goarch>
-        --archive=<zip> --url=<https://...> [--notes=<text>] [-o=<dir>]
+        --archive=<zip|tar.gz> --url=<https://...> [--notes=<text>] [-o=<dir>]
         [--valid-days=<1-365>]
         Writes manifest.json and manifest.json.sig (ed25519 over the
         manifest bytes) with the archive's sha256 and size, the feed
-        the battery's updater verifies. --version must equal the
-        bundle's CFBundleShortVersionString. The manifest expires
+        the battery's updater verifies. --archive is the .app zip
+        (macOS), the --zip output (Windows) or the --format=tar.gz
+        archive (Linux), and --version must equal the version the
+        bundle declares: CFBundleShortVersionString, ProductVersion or
+        manifest.json's version. The manifest expires
         after --valid-days (30 by default) and apps refuse it from
         then on: run feed again with the same flags to renew it. Both
         files are written 0644, ready to serve.

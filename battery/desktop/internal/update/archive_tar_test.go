@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle/linuxbundletest"
 )
 
@@ -84,16 +85,18 @@ func TestExtractTarGzRefusesUnsafeArchives(t *testing.T) {
 			tarEntry{tar.Header{Name: "app/link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"}, ""}),
 		"a hard link": tarGz(t, reg("app/a", 0o644, "x"),
 			tarEntry{tar.Header{Name: "app/link", Typeflag: tar.TypeLink, Linkname: "app/a"}, ""}),
-		"a FIFO":              tarGz(t, tarEntry{tar.Header{Name: "app/fifo", Typeflag: tar.TypeFifo}, ""}),
-		"a parent segment":    tarGz(t, reg("app/../escape", 0o644, "x")),
-		"an absolute name":    tarGz(t, reg("/app/a", 0o644, "x")),
-		"a backslash":         tarGz(t, reg(`app\a`, 0o644, "x")),
-		"two top-level names": tarGz(t, reg("app/a", 0o644, "x"), reg("other/b", 0o644, "y")),
-		"a repeated entry":    tarGz(t, reg("app/a", 0o644, "x"), reg("app/a", 0o644, "y")),
-		"a file as the root":  tarGz(t, reg("app", 0o644, "x")),
-		"an empty archive":    tarGz(t),
-		"not gzip":            []byte("plain bytes"),
-		"an oversized entry":  tarGz(t, tarEntry{tar.Header{Name: "app/big", Typeflag: tar.TypeReg, Size: maxEntrySize + 1}, ""}),
+		"a FIFO":                      tarGz(t, tarEntry{tar.Header{Name: "app/fifo", Typeflag: tar.TypeFifo}, ""}),
+		"a name that escapes":         tarGz(t, reg("app/../../escape", 0o644, "x")),
+		"a name that leaves the root": tarGz(t, reg("app/a", 0o644, "x"), reg("app/../escape", 0o644, "x")),
+		"a character device":          tarGz(t, tarEntry{tar.Header{Name: "app/dev", Typeflag: tar.TypeChar, Devmajor: 1, Devminor: 3}, ""}),
+		"an absolute name":            tarGz(t, reg("/app/a", 0o644, "x")),
+		"a backslash":                 tarGz(t, reg(`app\a`, 0o644, "x")),
+		"two top-level names":         tarGz(t, reg("app/a", 0o644, "x"), reg("other/b", 0o644, "y")),
+		"a repeated entry":            tarGz(t, reg("app/a", 0o644, "x"), reg("app/a", 0o644, "y")),
+		"a file as the root":          tarGz(t, reg("app", 0o644, "x")),
+		"an empty archive":            tarGz(t),
+		"not gzip":                    []byte("plain bytes"),
+		"an oversized entry":          tarGz(t, tarEntry{tar.Header{Name: "app/big", Typeflag: tar.TypeReg, Size: maxEntrySize + 1}, ""}),
 	}
 	for name, data := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -145,6 +148,95 @@ func TestWriteFeedChecksALinuxArchive(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), dir) {
 				t.Fatalf("the error names a path: %v", err)
+			}
+		})
+	}
+}
+
+// lower sets a tar cap for one test.
+func lower[T any](t *testing.T, cap *T, v T) {
+	old := *cap
+	*cap = v
+	t.Cleanup(func() { *cap = old })
+}
+
+func TestExtractTarGzHoldsItsCaps(t *testing.T) {
+	t.Run("entries", func(t *testing.T) {
+		lower(t, &maxTarEntries, 3)
+		ok := tarGz(t, reg("app/a", 0o644, "a"), reg("app/b", 0o644, "b"), reg("app/c", 0o644, "c"))
+		if _, err := ExtractTarGz(ok, t.TempDir()); err != nil {
+			t.Fatalf("three entries under a cap of three: %v", err)
+		}
+		over := tarGz(t, reg("app/a", 0o644, "a"), reg("app/b", 0o644, "b"), reg("app/c", 0o644, "c"), reg("app/d", 0o644, "d"))
+		_, err := ExtractTarGz(over, t.TempDir())
+		if !errors.Is(err, ErrBadArchive) || !strings.Contains(err.Error(), "too many entries") {
+			t.Fatalf("ExtractTarGz = %v, want too many entries", err)
+		}
+	})
+	t.Run("one entry", func(t *testing.T) {
+		lower(t, &maxTarEntry, 4)
+		dest := t.TempDir()
+		_, err := ExtractTarGz(tarGz(t, reg("app/big", 0o644, "12345")), dest)
+		if !errors.Is(err, ErrBadArchive) || !strings.Contains(err.Error(), "entry too large") {
+			t.Fatalf("ExtractTarGz = %v, want entry too large", err)
+		}
+		if _, err := os.Lstat(filepath.Join(dest, "app", "big")); err == nil {
+			t.Fatal("the oversized entry was written")
+		}
+	})
+	t.Run("total", func(t *testing.T) {
+		lower(t, &maxTarTotal, 8)
+		_, err := ExtractTarGz(tarGz(t, reg("app/a", 0o644, "12345"), reg("app/b", 0o644, "12345")), t.TempDir())
+		if !errors.Is(err, ErrBadArchive) || !strings.Contains(err.Error(), "expands too large") {
+			t.Fatalf("ExtractTarGz = %v, want expands too large", err)
+		}
+	})
+}
+
+func TestWriteFeedRefusesABadLinuxArchive(t *testing.T) {
+	spec := linuxbundletest.Default("1.2.0")
+	spec.Arch = "amd64"
+	dir := t.TempDir()
+	keyPath, _, _, _ := writeKeyFile(t, dir)
+	entries := linuxbundletest.Entries(spec)
+	root := "dev.gofastr.notes-1.2.0-linux-amd64"
+	var manifest string
+	var noManifest, renamed []tarEntry
+	for _, e := range entries {
+		renamed = append(renamed, reg("renamed-root/"+e.Name, e.Mode, string(e.Data)))
+		if e.Name == "manifest.json" {
+			manifest = string(e.Data)
+			continue
+		}
+		noManifest = append(noManifest, reg(root+"/"+e.Name, e.Mode, string(e.Data)))
+	}
+	with := func(extra ...tarEntry) []tarEntry {
+		return append(append([]tarEntry(nil), noManifest...), extra...)
+	}
+	cases := map[string][]byte{
+		"a root build does not write": tarGz(t, renamed...),
+		"no manifest":                 tarGz(t, noManifest...),
+		"two manifests":               tarGz(t, with(reg(root+"/manifest.json", 0o644, manifest), reg(root+"/manifest.json", 0o644, manifest))...),
+		"an oversized manifest":       tarGz(t, with(reg(root+"/manifest.json", 0o644, strings.Repeat(" ", linuxbundle.MaxManifest+1)))...),
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ok.tar.gz"), tarGz(t, with(reg(root+"/manifest.json", 0o644, manifest))...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeed(filepath.Join(dir, "ok"), keyPath, "1.2.0", "", "linux-amd64", filepath.Join(dir, "ok.tar.gz"), "https://example.com/a.tar.gz", 0); err != nil {
+		t.Fatalf("the well-formed control archive was refused: %v", err)
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "bundle.tar.gz")
+			if err := os.WriteFile(p, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := WriteFeed(filepath.Join(t.TempDir(), "feed"), keyPath, "1.2.0", "", "linux-amd64", p, "https://example.com/a.tar.gz", 0)
+			if err == nil {
+				t.Fatal("WriteFeed accepted it")
+			}
+			if name == "no manifest" && !strings.Contains(err.Error(), "has no "+root+"/manifest.json") {
+				t.Fatalf("WriteFeed = %v, want it to name the missing manifest", err)
 			}
 		})
 	}

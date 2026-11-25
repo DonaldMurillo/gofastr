@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+// ErrInstallationChanged is the sentinel for an install refused because
+// the installation on disk is no longer the one this process started
+// from: another instance of the app already updated it.
+var ErrInstallationChanged = errors.New("the installation changed since this app started")
+
 // ErrUnsupportedApply is the sentinel the default (non-darwin or unbundled) platform answers with.
 var ErrUnsupportedApply = errors.New("auto-update is not supported by this host")
 
@@ -202,6 +207,23 @@ func LogDetail(err error) string {
 type Unit struct {
 	Rel     string
 	Current string
+	// Sep joins Current to "old" and "new" for the paths the swap keeps
+	// beside it; "" means ".". A platform whose units sit among other
+	// apps' sets one their names cannot hold.
+	Sep string
+}
+
+// Old is where the swap keeps the replaced copy until the next launch.
+func (u Unit) Old() string { return u.Current + u.sep() + "old" }
+
+// New is where the swap stages the replacement before it moves in.
+func (u Unit) New() string { return u.Current + u.sep() + "new" }
+
+func (u Unit) sep() string {
+	if u.Sep == "" {
+		return "."
+	}
+	return u.Sep
 }
 
 // FileLayout is the optional Platform extension for a host whose

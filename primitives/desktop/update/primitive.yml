@@ -23,6 +23,10 @@ invariants:
     rule: install is single-flight through TryLock, so a concurrent call is refused at once, and every call after a completed swap is refused.
     enforced_by:
       - test: battery/desktop.TestInstallRefusesConcurrentInstall
+  - id: one-install-across-processes
+    rule: install takes a non-blocking lock on update.lock in the data directory for its whole length and refuses with in progress when another process holds it.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusedWhileAnotherProcessInstalls
   - id: only-a-strictly-newer-release
     rule: Check and install treat the feed release as an update only when it is strictly newer than the running version by semver precedence, so an equal or older feed is never offered or installed.
     enforced_by:
@@ -145,18 +149,27 @@ invariants:
       - test: battery/desktop/internal/update.TestDarwinVerifyRefusesNoIdentity
       - test: battery/desktop/internal/update.TestDarwinUnreadableIdentityRefuses
   - id: linux-needs-an-installation
-    rule: The Linux platform reports a bundle only when the running executable resolves to <apps>/<id>/bin/<id> of a directory linuxbundle.OpenInstalled accepts, and takes the app's version and id from that installation's manifest.
+    rule: The Linux platform reports a bundle only when the running executable resolves to <apps>/<id>/bin/<id>, <apps> passes linuxbundle.OpenDirectory, and linuxbundle.ReadInstalled reads a manifest and receipt for that id, without hashing the payload; when the path has that shape and either check fails it warns once with no path in the message.
     enforced_by:
       - test: battery/desktop/internal/update.TestLinuxPlatformReadsTheInstallation
       - test: battery/desktop/internal/update.TestLinuxPlatformNeedsAnIntactInstallation
+      - test: battery/desktop/internal/update.TestLinuxPlatformReadsAChangedInstallation
   - id: linux-swaps-the-installation
-    rule: A Linux install swaps the whole <apps>/<id> directory for one staged from the verified archive in the installed form, with a receipt reissued for the new manifest that keeps the running installation's launcher and desktop entry digests, keeps the previous directory as .old until the next launch, and relaunches bin/<id> in its own session with PredecessorEnv naming the quitting process.
+    rule: A Linux install swaps the whole <apps>/<id> directory for one staged from the verified archive in the installed form, with a receipt reissued for the new manifest that keeps the running installation's launcher and desktop entry digests, keeps the previous directory as <id>~old until the next launch with updates configured, and relaunches bin/<id> in its own session with PredecessorEnv naming the quitting process.
     enforced_by:
       - test: battery/desktop.TestLinuxInstallSwapsTheInstallation
       - test: battery/desktop/internal/update.TestLinuxExtractStagesAnInstallationUninstallAccepts
       - test: battery/desktop/internal/update.TestLinuxRelaunchNamesThePredecessor
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateEndToEnd
       - test: cmd/gofastr/internal/desktopcmd.TestLinuxDesktopUpdateNative
+  - id: linux-side-paths-name-no-app
+    rule: The copies a Linux install keeps beside an installation are <id>~old and <id>~new, which the app id grammar cannot name, so an update or a launch cleanup never removes another installed app.
+    enforced_by:
+      - test: battery/desktop.TestLinuxUpdateLeavesOtherAppsAlone
+  - id: linux-stale-instance-refuses
+    rule: A Linux install refuses with ErrInstallationChanged, and the bridge with restart, when the installation on disk no longer carries the receipt this process read at start, so a second running instance does not install the release again or start another copy.
+    enforced_by:
+      - test: battery/desktop.TestLinuxSecondInstanceDoesNotReinstall
   - id: linux-keeps-name-and-scheme
     rule: The Linux signature check refuses a staged update whose display name or embedded URL scheme differs from the running installation's, and the install then refuses with the archive error before anything is swapped.
     enforced_by:
@@ -168,14 +181,16 @@ invariants:
       - test: battery/desktop/internal/update.TestLinuxExtractRefusesABadBundle
       - test: battery/desktop/internal/update.TestLinuxInspectRefusesAnotherApp
   - id: extract-tar-one-root
-    rule: ExtractTarGz refuses an entry that escapes the root, a second top-level name, a link, device, FIFO or other non-regular, non-directory entry, a repeated name, a regular file as the root, more than maxZipEntries entries and an entry past maxEntrySize, and drops group and other write, setuid, setgid and sticky.
+    rule: ExtractTarGz refuses an entry that escapes the root, a second top-level name, a link, device, FIFO or other non-regular, non-directory entry, a repeated name, a regular file as the root, more than maxTarEntries entries, an entry past maxTarEntry and a total past maxTarTotal, the caps from each header before its body, and drops group and other write, setuid, setgid and sticky.
     enforced_by:
       - test: battery/desktop/internal/update.TestExtractTarGzRefusesUnsafeArchives
       - test: battery/desktop/internal/update.TestExtractTarGzWritesOneRoot
+      - test: battery/desktop/internal/update.TestExtractTarGzHoldsItsCaps
   - id: feed-writer-checks-linux-archives
-    rule: WriteFeed refuses a linux- platform archive that is not a tar.gz ExtractTarGz would accept, whose root is not the one gofastr desktop build writes for its manifest, or whose manifest names another platform or version.
+    rule: WriteFeed refuses a linux- platform archive that is not a tar.gz ExtractTarGz would accept, that holds no manifest.json or one past MaxManifest, whose root is not the one gofastr desktop build writes for its manifest, or whose manifest names another platform or version.
     enforced_by:
       - test: battery/desktop/internal/update.TestWriteFeedChecksALinuxArchive
+      - test: battery/desktop/internal/update.TestWriteFeedRefusesABadLinuxArchive
   - id: windows-layout-is-closed
     rule: A Windows install swaps exactly the executable and WebView2Loader.dll, refuses a running layout where the loader is missing or not a regular file, and relaunches the new executable with PredecessorEnv naming the quitting process.
     enforced_by:

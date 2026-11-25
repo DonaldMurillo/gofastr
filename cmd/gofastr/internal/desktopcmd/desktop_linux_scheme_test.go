@@ -63,7 +63,7 @@ func TestLinuxArchiveEmbeddedSchemeMetadata(t *testing.T) {
 			}
 			contents := make(map[string][]byte)
 			for _, entry := range entries {
-				contents[entry.name] = entry.data
+				contents[entry.Name] = entry.Data
 			}
 			var manifest linuxBundleManifest
 			if err := json.Unmarshal(contents["manifest.json"], &manifest); err != nil {

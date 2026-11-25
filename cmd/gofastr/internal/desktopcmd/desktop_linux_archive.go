@@ -1,35 +1,21 @@
 package desktopcmd
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"image/png"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
-	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
-type linuxArchiveEntry struct {
-	name   string
-	mode   int64
-	data   []byte
-	source string // only the staged executable; never a directory walk
-}
+type linuxArchiveEntry = linuxbundle.Entry
 
 type linuxBundleFile = linuxbundle.File
 
@@ -50,6 +36,9 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	}
 	if !linuxbundle.ValidVersion(f.version) {
 		return "", fmt.Errorf("--version must match %s and be at most 64 characters", desktopVersionRe.String())
+	}
+	if err := linuxbundle.CheckIdentity(linuxbundle.Manifest{ID: f.id, Name: name, Version: f.version, Platform: "linux-" + arch, EmbeddedScheme: f.scheme}); err != nil {
+		return "", err
 	}
 	return linuxbundle.RootName(f.id, f.version, arch)
 }
@@ -253,98 +242,26 @@ compiled executable, so pin those separately for reproducible builds.
 			"open. This is bus-scoped delivery, not a cross-session/global process lock.\n"
 	}
 	entries := []linuxArchiveEntry{
-		{name: "README.txt", mode: 0644, data: []byte(readme)},
-		{name: "bin/" + f.id, mode: 0755, source: executable},
-		{name: f.id + ".desktop.in", mode: 0644, data: []byte(desktopEntry)},
-		{name: "icon.png", mode: 0644, data: icon},
-		{name: "launch.sh", mode: 0755, data: []byte(launcher)},
+		{Name: "README.txt", Mode: 0644, Data: []byte(readme)},
+		{Name: "bin/" + f.id, Mode: 0755, Source: executable},
+		{Name: f.id + ".desktop.in", Mode: 0644, Data: []byte(desktopEntry)},
+		{Name: "icon.png", Mode: 0644, Data: icon},
+		{Name: "launch.sh", Mode: 0755, Data: []byte(launcher)},
 	}
-	slices.SortFunc(entries, func(a, b linuxArchiveEntry) int { return strings.Compare(a.name, b.name) })
 	manifest := linuxBundleManifest{SchemaVersion: 1, ID: f.id, Name: name, Version: f.version, Platform: "linux-" + arch, EntryPoint: "launch.sh", Runtime: []string{"glibc >= 2.34", "GTK 3", "WebKitGTK 4.1 >= 2.40", "X11 or Wayland graphical session"}}
 	if f.scheme != "" {
 		manifest.EmbeddedScheme = f.scheme
 		manifest.Runtime = append(manifest.Runtime, "existing local Unix D-Bus session bus (URL activation)")
 	}
-	for _, entry := range entries {
-		h := sha256.New()
-		size, err := copyLinuxArchiveEntry(h, entry)
-		if err != nil {
-			return nil, err
-		}
-		manifest.Files = append(manifest.Files, linuxBundleFile{Path: entry.name, Mode: fmt.Sprintf("%04o", entry.mode), Size: size, SHA256: hex.EncodeToString(h.Sum(nil))})
-	}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	entries = append(entries, linuxArchiveEntry{name: "manifest.json", mode: 0644, data: append(data, '\n')})
-	return entries, nil
+	return linuxbundle.WithManifest(manifest, entries)
 }
 
 func escapeDesktopEntryString(value string) string { return linuxbundle.EscapeDesktopString(value) }
 
 func copyLinuxArchiveEntry(dst io.Writer, entry linuxArchiveEntry) (int64, error) {
-	if entry.source == "" {
-		n, err := dst.Write(entry.data)
-		return int64(n), err
-	}
-	st, err := os.Lstat(entry.source)
-	if err != nil {
-		return 0, err
-	}
-	if !st.Mode().IsRegular() {
-		return 0, fmt.Errorf("archive source must be a regular file, not a symlink: %s", entry.source)
-	}
-	f, err := os.Open(entry.source)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	return io.Copy(dst, f)
+	return entry.CopyTo(dst)
 }
 
 func writeLinuxArchive(dst io.Writer, root string, entries []linuxArchiveEntry) error {
-	if root == "." || !fs.ValidPath(root) || strings.ContainsAny(root, "/\\\x00") || path.Clean(root) != root {
-		return fmt.Errorf("unsafe archive root %q", root)
-	}
-	entries = slices.Clone(entries)
-	slices.SortFunc(entries, func(a, b linuxArchiveEntry) int { return strings.Compare(a.name, b.name) })
-	previous := ""
-	// Validate before writing any archive bytes. Only explicitly enumerated,
-	// regular payload files can enter the archive: no source-tree walk.
-	for _, entry := range entries {
-		if !fs.ValidPath(entry.name) || strings.ContainsAny(entry.name, "\\\x00") || path.Clean(entry.name) != entry.name || entry.name == "." || entry.name == previous {
-			return fmt.Errorf("unsafe or duplicate archive path %q", entry.name)
-		}
-		if entry.mode != 0644 && entry.mode != 0755 {
-			return fmt.Errorf("unsupported archive mode %o", entry.mode)
-		}
-		previous = entry.name
-	}
-	gz := gzip.NewWriter(dst)
-	tw := tar.NewWriter(gz)
-	for _, entry := range entries {
-		size := int64(len(entry.data))
-		if entry.source != "" {
-			st, err := os.Lstat(entry.source)
-			if err != nil {
-				return err
-			}
-			if !st.Mode().IsRegular() {
-				return fmt.Errorf("archive source is not a regular file: %s", entry.source)
-			}
-			size = st.Size()
-		}
-		header := &tar.Header{Name: path.Join(root, entry.name), Typeflag: tar.TypeReg, Mode: entry.mode, Size: size, ModTime: time.Unix(0, 0), Format: tar.FormatPAX}
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-		if _, err := copyLinuxArchiveEntry(tw, entry); err != nil {
-			return err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-	return gz.Close()
+	return linuxbundle.WriteArchive(dst, root, entries)
 }

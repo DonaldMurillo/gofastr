@@ -49,46 +49,92 @@ func TestLinuxPlatformReadsTheInstallation(t *testing.T) {
 
 func TestLinuxPlatformNeedsAnIntactInstallation(t *testing.T) {
 	spec := linuxbundletest.Default("1.0.0")
-	cases := map[string]func(t *testing.T, dir string) string{
-		"a plain executable": func(t *testing.T, dir string) string {
+	rewriteReceipt := func(t *testing.T, dir string, r linuxbundle.Receipt) {
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer root.Close()
+		if err := root.Remove(linuxbundle.ReceiptName); err != nil {
+			t.Fatal(err)
+		}
+		if err := linuxbundle.WriteReceipt(root, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifestOf := func(t *testing.T, dir string) []byte {
+		raw, err := os.ReadFile(filepath.Join(dir, linuxbundle.ManifestName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	cases := []struct {
+		name  string
+		setup func(t *testing.T, dir string) string
+		warns bool
+	}{
+		{"a plain executable", func(t *testing.T, dir string) string {
 			exe := filepath.Join(t.TempDir(), spec.ID)
 			if err := os.WriteFile(exe, linuxbundletest.ELF(runtime.GOARCH, ""), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			return exe
-		},
-		"a receipt for another manifest": func(t *testing.T, dir string) string {
-			root, err := os.OpenRoot(dir)
-			if err != nil {
+		}, false},
+		{"an installation directory not named for its id", func(t *testing.T, dir string) string {
+			moved := filepath.Join(filepath.Dir(dir), "dev.gofastr.renamed")
+			if err := os.Rename(dir, moved); err != nil {
 				t.Fatal(err)
 			}
-			defer root.Close()
-			if err := root.Remove(linuxbundle.ReceiptName); err != nil {
-				t.Fatal(err)
-			}
-			if err := linuxbundle.WriteReceipt(root, linuxbundle.NewReceipt(spec.ID, []byte("{}"), testLauncher, testDesktop)); err != nil {
+			return filepath.Join(moved, "bin", spec.ID)
+		}, false},
+		{"a receipt for another manifest", func(t *testing.T, dir string) string {
+			rewriteReceipt(t, dir, linuxbundle.NewReceipt(spec.ID, []byte("{}"), testLauncher, testDesktop))
+			return filepath.Join(dir, "bin", spec.ID)
+		}, true},
+		{"a receipt naming another app", func(t *testing.T, dir string) string {
+			rewriteReceipt(t, dir, linuxbundle.NewReceipt("dev.gofastr.other", manifestOf(t, dir), testLauncher, testDesktop))
+			return filepath.Join(dir, "bin", spec.ID)
+		}, true},
+		{"an apps directory others can write", func(t *testing.T, dir string) string {
+			if err := os.Chmod(filepath.Dir(dir), 0o777); err != nil {
 				t.Fatal(err)
 			}
 			return filepath.Join(dir, "bin", spec.ID)
-		},
-		"a changed payload file": func(t *testing.T, dir string) string {
-			if err := os.WriteFile(filepath.Join(dir, "README.txt"), []byte("edited"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			return filepath.Join(dir, "bin", spec.ID)
-		},
+		}, true},
 	}
-	for name, setup := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
 			dir := linuxbundletest.Install(t, filepath.Join(t.TempDir(), "apps"), spec, testLauncher, testDesktop)
-			p := &linuxPlatform{exe: setup(t, dir)}
+			var warned []string
+			p := &linuxPlatform{exe: c.setup(t, dir), warn: func(m string) { warned = append(warned, m) }}
 			if _, _, ok := p.Bundle(); ok {
 				t.Fatal("Bundle reported an installation")
 			}
 			if p.Version() != "" || p.Identifier() != "" {
 				t.Fatalf("identity %q %q from no installation", p.Version(), p.Identifier())
 			}
+			if c.warns != (len(warned) == 1) {
+				t.Fatalf("warnings %q, want one: %v", warned, c.warns)
+			}
+			for _, w := range warned {
+				if strings.Contains(w, dir) || strings.Contains(w, filepath.Dir(dir)) {
+					t.Fatalf("the warning names a path: %q", w)
+				}
+			}
 		})
+	}
+}
+
+// A payload file changed after install does not keep the app from
+// updating: the update replaces the whole directory with verified files.
+func TestLinuxPlatformReadsAChangedInstallation(t *testing.T) {
+	p, apps := installedPlatform(t, linuxbundletest.Default("1.0.0"))
+	if err := os.WriteFile(filepath.Join(apps, "dev.gofastr.notes", "README.txt"), []byte("edited"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := p.Bundle(); !ok || p.Version() != "1.0.0" {
+		t.Fatalf("Bundle ok=%v version %q", ok, p.Version())
 	}
 }
 

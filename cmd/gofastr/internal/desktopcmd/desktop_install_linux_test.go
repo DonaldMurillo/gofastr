@@ -62,18 +62,18 @@ func linuxInstallFixture(t *testing.T, scheme string) (string, linuxBundleManife
 	}
 	dir := t.TempDir()
 	for _, entry := range entries {
-		data := entry.data
-		if entry.source != "" {
-			data, err = os.ReadFile(entry.source)
+		data := entry.Data
+		if entry.Source != "" {
+			data, err = os.ReadFile(entry.Source)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
-		name := filepath.Join(dir, filepath.FromSlash(entry.name))
+		name := filepath.Join(dir, filepath.FromSlash(entry.Name))
 		if err = os.MkdirAll(filepath.Dir(name), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err = os.WriteFile(name, data, os.FileMode(entry.mode)); err != nil {
+		if err = os.WriteFile(name, data, os.FileMode(entry.Mode)); err != nil {
 			t.Fatal(err)
 		}
 	}
