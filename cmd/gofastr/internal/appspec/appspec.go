@@ -78,6 +78,39 @@ type AppSpec struct {
 	// for the reason phrases is: App itself stays empty, since it decides
 	// what the fragment emits.
 	projectApp *AppSpecApp
+
+	// projectShell holds what the generated app.go of the project a
+	// fragment joins declares for screens to mount through
+	// (SetProjectShell), nil when none was read. Unexported for the
+	// reason phrases is.
+	projectShell *ProjectShell
+}
+
+// ProjectShell is what an added screen mounts through in the project it
+// joins, read off the project's generated source: whether app.go
+// declares appLayout and guestPolicy, the login route its authPolicy
+// calls redirect to and the home its guestPolicy calls send a signed-in
+// visitor to ("" when no call names one).
+type ProjectShell struct {
+	AppLayout   bool
+	GuestPolicy bool
+	LoginRoute  string
+	Home        string
+}
+
+// SetProjectShell records the shell of the project a fragment joins
+// (generate app --add). A fragment has no nav and only its own screens,
+// so without it an added screen would drop the app layout, the guest
+// redirect and the project's login route.
+func (bp *AppSpec) SetProjectShell(s ProjectShell) { bp.projectShell = &s }
+
+// ProjectShell returns the shell SetProjectShell recorded; ok is false
+// when none was, and the spec renders against its own nav and screens.
+func (bp *AppSpec) ProjectShell() (s ProjectShell, ok bool) {
+	if bp.projectShell == nil {
+		return s, false
+	}
+	return *bp.projectShell, true
 }
 
 // PhraseCollector returns the phrase collector of the file being

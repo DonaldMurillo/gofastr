@@ -750,6 +750,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if app, ok := projectRouteApp(projectRoot); ok {
 			bp.SetProjectApp(app)
 		}
+		if shell, ok := projectShell(projectRoot); ok {
+			bp.SetProjectShell(shell)
+		}
 	}
 	// Unscoped PII is a warning here (generation proceeds) and an error
 	// from `gofastr validate`. Suppressed in --json mode so stdout stays
@@ -971,6 +974,10 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		}
 		sort.Strings(skipNames)
 		if err := checkAddScreenInvalidation(writeRoot, written, skipNames); err != nil {
+			failGenerate(options.json, err)
+			cli.OsExit(1)
+		}
+		if err := checkAddScreenShell(writeRoot, written); err != nil {
 			failGenerate(options.json, err)
 			cli.OsExit(1)
 		}
@@ -2585,6 +2592,43 @@ func checkAddScreenInvalidation(writeRoot string, written []GeneratedFile, skipp
 	}
 	return fmt.Errorf("--add cannot write %s: %s lacks %s. Generate the full app in a scratch directory and copy the helper and its imports into %s, then retry --add",
 		written[dependent].Name, register, helper, register)
+}
+
+// checkAddScreenShell refuses an added screen file that mounts through
+// authPolicy or marketingLayout when the project's app.go declares
+// neither: app.go declares them only for a project that already has a
+// gated or marketing screen, and --add never edits it, so the new file
+// would not compile. A project with no app.go is not checked.
+func checkAddScreenShell(writeRoot string, written []GeneratedFile) error {
+	src, err := readFileUnder(writeRoot, "app.go")
+	if err != nil {
+		return nil
+	}
+	appFile, err := parser.ParseFile(token.NewFileSet(), "app.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		return nil
+	}
+	declared := topLevelNames(appFile)
+	for _, f := range written {
+		if !IsPerScreenSource(f.Name) {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), f.Name, f.Content, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		missing := ""
+		ast.Inspect(file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && missing == "" && (id.Name == "authPolicy" || id.Name == "marketingLayout") && !slices.Contains(declared, id.Name) {
+				missing = id.Name
+			}
+			return missing == ""
+		})
+		if missing != "" {
+			return fmt.Errorf("--add cannot write %s: it mounts through %s, which the project's app.go does not declare (app.go declares it only when the app spec already has a gated or marketing screen, and --add does not edit app.go). Generate the app spec with the screen in it into a scratch directory and copy %s and its imports from that app.go into yours, then retry --add", f.Name, missing, missing)
+		}
+	}
+	return nil
 }
 
 // readFileUnder reads rel under writeRoot through an *os.Root: a file

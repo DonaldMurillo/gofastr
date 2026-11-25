@@ -94,6 +94,9 @@ func appSpecLoginRoute(bp appspec.AppSpec) string {
 		}
 		return false
 	}
+	if shell, ok := bp.ProjectShell(); ok && shell.LoginRoute != "" {
+		return shell.LoginRoute
+	}
 	for _, s := range bp.Screens {
 		if hasLogin(s.Body) {
 			return s.Route
@@ -2605,22 +2608,36 @@ func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNod
 // appSpecScreenLayoutExpr resolves a screen's Layout field to the
 // package-level layout identifier app.go declares (appLayout / marketingLayout)
 // or "nil". Layouts are package-level vars so per-screen mount funcs can
-// reference them without app.go naming any screen.
+// reference them without app.go naming any screen. A screen added with
+// --add takes appLayout when the project's app.go declares it, since the
+// fragment has no nav of its own.
 func appSpecScreenLayoutExpr(screen appspec.AppSpecScreen, bp appspec.AppSpec) string {
-	switch screen.Layout {
-	case "marketing":
+	if screen.Layout == "marketing" {
 		return "marketingLayout"
-	case "app":
-		if len(bp.Nav) > 0 {
-			return "appLayout"
-		}
-		return "nil"
-	default:
-		if len(bp.Nav) > 0 {
-			return "appLayout"
-		}
-		return "nil"
 	}
+	hasAppLayout := len(bp.Nav) > 0
+	if shell, ok := bp.ProjectShell(); ok {
+		hasAppLayout = shell.AppLayout
+	}
+	if hasAppLayout {
+		return "appLayout"
+	}
+	return "nil"
+}
+
+// appSpecGuestHome reports whether auth-form screens are guest-gated
+// (app.go declares guestPolicy) and the home guestPolicy sends a
+// signed-in visitor to. A screen added with --add reads both off the
+// project, since the fragment's app section and screens are not the
+// project's.
+func appSpecGuestHome(bp appspec.AppSpec) (bool, string) {
+	if shell, ok := bp.ProjectShell(); ok {
+		if shell.Home != "" {
+			return shell.GuestPolicy, shell.Home
+		}
+		return shell.GuestPolicy, appspec.AppHome(bp.Screens)
+	}
+	return bp.App.Auth.Enabled && appSpecHasAuthFormScreen(bp), appspec.AppHome(bp.Screens)
 }
 
 // AppSpecScreenMountStmt emits the site.Register / site.RegisterScreen
@@ -2634,7 +2651,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	route := appSpecScreenPattern(bp, screen)
 	typeName := appspec.ToCamelCase(screen.Name) + "Screen"
 	layoutExpr := appSpecScreenLayoutExpr(screen, bp)
-	guestRedirect := bp.App.Auth.Enabled && appSpecHasAuthFormScreen(bp)
+	guestRedirect, home := appSpecGuestHome(bp)
 	// NewScreen does not probe the component the way site.Register does
 	// (no ScreenDescriber discovery), so a declared description must be
 	// chained explicitly or uihost strict mode fails the boot with
@@ -2667,7 +2684,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 		case screen.Access.Auth:
 			policy = fmt.Sprintf(".WithPolicy(authPolicy(%q, %q))", appSpecLoginRoute(bp), screen.Access.Role)
 		case guestRedirect && screenHasAuthForm(screen):
-			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appspec.AppHome(bp.Screens))
+			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", home)
 		}
 		return fmt.Sprintf("\trecord := %s%s\n%s\tsite.RegisterScreen(record, %s)", build, policy, intercept, layoutExpr)
 	}
@@ -2675,7 +2692,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	case screen.Access.Auth:
 		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(authPolicy(%q, %q)), %s)", build, appSpecLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appspec.AppHome(bp.Screens), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, home, layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}

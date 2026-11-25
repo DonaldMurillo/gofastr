@@ -43,6 +43,11 @@ invariants:
     rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
+  - id: added-screens-mount-through-the-project-shell
+    rule: A screen generate app --add renders takes the layout, guest redirect, home and login route the project's generated app.go and screens already use (AppSpec.ProjectShell), so its file matches a full generate of the project with the screen in it; one that would mount through an authPolicy or marketingLayout app.go does not declare is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenMatchesFullGenerate
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesUndeclaredShellHelper
   - id: add-preserves-distinct-mounted-routes
     rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
     enforced_by:
