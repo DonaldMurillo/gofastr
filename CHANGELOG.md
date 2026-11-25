@@ -34,6 +34,13 @@ few lines, and link the PR or the docs page for the rest.
   `.nojekyll`: an Actions deploy runs no Jekyll, and `upload-pages-artifact`
   v5 leaves dotfiles out.
 
+### Fixed
+
+- **Paired email templates no longer include the leading `Subject: ` line
+  in the HTML body.** A `.txt` body also drops its leading `Subject: ` line
+  when a `.subject` file sets the subject
+  ([#885](https://github.com/DonaldMurillo/gofastr/pull/885)).
+
 ## [0.99.0] - 2026-11-25
 
 ### Added
