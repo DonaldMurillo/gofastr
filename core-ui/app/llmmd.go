@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -240,10 +241,14 @@ func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
 		content = render.HTML(urlprefix.HTML([]byte(content), rule))
 	}
 	if base := linkBase(ctx); base != "" {
-		content = render.HTML(urlprefix.HTML([]byte(content), urlprefix.Rule{Prefix: base, Origins: origins}))
+		content = render.HTML(baseLinkAttr.ReplaceAllString(string(content), "${1}"+strings.ReplaceAll(base, "$", "$$")+"/${2}"))
 	}
 	return content
 }
+
+// baseLinkAttr finds the root-relative href and src values htmlToMarkdown turns into link and
+// image destinations; a static export puts its base path on every one, as its HTML rewrite does.
+var baseLinkAttr = regexp.MustCompile(`(?i)(\s(?:href|src)=")/([^/"]|")`)
 
 type linkBaseKey struct{}
 
