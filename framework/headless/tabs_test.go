@@ -17,19 +17,22 @@ func TestTabsRendersRovingTabindexAndPanels(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`<nav data-cui-internal="" role="tablist">`,
-		`<a aria-controls="cfg-panel-0" aria-selected="true" data-cui-signal-set="cfg:0" data-cui-tab-index="0" href="#cfg-panel-0" id="cfg-tab-0" role="tab" tabindex="0">General</a>`,
-		`<a aria-controls="cfg-panel-1" aria-selected="false" data-cui-signal-set="cfg:1" data-cui-tab-index="1" href="#cfg-panel-1" id="cfg-tab-1" role="tab" tabindex="-1">Secrets</a>`,
+		`<a aria-selected="true" data-cui-signal-set="cfg:0" data-cui-tab-index="0" href="#cfg-panel-0" id="cfg-tab-0" role="tab" tabindex="0">General</a>`,
+		`<a aria-selected="false" data-cui-signal-set="cfg:1" data-cui-tab-index="1" href="#cfg-panel-1" id="cfg-tab-1" role="tab" tabindex="-1">Secrets</a>`,
 		`<div aria-labelledby="cfg-tab-0" data-cui-tab-index="0" id="cfg-panel-0" role="tabpanel" tabindex="0">The general panel.</div>`,
-		`<div aria-labelledby="cfg-tab-1" data-cui-tab-index="1" id="cfg-panel-1" role="tabpanel" tabindex="0">The secrets panel.</div>`,
+		`<div aria-labelledby="cfg-tab-1" data-cui-tab-index="1" hidden="until-found" id="cfg-panel-1" role="tabpanel" tabindex="-1">The secrets panel.</div>`,
 		`data-active="0" data-cui-signal="cfg" data-cui-signal-attr="data-active" data-cui-signal-mode="attr" data-hui-tabs=""`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("tabs missing %q:\n%s", want, h)
 		}
 	}
-	// Exactly one tab is in the tab order.
-	if n := strings.Count(h, `tabindex="0"`); n != 3 { // active tab + two panels
-		t.Errorf("%d tabindex=0 attrs, want 3 (one tab + the panels):\n%s", n, h)
+	// Exactly one tab and its panel are in the tab order.
+	if n := strings.Count(h, `tabindex="0"`); n != 2 {
+		t.Errorf("%d tabindex=0 attrs, want 2 (the active tab and its panel):\n%s", n, h)
+	}
+	if strings.Contains(h, "aria-controls") {
+		t.Errorf("a tab carries aria-controls; the panel names its tab through aria-labelledby alone:\n%s", h)
 	}
 }
 
@@ -42,7 +45,7 @@ func TestTabsVacateStashAndState(t *testing.T) {
 		`data-hui-tabs-state="" data-hui-tabs-vacate=""`,
 		`data-state="inactive"`,
 		`data-state="active"`,
-		`<div aria-labelledby="vac-tab-0" data-cui-internal="" data-cui-tab-index="0" id="vac-panel-0" role="tabpanel" tabindex="0"></div>`,
+		`<div aria-labelledby="vac-tab-0" data-cui-internal="" data-cui-tab-index="0" hidden="until-found" id="vac-panel-0" role="tabpanel" tabindex="-1"></div>`,
 		`<div aria-labelledby="vac-tab-1" data-cui-tab-index="1" id="vac-panel-1" role="tabpanel" tabindex="0">Second</div>`,
 		`<script data-cui-internal="" data-hui-tabs-stash="true" type="application/json">`,
 	} {
@@ -111,5 +114,22 @@ func TestTabsScrubbedCarriedLabels(t *testing.T) {
 	h := renderTabs(TabsProps{Name: "x", Tabs: []Tab{{Label: "Set\r\ntings", Panel: render.Text("p")}}})
 	if !strings.Contains(h, ">Settings<") {
 		t.Errorf("a CR LF in a carried label reached the reader:\n%s", h)
+	}
+}
+
+// A disabled tab's panel is plainly hidden: find-in-page and fragment
+// links reveal a hidden="until-found" panel, and a search must not open
+// what a click cannot.
+func TestTabsDisabledPanelIsPlainlyHidden(t *testing.T) {
+	h := renderTabs(TabsProps{Name: "lk", Tabs: []Tab{
+		{Label: "Open", Panel: render.Text("open")},
+		{Label: "Locked", Panel: render.Text("locked"), Disabled: true},
+	}})
+	want := `<div aria-labelledby="lk-tab-1" data-cui-tab-index="1" hidden="" id="lk-panel-1" role="tabpanel" tabindex="-1">locked</div>`
+	if !strings.Contains(h, want) {
+		t.Errorf("the disabled tab's panel is not plainly hidden; want %s in:\n%s", want, h)
+	}
+	if n := strings.Count(h, `until-found`); n != 0 {
+		t.Errorf("%d until-found panels, want 0 (the only inactive tab is disabled):\n%s", n, h)
 	}
 }

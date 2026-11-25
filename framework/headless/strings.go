@@ -150,6 +150,8 @@ type Strings struct {
 	CarouselRole string
 	// CarouselSlideRole is each slide's roledescription. One word.
 	CarouselSlideRole string
+	// CarouselPause names the rotation control of a rotating carousel; aria-pressed says it is paused.
+	CarouselPause string
 
 	// PaneSecondary names a secondary pane with no label of its own. One word.
 	PaneSecondary string
@@ -324,6 +326,7 @@ var defaultStrings = Strings{
 
 	CarouselRole:      "carousel",
 	CarouselSlideRole: "slide",
+	CarouselPause:     "Pause slides",
 
 	PaneSecondary: "Secondary",
 	PaneTertiary:  "Tertiary",
