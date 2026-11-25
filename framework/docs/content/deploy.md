@@ -37,8 +37,10 @@ What it configures on the host:
 
 - `/opt/<name>/releases/<UTC-time>/<name>` and `/opt/<name>/current` symlink, plus per-release unit snapshots under `units/`.
 - A non-login system user `<name>` and writable data directory `/var/lib/<name>` (`HOME` and `XDG_STATE_HOME` point here, so relative SQLite paths and [telemetry](telemetry.md) stay contained).
-- `/etc/<name>/env` from `--env-file` (root + app readable only; omitted on later deploys to keep existing env).
+- `/opt/<name>/releases/<UTC-time>/env` from `--env-file`, readable only by root and the app's group. systemd reads `/opt/<name>/current/env`.
 - `/etc/systemd/system/<name>.service` (auto-restarts on crash, starts on boot, forces `GOFASTR_ENV=production`) and `<name>.socket`.
+
+If you omit `--env-file`, the new release copies the current release's env file. If that file is absent, it copies the legacy `/etc/<name>/env` if present or starts with an empty env file.
 
 After starting a release, `gofastr deploy` waits up to 30 seconds for `/healthz` to return 2xx. On failure, it rolls back to the previous release, prints the failing app logs, and exits non-zero.
 

@@ -304,6 +304,17 @@ func TestDeployDocDotenvLoadIsUnconditional(t *testing.T) {
 	}
 }
 
+func TestDeployDocNamesReleaseEnvironment(t *testing.T) {
+	doc := readDoc(t, "deploy.md")
+	if !strings.Contains(doc, "`/opt/<name>/current/env`") ||
+		!strings.Contains(doc, "`/opt/<name>/releases/<UTC-time>/env`") {
+		t.Error("deploy.md must name the release env file and the current env path systemd reads")
+	}
+	if strings.Contains(doc, "`/etc/<name>/env` from `--env-file`") {
+		t.Error("deploy.md treats the legacy env path as the destination for --env-file")
+	}
+}
+
 // access-control.md used framework.Wildcard. Wildcard lives in
 // framework/access and is not among the framework facade's re-exports.
 func TestAccessControlDocUsesTheRealWildcardPath(t *testing.T) {
