@@ -176,5 +176,6 @@ func init() {
 // interactiveContentRe matches what an <a> may not hold: an opening
 // link, control or embedded-media tag in any letter case (and not
 // <abbr>, <article>, <aside> and the like, whose names only start the
-// same), or a tabindex or contenteditable attribute.
-var interactiveContentRe = regexp.MustCompile(`(?i)<(a|button|input|select|textarea|label|details|summary|iframe|embed|object|audio|video)[\s>/]|\s(tabindex|contenteditable)\s*=`)
+// same), or a tabindex or contenteditable attribute inside a tag, with
+// a value or without one (the words alone in the text are fine).
+var interactiveContentRe = regexp.MustCompile(`(?i)<(a|button|input|select|textarea|label|details|summary|iframe|embed|object|audio|video)[\s>/]|<[^>]*\s(tabindex|contenteditable)(\s*=|[\s>/])`)

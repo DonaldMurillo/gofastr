@@ -57,6 +57,12 @@ func TestCardTitleLinkRefusals(t *testing.T) {
 // control, embedded media, a tabindex or contenteditable, and lets
 // ordinary phrasing through, <abbr> and <aside> included.
 func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
+	for _, text := range []string{`Set <code>tabindex</code> on it`, `The contenteditable attribute`} {
+		got := string(Card(CardProps{TitleContent: render.HTML(text), TitleHref: "/b"}, nil))
+		if !strings.Contains(got, `href="/b"`) {
+			t.Errorf("a TitleContent naming an attribute in its text lost its title link:\n%s", got)
+		}
+	}
 	for _, tag := range []string{"abbr", "aside", "article", "area", "b", "em", "span"} {
 		got := string(Card(CardProps{TitleContent: render.HTML(`<` + tag + `>x</` + tag + `>`), TitleHref: "/b"}, nil))
 		if !strings.Contains(got, `href="/b"`) {
@@ -65,7 +71,8 @@ func TestCardTitleLinkAllowsTagsThatStartWithA(t *testing.T) {
 	}
 	for _, link := range []string{`<a href="/x">x</a>`, `<A>x</A>`, "<a\thref=\"/x\">x</a>", `<a/>`,
 		`<button type="button">Details</button>`, `<input type="checkbox">`, `<span tabindex="0">x</span>`,
-		`<span contenteditable="true">x</span>`, `<audio controls src="/a.mp3"></audio>`} {
+		`<span contenteditable="true">x</span>`, `<audio controls src="/a.mp3"></audio>`,
+		`<span tabindex>x</span>`, `<span contenteditable>x</span>`, `<span tabindex/>`, "<span class=\"k\" tabindex\n>x</span>"} {
 		func() {
 			defer func() {
 				if recover() == nil {
