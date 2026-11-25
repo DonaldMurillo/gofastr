@@ -61,3 +61,20 @@ func TestAddRefusesUndeclaredShellHelper(t *testing.T) {
 		})
 	}
 }
+
+// A shell helper the project declares outside app.go still counts: the
+// package builds, so --add writes the screen.
+func TestAddFindsShellHelperOutsideAppGo(t *testing.T) {
+	dir, spec := clitest.AddSetup(t, addProjectSpec)
+	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: spec}) })
+	clitest.WriteTestFile(t, filepath.Join(dir, "policy.go"), "package main\n\nfunc authPolicy() {}\n")
+	fragment := filepath.Join(dir, "fragment.yml")
+	clitest.WriteTestFile(t, fragment, "screens:\n  - name: secret\n    route: /secret\n    access:\n      auth: true\n")
+	var code int
+	out := clitest.CovT_capOutput(t, func() {
+		code = clitest.CovT_capExit(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: fragment, add: true}) })
+	})
+	if code > 0 || !clitest.FileExists(dir, "screen_secret.go") {
+		t.Errorf("add with authPolicy in policy.go exited %d:\n%s", code, out)
+	}
+}

@@ -273,9 +273,9 @@ gofastr generate app new-billing.yml --add
 
 `--add` merges new `endpoints:` into `gofastr.settings.yml`, writes new entity/screen files, and rebuilds derived generated files without clobbering your existing hand-edited files.
 
-An added screen renders against the project it joins: the project's API prefix, auth base path, login route, app home and app layout, read off its generated source. `--add` refuses a screen that would mount through a helper the project's `app.go` does not declare: a gated screen (`access.auth`) in a project with no gated screen yet, which has no `authPolicy`, or a `layout: marketing` screen in a project with no marketing screen. Generate the app spec with the screen in it into a scratch directory, copy the helper and its imports from that `app.go` into yours, then retry `--add`. A signup or login screen added to a project without one gets no signed-in redirect, since that project's `app.go` has no `guestPolicy`.
+An added screen renders against the project it joins: the project's API prefix, auth base path, login route, app home and app layout, read off its generated source. `--add` refuses a screen that would mount through a helper no Go file in the project declares: a gated screen (`access.auth`) in a project with no gated screen yet, which has no `authPolicy`, or a `layout: marketing` screen in a project with no marketing screen. Generate the app spec with the screen in it into a scratch directory, copy the helper and its imports from that `app.go` into yours, then retry `--add`. A signup or login screen added to a project without one gets no signed-in redirect, since that project's `app.go` has no `guestPolicy`.
 
-If `--add` reports that an older `screens_register.go` lacks `invalidateScreensOnWrite`, generate the full app in a scratch directory. Copy that helper and its imports into your existing `screens_register.go`, then retry `--add`.
+If `--add` reports that the project declares no `invalidateScreensOnWrite`, generate the full app in a scratch directory. Copy that helper and its imports into your existing `screens_register.go`, then retry `--add`.
 
 ## Quick scaffolds (`generate entity`/`screen`)
 

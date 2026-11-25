@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -19,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -2583,12 +2584,8 @@ func checkAddScreenInvalidation(writeRoot string, written []GeneratedFile, skipp
 	if dependent < 0 {
 		return nil
 	}
-	src, err := readFileUnder(writeRoot, register)
-	if err == nil {
-		file, err := parser.ParseFile(token.NewFileSet(), register, src, parser.SkipObjectResolution)
-		if err == nil && slices.Contains(topLevelNames(file), helper) {
-			return nil
-		}
+	if slices.Contains(packageNamesUnder(writeRoot), helper) {
+		return nil
 	}
 	return fmt.Errorf("--add cannot write %s: %s lacks %s. Generate the full app in a scratch directory and copy the helper and its imports into %s, then retry --add",
 		written[dependent].Name, register, helper, register)
@@ -2598,17 +2595,13 @@ func checkAddScreenInvalidation(writeRoot string, written []GeneratedFile, skipp
 // authPolicy or marketingLayout when the project's app.go declares
 // neither: app.go declares them only for a project that already has a
 // gated or marketing screen, and --add never edits it, so the new file
-// would not compile. A project with no app.go is not checked.
+// would not compile. A helper declared in any of the project's Go files
+// counts. A project with no app.go is not checked.
 func checkAddScreenShell(writeRoot string, written []GeneratedFile) error {
-	src, err := readFileUnder(writeRoot, "app.go")
-	if err != nil {
+	if !fileExistsUnder(writeRoot, "app.go") {
 		return nil
 	}
-	appFile, err := parser.ParseFile(token.NewFileSet(), "app.go", src, parser.SkipObjectResolution)
-	if err != nil {
-		return nil
-	}
-	declared := topLevelNames(appFile)
+	declared := packageNamesUnder(writeRoot)
 	for _, f := range written {
 		if !IsPerScreenSource(f.Name) {
 			continue

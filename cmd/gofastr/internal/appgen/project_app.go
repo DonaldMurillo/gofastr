@@ -57,15 +57,10 @@ func projectShell(writeRoot string) (shell appspec.ProjectShell, ok bool) {
 		return shell, false
 	}
 	defer root.Close()
-	src, err := root.ReadFile("app.go")
-	if err != nil {
+	if _, err := root.Stat("app.go"); err != nil {
 		return shell, false
 	}
-	appFile, err := parser.ParseFile(token.NewFileSet(), "app.go", src, parser.SkipObjectResolution)
-	if err != nil {
-		return shell, false
-	}
-	names := topLevelNames(appFile)
+	names := rootPackageNames(root)
 	shell.AppLayout = slices.Contains(names, "appLayout")
 	shell.GuestPolicy = slices.Contains(names, "guestPolicy")
 	entries, _ := RootReadDirEntries(root, ".")
