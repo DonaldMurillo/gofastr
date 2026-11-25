@@ -36,6 +36,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **BREAKING:** `InsertBuilder.Build` panics on mismatched column and
+  value counts instead of returning invalid SQL. Supply one value per
+  column, or leave both lists empty for `DEFAULT VALUES`. See
+  [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
+  ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
+
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
