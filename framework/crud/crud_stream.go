@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -20,7 +21,7 @@ const streamListThreshold = 1000
 // ServeStreamingList writes the list envelope List answers, encoding the
 // rows one at a time instead of buffering them. It applies List's scope,
 // query and offset checks, and refuses an entity with AfterList hooks.
-// An explicit ?offset= overrides the offset page implies.
+// An explicit ?offset= overrides the offset implied by page and limit.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !ch.requireScope(w, r, opRead) {
@@ -35,8 +36,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
-	_, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
-	if !ch.requireBoundedOffset(w, r, q, streamPerPage) {
+	if !ch.requireBoundedOffset(w, r, q.Get("offset"), strconv.Itoa(page), limit) {
 		return
 	}
 	ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, limit, extraWhere)

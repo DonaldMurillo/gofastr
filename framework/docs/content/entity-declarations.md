@@ -157,6 +157,8 @@ Configure list behavior via `Pagination: &framework.PaginationConfig{...}`:
 
 Offset pagination is bounded to prevent deep-scan DoS: requests whose `?offset=` or `(page - 1) * limit` exceeds `CrudHandler.MaxOffset` (default `MaxListLimit * 1000`, i.e., `100,000`; configurable via `WithMaxOffset`) fail with `400 offset_too_large`, including integer-overflow page values. An explicit `?offset=` overrides `?page=`, and the response `page` reflects `offset/limit + 1`.
 
+Direct calls to `ServeStreamingList` use its `page` and `limit` arguments for this check. A valid request `?offset=` takes precedence.
+
 ## Screen hints (`display`)
 
 `Display` (`*framework.DisplayConfig`) tells `framework/entityui`, `battery/admin`, and generated screens how to render an entity without coupling schema to HTML:
