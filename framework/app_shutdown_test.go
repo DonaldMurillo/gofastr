@@ -3,6 +3,9 @@ package framework
 import (
 	"bufio"
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +14,118 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 )
+
+func TestShutdownBoundsAccessFanoutStop(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		reload  bool
+		timeout time.Duration
+		want    error
+	}{
+		{name: "idle", timeout: 200 * time.Millisecond},
+		{name: "reload in flight", reload: true, timeout: 200 * time.Millisecond, want: context.DeadlineExceeded},
+		{name: "already expired with reload", reload: true, want: context.DeadlineExceeded},
+		{name: "already expired while idle", want: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				entered, release := make(chan string, 1), make(chan struct{})
+				db := sql.OpenDB(accessReloadConnector{entered: entered, release: release})
+				defer db.Close()
+				f := &accessShutdownFanout{InProcess: fanout.NewInProcess()}
+				defer f.close()
+				store := access.NewGrantStore(db, access.NewRolePolicy(), access.WithReconcileInterval(0))
+				app := NewApp(WithDB(db), WithFanout(f), WithGrantStore(store))
+				defer func() { _ = app.Shutdown(context.Background()) }()
+				defer close(release)
+
+				if tc.reload {
+					msg := fanout.Wrap("peer", []byte(`{"role":"editor"}`))
+					if err := f.Publish(t.Context(), "gofastr.access", msg); err != nil {
+						t.Fatal(err)
+					}
+					select {
+					case role := <-entered:
+						if role != "editor" {
+							t.Fatalf("reloading role %q, want editor", role)
+						}
+					case <-time.After(time.Second):
+						t.Fatal("peer invalidation never entered the reload query")
+					}
+				}
+
+				ctx, cancel := context.WithTimeout(t.Context(), tc.timeout)
+				defer cancel()
+				done := make(chan error, 1)
+				go func() { done <- app.Shutdown(ctx) }()
+				select {
+				case err := <-done:
+					if !errors.Is(err, tc.want) || (tc.want != nil && !strings.Contains(err.Error(), "access fanout stop")) {
+						t.Fatalf("Shutdown error = %v, want %v from the access fanout stop", err, tc.want)
+					}
+				case <-time.After(tc.timeout + time.Millisecond):
+					t.Fatal("Shutdown waited past its deadline for the access fanout stop")
+				}
+			})
+		})
+	}
+}
+
+type accessReloadConnector struct {
+	entered chan<- string
+	release <-chan struct{}
+}
+
+func (c accessReloadConnector) Connect(context.Context) (driver.Conn, error) {
+	return &accessReloadConn{reload: c}, nil
+}
+
+func (accessReloadConnector) Driver() driver.Driver { return nil }
+
+type accessReloadConn struct {
+	driver.Conn
+	reload accessReloadConnector
+}
+
+func (*accessReloadConn) Close() error { return nil }
+
+func (*accessReloadConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return driver.RowsAffected(0), nil
+}
+
+func (c *accessReloadConn) QueryContext(_ context.Context, _ string, args []driver.NamedValue) (driver.Rows, error) {
+	if len(args) == 0 {
+		return nil, errors.New("unsupported dialect probe")
+	}
+	c.reload.entered <- args[0].Value.(string)
+	<-c.reload.release
+	return nil, errors.New("reload query released")
+}
+
+type accessShutdownFanout struct {
+	*fanout.InProcess
+	cancels []func()
+}
+
+func (f *accessShutdownFanout) Subscribe(topic string, fn func([]byte)) (func(), error) {
+	cancel, err := f.InProcess.Subscribe(topic, fn)
+	if err == nil {
+		f.cancels = append(f.cancels, cancel)
+	}
+	return cancel, err
+}
+
+func (f *accessShutdownFanout) close() {
+	for _, cancel := range f.cancels {
+		cancel()
+	}
+}
 
 // docker stop / kubectl rollout send SIGTERM. Start must install signal
 // handling by default and drain (server, batteries, OnStop hooks) before

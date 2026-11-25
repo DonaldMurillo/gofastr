@@ -1226,10 +1226,26 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: access fanout subscribe: " + err.Error())
 		}
-		a.OnStop(func() error {
-			stop()
-			return nil
-		})
+		a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+			done := make(chan error, 1)
+			go func() {
+				defer func() {
+					if v := recover(); v != nil {
+						done <- recoveredPanic(a.Logger(), "access fanout stop", fmt.Sprintf("%T", v))
+					}
+				}()
+				stop()
+				done <- nil
+			}()
+			select {
+			case err := <-done:
+				if ctx.Err() == nil {
+					return err
+				}
+			case <-ctx.Done():
+			}
+			return fmt.Errorf("access fanout stop abandoned after the drain deadline: %w", ctx.Err())
+		}))
 	}
 
 	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {

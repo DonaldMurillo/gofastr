@@ -414,10 +414,11 @@ invariants:
       - test: framework.TestServeRole_QueueDoesNotStart
       - test: framework.TestAgentRole_QueueDoesNotStart
   - id: worker-drains-honor-deadline
-    rule: The cron and queue drainers return at the Shutdown deadline even when a job ignores its cancelled context.
+    rule: The cron, queue and access fanout drainers stop waiting at the Shutdown deadline even when their work has not returned. The access fanout drainer skips the join when the deadline has already expired.
     enforced_by:
       - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
       - test: framework.TestAddQueueDrainHonorsShutdownDeadline
+      - test: framework.TestShutdownBoundsAccessFanoutStop
   - id: module-workers-gated-by-module
     rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
     enforced_by:
@@ -446,7 +447,7 @@ invariants:
       - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
       - test: framework.TestRunShutdownRaceInvariants
   - id: shutdown-stops-in-order
-    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order."
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers (including access fanout stop), in that order."
     enforced_by:
       - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
       - test: framework.TestShutdownRunsOnce
@@ -766,6 +767,14 @@ decisions:
       - option: Wait for Close however long it takes.
         why: A job handler that ignores its cancelled context would hang SIGTERM forever.
     revisit_if: schedulerStartStop gains a Close that takes a context.
+  - id: access-fanout-stop-abandoned-at-deadline
+    date: 2026-11-25
+    status: accepted
+    decision: The app leaves the grant store's fanout stop running after the drain deadline so it can finish detaching a store already being torn down once its in-flight work returns, without changing GrantStore.SetFanout's stop contract.
+    rejected:
+      - option: Keep joining the access store fanout worker synchronously through OnStop.
+        why: A reload stalled on the database or the store lock can hold Shutdown past its deadline.
+    upholds: [worker-drains-honor-deadline]
   - id: on-stop-hooks-ignore-context
     date: 2026-11-16
     status: accepted

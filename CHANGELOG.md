@@ -36,6 +36,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- `App.Shutdown` no longer waits past its deadline for the access grant-store
+  fanout to stop ([#TBD](https://github.com/DonaldMurillo/gofastr/pull/TBD)).
+
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
   Correct or remove the conflicting bounds before upgrading
