@@ -540,7 +540,7 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 	titleText := a.Name
 	effectiveTitle := registeredTitle(screen, decision.Kind)
 	if titler, ok := comp.(ScreenTitler); ok {
-		if t := safeScreenTitle(ctx, titler); t != "" {
+		if t := SafeScreenTitle(ctx, titler); t != "" {
 			effectiveTitle = t
 		}
 	}
@@ -587,7 +587,7 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 				ctx = withDocShell(ctx, lang, skip, strings.Join(vtKinds, " "))
 				effectiveTitle = nfScreen.Title
 				if titler, ok := nfComp.(ScreenTitler); ok {
-					if t := safeScreenTitle(ctx, titler); t != "" {
+					if t := SafeScreenTitle(ctx, titler); t != "" {
 						effectiveTitle = t
 					}
 				}
@@ -798,7 +798,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		ctx = withDocShell(ctx, res.DocumentLanguage, skip, vtKinds)
 		res.Title = nfScreen.Title
 		if titler, ok := nfComp.(ScreenTitler); ok {
-			if t := safeScreenTitle(ctx, titler); t != "" {
+			if t := SafeScreenTitle(ctx, titler); t != "" {
 				res.Title = t
 			}
 		}
@@ -998,7 +998,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 
 	out := RenderResult{HTML: body, DocumentLanguage: lang, Component: comp}
 	if t, ok := comp.(ScreenTitler); ok {
-		out.Title = safeScreenTitle(ctx, t)
+		out.Title = SafeScreenTitle(ctx, t)
 	}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
@@ -1040,10 +1040,11 @@ func safeScreenLoad(loader ScreenLoader, ctx context.Context) (err error) {
 	return loader.Load(ctx)
 }
 
-func safeScreenTitle(ctx context.Context, titler ScreenTitler) (title string) {
+// SafeScreenTitle reads the title hook and returns an empty title if it panics.
+func SafeScreenTitle(ctx context.Context, titler ScreenTitler) (title string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Default().Error("app: ScreenTitle re-read panicked; using registered title",
+			slog.Default().Error("app: ScreenTitle re-read panicked; using fallback title",
 				"panic", textsafe.Recovered(r))
 			title = ""
 		}

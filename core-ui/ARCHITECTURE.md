@@ -2469,6 +2469,10 @@ no screen matches carries no match; the guard falls through and the
 full loads and partials. A recovery screen's `ScreenLang` can override the
 host's document language for the route.
 
+The recovery title and default layout receive the prepared render
+context, including the request and query. A panicking title hook uses
+the fallback title.
+
 ---
 
 ### Error pages that show (404 through the root layout)

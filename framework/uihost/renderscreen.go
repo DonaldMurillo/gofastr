@@ -92,7 +92,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		title = appName
 	}
 	if t, ok := comp.(app.ScreenTitler); ok {
-		if name := t.ScreenTitle(r.Context()); name != "" {
+		if name := app.SafeScreenTitle(ctx, t); name != "" {
 			title = suffixTitle(name, appName)
 		}
 	}
@@ -117,7 +117,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 
 	if ds.App != nil && ds.App.Router != nil {
 		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.WrapCtx(r.Context(), body)
+			body = layout.WrapCtx(ctx, body)
 		}
 	}
 	ds.finishPageDocument(w, r, ctx,
