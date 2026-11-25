@@ -26,7 +26,7 @@ invariants:
       - test: cmd/gofastr/internal/devcmd.TestDevHoldMixedCaseHTML
       - test: core/mcp.TestSSEPostMixedCaseAccept
       - test: core-ui/runtime.TestRPCMixedCaseJSONResponse
-      - test: core-ui/runtime.TestNavigationUsesSharedHTMLCheck
+      - test: core-ui/runtime.TestNavAcceptsMixedCaseHTMLAnswer
       - test: framework/headless.TestE2E_Sortable409ConflictMessageAnnounced
       - test: kiln/live.TestFallbackMixedCaseHTML
     applies:
@@ -46,9 +46,6 @@ invariants:
     enforced_by:
       - test: internal/mediatype.TestWithJSONResponseCheckPanicsWithoutExactlyOneMarker
       - test: internal/mediatype.TestWithHTMLResponseCheckPanicsWithoutExactlyOneMarker
-      - test: core-ui/runtime.TestNavigationUsesSharedHTMLCheck
-      - test: core-ui/runtime.TestRPCMixedCaseJSONResponse
-      - test: framework/headless.TestE2E_Sortable409ConflictMessageAnnounced
     applies:
       - core-ui/runtime/frag/nav.js
       - core-ui/runtime/src/envelope.js
