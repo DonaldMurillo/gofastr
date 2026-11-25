@@ -99,6 +99,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestScreenArticleSynthesizesMetadata
       - test: framework/uihost.TestScreenArticleDoesNotDuplicateSchema
+      - test: framework/uihost.TestScreenArticleDoesNotDuplicatePointerSchema
       - test: framework/uihost.TestScreenArticlePreservesExplicitOG
       - test: framework/uihost.TestAsArticleDerivesFromScreenTitle
   - id: front-matter-mirrors-the-head
