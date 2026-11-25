@@ -30,3 +30,25 @@ func Check(id string) error {
 	}
 	return nil
 }
+
+// CheckName refuses a display name that is empty, longer than 64
+// bytes, holds a path separator or holds a control character. The
+// error starts with the rule broken, for the caller to prefix with what
+// the name is.
+func CheckName(name string) error {
+	if name == "" {
+		return fmt.Errorf("must not be empty")
+	}
+	if len(name) > 64 {
+		return fmt.Errorf("is longer than 64 characters")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("must not contain a path separator")
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("must be printable (control character at %q)", r)
+		}
+	}
+	return nil
+}

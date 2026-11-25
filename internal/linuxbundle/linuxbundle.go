@@ -98,18 +98,8 @@ func (r Receipt) Reissued(manifest []byte) Receipt {
 // ValidID reports whether id is a desktop app id (appid.Check).
 func ValidID(id string) bool { return appid.Check(id) == nil }
 
-// ValidName reports whether name is a display name: non-empty, at most 64 bytes of printable UTF-8, no path separator.
-func ValidName(name string) bool {
-	if name == "" || len(name) > 64 || !utf8.ValidString(name) || strings.ContainsAny(name, `/\`) {
-		return false
-	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
-	}
-	return true
-}
+// ValidName reports whether name is a display name (appid.CheckName) in valid UTF-8, as a desktop entry needs.
+func ValidName(name string) bool { return appid.CheckName(name) == nil && utf8.ValidString(name) }
 
 // ValidVersion reports whether version matches VersionPattern in at most 64 bytes.
 func ValidVersion(version string) bool {

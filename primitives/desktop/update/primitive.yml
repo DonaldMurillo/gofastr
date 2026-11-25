@@ -181,6 +181,7 @@ invariants:
       - test: battery/desktop/internal/update.TestReadRunningBuildRefusesABrokenLayout
       - test: battery/desktop/internal/update.TestWindowsPlatformInspect
       - test: battery/desktop/internal/update.TestWindowsRelaunchNamesThePredecessor
+      - test: battery/desktop/internal/update.TestRelaunchEnvReplacesEveryPredecessorEntry
 decisions:
   - id: build-metadata-refused
     date: 2026-11-20

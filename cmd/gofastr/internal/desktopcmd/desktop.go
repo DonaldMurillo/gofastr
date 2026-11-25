@@ -333,21 +333,9 @@ func validateDesktopID(id string) error {
 	return nil
 }
 
-// validateDesktopName: printable, no path separator, bounded.
 func validateDesktopName(name string) error {
-	if name == "" {
-		return fmt.Errorf("--name must not be empty")
-	}
-	if len(name) > 64 {
-		return fmt.Errorf("--name is longer than 64 characters")
-	}
-	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\\') {
-		return fmt.Errorf("--name must not contain a path separator")
-	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("--name must be printable (control character at %q)", r)
-		}
+	if err := appid.CheckName(name); err != nil {
+		return fmt.Errorf("--name %w", err)
 	}
 	return nil
 }
