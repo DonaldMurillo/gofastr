@@ -36,6 +36,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Redirect query parameters stay before URL fragments.** Added
+  `handler.WithQuery` and routed `battery/auth` form-error and policy
+  redirects (`SetDefaultLoginErrorPath`, `SetDefaultRegisterErrorPath`,
+  `WithRedirect`) and `framework/entityui` saved-view redirects through it,
+  so query parameters are no longer appended inside `#fragment` or dropped
+  ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
+
 - **JSON-LD rendering skips nil schema items.** `seo.Render` no longer
   panics on a nil interface or emits a `null` script for a typed-nil pointer
   ([#898](https://github.com/DonaldMurillo/gofastr/pull/898)).
