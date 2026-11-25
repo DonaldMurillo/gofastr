@@ -44,3 +44,18 @@ func TestInsertDefaultValues(t *testing.T) {
 		t.Fatalf("default insert SQL = %s, args=%v", got, args)
 	}
 }
+
+func TestUpdateWithoutAssignmentsBuildsNoStatement(t *testing.T) {
+	t.Run("bare", func(t *testing.T) {
+		got, args := Update("records").Build()
+		if got != "" || args != nil {
+			t.Fatalf("empty update SQL = %q, args = %#v; want empty SQL and nil args", got, args)
+		}
+	})
+	t.Run("with clauses", func(t *testing.T) {
+		got, args := Update("records").Where("id = $1", 42).Returning("id").Build()
+		if got != "" || args != nil {
+			t.Fatalf("empty update SQL = %q, args = %#v; want empty SQL and nil args", got, args)
+		}
+	})
+}

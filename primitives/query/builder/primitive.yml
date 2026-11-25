@@ -97,6 +97,10 @@ invariants:
     rule: An INSERT with no columns and no values is written as INSERT INTO t DEFAULT VALUES.
     enforced_by:
       - test: core/query.TestInsertDefaultValues
+  - id: empty-update-builds-no-statement
+    rule: An UPDATE with no Set assignments builds no statement and returns empty SQL and nil arguments, even when WHERE or RETURNING is present.
+    enforced_by:
+      - test: core/query.TestUpdateWithoutAssignmentsBuildsNoStatement
 decisions:
   - id: renumber-by-position
     date: 2026-11-18
