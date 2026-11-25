@@ -77,7 +77,7 @@ Optional power-user controls (off by default on app screens, on in `battery/admi
 - `.QueryBox()` — structured query expression bar
 - `.ColumnsMenu()` — toggle visible columns
 - `.Deleted()` — trash view + restore for `Scope.SoftDelete` entities
-- `.SavedViews()` — save and recall named filter combinations
+- `.SavedViews()` — save and recall named filter combinations. A successful native save or delete returns to the original list URL if adding or removing the selected view would produce a redirect longer than 2,048 bytes.
 - `.TabCounts()` — row badges on view tabs
 - `.Undo()` — 10-second Undo toast after soft-deleting (posts `<write base>/<id>/_restore`)
 
