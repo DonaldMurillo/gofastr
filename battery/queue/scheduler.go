@@ -237,7 +237,7 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 
 	job := ScheduledJob{
 		Type:        b.jobType,
-		Payload:     b.payload,
+		Payload:     slices.Clone(b.payload),
 		Interval:    b.interval,
 		Lane:        b.lane,
 		Priority:    b.priority,
