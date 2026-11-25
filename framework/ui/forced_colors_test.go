@@ -32,6 +32,8 @@ func TestForcedColorsFallbacks(t *testing.T) {
 		{"multiselect chevron", multiselectStyle, []string{".fui-multiselect__summary::after", "forced-color-adjust: none; background: CanvasText"}},
 		{"sidebar chevron", sidebarStyle, []string{".fui-sidebar__group-toggle::after", "forced-color-adjust: none; background: CanvasText"}},
 		{"sort icon", dataTableStyle, []string{".fui-data-table__sort::after", "forced-color-adjust: none; background: CanvasText"}},
+		{"carousel dot and play glyph", carouselStyle, []string{".fui-carousel__dot[aria-current=\"true\"]::after { background: Highlight; }", ".fui-carousel__pause[aria-pressed=\"true\"]::before { forced-color-adjust: none; background: ButtonText; }"}},
+		{"indeterminate progress band", progressStyle, []string{".fui-progress__bar:indeterminate", "forced-color-adjust: none", "linear-gradient(90deg, transparent, Highlight, transparent)"}},
 		{"collapsible chevron", collapsibleStyle, []string{".fui-collapsible__summary::after", "forced-color-adjust:none;background:CanvasText"}},
 	} {
 		css := c.style.Entry().CSSFor(th)

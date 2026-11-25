@@ -368,3 +368,11 @@ decisions:
       - option: Put it in the core runtime.
         why: Every page would pay for it, live numbers or not.
     upholds: [numbers-loads-on-number-signals]
+  - id: datepicker-names-days-in-gregorian
+    date: 2026-11-23
+    status: accepted
+    decision: The date picker's fallback day name in headless-datepicker formats with calendar gregory, the calendar the server's grid and day labels are drawn in.
+    rejected:
+      - option: Format with the locale's default calendar.
+        why: The grid, its month caption and every day button's aria-label are Gregorian CLDR output from core/i18n, so a th-TH or fa-IR reader would hear a Buddhist or Persian date for an undrawn day beside Gregorian dates for the drawn ones.
+    revisit_if: core/i18n formats dates in non-Gregorian calendars and the server grid follows the locale's calendar.

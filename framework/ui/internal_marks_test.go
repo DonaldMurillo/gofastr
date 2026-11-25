@@ -653,10 +653,10 @@ var kitComponents = []kitComponent{
 	{name: "Breadcrumbs", fn: Breadcrumbs},
 	{name: "Button", fn: Button},
 	{name: "Callout", fn: Callout},
-	// Action and Href refuse each other: the linked card is the second
-	// entry.
-	{name: "Card", fn: Card, prep: prepSet("Href", "")},
-	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""))},
+	// Action and Href refuse each other, as do Href and HeadingHref or
+	// Article: the linked card is the second entry.
+	{name: "Card", fn: Card, prep: prepSet("Href", "", "Header", render.HTML(""))},
+	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""), "HeadingHref", "", "Article", false)},
 	{name: "Carousel", fn: Carousel, required: []string{"Content"}},
 	{name: "Center", fn: Center},
 	{name: "ChangeList", fn: ChangeList},
@@ -846,7 +846,7 @@ var kitComponents = []kitComponent{
 	{name: "headless.Breadcrumbs", fn: headless.Breadcrumbs},
 	{name: "headless.Button", fn: headless.Button},
 	{name: "headless.Card", fn: headless.Card, prep: prepSet("Href", "")},
-	{name: "headless.Card/linked", fn: headless.Card, prep: prepSet("Action", render.HTML(""))},
+	{name: "headless.Card/linked", fn: headless.Card, prep: prepSet("Action", render.HTML(""), "TitleHref", "", "Article", false)},
 	{name: "headless.Carousel", fn: headless.Carousel},
 	{name: "headless.Choice", fn: headless.Choice, prep: prepSet("Type", "checkbox")},
 	{name: "headless.Cluster", fn: headless.Cluster},

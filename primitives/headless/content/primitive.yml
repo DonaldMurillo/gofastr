@@ -10,6 +10,7 @@ code:
   - framework/headless/jsontree.go
   - framework/headless/sortablelist.go
   - framework/headless/sortablelist_behavior.go
+  - framework/headless/sortabledrag_behavior.go
   - framework/headless/selection.go
   - framework/headless/carousel.go
   - framework/headless/carousel_behavior.go
@@ -116,10 +117,10 @@ invariants:
     rule: A sort href is built through net/url on Path with the carried query, its sort and direction parameters set rather than appended.
     enforced_by:
       - test: framework/headless.TestTableSortReplacesTheSortAndCarriesTheQuery
-  - id: table-sort-is-three-state
-    rule: aria-sort is ascending or descending on the active column and none on every other sortable one, the active anchor flips the direction and every other sorts ascending.
+  - id: table-sort-marks-only-the-active-column
+    rule: aria-sort is ascending or descending on the active column and absent on every other one, the active anchor flips the direction and every other sorts ascending.
     enforced_by:
-      - test: framework/headless.TestTableSortIsThreeStateAndCycles
+      - test: framework/headless.TestTableSortMarksOnlyTheActiveColumn
   - id: table-path-is-configuration
     rule: Table panics on a Path that is not same-origin, that carries a query or fragment, or whose sort href the anchor policy refuses.
     enforced_by:
@@ -199,7 +200,7 @@ invariants:
       - test: framework/headless.TestTreeDropsDangerousHrefs
       - test: framework/headless.TestTreeScrubsCarriedLabels
   - id: behaviours-markers-and-requires
-    rule: The tree, sortable list, carousel and wizard behaviours each register their root's data-hui marker, and only the tree requires the rpc module.
+    rule: The tree, sortable list, sortable drag, carousel and wizard behaviours each register their root's data-hui marker; the tree requires the rpc module, the sortable drag requires the sortable list, and no other requires anything.
     enforced_by:
       - test: framework/headless.TestSweepContentBehaviorsRegisterTheirMarkersAndRequires
   - id: json-tree-deterministic
@@ -236,11 +237,24 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSortableListAnnouncementsComeFromStrings
   - id: sortable-row-is-the-control
-    rule: Each row is a role=option <li> with draggable="true" and tabindex 0 that holds no button, its grip an aria-hidden span.
+    rule: Each row is a role=option <li> with tabindex 0 that holds no button and carries neither draggable nor aria-grabbed, its grip an aria-hidden span marked data-hui-sortable-grip.
     enforced_by:
       - test: framework/headless.TestSortableListRendersTheRowsAndContract
       - test: framework/headless.TestSweepContentSortableRowIsTheOnlyControl
       - test: framework/headless.TestNoEnumeratedAttributeRendersEmpty
+  - id: sortable-drag-moves-on-release
+    rule: A pointer drag starts only on a row's grip, moves no row while the pointer moves, marks the landing place with is-drop-before or is-drop-after on a row or is-drop-target on a list with no other row, moves the row once on release and commits it as a keyboard drop commits, lands a pointer in the gap between rows before the first row whose middle is below it (after the last when none is), and moves and commits nothing on a release off every list, over the dragged row or beside its own place, on Escape, when the pointer capture is lost, or when the page re-rendered the dragged row away; a landing row must be a row of the list under the pointer, and no keyboard grab starts while a pointer drag is held.
+    enforced_by:
+      - test: framework/headless.TestE2E_SortablePointerDragMovesOnRelease
+      - test: framework/headless.TestE2E_SortablePointerDragUpperHalfLandsBefore
+      - test: framework/headless.TestE2E_SortablePointerDragCancels
+      - test: framework/headless.TestE2E_SortablePointerDropOnItselfIsNoMove
+      - test: framework/headless.TestE2E_SortableTouchOutsideTheGripIsNoDrag
+      - test: framework/headless.TestE2E_SortableDragIntoEmptyColumn
+      - test: framework/headless.TestE2E_SortablePointerDragInAGapLandsByPosition
+      - test: framework/headless.TestE2E_SortablePointerDragEndsWhenTheListIsReRendered
+      - test: framework/headless.TestE2E_SortableKeyboardGrabWaitsOutAPointerDrag
+      - test: framework/headless.TestE2E_SortableDropOnANestedListStaysInIt
   - id: sortable-wiring-as-given
     rule: An empty SortableList still renders its <ol> and wiring, SortableItems renders the rows without it, and Group, Container, Version and ConflictRPC render only when set.
     enforced_by:
@@ -269,9 +283,29 @@ invariants:
     enforced_by:
       - test: framework/headless.TestCarouselHasALiveStatus
   - id: carousel-works-without-script
-    rule: Every dot is an anchor to its slide's id, and the track carries the status sentence and its format with the slide count.
+    rule: The track is a focusable scrollable list carrying the status sentence and its format with the slide count, and every arrow and dot is a type=button button, never a link.
     enforced_by:
       - test: framework/headless.TestCarouselRendersTrackControlsAndDots
+  - id: carousel-controls-order
+    rule: Prev and Next come before the track in the markup, the dots after it, and a rotating carousel's rotation control after the dots.
+    enforced_by:
+      - test: framework/headless.TestCarouselControlsBeforeTheTrack
+  - id: carousel-rotation-control
+    rule: A carousel with AutoRotateMS renders a rotation button named by Strings.CarouselPause with aria-pressed false, and one without renders none.
+    enforced_by:
+      - test: framework/headless.TestCarouselRotatingDrawsAPauseButton
+      - test: framework/headless.TestCarouselRendersTrackControlsAndDots
+  - id: carousel-pause-holds
+    rule: The rotation button's choice holds the rotation until it is pressed again, a carousel nobody chose for is held under reduced motion, and hover or focus on the button itself does not hold it; aria-pressed says whether it is held.
+    enforced_by:
+      - test: framework/headless.TestE2E_CarouselPauseButtonHolds
+      - test: framework/headless.TestE2E_CarouselReducedMotionStartsHeld
+  - id: carousel-ends-aria-disabled
+    rule: Without Loop, Prev is aria-disabled at the first position and Next at the last; the render marks Prev, and Next too for a lone slide, and the module keeps both in step.
+    enforced_by:
+      - test: framework/headless.TestCarouselArrowsStartDisabledAtTheEnds
+      - test: framework/headless.TestE2E_CarouselArrowsDisableAtTheEnds
+      - test: framework/headless.TestE2E_CarouselEndsFollowTheLayout
   - id: gallery-refusals
     rule: Gallery panics without items or Label, on an item without Src or with an Alt that scrubs to empty, and on control bytes in the lightbox Name or Group.
     enforced_by:
@@ -324,6 +358,12 @@ invariants:
     rule: The current step's heading carries tabindex -1, so the behaviour can focus it after a swap.
     enforced_by:
       - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
+  - id: card-title-link-is-the-one-link
+    rule: A Card with TitleHref wraps the title's words in one PartCardTitleLink anchor, its Action outside it, and panics with Href, without a title, with a TitleContent holding interactive content (an <a>, a control, embedded media, a tabindex or contenteditable, and not <abbr>, <aside> and the like), or on a URL the anchor policy refuses; Article renders the root as an <article> and panics with Href.
+    enforced_by:
+      - test: framework/headless.TestCardArticleWithTitleLink
+      - test: framework/headless.TestCardTitleLinkRefusals
+      - test: framework/headless.TestCardTitleLinkAllowsTagsThatStartWithA
 decisions:
   - id: layout-sizes-are-named-steps
     date: 2026-11-16
@@ -481,11 +521,23 @@ decisions:
   - id: sortable-row-is-the-focusable-element
     date: 2026-11-16
     status: accepted
-    decision: The <li> is the focusable, draggable control and the grip is a decorative span.
+    decision: The <li> is the focusable control and the grip is an aria-hidden span that is the pointer's drag handle.
     rejected:
       - option: A grip button inside the row.
         why: A focusable <li> holding a <button> fails axe's nested-interactive rule.
     upholds: [sortable-row-is-the-control]
+  - id: sortable-drag-is-pointer-events
+    date: 2026-11-23
+    status: accepted
+    decision: The pointer drag runs on pointer events captured by the grip, marks the landing place while the pointer moves and moves the row once on release, in its own behaviour module that ends every drag through the sortable list's commit.
+    rejected:
+      - option: HTML5 drag and drop on a draggable row.
+        why: It has no touch, and it reordered the rows live on every dragover, so a cancelled drag had to put them back.
+      - option: Touch-action none on the whole row.
+        why: A finger on the row could no longer scroll the page; on the grip alone it still can.
+      - option: Keep the drag inside headless-sortablelist.
+        why: The pointer path took the module past its gzip budget; split out, each module is under the goal and the sortable list sheds its override.
+    upholds: [sortable-drag-moves-on-release, sortable-row-is-the-control]
   - id: carousel-slides-are-divs
     date: 2026-11-16
     status: accepted
@@ -505,6 +557,34 @@ decisions:
     status: accepted
     decision: A rotating carousel renders its live region off and the behaviour makes it polite while the rotation is paused (the APG carousel).
     upholds: [carousel-live-region]
+  - id: carousel-controls-are-buttons
+    date: 2026-11-23
+    status: accepted
+    decision: Prev, Next and the dots are buttons the behaviour answers, the arrows before the track and the dots after it, as the modern-web-guidance carousel guide lays them out. With no script the track still scrolls by touch, trackpad and keys, and the styled sheet does not draw the controls.
+    rejected:
+      - option: Fragment anchors to the slide ids.
+        why: Prev and Next pointed at the first and last slide rather than one step, a reader heard links for controls that never leave the page, and the no-script track already reaches every slide by scrolling.
+      - option: Controls after the track.
+        why: A keyboard reader tabbed through every slide's content before reaching the arrows.
+    upholds: [carousel-works-without-script, carousel-controls-order]
+  - id: carousel-rotation-control-ends-the-dot-row
+    date: 2026-11-23
+    status: accepted
+    decision: The rotation control comes after the dots and says its state with aria-pressed under one fixed name.
+    rejected:
+      - option: The rotation control first inside the carousel (the APG example).
+        why: Focus anywhere inside already holds the rotation, so the first Tab stop in stops the motion; drawn first it would cover slide content or put the tab order out of step with the screen.
+      - option: A name that flips between pause and play.
+        why: The kit's toggles say their state with aria-pressed (ui.SignalToggle), and one fixed name is one string to translate.
+    upholds: [carousel-rotation-control, carousel-pause-holds]
+  - id: carousel-ends-use-aria-disabled
+    date: 2026-11-23
+    status: accepted
+    decision: An arrow at a finite end is aria-disabled and stays focusable.
+    rejected:
+      - option: The disabled attribute.
+        why: A disabled button drops the focus of the reader who just pressed it to reach the end.
+    upholds: [carousel-ends-aria-disabled]
   - id: gallery-lightbox-is-a-typed-prop
     date: 2026-11-16
     status: accepted
@@ -537,3 +617,13 @@ decisions:
       - option: Back and Next in visible order alone.
         why: Implicit submission clicks the first submit control, so Enter in a field went Back.
     upholds: [wizard-enter-means-next]
+  - id: card-article-is-opt-in
+    date: 2026-11-23
+    status: accepted
+    decision: A card's root stays a div unless Article is set, and a card that should be clickable as a whole while holding its own controls links its title with TitleHref rather than wrapping in Href.
+    rejected:
+      - option: Make every card an <article>.
+        why: Most kit cards are panels of one page (a settings section, a chart, a form), not self-contained items, and an article landmark on each would crowd the outline a screen reader lists.
+      - option: Change Href to the stretched title link.
+        why: Existing callers pass Href for cards with no title, whose whole surface is the link's name, and a linked card with no heading has nothing to stretch.
+    upholds: [card-title-link-is-the-one-link]

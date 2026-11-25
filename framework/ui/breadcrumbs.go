@@ -49,11 +49,10 @@ func Breadcrumbs(cfg BreadcrumbsConfig, crumbs ...Crumb) render.HTML {
 		items = append(items, headless.Breadcrumb{Text: c.Text, Href: c.Href, Current: c.Current})
 	}
 	classes := headless.Classes{
-		headless.PartRoot:                "fui-breadcrumbs",
-		headless.PartBreadcrumbList:      "fui-breadcrumbs__list",
-		headless.PartBreadcrumbItem:      "fui-breadcrumbs__item",
-		headless.PartBreadcrumbLink:      "fui-breadcrumbs__link",
-		headless.PartBreadcrumbSeparator: "fui-breadcrumbs__sep",
+		headless.PartRoot:           "fui-breadcrumbs",
+		headless.PartBreadcrumbList: "fui-breadcrumbs__list",
+		headless.PartBreadcrumbItem: "fui-breadcrumbs__item",
+		headless.PartBreadcrumbLink: "fui-breadcrumbs__link",
 	}
 	if cfg.CompactMobile {
 		classes[headless.PartRoot] += " fui-breadcrumbs--compact-mobile"
@@ -62,11 +61,12 @@ func Breadcrumbs(cfg BreadcrumbsConfig, crumbs ...Crumb) render.HTML {
 		classes[headless.PartRoot] += " " + cfg.Class
 	}
 	nav := headless.Breadcrumbs(headless.BreadcrumbsProps{
-		Label:      cfg.Label,
-		Items:      items,
-		ID:         cfg.ID,
-		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
-		Strings:    StringsFor(cfg.Ctx),
+		Label:           cfg.Label,
+		Items:           items,
+		SeparatorsInCSS: true,
+		ID:              cfg.ID,
+		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
+		Strings:         StringsFor(cfg.Ctx),
 	}, classes)
 	return breadcrumbsStyle.WrapHTML(nav)
 }
@@ -89,7 +89,13 @@ func breadcrumbsCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-sm, 4px);
 }
-[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
+/* The separator is generated content with empty alternative text: it
+   is not in the trail's text, so a copy is the steps' words and a screen
+   reader says no slash. The first declaration is for engines without
+   the alternative-text form. */
+[data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__item + .fui-breadcrumbs__item::before {
+  content: "/";
+  content: "/" / "";
   color: var(--color-text-muted, #52525B);
   opacity: var(--opacity-disabled, 0.5);
 }
@@ -108,7 +114,7 @@ func breadcrumbsCSS(_ style.Theme) string {
 }
 @media (max-width: 47.99rem) {
   [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:not(:nth-last-child(-n+2)) { display: none; }
-  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2) .fui-breadcrumbs__sep { display: none; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2)::before { content: none; }
   /* One line on a phone: the crumbs ellipsize instead of stacking the
      trail over two lines of the toolbar, the parent giving way before
      the page's own name. The trail narrows only as far as its

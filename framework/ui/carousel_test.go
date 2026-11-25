@@ -216,3 +216,37 @@ func TestCarouselExtraAttrsCannotOverrideOwned(t *testing.T) {
 		t.Errorf("region role lost:\n%s", root)
 	}
 }
+
+// The controls are buttons the module answers: with no script nothing
+// would, so they are not drawn; each control and the track take
+// touch-action manipulation; the pause glyph flips on aria-pressed; an
+// arrow at a finite end dims on aria-disabled; and the rotation button
+// sits at the end of the dot row.
+func TestCarouselCSSControlsContract(t *testing.T) {
+	css := carouselCSS(style.Theme{})
+	for _, want := range []string{
+		"@media (scripting: none) {\n  [data-cui-comp=\"ui-carousel\"] :is(.fui-carousel__prev, .fui-carousel__next, .fui-carousel__dots, .fui-carousel__pause) { display: none; }",
+		"scrollbar-width: none;\n  touch-action: manipulation;",
+		"cursor: pointer;\n  touch-action: manipulation;\n  transition:",
+		"background: transparent;\n  cursor: pointer;\n  touch-action: manipulation;\n  font-size: 0;",
+		"color: var(--color-text-muted, #52525B);\n  cursor: pointer;\n  touch-action: manipulation;",
+		".fui-carousel__pause[aria-pressed=\"true\"]::before {",
+		":is(.fui-carousel__prev, .fui-carousel__next)[aria-disabled=\"true\"] {",
+		"[data-cui-comp=\"ui-carousel\"] > .fui-carousel__pause { grid-column: 3; justify-self: end; }",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("carouselCSS lacks %q", want)
+		}
+	}
+}
+
+func TestCarouselAutoRotateDrawsThePauseButton(t *testing.T) {
+	h := string(Carousel(CarouselConfig{
+		Label:        "x",
+		AutoRotateMs: 4000,
+		Slides:       []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
+	}))
+	if !strings.Contains(h, `class="fui-carousel__pause"`) || !strings.Contains(h, `>Pause slides</button>`) {
+		t.Errorf("a rotating carousel lacks its pause button:\n%s", h)
+	}
+}

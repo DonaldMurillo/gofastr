@@ -673,6 +673,7 @@
       "goToSlide": "Ir a la diapositiva {{n}}",
       "next": "Diapositiva siguiente",
       "pagination": "Paginación de diapositivas",
+      "pause": "Pausar diapositivas",
       "previous": "Diapositiva anterior",
       "role": "carrusel",
       "slide": "Diapositiva {{n}} de {{total}}",
@@ -693,6 +694,7 @@
       "copyOf": "copiar {{what}}",
       "langSource": "código {{language}}",
       "lines": "{{n}} líneas",
+      "notCopied": "no copiado",
       "source": "código fuente"
     },
     "color": {
@@ -732,6 +734,7 @@
       "copy": "Copiar",
       "failed": "No se pudo copiar al portapapeles",
       "link": "Copiar enlace",
+      "notCopied": "No copiado",
       "status": "Copiado: {{name}}",
       "toClipboard": "Copiar al portapapeles"
     },

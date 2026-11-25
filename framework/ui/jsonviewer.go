@@ -17,10 +17,15 @@ type JSONViewerConfig struct {
 	Value any
 	// OpenDepth is the depth rendered open: 0 the root, -1 everything.
 	OpenDepth int
-	// MaxStringLen truncates longer strings with "…"; 0 is no limit.
+	// MaxStringLen cuts longer strings on the server with "…", a bound on
+	// the bytes sent; 0 is no limit.
 	MaxStringLen int
-	ID           string
-	Class        string
+	// EllipsizeStrings draws each string value on one line, cut with a
+	// CSS ellipsis where it overflows; the full value stays in the page,
+	// so find-in-page, selection and copy see all of it.
+	EllipsizeStrings bool
+	ID               string
+	Class            string
 	// ExtraAttrs land on the root, minus class, id and data-cui-*.
 	ExtraAttrs html.Attrs
 }
@@ -29,6 +34,9 @@ type JSONViewerConfig struct {
 // through headless.JSONTree, with keys sorted.
 func JSONViewer(cfg JSONViewerConfig) render.HTML {
 	cls := "fui-json-viewer"
+	if cfg.EllipsizeStrings {
+		cls += " fui-json-viewer--ellipsis"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -115,7 +123,27 @@ func jsonViewerCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   margin-inline-end: var(--spacing-sm, 4px);
 }
-[data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #166534); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #166534); overflow-wrap: anywhere; }
+/* EllipsizeStrings: a row holding a string is one line, its key kept
+   whole and the value cut with an ellipsis; the text stays in the DOM. */
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item:has(> .fui-json-viewer__str) {
+  display: flex;
+  align-items: baseline;
+  min-inline-size: 0;
+}
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__key,
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__colon { flex: none; }
+/* A root that is itself a string sits straight in the viewer, with no
+   row around it: it is one block line, cut the same way. */
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis > .fui-json-viewer__str { display: block; }
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis > .fui-json-viewer__str,
+[data-cui-comp="ui-json-viewer"].fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__str {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #854D0E); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #18181B); font-weight: var(--font-weight-semibold); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
