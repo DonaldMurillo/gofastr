@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -59,5 +60,32 @@ func TestSearchAndPickerHonorGetHooks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A get hook that errors on one record hides that record from lookups,
+// as the record screen does; the other matches still show.
+func TestLookupHookErrorHidesOneRecord(t *testing.T) {
+	rows := invoiceRows()
+	rows["customers"] = append(rows["customers"], map[string]any{"id": "cus-2", "name": "Acme Support"})
+	x := newTestUI(t, searchableInvoices(), rows, withAPI(map[string]string{"invoices": "/api/invoices", "customers": "/api/customers"}))
+	ch, err := x.host.Crud(mustEntity(t, x, "customers"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		if data.(*hook.GetPayload).ID == "cus-1" {
+			return errors.New("restricted")
+		}
+		return nil
+	})
+	ctx := x.userCtx("/customers", "", "u1")
+	if got := x.ui.SearchRecords(ctx, "customers", "Acme", 5); len(got) != 1 || got[0].ID != "cus-2" {
+		t.Errorf("SearchRecords = %+v, want only cus-2", got)
+	}
+	rec := pickPost(t, x, "customer_id", `{"q":"Acme"}`, nil)
+	if body := rec.Body.String(); rec.Code != http.StatusOK || strings.Contains(body, `data-value="cus-1"`) || !strings.Contains(body, `data-value="cus-2"`) {
+		t.Errorf("picker: status %d, want only cus-2: %s", rec.Code, body)
 	}
 }

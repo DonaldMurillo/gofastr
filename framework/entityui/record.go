@@ -75,6 +75,26 @@ func (m *meta) readableRow(ctx context.Context, id string) (map[string]any, erro
 	return row, err
 }
 
+// lookupRecord returns the row a search or picker may show for id, which
+// the list read returned as listed: the record as the record screen
+// reads it, or nil when the caller may not see it. A failed read or hook
+// error hides that record only. With no get hooks the listed row is the
+// record, so a lookup costs no read per row.
+func (m *meta) lookupRecord(ctx context.Context, id string, listed map[string]any) map[string]any {
+	if m.ch.Hooks == nil || len(m.ch.Hooks.HooksFor(hook.BeforeGet))+len(m.ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+		if id == "" || !canReadRecord(ctx, m.ch, id) {
+			return nil
+		}
+		return listed
+	}
+	row, err := m.readableRow(ctx, id)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: lookup record hidden", "entity", m.name, "error", err)
+		return nil
+	}
+	return row
+}
+
 // RecordHidden reports whether the caller's read hooks keep record id
 // out of sight; a screen that draws a record from a stored copy of its
 // values asks it first. A failed read or hook error hides the record. An
@@ -152,11 +172,7 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 		}
 		for _, row := range rows {
 			id := m.rowID(row)
-			record, err := m.readableRow(ctx, id)
-			if err != nil {
-				slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
-				return nil
-			}
+			record := m.lookupRecord(ctx, id, row)
 			if record == nil {
 				continue
 			}

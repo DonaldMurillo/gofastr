@@ -129,10 +129,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	needle := strings.ToLower(q)
 	for _, r := range rows {
 		oid := fieldtext.Cell(om.rowValue(r, om.pk))
-		record, err := om.readableRow(ctx, oid)
-		if err != nil {
-			return nil, "", false, err
-		}
+		record := om.lookupRecord(ctx, oid, r)
 		if record == nil {
 			continue
 		}
