@@ -246,6 +246,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Media-type matching is case-insensitive** for auth login redirects,
+  MCP SSE framing, Kiln's HTML fallback, the dev hold page, OpenAPI CLI
+  JSON pretty-printing, and browser RPC JSON responses.
 - **`gofastr deploy` and `deploy rollback` keep a release that
   `.release-order` does not list,** such as one an older CLI deployed or
   one an interrupted deploy left running, so rollback still finds it.
