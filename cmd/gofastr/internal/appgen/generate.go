@@ -2618,7 +2618,7 @@ func checkAddScreenShell(writeRoot string, written []GeneratedFile) error {
 			return missing == ""
 		})
 		if missing != "" {
-			return fmt.Errorf("--add cannot write %s: it mounts through %s, which the project's app.go does not declare (app.go declares it only when the app spec already has a gated or marketing screen, and --add does not edit app.go). Generate the app spec with the screen in it into a scratch directory and copy %s and its imports from that app.go into yours, then retry --add", f.Name, missing, missing)
+			return fmt.Errorf("--add cannot write %s: it mounts through %s, which no Go file in the project declares (a generated app.go declares it only when the app spec already has a gated or marketing screen, and --add does not edit app.go). Generate the app spec with the screen in it into a scratch directory and copy %s and its imports from that app.go into yours, then retry --add", f.Name, missing, missing)
 		}
 	}
 	return nil
