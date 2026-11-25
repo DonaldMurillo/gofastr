@@ -26,9 +26,8 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
-- **Same-site hops preserve URL fragments and stop after one reload.** For
-  clients without `Sec-Fetch-Site`, the hop marker now goes in the query
-  before the fragment, so the server sees it on the reload.
+- `handler.SameSiteHopTarget` now adds the hop marker to the query before
+  any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))
 
 - **Paired email templates no longer include the leading `Subject: ` line
   in the HTML body.** A `.txt` body also drops its leading `Subject: ` line

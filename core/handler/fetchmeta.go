@@ -127,9 +127,9 @@ func NeedsSameSiteHop(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "" && !r.URL.Query().Has(SameSiteHopParam)
 }
 
-// SameSiteHopTarget returns target with SameSiteHopParam added when r
-// carried no Sec-Fetch-Site and target lacks it. The marker is no
-// credential.
+// SameSiteHopTarget adds SameSiteHopParam in the query, before any fragment,
+// when r carried no Sec-Fetch-Site and the target query lacks the marker.
+// The marker is no credential.
 func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target
