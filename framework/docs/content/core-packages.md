@@ -19,6 +19,11 @@ Most apps touch only `handler`, `router`, `render`, and `config` directly; `fram
 - **Use:** Direct via `app.Router()`. Start at `core/router/router.go` (`Router`).
 - **Key contracts:** `Param` strips control chars, decoded `/`, and `..` traversal, and panics if the matched pattern declares no wildcard of that name (`handler.Bind` leaves undeclared `path` tags zero so one input struct can serve both `POST /users` and `PUT /users/{id}`). Pre-chain hooks (`SetRouteGate`, `SetServeHook`, `PreRoute`) recover panics themselves since `Recovery` middleware hasn't run yet.
 
+### `core/mediatype`
+- **What:** Case-insensitive media-type checks for HTTP headers.
+- **Use:** Direct when checking an `Accept` or `Content-Type` header. `Fold` lowercases the value without validating it or removing parameters.
+- **Key contracts:** `AcceptsAny` compares an `Accept` field to lowercase media types without ranking parameters or honoring quoted commas. `AcceptRanges` splits the field on commas outside quoted parameters.
+
 ## Real-time
 
 ### `core/stream`
