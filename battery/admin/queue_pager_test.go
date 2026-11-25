@@ -124,3 +124,18 @@ func TestQueueReplayAllIsBounded(t *testing.T) {
 		t.Fatalf("replayed %d jobs, want %d", len(q.replayed), maxReplayAll)
 	}
 }
+
+// With counts missing the page is not clamped to a page count, so a huge
+// ?p= must still give a non-negative offset past the jobs, not wrap to
+// the newest ones.
+func TestQueueHugePageWithoutCountsShowsNoJobs(t *testing.T) {
+	q := &fakeQueue{
+		jobs:     []queue.Job{{ID: "q2", Status: "pending"}, {ID: "q1", Status: "pending"}},
+		statsErr: errors.New("counts unavailable"),
+	}
+	x := setup(t, nil, Config{Queue: q}, nil)
+	rec := get(x.as(theAdmin), "/admin/queue?p=4611686018427387905&limit=2")
+	if got := jobIDsShown(rec.Body.String()); rec.Code != 200 || len(got) != 0 {
+		t.Errorf("huge page = %d showing %v, want 200 with no jobs", rec.Code, got)
+	}
+}
