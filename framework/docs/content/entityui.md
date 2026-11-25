@@ -95,6 +95,8 @@ Optional power-user controls (off by default on app screens, on in `battery/admi
 
 Relation fields render as `ui.Picker`: focusing lists the first 20 related records, typing searches through `POST <api>/_pick?field=<field>` (POST-only, JSON-only, 4 KB cap, same-origin, gated by both host and target read permissions and per-row `Decider`), and `WithRecordPath` adds Open and New shortcuts.
 
+Picker options and `UI.SearchRecords` results honor the target record's read hooks. Records hidden by `BeforeGet` are excluded, and titles reflect `AfterGet`.
+
 ## Bulk actions and CSV export
 
 `App.EntityUI` mounts `POST <api>/_bulk` and `GET <api>/_export.csv` alongside each entity's CRUD routes:

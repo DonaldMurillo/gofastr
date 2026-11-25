@@ -54,14 +54,25 @@ func (u *UI) Create(entity string) *RecordBuilder {
 // entity alike.
 func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bool) {
 	m, err := u.meta(entityName)
-	if err != nil || !canReadRecord(ctx, m.ch, id) {
+	if err != nil {
 		return "", false
 	}
-	row, err := m.getRow(ctx, id)
+	row, err := m.readableRow(ctx, id)
 	if err != nil || row == nil {
 		return "", false
 	}
 	return u.recordTitle(ctx, m, row), true
+}
+
+func (m *meta) readableRow(ctx context.Context, id string) (map[string]any, error) {
+	if id == "" || !canReadRecord(ctx, m.ch, id) {
+		return nil, nil
+	}
+	row, err := m.getRow(ctx, id)
+	if crud.IsNotFound(err) {
+		return nil, nil
+	}
+	return row, err
 }
 
 // RecordHidden reports whether the caller's read hooks keep record id
@@ -141,11 +152,16 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 		}
 		for _, row := range rows {
 			id := m.rowID(row)
-			if id == "" || !canReadRecord(ctx, m.ch, id) {
+			record, err := m.readableRow(ctx, id)
+			if err != nil {
+				slog.WarnContext(ctx, "entityui: search records", "entity", entityName, "error", err)
+				return nil
+			}
+			if record == nil {
 				continue
 			}
 			out = append(out, RecordMatch{ID: id})
-			found = append(found, row)
+			found = append(found, record)
 			if len(out) == limit {
 				break
 			}
