@@ -31,6 +31,13 @@ invariants:
     rule: IsSafeRelativePath accepts only a single-slash path with no scheme, host, backslash, NUL, CR, LF or tab, raw or percent-decoded.
     enforced_by:
       - test: core/handler.TestSweepSafeRelativePath
+  - id: query-before-fragment
+    rule: "WithQuery edits query parameters before any #fragment and reassembles the URL with the fragment intact, skipping malformed percent-escapes rather than failing; auth form error redirects, policy redirects and saved-view back redirects route through it."
+    enforced_by:
+      - test: core/handler.TestWithQuery
+      - test: battery/auth.TestFormAuthError_QueryBeforeFragment
+      - test: battery/auth.TestSessionPolicy_NextPathBeforeFragment
+      - test: framework/entityui.TestSavedViewRedirectKeepsQueryBeforeFragment
 decisions:
   - id: same-site-is-not-same-origin
     date: 2026-11-19

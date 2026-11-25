@@ -203,8 +203,8 @@ func TestSessionPolicy_NextPathEdgeCases(t *testing.T) {
 			requestPath:  "/dash",
 			withRequest:  true,
 			policyURL:    "/login?x=1",
-			wantPrefix:   "/login?x=1&next=",
-			wantContains: "%2Fdash",
+			wantPrefix:   "/login?",
+			wantContains: "next=%2Fdash&x=1",
 		},
 		{
 			// "/foo%2Fbar" is one segment whose value holds "/". next=
@@ -322,5 +322,39 @@ func TestSessionPolicy_NoNextSuppressesAppend(t *testing.T) {
 	}
 	if res.URL != "/marketing" {
 		t.Fatalf("URL = %q, want exactly /marketing (no ?next=)", res.URL)
+	}
+}
+
+func TestSessionPolicy_NextPathBeforeFragment(t *testing.T) {
+	cases := []struct {
+		name      string
+		policyURL string
+		want      string
+	}{
+		{"fragment only", "/auth#login", "/auth?next=%2Fdash#login"},
+		{"query and fragment", "/auth?tab=1#login", "/auth?next=%2Fdash&tab=1#login"},
+		{"question mark inside fragment", "/auth#step?a=1", "/auth?next=%2Fdash#step?a=1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := app.NewApp("t")
+			a.RegisterScreen(
+				app.NewScreen("/dash", &stubComp{tag: "x"}).
+					WithPolicy(auth.SessionPolicy(auth.WithRedirect(tc.policyURL))),
+				nil,
+			)
+			r := httptest.NewRequest("GET", "/dash", nil)
+			ctx := app.WithRequest(r.Context(), r)
+			res, err := a.RenderPageResult(ctx, "/dash")
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.Kind != app.DecisionRedirect {
+				t.Fatalf("want Redirect, got %v", res.Kind)
+			}
+			if res.URL != tc.want {
+				t.Errorf("URL = %q, want %q", res.URL, tc.want)
+			}
+		})
 	}
 }

@@ -44,3 +44,26 @@ func SafeRelativePathOr(p, fallback string) string {
 	}
 	return fallback
 }
+
+// WithQuery parses the query string of target before any #fragment, passes it
+// to edit, and reassembles target with the updated query before the unchanged
+// fragment. Malformed percent-escapes in an existing query are skipped rather
+// than failing.
+func WithQuery(target string, edit func(url.Values)) string {
+	beforeFrag, frag := target, ""
+	if i := strings.IndexByte(target, '#'); i >= 0 {
+		beforeFrag, frag = target[:i], target[i:]
+	}
+	path, rawQuery, _ := strings.Cut(beforeFrag, "?")
+	q, _ := url.ParseQuery(rawQuery)
+	if q == nil {
+		q = url.Values{}
+	}
+	if edit != nil {
+		edit(q)
+	}
+	if len(q) == 0 {
+		return path + frag
+	}
+	return path + "?" + q.Encode() + frag
+}
