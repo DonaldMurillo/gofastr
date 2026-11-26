@@ -160,7 +160,7 @@ func uninstallLinuxBundle(id string) error {
 	}
 	name := id
 	bundle, receipt, err := linuxbundle.OpenInstalled(filepath.Join(paths.apps, id), id)
-	if err != nil && errors.Is(err, fs.ErrNotExist) {
+	if _, lerr := apps.Lstat(id); err != nil && errors.Is(lerr, fs.ErrNotExist) {
 		// An update stopped between moving the installation aside and moving
 		// its replacement in leaves only <id>~old: uninstall that, when it is
 		// an unchanged installation the external files below also vouch for.

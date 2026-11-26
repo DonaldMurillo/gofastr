@@ -456,3 +456,46 @@ func TestLinuxUpdateVersionWarning(t *testing.T) {
 		}
 	}
 }
+
+// The archive build prints the update-version warning before it
+// compiles: with 1.2 it says so, with 1.2.0 it does not. The package to
+// build does not exist, so the build stops right after the warning.
+func TestLinuxArchiveBuildWarnsOfAnUpdateVersion(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		warns   bool
+	}{{"1.2", true}, {"1.2.0", false}} {
+		t.Run(c.version, func(t *testing.T) {
+			f := desktopBuildFlags{id: "dev.example.warn", version: c.version, pkg: "./testdata/no-such-package", out: t.TempDir(), format: "tar.gz"}
+			out := captureStdout(t, func() {
+				if err := buildLinuxDesktopArchive(f, "Warn", runtime.GOARCH); err == nil {
+					t.Fatal("the build of a missing package succeeded")
+				}
+			})
+			if got := strings.Contains(out, "cannot be published to an update feed"); got != c.warns {
+				t.Fatalf("warned %v, want %v; output:\n%s", got, c.warns, out)
+			}
+		})
+	}
+}
+
+// captureStdout runs fn with os.Stdout sent to a pipe and returns what it wrote.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	defer func() { os.Stdout = saved }()
+	fn()
+	os.Stdout = saved
+	_ = w.Close()
+	return <-done
+}

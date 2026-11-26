@@ -140,3 +140,28 @@ func TestLinuxUninstallAfterAnInterruptedUpdate(t *testing.T) {
 		}
 	}
 }
+
+// The fallback to <id>~old is for an installation directory that is
+// gone, not for one with a file missing: a damaged installation is
+// refused, and nothing is removed, even with an intact <id>~old beside it.
+func TestLinuxUninstallRefusesADamagedInstallationBesideAnOldCopy(t *testing.T) {
+	paths := linuxInstallTestHome(t)
+	source, manifest := linuxInstallFixture(t, "")
+	if err := installLinuxBundle(source); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(paths.apps, manifest.ID)
+	if out, err := exec.Command("cp", "-a", dir, dir+"~old").CombinedOutput(); err != nil {
+		t.Fatalf("cp: %v\n%s", err, out)
+	}
+	if err := os.Remove(filepath.Join(dir, "README.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := uninstallLinuxBundle(manifest.ID); err == nil {
+		t.Fatal("uninstall accepted an installation with a payload file missing")
+	}
+	assertInstallationKept(t, paths, manifest.ID)
+	if _, err := os.Stat(filepath.Join(dir+"~old", linuxInstallReceiptName)); err != nil {
+		t.Fatalf("the refused uninstall removed the old copy: %v", err)
+	}
+}
