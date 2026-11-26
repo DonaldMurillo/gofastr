@@ -487,9 +487,9 @@ func commandVersion(ctx context.Context, program string) (string, error) {
 	defer cancel()
 	versionCmd := exec.CommandContext(versionCtx, program, "--version")
 	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
-	output, err := versionCmd.CombinedOutput()
+	output, err := versionCmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("resolve Codex version: %w (%s)", err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("resolve Codex version: %w (%s)", err, strings.TrimSpace(exitStderr(err)))
 	}
 	return strings.TrimSpace(string(output)), nil
 }
@@ -575,4 +575,14 @@ func displayModel(model string) string {
 
 func contains(values []string, target string) bool {
 	return slices.Contains(values, target)
+}
+
+// exitStderr is what a failed command printed on stderr, which Output
+// keeps on the *exec.ExitError.
+func exitStderr(err error) string {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return string(exit.Stderr)
+	}
+	return ""
 }

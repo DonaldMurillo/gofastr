@@ -89,6 +89,9 @@ var Analyzers = []string{
 
 	// 2026-11 bug-bash rules (read hooks)
 	"hookedread",
+
+	// 2026-11-25 round-12 rules
+	"combinedparse",
 }
 
 // Lints is every source lint outside the vettool that shares the
