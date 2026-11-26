@@ -184,6 +184,12 @@ few lines, and link the PR or the docs page for the rest.
   fanout to stop. A panic in a queue `Close`, the outbox relay stop or the
   access store fanout stop is returned as a shutdown error instead of
   crashing the process ([#913](https://github.com/DonaldMurillo/gofastr/pull/913)).
+- `App.Shutdown` no longer waits past its deadline for mounted island
+  fanout to stop; it reports `island fanout stop abandoned after the drain
+  deadline`. The stop unsubscribes first, so islands stop receiving peer
+  updates even when shutdown gives up on it. Presence goodbyes still follow
+  in-flight rosters when time permits
+  ([#910](https://github.com/DonaldMurillo/gofastr/pull/910)).
 
 - **BREAKING:** `config.Load` now rejects `validate` tags whose highest
   `min` exceeds their lowest `max`, even in unset optional nested structs.
