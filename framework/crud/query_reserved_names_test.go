@@ -183,9 +183,10 @@ func mcpListIDs(t *testing.T, srv *mcp.Server, ctx context.Context, args map[str
 	return ids
 }
 
-// TestReservedNamesMCPListTool: the list tool's schema gives each of
-// its control arguments and the filter on a column of the same name
-// their own names, the filter's in bracket form, and both work.
+// TestReservedNamesMCPListTool: the filter on a column named after any
+// reserved key takes its bracket form in the list tool's schema and
+// works, and each of the tool's own control arguments keeps its name
+// and type.
 func TestReservedNamesMCPListTool(t *testing.T) {
 	installOwnerExtractor(t)
 	ch, r := reservedNamesHandler(t)
@@ -196,10 +197,10 @@ func TestReservedNamesMCPListTool(t *testing.T) {
 	ctx := handler.SetUser(context.Background(), &testUser{id: "alice"})
 	props := listToolSchema(ch.Entity, nil)["properties"].(map[string]any)
 	for _, row := range reservedNameRows {
-		if _, takes := listToolControlArgs[row.key]; !takes {
-			continue
-		}
 		t.Run(row.key+"/filter", func(t *testing.T) {
+			if ps, ok := props[row.key].(map[string]any); ok && ps["type"] == "string" && listToolControlArgs[row.key] == "" {
+				t.Errorf("schema %q is a bare column filter, which the route reads as its control", row.key)
+			}
 			filterKey := filter.BracketKey(row.key, filter.OpEq)
 			if ps, ok := props[filterKey].(map[string]any); !ok || ps["type"] != "string" {
 				t.Errorf("schema %q = %v, want the string column filter", filterKey, props[filterKey])
@@ -208,6 +209,9 @@ func TestReservedNamesMCPListTool(t *testing.T) {
 				t.Errorf("filter %s=%s listed %v, want [c]", filterKey, row.key+"-c", got)
 			}
 		})
+		if _, takes := listToolControlArgs[row.key]; !takes {
+			continue
+		}
 		t.Run(row.key+"/control", func(t *testing.T) {
 			ps, _ := props[row.key].(map[string]any)
 			if want := listToolControlArgs[row.key]; ps["type"] != want {

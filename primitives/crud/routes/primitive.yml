@@ -109,7 +109,7 @@ invariants:
     enforced_by:
       - test: framework/crud.TestEntityMCPToolsCarryHints
   - id: mcp-list-filter-keys-leave-controls
-    rule: The list tool spells a column filter whose key would be one of its control arguments (page, limit, per_page, offset, sort, and q with SearchFields) in bracket form, in its schema and handler alike, so the control keeps its name and type.
+    rule: The list tool spells a column filter whose key is one filter.ListControlParams reserves (q only with SearchFields) in bracket form, in its schema and handler alike, so the route never reads it as the control and the tool's own control arguments keep their name and type.
     enforced_by:
       - test: framework/crud.TestReservedNamesMCPListTool
 decisions:

@@ -195,10 +195,16 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 var listToolControls = [...]string{"page", "limit", "per_page", "offset", "sort"}
 
 // listToolFilterKey is the list tool's argument for a filter on field: the
-// route's key, in bracket form where it would be a control argument.
+// route's key, in bracket form where the route reads it as a control.
 func listToolFilterKey(ent *entity.Entity, spell filter.KeySpeller, field schema.Field, op filter.FilterOp) string {
 	key := spell.Key(mcpFieldKey(field), op)
-	if slices.Contains(listToolControls[:], key) || (key == "q" && len(ent.Config.SearchFields) > 0) {
+	if key == "q" {
+		if len(ent.Config.SearchFields) > 0 {
+			return filter.BracketKey(mcpFieldKey(field), op)
+		}
+		return key
+	}
+	if slices.Contains(filter.ListControlParams(), key) {
 		return filter.BracketKey(mcpFieldKey(field), op)
 	}
 	return key

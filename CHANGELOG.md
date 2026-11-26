@@ -95,10 +95,12 @@ few lines, and link the PR or the docs page for the rest.
   pair, multipart detection, local-entity forms or the validity tracker.
   A multipart form with no file input and a control named `enctype` was
   sent as JSON.
-- **MCP list tools:** a filter on a column named `page`, `limit`,
-  `per_page`, `offset` or `sort` (or `q` on a searchable entity) takes the
-  bracket key (`page[eq]`), so the tool's own argument keeps its name and
-  type. `limit: 1` was refused when the entity had a `limit` column.
+- **MCP list tools:** the equality filter on a column named after a
+  reserved list key (`page`, `limit`, `sort`, `fields`, `where`, `cursor`
+  and the rest, or `q` on a searchable entity) takes the bracket key
+  (`page[eq]`), so the route no longer reads it as the control and the
+  tool's own arguments keep their name and type. `limit: 1` was refused
+  when the entity had a `limit` column, and `fields: "x"` answered 400.
 - **CopyButton** copies a `<pre>`'s text exactly, and copies nothing from a
   PasswordInput, hidden or revealed.
 - **Sortable lists:** a late conflict refresh no longer overwrites a newer

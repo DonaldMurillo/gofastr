@@ -543,6 +543,8 @@ getter, or `getAttribute`; a plain write such as `form.action = x` stays
 quiet. `framework/crud`'s reserved-names table
 (`TestReservedNamesKeepBothMeanings`, `TestReservedNamesMCPListTool`)
 gives an entity a column named after every key
-`filter.ListControlParams` reserves and checks the bracket filter and
-the control on the list route and the MCP list tool; a new reserved key
-fails `TestReservedNamesTableCoversTheParser` until it has a row.
+`filter.ListControlParams` reserves. It checks the bracket filter for
+every key on the list route and the MCP list tool, and the control
+itself on the route and for the tool's own arguments (the rows #915
+holds skip). A new reserved key fails
+`TestReservedNamesTableCoversTheParser` until it has a row.
