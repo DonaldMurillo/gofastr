@@ -297,7 +297,7 @@ func (u *UI) everyMatch(ctx context.Context, m *meta, body bulkBody) ([]string, 
 }
 
 func (u *UI) matchIDs(ctx context.Context, m *meta, key string, q url.Values) ([]string, error) {
-	rows, err := u.matchRows(ctx, m, key, q, m.keys)
+	rows, err := u.matchRows(ctx, m, key, q, m.keys, false)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,9 @@ func matchDigest(ids []string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, fields []string) ([]map[string]any, error) {
+// matchRows reads every row the list query q names, in key order, or in the list's order when
+// listOrder is set.
+func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, fields []string, listOrder bool) ([]map[string]any, error) {
 	if key != "" && !entity.ValidKey(key) {
 		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkBadScope)
 	}
@@ -332,12 +334,17 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 	if err != nil {
 		return nil, err
 	}
+	sorts := m.keySorts()
+	if listOrder {
+		s.resolveSort(b)
+		sorts = append(slices.Clone(s.sorts), sorts...)
+	}
 	rows, err := m.listRows(ctx, crud.ListOptions{
 		Where:   where,
 		Filters: s.facetFilters(),
 		Search:  s.search,
 		Fields:  fields,
-		Sorts:   m.keySorts(),
+		Sorts:   sorts,
 		Limit:   EveryMatchCap + 1,
 	})
 	if err != nil {

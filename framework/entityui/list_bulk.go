@@ -133,6 +133,12 @@ func exportLink(ctx context.Context, s *listState) render.HTML {
 	if s.key != "" {
 		q.Set(exportKeyParam, s.key)
 	}
+	if col := s.q.Get(s.p.sort); col != "" && col == s.sortField {
+		q.Set(s.p.sort, col)
+		if s.sortDesc {
+			q.Set(s.p.dir, "desc")
+		}
+	}
 	return ui.LinkButton(ui.LinkButtonConfig{
 		Label:      i18nui.EntityBulkExport.Text(ctx),
 		Href:       listHref(s.m.api+"/_export.csv", q),

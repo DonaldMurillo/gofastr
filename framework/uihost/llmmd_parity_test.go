@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
 // parityRow is the record a lazy resolver looks up; the store never
@@ -27,6 +28,51 @@ func (*swallowsMissing) Load(ctx context.Context) error {
 }
 func (*swallowsMissing) Render() render.HTML         { return "<p>row body</p>" }
 func (*swallowsMissing) SetParams(map[string]string) {}
+
+func TestMarkdownScreenFailureStatus(t *testing.T) {
+	const title = "Unrendered screen title"
+	a := app.NewApp("parity")
+	failing := parityRow.From(func(context.Context) (string, error) {
+		return "", context.DeadlineExceeded
+	})
+	group := app.NewScreenGroup("/required", nil)
+	group.Resolve(failing)
+	group.Requires(parityRow)
+	group.Screen(app.NewScreen("/required/row", parityText("row body")).WithTitle(title), nil)
+	a.Router.ScreenGroup(group)
+	a.RegisterScreen(app.NewScreen("/load-error", &errorLoadScreen{}).WithTitle(title), nil)
+	a.RegisterScreen(app.NewScreen("/load-panic", &panicLoadScreen{}).WithTitle(title), nil)
+	a.RegisterScreen(app.NewScreen("/render-panic", panicRenderScreen{"render panic detail"}).WithTitle(title), nil)
+	a.RegisterScreen(app.NewScreen("/rows/{id}", &swallowsMissing{}).WithTitle(title).Resolve(failing), nil)
+	ds := renderdiag.ProductionStatus(t, New(a, WithPublicLLMMD(), WithMarkdownNegotiation()))
+
+	for _, tc := range []struct {
+		path string
+		code int
+	}{
+		{"/load-error", http.StatusNotFound},
+		{"/load-panic", http.StatusInternalServerError},
+		{"/render-panic", http.StatusInternalServerError},
+		{"/required/row", http.StatusInternalServerError},
+		{"/rows/42", http.StatusInternalServerError},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			for _, variant := range []struct{ path, accept string }{
+				{tc.path, "text/html"},
+				{tc.path, "text/markdown"},
+				{tc.path + "/llm.md", "text/markdown"},
+			} {
+				req := httptest.NewRequest(http.MethodGet, variant.path, nil)
+				req.Header.Set("Accept", variant.accept)
+				rec := httptest.NewRecorder()
+				ds.ServeHTTP(rec, req)
+				if rec.Code != tc.code || strings.Contains(rec.Body.String(), title) {
+					t.Errorf("%s (%s) = %d, want %d without route metadata", variant.path, variant.accept, rec.Code, tc.code)
+				}
+			}
+		})
+	}
+}
 
 // parityText renders its text, as a screen or an outlet fill.
 type parityText string

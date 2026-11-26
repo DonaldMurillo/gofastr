@@ -630,12 +630,11 @@
     }
     return null;
   };
-  const routeParams = (path) => {
-    const m = routeInfo(path);
-    return m?.params;
-  };
-  const substTmpl = (tmpl, params) => (params && tmpl.includes('{'))
-  ? tmpl.replace(/\{(\w+)\}/g, (m, n) => (Object.prototype.hasOwnProperty.call(params, n) ? params[n] : m))
+  const substTmpl = (tmpl, params) => params
+  ? tmpl.replace(/\/(?::([^/]+)|\{([^/]+)\})(?=\/)/g, (m, seg, brace) => {
+    const name = (seg || brace).split(':')[0].replace(/(?:\*|\.\.\.)$/, '');
+    return Object.hasOwn(params, name) ? '/' + params[name] : m;
+  })
   : tmpl;
 
   // The anchor + element-pane records (P12) live here, keyed by the
@@ -688,8 +687,7 @@
   /* gofastr:html-response-check */
   const routeLayouts = (path) => {
     const m = routeInfo(path);
-    const ls = ((m && m.entry && m.entry.layouts) || []);
-    return ls.some((k) => k.includes('{')) ? ls.map((k) => substTmpl(k, m.params)) : ls;
+    return m?.entry.layouts?.map((k) => substTmpl(k, m.params)) || [];
   };
   const sharedDepth = (layouts) => {
     const dom = domChainKeys();
@@ -1294,7 +1292,7 @@
     // addresses (spike/layout-resolve): resolve the path against the
     // manifest's patterns and substitute, sharing core's normalization
     // and constraint matching so both navigators select the same route.
-    subst: (tmpl, path) => substTmpl(tmpl, routeParams(path)),
+    subst: (tmpl, path) => substTmpl(tmpl, routeInfo(path)?.params),
     // The RAW manifest entry for a path (plus its captured params): the
     // loading and parts modules read their per-route fields off it.
     manifest: routeInfo,

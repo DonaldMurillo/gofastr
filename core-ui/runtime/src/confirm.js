@@ -145,7 +145,7 @@
       if (!ok) return;
       form._ok = true;
       try {
-        form.requestSubmit(sub && sub.form === form ? sub : null);
+        HTMLFormElement.prototype.requestSubmit.call(form, sub && sub.form === form ? sub : null);
       } finally {
         delete form._ok;
       }

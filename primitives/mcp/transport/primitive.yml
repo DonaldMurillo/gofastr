@@ -27,6 +27,10 @@ twins:
       - path: framework/experimental/harness/control/mcpserver/server.go
         note: Server.write.
 invariants:
+  - id: stdio-returns-write-errors
+    rule: ServeStdio returns the error of a reply, envelope refusal or line-limit refusal it could not write, joined with bufio.ErrTooLong for the line limit, instead of reading on or returning nil.
+    enforced_by:
+      - test: core/mcp.TestServeStdioReturnsWriteError
   - id: json-content-type-only
     rule: A POST whose Content-Type is missing or not application/json or a +json type is answered 415.
     enforced_by:

@@ -478,3 +478,57 @@ func TestE2E_SortableDropOnANestedListStaysInIt(t *testing.T) {
 		t.Fatalf("the nested drop committed %q, want exactly [i2,i1]", got)
 	}
 }
+
+func TestSortableSkipsListsInsideMovingRow(t *testing.T) {
+	child := SortableList(SortableListProps{
+		ID: "child", Group: "board", Label: "Child",
+		Items: []SortableItem{{Key: "inside", Label: "Inside"}},
+	}, nil)
+	parent := SortableList(SortableListProps{
+		ID: "parent", Group: "board", Label: "Parent",
+		Items: []SortableItem{{Key: "moving", Label: "Moving", Content: child}},
+	}, nil)
+	peer := SortableList(SortableListProps{ID: "peer", Group: "board", Label: "Peer", RPCPath: "/commit"}, nil)
+	for _, input := range []string{"pointer", "keyboard"} {
+		t.Run(input, func(t *testing.T) {
+			server, commits := sortableServer(t, sortableLayout+string(parent)+string(peer), false)
+			ctx := behaviorPage(t, server)
+			if !pollTrue(ctx, sortableLoaded) {
+				t.Fatal("sortable module never loaded")
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.sortError = ''; addEventListener('error', event => { window.sortError = event.error.name; });`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			want := "parent"
+			if input == "pointer" {
+				var marked bool
+				if err := chromedp.Run(ctx,
+					pointerPress("mouse", gripOf("moving"), lowerHalfOf("inside")),
+					chromedp.Evaluate(`!!document.querySelector('#child .is-drop-before, #child .is-drop-after, #child.is-drop-target')`, &marked),
+					pointerRelease("mouse", lowerHalfOf("inside")),
+				); err != nil {
+					t.Fatal(err)
+				}
+				if marked {
+					t.Error("pointer marked a descendant list as a valid drop")
+				}
+			} else {
+				want = "peer"
+				if err := chromedp.Run(ctx, kbCrossMove("moving")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := evalString(t, ctx, `window.sortError`); got != "" {
+				t.Errorf("move raised %s", got)
+			}
+			if got := evalString(t, ctx, `document.querySelector('[data-hui-sort-key="moving"]').parentElement.id`); got != want {
+				t.Fatalf("row ended in %q, want %q", got, want)
+			}
+			if want == "peer" {
+				if !waitLive(ctx, "Order saved.") || strings.Join(commits.get(), ",") != "moving" {
+					t.Fatalf("keyboard move did not save to the eligible list, commits %v", commits.get())
+				}
+			}
+		})
+	}
+}

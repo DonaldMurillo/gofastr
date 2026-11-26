@@ -116,6 +116,25 @@ func TestIncludedJSONKeepsStoredKeys(t *testing.T) {
 	})
 }
 
+func TestCountAllValidatesIncludePaths(t *testing.T) {
+	forIncludedLines(t, "due", "meta", nil, func(t *testing.T, fx includedLines) {
+		ctx := t.Context()
+		for _, name := range []string{"nonexistent", "lines.nonexistent"} {
+			opts := ListOptions{Includes: []string{name}}
+			_, listErr := fx.orders.ListAll(ctx, opts)
+			if listErr == nil {
+				t.Fatalf("ListAll accepted include %q", name)
+			}
+			if n, err := fx.orders.CountAll(ctx, opts); err == nil || err.Error() != listErr.Error() {
+				t.Errorf("CountAll with include %q = (%d, %v), want %v", name, n, err, listErr)
+			}
+		}
+		if n, err := fx.orders.CountAll(ctx, ListOptions{Includes: []string{"lines"}}); n != 1 || err != nil {
+			t.Errorf("CountAll with a valid include = (%d, %v), want (1, nil)", n, err)
+		}
+	})
+}
+
 func TestIncludedMixedCaseFieldsDecode(t *testing.T) {
 	meta := map[string]any{"a": float64(1)}
 	forIncludedLines(t, "Due", "Meta", meta, func(t *testing.T, fx includedLines) {

@@ -289,14 +289,12 @@ func redirectFormAuthError(w http.ResponseWriter, r *http.Request, status int, r
 		writeAuthError(w, r, status, reason)
 		return
 	}
-	sep := "?"
-	if strings.Contains(target, "?") {
-		sep = "&"
-	}
-	target += sep + "error=" + sanitiseErr(reason.Code())
-	if next != "" {
-		target += "&next=" + url.QueryEscape(next)
-	}
+	target = handler.WithQuery(target, func(q url.Values) {
+		q.Set("error", sanitiseErr(reason.Code()))
+		if next != "" {
+			q.Set("next", next)
+		}
+	})
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 

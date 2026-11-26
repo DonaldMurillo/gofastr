@@ -182,6 +182,9 @@ func (b *Builder) dumpRailScripts(ctx context.Context, res *Result, routes []str
 	if b.Handler == nil {
 		return nil
 	}
+	if b.Host.PWAEnabled() && (!b.staticSourceHas(pwaOfflineFile) || !b.staticSourceHas("service-worker.js")) {
+		routes = append(routes, pwaOfflinePath)
+	}
 	written := newFileSet()
 	for _, p := range res.Assets {
 		written.add(p)

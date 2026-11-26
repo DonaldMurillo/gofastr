@@ -198,7 +198,7 @@ application.RegisterScreen(
 )
 ```
 
-Options are last-write-wins (`WithRedirect`, `WithBlock`, `WithBlockReason`, `WithRenderAlt`). Suppress `?next=` with `auth.NoNext()`:
+Options are last-write-wins (`WithRedirect`, `WithBlock`, `WithBlockReason`, `WithRenderAlt`). `WithRedirect` sets `next` in the query before any `#fragment` (replacing any existing `next` param); suppress it with `auth.NoNext()`:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/battery/auth"

@@ -475,40 +475,7 @@ func renderSDKJSReadme(spec sdkSpec) string {
 
 // jsParsePrelude opens every generated client.js, the entity SDK's and the
 // OpenAPI SDK's: parseJSON, which keeps big integers exact, and ApiError.
-const jsParsePrelude = `/**
- * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
- * arrives as its decimal string, the digits the server sent, where
- * JSON.parse would round it (a snowflake id, a big counter). client.d.ts
- * types every integer field number | string for this reason. Every other
- * value parses as JSON.parse would.
- */
-function parseJSON(text) {
-  // An unsafe integer has at least 16 digits; most bodies have no such run.
-  if (!/\d{16}/.test(text)) return JSON.parse(text);
-  const numChar = (c) => (c >= 48 && c <= 57) || c === 46 || c === 101 || c === 69 || c === 43 || c === 45;
-  let out = "";
-  let last = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c === 34) {
-      // A string: skip to its closing quote, past escaped characters.
-      for (i++; i < text.length && text.charCodeAt(i) !== 34; i++) {
-        if (text.charCodeAt(i) === 92) i++;
-      }
-    } else if (c === 45 || (c >= 48 && c <= 57)) {
-      let j = i + 1;
-      while (j < text.length && numChar(text.charCodeAt(j))) j++;
-      const tok = text.slice(i, j);
-      if (/^-?\d+$/.test(tok) && !Number.isSafeInteger(Number(tok))) {
-        out += text.slice(last, i) + '"' + tok + '"';
-        last = j;
-      }
-      i = j - 1;
-    }
-  }
-  return JSON.parse(out + text.slice(last));
-}
-
+const jsParsePrelude = jsParseJSON + `
 /**
  * ApiError is thrown for non-2xx responses. The message is in the
  * request's locale; reason is its stable code (unique_taken,
@@ -1067,4 +1034,41 @@ export declare class Resource<T, TInput, TPatch, TKey = string, TItemKey = { id:
   transition(id: TKey, key: string): Promise<T>;
 }
 
+`
+
+// jsParseJSON is parseJSON's source, shared by the generated SDKs and the
+// generated form scripts that read entity JSON in the page.
+const jsParseJSON = `/**
+ * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
+ * arrives as its decimal string, the digits the server sent, where
+ * JSON.parse would round it (a snowflake id, a big counter). client.d.ts
+ * types every integer field number | string for this reason. Every other
+ * value parses as JSON.parse would.
+ */
+function parseJSON(text) {
+  // An unsafe integer has at least 16 digits; most bodies have no such run.
+  if (!/\d{16}/.test(text)) return JSON.parse(text);
+  const numChar = (c) => (c >= 48 && c <= 57) || c === 46 || c === 101 || c === 69 || c === 43 || c === 45;
+  let out = "";
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 34) {
+      // A string: skip to its closing quote, past escaped characters.
+      for (i++; i < text.length && text.charCodeAt(i) !== 34; i++) {
+        if (text.charCodeAt(i) === 92) i++;
+      }
+    } else if (c === 45 || (c >= 48 && c <= 57)) {
+      let j = i + 1;
+      while (j < text.length && numChar(text.charCodeAt(j))) j++;
+      const tok = text.slice(i, j);
+      if (/^-?\d+$/.test(tok) && !Number.isSafeInteger(Number(tok))) {
+        out += text.slice(last, i) + '"' + tok + '"';
+        last = j;
+      }
+      i = j - 1;
+    }
+  }
+  return JSON.parse(out + text.slice(last));
+}
 `

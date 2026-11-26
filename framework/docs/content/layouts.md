@@ -161,6 +161,8 @@ group.Screen(app.NewScreen("/projects/{project}/issues/{n}", &IssueScreen{}), ni
 site.Router.ScreenGroup(group)
 ```
 
+Typed prefixes such as `/projects/{project:int}` also use the captured parameter value in the layer key.
+
 - Pass `nil` layout to `SubGroup` to inherit the parent layout, attach group-wide policies as extra args to `NewScreenGroup`, and use `Layout.WithKey(...)` when one layout shape needs a distinct cache identity per context (e.g., per locale).
 - **Document-lifetime scripts:** Switching between pages whose `uihost.RegisterDocumentScript` sets differ triggers a real document navigation rather than a partial swap so removed scripts don't linger.
 
@@ -223,6 +225,7 @@ issue.Fill(aside, activity, app.FillPolicy(app.PolicyFunc(archivedGuard)))
 ```
 
 `RenderAlt` and `Block` apply to that region alone; `Redirect` and `decide.NotFound()` apply to the whole page.
+A blocked outlet loads only its `Default`, when present. `ErrNoFill` leaves the outlet empty, and a default load error goes through the outlet's usual error handling.
 
 ## Deferred outlets, loading states, transitions & owned styles
 
@@ -271,6 +274,8 @@ reports.WithLoading(&app.Loading{
 ```
 
 ### View transitions
+
+Set `Transitions` and `TransitionFor` on a primary or secondary outlet to pick a transition from a named set using the request context. An empty or unknown pick leaves that outlet without a transition.
 
 Declare typed transitions on `Primary` or outlets (`app.Slide(app.Right, d)`, `app.Crossfade(d)`, `app.FadeThrough(d)`, `app.Instant()`, or root `app.ViewTransitionPresetCSS("fade")`). Animations respect `prefers-reduced-motion` and are skipped gracefully if unsupported:
 

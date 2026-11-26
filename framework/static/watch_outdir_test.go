@@ -20,7 +20,32 @@ import (
 // source edit became a loop that never settled. The build's own output is
 // not a source.
 func TestWatchIgnoresItsOwnOutput(t *testing.T) {
+	for _, mode := range []string{"plain", "output-alias", "watch-root-alias"} {
+		t.Run(mode, func(t *testing.T) { assertWatchIgnoresOutput(t, mode) })
+	}
+}
+
+func assertWatchIgnoresOutput(t *testing.T, mode string) {
+	t.Helper()
 	base := t.TempDir()
+	outDir := filepath.Join(base, "dist")
+	watchDir := base
+	switch mode {
+	case "output-alias":
+		if err := os.Mkdir(outDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(base, "out-link")
+		if err := os.Symlink(outDir, link); err != nil {
+			t.Skipf("output symlink unavailable: %v", err)
+		}
+		outDir = link
+	case "watch-root-alias":
+		watchDir = filepath.Join(t.TempDir(), "root-link")
+		if err := os.Symlink(base, watchDir); err != nil {
+			t.Skipf("watch root symlink unavailable: %v", err)
+		}
+	}
 	src := filepath.Join(base, "static")
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
@@ -35,7 +60,7 @@ func TestWatchIgnoresItsOwnOutput(t *testing.T) {
 	var rebuilds atomic.Int32
 	b := &Builder{
 		Host:   uihost.New(app, uihost.WithStaticDir(src)),
-		OutDir: filepath.Join(base, "dist"),
+		OutDir: outDir,
 		Logger: func(format string, _ ...any) {
 			if strings.HasPrefix(format, "change detected") {
 				rebuilds.Add(1)
@@ -44,7 +69,15 @@ func TestWatchIgnoresItsOwnOutput(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- b.Watch(ctx, []string{base}, 20*time.Millisecond, func(err error) { t.Error(err) }) }()
+	go func() {
+		done <- b.Watch(ctx, []string{watchDir}, 20*time.Millisecond, func(err error) { t.Error(err) })
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
 
 	// Edit one source until a rebuild starts: the initial build's
 	// snapshot may land after an edit made too early, which then reads
@@ -64,11 +97,27 @@ func TestWatchIgnoresItsOwnOutput(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	settled := rebuilds.Load()
 	time.Sleep(500 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
 	if n := rebuilds.Load(); n != settled {
 		t.Fatalf("rebuilds kept coming with no source edit (%d, then %d): Watch is reading its own OutDir as a source", settled, n)
+	}
+}
+
+// TestWatchSkipResolvesMissingOutDir: Watch computes its OutDir skip
+// once, and OutDir may not exist yet (the first Build failed before it
+// made the directory). The skip must still use the resolved spelling the
+// walk sees, or the later output reads as a source.
+func TestWatchSkipResolvesMissingOutDir(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "site-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resolvedWatchPath(filepath.Join(link, "_out", "nested"))
+	if want := filepath.Join(resolvedReal, "_out", "nested"); got != want {
+		t.Fatalf("resolvedWatchPath = %q, want %q", got, want)
 	}
 }

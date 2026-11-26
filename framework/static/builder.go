@@ -199,7 +199,9 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return res, err
 	}
 
-	if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
+	if b.staticSourceHas("404.html") {
+		b.log("kept the static source 404.html")
+	} else if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
 		html := b.applyStaticMode(ctx, page)
 		dst := filepath.Join(b.OutDir, "404.html")
 		if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
@@ -291,12 +293,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 
 	frameworkAssetCount := len(res.Assets)
 
+	built := newFileSet()
+	for _, rel := range writtenPaths(&res, rendered, docs) {
+		built.add(rel)
+	}
 	if dir := b.Host.StaticDir(); dir != "" {
-		if err := copyDir(dir, b.OutDir, rendered, &res, b.log); err != nil {
+		if err := copyDir(dir, b.OutDir, built, &res, b.log); err != nil {
 			return res, err
 		}
 	} else if fsys := b.Host.StaticFS(); fsys != nil {
-		if err := copyFS(fsys, b.OutDir, rendered, &res, b.log); err != nil {
+		if err := copyFS(fsys, b.OutDir, built, &res, b.log); err != nil {
 			return res, err
 		}
 	}

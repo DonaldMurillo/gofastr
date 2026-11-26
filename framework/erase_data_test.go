@@ -1255,12 +1255,17 @@ func TestEraseUserData_KeptIdentitiesExpire(t *testing.T) {
 // the store registered with Source "test" and Name store.
 func seedRetention(t *testing.T, db *sql.DB, tenant, user, store, email string, expires time.Time) {
 	t.Helper()
+	seedRetentionKind(t, db, tenant, user, store, datexport.IdentityEmail, email, expires)
+}
+
+func seedRetentionKind(t *testing.T, db *sql.DB, tenant, user, store string, kind datexport.IdentityKind, value string, expires time.Time) {
+	t.Helper()
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, eraseIdentitiesDDL); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO `+eraseIdentitiesTable+` (tenant, user_id, store, kind, value, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		tenant, user, "4:test/"+store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
+		tenant, user, "4:test/"+store, int64(kind), value, expires.Unix()); err != nil {
 		t.Fatal(err)
 	}
 }

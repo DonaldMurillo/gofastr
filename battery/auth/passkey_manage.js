@@ -196,12 +196,9 @@
     proof.value = value;
     // Submitted as the button would have: its formaction and its own
     // name and value go with the proof.
-    if (btn.type === 'submit' && btn.form === form) {
-      btn.disabled = false;
-      form.requestSubmit(btn);
-    } else {
-      form.requestSubmit();
-    }
+    const own = btn.type === 'submit' && btn.form === form;
+    if (own) btn.disabled = false;
+    HTMLFormElement.prototype.requestSubmit.call(form, own ? btn : null);
   }
 
   // upgrade asks for a passkey without a prompt after a password

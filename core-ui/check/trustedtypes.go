@@ -10,7 +10,7 @@ var (
 	reTTAdjacent     = regexp.MustCompile(`\binsertAdjacentHTML\s*\(`)
 	reTTParse        = regexp.MustCompile(`\bparseFromString\s*\(`)
 	reTTWorker       = regexp.MustCompile(`\bnew\s+(?:Shared)?Worker\s*\(`)
-	reTTForbidden    = regexp.MustCompile(`\bdocument\s*\.\s*write(?:ln)?\s*\(|\bimportScripts\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$.])eval\s*\(|\bsetHTMLUnsafe\s*\(|\bcreateContextualFragment\s*\(`)
+	reTTForbidden    = regexp.MustCompile(`\bdocument\s*\.\s*write(?:ln)?\s*\(|\bimportScripts\s*\(|\bnew\s+Function\s*\(|(?:^|[^\w$.])((?:(?:window|globalThis|self)\s*\??\.\s*)?eval)\s*\(|\bsetHTMLUnsafe\s*\(|\bcreateContextualFragment\s*\(`)
 	reTTScriptVar    = regexp.MustCompile(`\b([A-Za-z_$][\w$]*)\s*=\s*document\s*\.\s*createElement\s*\(\s*['"]script['"]\s*\)`)
 	reTTHTMLCall     = regexp.MustCompile(`^(?:[\w$]+\s*(?:\?\.|\.)\s*)*_html\s*(?:\?\.)?\s*\(`)
 	reTTScriptURLArg = regexp.MustCompile(`^(?:[\w$]+\s*(?:\?\.|\.)\s*)*_scriptURL\s*(?:\?\.)?\s*\(`)
@@ -21,7 +21,7 @@ var (
 // not wholly a call of _html, on a Worker or a created script element's src
 // (property or attribute) whose URL is not wholly a call of _scriptURL, on a created script element's text assigned
 // with textContent, innerText or text, and on a sink no policy covers
-// (document.write, eval, new Function, importScripts, setHTMLUnsafe,
+// (document.write, bare or globally qualified eval, new Function, importScripts, setHTMLUnsafe,
 // createContextualFragment). Under the default require-trusted-types-for
 // 'script' each of these throws unless its value came from the runtime's
 // 'gofastr' policy.
@@ -85,8 +85,15 @@ func LintTrustedTypesSinks(roots ...string) (*Result, error) {
 				res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] a created script element's text is assigned a string, a TrustedScript sink even for type=application/json; append it with el.append(text) instead")
 			}
 		}
-		for _, loc := range reTTForbidden.FindAllStringIndex(f.Blank, -1) {
-			res.add(f.Path, f.lineOf(loc[0]), "[trusted-types-sink] "+strings.TrimRight(strings.TrimSpace(strings.TrimLeft(f.Blank[loc[0]:loc[1]], "(; \t")), "( \t")+
+		for _, loc := range reTTForbidden.FindAllStringSubmatchIndex(f.Blank, -1) {
+			start := loc[0]
+			if loc[2] >= 0 {
+				start = loc[2]
+				if strings.HasSuffix(strings.TrimRight(f.Blank[:start], " \t\r\n"), ".") {
+					continue
+				}
+			}
+			res.add(f.Path, f.lineOf(start), "[trusted-types-sink] "+strings.TrimRight(strings.TrimSpace(strings.TrimLeft(f.Blank[start:loc[1]], "(; \t")), "( \t")+
 				" is a sink the runtime's policy does not cover; build the DOM with createElement or a <template> filled through _html instead")
 		}
 	}

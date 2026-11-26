@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"regexp"
@@ -60,6 +61,25 @@ func TestQueuePagesOlderJobs(t *testing.T) {
 	}
 }
 
+func TestQueueKeepsPageWhenCountFails(t *testing.T) {
+	q := &fakeQueue{
+		jobs:     []queue.Job{{ID: "q3", Status: "pending"}, {ID: "q2", Status: "pending"}, {ID: "q1", Status: "pending"}},
+		stats:    queue.JobStats{"pending": 10},
+		statsErr: errors.New("counts unavailable"),
+	}
+	x := setup(t, nil, Config{Queue: q, QueueListLimit: 2}, nil)
+	body := get(x.as(theAdmin), "/admin/queue?status=pending&p=2").Body.String()
+	if got := jobIDsShown(body); !slices.Equal(got, []string{"q1"}) {
+		t.Errorf("page 2 shows %v, want [q1]", got)
+	}
+	if !strings.Contains(body, "Job counts and page navigation are unavailable.") {
+		t.Error("jobs page did not warn that page navigation was unavailable")
+	}
+	if strings.Contains(body, `class="fui-seglinks__count"`) || strings.Contains(body, `class="fui-pagination`) {
+		t.Error("jobs page showed counts or page links from a failed count")
+	}
+}
+
 // Replay all re-queues every failed job, not the first page of them.
 func TestQueueReplayAllPassesOnePage(t *testing.T) {
 	ids := make([]string, 5)
@@ -102,5 +122,20 @@ func TestQueueReplayAllIsBounded(t *testing.T) {
 	}
 	if len(q.replayed) != maxReplayAll {
 		t.Fatalf("replayed %d jobs, want %d", len(q.replayed), maxReplayAll)
+	}
+}
+
+// With counts missing the page is not clamped to a page count, so a huge
+// ?p= must still give a non-negative offset past the jobs, not wrap to
+// the newest ones.
+func TestQueueHugePageWithoutCountsShowsNoJobs(t *testing.T) {
+	q := &fakeQueue{
+		jobs:     []queue.Job{{ID: "q2", Status: "pending"}, {ID: "q1", Status: "pending"}},
+		statsErr: errors.New("counts unavailable"),
+	}
+	x := setup(t, nil, Config{Queue: q}, nil)
+	rec := get(x.as(theAdmin), "/admin/queue?p=4611686018427387905&limit=2")
+	if got := jobIDsShown(rec.Body.String()); rec.Code != 200 || len(got) != 0 {
+		t.Errorf("huge page = %d showing %v, want 200 with no jobs", rec.Code, got)
 	}
 }

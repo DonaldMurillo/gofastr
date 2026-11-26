@@ -3,10 +3,13 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
@@ -755,6 +758,150 @@ func TestAppStartSweepsExpiredRetention(t *testing.T) {
 	}
 }
 
+type retentionSweepProbe struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *retentionSweepProbe) Connect(ctx context.Context) (driver.Conn, error) {
+	p.once.Do(func() { close(p.entered) })
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.release:
+		return nil, errors.New("no such function: version")
+	}
+}
+
+func (*retentionSweepProbe) Driver() driver.Driver { return nil }
+
+func TestShutdownJoinsRetentionSweepDuringBoot(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
+		db := sql.OpenDB(&probe)
+		defer db.Close()
+		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
+		app.WithSeed(func(context.Context) error {
+			app.DB = db
+			return nil
+		})
+		started := make(chan struct{})
+		app.OnStart(func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		stopped := make(chan struct{})
+		app.OnStop(func() error {
+			close(stopped)
+			return db.Close()
+		})
+
+		run := make(chan error, 1)
+		host := &countingHost{}
+		go func() { run <- app.Run(context.Background(), host) }()
+		<-started
+		<-probe.entered
+		stop := make(chan error, 1)
+		go func() { stop <- app.Shutdown(context.Background()) }()
+		synctest.Wait()
+		if got := host.stops.Load(); got != 1 {
+			t.Errorf("host Stop ran %d times while the retention sweep was blocked, want 1", got)
+		}
+		select {
+		case <-stopped:
+			t.Error("OnStop closed the database while the retention sweep was still opening a connection")
+		default:
+		}
+		close(probe.release)
+		if err := <-stop; err != nil {
+			t.Fatalf("Shutdown: %v", err)
+		}
+		if err := <-run; err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+func TestShutdownBoundsRetentionSweepWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{})}
+		db := sql.OpenDB(&probe)
+		defer db.Close()
+		defer time.Sleep(20 * time.Second)
+		app := NewApp(WithoutAutoMigrate(), WithoutDefaultMiddleware())
+		app.WithSeed(func(context.Context) error {
+			app.DB = db
+			return nil
+		})
+
+		stopped := false
+		app.OnStop(func() error {
+			stopped = true
+			return nil
+		})
+		run := make(chan error, 1)
+		go func() { run <- app.Run(context.Background(), ServicesHost()) }()
+		<-app.ServicesReady()
+		<-probe.entered
+
+		const budget = time.Second
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		defer cancel()
+		start := time.Now()
+		if err := app.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "retention sweep join abandoned after the shutdown deadline") {
+			t.Errorf("Shutdown: %v, want retention sweep join abandoned after the shutdown deadline: context deadline exceeded", err)
+		}
+		if elapsed := time.Since(start); elapsed != budget {
+			t.Errorf("Shutdown spent %s waiting on retention sweep, want %s", elapsed, budget)
+		}
+		if !stopped {
+			t.Error("Shutdown skipped OnStop after the retention sweep wait expired")
+		}
+		if err := <-run; err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	})
+}
+
+func TestShutdownCanceledWithoutRetentionSweep(t *testing.T) {
+	for _, withStopError := range []bool{false, true} {
+		app := NewApp(WithoutDefaultMiddleware())
+		var want error
+		if withStopError {
+			want = errors.New("stop hook failed")
+			app.OnStop(func() error { return want })
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := app.Shutdown(ctx); !errors.Is(err, want) {
+			t.Errorf("Shutdown with no sweep: %v, want %v", err, want)
+		}
+	}
+}
+
+func TestShutdownCanceledAfterRetentionSweepFinished(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		probe := retentionSweepProbe{entered: make(chan struct{}), release: make(chan struct{})}
+		db := sql.OpenDB(&probe)
+		defer db.Close()
+		app := NewApp(WithoutDefaultMiddleware())
+		app.DB = db
+
+		ctx, cancel := context.WithCancel(context.Background())
+		app.startRetentionSweep(ctx)
+		<-probe.entered
+		cancel()
+		close(probe.release)
+		synctest.Wait()
+
+		if err := app.Shutdown(ctx); err != nil {
+			t.Fatalf("Shutdown after the sweep finished: %v", err)
+		}
+	})
+}
+
 // No two source and name pairs share a retention key.
 func TestStoreKeyIsUnambiguous(t *testing.T) {
 	a := storeKey(datexport.StoreEraser{Source: "app", Name: "cache/profiles"})
@@ -837,6 +984,77 @@ func TestDryRunCountsIDKeyedRecordsOnce(t *testing.T) {
 	for _, st := range rep.Stores {
 		if st.Name == "s" && st.RowsAffected != 3 {
 			t.Fatalf("dry-run count %d, want 3 (the id-keyed record once, each email once)", st.RowsAffected)
+		}
+	}
+}
+
+// phoneKind is a second identity kind; its resolver table is absent, so
+// only retention supplies it.
+const phoneKind datexport.IdentityKind = 9
+
+func seedTwoEmailsAndPhone(t *testing.T, db *sql.DB, phoneExpires time.Time) {
+	t.Helper()
+	datexport.RegisterIdentityResolver(phoneKind, datexport.DataIdentityResolver{
+		Table: "auth_phones", IDColumn: "id", ValueColumn: "phone",
+	})
+	seedRetention(t, db, "", "u1", "s", "a@x.test", time.Now().Add(time.Hour))
+	seedRetention(t, db, "", "u1", "s", "b@x.test", time.Now().Add(time.Hour))
+	seedRetentionKind(t, db, "", "u1", "s", phoneKind, "+15550100", phoneExpires)
+}
+
+// A further run carries only its own kept value, so another kind's
+// expiry does not skip it.
+func TestFurtherRunIgnoresOtherKindsExpiry(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	start := time.Now()
+	clock := fakeRetentionClock(t, start)
+	seedTwoEmailsAndPhone(t, db, start.Add(10*time.Second))
+	var got []string
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			e, _ := u.Identity(datexport.IdentityEmail)
+			got = append(got, e)
+			*clock = start.Add(20 * time.Second)
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"a@x.test", "b@x.test"}) {
+		t.Fatalf("store got emails %v, want both: the phone's expiry skipped a valid email", got)
+	}
+}
+
+// A dry run counts each kept value of another kind once, not once per
+// further run.
+func TestDryRunCountsOtherKindsOnce(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	seedTwoEmailsAndPhone(t, db, time.Now().Add(time.Hour))
+	// One record keyed by the user id, one under each kept value.
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			n := 1
+			for _, k := range []datexport.IdentityKind{datexport.IdentityEmail, phoneKind} {
+				if _, ok := u.Identity(k); ok {
+					n++
+				}
+			}
+			return n, nil
+		}})
+	rep, err := app.EraseUserData(context.Background(), "u1", WithEraseDryRun())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range rep.Stores {
+		if st.Name == "s" && st.RowsAffected != 4 {
+			t.Fatalf("dry-run count %d, want 4 (id once, each email once, the phone once)", st.RowsAffected)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package fieldtext
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -35,6 +36,12 @@ func TestForm(t *testing.T) {
 		{name: "timestamp string", typ: schema.Timestamp, in: "2026-01-02T09:30:15.25Z", text: "2026-01-02T09:30:15.25Z", input: "2026-01-02T09:30:15.250", step: 0.001},
 		{name: "json object", typ: schema.JSON, in: map[string]any{"a": 1.0, "b": []any{"x"}}, text: `{"a":1,"b":["x"]}`},
 		{name: "json array", typ: schema.JSON, in: []any{1.0, "x"}, text: `[1,"x"]`},
+		{name: "typed JSON map", typ: schema.JSON, in: map[string]string{"theme": "light"}, text: `{"theme":"light"}`},
+		{name: "typed JSON slice", typ: schema.JSON, in: []string{"light", "dark"}, text: `["light","dark"]`},
+		{name: "JSON text", typ: schema.JSON, in: `[ 1 ]`, text: `[ 1 ]`},
+		{name: "JSON bytes", typ: schema.JSON, in: []byte(`[ 1 ]`), text: `[ 1 ]`},
+		{name: "raw JSON", typ: schema.JSON, in: json.RawMessage(`[ 1 ]`), text: `[ 1 ]`},
+		{name: "nil JSON", typ: schema.JSON, in: nil, text: ""},
 		{name: "nil", typ: schema.String, in: nil, text: ""},
 		{name: "nil bool", typ: schema.Bool, in: nil, text: ""},
 		{name: "nil date pointer", typ: schema.Date, in: (*time.Time)(nil), text: ""},

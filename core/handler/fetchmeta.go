@@ -134,10 +134,7 @@ func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target
 	}
-	beforeFragment, fragment := target, ""
-	if i := strings.IndexByte(target, '#'); i >= 0 {
-		beforeFragment, fragment = target[:i], target[i:]
-	}
+	beforeFragment, fragment := splitFragment(target)
 	path, query, _ := strings.Cut(beforeFragment, "?")
 	if values, err := url.ParseQuery(query); err == nil && values.Has(SameSiteHopParam) {
 		return target

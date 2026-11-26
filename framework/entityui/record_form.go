@@ -226,7 +226,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 func (b *RecordBuilder) editableFields(m *meta) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
-		if m.system(f) || m.serverOwned(f.Name) || m.omitted(f.Name) || m.hint(f.Name).Omit {
+		if m.system(f) || m.serverOwned(f.Name) || m.omitted(f.Name) || m.hint(f.Name).Omit || slices.Contains(b.omit, f.Name) {
 			continue
 		}
 		out = append(out, f)
@@ -443,8 +443,9 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 			current := ""
 			if fb.row != nil {
 				current = fieldtext.Cell(fb.m.rowValue(fb.row, fb.m.states.Field))
-			} else if fb.create && fb.values != nil {
-				current = fb.values[cond.field]
+			} else if fb.create {
+				state, _ := fb.m.field(cond.field)
+				current = fieldtext.Cell(state.Default)
 			}
 			if !slices.Contains(cond.values, current) {
 				return ""

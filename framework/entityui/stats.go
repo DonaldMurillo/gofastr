@@ -198,24 +198,23 @@ func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool)
 }
 
 // CountView counts the records a declared view lists for the caller. ok
-// is false for an undeclared or hidden view, a refused read or a failure.
-func (u *UI) CountView(ctx context.Context, entityName, view string) (int, bool) {
+// is false for an undeclared or hidden view or a refused read; err is
+// set when the count itself failed.
+func (u *UI) CountView(ctx context.Context, entityName, view string) (n int, ok bool, err error) {
 	m, opts, ok := u.statRead(ctx, entityName, "")
 	if !ok || view == "" || !declaredAndViewable(ctx, m, view) {
-		return 0, false
+		return 0, false, nil
 	}
 	p, err := viewPredicate(ctx, m, view)
 	if err != nil {
-		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
-		return 0, false
+		return 0, false, err
 	}
 	opts.Where = p
-	n, err := m.countRows(ctx, opts)
+	n, err = m.countRows(ctx, opts)
 	if err != nil {
-		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
-		return 0, false
+		return 0, false, err
 	}
-	return n, true
+	return n, true, nil
 }
 
 // CountUpTo counts the records the caller can read that match where, up
