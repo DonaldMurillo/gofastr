@@ -267,7 +267,7 @@ tests 13.6% to 11.9%. `cmd/` as a whole is at 15.4%, nearly all of it in
 The two starred tools are files under 40 lines whose remaining comment is
 a two-line package doc (and, in `check-csp`, the reason on its ignore
 marker). A new `tools` primitive owns `cmd/vettool` and has one child per
-tool; `cmd/kiln` is `kiln.cli` under `kiln`. The sweep added 24
+tool; `cmd/kiln` is `kiln.cli` under `kiln`. The sweep added 25
 primitives, 177 invariants (6 judged only) and 51 decisions, plus 62 tests
 for rules that had none, and recorded 2 twins (`check-embed`'s gate and
 `buildcmd`'s, `kiln`'s capped stdout buffer and `codegen`'s).
@@ -287,7 +287,14 @@ The replay eval after it held every number but one cell of
 reported one; both reruns fixed all of it
 (`2026-11-26-replay-cmd-tools-sweep.md`).
 
-Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
+Review bots skipped the PR for their usage limits, so four agents that did
+not write it reviewed it adversarially
+(`docs/reviews/2026-11-26-cmd-tools-sweep-adversarial-review.md`): no
+blocker and no behaviour change, but about 35 rules whose named tests pass
+with the code broken, among them kiln's Host and Origin guard wiring and
+affected's `-tags`. They are listed there for a follow-up.
+
+Next: that follow-up, `cmd/gofastr`, then `internal/`. The repository as a whole is at
 10.1%.
 
 ### 3. Bring the known twins in, and merge them

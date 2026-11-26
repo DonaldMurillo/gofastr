@@ -40,7 +40,7 @@ invariants:
       - test: cmd/kiln.TestContractForbidsFileTools
       - test: cmd/kiln.TestKilnContractPreambleMentionsTheBoundary
   - id: builtins-run-in-temp-dirs
-    rule: Every built-in adapter has a fixed Dir directly under os.TempDir(), so no turn runs in kiln's own working directory.
+    rule: Every built-in adapter has a fixed Dir directly under os.TempDir(), so no built-in turn runs in kiln's own working directory; a custom adapter has no Dir and its turn runs in kiln's working directory.
     enforced_by:
       - test: cmd/kiln.TestEveryBuiltinAdapterHasIsolatedDir
   - id: auto-prefers-omp

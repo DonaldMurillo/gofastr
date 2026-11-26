@@ -19,7 +19,7 @@ every other cell is cut from a commit older than the registry.
 | Reported path fixed | 30/30 | 21/22 |
 | Other paths, entries written knowing the bugs | 12/12 | 12/12 |
 | Other paths, `form-field-typo` | 11/30 | 2/10 (1, 1) |
-| Other paths, `dup-column-key` / `index-name-collision` / `outbox` | 2/2, 8/8, 6/6 | 2/2, 12/12, 6/6 |
+| Other paths, `dup-column-key` / `index-name-collision` / `outbox` | 2/2, 8/8, 6/6 | 2/2, 16/16, 6/6 |
 | Other paths, `node-block-entity` | 20/24, rerun 22/24 | 22/24 |
 
 ## 3. What I think
