@@ -44,6 +44,16 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	return linuxbundle.RootName(f.id, f.version, arch)
 }
 
+// linuxUpdateVersionWarning is the warning a Linux archive built with
+// version earns when the version installs but no update feed can carry
+// it (it is not major.minor.patch), or "" when it can.
+func linuxUpdateVersionWarning(version string) string {
+	if desktop.ValidateAppVersion(version) == nil {
+		return ""
+	}
+	return fmt.Sprintf("--version %q is not major.minor.patch: the archive installs, but it cannot be published to an update feed, and the app it installs cannot update itself. Use a version such as 1.2.0.", version)
+}
+
 func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	ldflags, err := linuxDesktopLinkerFlags(f.scheme)
 	if err != nil {
@@ -58,8 +68,8 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	if err != nil {
 		return err
 	}
-	if desktop.ValidateAppVersion(f.version) != nil {
-		cli.Warn("--version %q is not major.minor.patch: the archive installs, but it cannot be published to an update feed, and the app it installs cannot update itself. Use a version such as 1.2.0.", f.version)
+	if warning := linuxUpdateVersionWarning(f.version); warning != "" {
+		cli.Warn("%s", warning)
 	}
 	icon, err := linuxBundleIcon(f.icon)
 	if err != nil {

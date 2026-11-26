@@ -441,3 +441,19 @@ func TestLinuxArchiveBuildFailurePreservesRelease(t *testing.T) {
 		t.Fatalf("staging files remain: %v %v", files, err)
 	}
 }
+
+// A Linux archive whose version installs but cannot ride an update feed
+// is built with a warning; a feed-ready version earns none.
+func TestLinuxUpdateVersionWarning(t *testing.T) {
+	for _, version := range []string{"1.2", "1", "2026.11", "1.2.0.4"} {
+		if w := linuxUpdateVersionWarning(version); !strings.Contains(w, "cannot be published to an update feed") {
+			t.Errorf("version %q: warning %q, want the update-feed warning", version, w)
+		}
+	}
+	for _, version := range []string{"1.2.0", "0.1.0", "10.20.30"} {
+		if w := linuxUpdateVersionWarning(version); w != "" {
+			t.Errorf("version %q: warning %q, want none", version, w)
+		}
+	}
+}
+
