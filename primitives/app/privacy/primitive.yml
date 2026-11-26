@@ -276,6 +276,13 @@ invariants:
       - test: framework.TestExpiredKeptIdentityIsSwept
       - test: framework.TestExpiredRowDoesNotBlockANewFailure
       - test: framework.TestAppStartSweepsExpiredRetention
+  - id: shutdown-joins-retention-sweep
+    rule: App shutdown cancels the retention sweep, stops the host without waiting for the sweep, then waits for an unfinished sweep until the shutdown context ends before OnStop hooks can close the database, even when shutdown interrupts boot. If the sweep is still running when shutdown stops waiting, teardown continues and reports the context error unless an earlier step failed.
+    enforced_by:
+      - test: framework.TestShutdownJoinsRetentionSweepDuringBoot
+      - test: framework.TestShutdownBoundsRetentionSweepWait
+      - test: framework.TestShutdownCanceledWithoutRetentionSweep
+      - test: framework.TestShutdownCanceledAfterRetentionSweepFinished
   - id: resolver-canonicalize-rewrites-value
     rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
     enforced_by:

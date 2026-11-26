@@ -457,7 +457,12 @@ func (a *App) startRetentionSweep(ctx context.Context) {
 			a.Logger().Warn("framework: sweeping expired erasure retention", "error", err)
 		}
 	}
+	done := make(chan struct{})
+	a.serverMu.Lock()
+	a.retentionSweepDone = done
+	a.serverMu.Unlock()
 	go func() {
+		defer close(done)
 		sweep()
 		t := time.NewTicker(retentionSweepEvery)
 		defer t.Stop()

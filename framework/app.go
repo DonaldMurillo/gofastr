@@ -255,6 +255,8 @@ type App struct {
 	appCtx     context.Context
 	appCancel  context.CancelFunc
 
+	retentionSweepDone <-chan struct{}
+
 	readyHooks []func(addr string)
 
 	seedHooks []func(ctx context.Context) error
@@ -2226,6 +2228,7 @@ func (a *App) shutdown(ctx context.Context) error {
 	a.server = nil
 	host := a.runHost
 	a2aSrv := a.a2a
+	swept := a.retentionSweepDone
 	a.serverMu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -2238,6 +2241,19 @@ func (a *App) shutdown(ctx context.Context) error {
 	if host != nil {
 		if err := a.stopHost(ctx, host); err != nil {
 			firstErr = err
+		}
+	}
+	if swept != nil {
+		select {
+		case <-swept:
+		case <-ctx.Done():
+			select {
+			case <-swept:
+			default:
+				if firstErr == nil {
+					firstErr = fmt.Errorf("retention sweep join abandoned after the shutdown deadline: %w", ctx.Err())
+				}
+			}
 		}
 	}
 	if a.processModules != nil {
