@@ -76,3 +76,71 @@ func TestFormAuthError_NoConfigStillFallsToJSON(t *testing.T) {
 		t.Errorf("expected JSON error in body, got: %s", rec.Body.String())
 	}
 }
+
+func TestFormAuthError_QueryBeforeFragment(t *testing.T) {
+	t.Cleanup(func() {
+		SetDefaultLoginErrorPath("")
+		SetDefaultRegisterErrorPath("")
+	})
+
+	cases := []struct {
+		name     string
+		register bool
+		fallback string
+		next     string
+		want     string
+	}{
+		{
+			name:     "login fragment only",
+			fallback: "/auth#login",
+			want:     "/auth?error=invalid_credentials#login",
+		},
+		{
+			name:     "login fragment with next",
+			fallback: "/auth#login",
+			next:     "/dash",
+			want:     "/auth?error=invalid_credentials&next=%2Fdash#login",
+		},
+		{
+			name:     "login query and fragment",
+			fallback: "/auth?tab=1#login",
+			want:     "/auth?error=invalid_credentials&tab=1#login",
+		},
+		{
+			name:     "question mark inside fragment",
+			fallback: "/auth#step?a=1",
+			want:     "/auth?error=invalid_credentials#step?a=1",
+		},
+		{
+			name:     "register fragment only",
+			register: true,
+			fallback: "/auth#register",
+			want:     "/auth?error=invalid_credentials#register",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.register {
+				SetDefaultLoginErrorPath("")
+				SetDefaultRegisterErrorPath(tc.fallback)
+			} else {
+				SetDefaultLoginErrorPath(tc.fallback)
+				SetDefaultRegisterErrorPath("")
+			}
+			req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+			if tc.register {
+				req = asRegisterForm(req)
+			}
+			rec := httptest.NewRecorder()
+			redirectFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials, tc.next)
+
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("status = %d, want 303", rec.Code)
+			}
+			if got := rec.Header().Get("Location"); got != tc.want {
+				t.Errorf("Location = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

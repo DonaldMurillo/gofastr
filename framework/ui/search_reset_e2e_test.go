@@ -26,3 +26,40 @@ func TestSearchClearTracksFormReset(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchClearWithNamedFormControl(t *testing.T) {
+	for _, tc := range []struct{ name, control, clear, legacy string }{
+		{name: "click", control: "requestSubmit", clear: `document.querySelector('.fui-search__clear').click()`},
+		{name: "Escape with legacy submit", control: "submit",
+			clear: `input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}))`,
+			legacy: `HTMLFormElement.prototype.requestSubmit = undefined;
+				HTMLFormElement.prototype.submit = function () { record(this); };`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ui.SearchInput(ui.SearchInputConfig{
+				Name: tc.control, ID: "query", Action: "/search", ExtraAttrs: map[string]string{"value": "books"},
+			})
+			ctx := moduleTestCtx(t, string(input))
+			if !pollJS(ctx, moduleLoaded("searchinput")) {
+				t.Fatal("searchinput did not load")
+			}
+			var got string
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+				const input = document.getElementById('query');
+				history.replaceState(null, '', '?' + input.name + '=books');
+				let submitted = 'missing';
+				const record = form => { submitted = JSON.stringify(Array.from(new FormData(form))); };
+				input.form.addEventListener('submit', event => { event.preventDefault(); record(event.target); });
+				`+tc.legacy+`
+				`+tc.clear+`;
+				return submitted;
+			})()`, &got)); err != nil {
+				t.Fatal(err)
+			}
+			want := `[["` + tc.control + `",""]]`
+			if got != want {
+				t.Fatalf("clear submitted %s, want %s", got, want)
+			}
+		})
+	}
+}

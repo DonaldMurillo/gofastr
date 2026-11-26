@@ -174,11 +174,10 @@ func init() {
 	})
 }
 
-// interactiveTags are the elements an <a> may not hold: links,
-// controls and embedded media.
+// interactiveTags are the elements this check always refuses inside an <a>.
 var interactiveTags = map[string]bool{
 	"a": true, "button": true, "input": true, "select": true, "textarea": true, "label": true,
-	"details": true, "summary": true, "iframe": true, "embed": true, "object": true, "audio": true, "video": true,
+	"details": true, "summary": true, "iframe": true, "embed": true, "object": true,
 }
 
 // holdsInteractiveContent reports whether markup opens an element an <a>
@@ -194,16 +193,16 @@ func holdsInteractiveContent(markup string) bool {
 			return false
 		case xhtml.StartTagToken, xhtml.SelfClosingTagToken:
 			name, hasAttr := z.TagName()
-			if interactiveTags[string(name)] {
+			tag := string(name)
+			if interactiveTags[tag] {
 				return true
 			}
 			for hasAttr {
 				var key []byte
 				key, _, hasAttr = z.TagAttr()
 				k := string(key)
-				// An image with a usemap is interactive content (HTML's
-				// content categories); a plain image is not.
-				if k == "tabindex" || k == "contenteditable" || (k == "usemap" && string(name) == "img") {
+				if k == "tabindex" || k == "contenteditable" || (k == "usemap" && tag == "img") ||
+					(k == "controls" && (tag == "audio" || tag == "video")) {
 					return true
 				}
 			}

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core/cliplugin"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -563,6 +565,18 @@ func missingExplicitTrustFlags(pp cliplugin.ProjectPlugin, g grantFlags) []strin
 	return flags
 }
 
+// settingsDir is the nearest directory from wd up to the project root that
+// holds the settings file, readable or not, else wd.
+func settingsDir(wd string) string {
+	dirs, _ := settings.SearchDirs(wd)
+	for _, d := range dirs {
+		if _, err := os.Stat(filepath.Join(d, settings.FileName)); err == nil {
+			return d
+		}
+	}
+	return wd
+}
+
 func runPluginUntrust(args []string) {
 	if len(args) != 1 || cli.IsFlagToken(args[0]) {
 		cli.UsageFail("Usage: gofastr plugin untrust <name>")
@@ -576,9 +590,10 @@ func runPluginUntrust(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	projDir := wd
-	if projCfg, err := cliplugin.DiscoverProjectConfig(wd); err == nil && projCfg.ProjectDir != "" {
-		projDir = projCfg.ProjectDir
+	projCfg, _ := cliplugin.DiscoverProjectConfig(wd)
+	projDir := projCfg.ProjectDir
+	if projDir == "" {
+		projDir = settingsDir(wd)
 	}
 	canonProj := cliplugin.CanonicalProjectDir(projDir)
 

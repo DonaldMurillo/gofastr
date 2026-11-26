@@ -409,7 +409,9 @@ func sortedUnique(in []string) []string {
 }
 
 // DiscoverProjectConfig searches for a `plugins:` section in
-// gofastr.settings.yml bounded to the enclosing project root.
+// gofastr.settings.yml bounded to the enclosing project root. If the section
+// fails to decode, the returned config still identifies the settings file and
+// its directory.
 func DiscoverProjectConfig(startDir string) (ProjectConfig, error) {
 	f, ok, err := settings.Find(startDir, "plugins")
 	if err != nil || !ok {
@@ -421,7 +423,7 @@ func DiscoverProjectConfig(startDir string) (ProjectConfig, error) {
 	}
 	plugins, err := DecodeProjectPlugins(sec)
 	if err != nil {
-		return ProjectConfig{}, fmt.Errorf("%s: %w", f.Path, err)
+		return ProjectConfig{Path: f.Path, ProjectDir: f.Dir}, fmt.Errorf("%s: %w", f.Path, err)
 	}
 	return ProjectConfig{
 		Path:       f.Path,

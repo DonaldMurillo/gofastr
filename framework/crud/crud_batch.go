@@ -240,6 +240,22 @@ type batchCreateRequest struct {
 	Items []map[string]any `json:"items"`
 }
 
+// checkBatchItems refuses, by index, an item that is not an object or
+// whose keys fold onto one column.
+func (ch *CrudHandler) checkBatchItems(w http.ResponseWriter, r *http.Request, items []map[string]any) bool {
+	for i, item := range items {
+		if item == nil {
+			writeBatchItemError(w, r, i, i18n.NewError(reasonNotObject))
+			return false
+		}
+		if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
+			writeBatchItemError(w, r, i, err)
+			return false
+		}
+	}
+	return true
+}
+
 // BatchCreate handles POST /{table}/_batch with {items:[...]}: every item
 // in one transaction, the first error rolling all back, and results in
 // input order.
@@ -251,13 +267,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			count:     func() int { return len(req.Items) },
 			normalize: func() { normalizeItemNumbers(req.Items) },
 			checkItems: func(r *http.Request) bool {
-				for i, item := range req.Items {
-					if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
-						writeBatchItemError(w, r, i, err)
-						return false
-					}
-				}
-				return true
+				return ch.checkBatchItems(w, r, req.Items)
 			},
 			event: event.EntityCreated,
 			shape: true,
@@ -294,13 +304,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			count:     func() int { return len(req.Items) },
 			normalize: func() { normalizeItemNumbers(req.Items) },
 			checkItems: func(r *http.Request) bool {
-				for i, item := range req.Items {
-					if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
-						writeBatchItemError(w, r, i, err)
-						return false
-					}
-				}
-				return true
+				return ch.checkBatchItems(w, r, req.Items)
 			},
 			event: event.EntityUpdated,
 			shape: true,

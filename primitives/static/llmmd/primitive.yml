@@ -6,6 +6,11 @@ docs:
   - framework/docs/content/agent-ready.md
   - framework/docs/content/static-export.md
 invariants:
+  - id: doc-status-is-the-page-status
+    rule: The export decides whether a page answers 200 with uihost.DocStatus, the rule live pages use, so a ScreenStatusCode or recorded status outside 100-999 is ignored the same way in both.
+    enforced_by:
+      - test: framework/static.TestExportIgnoresInvalidDocStatus
+      - test: framework/uihost.TestPageStatusIgnoresOutOfRangeScreenCode
   - id: doc-per-exported-page
     rule: Each exported page gets its own llm.md rendered under the GET request its page renders under, and none is written for a NoLLMMD screen, an excluded route, a path a redirect takes or a page that answers a status other than 200.
     enforced_by:
@@ -15,17 +20,30 @@ invariants:
       - test: framework/static.TestExportWritesRedirectPages
       - test: framework/static.TestStaticBuildSkipsSetStatusPage
       - test: framework/static.TestStaticBuildSkipsNotFoundOutlet
-      - test: framework/static.TestSweepStaticDocStatus
+      - test: framework/static.TestExportIgnoresInvalidDocStatus
   - id: unresolved-path-gets-withheld-doc
     rule: An expanded path its route does not resolve gets the withheld doc, never the pattern doc with the screen's title and content.
     enforced_by:
       - test: framework/static.TestSweepStaticUnresolvedDocIsWithheld
+  - id: doc-body-links-carry-base-path
+    rule: Root-relative links in an exported page's llm.md body carry the export base path before any locale prefix.
+    enforced_by:
+      - test: framework/static.TestExportDocBodyLinksUseBasePath
   - id: index-links-written-docs
-    rule: Each tree's llm-pages.md links only the docs that tree wrote.
+    rule: Each tree's llm-pages.md links only the docs that tree wrote, with the export base path before the locale prefix.
     enforced_by:
       - test: framework/static.TestExportIndexLinksWrittenDocs
+      - test: framework/static.TestExportIndexLinksUseBasePath
       - test: framework/static.TestSweepStaticExcludedRedirectAndDoc
 decisions:
+  - id: one-page-status-rule
+    date: 2026-11-25
+    status: accepted
+    decision: The export calls uihost.DocStatus instead of keeping its own docStatus copy of the page status rule.
+    rejected:
+      - option: A docStatus copy in framework/static pinned by a parity test.
+        why: The copy had already drifted once (R12 S1a-03, out-of-range codes); the two rules can share code.
+    upholds: [doc-status-is-the-page-status]
   - id: withheld-doc-fallback
     date: 2026-11-17
     status: accepted

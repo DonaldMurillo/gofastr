@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -193,5 +195,43 @@ func TestBuildNoPWAAssetsWithoutOption(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(rel))); err == nil {
 			t.Errorf("%s should not exist without WithPWA", rel)
 		}
+	}
+}
+
+func TestPWAHashesSuppliedFiles(t *testing.T) {
+	for _, rel := range []string{
+		"__gofastr/pwa/offline/index.html",
+		"__gofastr/pwa/register.js",
+		"manifest.webmanifest",
+		"es/manifest.webmanifest",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			a := coreapp.NewApp("t")
+			a.Register("/", &homeScreen{}, nil)
+			host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+			host.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+			src := fstest.MapFS{rel: {Data: []byte("original")}}
+			host.SetStaticFS(src)
+			b := &Builder{Host: host, OutDir: t.TempDir()}
+			build := func() string {
+				t.Helper()
+				if _, err := b.Build(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				return readOut(t, b.OutDir, "service-worker.js")
+			}
+			first := build()
+			src[rel].Data = []byte("updated")
+			second := build()
+			if got := readOut(t, b.OutDir, rel); got != "updated" {
+				t.Fatalf("supplied file = %q, want updated", got)
+			}
+			if first == second {
+				t.Error("supplied file changed but the worker stayed byte-identical")
+			}
+			if second != build() {
+				t.Error("unchanged supplied file produced a different worker")
+			}
+		})
 	}
 }

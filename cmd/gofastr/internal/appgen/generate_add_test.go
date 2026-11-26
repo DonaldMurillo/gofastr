@@ -96,6 +96,65 @@ func TestAddOnlyOnGenerateApp(t *testing.T) {
 	}
 }
 
+func TestAddChecksScreenInvalidation(t *testing.T) {
+	dir, bp := clitest.AddSetup(t, clitest.AddScreenBaseAppSpec("example.com/addtest"))
+	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
+
+	const register = "screens_register.go"
+	current := clitest.ReadFile(t, dir, register)
+	start := strings.Index(current, "func invalidateScreensOnWrite(")
+	end := strings.Index(current, "// screenRegistrar pairs")
+	if start < 0 || end <= start {
+		t.Fatal("cannot locate invalidation helper in the current generated registrar")
+	}
+	legacy := strings.NewReplacer("\"net/http\"\n", "", "\"strings\"\n", "", "\"github.com/DonaldMurillo/gofastr/framework/ui\"\n", "").
+		Replace(current[:start] + current[end:])
+	clitest.WriteTestFile(t, filepath.Join(dir, register), legacy)
+
+	for _, tc := range []struct {
+		name, body, file string
+		wantExit         int
+	}{
+		{"plain", "", "screen_plain.go", -1},
+		{"stats", `    body:
+      - kind: stat_card
+        props:
+          label: Posts
+          source:
+            entity: posts
+            agg: count
+`, "screen_stats.go", 1},
+		{"crud", `    body:
+      - kind: entity_list
+        entity: posts
+        fields: [title]
+`, "screen_posts_crud.go", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frag := filepath.Join(dir, "fragment.yml")
+			clitest.WriteTestFile(t, frag, "screens:\n  - name: "+tc.name+"\n    route: /"+tc.name+"\n    title: Probe\n"+tc.body)
+			var code int
+			out := clitest.CovT_capOutput(t, func() {
+				code = clitest.CovT_capExit(t, func() {
+					GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true})
+				})
+			})
+			if code != tc.wantExit {
+				t.Errorf("add with a legacy registrar exited %d, want %d:\n%s", code, tc.wantExit, out)
+			}
+			if tc.wantExit == 1 && (!strings.Contains(out, register) || !strings.Contains(out, "invalidateScreensOnWrite")) {
+				t.Errorf("upgrade error must name the missing helper in %s:\n%s", register, out)
+			}
+			if clitest.FileExists(dir, tc.file) != (tc.wantExit == -1) {
+				t.Errorf("%s existence disagrees with exit %d", tc.file, tc.wantExit)
+			}
+		})
+	}
+	if got := clitest.ReadFile(t, dir, register); got != legacy {
+		t.Error("add rewrote the legacy registrar")
+	}
+}
+
 // TestOverwriteErrorNamesAddPath pins issue #77 item 5: the refuse-to-
 // overwrite conflict error must name `generate app --add` so a user who hits
 // it at the moment of need discovers the additive path without reading docs.

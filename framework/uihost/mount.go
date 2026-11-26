@@ -185,13 +185,9 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 		_, exact := coreApp.Router.Screens()[routePath]
 		handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if exact {
-				md, ok := ds.pageLLMMD(req, base, sc)
-				if !ok {
+				if !ds.servePageLLMMD(w, req, base, sc) {
 					ds.handlePage(w, req)
-					return
 				}
-				setPageMarkdownHeaders(w)
-				w.Write([]byte(md))
 				return
 			}
 			ctx := app.WithRequest(req.Context(), req)
@@ -308,9 +304,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
-		setPageMarkdownHeaders(w)
-		w.Write([]byte(md))
+	if ds.serveDynamicPageLLMMD(w, r, routePath(r)) {
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead && ds.isScreenPath(r) {
@@ -320,9 +314,9 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	ds.handlePage(w, r)
 }
 
-func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) {
+func (ds *UIHost) serveDynamicPageLLMMD(w http.ResponseWriter, r *http.Request, path string) bool {
 	if !ds.pageDocsOn() || !strings.HasSuffix(path, "/llm.md") {
-		return "", false
+		return false
 	}
 	base := strings.TrimSuffix(path, "/llm.md")
 	if base == "" {
@@ -330,12 +324,12 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	}
 	scr, _, ok := ds.App.Router.Resolve(base)
 	if !ok || scr.NoLLMMD {
-		return "", false
+		return false
 	}
-	return ds.pageLLMMD(r, base, scr)
+	return ds.servePageLLMMD(w, r, base, scr)
 }
 
-func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (string, bool) {
+func (ds *UIHost) servePageLLMMD(w http.ResponseWriter, r *http.Request, base string, scr *app.Screen) bool {
 	pr := r.Clone(r.Context())
 	esc := app.EscapeRoutePath(base)
 	decoded, err := url.PathUnescape(esc)
@@ -345,13 +339,21 @@ func (ds *UIHost) pageLLMMD(r *http.Request, base string, scr *app.Screen) (stri
 	pr.URL.Path, pr.URL.RawPath = decoded, esc
 	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), pr))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
+	if res.Err != nil {
+		setPageMarkdownHeaders(w)
+		ds.servePageFailure(w, r, base, res.Err)
+		return true
+	}
 	if !ok {
-		return "", false
+		return false
 	}
 	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
-		return "", false
+		return false
 	}
-	return ds.LLMMDWithSEO(ctx, base, scr, res), true
+	md := ds.LLMMDWithSEO(ctx, base, scr, res)
+	setPageMarkdownHeaders(w)
+	w.Write([]byte(md))
+	return true
 }
 
 // LLMMDWithSEO returns res's markdown behind the screen's SEO front matter, the

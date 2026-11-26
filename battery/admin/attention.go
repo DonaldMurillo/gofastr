@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"slices"
 	"strconv"
@@ -65,12 +66,17 @@ func watchedView(e *entity.Entity, key string) (entity.ListView, bool) {
 
 func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 	var lists []render.HTML
+	failed := false
 	for i, w := range b.cfg.Attention {
 		e, _ := b.exposedNamed(w.Entity)
 		v, _ := watchedView(e, w.View)
 		cctx, cancel := context.WithTimeout(ctx, countDeadline)
-		n, ok := b.ui.CountView(cctx, w.Entity, w.View)
+		n, ok, err := b.ui.CountView(cctx, w.Entity, w.View)
 		cancel()
+		if err != nil {
+			slog.WarnContext(ctx, "admin: attention count", "entity", w.Entity, "view", w.View, "error", err)
+			failed = true
+		}
 		if !ok || n == 0 {
 			continue
 		}
@@ -93,6 +99,10 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 		}
 	}
 	title := i18nui.AdminAttention.Text(ctx)
+	if failed {
+		lists = append([]render.HTML{ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
+			render.Text(i18nui.AdminAttentionIncomplete.Text(ctx)))}, lists...)
+	}
 	if len(lists) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
 			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.AdminAttentionClear.Text(ctx), HeadingLevel: 3}))

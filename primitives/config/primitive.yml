@@ -112,6 +112,10 @@ invariants:
     rule: Repeated min and max rules for strings, integers, durations and floats use the highest minimum and lowest maximum, inclusive, regardless of tag order.
     enforced_by:
       - test: core/config.TestRepeatedBounds
+  - id: contradictory-bounds-refused
+    rule: Load refuses a field whose highest minimum exceeds its lowest maximum during shape checking, even if an optional nested field is unset, and the error names the field and both bounds.
+    enforced_by:
+      - test: core/config.TestContradictoryBounds
   - id: validator-hook-runs
     rule: A config that implements ConfigValidator has Validate called after binding, and its error fails Load and MustLoad.
     enforced_by:

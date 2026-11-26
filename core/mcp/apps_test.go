@@ -28,7 +28,11 @@ func wireResult(t *testing.T, resp Response) map[string]any {
 
 func callTool(t *testing.T, s *Server, name string, args map[string]any) Response {
 	t.Helper()
-	p, _ := json.Marshal(map[string]any{"name": name, "arguments": args})
+	call := map[string]any{"name": name}
+	if args != nil {
+		call["arguments"] = args
+	}
+	p, _ := json.Marshal(call)
 	return s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: p})
 }
 

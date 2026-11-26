@@ -182,7 +182,8 @@ type storePlan struct {
 
 // retainedPlanFor plans one store eraser's runs: user itself, its kept
 // values filling kinds where nothing resolves now, and one more run for
-// each further kept value of a kind. A value expired, or that another
+// each further kept value of a kind, carrying only the user id and that
+// value. A value expired, or that another
 // account holds, is left out.
 func (a *App) retainedPlanFor(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, kept []keptRow) storePlan {
 	var plan storePlan
@@ -220,10 +221,10 @@ func (a *App) retainedPlanFor(ctx context.Context, dialect migrate.Dialect, user
 	}
 	plan.runs = []storeRun{base}
 	for _, r := range extra {
-		run := storeRun{user: datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(base.user.Identities)}, kept: maps.Clone(base.kept)}
-		run.user.Identities[r.kind] = r.value
-		run.kept[r.kind] = r
-		plan.runs = append(plan.runs, run)
+		plan.runs = append(plan.runs, storeRun{
+			user: datexport.ErasedUser{ID: user.ID, Identities: map[datexport.IdentityKind]string{r.kind: r.value}},
+			kept: map[datexport.IdentityKind]keptRow{r.kind: r},
+		})
 	}
 	return plan
 }
@@ -459,7 +460,12 @@ func (a *App) startRetentionSweep(ctx context.Context) {
 			a.Logger().Warn("framework: sweeping expired erasure retention", "error", err)
 		}
 	}
+	done := make(chan struct{})
+	a.serverMu.Lock()
+	a.retentionSweepDone = done
+	a.serverMu.Unlock()
 	go func() {
+		defer close(done)
 		sweep()
 		t := time.NewTicker(retentionSweepEvery)
 		defer t.Stop()

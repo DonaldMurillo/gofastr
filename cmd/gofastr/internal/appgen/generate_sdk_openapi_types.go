@@ -13,9 +13,10 @@ import (
 type oaType struct {
 	// Kind is string, integer, number, boolean, array, map, struct or raw
 	// (any JSON value, kept as written).
-	Kind string
-	Elem *oaType // array items, map values
-	Name string  // struct
+	Kind         string
+	Elem         *oaType // array items, map values
+	ElemNullable bool
+	Name         string // struct
 }
 
 // oaField is one property of a struct type.
@@ -224,11 +225,11 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 		if items == nil {
 			return &oaType{Kind: "array", Elem: oaRaw}, nullable, nil
 		}
-		elem, _, err := ts.typeOf(items, hint+"Item")
+		elem, elemNullable, err := ts.typeOf(items, hint+"Item")
 		if err != nil {
 			return nil, false, err
 		}
-		return &oaType{Kind: "array", Elem: elem}, nullable, nil
+		return &oaType{Kind: "array", Elem: elem, ElemNullable: elemNullable}, nullable, nil
 	case "object", "":
 		if oaStructShaped(s) {
 			if !oaFieldsNameable(s) {
@@ -243,11 +244,11 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 			return &oaType{Kind: "struct", Name: hint}, nullable, nil
 		}
 		if ap, isSchema := s["additionalProperties"].(map[string]any); isSchema && len(ap) > 0 {
-			elem, _, err := ts.typeOf(ap, hint+"Value")
+			elem, elemNullable, err := ts.typeOf(ap, hint+"Value")
 			if err != nil {
 				return nil, false, err
 			}
-			return &oaType{Kind: "map", Elem: elem}, nullable, nil
+			return &oaType{Kind: "map", Elem: elem, ElemNullable: elemNullable}, nullable, nil
 		}
 		if typ == "object" {
 			return &oaType{Kind: "map", Elem: oaRaw}, nullable, nil
@@ -334,10 +335,15 @@ func (t *oaType) goExpr() string {
 		return "float64"
 	case "boolean":
 		return "bool"
-	case "array":
-		return "[]" + t.Elem.goExpr()
-	case "map":
-		return "map[string]" + t.Elem.goExpr()
+	case "array", "map":
+		elem := t.Elem.goExpr()
+		if t.ElemNullable && t.Elem.goPointer() {
+			elem = "*" + elem
+		}
+		if t.Kind == "array" {
+			return "[]" + elem
+		}
+		return "map[string]" + elem
 	case "struct":
 		return t.Name
 	}
@@ -378,10 +384,15 @@ func (t *oaType) tsExpr() string {
 		return "number"
 	case "boolean":
 		return "boolean"
-	case "array":
-		return "Array<" + t.Elem.tsExpr() + ">"
-	case "map":
-		return "Record<string, " + t.Elem.tsExpr() + ">"
+	case "array", "map":
+		elem := t.Elem.tsExpr()
+		if t.ElemNullable && elem != "unknown" {
+			elem += " | null"
+		}
+		if t.Kind == "array" {
+			return "Array<" + elem + ">"
+		}
+		return "Record<string, " + elem + ">"
 	case "struct":
 		return t.Name
 	}

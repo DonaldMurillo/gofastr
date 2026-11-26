@@ -124,7 +124,8 @@
       if (!e.target.matches('textarea') || !isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       e.stopPropagation();
-      if (form.requestSubmit) form.requestSubmit();
+      const rs = HTMLFormElement.prototype.requestSubmit;
+      if (rs) rs.call(form);
       else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
     form.addEventListener('keypress', function (e) {

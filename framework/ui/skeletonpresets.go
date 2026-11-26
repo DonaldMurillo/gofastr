@@ -293,6 +293,7 @@ const skeletonPresetsCSS = `
   transform: rotate(45deg);
   opacity: var(--opacity-muted, 0.6);
 }
+.fui-skeleton-row--chevron:dir(rtl)::after { transform: rotate(-45deg); }
 
 /* Avatar: the first line is the circle, the rest are the text
    column. The circle is pinned out of the flow so the two text lines

@@ -24,6 +24,20 @@ var colorSchemeFS embed.FS
 var modulesFS embed.FS
 
 var (
+	rpcSource      = mediatype.WithJSONResponseCheck(mustReadScript(modulesFS, "src/rpc.js"))
+	envelopeSource = mediatype.WithHTMLResponseCheck(mustReadScript(modulesFS, "src/envelope.js"))
+	navSource      = mediatype.WithHTMLResponseCheck(mustReadScript(fragFS, "frag/nav.js"))
+)
+
+func mustReadScript(files embed.FS, path string) string {
+	raw, err := files.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
+var (
 	bundleOnce  sync.Once
 	bundleData  string
 	bundleErr   error
@@ -41,16 +55,24 @@ const iifeFooter = "\n})();\n"
 
 var fullFragmentOrder = []string{"kernel", "signals", "nav", "widgets-boot", "boot"}
 
+func readFragment(name string) (string, error) {
+	if name == "nav" {
+		return navSource, nil
+	}
+	raw, err := fs.ReadFile(fragFS, "frag/"+name+".js")
+	return string(raw), err
+}
+
 func composeFragments(header string, order []string) (string, error) {
 	var b strings.Builder
 	b.WriteString(header)
 	for _, name := range order {
-		data, err := fs.ReadFile(fragFS, "frag/"+name+".js")
+		data, err := readFragment(name)
 		if err != nil {
 			return "", fmt.Errorf("compose fragment %q: %w", name, err)
 		}
 		b.WriteByte('\n')
-		b.WriteString(strings.TrimRight(string(data), "\n"))
+		b.WriteString(strings.TrimRight(data, "\n"))
 		b.WriteByte('\n')
 	}
 	b.WriteString(iifeFooter)
@@ -248,16 +270,20 @@ func loadModules() {
 		if !strings.HasSuffix(n, ".js") {
 			continue
 		}
+		name := strings.TrimSuffix(n, ".js")
+		switch name {
+		case "rpc":
+			modulesData[name] = minify.ServedJS(rpcSource)
+			continue
+		case "envelope":
+			modulesData[name] = minify.ServedJS(envelopeSource)
+			continue
+		}
 		raw, err := fs.ReadFile(modulesFS, "src/"+n)
 		if err != nil {
 			continue
 		}
-		name := strings.TrimSuffix(n, ".js")
-		source := string(raw)
-		if name == "rpc" {
-			source = mediatype.WithJSONResponseCheck(source)
-		}
-		modulesData[name] = minify.ServedJS(source)
+		modulesData[name] = minify.ServedJS(string(raw))
 	}
 }
 

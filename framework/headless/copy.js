@@ -84,10 +84,10 @@
   // break of a block per line and dropping a blank line's), else the
   // rendered text.
   function copyText(target) {
-    if (target.tagName === 'INPUT' && String(target.type).toLowerCase() === 'password') return '';
+    if (target.tagName === 'INPUT' && (target.type === 'password' || target.hasAttribute('data-hui-password'))) return '';
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return String(target.value || '');
     if (target.tagName === 'PRE') return target.textContent || '';
-    return (target.innerText || target.textContent) || '';
+    return (target.innerText || target.textContent || '').trim();
   }
   document.addEventListener('click', (e) => {
     const t = e.target;
@@ -96,11 +96,7 @@
     const id = wrap.getAttribute('data-hui-copy-target');
     const target = id ? document.getElementById(id) : null;
     if (!target) return;
-    // A field's value is copied exactly as typed, its spaces and
-    // newlines included; other text is trimmed of layout whitespace.
-    const field = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
-    const raw = copyText(target);
-    const text = field ? raw : raw.trim();
+    const text = copyText(target);
     if (!text) return;
     let write = null;
     try {

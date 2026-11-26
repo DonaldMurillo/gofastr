@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"maps"
 	"slices"
 	"strings"
 
@@ -39,11 +38,17 @@ func resolveChainKeys(chain []LayoutLayer, params map[string]string) []LayoutLay
 	out := make([]LayoutLayer, len(chain))
 	changed := false
 	for i, l := range chain {
-		if l.GroupPrefix != "" && strings.Contains(l.GroupPrefix, "{") {
-			p := l.GroupPrefix
-			for _, name := range slices.Sorted(maps.Keys(params)) {
-				p = strings.ReplaceAll(p, "{"+name+"}", params[name])
+		if strings.ContainsAny(l.GroupPrefix, "{:") {
+			parts := strings.Split(l.GroupPrefix, "/")
+			for j, part := range parts {
+				seg := normalizeRoutePath(part)
+				if isParamSeg(seg) {
+					if value, ok := params[segParamName(seg)]; ok {
+						parts[j] = value
+					}
+				}
 			}
+			p := strings.Join(parts, "/")
 			if p != l.GroupPrefix {
 				changed = true
 				l.GroupPrefix = p

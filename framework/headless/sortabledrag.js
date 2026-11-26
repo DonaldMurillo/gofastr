@@ -65,7 +65,7 @@
     const S = NS._sortable, el = document.elementFromPoint(ev.clientX, ev.clientY);
     const list = el?.closest('[data-hui-sortable]'), src = S.listOf(pd.item);
     mark(false);
-    if (!list || (list !== src && !S.canCross(list, src))) pd.at = null;
+    if (!list || (list !== src && !S.canCross(list, src, pd.item))) pd.at = null;
     else {
       // Only a row of this list lands the drop: over a list nested in a
       // row, closest() would find the outer row and drop beside it.

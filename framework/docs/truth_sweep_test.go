@@ -11,6 +11,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
+func TestStaticExportDocsNameMarkdownIndex(t *testing.T) {
+	doc, err := Get("static-export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, assets, found := strings.Cut(string(doc), "**Assets & metadata:**")
+	assets, _, _ = strings.Cut(assets, "\n")
+	if !found || !strings.Contains(assets, "`/llm-pages.md`") || strings.Contains(assets, "`/llms.txt`") {
+		t.Fatalf("the generated asset list must name /llm-pages.md: %s", assets)
+	}
+}
+
 func TestSDKStaticExportStagesDownloadURLs(t *testing.T) {
 	doc := readDoc(t, "sdk.md")
 	_, recipe, found := strings.Cut(sectionAfter(t, doc, "### Static export", 2000), "```sh\n")
@@ -289,6 +301,17 @@ func TestDeployDocDotenvLoadIsUnconditional(t *testing.T) {
 	}
 	if !strings.Contains(readRepo(t, "framework/app.go"), `os.Getenv("GOFASTR_DOTENV") != "off"`) {
 		t.Error("the NewApp dotenv gate changed — recheck deploy.md's Configuration section")
+	}
+}
+
+func TestDeployDocNamesReleaseEnvironment(t *testing.T) {
+	doc := readDoc(t, "deploy.md")
+	if !strings.Contains(doc, "`/opt/<name>/current/env`") ||
+		!strings.Contains(doc, "`/opt/<name>/releases/<UTC-time>/env`") {
+		t.Error("deploy.md must name the release env file and the current env path systemd reads")
+	}
+	if strings.Contains(doc, "`/etc/<name>/env` from `--env-file`") {
+		t.Error("deploy.md treats the legacy env path as the destination for --env-file")
 	}
 }
 
