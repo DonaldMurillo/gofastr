@@ -167,6 +167,15 @@ func (c *checker) findMergedBuffers(body *ast.BlockStmt) {
 			}
 			cmd := c.objOf(sel.X)
 			buf := c.bufferOf(as.Rhs[i])
+			// cmd.Stderr = cmd.Stdout shares the buffer already set.
+			if rs, ok := ast.Unparen(as.Rhs[i]).(*ast.SelectorExpr); ok && c.isCmd(rs.X) && c.objOf(rs.X) == cmd {
+				switch rs.Sel.Name {
+				case "Stdout":
+					buf = stdout[cmd]
+				case "Stderr":
+					buf = stderr[cmd]
+				}
+			}
 			if cmd == nil || buf == nil {
 				continue
 			}
@@ -206,14 +215,19 @@ func (c *checker) objOf(x ast.Expr) types.Object {
 	return nil
 }
 
-// bufferOf resolves &buf or buf to buf's object.
+// bufferOf resolves &buf, buf, &x.buf or x.buf to buf's object.
 func (c *checker) bufferOf(x ast.Expr) types.Object {
 	x = ast.Unparen(x)
 	if u, ok := x.(*ast.UnaryExpr); ok && u.Op == token.AND {
 		x = ast.Unparen(u.X)
 	}
-	if id, ok := x.(*ast.Ident); ok {
-		return c.pass.TypesInfo.ObjectOf(id)
+	switch e := x.(type) {
+	case *ast.Ident:
+		return c.pass.TypesInfo.ObjectOf(e)
+	case *ast.SelectorExpr:
+		if _, field := c.pass.TypesInfo.ObjectOf(e.Sel).(*types.Var); field {
+			return c.pass.TypesInfo.ObjectOf(e.Sel)
+		}
 	}
 	return nil
 }

@@ -39,6 +39,9 @@
 // top-level deferred recover in its own function or in a function
 // literal's synchronous owner (not across a go statement: the
 // goroutine's panic never reaches the launching frame's recover).
+// Any literal not started with go counts as synchronous, so a closure
+// that escapes its owner (returned, stored) and runs after the owner's
+// frame is gone is a known miss.
 //
 // Silent postures, deliberately:
 //   - a function that recovers around more than the one call is not a

@@ -117,3 +117,21 @@ var runTool = func(name string) (string, error) {
 	out, err := exec.Command(name).CombinedOutput()
 	return string(out), err // want `merged stdout and stderr returned as a value`
 }
+
+type runner struct{ buf bytes.Buffer }
+
+func (r *runner) fieldBuffer() []string {
+	cmd := exec.Command("tool")
+	cmd.Stdout, cmd.Stderr = &r.buf, &r.buf
+	_ = cmd.Run()
+	return strings.Fields(r.buf.String()) // want `Fields reads the merged stdout and stderr`
+}
+
+func sharedWriter() string {
+	var b bytes.Buffer
+	cmd := exec.Command("tool")
+	cmd.Stdout = &b
+	cmd.Stderr = cmd.Stdout
+	_ = cmd.Run()
+	return strings.TrimSpace(b.String()) // want `merged stdout and stderr`
+}

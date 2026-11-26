@@ -198,7 +198,7 @@ func (c *checker) isCallbackCall(call *ast.CallExpr) bool {
 	if _, ok := c.pass.TypesInfo.TypeOf(fun).Underlying().(*types.Signature); !ok {
 		return false
 	}
-	switch f := fun.(type) {
+	switch f := c.uninstantiated(fun).(type) {
 	case *ast.Ident:
 		_, declared := c.pass.TypesInfo.Uses[f].(*types.Func)
 		return !declared
@@ -219,6 +219,32 @@ func (c *checker) isCallbackCall(call *ast.CallExpr) bool {
 	}
 	// A map entry, an index into a slice of funcs, a call result.
 	return true
+}
+
+// uninstantiated strips the type arguments from an explicit generic
+// instantiation (f[T]), so a declared generic function reads as declared,
+// and leaves an index into a slice or map of funcs alone.
+func (c *checker) uninstantiated(fun ast.Expr) ast.Expr {
+	var base ast.Expr
+	switch e := fun.(type) {
+	case *ast.IndexExpr:
+		base = e.X
+	case *ast.IndexListExpr:
+		base = e.X
+	default:
+		return fun
+	}
+	id, ok := ast.Unparen(base).(*ast.Ident)
+	if sel, isSel := ast.Unparen(base).(*ast.SelectorExpr); isSel {
+		id, ok = sel.Sel, true
+	}
+	if !ok {
+		return fun
+	}
+	if _, inst := c.pass.TypesInfo.Instances[id]; inst {
+		return ast.Unparen(base)
+	}
+	return fun
 }
 
 // takesMap reports whether the callee's parameter j is itself a map: a

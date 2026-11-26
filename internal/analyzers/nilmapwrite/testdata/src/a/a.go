@@ -110,3 +110,8 @@ type executor interface{ Execute(data any) error }
 
 // Exec hands the map on as any: the template reads it.
 func Exec(t executor, data map[string]any) error { return t.Execute(data) }
+
+func readGeneric[K comparable](m map[K]int) int { return len(m) }
+
+// Inst names a declared generic function, not a callback.
+func Inst(m map[string]int) int { return readGeneric[string](m) }
