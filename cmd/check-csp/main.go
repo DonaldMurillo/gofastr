@@ -1,24 +1,8 @@
 //check-csp:ignore-file
-// The CLI references <script> in its own help text; exempt from
-// the rule the CLI enforces.
+// The help text names <script>, the thing it forbids.
 
-// check-csp is a build-time linter that fails when production Go
-// source emits inline <script> blocks. The framework's default
-// strict Content-Security-Policy is `default-src 'self'`, which
-// forbids inline JS; violations silently break pages in production
-// (the browser blocks the script with a CSP error).
-//
-// Usage:
-//
-//	go run ./cmd/check-csp           # walks the current directory
-//	go run ./cmd/check-csp ./path    # walks a specific path
-//
-// Exits 0 when clean, 1 when violations were found, 2 on infrastructure
-// error. Wired into `make build` via a `csp-check` prerequisite so the
-// app refuses to build when an inline <script> sneaks in.
-//
-// Test files (_test.go) are skipped. Fixtures may legitimately
-// contain known-bad strings for assertion purposes.
+// check-csp [root] exits 1 when Go source under root emits an inline
+// <script> or style="...", and 2 when the walk fails.
 package main
 
 import (
