@@ -1,0 +1,29 @@
+primitive: tools.primitives
+summary: The primitives command - it lists the registry, says what governs a file, shows one primitive, lints the registry, writes the generated import tests and lists the judged questions for changed files.
+code:
+  - cmd/primitives/main.go
+docs:
+  - primitives/README.md
+invariants:
+  - id: only-lint-and-stop-run-on-a-broken-registry
+    rule: Every command but lint and stop refuses with exit 1 and the findings when the registry does not parse; lint prints the findings and exits 1, and stop turns them into a block.
+    enforced_by:
+      - test: cmd/primitives.TestOnlyLintAndStopRunOnARegistryThatDoesNotParse
+      - test: cmd/primitives.TestStopBlocksOnARegistryThatDoesNotParse
+  - id: commands-answer-as-documented
+    rule: list, for, show and lint print what primitives/README.md says they print, and an unknown command or a show of an unknown id exits 2 with its usage.
+    enforced_by:
+      - test: cmd/primitives.TestCommands
+      - test: cmd/primitives.TestAppliedRulesReachForAndStop
+  - id: gen-check-is-silent-when-current
+    rule: gen --check on a current tree exits 0 and prints nothing.
+    enforced_by:
+      - test: cmd/primitives.TestGenCheckIsSilentWhenCurrent
+  - id: paths-are-relative-by-segment
+    rule: for resolves an argument against the repository root by path segment, so a sibling directory sharing the root's prefix is not read as inside it.
+    enforced_by:
+      - test: cmd/primitives.TestRelPathComparesPathSegments
+  - id: hooks-read-the-stdin-run-is-given
+    rule: hook and stop read their event from the stdin run receives, not from os.Stdin.
+    enforced_by:
+      - test: cmd/primitives.TestHookReadsTheEventRunIsGiven
