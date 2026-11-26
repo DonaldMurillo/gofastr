@@ -87,9 +87,27 @@ few lines, and link the PR or the docs page for the rest.
   full load does, so a panic no longer breaks navigation; recovery pages
   keep `lang` and `dir` on both shapes, and their title hooks and layouts
   get the request.
+- **Article pages** whose `ScreenTitle` panics serve with an empty
+  headline, as the page title already did, instead of failing the request.
+- **`headless.Mark`, `headless.Flag` and `entity.ValidationRegistry.Validate`
+  take a nil map.** Mark and Flag return a new map; Validate hands its
+  validators an empty one, so a validator that writes no longer panics.
+- **`service` on macOS** reads the default browser from `plutil` stdout
+  only, so a warning on stderr no longer breaks the JSON read. A failing
+  tool's error still quotes both streams.
 - **Forms with a control named `requestSubmit`** submit and clear
   through SearchInput, submit-on-enter, the repeater's Enter key, the
-  confirm dialog and passkey step-up.
+  confirm dialog and passkey step-up. A control named `elements`,
+  `enctype` or `reset` no longer breaks form errors, the hidden-checkbox
+  pair, multipart detection, local-entity forms or the validity tracker.
+  A multipart form with no file input and a control named `enctype` was
+  sent as JSON.
+- **MCP list tools:** the equality filter on a column named after a
+  reserved list key (`page`, `limit`, `sort`, `fields`, `where`, `cursor`
+  and the rest, or `q` on a searchable entity) takes the bracket key
+  (`page[eq]`), so the route no longer reads it as the control and the
+  tool's own arguments keep their name and type. `limit: 1` was refused
+  when the entity had a `limit` column, and `fields: "x"` answered 400.
 - **CopyButton** copies a `<pre>`'s text exactly, and copies nothing from a
   PasswordInput, hidden or revealed.
 - **Sortable lists:** a late conflict refresh no longer overwrites a newer

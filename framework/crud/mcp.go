@@ -142,7 +142,7 @@ func (ch *CrudHandler) mcpBase() string {
 func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		values := make(url.Values)
-		for _, key := range []string{"page", "limit", "per_page", "offset", "sort"} {
+		for _, key := range listToolControls {
 			if v, ok := params[key]; ok {
 				values[key] = toolParamValues(v)
 			}
@@ -153,7 +153,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 			if field.Hidden || field.NoQuery {
 				continue
 			}
-			eqKey := spell.Key(mcpFieldKey(field), filter.OpEq)
+			eqKey := listToolFilterKey(ch.Entity, spell, field, filter.OpEq)
 			if v, ok := params[eqKey]; ok {
 				if !filter.OpSuitsType(filter.OpEq, field.Type) {
 					return nil, toolArgError("param %q: a json field takes no filter", eqKey)
@@ -168,7 +168,7 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				if !filter.OpSuitsType(s.Op, field.Type) {
 					continue
 				}
-				key := spell.Key(mcpFieldKey(field), s.Op)
+				key := listToolFilterKey(ch.Entity, spell, field, s.Op)
 				if v, ok := params[key]; ok {
 					vs, err := toolFilterValues(key, s.Op == filter.OpIn, v)
 					if err != nil {
@@ -189,6 +189,25 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 		}
 		return runToolRequest(ctx, router, http.MethodGet, path, nil)
 	}
+}
+
+// listToolControls are the list tool's control arguments besides q.
+var listToolControls = [...]string{"page", "limit", "per_page", "offset", "sort"}
+
+// listToolFilterKey is the list tool's argument for a filter on field: the
+// route's key, in bracket form where the route reads it as a control.
+func listToolFilterKey(ent *entity.Entity, spell filter.KeySpeller, field schema.Field, op filter.FilterOp) string {
+	key := spell.Key(mcpFieldKey(field), op)
+	if key == "q" {
+		if len(ent.Config.SearchFields) > 0 {
+			return filter.BracketKey(mcpFieldKey(field), op)
+		}
+		return key
+	}
+	if slices.Contains(filter.ListControlParams(), key) {
+		return filter.BracketKey(mcpFieldKey(field), op)
+	}
+	return key
 }
 
 // toolParamValues renders a tool parameter as query values, one per
@@ -526,7 +545,7 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 			continue
 		}
 		if filter.OpSuitsType(filter.OpEq, field.Type) {
-			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = tf.schema(field)
+			props[listToolFilterKey(ent, spell, field, filter.OpEq)] = tf.schema(field)
 		}
 		for _, s := range filter.FilterSuffixes {
 			if !filter.OpSuitsType(s.Op, field.Type) {
@@ -540,7 +559,7 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 				ps = map[string]any{"type": "array", "items": tf.schema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, filterOpLabel(s.Op))
-			props[spell.Key(mcpFieldKey(field), s.Op)] = ps
+			props[listToolFilterKey(ent, spell, field, s.Op)] = ps
 		}
 	}
 	return map[string]any{"type": "object", "properties": props}

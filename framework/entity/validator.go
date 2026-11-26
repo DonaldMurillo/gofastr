@@ -28,6 +28,9 @@ func (vr *ValidationRegistry) RegisterValidator(fn ValidatorFunc) {
 
 // Validate runs every validator and merges their field errors.
 func (vr *ValidationRegistry) Validate(ctx context.Context, data map[string]any) map[string]string {
+	if data == nil {
+		data = map[string]any{}
+	}
 	errors := make(map[string]string)
 	for _, fn := range vr.validators {
 		fieldErrors := fn(ctx, data)

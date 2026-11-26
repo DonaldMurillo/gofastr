@@ -187,7 +187,7 @@
     form.addEventListener('submit', (ev) => {
       ev.preventDefault();
       const data = new URLSearchParams(new FormData(form));
-      window.fetch(form.action, {
+      window.fetch(form.getAttribute('action'), {
         method: 'POST',
         body: data,
         credentials: 'same-origin',

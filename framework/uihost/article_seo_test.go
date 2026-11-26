@@ -248,3 +248,29 @@ func TestAsArticleDerivesFromScreenTitle(t *testing.T) {
 		}
 	}
 }
+
+// articleTitleBoom is an AsArticle screen whose ScreenTitle works for
+// registration's read and panics on every request-time read.
+type articleTitleBoom struct{ calls int }
+
+func (*articleTitleBoom) Render() render.HTML { return render.Raw("<p>The prose.</p>") }
+func (c *articleTitleBoom) ScreenTitle(context.Context) string {
+	c.calls++
+	if c.calls >= 2 {
+		panic("test: article title boom")
+	}
+	return "Boom Post"
+}
+
+// The article headline falls back to ScreenTitle through the same
+// recover guard as the page title: a panicking title still serves the
+// page.
+func TestArticleHeadlineTitlePanicServes(t *testing.T) {
+	a := app.NewApp("art-boom")
+	a.SetDefaultLayout(bareLayout("art-boom"))
+	a.Register("/p", &articleTitleBoom{}, nil, app.AsArticle())
+	rec := ssrGetNoPanic(t, "article-headline-title", New(a), "/p", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "The prose.") {
+		t.Fatalf("GET /p = %d, want 200 with the body; got %q", rec.Code, rec.Body.String())
+	}
+}

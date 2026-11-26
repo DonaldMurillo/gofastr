@@ -26,6 +26,7 @@
   NS.loadedModules[NAME] = true;
 
   const P = 'data-fui-local-';
+  const formControls = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get;
   const FORM = '[' + P + 'form]';
 
   const specs = new WeakMap();
@@ -123,7 +124,7 @@
   // control (or one in a disabled fieldset) is not in FormData, so it
   // must not read as an emptied field.
   const live = (form, name) => {
-    const ctl = form.elements.namedItem(name);
+    const ctl = formControls.call(form).namedItem(name);
     return ctl ? (ctl.tagName ? [ctl] : Array.from(ctl)).filter((c) => !c.matches(':disabled')) : [];
   };
 
@@ -255,7 +256,7 @@
       }
       return;
     }
-    form.reset();
+    HTMLFormElement.prototype.reset.call(form);
     wrap.dispatchEvent(new CustomEvent('gofastr:local-saved', { bubbles: true, detail: { target: v } }));
   }
 
@@ -267,7 +268,7 @@
     if (!form || !spec) return;
     for (const f of spec.fields) {
       const value = has(rec, f.name) ? rec[f.name] : undefined;
-      const ctl = form.elements.namedItem(f.name);
+      const ctl = formControls.call(form).namedItem(f.name);
       if (!ctl) continue;
       const list = ctl.tagName ? [ctl] : Array.from(ctl);
       for (const c of list) {

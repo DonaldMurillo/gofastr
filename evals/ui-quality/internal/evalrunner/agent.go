@@ -1,6 +1,7 @@
 package evalrunner
 
 import (
+	"errors"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 
 	"bufio"
@@ -354,9 +355,9 @@ func agentVersion(ctx context.Context, cfg AgentConfig) (string, error) {
 	args := append(append([]string(nil), cfg.PrefixArgs...), "--version")
 	versionCmd := exec.CommandContext(versionCtx, cfg.Program, args...)
 	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
-	out, err := versionCmd.CombinedOutput()
+	out, err := versionCmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("resolve %s version: %w (%s)", cfg.Backend, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("resolve %s version: %w (%s)", cfg.Backend, err, strings.TrimSpace(exitStderr(err)))
 	}
 	version := strings.TrimSpace(string(out))
 	if version == "" {
@@ -386,4 +387,14 @@ func backendCredentialAllowed(backend, name string) bool {
 	default:
 		return false
 	}
+}
+
+// exitStderr is what a failed command printed on stderr, which Output
+// keeps on the *exec.ExitError.
+func exitStderr(err error) string {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return string(exit.Stderr)
+	}
+	return ""
 }
