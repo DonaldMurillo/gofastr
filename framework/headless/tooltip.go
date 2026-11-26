@@ -18,7 +18,7 @@ const (
 type TooltipProps struct {
 	// Text is the sentence. Required and non-blank.
 	Text string
-	// Trigger is the element the tooltip describes; its first open tag gains aria-describedby. Required.
+	// Trigger is the element the tooltip describes; the ID joins the aria-describedby list on its first open tag. Required.
 	Trigger render.HTML
 	// Placement is the preferred side: "top" (or empty), "bottom", "left" or "right"; left and right are the reading direction's start and end.
 	Placement string
@@ -52,7 +52,7 @@ func Tooltip(p TooltipProps, s Classes) render.HTML {
 	own := Safe(p.ExtraAttrs, "role")
 	Mark(own, "data-hui-tooltip")
 	own["data-hui-tooltip-placement"] = placement
-	trigger, _ := uiregistry.InjectAttribute(p.Trigger, "aria-describedby", p.ID)
+	trigger, _ := uiregistry.AddAttributeToken(p.Trigger, "aria-describedby", p.ID)
 	popAttrs := Internal(Attrs(map[string]string{"id": p.ID, "role": "tooltip"}))
 	Mark(popAttrs, "data-hui-tooltip-pop")
 	return b.El("span", PartRoot, own,

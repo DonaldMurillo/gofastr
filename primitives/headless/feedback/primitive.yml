@@ -22,11 +22,12 @@ code:
   - framework/headless/tooltip.js
 invariants:
   - id: tooltip-rises-to-the-top-layer
-    rule: On a Tooltip's first hover or focus headless-tooltip makes its pop a manual popover and marks the wrapper data-hui-tooltip-live, so the pop renders in the top layer past any ancestor that clips its overflow.
+    rule: On a Tooltip's first hover or focus, or when the module loads while the trigger already has focus or the pointer, headless-tooltip makes its pop a manual popover and marks the wrapper data-hui-tooltip-live, so the pop renders in the top layer past any ancestor that clips its overflow.
     enforced_by:
       - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
+      - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
   - id: tooltip-is-hoverable-and-dismissable
-    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes, staying closed until pointer and focus have both left the wrapper.
+    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through when the open Tooltip's wrapper has left the page.
     enforced_by:
       - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
       - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
@@ -34,6 +35,8 @@ invariants:
       - test: framework/ui.TestTooltipEscapeLeavesTheDialogOpen
       - test: framework/ui.TestTooltipFocusAndDismissalOutlastThePointer
       - test: framework/ui.TestTooltipFollowsFocus
+      - test: framework/ui.TestTooltipDismissedOneLetsTheOpenOneClose
+      - test: framework/ui.TestTooltipEscapePassesWhenItsTooltipIsGone
   - id: tooltip-sits-beside-its-trigger
     rule: An open Tooltip's pop is centred on its trigger on the preferred side, or the opposite one when the preferred side has no room, by anchor positioning where the browser has it and by the module's fixed coordinates where it does not.
     enforced_by:

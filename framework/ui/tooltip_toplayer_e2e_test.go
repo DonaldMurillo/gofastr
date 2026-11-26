@@ -8,6 +8,7 @@ package ui_test
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -18,15 +19,32 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // tooltipPage serves a tooltip on a button inside a short box that clips
 // its overflow, at the top of the viewport, so the preferred top side has
 // no room; a second tooltip sits inside a dialog.
 func tooltipPage(t *testing.T, anchorPositioning bool, pre ...chromedp.Action) context.Context {
+	t.Helper()
+	url := tooltipServer(t, anchorPositioning, nil)
+	return moduleTestCtxURL(t, url, append(pre, emulateFocus(), chromedp.EmulateViewport(900, 600))...)
+}
+
+// A headless page has no focus of its own, so the browser fires no
+// focus events until focus is emulated.
+func emulateFocus() chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return emulation.SetFocusEmulationEnabled(true).Do(ctx)
+	})
+}
+
+// tooltipServer serves the page tooltipPage opens and returns its URL.
+func tooltipServer(t *testing.T, anchorPositioning bool, extra func(mux *http.ServeMux)) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
@@ -49,13 +67,11 @@ func tooltipPage(t *testing.T, anchorPositioning bool, pre ...chromedp.Action) c
 	body := `<div id="clip" style="overflow: hidden; width: 220px; height: 36px; margin: 4px 120px">` + string(tip) + `</div>` +
 		`<button id="elsewhere" type="button" style="margin: 300px 0 0 20px">Elsewhere</button>` +
 		`<dialog id="dlg"><p>A dialog</p>` + string(inDialog) + `</dialog>`
-	srv := themeTestPageWithHead(t, head, body)
-	// A headless page has no focus of its own, so the browser fires no
-	// focus events until focus is emulated.
-	focus := chromedp.ActionFunc(func(ctx context.Context) error {
-		return emulation.SetFocusEmulationEnabled(true).Do(ctx)
-	})
-	return moduleTestCtxURL(t, srv.URL, append(pre, focus, chromedp.EmulateViewport(900, 600))...)
+	var adds []func(mux *http.ServeMux)
+	if extra != nil {
+		adds = append(adds, extra)
+	}
+	return themeTestPageWithHead(t, head, body, adds...).URL
 }
 
 // withoutBlock drops the brace-balanced block that opens with head from
@@ -308,7 +324,9 @@ func TestTooltipEscapeIsConsumed(t *testing.T) {
 	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
 		t.Fatal("headless-tooltip did not load")
 	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__escSeen = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__escSeen++; })`, nil)); err != nil {
+	// One listener bubbles; the other captures on document, the target
+	// the module listens on, registered after it.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__escSeen = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__escSeen++; }); document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__escSeen++; }, true)`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	hoverID(t, ctx, "trigger")
@@ -328,8 +346,8 @@ func TestTooltipEscapeIsConsumed(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__escSeen`, &seen)); err != nil {
 		t.Fatal(err)
 	}
-	if seen != 1 {
-		t.Fatalf("with no tooltip open, the page saw %d Escape presses, want 1", seen)
+	if seen != 2 {
+		t.Fatalf("with no tooltip open, the page's two listeners saw %d Escape presses, want 2", seen)
 	}
 }
 
@@ -359,5 +377,139 @@ func TestTooltipFocusAndDismissalOutlastThePointer(t *testing.T) {
 	settle()
 	if tipOpen(ctx, "tip") {
 		t.Fatal("the pop dismissed by Escape came back on hover while focus stayed on the trigger")
+	}
+}
+
+// gateModule holds the headless-tooltip module back until release is
+// closed, and closes requested when the browser asks for it.
+func gateModule(t *testing.T, requested, release chan struct{}) func(mux *http.ServeMux) {
+	return func(mux *http.ServeMux) {
+		mux.HandleFunc("/__gofastr/runtime/headless-tooltip.js", func(w http.ResponseWriter, r *http.Request) {
+			close(requested)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			case <-time.After(15 * time.Second):
+			}
+			src, ok := runtime.Module("headless-tooltip")
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/javascript")
+			w.Write([]byte(src))
+		})
+	}
+}
+
+// A trigger that has focus, or the pointer, before headless-tooltip has
+// loaded opens on the top layer once it does, without a second focus or
+// hover.
+func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
+	for _, how := range []string{"focus", "hover"} {
+		t.Run(how, func(t *testing.T) {
+			requested, release := make(chan struct{}), make(chan struct{})
+			url := tooltipServer(t, true, gateModule(t, requested, release))
+			// The held module holds back the load event, so navigate
+			// without waiting for it.
+			ctx := chromedptest.Context(t)
+			if err := chromedp.Run(ctx, emulateFocus(), chromedp.EmulateViewport(900, 600),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					_, _, _, _, err := page.Navigate(url).Do(ctx)
+					return err
+				}),
+				chromedp.WaitVisible(`#ready`, chromedp.ByID),
+			); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-requested:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the page never asked for headless-tooltip")
+			}
+			if how == "focus" {
+				if err := chromedp.Run(ctx, chromedp.Focus(`#trigger`, chromedp.ByQuery)); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				hoverID(t, ctx, "trigger")
+			}
+			if tipOpen(ctx, "tip") {
+				t.Fatal("the pop is a popover before the module loaded, so the test proves nothing")
+			}
+			close(release)
+			if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
+				t.Fatal("headless-tooltip did not load")
+			}
+			if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
+				t.Fatalf("the trigger that had %s before the module loaded did not open on the top layer", how)
+			}
+		})
+	}
+}
+
+// A tooltip whose wrapper a swap has removed does not swallow the next
+// Escape: the page sees it.
+func TestTooltipEscapePassesWhenItsTooltipIsGone(t *testing.T) {
+	ctx := tooltipPage(t, true)
+	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
+		t.Fatal("headless-tooltip did not load")
+	}
+	hoverID(t, ctx, "trigger")
+	if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
+		t.Fatal("hover did not open the pop")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__escSeen = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__escSeen++; }); document.getElementById('clip').replaceChildren()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	pressEscape(t, ctx)
+	var seen int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__escSeen`, &seen)); err != nil {
+		t.Fatal(err)
+	}
+	if seen != 1 {
+		t.Fatalf("after the open tooltip was removed, the page saw %d Escape presses, want 1", seen)
+	}
+}
+
+// Moving the pointer from an open tooltip onto one dismissed by Escape
+// still closes the first: the dismissed one does not cancel its hide.
+func TestTooltipDismissedOneLetsTheOpenOneClose(t *testing.T) {
+	ctx := tooltipPage(t, true)
+	// A second tooltip, cloned before either is upgraded.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const c = document.querySelector('#clip [data-hui-tooltip]').cloneNode(true);
+		c.querySelector('#trigger').id = 'trigger2';
+		c.querySelector('#tip').id = 'tip2';
+		const box = document.createElement('div');
+		box.style.cssText = 'position: fixed; left: 420px; top: 220px';
+		box.append(c);
+		document.body.append(box);
+	})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, moduleLoaded("headless-tooltip")) {
+		t.Fatal("headless-tooltip did not load")
+	}
+	if err := chromedp.Run(ctx, chromedp.Focus(`#trigger`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
+		t.Fatal("focus did not open the first pop")
+	}
+	pressEscape(t, ctx)
+	hoverID(t, ctx, "trigger2")
+	if !pollJS(ctx, `document.getElementById('tip2').matches(':popover-open')`) {
+		t.Fatal("hover did not open the second pop")
+	}
+	// Straight from the second trigger onto the dismissed, still focused one.
+	hoverID(t, ctx, "trigger")
+	settle()
+	if tipOpen(ctx, "tip2") {
+		t.Fatal("the second pop stayed open after the pointer left it for a dismissed tooltip")
+	}
+	if tipOpen(ctx, "tip") {
+		t.Fatal("the dismissed pop came back")
 	}
 }

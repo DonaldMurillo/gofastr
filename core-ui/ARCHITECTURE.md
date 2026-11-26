@@ -2758,6 +2758,9 @@ tokens) live in `theme.css` / `WithCustomCSS`.
 component marker injector. It appends attributes in sorted order with
 `render.Attr` escaping, skips leading comments, and inserts before a
 self-closing slash. A fragment with no usable root stays unchanged.
+`registry.AddAttributeToken` uses it too, to add one token to a
+space-separated list such as `aria-describedby`: it keeps the tokens
+already there and adds the token once.
 
 ### One styling surface (who ships CSS, and who must not)
 

@@ -77,8 +77,11 @@ few lines, and link the PR or the docs page for the rest.
   pointer is over it, and Escape closes it without moving the pointer or
   focus. It sits beside its trigger by CSS anchor positioning, or by the
   module where the browser lacks it, and flips when its side has no
-  room. Without script it still shows on hover and focus. It now
-  renders through the new `headless.Tooltip`. See
+  room. Without script it still shows on hover and focus. A trigger
+  that already has an `aria-describedby` keeps it, with the tooltip's id
+  added to the list. It now renders through the new `headless.Tooltip`,
+  and the new `registry.AddAttributeToken` adds one id to such a list.
+  See
   [New components](framework/docs/content/ui-new-components.md).
 - **Static export:** under `--base`, the Markdown index and every
   root-relative link in exported page docs carry the base path, and the

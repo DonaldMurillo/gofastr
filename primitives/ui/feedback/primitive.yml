@@ -138,7 +138,7 @@ invariants:
       - test: framework/ui.TestTooltipsGetDistinctIDs
       - test: framework/ui.TestTooltipsWithoutAScopeGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
-    rule: Tooltip uses registry.InjectAttribute to splice aria-describedby into the trigger's first open tag, past leading comments and before a self-closing slash, leaving text-only triggers and an existing root attribute intact and ignoring tag delimiters and attribute-like text inside quotes.
+    rule: Tooltip adds its pop's id to the aria-describedby list on the trigger's first open tag with registry.AddAttributeToken, past leading comments and before a self-closing slash, keeping the ids already listed, naming the pop once, leaving text-only triggers intact and ignoring tag delimiters and attribute-like text inside quotes.
     enforced_by:
       - test: framework/ui.TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy
       - test: framework/ui.TestTooltipSplicesPastAGtInsideAQuotedValue
@@ -147,6 +147,7 @@ invariants:
       - test: framework/ui.TestTooltipKeepsTextOnlyTrigger
       - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
       - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
+      - test: framework/headless.TestTooltipJoinsTheTriggersDescription
 decisions:
   - id: tooltip-unscoped-id-takes-a-counter
     date: 2026-11-16

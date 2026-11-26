@@ -1,8 +1,8 @@
 // headless-tooltip: the behaviour module for headless.Tooltip
 // ([data-hui-tooltip] wrapper, [data-hui-tooltip-pop] role=tooltip pop).
 // Without it the kit's sheet shows the pop on hover and focus. On a
-// wrapper's first hover or focus the module makes the pop a manual
-// popover, so it renders in the top layer where no ancestor's overflow
+// wrapper's first hover or focus (or at load, for one that already has
+// either) the module makes the pop a manual popover, so it renders in the top layer where no ancestor's overflow
 // clips it, marks the wrapper data-hui-tooltip-live so the sheet stops
 // showing the pop by :hover, and from then on:
 //   - shows the pop while the pointer is over the wrapper or the pop, or
@@ -59,8 +59,8 @@
     try { tip.pop.hidePopover(); } catch (_) {}
   }
   function show(tip) {
-    clearTimeout(hideTimer);
     if (tip.dismissed || !tip.root.isConnected) return;
+    clearTimeout(hideTimer);
     if (open && open !== tip) hideNow();
     if (open === tip) return;
     try { tip.pop.showPopover(); } catch (_) { return; }
@@ -137,12 +137,14 @@
     if (open === tip && !tip.hovered) hideNow();
   }, true);
   // Escape closes the open tooltip and goes no further, so a dialog the
-  // tooltip sits in stays open; with no tooltip open it passes through.
+  // tooltip sits in stays open; with no tooltip open, or only one whose
+  // wrapper has left the page, it passes through.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !open || e.isComposing) return;
+    if (!open.root.isConnected) { hideNow(); return; }
     open.dismissed = true;
     hideNow();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
     e.preventDefault();
   }, true);
   let frame = 0;
@@ -156,4 +158,18 @@
   };
   window.addEventListener('scroll', follow, true);
   window.addEventListener('resize', follow);
+
+  // A trigger focused or hovered before the module ran opens now.
+  const focused = document.activeElement;
+  const early = focused && focused !== document.body ? tipAt(focused) : null;
+  if (early) {
+    show(early);
+  } else {
+    const under = document.querySelectorAll(ROOT + ':hover');
+    const tip = under.length ? upgrade(under[under.length - 1]) : null;
+    if (tip) {
+      tip.hovered = true;
+      show(tip);
+    }
+  }
 })();

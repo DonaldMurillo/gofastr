@@ -1,5 +1,5 @@
 primitive: uiregistry.inject
-summary: The attribute splice on a component's first opening tag - the data-cui-comp marker, InjectAttribute, AppendAttributes and Attribute - with no HTML parser, one quote-aware scan to the tag's >.
+summary: The attribute splice on a component's first opening tag - the data-cui-comp marker, InjectAttribute, AppendAttributes, AddAttributeToken and Attribute - with no HTML parser, one quote-aware scan to the tag's >.
 code:
   - core-ui/registry/inject.go
 docs:
@@ -25,3 +25,7 @@ invariants:
       - test: core-ui/registry.TestInjectIdempotentAcrossLineBreaks
       - test: core-ui/registry.TestInjectSkipsWhenWrappedByDifferentName
       - test: core-ui/registry.TestAttribute
+  - id: token-joins-the-list
+    rule: AddAttributeToken refuses an unsafe attribute name and a token that is empty or holds whitespace, adds name="token" to a root tag without the attribute, rewrites a quoted, unquoted, empty or bare value as one double-quoted, HTML-escaped, space-separated list with the token last, and returns a list that already holds the token, or a fragment with no usable root, unchanged.
+    enforced_by:
+      - test: core-ui/registry.TestAddAttributeToken

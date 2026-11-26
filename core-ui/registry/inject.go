@@ -229,3 +229,53 @@ func Attribute(src render.HTML, name string) (string, bool, error) {
 	}
 	return v, true, nil
 }
+
+// AddAttributeToken adds token to the space-separated list name holds on
+// the first opening tag of src, adding the attribute when the tag has
+// none; a list that already holds token comes back unchanged.
+func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error) {
+	if !attrNameOK(name) {
+		return src, fmt.Errorf("registry: AddAttributeToken: %q is not a valid attribute name", name)
+	}
+	if token == "" || strings.ContainsAny(token, " \t\n\r\f") {
+		return src, fmt.Errorf("registry: AddAttributeToken: %q is not a single token", token)
+	}
+	html := string(src)
+	start, end, err := rootTag(html)
+	if err != nil {
+		return src, fmt.Errorf("registry: AddAttributeToken: %w", err)
+	}
+	openTag := html[start:end]
+	at := attrIndex(openTag, name)
+	if at < 0 {
+		return render.HTML(spliceAttr(html, end, name, token)), nil
+	}
+	from := at + len(name)
+	to := from
+	var tokens []string
+	if from < len(openTag) && openTag[from] == '=' {
+		v := openTag[from+1:]
+		switch {
+		case len(v) > 0 && (v[0] == '"' || v[0] == '\''):
+			closing := strings.IndexByte(v[1:], v[0])
+			if closing < 0 {
+				return src, fmt.Errorf("registry: AddAttributeToken: unterminated attribute value")
+			}
+			to = from + 1 + 1 + closing + 1
+			v = v[1 : 1+closing]
+		default:
+			if cut := strings.IndexAny(v, " \t\n\r"); cut >= 0 {
+				v = v[:cut]
+			}
+			to = from + 1 + len(v)
+		}
+		tokens = strings.Fields(htmlUnescape(v))
+	}
+	if slices.Contains(tokens, token) {
+		return src, nil
+	}
+	value := `="` + htmlEscape(strings.Join(append(tokens, token), " ")) + `"`
+	return render.HTML(html[:start+from] + value + html[start+to:]), nil
+}
+
+func htmlUnescape(v string) string { return html.UnescapeString(v) }

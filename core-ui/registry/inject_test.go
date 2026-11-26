@@ -385,3 +385,52 @@ func TestAttribute(t *testing.T) {
 		})
 	}
 }
+
+func TestAddAttributeToken(t *testing.T) {
+	cases := []struct {
+		name, html, token, want, wantErr string
+	}{
+		{name: "no attribute yet", html: `<button type="button">Save</button>`, token: "tip",
+			want: `<button type="button" aria-describedby="tip">Save</button>`},
+		{name: "appends to an existing list", html: `<button aria-describedby="help">Save</button>`, token: "tip",
+			want: `<button aria-describedby="help tip">Save</button>`},
+		{name: "single quotes and extra spaces", html: `<input aria-describedby=' help  err ' />`, token: "tip",
+			want: `<input aria-describedby="help err tip" />`},
+		{name: "unquoted value", html: `<input aria-describedby=help class="x">`, token: "tip",
+			want: `<input aria-describedby="help tip" class="x">`},
+		{name: "already listed", html: `<button aria-describedby="tip help">Save</button>`, token: "tip",
+			want: `<button aria-describedby="tip help">Save</button>`},
+		{name: "empty value", html: `<button aria-describedby="">Save</button>`, token: "tip",
+			want: `<button aria-describedby="tip">Save</button>`},
+		{name: "no value", html: `<button aria-describedby>Save</button>`, token: "tip",
+			want: `<button aria-describedby="tip">Save</button>`},
+		{name: "a lookalike inside a quoted value is not the attribute", html: `<button title='aria-describedby="x"'>Save</button>`, token: "tip",
+			want: `<button title='aria-describedby="x"' aria-describedby="tip">Save</button>`},
+		{name: "only the root tag", html: `<span><b aria-describedby="x">a</b></span>`, token: "tip",
+			want: `<span aria-describedby="tip"><b aria-describedby="x">a</b></span>`},
+		{name: "escapes what it writes", html: `<button aria-describedby="a&amp;b">x</button>`, token: "tip",
+			want: `<button aria-describedby="a&amp;b tip">x</button>`},
+		{name: "a token with a space", html: `<button>x</button>`, token: "a b", wantErr: "single token"},
+		{name: "text only", html: `Save`, token: "tip", wantErr: "element open tag"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := AddAttributeToken(render.HTML(c.html), "aria-describedby", c.token)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, c.wantErr)
+				}
+				if string(got) != c.html {
+					t.Fatalf("on error got %q, want the input back", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != c.want {
+				t.Fatalf("got  %s\nwant %s", got, c.want)
+			}
+		})
+	}
+}
