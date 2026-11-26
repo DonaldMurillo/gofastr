@@ -1,12 +1,12 @@
 // headless-sortablelist: the behaviour module for this package's
-// sortable lists — drag-and-drop reorder plus the keyboard model
-// (Space grabs, Arrow Up/Down moves within the column, Arrow
-// Left/Right crosses to an adjacent column of the same group, the one
-// on screen to that side in RTL, Space drops, Escape or focus leaving
-// the row cancels, a new grab cancels the old) — and the server round
-// trip the pattern shipped, with the server authoritative: non-2xx
-// reverts the DOM to the last order the server confirmed, unless a
-// newer commit on the list has gone out since.
+// sortable lists: the keyboard model (Space grabs, Arrow Up/Down
+// moves within the column, Arrow Left/Right crosses to an adjacent
+// column of the same group, the one on screen to that side in RTL,
+// Space drops, Escape or focus leaving the row cancels, a new grab
+// cancels the old) and the server round trip every move ends in, the
+// pointer drag's too (headless-sortabledrag), with the server
+// authoritative: non-2xx reverts the DOM to the last order the server
+// confirmed, unless a newer commit on the list has gone out since.
 //
 // The commit contract:
 //   - a same-container reorder POSTs order=<comma-separated keys>,
@@ -34,9 +34,10 @@
 // attribute the component rendered from its Strings, so a translated
 // page announces in its own language; the {{label}}/{{list}}/{{position}}
 // tokens are written in when the move has happened. No inline style
-// is ever written; the grabbed and dragging states are classes.
+// is ever written; the grabbed, dragging and drop states are classes.
 (function () {
   'use strict';
+  /* gofastr:json-response-check */
   const NAME = 'headless-sortablelist';
   const NS = window.__gofastr = window.__gofastr || {};
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
@@ -51,11 +52,12 @@
 
   const VERSION = 'data-hui-sortable-version';
 
-  // peers: the lists a move can cross between, the list alone when it
-  // has no group.
-  function peers(list) {
+  // peers: lists of the same group, excluding lists inside the moving row.
+  function peers(list, item) {
     const group = attr(list, 'data-hui-sortable-group');
-    return group ? Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(group) + '"]')) : [list];
+    if (!group) return [list];
+    const lists = Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(group) + '"]'));
+    return item ? lists.filter((peer) => !item.contains(peer)) : lists;
   }
 
   // renewed: the version a response says the server holds now, '' when
@@ -70,9 +72,8 @@
     return tpl.replace(/\{\{(label|list|position)\}\}/g, (_, k) => String(map[k] ?? ''));
   }
 
-  // canCross: over and src are different lists of the same group.
-  function canCross(overList, srcList) {
-    return !!overList && overList !== srcList && peers(srcList).includes(overList);
+  function canCross(overList, srcList, item) {
+    return !!overList && overList !== srcList && peers(srcList, item).includes(overList);
   }
 
   // CSRF: forward meta[name="csrf-token"] via X-CSRF-Token so the
@@ -106,7 +107,7 @@
   // Mirrors the feedback module's copy path: blank then set text after
   // ~30ms so AT re-reads. raw is a server-provided message (the bounded
   // 409 detail), said as it is; every other sentence is the list's own.
-  function announce(list, key, map, raw) {
+  function announce(list, key, map, raw, seq) {
     let live = document.getElementById('hui-sortable-live');
     if (!live) {
       live = document.createElement('div');
@@ -117,7 +118,7 @@
     }
     const msg = raw || fill(attr(list, key), map || {});
     live.textContent = '';
-    setTimeout(() => { live.textContent = msg; }, 30);
+    setTimeout(() => { if (!seq || seq === list.__huiSeq) live.textContent = msg; }, 30);
   }
 
   // readBounded: read at most `max` chars from res's body via the
@@ -144,7 +145,7 @@
   // ~300 chars; malformed/oversized/empty → cb('') so the caller falls
   // back to the generic copy.
   function conflictMessage(res, cb) {
-    if (!(res.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) return cb('');
+    if (!isJSON(res)) return cb('');
     readBounded(res, 4096, (txt) => {
       // An empty or malformed body throws in the parse: generic copy.
       try {
@@ -189,12 +190,30 @@
     // outcome is announced.
     const record = (ok) => lists.map((l, i) => {
       l.__huiN--;
-      if (ok && mine[i] > (l.__huiOk || 0)) { l.__huiAck = sent[i]; l.__huiOk = mine[i]; }
-      if (!ok && mine[i] === l.__huiSeq) l.__huiBad = mine[i];
-      if (l.__huiBad === l.__huiSeq) putBack(l, l.__huiAck);
-      return mine[i] === l.__huiSeq;
+      const latest = mine[i] === l.__huiSeq;
+      if (ok && mine[i] > (l.__huiOk || 0)) {
+        l.__huiAck = sent[i];
+        l.__huiOk = mine[i];
+        if (l.__huiRefresh?.seq < mine[i]) delete l.__huiRefresh;
+      }
+      if (!ok && latest) l.__huiBad = mine[i];
+      if (l.__huiBad === l.__huiSeq) {
+        const r = l.__huiRefresh;
+        if (r) {
+          if (i) putBack(l, l.__huiAck);
+          delete l.__huiRefresh;
+          l.innerHTML = NS._html?.(r.html) ?? r.html;
+          if (r.next) l.setAttribute(VERSION, r.next);
+          l.__huiAck = rowsOf(l);
+          l.__huiOk = r.seq;
+          if (!r.msg || r.seq !== l.__huiSeq) announce(l, 'data-hui-sortable-s-conflict-refreshed', null, null, l.__huiSeq);
+          return false;
+        }
+        if (ok || latest) putBack(l, l.__huiAck);
+      }
+      return latest;
     }).every(Boolean);
-    const fail = (key) => { if (record(false) && key) announce(dest, key); };
+    const fail = (key) => { if (record(false) && key) announce(dest, key, null, null, mine[0]); };
     p.then((res) => {
       // A followed 3xx (an expired session sent the commit to the
       // sign-in page) is another URL's 200, not this commit's: the
@@ -212,14 +231,17 @@
       }
       const is409 = res && res.status === 409;
       if (!is409 || !was) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
+      const ownsDest = () => mine[0] === dest.__huiSeq;
+      const newerAck = () => dest.__huiOk > mine[0];
       conflictMessage(res, (msg) => {
+        if (newerAck()) return record(false);
         const crpc = attr(dest, 'data-hui-sortable-conflict');
         // A real server message is the announcement AND an error
         // toast — the live region is visually hidden, so without the
         // toast a sighted reader learns nothing of the conflict. The
         // generic copies never toast, and a message replaces them the
         // way the retired module's finishConflict did.
-        if (msg) { announce(dest, '', 0, msg); fireToast(msg); }
+        if (msg && ownsDest()) { announce(dest, '', null, msg, mine[0]); fireToast(msg, ownsDest); }
         const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
         if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
         let next = '';
@@ -230,19 +252,13 @@
             // body reflects the request URL and would replace live page
             // markup with reflected output. A followed 3xx is another
             // URL's markup (a sign-in page), never the rows.
-            if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
+            if (!r.ok || r.redirected) throw 0;
             next = renewed(r);
             return r.text();
           })
           .then((html) => {
-            // The fresh rows are the server's order: the destination
-            // confirms them, and the record puts the source back.
-            dest.innerHTML = NS._html?.(html) ?? html;
-            if (next) dest.setAttribute(VERSION, next);
-            dest.__huiAck = rowsOf(dest);
-            dest.__huiOk = dest.__huiSeq;
+            if (!newerAck() && !(dest.__huiRefresh?.seq > mine[0])) dest.__huiRefresh = { seq: mine[0], html, next, msg };
             record(false);
-            if (!msg) announce(dest, 'data-hui-sortable-s-conflict-refreshed');
           }, () => fail(reverted));
       });
     }, () => fail('data-hui-sortable-s-reverted'));
@@ -257,9 +273,9 @@
   // with no kernel (a bare test page): the live region stays the
   // always-on surface, this is the one a sighted reader sees. Never
   // called with the generic copy.
-  function fireToast(msg) {
+  function fireToast(msg, ownsDest) {
     NS.loadModule?.('headless-feedback').then(() => {
-      NS.toast?.({ variant: 'danger', title: msg, ttl: 6000 });
+      if (ownsDest()) NS.toast?.({ variant: 'danger', title: msg, ttl: 6000 });
     }, () => {});
   }
 
@@ -280,66 +296,6 @@
     if (src && prev) prev.forEach((r) => src.appendChild(r));
   }
 
-  // ── Drag and drop ──────────────────────────────────────────────────
-  // dragPrev: the source list's rows at dragstart; dropped: a drop
-  // landed on a list this drag.
-  let dragSrc = null, dragPrev = null, dragSrcList = null, dropped = false;
-
-  document.addEventListener('dragstart', (ev) => {
-    const item = ev.target.closest?.('[data-hui-sortable-item]');
-    if (!item) return;
-    dragSrc = item;
-    dragSrcList = listOf(item);
-    dragPrev = rowsOf(dragSrcList);
-    dropped = false;
-    item.classList.add('is-dragging');
-    if (ev.dataTransfer) {
-      ev.dataTransfer.effectAllowed = 'move';
-      ev.dataTransfer.setData('text/plain', attr(item, 'data-hui-sort-key'));
-    }
-  });
-
-  // dropTarget: the list a drag over ev.target may land in, or null.
-  function dropTarget(ev) {
-    const t = ev.target.closest?.('[data-hui-sortable]');
-    const src = listOf(dragSrc);
-    return t && (t === src || canCross(t, src)) ? t : null;
-  }
-
-  document.addEventListener('dragover', (ev) => {
-    if (!dragSrc) return;
-    const overList = dropTarget(ev);
-    if (!overList) return;
-    ev.preventDefault();
-    const over = ev.target.closest('[data-hui-sortable-item]');
-    if (over === dragSrc) return;
-    if (over) {
-      const rect = over.getBoundingClientRect();
-      const after = (ev.clientY - rect.top) > rect.height / 2;
-      over.parentNode.insertBefore(dragSrc, after ? over.nextSibling : over);
-    } else {
-      // Empty column: no row to hit-test, the list itself takes it.
-      overList.appendChild(dragSrc);
-    }
-  });
-
-  // dragover moves the row live, so only a drop on a list keeps the
-  // move. Escape mid-drag, or a release anywhere else, fires dragend
-  // with no drop first, and the row goes back uncommitted.
-  document.addEventListener('drop', (ev) => {
-    if (!dragSrc || !dropTarget(ev)) return;
-    ev.preventDefault();
-    dropped = true;
-  });
-
-  document.addEventListener('dragend', () => {
-    if (!dragSrc) return;
-    dragSrc.classList.remove('is-dragging');
-    if (dropped) settle(dragSrc, dragSrcList, dragPrev);
-    else putBack(dragSrcList, dragPrev);
-    dragSrc = dragPrev = dragSrcList = null;
-  });
-
   // ── Keyboard ───────────────────────────────────────────────────────
   let kbGrab = null, kbPrev = null, kbSrcList = null; // kbPrev: the source list's rows at grab
 
@@ -347,7 +303,6 @@
   function kbEnd(commitIt) {
     const t = kbGrab;
     t.classList.remove('is-grabbed');
-    t.removeAttribute('aria-grabbed');
     if (commitIt) settle(t, kbSrcList, kbPrev);
     else putBack(kbSrcList, kbPrev);
     kbGrab = kbPrev = kbSrcList = null;
@@ -373,6 +328,9 @@
 
     if (ev.key === ' ' || ev.key === 'Spacebar') {
       ev.preventDefault();
+      // No grab starts under a held pointer drag: it would outlive the
+      // drop and its Escape would revert the committed move.
+      if (NS._sortable.dragging) return;
       if (kbGrab === t) { kbEnd(true); return; }
       // A grab still held on another row is cancelled first, so the
       // next drop commits only its own move.
@@ -381,7 +339,6 @@
       kbSrcList = listOf(t);
       kbPrev = rowsOf(kbSrcList);
       t.classList.add('is-grabbed');
-      t.setAttribute('aria-grabbed', 'true');
       announce(kbSrcList, 'data-hui-sortable-s-grabbed', { label: attr(t, 'aria-label') });
       return;
     }
@@ -407,7 +364,7 @@
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       ev.preventDefault();
       const list = listOf(t);
-      const cols = peers(list);
+      const cols = peers(list, t);
       const idx = cols.indexOf(list);
       if (idx < 0) return;
       // The columns run in document order along the inline axis: in a
@@ -427,6 +384,9 @@
   // per-root pass; the scanner exists because the kernel's contract
   // hands every inserted subtree to the module.
   function scan() {}
+  // The pointer drag (headless-sortabledrag, which requires this
+  // module) ends its drags through the same commit and announcements.
+  NS._sortable = { settle, canCross, announce, listOf, rowsOf, cancelGrab: () => kbGrab && kbEnd(false) };
   NS._moduleScanners = NS._moduleScanners || {};
   NS._moduleScanners[NAME] = scan;
 })();

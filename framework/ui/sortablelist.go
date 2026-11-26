@@ -91,7 +91,18 @@ func sortablelistCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   display: grid;
+  align-content: start;
   gap: var(--spacing-sm, 4px);
+  /* An empty column keeps a row's height, so a pointer can drop on it. */
+  min-block-size: var(--spacing-touch-target, 44px);
+  border-radius: var(--radii-md, 8px);
+}
+/* The drag marks where the row would land: a line in the gap above or
+   below a row, or an outline round a list with no other row. Borders
+   and outlines, so the marks survive forced colours. */
+[data-cui-comp="ui-sortablelist"].is-drop-target {
+  outline: var(--stroke-thick, 2px) dashed var(--color-primary, #18181B);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 :where([data-cui-comp="ui-sortablelist"]) .fui-sortablelist__item {
   display: flex;
@@ -106,6 +117,7 @@ func sortablelistCSS(_ style.Theme) string {
   cursor: default;
   user-select: none;
   min-block-size: var(--spacing-touch-target, 44px);
+  position: relative;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -119,8 +131,17 @@ func sortablelistCSS(_ style.Theme) string {
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
   opacity: var(--opacity-disabled, 0.5);
 }
-[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
-  border-top: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:is(.is-drop-before, .is-drop-after)::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(-1 * (var(--spacing-sm, 4px) + var(--stroke-thick, 2px)) / 2 - var(--stroke-thin, 1px));
+  border-block-start: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+  pointer-events: none;
+}
+[data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-after::before {
+  inset-block-start: auto;
+  inset-block-end: calc(-1 * (var(--spacing-sm, 4px) + var(--stroke-thick, 2px)) / 2 - var(--stroke-thin, 1px));
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__grip {
   display: inline-flex;
@@ -133,6 +154,9 @@ func sortablelistCSS(_ style.Theme) string {
   border: 0;
   color: var(--color-text-muted, #52525B);
   cursor: grab;
+  /* The grip alone is the drag handle: a touch there drags, a touch on
+     the rest of the row scrolls the page. */
+  touch-action: none;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:active .fui-sortablelist__grip {
   cursor: grabbing;

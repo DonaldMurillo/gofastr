@@ -125,3 +125,31 @@ func TestJSONViewerCSSColoursStringsAndSpacesColons(t *testing.T) {
 		t.Errorf("the colon rule is gone — the space after each colon rides its margin:\n%s", css)
 	}
 }
+
+// EllipsizeStrings cuts long strings in CSS, not on the server: the root
+// carries the modifier, the full value stays in the markup, and the
+// sheet clips the string span of a row with an ellipsis.
+func TestJSONViewerEllipsizeStringsKeepsTheFullValue(t *testing.T) {
+	long := strings.Repeat("abcdefghij", 30)
+	h := string(JSONViewer(JSONViewerConfig{Value: map[string]any{"token": long}, EllipsizeStrings: true}))
+	if !strings.Contains(h, "fui-json-viewer--ellipsis") {
+		t.Errorf("no ellipsis modifier on the root:\n%s", h)
+	}
+	if !strings.Contains(h, "&quot;"+long+"&quot;") {
+		t.Errorf("the full string is not in the markup")
+	}
+	if plain := string(JSONViewer(JSONViewerConfig{Value: "x"})); strings.Contains(plain, "fui-json-viewer--ellipsis") {
+		t.Errorf("the modifier is on without EllipsizeStrings")
+	}
+	css := jsonViewerCSS(style.Theme{})
+	at := strings.Index(css, `.fui-json-viewer--ellipsis .fui-json-viewer__item > .fui-json-viewer__str {`)
+	if at < 0 {
+		t.Fatalf("no ellipsis rule for the string span:\n%s", css)
+	}
+	rule := css[at : at+strings.IndexByte(css[at:], '}')]
+	for _, want := range []string{"text-overflow: ellipsis", "white-space: nowrap", "min-inline-size: 0"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the string span's ellipsis rule lacks %q:\n%s", want, rule)
+		}
+	}
+}

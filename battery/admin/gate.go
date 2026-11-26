@@ -117,13 +117,19 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 			status := b.authzStatus(r.Context())
 			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
 				handler.NoteSessionRefusal(r.Context())
-				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(loginNext(r)), http.StatusSeeOther)
+				http.Redirect(w, r, b.loginRedirectURL(loginNext(r)), http.StatusSeeOther)
 				return
 			}
 			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func (b *Battery) loginRedirectURL(next string) string {
+	return handler.WithQuery(b.cfg.LoginPath, func(q url.Values) {
+		q.Set("next", next)
 	})
 }
 

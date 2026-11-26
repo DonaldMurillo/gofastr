@@ -23,6 +23,9 @@ type CopyButtonConfig struct {
 	Label string
 	// CopiedLabel is the text shown briefly after success. Default "Copied".
 	CopiedLabel string
+	// FailedLabel is the text shown for a few seconds when the clipboard
+	// refuses the copy. Default "Not copied".
+	FailedLabel string
 	// IconOnly hides the visible label and keeps an accessible name.
 	IconOnly bool
 	// Icon names a registered icon drawn in place of the copy glyph, or before the label.
@@ -80,6 +83,10 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	copied := cfg.CopiedLabel
 	if copied == "" {
 		copied = i18nui.CopyCopied.Text(ctx)
+	}
+	failedLabel := cfg.FailedLabel
+	if failedLabel == "" {
+		failedLabel = i18nui.CopyNotCopied.Text(ctx)
 	}
 	announce := cfg.AnnounceText
 	if announce == "" {
@@ -160,7 +167,11 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 			html.Span(html.TextConfig{
 				Class:      "fui-copy-btn__copied",
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text(copied)))
+			}, render.Text(copied)),
+			html.Span(html.TextConfig{
+				Class:      "fui-copy-btn__failed",
+				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
+			}, render.Text(failedLabel)))
 	} else {
 		inner = []render.HTML{
 			render.Raw(`<span class="fui-copy-btn__icon" aria-hidden="true">⧉</span>`),
@@ -258,13 +269,28 @@ func copyButtonCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-[data-cui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__copied { display: none; }
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__copied,
+[data-cui-comp="ui-copy-btn"] .fui-copy-btn .fui-copy-btn__failed { display: none; }
 /* Success tint mixes the theme's own success color over the surface, so it
    adapts to light and dark schemes alike (--color-success-bg was never a real
    token; its light fallback always applied). */
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in oklab, var(--color-success, #166534) 14%, transparent); border-color: var(--color-success, #166534); }
-[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
+/* The label leaves the eye but not the accessible name while the
+   copied or failed word shows: that word is aria-hidden, so hiding
+   the label with display none left the button unnamed. */
+[data-cui-comp="ui-copy-btn"]:is([data-hui-copy-state="done"], [data-hui-copy-state="failed"]) .fui-copy-btn .fui-copy-btn__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #166534); }
+/* A refused clipboard is shown, not only announced: the danger tint and,
+   on a labelled button, the short failed label for the module's window. */
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="failed"] .fui-copy-btn { background: color-mix(in oklab, var(--color-danger, #B91C1C) 12%, transparent); border-color: var(--color-danger, #B91C1C); }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="failed"] .fui-copy-btn .fui-copy-btn__failed { display: inline; color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5); }
 /* Inline: the knobs set on the button itself, so the base rules draw
    it quiet; WCAG 2.5.8's 24px floor stands in for the touch target. */

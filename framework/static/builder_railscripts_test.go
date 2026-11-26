@@ -7,10 +7,61 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
+
+func TestBuildExportsOfflineRailScript(t *testing.T) {
+	const src = "/offline-help.js"
+	const offline = "/__gofastr/pwa/offline"
+	for _, mode := range []string{"generated", "supplied-offline", "supplied-both", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			a := coreapp.NewApp("Rail")
+			a.Register("/", &homeScreen{}, nil)
+			var opts []uihost.Option
+			if mode != "disabled" {
+				opts = append(opts, uihost.WithPWA(uihost.PWAConfig{}))
+			}
+			host := uihost.New(a, opts...)
+			if err := host.RegisterDocumentScript(src, func(path string) bool { return path == offline }); err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(mode, "supplied-") {
+				source := fstest.MapFS{offline[1:] + "/index.html": {Data: []byte("custom fallback")}}
+				if mode == "supplied-both" {
+					source["service-worker.js"] = &fstest.MapFile{Data: []byte("// custom worker")}
+				}
+				host.SetStaticFS(source)
+			}
+			mux := http.NewServeMux()
+			mux.Handle("GET "+src, uihost.ScriptHandler([]byte("window.offlineHelp = true;")))
+			out := t.TempDir()
+			if _, err := (&Builder{Host: host, OutDir: out, BasePath: "/site", Handler: mux}).Build(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "disabled" || mode == "supplied-both" {
+				if _, err := os.Stat(filepath.Join(out, src[1:])); !os.IsNotExist(err) {
+					t.Fatalf("unused offline script was exported: stat error %v", err)
+				}
+				return
+			}
+			if mode == "generated" {
+				if page := readOut(t, out, offline[1:]+"/index.html"); !strings.Contains(page, `src="/site`+src+`"`) {
+					t.Fatal("offline page did not load the scoped script")
+				}
+			}
+			sw := readOut(t, out, "service-worker.js")
+			_, precache, _ := strings.Cut(sw, "var PRECACHE = ")
+			precache, _, _ = strings.Cut(precache, ";\n")
+			if !strings.Contains(precache, `"/site`+src+`"`) {
+				t.Fatal("the worker did not require the offline script")
+			}
+			readOut(t, out, src[1:])
+		})
+	}
+}
 
 // A script the app serves from its own router (WithExtraScripts plus a
 // route) is on every page, so the export must ship it.

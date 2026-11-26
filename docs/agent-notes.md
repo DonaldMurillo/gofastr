@@ -241,13 +241,12 @@
 - Next time: test the dispatch seam for duplicate firings, not merely a repeated-hour Next result.
 - Status: active, rejected candidate; not counted
 
-## 2026-11-07 - Validate sortable conflict races against version semantics
-- Scope: framework/headless/sortablelist.js, review adjudication
-- Trigger: a held conflict refresh replaces a newer accepted order in a fresh full-module keyboard-event adapter.
-- Approach: retain no-newer and refresh-before-newer controls; verify a supported server could accept the newer commit before counting the stale-response symptom. Strict unchanged-token optimistic locking is an explicit objection.
-- Evidence: `/tmp/gofastr-coordinator-sortable/observation.cjs`; fake DOM/fetch, no real-server or browser claim. Scope 29 recheck pending; browser-free headless package selection passes.
-- Next time: exercise conflict GET completion interleaved with newer commits, and distinguish a reproducible adapter outcome from a supported end-to-end contract violation.
-- Status: pending validation, not counted or fixed
+## 2026-11-25 - Check conflict refreshes against both outcomes of a newer move
+- Scope: framework/headless/sortablelist.js
+- Trigger: a held conflict refresh can overwrite a newer save or be discarded before the newer move fails.
+- Approach: defer conflict rows and their version while the newer move is pending. On cross-list failure, restore the moved node to the source before replacing the source's rows.
+- Evidence: `TestSortableIgnoresLateConflictRefresh` in [sortablelist_version_e2e_test.go](../framework/headless/sortablelist_version_e2e_test.go) controls response order with channels and checks both order and version after recovery.
+- Next time: exercise successful and failed newer moves, release the conflict GET on both sides of a failure, and check both columns for a cross-list rollback.
 
 ## 2026-11-07 - Renew sortable tokens with the accepted server state
 - Scope: framework/headless/sortablelist.js, ui.RenewSortableVersion

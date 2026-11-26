@@ -7,8 +7,13 @@ import (
 
 func ensureArticleSchema(schema []seo.Thing, meta app.ArticleMeta) []seo.Thing {
 	for _, s := range schema {
-		if _, ok := s.(seo.Article); ok {
+		switch a := s.(type) {
+		case seo.Article:
 			return schema
+		case *seo.Article:
+			if a != nil {
+				return schema
+			}
 		}
 	}
 	a := seo.NewArticle()

@@ -71,6 +71,11 @@ invariants:
     rule: Carousel clamps VisiblePerView into 1 to 8, so the emitted fui-carousel--cols-N class always has a rule in its sheet.
     enforced_by:
       - test: framework/ui.TestCarouselVisiblePerViewClampedAndApplied
+  - id: carousel-controls-need-script
+    rule: The carousel sheet hides the arrows, the dots and the rotation button under scripting none and closes the arrows' gutters, gives every control and the track touch-action manipulation, dims an aria-disabled arrow, and draws the rotation glyph from aria-pressed at the end of the dot row.
+    enforced_by:
+      - test: framework/ui.TestCarouselCSSControlsContract
+      - test: framework/ui.TestCarouselAutoRotateDrawsThePauseButton
   - id: carousel-ids-distinct-without-scope
     rule: A Carousel with no ID rendered outside an id scope takes a process-unique id, so two identical carousels never share one.
     enforced_by:
@@ -124,10 +129,10 @@ invariants:
       - test: framework/ui.TestHighlightPlainAndEscaping
       - test: framework/ui.TestSweepMediaHighlightDropsTrailingBlankLine
   - id: code-tabs-css-covers-every-panel
-    rule: The code-tabs sheet holds an active-tab and a visible-panel rule for every index up to headless.TabsMaxPanels.
+    rule: The code-tabs sheet holds an active-tab rule for every index up to headless.TabsMaxPanels and sets no panel's display, which the hidden attribute owns.
     enforced_by:
       - test: framework/ui.TestSweepMediaCodeTabsCSSCoversEveryPanelIndex
-      - test: framework/ui.TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab
+      - test: framework/ui.TestCodeTabsCSSLeavesPanelsToHiddenAndUnderlinesTheActiveTab
   - id: image-urls-pass-the-image-policy
     rule: OptimizedImage and PipelineImage replace a Src or Fallback the image policy refuses with /__gofastr/blank.png, drop a refused source, and keep an inline raster data URI.
     enforced_by:
@@ -250,6 +255,10 @@ invariants:
     rule: Thumbnail returns "" for an empty Src or one the image policy refuses.
     enforced_by:
       - test: framework/ui.TestThumbnailRefusesUnsafeSrc
+  - id: collapsible-chevron-motion-is-opt-in
+    rule: The collapsible chevron's turn transition sits only inside a prefers-reduced-motion no-preference block, so a reader who asked for reduced motion sees it flip without animating.
+    enforced_by:
+      - test: framework/ui.TestCollapsibleChevronTurnsOnlyWithoutReducedMotion
 decisions:
   - id: placeholder-is-an-img
     date: 2026-11-16
@@ -314,6 +323,16 @@ decisions:
       - option: Rely on the <ul> implicit role.
         why: list-style none drops list semantics in WebKit and VoiceOver, losing the depth a reader hears.
     upholds: [comment-thread-list-roles]
+  - id: carousel-controls-hidden-without-script
+    date: 2026-11-23
+    status: accepted
+    decision: The sheet hides the carousel's buttons with a scripting none media query, so a page with script on draws them at first paint.
+    rejected:
+      - option: Render the controls hidden and have the module show them.
+        why: Every carousel would shift its layout once the module loads.
+      - option: Draw them with no script too.
+        why: Nothing answers them there, so they would promise a step that never comes.
+    upholds: [carousel-controls-need-script]
   - id: carousel-autoid-outside-scope
     date: 2026-11-16
     status: accepted
@@ -352,3 +371,13 @@ decisions:
     rejected:
       - option: One flat gap between every element.
         why: Headings would not bind to the text they introduce.
+  - id: lightbox-image-owns-its-gestures
+    date: 2026-11-23
+    status: accepted
+    decision: The lightbox's full image keeps touch-action none at every zoom, so the pinch-zoom module's pointer events see a pinch from its first finger.
+    rejected:
+      - option: touch-action pan-x pan-y while the image is at 1x.
+        why: A pinch begins as a scroll gesture in the browser, which would cancel the pointers and break pinch-zoom before the module can scale.
+      - option: Pan the zoomed image in a native scroll container.
+        why: It is the better model, but it replaces the pinch, pan and double-tap module and can only be judged on a real touch device.
+    revisit_if: The lightbox's zoom is rebuilt as a scroll container with native panning.

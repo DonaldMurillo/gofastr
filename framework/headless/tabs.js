@@ -3,9 +3,11 @@
 // the tab, data-active mirrored on the wrapper, CSS lights the panel);
 // the module owns the keyboard contract (one tab is roving-tabindex 0;
 // ArrowLeft/ArrowRight are RTL-aware and select on focus; Home/End
-// jump; Tab leaves the strip), the data-state mirror for ports, and
-// the vacate stash's restore-on-first-show with live-node moves after
-// that. It replaces the retired core-ui/runtime tabs module.
+// jump; Tab leaves the strip), the panels' hidden="until-found" (find-
+// in-page or a fragment link that reveals a panel selects its tab),
+// the data-state mirror for ports, and the vacate stash's restore-on-
+// first-show with live-node moves after that. It replaces the retired
+// core-ui/runtime tabs module.
 (function () {
   'use strict';
   const NAME = 'headless-tabs';
@@ -62,9 +64,37 @@
     }
   }
 
+  // syncPanels shows the selected panel and gives every other one
+  // hidden="until-found" and aria-hidden, out of the tab order: the browser keeps its
+  // content findable and reveals it on a match. A disabled tab's panel
+  // takes plain hidden, so a search cannot open what a click cannot.
+  function syncPanels(wrapper) {
+    const idx = String(parseInt(wrapper.getAttribute('data-active') || '0', 10));
+    const disabled = new Set();
+    for (const t of own(wrapper, '[role="tab"]')) {
+      if (t.getAttribute('aria-disabled') === 'true') disabled.add(t.getAttribute('data-cui-tab-index'));
+    }
+    for (const panel of own(wrapper, '[role="tabpanel"]')) {
+      const i = panel.getAttribute('data-cui-tab-index');
+      const hidden = i === idx ? null : (disabled.has(i) ? '' : 'until-found');
+      if (hidden === null) {
+        if (panel.hasAttribute('hidden')) panel.removeAttribute('hidden');
+        if (panel.hasAttribute('aria-hidden')) panel.removeAttribute('aria-hidden');
+      } else {
+        if (panel.getAttribute('hidden') !== hidden) panel.setAttribute('hidden', hidden);
+        // Chromium keeps an until-found panel in the accessibility tree
+        // as an empty tabpanel; aria-hidden takes it out.
+        if (panel.getAttribute('aria-hidden') !== 'true') panel.setAttribute('aria-hidden', 'true');
+      }
+      const ti = i === idx ? '0' : '-1';
+      if (panel.getAttribute('tabindex') !== ti) panel.setAttribute('tabindex', ti);
+    }
+  }
+
   function apply(wrapper) {
     const idx = parseInt(wrapper.getAttribute('data-active') || '0', 10);
     syncTabs(wrapper);
+    syncPanels(wrapper);
     // The kernel's data-active mirror (core-ui/runtime frag/signals.js)
     // writes aria-selected on every [role=tab][data-cui-tab-index]
     // under the wrapper whose signal changed, nested strips included:
@@ -120,10 +150,39 @@
     NS.setSignal(name, parseInt(w.getAttribute('data-active') || '0', 10) || 0);
   }
 
+  // adoptRevealed selects the panel the browser revealed before this
+  // module was listening: a fragment URL on first load or a search
+  // that ran before the module arrived fires beforematch with nobody
+  // listening, drops the panel's hidden, and apply() would hide it
+  // again. Every inactive panel ships hidden with tabindex -1, and the
+  // browser's reveal drops only the hidden, so a panel without it but
+  // still at -1 is the one the reader was sent to. The panel the server
+  // painted active (tabindex 0) is not: a tab clicked before this module
+  // arrived moved data-active away from it, and that click stands.
+  function adoptRevealed(w) {
+    const idx = String(parseInt(w.getAttribute('data-active') || '0', 10));
+    const tabs = own(w, '[role="tab"]');
+    for (const panel of own(w, '[role="tabpanel"]')) {
+      const i = panel.getAttribute('data-cui-tab-index');
+      if (i === idx || panel.hasAttribute('hidden') || panel.getAttribute('tabindex') !== '-1') continue;
+      const tab = tabs.find(function (t) { return t.getAttribute('data-cui-tab-index') === i; });
+      if (!tab || tab.getAttribute('aria-disabled') === 'true') continue;
+      selectIndex(w, i);
+      return;
+    }
+  }
+
+  function selectIndex(wrapper, i) {
+    const name = wrapper.getAttribute('data-cui-signal');
+    if (name && typeof NS.setSignal === 'function') NS.setSignal(name, parseInt(i, 10));
+    if (wrapper.getAttribute('data-active') !== i) wrapper.setAttribute('data-active', i);
+  }
+
   function wire(w) {
     if (wired.has(w) || !w.isConnected) return;
     wired.add(w);
     settleSignal(w);
+    adoptRevealed(w);
     const obs = new MutationObserver(function () { apply(w); });
     obs.observe(w, { attributes: true, attributeFilter: ['data-active'] });
     apply(w);
@@ -188,6 +247,23 @@
       }
     }
   });
+
+  // The browser fires beforematch on a hidden="until-found" panel when
+  // find-in-page or a fragment link is about to reveal it, then drops
+  // the attribute itself. Selecting the panel's tab keeps the strip,
+  // the signal and the other panels in step with what is now shown.
+  document.addEventListener('beforematch', function (e) {
+    const panel = e.target;
+    if (!panel || !panel.matches || !panel.matches('[data-hui-tabs] [role="tabpanel"]')) return;
+    const wrapper = panel.closest('[data-hui-tabs]');
+    if (!wrapper) return;
+    const i = panel.getAttribute('data-cui-tab-index');
+    const tab = own(wrapper, '[role="tab"]').find(function (t) {
+      return t.getAttribute('data-cui-tab-index') === i;
+    });
+    if (!tab || tab.getAttribute('aria-disabled') === 'true') return;
+    selectIndex(wrapper, i);
+  }, true);
 
   // Focus follows the roving tabindex: focusing a tab with the arrows
   // updates it; Tab leaves naturally (nothing to do).

@@ -27,6 +27,11 @@ func (s *paramScreen) Render() render.HTML           { return render.Text("P[" +
 // ONE group at /projects/{project} with its own layer.
 func paramKeyApp(t *testing.T) *app.App {
 	t.Helper()
+	return paramSegmentApp(t, "{project}")
+}
+
+func paramSegmentApp(t *testing.T, segment string) *app.App {
+	t.Helper()
 	a := app.NewApp("t")
 	shell := app.NewLayout("shell", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		return l.Primary()
@@ -35,9 +40,10 @@ func paramKeyApp(t *testing.T) *app.App {
 		return l.Primary()
 	})
 	a.SetDefaultLayout(shell)
-	g := app.NewScreenGroup("/projects/{project}", project)
-	g.Screen(app.NewScreen("/projects/{project}", &paramScreen{}), nil)
-	g.Screen(app.NewScreen("/projects/{project}/issues/{n}", &paramScreen{}), nil)
+	prefix := "/projects/" + segment
+	g := app.NewScreenGroup(prefix, project)
+	g.Screen(app.NewScreen(prefix, &paramScreen{}), nil)
+	g.Screen(app.NewScreen("issues/{n}", &paramScreen{}), nil)
 	a.Router.ScreenGroup(g)
 	return a
 }
@@ -95,5 +101,28 @@ func TestParamGroupLayerKeyedByResolvedValue(t *testing.T) {
 	}
 	if !strings.Contains(string(cross.HTML), `data-cui-layout-key="g:/projects/search/:project"`) {
 		t.Errorf("the re-rendered layer carries the new value's key:\n%s", cross.HTML)
+	}
+}
+
+func TestTypedGroupKeysFollowParams(t *testing.T) {
+	for _, segment := range []string{"{project:int}", ":project:int"} {
+		t.Run(segment, func(t *testing.T) {
+			a := paramSegmentApp(t, segment)
+			ctx := context.Background()
+			same, err := a.RenderPartialFromResult(ctx, "/projects/1/issues/42", "/projects/1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if same.SwapLayer != "g:/projects/1/:project" {
+				t.Errorf("same project swapped at %q, want its resolved group key", same.SwapLayer)
+			}
+			cross, err := a.RenderPartialFromResult(ctx, "/projects/2/issues/42", "/projects/1/issues/42")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cross.SwapLayer != "l:shell" || !strings.Contains(string(cross.HTML), `data-cui-layout-key="g:/projects/2/:project"`) {
+				t.Errorf("cross-project swap = %q, want l:shell and the new group's resolved key", cross.SwapLayer)
+			}
+		})
 	}
 }

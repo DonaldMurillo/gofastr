@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"iter"
 	"log"
 	"log/slog"
 	"mime"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/mediatype"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
@@ -583,7 +583,7 @@ type acceptPreferences struct {
 func readAcceptPreferences(r *http.Request) acceptPreferences {
 	var prefs acceptPreferences
 	for _, field := range r.Header.Values("Accept") {
-		for mediaRange := range splitAcceptRanges(field) {
+		for mediaRange := range mediatype.AcceptRanges(field) {
 			mediaType, params, err := mime.ParseMediaType(mediaRange)
 			if err != nil {
 				continue
@@ -644,31 +644,6 @@ func (p acceptPreferences) prefersProblemJSON(markdownAvailable bool) bool {
 
 func acceptsMarkdown(r *http.Request) bool {
 	return readAcceptPreferences(r).prefersMarkdown()
-}
-
-func splitAcceptRanges(field string) iter.Seq[string] {
-	return func(yield func(string) bool) {
-		start, quoted := 0, false
-		for i := 0; i < len(field); i++ {
-			switch field[i] {
-			case '\\':
-				if quoted {
-					i++
-				}
-			case '"':
-				quoted = !quoted
-			case ',':
-				if quoted {
-					continue
-				}
-				if !yield(field[start:i]) {
-					return
-				}
-				start = i + 1
-			}
-		}
-		yield(field[start:])
-	}
 }
 
 func acceptsProblemJSON(r *http.Request) bool {
@@ -751,10 +726,15 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	}
 	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
+	if res.Err != nil {
+		setPageMarkdownHeaders(w)
+		ds.servePageFailure(w, r, routePath(r), res.Err)
+		return true
+	}
 	if !ok {
 		return false
 	}
-	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
+	status := DocStatus(res.Component, recorded())
 	switch res.Decision.Kind {
 	case app.DecisionRedirect:
 		w.Header().Add("Vary", "Accept")

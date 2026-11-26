@@ -16,20 +16,14 @@ type aboutLinkComp struct{}
 
 func (aboutLinkComp) Render() render.HTML { return `<a href="/about">about</a>` }
 
-// injectLinkComp registered by value fails DI: the doc falls back.
+// injectLinkComp registered by value fails DI.
 type injectLinkComp struct {
 	Svc fmt.Stringer `inject:""`
 }
 
 func (injectLinkComp) Render() render.HTML { return `<a href="/about">about</a>` }
 
-// The pattern doc stands in for a page whose per-URL render failed and
-// is served by ScreenLLMMDHandler: under /es/ both linked the English
-// pages, while the per-URL doc and the HTML link the Spanish ones.
-func TestPatternDocFollowsLocalePrefix(t *testing.T) {
-	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
-	es := i18n.WithPathLocale(context.Background(), set, "es")
-
+func TestConcreteMarkdownReportsFailure(t *testing.T) {
 	a := NewApp("x")
 	down := NewKey[string]("down")
 	g := NewScreenGroup("/f", nil)
@@ -37,15 +31,20 @@ func TestPatternDocFollowsLocalePrefix(t *testing.T) {
 	g.Requires(down)
 	g.Screen(NewScreen("/f", aboutLinkComp{}), nil)
 	a.Router.ScreenGroup(g)
-	res, ok := ScreenLLMMDForPath(es, a, "/f")
-	if !ok || !strings.Contains(res.MD, "(/es/about)") {
-		t.Errorf("fallback doc: ok=%v, want (/es/about):\n%s", ok, res.MD)
-	}
-
 	a.RegisterScreen(NewScreen("/di", injectLinkComp{}), nil)
-	if res, ok := ScreenLLMMDForPath(es, a, "/di"); !ok || !strings.Contains(res.MD, "(/es/about)") {
-		t.Errorf("DI fallback doc: ok=%v, want (/es/about):\n%s", ok, res.MD)
+
+	for _, path := range []string{"/f", "/di"} {
+		res, ok := ScreenLLMMDForPath(context.Background(), a, path)
+		if !ok || res.Err == nil || res.Allowed || res.MD != "" {
+			t.Errorf("%s: want a failure without a document, got %+v, resolved=%t", path, res, ok)
+		}
 	}
+}
+
+func TestPatternDocFollowsLocalePrefix(t *testing.T) {
+	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
+	es := i18n.WithPathLocale(context.Background(), set, "es")
+	a := NewApp("x")
 
 	h := ScreenLLMMDHandler(a, NewScreen("/h", aboutLinkComp{}))
 	for ctx, want := range map[context.Context]string{es: "(/es/about)", context.Background(): "(/about)"} {

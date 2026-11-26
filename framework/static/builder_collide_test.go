@@ -2,12 +2,57 @@ package static
 
 import (
 	"context"
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
+
+func TestStaticSourceKeepsBuiltAssets(t *testing.T) {
+	const index = "search/index.json"
+	const stale = "stale copy"
+	for _, kind := range []string{"disk", "embedded", "extra"} {
+		t.Run(kind, func(t *testing.T) {
+			source := fstest.MapFS{
+				index:                  {Data: []byte(stale)},
+				"llm-pages.md":         {Data: []byte(stale)},
+				"__gofastr/runtime.js": {Data: []byte(stale)},
+			}
+			a := coreapp.NewApp("t")
+			a.Register("/", &homeScreen{}, nil)
+			host := uihost.New(a)
+			b := &Builder{Host: host, OutDir: t.TempDir(), Contributors: []Contributor{fileContributor{"/" + index}}}
+			switch kind {
+			case "disk":
+				dir := t.TempDir()
+				if err := os.CopyFS(dir, source); err != nil {
+					t.Fatal(err)
+				}
+				host = uihost.New(a, uihost.WithStaticDir(dir))
+				b.Host = host
+			case "embedded":
+				host.SetStaticFS(source)
+			case "extra":
+				b.ExtraDirs = map[string]fs.FS{"/": source}
+			}
+			if _, err := b.Build(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := readOut(t, b.OutDir, index); got != "ASSET" {
+				t.Errorf("contributor asset = %q, want ASSET", got)
+			}
+			for _, rel := range []string{"llm-pages.md", "__gofastr/runtime.js"} {
+				if readOut(t, b.OutDir, rel) == stale {
+					t.Errorf("%s was overwritten by the source copy", rel)
+				}
+			}
+		})
+	}
+}
 
 // slashProducts exports one record whose key holds a slash: it links as
 // /products/a%2Fb and lands on products/a/b/index.html.

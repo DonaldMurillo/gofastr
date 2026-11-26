@@ -66,22 +66,25 @@ func TestCodeTabsExtraAttrsOnRoot(t *testing.T) {
 	}
 }
 
-func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
+func TestCodeTabsCSSLeavesPanelsToHiddenAndUnderlinesTheActiveTab(t *testing.T) {
 	css := codeTabsCSS(style.Theme{})
-	// The retired tabs pattern's contract, carried onto the classes
-	// headless.Tabs renders: every panel hidden except the active
-	// index, the strip bordered, the active tab underlined. Without
-	// the per-index pair all panels stack (review item 19).
+	// The strip is ruled and scrolls rather than wraps, the active tab
+	// is underlined. Panel visibility is headless.Tabs' hidden
+	// attribute alone: a display rule on the panel would beat
+	// hidden="until-found" and stop find-in-page reaching it.
 	for _, want := range []string{
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {`,
-		`border-bottom: var(--stroke-thin, 1px) solid var(--color-border`,
-		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none;`,
-		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="0"] .fui-code-tabs__panel[data-cui-tab-index="0"]{display:block}`,
+		`flex-wrap: nowrap;`,
+		`overflow-x: auto;`,
+		`box-shadow: inset 0 calc(-1 * var(--stroke-thin, 1px)) 0 var(--color-border`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="1"] .fui-code-tabs__tab[data-cui-tab-index="1"]{color:var(--color-primary`,
 	} {
 		if !strings.Contains(css, want) {
-			t.Errorf("codeTabsCSS lost the rule %q — the strip or the panel visibility regressed:\n%s", want, css)
+			t.Errorf("codeTabsCSS lost the rule %q — the strip regressed:\n%s", want, css)
 		}
+	}
+	if strings.Contains(css, "fui-code-tabs__panel { display") || strings.Contains(css, "fui-code-tabs__panel[data-cui-tab-index") {
+		t.Errorf("codeTabsCSS sets a panel's display; the hidden attribute owns panel visibility:\n%s", css)
 	}
 }
 

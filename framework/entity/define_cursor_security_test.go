@@ -117,6 +117,23 @@ func TestCursorNonNullColumnsDefine(t *testing.T) {
 	}
 }
 
+func TestCursorRejectsJSONColumns(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		page PaginationConfig
+	}{
+		{"single", PaginationConfig{CursorField: "metadata"}},
+		{"composite", PaginationConfig{CursorFields: []string{"created_at", "metadata"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expectDefinePanic(t, "cursor field \"metadata\" is JSON", EntityConfig{
+				Fields:     []schema.Field{{Name: "metadata", Type: schema.JSON, Required: true}},
+				Pagination: &tc.page,
+			})
+		})
+	}
+}
+
 // Like SearchFields and ReadScope, CursorField must name a declared column.
 func TestCursorFieldUndeclaredPanics(t *testing.T) {
 	expectDefinePanic(t, "is not a declared field", EntityConfig{

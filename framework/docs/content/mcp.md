@@ -70,7 +70,7 @@ srv.RegisterTool(
 )
 ```
 
-- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
+- **Schema enforcement:** `tools/call` and `CallTool` validate `arguments` against `inputSchema` (`type`, `required`, `enum`, `items`, `additionalProperties`) before calling your handler; opt out with `WithLaxArgs()`. Omitted `arguments` reach the handler as a nil map; `"arguments": null`, or any value that is not an object, answers `-32602` before the tool is looked up. Integers past ±2^53 arrive as `json.Number` so IDs aren't rounded.
 - **Return values:** `mcp.ToolResult` (explicit content blocks and/or `Structured`, plus `IsError: true` for model-visible tool errors), `mcp.ImageResult`, `mcp.Content` / `[]mcp.Content` (`TextContent`, `ImageContent`, `AudioContent`, `ResourceContent`), `string`, or any JSON-marshalable value.
 - **Errors:** `*RPCError` passes through verbatim; 4xx `*handler.Error` becomes `-32602` with `code`, `reason`, and `fields` in `data`; plain errors, 5xx errors, and panics are logged server-side and answered with a generic `"internal tool error"`.
 - **Options:** `WithOutputSchema(schema)`, `WithToolMeta(meta)`, `WithToolGate(gate)`, `WithLaxArgs()`, `WithAnnotations(a)`.
@@ -103,6 +103,7 @@ srv.RegisterTool("generate_barcode", "Generate a barcode image",
 ```
 
 - `SetAnnotationWarnings(true)` (enabled automatically in `gofastr dev`) warns once per non-dev-implied tool missing `readOnlyHint`, `destructiveHint`, or `openWorldHint`.
+- Generated entity item tools (`_get`, `_update`, `_delete`, transitions) take the record key as `id`. A composite key takes one argument per key column, named by its wire name, and so does a single key column other than `id` when another field is called `id`, so `_update` can still write that field.
 - Generated entity CRUD tools set annotations automatically: `_list`/`_get` are read-only + idempotent; `_create` is non-destructive; `_update`/`_delete` are destructive + idempotent; state transitions are destructive + non-idempotent. Set custom endpoint hints via `entity.Endpoint.MCPAnnotations` and app hints via `AppConfig.Annotations`.
 
 ### Request `_meta`

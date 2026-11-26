@@ -15,7 +15,7 @@ import (
 // plain Enter afterwards still submits.
 func TestSubmitOnEnterSkipsComposing(t *testing.T) {
 	page := `<!doctype html><html><head><title>ime</title></head><body>
-<form id="f" data-cui-submit-on-enter><textarea id="ta">きょう</textarea></form>
+<form id="f" data-cui-submit-on-enter><textarea id="ta" name="requestSubmit">きょう</textarea></form>
 <script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, nil)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))

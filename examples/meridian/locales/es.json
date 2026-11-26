@@ -440,6 +440,7 @@
       "assignRefused": "No puedes asignar un rol superior al tuyo.",
       "attention": "Requiere atención",
       "attentionClear": "Nada requiere atención.",
+      "attentionIncomplete": "No se pudieron revisar todas las vistas vigiladas.",
       "attentionList": "{{entity}} · {{view}}",
       "audit": "Registro de auditoría",
       "auditAnyEntity": "Cualquier entidad",
@@ -578,6 +579,7 @@
       "queueEmptyDesc": "Ningún trabajo coincide con este filtro.",
       "queueFailed": "Fallidos",
       "queueLoadFailed": "No se pudieron cargar los trabajos. Revisa los registros del servidor.",
+      "queueCountsFailed": "Los recuentos de trabajos y la navegación entre páginas no están disponibles.",
       "queuePending": "Pendientes",
       "queueStatus": "Estado",
       "queueSub": "Trabajos en segundo plano. Los fallidos agotaron sus reintentos y esperan una repetición.",
@@ -585,6 +587,7 @@
       "refused": "No puedes hacer eso.",
       "replay": "Repetir",
       "replayAll": "Repetir {{n}} fallidos",
+      "replayAllBounded": "¿Repetir {{n}} trabajos fallidos? Quedarán más trabajos fallidos.",
       "replayAllConfirm": "¿Repetir todos los trabajos fallidos?",
       "replayAllNothing": "No se volvió a poner en cola ningún trabajo fallido.",
       "replayDuplicate": "Ya hay en cola un trabajo más reciente con la misma clave única.",
@@ -673,6 +676,7 @@
       "goToSlide": "Ir a la diapositiva {{n}}",
       "next": "Diapositiva siguiente",
       "pagination": "Paginación de diapositivas",
+      "pause": "Pausar diapositivas",
       "previous": "Diapositiva anterior",
       "role": "carrusel",
       "slide": "Diapositiva {{n}} de {{total}}",
@@ -693,6 +697,7 @@
       "copyOf": "copiar {{what}}",
       "langSource": "código {{language}}",
       "lines": "{{n}} líneas",
+      "notCopied": "no copiado",
       "source": "código fuente"
     },
     "color": {
@@ -732,6 +737,7 @@
       "copy": "Copiar",
       "failed": "No se pudo copiar al portapapeles",
       "link": "Copiar enlace",
+      "notCopied": "No copiado",
       "status": "Copiado: {{name}}",
       "toClipboard": "Copiar al portapapeles"
     },

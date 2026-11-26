@@ -35,6 +35,20 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
     applies:
       - core-ui/app/router.go
+  - id: form-relation-keys-stay-exact
+    rule: A generated entity form reads its relation options through the SDK's parseJSON source (jsParseJSON), so an integer key past 2^53 keeps the digits the server sent.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestEntityFormRelationKeepsBigIntKey
+  - id: added-screens-use-the-project-api
+    rule: Screens generate app --add renders post to, read from and invalidate on the project's API prefix, and their auth forms post to the project's auth base path (both AppSpec.RouteApp), not the fragment's empty app section.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenUsesProjectAPIPrefix
+  - id: added-screens-mount-through-the-project-shell
+    rule: A screen generate app --add renders takes the layout, guest redirect, home and login route the project's generated app.go and screens already use (AppSpec.ProjectShell), so its file matches a full generate of the project with the screen in it; one that would mount through an authPolicy or marketingLayout no Go file of the project declares is refused, and a helper declared outside app.go counts.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddedScreenMatchesFullGenerate
+      - test: cmd/gofastr/internal/appgen.TestAddRefusesUndeclaredShellHelper
+      - test: cmd/gofastr/internal/appgen.TestAddFindsShellHelperOutsideAppGo
   - id: add-preserves-distinct-mounted-routes
     rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
     enforced_by:

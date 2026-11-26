@@ -127,21 +127,22 @@ func NeedsSameSiteHop(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "" && !r.URL.Query().Has(SameSiteHopParam)
 }
 
-// SameSiteHopTarget returns target with SameSiteHopParam added when r
-// carried no Sec-Fetch-Site and target lacks it. The marker is no
-// credential.
+// SameSiteHopTarget adds SameSiteHopParam in the query, before any fragment,
+// when r carried no Sec-Fetch-Site and the target query lacks the marker.
+// The marker is no credential.
 func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target
 	}
-	path, query, _ := strings.Cut(target, "?")
+	beforeFragment, fragment := splitFragment(target)
+	path, query, _ := strings.Cut(beforeFragment, "?")
 	if values, err := url.ParseQuery(query); err == nil && values.Has(SameSiteHopParam) {
 		return target
 	}
 	if query == "" {
-		return path + "?" + SameSiteHopParam + "=1"
+		return path + "?" + SameSiteHopParam + "=1" + fragment
 	}
-	return target + "&" + SameSiteHopParam + "=1"
+	return beforeFragment + "&" + SameSiteHopParam + "=1" + fragment
 }
 
 type sessionRefusalKey struct{}

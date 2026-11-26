@@ -151,7 +151,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Fetch the pull request base (affected scope)
         if: github.event_name == 'pull_request'
@@ -159,7 +159,7 @@ jobs:
 
       - name: Go module + build/test cache + coverage manifests (per-SHA)
         id: go-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           # Restored BEFORE Set up Go, here and in the two restore-only
           # steps below. setup-go installs the go.mod `go` version, and its
@@ -198,10 +198,10 @@ jobs:
         run: scripts/go-cache-prune.sh age
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          # setup-go's built-in cache keys on go.sum alone: the entry is
+          # setup-go's built-in cache keys on go.mod alone: the entry is
           # saved once per dependency bump, then restored read-only by every
           # later run, test results for code that changed since are never
           # persisted, so the test step re-executed every package on every
@@ -229,7 +229,7 @@ jobs:
         run: echo "GOFASTR_AXE_COVERAGE_DIR=$HOME/.cache/gofastr-coverage" >> "$GITHUB_ENV"
 
       - name: Install Chrome (stable chromedp suites run here too)
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         with:
           # A pinned Chromium snapshot, the same one in every job. The
           # default, latest, is a new snapshot every few hours, installed
@@ -426,7 +426,7 @@ jobs:
 
       - name: Save the Go cache and coverage manifests (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -450,7 +450,7 @@ jobs:
       GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
       GOFASTR_AFFECTED_DIFF_BASE: "1"
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Fetch the pull request base (affected scope)
         if: github.event_name == 'pull_request'
@@ -458,7 +458,7 @@ jobs:
 
       - name: Go module + build cache (lint, per-SHA)
         id: go-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           # Its own entry, not the test job's: vet results, the windows,
           # darwin and linux/386 builds and the CGO-free desktop builds are
@@ -480,7 +480,7 @@ jobs:
         run: scripts/go-cache-prune.sh age
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           # See the test job: the cache step above replaces setup-go's.
@@ -616,7 +616,7 @@ jobs:
 
       - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -657,7 +657,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Fetch the pull request base (affected scope)
         if: github.event_name == 'pull_request'
@@ -665,7 +665,7 @@ jobs:
 
       - name: Go module + build cache (race, per-SHA)
         id: go-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           # Its own entry for the same reason as the lint job's: -race
           # builds and race test results are cached only by this job.
@@ -683,14 +683,14 @@ jobs:
         run: scripts/go-cache-prune.sh age
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           # See the test job: the cache step above replaces setup-go's.
           cache: false
 
       - name: Install Chrome (framework/uihost's chromedp tests)
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         with:
           # Pinned with the test job's Chrome step; see the reason there.
           chrome-version: "1745190"
@@ -773,7 +773,7 @@ jobs:
 
       - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -788,10 +788,10 @@ jobs:
     env:
       CGO_ENABLED: "1"
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -852,10 +852,10 @@ jobs:
       CGO_ENABLED: "1"
       GOFASTR_REQUIRE_SANDBOX_CONFORMANCE: ${{ matrix.require }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -913,7 +913,7 @@ jobs:
       untagged: ${{ steps.list.outputs.untagged }}
       chromium: ${{ steps.list.outputs.chromium }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: github.event_name == 'pull_request'
 
       - name: Fetch the pull request base (affected scope)
@@ -922,7 +922,7 @@ jobs:
 
       - name: Set up Go
         if: github.event_name == 'pull_request'
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           # No cache: go list needs module sources only, and a fresh
@@ -1155,12 +1155,12 @@ jobs:
             echo "::notice::$PKG is not in this change's import-graph closure; suite skipped (runs on main)."
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: steps.scope.outputs.run == 'true'
 
       - name: Go module + build cache (restore only)
         if: steps.scope.outputs.run == 'true'
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -1176,17 +1176,17 @@ jobs:
 
       - name: Set up Go
         if: steps.scope.outputs.run == 'true'
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          # See the test job: setup-go's go.sum-keyed cache goes stale
+          # See the test job: setup-go's go.mod-keyed cache goes stale
           # between dependency bumps. This job restores the test job's
           # per-SHA cache instead.
           cache: false
 
       - name: Install Chrome
         if: steps.scope.outputs.run == 'true'
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         with:
           # Pinned with the test job's Chrome step; see the reason there.
           chrome-version: "1745190"
@@ -1240,16 +1240,16 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Install Chrome (the chromedp suites read files too)
-        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         with:
           # Pinned with the test job's Chrome step; see the reason there.
           chrome-version: "1745190"
@@ -1290,7 +1290,7 @@ jobs:
     env:
       CGO_ENABLED: "0" # the upgraded fixtures use the pure-Go sqlite driver
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # Full history, every release tag included. The registry symbol gate reads Go source
           # at each release's prior tag (git ls-tree / git show), and a
@@ -1304,7 +1304,7 @@ jobs:
         # compile this repo's framework sources (the replace points at the
         # checkout), so the GOCACHE entries from `test`'s `go build ./...`
         # hit and the cold build is far smaller.
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -1315,7 +1315,7 @@ jobs:
             go-test-${{ runner.os }}-
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false

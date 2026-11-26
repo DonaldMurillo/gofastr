@@ -329,7 +329,11 @@ func (t *LayoutTree) Place(o *Outlet) render.HTML {
 	}
 	addr := t.key + "#" + o.Name()
 	attrs := html.Attrs{"data-cui-outlet": addr}
-	for k, v := range t.vtCellAttrs(o.Transition, o.Name()) {
+	pick, tr := "", o.Transition
+	if len(o.Transitions) > 0 {
+		pick, tr = keyedPick(t.ctx, o.TransitionFor, o.Transitions)
+	}
+	for k, v := range t.vtCellAttrs(tr, keyedSlotName(o.Name(), pick)) {
 		attrs[k] = v
 	}
 	var inner render.HTML

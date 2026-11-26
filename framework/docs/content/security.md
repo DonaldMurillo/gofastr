@@ -77,7 +77,7 @@ If you supply a custom `ContentSecurityPolicy`, it replaces the default whole. K
 
 ### Trusted Types
 
-The default policy ends with `require-trusted-types-for 'script'; trusted-types gofastr`. In browsers that support Trusted Types, a plain string can no longer reach an HTML or script sink (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `DOMParser.parseFromString`, `document.write`, `eval`, a created `<script>`'s or a `Worker`'s URL): only a value made by an allowed policy passes, and only the policy named `gofastr` may be created. The runtime creates that policy (`middleware.TrustedTypesPolicy`) and routes every HTML string and script URL it writes through it; `core-ui/check`'s `LintTrustedTypesSinks` keeps the framework's own JavaScript on it. The policy checks nothing: `window.__gofastr.updateHTML`, `fetchPage` and the internal `_html` / `_scriptURL` wrappers write their caller's string, so pass them only trusted HTML.
+The default policy ends with `require-trusted-types-for 'script'; trusted-types gofastr`. In browsers that support Trusted Types, a plain string can no longer reach an HTML or script sink (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `DOMParser.parseFromString`, `document.write`, `eval`, a created `<script>`'s or a `Worker`'s URL): only a value made by an allowed policy passes, and only the policy named `gofastr` may be created. The runtime creates that policy (`middleware.TrustedTypesPolicy`) and routes every HTML string and script URL it writes through it; `core-ui/check`'s `LintTrustedTypesSinks` keeps the framework's own JavaScript on it. The lint flags `eval`, `window.eval` and `globalThis.eval`. The policy checks nothing: `window.__gofastr.updateHTML`, `fetchPage` and the internal `_html` / `_scriptURL` wrappers write their caller's string, so pass them only trusted HTML.
 
 Your own scripts follow the same rule: build elements with `createElement` and `textContent`, or create a policy and name it:
 
@@ -96,7 +96,7 @@ Listing `default` only allows that name; your script still creates it with `trus
 
 ### Violation reports
 
-`framework.WithCSPReports(fn)` mounts `handler.CSPReportHandler` at `POST /__gofastr/csp-report` (`middleware.CSPReportPath`) and points the default chain's policy at it: a `Reporting-Endpoints: csp-endpoint="…"` header (beside any endpoints already set), `report-to csp-endpoint` and `report-uri`, and `'report-sample'` in the built-in policy. A nil `fn` logs at most 20 reports a minute at warn level.
+`framework.WithCSPReports(fn)` mounts `handler.CSPReportHandler` at `POST /__gofastr/csp-report` (`middleware.CSPReportPath`) and points the default chain's policy at it: a `Reporting-Endpoints: csp-endpoint="…"` header (beside any endpoints already set), `report-to csp-endpoint` and `report-uri`, and `'report-sample'` in the built-in policy. An existing `csp-endpoint` on any `Reporting-Endpoints` line takes precedence. The middleware keeps existing endpoints and drops blank header lines. A nil `fn` logs at most 20 reports a minute at warn level.
 
 <!-- gofastr:compile
 stmt: _ = app
@@ -194,6 +194,10 @@ mux.Handle("POST /profile", handler.RefuseCrossSite(saveProfile))
 It returns `403` for non-GET/HEAD/OPTIONS requests with a form-forgeable content type (`handler.IsForgeableRequest`) coming from another site (`handler.IsCrossSiteRequest`: checks `Sec-Fetch-Site` with an `Origin`-vs-`Host` fallback, including sibling-subdomain checks). For `fetch()`-only endpoints where `Origin: null` (sandboxed iframes) should also be refused, use `handler.IsCrossSiteRequestStrict`. Leave routes that legitimately receive cross-site POSTs (such as Apple's OAuth `form_post` callback) unwrapped.
 
 **Same-site hop pages:** Because session cookies are `SameSite=Strict`, top-level links arriving from another site (email, chat) omit the cookie. Handlers that need the cookie on arrival (OAuth callbacks, email verification, guarded pages under `auth.SessionMiddleware`) return a tiny same-origin hop page (`Refresh: 0;url=...` + Continue link) using `handler.NeedsSameSiteHop` / `handler.SameSiteHopTarget` so the browser reloads same-site with the cookie attached. See [auth.md](auth.md#a-link-from-another-site-into-a-guarded-page).
+
+For clients without `Sec-Fetch-Site`, `handler.SameSiteHopTarget` puts
+`gofastr_hop=1` in the target's query, before any fragment, so the server
+can recognize the reload.
 
 ### Resource isolation
 

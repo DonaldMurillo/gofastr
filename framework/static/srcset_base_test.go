@@ -32,3 +32,15 @@ func TestRewriteBaseURLs_PrefixesSrcset(t *testing.T) {
 		t.Errorf("an apex export must leave srcset as written; got:\n%s", apex)
 	}
 }
+
+// HTML attribute names are case-insensitive, and the llm.md export already
+// prefixes HREF="/up": the HTML export has to prefix it too.
+func TestRewriteBaseURLs_IgnoresAttrCase(t *testing.T) {
+	b := &Builder{BasePath: "/docs"}
+	out := b.rewriteBaseURLs(`<a HREF="/up">up</a><img Src="/a.png" SRCSET="/b.png 2x" alt="">`)
+	for _, want := range []string{`HREF="/docs/up"`, `Src="/docs/a.png"`, `SRCSET="/docs/b.png 2x"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rewriteBaseURLs: want %q; got:\n%s", want, out)
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -115,6 +116,51 @@ func TestAPIPrefix_OpenAPIPathsMatchLiveRoutes(t *testing.T) {
 			t.Errorf("servers = %q, want exactly [\"/\"] — the prefix now lives in the path keys, so repeating it here doubles it to /api/api/tickets, and emitting none leaves clients without a base", servers)
 		}
 	})
+}
+
+// An entity in the root group mounts at /items whatever the API prefix,
+// so the spec, the handler's BasePath and the banner say /items too.
+func TestRootGroupEntityIgnoresAPIPrefix(t *testing.T) {
+	app := NewApp(WithDB(bannerTestDB(t)), WithAPIPrefix("/api"), WithoutDefaultMiddleware())
+	app.GroupEntity(app.Group("/"), "items", entity.EntityConfig{
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{Public: true},
+		Endpoints: []entity.Endpoint{{Method: "GET", Path: "summary", Public: true,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })}},
+	}.WithTimestamps(false))
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items/summary", nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("GET /items/summary = %d, want 204", rec.Code)
+	}
+	paths := app.OpenAPISpec("").Build()["paths"].(map[string]map[string]any)
+	for _, p := range []string{"/items", "/items/{id}", "/items/summary"} {
+		if paths[p] == nil {
+			t.Errorf("spec lacks %s, where the route mounts", p)
+		}
+	}
+	for p := range paths {
+		if strings.HasPrefix(p, "/api/items") {
+			t.Errorf("spec advertises %s, which is not mounted", p)
+		}
+	}
+	ent, err := app.Registry.Get("items")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := app.CrudHandlerForEntity(ent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch.BasePath != "" {
+		t.Errorf("CrudHandlerForEntity BasePath = %q, want the root group's empty prefix", ch.BasePath)
+	}
+	var out bytes.Buffer
+	app.startupOutput = &out
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "test", false, false, "")
+	if strings.Contains(out.String(), "/api/items") {
+		t.Errorf("banner advertises /api/items:\n%s", out.String())
+	}
 }
 
 // The documented path is not merely well-formed. It is reachable. This walks

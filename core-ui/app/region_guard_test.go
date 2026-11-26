@@ -22,6 +22,57 @@ type stubComp2 struct{ html string }
 
 func (s *stubComp2) Render() render.HTML { return render.Text(s.html) }
 
+type blockedDefaultBoundary struct{ sleepyFill }
+
+func (*blockedDefaultBoundary) RenderError(error) render.HTML { return "[DEFAULT-ERROR]" }
+
+func TestBlockedDefaultUsesFillErrorPath(t *testing.T) {
+	failure := errors.New("default load failed")
+	for _, test := range []struct {
+		name string
+		def  component.Component
+		want render.HTML
+	}{
+		{"failure", &blockedDefaultBoundary{sleepyFill{loadErr: failure}}, "[DEFAULT-ERROR]"},
+		{"declined", &sleepyFill{loadErr: app.ErrNoFill}, ""},
+		{"absent", nil, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const addr = "l:shell#aside"
+			ctx := context.Background()
+			a := app.NewApp("t")
+			aside := app.NewOutlet("aside", app.OutletOptions{
+				Default:  test.def,
+				Deferred: true,
+				Policy:   app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403) }),
+			})
+			a.SetDefaultLayout(app.NewLayout("shell", app.LayoutSpec{Outlets: []*app.Outlet{aside}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+				return render.Join(l.Primary(), l.Place(aside))
+			}))
+			var loads int
+			a.RegisterScreen(app.NewScreen("/", &stubComp{html: "HOME"}).Fill(aside, &loadCounter{loads: &loads}), nil)
+			page, err := a.RenderPageResult(ctx, "/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want != "" {
+				if len(page.FillFailures) != 1 || page.FillFailures[0].Addr != addr || !errors.Is(page.FillFailures[0].Err, failure) {
+					t.Errorf("full page did not record the blocked default's error: %v", page.FillFailures)
+				}
+			} else if len(page.FillFailures) != 0 {
+				t.Errorf("empty default recorded a failure: %v", page.FillFailures)
+			}
+			fill, outcome := a.RenderPartResult(ctx, "/", addr)
+			if outcome != app.PartApplied || fill.HTML != test.want {
+				t.Errorf("deferred outlet = %q (outcome %v), want %q applied", fill.HTML, outcome, test.want)
+			}
+			if loads != 0 {
+				t.Errorf("blocked screen fill loaded %d times", loads)
+			}
+		})
+	}
+}
+
 // loadCounter (screen flavour) comes from parts_test.go: Load counts
 // into a *int and renders [label].
 

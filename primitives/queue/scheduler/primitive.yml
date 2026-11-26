@@ -10,6 +10,12 @@ docs:
   - framework/docs/content/cron.md
   - framework/docs/content/queue.md
 invariants:
+  - id: in-memory-schedule-owns-its-payload
+    rule: The in-memory scheduler copies byte payloads at registration and for each queue on each run without normalizing or validating them, so changes to the caller's buffer or to a dispatched payload cannot affect other jobs.
+    enforced_by:
+      - test: battery/queue.TestSchedulerCopiesPayloadOnRegister
+      - test: battery/queue.TestSchedulerAcceptsEmptyAndNonJSONPayloads
+      - test: battery/queue.TestSchedulerDispatchOwnsPayload
   - id: interval-has-a-millisecond-floor
     rule: Both schedulers refuse a negative interval and a positive one below one millisecond.
     enforced_by:

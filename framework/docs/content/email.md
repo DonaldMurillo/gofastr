@@ -53,6 +53,8 @@ msg.To = []string{user.Email}
 err = sender.Send(ctx, msg)
 ```
 
+Both loaders treat a leading `Subject: ` line in either body file as metadata and remove it from that body. The first non-empty subject wins: the trimmed `.subject` file, then the `.txt` subject line, then the `.html` subject line. A body without a leading subject line is left unchanged by the loader.
+
 `Execute` renders `Subject` and `TextBody` with `text/template` and `HTMLBody` with `html/template`. Preview templates with sample data inside `battery/admin` via `Config.EmailPreviews` (see [Admin email previews](admin.md#email-previews)).
 
 ## Common mistakes

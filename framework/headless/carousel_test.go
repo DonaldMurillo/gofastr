@@ -34,16 +34,67 @@ func TestCarouselRendersTrackControlsAndDots(t *testing.T) {
 		`<div data-hui-carousel-status="Slide 1 of 2" data-hui-carousel-status-fmt="Slide {{n}} of {{total}}|2" data-hui-carousel-track="" id="feat-track" tabindex="0">`,
 		`<div aria-current="true" aria-label="Slide 1 of 2" aria-roledescription="slide" id="feat-track-slide-0" role="group">`,
 		`<div aria-label="Slide 2 of 2" aria-roledescription="slide" id="feat-track-slide-1" role="group">`,
-		`<a aria-current="true" aria-label="Go to slide 1" data-hui-carousel-goto="0" href="#feat-track-slide-0">`,
-		`<a aria-label="Go to slide 2" data-hui-carousel-goto="1" href="#feat-track-slide-1">`,
-		`data-hui-carousel-prev=""`,
-		`data-hui-carousel-next=""`,
-		`>Previous</a>`,
-		`>Next</a>`,
+		`<button aria-current="true" aria-label="Go to slide 1" data-hui-carousel-goto="0" type="button">1</button>`,
+		`<button aria-label="Go to slide 2" data-hui-carousel-goto="1" type="button">2</button>`,
+		`<button aria-disabled="true" data-cui-internal="" data-hui-carousel-prev="" type="button">Previous</button>`,
+		`<button data-cui-internal="" data-hui-carousel-next="" type="button">Next</button>`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("carousel missing %q:\n%s", want, h)
 		}
+	}
+	if strings.Contains(h, "href=") {
+		t.Errorf("a carousel control is still a link:\n%s", h)
+	}
+	if strings.Contains(h, "data-hui-carousel-pause") {
+		t.Errorf("a carousel that does not rotate drew a rotation button:\n%s", h)
+	}
+}
+
+// The arrows come before the track and the dots after it, the order the
+// guide asks for, so a reader tabs through the controls before the slides.
+func TestCarouselControlsBeforeTheTrack(t *testing.T) {
+	h := renderCarousel(CarouselProps{Label: "Order", ID: "ord", AutoRotateMS: 5000, Slides: []CarouselSlide{
+		{Content: render.Text("One")}, {Content: render.Text("Two")},
+	}})
+	prev := strings.Index(h, "data-hui-carousel-prev")
+	next := strings.Index(h, "data-hui-carousel-next")
+	track := strings.Index(h, "data-hui-carousel-track")
+	dots := strings.Index(h, "data-hui-carousel-goto")
+	pause := strings.Index(h, "data-hui-carousel-pause")
+	if prev < 0 || next < 0 || track < 0 || dots < 0 || pause < 0 {
+		t.Fatalf("a part is missing:\n%s", h)
+	}
+	if !(prev < next && next < track && track < dots && dots < pause) {
+		t.Errorf("order prev=%d next=%d track=%d dots=%d pause=%d, want prev, next, track, dots, pause:\n%s",
+			prev, next, track, dots, pause, h)
+	}
+}
+
+// With Loop the ends wrap, so neither arrow starts disabled; a lone slide
+// without Loop has nowhere to go either way.
+func TestCarouselArrowsStartDisabledAtTheEnds(t *testing.T) {
+	loop := renderCarousel(CarouselProps{Label: "L", Loop: true, Slides: []CarouselSlide{
+		{Content: render.Text("a")}, {Content: render.Text("b")},
+	}})
+	if strings.Contains(loop, "aria-disabled") {
+		t.Errorf("a looping carousel rendered a disabled arrow:\n%s", loop)
+	}
+	one := renderCarousel(CarouselProps{Label: "L", Slides: []CarouselSlide{{Content: render.Text("a")}}})
+	if n := strings.Count(one, `aria-disabled="true"`); n != 2 {
+		t.Errorf("a lone slide without Loop rendered %d disabled arrows, want 2:\n%s", n, one)
+	}
+}
+
+// A rotating carousel draws a pause button (WCAG 2.2.2) whose name is
+// the Strings word and whose aria-pressed starts false.
+func TestCarouselRotatingDrawsAPauseButton(t *testing.T) {
+	h := string(Carousel(CarouselProps{Label: "Hero", ID: "hero", NoDots: true, NoArrows: true, AutoRotateMS: 5000,
+		Slides:  []CarouselSlide{{Content: render.Text("a")}, {Content: render.Text("b")}},
+		Strings: &Strings{CarouselPause: "Pausar diapositivas"}}, nil))
+	want := `<button aria-pressed="false" data-cui-internal="" data-hui-carousel-pause="" type="button">Pausar diapositivas</button>`
+	if !strings.Contains(h, want) {
+		t.Errorf("rotating carousel missing %q:\n%s", want, h)
 	}
 }
 

@@ -17,10 +17,11 @@ invariants:
       - test: core/handler.TestRefuseCrossSite
       - test: core/handler.TestIsForgeableRequest
   - id: hop-ends
-    rule: NeedsSameSiteHop is true for a cross-site request and for one with no Sec-Fetch-Site and no hop marker, and SameSiteHopTarget adds the marker only when the request had no Sec-Fetch-Site and the target lacks it.
+    rule: NeedsSameSiteHop is true for a cross-site request and for one with no Sec-Fetch-Site and no hop marker, and SameSiteHopTarget adds the marker to the query before any fragment only when the request had no Sec-Fetch-Site and the target query lacks it.
     enforced_by:
       - test: core/handler.TestNeedsSameSiteHop
       - test: core/handler.TestSameSiteHopTarget
+      - test: core/handler.TestSameSiteHopFragmentReload
   - id: resource-isolation
     rule: IsCrossOriginSubresource is true when Sec-Fetch-Site is present and neither same-origin nor none, except for a GET or HEAD navigation whose destination is not an object or embed, and IsolateResources answers those 403 unless its allow func admits them, adding Sec-Fetch-Site, Sec-Fetch-Mode and Sec-Fetch-Dest to Vary on every answer so a shared cache cannot serve an allowed copy to a refused request.
     enforced_by:
@@ -31,6 +32,14 @@ invariants:
     rule: IsSafeRelativePath accepts only a single-slash path with no scheme, host, backslash, NUL, CR, LF or tab, raw or percent-decoded.
     enforced_by:
       - test: core/handler.TestSweepSafeRelativePath
+  - id: query-before-fragment
+    rule: "WithQuery splits target at the first '#' via splitFragment, edits query parameters before it, and re-encodes them via url.Values.Encode (sorting keys and dropping pairs url.ParseQuery rejects, including malformed percent-escapes and semicolon-separated pairs) before the unchanged fragment; auth form error redirects, policy redirects, admin login redirects and saved-view back redirects route through it."
+    enforced_by:
+      - test: core/handler.TestWithQuery
+      - test: battery/auth.TestFormAuthError_QueryBeforeFragment
+      - test: battery/auth.TestSessionPolicy_NextPathBeforeFragment
+      - test: battery/admin.TestGateLoginRedirectBeforeFragment
+      - test: framework/entityui.TestSavedViewRedirectKeepsQueryBeforeFragment
 decisions:
   - id: same-site-is-not-same-origin
     date: 2026-11-19
