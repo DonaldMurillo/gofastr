@@ -97,3 +97,40 @@ func TestLLMMDBatchItemNamesKey(t *testing.T) {
 		t.Errorf("batch-update example lacks %s:\n%s", want, doc)
 	}
 }
+
+// A single key column other than id takes its own name as the MCP key
+// argument when a writable field is called id, so update can write id.
+func TestMCPKeyArgLeavesWritableIDField(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE items (slug TEXT PRIMARY KEY, id TEXT)`)
+	ent := entity.Define("items", entity.EntityConfig{
+		Table: "items",
+		Fields: []schema.Field{
+			{Name: "slug", Type: schema.String, Required: true},
+			{Name: "id", Type: schema.String},
+		},
+		PrimaryKey: []string{"slug"},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	r := router.New()
+	ch := NewCrudHandler(ent, db)
+	RegisterCrudRoutes(r, ch, "/items")
+	srv := mcp.NewServer()
+	if err := RegisterEntityMCPTools(srv, ch, r); err != nil {
+		t.Fatalf("register mcp: %v", err)
+	}
+	ctx := handler.SetUser(context.Background(), &testUser{id: "u1"})
+	if _, err := srv.CallTool(ctx, "items_create", map[string]any{"slug": "a", "id": "rest"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := srv.CallTool(ctx, "items_update", map[string]any{"slug": "a", "id": "mcp"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	var id string
+	if err := db.QueryRow(`SELECT id FROM items WHERE slug = 'a'`).Scan(&id); err != nil || id != "mcp" {
+		t.Errorf("stored id = %q (%v), want mcp", id, err)
+	}
+	s := updateToolSchema(ch.Entity, nil, ch.toolKeyArgs())
+	if req := s["required"].([]string); !slices.Equal(req, []string{"slug"}) {
+		t.Errorf("update schema required = %v, want [slug]", req)
+	}
+}

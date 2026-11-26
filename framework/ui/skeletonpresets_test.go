@@ -248,3 +248,12 @@ func TestSkeletonTimelineRowsAndRail(t *testing.T) {
 		}
 	}
 }
+
+// The row chevron is drawn from its inline-end border, which moves to the
+// left under RTL; the fixed 45deg turn then points it up, not at the row's end.
+func TestSkeletonRowChevronFollowsDirection(t *testing.T) {
+	rule := `.fui-skeleton-row--chevron:dir(rtl)::after { transform: rotate(-45deg); }`
+	if !strings.Contains(skeletonPresetsCSS, rule) {
+		t.Errorf("skeleton row chevron lacks its RTL rotation %q", rule)
+	}
+}

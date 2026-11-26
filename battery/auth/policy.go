@@ -141,11 +141,9 @@ func failureDecision(ctx context.Context, o policyOpts) app.Decision {
 		dest := o.redirect
 		if o.nextPath {
 			if path := requestPathFromCtx(ctx); path != "" && path != "/" {
-				sep := "?"
-				if containsQuery(dest) {
-					sep = "&"
-				}
-				dest = dest + sep + "next=" + url.QueryEscape(path)
+				dest = handler.WithQuery(dest, func(q url.Values) {
+					q.Set("next", path)
+				})
 			}
 		}
 		handler.NoteSessionRefusal(ctx)
@@ -156,15 +154,6 @@ func failureDecision(ctx context.Context, o policyOpts) app.Decision {
 		status = 401
 	}
 	return decide.BlockWith(status, o.blockWhy)
-}
-
-func containsQuery(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '?' {
-			return true
-		}
-	}
-	return false
 }
 
 func requestPathFromCtx(ctx context.Context) string {

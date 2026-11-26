@@ -49,6 +49,20 @@ func TestCarouselCSSRestoresTheOverlaidChrome(t *testing.T) {
 	}
 }
 
+func TestCarouselArrowsFollowDirection(t *testing.T) {
+	css := carouselCSS(style.Theme{})
+	for _, want := range []struct{ button, angle string }{
+		{"prev", "45deg"},
+		{"next", "-135deg"},
+	} {
+		rule := `[data-cui-comp="ui-carousel"] .fui-carousel__` + want.button +
+			`:dir(rtl)::before { transform: rotate(` + want.angle + `); }`
+		if !strings.Contains(css, rule) {
+			t.Errorf("RTL %s chevron lacks its %s rotation", want.button, want.angle)
+		}
+	}
+}
+
 func TestCarouselSlideRequiresContent(t *testing.T) {
 	defer func() {
 		if recover() == nil {

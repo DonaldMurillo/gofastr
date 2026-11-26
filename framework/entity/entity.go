@@ -366,6 +366,9 @@ func Define(name string, config EntityConfig) *Entity {
 			if f.NoQuery {
 				panic(fmt.Sprintf("entity %q: cursor field %q is NoQuery (keyset paging orders and compares on the stored value, and the cursor token carries it verbatim)", name, cf))
 			}
+			if f.Type == schema.JSON {
+				panic(fmt.Sprintf("entity %q: cursor field %q is JSON (the database orders the stored text, but the cursor token carries the decoded value re-encoded with sorted keys); page on a scalar column", name, cf))
+			}
 			break
 		}
 		if !declared {

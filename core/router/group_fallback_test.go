@@ -270,6 +270,44 @@ func TestGroupFallbackMatchesEscapedSegments(t *testing.T) {
 	}
 }
 
+func TestGroupFallbackMatchesMuxCoverage(t *testing.T) {
+	r := New()
+	r.Get("/api/known", status(http.StatusOK))
+	r.Get("/files/%2F/known", status(http.StatusOK))
+	for _, prefix := range []string{"example.test/api", "/files/{name}"} {
+		group := r.Group(prefix)
+		group.Get("/known", status(http.StatusOK))
+		group.NotFound(status(http.StatusTeapot))
+		group.MethodNotAllowed(status(http.StatusUnprocessableEntity))
+	}
+
+	for _, tc := range []struct {
+		name, host, path string
+		covered          bool
+	}{
+		{"host port", "example.test:8443", "/api", true},
+		{"different host case", "EXAMPLE.test", "/api", false},
+		{"escaped slash in name", "", "/files/a%2Fb", true},
+		{"escaped slash only", "", "/files/%2f", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want404, want405 := http.StatusNotFound, http.StatusMethodNotAllowed
+			if tc.covered {
+				want404, want405 = http.StatusTeapot, http.StatusUnprocessableEntity
+			}
+			if got := fallbackServe(r, http.MethodGet, tc.host, tc.path+"/missing").Code; got != want404 {
+				t.Errorf("404 fallback status = %d, want %d", got, want404)
+			}
+			if got := fallbackServe(r, http.MethodPost, tc.host, tc.path+"/known").Code; got != want405 {
+				t.Errorf("405 fallback status = %d, want %d", got, want405)
+			}
+		})
+	}
+	if got := fallbackServe(r, http.MethodConnect, "example.test:8443", "/api/missing").Code; got != http.StatusNotFound {
+		t.Errorf("CONNECT with a host port = %d, want 404", got)
+	}
+}
+
 func TestGroupWrapDelegationStaysInsideTheServedRouter(t *testing.T) {
 	identity := func(next http.Handler) http.Handler { return next }
 	r := New()

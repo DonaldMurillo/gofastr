@@ -100,6 +100,21 @@ func Form(f schema.Field, v any) string {
 		}
 	case schema.Bool:
 		return Bool(v)
+	case schema.JSON:
+		switch t := v.(type) {
+		case nil:
+			return ""
+		case string:
+			return t
+		case []byte:
+			return string(t)
+		case json.RawMessage:
+			return string(t)
+		default:
+			if b, err := json.Marshal(v); err == nil {
+				return string(b)
+			}
+		}
 	default:
 	}
 	return Cell(v)

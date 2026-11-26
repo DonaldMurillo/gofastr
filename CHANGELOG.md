@@ -26,6 +26,26 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 
+- **BREAKING: `entity.Define` refuses a JSON field as a cursor column**
+  (`CursorField`, `CursorFields`; `cursor_field` and `cursor_fields` in
+  `gofastr.yml`). A keyset cursor over a JSON column repeated its own page
+  on SQLite. Page on a non-null scalar column instead.
+- **BREAKING: regenerated OpenAPI SDKs keep `null`.** Nullable scalar
+  results and nullable array or map members are pointers in Go (`*int64`,
+  `[]*int64`, `map[string]*bool`) and gain `| null` in TypeScript. Check
+  for nil before using the value.
+- **BREAKING: `entityui.UI.CountView` returns `(n int, ok bool, err error)`.**
+  A failed count is an error now, not `ok == false`, and the admin
+  attention card says "Could not check every watched view." when one
+  fails.
+- **MCP `tools/call` answers `-32602` for `"arguments": null`** or any other
+  value that is not an object. Omit `arguments` to call a tool without
+  them.
+- **`/openapi.json` describes an entity registered with
+  `App.GroupEntity(app.Group("/"), ...)` at the path it is served on**
+  (`/items`), not under `WithAPIPrefix` (`/api/items`).
+  `CrudHandlerForEntity` and the startup banner report the same path.
+  Regenerate clients built from the spec.
 - **CI actions run on Node 24 (#891).** `checkout` v5, `setup-go` v6,
   `cache` v5, `setup-chrome` v2, `upload-pages-artifact` v5 and
   `deploy-pages` v5 replace the majors GitHub was forcing off Node 20.
@@ -36,6 +56,92 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Static export:** under `--base`, the Markdown index and every
+  root-relative link in exported page docs carry the base path, and the
+  HTML rewrite matches URL attributes in any case (`HREF="/up"`). A page
+  whose `ScreenStatusCode` is outside 100–999 keeps its `llm.md`, as live
+  pages do. Copying the static source no longer overwrites built assets,
+  and a static-source `404.html` still replaces the generated one. An
+  export fails when a Block-policy outlet's default loader errors, instead
+  of writing a blank outlet. `Watch` no longer rebuilds in a loop when
+  `OutDir` is reached through a symlink, even before it exists. The static
+  guide names the Markdown index the export writes.
+- **PWA:** the worker refreshes when the static source replaces the
+  offline page, manifest or `register.js`, and the export includes the
+  scripts the offline page loads.
+- **Layouts and outlets:** layout keys resolve typed group parameters,
+  so soft navigation between two records of a typed group swaps the
+  layout, and deferred parts resolve colon-form addresses. A secondary
+  outlet gets its keyed view-transition name.
+- **Markdown pages** (`/llm.md` and negotiated) answer 404 or 500 when a
+  screen's Load, Render or resolver fails, as HTML does. Markdown 404s
+  link the sitemap and `llms.txt` only when the app mounts them.
+- **Soft navigation and recovery pages** guard and trim `ScreenLang` as a
+  full load does, so a panic no longer breaks navigation; recovery pages
+  keep `lang` and `dir` on both shapes, and their title hooks and layouts
+  get the request.
+- **Forms with a control named `requestSubmit`** submit and clear
+  through SearchInput, submit-on-enter, the repeater's Enter key, the
+  confirm dialog and passkey step-up.
+- **CopyButton** copies a `<pre>`'s text exactly, and copies nothing from a
+  PasswordInput, hidden or revealed.
+- **Sortable lists:** a late conflict refresh no longer overwrites a newer
+  save, and is applied if the newer move fails. A row can no longer be
+  moved into a list inside itself.
+- **RTL:** carousel arrows and the skeleton row chevron point along the
+  reading direction.
+- **Card** title links accept `<audio>` and `<video>` without `controls`.
+- **Theme validation** holds a color written as opaque-alpha hex
+  (`#RRGGBBFF`, `#RGBF`) to the 4.5:1 contrast floor.
+- **The Trusted Types lint** flags `window.eval`, `globalThis.eval`,
+  `self.eval` and their `?.` spellings.
+- **Entity lists and forms:** lookups and pickers apply the record's read
+  hooks, and a hook error hides only that record. Tab counts include the
+  filters a filter-row submit carries. CSV export follows the list's sort.
+  Create forms evaluate field conditions against the initial state, render
+  typed JSON defaults as JSON, and leave out fields `RecordBuilder.Omit`
+  names. Saving or deleting a saved view redirects to the checked return
+  path when the rewritten URL is too long.
+- **Admin:** Replay failed shows the number of jobs it queues (at most
+  10,000) and says when more will remain. When job counts fail, the Jobs
+  page keeps the requested page and says counts and page links are
+  unavailable; a huge `?p=` no longer wraps the offset.
+- **CRUD:** `?q=` is no longer read as a column filter, so a column named
+  `q` or wired as `query` keeps its filter beside a search. A direct
+  `ServeStreamingList` call checks `MaxOffset` against its own page
+  arguments. `CountAll` refuses an unknown include, as `ListAll` does. A
+  JSON `null` write body, or a `null` batch item, answers 400. Typed writes
+  (`CreateOne`, `UpsertOne`, `UpdateOne` and the batch forms) treat a nil
+  body as empty instead of panicking, hooks included.
+- **The cursor-pagination quickstart** defines an entity that passes
+  `Define`.
+- **Erasure retries:** each further run for a kind carries only its own
+  kept value, so another kind's expiry no longer skips it and a dry run
+  counts each record once.
+- **MCP:** an entity keyed on a column other than `id`, with a field called
+  `id`, names its key argument after the key column, so `_update` can
+  write `id`. `ServeStdio` returns reply write errors instead of exiting
+  cleanly.
+- **`gofastr generate app --add`** renders an added screen against the
+  project's API prefix, auth base path and shell (layout, login route,
+  guest policy), finds those helpers in any project Go file, and refuses a
+  screen that needs a helper an older project lacks. Generated relation
+  options keep integer keys past 2^53 exact.
+- **Deploy:** discovery and install read SSH replies from stdout only, so
+  SSH warnings no longer break them. A failed deploy removes its staged
+  upload. The guide names the env file systemd reads.
+- **`gofastr plugin untrust`** finds the project by its settings file when
+  the file fails to decode.
+- **Router:** group fallbacks match hosts and wildcard segments as
+  `http.ServeMux` does, and custom NotFound and MethodNotAllowed handlers
+  no longer call the serve hook.
+- **Redirect query parameters stay before URL fragments.** Added
+  `handler.WithQuery` and routed `battery/auth` form-error and policy
+  redirects (`SetDefaultLoginErrorPath`, `SetDefaultRegisterErrorPath`,
+  `WithRedirect`), `battery/admin` login redirects (`LoginPath`), and
+  `framework/entityui` saved-view redirects through it, so query parameters
+  are no longer appended inside `#fragment` or dropped
+  ([#905](https://github.com/DonaldMurillo/gofastr/pull/905)).
 - **`App.Shutdown` waits for the erasure-retention sweep before stop hooks.**
   This prevents the sweep from racing SQLite cleanup during graceful shutdown.
   If the wait reaches the shutdown deadline, teardown proceeds and
@@ -53,8 +159,17 @@ few lines, and link the PR or the docs page for the rest.
   [Programmatic inserts](framework/docs/content/query-dsl.md#programmatic-inserts)
   ([#901](https://github.com/DonaldMurillo/gofastr/pull/901)).
 
+- **BREAKING:** `UpdateBuilder.Build` panics when no `Set` assignments
+  were added instead of returning invalid SQL. Handle updates with no
+  fields before calling `Build`. See
+  [Programmatic updates](framework/docs/content/query-dsl.md#programmatic-updates)
+  ([#887](https://github.com/DonaldMurillo/gofastr/pull/887)).
+
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
+
+- `App.Shutdown` stops waiting for a stuck outbox relay when the drain
+  deadline expires and reports the deadline error. ([#907](https://github.com/DonaldMurillo/gofastr/pull/907))
 
 - `handler.SameSiteHopTarget` now adds the hop marker to the query before
   any fragment in the supplied target. ([#899](https://github.com/DonaldMurillo/gofastr/pull/899))

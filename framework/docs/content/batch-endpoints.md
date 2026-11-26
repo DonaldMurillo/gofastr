@@ -10,6 +10,7 @@ Every CRUD-enabled entity mounts batch routes at `/<table>/_batch` so callers ca
 
 ## Transaction and validation semantics
 
+- Each create or update item must be a JSON object. A `null` item returns `400` with its zero-based index before the transaction begins.
 - **All-or-nothing:** batch writes execute inside one database transaction. If any item fails validation, access control, a `Before*` hook, or a constraint check, the entire batch rolls back and no rows change.
 - **Same security pipeline:** every item goes through the entity's `Exposure.Access`, per-row `Decider`, `Scope.OwnerField` (auto-stamped on create, scoped on update/delete), `Scope.MultiTenant`, `Scope.SoftDelete`, and hooks.
 - **Wire names:** item payloads use the mount's configured JSON casing (`WireName` or default camelCase).

@@ -140,7 +140,13 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, "# Not found\n\nNo page lives at this address. Try:\n\n"+
-			"- [Home](/)\n- [Site map](/sitemap.xml)\n- [llms.txt](/llms.txt)\n")
+			"- [Home](/)\n")
+		if ds.sitemapConfig != nil {
+			fmt.Fprint(w, "- [Site map](/sitemap.xml)\n")
+		}
+		if ds.agentReady.llms != nil {
+			fmt.Fprint(w, "- [llms.txt](/llms.txt)\n")
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

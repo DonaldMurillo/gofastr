@@ -152,7 +152,7 @@ func TestConfirmDialogGatesRPCForm(t *testing.T) {
 	var hits atomic.Int32
 	base := startPollServer(t, `<!doctype html><html><head></head><body>
 <form id="f" method="post" action="/act" data-cui-rpc="/act" data-cui-rpc-method="POST" data-cui-confirm="Purge it?">
-<input type="hidden" name="back" value="/list">
+<input type="hidden" name="requestSubmit" value="field">
 <button id="b" type="submit">Purge</button>
 </form>
 `+confirmTemplate+`

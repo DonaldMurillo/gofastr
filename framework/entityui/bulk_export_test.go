@@ -245,3 +245,18 @@ func listReason(t *testing.T, rec *httptest.ResponseRecorder) any {
 	}
 	return doc["reason"]
 }
+
+// The export link carries the list's sort, and the export applies it.
+func TestExportFollowsListSort(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	html := listHTML(t, x.ui.List("invoices").Bulk(), x.userCtx("/invoices", "?sort=number&dir=desc", "u1"))
+	if !strings.Contains(html, `/api/invoices/_export.csv?dir=desc&amp;sort=number"`) {
+		t.Errorf("export link lost the sort:\n%s", html)
+	}
+	for query, want := range map[string]string{"sort=number&dir=desc": "a2", "sort=number": "a1", "": "a1"} {
+		_, got := getExport(t, x, bulkCtx("u1", nil), query)
+		if len(got) != 3 || got[1][0] != want {
+			t.Errorf("export ?%s = %v, want %s first", query, got, want)
+		}
+	}
+}

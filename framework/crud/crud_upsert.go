@@ -56,6 +56,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	if err := ch.bodyColumns(body); err != nil {
 		return nil, err
 	}
+	if body == nil {
+		body = map[string]any{}
+	}
 	if of := ch.Entity.Config.Scope.OwnerField; of != "" {
 		delete(body, of)
 	}
