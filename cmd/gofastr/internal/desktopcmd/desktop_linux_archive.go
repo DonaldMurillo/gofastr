@@ -1,53 +1,26 @@
 package desktopcmd
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"image/png"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
-	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/internal/linuxbundle"
 )
 
-type linuxArchiveEntry struct {
-	name   string
-	mode   int64
-	data   []byte
-	source string // only the staged executable; never a directory walk
-}
+type linuxArchiveEntry = linuxbundle.Entry
 
-type linuxBundleFile struct {
-	Path   string `json:"path"`
-	Mode   string `json:"mode"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-}
+type linuxBundleFile = linuxbundle.File
 
-type linuxBundleManifest struct {
-	SchemaVersion  int               `json:"schema_version"`
-	ID             string            `json:"id"`
-	Name           string            `json:"name"`
-	Version        string            `json:"version"`
-	Platform       string            `json:"platform"`
-	EntryPoint     string            `json:"entry_point"`
-	EmbeddedScheme string            `json:"embedded_scheme,omitempty"`
-	Runtime        []string          `json:"runtime"`
-	Files          []linuxBundleFile `json:"files"`
-}
+type linuxBundleManifest = linuxbundle.Manifest
 
 func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	if _, err := linuxDesktopLinkerFlags(f.scheme); err != nil {
@@ -62,20 +35,23 @@ func linuxBundleRoot(f desktopBuildFlags, name, arch string) (string, error) {
 	if !utf8.ValidString(name) {
 		return "", fmt.Errorf("--name must be valid UTF-8 for a desktop entry")
 	}
-	if !desktopVersionRe.MatchString(f.version) || len(f.version) > 64 {
+	if !linuxbundle.ValidVersion(f.version) {
 		return "", fmt.Errorf("--version must match %s and be at most 64 characters", desktopVersionRe.String())
 	}
-	if arch != "amd64" && arch != "arm64" {
-		return "", fmt.Errorf("unsupported Linux architecture %q", arch)
+	if err := linuxbundle.CheckIdentity(linuxbundle.Manifest{ID: f.id, Name: name, Version: f.version, Platform: "linux-" + arch, EmbeddedScheme: f.scheme}); err != nil {
+		return "", err
 	}
-	root := f.id + "-" + f.version + "-linux-" + arch
-	if len(root)+len(".tar.gz") > 255 {
-		return "", fmt.Errorf("app id and version make the Linux archive filename longer than 255 bytes")
+	return linuxbundle.RootName(f.id, f.version, arch)
+}
+
+// linuxUpdateVersionWarning is the warning a Linux archive built with
+// version earns when the version installs but no update feed can carry
+// it (it is not major.minor.patch), or "" when it can.
+func linuxUpdateVersionWarning(version string) string {
+	if desktop.ValidateAppVersion(version) == nil {
+		return ""
 	}
-	if root == "." || !fs.ValidPath(root) || strings.ContainsAny(root, "/\\\x00") || path.Clean(root) != root {
-		return "", fmt.Errorf("unsafe Linux archive root")
-	}
-	return root, nil
+	return fmt.Sprintf("--version %q is not major.minor.patch: the archive installs, but it cannot be published to an update feed, and the app it installs cannot update itself. Use a version such as 1.2.0.", version)
 }
 
 func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
@@ -91,6 +67,9 @@ func buildLinuxDesktopArchive(f desktopBuildFlags, name, arch string) error {
 	bundleRoot, err := linuxBundleRoot(f, name, arch)
 	if err != nil {
 		return err
+	}
+	if warning := linuxUpdateVersionWarning(f.version); warning != "" {
+		cli.Warn("%s", warning)
 	}
 	icon, err := linuxBundleIcon(f.icon)
 	if err != nil {
@@ -253,8 +232,14 @@ the string escaping layer, not Exec quoting. Never mark the template as
 trusted or install it without rendering and validating it first.
 
 This build writes release artifacts only: no menu installation, default
-protocol association, scheme registration, signing, or automatic update
-installation. The archive contains no GTK/WebKit/shared-library copies.
+protocol association, scheme registration or signing. An app installed
+with 'gofastr desktop install' whose Config.Update names a signed feed
+can update itself: the scheduled check sends the page update_available
+when the feed offers a newer archive, and the app installs it by
+calling InstallUpdate (the page's updates.install). 'gofastr desktop
+feed --platform linux-<arch>' signs the feed; its version must be
+major.minor.patch.
+The archive contains no GTK/WebKit/shared-library copies.
 manifest.json inventories the payload files with SHA-256 checksums; these
 checksums detect changes, not publisher authenticity. It does not inventory
 itself. Preserve your application's own licenses and distribution notices.
@@ -274,102 +259,26 @@ compiled executable, so pin those separately for reproducible builds.
 			"open. This is bus-scoped delivery, not a cross-session/global process lock.\n"
 	}
 	entries := []linuxArchiveEntry{
-		{name: "README.txt", mode: 0644, data: []byte(readme)},
-		{name: "bin/" + f.id, mode: 0755, source: executable},
-		{name: f.id + ".desktop.in", mode: 0644, data: []byte(desktopEntry)},
-		{name: "icon.png", mode: 0644, data: icon},
-		{name: "launch.sh", mode: 0755, data: []byte(launcher)},
+		{Name: "README.txt", Mode: 0644, Data: []byte(readme)},
+		{Name: "bin/" + f.id, Mode: 0755, Source: executable},
+		{Name: f.id + ".desktop.in", Mode: 0644, Data: []byte(desktopEntry)},
+		{Name: "icon.png", Mode: 0644, Data: icon},
+		{Name: "launch.sh", Mode: 0755, Data: []byte(launcher)},
 	}
-	slices.SortFunc(entries, func(a, b linuxArchiveEntry) int { return strings.Compare(a.name, b.name) })
 	manifest := linuxBundleManifest{SchemaVersion: 1, ID: f.id, Name: name, Version: f.version, Platform: "linux-" + arch, EntryPoint: "launch.sh", Runtime: []string{"glibc >= 2.34", "GTK 3", "WebKitGTK 4.1 >= 2.40", "X11 or Wayland graphical session"}}
 	if f.scheme != "" {
 		manifest.EmbeddedScheme = f.scheme
 		manifest.Runtime = append(manifest.Runtime, "existing local Unix D-Bus session bus (URL activation)")
 	}
-	for _, entry := range entries {
-		h := sha256.New()
-		size, err := copyLinuxArchiveEntry(h, entry)
-		if err != nil {
-			return nil, err
-		}
-		manifest.Files = append(manifest.Files, linuxBundleFile{Path: entry.name, Mode: fmt.Sprintf("%04o", entry.mode), Size: size, SHA256: hex.EncodeToString(h.Sum(nil))})
-	}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	entries = append(entries, linuxArchiveEntry{name: "manifest.json", mode: 0644, data: append(data, '\n')})
-	return entries, nil
+	return linuxbundle.WithManifest(manifest, entries)
 }
 
-// Desktop string values are not shell words. In particular, '%' and '$'
-// in Name are literal and must not use the separate Exec field-code rules.
-func escapeDesktopEntryString(value string) string {
-	return strings.NewReplacer("\\", "\\\\", " ", "\\s", "\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
-}
+func escapeDesktopEntryString(value string) string { return linuxbundle.EscapeDesktopString(value) }
 
 func copyLinuxArchiveEntry(dst io.Writer, entry linuxArchiveEntry) (int64, error) {
-	if entry.source == "" {
-		n, err := dst.Write(entry.data)
-		return int64(n), err
-	}
-	st, err := os.Lstat(entry.source)
-	if err != nil {
-		return 0, err
-	}
-	if !st.Mode().IsRegular() {
-		return 0, fmt.Errorf("archive source must be a regular file, not a symlink: %s", entry.source)
-	}
-	f, err := os.Open(entry.source)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	return io.Copy(dst, f)
+	return entry.CopyTo(dst)
 }
 
 func writeLinuxArchive(dst io.Writer, root string, entries []linuxArchiveEntry) error {
-	if root == "." || !fs.ValidPath(root) || strings.ContainsAny(root, "/\\\x00") || path.Clean(root) != root {
-		return fmt.Errorf("unsafe archive root %q", root)
-	}
-	entries = slices.Clone(entries)
-	slices.SortFunc(entries, func(a, b linuxArchiveEntry) int { return strings.Compare(a.name, b.name) })
-	previous := ""
-	// Validate before writing any archive bytes. Only explicitly enumerated,
-	// regular payload files can enter the archive: no source-tree walk.
-	for _, entry := range entries {
-		if !fs.ValidPath(entry.name) || strings.ContainsAny(entry.name, "\\\x00") || path.Clean(entry.name) != entry.name || entry.name == "." || entry.name == previous {
-			return fmt.Errorf("unsafe or duplicate archive path %q", entry.name)
-		}
-		if entry.mode != 0644 && entry.mode != 0755 {
-			return fmt.Errorf("unsupported archive mode %o", entry.mode)
-		}
-		previous = entry.name
-	}
-	gz := gzip.NewWriter(dst)
-	tw := tar.NewWriter(gz)
-	for _, entry := range entries {
-		size := int64(len(entry.data))
-		if entry.source != "" {
-			st, err := os.Lstat(entry.source)
-			if err != nil {
-				return err
-			}
-			if !st.Mode().IsRegular() {
-				return fmt.Errorf("archive source is not a regular file: %s", entry.source)
-			}
-			size = st.Size()
-		}
-		header := &tar.Header{Name: path.Join(root, entry.name), Typeflag: tar.TypeReg, Mode: entry.mode, Size: size, ModTime: time.Unix(0, 0), Format: tar.FormatPAX}
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-		if _, err := copyLinuxArchiveEntry(tw, entry); err != nil {
-			return err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-	return gz.Close()
+	return linuxbundle.WriteArchive(dst, root, entries)
 }

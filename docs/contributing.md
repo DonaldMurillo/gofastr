@@ -192,8 +192,8 @@ These are the guide's Hard rules 10 to 13 in full.
     against the code. A bot that skips a PR for its size (CodeRabbit stops
     at 100 files, Bugbot at a line count) has not reviewed it, and Greptile
     reviews one PR an hour, so splitting a large PR for the bots alone
-    trades one wait for several: review it adversarially instead, and
-    record the review and its triage in `docs/reviews/`.
+    trades one wait for several: review it adversarially instead. Its
+    findings and their triage go on the PR, not in the repo.
 
 **Stacked PRs.** A series of PRs that build on each other lands as one
 GitHub stack, merged all or nothing. Base each PR on the one below it,

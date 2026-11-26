@@ -18,7 +18,7 @@ func TestLinuxDesktopRunner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "lifetimes-skip", "lifetimes-missing", "lifetimes-fail", "effects-skip", "effects-missing", "effects-fail", "pickers-skip", "pickers-missing", "pickers-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail", "dunst-v-minimum", "dunst-v-current", "dunst-v-old", "dunst-v-malformed"} {
+	for _, mode := range []string{"pass", "safe-zero", "skip", "missing", "fail", "pass-then-fail", "wrapper-fail", "unsafe-sandbox", "empty-sandbox", "activation-skip", "activation-missing", "activation-fail", "graphical-activation-skip", "profile-skip", "profile-missing", "profile-fail", "tray-skip", "tray-missing", "tray-fail", "tray-graphical-skip", "tray-graphical-missing", "tray-graphical-fail", "notifications-skip", "notifications-missing", "notifications-fail", "notification-graphical-skip", "notification-graphical-missing", "notification-graphical-fail", "lifetimes-skip", "lifetimes-missing", "lifetimes-fail", "effects-skip", "effects-missing", "effects-fail", "pickers-skip", "pickers-missing", "pickers-fail", "update-skip", "update-missing", "update-fail", "dunst-minimum", "dunst-current", "dunst-future", "dunst-1.5", "dunst-1.6", "dunst-malformed", "dunst-unrelated-version", "dunst-version-fail", "dunst-v-minimum", "dunst-v-current", "dunst-v-old", "dunst-v-malformed"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			writeTestFile(t, dir, "scripts/test-linux-desktop.sh", string(src))
@@ -35,13 +35,15 @@ printf 'go %s\n' "$*" >> "$TRACE"
 [[ $GOFASTR_LINUX_COMPOSITOR = 1 && $GOFASTR_LINUX_PICKERS = 1 ]]
 [[ $GOOS = linux && $GOARCH = amd64 && $LC_ALL = C.UTF-8 && $LANGUAGE = en ]]
 [[ $GOFASTR_LINUX_TEST_OUTPUT = "$PWD/dist/ci/linux-native" ]]
-[[ $1 = test && $2 = ./battery/desktop/linux && $3 = -run && $5 = -count=1 && $7 = -v ]]
+[[ $1 = test && $3 = -run && $5 = -count=1 && $7 = -v ]]
 name=${4#^}; name=${name%$}
+if [[ $name = TestLinuxDesktopUpdateNative ]]; then [[ $2 = ./cmd/gofastr/internal/desktopcmd ]]; else [[ $2 = ./battery/desktop/linux ]]; fi
 case "$name" in
   TestNativeGTKWebKit|TestNativeGTKLifetimes|TestNativeWindowEffects|TestNativeGoFastrBridge|TestNativeNotifications|TestNativeNotificationGraphical|TestNativePickersAutomated) [[ $# = 7 && $6 = -timeout=90s ]] ;;
   TestNativeProfile) [[ $# = 7 && $6 = -timeout=240s ]] ;;
   TestNativeTray) [[ $# = 7 && $6 = -timeout=120s ]] ;;
   TestNativeTrayGraphical) [[ $# = 7 && $6 = -timeout=180s ]] ;;
+  TestLinuxDesktopUpdateNative) [[ $# = 7 && $6 = -timeout=300s ]] ;;
   TestNativeActivation|TestNativeActivationGraphical)
     [[ $# = 9 && $8 = -ldflags && $9 = '-X github.com/DonaldMurillo/gofastr/battery/desktop.builtDeepLinkScheme=gofastr605test' ]]
     if [[ $name = TestNativeActivation ]]; then [[ $6 = -timeout=120s ]]; else [[ $6 = -timeout=150s ]]; fi
@@ -65,6 +67,9 @@ case "$MODE:$name" in
   lifetimes-skip:TestNativeGTKLifetimes|effects-skip:TestNativeWindowEffects|pickers-skip:TestNativePickersAutomated) mode=skip ;;
   lifetimes-missing:TestNativeGTKLifetimes|effects-missing:TestNativeWindowEffects|pickers-missing:TestNativePickersAutomated) mode=missing ;;
   lifetimes-fail:TestNativeGTKLifetimes|effects-fail:TestNativeWindowEffects|pickers-fail:TestNativePickersAutomated) mode=fail ;;
+  update-skip:TestLinuxDesktopUpdateNative) mode=skip ;;
+  update-missing:TestLinuxDesktopUpdateNative) mode=missing ;;
+  update-fail:TestLinuxDesktopUpdateNative) mode=fail ;;
 esac
 case "$mode" in
   skip) printf -- '--- SKIP: %s (0.00s)\nPASS\n' "$name" ;;
@@ -120,7 +125,7 @@ esac
 				}
 			}
 			// A stale successful log must not satisfy a skipped/missing test.
-			for _, name := range []string{"TestNativeGTKWebKit", "TestNativeGTKLifetimes", "TestNativeWindowEffects", "TestNativeGoFastrBridge", "TestNativeActivation", "TestNativeActivationGraphical", "TestNativeProfile", "TestNativeTray", "TestNativeTrayGraphical", "TestNativeNotifications", "TestNativeNotificationGraphical", "TestNativePickersAutomated"} {
+			for _, name := range []string{"TestNativeGTKWebKit", "TestNativeGTKLifetimes", "TestNativeWindowEffects", "TestNativeGoFastrBridge", "TestNativeActivation", "TestNativeActivationGraphical", "TestNativeProfile", "TestNativeTray", "TestNativeTrayGraphical", "TestNativeNotifications", "TestNativeNotificationGraphical", "TestNativePickersAutomated", "TestLinuxDesktopUpdateNative"} {
 				writeTestFile(t, dir, "dist/ci/linux-native/"+name+".log", "--- PASS: "+name+" (0.00s)\n")
 			}
 			trace := filepath.Join(dir, "trace")
@@ -163,7 +168,8 @@ esac
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeTrayGraphical$ -count=1 -timeout=180s -v\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeNotifications$ -count=1 -timeout=90s -v\n" +
 					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativeNotificationGraphical$ -count=1 -timeout=90s -v\n" +
-					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativePickersAutomated$ -count=1 -timeout=90s -v\n"
+					"dbus\nxvfb\ngo test ./battery/desktop/linux -run ^TestNativePickersAutomated$ -count=1 -timeout=90s -v\n" +
+					"dbus\nxvfb\ngo test ./cmd/gofastr/internal/desktopcmd -run ^TestLinuxDesktopUpdateNative$ -count=1 -timeout=300s -v\n"
 				if string(got) != want {
 					t.Errorf("invocations = %q, want %q", got, want)
 				}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -126,7 +125,7 @@ func (p *windowsPlatform) VerifySignature(extracted string) error {
 }
 
 func (p *windowsPlatform) Relaunch(exe string) error {
-	env := append(withoutEnv(os.Environ(), PredecessorEnv), PredecessorEnv+"="+strconv.Itoa(os.Getpid()))
+	env := relaunchEnv(os.Environ(), strings.EqualFold)
 	if p.start != nil {
 		return p.start(exe, env)
 	}
@@ -140,15 +139,4 @@ func (p *windowsPlatform) Relaunch(exe string) error {
 		return fmt.Errorf("start the updated app: %s", LogDetail(err))
 	}
 	return cmd.Process.Release()
-}
-
-func withoutEnv(env []string, key string) []string {
-	out := env[:0:0]
-	for _, kv := range env {
-		k, _, _ := strings.Cut(kv, "=")
-		if !strings.EqualFold(k, key) {
-			out = append(out, kv)
-		}
-	}
-	return out
 }

@@ -98,7 +98,8 @@ Register custom Go capabilities before `Run` with `Register(Capability)` (the re
 - **Cross-window events:** `Battery.Emit(name, payload)` broadcasts to every open window (guarded to the app's own origin); `Battery.EmitTo(id, name, payload)` targets one window. Pages listen with `__gofastr.desktop.on(name, fn)` and know their own ID via `__gofastr.desktop.windowID`.
 - **Deep links:** set `Config.DeepLink` (`Scheme: "my-app"`, optional `OnDeepLink`) and pass `--scheme=my-app` to `gofastr desktop build` to route custom URL schemes into client-side navigation and `deep_link` events.
 - **App state & preferences:** `Battery.State()` (`battery/desktop/appstate`) stores debounced JSON key-value data in `state.json` (`0600`). Declare typed settings in `Config.Preferences`, read them via `d.Preferences()`, and mount `desktop.PreferencesScreen` at `/settings`.
-- **Auto-update (macOS & Windows):** configure `Config.Update` (`FeedURL`, ed25519 `PublicKey`). Updates verify feed signature, expiry, SHA-256, bundle version/ID, and code signature before swapping and relaunching.
+- **Auto-update (macOS, Windows & Linux):** configure `Config.Update` (`FeedURL`, ed25519 `PublicKey`). Updates verify feed signature, expiry, SHA-256 and bundle version/ID, and on macOS and Windows the code signature, before swapping and relaunching. One install runs at a time across every open instance of the app; an instance that started before another one updated the app answers that it must restart.
+- **Auto-update on Linux:** only an app installed with `gofastr desktop install` updates; a plain executable or an extracted archive answers `unsupported`. Publish the `--format=tar.gz` archive with `gofastr desktop feed --platform linux-amd64` (or `linux-arm64`). The update replaces the whole installed directory, verifies every file against the archive's `manifest.json`, writes a fresh install receipt, and relaunches, so `gofastr desktop uninstall` still removes it. ELF binaries carry no signature: the feed's ed25519 signature, which pins the archive's SHA-256, is the publisher check. An update that changes `--name` or `--scheme` is refused, because the installed desktop entry carries both; reinstall to change them. The previous version stays beside the installation as `<id>~old` until the next launch, and `gofastr desktop uninstall` removes it too. The download is capped at 256 MiB and the executable inside at 1 GiB. Linux versions are `--version` numbers such as `1.4.2`, so a pre-release such as `1.5.0-beta.1` cannot ship on Linux. A damaged installation turns updates off and logs why; reinstall it to turn them back on.
 
 ## The `gofastr desktop` verbs
 
@@ -106,10 +107,10 @@ Register custom Go capabilities before `Run` with `Register(Capability)` (the re
 | --- | --- |
 | `gofastr desktop run` | Build and launch the desktop app in dev mode |
 | `gofastr desktop build --id <rev.dns> --name <Name>` | Package a `.app` bundle (macOS, ad-hoc signed by default; `--sign`, `--notarize`, `--scheme`), `.exe` + `WebView2Loader.dll` (Windows; `--sign`, `--zip`), or ELF / `--format=tar.gz` (Linux). Use `--launch-args` + `desktop.LaunchArgs` when desktop mode is a subcommand. |
-| `gofastr desktop install / uninstall` | Per-user Linux install/uninstall of an extracted `tar.gz` bundle |
+| `gofastr desktop install / uninstall` | Per-user Linux install/uninstall of an extracted `tar.gz` bundle; an installed app can auto-update |
 | `gofastr desktop types` | Generate `desktop.d.ts` TypeScript definitions for registered capabilities |
 | `gofastr desktop keygen -o <path>` | Mint an ed25519 keypair for signed update feeds |
-| `gofastr desktop feed --key ... --version ... --platform ... --archive ... --url ...` | Build and sign `manifest.json` + `manifest.json.sig` |
+| `gofastr desktop feed --key ... --version ... --platform ... --archive ... --url ...` | Build and sign `manifest.json` + `manifest.json.sig`; `--archive` is the `.app` zip (macOS), the `--zip` output (Windows) or the `--format=tar.gz` archive (Linux) |
 
 ## Testing
 

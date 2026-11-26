@@ -272,6 +272,17 @@ few lines, and link the PR or the docs page for the rest.
   interrupts and exact exit codes. See
   [CLI plugins](framework/docs/content/cli-plugins.md)
   ([#882](https://github.com/DonaldMurillo/gofastr/pull/882)).
+- **Linux desktop auto-update** (#648). An app installed with
+  `gofastr desktop install` now installs updates from its signed feed:
+  publish the `--format=tar.gz` archive with
+  `gofastr desktop feed --platform linux-<arch>`. The update swaps the
+  installed directory, writes a fresh install receipt so
+  `gofastr desktop uninstall` still works, and relaunches. An update
+  that renames the app or changes its URL scheme is refused, and only
+  one open instance of the app installs at a time.
+  `gofastr desktop uninstall` also removes the previous version an
+  update keeps beside the installation. See
+  [Desktop](framework/docs/content/desktop.md).
 
 ### Changed
 

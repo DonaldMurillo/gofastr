@@ -99,7 +99,7 @@
 - Scope: issue #669 T4, migrations, queue, outbox, webhook, idempotency, cron and log history
 - Trigger: review of the nine GLM commits found missed settle sinks, shared AppOption state, warning gaps and weak regression premises.
 - Approach: classify SQLite contention by result code, preserve the first call's context, bound retries, and exercise every claim-settle destination with a real file lock.
-- Evidence: [T4 review and negative-proof ledger](reviews/2026-11-08-i669-t4.md); 19 mutation checks, scoped SQLite/Postgres packages, race tests and repository analyzers pass.
+- Evidence: T4 review and negative-proof ledger; 19 mutation checks, scoped SQLite/Postgres packages, race tests and repository analyzers pass.
 - Next time: use Go overlays for negative proofs, test two queues on the same table, and keep unreleased upgrade notes out of published release files.
 - Status: active
 
@@ -107,7 +107,7 @@
 - Scope: core-ui/runtime/src/envelope.js, envelope seed lifecycle
 - Trigger: Cursor Bugbot found first-seen `toString` and `valueOf` globals resolving to inherited functions instead of own slots.
 - Approach: create global slots using an own-property check, matching core navigation; exercise names absent from the boot seed through real envelope HTTP navigation and cached replay.
-- Evidence: [runtime fix follow-up](reviews/2026-11-07-fixes-runtime.md), `TestEnvelopeSeedsPrototypeNamedGlobals`; ordinary `newGlobal` passed while both prototype names failed before the fix.
+- Evidence: runtime fix follow-up, `TestEnvelopeSeedsPrototypeNamedGlobals`; ordinary `newGlobal` passed while both prototype names failed before the fix.
 - Next time: test first-seen names as well as pre-seeded client mutations, and wait for demand modules after the navigation that loads them.
 - Status: active
 
@@ -115,7 +115,7 @@
 - Scope: git integration and PR preparation
 - Trigger: main advanced while correctness fixes and their review notes were uncommitted.
 - Approach: retain an include-untracked safety stash, fast-forward main, reapply the changes and preserve both sides of the changelog-only conflict.
-- Evidence: integration base `8b34dc070`; fresh scoped package and browser gates passed. `docs/reviews/2026-11-07-findings.md` keeps the older review/development revisions distinct.
+- Evidence: integration base `8b34dc070`; fresh scoped package and browser gates passed.
 - Next time: fetch before opening the PR, rerun current analyzers and affected tests, and never imply old-base results validate newly integrated main.
 - Status: active
 
@@ -132,7 +132,7 @@
 - Scope: parallel implementation and regression testing
 - Trigger: coordinator saw the globals-only Back regression fail while the implementation worker was temporarily reverting its fix to prove the test detects it.
 - Approach: run negative mutation proofs in isolated snapshots/overlays, not files other workers or coordinator tests currently consume; validate restored final state after implementation completes.
-- Evidence: [runtime fix notes](reviews/2026-11-07-fixes-runtime.md); final coordinator browser regressions pass, including both Back/Forward arms and envelope replay.
+- Evidence: runtime fix notes; final coordinator browser regressions pass, including both Back/Forward arms and envelope replay.
 - Next time: announce mutation windows if isolation is impossible; retain full timeout output rather than only a tail.
 - Status: active
 
@@ -140,7 +140,7 @@
 - Scope: core/jcs, serialization fidelity review
 - Trigger: lossless-integer or UTF-8 key-order expectations would incorrectly reject this package's explicit ECMAScript-double/UTF-16 canonicalization contract.
 - Approach: compare public output byte-for-byte to a recursive sorted JSON.stringify oracle, then check idempotence/value preservation and both entry points separately.
-- Evidence: coordinator regenerated scope 41's deterministic oracle and rebuilt/reran 14,145 assertions with zero failures; core/jcs suite passes. Sources/logs: /tmp/scope41-probe; [review ledger](reviews/2026-11-07-findings.md).
+- Evidence: coordinator regenerated scope 41's deterministic oracle and rebuilt/reran 14,145 assertions with zero failures; core/jcs suite passes. Sources/logs: /tmp/scope41-probe; review ledger.
 - Next time: distinguish deliberate double rounding and documented encoding/json replacement from byte-preserving archive expectations; keep serialization checks separate from security/signing analysis.
 - Status: active, review methodology; no new finding
 
@@ -148,7 +148,7 @@
 - Scope: core/featureflag, framework/flags.go
 - Trigger: BoolDefault fallback and allow-list checks can appear wrong when a flag exists but its Enabled/Envs gates turn it off.
 - Approach: establish evaluation precedence first, compare rollout buckets to an independently implemented documented hash, and explicitly attach FlagContextMiddleware when default middleware is disabled.
-- Evidence: scope 40's rebuilt coordinator probes pass 85 checks; featureflag and framework Flag selections pass. Retained sources/logs: /tmp/scope40-probe; [review ledger](reviews/2026-11-07-findings.md).
+- Evidence: scope 40's rebuilt coordinator probes pass 85 checks; featureflag and framework Flag selections pass. Retained sources/logs: /tmp/scope40-probe; review ledger.
 - Next time: use explicit missing/disabled/env-blocked/cohort-off controls rather than assuming a default overrides an existing flag or guessing a rollout subject's bucket.
 - Status: active, review methodology; no new finding
 
@@ -156,7 +156,7 @@
 - Scope: framework/headless/menu.js, keyboard correctness review
 - Trigger: an enabled menu's programmatically refocused summary is a weak reproduction; all-disabled rows naturally leave focus on the summary after Enter opens it.
 - Approach: render native-summary and caller-owned-trigger variants through Menu, with enabled/all-disabled controls; execute actual menu/disclosure modules and Tab in both directions.
-- Evidence: [C19 fix](reviews/2026-11-07-fixes-headless.md); coordinator passed the real-browser eight-case Tab/Shift+Tab matrix. Native-summary triggers now close the chain without blocking native Tab movement.
+- Evidence: C19 fix; coordinator passed the real-browser eight-case Tab/Shift+Tab matrix. Native-summary triggers now close the chain without blocking native Tab movement.
 - Next time: establish a natural reachable focus state before counting a keyboard bug, and read TestMenuSpaceActivatesLink before misclassifying multiword type-ahead as swallowed activation.
 - Status: active, fixed locally; implicit-summary focus on caller-owned triggers remains an unvalidated side observation
 
@@ -228,7 +228,7 @@
 - Scope: core/i18n, locale formatting
 - Trigger: Number keeps invariant NaN, six recognized currencies round to whole units, and CN/AE weekday defaults disagree with the declared CLDR 47 data.
 - Approach: compare public API output against exact version-pinned Unicode JSON; retain source hashes and exact whitespace (Russian NaN uses U+00A0). Check standard _digits separately from _cashDigits.
-- Evidence: [C16–C18 fixes](reviews/2026-11-07-fixes-locale.md); coordinator passed `go test -p 2 -count=1 ./core/i18n/...` and reran `go run -p 2 ./core/i18n/internal/cldrgen` with both output SHA-256 values unchanged. NaN, standard currency digits and week data now share the pinned generator.
+- Evidence: C16–C18 fixes; coordinator passed `go test -p 2 -count=1 ./core/i18n/...` and reran `go run -p 2 ./core/i18n/internal/cldrgen` with both output SHA-256 values unchanged. NaN, standard currency digits and week data now share the pinned generator.
 - Boundary: UYW is unrecognized by the linked currency library, so its documented two-digit/no-symbol fallback is excluded from the known-currency defect. Do not use arbitrary ICU vintages as the sole oracle.
 - Next time: verify NaN symbols, currency rounding data and regional week tables separately when claiming a CLDR snapshot upgrade.
 - Status: active, fixed locally; nine known-currency precision cases covered, currency symbols remain x/text-sourced
@@ -252,7 +252,7 @@
 - Scope: framework/headless/sortablelist.js, ui.RenewSortableVersion
 - Trigger: a versioned list saves once then repeatedly sends its original token; rows-only conflict refresh cannot renew it.
 - Approach: return the percent-encoded version header on accepted writes and conflict refreshes; renew only group peers holding the submitted token, and only the refreshed list on reconciliation.
-- Evidence: [C20 fix](reviews/2026-11-07-fixes-headless.md); coordinator passed real-browser three-move/group-conflict tests and flagship persistence/header checks. Sortable gzip grew 113 bytes with explicit budget accounting.
+- Evidence: C20 fix; coordinator passed real-browser three-move/group-conflict tests and flagship persistence/header checks. Sortable gzip grew 113 bytes with explicit budget accounting.
 - Next time: test consecutive accepted moves and stale-peer recovery, not only one successful move; keep the separate delayed-refresh race unclaimed.
 - Status: active, fixed locally
 
@@ -268,7 +268,7 @@
 - Scope: core-ui/widget, runtime/widgets
 - Trigger: Mount accepts toString/valueOf and serves their assets, but the client mistakes inherited Object.prototype members for mounted widgets.
 - Approach: feed real Go catalog/chrome fixtures into the actual widgets.js, alongside an ordinary-name mount/close control; assert inserted roots and lifecycle events, not fetch success alone.
-- Evidence: [C15 independent reproduction](reviews/2026-11-07-widget-correctness.md); deterministic DOM adapter, not browser layout coverage.
+- Evidence: C15 independent reproduction; deterministic DOM adapter, not browser layout coverage.
 - Next time: inspect own-property membership at every registry read before concluding a registered name is openable end to end.
 - Status: active, review only; not fixed
 
@@ -284,7 +284,7 @@
 - Scope: core-ui/runtime/src/envelope.js, core-ui/runtime/src/loading.js
 - Trigger: a partial harness falsely suggested a delayed skeleton parks freshly applied content after success.
 - Approach: include envelope.js:1169 load.finish in the full schedule/wait/apply/sweep/finally sequence; _restoreLoading clears pending timers before checking shown state.
-- Evidence: [scope 20 adjudication](reviews/2026-11-07-findings.md); retained reviewer refutation and omission control at `/tmp/gofastr-s20-953ccc0/f1-loading-after-timer.cjs`.
+- Evidence: scope 20 adjudication; retained reviewer refutation and omission control at `/tmp/gofastr-s20-953ccc0/f1-loading-after-timer.cjs`.
 - Next time: trace every success/error/finally caller cleanup before promoting an isolated helper-timer observation to a finding.
 - Status: active
 
@@ -292,7 +292,7 @@
 - Scope: core-ui/runtime/src/ws.js, core-ui/runtime/src/poll.js
 - Trigger: clean server-5xx closes retry correctly with the wrong reason class; identical structured polls replay flash/scroll hooks.
 - Approach: isolate each close case in its own VM and assert class plus retry; execute actual poll.js and production setSignal against fresh JSON parses, counting structured and scalar binding writes.
-- Evidence: [C13/C14 fixes](reviews/2026-11-07-fixes-runtime.md); coordinator passed real-browser clean-4503 close/retry and unchanged-structured-poll mutation regressions. Reason class and skipped writes are checked independently of reconnect/value correctness.
+- Evidence: C13/C14 fixes; coordinator passed real-browser clean-4503 close/retry and unchanged-structured-poll mutation regressions. Reason class and skipped writes are checked independently of reconnect/value correctness.
 - Next time: assert exposed status fields as well as recovery, and compare structured JSON values rather than only object identity when promising unchanged-value DOM suppression.
 - Status: active
 
@@ -300,7 +300,7 @@
 - Scope: core/schema/decimal.go, framework/crud/decimal_sqlite.go
 - Trigger: a numeric-affinity write rejects exact signed-int64 values but accepts nonzero 1e-400 as zero.
 - Approach: compare real POST/GET results and SQLite typeof/CAST storage with direct bound-string inserts; include NUMERIC, REAL/FLOAT/DOUBLE, and TEXT controls plus affinity-precedence names (`FLOATING POINT`, `REAL TEXT`).
-- Evidence: [C12 fix and PR #688 follow-up](reviews/2026-11-07-fixes-data.md); plain int64 digits pass only for INTEGER/NUMERIC affinity. Independent review caught REAL columns silently rounding; schema and CRUD regressions failed before the correction.
+- Evidence: C12 fix and PR #688 follow-up; plain int64 digits pass only for INTEGER/NUMERIC affinity. Independent review caught REAL columns silently rounding; schema and CRUD regressions failed before the correction.
 - Boundary: the `1e-307` magnitude floor is conservative and also refuses some normal doubles SQLite could retain; TEXT-backed Decimal and Postgres behavior are unchanged.
 - Next time: verify SQLite affinity precedence before admitting int64 literals; probe integer, floating-point, and underflow boundaries independently of significant-digit counts.
 - Status: active
@@ -309,14 +309,14 @@
 - Scope: framework/factory, framework/seed.go
 - Trigger: correctness review found no confirmed defect in factory or seed lifecycle contracts.
 - Approach: compare entity seeds (ledger-gated) with WithSeed hooks (each boot); observe factory events on the asynchronous lane and distinguish CreateMany partial results from atomic batches.
-- Evidence: [scope 19 review status](reviews/2026-11-07-findings.md); reviewer probes retained under `/tmp/scope19-probe`, not independently rerun by the coordinator.
+- Evidence: scope 19 review status; reviewer probes retained under `/tmp/scope19-probe`, not independently rerun by the coordinator.
 - Next time: assert persisted rows and ledger state across two real App boots; do not interpret immediate async-event absence as a bug.
 - Status: active
 
 ## 2026-11-07 - Budget runtime browser suites explicitly
 - Scope: core-ui/runtime, test tooling
 - Trigger: `go test -short` still launches Chrome and the broad runtime package hit Go's ten-minute timeout.
-- Evidence: [validation limitation](reviews/2026-11-07-runtime-correctness.md); the active test was only one second old at the package-wide alarm, so an individual hang is not established.
+- Evidence: validation limitation; the active test was only one second old at the package-wide alarm, so an individual hang is not established.
 - Fix-run evidence: runtime worker reports the full package tree passed with `-timeout 20m`, main package 730s; coordinator independently reran focused browser, composition, lint and budget gates, not the full tree.
 - Approach: quick composition checks select named browser-free tests; full browser validation needs an intentional timeout budget and `-json` progress capture.
 - Next time: inspect browser-test selection before assuming `-short` excludes browsers; never report a timed-out package as green or count elapsed time as a functional bug.
@@ -326,7 +326,7 @@
 - Scope: cmd/gofastr/internal/packcmd
 - Trigger: a supported data table packs successfully but its rows become strings and cannot validate/regenerate.
 - Approach: build a fresh CLI under /tmp and exercise validate → generate → pack → validate → generate, with a no-row control.
-- Evidence: [C11 fix](reviews/2026-11-07-fixes-codegen.md); nested lists now use empty/scalar-flow/complex-block forms. Coordinator passed full packcmd and public generate→pack→load→regenerate regressions, including quoted cells and nested maps.
+- Evidence: C11 fix; nested lists now use empty/scalar-flow/complex-block forms. Coordinator passed full packcmd and public generate→pack→load→regenerate regressions, including quoted cells and nested maps.
 - Pack now decodes the emitted YAML before comparing regenerated Go or writing output. The regression fixtures include an out-of-range float spelling stored as text and a quoted property key.
 - Next time: run pack through its CLI entry point and decode its stdout when testing YAML fidelity. For source recovery, exercise both screen layouts and keep the file selection aligned with the fidelity check.
 - Status: active
@@ -342,8 +342,8 @@
 - Scope: core-ui/runtime
 - Trigger: cart state survives navigation in memory while the swapped badge displays its server snapshot; string action messages also disappear in fallback.
 - Approach: compare store and bound node after partial merge; include a Back navigation from a page with no signal seed, not only pages with page-scoped declarations. Test fallback string and object configs under both module failure and missing-stack conditions.
-- Evidence: [C09/C10 reproduction](reviews/2026-11-07-runtime-correctness.md); merge root is nav.js, not the reviewer's signals.js path. Coordinator method-seam probes and reviewer browser evidence are explicitly distinct.
-- Final checkpoint: coordinator browser run passes fallback messages, both page-list/globals-only Back/Forward arms and envelope fills/replays. The earlier globals-only failure is superseded; the worker says its in-place mutation proof was active at that time. [Fix evidence](reviews/2026-11-07-fixes-runtime.md).
+- Evidence: C09/C10 reproduction; merge root is nav.js, not the reviewer's signals.js path. Coordinator method-seam probes and reviewer browser evidence are explicitly distinct.
+- Final checkpoint: coordinator browser run passes fallback messages, both page-list/globals-only Back/Forward arms and envelope fills/replays. The earlier globals-only failure is superseded; the worker says its in-place mutation proof was active at that time. Fix evidence.
 - Next time: assert visible bound DOM as well as stored state, and normalize accepted toast shapes before selecting a renderer.
 - Status: active
 
@@ -351,7 +351,7 @@
 - Scope: battery/log, plugin lifecycle
 - Trigger: Metrics promises any-time safety but its handler is allocated only during Init.
 - Approach: call direct Metrics and a retained MetricsHandler before Init, then initialize the same plugin with an in-memory sink and repeat both calls.
-- Evidence: [C08 fix](reviews/2026-11-07-fixes-services.md) publishes the fanout handler atomically and returns zero metrics before Init; coordinator full log suite and the direct/HTTP lifecycle regression pass.
+- Evidence: C08 fix publishes the fanout handler atomically and returns zero metrics before Init; coordinator full log suite and the direct/HTTP lifecycle regression pass.
 - Boundary: one narrow lifecycle defect; handler panic is not inherently process termination. The fix is local and uncommitted.
 - Next time: test explicitly documented pre-Init access independently of the normal register-initialize-serve flow.
 - Status: active
@@ -360,7 +360,7 @@
 - Scope: battery/cache, framework/image
 - Trigger: normal Vary traffic repeatedly missed and wide banners produced square placeholders.
 - Approach: use a two-variant sequence with spare capacity/long TTL, and decode actual Placeholder JPEGs beside Resize controls for boundary and ordinary aspect ratios.
-- Evidence: [C06/C07 fixes](reviews/2026-11-07-fixes-services.md); coordinator full cache/image suites pass with generation-indexed variants and no second fit of a derived image box.
+- Evidence: C06/C07 fixes; coordinator full cache/image suites pass with generation-indexed variants and no second fit of a derived image box.
 - Boundary: cache invalidation is not atomic with an in-flight GET store, and unreachable variants occupy slots until TTL; Redis/S3 were not executed.
 - Next time: test variant retention, eviction and expiry separately, and preserve the requested image axis when deriving the other side.
 - Status: active
@@ -369,7 +369,7 @@
 - Scope: cmd/gofastr/internal/appgen, framework/openapi
 - Trigger: SDK-only declaration walks missed injected timestamps and typed an integer-key relation as a string.
 - Approach: generate both SDK targets, create real records through the HTTP handler, compare OpenAPI/Go AST/TS declarations, and feed the captured response through the actual generated JS client.
-- Evidence: [C04/C05 fixes](reviews/2026-11-07-fixes-codegen.md); coordinator passed full appgen, `TestSDKShapesMatchCRUDResponse` including Node, and Meridian's generated-tree gate. Injected timestamps appear only in response/field shapes; integer-key relation types now match `number | string` target keys.
+- Evidence: C04/C05 fixes; coordinator passed full appgen, `TestSDKShapesMatchCRUDResponse` including Node, and Meridian's generated-tree gate. Injected timestamps appear only in response/field shapes; integer-key relation types now match `number | string` target keys.
 - Boundary: read-only timestamps stay out of writable inputs. Unselected/composite/many relation targets retain string typing; no tsc diagnostic or Postgres execution is claimed.
 - Next time: derive response fields from resolved entity schema and relation types from resolved target keys, with explicit controls for input/read-only distinctions.
 - Status: active
@@ -378,7 +378,7 @@
 - Scope: battery/email, review adjudication
 - Trigger: an OMP candidate inferred that every leading `Subject: ` line must disappear even after another source supplies the subject.
 - Approach: compare the loader's fallback/alternative-source contract against fresh `LoadFromFS` and `Execute` probes before counting a body-formatting discrepancy.
-- Evidence: [retained probe and rejection](reviews/2026-11-07-email-correctness.md); observations reproduce, but unconditional stripping is not promised. This candidate has no finding ID.
+- Evidence: retained probe and rejection; observations reproduce, but unconditional stripping is not promised. This candidate has no finding ID.
 - Next time: distinguish subject selection from body normalization; single-source controls do not establish duplicate-source semantics.
 - Status: active
 
@@ -386,23 +386,23 @@
 - Scope: framework/entityui, framework/ui
 - Trigger: a valid required single-value enum replaced both record and create forms with a generic error.
 - Approach: independently render both screens with and without a default, then compare optional-single and required-two-option controls.
-- Evidence: [C03 and retained overlay reproduction](reviews/2026-11-07-entityui-correctness.md) confirms four failed form renders and four successful controls; `typedInput` selects a segmented control below its two-option minimum.
+- Evidence: C03 and retained overlay reproduction confirms four failed form renders and four successful controls; `typedInput` selects a segmented control below its two-option minimum.
 - Next time: test schema-to-control boundaries at minimum supported cardinality, and assert unrelated form fields survive instead of treating panic containment as success.
 - Status: active
 
 ## 2026-11-07 - Count independently validated root causes, not review claims
 - Scope: correctness review coordination
 - Trigger: expand the OMP GLM review toward twenty distinct findings without relaxing the evidence bar.
-- Approach: keep the numbered [findings ledger](reviews/2026-11-07-findings.md); require fresh public-boundary reproduction, retained evidence and deduplication before assigning an ID.
+- Approach: keep the numbered findings ledger; require fresh public-boundary reproduction, retained evidence and deduplication before assigning an ID.
 - Evidence: the ledger reached 20 distinct reproduced roots; C20 uses real HTTP and sequential versioned moves, while the delayed-refresh race and ACP parse-error reserve remain uncounted.
-- Next time: resume from the ledger, preserve conditional compatibility caveats, and stop allocating new reviews when the requested target is reached.
+- Next time: keep the numbered findings ledger on the review's PR (review records no longer live in the repo), preserve conditional compatibility caveats, and stop allocating new reviews when the requested target is reached.
 - Status: active
 
 ## 2026-11-07 - Respect component cardinality and registry ownership
 - Scope: framework/entityui, core-ui/runtime widgets
 - Trigger: valid one-option enums panicked during form rendering; inherited Object members looked like mounted widgets.
 - Approach: select segmented controls only for their supported cardinality, and reuse the own-property registry reader for duplicate-mount detection.
-- Evidence: [C03/C15 fixes](reviews/2026-11-07-fixes-forms-widgets.md); coordinator render and real-browser lifecycle regressions pass, including ordinary-name and genuine-duplicate controls.
+- Evidence: C03/C15 fixes; coordinator render and real-browser lifecycle regressions pass, including ordinary-name and genuine-duplicate controls.
 - Next time: cover minimum component cardinality and inherited-member names through public rendering and lifecycle boundaries.
 - Status: active
 
@@ -410,7 +410,7 @@
 - Scope: review orchestration
 - Trigger: stale running labels contradicted final reports already present in four review transcripts.
 - Approach: inspect the final transcript before claiming a reviewer remains active; distinguish report completion from cancellation acknowledgement.
-- Evidence: [review closure](reviews/2026-11-07-findings.md); recovered scopes 29/32/38/42 were finished, while cancellation returned only `cancel_requested`.
+- Evidence: review closure; recovered scopes 29/32/38/42 were finished, while cancellation returned only `cancel_requested`.
 - Next time: report observed work and uncertainty explicitly; do not launch replacements for already completed reviews.
 - Status: active
 
@@ -418,7 +418,7 @@
 - Scope: framework/headless, optimistic state
 - Trigger: a sortable list saved once, then conflicted forever because the root retained its initial version.
 - Approach: test at least three sequential moves through the compare-and-bump handler, including rows-only conflict reconciliation and fresh-render/unversioned controls.
-- Evidence: [C20 reproduction](reviews/2026-11-07-sortable-correctness.md); statuses 204/409/409 versus 204/204/204 in both controls.
+- Evidence: C20 reproduction; statuses 204/409/409 versus 204/204/204 in both controls.
 - Next time: verify renewal of concurrency tokens after both successful writes and authoritative fragment refreshes.
 - Status: active
 
@@ -426,7 +426,7 @@
 - Scope: framework/filter, framework/crud, framework/pagination
 - Trigger: OMP reported missing/repeated cursor rows for timestamps populated outside canonical CRUD writes.
 - Approach: independently exercise the real HTTP list handler over `Unmanaged` in-memory SQLite tables, testing both `TEXT` and `DATETIME` columns plus a canonical-format control.
-- Evidence: [C02 fix](reviews/2026-11-07-fixes-data.md); coordinator passed full CRUD and verbose timestamp regressions. Unmanaged SQLite keysets bind stored text; base CRUD comparisons refuse noncanonical columns with 500 `timestamp_layout` instead of returning wrong rows.
+- Evidence: C02 fix; coordinator passed full CRUD and verbose timestamp regressions. Unmanaged SQLite keysets bind stored text; base CRUD comparisons refuse noncanonical columns with 500 `timestamp_layout` instead of returning wrong rows.
 - Boundary: the refusal scans per request and does not guard nested-relation/DSL/typed/read-scope comparisons or direct SQL into managed tables; normalize those sources. Coordinator Postgres test skipped without a DSN; worker container results are separate evidence.
 - Next time: test cursor encode/rebind symmetry against the actual stored layout and settle unmanaged-table compatibility before changing timestamp coercion.
 - Status: active
@@ -435,7 +435,7 @@
 - Scope: core/i18n, core-ui/runtime
 - Trigger: OMP reported placeholder grammar drift and blank translations during a correctness review.
 - Approach: exercise `Define`, `CheckCatalog`, `RegisterStrings` and `StringsJSON`, then execute the actual `say` function extracted from `core-ui/runtime/frag/kernel.js` with Node.
-- Evidence: [C01 fix](reviews/2026-11-07-fixes-runtime.md); coordinator passed real-browser Go/say grammar comparisons, including Unicode whitespace controls, and full i18n tests. Catalog placeholder spellings remain exact for headless fills; stale comments were corrected without changing that check.
+- Evidence: C01 fix; coordinator passed real-browser Go/say grammar comparisons, including Unicode whitespace controls, and full i18n tests. Catalog placeholder spellings remain exact for headless fills; stale comments were corrected without changing that check.
 - Boundary: reproduced blank-text/blank-plural output remains a contract question, not a confirmed fallback bug; existing guarantees concern absent entries/forms.
 - Next time: use a canonical control and the exported translation table to validate both runtimes; settle blank-value semantics before changing fallback behavior.
 - Status: active

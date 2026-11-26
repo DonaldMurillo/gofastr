@@ -3,7 +3,9 @@ package update
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,5 +39,21 @@ func TestAwaitPredecessorWaitsForALiveProcess(t *testing.T) {
 	}
 	if waited := time.Since(started); waited < 400*time.Millisecond {
 		t.Fatalf("AwaitPredecessor returned after %v, before the 500ms predecessor exited", waited)
+	}
+}
+
+func TestRelaunchEnvReplacesEveryPredecessorEntry(t *testing.T) {
+	want := PredecessorEnv + "=" + strconv.Itoa(os.Getpid())
+	env := []string{"A=1", PredecessorEnv + "=7", strings.ToLower(PredecessorEnv) + "=8", "B=2"}
+	folded := relaunchEnv(env, strings.EqualFold)
+	if !slices.Equal(folded, []string{"A=1", "B=2", want}) {
+		t.Fatalf("case-folded (Windows) env = %q", folded)
+	}
+	exact := relaunchEnv(env, func(a, b string) bool { return a == b })
+	if !slices.Equal(exact, []string{"A=1", strings.ToLower(PredecessorEnv) + "=8", "B=2", want}) {
+		t.Fatalf("exact (Linux) env = %q", exact)
+	}
+	if env[1] != PredecessorEnv+"=7" {
+		t.Fatal("relaunchEnv changed its input")
 	}
 }

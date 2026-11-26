@@ -230,11 +230,9 @@ strong key, `TestWebhookMetrics_CountersAndCollector` let an attempt count
 twice, two mail-queue panic tests returned before the worker's fate was
 known, and a search test named for a clause it did not check), and two
 docs that said the opposite of the code (`search.md` on a non-string
-weighted field, webhook's `Options` on a caller's HTTP client). Every
-proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Review
+weighted field, webhook's `Options` on a caller's HTTP client). Review
 bots skipped the PR for its size, so four agents that did not write it
-reviewed it adversarially (hard rule 13,
-`docs/reviews/2026-11-21-battery-sweep-adversarial-review.md`): about 220
+reviewed it adversarially (hard rule 13): about 220
 mutations of its new invariants, of which about 45 survived, and about 40
 rules from deleted comments that nothing guarded, among them a TOTP code
 that could verify two sessions, the updater's archive checksum and a

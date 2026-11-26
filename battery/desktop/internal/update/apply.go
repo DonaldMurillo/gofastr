@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+// ErrInstallationChanged is the sentinel for an install refused because
+// the installation on disk is no longer the one this process started
+// from: another instance of the app already updated it.
+var ErrInstallationChanged = errors.New("the installation changed since this app started")
+
 // ErrUnsupportedApply is the sentinel the default (non-darwin or unbundled) platform answers with.
 var ErrUnsupportedApply = errors.New("auto-update is not supported by this host")
 
@@ -65,9 +70,9 @@ type SignaturePolicy struct {
 // lives, what version it reports, how its replacement proves its
 // signature, and how the new copy is launched.
 type Platform interface {
-	// Version returns the running app's version (the bundle's CFBundleShortVersionString on darwin, the executable's ProductVersion on windows).
+	// Version returns the running app's version (the bundle's CFBundleShortVersionString on darwin, the executable's ProductVersion on windows, the installed manifest's version on linux).
 	Version() string
-	// Identifier returns the running app's CFBundleIdentifier.
+	// Identifier returns the running app's id (CFBundleIdentifier on darwin).
 	Identifier() string
 	// Bundle returns the running bundle's file name ("Notes.app") and its parent directory.
 	Bundle() (name, dir string, ok bool)
@@ -77,7 +82,7 @@ type Platform interface {
 	// CheckWindowsTrust on windows.
 	VerifySignature(appDir string) error
 	// Relaunch starts the newly installed copy (open -n on darwin, the
-	// new executable with PredecessorEnv set on windows) so the new
+	// new executable with PredecessorEnv set on windows and linux) so the new
 	// version starts before the current process quits.
 	Relaunch(appDir string) error
 }
@@ -202,6 +207,23 @@ func LogDetail(err error) string {
 type Unit struct {
 	Rel     string
 	Current string
+	// Sep joins Current to "old" and "new" for the paths the swap keeps
+	// beside it; "" means ".". A platform whose units sit among other
+	// apps' sets one their names cannot hold.
+	Sep string
+}
+
+// Old is where the swap keeps the replaced copy until the next launch.
+func (u Unit) Old() string { return u.Current + u.sep() + "old" }
+
+// New is where the swap stages the replacement before it moves in.
+func (u Unit) New() string { return u.Current + u.sep() + "new" }
+
+func (u Unit) sep() string {
+	if u.Sep == "" {
+		return "."
+	}
+	return u.Sep
 }
 
 // FileLayout is the optional Platform extension for a host whose
@@ -212,4 +234,20 @@ type FileLayout interface {
 	Units() (units []Unit, ok bool)
 	// Inspect checks that the extracted root holds exactly the files Units names and returns the identity it declares.
 	Inspect(extracted string) (BundleInfo, error)
+}
+
+// InstallLocker is the optional Platform extension for a host whose
+// install lock must be found by a process other than the app (Linux:
+// gofastr desktop uninstall), so it sits beside the installation rather
+// than in the app's data directory.
+type InstallLocker interface {
+	// LockPath is the file every install, launch cleanup and uninstall locks.
+	LockPath() (string, bool)
+}
+
+// Extractor is the optional Platform extension for a host whose release
+// archive is not the zip ExtractZip reads (Linux: a .tar.gz).
+type Extractor interface {
+	// Extract unpacks the verified archive under stage and returns the directory the units' Rel paths are relative to.
+	Extract(data []byte, stage string) (string, error)
 }
