@@ -71,3 +71,64 @@ func TestMissingUpDirectiveFailsLoud(t *testing.T) {
 		}
 	})
 }
+
+func TestMigrationRefusesUnsectionedSQL(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		prefix string
+	}{
+		{"before Up", "CREATE TABLE a (id INTEGER);\n"},
+		{"before Down", "-- +migrate NoTransaction\n/* header */ CREATE TABLE a (id INTEGER);\n-- +migrate Down\nDROP TABLE b;\n"},
+		{"after SQLite comment", "/* /* */ CREATE TABLE a (id INTEGER);\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, db := newSQLiteMigrator(t)
+			file := "-- +migrate Version 1\n-- +migrate Name example\n" + tc.prefix +
+				"-- +migrate Up\nCREATE TABLE b (id INTEGER);\n"
+			regErr := m.RegisterFromReader(strings.NewReader(file))
+			if err := m.Up(context.Background()); err != nil {
+				t.Fatalf("Up after registration attempt: %v", err)
+			}
+			a, b, recorded := tableExists(t, db, "a"), tableExists(t, db, "b"), upRowRecorded(t, m, 1)
+			if regErr == nil || !strings.Contains(regErr.Error(), "outside any section") ||
+				!strings.Contains(regErr.Error(), "if not yet applied, move it below -- +migrate Up (or into Down for rollback SQL)") ||
+				!strings.Contains(regErr.Error(), "if already applied, remove it from this file and put it in a new migration") || a || b || recorded {
+				t.Fatalf("want actionable registration error, neither table, and no record; got register=%v, a=%t, b=%t, recorded=%t",
+					regErr, a, b, recorded)
+			}
+		})
+	}
+}
+
+func TestMigrationAcceptsNestedPGComment(t *testing.T) {
+	m := New(nil, WithDialect(DialectPostgres))
+	file := "-- +migrate Version 1\n/* /* */ text still inside the outer comment */\n" +
+		"-- +migrate Up\nCREATE TABLE b (id INTEGER);\n"
+	if err := m.RegisterFromReader(strings.NewReader(file)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+}
+
+func TestMigrationAcceptsCommentPreamble(t *testing.T) {
+	m, db := newSQLiteMigrator(t)
+	file := " \t\n-- heading\n-- +migrate Version 1\n" +
+		"/* multi-line\n   comment with SQL: CREATE TABLE ignored (id INTEGER);\n*/ -- trailing comment\n" +
+		"-- +migrate Down\nDROP TABLE b;\n" +
+		"-- +migrate Up\nCREATE TABLE b (id INTEGER);\n"
+	if err := m.RegisterFromReader(strings.NewReader(file)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	ctx := context.Background()
+	if err := m.Up(ctx); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	if !tableExists(t, db, "b") || !upRowRecorded(t, m, 1) {
+		t.Fatal("Up did not create and record the migration")
+	}
+	if err := m.Down(ctx, 1); err != nil {
+		t.Fatalf("Down: %v", err)
+	}
+	if tableExists(t, db, "b") || upRowRecorded(t, m, 1) {
+		t.Fatal("Down did not roll back the migration")
+	}
+}

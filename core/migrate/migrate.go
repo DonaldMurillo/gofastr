@@ -167,7 +167,7 @@ func (m *Migrator) Register(mig Migration) error {
 
 // RegisterFromReader parses a "-- +migrate" directive file and registers it.
 func (m *Migrator) RegisterFromReader(r io.Reader) error {
-	mig, err := parseMigration(r)
+	mig, err := parseMigration(r, m.dialect)
 	if err != nil {
 		return err
 	}
@@ -189,16 +189,15 @@ func isNearMissDirective(trimmed string) bool {
 	return len(rest) >= len("+migrate") && asciicase.Lower(rest[:len("+migrate")]) == "+migrate"
 }
 
-func parseMigration(r io.Reader) (*Migration, error) {
+func parseMigration(r io.Reader, dialect Dialect) (*Migration, error) {
 	scanner := bufio.NewScanner(r)
 	var version uint64
 	var name string
 	var noTx bool
 	var group string
-	var upSQL, downSQL strings.Builder
+	var upSQL, downSQL, preamble strings.Builder
 	var section string
 	upOpened := false
-	orphanedSQL := false
 
 	first := true
 	for scanner.Scan() {
@@ -253,9 +252,8 @@ func parseMigration(r io.Reader) (*Migration, error) {
 			}
 			downSQL.WriteString(line)
 		default:
-			if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-				orphanedSQL = true
-			}
+			preamble.WriteString(trimmed)
+			preamble.WriteByte('\n')
 		}
 	}
 
@@ -270,8 +268,8 @@ func parseMigration(r io.Reader) (*Migration, error) {
 	if !upOpened {
 		return nil, fmt.Errorf("migration %q (version %d) has no Up section: the -- +migrate Up directive is missing or misspelled (directives are case-sensitive); refusing a migration whose SQL would be silently discarded", name, version)
 	}
-	if strings.TrimSpace(upSQL.String()) == "" && orphanedSQL {
-		return nil, fmt.Errorf("migration %q (version %d) has an empty Up section but carries SQL lines outside any section (they would be silently discarded); move them below the -- +migrate Up directive", name, version)
+	if len(splitStatementsWithCommentNesting(preamble.String(), dialect != DialectSQLite)) != 0 {
+		return nil, fmt.Errorf("migration %q (version %d) has SQL outside any section; if not yet applied, move it below -- +migrate Up (or into Down for rollback SQL); if already applied, remove it from this file and put it in a new migration", name, version)
 	}
 
 	return &Migration{
