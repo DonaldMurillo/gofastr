@@ -1249,10 +1249,12 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: access fanout subscribe: " + err.Error())
 		}
-		a.OnStop(func() error {
-			stop()
-			return nil
-		})
+		a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+			return a.drainWithDeadline(ctx, "access store fanout stop", func() error {
+				stop()
+				return nil
+			}, "access store fanout stop abandoned after the drain deadline")
+		}))
 	}
 
 	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {
@@ -2122,18 +2124,25 @@ func (a *App) AddQueue(q schedulerStartStop) *App {
 		return nil
 	})
 	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
-		return drainQueueClose(ctx, q)
+		return a.drainWithDeadline(ctx, "queue Close", q.Close, "queue Close abandoned after the drain deadline (a job handler ignored its cancelled context)")
 	}))
 	return a
 }
 
-func drainQueueClose(ctx context.Context, q schedulerStartStop) error {
-	return drainWithDeadline(ctx, q.Close, "queue Close abandoned after the drain deadline (a job handler ignored its cancelled context)")
-}
-
-func drainWithDeadline(ctx context.Context, drain func() error, deadlineMessage string) error {
+// drainWithDeadline starts drain and waits for it until ctx ends.
+func (a *App) drainWithDeadline(ctx context.Context, what string, drain func() error, deadlineMessage string) error {
 	done := make(chan error, 1)
-	go func() { done <- drain() }()
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				done <- recoveredPanic(a.Logger(), what, fmt.Sprintf("%T", v))
+			}
+		}()
+		done <- drain()
+	}()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%s: %w", deadlineMessage, err)
+	}
 	select {
 	case err := <-done:
 		return err

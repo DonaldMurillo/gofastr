@@ -389,14 +389,10 @@ func (a *App) startOutboxRelay() {
 	}
 	stopRelay := a.outbox.StartRelay(a.appCtx)
 	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
-		const deadlineMessage = "outbox relay stop abandoned after the drain deadline"
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("%s: %w", deadlineMessage, err)
-		}
-		return drainWithDeadline(ctx, func() error {
+		return a.drainWithDeadline(ctx, "outbox relay stop", func() error {
 			stopRelay()
 			return nil
-		}, deadlineMessage)
+		}, "outbox relay stop abandoned after the drain deadline")
 	}))
 }
 
