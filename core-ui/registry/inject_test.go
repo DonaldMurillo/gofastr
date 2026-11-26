@@ -409,6 +409,8 @@ func TestAddAttributeToken(t *testing.T) {
 			want: `<button aria-describedby="help tip">Save</button>`},
 		{name: "a form feed before the name", html: "<button\faria-describedby=\"help\">Save</button>", token: "tip",
 			want: "<button\faria-describedby=\"help tip\">Save</button>"},
+		{name: "a non-breaking space inside an id", html: `<button aria-describedby="help&#160;details">Save</button>`, token: "tip",
+			want: "<button aria-describedby=\"help\u00a0details tip\">Save</button>"},
 		{name: "an upper-case name", html: `<button ARIA-DESCRIBEDBY="help">Save</button>`, token: "tip",
 			want: `<button ARIA-DESCRIBEDBY="help tip">Save</button>`},
 		{name: "a mixed-case name", html: `<button Aria-DescribedBy='help'>Save</button>`, token: "tip",

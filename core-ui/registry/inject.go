@@ -268,7 +268,7 @@ func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error)
 	if err != nil {
 		return src, fmt.Errorf("registry: AddAttributeToken: %w", err)
 	}
-	tokens := strings.Fields(htmlUnescape(raw))
+	tokens := strings.FieldsFunc(htmlUnescape(raw), func(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) })
 	if slices.Contains(tokens, token) {
 		return src, nil
 	}
