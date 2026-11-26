@@ -1,77 +1,7 @@
-// Package embedcheck is the build-time gate for server actions on embeddable
-// surfaces.
-//
-// G.serverAction does not work inside an embed frame: the action registry is
-// app-global, keyed by (componentID, action) with no relationship to any
-// surface, so honouring an embed grant at /__gofastr/action would let a
-// credential minted for one surface invoke any action registered anywhere.
-// framework/uihost already panics at boot when a surface's screen registers one
-// (enforceNoServerActionsOnEmbeds in embed_actions.go). This package catches
-// the same condition at `gofastr build` / `make build`, before anything runs.
-//
-// # The signal
-//
-// The property "this action posts to the server" is carried by the ClientJS
-// passed to component.WithClientJS. The compiler rewrites only the canonical
-// "G.serverAction(" spelling. This analyzer also detects legal whitespace
-// before "(", then reports the canonical spelling instead of allowing a dead
-// call to ship.
-//
-// The analyzer checks the call in ClientJS itself. Issue #150 rejected
-// marker interfaces because they can drift from the code that runs.
-//
-// # Reachability, and where each step gives up
-//
-// embed.Surface now carries the screen value, so the link from a surface to the
-// component tree it renders is a Go value graph. analyze resolves as much
-// of it as go/analysis + go/types honestly can, per package:
-//
-//  1. embed.Surface{...} composite literals, identified by resolved type, so a
-//     same-named struct elsewhere is never mistaken for one.
-//  2. The Screen field → the app.NewScreen(path, comp) call that built it,
-//     following one level of identifier → initializer within the package.
-//  3. comp → its concrete named type, following an identifier whose declared
-//     type is the component.Component interface back to its initializer.
-//  4. the WHOLE component tree reachable from that type rather than the root alone:
-//     struct fields (including embedded ones, and through pointers, slices,
-//     arrays and maps), concrete components handed to the constructor
-//     expression that built the root, and concrete components named in the
-//     root's own Render / RenderCtx body.
-//  5. each reachable type's Actions() method → executable component.On(...)
-//     calls with a literal component.WithClientJS(...) option containing a
-//     G.serverAction call outside JavaScript comments and strings.
-//
-// Step 4 is why the root is not the unit. A root that renders a child ships the
-// CHILD's compiled actions to the frame. Every compiled registry travels in one
-// bundle, so a gate that inspected only the root passed a surface whose button
-// 401s in the customer's page.
-//
-// # Where it stops, and why it says so
-//
-// Static analysis cannot follow an interface-typed field resolved at runtime, a
-// component type whose Actions() body lives in another package, a component
-// produced by calling a function value, ClientJS that is not a string literal,
-// or a registration nested inside a function literal. Each of those is reported
-// as an [Unresolved], NOT as silence. A gate that quietly gives up reads
-// exactly like a gate that checked and found nothing, which is how the
-// rendered-child hole survived a release.
-//
-// Most Unresolved notes are advisory: the boot walk in framework/uihost reads
-// live component VALUES, so a child held in a field, through an interface, a
-// map key, or an island wrapper, is checked at Mount. One class is not, and
-// carries Blocking: a child built inside Render() whose type lives in another
-// package. It does not exist as a value when the walk runs, and its Actions()
-// body is not in this syntax tree, so neither gate can vouch for it and
-// `gofastr build` stops.
-//
-// Failing on EVERY note was tried and reverted. It rejected clean island
-// surfaces, the shape the app generator emits for every island block, plus
-// interface-typed fields the analyzer had already resolved and the fixture
-// named for false positives, and the advertised remedy ("hold the child in a
-// field") is impossible for a wrapper.
-//
-// [Check] returns violations alone for callers that want only those;
-// [CheckAll] returns both and is what the build gate uses.
+// Package embedcheck reports embeddable surfaces whose screen renders a
+// component that registers a G.serverAction, which a frame refuses, and each
+// place on the way that static analysis could not follow. [Check] returns
+// the violations; [CheckAll] adds the notes.
 package embedcheck
 
 import (
@@ -88,9 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/astbase"
 )
 
-// renderWrapperPackages hold components that WRAP another component rather
-// than being a leaf: the value walk at Mount descends through them into the
-// child, so seeing one built inside Render is not a place analysis gave up.
 var renderWrapperPackages = map[string]bool{
 	"github.com/DonaldMurillo/gofastr/core-ui/island":    true,
 	"github.com/DonaldMurillo/gofastr/core-ui/component": true,
@@ -103,9 +30,7 @@ const (
 	componentPkgPath = "github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
-// Analyzer is the go/analysis pass. analysistest exercises it directly, and a
-// future `go vet` attachment would run it; the cmd/check-embed CLI and the
-// `gofastr build` gate both call the same analyze core via Check.
+// Analyzer runs the check Check runs as a go/analysis pass.
 var Analyzer = &analysis.Analyzer{
 	Name: "check_embed",
 	Doc:  "report embeddable surfaces whose screen's component registers a G.serverAction, which is refused inside a frame",
@@ -123,27 +48,14 @@ func runPass(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// Unresolved is one place the static walk could not follow, on the path from an
-// embeddable surface to the components it renders.
-//
-// It is never a violation. The surface may well be clean. It exists so that
-// "I found nothing" and "I could not look" are not the same output.
-//
-// Most notes are advisory, because the boot-time walk in
-// framework/uihost/embed_actions.go covers what they describe: it reads live
-// component VALUES, so a child held in a field, including through an
-// interface, a map key, or an island wrapper, is checked at Mount.
-//
-// Blocking is the exception: a child constructed inside Render whose actions
-// cannot be decided statically is covered by neither gate. Its type may live
-// in another package, or its own options may be unresolved.
+// Unresolved is one place on the path from an embeddable surface to the
+// components it renders that the static walk could not follow. It is not a
+// violation.
 type Unresolved struct {
-	Pos     token.Pos
-	Surface string // the surface Name; "<dynamic>" when not a string literal
-	Reason  string
-	// Blocking marks the note class no gate can cover, which is what
-	// `gofastr build` refuses to build past.
-	Blocking bool
+	Pos      token.Pos
+	Surface  string // the surface Name; "<dynamic>" when not a string literal
+	Reason   string
+	Blocking bool // neither this walk nor the boot walk can cover the place
 }
 
 // Format renders the human-facing note.
@@ -165,8 +77,7 @@ type Finding struct {
 	Action    string // the On() event name; "<dynamic>" when not a string literal
 }
 
-// Format renders the human-facing message, mirroring the boot-walk panic so a
-// developer sees the same explanation at build time and at boot.
+// Format renders the human-facing message.
 func (f Finding) Format() string {
 	return fmt.Sprintf(
 		"embed surface %q renders component %q which registers a server action "+
@@ -179,11 +90,6 @@ func (f Finding) Format() string {
 		f.Surface, f.Component, f.Action)
 }
 
-// analyze resolves every embed.Surface in the package to the component TREE its
-// screen renders, and reports both the server actions that tree registers and
-// every place the walk could not follow. It operates on one package:
-// cross-package references (a screen or component declared elsewhere) are a
-// reported give-up, not silence.
 func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding, []Unresolved) {
 	if pkg == nil || info == nil {
 		return nil, nil
@@ -312,24 +218,8 @@ func (r *resolver) variableWrittenBefore(variable *types.Var, before token.Pos) 
 	return written
 }
 
-// maxReachDepth bounds the type walk. Component trees are shallow; the cap stops
-// a self-referential type graph from spinning without needing a second visited
-// set for every intermediate type.
 const maxReachDepth = 12
 
-// reachableComponents returns every component type reachable from root that is
-// declared in this package, root first, and calls note for each step it cannot
-// follow.
-//
-// Three sources feed the walk, and each answers a shape real code uses:
-//
-//   - struct fields: a root that holds its children (the shape the boot gate
-//     caught shipping a child's action to a frame);
-//   - the construction expression: `app.NewScreen("/x", NewPanel(&child{}))`,
-//     where the concrete child is an argument and the field that stores it is
-//     interface-typed;
-//   - the root's Render / RenderCtx body: `return c.child.Render()`, and any
-//     child built inline there.
 func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, note, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
 	seen := map[*types.Named]bool{}
@@ -346,8 +236,6 @@ func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, not
 		queue = append(queue, n)
 	}
 	push(root)
-	// Concrete components handed to whatever built the root: composite-literal
-	// elements and call arguments, at any nesting.
 	for _, n := range r.componentsInExpr(rootExpr) {
 		push(n)
 	}
@@ -362,9 +250,6 @@ func (r *resolver) reachableComponents(root *types.Named, rootExpr ast.Expr, not
 	return out
 }
 
-// walkComponentType follows cur's fields (through pointers, slices, arrays and
-// maps, and into nested plain structs declared in this package), pushing every
-// in-package component type it finds and noting every one it cannot follow.
 func (r *resolver) walkComponentType(cur *types.Named, push func(*types.Named), note func(token.Pos, string)) {
 	st, ok := cur.Underlying().(*types.Struct)
 	if !ok {
@@ -398,9 +283,6 @@ func (r *resolver) walkComponentType(cur *types.Named, push func(*types.Named), 
 					"holds is chosen at runtime", label))
 			}
 		case *types.Named:
-			// A NAMED interface (component.Component is one) is an interface
-			// first: it has a Render method but no body anywhere, and what it
-			// holds is a runtime choice.
 			if iface, ok := x.Underlying().(*types.Interface); ok {
 				if interfaceHasRender(iface) {
 					note(pos, fmt.Sprintf("%s is interface-typed, so the component it "+
@@ -417,7 +299,6 @@ func (r *resolver) walkComponentType(cur *types.Named, push func(*types.Named), 
 					"whose Actions() body is not visible here", label, x.String()))
 				return
 			}
-			// A plain struct in this package can still hold components.
 			if x.Obj() != nil && x.Obj().Pkg() == r.pkg {
 				walk(x.Underlying(), depth+1, pos, label)
 			}
@@ -432,10 +313,6 @@ func (r *resolver) walkComponentType(cur *types.Named, push func(*types.Named), 
 	}
 }
 
-// componentsInExpr collects every sub-expression of expr whose resolved type is
-// a concrete component type declared in this package. Used on the expression
-// that built the root component, so a child passed to a constructor is followed
-// even when the field it lands in is interface-typed.
 func (r *resolver) componentsInExpr(expr ast.Expr) []*types.Named {
 	var out []*types.Named
 	if expr == nil {
@@ -456,22 +333,10 @@ func (r *resolver) componentsInExpr(expr ast.Expr) []*types.Named {
 	return out
 }
 
-// componentsInRenderBodies collects the in-package component types named in
-// cur's Render / RenderCtx bodies. `return c.child.Render()` is the plainest
-// spelling of "this root renders that child", and it carries no field the type
-// walk could have found when the child is reached through an interface.
 func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(token.Pos, string)) []*types.Named {
 	var out []*types.Named
 	noted := map[*types.Named]bool{}
 
-	// A Render that hands its child-building to a same-package helper says
-	// exactly what a Render building the child inline says. But the call's
-	// static type is the component.Component interface, and the interface
-	// carve-out below then reads it as a child held elsewhere. That carve-out
-	// is right for a FIELD and wrong for a call result: the child really is
-	// built here, one frame down. Walking the callee restores the shape this
-	// check was written to see, and without it a cross-package child reached
-	// through a helper produced no finding and no note at all.
 	type frame struct {
 		body   *ast.BlockStmt
 		method string // the Render method this body was reached from
@@ -510,29 +375,12 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 				out = append(out, named)
 				return true
 			}
-			// A named INTERFACE (component.Component itself) is not a child
-			// built here. It is the static type of one held elsewhere, and
-			// walkComponentType already notes it as runtime-chosen. Noting it
-			// again would double every interface-typed field.
 			if _, isIface := named.Underlying().(*types.Interface); isIface {
 				return true
 			}
-			// Known composition wrappers are not a give-up: the boot walk
-			// descends THROUGH them into the child they hold (island is in
-			// neither reachStopPackages nor this list), so the child is
-			// covered at Mount and there is nothing to warn about. Noting
-			// them turned every island-rendering surface, the shape the
-			// app generator emits for every island block, into a build failure.
 			if renderWrapperPackages[named.Obj().Pkg().Path()] {
 				return true
 			}
-			// A child BUILT here whose type comes from another package is the
-			// one shape NEITHER gate can clear: it does not exist as a value
-			// until Render runs, so the boot-time walk in framework/uihost
-			// cannot see it, and its Actions() body is not in this syntax
-			// tree, so nothing here can read it either. Dropping it silently
-			// is what let a child's server action reach a customer's frame
-			// with both gates green.
 			if !noted[named] {
 				noted[named] = true
 				blockingNote(e.Pos(), fmt.Sprintf("%s.%s builds component %s from another package, "+
@@ -545,11 +393,6 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 	return out
 }
 
-// componentHelperBody returns the body of a same-package function called by
-// call whose result is component-shaped (component.Component, a slice of
-// them, or any type carrying a Render method). Anything else — a stdlib
-// call, a method on another package's type — returns nil, so the walk stays
-// inside this package's syntax tree.
 func (r *resolver) componentHelperBody(call *ast.CallExpr) *ast.BlockStmt {
 	var name *ast.Ident
 	switch fun := call.Fun.(type) {
@@ -585,7 +428,6 @@ func (r *resolver) componentHelperBody(call *ast.CallExpr) *ast.BlockStmt {
 	return nil
 }
 
-// componentShaped reports whether t is a component, or a slice of them.
 func componentShaped(t types.Type) bool {
 	if sl, ok := t.Underlying().(*types.Slice); ok {
 		t = sl.Elem()
@@ -602,10 +444,6 @@ func componentShaped(t types.Type) bool {
 	return named != nil && hasRenderMethod(named)
 }
 
-// hasRenderMethod reports whether t (or *t) declares Render, the one method
-// every component has. Used instead of types.Implements against
-// component.Component so a package that declares a component without importing
-// core-ui/component is still followed.
 func hasRenderMethod(t types.Type) bool {
 	if t == nil {
 		return false
@@ -651,16 +489,11 @@ func signatureMakesComponent(sig *types.Signature) bool {
 	return false
 }
 
-// ---- identifier → initializer following --------------------------------
-
 type resolver struct {
 	pkg   *types.Package
 	info  *types.Info
 	files []*ast.File
 
-	// defIdent maps an object to its defining *ast.Ident within this package,
-	// so an identifier reference can be followed to the expression that
-	// initialized it (a var spec or a := assignment).
 	defIdent map[types.Object]*ast.Ident
 }
 
@@ -714,10 +547,6 @@ func surfaceFields(lit *ast.CompositeLit) (name string, screen ast.Expr) {
 	return name, screen
 }
 
-// resolveScreenToComponent follows a Surface.Screen expression to the
-// app.NewScreen(path, comp) call that built it and returns the comp argument.
-// Returns nil when the screen is not statically a *app.Screen from NewScreen in
-// this package (cross-package, computed, or a different construction).
 func (r *resolver) resolveScreenToComponent(expr ast.Expr) ast.Expr {
 	return r.followScreen(expr, map[types.Object]bool{})
 }
@@ -732,8 +561,6 @@ func (r *resolver) followScreen(expr ast.Expr, seen map[types.Object]bool) ast.E
 			return nil
 		}
 		seen[obj] = true
-		// Only follow vars declared in THIS package; a screen value from
-		// another package is a give-up (the boot walk covers it).
 		if obj.Pkg() == nil || obj.Pkg() != r.pkg {
 			return nil
 		}
@@ -748,10 +575,6 @@ func (r *resolver) followScreen(expr ast.Expr, seen map[types.Object]bool) ast.E
 	return nil
 }
 
-// screenFromCallChain handles app.NewScreen(...) and method chains on its
-// result (WithTitle, WithPolicy, WithDescription, …; all return *Screen). The
-// base of the chain is the NewScreen call, so a method-call receiver is
-// unwrapped until it is reached.
 func (r *resolver) screenFromCallChain(call *ast.CallExpr) ast.Expr {
 	if comp, ok := r.newScreenComponent(call); ok {
 		return comp
@@ -764,9 +587,6 @@ func (r *resolver) screenFromCallChain(call *ast.CallExpr) ast.Expr {
 	return nil
 }
 
-// newScreenComponent reports whether call is app.NewScreen(path, comp) and
-// returns the comp argument. It confirms the callee's package via go/types so a
-// same-named function in another package is not mistaken for it.
 func (r *resolver) newScreenComponent(call *ast.CallExpr) (ast.Expr, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel == nil || sel.Sel.Name != "NewScreen" {
@@ -782,9 +602,6 @@ func (r *resolver) newScreenComponent(call *ast.CallExpr) (ast.Expr, bool) {
 	return call.Args[1], true
 }
 
-// varInitializer returns the initializer expression of a package- or
-// block-scoped var in this package, or nil. It matches by the defining
-// identifier's token position (stable and unique within a file).
 func (r *resolver) varInitializer(v *types.Var) ast.Expr {
 	id := r.defIdent[v]
 	if id == nil {
@@ -808,8 +625,6 @@ func (r *resolver) varInitializer(v *types.Var) ast.Expr {
 				}
 			}
 		case *ast.AssignStmt:
-			// `name := …` (DEFINE). A plain `=` to a blank identifier or a
-			// multi-assign does not carry the screen value we can follow.
 			if s.Tok == token.DEFINE {
 				for i, lhs := range s.Lhs {
 					if lid, ok := lhs.(*ast.Ident); ok && lid.Pos() == id.Pos() && i < len(s.Rhs) {
@@ -833,12 +648,6 @@ func (r *resolver) fileContaining(pos token.Pos) *ast.File {
 	return nil
 }
 
-// ---- component type resolution -----------------------------------------
-
-// concreteComponentType resolves a component expression to its concrete named
-// type, following an identifier whose declared type is the component.Component
-// interface back to its initializer. Returns nil when the concrete type is not
-// visible in this package.
 func (r *resolver) concreteComponentType(expr ast.Expr) *types.Named {
 	if expr == nil {
 		return nil
@@ -877,28 +686,16 @@ func namedOf(t types.Type) *types.Named {
 	}
 }
 
-// ---- server-action registration scan ----------------------------------
-
 type registration struct {
 	pos   token.Pos
 	event string
 }
 
-// actionNote is one give-up inside an Actions() body.
 type actionNote struct {
 	pos    token.Pos
 	reason string
 }
 
-// serverActions returns executable component.On(...) registrations in named's
-// Actions method whose literal WithClientJS option calls G.serverAction, plus
-// the registrations it could not decide about.
-//
-// It skips function literals because their bodies do not execute merely by
-// being declared, but a skipped body that CONTAINS a server action is reported
-// as unresolved rather than passed over, because an immediately-invoked literal
-// executes and this walk cannot tell the two apart. The compiled-registry boot
-// gate is what covers them.
 func (r *resolver) serverActions(named *types.Named) ([]registration, []actionNote) {
 	if named.Obj().Pkg() == nil || named.Obj().Pkg() != r.pkg {
 		return nil, nil
@@ -946,8 +743,6 @@ func (r *resolver) serverActions(named *types.Named) ([]registration, []actionNo
 	return out, notes
 }
 
-// serverActionInFuncLit reports whether lit contains a component.On(...) whose
-// literal ClientJS calls G.serverAction, and where.
 func (r *resolver) serverActionInFuncLit(lit *ast.FuncLit) (token.Pos, bool) {
 	var pos token.Pos
 	found := false
@@ -968,9 +763,6 @@ func (r *resolver) serverActionInFuncLit(lit *ast.FuncLit) (token.Pos, bool) {
 	return pos, found
 }
 
-// hasClientJSOption reports whether the registration passes a WithClientJS
-// option at all, so a non-literal argument can be told apart from an action
-// that declares no client handler.
 func (r *resolver) hasClientJSOption(call *ast.CallExpr) bool {
 	if len(call.Args) < 3 {
 		return false
@@ -1008,10 +800,6 @@ func (r *resolver) isComponentCall(call *ast.CallExpr, name string) bool {
 	return ok && fn.Name() == name && fn.Pkg() != nil && fn.Pkg().Path() == componentPkgPath
 }
 
-// clientJSLiteral returns the literal JavaScript passed directly to a
-// component.WithClientJS option on this registration. Identifiers,
-// concatenations, wrapper options, and options returned by helpers are static
-// give-ups; evaluating them would risk reporting code that never registers.
 func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
 	for _, arg := range call.Args[2:] {
 		opt, ok := arg.(*ast.CallExpr)
@@ -1036,19 +824,10 @@ func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
 	return "", false
 }
 
-// executableServerActionCall reports whether src calls G.serverAction
-// outside comments, strings, template text and regular-expression
-// literals, reading a template's ${...} as code and accepting whitespace
-// or a comment before "(" (internal/actionscan). The boot walk in
-// framework/uihost asks the same function, so the two gates cannot
-// disagree about the same ClientJS.
 func executableServerActionCall(src string) bool {
 	return actionscan.ServerActionCall(src)
 }
 
-// funcDeclForMethod finds the FuncDecl for methodName on named by receiver type
-// name, scanning this package's files. Matching by receiver type name + method
-// name avoids depending on token-position semantics of method declarations.
 func (r *resolver) funcDeclForMethod(named *types.Named, methodName string) *ast.FuncDecl {
 	typeName := named.Obj().Name()
 	for _, f := range r.files {

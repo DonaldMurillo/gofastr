@@ -8,26 +8,16 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// Check loads the non-test packages matching pattern (e.g. "./...") and returns
-// any server-action-on-embed finding. It is the shared driver used by the
-// cmd/check-embed CLI and the `gofastr build` gate, so both report identically.
-//
-// Findings take precedence over load errors: a real violation is the actionable
-// signal and is returned with a nil error. When a package failed to parse or
-// type-check and no findings were produced, Check returns that as an error so
-// the caller can surface an infrastructure failure rather than a false "clean".
+// Check loads the non-test packages matching pattern and returns every
+// server action reachable from an embeddable surface. It returns a load
+// failure only when there is no finding.
 func Check(pattern string) ([]Finding, *token.FileSet, error) {
 	findings, _, fset, err := CheckAll(pattern)
 	return findings, fset, err
 }
 
-// CheckAll is Check plus the places the static walk could not follow.
-//
-// The two are separate returns because they mean different things to a build:
-// a Finding is a violation and must fail it; an Unresolved is the analyzer
-// saying "I could not look here", which the boot walk covers and which must
-// never be mistaken for a clean result. Callers that gate a build print both
-// and fail on the first.
+// CheckAll is Check over every pattern, ./... when none is given, that also
+// returns the places the walk could not follow.
 func CheckAll(patterns ...string) ([]Finding, []Unresolved, *token.FileSet, error) {
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
@@ -65,14 +55,10 @@ func CheckAll(patterns ...string) ([]Finding, []Unresolved, *token.FileSet, erro
 	return findings, notes, fset, err
 }
 
-// loadMode is what analyze reads: syntax plus full type information for the
-// matched packages and, through NeedDeps, for everything they import.
 const loadMode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 	packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo |
 	packages.NeedSyntax | packages.NeedDeps
 
-// checkLoaded is CheckAll after the load: it analyzes packages loaded with
-// loadMode and applies the findings-before-load-errors precedence.
 func checkLoaded(pkgs []*packages.Package) ([]Finding, []Unresolved, error) {
 	if len(pkgs) == 0 {
 		return nil, nil, fmt.Errorf("check-embed: no packages to check")
