@@ -107,7 +107,7 @@ func spliceAttrs(html string, end int, attrs string) string {
 		insertAt--
 	}
 	sep := " "
-	if insertAt > 0 && strings.ContainsRune(" \t\n", rune(html[insertAt-1])) {
+	if insertAt > 0 && isHTMLSpace(html[insertAt-1]) {
 		sep = ""
 	}
 	if selfClose && insertAt > 0 && html[insertAt-1] == ' ' {
@@ -147,20 +147,20 @@ func attrAt(openTag string, at int, name string) bool {
 		return false
 	}
 	prev := openTag[at-1]
-	if prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' {
+	if !isHTMLSpace(prev) {
 		return false
 	}
 	if len(rest) == len(name) {
 		return true
 	}
 	next := rest[len(name)]
-	return next == '=' || next == ' ' || next == '\t' || next == '\n' || next == '\r' || next == '/'
+	return next == '=' || next == '/' || isHTMLSpace(next)
 }
 
 func skipWhitespace(s string, i int) int {
 	for i < len(s) {
 		c := s[i]
-		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+		if isHTMLSpace(c) {
 			i++
 			continue
 		}
@@ -237,7 +237,7 @@ func attrValue(openTag string, from int) (raw string, to int, err error) {
 		return openTag[i+1 : i+1+closing], i + 1 + closing + 1, nil
 	}
 	j := i
-	for j < len(openTag) && !strings.ContainsRune(" \t\n\r", rune(openTag[j])) {
+	for j < len(openTag) && !isHTMLSpace(openTag[j]) {
 		j++
 	}
 	return openTag[i:j], j, nil
