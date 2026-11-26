@@ -129,7 +129,7 @@ func TestLenientDropsUnknown(t *testing.T) {
 // A declared field whose name collides with a reserved control word must be
 // FILTERED, never swallowed by the reserved-skip, otherwise ?stream=true
 // returns the whole table (the exact #100A hazard). Field wins over reserved.
-func TestStrictFieldWinsOverReservedName(t *testing.T) {
+func TestControlWordBeatsSameNamedField(t *testing.T) {
 	fields := []schema.Field{
 		{Name: "stream", Type: schema.String},
 		{Name: "q", Type: schema.String},
@@ -137,14 +137,34 @@ func TestStrictFieldWinsOverReservedName(t *testing.T) {
 	r := httptest.NewRequest("GET", "/x?stream=live&q=hi", nil)
 	filters, err := ParseFilters(r, fields)
 	if err != nil {
-		t.Fatalf("field named like a reserved word must not error: %v", err)
+		t.Fatalf("a bare control next to a same-named field must not error: %v", err)
 	}
 	got := map[string]string{}
 	for _, f := range filters {
 		got[f.Field] = f.Value
 	}
-	if got["stream"] != "live" || got["q"] != "hi" {
-		t.Fatalf("reserved-named fields must be filtered, got %v", filters)
+	if _, ok := got["stream"]; ok || got["q"] != "hi" {
+		t.Fatalf("bare stream is the control and q filters its field, got %v", filters)
+	}
+	r = httptest.NewRequest("GET", "/x?stream%5Beq%5D=live", nil)
+	if filters, err = ParseFilters(r, fields); err != nil || len(filters) != 1 || filters[0].Value != "live" {
+		t.Fatalf("stream[eq] = %v, %v; want the stream filter", filters, err)
+	}
+}
+
+func TestSpellerBracketsControlWords(t *testing.T) {
+	spell := NewKeySpeller("page", "direction", "title")
+	if got := spell.Key("page", OpEq); got != "page[eq]" {
+		t.Errorf("Key(page, eq) = %q, want page[eq]", got)
+	}
+	if got := spell.Key("page", OpGte); got != "page_gte" {
+		t.Errorf("Key(page, gte) = %q, want page_gte", got)
+	}
+	if got := spell.Key("title", OpEq); got != "title" {
+		t.Errorf("Key(title, eq) = %q, want title", got)
+	}
+	if got := spell.ControlNamedKeys(); !slices.Equal(got, []string{"direction", "page"}) {
+		t.Errorf("ControlNamedKeys = %v", got)
 	}
 }
 
