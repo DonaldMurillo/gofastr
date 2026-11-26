@@ -77,6 +77,9 @@ parsed, err := dsl.ParseDSL(`tickets.where(status="open").order(-created_at).lim
 qb, err := dsl.BuildDSLQuery(app.Registry, `tickets.where(status="open").order(-created_at).limit(20)`)
 ```
 
+Separate each call from the preceding entity or call with a dot. End the
+expression with the entity name or the closing parenthesis of the last call.
+
 > **Security warning:** `dsl.BuildDSLQuery` checks field names, `Hidden`, and `NoQuery`, but it applies **no** `OwnerField`, `MultiTenant`, `ReadScope`, or `SoftDelete` scoping. Always append your caller/tenant/soft-delete predicates to `qb` before executing it on behalf of a user.
 
 ## SQL builders (`core/query`)

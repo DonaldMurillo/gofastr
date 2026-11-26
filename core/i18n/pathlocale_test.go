@@ -129,3 +129,10 @@ func TestPathPrefixAndLocalePath(t *testing.T) {
 		}
 	}
 }
+
+func TestZeroPathLocalesDoesNotStripEmptySegment(t *testing.T) {
+	var set PathLocales
+	if tag, rest := set.Split("//other"); tag != "" || rest != "//other" {
+		t.Fatalf("Split = (%q, %q), want empty locale and original path", tag, rest)
+	}
+}

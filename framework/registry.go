@@ -22,7 +22,7 @@ type entityKey struct {
 }
 
 // Registry stores and retrieves Entity definitions keyed by (name, version).
-// It is safe for concurrent use.
+// Its zero value is an empty registry. It is safe for concurrent use.
 type Registry struct {
 	mu         sync.RWMutex
 	entities   map[entityKey]*entity.Entity
@@ -74,6 +74,9 @@ func (r *Registry) Register(ent *entity.Entity) error {
 		ent.DB = r.db
 	}
 
+	if r.entities == nil {
+		r.entities = make(map[entityKey]*entity.Entity)
+	}
 	r.entities[key] = ent
 	return nil
 }

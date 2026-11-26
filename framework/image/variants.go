@@ -171,6 +171,9 @@ func (s VariantSet) run(src *Image, op string, emit func(VariantHeader, *bytes.B
 	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
 		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
 	}
+	if s.BlurHashX < 0 || s.BlurHashX > 9 || s.BlurHashY < 0 || s.BlurHashY > 9 {
+		return StreamResult{}, fmt.Errorf("image: VariantSet: BlurHash components must be in 1..9")
+	}
 	if s.RejectAnimated && src.frames > 1 {
 		return StreamResult{}, ErrAnimatedSource
 	}

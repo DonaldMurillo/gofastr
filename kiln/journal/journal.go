@@ -54,6 +54,7 @@ func NewMemory() *Memory {
 func (m *Memory) Append(e Entry) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	e.Payload = bytes.Clone(e.Payload)
 	m.entries = append(m.entries, e)
 	return len(m.entries), nil
 }
@@ -62,7 +63,10 @@ func (m *Memory) Read() ([]Entry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]Entry, len(m.entries))
-	copy(out, m.entries)
+	for i, e := range m.entries {
+		e.Payload = bytes.Clone(e.Payload)
+		out[i] = e
+	}
 	return out, nil
 }
 
@@ -75,6 +79,7 @@ func (m *Memory) TruncateAfter(n int) error {
 	if n > len(m.entries) {
 		return fmt.Errorf("journal: truncate offset %d exceeds length %d", n, len(m.entries))
 	}
+	clear(m.entries[n:])
 	m.entries = m.entries[:n]
 	return nil
 }
@@ -299,6 +304,7 @@ var (
 	writeJournal    = (*os.File).Write
 	syncJournal     = (*os.File).Sync
 	truncateJournal = (*os.File).Truncate
+	renameJournal   = os.Rename
 )
 
 func (j *JSONL) Read() ([]Entry, error) {
@@ -390,8 +396,16 @@ func (j *JSONL) TruncateAfter(n int) error {
 	if err := j.file.Close(); err != nil {
 		return fmt.Errorf("journal: close original: %w", err)
 	}
-	if err := os.Rename(tmpPath, j.path); err != nil {
-		return fmt.Errorf("journal: rename: %w", err)
+	if err := renameJournal(tmpPath, j.path); err != nil {
+		os.Remove(tmpPath)
+		renameErr := fmt.Errorf("journal: rename: %w", err)
+		f, reopenErr := openJournalFile(j.path, os.O_RDWR|os.O_APPEND)
+		if reopenErr != nil {
+			j.broken = errors.Join(renameErr, fmt.Errorf("journal: reopen original: %w", reopenErr))
+			return j.broken
+		}
+		j.file = f
+		return renameErr
 	}
 	f, err := openJournalFile(j.path, os.O_RDWR|os.O_APPEND)
 	if err != nil {

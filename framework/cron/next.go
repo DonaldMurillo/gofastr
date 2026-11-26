@@ -45,7 +45,7 @@ func (s Schedule) Next(after time.Time) time.Time {
 	if !s.Satisfiable() {
 		return time.Time{}
 	}
-	t := after.Truncate(time.Minute).Add(time.Minute)
+	t := nextLocalMinute(after)
 	end := t.AddDate(HorizonYears, 0, 0)
 	for t.Before(end) {
 		if s.expr.matches(t) {
@@ -65,5 +65,22 @@ func (s Schedule) SkipDay(t time.Time) time.Time {
 			return j
 		}
 	}
-	return t.Add(time.Minute)
+	return nextLocalMinute(t)
+}
+
+// nextLocalMinute finds the next wall-clock minute, including when a
+// zone offset contains seconds or changes before the next boundary.
+func nextLocalMinute(after time.Time) time.Time {
+	for {
+		elapsed := time.Duration(after.Second())*time.Second + time.Duration(after.Nanosecond())
+		next := after.Add(time.Minute - elapsed)
+		_, zoneEnd := after.ZoneBounds()
+		if zoneEnd.IsZero() || next.Before(zoneEnd) {
+			return next
+		}
+		after = zoneEnd.In(after.Location())
+		if after.Second() == 0 {
+			return after
+		}
+	}
 }

@@ -16,7 +16,7 @@ func splitStatementsWithCommentNesting(body string, nest bool) []string {
 	start := 0
 	hasCode := false
 	atomic, cases, parens := 0, 0, 0
-	prevWord := ""
+	afterBegin := false
 	flush := func(end int) {
 		if hasCode {
 			out = append(out, strings.TrimSpace(body[start:end]))
@@ -28,19 +28,22 @@ func splitStatementsWithCommentNesting(body string, nest bool) []string {
 		c := body[i]
 		switch {
 		case c == '-' && i+1 < n && body[i+1] == '-':
-			for i < n && body[i] != '\n' {
+			for i < n && body[i] != '\n' && body[i] != '\r' {
 				i++
 			}
 		case c == '/' && i+1 < n && body[i+1] == '*':
 			i = sqllex.SkipBlockComment(body, i, nest)
 		case c == '\'':
+			afterBegin = false
 			escapes := i > 0 && (body[i-1] == 'E' || body[i-1] == 'e') && (i < 2 || !identByte(body[i-2]))
 			hasCode = true
 			i = sqllex.SkipQuoted(body, i, escapes)
 		case c == '"':
+			afterBegin = false
 			hasCode = true
 			i = sqllex.SkipQuoted(body, i, false)
 		case c == '$' && (i == 0 || !identByte(body[i-1])):
+			afterBegin = false
 			hasCode = true
 			if tag := sqllex.DollarTag(body[i:]); tag != "" {
 				end := strings.Index(body[i+len(tag):], tag)
@@ -53,16 +56,21 @@ func splitStatementsWithCommentNesting(body string, nest bool) []string {
 			}
 			i++
 		case c == '(':
+			afterBegin = false
 			hasCode = true
 			parens++
 			i++
 		case c == ')':
+			afterBegin = false
+			// A stray closer is Postgres's syntax error to report; it
+			// must not drive the depth negative and hide later boundaries.
 			hasCode = true
 			if parens > 0 {
 				parens--
 			}
 			i++
 		case c == ';':
+			afterBegin = false
 			if atomic == 0 && parens == 0 {
 				flush(i)
 			}
@@ -75,7 +83,7 @@ func splitStatementsWithCommentNesting(body string, nest bool) []string {
 			}
 			word := strings.ToUpper(body[i:j])
 			switch {
-			case word == "ATOMIC" && prevWord == "BEGIN":
+			case word == "ATOMIC" && afterBegin:
 				atomic++
 			case atomic > 0 && word == "CASE":
 				cases++
@@ -84,10 +92,11 @@ func splitStatementsWithCommentNesting(body string, nest bool) []string {
 			case atomic > 0 && word == "END":
 				atomic--
 			}
-			prevWord = word
+			afterBegin = word == "BEGIN"
 			i = j
 		default:
-			if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			if c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v' {
+				afterBegin = false
 				hasCode = true
 			}
 			i++

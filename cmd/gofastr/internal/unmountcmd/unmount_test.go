@@ -722,3 +722,37 @@ func TestApplyImportRewireRefusesLeafSymlink(t *testing.T) {
 		t.Fatalf("target = %q, %v", got, err)
 	}
 }
+
+func TestUnmountCopiesEmbeddedDirectoryMatchedByGlob(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"widget.go":          "package widget\nimport _ \"embed\"\n//go:embed test*/*.txt\nvar asset string\n",
+		"testdata/asset.txt": "included",
+	} {
+		name = filepath.Join(dir, "widget", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tree, err := readUnmountTree(dir, project.GofastrModule+"/widget", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range tree.Files {
+		if file.Name == "testdata/asset.txt" {
+			return
+		}
+	}
+	t.Fatal("embedded testdata file was omitted")
+}
+
+func TestUnmountRejectsEmptyExplicitOutput(t *testing.T) {
+	for _, args := range [][]string{{"battery/cache", "--out="}, {"battery/cache", "--out", ""}} {
+		if _, _, _, _, ok := parseUnmountArgs("unmount", args); ok {
+			t.Errorf("accepted %q", args)
+		}
+	}
+}

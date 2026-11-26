@@ -213,3 +213,11 @@ func TestWebApplicationShape(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderSkipsAbsentItems(t *testing.T) {
+	var absent *Product
+	page := NewWebPage()
+	if got, want := Render(nil, page, absent), Render(page); got != want {
+		t.Errorf("Render = %q, want %q", got, want)
+	}
+}

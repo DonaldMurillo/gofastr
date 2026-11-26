@@ -23,3 +23,11 @@ func TestSingularSuffixRules(t *testing.T) {
 		}
 	}
 }
+
+func TestSingularWordsEndingInUse(t *testing.T) {
+	for input, want := range map[string]string{"houses": "house", "causes": "cause", "abuses": "abuse", "statuses": "status", "buses": "bus", "viruses": "virus"} {
+		if got := Singular(input); got != want {
+			t.Errorf("Singular(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

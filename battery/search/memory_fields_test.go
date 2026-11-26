@@ -103,3 +103,27 @@ func TestMemoryFieldEqualsStringOnly(t *testing.T) {
 		t.Fatalf("non-string field matched FieldEquals: got %#v, want 0", res)
 	}
 }
+
+func TestMemoryOwnsNestedFieldContainers(t *testing.T) {
+	m := NewMemory()
+	t.Cleanup(func() { m.Close() })
+	ctx := t.Context()
+	nested := map[string]string{"name": "before"}
+	if err := m.Index(ctx, Document{ID: "one", Fields: map[string]any{"nested": nested}}); err != nil {
+		t.Fatal(err)
+	}
+	nested["name"] = "after"
+	results, err := m.Search(ctx, Query{})
+	if err != nil || len(results) != 1 {
+		t.Fatalf("Search returned %d results, %v", len(results), err)
+	}
+	fields := results[0].Document.Fields["nested"].(map[string]string)
+	if fields["name"] != "before" {
+		t.Errorf("Index retained the caller's nested map: %v", fields)
+	}
+	fields["name"] = "changed"
+	again, err := m.Search(ctx, Query{})
+	if err != nil || len(again) != 1 || again[0].Document.Fields["nested"].(map[string]string)["name"] != "before" {
+		t.Fatalf("result mutation reached the index: %#v, %v", again, err)
+	}
+}

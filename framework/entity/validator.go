@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"reflect"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -46,6 +48,7 @@ func (vr *ValidationRegistry) Validators() int {
 
 // Required returns a validator that checks the fields are present and non-zero.
 func Required(fields ...string) ValidatorFunc {
+	fields = slices.Clone(fields)
 	return func(ctx context.Context, data map[string]any) map[string]string {
 		errors := make(map[string]string)
 		for _, field := range fields {
@@ -81,20 +84,16 @@ func Custom(name string, fn func(ctx context.Context, data map[string]any) map[s
 }
 
 func isZero(v any) bool {
-	if v == nil {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Invalid:
 		return true
-	}
-	switch val := v.(type) {
-	case string:
-		return val == ""
-	case int:
-		return val == 0
-	case int64:
-		return val == 0
-	case float64:
-		return val == 0
-	case bool:
-		return !val
+	case reflect.Bool, reflect.String,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128,
+		reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return rv.IsZero()
 	default:
 		return false
 	}
@@ -106,8 +105,8 @@ func FormatValidationErrors(errors map[string]string) []string {
 		return nil
 	}
 	out := make([]string, 0, len(errors))
-	for field, msg := range errors {
-		out = append(out, fmt.Sprintf("%s %s", field, msg))
+	for _, field := range slices.Sorted(maps.Keys(errors)) {
+		out = append(out, fmt.Sprintf("%s %s", field, errors[field]))
 	}
 	return out
 }

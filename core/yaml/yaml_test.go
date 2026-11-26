@@ -1,6 +1,9 @@
 package yaml
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMappingScalarColumnUsesValuePosition(t *testing.T) {
 	for _, tt := range []struct {
@@ -279,5 +282,57 @@ func TestCompactNestedListRefused(t *testing.T) {
 	}
 	if got := node.List; len(got) != 2 || got[0].Value != int64(-5) || got[1].Value != "- a" {
 		t.Fatalf("list = %v", got)
+	}
+}
+
+func TestMappingValueColumn(t *testing.T) {
+	node, err := Parse("outer:\n  same: same\nitems:\n  -   same: same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := node.Map["outer"].Map["same"].Column; got != 9 {
+		t.Errorf("mapping value column = %d, want 9", got)
+	}
+	if got := node.Map["items"].List[0].Map["same"].Column; got != 13 {
+		t.Errorf("list mapping value column = %d, want 13", got)
+	}
+}
+
+func TestListIndentedScalarColumn(t *testing.T) {
+	node, err := Parse("-   value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := node.List[0].Column; got != 5 {
+		t.Errorf("scalar column = %d, want 5", got)
+	}
+}
+
+func TestCRLineBreak(t *testing.T) {
+	node, err := Parse("first: 1\rsecond: 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Map["first"].Value != int64(1) || node.Map["second"].Value != int64(2) {
+		t.Fatalf("incorrect mapping after CR line break: %#v", node.Map)
+	}
+}
+
+func TestListMappingDuplicateReportsKeyLine(t *testing.T) {
+	_, err := Parse("- item:\n    child: value\n  item: repeated")
+	if err == nil || !strings.Contains(err.Error(), "first defined at line 1") {
+		t.Fatalf("duplicate error = %v, want original key on line 1", err)
+	}
+}
+
+func TestInlineListScalarColumns(t *testing.T) {
+	node, err := Parse("items: [  first, 'has, comma', third]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []int{11, 18, 32} {
+		if got := node.Map["items"].List[i].Column; got != want {
+			t.Errorf("item %d column = %d, want %d", i, got, want)
+		}
 	}
 }

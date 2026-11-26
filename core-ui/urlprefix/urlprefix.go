@@ -53,7 +53,6 @@ func Path(u string, rule Rule) string {
 			case '?', '#':
 				return o + rule.Prefix + rest
 			}
-			return u
 		}
 	}
 	if u[0] != '/' || strings.HasPrefix(u, "//") {
@@ -151,7 +150,7 @@ func HTML(page []byte, rule Rule) []byte {
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
-			if z.Err() != io.EOF {
+			if z.Err() != io.EOF || len(z.Raw()) != 0 {
 				return page
 			}
 			return out.Bytes()
@@ -171,11 +170,8 @@ func HTML(page []byte, rule Rule) []byte {
 }
 
 func rewriteTag(tok *html.Token, rule Rule) bool {
-	switch tok.Data {
-	case "meta":
+	if tok.Data == "meta" {
 		return rewriteMetaRefresh(tok, rule)
-	case "link", "script", "img", "source", "video", "audio", "iframe":
-		return false
 	}
 	if tok.Data == "a" || tok.Data == "area" {
 		for _, a := range tok.Attr {

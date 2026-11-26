@@ -155,6 +155,9 @@ func (b *Battery) Document(doc Document) *Battery {
 		panic(fmt.Sprintf("print: document %q has no Build func", doc.Name))
 	}
 	d := doc
+	if doc.Page != nil {
+		d.Page = doc.Page.Ptr()
+	}
 	b.docs = append(b.docs, &d)
 	b.byName[doc.Name] = &d
 	return b
@@ -240,9 +243,10 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 		return "", PageConfig{}, false
 	}
 
-	title := doc.Title
-	if doc.TitleFunc != nil {
-		title = doc.TitleFunc(r)
+	title, err := safeTitle(doc, r)
+	if err != nil {
+		writeBuildError(w, r, err)
+		return "", PageConfig{}, false
 	}
 
 	page := effectivePage(doc.Page, b.cfg.DefaultPage)
@@ -276,6 +280,24 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 	return renderShell(in), page, true
 }
 
+func safeTitle(doc *Document, r *http.Request) (title string, err error) {
+	if doc.TitleFunc == nil {
+		return doc.Title, nil
+	}
+	defer func() {
+		if recover() != nil {
+			err = errors.New("print: document title callback panicked")
+		}
+	}()
+	return doc.TitleFunc(r), nil
+}
+
+// safeBuild calls a document's Build hook, converting a panic into an
+// ordinary error so a misbehaving host closure yields a clean 500 status
+// page (honoring the battery's "never a stack trace" contract) instead of
+// crashing the handler goroutine. The panic value is intentionally NOT
+// folded into the error message (it could carry sensitive data), the
+// returned error is non-sentinel, so writeBuildError maps it to 500.
 func safeBuild(doc *Document, r *http.Request) (comp component.Component, err error) {
 	defer func() {
 		if v := recover(); v != nil {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -35,10 +36,13 @@ func (fs *FileSet) Add(file GeneratedFile) error {
 	}
 	file.Path = path
 	if existing, ok := fs.files[path]; ok {
-		if existing.Content == file.Content && existing.Owner == file.Owner {
+		if existing.Content == file.Content && existing.Owner == file.Owner && existing.Mode == file.Mode {
 			return nil
 		}
 		return fmt.Errorf("generated file collision at %q between %q and %q", path, existing.Owner, file.Owner)
+	}
+	if fs.files == nil {
+		fs.files = make(map[string]GeneratedFile)
 	}
 	fs.files[path] = file
 	return nil
@@ -214,6 +218,14 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 	if err := EnsureNoSymlinkPath(root); err != nil {
 		return err
 	}
+	all := files.All()
+	for _, file := range all {
+		for dir := path.Dir(file.Path); dir != "."; dir = path.Dir(dir) {
+			if _, exists := files.files[dir]; exists {
+				return fmt.Errorf("generated path %q requires directory %q, which is also a generated file", file.Path, dir)
+			}
+		}
+	}
 	if opts.Clean {
 		if err := cleanManifestFiles(root); err != nil {
 			return err
@@ -225,7 +237,7 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 	if err := EnsureNoSymlinkPath(root); err != nil {
 		return err
 	}
-	all := files.All()
+	written := make([]GeneratedFile, 0, len(all))
 	for _, file := range all {
 		path := filepath.Join(root, filepath.FromSlash(file.Path))
 		parent := filepath.Dir(path)
@@ -244,6 +256,7 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 		if opts.Conflict == ConflictSkip {
 			if existing, readErr := os.ReadFile(path); readErr == nil {
 				if bytes.Equal(existing, []byte(file.Content)) {
+					written = append(written, file)
 					continue // identical — nothing to do
 				}
 				// Exists and differs: never clobber owned code.
@@ -260,16 +273,18 @@ func WriteFiles(files *FileSet, opts WriteOptions) error {
 				}
 				return err
 			}
+			written = append(written, file)
 			continue
 		}
 		if err := writeGeneratedFile(path, file); err != nil {
 			return err
 		}
+		written = append(written, file)
 	}
 	if opts.SkipManifest {
 		return nil
 	}
-	return writeManifest(root, all)
+	return writeManifest(root, written)
 }
 
 // SafeOutputRoot validates a root that may be cleaned. The working directory

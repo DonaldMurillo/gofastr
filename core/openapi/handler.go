@@ -24,27 +24,26 @@ func Handler(spec *Spec) http.Handler {
 
 func serveSpec(w http.ResponseWriter, r *http.Request, spec *Spec) {
 	s := spec.viewFor(r)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
 	data, err := json.MarshalIndent(s.Build(), "", "  ")
-	if err != nil {
-		data = []byte(`{"error":"failed to marshal spec"}`)
-	}
-	w.Write(data)
+	writeSpecJSON(w, data, err)
 }
 
 // PublicHandler serves the whole spec, built once, without an auth check.
 func PublicHandler(spec *Spec) http.Handler {
-	doc := spec.Build()
-	data, err := json.MarshalIndent(doc, "", "  ")
+	data, err := json.MarshalIndent(spec.Build(), "", "  ")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSpecJSON(w, data, err)
+	})
+}
+
+func writeSpecJSON(w http.ResponseWriter, data []byte, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		data = []byte(`{"error":"failed to marshal spec"}`)
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Write(data)
-	})
+	w.Write(data)
 }
 
 // GatedHandler serves the spec to a request allow admits and 404 to any

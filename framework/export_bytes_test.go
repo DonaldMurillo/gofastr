@@ -141,3 +141,24 @@ func TestImportAdvancesRawSerial(t *testing.T) {
 			nextSerialIDFollowsRestore(t, dst, "tallies")
 		})
 }
+
+func TestArchiveWriterRejectsInvalidUTF8Text(t *testing.T) {
+	archive, err := createNDJSON(filepath.Join(t.TempDir(), "rows.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.close()
+	if err := archive.write(map[string]any{"title": string([]byte{0xff})}); err == nil {
+		t.Fatal("invalid UTF-8 text silently became a replacement character")
+	}
+}
+
+func TestArchiveReaderRequiresEndOfInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.ndjson")
+	if err := os.WriteFile(path, []byte("{\"id\":1}\n]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := readNDJSON(path); err == nil {
+		t.Fatalf("archive reader accepted trailing content after %#v", rows)
+	}
+}

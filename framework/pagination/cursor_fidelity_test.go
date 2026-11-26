@@ -78,3 +78,41 @@ func TestCursorFieldNamesStillStripped(t *testing.T) {
 		t.Errorf("field = %q, want stripped %q", field, "title")
 	}
 }
+
+func TestCursorPointerValueRoundTrip(t *testing.T) {
+	value := "a string with spaces"
+	cursor := EncodeCursor("title", &value)
+	_, got, err := DecodeCursor(cursor)
+	if err != nil || got != value {
+		t.Fatalf("decoded value = %q, %v, want %q", got, err, value)
+	}
+}
+
+func TestMultiCursorRejectsMissingFields(t *testing.T) {
+	cursor := EncodeMultiCursor([]string{"title"}, nil)
+	if CursorFits(cursor) {
+		t.Error("cursor without key values reported as usable")
+	}
+	if fields, err := DecodeMultiCursor(cursor); err == nil {
+		t.Fatalf("empty cursor decoded successfully with %d fields", len(fields))
+	}
+}
+
+func TestCursorNamedStringRoundTrip(t *testing.T) {
+	type title string
+	for _, v := range []any{title("a title"), new(title("a title"))} {
+		_, got, err := DecodeCursor(EncodeCursor("title", v))
+		if err != nil || got != "a title" {
+			t.Errorf("%T decoded as %q, %v", v, got, err)
+		}
+	}
+}
+
+func TestCompositeCursorRefusesIncompleteKey(t *testing.T) {
+	for _, row := range []map[string]any{{"id": "one"}, {"id": "one", "title": nil}} {
+		cursor := EncodeMultiCursor([]string{"title", "id"}, row)
+		if _, err := DecodeMultiCursor(cursor); CursorFits(cursor) || err == nil {
+			t.Fatalf("row %v encoded an incomplete keyset", row)
+		}
+	}
+}

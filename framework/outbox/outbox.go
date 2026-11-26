@@ -402,7 +402,7 @@ func scanOutboxRow(row interface {
 
 func truncateError(err error) string {
 	const max = 2000
-	s := err.Error()
+	s := strings.ToValidUTF8(strings.ReplaceAll(err.Error(), "\x00", "�"), "�")
 	if len(s) <= max {
 		return s
 	}

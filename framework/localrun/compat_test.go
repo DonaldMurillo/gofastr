@@ -86,7 +86,7 @@ func TestSidecarRemovedWithRun(t *testing.T) {
 	}
 	// A live run's sidecar, written just before its record, stays.
 	fresh := filepath.Join(dir, fmt.Sprintf("%d-0000cafe.start", os.Getpid()))
-	if err := os.WriteFile(fresh, []byte("12345"), 0o600); err != nil {
+	if err := os.WriteFile(fresh, fmt.Appendf(nil, "%d", procalive.Identify(os.Getpid()).Start), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := List(); err != nil {

@@ -45,6 +45,7 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	if ent.Config.Scope == nil {
 		ent.Config.Scope = &entity.ScopeConfig{}
 	}
+	previousColumn := ent.Config.TenantColumn()
 	ent.Config.Scope.MultiTenant = true
 	if config.Field != "" && config.Field != "tenant_id" {
 		ent.Config.Scope.TenantField = config.Field
@@ -58,7 +59,7 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 		if f.Name == col {
 			return ent
 		}
-		if f.Name == "tenant_id" && isInjectedTenantField(f) {
+		if f.Name == previousColumn && isInjectedTenantField(f) {
 			injected = i
 		}
 	}

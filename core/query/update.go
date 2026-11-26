@@ -48,6 +48,9 @@ func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
 }
 
 func selectVerb(cols []string) string {
+	if len(cols) == 0 {
+		return "SELECT * FROM "
+	}
 	safe := make([]string, len(cols))
 	for i, c := range cols {
 		safe[i] = identSlot(sanitizeColumn(c))

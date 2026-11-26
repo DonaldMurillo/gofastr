@@ -8,32 +8,36 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	nethtml "golang.org/x/net/html"
 )
 
+const tagEnd = `(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?/?>`
+
+// Pre-compiled regexes, compiled once, reused per request.
 var (
-	reScript    = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	reStyle     = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	reCode      = regexp.MustCompile(`(?is)<code[^>]*>(.*?)</code>`)
-	reStrong    = regexp.MustCompile(`(?is)<strong[^>]*>(.*?)</strong>`)
-	reB         = regexp.MustCompile(`(?is)<b(?:\s[^>]*)?>(.*?)</b>`)
-	reEm        = regexp.MustCompile(`(?is)<em[^>]*>(.*?)</em>`)
-	reI         = regexp.MustCompile(`(?is)<i(?:\s[^>]*)?>(.*?)</i>`)
-	reLink      = regexp.MustCompile(`(?is)<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>`)
-	reImgAltSrc = regexp.MustCompile(`(?is)<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*/?\s*>`)
-	reImgSrcAlt = regexp.MustCompile(`(?is)<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*/?\s*>`)
-	reHR        = regexp.MustCompile(`(?is)<hr[^>]*/?\s*>`)
-	reLiOpen    = regexp.MustCompile(`(?is)<li(?:\s[^>]*)?>`)
-	reLiClose   = regexp.MustCompile(`(?is)</li>`)
-	reOlBlock   = regexp.MustCompile(`(?is)(<ol[^>]*>)(.*?)(</ol>)`)
-	reOlTag     = regexp.MustCompile(`(?is)</?ol[^>]*>`)
-	reUlTag     = regexp.MustCompile(`(?is)</?ul[^>]*>`)
-	rePOpen     = regexp.MustCompile(`(?is)<p[^>]*>`)
-	rePClose    = regexp.MustCompile(`(?is)</p>`)
-	reDivOpen   = regexp.MustCompile(`(?is)<div[^>]*>`)
-	reDivClose  = regexp.MustCompile(`(?is)</div>`)
-	reBR        = regexp.MustCompile(`(?is)<br[^>]*/?\s*>`)
-	reAnyTag    = regexp.MustCompile(`(?is)<[^>]+>`)
-	reStripTag  = regexp.MustCompile(`<[^>]+>`)
+	reScript   = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	reStyle    = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	reCode     = regexp.MustCompile(`(?is)<code[^>]*>(.*?)</code>`)
+	reStrong   = regexp.MustCompile(`(?is)<strong[^>]*>(.*?)</strong>`)
+	reB        = regexp.MustCompile(`(?is)<b(?:\s[^>]*)?>(.*?)</b>`)
+	reEm       = regexp.MustCompile(`(?is)<em[^>]*>(.*?)</em>`)
+	reI        = regexp.MustCompile(`(?is)<i(?:\s[^>]*)?>(.*?)</i>`)
+	reLink     = regexp.MustCompile(`(?is)(<a` + tagEnd + `)(.*?)</a>`)
+	reImg      = regexp.MustCompile(`(?is)<img` + tagEnd)
+	reHR       = regexp.MustCompile(`(?is)<hr[^>]*/?\s*>`)
+	reLiOpen   = regexp.MustCompile(`(?is)<li(?:\s[^>]*)?>`)
+	reLiClose  = regexp.MustCompile(`(?is)</li>`)
+	reOlBlock  = regexp.MustCompile(`(?is)(<ol[^>]*>)(.*?)(</ol>)`)
+	reOlTag    = regexp.MustCompile(`(?is)</?ol[^>]*>`)
+	reUlTag    = regexp.MustCompile(`(?is)</?ul[^>]*>`)
+	rePOpen    = regexp.MustCompile(`(?is)<p[^>]*>`)
+	rePClose   = regexp.MustCompile(`(?is)</p>`)
+	reDivOpen  = regexp.MustCompile(`(?is)<div[^>]*>`)
+	reDivClose = regexp.MustCompile(`(?is)</div>`)
+	reBR       = regexp.MustCompile(`(?is)<br[^>]*/?\s*>`)
+	reAnyTag   = regexp.MustCompile(`(?is)<[^>]+>`)
+	reStripTag = regexp.MustCompile(`<[^>]+>`)
 
 	reTable   = regexp.MustCompile(`(?is)<table[^>]*>(.*?)</table>`)
 	reRow     = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
@@ -120,16 +124,20 @@ func htmlToMarkdown(h string) string {
 
 	s = reLink.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reLink.FindStringSubmatch(m)
-		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
+		href, ok := tagAttribute(tagAttributes(sub[1]), "href")
+		if !ok {
+			return m
+		}
+		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(href) + ")"
 	})
 
-	s = reImgAltSrc.ReplaceAllStringFunc(s, func(m string) string {
-		sub := reImgAltSrc.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(decodeEntities(sub[2])) + ")"
-	})
-	s = reImgSrcAlt.ReplaceAllStringFunc(s, func(m string) string {
-		sub := reImgSrcAlt.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
+	// Images: alt text and src treated exactly like link text/dest.
+	s = reImg.ReplaceAllStringFunc(s, func(m string) string {
+		alt, src, ok := imageAttributes(m)
+		if !ok {
+			return m
+		}
+		return "![" + mdImageAlt(alt) + "](" + mdLinkDest(src) + ")"
 	})
 
 	s = reHR.ReplaceAllString(s, "\n---\n")
@@ -165,6 +173,28 @@ func htmlToMarkdown(h string) string {
 	s = restoreFences(s, fences)
 	s = strings.NewReplacer(parkedLT, "<", parkedGT, ">").Replace(s)
 	return strings.TrimSpace(s)
+}
+
+func tagAttributes(tag string) []nethtml.Attribute {
+	z := nethtml.NewTokenizer(strings.NewReader(tag))
+	z.Next()
+	return z.Token().Attr
+}
+
+func tagAttribute(attrs []nethtml.Attribute, key string) (string, bool) {
+	for _, attr := range attrs {
+		if attr.Key == key {
+			return scrubControls(attr.Val), true
+		}
+	}
+	return "", false
+}
+
+func imageAttributes(tag string) (alt, src string, ok bool) {
+	attrs := tagAttributes(tag)
+	alt, hasAlt := tagAttribute(attrs, "alt")
+	src, hasSrc := tagAttribute(attrs, "src")
+	return alt, src, hasAlt && hasSrc
 }
 
 func convertTables(h string, fences []fencedBlock) string {
@@ -217,21 +247,24 @@ func mdTableCellHTML(cellHTML string, fences []fencedBlock) string {
 	text := func(v string) string {
 		return strings.ReplaceAll(mdLinkText(stripTags(reBR.ReplaceAllString(v, " "))), "|", `\|`)
 	}
-	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(decodeEntities(v)), "|", "%7C") }
+	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(v), "|", "%7C") }
 	image := func(alt, src string) string {
 		return "![" + strings.ReplaceAll(mdImageAlt(alt), "|", `\|`) + "](" + dest(src) + ")"
 	}
-	c := reImgAltSrc.ReplaceAllStringFunc(cellHTML, func(m string) string {
-		sub := reImgAltSrc.FindStringSubmatch(m)
-		return park(image(sub[1], sub[2]))
-	})
-	c = reImgSrcAlt.ReplaceAllStringFunc(c, func(m string) string {
-		sub := reImgSrcAlt.FindStringSubmatch(m)
-		return park(image(sub[2], sub[1]))
+	c := reImg.ReplaceAllStringFunc(cellHTML, func(m string) string {
+		alt, src, ok := imageAttributes(m)
+		if !ok {
+			return m
+		}
+		return park(image(alt, src))
 	})
 	c = reLink.ReplaceAllStringFunc(c, func(m string) string {
 		sub := reLink.FindStringSubmatch(m)
-		return park("[" + strings.TrimSpace(text(sub[2])) + "](" + dest(sub[1]) + ")")
+		href, ok := tagAttribute(tagAttributes(sub[1]), "href")
+		if !ok {
+			return m
+		}
+		return park("[" + strings.TrimSpace(text(sub[2])) + "](" + dest(href) + ")")
 	})
 	c = reBR.ReplaceAllString(c, " ")
 	c = mdTableCell(strings.TrimSpace(stripTags(c)))
@@ -404,7 +437,7 @@ func mdLinkText(s string) string {
 }
 
 func mdImageAlt(alt string) string {
-	return mdLinkText(reTagStart.ReplaceAllString(decodeEntities(alt), "&lt;$1"))
+	return mdLinkText(reTagStart.ReplaceAllString(alt, "&lt;$1"))
 }
 
 func mdLinkDest(u string) string {

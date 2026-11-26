@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -24,12 +25,9 @@ func (o *Outbox) StartRelay(ctx context.Context) (stop func()) {
 		defer close(doneCh)
 		o.relayLoop(ctx, stopCh)
 	}()
+	var once sync.Once
 	return func() {
-		select {
-		case <-stopCh:
-		default:
-			close(stopCh)
-		}
+		once.Do(func() { close(stopCh) })
 		<-doneCh
 	}
 }
@@ -126,7 +124,7 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	}
 	var payload any
 	if len(d.Payload) > 0 {
-		if err := jsonexact.Unmarshal(d.Payload, &payload); err != nil {
+		if err := jsonexact.UnmarshalFullRange(d.Payload, &payload); err != nil {
 			settleCtx, cancel := o.settleContext(ctx)
 			defer cancel()
 			o.markDeliveryFailure(settleCtx, d, fmt.Errorf("unmarshal payload: %w", err))

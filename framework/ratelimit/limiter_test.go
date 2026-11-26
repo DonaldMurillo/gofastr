@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+func TestRetryAfterRoundsUpToNextSecond(t *testing.T) {
+	limiter := NewLimiter(Config{MaxAttempts: 1, BlockDuration: 200 * time.Millisecond})
+	serve := limiter.Middleware()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	serve.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	refused := httptest.NewRecorder()
+	serve.ServeHTTP(refused, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got := refused.Header().Get("Retry-After"); refused.Code != http.StatusTooManyRequests || got != "1" {
+		t.Fatalf("got status %d and Retry-After %q, want 429 and 1", refused.Code, got)
+	}
+}
+
 // TestLimiter_AllowsUpToMaxThenBlocks pins the core sliding-window contract:
 // exactly MaxAttempts requests pass, the MaxAttempts+1th is denied and reports
 // a retryAfter equal to the configured BlockDuration.

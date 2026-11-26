@@ -1,7 +1,6 @@
 package log
 
 import (
-	"bytes"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
@@ -85,10 +84,19 @@ func (r *RingSink) SnapshotDecoded() []map[string]any {
 	raw := r.Snapshot()
 	out := make([]map[string]any, 0, len(raw))
 	for _, line := range raw {
-		var m map[string]any
-		if err := jsonexact.Unmarshal(bytes.TrimSpace(line), &m); err == nil {
+		if m := decodeLogEntry(line); m != nil {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// decodeLogEntry accepts JSON objects, including empty objects. Malformed
+// lines and JSON null are not log records.
+func decodeLogEntry(line []byte) map[string]any {
+	var entry map[string]any
+	if err := jsonexact.Unmarshal(line, &entry); err != nil {
+		return nil
+	}
+	return entry
 }

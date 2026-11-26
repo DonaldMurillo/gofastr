@@ -22,6 +22,9 @@ func (a *Asset) Hash() string { return a.hash }
 // WriteTo writes the registered bytes without copying them.
 func (a *Asset) WriteTo(w io.Writer) (int64, error) {
 	n, err := w.Write(a.content)
+	if err == nil && n != len(a.content) {
+		err = io.ErrShortWrite
+	}
 	return int64(n), err
 }
 

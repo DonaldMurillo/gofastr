@@ -49,6 +49,9 @@ func (idx *Index) files(max int) (map[string][]byte, error) {
 	}
 	shards := splitShards(idx.keys, rows, max)
 	keys := slices.Sorted(maps.Keys(shards))
+	if keys == nil {
+		keys = []string{}
+	}
 	bodies := map[string][]byte{}
 	sum := sha256.New()
 	for _, k := range keys {

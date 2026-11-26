@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"strings"
 	"testing"
 )
@@ -113,5 +114,17 @@ func TestWorkerAndWASMShareName(t *testing.T) {
 	}
 	if _, ok := LookupWASM("sum"); !ok {
 		t.Fatal("wasm missing")
+	}
+}
+
+type shortAssetWriter struct{}
+
+func (shortAssetWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
+
+func TestWriteToReportsShortWrite(t *testing.T) {
+	asset := &Asset{content: []byte("abc")}
+	n, err := asset.WriteTo(shortAssetWriter{})
+	if n != 2 || err != io.ErrShortWrite {
+		t.Fatalf("WriteTo = (%d, %v), want (2, %v)", n, err, io.ErrShortWrite)
 	}
 }

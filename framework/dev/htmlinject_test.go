@@ -284,3 +284,73 @@ func TestInjectorForwardsHijackForWebSockets(t *testing.T) {
 		t.Fatalf("injector wrote to a hijacked response: %q", rec.Body.String())
 	}
 }
+
+func TestInjectorKeepsFirstFinalStatus(t *testing.T) {
+	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><body>missing</body></html>"))
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestInjectorMatchesHTMLMediaType(t *testing.T) {
+	for _, tc := range []struct {
+		ct     string
+		inject bool
+	}{
+		{"Text/HTML; charset=utf-8", true},
+		{"text/html-other", false},
+	} {
+		rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", tc.ct)
+			_, _ = w.Write([]byte("<html><body>page</body></html>"))
+		})
+		if got := strings.Contains(rec.Body.String(), LiveReloadScriptURL); got != tc.inject {
+			t.Errorf("Content-Type %q: injected = %v, want %v", tc.ct, got, tc.inject)
+		}
+	}
+}
+
+func TestInjectorRecognizesCaseInsensitiveBodyClose(t *testing.T) {
+	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<HTML><BODY>page</BODY></HTML>"))
+	})
+	if !strings.Contains(rec.Body.String(), "</script></BODY>") {
+		t.Fatalf("script missing before closing body: %s", rec.Body)
+	}
+}
+
+func TestInjectorOnlyDeduplicatesRealScriptTags(t *testing.T) {
+	t.Run("attribute in a non-script tag", func(t *testing.T) {
+		rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><body><img src="` + LiveReloadScriptURL + `"></body></html>`))
+		})
+		if !strings.Contains(rec.Body.String(), "<script ") {
+			t.Fatalf("non-script tag suppressed injection: %s", rec.Body)
+		}
+	})
+	t.Run("existing script with single quotes", func(t *testing.T) {
+		rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><body><script src='` + LiveReloadScriptURL + `'></script></body></html>`))
+		})
+		if strings.Count(rec.Body.String(), LiveReloadScriptURL) != 1 {
+			t.Fatalf("script duplicated: %s", rec.Body)
+		}
+	})
+}
+
+func TestInjectorPreservesImplicitContentSniffing(t *testing.T) {
+	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("plain text"))
+	})
+	if got := rec.Result().Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want net/http's implicit content type", got)
+	}
+}

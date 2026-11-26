@@ -11,6 +11,8 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strconv"
+	"strings"
 )
 
 // Unmarshal is json.Unmarshal with every number an interface value holds
@@ -18,6 +20,28 @@ import (
 // the target holds an any, a map[string]any or an []any.
 func Unmarshal(b []byte, dest any) error {
 	return Decode(b, dest, Lossless)
+}
+
+// UnmarshalFullRange also keeps JSON numbers that overflow float64 or
+// underflow to zero as json.Number. Use it where a valid, already-encoded
+// payload must round-trip even if a number falls outside float64's range.
+func UnmarshalFullRange(b []byte, dest any) error {
+	return Decode(b, dest, func(n json.Number) (any, error) {
+		value, err := Lossless(n)
+		if errors.Is(err, strconv.ErrRange) {
+			return n, nil
+		}
+		if f, ok := value.(float64); ok && f == 0 {
+			mantissa := n.String()
+			if i := strings.IndexAny(mantissa, "eE"); i >= 0 {
+				mantissa = mantissa[:i]
+			}
+			if strings.ContainsAny(mantissa, "123456789") {
+				return n, nil
+			}
+		}
+		return value, err
+	})
 }
 
 // Decode decodes b into dest with UseNumber, then replaces each

@@ -408,3 +408,21 @@ func TestSearch_QRefusesUnstorableText(t *testing.T) {
 		t.Errorf("in-process ListAll accepted an unstorable search term")
 	}
 }
+
+func TestSearchControlIsNotCoercedAsQColumn(t *testing.T) {
+	installOwnerExtractor(t)
+	conn := setupDB(t, `CREATE TABLE search_counts (id TEXT PRIMARY KEY, title TEXT, q INTEGER)`,
+		`INSERT INTO search_counts (id, title, q) VALUES ('a', 'quality', 7), ('b', 'quantity', 8)`)
+	ent := entity.Define("SearchCount", entity.EntityConfig{
+		Table: "search_counts", Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "q", Type: schema.Int}},
+		SearchFields: []string{"title"},
+	}.WithTimestamps(false))
+	ent.SetDB(conn)
+	ch := NewCrudHandler(ent, conn)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/search_counts?q=quality&q%5Beq%5D=7", nil), "alice")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"a"`) {
+		t.Fatalf("status=%d body=%s, want matching row", rec.Code, rec.Body.String())
+	}
+}

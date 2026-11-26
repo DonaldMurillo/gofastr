@@ -101,7 +101,7 @@ func cloneDSLQuery(q DSLQuery) DSLQuery {
 }
 
 func parseDSLUncached(input string) (DSLQuery, error) {
-	ent, rest, _ := strings.Cut(input, ".")
+	ent, rest, hasCalls := strings.Cut(input, ".")
 	if ent == "" {
 		return DSLQuery{}, i18n.NewError(reasonEntityRequired)
 	}
@@ -109,8 +109,11 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 		return DSLQuery{}, i18n.NewError(reasonInvalidEntity, map[string]any{"name": strconv.Quote(ent)})
 	}
 	out := DSLQuery{Entity: ent}
-	if rest == "" {
+	if !hasCalls {
 		return out, nil
+	}
+	if rest == "" {
+		return DSLQuery{}, i18n.NewError(reasonExpectedCall, map[string]any{"input": strconv.Quote(input)})
 	}
 
 	for rest != "" {
@@ -165,7 +168,14 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 		default:
 			return DSLQuery{}, i18n.NewError(reasonUnknownCall, map[string]any{"name": strconv.Quote(name)})
 		}
-		rest = strings.TrimPrefix(tail, ".")
+		if tail == "" {
+			break
+		}
+		var ok bool
+		rest, ok = strings.CutPrefix(tail, ".")
+		if !ok || rest == "" {
+			return DSLQuery{}, i18n.NewError(reasonExpectedCall, map[string]any{"input": strconv.Quote(tail)})
+		}
 	}
 
 	if len(out.Orders) > maxSortTerms {

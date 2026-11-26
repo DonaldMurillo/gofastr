@@ -19,11 +19,14 @@ type txKey struct{}
 // TxFromContext returns the ambient transaction, so a hook's queries commit or roll back with the write.
 func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 	tx, ok := ctx.Value(txKey{}).(*sql.Tx)
-	return tx, ok
+	return tx, ok && tx != nil
 }
 
 // WithTx returns ctx carrying tx; it adds no commit queue and keeps one ctx already carries.
 func WithTx(ctx context.Context, tx *sql.Tx) context.Context {
+	if current, _ := TxFromContext(ctx); current != tx {
+		ctx = context.WithValue(ctx, commitQueueKey{}, nil)
+	}
 	return context.WithValue(ctx, txKey{}, tx)
 }
 

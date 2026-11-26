@@ -77,3 +77,11 @@ func TestWithMultiTenantDeclaresTheColumn(t *testing.T) {
 		WithMultiTenant(entity.Define("wmt_e", entity.EntityConfig{}), TenantConfig{Field: "bad name;"})
 	})
 }
+
+func TestWithMultiTenantReplacesPriorCustomColumn(t *testing.T) {
+	ent := WithMultiTenant(entity.Define("notes", entity.EntityConfig{}), TenantConfig{Field: "org_id"})
+	WithMultiTenant(ent, TenantConfig{Field: "account_id"})
+	if len(tenantFields(ent, "account_id")) != 1 || len(tenantFields(ent, "org_id")) != 0 {
+		t.Fatalf("old custom column survived: %+v", ent.Config.Fields)
+	}
+}

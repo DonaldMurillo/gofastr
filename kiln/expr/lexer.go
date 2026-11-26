@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type tokenKind int
@@ -29,9 +30,10 @@ func lex(src string) ([]token, error) {
 	i := 0
 	for i < len(src) {
 		c := src[i]
+		r, size := utf8.DecodeRuneInString(src[i:])
 		switch {
-		case isSpace(c):
-			i++
+		case unicode.IsSpace(r):
+			i += size
 
 		case isDigit(c) || (c == '.' && i+1 < len(src) && isDigit(src[i+1])):
 			start := i
@@ -115,7 +117,6 @@ func lex(src string) ([]token, error) {
 	return out, nil
 }
 
-func isSpace(c byte) bool      { return unicode.IsSpace(rune(c)) }
 func isDigit(c byte) bool      { return c >= '0' && c <= '9' }
 func isIdentStart(c byte) bool { return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 func isIdentCont(c byte) bool  { return isIdentStart(c) || isDigit(c) }

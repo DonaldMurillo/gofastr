@@ -472,7 +472,7 @@ func RelationLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldNa
 }
 
 func trimIDSuffix(name string) string {
-	for _, suf := range []string{"_id", "Id", "ID"} {
+	for _, suf := range []string{"_id", "_Id", "_ID", "Id", "ID"} {
 		if len(name) > len(suf) && strings.HasSuffix(name, suf) {
 			return strings.TrimSuffix(name, suf)
 		}
@@ -560,7 +560,7 @@ func humanize(s string) string {
 			out = append(out, ' ')
 			continue
 		}
-		if i > 0 && unicode.IsUpper(ch) && ((i+1 < len(runes) && unicode.IsLower(runes[i+1])) || unicode.IsLower(runes[i-1])) {
+		if i > 0 && out[len(out)-1] != ' ' && unicode.IsUpper(ch) && ((i+1 < len(runes) && unicode.IsLower(runes[i+1])) || unicode.IsLower(runes[i-1])) {
 			out = append(out, ' ')
 		}
 		if i == 0 || len(out) == 0 || out[len(out)-1] == ' ' {

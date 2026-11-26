@@ -94,3 +94,22 @@ func TestCandidatesAreAbsolute(t *testing.T) {
 		}
 	}
 }
+
+func TestInvalidOverrideDoesNotMaskInstalledBrowser(t *testing.T) {
+	for _, dir := range []bool{true, false} {
+		p := t.TempDir()
+		if !dir {
+			if runtime.GOOS == "windows" {
+				continue
+			}
+			p = filepath.Join(p, "not-executable")
+			if err := os.WriteFile(p, []byte("non-executable"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Setenv("GOFASTR_BROWSER_PATH", p)
+		if got, ok := Find(); ok && got == p {
+			t.Errorf("Find accepted invalid browser %q", got)
+		}
+	}
+}

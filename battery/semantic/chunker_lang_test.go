@@ -96,3 +96,29 @@ func textsOf(chunks []Chunk) []string {
 	}
 	return out
 }
+
+func TestLangAwareRejectsInvalidUTF8InMarkdown(t *testing.T) {
+	_, err := NewLangAware().Chunk(Document{ID: "doc", Source: "notes.md", Text: "# Heading\n\xff"})
+	if err == nil {
+		t.Fatal("accepted invalid UTF-8")
+	}
+}
+
+func TestLangAwareNonpositiveCapUsesDefault(t *testing.T) {
+	body := "# Heading\n" + strings.Repeat("a", 700)
+	l := &LangAware{MaxRunes: -1}
+	chunks, err := l.Chunk(Document{ID: "doc", Source: "notes.md", Text: body})
+	if err != nil || len(chunks) != 1 || chunks[0].Text != body {
+		t.Fatalf("got %d chunks, %v; want a single structural chunk", len(chunks), err)
+	}
+}
+
+func TestLangAwareEmptyCodeLanguageFallsBackToExtension(t *testing.T) {
+	chunks, err := NewLangAware().Chunk(Document{
+		ID: "doc", Source: "main.go", Text: "package main\nfunc a() {}\nfunc b() {}\n",
+		Metadata: map[string]any{"kind": "code", "lang": ""},
+	})
+	if err != nil || len(chunks) != 2 {
+		t.Fatalf("got %d chunks, %v; want two Go declarations", len(chunks), err)
+	}
+}

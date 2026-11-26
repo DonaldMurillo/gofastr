@@ -229,3 +229,26 @@ func TestResetRestoresColdLoad(t *testing.T) {
 		t.Fatal("Current() is empty after an inner reset ended")
 	}
 }
+
+func TestNilSetMatchesNothing(t *testing.T) {
+	var s *Set
+	if got := s.Check([]byte("<div>")); len(got) != 0 {
+		t.Fatalf("nil set matched %#v", got)
+	}
+}
+
+func TestCheckResumesAfterBangCommentEnd(t *testing.T) {
+	s := fixtureSet(t)
+	got := s.Check([]byte(`<!-- comment --!><div class="ui-button">`))
+	if len(got) != 1 || got[0].Name != "ui-button" {
+		t.Fatalf("Findings = %#v, want ui-button", got)
+	}
+}
+
+func TestCheckDeduplicatesAttributeNamesIgnoringCase(t *testing.T) {
+	s := fixtureSet(t)
+	got := s.Check([]byte(`<div DATA-FUI-SIGNAL><div data-fui-signal>`))
+	if len(got) != 1 || got[0].Name != "DATA-FUI-SIGNAL" {
+		t.Fatalf("Findings = %#v, want first spelling", got)
+	}
+}

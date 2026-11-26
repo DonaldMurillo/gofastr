@@ -187,3 +187,15 @@ func TestOllamaEmbedder_DimRaceFree(t *testing.T) {
 		t.Fatalf("Dim = %d, want 32", e.Dim())
 	}
 }
+
+func TestOllamaRejectsNonSuccessStatusWithValidBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMultipleChoices)
+		io.WriteString(w, `{"embeddings":[[1,2]]}`)
+	}))
+	defer srv.Close()
+	emb := NewOllamaEmbedder(OllamaConfig{BaseURL: srv.URL})
+	if _, err := emb.Embed(t.Context(), []string{"hello"}); err == nil {
+		t.Fatal("Embed treated HTTP 300 as a successful response")
+	}
+}

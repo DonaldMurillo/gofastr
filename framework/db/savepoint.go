@@ -18,8 +18,8 @@ func InSavepoint(ctx context.Context, tx *sql.Tx, fn func(ctx context.Context, t
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+name); err != nil {
 		return fmt.Errorf("savepoint: %w", err)
 	}
-	spCtx := ctx
-	parent, hasParent := CommitQueueFromContext(ctx)
+	spCtx := WithTx(ctx, tx)
+	parent, hasParent := CommitQueueFromContext(spCtx)
 	var queue *CommitQueue
 	if hasParent {
 		spCtx, queue = WithTxQueue(ctx, tx)

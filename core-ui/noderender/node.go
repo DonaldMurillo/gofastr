@@ -101,7 +101,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Section(html.SectionConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label", "aria-labelledby"),
 		}, children...)
 	case "main":
 		return html.Main(html.MainConfig{
@@ -123,14 +123,14 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		return html.Nav(html.NavConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label", "aria-labelledby"),
 		}, children...)
 	case "aside":
 		label, labelledBy := landmarkLabel(props, "Aside")
 		return html.Aside(html.AsideConfig{
 			Label: label, LabelledBy: labelledBy,
 			ID: propString(props, "id"), Class: propString(props, "class"),
-			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label"),
+			ExtraAttrs: extraAttrs(props, "id", "class", "label", "labelledby", "aria-label", "aria-labelledby"),
 		}, children...)
 
 	case "heading":
@@ -511,6 +511,9 @@ func landmarkLabel(props map[string]any, fallback string) (label, labelledBy str
 		label = propString(props, "aria-label")
 	}
 	labelledBy = propString(props, "labelledby")
+	if labelledBy == "" {
+		labelledBy = propString(props, "aria-labelledby")
+	}
 	if label == "" && labelledBy == "" {
 		label = fallback
 	}

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/email"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -309,6 +310,9 @@ func NewMapTemplater() *MapTemplater {
 // Set registers a template for the (notifType, channel) pair.
 func (m *MapTemplater) Set(notifType, channel string, t Template) {
 	m.mu.Lock()
+	if m.templates == nil {
+		m.templates = make(map[string]map[string]Template)
+	}
 	if m.templates[notifType] == nil {
 		m.templates[notifType] = map[string]Template{}
 	}
@@ -365,7 +369,7 @@ func interpolateValues(s string, params map[string]any, format func(any) string)
 	b.Grow(len(s))
 	write := func(chunk string) bool {
 		if b.Len()+len(chunk) > MaxInterpolatedOutputBytes {
-			b.WriteString(chunk[:MaxInterpolatedOutputBytes-b.Len()])
+			b.WriteString(chunk[:runeBoundary(chunk, MaxInterpolatedOutputBytes-b.Len())])
 			return false
 		}
 		b.WriteString(chunk)
@@ -405,6 +409,16 @@ func interpolateValues(s string, params map[string]any, format func(any) string)
 	return b.String()
 }
 
+func runeBoundary[T ~string | ~[]byte](s T, cut int) int {
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return cut
+}
+
+// htmlDelimL and htmlDelimR delimit the actions renderHTMLBody writes
+// into a body's source. Host markup holds no NUL (renderHTMLBody
+// refuses one), so a literal "{{" in it is never read as an action.
 const htmlDelimL, htmlDelimR = "\x00[", "]\x00"
 
 func renderHTMLBody(body string, data map[string]any) (string, error) {
@@ -437,7 +451,12 @@ type cappedWriter struct {
 
 func (w *cappedWriter) Write(p []byte) (int, error) {
 	if room := w.max - w.b.Len(); room > 0 {
-		w.b.Write(p[:min(len(p), room)])
+		if len(p) > room {
+			w.b.Write(p[:runeBoundary(p, room)])
+			w.max = w.b.Len()
+		} else {
+			w.b.Write(p)
+		}
 	}
 	return len(p), nil
 }

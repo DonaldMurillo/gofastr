@@ -93,11 +93,13 @@ func Percent[N Numeric](ctx context.Context, v N, opts ...NumberOption) string {
 // rounded to the currency's CLDR digits; an unknown code gets two digits.
 func Currency[N Numeric](ctx context.Context, amount N, code string) string {
 	m := cldrFor(ctx)
-	scale, symbol := 2, ""
-	if cur, err := currency.ParseISO(code); err == nil {
-		scale = standardCurrencyDigits(cur.String())
-		symbol = m.printer().Sprint(currency.Symbol(cur))
+	cur, err := currency.ParseISO(code)
+	if err != nil {
+		opts := []NumberOption{MinFraction(2), MaxFraction(2)}
+		return m.loc.formatNumber(m.loc.decimalPattern, amount, 0, opts, "")
 	}
+	scale := standardCurrencyDigits(cur.String())
+	symbol := m.printer().Sprint(currency.Symbol(cur))
 	opts := []NumberOption{MinFraction(scale), MaxFraction(scale)}
 	return m.loc.formatNumber(m.loc.currencyPattern, amount, 0, opts, symbol)
 }

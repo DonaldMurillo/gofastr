@@ -98,3 +98,10 @@ func TestTableOfContentsRefusesBrokenConfiguration(t *testing.T) {
 		}()
 	}
 }
+
+func TestTableOfContentsEscapesLiteralPercentInFragment(t *testing.T) {
+	h := renderTOC(TableOfContentsProps{Items: []TOCItem{{ID: "chapter%20one", Label: "Chapter one"}}})
+	if !strings.Contains(h, `href="#chapter%2520one"`) {
+		t.Errorf("link must target the literal ID chapter%%20one: %s", h)
+	}
+}

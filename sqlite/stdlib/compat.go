@@ -62,90 +62,34 @@ const txLockParam = "_txlock=immediate"
 // cleans up.
 const foreignKeysParam = "_pragma=foreign_keys(1)"
 
-// hasForeignKeysChoice reports whether the DSN already expresses a
-// foreign_keys setting in a form the driver acts on.
-//
-// A plain substring test on "foreign_keys" was wrong in the one direction that
-// matters. modernc acts on `_pragma=foreign_keys(N)` and on mattn's
-// `_foreign_keys=N`, and ignores anything else — so a DSN saying
-// `?foreign_keys=1` (the bare SQLite-URI spelling, an easy thing to write from
-// memory) suppressed the default AND set nothing itself. The DSN read as
-// opted-in while enforcement was off, which is worse than either outcome
-// alone. An unrecognized spelling now gets the default appended; the caller's
-// parameter is still there, still ignored by the driver, and no longer
-// silently decisive.
-func hasForeignKeysChoice(query string) bool {
-	// Parse rather than substring-match. The driver runs the query string
-	// through url.ParseQuery, so values arrive DECODED
-	// (`foreign_keys%280%29` is `foreign_keys(0)`), and it applies _pragma
-	// settings in sorted order — which means `foreign_keys(1)` sorts after
-	// `foreign_keys(0)` and executes last. A missed spelling therefore does
-	// not merely fail to opt out: the appended default silently OVERRIDES the
-	// caller's explicit choice. Pragma names are also case-insensitive to
-	// SQLite, so `FOREIGN_KEYS(0)` is a real opt-out too.
-	vals, err := url.ParseQuery(query)
-	if err != nil {
-		// Unparseable query: fall back to the conservative substring test
-		// rather than appending a default that might override something.
-		return strings.Contains(strings.ToLower(query), "foreign_keys")
-	}
-	for _, v := range vals["_pragma"] {
-		// Match the pragma NAME, not one spelling of its argument. SQLite's
-		// PRAGMA grammar accepts `name(v)`, `name = v`, and `name=v`, with
-		// arbitrary whitespace — and the driver executes all of them. Keying
-		// on the literal prefix `foreign_keys(` therefore missed
-		// `foreign_keys (0)`, `foreign_keys = 0`, and the percent-encoded
-		// space forms: the caller's opt-out was honoured by the driver while
-		// this function reported "no choice made", so the appended default was
-		// added and — because _pragma values are applied in sorted order —
-		// executed last and won. That is the third time this guard has
-		// silently inverted an explicit choice, each time through a different
-		// spelling, which is why it now matches the name and stops.
-		//
-		// No other SQLite pragma begins with "foreign_keys", so this cannot
-		// over-suppress.
-		name := strings.ToLower(strings.TrimSpace(v))
-		rest, ok := strings.CutPrefix(name, "foreign_keys")
-		if !ok {
-			continue
-		}
-		// An ASSIGNMENT is a choice; a bare `_pragma=foreign_keys` is a read
-		// that sets nothing, so it must still receive the default. Both
-		// argument forms SQLite accepts count, with any whitespace.
-		rest = strings.TrimSpace(rest)
-		if strings.HasPrefix(rest, "(") || strings.HasPrefix(rest, "=") {
-			return true
-		}
-	}
-	// The mattn-compatible shorthands. A NON-EMPTY value is a choice and wins.
-	// An empty one is not: modernc suppresses the shorthand's pragma when the
-	// value is empty, so `?_foreign_keys=` selects nothing at all. Reading the
-	// bare key as a choice meant the default was skipped for a DSN that had
-	// merely mentioned the parameter, and enforcement came back off with
-	// nobody having asked for it. Executed against the shipped driver:
-	// `?_foreign_keys=` and `?_fk=` both reported foreign_keys=0.
-	//
-	// The comment that stood here claimed this arm changed no observable
-	// behavior and that no test could pin it. Both halves were wrong, which is
-	// the argument for pinning a guard rather than reasoning about it.
-	for _, k := range []string{"_foreign_keys", "_fk"} {
-		for _, v := range vals[k] {
-			if strings.TrimSpace(v) != "" {
-				return true
+// hasPragmaAssignment recognizes the assignment forms accepted by SQLite.
+func hasPragmaAssignment(values url.Values, name string) bool {
+	for _, value := range values["_pragma"] {
+		value = strings.ToLower(strings.TrimSpace(value))
+		for _, spelling := range []string{name, `"` + name + `"`, "'" + name + "'", "`" + name + "`", "[" + name + "]"} {
+			rest, ok := strings.CutPrefix(value, spelling)
+			if ok {
+				rest = strings.TrimSpace(rest)
+				if strings.HasPrefix(rest, "(") || strings.HasPrefix(rest, "=") {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
+func hasForeignKeysChoice(values url.Values) bool {
+	return hasPragmaAssignment(values, "foreign_keys") ||
+		values.Get("_foreign_keys") != "" || values.Get("_fk") != ""
+}
+
 // withCompatDefaults adds the defaults above to a DSN, skipping either one the
 // caller already chose. _time_integer_format counts as choosing a time format:
 // modernc ignores _time_format entirely when it is set.
 func withCompatDefaults(dsn string) string {
-	query := ""
-	if _, after, ok := strings.Cut(dsn, "?"); ok {
-		query = after
-	}
+	path, query, _ := strings.Cut(dsn, "?")
+	values, queryErr := url.ParseQuery(query)
 	out := dsn
 	add := func(param string) {
 		sep := "?"
@@ -154,17 +98,28 @@ func withCompatDefaults(dsn string) string {
 		}
 		out += sep + param
 	}
-	if !strings.Contains(query, "_time_format=") && !strings.Contains(query, "_time_integer_format=") {
-		add(timeFormatParam)
+	// Modernc uses the first value for these settings. Insert the default
+	// ahead of an explicitly blank value so it can take effect.
+	addFirstValue := func(key, param string) {
+		if values.Has(key) {
+			_, existing, _ := strings.Cut(out, "?")
+			out = path + "?" + param + "&" + existing
+			return
+		}
+		add(param)
 	}
-	if !strings.Contains(query, "busy_timeout") {
+	if values.Get("_time_format") == "" && values.Get("_time_integer_format") == "" {
+		addFirstValue("_time_format", timeFormatParam)
+	}
+	if values.Get("_busy_timeout") == "" && values.Get("_timeout") == "" && !hasPragmaAssignment(values, "busy_timeout") {
 		add(busyTimeoutParam)
 	}
-	if !hasForeignKeysChoice(query) {
+	// Keep the conservative foreign-key fallback for malformed queries.
+	if !hasForeignKeysChoice(values) && (queryErr == nil || !strings.Contains(strings.ToLower(query), "foreign_keys")) {
 		add(foreignKeysParam)
 	}
-	if !strings.Contains(query, "_txlock=") {
-		add(txLockParam)
+	if values.Get("_txlock") == "" {
+		addFirstValue("_txlock", txLockParam)
 	}
 	return out
 }

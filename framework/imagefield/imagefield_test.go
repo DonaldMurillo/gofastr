@@ -270,3 +270,23 @@ func TestDerivedVariantsJSONShape(t *testing.T) {
 		}
 	}
 }
+
+func TestNewSnapshotsDeriverOptions(t *testing.T) {
+	cfg := imagefield.Config{
+		Variants:    []fwimage.Variant{{Width: 4, Format: fwimage.FormatPNG}},
+		Placeholder: &fwimage.PlaceholderOptions{Width: 4},
+	}
+	d, err := imagefield.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Variants[0].Width = -1
+	cfg.Placeholder.Width = 1 << 20
+	out, err := d.DeriveImage(t.Context(), newMemStore(), testPNG(t, 8, 8), "primary.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Variants) != 1 || out.Variants[0].Width != 4 || out.Placeholder == "" {
+		t.Fatalf("got %+v, want original configuration", out)
+	}
+}

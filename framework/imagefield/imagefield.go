@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -59,10 +60,15 @@ func New(cfg Config) (*Deriver, error) {
 	if err := fwimage.CheckVariants(cfg.Variants); err != nil {
 		return nil, fmt.Errorf("imagefield: %w", err)
 	}
+	placeholder := cfg.Placeholder
+	if placeholder != nil {
+		options := *placeholder
+		placeholder = &options
+	}
 	return &Deriver{
 		set: fwimage.VariantSet{
-			Variants:       cfg.Variants,
-			Placeholder:    cfg.Placeholder,
+			Variants:       slices.Clone(cfg.Variants),
+			Placeholder:    placeholder,
 			BlurHashX:      cfg.BlurHashX,
 			BlurHashY:      cfg.BlurHashY,
 			RejectAnimated: cfg.RejectAnimated,

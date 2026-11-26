@@ -316,24 +316,16 @@ func queryHref(component, path string, q url.Values) string {
 }
 
 func pageNumbers(pages, page, window int) []int {
-	if window > pages {
-		window = pages
-	}
-	if pages <= 7+2*(window-1) {
+	// Compare against the required window without doubling it.
+	if window >= (pages-4)/2 {
 		out := make([]int, pages)
 		for i := range out {
 			out[i] = i + 1
 		}
 		return out
 	}
-	left := page - window
-	right := page + window
-	if left < 2 {
-		left = 2
-	}
-	if right > pages-1 {
-		right = pages - 1
-	}
+	left := max(2, page-window)
+	right := page + min(window, pages-1-page)
 	out := []int{1}
 	if left > 2 {
 		out = append(out, 0)

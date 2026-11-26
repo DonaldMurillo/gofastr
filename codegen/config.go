@@ -3,7 +3,9 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -310,12 +312,11 @@ func validateConfig(cfg CodegenConfig, requireExtensionCommands bool) error {
 		if gen.Name == "" {
 			return fmt.Errorf("codegen.generators[%d].name is required", i)
 		}
-		if gen.ID != "" {
-			if seenGeneratorIDs[gen.ID] {
-				return fmt.Errorf("duplicate generator id %q", gen.ID)
-			}
-			seenGeneratorIDs[gen.ID] = true
+		id := generatorInputKey(gen, i)
+		if seenGeneratorIDs[id] {
+			return fmt.Errorf("duplicate generator id %q", id)
 		}
+		seenGeneratorIDs[id] = true
 		if gen.Extension != "" && gen.Source.Type == "" {
 			return fmt.Errorf("codegen.generators[%d].source.type is required for extension generator %q", i, gen.Name)
 		}
@@ -344,7 +345,7 @@ func expectList(node *coreyaml.Node, label string) ([]*coreyaml.Node, error) {
 }
 
 func rejectUnknownKeys(m map[string]*coreyaml.Node, allowed map[string]bool, label string) error {
-	for key := range m {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		if allowed[key] || strings.HasPrefix(key, "x_") || strings.HasPrefix(key, "x-") {
 			continue
 		}

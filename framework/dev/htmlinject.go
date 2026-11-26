@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/internal/mediatype"
+	"golang.org/x/net/html"
 )
 
 // LiveReloadHTMLInjector returns middleware that splices the livereload
@@ -61,6 +62,7 @@ type injectWriter struct {
 	rw         http.ResponseWriter
 	status     int
 	decided    bool
+	final      bool
 	buffering  bool
 	sentHeader bool
 	hijacked   bool
@@ -91,12 +93,16 @@ func (w *injectWriter) decide() {
 }
 
 func (w *injectWriter) WriteHeader(status int) {
+	if w.final {
+		return
+	}
 	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
 		if !w.sentHeader {
 			w.rw.WriteHeader(status)
 		}
 		return
 	}
+	w.final = true
 	w.decide()
 	w.status = status
 	if !w.buffering && !w.sentHeader {
@@ -109,14 +115,12 @@ func (w *injectWriter) Write(p []byte) (int, error) {
 	if w.hijacked {
 		return 0, http.ErrHijacked
 	}
+	w.final = true
 	w.decide()
 	if w.buffering {
 		return w.buf.Write(p)
 	}
-	if !w.sentHeader {
-		w.rw.WriteHeader(w.status)
-		w.sentHeader = true
-	}
+	w.sentHeader = true
 	return w.rw.Write(p)
 }
 
@@ -124,6 +128,7 @@ func (w *injectWriter) Flush() {
 	if w.hijacked {
 		return
 	}
+	w.final = true
 	w.decide()
 	if w.buffering {
 		w.buffering = false
@@ -163,10 +168,14 @@ func (w *injectWriter) finish() {
 		return
 	}
 	body := w.buf.Bytes()
-	if i := bytes.LastIndex(body, []byte("</body>")); i >= 0 {
+	// Full documents only: splice before the LAST </body>. Fragments pass
+	// through byte-for-byte. The guard matches each script's src attribute,
+	// not the bare URL, so a page that merely mentions the URL in prose
+	// still gets the script, and a page that links it already keeps one.
+	if i, scriptSources := documentScripts(body); i >= 0 {
 		var tags []byte
 		for _, url := range w.scripts {
-			if !bytes.Contains(body, []byte(`src="`+url+`"`)) {
+			if !scriptSources[url] {
 				tags = append(tags, `<script src="`+url+`" defer></script>`...)
 			}
 		}
@@ -185,5 +194,40 @@ func (w *injectWriter) finish() {
 	}
 	if len(body) > 0 {
 		_, _ = w.rw.Write(body)
+	}
+}
+
+// documentScripts finds the closing body tag and the actual script sources.
+func documentScripts(body []byte) (int, map[string]bool) {
+	tokenizer := html.NewTokenizer(bytes.NewReader(body))
+	closeBody, offset := -1, 0
+	sources := make(map[string]bool)
+	for {
+		kind := tokenizer.Next()
+		if kind == html.ErrorToken {
+			return closeBody, sources
+		}
+		start := offset
+		offset += len(tokenizer.Raw())
+		switch kind {
+		case html.EndTagToken:
+			name, _ := tokenizer.TagName()
+			if bytes.Equal(name, []byte("body")) {
+				closeBody = start
+			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, more := tokenizer.TagName()
+			if !bytes.Equal(name, []byte("script")) {
+				continue
+			}
+			for more {
+				var key, value []byte
+				key, value, more = tokenizer.TagAttr()
+				if bytes.Equal(key, []byte("src")) {
+					sources[string(value)] = true
+					break
+				}
+			}
+		}
 	}
 }

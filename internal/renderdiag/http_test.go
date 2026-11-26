@@ -123,3 +123,19 @@ func TestProductionContextKeepsWriter(t *testing.T) {
 		t.Fatal("a request without the exemption kept its writer")
 	}
 }
+
+func TestResponsePreservesFlushError(t *testing.T) {
+	cause := errors.New("flush failed")
+	underlying := &errorFlusher{ResponseRecorder: httptest.NewRecorder(), err: cause}
+	w, _ := TestResponse(underlying, httptest.NewRequest(http.MethodGet, "/", nil))
+	if err := http.NewResponseController(w).Flush(); !errors.Is(err, cause) {
+		t.Fatalf("Flush error = %v, want %v", err, cause)
+	}
+}
+
+type errorFlusher struct {
+	*httptest.ResponseRecorder
+	err error
+}
+
+func (w *errorFlusher) FlushError() error { return w.err }

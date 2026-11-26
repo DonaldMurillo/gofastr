@@ -121,6 +121,25 @@ func TestListDropsDeadRun(t *testing.T) {
 	}
 }
 
+func TestListDropsOrphanSidecarForRecycledPID(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvDir, dir)
+	self := procalive.Identify(os.Getpid())
+	if self.Start == 0 {
+		t.Skip("process start unavailable")
+	}
+	old := filepath.Join(dir, fmt.Sprintf("%d-12345678.start", self.PID))
+	if err := os.WriteFile(old, fmt.Appendf(nil, "%d", self.Start+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := List(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("orphan sidecar for an earlier process survived: %v", err)
+	}
+}
+
 // Once a run is gone its pid may go to a newer process. That process is
 // alive but is not the run: a record whose start value disagrees with
 // the pid's is dropped, so a tool never lists a dead run's URL as live.

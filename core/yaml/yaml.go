@@ -76,7 +76,7 @@ func ExpectMap(node *Node, label string) (map[string]*Node, error) {
 }
 
 func lexLines(input string) ([]line, error) {
-	raw := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
+	raw := strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(input), "\n")
 	lines := make([]line, 0, len(raw))
 	for i, rawLine := range raw {
 		if strings.ContainsRune(rawLine[:len(rawLine)-len(strings.TrimLeft(rawLine, " \t"))], '\t') {
@@ -272,7 +272,8 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		if !(strings.HasPrefix(line.text, "- ") || line.text == "-") {
 			break
 		}
-		item := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
+		item := strings.TrimSpace(line.text[1:])
+		itemCol := line.indent + len(line.text) - len(item) + 1
 		p.pos++
 		if strings.HasPrefix(item, "- ") || item == "-" {
 			return nil, fmt.Errorf("yaml:%d:%d: a nested list on the same line as its parent dash is not supported; put the inner list on its own indented lines", line.line, line.indent+3)
@@ -294,11 +295,16 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		}
 		if key, value, valueOffset, ok := splitMapping(item); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
-			normKey, kErr := normalizeKey(key, line.line, line.indent+3)
+			// The item's first key is a mapping key like any other:
+			// normalize it so flow characters and anchor/tag
+			// decorations are refused here too (the plain map path
+			// enforces this via normalizeKey) and a quoted spelling
+			// cannot dodge the continuation-seed duplicate check.
+			normKey, kErr := normalizeKey(key, line.line, itemCol)
 			if kErr != nil {
 				return nil, kErr
 			}
-			keyCol := line.indent + 1 + (len(line.text) - 1 - len(strings.TrimLeft(line.text[1:], " ")))
+			keyCol := itemCol - 1
 			if value == "" {
 				if p.pos < len(p.lines) && (p.lines[p.pos].indent > keyCol ||
 					(p.lines[p.pos].indent == keyCol && (strings.HasPrefix(p.lines[p.pos].text, "- ") || p.lines[p.pos].text == "-"))) {
@@ -328,7 +334,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			out.List = append(out.List, child)
 			continue
 		}
-		node, err := parseScalar(item, line.line, line.indent+3, 0)
+		node, err := parseScalar(item, line.line, itemCol, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -462,8 +468,8 @@ func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {
 	if !strings.HasSuffix(raw, "]") {
 		return nil, fmt.Errorf("yaml:%d:%d: unterminated inline list", line, column)
 	}
-	body := strings.TrimSpace(raw[1 : len(raw)-1])
-	if body == "" {
+	body := raw[1 : len(raw)-1]
+	if strings.TrimSpace(body) == "" {
 		return nil, nil
 	}
 	parts, err := splitInline(body)
@@ -471,13 +477,17 @@ func parseInlineList(raw string, line, column, depth int) ([]*Node, error) {
 		return nil, fmt.Errorf("yaml:%d:%d: %w", line, column, err)
 	}
 	out := make([]*Node, 0, len(parts))
+	itemStart := column + 1 // skip the opening bracket
 	for _, part := range parts {
-		node, err := parseScalar(part, line, column, depth)
+		trimmed := strings.TrimLeftFunc(part, unicode.IsSpace)
+		itemColumn := itemStart + len(part) - len(trimmed)
+		itemStart += len(part) + 1
+		node, err := parseScalar(trimmed, line, itemColumn, depth)
 		if err != nil {
 			return nil, err
 		}
 		if node.Kind != Scalar {
-			return nil, fmt.Errorf("yaml:%d:%d: inline lists may only contain scalar values", line, column)
+			return nil, fmt.Errorf("yaml:%d:%d: inline lists may only contain scalar values", line, itemColumn)
 		}
 		out = append(out, node)
 	}
@@ -491,7 +501,7 @@ func splitInline(body string) ([]string, error) {
 	for i := 0; i < len(body); {
 		n, unquoted := q.next(body, i, true)
 		if unquoted && body[i] == ',' {
-			out = append(out, strings.TrimSpace(body[start:i]))
+			out = append(out, body[start:i])
 			start = i + 1
 		}
 		i += n
@@ -499,11 +509,15 @@ func splitInline(body string) ([]string, error) {
 	if q.quote != 0 {
 		return nil, fmt.Errorf("unterminated quoted scalar")
 	}
-	if last := strings.TrimSpace(body[start:]); last != "" || len(out) == 0 {
+	// A trailing comma ends the list (YAML 1.2 allows it) and adds no
+	// item: appended, the empty last part became a "" value that an
+	// app-spec enum then accepted. Any other empty part ([a,,b], [,a])
+	// is refused; an empty item is spelled "".
+	if last := body[start:]; strings.TrimSpace(last) != "" || len(out) == 0 {
 		out = append(out, last)
 	}
 	for _, part := range out {
-		if part == "" {
+		if strings.TrimSpace(part) == "" {
 			return nil, fmt.Errorf("empty inline list item; write \"\" for an empty string")
 		}
 	}

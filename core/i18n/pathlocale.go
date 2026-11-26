@@ -46,7 +46,7 @@ func (p PathLocales) Split(path string) (tag, rest string) {
 		return "", path
 	}
 	seg, after, _ := strings.Cut(path[1:], "/")
-	if seg != p.Default && !slices.Contains(p.Prefixed, seg) {
+	if seg == "" || (seg != p.Default && !slices.Contains(p.Prefixed, seg)) {
 		return "", path
 	}
 	return seg, "/" + after
@@ -99,7 +99,8 @@ func (p PathLocales) Path(tag, path string) string {
 	if path == "/" {
 		return pre
 	}
-	if len(path) > 1 && path[0] == '/' && path[1] == '?' {
+	// Keep root queries and fragments on the canonical locale root.
+	if len(path) > 1 && path[0] == '/' && (path[1] == '?' || path[1] == '#') {
 		return pre + path[1:]
 	}
 	return pre + path

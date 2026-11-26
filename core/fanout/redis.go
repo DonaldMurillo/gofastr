@@ -3,6 +3,7 @@ package fanout
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // RedisPubSub is the Redis client surface [NewRedis] needs.
@@ -34,8 +35,11 @@ func (r *redisFanout) Subscribe(topic string, fn func(payload []byte)) (cancel f
 		stop()
 		return nil, fmt.Errorf("fanout: redis subscribe %q: %w", topic, err)
 	}
+	var once sync.Once
 	return func() {
-		c()
-		stop()
+		once.Do(func() {
+			c()
+			stop()
+		})
 	}, nil
 }

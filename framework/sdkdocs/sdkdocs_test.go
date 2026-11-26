@@ -462,3 +462,32 @@ func TestSDKDocsMountsUseIndependentDrawers(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactCacheControlOnNotModified(t *testing.T) {
+	reg := testRegistry()
+	srv := mountedServer(t, Config{Registry: reg, Artifacts: testArtifacts(t, reg, true)})
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/docs/api/sdk/go.zip", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("If-None-Match", `"`+sdkSum("zip")+`"`)
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Cache-Control"); resp.StatusCode != http.StatusNotModified || got != "no-cache" {
+		t.Fatalf("conditional SDK download returned status %d and Cache-Control %q", resp.StatusCode, got)
+	}
+}
+
+func TestArtifactMustMatchManifestFilename(t *testing.T) {
+	reg := testRegistry()
+	artifacts := testArtifacts(t, reg, true)
+	raw := artifacts[sdk.ManifestFile]
+	raw.Data = []byte(strings.Replace(string(raw.Data), sdk.GoArtifact, "different.zip", 1))
+	srv := mountedServer(t, Config{Registry: reg, Artifacts: artifacts})
+	if resp, _ := get(t, srv, "/docs/api/sdk/go.zip"); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("SDK download mismatching manifest filename returned status %d", resp.StatusCode)
+	}
+}

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 func tailFile(path string, maxLines int) ([]map[string]any, error) {
@@ -38,19 +36,25 @@ func tailFileWithWindow(path string, maxLines int, window int64) ([]map[string]a
 	}
 
 	offset := max(info.Size()-window, 0)
+	skipFirst := false
+	if offset > 0 {
+		var previous [1]byte
+		if _, err := f.ReadAt(previous[:], offset-1); err != nil {
+			return nil, fmt.Errorf("log: tail read %s: %w", path, err)
+		}
+		skipFirst = previous[0] != '\n'
+	}
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("log: tail seek %s: %w", path, err)
 	}
 
 	rd := bufio.NewReaderSize(f, 64*1024)
-	skipFirst := offset > 0
 
 	out := make([]map[string]any, 0, maxLines)
 	for {
 		line, err := readLineCapped(rd, 1<<20)
 		if line != nil && !skipFirst {
-			var m map[string]any
-			if jsonexact.Unmarshal(line, &m) == nil {
+			if m := decodeLogEntry(line); m != nil {
 				if len(out) == maxLines {
 					out = out[1:]
 				}

@@ -31,9 +31,10 @@ func ParseFenceInfo(info string) FenceInfo {
 }
 
 type fenceDelim struct {
-	char byte
-	n    int
-	info string
+	char   byte
+	n      int
+	info   string
+	indent int
 }
 
 func openFence(line string) (fenceDelim, bool) {
@@ -46,10 +47,10 @@ func openFence(line string) (fenceDelim, bool) {
 	for n < len(t) && t[n] == ch {
 		n++
 	}
-	if n < 3 {
+	if n < 3 || ch == '`' && strings.ContainsRune(t[n:], '`') {
 		return fenceDelim{}, false
 	}
-	return fenceDelim{char: ch, n: n, info: strings.TrimSpace(t[n:])}, true
+	return fenceDelim{char: ch, n: n, info: strings.TrimSpace(t[n:]), indent: len(line) - len(t)}, true
 }
 
 func (d fenceDelim) closes(line string) bool {

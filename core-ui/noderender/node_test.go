@@ -53,3 +53,34 @@ func TestRenderNodeEscapesText(t *testing.T) {
 		t.Errorf("text not escaped: %q", got)
 	}
 }
+
+func TestFalseBooleanAttributesAreAbsent(t *testing.T) {
+	for _, cfg := range []struct{ kind, attr string }{
+		{"select", "multiple"}, {"input", "checked"}, {"button", "disabled"},
+	} {
+		got := string(RenderNode(node.Node{Kind: cfg.kind, Props: map[string]any{cfg.attr: false}}))
+		if strings.Contains(got, " "+cfg.attr+"=") {
+			t.Errorf("%s activated %s=false: %s", cfg.kind, cfg.attr, got)
+		}
+	}
+	got := string(RenderNode(node.Node{Kind: "input", Props: map[string]any{"checked": true, "aria-hidden": false}}))
+	if !strings.Contains(got, " checked=") || !strings.Contains(got, `aria-hidden="false"`) {
+		t.Fatalf("true and ARIA boolean state lost: %s", got)
+	}
+}
+
+func TestTableCellsKeepSpans(t *testing.T) {
+	got := string(RenderNode(node.Node{Kind: "td", Props: map[string]any{"colspan": 2, "rowspan": 3, "headers": "heading"}}))
+	for _, want := range []string{`colspan="2"`, `rowspan="3"`, `headers="heading"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s: %s", want, got)
+		}
+	}
+}
+
+func TestLandmarkUsesAriaLabelledByWithoutFallback(t *testing.T) {
+	got := string(RenderNode(node.Node{Kind: "section", Props: map[string]any{"aria-labelledby": "heading"}}))
+	if !strings.Contains(got, `aria-labelledby="heading"`) || strings.Contains(got, " aria-label=") {
+		t.Fatalf("unexpected landmark accessible name: %s", got)
+	}
+}

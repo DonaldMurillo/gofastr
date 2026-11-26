@@ -344,7 +344,7 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 		}
 		if key != "" {
 			a, ok := m.Artifacts[key]
-			if !ok || a.SHA256 == "" || fmt.Sprintf("%x", sha256.Sum256(data)) != a.SHA256 {
+			if !ok || a.File != file || a.SHA256 == "" || fmt.Sprintf("%x", sha256.Sum256(data)) != a.SHA256 {
 				i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
 				return
 			}

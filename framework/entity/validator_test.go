@@ -25,3 +25,42 @@ func TestBuiltinValidatorsTranslate(t *testing.T) {
 		t.Fatalf("no translator: name = %q, want the English default", got["name"])
 	}
 }
+
+func TestRequiredRejectsTypedNil(t *testing.T) {
+	var title *string
+	errs := Required("title")(context.Background(), map[string]any{"title": title})
+	if _, ok := errs["title"]; !ok {
+		t.Fatal("required field accepted a typed nil")
+	}
+}
+
+func TestRequiredRejectsZeroNamedScalar(t *testing.T) {
+	type title string
+	type score float32
+	errs := Required("title", "score")(context.Background(), map[string]any{"title": title(""), "score": score(0)})
+	if len(errs) != 2 {
+		t.Fatalf("required accepted zero scalars: %v", errs)
+	}
+}
+
+func TestFormatValidationErrorsUsesFieldOrder(t *testing.T) {
+	want := []string{"a missing", "b invalid", "c too long"}
+	for range 100 {
+		got := FormatValidationErrors(map[string]string{"c": "too long", "b": "invalid", "a": "missing"})
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("errors = %v, want %v", got, want)
+			}
+		}
+	}
+}
+
+func TestRequiredOwnsFieldNames(t *testing.T) {
+	fields := []string{"title"}
+	validate := Required(fields...)
+	fields[0] = "author"
+	errs := validate(t.Context(), nil)
+	if _, ok := errs["title"]; !ok {
+		t.Fatalf("caller changed required field names: %v", errs)
+	}
+}

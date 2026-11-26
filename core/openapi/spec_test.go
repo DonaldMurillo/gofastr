@@ -518,3 +518,31 @@ func keys(m map[string]map[string]any) []string {
 	}
 	return k
 }
+
+func TestSecurityRequirementNilScopes(t *testing.T) {
+	spec := NewSpec("API", "1")
+	spec.AddSecurityRequirement("bearerAuth", nil)
+	data, err := json.Marshal(spec.Build()["security"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), `[{"bearerAuth":[]}]`; got != want {
+		t.Errorf("security = %s, want %s", got, want)
+	}
+}
+
+func TestSpecHandlersReportMarshalFailure(t *testing.T) {
+	spec := NewSpec("API", "1")
+	spec.AddSchema("invalid", map[string]any{"default": make(chan int)})
+	for name, h := range map[string]http.Handler{"public": PublicHandler(spec), "private": Handler(spec)} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+			req = req.WithContext(handler.SetUser(req.Context(), struct{}{}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d for invalid spec, want 500", rec.Code)
+			}
+		})
+	}
+}

@@ -123,9 +123,6 @@ func Forced() bool {
 // ID, PID (this process), ProcStart, Version and a zero Started. URL is
 // required.
 func Register(rec Record) (unregister func(), err error) {
-	if rec.URL == "" {
-		return nil, errors.New("localrun: a record needs a URL")
-	}
 	if rec.PID == 0 {
 		rec.PID = os.Getpid()
 	}
@@ -278,15 +275,22 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 	return rec, true
 }
 
+// dropOrphanStart removes the sidecar of a record that is gone (a
+// reader that predates sidecars deleted it) once its process has
+// exited. A live process's sidecar stays: Register writes it just
+// before the record.
 func dropOrphanStart(root *os.Root, names []string, id string) {
 	if _, found := slices.BinarySearch(names, id+recordExt); found {
 		return
 	}
 	pid, err := strconv.Atoi(id[:strings.IndexByte(id, '-')])
-	if err != nil || procalive.Alive(pid) {
+	if err != nil {
 		return
 	}
-	_ = root.Remove(id + startExt)
+	name := id + startExt
+	if !(procalive.Identity{PID: pid, Start: readStart(root, name)}).Alive() {
+		_ = root.Remove(name)
+	}
 }
 
 // recordMetaErr reports why rec breaks the URL and MCP path rules

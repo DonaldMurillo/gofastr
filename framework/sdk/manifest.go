@@ -96,6 +96,9 @@ func ReadManifest(fsys fs.FS) (*Manifest, error) {
 		if key == "go" && (!archiveDirectory.MatchString(a.Directory) || a.Directory == "." || a.Directory == "..") {
 			return nil, fmt.Errorf("sdk: %s: Go artifact directory must be a safe single path component", ManifestFile)
 		}
+		if a.Bytes < 0 {
+			return nil, fmt.Errorf("sdk: %s: artifact %q has a negative size", ManifestFile, key)
+		}
 	}
 	return &m, nil
 }

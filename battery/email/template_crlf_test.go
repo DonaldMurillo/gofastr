@@ -106,3 +106,16 @@ func TestLoadPairedTemplateSubjects(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadFromFSUTF8BOM(t *testing.T) {
+	templates, err := LoadFromFS(fstest.MapFS{
+		"welcome.txt":  {Data: []byte("\ufeffSubject: Welcome\nHello\n")},
+		"welcome.html": {Data: []byte("\ufeff<p>Hello</p>")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := templates["welcome"]; got.Subject != "Welcome" || got.TextBody != "Hello\n" || got.HTMLBody != "<p>Hello</p>" {
+		t.Fatalf("template = %+v", got)
+	}
+}

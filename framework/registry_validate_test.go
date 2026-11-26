@@ -31,3 +31,14 @@ func TestRegisterRejectsInvalidConfig(t *testing.T) {
 		t.Errorf("expected actionable validation message about duplicate field, got %q", err.Error())
 	}
 }
+
+func TestRegistryZeroValueRegistersEntity(t *testing.T) {
+	var registry Registry
+	ent := Define("Task", EntityConfig{})
+	if err := registry.Register(ent); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := registry.Get("Task"); got != ent || err != nil {
+		t.Fatalf("Get returned %p, %v, want %p", got, err, ent)
+	}
+}

@@ -38,3 +38,16 @@ func TestCron_Next(t *testing.T) {
 		})
 	}
 }
+
+func TestScheduleNextAlignsWithLocalMinute(t *testing.T) {
+	s, err := Parse("0 12 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := time.FixedZone("offset with seconds", 25)
+	after := time.Date(2026, 11, 26, 11, 59, 50, 0, local)
+	want := time.Date(2026, 11, 26, 12, 0, 0, 0, local)
+	if got := s.Next(after); !got.Equal(want) {
+		t.Fatalf("Next(%s) = %s, want %s", after, got, want)
+	}
+}
