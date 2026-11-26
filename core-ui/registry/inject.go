@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	xhtml "golang.org/x/net/html"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -268,10 +270,8 @@ func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error)
 	if err != nil {
 		return src, fmt.Errorf("registry: AddAttributeToken: %w", err)
 	}
-	for _, t := range strings.FieldsFunc(raw, isHTMLSpaceRune) {
-		if t == token || htmlUnescape(t) == token {
-			return src, nil
-		}
+	if slices.Contains(strings.FieldsFunc(attrDecode(raw), isHTMLSpaceRune), token) {
+		return src, nil
 	}
 	sep := " "
 	if raw == "" || isHTMLSpace(raw[len(raw)-1]) {
@@ -300,4 +300,16 @@ func requoteValue(html string, from, to int, raw, sep, token string) string {
 
 func isHTMLSpaceRune(r rune) bool { return r < 0x80 && isHTMLSpace(byte(r)) }
 
-func htmlUnescape(v string) string { return html.UnescapeString(v) }
+// attrDecode decodes a raw attribute value as a browser does in an
+// attribute, where a semicolonless reference followed by = or an
+// alphanumeric stays literal, unlike html.UnescapeString's text rules.
+func attrDecode(raw string) string {
+	z := xhtml.NewTokenizer(strings.NewReader(`<x a="` + strings.ReplaceAll(raw, `"`, "&quot;") + `">`))
+	if z.Next() != xhtml.StartTagToken {
+		return raw
+	}
+	if _, val, _ := z.TagAttr(); val != nil {
+		return string(val)
+	}
+	return raw
+}
