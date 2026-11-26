@@ -1,0 +1,73 @@
+primitive: tools.repolint
+summary: "cmd/repolint, the repository-wide text and layout lint run by make lint: it walks the tree once for per-file rules and runs each repository-level rule, which its children own."
+code:
+  - cmd/repolint/main.go
+docs:
+  - docs/contributing.md
+on_change:
+  - A new rule gets its own file and a child primitive here, and is called from lintRepo; its finding names the rule id that users grep for.
+invariants:
+  - id: walk-skips-output-and-dot-dirs
+    rule: The tree walk lints the root but skips .git, vendor, node_modules, dist, bin, build, tmp and every directory below the root whose name starts with a dot.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoSkipsBuildOutput
+      - test: cmd/repolint.TestLintRepoSkipsDotDirectories
+  - id: conflict-markers-fail
+    rule: A line in a linted file that starts with a merge conflict marker is a conflict-marker finding.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsConflictMarkers
+  - id: crlf-fails
+    rule: A linted file containing a CRLF line ending is a crlf finding.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsCRLF
+  - id: go-files-must-parse
+    rule: A non-generated .go file that go/parser rejects is a go-syntax finding at the first error's line, and a file IsGeneratedSource marks is not parsed.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsGoSyntax
+      - test: cmd/repolint.TestGoSyntaxSkipsGeneratedFiles
+  - id: control-bytes-in-names-fail
+    rule: Any file whose name holds a control byte is a bad-filename finding, whatever its extension, reported with the path quoted.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsControlCharFilename
+  - id: root-markdown-is-allowlisted
+    rule: A markdown file at the repository root that is not in rootMarkdownAllowlist (the community-health files, ROADMAP, the agent guides and THIRD_PARTY_NOTICES) is a root-markdown finding.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsStrayRootMarkdown
+      - test: cmd/repolint.TestLintRootMarkdownAcceptsLicenseNotices
+  - id: no-process-ledger-markdown
+    rule: An all-caps markdown name anywhere in the tree containing AUDIT, FINDINGS, NOTES, JOURNAL, HANDOFF or LEDGER is a process-artifact-markdown finding; lowercase feature docs such as audit-log.md pass.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsProcessArtifactMarkdown
+      - test: cmd/repolint.TestLintRepoAcceptsLowercaseFeatureDocs
+  - id: security-names-latest-minor
+    rule: When CHANGELOG.md and SECURITY.md exist, SECURITY.md must contain "currently `X.Y.x`" for the newest released CHANGELOG heading, or the tree has a supported-version-drift finding.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsSupportedVersionDrift
+      - test: cmd/repolint.TestLintRepoAcceptsCurrentSupportedVersion
+  - id: no-external-linters
+    rule: The Makefile and scripts/*.sh never invoke golangci-lint or staticcheck, and go.mod never names golangci-lint, honnef.co/go/tools or gofumpt.
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsExternalLintToolsInBuildScripts
+      - test: cmd/repolint.TestLintRepoFlagsExternalLintDependencies
+  - id: build-scripts-stay-current
+    rule: Build scripts name neither the retired framework/apiversions path nor a personal .pi/worktrees/roadmap path, and the Makefile never says "No codegen yet".
+    enforced_by:
+      - test: cmd/repolint.TestLintRepoFlagsRetiredBuildPaths
+      - test: cmd/repolint.TestLintRepoFlagsStaleCodegenStatus
+decisions:
+  - id: process-history-lives-in-git
+    date: 2026-11-26
+    status: accepted
+    decision: Ledgers, journals, audits and handoffs are not tracked markdown; their rationale goes in commit messages and pinning tests.
+    rejected:
+      - option: Allow process notes beside the code or at the root.
+        why: They accrete, go stale and duplicate what git history and the tests already hold.
+    upholds: [root-markdown-is-allowlisted, no-process-ledger-markdown]
+  - id: repo-owned-lint-only
+    date: 2026-11-26
+    status: accepted
+    decision: Lint uses repository-owned checks and Go-team tools only.
+    rejected:
+      - option: Adopt golangci-lint or staticcheck.
+        why: Each adds a third-party dependency and rule set outside the registry; the repo's own analyzers and repolint carry the rules it needs.
+    upholds: [no-external-linters]

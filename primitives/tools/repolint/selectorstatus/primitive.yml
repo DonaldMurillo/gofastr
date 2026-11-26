@@ -1,0 +1,32 @@
+primitive: tools.repolint.selectorstatus
+summary: The selector-status-discarded rule, which keeps workflows and build scripts from testing a cmd/affected command substitution inside [ ], [[ ]] or test, where its exit status is lost.
+code:
+  - cmd/repolint/selectorstatus.go
+invariants:
+  - id: tested-selector-fails
+    rule: A $(…) holding cmd/affected that is the operand of -n or -z, with or without !, in [, [[ or a test in command position is one finding per line, in .github/workflows and in the Makefile and scripts/*.sh.
+    enforced_by:
+      - test: cmd/repolint.TestSelectorStatusInWorkflow
+      - test: cmd/repolint.TestSelectorStatusInScript
+      - test: cmd/repolint.TestSelectorStatusOtherSpellings
+      - test: cmd/repolint.TestSelectorStatusOneFindingPerLine
+  - id: substitution-span-follows-shell-quoting
+    rule: The substitution ends at the ")" that closes it, past nested $(…), a subshell, quoted parentheses and comments, and may cross lines; a test begun on a backslash-continued line is joined unless the backslash sits in a comment.
+    enforced_by:
+      - test: cmd/repolint.TestSelectorStatusOtherSpellings
+      - test: cmd/repolint.TestSelectorStatusSubshellInsideSubstitution
+      - test: cmd/repolint.TestSelectorStatusCommentBackslash
+  - id: assigned-or-commented-passes
+    rule: A substitution assigned on its own line, one of another command, test used as an argument, and a test in a shell comment are not findings.
+    enforced_by:
+      - test: cmd/repolint.TestSelectorStatusAssignedFirst
+      - test: cmd/repolint.TestSelectorStatusOtherSpellings
+decisions:
+  - id: assign-then-test
+    date: 2026-11-26
+    status: accepted
+    decision: A step assigns the selector's output on its own line, where bash -e stops on its failure, then tests the variable.
+    rejected:
+      - option: Test the substitution inline.
+        why: A failing selector prints nothing and reads as "nothing affected", so the browser suite skipped where it should have failed.
+    upholds: [tested-selector-fails]
