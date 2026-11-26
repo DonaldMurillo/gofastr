@@ -403,7 +403,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		cursorMode := q.Has("cursor")
 		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 
-		if !cursorMode && !ch.requireBoundedOffset(w, r, q, perPage) {
+		if !cursorMode && !ch.requireBoundedOffset(w, r, q.Get("offset"), q.Get("page"), perPage) {
 			return
 		}
 
@@ -420,13 +420,16 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		if extra := ch.Entity.Config.AllowedFilterParams; len(extra) > 0 {
 			filterOpts = append(filterOpts, filter.Allow(extra...))
 		}
-		filters, err := filter.ParseFiltersValues(q, ch.queryFields(), filterOpts...)
+		filterQuery := q
+		if len(ch.Entity.Config.SearchFields) > 0 && q.Has("q") {
+			filterQuery = maps.Clone(q)
+			delete(filterQuery, "q")
+		}
+		filters, err := filter.ParseFiltersValues(filterQuery, ch.queryFields(), filterOpts...)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
 			return
 		}
-
-		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, q.Has("q"))
 
 		nested, err := parseNestedFiltersValues(q, ch.Entity, ch.Registry)
 		if err != nil {
@@ -679,22 +682,6 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 		return nil, p, nil
 	}
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
-}
-
-// stripQColumnEqFilter drops ?q=value as a filter on a q column when ?q= is
-// a search; ?q_like= and ?q[eq]= still filter the column.
-func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
-	if !hasSearchFields || !qPresent || len(filters) == 0 {
-		return filters
-	}
-	out := filters[:0]
-	for _, f := range filters {
-		if f.Op == filter.OpEq && f.Field == "q" && !filter.IsBracketKey(f.Key()) {
-			continue
-		}
-		out = append(out, f)
-	}
-	return out
 }
 
 // Get returns the handler that reads one record by id, with ?include=.
@@ -1151,8 +1138,8 @@ func (ch *CrudHandler) maxListOffset() int {
 
 // requireBoundedOffset refuses with 400 a skip, explicit or page-derived,
 // past maxListOffset, reckoned exactly at any size.
-func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, perPage int) bool {
-	offset := requestedOffset(q, perPage)
+func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, rawOffset, rawPage string, perPage int) bool {
+	offset := requestedOffset(rawOffset, rawPage, perPage)
 	if offset.Cmp(big.NewInt(int64(ch.maxListOffset()))) <= 0 {
 		return true
 	}
@@ -1164,18 +1151,16 @@ func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Reque
 	return false
 }
 
-func requestedOffset(q url.Values, perPage int) *big.Int {
+func requestedOffset(rawOffset, rawPage string, perPage int) *big.Int {
 	whole := func(v string) (*big.Int, bool) {
 		n, ok := new(big.Int).SetString(v, 10)
 		return n, ok && n.Sign() >= 0
 	}
-	if v := q.Get("offset"); v != "" {
-		if n, ok := whole(v); ok {
-			return n
-		}
+	if n, ok := whole(rawOffset); ok {
+		return n
 	}
-	if v := q.Get("page"); v != "" {
-		if n, ok := whole(v); ok && n.Sign() > 0 {
+	if perPage > 0 {
+		if n, ok := whole(rawPage); ok && n.Sign() > 0 {
 			n.Sub(n, big.NewInt(1))
 			return n.Mul(n, big.NewInt(int64(perPage)))
 		}

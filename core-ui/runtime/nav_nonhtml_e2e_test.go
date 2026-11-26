@@ -37,11 +37,12 @@ func nonHTMLServer(t *testing.T, envelope bool) *httptest.Server {
 	}
 	doc := func(main string) string {
 		return `<!doctype html><html lang="en"><head><title>nonhtml</title>` +
-			`<script type="application/json" id="gofastr-routes">[{"path":"/","layouts":` + site + `},{"path":"/raw","layouts":` + site + `},{"path":"/plain","layouts":[]},{"path":"/rawp","layouts":[]},{"path":"/rawx","layouts":["l:other"]}]</script>` +
-			`</head><body><nav><a id="goRaw" href="/raw">raw</a><a id="goRawX" href="/rawx">rawx</a><a id="goPlain" href="/plain">plain</a><a id="goRawP" href="/rawp">rawp</a></nav>` +
+			`<script type="application/json" id="gofastr-routes">[{"path":"/","layouts":` + site + `},{"path":"/mixed","layouts":` + site + `},{"path":"/raw","layouts":` + site + `},{"path":"/plain","layouts":[]},{"path":"/rawp","layouts":[]},{"path":"/rawx","layouts":["l:other"]}]</script>` +
+			`</head><body><nav><a id="goRaw" href="/raw">raw</a><a id="goRawX" href="/rawx">rawx</a><a id="goPlain" href="/plain">plain</a><a id="goRawP" href="/rawp">rawp</a><a id="goMixed" href="/mixed">mixed</a></nav>` +
 			main + `<script src="/__gofastr/runtime.js"></script></body></html>`
 	}
 	page, plain := doc(main), doc(`<main role="main" tabindex="-1" id="main"><p id="screen-plain">PLAIN</p></main>`)
+	mixed := doc(strings.Replace(main, `<p id="screen-home">HOME</p>`, `<p id="screen-mixed">MIXED</p>`, 1))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -59,6 +60,10 @@ func nonHTMLServer(t *testing.T, envelope bool) *httptest.Server {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		switch req.URL.Path {
+		case "/mixed":
+			w.Header().Set("Content-Type", "Text/HTML; Charset=UTF-8")
+			fmt.Fprint(w, mixed)
+			return
 		case "/raw", "/rawp", "/rawx":
 			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 			fmt.Fprint(w, "# Raw\n\nnot a page\n")
@@ -74,6 +79,43 @@ func nonHTMLServer(t *testing.T, envelope bool) *httptest.Server {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestNavAcceptsMixedCaseHTMLAnswer(t *testing.T) {
+	for _, envelope := range []bool{false, true} {
+		t.Run(fmt.Sprintf("envelope=%v", envelope), func(t *testing.T) {
+			srv := nonHTMLServer(t, envelope)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(30*time.Second))
+			if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/"), chromedp.WaitVisible("#screen-home", chromedp.ByQuery)); err != nil {
+				t.Fatal(err)
+			}
+			if envelope {
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`void window.__gofastr.loadModule('envelope')`, nil)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			hook := fmt.Sprintf("!!window.__gofastr?._navHooks?.envelope?.nav === %t", envelope)
+			if err := chromedptest.Poll(ctx, hook, 10*time.Second); err != nil {
+				t.Fatalf("waiting for navigator mode: %v", err)
+			}
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`window.__softMark = 1`, nil),
+				chromedp.Click("#goMixed", chromedp.ByQuery),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if err := chromedptest.Poll(ctx, `location.pathname === '/mixed' && !!document.getElementById('screen-mixed')`, 10*time.Second); err != nil {
+				t.Fatalf("mixed-case HTML response did not swap in: %v", err)
+			}
+			var soft bool
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__softMark === 1`, &soft)); err != nil {
+				t.Fatal(err)
+			}
+			if !soft {
+				t.Fatal("the navigation reloaded the document")
+			}
+		})
+	}
 }
 
 // A 200 answer that is not HTML (2026-10-27 bug bash W4: a docs site's

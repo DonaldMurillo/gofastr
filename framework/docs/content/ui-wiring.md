@@ -115,6 +115,8 @@ func guard(host *uihost.UIHost, next http.Handler) http.Handler {
 ```
 
 - `RenderScreen` serves the branded layout on full loads (always `Cache-Control: no-store`, `Vary: Cookie`) and a bare error partial (`private, no-store`, never minting a session) on `X-Gofastr-Navigate` requests.
+- Both responses use the recovery screen's trimmed `ScreenLang` override when it supplies one. Otherwise they use the host's document language for the route.
+- The body, `ScreenTitle`, and default layout can read the request and query through `app.RequestFromContext` and `app.QueryFromContext`. If `ScreenTitle` panics, `RenderScreen` uses its default title based on the status and app name.
 - Return the same recovery screen and status for missing and expired sessions so callers cannot probe session existence.
 
 ## Common mistakes

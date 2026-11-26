@@ -157,11 +157,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	ds.writePartialResult(w, r, withOutcome(ctx, res), path, res, overlay, pageStatus(res, recorded()))
 }
 
-func (ds *UIHost) partialHead(ctx context.Context, path string, comp component.Component) render.HTML {
-	lang := ds.App.LangFor(ctx, path)
-	if c, ok := comp.(app.ScreenLanger); ok && c.ScreenLang() != "" {
-		lang = c.ScreenLang()
-	}
+func (ds *UIHost) partialHead(ctx context.Context, path, lang string, comp component.Component) render.HTML {
 	head := map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(ctx, path, comp)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}
 	if strs := runtime.StringsJSON(ctx); strs != nil {
 		head["data-cui-strings"] = string(strs)
@@ -206,7 +202,7 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		w.Header().Set("X-Gofastr-Overlay", overlay.As.String())
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	res.HTML = render.Join(res.HTML, ds.partialHead(withRenderAlt(ctx, res), path, res.Component))
+	res.HTML = render.Join(res.HTML, ds.partialHead(withRenderAlt(ctx, res), path, res.DocumentLanguage, res.Component))
 	if r.Header.Get("X-Gofastr-Fills") == "2" && len(res.Fills) > 0 {
 		w.Header().Set("X-Gofastr-Envelope", "2")
 		scanned := string(res.HTML)

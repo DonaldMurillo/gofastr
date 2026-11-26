@@ -73,11 +73,11 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		b.logger().Warn("admin: queue stats", "error", err)
 		stats = nil
 	}
-	pages := 1
+	pages := 0
 	if stats != nil {
 		pages = pageCount(queueTotal(stats, status), limit)
+		pageNo = min(pageNo, pages)
 	}
-	pageNo = min(pageNo, pages)
 	q := url.Values{}
 	for k, v := range carry {
 		q[k] = v
@@ -95,18 +95,26 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	}
 	_, canReplay := b.replayable()
 	if failed := stats["failed"]; canReplay && failed > 0 {
+		confirm := i18nui.AdminReplayAllConfirm.Text(ctx)
+		if failed > maxReplayAll {
+			confirm = i18nui.AdminReplayAllBounded.Text(ctx, map[string]any{"n": i18n.Number(ctx, maxReplayAll)})
+		}
 		header = ui.PageHeader(ui.PageHeaderConfig{
 			Title:    i18nui.AdminQueue.Text(ctx),
 			Subtitle: i18nui.AdminQueueSub.Text(ctx),
 			Actions: b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay_all", page: page,
-				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": failed}),
+				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": i18n.Number(ctx, min(failed, maxReplayAll))}),
 				variant: ui.ButtonSecondary,
-				confirm: i18nui.AdminReplayAllConfirm.Text(ctx),
+				confirm: confirm,
 			}),
 		})
 	}
 	pager := pagePager(ctx, b.cfg.PathPrefix+"/queue", carry, pageNo, pages)
+	var countsWarning render.HTML
+	if stats == nil {
+		countsWarning = ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(i18nui.AdminQueueCountsFailed.Text(ctx)))
+	}
 	var warning render.HTML
 	if unknownStatus || dropped {
 		warning = listfilter.Warning(ctx)
@@ -114,6 +122,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
+		countsWarning,
 		warning,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),

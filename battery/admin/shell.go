@@ -112,7 +112,7 @@ func (b *Battery) gatePolicy() appui.Policy {
 				next = loginNext(r)
 			}
 			handler.NoteSessionRefusal(ctx)
-			return decide.Redirect(b.cfg.LoginPath + "?next=" + urlQueryEscape(next))
+			return decide.Redirect(b.loginRedirectURL(next))
 		}
 		return decide.Block(status)
 	})

@@ -12,7 +12,7 @@ import (
 )
 
 func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]bool) error {
-	ctx := locale.ctx
+	ctx := coreapp.WithLinkBase(locale.ctx, b.BasePath)
 	if locale.rule.Locales != nil {
 		ctx = coreapp.WithLinkKeep(ctx, b.keepUnprefixed)
 	}
@@ -37,8 +37,11 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 			}
 			var md string
 			sctx, recorded := coreapp.TrackStatus(withPageRequest(ctx, p))
-			if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
-				if st := docStatus(doc.Component, recorded()); st != 0 {
+			if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); doc.Err != nil {
+				slog.Warn("static: skipped llm.md after a screen failure", "path", p)
+				continue
+			} else if ok {
+				if st := uihost.DocStatus(doc.Component, recorded()); st != 0 {
 					slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
 						"path", p, "status", st)
 					continue
@@ -74,18 +77,6 @@ func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]b
 	docs[strings.TrimPrefix(index, "/")] = true
 	b.log("wrote %s index", index)
 	return nil
-}
-
-func docStatus(c any, recorded int) int {
-	if sc, ok := c.(uihost.ScreenStatusCode); ok {
-		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
-			return code
-		}
-	}
-	if recorded == http.StatusOK {
-		return 0
-	}
-	return recorded
 }
 
 func withPageRequest(ctx context.Context, p string) context.Context {

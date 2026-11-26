@@ -171,6 +171,20 @@ func TestQueueReplayOffersOnFailedRows(t *testing.T) {
 	}
 }
 
+func TestQueueReplayOffersBoundedBatch(t *testing.T) {
+	q := &fakeQueue{stats: queue.JobStats{"failed": maxReplayAll + 3}}
+	x := queueEnv(t, q)
+	for _, path := range []string{"/admin/queue", "/admin/queue?status=failed"} {
+		body := get(x.as(theAdmin), path).Body.String()
+		if !strings.Contains(body, ">Replay 10,000 failed</button>") {
+			t.Errorf("%s: replay button does not show the 10,000-job limit", path)
+		}
+		if !strings.Contains(body, "Replay 10,000 failed jobs? More failed jobs will remain.") {
+			t.Errorf("%s: replay confirmation does not describe the bounded batch", path)
+		}
+	}
+}
+
 // The page filters by every status with its count, and each row shows
 // its status, when it last changed and its last error.
 func TestQueueColumnsAndFilters(t *testing.T) {

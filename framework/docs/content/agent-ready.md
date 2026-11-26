@@ -72,11 +72,14 @@ uihost.WithLLMsTxt("Acme", "A billing console.",
 
 With `uihost.WithPublicLLMMD()`, every screen serves a per-URL markdown view (`/about/llm.md`, `/products/42/llm.md`) built through the same `Load`, locale, SEO metadata, and policy chain as the HTML page. Policy-blocked routes return a metadata-free withheld doc or `404` matching the HTML status, and all page-markdown responses send `Cache-Control: private, no-store` with `Vary: Cookie`.
 
+Concrete `/llm.md` URLs and negotiated Markdown use the page's error response when a screen fails. An ordinary `Load` error answers `404`. A panic in `Load` or an unhandled panic in `Render` answers `500`. Route resolver failures answer `404` for not-found and `500` for other errors.
+
 #### Markdown content negotiation
 
 Add `uihost.WithMarkdownNegotiation()` (or `AgentReadyConfig.ContentNegotiation`) alongside `WithPublicLLMMD()` so any page URL serves markdown directly when a client sends `Accept: text/markdown` with weight at least as high as HTML. Both HTML and markdown variants emit `Vary: Accept` so shared caches never mix them.
 
 Unmatched routes automatically return RFC 9457 `application/problem+json` for JSON clients, markdown recovery links for `Accept: text/markdown` (when enabled), or your HTML 404 for browsers.
+Markdown recovery includes sitemap and `llms.txt` links for the discovery routes you enable.
 
 ### A2A agent card & signed cards
 

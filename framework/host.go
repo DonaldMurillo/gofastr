@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 )
 
 // Host serves a booted App and owns its transport; App.Run owns every
@@ -386,10 +388,16 @@ func (a *App) startOutboxRelay() {
 		return
 	}
 	stopRelay := a.outbox.StartRelay(a.appCtx)
-	a.OnStop(func() error {
-		stopRelay()
-		return nil
-	})
+	a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+		const deadlineMessage = "outbox relay stop abandoned after the drain deadline"
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("%s: %w", deadlineMessage, err)
+		}
+		return drainWithDeadline(ctx, func() error {
+			stopRelay()
+			return nil
+		}, deadlineMessage)
+	}))
 }
 
 func (a *App) startDeferred() {

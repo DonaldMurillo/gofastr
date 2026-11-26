@@ -213,6 +213,7 @@ func Password(p PasswordProps, s Classes) render.HTML {
 		"spellcheck":           "false",
 		"autocapitalize":       "off",
 	})
+	Mark(input, "data-hui-password")
 	attrsSet(input, "placeholder", p.Placeholder)
 	attrsSet(input, "id", p.ID)
 	attrsSet(input, "aria-describedby", p.DescribedBy)
@@ -413,7 +414,7 @@ func init() {
 	Register(Spec{
 		Name:    "Password",
 		Anatomy: []Part{PartRoot, PartControl, PartAffixButton},
-		Hooks:   []string{"data-hui-affix", "data-hui-affix-input", "data-hui-reveal"},
+		Hooks:   []string{"data-hui-affix", "data-hui-affix-input", "data-hui-password", "data-hui-reveal"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Password(PasswordProps{Name: "token", ID: "token", Parts: parts}, s)
 		},

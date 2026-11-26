@@ -46,6 +46,10 @@ type Options struct {
 	ReadOnlyMounted func(*entity.Entity) bool
 	// BasePath is the API prefix baked into every path key ("/api").
 	BasePath string
+	// Grouped reports an entity registered in a route group: its paths
+	// join its Version (the root group's "" included), not BasePath. Nil
+	// counts an entity with a Version as grouped.
+	Grouped func(*entity.Entity) bool
 	// JSONCase is the casing the CRUD handlers answer in.
 	JSONCase crud.JSONCase
 }
@@ -181,6 +185,10 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		disambig := ""
 		tagName := entityName
 		pathPrefix := ""
+		entPrefix := apiPrefix
+		if ent.Version != "" || o.Grouped != nil && o.Grouped(ent) {
+			entPrefix = ""
+		}
 		if ent.Version != "" {
 			disambig = "_" + versionSlug(ent.Version)
 			pathPrefix = ent.Version
@@ -237,7 +245,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			anyGated = addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) || anyGated
+			anyGated = addCustomEndpoints(s, ent, schemaName, tagName, entPrefix, components) || anyGated
 			continue
 		}
 
@@ -275,10 +283,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			scopeSkip = append(scopeSkip, ent.Config.TenantColumn())
 		}
 
-		path := apiPrefix + pathPrefix + "/" + tableName
-		if ent.Version != "" {
-			path = pathPrefix + "/" + tableName
-		}
+		path := entPrefix + pathPrefix + "/" + tableName
 		recPath, keyProps, keyReq := recordKey(ent, path, jc)
 
 		rbacGated := ent.Config.Exposure.Access.Read != "" ||
@@ -639,7 +644,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		anyGated = addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) || anyGated
+		anyGated = addCustomEndpoints(s, ent, schemaName, tagName, entPrefix, components) || anyGated
 	}
 
 	if anyGated {

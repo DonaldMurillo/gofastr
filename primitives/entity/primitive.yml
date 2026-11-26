@@ -39,8 +39,9 @@ invariants:
     enforced_by:
       - test: framework/entity.TestReadScopeRefusesTwoInPredicatesOnOneField
   - id: cursor-columns-are-servable
-    rule: Every keyset column, the key tiebreak and the default primary-key keyset included, is declared, not Hidden, not NoQuery and cannot hold NULL, and a composite names each column once.
+    rule: Every keyset column, the key tiebreak and the default primary-key keyset included, is declared, not Hidden, not NoQuery, not JSON and cannot hold NULL, and a composite names each column once.
     enforced_by:
+      - test: framework/entity.TestCursorRejectsJSONColumns
       - test: framework/entity.TestCursorFieldUndeclaredPanics
       - test: framework/entity.TestCursorFieldHiddenPanics
       - test: framework/entity.TestCursorFieldNoQueryPanics

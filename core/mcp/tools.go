@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 
@@ -17,7 +18,7 @@ type toolsListResult struct {
 
 type toolsCallParams struct {
 	Name      string          `json:"name"`
-	Arguments map[string]any  `json:"arguments,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 	Meta      json.RawMessage `json:"_meta,omitempty"`
 }
 
@@ -25,6 +26,25 @@ type toolsCallResult struct {
 	Content           []Content `json:"content"` //gofastr:required-array
 	StructuredContent any       `json:"structuredContent,omitempty"`
 	IsError           bool      `json:"isError,omitempty"`
+}
+
+// decodeToolArguments decodes tools/call arguments: omitted is a nil map,
+// and anything present must be a JSON object (null included).
+func decodeToolArguments(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, errors.New("arguments must be an object")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var args map[string]any
+	if err := dec.Decode(&args); err != nil {
+		return nil, handler.JSONErrorDetail(err)
+	}
+	args, _ = normalizeArgNumbers(args).(map[string]any)
+	return args, nil
 }
 
 func (s *Server) handleToolsList(ctx context.Context, req Request) Response {
@@ -47,7 +67,10 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	if err := dec.Decode(&params); err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+handler.JSONErrorDetail(err).Error())
 	}
-	params.Arguments, _ = normalizeArgNumbers(params.Arguments).(map[string]any)
+	args, err := decodeToolArguments(params.Arguments)
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, "invalid params: "+err.Error())
+	}
 
 	if params.Name == "" {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing tool name")
@@ -58,7 +81,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req Request) Response {
 	}
 	ctx = context.WithValue(ctx, requestMetaKey{}, meta)
 
-	result, err := s.callTool(ctx, params.Name, params.Arguments)
+	result, err := s.callTool(ctx, params.Name, args)
 	if err != nil {
 		rpcErr, ok := err.(*RPCError)
 		if ok {

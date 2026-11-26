@@ -68,6 +68,11 @@ invariants:
       - test: framework/crud.TestToolFilterValuesRefusesOffSchemaShapes
       - test: framework/crud.TestMCPSchemaMatchesOpMatrix
       - test: framework/crud.TestNoQueryAbsentFromAgentSurfaces
+  - id: mcp-key-args-leave-field-names
+    rule: An item tool names a single key column id only when no other field is called id; otherwise each key argument is its key column's wire name, so a field called id stays writable through the update tool.
+    enforced_by:
+      - test: framework/crud.TestMCPKeyArgLeavesWritableIDField
+      - test: framework/crud.TestMCPToolsTakeCompositeKey
   - id: mcp-numbers-stay-exact
     rule: Tool parameters render integers as exact decimals and JSON arrays as repeated values, and a tool result keeps every number as the route wrote it.
     enforced_by:

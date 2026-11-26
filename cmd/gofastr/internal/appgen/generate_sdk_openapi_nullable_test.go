@@ -12,6 +12,41 @@ import (
 	"testing"
 )
 
+func TestOpenAPISDKNullableResults(t *testing.T) {
+	for _, tc := range []struct {
+		name, schema, goType, tsType string
+	}{
+		{"array", `{"type":"array","items":{"$ref":"#/components/schemas/MaybeInt"}}`, "[]*int64", "Array<number | string | null>"},
+		{"map", `{"type":"object","additionalProperties":{"oneOf":[{"type":"boolean"},{"type":"null"}]}}`, "map[string]*bool", "Record<string, boolean | null>"},
+		{"nested", `{"type":"array","items":{"type":["array","null"],"items":{"type":"string"}}}`, "[][]string", "Array<Array<string> | null>"},
+		{"object", `{"type":"array","items":{"type":["object","null"],"properties":{"id":{"type":"integer"}}}}`, "[]*ReadResponseItem", "Array<ReadResponseItem | null>"},
+		{"scalar", `{"$ref":"#/components/schemas/MaybeInt"}`, "*int64", "number | string"},
+		{"nonnullable", `{"type":"integer"}`, "int64", "number | string"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := fmt.Sprintf(`{"openapi":"3.1.0","info":{"title":"Null","version":"1"},
+				"components":{"schemas":{"MaybeInt":{"type":["integer","null"]}}},
+				"paths":{"/data":{"get":{"operationId":"read","responses":{"200":{
+					"description":"ok","content":{"application/json":{"schema":%s}}
+				}}}}}}`, tc.schema)
+			spec, err := oaSDKSpecFor(t, doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var generated strings.Builder
+			renderOASDKMethod(&generated, spec.Ops[0])
+			for _, want := range []string{"Read(ctx context.Context) (" + tc.goType + ", error)", "var out " + tc.goType + "\n"} {
+				if !strings.Contains(generated.String(), want) {
+					t.Errorf("generated Go lacks %q:\n%s", want, generated.String())
+				}
+			}
+			if got, want := renderOASDKJSFiles(spec)[1].Content, "read(): Promise<"+tc.tsType+" | null>"; !strings.Contains(got, want) {
+				t.Errorf("generated TypeScript lacks %q:\n%s", want, got)
+			}
+		})
+	}
+}
+
 func TestOpenAPISDKNullableBody(t *testing.T) {
 	for _, schema := range []string{`{"type":"string","nullable":true}`, `{"type":["string","null"]}`, `{"$ref":"#/components/schemas/Maybe"}`} {
 		t.Run(schema, func(t *testing.T) {

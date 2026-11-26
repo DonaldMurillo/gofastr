@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -70,6 +71,31 @@ func TestTabCountsKeepTheFilter(t *testing.T) {
 	html := listHTML(t, x.ui.List("invoices").TabCounts(), x.userCtx("/invoices", `?view=drafts&filter=number+%3D+%22A-2%22`, "u1"))
 	if got := tabBadges(html); got["All"] != "1" || got["Drafts"] != "0" {
 		t.Fatalf("tab counts = %v, want All 1, Drafts 0:\n%s", got, html)
+	}
+}
+
+func TestTabCountsFollowFilterRowLinks(t *testing.T) {
+	x := countedInvoices(t)
+	store := newMemSavedViews()
+	x.ui = x.ui.WithSavedViews(store)
+	store.put("u1", SavedView{ID: "sv-paid", Entity: "invoices", Name: "Paid", Filter: `status = "paid"`})
+	for _, tc := range []struct {
+		name, query, filter, all, drafts string
+	}{
+		{"row filter", "?rf=number&ro=%3D&rv=A-2", `number = "A-2"`, "1", "0"},
+		{"row filter on saved tab", "?saved=sv-paid&rf=number&ro=%3D&rv=A-2", `number = "A-2"`, "1", "0"},
+		{"inherited saved filter", "?saved=sv-paid", "", "2", "1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			html := listHTML(t, x.ui.List("invoices").QueryBox().TabCounts().SavedViews(), x.userCtx("/invoices", tc.query, "u1"))
+			if got := tabBadges(html); got["All"] != tc.all || got["Drafts"] != tc.drafts {
+				t.Errorf("tab badges = %v, want All %s and Drafts %s", got, tc.all, tc.drafts)
+			}
+			link := hrefWith(t, html, func(q url.Values) bool { return q.Get("view") == "drafts" })
+			if link == nil || link.Get("filter") != tc.filter {
+				t.Errorf("Drafts link query = %v, want filter %q", link, tc.filter)
+			}
+		})
 	}
 }
 

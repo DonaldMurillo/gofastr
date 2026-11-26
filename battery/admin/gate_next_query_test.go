@@ -33,3 +33,57 @@ func TestGateLoginRedirectKeepsQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestGateLoginRedirectBeforeFragment(t *testing.T) {
+	cases := []struct {
+		name      string
+		loginPath string
+		wantLoc   func(next string) string
+	}{
+		{
+			name:      "fragment only",
+			loginPath: "/auth#login",
+			wantLoc:   func(next string) string { return "/auth?next=" + url.QueryEscape(next) + "#login" },
+		},
+		{
+			name:      "existing query",
+			loginPath: "/login?x=1",
+			wantLoc:   func(next string) string { return "/login?next=" + url.QueryEscape(next) + "&x=1" },
+		},
+		{
+			name:      "query and fragment",
+			loginPath: "/auth?tab=1#login",
+			wantLoc:   func(next string) string { return "/auth?next=" + url.QueryEscape(next) + "&tab=1#login" },
+		},
+		{
+			name:      "question mark inside fragment",
+			loginPath: "/auth#step?a=1",
+			wantLoc:   func(next string) string { return "/auth?next=" + url.QueryEscape(next) + "#step?a=1" },
+		},
+	}
+	targets := []struct {
+		kind string
+		path string
+	}{
+		{kind: "screen", path: "/admin/audit?actor=u1"},
+		{kind: "gate", path: "/admin/_count/posts?view=mine"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			x := gatedEnv(t, Config{LoginPath: tc.loginPath})
+			for _, target := range targets {
+				t.Run(target.kind, func(t *testing.T) {
+					rr := get(x.as(nil), target.path)
+					if rr.Code != http.StatusSeeOther && rr.Code != http.StatusFound {
+						t.Fatalf("signed-out %s = %d, want redirect", target.path, rr.Code)
+					}
+					want := tc.wantLoc(target.path)
+					if got := rr.Header().Get("Location"); got != want {
+						t.Errorf("Location = %q, want %q", got, want)
+					}
+				})
+			}
+		})
+	}
+}

@@ -126,21 +126,18 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	if err != nil {
 		return nil, "", false, err
 	}
-	titles := u.rowTitles(ctx, om, rows, 0)
 	needle := strings.ToLower(q)
-	for i, r := range rows {
+	for _, r := range rows {
 		oid := fieldtext.Cell(om.rowValue(r, om.pk))
-		if oid == "" {
+		record := om.lookupRecord(ctx, oid, r)
+		if record == nil {
 			continue
 		}
-		label := titles[i]
+		label := u.rowTitles(ctx, om, []map[string]any{record}, 0)[0]
 		if label == "" {
 			label = oid
 		}
 		if byTitle && !strings.Contains(strings.ToLower(label), needle) {
-			continue
-		}
-		if !canReadRecord(ctx, om.ch, oid) {
 			continue
 		}
 		if len(opts) == pickerRows {

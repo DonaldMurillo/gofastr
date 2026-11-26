@@ -342,7 +342,7 @@
       killParts(_live); // supersede the older navigation first
       const E = NS._navHooks.envelope;
       const m = E?.manifest(path);
-      const addrs = (m?.entry?.deferred || []).map((a) => a.includes('{') ? E.subst(a, path) : a);
+      const addrs = (m?.entry?.deferred || []).map((a) => E.subst(a, path));
       if (!addrs.length) return null;
       const ctl = new AbortController();
       const st = newPartsState(path, addrs, epoch, ctl);
