@@ -213,21 +213,34 @@ func Attribute(src render.HTML, name string) (string, bool, error) {
 	if at < 0 {
 		return "", false, nil
 	}
-	rest := openTag[at+len(name):]
-	if !strings.HasPrefix(rest, "=") {
-		return "", true, nil
-	}
-	v := strings.TrimPrefix(rest, "=")
-	if len(v) > 1 && (v[0] == '"' || v[0] == '\'') {
-		if closing := strings.IndexByte(v[1:], v[0]); closing >= 0 {
-			return v[1 : 1+closing], true, nil
-		}
-		return "", false, fmt.Errorf("registry: Attribute: unterminated attribute value")
-	}
-	if cut := strings.IndexAny(v, " \t\n\r"); cut >= 0 {
-		v = v[:cut]
+	v, _, err := attrValue(openTag, at+len(name))
+	if err != nil {
+		return "", false, fmt.Errorf("registry: Attribute: %w", err)
 	}
 	return v, true, nil
+}
+
+// attrValue reads the value of the attribute whose name ends at from in
+// openTag, allowing whitespace around the =: the raw value and the
+// offset just past it, which is from itself for a bare attribute.
+func attrValue(openTag string, from int) (raw string, to int, err error) {
+	i := skipWhitespace(openTag, from)
+	if i >= len(openTag) || openTag[i] != '=' {
+		return "", from, nil
+	}
+	i = skipWhitespace(openTag, i+1)
+	if i < len(openTag) && (openTag[i] == '"' || openTag[i] == '\'') {
+		closing := strings.IndexByte(openTag[i+1:], openTag[i])
+		if closing < 0 {
+			return "", from, fmt.Errorf("unterminated attribute value")
+		}
+		return openTag[i+1 : i+1+closing], i + 1 + closing + 1, nil
+	}
+	j := i
+	for j < len(openTag) && !strings.ContainsRune(" \t\n\r", rune(openTag[j])) {
+		j++
+	}
+	return openTag[i:j], j, nil
 }
 
 // AddAttributeToken adds token to the space-separated list name holds on
@@ -251,26 +264,11 @@ func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error)
 		return render.HTML(spliceAttr(html, end, name, token)), nil
 	}
 	from := at + len(name)
-	to := from
-	var tokens []string
-	if from < len(openTag) && openTag[from] == '=' {
-		v := openTag[from+1:]
-		switch {
-		case len(v) > 0 && (v[0] == '"' || v[0] == '\''):
-			closing := strings.IndexByte(v[1:], v[0])
-			if closing < 0 {
-				return src, fmt.Errorf("registry: AddAttributeToken: unterminated attribute value")
-			}
-			to = from + 1 + 1 + closing + 1
-			v = v[1 : 1+closing]
-		default:
-			if cut := strings.IndexAny(v, " \t\n\r"); cut >= 0 {
-				v = v[:cut]
-			}
-			to = from + 1 + len(v)
-		}
-		tokens = strings.Fields(htmlUnescape(v))
+	raw, to, err := attrValue(openTag, from)
+	if err != nil {
+		return src, fmt.Errorf("registry: AddAttributeToken: %w", err)
 	}
+	tokens := strings.Fields(htmlUnescape(raw))
 	if slices.Contains(tokens, token) {
 		return src, nil
 	}

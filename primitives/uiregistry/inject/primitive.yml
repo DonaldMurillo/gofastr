@@ -18,7 +18,7 @@ invariants:
       - test: core-ui/registry.TestInjectMarkerEscapesName
       - test: core-ui/interactive.TestInteractiveAttributesReachRootAfterComments
   - id: attribute-found-at-a-name-boundary
-    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; injectMarker and InjectAttribute return a tag that already carries it unchanged, AppendAttributes keeps the existing bytes and appends each pair render.Attr accepts, even a name the tag already has, and Attribute reads a quoted value to its own closing quote.
+    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; injectMarker and InjectAttribute return a tag that already carries it unchanged, AppendAttributes keeps the existing bytes and appends each pair render.Attr accepts, even a name the tag already has, and Attribute reads a value past whitespace around the = and a quoted one to its own closing quote.
     enforced_by:
       - test: core-ui/registry.TestInjectIdempotentWhenAlreadyMarked
       - test: core-ui/registry.TestInjectIgnoresAttrNameInsideQuotedValue
@@ -26,6 +26,6 @@ invariants:
       - test: core-ui/registry.TestInjectSkipsWhenWrappedByDifferentName
       - test: core-ui/registry.TestAttribute
   - id: token-joins-the-list
-    rule: AddAttributeToken refuses an unsafe attribute name and a token that is empty or holds whitespace, adds name="token" to a root tag without the attribute, rewrites a quoted, unquoted, empty or bare value as one double-quoted, HTML-escaped, space-separated list with the token last, and returns a list that already holds the token, or a fragment with no usable root, unchanged.
+    rule: AddAttributeToken refuses an unsafe attribute name and a token that is empty or holds whitespace, adds name="token" to a root tag without the attribute, rewrites a quoted, unquoted, empty or bare value, with or without whitespace around the =, as one double-quoted, HTML-escaped, space-separated list with the token last, and returns a list that already holds the token, or a fragment with no usable root, unchanged.
     enforced_by:
       - test: core-ui/registry.TestAddAttributeToken

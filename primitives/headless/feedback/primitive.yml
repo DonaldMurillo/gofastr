@@ -27,7 +27,7 @@ invariants:
       - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
       - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
   - id: tooltip-is-hoverable-and-dismissable
-    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through when the open Tooltip's wrapper has left the page.
+    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes from every later listener, staying closed until pointer and focus have both left the wrapper; a dismissed Tooltip the pointer enters does not keep another open, and Escape passes through during IME composition and when the open Tooltip's wrapper has left the page; a trigger focused and hovered at load stays open when focus leaves while the pointer stays.
     enforced_by:
       - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
       - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
@@ -37,6 +37,8 @@ invariants:
       - test: framework/ui.TestTooltipFollowsFocus
       - test: framework/ui.TestTooltipDismissedOneLetsTheOpenOneClose
       - test: framework/ui.TestTooltipEscapePassesWhenItsTooltipIsGone
+      - test: framework/ui.TestTooltipOpensForATriggerUsedBeforeTheModuleLoads
+      - test: core-ui/check.TestLintKeyGuard_Repo
   - id: tooltip-sits-beside-its-trigger
     rule: An open Tooltip's pop is centred on its trigger on the preferred side, or the opposite one when the preferred side has no room, by anchor positioning where the browser has it and by the module's fixed coordinates where it does not.
     enforced_by:

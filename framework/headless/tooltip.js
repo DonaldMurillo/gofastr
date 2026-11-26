@@ -140,7 +140,7 @@
   // tooltip sits in stays open; with no tooltip open, or only one whose
   // wrapper has left the page, it passes through.
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !open || e.isComposing) return;
+    if (e.key !== 'Escape' || !open || e.isComposing || e.keyCode === 229) return;
     if (!open.root.isConnected) { hideNow(); return; }
     open.dismissed = true;
     hideNow();
@@ -163,6 +163,7 @@
   const focused = document.activeElement;
   const early = focused && focused !== document.body ? tipAt(focused) : null;
   if (early) {
+    early.hovered = early.root.matches(':hover');
     show(early);
   } else {
     const under = document.querySelectorAll(ROOT + ':hover');

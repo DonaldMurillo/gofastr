@@ -403,11 +403,12 @@ func gateModule(t *testing.T, requested, release chan struct{}) func(mux *http.S
 	}
 }
 
-// A trigger that has focus, or the pointer, before headless-tooltip has
-// loaded opens on the top layer once it does, without a second focus or
-// hover.
+// A trigger that has focus, the pointer or both before headless-tooltip
+// has loaded opens on the top layer once it does, without a second focus
+// or hover; with both, it stays open when focus leaves and the pointer
+// stays.
 func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
-	for _, how := range []string{"focus", "hover"} {
+	for _, how := range []string{"focus", "hover", "focus and hover"} {
 		t.Run(how, func(t *testing.T) {
 			requested, release := make(chan struct{}), make(chan struct{})
 			url := tooltipServer(t, true, gateModule(t, requested, release))
@@ -428,12 +429,13 @@ func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("the page never asked for headless-tooltip")
 			}
-			if how == "focus" {
+			if how != "focus" {
+				hoverID(t, ctx, "trigger")
+			}
+			if how != "hover" {
 				if err := chromedp.Run(ctx, chromedp.Focus(`#trigger`, chromedp.ByQuery)); err != nil {
 					t.Fatal(err)
 				}
-			} else {
-				hoverID(t, ctx, "trigger")
 			}
 			if tipOpen(ctx, "tip") {
 				t.Fatal("the pop is a popover before the module loaded, so the test proves nothing")
@@ -444,6 +446,15 @@ func TestTooltipOpensForATriggerUsedBeforeTheModuleLoads(t *testing.T) {
 			}
 			if !pollJS(ctx, `document.getElementById('tip').matches(':popover-open')`) {
 				t.Fatalf("the trigger that had %s before the module loaded did not open on the top layer", how)
+			}
+			if how == "focus and hover" {
+				if err := chromedp.Run(ctx, chromedp.Focus(`#elsewhere`, chromedp.ByQuery)); err != nil {
+					t.Fatal(err)
+				}
+				settle()
+				if !tipOpen(ctx, "tip") {
+					t.Fatal("the pop closed when focus left while the pointer stayed on the trigger")
+				}
 			}
 		})
 	}
