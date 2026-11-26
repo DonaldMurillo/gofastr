@@ -63,6 +63,15 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 
+- **Tooltip meets WCAG 1.4.13** (#706). With the `headless-tooltip`
+  module, `ui.Tooltip` opens in the top layer, so a scrolling or
+  clipping container no longer cuts it off. It stays open while the
+  pointer is over it, and Escape closes it without moving the pointer or
+  focus. It sits beside its trigger by CSS anchor positioning, or by the
+  module where the browser lacks it, and flips when its side has no
+  room. Without script it still shows on hover and focus. It now
+  renders through the new `headless.Tooltip`. See
+  [New components](framework/docs/content/ui-new-components.md).
 - **Static export:** under `--base`, the Markdown index and every
   root-relative link in exported page docs carry the base path, and the
   HTML rewrite matches URL attributes in any case (`HREF="/up"`). A page

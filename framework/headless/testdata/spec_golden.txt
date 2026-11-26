@@ -898,6 +898,14 @@ the search field is the one control in a toolbar that should grow, so its wrappe
 an empty element that pushes what follows to the far end — it renders nothing, says nothing, and is in the markup only because the layout needs a thing to grow
 <div></div>
 
+=== Tooltip / a tooltip on a button ===
+the pop is a description, not a name: the trigger keeps its own label and points at the pop with aria-describedby, so a screen reader says both and a sighted reader sees the pop on hover or focus
+<span data-hui-tooltip="" data-hui-tooltip-placement="top"><button type="button" aria-describedby="tip-save">Save</button><span data-cui-internal="" data-hui-tooltip-pop="" id="tip-save" role="tooltip">Saves without closing</span></span>
+
+=== Tooltip / a preferred side ===
+the placement is a preference, not a promise: the pop flips to the opposite side when the preferred one has no room, so the hook says where to try first
+<span data-hui-tooltip="" data-hui-tooltip-placement="bottom"><button type="button" aria-describedby="tip-docs">Guide</button><span data-cui-internal="" data-hui-tooltip-pop="" id="tip-docs" role="tooltip">Opens the guide beside the page</span></span>
+
 === Tree / a tree with a selected leaf ===
 the roving tabindex puts the keyboard on the first row and aria-selected says which leaf is the current one — the whole keyboard contract is the module's, on hooks the markup carries
 <ul aria-label="File system" data-hui-tree="" id="t" role="tree"><li aria-level="1" aria-posinset="1" aria-setsize="3" data-cui-internal="" id="a" role="treeitem" tabindex="0"><div><a href="/a" tabindex="-1">A</a></div></li><li aria-level="1" aria-posinset="2" aria-setsize="3" data-cui-internal="" id="b" role="treeitem" tabindex="-1"><div><span>B</span></div></li><li aria-level="1" aria-posinset="3" aria-selected="true" aria-setsize="3" data-cui-internal="" id="c" role="treeitem" tabindex="-1"><div><span>C</span></div></li></ul>

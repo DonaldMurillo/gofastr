@@ -17,7 +17,28 @@ code:
   - framework/headless/copy_behavior.go
   - framework/headless/copy.js
   - framework/headless/selectioncopy_behavior.go
+  - framework/headless/tooltip.go
+  - framework/headless/tooltip_behavior.go
+  - framework/headless/tooltip.js
 invariants:
+  - id: tooltip-rises-to-the-top-layer
+    rule: On a Tooltip's first hover or focus headless-tooltip makes its pop a manual popover and marks the wrapper data-hui-tooltip-live, so the pop renders in the top layer past any ancestor that clips its overflow.
+    enforced_by:
+      - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
+  - id: tooltip-is-hoverable-and-dismissable
+    rule: An upgraded Tooltip stays open while the pointer is over its trigger or its pop or focus is inside the wrapper, closes once both have left, and closes on Escape, which it consumes, staying closed until pointer and focus have both left the wrapper.
+    enforced_by:
+      - test: framework/ui.TestTooltipCanBeHoveredAndClosesWhenThePointerLeaves
+      - test: framework/ui.TestTooltipEscapeDismissesWithoutMovingThePointer
+      - test: framework/ui.TestTooltipEscapeIsConsumed
+      - test: framework/ui.TestTooltipEscapeLeavesTheDialogOpen
+      - test: framework/ui.TestTooltipFocusAndDismissalOutlastThePointer
+      - test: framework/ui.TestTooltipFollowsFocus
+  - id: tooltip-sits-beside-its-trigger
+    rule: An open Tooltip's pop is centred on its trigger on the preferred side, or the opposite one when the preferred side has no room, by anchor positioning where the browser has it and by the module's fixed coordinates where it does not.
+    enforced_by:
+      - test: framework/ui.TestTooltipRisesIntoTheTopLayerOutOfAClippingBox
+      - test: framework/ui.TestTooltipPlacesItselfWithoutAnchorPositioning
   - id: action-endpoint-same-origin
     rule: OptimisticAction and ToggleAction panic at render on an empty Endpoint and on an Endpoint or UntoggleEndpoint that is not same-origin.
     enforced_by:

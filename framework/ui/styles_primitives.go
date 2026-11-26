@@ -712,6 +712,44 @@ func tooltipCSS(_ style.Theme) string {
 
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-tooltip"] .fui-tooltip__pop { transition: none; transform: translateX(-50%) translateY(0); }
+}
+
+/* Raised by headless-tooltip: the pop is a manual popover in the top
+   layer, shown and hidden by the module, so :hover no longer shows it
+   and no ancestor's overflow clips it. It takes the pointer, so it can
+   be hovered. The module places it where anchor positioning is absent;
+   the block below places it where it is present. */
+[data-cui-comp="ui-tooltip"][data-hui-tooltip-live] .fui-tooltip__pop[popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  overflow: visible;
+  transform: none;
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+}
+[data-cui-comp="ui-tooltip"][data-hui-tooltip-live] .fui-tooltip__pop[popover]:popover-open {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+@supports (anchor-scope: --x) and (position-area: top) {
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] {
+    anchor-name: --fui-tooltip;
+    anchor-scope: --fui-tooltip;
+  }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live] .fui-tooltip__pop[popover] {
+    position-anchor: --fui-tooltip;
+    position-area: top;
+    position-try-fallbacks: flip-block;
+    margin: calc(var(--spacing-sm, 4px) * 1.5);
+  }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--bottom .fui-tooltip__pop[popover] { position-area: bottom; }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--left .fui-tooltip__pop[popover] { position-area: inline-start; position-try-fallbacks: flip-inline; }
+  [data-cui-comp="ui-tooltip"][data-hui-tooltip-live].fui-tooltip--right .fui-tooltip__pop[popover] { position-area: inline-end; position-try-fallbacks: flip-inline; }
 }`
 }
 
