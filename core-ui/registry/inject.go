@@ -272,8 +272,15 @@ func AddAttributeToken(src render.HTML, name, token string) (render.HTML, error)
 	if slices.Contains(tokens, token) {
 		return src, nil
 	}
-	value := `="` + htmlEscape(strings.Join(append(tokens, token), " ")) + `"`
-	return render.HTML(html[:start+from] + value + html[start+to:]), nil
+	list := strings.Join(append(tokens, token), " ")
+	valueFrom, valueTo := start+from, start+to
+	return render.HTML(replaceAttrValue(html, valueFrom, valueTo, list)), nil
+}
+
+// replaceAttrValue writes ="value", HTML-escaped, over html[from:to], the
+// span from the end of an attribute's name to the end of its old value.
+func replaceAttrValue(html string, from, to int, value string) string {
+	return html[:from] + `="` + htmlEscape(value) + `"` + html[to:]
 }
 
 func htmlUnescape(v string) string { return html.UnescapeString(v) }
