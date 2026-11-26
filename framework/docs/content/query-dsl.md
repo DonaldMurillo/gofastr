@@ -84,7 +84,7 @@ before calling `Build`.
 
 ## MCP tool arguments
 
-The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas.
+The generated `<table>_list` MCP tool accepts the same filter keys as typed JSON arguments (`status`, `amount_gte`, `status_in: ["draft", "sent"]`). For `_in`, pass a non-empty JSON array whose elements contain no commas. The filter on a column named like one of the tool's own arguments (`page`, `limit`, `per_page`, `offset`, `sort`, and `q` when the entity has `SearchFields`) takes the bracket key, such as `page[eq]` or `sort[like]`, so the argument keeps its own meaning and type.
 
 ## Common mistakes
 
