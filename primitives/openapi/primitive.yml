@@ -57,6 +57,10 @@ invariants:
       - test: framework/openapi.TestNoQueryFieldOmitsFilterParams
       - test: framework/openapi.TestFilterParamCollidesWithListControl
       - test: framework.TestOpenAPI_RelationFieldsTypedByTargetKey
+  - id: control-named-filter-says-why
+    rule: The equality filter parameter of a field named like a list control (q only with SearchFields) is the bracket key, and its description says the bare key is the list control.
+    enforced_by:
+      - test: framework/openapi.TestSpecBracketsControlNamedFilter
   - id: list-controls-documented
     rule: The list operation documents offset, per_page and stream, and trashed only for a soft-delete entity.
     enforced_by:
