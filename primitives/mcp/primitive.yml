@@ -50,6 +50,10 @@ invariants:
     enforced_by:
       - test: core/mcp.TestNonScalarIDRefused
       - test: core/mcp.TestInvalidJSONRPCVersion
+  - id: tool-arguments-are-an-object
+    rule: tools/call answers -32602 before the tool is looked up when arguments is present and is not a JSON object, null included; omitted arguments reach the tool as a nil map.
+    enforced_by:
+      - test: core/mcp.TestToolsCallRefusesNullArguments
   - id: params-refuse-ambiguous-keys
     rule: HandleRequest answers -32602 before dispatch when any object at any depth of params repeats a key or holds two keys that case-fold onto each other.
     enforced_by:

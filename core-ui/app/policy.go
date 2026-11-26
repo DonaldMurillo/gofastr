@@ -25,6 +25,8 @@ type RenderResult struct {
 	// AFTER Load, so dynamic routes (whose registration-time title is empty or generic) report the
 	// loaded title.
 	Title string
+	// DocumentLanguage carries the resolved language to the document or navigation response.
+	DocumentLanguage string
 	// Component is the loaded per-request instance the HTML was rendered from (post SetParams → DI → Load).
 	Component component.Component
 	// SwapLayer is the layer key the partial HTML renders below when the render was a subtree partial

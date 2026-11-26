@@ -94,6 +94,9 @@ func appSpecLoginRoute(bp appspec.AppSpec) string {
 		}
 		return false
 	}
+	if shell, ok := bp.ProjectShell(); ok && shell.LoginRoute != "" {
+		return shell.LoginRoute
+	}
 	for _, s := range bp.Screens {
 		if hasLogin(s.Body) {
 			return s.Route
@@ -2266,7 +2269,7 @@ func RenderAppSpecScreens(bp appspec.AppSpec) string {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	apiBase := appSpecAPIBase(bp.App.APIPrefix)
+	apiBase := appSpecAPIBase(bp.RouteApp().APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), "screens", "screens"))
@@ -2605,22 +2608,36 @@ func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNod
 // appSpecScreenLayoutExpr resolves a screen's Layout field to the
 // package-level layout identifier app.go declares (appLayout / marketingLayout)
 // or "nil". Layouts are package-level vars so per-screen mount funcs can
-// reference them without app.go naming any screen.
+// reference them without app.go naming any screen. A screen added with
+// --add takes appLayout when the project's app.go declares it, since the
+// fragment has no nav of its own.
 func appSpecScreenLayoutExpr(screen appspec.AppSpecScreen, bp appspec.AppSpec) string {
-	switch screen.Layout {
-	case "marketing":
+	if screen.Layout == "marketing" {
 		return "marketingLayout"
-	case "app":
-		if len(bp.Nav) > 0 {
-			return "appLayout"
-		}
-		return "nil"
-	default:
-		if len(bp.Nav) > 0 {
-			return "appLayout"
-		}
-		return "nil"
 	}
+	hasAppLayout := len(bp.Nav) > 0
+	if shell, ok := bp.ProjectShell(); ok {
+		hasAppLayout = shell.AppLayout
+	}
+	if hasAppLayout {
+		return "appLayout"
+	}
+	return "nil"
+}
+
+// appSpecGuestHome reports whether auth-form screens are guest-gated
+// (app.go declares guestPolicy) and the home guestPolicy sends a
+// signed-in visitor to. A screen added with --add reads both off the
+// project, since the fragment's app section and screens are not the
+// project's.
+func appSpecGuestHome(bp appspec.AppSpec) (bool, string) {
+	if shell, ok := bp.ProjectShell(); ok {
+		if shell.Home != "" {
+			return shell.GuestPolicy, shell.Home
+		}
+		return shell.GuestPolicy, appspec.AppHome(bp.Screens)
+	}
+	return bp.App.Auth.Enabled && appSpecHasAuthFormScreen(bp), appspec.AppHome(bp.Screens)
 }
 
 // AppSpecScreenMountStmt emits the site.Register / site.RegisterScreen
@@ -2634,7 +2651,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	route := appSpecScreenPattern(bp, screen)
 	typeName := appspec.ToCamelCase(screen.Name) + "Screen"
 	layoutExpr := appSpecScreenLayoutExpr(screen, bp)
-	guestRedirect := bp.App.Auth.Enabled && appSpecHasAuthFormScreen(bp)
+	guestRedirect, home := appSpecGuestHome(bp)
 	// NewScreen does not probe the component the way site.Register does
 	// (no ScreenDescriber discovery), so a declared description must be
 	// chained explicitly or uihost strict mode fails the boot with
@@ -2667,7 +2684,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 		case screen.Access.Auth:
 			policy = fmt.Sprintf(".WithPolicy(authPolicy(%q, %q))", appSpecLoginRoute(bp), screen.Access.Role)
 		case guestRedirect && screenHasAuthForm(screen):
-			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appspec.AppHome(bp.Screens))
+			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", home)
 		}
 		return fmt.Sprintf("\trecord := %s%s\n%s\tsite.RegisterScreen(record, %s)", build, policy, intercept, layoutExpr)
 	}
@@ -2675,7 +2692,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	case screen.Access.Auth:
 		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(authPolicy(%q, %q)), %s)", build, appSpecLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appspec.AppHome(bp.Screens), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, home, layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}
@@ -2695,7 +2712,7 @@ func appSpecScreenFiles(bp appspec.AppSpec, screenOrderOffset int) []GeneratedFi
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
 	}
-	apiBase := appSpecAPIBase(bp.App.APIPrefix)
+	apiBase := appSpecAPIBase(bp.RouteApp().APIPrefix)
 	var files []GeneratedFile
 	files = append(files, GeneratedFile{Name: "screens_register.go", Content: appSpecScreensRegisterGo})
 	if appSpecScreenImports(bp).node {
@@ -3208,7 +3225,7 @@ func appSpecScreenInvalidation(screen appspec.AppSpecScreen, bp appspec.AppSpec)
 		}
 		for _, decl := range bp.Entities {
 			if name != "" && decl.Name == name {
-				api := appSpecEntityAPIPath(appSpecAPIBase(bp.App.APIPrefix), decl)
+				api := appSpecEntityAPIPath(appSpecAPIBase(bp.RouteApp().APIPrefix), decl)
 				if !slices.Contains(apis, api) {
 					apis = append(apis, api)
 				}
@@ -3234,7 +3251,7 @@ func appSpecScreenImports(bp appspec.AppSpec) screenImportNeeds {
 	for _, decl := range bp.Entities {
 		entityMap[decl.Name] = decl
 	}
-	return appSpecScreensImportNeeds(bp, bp.Screens, entityMap, appSpecAPIBase(bp.App.APIPrefix))
+	return appSpecScreensImportNeeds(bp, bp.Screens, entityMap, appSpecAPIBase(bp.RouteApp().APIPrefix))
 }
 
 // appSpecScreensImportNeeds computes the import set for an arbitrary
@@ -4044,12 +4061,13 @@ func appSpecAPIBase(apiPrefix string) string {
 }
 
 // appSpecAuthBase is where the auth battery mounts its routes:
-// app.auth.base_path, else the battery's default /auth. Validation keeps
-// base_path an absolute path with no trailing slash, so base + "/login"
-// is the battery's login route.
+// app.auth.base_path of the project (AppSpec.RouteApp, so a screen added
+// with --add posts to the project's battery), else the battery's default
+// /auth. Validation keeps base_path an absolute path with no trailing
+// slash, so base + "/login" is the battery's login route.
 func appSpecAuthBase(bp appspec.AppSpec) string {
-	if bp.App.Auth.BasePath != "" {
-		return bp.App.Auth.BasePath
+	if base := bp.RouteApp().Auth.BasePath; base != "" {
+		return base
 	}
 	return "/auth"
 }
@@ -4248,7 +4266,8 @@ func appSpecFormFieldSkipped(field framework.FieldDeclaration, filterFields []st
 }
 
 // appSpecEntityFormClientJS populates the form's relation <select>s on
-// mount by fetching each related entity's collection. targets maps a
+// mount by fetching each related entity's collection, read with the SDK's
+// parseJSON so a big integer key stays exact. targets maps a
 // related entity to its route and the wire name of its key, the column a
 // relation stores: a target keyed on currency_code is read as
 // row.currencyCode, and one on its own table is fetched there. A target
@@ -4278,6 +4297,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
 		targetsJSON = []byte("{}")
 	}
 	return fmt.Sprintf(`(async () => {
+%s
   const targets = %s;
   const form = document.querySelector('form[data-action-mount="%s"]');
   if (!form) return;
@@ -4292,7 +4312,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       // falls back to fetch.
       const res = await ((window.__gofastr && window.__gofastr.fetch) || fetch)(t.path + '?limit=100', { headers: { 'Accept': 'application/json' } });
       if (!res.ok) continue;
-      const payload = await res.json();
+      const payload = parseJSON(await res.text());
       const rows = Array.isArray(payload.data) ? payload.data : [];
       for (const row of rows) {
         if (row[t.key] == null) continue;
@@ -4307,7 +4327,7 @@ func appSpecEntityFormClientJS(block appspec.AppSpecBlock, entityMap map[string]
       sel.dataset.relLoaded = '1';
     } catch (_) {}
   }
-})();`, targetsJSON, mountAction)
+})();`, jsParseJSON, targetsJSON, mountAction)
 }
 
 func appSpecEntityFormActionName(screen appspec.AppSpecScreen, path []int) string {

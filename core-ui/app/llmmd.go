@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -135,6 +136,7 @@ type ScreenLLMMDResult struct {
 	Allowed   bool
 	Component component.Component
 	Decision  Decision
+	Err       error // A screen pipeline failure that prevented rendering the document.
 }
 
 // ScreenLLMMDForPath generates the per-screen llm.md for a CONCRETE URL of a (possibly dynamic) route.
@@ -156,6 +158,9 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if errors.Is(phase.err, ErrNotFound) {
 		return ScreenLLMMDResult{}, false
 	}
+	if phase.err != nil {
+		return ScreenLLMMDResult{Err: phase.err}, true
+	}
 	if phase.decision.Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: phase.decision}, true
 	}
@@ -163,44 +168,36 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if guardRedirect.Kind == DecisionRedirect {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen), Decision: guardRedirect}, true
 	}
-	if phase.err != nil {
-		return ScreenLLMMDResult{MD: ScreenLLMMD(ctx, screen), Title: screen.Title, Allowed: true}, true
-	}
-
 	comp := screen.newInstance()
 	if len(params) > 0 {
 		if ps, ok := comp.(ParamSetter); ok {
 			ps.SetParams(params)
 		}
 	}
-	loaded := true
 	if err := a.injectComponent(comp, path); err != nil {
-		loaded = false
+		return ScreenLLMMDResult{Err: err}, true
 	}
 	ctx = withResolvePhase(ctx, resolvePhaseLoad)
-	if loaded {
-		if loader, ok := comp.(ScreenLoader); ok {
-			if err := safeScreenLoad(loader, ctx); err != nil {
-				if errors.Is(err, ErrNotFound) {
-					return ScreenLLMMDResult{}, false
-				}
-				loaded = false
-			}
-		}
+	var loadErr error
+	if loader, ok := comp.(ScreenLoader); ok {
+		loadErr = safeScreenLoad(loader, ctx)
 	}
 	if pe := resolverPageError(ctx, path); pe != nil {
 		if errors.Is(pe, ErrNotFound) {
 			return ScreenLLMMDResult{}, false
 		}
-		loaded = false
+		return ScreenLLMMDResult{Err: pe}, true
 	}
-	if !loaded {
-		return ScreenLLMMDResult{MD: ScreenLLMMD(ctx, screen), Title: screen.Title, Allowed: true}, true
+	if errors.Is(loadErr, ErrNotFound) {
+		return ScreenLLMMDResult{}, false
+	}
+	if loadErr != nil {
+		return ScreenLLMMDResult{Err: fmt.Errorf("app: load failed for %q: %w", path, loadErr)}, true
 	}
 
 	title := screen.Title
 	if t, ok := comp.(ScreenTitler); ok {
-		if tt := safeScreenTitle(ctx, t); tt != "" {
+		if tt := SafeScreenTitle(ctx, t); tt != "" {
 			title = tt
 		}
 	}
@@ -215,14 +212,13 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	b.WriteString("---\n\n")
 	b.WriteString("## Page Content\n\n")
 	ctx = withResolvePhase(ctx, resolvePhaseRegion)
-	content, err := component.SafeRenderCtx(ctx, comp)
-	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
-		return ScreenLLMMDResult{}, false
-	}
+	content, err := renderScreen(ctx, comp)
 	if err != nil {
 		log.Printf("llm.md: render error for %s: %s", textsafe.ScrubControlBytes(path), textsafe.Recovered(err))
-		b.WriteString("_(error rendering content: see server logs)_\n")
-		return ScreenLLMMDResult{MD: b.String(), Title: title, Allowed: true, Component: comp}, true
+		return ScreenLLMMDResult{Err: screenRenderPanicError(path, err)}, true
+	}
+	if fills := a.resolveFills(ctx, path, params, screen, chain, false, guards); fills != nil && fills.notFoundOutlet {
+		return ScreenLLMMDResult{}, false
 	}
 	if m := htmlToMarkdown(string(localizeLinks(ctx, content))); m != "" {
 		b.WriteString(m)
@@ -234,17 +230,37 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 }
 
 func localizeLinks(ctx context.Context, content render.HTML) render.HTML {
-	prefix := i18n.PathPrefix(ctx)
-	if prefix == "" {
-		return content
-	}
-	set, _, _ := i18n.PathLocale(ctx)
-	rule := urlprefix.Rule{Prefix: prefix, Locales: set.All()}
-	rule.Keep, _ = ctx.Value(linkKeepKey{}).(func(string) bool)
+	var origins []string
 	if r := RequestFromContext(ctx); r != nil && r.Host != "" {
-		rule.Origins = []string{"http://" + r.Host, "https://" + r.Host}
+		origins = []string{"http://" + r.Host, "https://" + r.Host}
 	}
-	return render.HTML(urlprefix.HTML([]byte(content), rule))
+	if prefix := i18n.PathPrefix(ctx); prefix != "" {
+		set, _, _ := i18n.PathLocale(ctx)
+		rule := urlprefix.Rule{Prefix: prefix, Locales: set.All(), Origins: origins}
+		rule.Keep, _ = ctx.Value(linkKeepKey{}).(func(string) bool)
+		content = render.HTML(urlprefix.HTML([]byte(content), rule))
+	}
+	if base := linkBase(ctx); base != "" {
+		content = render.HTML(baseLinkAttr.ReplaceAllString(string(content), "${1}"+strings.ReplaceAll(base, "$", "$$")+"/${2}"))
+	}
+	return content
+}
+
+// baseLinkAttr finds the root-relative href and src values htmlToMarkdown turns into link and
+// image destinations; a static export puts its base path on every one, as its HTML rewrite does.
+var baseLinkAttr = regexp.MustCompile(`(?i)(\s(?:href|src)=")/([^/"]|")`)
+
+type linkBaseKey struct{}
+
+// WithLinkBase returns ctx carrying a static export's mount path, which the markdown docs put
+// in front of every root-relative link, before any locale prefix.
+func WithLinkBase(ctx context.Context, basePath string) context.Context {
+	return context.WithValue(ctx, linkBaseKey{}, strings.TrimRight(basePath, "/"))
+}
+
+func linkBase(ctx context.Context) string {
+	base, _ := ctx.Value(linkBaseKey{}).(string)
+	return base
 }
 
 type linkKeepKey struct{}
@@ -257,26 +273,30 @@ func WithLinkKeep(ctx context.Context, keep func(path string) bool) context.Cont
 
 type exportedDocsKey struct{}
 
+type exportedDocs struct {
+	pages map[string][]string
+}
+
 // WithExportedDocs returns ctx for a static export's page index: docs maps each route pattern to
 // the pages, in routing form and without a locale prefix, whose llm.md the export wrote.
 func WithExportedDocs(ctx context.Context, docs map[string][]string) context.Context {
-	return context.WithValue(ctx, exportedDocsKey{}, docs)
+	return context.WithValue(ctx, exportedDocsKey{}, exportedDocs{pages: docs})
 }
 
 func rowLLMMDLink(ctx context.Context, path string) string {
-	if docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string); ok && !slices.Contains(docs[path], path) {
+	if docs, ok := ctx.Value(exportedDocsKey{}).(exportedDocs); ok && !slices.Contains(docs.pages[path], path) {
 		return ""
 	}
 	return pageLLMMDLink(ctx, path)
 }
 
 func dynamicPatternCell(ctx context.Context, pattern string) string {
-	docs, ok := ctx.Value(exportedDocsKey{}).(map[string][]string)
+	docs, ok := ctx.Value(exportedDocsKey{}).(exportedDocs)
 	if !ok {
 		return fmt.Sprintf("[%s](%s)", mdLinkText(pattern), mdLinkDest(pageLLMMDLink(ctx, pattern)))
 	}
 	cell := mdTableCell(pattern)
-	for i, p := range docs[pattern] {
+	for i, p := range docs.pages[pattern] {
 		sep := ", "
 		if i == 0 {
 			sep = ": "
@@ -287,12 +307,7 @@ func dynamicPatternCell(ctx context.Context, pattern string) string {
 }
 
 func pageLLMMDLink(ctx context.Context, path string) string {
-	pre := i18n.PathPrefix(ctx)
-	clean := strings.TrimRight(path, "/")
-	if clean == "" {
-		return pre + "/llm.md"
-	}
-	return pre + clean + "/llm.md"
+	return linkBase(ctx) + i18n.PathPrefix(ctx) + strings.TrimRight(path, "/") + "/llm.md"
 }
 
 // AppLLMMD generates a top-level LLM-friendly markdown index listing all screens/pages registered in the app.

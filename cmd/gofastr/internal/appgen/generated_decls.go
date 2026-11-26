@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -116,4 +117,35 @@ func fieldNames(f *ast.Field) []string {
 		return []string{x.Sel.Name}
 	}
 	return nil
+}
+
+// packageNamesUnder lists the top-level names declared across the
+// production Go files directly under writeRoot.
+func packageNamesUnder(writeRoot string) []string {
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return nil
+	}
+	defer root.Close()
+	return rootPackageNames(root)
+}
+
+func rootPackageNames(root *os.Root) []string {
+	entries, _ := RootReadDirEntries(root, ".")
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !IsProductionGoSource(e.Name()) {
+			continue
+		}
+		src, err := root.ReadFile(e.Name())
+		if err != nil {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), e.Name(), src, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		out = append(out, topLevelNames(f)...)
+	}
+	return out
 }

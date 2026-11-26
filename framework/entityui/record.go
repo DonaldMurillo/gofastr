@@ -54,14 +54,45 @@ func (u *UI) Create(entity string) *RecordBuilder {
 // entity alike.
 func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bool) {
 	m, err := u.meta(entityName)
-	if err != nil || !canReadRecord(ctx, m.ch, id) {
+	if err != nil {
 		return "", false
 	}
-	row, err := m.getRow(ctx, id)
+	row, err := m.readableRow(ctx, id)
 	if err != nil || row == nil {
 		return "", false
 	}
 	return u.recordTitle(ctx, m, row), true
+}
+
+func (m *meta) readableRow(ctx context.Context, id string) (map[string]any, error) {
+	if id == "" || !canReadRecord(ctx, m.ch, id) {
+		return nil, nil
+	}
+	row, err := m.getRow(ctx, id)
+	if crud.IsNotFound(err) {
+		return nil, nil
+	}
+	return row, err
+}
+
+// lookupRecord returns the row a search or picker may show for id, which
+// the list read returned as listed: the record as the record screen
+// reads it, or nil when the caller may not see it. A failed read or hook
+// error hides that record only. With no get hooks the listed row is the
+// record, so a lookup costs no read per row.
+func (m *meta) lookupRecord(ctx context.Context, id string, listed map[string]any) map[string]any {
+	if m.ch.Hooks == nil || len(m.ch.Hooks.HooksFor(hook.BeforeGet))+len(m.ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+		if id == "" || !canReadRecord(ctx, m.ch, id) {
+			return nil
+		}
+		return listed
+	}
+	row, err := m.readableRow(ctx, id)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: lookup record hidden", "entity", m.name, "error", err)
+		return nil
+	}
+	return row
 }
 
 // RecordHidden reports whether the caller's read hooks keep record id
@@ -141,11 +172,12 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 		}
 		for _, row := range rows {
 			id := m.rowID(row)
-			if id == "" || !canReadRecord(ctx, m.ch, id) {
+			record := m.lookupRecord(ctx, id, row)
+			if record == nil {
 				continue
 			}
 			out = append(out, RecordMatch{ID: id})
-			found = append(found, row)
+			found = append(found, record)
 			if len(out) == limit {
 				break
 			}

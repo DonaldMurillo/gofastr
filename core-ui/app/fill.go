@@ -278,14 +278,13 @@ func (a *App) resolveFillSlot(ctx context.Context, path string, params map[strin
 	candidates := slot.candidates
 	if d, ok := guards[slot.addr]; ok {
 		if d.kind == DecisionBlock {
-			if slot.spec.Default != nil {
-				if _, html, err := a.loadFillComponent(ctx, path, params, slot.spec.Default); err == nil {
-					return fillSlotResult{html: html}
-				}
+			slot.candidates = nil
+			slot.spec.Fallback = FallbackNothing
+			if def := slot.spec.Default; def != nil {
+				slot.candidates = []component.Component{def}
 			}
-			return fillSlotResult{html: ""}
-		}
-		if alt := altCandidates(guards, slot); alt != nil {
+			candidates = slot.candidates
+		} else if alt := altCandidates(guards, slot); alt != nil {
 			candidates = alt
 		}
 	}

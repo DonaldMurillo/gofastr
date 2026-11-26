@@ -65,6 +65,19 @@ func storedGadget(t *testing.T, x *testUI) map[string]string {
 	return out
 }
 
+func TestCreateRendersTypedJSONDefaults(t *testing.T) {
+	cfg := entity.EntityConfig{Fields: []schema.Field{
+		{Name: "metadata", Type: schema.JSON, Default: map[string]string{"theme": "light"}},
+		{Name: "themes", Type: schema.JSON, Default: []string{"light", "dark"}},
+	}}.WithTimestamps(false)
+	x := newTestUI(t, map[string]entity.EntityConfig{"gadgets": cfg}, nil, withAPI(map[string]string{"gadgets": "/api/gadgets"}))
+	create := string(x.ui.Create("gadgets").Base("/gadgets").RenderCtx(x.userCtx("/gadgets/create", "", "u1")))
+	got := formFields(create, "eui-gadgets-form")
+	if got["metadata"] != `{"theme":"light"}` || got["themes"] != `["light","dark"]` {
+		t.Errorf("create defaults: metadata=%q themes=%q, want JSON object and array", got["metadata"], got["themes"])
+	}
+}
+
 // An untouched save of a record holding those shapes writes back what
 // is stored. A NULL optional bool drew a switch with a hidden "false"
 // and saved false; a color input turned "brand-red" and "#A1B2C3" into

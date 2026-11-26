@@ -42,6 +42,50 @@ func TestRegisterHookNilIsNoop(t *testing.T) {
 	// Just reaching here without panicking is the assertion.
 }
 
+func TestServeHookSkipsFallbacks(t *testing.T) {
+	for _, scope := range []string{"root", "group", "wrapped sibling"} {
+		t.Run(scope, func(t *testing.T) {
+			r := New()
+			group := r.Group("/api")
+			group.Get("/known", status(http.StatusOK))
+			group.Handle("", "/any", status(http.StatusAccepted))
+			target := r
+			switch scope {
+			case "group":
+				target = group
+			case "wrapped sibling":
+				target = r.Group("/api")
+			}
+			target.NotFound(status(http.StatusTeapot))
+			target.MethodNotAllowed(status(http.StatusUnprocessableEntity))
+			if scope == "wrapped sibling" {
+				identity := func(next http.Handler) http.Handler { return next }
+				target.WrapNotFound(identity)
+				target.WrapMethodNotAllowed(identity)
+			}
+
+			var calls []string
+			r.SetServeHook(func(method, pattern string) { calls = append(calls, method+" "+pattern) })
+			for _, req := range []struct {
+				method, path string
+				want         int
+			}{
+				{http.MethodGet, "/api/known", http.StatusOK},
+				{http.MethodGet, "/api/any", http.StatusAccepted},
+				{http.MethodGet, "/api/missing", http.StatusTeapot},
+				{http.MethodPost, "/api/known", http.StatusUnprocessableEntity},
+			} {
+				if got := fallbackServe(r, req.method, "", req.path).Code; got != req.want {
+					t.Errorf("%s %s = %d, want %d", req.method, req.path, got, req.want)
+				}
+			}
+			if want := []string{"GET /api/known", " /api/any"}; !slices.Equal(calls, want) {
+				t.Errorf("serve hook calls = %q, want %q", calls, want)
+			}
+		})
+	}
+}
+
 func TestRouteGateAllowsWhenTrue(t *testing.T) {
 	r := New()
 	r.SetRouteGate(func(pattern string) bool {

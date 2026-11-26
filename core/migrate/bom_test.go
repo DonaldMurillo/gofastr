@@ -9,11 +9,11 @@ import (
 // first directive: the mark is not part of the "-- +migrate" prefix.
 func TestParseMigrationIgnoresBOM(t *testing.T) {
 	src := "-- +migrate Version 7\n-- +migrate Name add_widgets\n-- +migrate Up\nCREATE TABLE widgets (id int);\n-- +migrate Down\nDROP TABLE widgets;\n"
-	plain, err := parseMigration(strings.NewReader(src))
+	plain, err := parseMigration(strings.NewReader(src), DialectPostgres)
 	if err != nil {
 		t.Fatalf("without a BOM: %v", err)
 	}
-	marked, err := parseMigration(strings.NewReader("\xEF\xBB\xBF" + src))
+	marked, err := parseMigration(strings.NewReader("\xEF\xBB\xBF"+src), DialectPostgres)
 	if err != nil {
 		t.Fatalf("with a BOM: %v", err)
 	}

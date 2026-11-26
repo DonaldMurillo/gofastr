@@ -69,8 +69,8 @@ submit with the supplied token immediately.
 
 Envelope and core navigation share percent-decoded segment normalization
 and typed-parameter matching, including deferred-region route addresses.
-Layout keys and deferred addresses substitute decoded captured values, including
-literal slashes and percent signs, exactly as the server's layout resolver does.
+Layout keys and deferred addresses substitute decoded captured values for both
+plain and typed group parameters, including literal slashes and percent signs.
 
 Widget state hydration refuses cross-origin endpoints without aborting
 mounting: local actions, lifecycle listeners and dismissal remain wired.
@@ -189,6 +189,10 @@ not already end with that exact suffix. Full pages, not-found outlet
 outcomes, recovery screens, and partial-navigation title headers follow
 the same rule.
 
+Full pages and navigation partials resolve the screen's trimmed
+`ScreenLang` after `Load`. Empty values and panics use the route language.
+The layout and partial head use the same resolved language.
+
 Custom not-found screens can implement
 `uihost.NotFoundTitler.NotFoundTitle(context.Context, string)` to choose
 the title for the current request path, without storing that path on the
@@ -254,6 +258,16 @@ one) through the root layout, or a minimal document when there is no
 root layout. `Vary: Accept` on every arm, and no arm echoes the path or
 the panic. The embed content route answers the minimal document
 directly, since a frame must not receive the site's root layout.
+
+Concrete `llm.md` URLs and negotiated Markdown use the same failure
+handling as HTML pages. Pattern documents can describe the route without
+loading a specific record.
+
+Markdown not-found responses list discovery links for the mounted
+sitemap and `llms.txt` routes.
+
+An exported `llm-pages.md` uses the export's base path before its locale
+prefix in each link to a written page document.
 
 ---
 
@@ -382,6 +396,9 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 SearchInput's kit-owned scanner keeps its clear button in step with the
 input value on input and after a native form reset. The reset update runs
 on the next animation frame, after the browser restores default values.
+Clearing a submitted GET search calls the native form submission method
+through its prototype, so fields named `requestSubmit` or `submit` can
+still be cleared along with their search results.
 
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
@@ -510,7 +527,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-range-slider-output` | On the `<output>` of a RangeSlider with `ShowValue=true`: the sentence SHAPE travels in the attribute (a phrase with `{{low}}` and `{{high}}` tokens), and the module re-formats the live `low – high` through it as the user drags — so a translated page keeps its own words live. The SSR text is the true pair. |
 | `data-hui-shortcut-focus` / `data-hui-shortcut-click` / `data-hui-shortcut-target` / `data-hui-shortcut-hint` | The page's keyboard chords, rendered by `ui.GlobalSearch`, `ui.CommandPalette`, `ui.ShortcutHint` (BindTarget) and host chrome; bound by the registered `headless-navigation` module (framework/headless), which owns one document keydown with an isComposing guard and resolves the first connected target outside an `inert` subtree (a chord without Mod or Alt never fires while focus is in an input, a contenteditable editor or a `role="textbox"` widget, and a modifier the chord does not name makes it a different chord, except Shift on a non-letter such as `?`), so a chord under an open drawer's lower layers or the page beneath reaches the top layer's control. The retired shortcut-module spellings are gone with the `shortcut` module. |
 | `data-hui-combobox*` (input, listbox, static, loader, loading, status, count, no-results, inline) | On a `headless.Combobox` / `ui.GlobalSearch` / `ui.CommandPalette`: the registered `headless-combobox` module (framework/headless) owns the keyboard contract and the pick (Escape on an open listbox closes only the list, in the capture phase, so a surrounding modal, intercept overlay or disclosure stays open; `-inline` on the input, set by `Inline` and by the command palette, marks a list that is the dialog's own content, whose Escape closes the dialog); the RPC debounce and the signal swap stay the kernel's `data-cui-rpc` contract; the no-script path is the same-origin GET form. The retired combobox-module static-list marker went with the `combobox` module. |
-| `data-hui-copy-target="<id>"` | On the same wrapper: the ELEMENT ID of the copy source (not a selector — the module resolves it with `getElementById`; a leading `#` is stripped at render). The copy is an `<input>` or `<textarea>`'s current `value`, exactly as typed (never a password field's: the click copies nothing), a `<pre>`'s `textContent`, else the element's rendered text. |
+| `data-hui-copy-target="<id>"` | On the same wrapper: the ELEMENT ID of the copy source (not a selector — the module resolves it with `getElementById`; a leading `#` is stripped at render). The copy is an `<input>` or `<textarea>`'s current `value`, exactly as typed (the click copies nothing from a native password field or a PasswordInput in either visibility state), a `<pre>`'s exact `textContent`, including indentation and trailing newlines, or the trimmed rendered text of other elements. |
 | `data-hui-copy` | On the wrapper `framework/ui.CopyButton` renders (the button and its status span live inside it): marks a copy control. The `headless-copy` module's delegated click reader performs the clipboard write (`navigator.clipboard.writeText` on the target's text) — no clipboard mutation is promised without script, the target stays readable and selectable. |
 | `data-hui-copy-copied` / `data-hui-copy-back` | The copied and idle label texts: on success (the `writeText` promise resolved, not the click) the module swaps `data-hui-copy-copied` into a `[data-hui-copy-label]` span inside the wrapper, when one exists, and back after ~1.2s — the same window `data-hui-copy-state="done"` sits on the wrapper. `framework/ui.CopyButton` renders no `data-hui-copy-label` span: it draws both labels and its sheet shows one at a time from `data-hui-copy-state`. The span is for a host's own copy button. |
 | `data-hui-copy-sentence` / `data-hui-copy-name` / `data-hui-copy-status` | The announcement contract: on success the module writes the sentence (with `{{name}}` substituted from `data-hui-copy-name`) into the visually-hidden `role="status"` span carrying `data-hui-copy-status`, clear then frame, so screen-reader users hear "Copied" without focus loss. |
@@ -542,7 +559,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-sidebar-toggle` | On the collapse button. Toggling flips `data-collapsed` on the root, `aria-expanded` and the accessible name on the button, and persists under the storage key when the root carries one. |
 | `data-hui-sidebar-storage="<key>"` | On a collapsible sidebar root with `SidebarCollapseAuto` (the zero value). Names the local-storage entry used to restore the collapsed state across navigation and reloads; the state is stored namespaced as `gofastr.sidebar-collapse.` + `encodeURIComponent(<key>)`; a value stored under the pre-namespace raw `<key>` is not read. A server-owned collapse state (`SidebarCollapseCollapsed`/`Expanded`, rendered as `data-collapsed` on the root) omits this attribute, which suppresses BOTH the hydration-time localStorage read and the post-toggle write: a per-user state restored from the database survives first paint on a device whose localStorage says otherwise, and no stale local value is written back. |
 | `data-hui-sidebar-group-toggle` | On a button-dialect group header (`SidebarConfig.GroupMarkup: SidebarGroupButton`). The sidebar module toggles `aria-expanded` on the button plus the `hidden` attribute on the element named by `aria-controls`. The default `<details>` dialect instead carries the disclosure hooks (`data-hui-disclosure` + `data-hui-disclosure-persist` with a per-group key). |
-| `data-hui-sortable` / `data-hui-sortable-rpc="<path>"` / `data-hui-sortable-item` / `data-hui-sortable-grip` / `data-hui-sort-key="<key>"` / `data-hui-sortable-group="<id>"` / `data-hui-sortable-container="<id>"` / `data-hui-sortable-version="<token>"` / `data-hui-sortable-conflict="<rpc>"` / `data-hui-sortable-s-*` | On a `framework/ui.SortableList` (headless.SortableList anatomy): the registered `headless-sortablelist` module (framework/headless) owns the keyboard model (Space grabs, Arrow Up/Down moves within a column, Arrow Left/Right crosses to an adjacent column of the same group, the column on screen to that side in a right-to-left board, Space drops, Esc cancels, and so do focus leaving the grabbed row and a grab of another row, so the next drop commits only its own move), the pointer drag through `headless-sortabledrag`, which requires it (mouse, pen or touch pressed on a row's aria-hidden grip, `data-hui-sortable-grip`, and captured there; the kit sets `touch-action: none` on the grip alone, so a touch elsewhere on the row still scrolls; no row moves while the pointer does, the landing place is marked `is-drop-before` or `is-drop-after` on a row or `is-drop-target` on a list with no other row, and the release moves the row once into the same commit as a keyboard drop; a release off every list or over the dragged row, Esc and a lost pointer capture move and commit nothing), the polite per-move announcements (the `data-hui-sortable-s-*` attributes carry the Strings, `{{label}}`/`{{list}}`/`{{position}}` substituted at say-time), and the server-authoritative commit: same-container reorders POST `order=<keys>` plus `container=` when configured and `version=` when versioned; cross-container drops add `moved=<key>` and always carry `container=`; non-2xx reverts the DOM, unless a newer commit has gone out on that list since (it sent the whole newer order, so a slow failure never repaints over a later save); a revert restores the last order the server confirmed on that list, not the order the failed move started from, so two overlapping commits that both fail leave the list where the server has it, and an older commit that succeeds after the newest one failed moves the list to the order it saved; a versioned 409 fires the conflict path (GET the conflict endpoint, replace the list's rows — an empty body reconciles the column to zero items), after reading the 409 body under hard bounds (JSON content-type, ~4 KB, the error envelope's `{"error":<string>}`, capped ~300 chars); a versioned list renews its `data-hui-sortable-version` from the `X-Gofastr-Sortable-Version` response header: a 2xx move renews every list of its group still holding the token it sent, and the conflict refresh renews the list whose rows it replaced. |
+| `data-hui-sortable` / `data-hui-sortable-rpc="<path>"` / `data-hui-sortable-item` / `data-hui-sortable-grip` / `data-hui-sort-key="<key>"` / `data-hui-sortable-group="<id>"` / `data-hui-sortable-container="<id>"` / `data-hui-sortable-version="<token>"` / `data-hui-sortable-conflict="<rpc>"` / `data-hui-sortable-s-*` | On a `framework/ui.SortableList` (headless.SortableList anatomy): the registered `headless-sortablelist` module (framework/headless) owns the keyboard model (Space grabs, Arrow Up/Down moves within a column, Arrow Left/Right crosses to an adjacent column of the same group, the column on screen to that side in a right-to-left board, Space drops, Esc cancels, and so do focus leaving the grabbed row and a grab of another row, so the next drop commits only its own move), the pointer drag through `headless-sortabledrag`, which requires it (mouse, pen or touch pressed on a row's aria-hidden grip, `data-hui-sortable-grip`, and captured there; the kit sets `touch-action: none` on the grip alone, so a touch elsewhere on the row still scrolls; no row moves while the pointer does, the landing place is marked `is-drop-before` or `is-drop-after` on a row or `is-drop-target` on a list with no other row, and the release moves the row once into the same commit as a keyboard drop; a release off every list or over the dragged row, Esc and a lost pointer capture move and commit nothing), the polite per-move announcements (the `data-hui-sortable-s-*` attributes carry the Strings, `{{label}}`/`{{list}}`/`{{position}}` substituted at say-time), and the server-authoritative commit: same-container reorders POST `order=<keys>` plus `container=` when configured and `version=` when versioned; cross-container drops add `moved=<key>` and always carry `container=`; non-2xx reverts the DOM, unless a newer commit has gone out on that list since (it sent the whole newer order, so a slow failure never repaints over a later save); a revert restores the last order the server confirmed on that list, not the order the failed move started from, so two overlapping commits that both fail leave the list where the server has it, and an older commit that succeeds after the newest one failed moves the list to the order it saved; a versioned 409 fires the conflict path (GET the conflict endpoint, replace the list's rows — an empty body reconciles the column to zero items), after reading the 409 body under hard bounds (JSON content-type, ~4 KB, the error envelope's `{"error":<string>}`, capped ~300 chars); a versioned list renews its `data-hui-sortable-version` from the `X-Gofastr-Sortable-Version` response header: a 2xx move renews every list of its group still holding the token it sent, and the conflict refresh renews the list whose rows it replaced. A conflict refresh waits while the newest move on that list is pending. A newer save supersedes it. If the newest move fails, the refresh supplies the server's rows and version for recovery. Pointer and keyboard moves skip any destination list inside the moving row. |
 | `data-hui-system` / `data-hui-system-offline` | On a NetworkRetryBanner — the offline SystemBanner: the banner ships hidden and the headless module shows it when the framework reports the connection lost with a retry scheduled (reading `window.__gofastr.sseStatus`; the failure-count and SSE-silence triggers retired with the old module) and hides it on reconnect. A banner arriving during an outage reads the mirrored state on arm instead of waiting for the next event. |
 | `data-hui-system-id="<id>"` | The message's identity on a SystemBanner (from `BannerConfig.DismissID`, else `ID`, else a name `framework/ui.Banner` derives from the message, the same on every render): a dismissal is remembered for the session under it — `sessionStorage` (`hui.system.dismissed`) plus the cookie `gofastr.banner-dismiss.<encodeURIComponent(id)>` the module writes, component-encoded at the storage boundary so a DOM-sourced id can never contribute cookie delimiters. `framework/ui.Banner` reads the same cookie to skip rendering a dismissed banner server-side; for the usual letters-and-digits ids the cookie name is the id verbatim. Use for "deprecation notice — got it" banners. The dismissed set never applies to the offline banner. |
 | `data-hui-slider-output` | On the `<output>` of a `framework/ui.Slider` with `ShowValue`: the `headless-controls` module writes the input's live value into it as the thumb moves (a real form output, `for`-associated, whose SSR text is the true value), and the same words into the input's `aria-valuetext`, which the server renders only beside an output. Auto-emitted when `SliderConfig.ShowValue` is true; a slider without an output renders no hook at all. |
@@ -578,6 +595,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-number-input-decrement` / `data-hui-number-input-increment` | On the −/+ buttons of a `framework/ui.NumberInput`: clicking steps the linked `<input type="number">` through the browser's `stepUp`/`stepDown`, so the value lands inside the bounds its own `min`/`max`/`step` declare and on the step base (`min=1 step=5` walks 1, 6, 11) — the declared bounds are the server's, never repaired client-side — then dispatches an `input` + `change` event after writing the new value so form-RPC pipelines see the change. |
 | `data-hui-number-input-for="<input-id>"` | On a `data-hui-number-input-decrement`/`-increment` button: the id of the `<input type="number">` it controls. The module looks for it among the button's siblings in the control's row, so two forms whose fields share the default id (the name) each step their own input, and an island swap that replaces the row rebinds on arrival. The label's `for` still resolves page-wide: set `ID` when one page draws the field twice. |
 | `data-hui-reveal` | On an affix shell's password-reveal button: toggles the shell input between password and text, focuses the input with its caret at the end, and mirrors visibility with `aria-pressed`. |
+| `data-hui-password` | Marks the input rendered by `headless.Password`. CopyButton uses this marker to recognize the password field after reveal changes its type to text. |
 | `data-hui-system-dismiss` | On a system banner's dismiss control: hides the closest `data-hui-system` banner and remembers its `data-hui-system-id` for the session when present. |
 | `data-hui-table-sort="<key>"` / `data-hui-page="<page>"` | Sort and pager controls on an island table. The server owns the sort/page computation; the headless module records the clicked key or page so it can restore focus after the table's RPC answer replaces its markup. |
 | `data-hui-step-wizard` / `data-hui-step-wizard-current="<index>"` / `data-hui-step-wizard-action="next\|back"` / `data-hui-step-wizard-status` | On a `headless.StepWizard` form, its submit controls and live status: the current step is zero-based. The server owns the steps and validation. On an island submit, `headless-wizard` records the departing form and step; after its replacement arrives it focuses the error summary first, otherwise the new step heading, and re-announces the server-rendered status when the step changed. Plain POST works without script. |
@@ -2456,6 +2474,14 @@ no screen matches carries no match; the guard falls through and the
 `WithNotFoundScreen` 404 stays truthful. See
 `framework/docs/content/ui-wiring.md` → "Guards on dynamic screens".
 
+`RenderScreen` uses the same resolved document language and direction on
+full loads and partials. A recovery screen's `ScreenLang` can override the
+host's document language for the route.
+
+The recovery title and default layout receive the prepared render
+context, including the request and query. A panicking title hook uses
+the fallback title.
+
 ---
 
 ### Error pages that show (404 through the root layout)
@@ -3110,6 +3136,8 @@ CSS exposing `::details-content` preserves its nested Tab stops.
 
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
+The carousel's component sheet draws its arrows toward the previous and
+next slides in either text direction.
 Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
 Navigable combobox options are anchors with `role="option"` and

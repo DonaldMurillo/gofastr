@@ -35,7 +35,11 @@ func TestToolCallsKeepTypedClientRefusals(t *testing.T) {
 			if err := server.RegisterTool("echo", "Echo", map[string]any{"type": "object"}, adapter); err != nil {
 				t.Fatal(err)
 			}
-			params, err := json.Marshal(map[string]any{"name": "echo", "arguments": test.args})
+			call := map[string]any{"name": "echo"}
+			if test.args != nil {
+				call["arguments"] = test.args
+			}
+			params, err := json.Marshal(call)
 			if err != nil {
 				t.Fatal(err)
 			}

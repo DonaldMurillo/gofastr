@@ -78,7 +78,7 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 <form><input data-passkey-name value="Laptop">
 <button id="add" data-passkey-register="/auth" hidden>Add</button>
 <button id="ren" data-passkey-rename="/auth" data-passkey-id="%[2]s" hidden>Rename</button></form>
-<form method="post" action="/sensitive"><input type="hidden" name="_csrf" value="%[1]s">
+<form method="post" action="/sensitive"><input type="hidden" name="_csrf" value="%[1]s"><input type="hidden" name="requestSubmit" value="field">
 <button id="re" data-passkey-reauth="/auth" hidden>Confirm</button></form>
 %[3]s
 <button id="in" data-passkey-login="/auth" hidden>Sign in</button>

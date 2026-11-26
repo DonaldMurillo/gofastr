@@ -92,21 +92,23 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		title = appName
 	}
 	if t, ok := comp.(app.ScreenTitler); ok {
-		if name := t.ScreenTitle(r.Context()); name != "" {
+		if name := app.SafeScreenTitle(ctx, t); name != "" {
 			title = suffixTitle(name, appName)
 		}
 	}
 
+	path := routePath(r)
+	lang := app.ScreenLanguage(comp, ds.LangFor(ctx, path))
 	if r.Header.Get("X-Gofastr-Navigate") == "1" {
 		if staleMarkupClient(r) {
 			w.Header().Del("Cache-Control")
-			writeStaleMarkupReload(w, r, routePath(r), "")
+			writeStaleMarkupReload(w, r, path, "")
 			return
 		}
 		w.Header().Set("X-Gofastr-Partial", "true")
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(textsafe.StripInvisible(title)))
 		if ds.App != nil {
-			body = render.Join(body, ds.partialHead(ctx, routePath(r), comp))
+			body = render.Join(body, ds.partialHead(ctx, path, lang, comp))
 		}
 		w.WriteHeader(status)
 		fmt.Fprint(w, partialSeedIsland(ctx, string(body))+string(body))
@@ -115,9 +117,9 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 
 	if ds.App != nil && ds.App.Router != nil {
 		if layout := ds.App.Router.GetDefaultLayout(); layout != nil {
-			body = layout.WrapCtx(r.Context(), body)
+			body = layout.WrapCtx(ctx, body)
 		}
 	}
 	ds.finishPageDocument(w, r, ctx,
-		render.HTML(ds.documentShell(ctx, r.URL.Path, title, string(body))), r.URL.Path, comp, status)
+		render.HTML(ds.documentShellLang(ctx, path, lang, title, string(body))), r.URL.Path, comp, status)
 }
