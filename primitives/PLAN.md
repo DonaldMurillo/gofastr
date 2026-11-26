@@ -282,6 +282,11 @@ watcher rereads the active adapter per message; in `mutate`, that a written
 mutant is reread, and the wall-clock deadline on each run; in `repolint`,
 that each classified CRUD exposure carries a real reason.
 
+The replay eval after it held every number but one cell of
+`index-name-collision`, which fixed its four sibling paths and missed the
+reported one; both reruns fixed all of it
+(`2026-11-26-replay-cmd-tools-sweep.md`).
+
 Next: `cmd/gofastr`, then `internal/`. The repository as a whole is at
 10.1%.
 
