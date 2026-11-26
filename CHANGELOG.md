@@ -205,6 +205,12 @@ few lines, and link the PR or the docs page for the rest.
 - **SecurityHeaders preserves multiple `Reporting-Endpoints` lines** and
   honors an existing `csp-endpoint` on any line ([#900](https://github.com/DonaldMurillo/gofastr/pull/900)).
 
+- `App.Shutdown` stops waiting for an event bridge publish that is stuck
+  in the fanout backend when the drain deadline expires, reports the
+  deadline error and runs the remaining stop hooks. The stuck publish keeps
+  running in the background and may still reach other replicas or be lost
+  at exit. ([#912](https://github.com/DonaldMurillo/gofastr/pull/912))
+
 - `App.Shutdown` stops waiting for a stuck outbox relay when the drain
   deadline expires and reports the deadline error. ([#907](https://github.com/DonaldMurillo/gofastr/pull/907))
 

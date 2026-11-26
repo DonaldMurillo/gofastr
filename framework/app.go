@@ -1219,10 +1219,12 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: WithFanout: " + err.Error())
 		}
-		a.OnStop(func() error {
-			stopBridge()
-			return nil
-		})
+		a.lc.PrependDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+			return a.drainWithDeadline(ctx, "event bridge stop", func() error {
+				stopBridge()
+				return nil
+			}, "event bridge stop abandoned after the drain deadline")
+		}))
 	}
 
 	a.modules = NewModuleManager(a.DB, a.fanout)

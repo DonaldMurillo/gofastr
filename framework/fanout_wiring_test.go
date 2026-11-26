@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
@@ -124,6 +125,96 @@ func TestWithFanout_NilPanics(t *testing.T) {
 		}
 	}()
 	WithFanout(nil)
+}
+
+type blockingEventFanout struct {
+	publishing chan struct{}
+	release    chan struct{}
+	detached   chan struct{}
+}
+
+func (f *blockingEventFanout) Publish(context.Context, string, []byte) error {
+	close(f.publishing)
+	<-f.release
+	return nil
+}
+
+func (f *blockingEventFanout) Subscribe(string, func([]byte)) (func(), error) {
+	return func() { close(f.detached) }, nil
+}
+
+func TestEventBridgeShutdownDeadline(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{"in-flight", time.Second},
+		{"already-expired", -time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &blockingEventFanout{
+					publishing: make(chan struct{}),
+					release:    make(chan struct{}),
+					detached:   make(chan struct{}),
+				}
+				defer close(f.release)
+				app := NewApp(WithFanout(f), WithoutDefaultMiddleware())
+				finalHookRan := make(chan struct{})
+				app.OnStopFirst(func() error {
+					close(finalHookRan)
+					if tc.timeout <= 0 {
+						// An expired drain starts the stop without waiting for it.
+						return nil
+					}
+					select {
+					case <-f.detached:
+					default:
+						t.Error("event bridge was not detached before the final stop hook")
+					}
+					return nil
+				})
+				if err := app.Events().Emit(context.Background(), event.Event{Type: "ping"}); err != nil {
+					t.Fatal(err)
+				}
+				<-f.publishing
+
+				ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+				defer cancel()
+				done := make(chan error, 1)
+				go func() { done <- app.Shutdown(ctx) }()
+
+				if tc.timeout > 0 {
+					synctest.Wait()
+					select {
+					case err := <-done:
+						t.Fatalf("Shutdown returned before its deadline: %v", err)
+					default:
+					}
+				}
+				<-ctx.Done()
+				synctest.Wait()
+				select {
+				case err := <-done:
+					if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "event bridge stop abandoned after the drain deadline") {
+						t.Errorf("Shutdown = %v, want context.DeadlineExceeded from the event bridge stop", err)
+					}
+					select {
+					case <-finalHookRan:
+					default:
+						t.Error("Shutdown skipped the final stop hook")
+					}
+					select {
+					case <-f.detached:
+					default:
+						t.Error("Shutdown did not start the event bridge stop")
+					}
+				default:
+					t.Error("Shutdown still waiting for fanout Publish after its deadline")
+				}
+			})
+		})
+	}
 }
 
 // TestWithFanout_GrantStorePropagates proves WithGrantStore wires the RBAC
