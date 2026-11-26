@@ -70,3 +70,28 @@ func TestOAKebabSplitsBracketOperator(t *testing.T) {
 		}
 	}
 }
+
+func TestSDKReadmesNameControlNamedFields(t *testing.T) {
+	spec, err := buildSDKSpec([]framework.EntityDeclaration{{
+		Name: "transfers", Table: "transfers",
+		Fields: []framework.FieldDeclaration{{Name: "direction", Type: "string"}, {Name: "title", Type: "string"}},
+	}}, &SdkOptions{name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, md := range map[string]string{"go": renderSDKGoReadme(spec), "js": renderSDKJSReadme(spec)} {
+		if !strings.Contains(md, "- `direction` on `transfers`: send `direction[eq]`") {
+			t.Errorf("%s readme lacks the direction line:\n%s", name, md)
+		}
+	}
+	live, err := buildSDKSpec([]framework.EntityDeclaration{{
+		Name: "feeds", Table: "feeds",
+		Fields: []framework.FieldDeclaration{{Name: "stream", Type: "bool"}},
+	}}, &SdkOptions{name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if js := renderSDKJSReadme(live); !strings.Contains(js, `[feedsFields.stream + "[eq]"]`) {
+		t.Errorf("js example sends a bare stream:\n%s", js)
+	}
+}
